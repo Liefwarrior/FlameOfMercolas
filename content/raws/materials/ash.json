@@ -1,0 +1,20 @@
+{
+  "id": "ash",
+  "displayName": "Ash",
+  "phase": "SOLID",
+  "density": 300,
+  "hardness": 1,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 4,
+  "heatCapacityQ8": 16,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 1,
+  "tags": ["residue"],
+  "light": { "opacity": 4 },
+  "features": {},
+  "provenance": "Invented for v0 balance, needs Eli's blessing. Role fixed by ARCHITECTURE sections 10-11: burnsTo target of every flammable; Tavern Fire golden asserts the ash count.",
+  "notes": "Terminal burn product - itself non-flammable so burn chains halt (no burnsTo cycles). Near-insulator, minimal thermal mass (16, above the enforced minimum 12). Low opacity (4): a burned-out roof lets daylight pour in, which is what wakes the Light system after burnout."
+}

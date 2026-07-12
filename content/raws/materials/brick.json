@@ -1,0 +1,20 @@
+{
+  "id": "brick",
+  "displayName": "Brick",
+  "phase": "SOLID",
+  "density": 1900,
+  "hardness": 4,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 40,
+  "heatCapacityQ8": 72,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 15,
+  "tags": ["masonry"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "Invented for v0 balance, needs Eli's blessing.",
+  "notes": "Fired-clay masonry: insulates a little better than granite (40 vs 60), slightly lower thermal mass. Non-flammable, no melt in v0."
+}

@@ -1,0 +1,20 @@
+{
+  "id": "trudgeon_wood",
+  "displayName": "Trudgeon Wood",
+  "phase": "SOLID",
+  "density": 900,
+  "hardness": 4,
+  "flammability": 1,
+  "ignitionK": 650,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 20,
+  "heatCapacityQ8": 56,
+  "fuelTicks": 3400, "burnsTo": "ash",
+  "valueCp": 60,
+  "tags": ["wood"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "WorldBible section 9: trudgeon trunks soaked in getilia sap harden to stone-like density and become fireproof (the Delta palisade and houses). This raw is the UNTREATED base wood; numbers invented for v0 balance, needs Eli's blessing.",
+  "notes": "Base trudgeon must be FLAMMABLE so the getilia_soak treatment (sibling treatments raw) has something to negate: it mints 'trudgeon_wood@getilia_soak' with flammability 0 at load, which per ARCHITECTURE section 11 'never enters the burning map'. Dense hardwood: hardest of the woods to light (650 K), longest-burning (3400 fuelTicks; 650 + 3400 = 4050 <= 4095 under either parse of the fuel invariant)."
+}

@@ -1,0 +1,20 @@
+{
+  "id": "thatch",
+  "displayName": "Thatch",
+  "phase": "SOLID",
+  "density": 150,
+  "hardness": 1,
+  "flammability": 3,
+  "ignitionK": 450,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 8,
+  "heatCapacityQ8": 16,
+  "fuelTicks": 240, "burnsTo": "ash",
+  "valueCp": 5,
+  "tags": ["plant", "roofing"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "Invented for v0 balance, needs Eli's blessing.",
+  "notes": "The tinder of the Tavern Fire: lowest ignition point (450 K) and fastest burn (240 fuelTicks) of the flammables - ignites easier and burns faster than oak per the assignment. Tiny heat capacity (16, above the enforced minimum 12) means a thatch roof flashes over quickly."
+}

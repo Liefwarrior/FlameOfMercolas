@@ -1,0 +1,20 @@
+{
+  "id": "oak",
+  "displayName": "Oak",
+  "phase": "SOLID",
+  "density": 700,
+  "hardness": 3,
+  "flammability": 2,
+  "ignitionK": 550,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 16,
+  "heatCapacityQ8": 48,
+  "fuelTicks": 1800, "burnsTo": "ash",
+  "valueCp": 40,
+  "tags": ["wood"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "Invented for v0 balance, needs Eli's blessing. Oak is the named fuel of the ARCHITECTURE section 11 Tavern Fire trace ('diffusion heats oak past ignition on the frontier').",
+  "notes": "ignitionK 550 K approximates real wood autoignition (~570 K). Slower to ignite and much longer-burning than thatch (550 K vs 450 K; 1800 vs 240 fuelTicks) per the assignment ordering. ignitionK + fuelTicks = 2350 <= 4095 under either parse of the fuel invariant."
+}

@@ -1,0 +1,20 @@
+{
+  "id": "steel",
+  "displayName": "Steel",
+  "phase": "SOLID",
+  "density": 7850,
+  "hardness": 7,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 230,
+  "heatCapacityQ8": 100,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 1200,
+  "tags": ["metal"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "WorldBible section 9: 'Chromatis broadheads punch through three inches of steel' - so steel hardness (7) sits below chromatis (8). Thermal/value numbers invented for v0 balance, needs Eli's blessing.",
+  "notes": "Best conductor in the set (230, under the 256 cap; conducts better than chromatis 200). meltK deliberately null: a realistic ~1811 K melt would require a 'steel_melt' id outside the v0 vocabulary, and melt => meltsTo is a boot-fail invariant. Flagged as an open question."
+}

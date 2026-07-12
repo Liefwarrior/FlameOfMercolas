@@ -1,0 +1,38 @@
+{
+  "id": "lightstone",
+  "displayName": "Lightstone",
+  "phase": "SOLID",
+  "density": 2600,
+  "hardness": 5,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 48,
+  "heatCapacityQ8": 64,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 15000,
+  "tags": ["crystal", "glasswork"],
+  "light": { "opacity": 12 },
+  "features": {
+    "chargeable": {
+      "capacityCu": 5000,
+      "maxSafeDischargePerTick": 150,
+      "saturationPct": 100,
+      "saturationHeatDeciKPerTick": 0,
+      "equilibriumDeciK": 2930,
+      "colorStops": [
+        { "uptoPct": 5,   "tint": "#8C9199", "lightLevel": 0 },
+        { "uptoPct": 60,  "tint": "#F2E6B8", "lightLevel": 5 },
+        { "uptoPct": 100, "tint": "#FFF8DC", "lightLevel": 9 }
+      ]
+    },
+    "shatterOnSpike": {
+      "spikeCuPerTick": 2000,
+      "shattersTo": "lightstone_shards",
+      "radiusChebyshev": 2
+    }
+  },
+  "provenance": "WorldBible section 9: glass-and-metal sphere; lights when fed Alir; lasts long; releasing the energy too suddenly shatters it (Chala's gift to Eric). Capacity 5000 cu / spike 2000 per ARCHITECTURE section 1 decision 14.",
+  "notes": "Chargeable lamp: warm white ramp, no saturation heat (canon says it lights, never that it heats). shatterOnSpike backs the ARCHITECTURE section 11 Chromatis Experiment: an EnergyDischarged rate above 2000 cu/tick within Chebyshev radius 2 (including self) converts it to lightstone_shards. Semi-transparent (opacity 12, glass body) - invented, needs Eli's blessing. All chargeable/spike values fit 16 bits."
+}

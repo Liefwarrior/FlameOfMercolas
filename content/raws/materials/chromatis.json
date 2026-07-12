@@ -1,0 +1,33 @@
+{
+  "id": "chromatis",
+  "displayName": "Chromatis",
+  "phase": "SOLID",
+  "density": 6800,
+  "hardness": 8,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": 2600, "meltsTo": "chromatis_melt", "meltYieldUnits": 7,
+  "boilK": null,
+  "conductivityQ8": 200,
+  "heatCapacityQ8": 96,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 40000,
+  "tags": ["metal", "alloy"],
+  "light": { "opacity": 31 },
+  "features": {
+    "chargeable": {
+      "capacityCu": 60000,
+      "maxSafeDischargePerTick": 600,
+      "saturationPct": 95,
+      "saturationHeatDeciKPerTick": 20,
+      "equilibriumDeciK": 6000,
+      "colorStops": [
+        { "uptoPct": 60,  "tint": "#9FB8D8", "lightLevel": 0 },
+        { "uptoPct": 95,  "tint": "#E8842A", "lightLevel": 4 },
+        { "uptoPct": 100, "tint": "#F5C542", "lightLevel": 8 }
+      ]
+    }
+  },
+  "provenance": "ARCHITECTURE.md section 10 normative example, copied verbatim. Canon: WorldBible section 9 - sky-blue/silver alloy; holds enormous energy without feeling hot until saturated; silver/blue -> gold at full charge; blades turn orange when hot from energy. Capacity 60000 cu / maxSafeDischarge 600 per ARCHITECTURE section 1 decision 14 (16-bit overlay rescale).",
+  "notes": "Color stops mirror canon charge ramp: silver/blue -> orange -> gold. Saturation heat begins at 95% ('stays cool until saturated'). meltK 2600 is spec-normative, not canon."
+}

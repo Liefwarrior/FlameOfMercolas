@@ -1,0 +1,22 @@
+{
+  "id": "glowstone",
+  "displayName": "Glowstone",
+  "phase": "SOLID",
+  "density": 2500,
+  "hardness": 5,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 44,
+  "heatCapacityQ8": 64,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 6000,
+  "tags": ["mineral"],
+  "light": { "opacity": 31 },
+  "features": {
+    "emissive": { "lightLevel": 7, "tint": "#C43A2F" }
+  },
+  "provenance": "WorldBible section 9: eerie red light; lights the U'mar shrine; different from lightstone. Thermal/value numbers invented for v0 balance, needs Eli's blessing.",
+  "notes": "Passive emitter (PLAN-v0: 'Glowstone: passive red light') - always on, never charged, never shatters; the deliberate contrast to lightstone. Opaque body that glows (opacity 31 + emissive), like coal that burns red."
+}

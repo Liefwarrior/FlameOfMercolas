@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "provenance": "docs/art/TILE-ART-SPEC.md is the authoritative spec for this file; ARCHITECTURE.md section 3 (TileArtResolver/JsonTileArtResolver, byAppearance) and section 10 (chromatis colorStops) govern.",
+  "notes": "Placeholder mapping. To swap in a real pack (Kenney 1-bit, DawnLike): change 'atlas', rewrite region names, ignore/delete 'placeholderGen'. Resolver ignores 'placeholderGen', 'provenance', 'notes'.",
+  "atlas": "art/placeholder/placeholder.atlas",
+  "tilePx": 16,
+  "missingRegion": "missing",
+  "voidColor": "#0E0E12",
+  "lightTintQ8": [36, 36, 36, 38, 39, 41, 44, 47, 50, 54, 58, 63, 68, 74, 80, 87, 94, 102, 110, 118, 127, 136, 146, 157, 167, 179, 190, 202, 215, 228, 242, 256],
+  "zPeekDimQ8": [256, 168, 112, 76],
+  "materials": {
+    "granite": {
+      "forms": {
+        "block": { "byAppearance": ["granite"] },
+        "floor": { "byAppearance": ["granite.floor"] }
+      }
+    },
+    "dirt": {
+      "forms": {
+        "block": { "byAppearance": ["dirt"] },
+        "floor": { "byAppearance": ["dirt.floor"] }
+      }
+    },
+    "oak": {
+      "forms": {
+        "block": { "byAppearance": ["oak"] },
+        "floor": { "byAppearance": ["oak.floor"] }
+      }
+    },
+    "thatch": {
+      "forms": {
+        "block": { "byAppearance": ["thatch"] },
+        "floor": { "byAppearance": ["thatch.floor"] }
+      }
+    },
+    "trudgeon_wood": {
+      "forms": {
+        "block": { "byAppearance": ["trudgeon_wood"] },
+        "floor": { "byAppearance": ["trudgeon_wood.floor"] }
+      }
+    },
+    "trudgeon_wood@getilia_soak": {
+      "notes": "Treatment-derived id minted at load (getilia_soak). Region names carry the '@' verbatim; the atlas is generated, so no filesystem contact.",
+      "forms": {
+        "block": { "byAppearance": ["trudgeon_wood@getilia_soak"] },
+        "floor": { "byAppearance": ["trudgeon_wood@getilia_soak.floor"] }
+      }
+    },
+    "steel": {
+      "forms": {
+        "block": { "byAppearance": ["steel"] },
+        "floor": { "byAppearance": ["steel.floor"] }
+      }
+    },
+    "brick": {
+      "forms": {
+        "block": { "byAppearance": ["brick"] },
+        "floor": { "byAppearance": ["brick.floor"] }
+      }
+    },
+    "chromatis": {
+      "provenance": "Buckets = colorStops ordinals from ARCHITECTURE.md section 10: silver-blue (<=60%), orange (<=95%), gold (<=100%). WorldBible section 9: silver/blue -> gold at full charge.",
+      "forms": {
+        "block": { "byAppearance": ["chromatis", "chromatis.a1", "chromatis.a2"] },
+        "floor": { "byAppearance": ["chromatis.floor", "chromatis.floor.a1", "chromatis.floor.a2"] }
+      }
+    },
+    "chromatis_melt": {
+      "forms": {
+        "block": { "byAppearance": ["chromatis_melt"] },
+        "floor": { "byAppearance": ["chromatis_melt.floor"] }
+      }
+    },
+    "phorys": {
+      "forms": {
+        "block": { "byAppearance": ["phorys"] },
+        "floor": { "byAppearance": ["phorys.floor"] }
+      }
+    },
+    "lightstone": {
+      "notes": "Chargeable (5000 cu). If the materials crew ships colorStops, add lightstone.a1... here; until then bucket clamp makes one region correct.",
+      "forms": {
+        "block": { "byAppearance": ["lightstone"] },
+        "floor": { "byAppearance": ["lightstone.floor"] }
+      }
+    },
+    "lightstone_shards": {
+      "forms": {
+        "block": { "byAppearance": ["lightstone_shards"] },
+        "floor": { "byAppearance": ["lightstone_shards.floor"] }
+      }
+    },
+    "glowstone": {
+      "provenance": "WorldBible section 9: eerie red light. minLight is a cosmetic observer clamp only (TILE-ART-SPEC section 5.1).",
+      "minLight": 8,
+      "forms": {
+        "block": { "byAppearance": ["glowstone"] },
+        "floor": { "byAppearance": ["glowstone.floor"] }
+      }
+    },
+    "ash": {
+      "forms": {
+        "block": { "byAppearance": ["ash"] },
+        "floor": { "byAppearance": ["ash.floor"] }
+      }
+    },
+    "ice": {
+      "notes": "Grid material placed by PhaseTransition on FluidFrozenEvent (ARCHITECTURE section 5). Id 'ice' assumed - open question 1 in TILE-ART-SPEC.",
+      "forms": {
+        "block": { "byAppearance": ["ice"] },
+        "floor": { "byAppearance": ["ice.floor"] }
+      }
+    }
+  },
+  "fluids": {
+    "water": {
+      "region": "water",
+      "depthAlphaQ8": [0, 96, 120, 144, 168, 192, 216, 240]
+    }
+  },
+  "placeholderGen": {
+    "notes": "Input to the placeholder atlas generator ONLY (byte-deterministic; writes placeholder.png + placeholder.atlas directly, no TexturePacker). Colors are normative per TILE-ART-SPEC section 6.2; the FNV-1a-64 HSL mint rule applies to future ids not listed here.",
+    "atlasSizePx": 128,
+    "cellPx": 16,
+    "layout": "row-major, ascending ASCII region-name order",
+    "outlineScaleQ8": 128,
+    "floorScaleQ8": 184,
+    "floorGlyphBlendQ8": 128,
+    "glyphFont": "builtin-8x8-ascii",
+    "hashRule": "FNV-1a-64(utf8(id)); hue=h%360; sat=45+((h>>16)%25); lit=34+((h>>32)%18); HSL->sRGB rounded; glyph black if WCAG rel-luminance > 0.30 else white",
+    "materials": {
+      "granite":                    { "color": "#A9328F", "glyph": "G", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "dirt":                       { "color": "#29679E", "glyph": "D", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "oak":                        { "color": "#24768F", "glyph": "O", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "thatch":                     { "color": "#D62971", "glyph": "H", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "trudgeon_wood":              { "color": "#A6433A", "glyph": "T", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "trudgeon_wood@getilia_soak": { "color": "#805B2D", "glyph": "t", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "steel":                      { "color": "#461E94", "glyph": "S", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "brick":                      { "color": "#335899", "glyph": "B", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "chromatis": {
+        "bucketColors": ["#9FB8D8", "#E8842A", "#F5C542"],
+        "glyph": "C",
+        "glyphColor": "#000000",
+        "colorSource": "canon",
+        "provenance": "ARCHITECTURE.md section 10 colorStops tints; WorldBible section 9: silver/blue -> orange when hot -> gold at full charge"
+      },
+      "chromatis_melt":             { "color": "#CEAC27", "glyph": "c", "glyphColor": "#000000", "colorSource": "hash" },
+      "phorys":                     { "color": "#2A6993", "glyph": "P", "glyphColor": "#FFFFFF", "colorSource": "hash" },
+      "lightstone":                 { "color": "#51D530", "glyph": "L", "glyphColor": "#000000", "colorSource": "hash" },
+      "lightstone_shards":          { "color": "#A5B635", "glyph": "*", "glyphColor": "#000000", "colorSource": "hash" },
+      "glowstone": {
+        "color": "#B22D2D",
+        "glyph": "g",
+        "glyphColor": "#FFFFFF",
+        "colorSource": "canon-override",
+        "provenance": "WorldBible section 9: glowstone gives an eerie red light (hash minted purple, misleading)"
+      },
+      "ash":                        { "color": "#B6BD28", "glyph": "A", "glyphColor": "#000000", "colorSource": "hash" },
+      "ice": {
+        "color": "#A9D4E8",
+        "glyph": "I",
+        "glyphColor": "#000000",
+        "colorSource": "override",
+        "provenance": "invented for v0 legibility, needs Eli's blessing (hash minted purple)"
+      }
+    },
+    "fluids": {
+      "water": {
+        "color": "#3F6FB5",
+        "glyph": "~",
+        "glyphColor": "#FFFFFF",
+        "colorSource": "override",
+        "provenance": "invented for v0 legibility, needs Eli's blessing (hash minted olive green)"
+      }
+    },
+    "missing": { "checkerColors": ["#FF00FF", "#000000"], "checkerPx": 8 }
+  }
+}

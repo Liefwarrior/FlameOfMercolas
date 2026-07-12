@@ -1,0 +1,20 @@
+{
+  "id": "chromatis_melt",
+  "displayName": "Molten Chromatis",
+  "phase": "LIQUID",
+  "density": 6800,
+  "hardness": 1,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 210,
+  "heatCapacityQ8": 96,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 5000,
+  "tags": ["metal", "melt"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "Derived material: meltsTo target of chromatis (ARCHITECTURE section 10). All numbers invented for v0 balance, needs Eli's blessing.",
+  "notes": "Deliberately does NOT carry the 'liquid' tag: the loader invariant 'liquid tag => boilsTo' would demand a vapor id outside the v0 vocabulary, and the phorys reaction ('any liquid tag') would otherwise fire on molten metal. valueCp 5000/unit x 7 yield units = 35000, slightly below the 40000 solid block - melting is lossy on purpose."
+}

@@ -1,0 +1,20 @@
+{
+  "id": "lightstone_shards",
+  "displayName": "Lightstone Shards",
+  "phase": "SOLID",
+  "density": 2600,
+  "hardness": 2,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 40,
+  "heatCapacityQ8": 48,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 500,
+  "tags": ["crystal", "debris"],
+  "light": { "opacity": 6 },
+  "features": {},
+  "provenance": "Derived material: shatter product of lightstone (WorldBible section 9 - releasing the energy too suddenly shatters it; ARCHITECTURE section 11 shatter trace). Numbers invented for v0 balance, needs Eli's blessing.",
+  "notes": "Inert glass rubble: not chargeable, emits nothing (the section 11 trace removes the light emitter the same tick the stone shatters). Low opacity (6) - a heap of clear fragments barely blocks light. Worth ~3% of an intact stone."
+}

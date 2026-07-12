@@ -1,0 +1,18 @@
+{
+  "id": "water",
+  "displayName": "Water",
+  "density": 1000,
+  "conductivityQ8": 40,
+  "heatCapacityQ8": 208,
+  "freezeK": 273,
+  "freezesTo": "ice",
+  "freezeMinDepth": 7,
+  "boilK": 373,
+  "boilsTo": null,
+  "evapMaxDepth": 1,
+  "evapMinK": 333,
+  "evapChanceQ16": 2048,
+  "tags": ["liquid"],
+  "provenance": "Mundane water; thresholds are real-world (273 K freeze, 373 K boil, density 1000). evapMinK 333, evapChanceQ16 2048, freezeMinDepth 7, and the Q8 thermal constants are invented for v0 balance, need Eli's blessing.",
+  "notes": "Temps are integer Kelvin in raws; loaders convert to deci-K (§1.1 #13). conductivityQ8/heatCapacityQ8: substituted into the thermal kernel when pooled depth >= 4 (§1.1 #20); low conductivity, high capacity — water quenches by soaking heat. freezeK/freezesTo: FluidSystem owns pooled-fluid freeze (§1.1 #21); at temp <= freezeK it removes the units, emits FluidFrozenEvent, and PhaseTransition places material 'ice' same tick. freezeMinDepth 7: only a full-depth (7-unit) column freezes to an ice tile, so the 7 units consumed exactly match ice.meltYieldUnits = 7 and the freeze/melt round trip conserves to the unit; shallower water at freezeK stays liquid in v0 (conservation simplification — needs Eli's blessing). boilK/boilsTo: at temp >= boilK pooled units are removed via FluidVaporizedEvent(cause=BOIL) and ledgered; boilsTo is null because v0 has no gas fluid — steam/aether is a reserved seam (aether = a later lane registration). evapMaxDepth/evapMinK/evapChanceQ16: hash-phase evaporation (pinned mix constants, zero RNG draws) removes 1 unit when depth <= evapMaxDepth (1) and temp >= evapMinK, with per-cell per-tick probability evapChanceQ16/65536 (2048 = 1/32); removed units go through FluidVaporizedEvent(cause=EVAPORATION) and are ledgered. tags: 'liquid' marks this fluid as a phorys reagent (reactions match on the tag) and as quench-capable for fire extinguish queries."
+}

@@ -1,0 +1,20 @@
+{
+  "id": "granite",
+  "displayName": "Granite",
+  "phase": "SOLID",
+  "density": 2700,
+  "hardness": 6,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 60,
+  "heatCapacityQ8": 88,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 20,
+  "tags": ["stone"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "Invented for v0 balance, needs Eli's blessing. Role fixed by ARCHITECTURE section 11 Tavern Fire: 'stone conducts only' - never ignites, never melts in v0.",
+  "notes": "Modest conductor, high heat capacity: a stone wall soaks heat and passes it slowly, satisfying the M3/PLAN 'stone room never ignites' golden. No meltK because no granite melt id exists in the v0 vocabulary."
+}

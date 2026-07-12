@@ -1,0 +1,20 @@
+{
+  "id": "dirt",
+  "displayName": "Dirt",
+  "phase": "SOLID",
+  "density": 1500,
+  "hardness": 1,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 24,
+  "heatCapacityQ8": 64,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 1,
+  "tags": ["earth"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "Invented for v0 balance, needs Eli's blessing.",
+  "notes": "Poor conductor (dry soil insulates); the default ground filler for imported maps."
+}

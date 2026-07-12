@@ -1,0 +1,19 @@
+{
+  "id": "phorys_hydration",
+  "displayName": "Phorys Hydration",
+  "solid": "phorys",
+  "trigger": {
+    "kind": "FLUID_CONTACT",
+    "fluidTag": "liquid"
+  },
+  "expansion": 240,
+  "wearPerUnit": 5,
+  "wearCapacity": 1200,
+  "wornTo": "ash",
+  "pulse": {
+    "gasId": null,
+    "magnitudeCap": 1680
+  },
+  "provenance": "WorldBible §9: 'Phorys — Reman mineral. Mixed with liquid, converts liquid to pressurized gas. Powers the Devastator cannons and Revlin's flame bow.' Expansion 240 and wear 5/unit are the ARCHITECTURE.md §10 sibling-file numbers. wearCapacity 1200 and wornTo ash are invented for v0 balance, need Eli's blessing.",
+  "notes": "Field semantics. trigger: FluidSystem's REAGENT sub-phase consumes the contacting fluid units in its own lane (any fluid whose raw carries tag 'liquid'; matching is by tag, not id) and emits ReagentContactEvent(cell, fluidId, units, solidId); PhorysReactionSystem (REACTIONS phase, after THERMAL) consumes it same tick. expansion: gas volume factor — PressurePulseEvent.magnitude = unitsConsumed * expansion (240 gas-units per liquid unit). Max liquid contact per cell per tick is depth 7, so magnitude <= 7 * 240 = 1680 = pulse.magnitudeCap; loader validates cap fits 16 bits and clamps. pulse.gasId: null in v0 — there is no gas fluid in the canonical vocabulary; the pulse carries pressure only and FluidSystem applies it next tick (documented canon latency, event table §5) as displacement/wake input; steam/aether gas is a post-v0 seam. wearPerUnit: PhorysReactionSystem adds wearPerUnit * unitsConsumed to the per-chunk sparse wear counter for the cell (16-bit; loader validates wearCapacity fits). wearCapacity: when wear >= wearCapacity the phorys tile is spent and swaps to 'wornTo' via ChunkWriter with MaterialTransformedEvent; 1200/5 = 240 liquid units to exhaust one tile. wornTo: 'ash' chosen as inert residue in the canonical vocabulary; canon is silent on spent phorys."
+}

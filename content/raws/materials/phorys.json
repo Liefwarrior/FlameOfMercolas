@@ -1,0 +1,22 @@
+{
+  "id": "phorys",
+  "displayName": "Phorys",
+  "phase": "SOLID",
+  "density": 2400,
+  "hardness": 3,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 32,
+  "heatCapacityQ8": 48,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 8000,
+  "tags": ["mineral", "reagent"],
+  "light": { "opacity": 31 },
+  "features": {
+    "contactReactive": { "reagentTag": "liquid" }
+  },
+  "provenance": "WorldBible section 9: Reman mineral; mixed with liquid, converts liquid to pressurized gas; powers the Devastator cannons and Revlin's flame bow. Thermal/value numbers invented for v0 balance, needs Eli's blessing.",
+  "notes": "contactReactive is the raws flag that gates per-tile ReagentContactEvent emission (ARCHITECTURE section 6) and sets the per-chunk containsReagents gate in Fluids. The reaction numbers themselves (any 'liquid'-tag fluid, expansion 240, wear 5/unit) live in the sibling reactions raw, not here. High valueCp: strategic military mineral (gunpowder analog)."
+}

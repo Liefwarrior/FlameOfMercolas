@@ -1,0 +1,19 @@
+{
+  "id": "ice",
+  "displayName": "Ice",
+  "phase": "SOLID",
+  "density": 917,
+  "hardness": 2,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": 273, "meltsTo": "water", "meltYieldUnits": 7,
+  "boilK": null,
+  "conductivityQ8": 48,
+  "heatCapacityQ8": 128,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 10,
+  "tags": ["frozen"],
+  "light": { "opacity": 4 },
+  "provenance": "Added by v0 ruling: freezing pooled water yields material 'ice'. Mundane material; density 917 is real-world; hardness, thermal constants, valueCp, opacity invented for v0 balance, need Eli's blessing.",
+  "notes": "Grid material minted by PhaseTransition when FluidSystem emits FluidFrozenEvent for a full-depth water column (water.freezeMinDepth = 7). meltsTo references fluid id 'water': PhaseTransition (THERMAL) owns the melt at meltK, emits MaterialPhaseChangedEvent(yieldUnits=7), and FluidSystem spawns the 7 liquid units next tick (§1.1 #21) — exactly the units consumed at freeze, so the round trip conserves to the unit. Low conductivityQ8 (48) per the v0 ruling; heatCapacityQ8 128 keeps the per-material stability invariant comfortable. flammability 0 so no FLAMMABLE fields; boilK null (no sublimation in v0). opacity 4 of 31: translucent — frozen ponds dim but do not seal skylight columns."
+}
