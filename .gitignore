@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+out/
+.vscode/
+!.vscode/settings.json
+!.vscode/launch.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Java
+*.class
+hs_err_pid*
+replay_pid*
+
+# Local-only
+*.log
+/local/

@@ -1,0 +1,12 @@
+# Normalize line endings: LF in the repo, LF on checkout (cross-OS determinism includes text files).
+* text=auto eol=lf
+
+# Windows scripts stay CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touch binaries.
+*.jar binary
+*.png binary
+*.tregion binary
+*.trojsave binary
