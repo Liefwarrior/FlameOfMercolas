@@ -20,15 +20,18 @@ Status legend: **RULED** = engineering decision made under ARCHITECTURE.md autho
    metal in v0 — documented limitation); stored charge on melt converts to heat.
 4. **steel.meltK = null in v0** (no steel_melt id; forge-grade temps out of scope until needed).
 
-## Canon interpretation (ASKED — see answers recorded below when given)
+## Canon interpretation (ANSWERED by Eli, 2026-07-12)
 
-5. Chromatis orange stop: fill-band (as shipped) vs canon's discharge-heat orange.
-6. Thatch roofs + roofs as walkable FLOOR form.
-7. `granite` as the id for canon's unnamed generic stone.
-8. Untreated trudgeon flammable; whether getilia_soak also bumps hardness to stone-tier (canon:
-   "hard as stone").
-9. Phorys scope: contact-reaction only in v0; wearCapacity 1200 → ash; powder-explosion mode
-   (Devastator) and lightstone self-drain/flicker deferred.
+5. Chromatis: **HYBRID** — colorStops are a pure fill ramp silver→pale-gold(#E3CE7A)→gold; orange
+   #E8842A is the heat-glow overlay rendered only while actively discharging or saturation-heating
+   (`heatGlowTint` in art-mapping; renderer work lands with F5 light). Raws + art patched.
+6. Roofs: **KEEP** thatch + walkable FLOOR form (rooftop traversal is desired for the Wielder).
+7. `granite`: **BLESSED** as the id for canon's unnamed generic stone.
+8. **BLESSED both**: untreated trudgeon burns (slow, fuelTicks 4050); getilia_soak now also
+   overrides hardness→6 (granite-tier, canon "hard as stone"). Treatment raw patched.
+9. Phorys: **NO WEAR-OUT in v0** (Eli overrode the wear-1200 recommendation) — inexhaustible;
+   wear* fields removed from the shipped raw and become optional-reserved in the reaction schema
+   (absent = no wear). Powder-explosion mode and lightstone self-drain remain deferred.
 
 ## Balance numbers (DEFAULT — batch-veto anytime)
 

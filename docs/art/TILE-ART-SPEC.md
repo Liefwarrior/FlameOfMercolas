@@ -185,7 +185,7 @@ table exactly (it is asserted by test against `art-mapping.json`).
 | steel | `#461E94` | `S` | white | hash |
 | brick | `#335899` | `B` | white | hash |
 | chromatis (bucket 0) | `#9FB8D8` | `C` | black | **canon** — ARCHITECTURE §10 colorStops / WorldBible §9 silver-blue |
-| chromatis (bucket 1) | `#E8842A` | `C` | black | **canon** — orange when hot |
+| chromatis (bucket 1) | `#E3CE7A` | `C` | black | HYBRID ruling (Eli 2026-07-12): fill ramp is silver→pale-gold→gold; orange `#E8842A` moved to the `heatGlowTint` overlay, rendered only while discharging or saturation-heating — that's canon's "orange when hot" |
 | chromatis (bucket 2) | `#F5C542` | `C` | black | **canon** — gold at full charge |
 | chromatis_melt | `#CEAC27` | `c` | black | hash (happily lands molten-gold) |
 | phorys | `#2A6993` | `P` | white | hash |

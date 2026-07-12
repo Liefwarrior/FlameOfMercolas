@@ -8,12 +8,13 @@
     "flammability": 0,
     "ignitionK": null,
     "fuelTicks": 0,
-    "burnsTo": null
+    "burnsTo": null,
+    "hardness": 6
   },
   "scaleQ8": {
     "density": 294
   },
   "addTags": ["treated", "fireproof"],
   "provenance": "Novel, Delta palisade passage: trudgeon trunks 'would eventually become as hard as stone when covered in the sap of the getilia tree'; WorldBible §9: trudgeon soaked in getilia sap hardens to stone-like density and becomes fireproof (the Delta palisade and houses).",
-  "notes": "Minted at raws-load time per ARCHITECTURE.md §10: loader clones the target material, applies 'overrides' (absolute field replacement, null replaces with null) then 'scaleQ8' (derived = floor(base * value / 256); 294/256 = +14.8% density per assignment ruling of ~+15%). flammability 0 makes the derived material non-FLAMMABLE, so ignitionK/fuelTicks/burnsTo are cleared to satisfy the FLAMMABLE-implies invariant; the derived tile never enters FireSystem's burning set (Tavern Fire golden asserts treated tiles unchanged). 'addTags' appends to the base tag list; no loader semantics attached to these two tags in v0. Canon also implies hardness rises to stone-like; v0 leaves hardness at the trudgeon_wood base value because the granite/trudgeon hardness scale is owned by the materials crew — hardness bump needs Eli's blessing."
+  "notes": "Minted at raws-load time per ARCHITECTURE.md §10: loader clones the target material, applies 'overrides' (absolute field replacement, null replaces with null) then 'scaleQ8' (derived = floor(base * value / 256); 294/256 = +14.8% density per assignment ruling of ~+15%). flammability 0 makes the derived material non-FLAMMABLE, so ignitionK/fuelTicks/burnsTo are cleared to satisfy the FLAMMABLE-implies invariant; the derived tile never enters FireSystem's burning set (Tavern Fire golden asserts treated tiles unchanged). 'addTags' appends to the base tag list; no loader semantics attached to these two tags in v0. Hardness bump BLESSED (Eli, 2026-07-12): overrides.hardness 6 = granite-tier, honoring canon's 'hard as stone' verbatim (trudgeon base is 4)."
 }

@@ -138,11 +138,12 @@
       "steel":                      { "color": "#461E94", "glyph": "S", "glyphColor": "#FFFFFF", "colorSource": "hash" },
       "brick":                      { "color": "#335899", "glyph": "B", "glyphColor": "#FFFFFF", "colorSource": "hash" },
       "chromatis": {
-        "bucketColors": ["#9FB8D8", "#E8842A", "#F5C542"],
+        "bucketColors": ["#9FB8D8", "#E3CE7A", "#F5C542"],
+        "heatGlowTint": "#E8842A",
         "glyph": "C",
         "glyphColor": "#000000",
         "colorSource": "canon",
-        "provenance": "ARCHITECTURE.md section 10 colorStops tints; WorldBible section 9: silver/blue -> orange when hot -> gold at full charge"
+        "provenance": "HYBRID ruling (Eli 2026-07-12): fill ramp silver -> pale gold -> gold; heatGlowTint is the discharge/saturation overlay honoring WorldBible section 9 'orange when hot'"
       },
       "chromatis_melt":             { "color": "#CEAC27", "glyph": "c", "glyphColor": "#000000", "colorSource": "hash" },
       "phorys":                     { "color": "#2A6993", "glyph": "P", "glyphColor": "#FFFFFF", "colorSource": "hash" },

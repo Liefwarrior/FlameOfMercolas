@@ -23,11 +23,11 @@
       "equilibriumDeciK": 6000,
       "colorStops": [
         { "uptoPct": 60,  "tint": "#9FB8D8", "lightLevel": 0 },
-        { "uptoPct": 95,  "tint": "#E8842A", "lightLevel": 4 },
+        { "uptoPct": 95,  "tint": "#E3CE7A", "lightLevel": 4 },
         { "uptoPct": 100, "tint": "#F5C542", "lightLevel": 8 }
       ]
     }
   },
   "provenance": "ARCHITECTURE.md section 10 normative example, copied verbatim. Canon: WorldBible section 9 - sky-blue/silver alloy; holds enormous energy without feeling hot until saturated; silver/blue -> gold at full charge; blades turn orange when hot from energy. Capacity 60000 cu / maxSafeDischarge 600 per ARCHITECTURE section 1 decision 14 (16-bit overlay rescale).",
-  "notes": "Color stops mirror canon charge ramp: silver/blue -> orange -> gold. Saturation heat begins at 95% ('stays cool until saturated'). meltK 2600 is spec-normative, not canon."
+  "notes": "HYBRID ruling (Eli, 2026-07-12): color stops are a pure FILL ramp, silver/blue -> pale gold -> full gold. Orange (#E8842A) is NOT a fill color — it is the heat-glow overlay the renderer applies while the tile is actively discharging or saturation-heating (driven by EnergyDischargedEvent / ChargeSaturatedEvent, see TILE-ART-SPEC). Saturation heat begins at 95% ('stays cool until saturated'). meltK 2600 is spec-normative, not canon."
 }
