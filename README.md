@@ -1,4 +1,6 @@
-# Flame of Mercolas
+# Granadad: The Darkstreets
+
+*(project codename: Flame of Mercolas)*
 
 A simulation-first game set in **Granadad**, capital of Trojia — from the novel *Lord of Trojia*.
 You will play **Gabri, Wielder of the Flame of Mercolas**: socially untouchable from day one,
