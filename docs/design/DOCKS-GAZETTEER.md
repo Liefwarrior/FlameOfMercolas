@@ -67,6 +67,14 @@ The two-level tide swing (z10 ↔ z9) is the district's second clock: deep-draft
 - **The east end decays:** condemned pier, condemned warehouse, the Gullet, the outfall — the whole dungeon seam is gathered at the east end so the investigation's surface trail walks the player naturally from busy west (market, Weighhouse) to dark east (the descent).
 - **Verticality is legible:** up-slope = safer, brighter, closer to the law; down-slope = wetter, darker, closer to the water and the underworld. The z-gradient IS the danger gradient.
 
+### 2.5 Housing typology: Compounds (DECISIONS.md, Eli 2026-07-13)
+
+Trojian residential space is organized into walled **Compounds**, not detached single-family houses: one large lot with a courtyard/atrium farm at the center (crops for the resident families) ringed by condo-like apartments or mansions belonging to owning families, built up multiple stories where land is scarce. The rooftop of a tall compound is walled off and rented out as mass low-income housing — tents/mud huts, cheap and flammable. The wealth gradient rides the MATERIAL, not the floor plan: owning-family units are Reman-engineered (`reman_concrete` — the canon engineer-civilization's concrete-equivalent); rooftop-slum units are cloth/leather/mudbrick. Visual touchstone: "the big crab in Ald-Ruhn" (Morrowind) — one architectural shell holding a stratified community, not a suburb of identical lots.
+
+**Social consequence, binding:** rooftops are unseemly for every Trojian except a presented Wielder (whose maxed social immunity exempts him alone) — this is *why* the poor live there and *why* burglars/assassins (**"Skyrunners"**) use the rooftop-slum layer as their highway, fleeing across compound roofs after breaking in through a ceiling.
+
+**Applies to the Docks:** every K-site with resident staff (K01 Weighhouse clerks, K05 the Lantern Room's landlady, K17 the Mission's disciple dormitory, etc. — §3) houses its people in a Compound, not a standalone building; a "dozen homes" is a dozen dwelling UNITS inside one compound, never a dozen separate lots. Worked precedent: `content/maps/src/compound_block.tmx` (one mansion + 8 condo units + 3 rooftop huts around a courtyard farm, populated with 40 actors including a Skyrunner under a rooftop-tenant cover, F2.5) — the pattern the eventual `docks_surface.tmx` residential blocks (§8.1) should reuse rather than re-deriving.
+
 ---
 
 ## 3. Establishments (keyed locations)
@@ -315,6 +323,8 @@ Three z-levels under the east end, each ~one 32×32 chunk footprint expanding do
 | `maps/interiors_*.tmx` | as needed | — | Only if the importer wants big interiors (Ropewalk, Weighhouse) as separate stamps; default: inline in surface file |
 
 Importer contract: emits TROJSAV at tick 0, byte-deterministic (ARCHITECTURE §9). Underground files occupy the same world chunks as the surface file's low z-layers — **ruling needed: one merged 16-z file vs. the split above; split recommended** for authoring sanity, importer stitches.
+
+Residential blocks within `docks_surface.tmx` follow the Compound typology (§2.5), not detached buildings — author them the way `content/maps/src/compound_block.tmx` already does (courtyard-farm center, condo/mansion ring, rooftop-slum layer), not as one-lot-per-household stamps.
 
 ### 8.2 Layer & marker conventions (extends F2's TMX reader conventions — reconcile with `docs/art/TILE-ART-SPEC.md`)
 
