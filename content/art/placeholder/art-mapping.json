@@ -59,7 +59,8 @@
       }
     },
     "chromatis": {
-      "provenance": "Buckets = colorStops ordinals from ARCHITECTURE.md section 10: silver-blue (<=60%), orange (<=95%), gold (<=100%). WorldBible section 9: silver/blue -> gold at full charge.",
+      "provenance": "Buckets = colorStops ordinals from ARCHITECTURE.md section 10 (HYBRID ruling, BLESSING-QUEUE 5): fill ramp silver (<=60%) -> pale gold (<=95%) -> gold (<=100%). heatGlowTint #E8842A is the discharge/saturation overlay ('orange when hot') read by JsonTileArtResolver; other loaders ignore the field.",
+      "heatGlowTint": "#E8842A",
       "forms": {
         "block": { "byAppearance": ["chromatis", "chromatis.a1", "chromatis.a2"] },
         "floor": { "byAppearance": ["chromatis.floor", "chromatis.floor.a1", "chromatis.floor.a2"] }
