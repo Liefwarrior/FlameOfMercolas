@@ -71,6 +71,22 @@ the collected decision-needing items (spec § in parentheses).
 | F5 | FACES | overlay anchors + 13/2/1 rarity (§4.6) | |
 | F6 | FACES | targeted-enemy-face-only panel rule (§5) | coordinate with SCREEN |
 
+## Blessing resolutions (Eli, 2026-07-12 — docket round 3)
+
+- **SANCTIONED EXPLOITS (all three confirmed as features)**: Wielder's Bruise (P3), guard
+  mop-up (S7), chromatis armor no-wear (C2). These are load-bearing design, protected from
+  future "balance fixes" without a new ruling.
+- **S3 RULED**: death in v0 = plain game over. No Flame intervention.
+- **P4 + S2 BLESSED**: Flame track as specced (Grit-gated rite, vigils, Candleflame→Declaration
+  ladder; starter powers Flicker/Dazzle/Declare).
+- **S6 RULED + COMBAT-SPEC CO-SIGN**: aiming overrides the location roll (with accuracy
+  penalty). COMBAT-SPEC §3's location table gains the aimed-attack bypass note at F-implementation.
+- **C4 BLESSED**: `gladius` is the common short-sword.
+- **F4 BLESSED**: Minister John's invented appearance stands.
+- **P1 PARTIAL**: Eli reviewing the 18 skill names (Shadow-Wait pending); remaining batch
+  (C1, C3/P2, C5-C11, P5-P8, S1, S4-S5, F1-F3, F5-F6) queued for a full walkthrough docket
+  next downtime — NOT batch-blessed.
+
 ## Verification-pass fix log (2026-07-12)
 
 Applied: hit-formula unification (PROGRESSION §8/§9.1/tests recomputed on COMBAT §2.3);
