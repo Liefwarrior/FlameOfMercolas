@@ -1,0 +1,22 @@
+{
+  "id": "animal_keeper",
+  "displayName": "Animal Keeper",
+  "glyph": "K",
+  "tint": "#B09048",
+  "factionId": "commons",
+  "hp": 18,
+  "speedTicksPerStep": 2,
+  "leashRadius": 16,
+  "inventoryCap": 3,
+  "needs": {
+    "hunger": { "start": 8500, "decayPerKilotick": 900, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 500 },
+    "rest":   { "start": 9000, "decayPerKilotick": 550, "recoverPerTick": 0, "lowBonus": 200, "critBonus": 400 },
+    "coin":   { "start": 7000, "decayPerKilotick": 300, "recoverPerTick": 0, "lowBonus": 150, "critBonus": 300 },
+    "safety": { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 3, "lowBonus": 300, "critBonus": 600 },
+    "duty":   { "start": 8500, "decayPerKilotick": 900, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 400 }
+  },
+  "deferWielder": { "enabled": true, "priority": 965, "radius": 6 },
+  "flee": { "priority": 945 },
+  "returnHome": { "priority": 305, "rhythmBonus": 80, "nightWindowStart": 13500, "nightWindowEnd": 24000 },
+  "loiter": { "priority": 10 }
+}

@@ -42,8 +42,12 @@ public final class FixtureWorldLoader {
     private FixtureWorldLoader() {
     }
 
-    /** The loaded world plus the material registry it was baked against. */
-    public record Loaded(TickableWorld world, MaterialRegistry materials) {
+    /**
+     * The loaded world, the material registry it was baked against, and the world seed
+     * its TROJSAV header carries (the only persisted RNG state — see {@code EngineConfig}
+     * javadoc — needed to wrap this world in a {@code SimulationEngine}).
+     */
+    public record Loaded(TickableWorld world, MaterialRegistry materials, long worldSeed) {
     }
 
     /**
@@ -70,7 +74,7 @@ public final class FixtureWorldLoader {
                                 + ") -- rerun TavernFixtureBakeTest to rebake it");
             }
             TickableWorld world = new WorldLoader().load(save);
-            return new Loaded(world, materials);
+            return new Loaded(world, materials, save.header().worldSeed());
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load the tavern fixture world", e);
         }

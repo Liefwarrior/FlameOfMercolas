@@ -1,0 +1,150 @@
+{
+  "id": "skills",
+  "skills": [
+    {
+      "id": "sidearms",
+      "displayName": "Sidearms",
+      "covers": "saxe blades, knives held & thrown, repeater crossbow",
+      "governingAttribute": "AGI",
+      "aptitudeTier": "TRAINED",
+      "canonAnchor": "saxe = the press blade (novel L2390); Hart's thrown knives (L3030); repeater crossbow, \"two quick clicks\" (L2713)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 1 (placeholder name; merge Eli-ruled 2026-07-12: Saxework + Repeaterwork, both parents Trained)"
+    },
+    {
+      "id": "bladework",
+      "displayName": "Bladework",
+      "covers": "swords long & short",
+      "governingAttribute": "AGI",
+      "aptitudeTier": "NEGLECTED",
+      "canonAnchor": "Blademaster vocabulary, swan stance (L3002)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 2 (placeholder name)"
+    },
+    {
+      "id": "lancework",
+      "displayName": "Lancework",
+      "covers": "lance, spear, javelin",
+      "governingAttribute": "MGT",
+      "aptitudeTier": "NEGLECTED",
+      "canonAnchor": "Stahl's Omission / Trojja's Fury forms (L1537)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 3 (placeholder name)"
+    },
+    {
+      "id": "heavy_arms",
+      "displayName": "Heavy Arms",
+      "covers": "axe, mace, club",
+      "governingAttribute": "MGT",
+      "aptitudeTier": "NEGLECTED",
+      "canonAnchor": "Trojian house-guard axe (L277); Devin's mace (L2714)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 4 (placeholder name)"
+    },
+    {
+      "id": "dire_bows",
+      "displayName": "Dire Bows",
+      "covers": "bows incl. chromatis composite",
+      "governingAttribute": "WIT",
+      "aptitudeTier": "NEGLECTED",
+      "canonAnchor": "160-lb sniper standard (L1245)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 5 (Eli-named 2026-07-12; was \"The Draw\")"
+    },
+    {
+      "id": "open_hand",
+      "displayName": "Open Hand",
+      "covers": "unarmed strikes, locks, throws",
+      "governingAttribute": "AGI",
+      "aptitudeTier": "TRAINED",
+      "canonAnchor": "army \"unarmed specialist\"; windpipe strike (L183, L976)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 6 (placeholder name)"
+    },
+    {
+      "id": "shieldwall",
+      "displayName": "Shieldwall",
+      "covers": "block, shield use",
+      "governingAttribute": "VIG",
+      "aptitudeTier": "NEGLECTED",
+      "canonAnchor": "shieldman drill (L2221)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 7 (canon term, L2390)"
+    },
+    {
+      "id": "harness",
+      "displayName": "Harness",
+      "covers": "armor familiarity (all slots)",
+      "governingAttribute": "VIG",
+      "aptitudeTier": "TRAINED",
+      "canonAnchor": "layered per-part kit canon (Gundleas, L2209)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 8 (placeholder name)"
+    },
+    {
+      "id": "grit",
+      "displayName": "Grit",
+      "covers": "toughness: pain, falls, burns",
+      "governingAttribute": "VIG",
+      "aptitudeTier": "TRAINED",
+      "canonAnchor": "pain-teaches; Hordrar's 20-hour endurance flavor (L2213)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 9 (placeholder name)"
+    },
+    {
+      "id": "skyrunning",
+      "displayName": "Skyrunning",
+      "covers": "sneak, pickpocket, takedown, jumps, climbs, rooftop runs",
+      "governingAttribute": "AGI",
+      "aptitudeTier": "FAVORED",
+      "canonAnchor": "Hart's sentry craft, \"counted out five minutes\" (L3030-3038, L3037); walkable roofs kept for the Wielder (BLESSING-QUEUE #6)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 10 (Eli-named 2026-07-12 as \"Deftness\"; renamed 2026-07-13 to Skyrunning; merge of Shadow-Wait + Skylining; Favored aptitude needs-confirmation per section 11)"
+    },
+    {
+      "id": "cracksmanship",
+      "displayName": "Cracksmanship",
+      "covers": "locks, traps",
+      "governingAttribute": "WIT",
+      "aptitudeTier": "TRAINED",
+      "canonAnchor": "urban-dungeon invention; canon [SILENT]",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 11 (placeholder name)"
+    },
+    {
+      "id": "kit_keeping",
+      "displayName": "Kit-Keeping",
+      "covers": "repair, maintenance",
+      "governingAttribute": "MGT",
+      "aptitudeTier": "TRAINED",
+      "canonAnchor": "nicked dagger (L186); barbed arrows ruin shields (L2813)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 12 (placeholder name)"
+    },
+    {
+      "id": "mixtures",
+      "displayName": "Mixtures",
+      "covers": "venoms, draughts, reagents",
+      "governingAttribute": "WIT",
+      "aptitudeTier": "TRAINED",
+      "canonAnchor": "nighthawk venom (L3025); Revlin's mixtures (L1630)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 13 (canon-adjacent: \"phorys mixture\", L2908)"
+    },
+    {
+      "id": "channeling",
+      "displayName": "Channeling",
+      "covers": "filling/recharging chromatis & lightstone",
+      "governingAttribute": "WIT",
+      "aptitudeTier": "FAVORED",
+      "canonAnchor": "channelers fill the Reman key (L1399)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 14 (canon term - fill-only tier, L1257, L1399)"
+    },
+    {
+      "id": "streetwise",
+      "displayName": "Streetwise",
+      "covers": "rumors, routes, black-market pricing & timing",
+      "governingAttribute": "WIT",
+      "aptitudeTier": "FAVORED",
+      "canonAnchor": "slums cloak-up texture (L2410)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 15 (Eli-named 2026-07-12; was \"Gutter-Ken\")"
+    },
+    {
+      "id": "the_flame",
+      "displayName": "The Flame",
+      "covers": "Gabri-unique Source track (ability-unlock effects out of scope this pass; see section 7)",
+      "governingAttribute": "NONE",
+      "aptitudeTier": "FLAME",
+      "canonAnchor": "Flame of Mercolas feats (L2341, L2710, L2980)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 16 (aptitude x4; weak-start Gabri numbers are pure invention, needs-blessing per section 11)"
+    }
+  ],
+  "notes": "Schema mirrors content/raws/materials conventions (ARCHITECTURE.md section 10 style): id, displayName, covers, governingAttribute (MGT|AGI|VIG|WIT|NONE), aptitudeTier (FAVORED|TRAINED|NEGLECTED|FLAME). canonAnchor/provenance/notes are documentation-only and ignored by the loader. Encodes PROGRESSION-SPEC.md section 2's 16-skill table verbatim as of the 2026-07-13 Skyrunning rename."
+}

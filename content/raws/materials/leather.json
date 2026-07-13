@@ -1,0 +1,20 @@
+{
+  "id": "leather",
+  "displayName": "Leather",
+  "phase": "SOLID",
+  "density": 860,
+  "hardness": 2,
+  "flammability": 1,
+  "ignitionK": 700,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 14,
+  "heatCapacityQ8": 40,
+  "fuelTicks": 900, "burnsTo": "ash",
+  "valueCp": 45,
+  "tags": ["hide"],
+  "light": { "opacity": 20 },
+  "features": {},
+  "provenance": "ALREADY BLESSED, not a fresh invention: docs/design/SPEC-INDEX.md item C1 - 'leather + cloth material raws (hardness 2/0, durability 60/40) (section 1.2, section 9) - new raws, invented for v0 balance provenance', resolved 'FINAL BATCH BLESSED: C1 (leather/cloth raws)...' in the SPEC-INDEX blessing log. docs/design/COMBAT-SPEC.md section 1.2 verbatim: 'Gear needs two NEW raws: leather (hardness 2 (placeholder)) and cloth (hardness 0 (placeholder))... Caps by material (placeholder): cloth 40, leather 60, oak 90, steel 240, chromatis (infinity, no-wear)'. hardness 2 here is the exact already-blessed number, copied verbatim, not re-derived.",
+  "notes": "On 'durability 60': ARCHITECTURE.md section 10 / MaterialRawsLoader's MATERIAL_FIELDS list has no durability-bearing field on the material raw schema (verified against sim-core/src/main/java/com/trojia/sim/material/MaterialRawsLoader.java - unknown fields are hard-rejected except provenance/notes). The COMBAT-SPEC section 1.2 durability caps (cloth 40/leather 60/oak 90/steel 240/chromatis no-wear) are an ITEM-INSTANCE property (maxDurability/curDurability on the equipped piece), owned entirely by that spec's own per-material table keyed off this material's id - not a tile-material raw field. So this raw correctly does not carry a 'durability' key; the blessed 60 lives in COMBAT-SPEC section 1.2 verbatim, referencing material id 'leather'. Remaining fields are NEW inventions (needs-blessing, not part of the C1 blessed set): flammability 1 / ignitionK 700 (placeholder) - leather is armor-grade hide, tougher to ignite than the structural woods (oak 550, trudgeon 650); fuelTicks 900 (placeholder) - burns out faster than structural lumber (oak 1800, trudgeon 3400) since it's a thin worn material, not a fuel mass; burnsTo ash (matches every other flammable in the set). conductivityQ8 14 / heatCapacityQ8 40 (placeholder): low-conductivity insulating hide, satisfies stability (3*14=42 <= 64*40=2560). density 860, valueCp 45, opacity 20 (placeholder): real-world hide density; mid-tier value between brick (15) and trudgeon (60); partial opacity for a worn/gear item."
+}

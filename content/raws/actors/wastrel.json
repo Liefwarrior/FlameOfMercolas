@@ -1,0 +1,22 @@
+{
+  "id": "wastrel",
+  "displayName": "Wastrel",
+  "glyph": "w",
+  "tint": "#787068",
+  "factionId": "wastrels",
+  "hp": 14,
+  "speedTicksPerStep": 1,
+  "leashRadius": 40,
+  "inventoryCap": 2,
+  "needs": {
+    "hunger": { "start": 6000, "decayPerKilotick": 1400, "recoverPerTick": 0, "lowBonus": 350, "critBonus": 700 },
+    "rest":   { "start": 8000, "decayPerKilotick": 300, "recoverPerTick": 0, "lowBonus": 150, "critBonus": 300 },
+    "coin":   { "start": 3000, "decayPerKilotick": 800, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 500 },
+    "safety": { "start": 9000, "decayPerKilotick": 0, "recoverPerTick": 4, "lowBonus": 400, "critBonus": 900 },
+    "duty":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 }
+  },
+  "deferWielder": { "enabled": true, "priority": 960, "radius": 8 },
+  "flee": { "priority": 955 },
+  "returnHome": { "priority": 305, "rhythmBonus": 60, "nightWindowStart": 16000, "nightWindowEnd": 22000 },
+  "loiter": { "priority": 15 }
+}

@@ -1,0 +1,61 @@
+package com.trojia.sim.actor;
+
+import com.trojia.sim.actor.job.JobRegistry;
+
+/**
+ * The per-tick facade handed to every {@link Actor#tick} and
+ * {@link BehaviorPolicy} (ACTORS-SPEC.md §2). Mirrors
+ * {@code com.trojia.sim.engine.TickContext}'s shape but scoped to the actor
+ * system: actors never touch world lanes directly (§2.3), so this exposes
+ * only actor-owned registries, named-draw access, and the small set of
+ * cross-actor queries the starter policy library needs.
+ */
+public interface ActorContext {
+
+    /** The tick currently being simulated. */
+    long tick();
+
+    /** The one persisted RNG seed (ARCHITECTURE.md §1.1 #16). */
+    long worldSeed();
+
+    /** The actor registry (ascending-id iteration, spatial/home/job lookups). */
+    ActorRegistry registry();
+
+    /** The Home side-table (ACTORS-SPEC.md §11.1). */
+    HomeRegistry homes();
+
+    /** The relationship side-table (ACTORS-SPEC.md §11.3). */
+    RelationshipRegistry relationships();
+
+    /** The ItemsLite side-table (ACTORS-SPEC.md §2.6, §11.2). */
+    ItemsLiteRegistry items();
+
+    /** The bound Job taxonomy (ACTORS-SPEC.md §10.2). */
+    JobRegistry jobs();
+
+    /**
+     * One named draw (ACTORS-SPEC.md §2.2): {@code spatialKey = actorId}
+     * always; {@code drawIndex} is the per-actor per-tick counter the caller
+     * maintains (shared across every stream, the pinned attribution rule).
+     */
+    long draw(ActorRngStream stream, int actorId, int drawIndex);
+
+    /**
+     * The next draw index for {@code actorId} this tick, incrementing the
+     * shared per-actor counter (ACTORS-SPEC.md §2.2's "one counter per actor
+     * shared across all streams"). Convenience over tracking indices by hand.
+     */
+    int nextDrawIndex(int actorId);
+
+    /**
+     * The cell of the actor currently presenting as the Wielder (the first
+     * bound {@code Job.FlameOfMerc} holder, ascending id), or
+     * {@link Actor#NONE} if none is spawned. Backs {@code DEFER_WIELDER}
+     * (§1.3) — deference reads the PRESENTED identity per the DECISIONS
+     * seam, so a disguised Wielder (presented != true) does not trigger it.
+     */
+    int wielderCell();
+
+    /** The actor id backing {@link #wielderCell()}, or {@link Actor#NONE} if none is spawned. */
+    int wielderId();
+}

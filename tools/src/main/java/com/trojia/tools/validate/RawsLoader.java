@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -39,6 +40,10 @@ public final class RawsLoader {
 
     private static final String PASS_ID = "raws";
 
+    /** Categories this loader actually parses and cross-checks; see {@link #load}. */
+    private static final Set<String> KNOWN_CATEGORIES =
+            Set.of("materials", "fluids", "treatments", "reactions");
+
     private final ObjectMapper mapper = new ObjectMapper();
 
     /** Creates a loader. */
@@ -68,6 +73,19 @@ public final class RawsLoader {
 
         for (Path file : listJsonFiles(rawsRoot)) {
             String source = relativeName(rawsRoot, file);
+            String category = categoryOf(rawsRoot, file);
+            if (!KNOWN_CATEGORIES.contains(category)) {
+                // This loader only cross-checks materials/fluids/treatments/reactions;
+                // other raws categories (actors, jobs, skills, ...) are someone else's
+                // contract (their own loaders/tests own their own hygiene), including
+                // container/config files with no top-level "id" (e.g. jobs/jobs.json,
+                // actors/household.json) — never even attempt the "id" requirement below.
+                out.accept(new ValidationIssue(Severity.WARNING, PASS_ID, source, "",
+                        ValidationIssue.NO_COORD, ValidationIssue.NO_COORD,
+                        "unknown raws category \"" + category + "\"; file ignored.",
+                        "known categories: materials, fluids, treatments, reactions."));
+                continue;
+            }
             JsonNode node;
             try {
                 node = mapper.readTree(file.toFile());
@@ -83,15 +101,12 @@ public final class RawsLoader {
                 continue;
             }
             ParsedRaw raw = new ParsedRaw(source, id, node);
-            switch (categoryOf(rawsRoot, file)) {
+            switch (category) {
                 case "materials" -> materials.add(raw);
                 case "fluids" -> fluids.add(raw);
                 case "treatments" -> treatments.add(raw);
                 case "reactions" -> reactions.add(raw);
-                default -> out.accept(new ValidationIssue(Severity.WARNING, PASS_ID, source, "",
-                        ValidationIssue.NO_COORD, ValidationIssue.NO_COORD,
-                        "unknown raws category \"" + categoryOf(rawsRoot, file) + "\"; file ignored.",
-                        "known categories: materials, fluids, treatments, reactions."));
+                default -> throw new IllegalStateException("unreachable: " + category);
             }
         }
 

@@ -1,0 +1,22 @@
+{
+  "id": "disciple_of_the_flame",
+  "displayName": "Disciple of the Flame",
+  "glyph": "p",
+  "tint": "#B8B4AC",
+  "factionId": "flame_order",
+  "hp": 14,
+  "speedTicksPerStep": 1,
+  "leashRadius": 20,
+  "inventoryCap": 4,
+  "needs": {
+    "hunger": { "start": 8500, "decayPerKilotick": 900, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 500 },
+    "rest":   { "start": 9000, "decayPerKilotick": 500, "recoverPerTick": 0, "lowBonus": 200, "critBonus": 400 },
+    "coin":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 },
+    "safety": { "start": 9000, "decayPerKilotick": 0, "recoverPerTick": 3, "lowBonus": 400, "critBonus": 800 },
+    "duty":   { "start": 9000, "decayPerKilotick": 900, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 450 }
+  },
+  "deferWielder": { "enabled": true, "priority": 995, "radius": 10 },
+  "flee": { "priority": 960 },
+  "returnHome": { "priority": 305, "rhythmBonus": 80, "nightWindowStart": 13000, "nightWindowEnd": 24000 },
+  "loiter": { "priority": 8 }
+}

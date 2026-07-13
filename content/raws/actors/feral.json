@@ -1,0 +1,21 @@
+{
+  "id": "feral",
+  "displayName": "Harbor Gull",
+  "glyph": "v",
+  "tint": "#C0C8CC",
+  "factionId": "feral",
+  "hp": 4,
+  "speedTicksPerStep": 1,
+  "leashRadius": 14,
+  "inventoryCap": 1,
+  "needs": {
+    "hunger": { "start": 7000, "decayPerKilotick": 2000, "recoverPerTick": 0, "lowBonus": 350, "critBonus": 700 },
+    "rest":   { "start": 9000, "decayPerKilotick": 600, "recoverPerTick": 0, "lowBonus": 150, "critBonus": 300 },
+    "coin":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 },
+    "safety": { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 6, "lowBonus": 500, "critBonus": 900 },
+    "duty":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 }
+  },
+  "flee": { "priority": 950 },
+  "returnHome": { "priority": 305, "rhythmBonus": 0, "nightWindowStart": 0, "nightWindowEnd": 24000 },
+  "loiter": { "priority": 20 }
+}

@@ -21,11 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 final class MaterialRawsLoaderCommittedTest {
 
-    /** All 16 material ids in id order: sorted string keys, first key = 0. */
+    /** All 19 material ids in id order: sorted string keys, first key = 0. */
     private static final List<String> EXPECTED_IDS = List.of(
-            "ash", "brick", "chromatis", "chromatis_melt", "dirt", "glowstone",
-            "granite", "ice", "lightstone", "lightstone_shards", "oak", "phorys",
-            "steel", "thatch", "trudgeon_wood", "trudgeon_wood@getilia_soak");
+            "ash", "brick", "chromatis", "chromatis_melt", "cloth", "dirt", "glowstone",
+            "granite", "ice", "leather", "lightstone", "lightstone_shards", "oak", "phorys",
+            "reman_concrete", "steel", "thatch", "trudgeon_wood", "trudgeon_wood@getilia_soak");
 
     private static RawsBundle bundle;
 
@@ -35,8 +35,8 @@ final class MaterialRawsLoaderCommittedTest {
     }
 
     @Test
-    void loadsSixteenMaterialsOneFluidOneTreatmentOneReaction() {
-        assertEquals(16, bundle.materials().size());
+    void loadsNineteenMaterialsOneFluidOneTreatmentOneReaction() {
+        assertEquals(19, bundle.materials().size());
         assertEquals(1, bundle.fluids().size());
         assertEquals(1, bundle.treatments().size());
         assertEquals("getilia_soak", bundle.treatments().get(0).key());

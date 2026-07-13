@@ -11,9 +11,11 @@ and read the tile *Class* label, e.g. `granite/WALL`).
 
 | File | What |
 |---|---|
-| `src/materials.tsx` | Shared imageless tileset. One tile per (material, form) pair in use, plus fluid tiles. 16×16 px declared size. |
+| `src/materials.tsx` | Shared imageless tileset. One tile per (material, form) pair in use, plus fluid tiles. 16×16 px declared size. Includes `reman_concrete` (WALL/FLOOR) and `leather`/`cloth` (WALL) for the Compound typology (tile ids 31–34). |
 | `src/tavern_fixture.tmx` | 48×32, z-levels −1/+0/+1. The Tavern Fire flagship stage (M1/M2 acceptance: imports byte-identical twice). |
 | `src/ubend_fixture.tmx` | 24×16, z-levels −1/+0. Sealed U-bend duct for the M3 fluids pressure test. |
+| `src/city_block.tmx` | 224×160, z-levels −1/+0. A DOCKS-GAZETTEER Ropewynd city-block slice: 2 businesses (K08, K23) + 12 invented laborer homes, for the population stage. **Superseded typology** — see `compound_block.tmx`; kept as-is, not deleted. |
+| `src/compound_block.tmx` | 128×128, z-levels +0/+1/+2. A DOCKS-GAZETTEER city-block slice built on the corrected **Trojian Compound** housing typology (canon: courtyard-farm ecosystem, not detached homes) — 1 Compound (12 dwelling units) + 2 businesses (K22, K24), for the population stage. |
 
 ## Map-level rules
 
@@ -51,8 +53,8 @@ Every material tile carries string properties:
 - `material` — a raws material id. Must resolve against `MaterialRegistry` at import;
   unknown names **fail the import** (with a nearest-name suggestion). v0 vocabulary:
   `granite, dirt, oak, thatch, trudgeon_wood, steel, brick, chromatis, chromatis_melt,
-  phorys, lightstone, lightstone_shards, glowstone, ash` and the treatment-minted
-  `trudgeon_wood@getilia_soak`.
+  phorys, lightstone, lightstone_shards, glowstone, ash, reman_concrete, leather, cloth`
+  and the treatment-minted `trudgeon_wood@getilia_soak`.
 - `form` — one of `WALL | FLOOR | OPEN | RAMP | STAIR_UP | STAIR_DOWN` (`TileForm`).
   No tile in the set uses `OPEN` (see collapse rule); the value exists in the enum only.
 
@@ -117,6 +119,80 @@ with water depth 7. The left arm is additionally primed with depth 7 at z:+0. An
 `water_inlet` (6,8), `gauge_point` (17,8) — the M3 test injects at the inlet and asserts rise
 at the gauge.
 
+### `city_block.tmx` (224×160 — 7×5 chunks)
+
+DOCKS-GAZETTEER (§2.3, §3) slice along **Ropewynd**, the "fitting trades" street: businesses
+sit on the street frontage (y 16–64), Ropewynd itself runs y 70–77 full width (brick), and an
+access lane (x 102–121, brick) drops south from Ropewynd through a shared courtyard plaza
+(x 20–203 / y 100–135, brick — the block's invented Netmenders'-Arcade-style commons) to 12
+laborer homes ringing it in two rows of six. Homes are `dirt`-shell/`oak`-floor single rooms
+with a granite hearth prop; not gazetteer K-keys (the gazetteer enumerates establishments, not
+individual dwellings) — invented Serf/artisan housing consistent with Ropewynd's trade-labor
+texture (§4.2 Shopkeeper/Serf dossiers).
+
+- **K08 The Chandlery** (Brann's) — brick shell x 24–79 / y 16–64, oak floor, stockroom
+  shelving + counter props, door (50–53, 64) onto Ropewynd. Hidden cellar: oak `STAIR_DOWN`
+  (30,58) → z:−1 gray-ledger stash room (granite floor, two oak crates) — K08's "two sets of
+  books" texture.
+- **K23 Cooper & Blockmaker's shed** — `trudgeon_wood` shell x 144–203 / y 16–64, oak floor,
+  barrel/pulley-block props, door (165–168, 64) onto Ropewynd.
+- **12 homes** — `home_01`…`home_12`, two rows of six (y 80–99 north row, y 136–155 south
+  row; each row split into a west cluster x 22–101 and east cluster x 121–200 flanking the
+  access lane), doors facing the courtyard.
+- **z:−1.** Solid granite except Brann's cellar carve (x 26–46 / y 30–45) and its connecting
+  shaft (x 29–31 / y 30–58) down to the z:+0 stair column.
+- Markers: `business_chandlery_anchor`, `business_cooperblockmaker_anchor`,
+  `home_01_anchor`…`home_12_anchor` (population-stage spawn points), `chandlery_cellar_anchor`;
+  `lamp_ropewynd_west`/`lamp_ropewynd_east` light sources (luminance 20).
+
+### `compound_block.tmx` (128×128 — 4×4 chunks)
+
+DOCKS-GAZETTEER slice built on the corrected **Trojian Compound** housing typology (see
+`docs/design/DECISIONS.md` "Trojian housing: Compounds" row): one large walled residential
+ecosystem — a courtyard-farm ringed by condo/mansion units, built up over the courtyard's
+east wing, with the rooftop of that taller wing walled off as informal slum housing — plus
+2 street-frontage businesses on the same block, outside the compound's walls. Supersedes the
+"12 detached homes" typology of `city_block.tmx` (kept, not deleted); a `home_NN` there =
+one dwelling *unit* within a Compound here, not a separate building.
+
+- **Street + businesses (z:+0, y 0–31).** Brick street y 0–7. **K22 Netmenders' Arcade** —
+  `thatch` shell x 8–47 / y 8–31, oak floor, door (26–27, 31). **K24 The Eel-Pots** —
+  `trudgeon_wood` shell x 80–119 / y 8–31, dirt floor (open-air night stalls), door
+  (98–99, 31). A dirt lane (x 48–79) between them drops south into the compound gate.
+- **The Compound (z:+0, y 36–95).** Outer walls are `reman_concrete` throughout (the
+  owning families' Reman-engineered construction); each unit's own perimeter wall doubles
+  as the compound's ring wall, so no separate boundary wall is authored.
+  - **courtyard_farm** — the namesake atrium, x 48–79 / y 54–77 (32×24), open-air `dirt`
+    floor, no walls: the shared farm lot the whole Compound is organized around.
+  - **mansion_01** — the whole west wing, x 8–47 / y 36–95 (40×60), single story: the
+    owning family's mansion, deliberately far larger than any condo (the size variance
+    *is* the wealth signal). Door (47, 64–67) opens straight onto the courtyard.
+  - **condo_05** (x 48–63/y 36–53), **condo_06** (x 48–79/y 78–95) — smaller condo units
+    closing the north and south sides of the ring, doors onto the courtyard.
+  - **condo_02/03/04** — the east wing at ground level, x 80–119, split into three
+    18–24-tall condos (y 36–53 / 54–77 / 78–95); condo_03's door opens onto the courtyard,
+    condo_02's onto the gate corridor, condo_04's (the compound's outer corner, no
+    courtyard-adjacent side) onto the outer yard to the south.
+  - A 16-wide open gate corridor (x 64–79 / y 36–53, `dirt` floor, unwalled) is the
+    Compound's one carted entrance, linking the street lane down into the courtyard.
+- **Upper floor (z:+1, over the east wing only, x 80–119/y 36–95).** `condo_07/08/09`
+  stand directly above `condo_02/03/04` — the same 3 ground units built up a second
+  story (`reman_concrete` shell+floor), reached by `oak` `STAIR_UP`/`STAIR_DOWN` pairs at
+  (85,40)/(85,60)/(85,82). The single-story wings (mansion, condo_05, condo_06) get a
+  flat unpopulated `reman_concrete` roof deck at this level for visual completeness only
+  (no dwelling units, same treatment as the tavern's thatch roof over its common room).
+- **Roof slum (z:+2, x 80–119/y 36–95 — the footprint of the 2-story east wing only).**
+  A `reman_concrete`-parapet deck, reached from condo_08 by an `oak` stair pair at
+  (95,60). Three small, irregularly sized and placed tent/hut units —
+  `roof_hut_10` (`leather`, 8×8), `roof_hut_11` (`cloth`, 10×12), `roof_hut_12`
+  (`leather`, 8×10) — sit on `dirt` (mud) floors, deliberately off the tidy grid the
+  condos below keep: the visual signal that this is informal, illegally-built housing,
+  per canon "tents/mud huts... informal and flammable".
+- Markers: `business_netmenders_anchor`, `business_eelpots_anchor`, `mansion_01_anchor`,
+  `condo_02_anchor`…`condo_09_anchor`, `roof_hut_10_anchor`…`roof_hut_12_anchor` (12
+  dwelling-unit anchors total), `courtyard_farm_anchor`; `lamp_compound_gate` /
+  `lamp_courtyard_roof_deck` light sources (luminance 18 / 14).
+
 ## Provenance
 
 Canon (novel wins; `LordOfTrojia-MVP/Documentation/WorldBible.md` §9): trudgeon trunks soaked
@@ -125,3 +201,20 @@ granite-shell/timber-interior tavern is genre-standard for Granadad. Layout geom
 luminance 26, sewer/water depths, and the U-bend dimensions are **invented for v0 balance,
 need Eli's blessing**. Nothing here fixes art: appearance mapping keys on the registry's
 appearance buckets, not on these tiles.
+
+`city_block.tmx`'s K08/K23 placement and dimensions follow DOCKS-GAZETTEER (novel wins per
+its own citation chain); the 12 homes, the courtyard commons, and all coordinates/props are
+**invented for v0, need Eli's blessing** — the gazetteer fixes establishments, not dwellings.
+
+`compound_block.tmx`'s Compound typology is canon (Eli, 2026-07-13 — see
+`docs/design/DECISIONS.md` "Trojian housing: Compounds" and the
+`canon-trojian-compounds` memory note): courtyard-farm atrium, condo/mansion ring in
+Reman-engineered construction, rooftop slum in cloth/leather/tent construction over the
+built-up wing. `reman_concrete`/`leather`/`cloth` raws (`content/raws/materials/`) are the
+canon-mandated materials for that gradient. Its K22/K24 placement follows DOCKS-GAZETTEER
+(novel wins); every other coordinate, the courtyard/ring/roof-slum layout, unit count split
+(1 mansion + 8 condos at ground/upper + 3 roof huts = 12), and the specific dimensions are
+**invented for v0, need Eli's blessing** — the gazetteer fixes establishments, canon fixes
+the typology, but not this map's specific geometry. This design has no gazetteer precedent
+of its own yet and is a strong candidate to fold back into DOCKS-GAZETTEER as the canonical
+Compound reference once blessed.

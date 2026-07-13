@@ -16,8 +16,11 @@ import com.trojia.client.boot.RepoPaths;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.hud.HudText;
 import com.trojia.client.input.CameraInput;
+import com.trojia.client.input.TimeControlInput;
 import com.trojia.client.render.WorldRenderer;
+import com.trojia.client.time.SimulationDriver;
 import com.trojia.client.world.ZLevelCursor;
+import com.trojia.sim.engine.TickClock;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.TickableWorld;
 import com.trojia.sim.world.WorldConfig;
@@ -30,8 +33,11 @@ import java.nio.file.Files;
 /**
  * The observer application. M0 was an empty window; M1 boots the baked tavern fixture
  * world (see {@link FixtureWorldLoader}) and renders its currently selected z-level as
- * atlas tiles under {@link MapCamera}, navigable via {@link CameraInput}. {@code --smoke=N}
- * still renders exactly N frames then exits (see {@link ObserverLauncher}).
+ * atlas tiles under {@link MapCamera}, navigable via {@link CameraInput}. The world is
+ * wrapped in a {@link SimulationDriver} so simulated time actually advances (paced per
+ * frame by {@link TimeControlInput}); {@code --smoke=N} still renders exactly N frames
+ * then exits (see {@link ObserverLauncher}) regardless of the active speed setting, since
+ * frame counting is independent of tick counting.
  */
 public final class ObserverApp extends ApplicationAdapter {
 
@@ -42,6 +48,7 @@ public final class ObserverApp extends ApplicationAdapter {
     private ZLevelCursor zLevel;
     private PlaceholderAtlas atlas;
     private WorldRenderer renderer;
+    private SimulationDriver driver;
     private SpriteBatch batch;
     private BitmapFont font;
     private final Matrix4 projection = new Matrix4();
@@ -72,6 +79,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         this.zLevel = new ZLevelCursor(0, worldZTiles - 1, FixtureWorldLoader.TAVERN_STREET_LEVEL_Z);
         this.renderer = new WorldRenderer(world, loaded.materials(), artResolver, atlas);
+        this.driver = new SimulationDriver(world, loaded.worldSeed());
 
         this.batch = new SpriteBatch();
         this.font = new BitmapFont();
@@ -88,7 +96,10 @@ public final class ObserverApp extends ApplicationAdapter {
     public void render() {
         ScreenUtils.clear(0.055f, 0.05f, 0.08f, 1f);
 
-        CameraInput.poll(camera, zLevel, Gdx.graphics.getDeltaTime());
+        float deltaSeconds = Gdx.graphics.getDeltaTime();
+        CameraInput.poll(camera, zLevel, deltaSeconds);
+        TimeControlInput.poll(driver);
+        driver.update(deltaSeconds);
 
         projection.setToOrtho2D(0, 0, camera.viewportWidthPx(), camera.viewportHeightPx());
         batch.setProjectionMatrix(projection);
@@ -96,6 +107,10 @@ public final class ObserverApp extends ApplicationAdapter {
         renderer.draw(batch, camera, zLevel.z());
         font.draw(batch, HudText.describe(zLevel.z(), camera.zoom()), 8,
                 camera.viewportHeightPx() - 8);
+        long simElapsedSeconds = driver.currentTick() * TickClock.MILLIS_PER_TICK / 1000;
+        font.draw(batch,
+                HudText.describeTime(driver.currentTick(), driver.speed().name(), simElapsedSeconds),
+                8, camera.viewportHeightPx() - 8 - font.getLineHeight());
         batch.end();
 
         framesRendered++;

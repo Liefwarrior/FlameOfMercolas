@@ -1,0 +1,20 @@
+{
+  "id": "cloth",
+  "displayName": "Cloth",
+  "phase": "SOLID",
+  "density": 250,
+  "hardness": 0,
+  "flammability": 1,
+  "ignitionK": 400,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 6,
+  "heatCapacityQ8": 16,
+  "fuelTicks": 150, "burnsTo": "ash",
+  "valueCp": 8,
+  "tags": ["fabric"],
+  "light": { "opacity": 8 },
+  "features": {},
+  "provenance": "ALREADY BLESSED, not a fresh invention: docs/design/SPEC-INDEX.md item C1 - 'leather + cloth material raws (hardness 2/0, durability 60/40) (section 1.2, section 9) - new raws, invented for v0 balance provenance', resolved 'FINAL BATCH BLESSED: C1 (leather/cloth raws)...' in the SPEC-INDEX blessing log. docs/design/COMBAT-SPEC.md section 1.2 verbatim: 'Gear needs two NEW raws: leather (hardness 2 (placeholder)) and cloth (hardness 0 (placeholder))... Caps by material (placeholder): cloth 40, leather 60, oak 90, steel 240, chromatis (infinity, no-wear)'. hardness 0 here is the exact already-blessed number, copied verbatim, not re-derived.",
+  "notes": "On 'durability 40': same schema finding as leather.json - ARCHITECTURE.md section 10 / MaterialRawsLoader's MATERIAL_FIELDS list has no durability-bearing field on the material raw (unknown fields hard-rejected except provenance/notes); the COMBAT-SPEC section 1.2 durability caps table is an item-instance property owned by that spec, keyed off this material's id, not a tile-material raw field. So this raw correctly carries no 'durability' key; the blessed 40 lives in COMBAT-SPEC section 1.2 verbatim, referencing material id 'cloth'. Remaining fields are NEW inventions (needs-blessing, not part of the C1 blessed set): flammability 1 / ignitionK 400 (placeholder) - lower than thatch's 450 (the current lowest in the set), since woven cloth garments are thinner and catch faster than a thatch roof; fuelTicks 150 (placeholder) - shorter than thatch's 240, the fastest-burning solid in the vocabulary, matching cloth's thin/loose-weave profile; burnsTo ash (matches every other flammable). conductivityQ8 6 / heatCapacityQ8 16 (placeholder): near-insulator with minimal thermal mass (16, at the enforced floor), satisfies stability (3*6=18 <= 64*16=1024). density 250, valueCp 8, opacity 8 (placeholder): lighter than ash (300); cheap common-clothing value, below brick (15); low opacity for a thin worn fabric."
+}

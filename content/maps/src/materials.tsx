@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tileset version="1.10" name="materials" tilewidth="16" tileheight="16" tilecount="31" columns="0">
+<tileset version="1.10" name="materials" tilewidth="16" tileheight="16" tilecount="35" columns="0">
  <grid orientation="orthogonal" width="16" height="16"/>
  <tile id="0" type="granite/WALL">
   <properties>
@@ -185,6 +185,30 @@
   <properties>
    <property name="fluid" value="water"/>
    <property name="depth" type="int" value="2"/>
+  </properties>
+ </tile>
+ <tile id="31" type="reman_concrete/WALL">
+  <properties>
+   <property name="material" value="reman_concrete"/>
+   <property name="form" value="WALL"/>
+  </properties>
+ </tile>
+ <tile id="32" type="reman_concrete/FLOOR">
+  <properties>
+   <property name="material" value="reman_concrete"/>
+   <property name="form" value="FLOOR"/>
+  </properties>
+ </tile>
+ <tile id="33" type="leather/WALL">
+  <properties>
+   <property name="material" value="leather"/>
+   <property name="form" value="WALL"/>
+  </properties>
+ </tile>
+ <tile id="34" type="cloth/WALL">
+  <properties>
+   <property name="material" value="cloth"/>
+   <property name="form" value="WALL"/>
   </properties>
  </tile>
 </tileset>

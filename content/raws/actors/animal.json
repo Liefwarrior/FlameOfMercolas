@@ -1,0 +1,21 @@
+{
+  "id": "animal",
+  "displayName": "Dock Dog",
+  "glyph": "d",
+  "tint": "#C8A050",
+  "factionId": "animals",
+  "hp": 10,
+  "speedTicksPerStep": 1,
+  "leashRadius": 6,
+  "inventoryCap": 1,
+  "needs": {
+    "hunger": { "start": 8000, "decayPerKilotick": 1600, "recoverPerTick": 0, "lowBonus": 300, "critBonus": 600 },
+    "rest":   { "start": 9000, "decayPerKilotick": 800, "recoverPerTick": 0, "lowBonus": 200, "critBonus": 400 },
+    "coin":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 },
+    "safety": { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 4, "lowBonus": 500, "critBonus": 900 },
+    "duty":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 }
+  },
+  "flee": { "priority": 950 },
+  "returnHome": { "priority": 305, "rhythmBonus": 60, "nightWindowStart": 12500, "nightWindowEnd": 24000 },
+  "loiter": { "priority": 20 }
+}

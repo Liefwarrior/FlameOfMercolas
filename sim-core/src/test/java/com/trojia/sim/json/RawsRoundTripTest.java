@@ -30,6 +30,17 @@ final class RawsRoundTripTest {
     /** Minimum committed raws count at the time this test was written. */
     private static final int MIN_EXPECTED_RAWS = 18;
 
+    /**
+     * Files that are multi-entry containers or standalone config, not a
+     * single id-bearing raw: {@code jobs/jobs.json} binds the whole
+     * {@code Job} hierarchy from one file by design (each entry in its
+     * {@code "jobs"} array carries its own id); {@code actors/household.json}
+     * is household-formation tuning, not a catalog entry.
+     */
+    private static final List<String> NON_ENTITY_RAWS = List.of(
+            "jobs/jobs.json",
+            "actors/household.json");
+
     @TestFactory
     Stream<DynamicTest> everyCommittedRawRoundTrips() throws IOException {
         Path rawsDir = locateRawsDir();
@@ -43,12 +54,14 @@ final class RawsRoundTripTest {
         assertTrue(files.size() >= MIN_EXPECTED_RAWS,
                 "expected at least " + MIN_EXPECTED_RAWS + " raws files under "
                         + rawsDir + " but found " + files.size());
-        return files.stream().map(file -> DynamicTest.dynamicTest(
-                rawsDir.relativize(file).toString().replace('\\', '/'),
-                () -> assertRoundTrips(file)));
+        return files.stream().map(file -> {
+            String relative = rawsDir.relativize(file).toString().replace('\\', '/');
+            return DynamicTest.dynamicTest(relative,
+                    () -> assertRoundTrips(file, !NON_ENTITY_RAWS.contains(relative)));
+        });
     }
 
-    private static void assertRoundTrips(Path file) throws IOException {
+    private static void assertRoundTrips(Path file, boolean requireId) throws IOException {
         byte[] bytes = Files.readAllBytes(file);
 
         // Strict UTF-8 byte parse, integer-only (the raws hygiene contract).
@@ -59,9 +72,11 @@ final class RawsRoundTripTest {
                 new String(bytes, StandardCharsets.UTF_8), JsonNumberMode.INTEGER_ONLY);
         assertEquals(tree, viaString, "byte and String parses disagree");
 
-        // Every raw is a top-level object declaring an id.
+        // Every raw is a top-level object; single-entity raws also declare an id.
         JsonObject root = assertInstanceOf(JsonObject.class, tree);
-        assertTrue(root.has("id"), "raw is missing \"id\": " + file);
+        if (requireId) {
+            assertTrue(root.has("id"), "raw is missing \"id\": " + file);
+        }
 
         // Canonical round trip: reparse equals, and the text is a fixed point.
         String canonical = MiniJson.write(tree);

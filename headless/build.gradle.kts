@@ -25,3 +25,12 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
+// F2.5 actors foundation demo (ACTORS-SPEC.md) — separate entry point/task so
+// the existing `run` task (HeadlessLauncher) is untouched.
+tasks.register<JavaExec>("runActorsDemo") {
+    group = "application"
+    description = "Runs the F2.5 actor-system foundation demo over the real engine."
+    mainClass.set("com.trojia.headless.ActorsDemoMain")
+    classpath = sourceSets["main"].runtimeClasspath
+}

@@ -1,0 +1,20 @@
+{
+  "id": "reman_concrete",
+  "displayName": "Reman Concrete",
+  "phase": "SOLID",
+  "density": 2400,
+  "hardness": 7,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 80,
+  "heatCapacityQ8": 90,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 200,
+  "tags": ["masonry", "engineered"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "WorldBible section 1 (Regions): Rema is a 'Thick forests, political freedom and justice... Engineering culture' nation (Reman key, Devastator siege cannons, repeater crossbows). WorldBible section 3.7: Revlin is a 'Reman foundry-prodigy' whose gift 'integrates Chromatis-based energy storage with Reman engineering' - Rema is the setting's dedicated engineer-civilization. docs/design/DECISIONS.md 'Trojian housing: Compounds' row (Eli, 2026-07-13): owning-family mansions/condos in a Compound are built from 'Reman engineering (concrete-equivalent - Rema is the canon engineer-civilization)', as opposed to rooftop-slum cloth/mudbrick/tent construction. All specific numeric values below are (placeholder) - invented for v0 balance, needs Eli's blessing.",
+  "notes": "hardness 7 (placeholder): one tier above granite's 6 - deliberately harder than quarried stone because this is a FABRICATED, reinforced civil material, not raw rock; ties with steel's 7 (below chromatis's 8) to reflect that legendary Reman engineering-grade concrete is exceptionally tough for a masonry material. flammability 0 / ignitionK null (placeholder-but-structural): masonry never enters the burning map, same role as granite/brick per ARCHITECTURE section 11 'stone conducts only'. conductivityQ8 80 (placeholder): moderate-high for masonry - above granite (60) and brick (40) since it is a denser engineered composite, but nowhere near metal range (steel 230, chromatis 200); passes the stability invariant against heatCapacityQ8 90 (3*80=240 <= 64*90=5760). valueCp 200 (placeholder): roughly 10x granite (20) and brick (15) - engineered goods with skilled Reman labor and mix design cost more than quarried stone, but this is ordinary (if premium) construction material, far below true alloys (steel 1200, chromatis 40000). meltK left null (placeholder-but-structural), matching the steel.json precedent (MATERIALS-CANON.md section 1.6: 'recommend meltK: null for v0 - no forge scenario needs molten steel'): no v0 scenario needs molten concrete and no reman_concrete_melt id exists in the vocabulary, so a meltK would violate the melt=>meltsTo+yield invariant. density 2400 (placeholder): real-world concrete-tier, between brick (1900) and granite (2700)."
+}

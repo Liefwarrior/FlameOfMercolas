@@ -1,0 +1,345 @@
+package com.trojia.sim.actor;
+
+import com.trojia.sim.actor.job.Job;
+import com.trojia.sim.actor.job.JobRegistry;
+import com.trojia.sim.engine.SimulationSystem;
+import com.trojia.sim.engine.SystemId;
+import com.trojia.sim.engine.TickContext;
+import com.trojia.sim.engine.TickPhase;
+import com.trojia.sim.world.io.WorldHasher;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+
+/**
+ * The ACTORS tick-phase system (ACTORS-SPEC.md §2.1, §2.8): decays needs,
+ * selects and runs one policy per actor in ascending ActorId order, every
+ * tick. Registries (actors, homes, relationships, items, jobs) are
+ * constructor-injected — built by the spawner/{@link HouseholdFormer} bake
+ * pass before the engine starts, exactly like {@code MacroWorld} precedent.
+ *
+ * <p>Persistence in this foundation milestone covers every {@link Actor}
+ * field, the {@link Home} table and the {@link RelationshipEdge} table in one
+ * straightforward primitive layout (documented simplification vs the spec's
+ * exact §2.8 {@code ACTR} byte-for-byte record — the shape is faithful, the
+ * wire format is this class's own).
+ */
+public final class ActorsSystem implements SimulationSystem {
+
+    private final SystemId id = SystemId.of("actors", "ACTR");
+    private final long worldSeed;
+    private final ActorTypeStatsTable typeStats;
+    private final JobRegistry jobs;
+    private final ActorRegistry registry;
+    private final HomeRegistry homes;
+    private final RelationshipRegistry relationships;
+    private final ItemsLiteRegistry items;
+    /** Per-actor per-tick draw-index counter (§2.2's "one counter per actor"); reset each tick. */
+    private int[] drawCounters = new int[0];
+
+    public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
+            ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
+            ItemsLiteRegistry items) {
+        this.worldSeed = worldSeed;
+        this.typeStats = typeStats;
+        this.jobs = jobs;
+        this.registry = registry;
+        this.homes = homes;
+        this.relationships = relationships;
+        this.items = items;
+    }
+
+    public ActorRegistry registry() {
+        return registry;
+    }
+
+    public HomeRegistry homes() {
+        return homes;
+    }
+
+    public RelationshipRegistry relationships() {
+        return relationships;
+    }
+
+    public ItemsLiteRegistry items() {
+        return items;
+    }
+
+    @Override
+    public SystemId id() {
+        return id;
+    }
+
+    @Override
+    public TickPhase phase() {
+        return TickPhase.ACTORS;
+    }
+
+    @Override
+    public void tick(TickContext context) {
+        if (drawCounters.length < registry.size()) {
+            drawCounters = new int[registry.size()];
+        } else {
+            java.util.Arrays.fill(drawCounters, 0, registry.size(), 0);
+        }
+        registry.tickAll(new ActorContextImpl(context));
+    }
+
+    @Override
+    public void serialize(DataOutput out) throws IOException {
+        out.writeInt(registry.size());
+        for (int i = 0; i < registry.size(); i++) {
+            writeActor(out, registry.get(i));
+        }
+        out.writeInt(homes.size());
+        for (int i = 0; i < homes.size(); i++) {
+            out.writeInt(homes.get(i).homeCell());
+        }
+        out.writeInt(relationships.size());
+        for (int i = 0; i < relationships.size(); i++) {
+            RelationshipEdge edge = relationships.get(i);
+            out.writeInt(edge.fromId());
+            out.writeInt(edge.toId());
+            out.writeByte(edge.kind().ordinal());
+        }
+        out.writeInt(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            ItemsLiteEntry entry = items.get(i);
+            out.writeShort(entry.kindId());
+            out.writeInt(entry.ownerActorId());
+            out.writeInt(entry.locationCarriedBy());
+            out.writeInt(entry.locationCell());
+            out.writeShort(entry.quantity());
+        }
+    }
+
+    private void writeActor(DataOutput out, Actor actor) throws IOException {
+        out.writeInt(typeStats.ordinalOf(actor.typeId()));
+        out.writeInt(actor.identity().trueId());
+        out.writeInt(actor.identity().presentedId());
+        out.writeInt(actor.cell());
+        out.writeByte(actor.facing());
+        for (Need need : Need.values()) {
+            out.writeShort(actor.need(need));
+        }
+        out.writeShort(actor.hp());
+        out.writeShort(actor.statusBits());
+        out.writeShort(actor.downedTimer());
+        out.writeByte(actor.policyOrdinal());
+        out.writeByte(actor.targetKind().ordinal());
+        out.writeInt(actor.targetKey());
+        out.writeShort(actor.policyTimer());
+        out.writeInt(actor.anchorCell());
+        out.writeInt(actor.ownerId());
+        out.writeInt(actor.homeId());
+        out.writeShort(actor.jobOrdinal());
+        out.writeByte(actor.goalState().ordinal());
+        out.writeByte(actor.goalTargetKind().ordinal());
+        out.writeInt(actor.goalTargetKey());
+        out.writeShort(actor.goalProgress());
+        out.writeInt(actor.goalCooldown());
+        out.writeInt(actor.goalWorkTicks());
+        out.writeByte(actor.inventoryCount());
+        for (int i = 0; i < actor.inventoryCount(); i++) {
+            out.writeShort(actor.inventoryItemAt(i));
+        }
+    }
+
+    @Override
+    public void load(DataInput in) throws IOException {
+        int count = in.readInt();
+        for (int i = 0; i < count; i++) {
+            readActor(in);
+        }
+        int homeCount = in.readInt();
+        for (int i = 0; i < homeCount; i++) {
+            homes.addHome(in.readInt());
+        }
+        int edgeCount = in.readInt();
+        for (int i = 0; i < edgeCount; i++) {
+            int fromId = in.readInt();
+            int toId = in.readInt();
+            RelationshipKind kind = RelationshipKind.values()[in.readByte()];
+            if (kind == RelationshipKind.HOUSEHOLD || kind == RelationshipKind.NEIGHBOR
+                    || kind == RelationshipKind.FRIEND) {
+                relationships.addSymmetric(fromId, toId, kind);
+            } else {
+                relationships.addDirected(fromId, toId, kind);
+            }
+        }
+        int itemCount = in.readInt();
+        for (int i = 0; i < itemCount; i++) {
+            short kindId = in.readShort();
+            int ownerActorId = in.readInt();
+            int carriedBy = in.readInt();
+            int cell = in.readInt();
+            short quantity = in.readShort();
+            items.mint(kindId, ownerActorId, carriedBy, cell, quantity);
+        }
+    }
+
+    private void readActor(DataInput in) throws IOException {
+        ActorTypeId typeId = typeStats.idAt(in.readInt());
+        int trueId = in.readInt();
+        int presentedId = in.readInt();
+        int cell = in.readInt();
+        byte facing = in.readByte();
+        short[] needs = new short[Need.COUNT];
+        for (int i = 0; i < Need.COUNT; i++) {
+            needs[i] = in.readShort();
+        }
+        short hp = in.readShort();
+        short statusBits = in.readShort();
+        short downedTimer = in.readShort();
+        byte policyOrdinal = in.readByte();
+        TargetKind targetKind = TargetKind.values()[in.readByte()];
+        int targetKey = in.readInt();
+        short policyTimer = in.readShort();
+        int anchorCell = in.readInt();
+        int ownerId = in.readInt();
+        int homeId = in.readInt();
+        short jobOrdinal = in.readShort();
+        GoalState goalState = GoalState.values()[in.readByte()];
+        TargetKind goalTargetKind = TargetKind.values()[in.readByte()];
+        int goalTargetKey = in.readInt();
+        short goalProgress = in.readShort();
+        int goalCooldown = in.readInt();
+        int goalWorkTicks = in.readInt();
+        int invCount = in.readByte() & 0xFF;
+        short[] inventory = new short[invCount];
+        for (int i = 0; i < invCount; i++) {
+            inventory[i] = in.readShort();
+        }
+
+        Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
+        actor.setIdentity(new Persona(trueId, presentedId));
+        actor.setFacing(facing);
+        for (Need need : Need.values()) {
+            actor.applyNeedDelta(need, needs[need.ordinal()] - actor.need(need));
+        }
+        actor.setHp(hp);
+        actor.setDownedTimer(downedTimer);
+        actor.setStatusBits(statusBits);
+        actor.setPolicyOrdinal(policyOrdinal);
+        actor.setTarget(targetKind, targetKey);
+        actor.setPolicyTimer(policyTimer);
+        actor.setAnchorCell(anchorCell);
+        actor.setOwnerId(ownerId);
+        actor.setHomeId(homeId);
+        actor.setJobOrdinal(jobOrdinal);
+        actor.setGoalState(goalState);
+        actor.setGoalTarget(goalTargetKind, goalTargetKey);
+        actor.setGoalProgress(goalProgress);
+        actor.setGoalCooldown(goalCooldown);
+        actor.setGoalWorkTicks(goalWorkTicks);
+        for (short itemId : inventory) {
+            actor.addInventoryItem(itemId);
+        }
+    }
+
+    @Override
+    public void hashInto(WorldHasher.Sink sink) {
+        sink.putInt(registry.size());
+        for (int i = 0; i < registry.size(); i++) {
+            Actor actor = registry.get(i);
+            sink.putInt(typeStats.ordinalOf(actor.typeId()));
+            sink.putInt(actor.cell());
+            for (Need need : Need.values()) {
+                sink.putShort(actor.need(need));
+            }
+            sink.putShort(actor.hp());
+            sink.putShort(actor.statusBits());
+            sink.putInt(actor.homeId());
+            sink.putShort(actor.jobOrdinal());
+            sink.putByte(actor.goalState().ordinal());
+            sink.putShort(actor.goalProgress());
+        }
+        sink.putInt(homes.size());
+        for (int i = 0; i < homes.size(); i++) {
+            sink.putInt(homes.get(i).homeCell());
+        }
+        sink.putInt(relationships.size());
+        for (int i = 0; i < relationships.size(); i++) {
+            RelationshipEdge edge = relationships.get(i);
+            sink.putInt(edge.fromId());
+            sink.putInt(edge.toId());
+            sink.putByte(edge.kind().ordinal());
+        }
+    }
+
+    /** The per-tick {@link ActorContext}, bound to this system's registries and named draws. */
+    private final class ActorContextImpl implements ActorContext {
+
+        private final TickContext ctx;
+
+        ActorContextImpl(TickContext ctx) {
+            this.ctx = ctx;
+        }
+
+        @Override
+        public long tick() {
+            return ctx.tick();
+        }
+
+        @Override
+        public long worldSeed() {
+            return worldSeed;
+        }
+
+        @Override
+        public ActorRegistry registry() {
+            return registry;
+        }
+
+        @Override
+        public HomeRegistry homes() {
+            return homes;
+        }
+
+        @Override
+        public RelationshipRegistry relationships() {
+            return relationships;
+        }
+
+        @Override
+        public ItemsLiteRegistry items() {
+            return items;
+        }
+
+        @Override
+        public JobRegistry jobs() {
+            return jobs;
+        }
+
+        @Override
+        public long draw(ActorRngStream stream, int actorId, int drawIndex) {
+            return NamedDraws.draw(stream, worldSeed, ctx.tick(), actorId, drawIndex);
+        }
+
+        @Override
+        public int nextDrawIndex(int actorId) {
+            return drawCounters[actorId]++;
+        }
+
+        @Override
+        public int wielderCell() {
+            int wielderId = wielderId();
+            return wielderId == Actor.NONE ? Actor.NONE : registry.get(wielderId).cell();
+        }
+
+        @Override
+        public int wielderId() {
+            for (int i = 0; i < registry.size(); i++) {
+                Actor actor = registry.get(i);
+                if (actor.jobOrdinal() >= 0) {
+                    Job job = jobs.get(actor.jobOrdinal());
+                    if (job instanceof Job.FlameOfMerc) {
+                        return actor.identity().presentedId() == actor.id() ? actor.id() : Actor.NONE;
+                    }
+                }
+            }
+            return Actor.NONE;
+        }
+    }
+}

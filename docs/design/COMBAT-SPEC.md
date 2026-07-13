@@ -234,7 +234,7 @@ Falls resolve through this spec so PROGRESSION-SPEC's seam E2 has a real hook:
 
 ```
 fallDmg       = max(0, 2 * drop * drop - fallMitigation)   // drop = z-levels fallen, pure integer, no draw
-fallMitigation = (Grit + Deftness) >> 2                     // (placeholder shape; skill semantics owned by PROGRESSION-SPEC; Deftness = merged Shadow-Wait+Skylining, Eli-named 2026-07-12)
+fallMitigation = (Grit + Skyrunning) >> 2                     // (placeholder shape; skill semantics owned by PROGRESSION-SPEC; Skyrunning = merged Shadow-Wait+Skylining, Eli-named 2026-07-12)
 ```
 
 Deterministic — **no RNG draw**, no location roll, no armor mitigation (a fall is not a strike; placeholder ruling). Superlinear in `drop` by design: 1z = 2, 2z = 8, 3z = 18, 4z = 32 (before mitigation) — survivable practice drops stay cheap while real falls stay lethal. Damage ≥ 1 from a fall qualifies for Grit fall-XP (PROGRESSION-SPEC §3.1/§4 E2). All constants **(placeholder)**.
@@ -418,4 +418,4 @@ Class/method names are binding; each row is the exact assertion.
 | C8 | Ranged-specific rules (reload, range bands, cover) — repeater slowReload canon L2908 | COMBAT-SCREEN-SPEC owns action economy; damage/AP resolve through this spec unchanged |
 | C9 | `chromatis_blade` AP 8 — extrapolated from the chromatis BOW three-inch-steel feat (L1246) to blades | keep the number, flag the transfer — **needs-blessing** |
 | C10 | "Reman" manufacture attribution on the repeater crossbow (canon has Reman engineering L277/L1398 but never names the repeater's maker) | inferred — **needs-blessing** or drop the attribution |
-| C11 | Fall damage §5.3 (2×drop² curve, (Grit+Deftness)>>2 mitigation, no-armor ruling) | all constants placeholder — **needs-blessing** |
+| C11 | Fall damage §5.3 (2×drop² curve, (Grit+Skyrunning)>>2 mitigation, no-armor ruling) | all constants placeholder — **needs-blessing** |

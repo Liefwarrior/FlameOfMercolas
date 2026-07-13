@@ -1,0 +1,22 @@
+{
+  "id": "priest_of_the_flame",
+  "displayName": "Priest of the Flame",
+  "glyph": "P",
+  "tint": "#F0EEE6",
+  "factionId": "flame_order",
+  "hp": 20,
+  "speedTicksPerStep": 2,
+  "leashRadius": 20,
+  "inventoryCap": 4,
+  "needs": {
+    "hunger": { "start": 9000, "decayPerKilotick": 500, "recoverPerTick": 0, "lowBonus": 200, "critBonus": 400 },
+    "rest":   { "start": 9000, "decayPerKilotick": 400, "recoverPerTick": 0, "lowBonus": 200, "critBonus": 400 },
+    "coin":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 },
+    "safety": { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 3, "lowBonus": 300, "critBonus": 600 },
+    "duty":   { "start": 9000, "decayPerKilotick": 1000, "recoverPerTick": 0, "lowBonus": 300, "critBonus": 500 }
+  },
+  "deferWielder": { "enabled": true, "priority": 990, "radius": 10 },
+  "flee": { "priority": 920 },
+  "returnHome": { "priority": 305, "rhythmBonus": 80, "nightWindowStart": 13000, "nightWindowEnd": 24000 },
+  "loiter": { "priority": 8 }
+}

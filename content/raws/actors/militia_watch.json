@@ -1,0 +1,22 @@
+{
+  "id": "militia_watch",
+  "displayName": "Militia Watch",
+  "glyph": "W",
+  "tint": "#6FA0D0",
+  "factionId": "watch",
+  "hp": 30,
+  "speedTicksPerStep": 2,
+  "leashRadius": 24,
+  "inventoryCap": 4,
+  "needs": {
+    "hunger": { "start": 9000, "decayPerKilotick": 700, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 500 },
+    "rest":   { "start": 9000, "decayPerKilotick": 550, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 500 },
+    "coin":   { "start": 8000, "decayPerKilotick": 200, "recoverPerTick": 0, "lowBonus": 100, "critBonus": 200 },
+    "safety": { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 2, "lowBonus": 400, "critBonus": 800 },
+    "duty":   { "start": 9000, "decayPerKilotick": 900, "recoverPerTick": 0, "lowBonus": 300, "critBonus": 400 }
+  },
+  "deferWielder": { "enabled": true, "priority": 980, "radius": 6 },
+  "flee": { "priority": 940 },
+  "returnHome": { "priority": 305, "rhythmBonus": 80, "nightWindowStart": 12000, "nightWindowEnd": 24000 },
+  "loiter": { "priority": 10 }
+}

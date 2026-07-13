@@ -1,0 +1,22 @@
+{
+  "id": "serf",
+  "displayName": "Serf",
+  "glyph": "s",
+  "tint": "#A08860",
+  "factionId": "commons",
+  "hp": 18,
+  "speedTicksPerStep": 2,
+  "leashRadius": 30,
+  "inventoryCap": 3,
+  "needs": {
+    "hunger": { "start": 8000, "decayPerKilotick": 1000, "recoverPerTick": 0, "lowBonus": 300, "critBonus": 600 },
+    "rest":   { "start": 9000, "decayPerKilotick": 600, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 500 },
+    "coin":   { "start": 6000, "decayPerKilotick": 500, "recoverPerTick": 0, "lowBonus": 200, "critBonus": 400 },
+    "safety": { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 2, "lowBonus": 300, "critBonus": 700 },
+    "duty":   { "start": 8000, "decayPerKilotick": 600, "recoverPerTick": 0, "lowBonus": 200, "critBonus": 350 }
+  },
+  "deferWielder": { "enabled": true, "priority": 970, "radius": 5 },
+  "flee": { "priority": 950 },
+  "returnHome": { "priority": 305, "rhythmBonus": 80, "nightWindowStart": 14000, "nightWindowEnd": 23000 },
+  "loiter": { "priority": 10 }
+}

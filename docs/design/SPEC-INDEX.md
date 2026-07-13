@@ -49,8 +49,8 @@ the collected decision-needing items (spec § in parentheses).
 | C8 | COMBAT | ranged rules (reload/range/cover) split (§9) | SCREEN owns action economy |
 | C9 | COMBAT | `chromatis_blade` AP 8 (§5.1) | extrapolated from the chromatis BOW 3-inch-steel feat L1246 |
 | C10 | COMBAT | "Reman" repeater manufacture attribution (§5.1) | inferred — bless or drop |
-| C11 | COMBAT | fall damage constants (2×drop², (Grit+Deftness)>>2, no-armor ruling) (§5.3) | invented curve for seam E2 |
-| P1 | PROGRESSION | skill names + aptitude assignments (§2) | **RESOLVED 2026-07-12** (skill-list rulings, below): Saxework+Repeaterwork merged ("Sidearms" placeholder name); Shadow-Wait+Skylining merged as **Deftness** (Eli-named); The Draw → **Dire Bows**; Gutter-Ken → **Streetwise**; 18 → 16 skills. Follow-ups: Sidearms name awaits Eli; Deftness aptitude Favored needs-confirmation |
+| C11 | COMBAT | fall damage constants (2×drop², (Grit+Skyrunning)>>2, no-armor ruling) (§5.3) | invented curve for seam E2 |
+| P1 | PROGRESSION | skill names + aptitude assignments (§2) | **RESOLVED 2026-07-12** (skill-list rulings, below): Saxework+Repeaterwork merged ("Sidearms" placeholder name); Shadow-Wait+Skylining merged as **Deftness** (Eli-named), **renamed Skyrunning 2026-07-13** to match the new Skyrunner villain archetype; The Draw → **Dire Bows**; Gutter-Ken → **Streetwise**; 18 → 16 skills. Follow-ups: Sidearms name awaits Eli; Skyrunning aptitude Favored needs-confirmation |
 | P2 | PROGRESSION | weak-start Gabri numbers (skills ~0–5, Flame locked) | north-star invention, zero canon |
 | P3 | PROGRESSION | seam E1 "Wielder's Bruise" tone check (§4) | goading thugs to strike the Wielder |
 | P4 | PROGRESSION | Flame unlock rite + ability ladder names (§7) | Grit gate, vigils, Candleflame…Declaration |
@@ -100,7 +100,7 @@ the collected decision-needing items (spec § in parentheses).
   `AP = max(weaponBaseAP, materialHardness)` for `hardness ≥ 8`), generalizing to any future
   chromatis weapon. The Reman-attributed repeater (C10) needs no separate extrapolation once
   Rema is canonically a chromatis-working civilization.
-- **C11 BLESSED**: fall-damage curve `2×drop² − (Grit+Deftness)>>2` stands (Deftness
+- **C11 BLESSED**: fall-damage curve `2×drop² − (Grit+Skyrunning)>>2` stands (Skyrunning
   supersedes the old Skylining reference post skill-merge).
 - **S4 + S5 CONFIRMED**: Devin is downed-not-dead (no companion permadeath in v0); fleeing
   is whole-side only — no abandoning him mid-fight.
@@ -135,7 +135,7 @@ skill list is now **16 skills** (was 18):
    awaiting Eli**. Aptitude-clean merge (both parents AGI/Trained). AGI weight = sum of
    parents (24+20 = 44); §9.1 worked-example arithmetic unchanged (same aptNum 20, same
    ACC hook) except the AGI side-effect note (weight 20 → 44).
-2. **MERGE Shadow-Wait + Skylining** → **Deftness** (Eli-named). Covers sneak, pickpocket,
+2. **MERGE Shadow-Wait + Skylining** → **Skyrunning** (Eli-named). Covers sneak, pickpocket,
    takedown, jumps, climbs, rooftop runs. AGI weight = sum of parents (28+36 = 64).
    Aptitude set to **Favored** (Skylining's; preserves the walkable-roofs/Wielder theme) —
    Shadow-Wait was Trained, so this choice **needs-confirmation** from Eli.

@@ -1248,7 +1248,7 @@ in the purity suite. (Names unique across all specs; SPEC-INDEX totals to be upd
 
 ### 9.1 PROGRESSION-SPEC hooks (actors feed the XP economy)
 
-Actors are the live entities PROGRESSION's gates require: Deftness's "live observer
+Actors are the live entities PROGRESSION's gates require: Skyrunning's "live observer
 within 10 tiles" = any Actor with sight of the tile (gate 3.2#3); pickpocket targets and
 satiation contextKeys (observer/target entity id) are ActorIds; Streetwise informants are
 Wastrels/Shopkeepers with raws rumor tables (§2 #15 fence — loosened 2026-07-12, see
@@ -1292,6 +1292,14 @@ are encounter-roster actors, not the eight civic types.
     (§7.2), `beast.feral` default job (§10.6), tests A41–A44. **Still open inside it:**
     the §4.9 frictions list (gull-brazenness deterrence override; despawn-after-fire
     repopulation pacing) and all (placeholder) population numbers — folded into item 8.
+13. **Home, Inventory & Relationships addendum — see §11.** Home (§11.1: `homeId` field +
+    `RETURN_HOME` policy), Inventory quantity (§11.2: ItemsLite `quantity` field, inert
+    until a future items-raws system declares a stackable kind), and Relationships (§11.3:
+    `RelationshipKind` graph + §11.4's deterministic household-formation bake pass),
+    tests A45–A54. **Still open inside it:** the §11.8 frictions list (disposition/
+    relationship coupling; `MENTOR`'s missing inverse label; FRIEND/NEIGHBOR having no
+    consumer yet; household type-mix) and all (placeholder) numbers in §11.4/§11.5 —
+    folded into item 8.
 
 ---
 
@@ -1605,9 +1613,409 @@ one jobs.json entry). Test A40.
 
 ---
 
+## 11. Home, Inventory & Relationships (addendum)
+
+**Status:** spec-first addendum, closing three gaps the audited §1–§10 body left open for a
+city-block population: where an actor sleeps, what it carries beyond the raws-capped
+ItemsLite slots already on the base, and how actors relate to each other socially. Applied
+the same way §4.9 (Feral) and §10 (Goals & Jobs) were applied: new state + one new
+`BehaviorPolicy`, zero new verbs, zero engine-phase changes, deltas listed in §11.6 for
+whoever builds F2.5. Every invented number/name is **(placeholder)**; every invented
+mechanism not already implied by §1–§10 is **(invention)**.
+
+**Design pressure test before writing a line of schema:** the dossier rule this addendum
+must obey is §1.1's — "subclasses add zero fields," extended here to "the Actor base adds
+only BOUNDED fields; unbounded per-actor data lives in a registry-owned side-table." Home
+is 1-per-actor (bounded, same shape as the existing `ownerId`/`anchorCell` ints) → it gets
+one Actor field. Inventory already has a bounded, capped, array-backed home on the base
+(§1.1 `inventory[]`/`inventoryCount`, backed by the ItemsLite registry, §2.6) → this
+addendum touches the ItemsLite **side-table**, not the Actor. Relationships are
+unbounded-per-actor (a Priest may accrue a dozen FRIEND edges over a long run) → 100%
+side-table, zero Actor fields. This is the same reasoning §2.9.5 already used to keep
+Keeper-owned-animal lists derivable-not-stored, and §10.4 used to keep presented-job
+derived-not-stored: **one truth per fact, nothing to desync.**
+
+### 11.1 Home / Residence
+
+**Data model:**
+
+```java
+// ---- Actor base gains ONE field (bounded, same category as ownerId/anchorCell) ----
+int homeId;    // index into HomeRegistry; assigned once at spawn bake; NEVER NONE after
+              // bake completes (invariant: every actor has exactly one home, test A46)
+```
+
+```java
+/** Registry-owned side-table, sorted by homeId — the ActorRegistry/ItemsLite pattern. */
+public record Home(int homeId, int homeCell) {}   // homeCell = PackedPos, §2.6 PropertyIndex hook
+```
+
+- **Occupants are derived, never stored** (the §2.9.5/§10.4 single-source-of-truth rule,
+  applied a third time): "who lives at Home #H" = scan actors where `actor.homeId == H`,
+  ascending ActorId. No reverse list on `Home` — nothing to desync when a resident dies or
+  a juvenile Animal-equivalent is born into a household.
+- **`homeCell` is a PropertyIndex "sleeping spot" tile** (§2.6 already declares this tile
+  kind: "cell → owning actorId for annotated tiles (stall, pen, shopfront, **sleeping
+  spot**)"). This addendum does not invent a new tile kind — it wires the one that was
+  already reserved. Multiple actors sharing a Home share the same `homeCell`; PropertyIndex
+  ownership of that cell is separately assigned to the household's senior member (the head
+  of household, first actorId in the group) for trespass/crime attribution (§2.6) — Home
+  membership and PropertyIndex ownership are related but distinct facts, same as a
+  Keeper "owning" a pen tile is distinct from an Animal's leash anchor.
+- **Authored homes vs computed homes:** DOCKS-GAZETTEER §8.2's `npc_spawns` object layer
+  already declares a `schedule_anchor` prop ("home/work/night refs by K-key") that this
+  spec left unconsumed. Rule: if a spawn-table row (or a named-NPC's `npc_spawns` point,
+  §4.4 of the gazetteer) declares `schedule_anchor.home`, the importer/ActorSeeder bakes
+  that K-key's sleeping-spot tile straight into a `Home` record at bake time — no draw. Only
+  **un-anchored crowd-filler spawns** (the 30–50 anonymous Serfs, 8–15 Wastrels, §4.2 of the
+  gazetteer) fall through to the deterministic `HouseholdFormer` pass, §11.4.
+
+**The sleep-at-home behavior (new `BehaviorPolicy`, NEED band):**
+
+| PolicyId | Band | What it does (one tick) | Draws used |
+|---|---|---|---|
+| `RETURN_HOME` | NEED | scores when REST need urgency ≥ raws `lowBonus`/`critBonus` (§3.3, unchanged mechanism) OR the type's night `rhythmWindow` is open (§3.4, unchanged mechanism), **AND** `self.cell != Homes[self.homeId].homeCell`; `act()` = `stepToward(homeCell)` (the one shared verb, §1.1) | — (draw-free; movement reuses §2.5's deterministic sidestep) |
+
+- **Priority (placeholder, stated relative to existing bands per the assignment):** base
+  `priority = 305`, `rhythmBonus = 80` inside the type's night window — packed in the NEED
+  band (300–499, §1.2) alongside `EAT` (320 in the Watch example, §6) and `REST` (300).
+  This deliberately outranks every JOB-band policy (100–299, e.g. `PATROL` 220): when the
+  rhythm window says "go home," `RETURN_HOME` wins over `WORK`/`PATROL`/`VEND` the same way
+  a NEED-band policy always outranks JOB today (§1.2 selection rule, unchanged).
+- **Mutual exclusivity with `REST` by construction, not by new logic:** `RETURN_HOME`
+  scores 0 the instant `self.cell == homeCell` (not applicable — §1.2's "0 = not
+  applicable" convention); `REST` (unchanged, §1.3) then wins the argmax and the actor
+  sleeps. No new interruption rule is needed: EMERGENCY/RESPONSE bands still preempt
+  `RETURN_HOME` exactly as they preempt `WORK`/`PATROL` today (band ordering, §1.2,
+  untouched), and because goal-shaped state (`targetKind`/`targetKey`/`policyTimer`) already
+  lives on the Actor (§1.1), an interrupted walk home resumes at the same target after a
+  `FLEE` — the same property §10.1 already proved for `GOAL_PURSUE` (test A36's pattern,
+  reused here as A51/A52).
+- **Types that already "sleep where they work"** (Watch off-shift at post, Shopkeeper at
+  the shop, Priest/Disciple at the Mission, Animal Keeper by the pen — §4.1–4.7's rhythm
+  text) get `Home.homeCell == anchorCell` at bake, so `RETURN_HOME` is added to every
+  type's stack (one-line edit, the §10.1/§4.9 convention) but never fires for them in
+  practice — harmless, universal, and it means a Shopkeeper's family sharing the flat over
+  the shop (HOUSEHOLD edges, §11.3) is modeled the same way as a Serf's tenement, no
+  type-special-casing.
+- **Types with a genuinely separate home** (Serf → tenement/the Rows; Wastrel → a claimed
+  grate or condemned-building corner, still a Home, just a squalid `homeCell`, consistent
+  with §4.3's "sleeps in sewer grates like Zradist," novel L2345) actually walk.
+
+### 11.2 Inventory
+
+**This is mostly not a new system.** §1.1 already put a raws-capped, array-backed carried-
+items model on the Actor base (`inventory[]` / `inventoryCount`, canonical order = pickup
+order) over the ItemsLite registry (§2.6: `itemId → (kindId, ownerActorId|NONE, location:
+carriedBy|cell)`). That already IS "a small fixed-slot carried-items model, item ids
+referencing a future items raws system, integer-only, no item behavior" — word for word
+the ask. This addendum's only real contribution is the piece that was missing: **quantity.**
+
+```java
+/** ItemsLite record — the ONE addition: a quantity field. Everything else is unchanged §2.6. */
+public record ItemsLiteEntry(
+    int itemId, short kindId, int ownerActorId /* NONE = -1 */,
+    int locationCarriedBy /* NONE = -1 */, int locationCell /* NONE = -1, mutually exclusive */,
+    short quantity   // NEW (placeholder default 1; §6 loader clamps to 1 until a kind is
+                     // declared stackable — see below)
+) {}
+```
+
+- **No item BEHAVIOR is added** (per the assignment's explicit fence): `quantity` is a
+  plain integer counter, never merged, split, or consumed by any policy in this addendum.
+  `VEND`/`GIVE_ALMS`/`take`/`give`/`pickUp` (§1.1, §1.3) are **unchanged** — they still
+  operate one `itemId` at a time. The field exists so a **future** items-raws system can
+  mark a kind `stackable: true` and have `pickUp` increment `quantity` on an existing slot
+  instead of consuming a new one, without another ItemsLite schema bump.
+- **v1 loader rule (placeholder, keeps the field inert until it's needed):** every
+  `ItemsLiteEntry.quantity` is validated `== 1` at load/bake UNLESS the item's `kindId` is
+  found in a `stackableKinds` set — which is empty in v1 (no kind is declared stackable
+  yet). So today `quantity` is always 1, byte-plumbed through `ACTR`, and costs nothing;
+  the day items raws ships a stackable kind, only the loader validation and `pickUp`
+  change — zero ItemsLite consumers need to change, because they already read `quantity`
+  (defensively, always 1 today).
+- **Household relevance (why this addendum touches inventory at all):** spawn-time
+  household/business formation (§11.4) seeds starting carried items for flavor — a
+  Serf household spawns with 0–2 `coin` items per adult (placeholder), a Shopkeeper's
+  employee spawns with 0 (wages, not stock, per §4.6's "COIN dominant" need framing) — using
+  the **existing** `pickUp`-equivalent bake-time mint (ActorSeeder mints ItemsLite entries
+  directly into `carriedBy`, same mechanism §2.6 already documents for "stall stock, pen
+  feed" at import). No new verb; the importer already mints items this way.
+
+### 11.3 Relationships
+
+**Data model — a sparse, sorted, side-table social graph (no HashMap/HashSet, §6
+determinism rule, ARCHITECTURE §6):**
+
+```java
+public enum RelationshipKind {   // append-only, mirrors the §2.10 disposition FSM's convention
+    HOUSEHOLD,  // symmetric — shares a Home (§11.1)
+    EMPLOYER,   // directed — fromId employs/directs toId's job (Shopkeeper→staff,
+               // Priest→Disciple per the §4.5 FOLLOW-assignment invariant)
+    EMPLOYEE,   // query-facing INVERSE label of EMPLOYER — see the construction rule below;
+               // never itself the kind an edge is constructed with (test A50)
+    NEIGHBOR,   // symmetric — separate Homes, geographically adjacent (flavor)
+    FRIEND,     // symmetric — social bond, no household/work tie required (flavor)
+    MENTOR      // directed — fromId trains/oversees toId; (invention, canon-INFERRED:
+               // the novel's master/apprentice register — Vallech takes Eric "straight
+               // from the recruiters" as apprentice and assigns Gerik as his "offensive
+               // crafting tutor," novel L437-461; a farm boy's apprenticeship to a corps
+               // for wages, novel L996-998 — applied here to Priest→Disciple, already a
+               // spec-mandated pairing (§4.5), and to any future master/journeyman trade
+               // pair (e.g. a Shopkeeper training an apprentice))
+}
+```
+
+```java
+/** One immutable edge. Directed kinds (EMPLOYER, MENTOR) store fromId = the senior party.
+ *  Symmetric kinds (HOUSEHOLD, NEIGHBOR, FRIEND) store fromId = min(actorId), toId = max —
+ *  canonical construction, so A-knows-B and B-knows-A are never two edges (nothing to desync,
+ *  the §2.9.5/§10.4/§11.1 rule applied a fourth time). EMPLOYEE is NEVER the constructed kind
+ *  (test A50) — see query resolution below. */
+public record RelationshipEdge(int fromId, int toId, byte kind) {}
+```
+
+- **`RelationshipRegistry`:** flat array, canonical sort key `(min(fromId,toId),
+  max(fromId,toId), kind)` ascending — the same array+binary-search convention as the
+  spatial index (§2.2) and the §2.10 disposition FSM's sparse override list. No actor's
+  edge list is stored on the Actor (unbounded — the §11 intro's design-pressure rule).
+- **Query, symmetric in effect (test A48):** `relationshipsOf(actorId) →
+  List<(otherId, kindAsSeenFromActorId)>`, built by scanning the sorted array for edges
+  where `actorId ∈ {fromId, toId}` (binary search on the canonical low-id half of the sort
+  key, then a short linear scan — same cost shape as `actorsInRadius`, §2.2). Resolution
+  rule: for symmetric kinds, `kindAsSeenFromActorId` = the stored kind, always (no
+  direction to resolve). For `EMPLOYER`/`EMPLOYEE`: if `actorId == fromId`, report
+  `EMPLOYER` ("I employ/direct otherId"); if `actorId == toId`, report `EMPLOYEE` ("otherId
+  employs/directs me") — the inverse label is computed by the query helper, never read off
+  storage. `MENTOR` has no separate inverse constant in v1 (placeholder scope-trim): both
+  sides see `kind = MENTOR`; callers distinguish direction via `edge.fromId == self` (self
+  is the mentor) vs `edge.toId == self` (self is the mentee/apprentice) — flagged in §11.7
+  as a possible follow-up (`APPRENTICE` inverse label) if a future spec needs it
+  symmetrically-labeled like EMPLOYER/EMPLOYEE.
+- **Invariant: no actor is its own relation** (test A49) — `fromId != toId` is asserted at
+  construction (registry insert helper hard-fails; a `-ea` audit re-checks the whole table
+  every bake, the §4.8.3/§10.3 convention of asserting invariants rather than trusting
+  callers).
+- **Disposition (§2.10) is UNCHANGED and separate.** `RelationshipKind` is the durable,
+  spawn-time-computed social-graph fact ("we are neighbors"); the §2.10 disposition FSM is
+  the runtime, event-driven HOSTILE↔FRIENDLY state. They can agree or disagree on purpose
+  (a HOUSEHOLD member can still go WARY after a witnessed crime) — no coupling is added by
+  this addendum; a coupling (e.g. HOUSEHOLD nudging a disposition floor) is listed as a
+  friction, §11.8, not decided here.
+
+### 11.4 Household formation at spawn time (deterministic, named draws)
+
+Runs inside `ActorSeeder`'s existing deterministic bake pass (§2.2: "zone id asc,
+spawn-table row order, index" — this addendum adds one more sub-pass at the END of that
+order, after every actor in the scenario has an ActorId and a `homeId` of `NONE`), mirroring
+the `FeralSpawner`/`JobBinder` bake-time pass shape already established (§4.9, §10.4):
+
+1. **Authored homes first (draw-free):** every spawn with a `schedule_anchor.home` K-key
+   (§11.1) gets its `Home` record baked directly; if multiple spawns share the same
+   `schedule_anchor.home`, they share the same `homeId` (this is how a named NPC's Disciples
+   or a Shopkeeper's live-in family are authored explicitly, K-key by K-key, zero draws).
+2. **Crowd-filler households (named draw `household.size`):** for each remaining
+   un-housed actor in ascending ActorId order within its spawn zone: draw a household size
+   `N` from the raws distribution `{1:20, 2:35, 3:25, 4:15, 5:5}` (weights,
+   **(placeholder)**, `household.size`, spatialKey = the actor's own id, idx 0 — the
+   §10.4 bake-draw convention); group the next `N − 1` still-un-housed, same-zone,
+   ascending-ActorId actors with it into one new `Home` at a free `sleeping_spot`
+   PropertyIndex tile in that zone (zone's tile list, ascending cell — the §4.8.3
+   tie-break shape); emit one `HOUSEHOLD` edge between every pair in the group
+   (`N·(N−1)/2` edges, canonical-sorted construction, §11.3). This is the "siblings/
+   spouses/roommates" rule the assignment asked for — the sim doesn't distinguish sibling
+   from spouse from roommate (no data for it), it just guarantees co-residents know each
+   other as HOUSEHOLD, canon-anchored to the shared-room family home the novel actually
+   shows (one ground-floor room, separate upstairs rooms for the kids, parents sharing —
+   novel L997-998) as the texture a crowd-filler tenement should echo, scaled down to "one
+   Home, no room-level granularity" for v1 **(invention — the novel's multi-room detail is
+   not modeled, just its "one household, one roof" shape)**.
+3. **Employer/employee edges (named draw `household.staffCount`):** for each Shopkeeper
+   (and, per §4.5's existing invariant, each Priest↔Disciple pairing — already spawn-bound,
+   §4.5 — gets its EMPLOYER edge for free, no draw, from that existing assignment): draw a
+   staff count from raws range `[0, 2]` (**(placeholder)**, `household.staffCount`,
+   spatialKey = the Shopkeeper's own id, idx 0); assign the nearest `staffCount`
+   unassigned-to-a-business Serfs by `(Chebyshev distance, actorId asc)` — the exact
+   §4.8.3 adoption-scan tie-break, reused verbatim; emit one `EMPLOYER` edge
+   (Shopkeeper → Serf) per hire. An employee's `Home` is unaffected by employment (a hired
+   Serf keeps whatever Home step 1/2 gave them) — employment and residence are independent
+   facts, per §11.3's design note.
+4. **Flavor edges (named draws `household.neighborPick`, `household.friendPick`):** for
+   each `Home`, draw a count from `[0, 2]` (**(placeholder)**) of `NEIGHBOR` edges to the
+   nearest **other** Homes by `(homeCell Chebyshev distance, homeId asc)`
+   (`household.neighborPick`, spatialKey = the household's lowest-actorId member, one draw
+   per candidate slot); for each actor, draw a count from `[0, 2]` (**(placeholder)**) of
+   `FRIEND` edges among same-zone actors of the same Job family (§10, e.g. two Serfs both
+   `serf.laborer`) by ascending actorId (`household.friendPick`, spatialKey = the actor's
+   own id). Pure flavor — no policy reads these in v1 (flagged extension: `FRIEND` could
+   feed a future gossip-propagation or BEG-target tie-break; not built here).
+5. **Invariant close-out (registry `-ea` audit, the §4.8.3/§10.3 convention):** after the
+   pass, every actor's `homeId != NONE` — an actor left unhoused at the end of bake is a
+   **boot/scenario error, not a warning** (mirrors §4.8's "spawning an Animal with no live
+   Keeper hard-fails," same severity for the same reason: an invariant this addendum
+   promises must not be silently false).
+
+All counts/weights/ranges in this section are **(placeholder)**, folded into the existing
+§9.2 blessing queue (new item, §11.9).
+
+### 11.5 Raws/data note — no new authored data file (my call, stated plainly)
+
+**Home and Relationships need NO per-content raws file.** Both are spawn-time-computed
+state, not authored content:
+
+- Home's only per-scenario input is the `schedule_anchor` prop DOCKS-GAZETTEER §8.2 already
+  reserves on the `npc_spawns` Tiled layer — that's map authoring, already speced, already
+  a TMX object property, not a new JSON file.
+- Relationship formation's tuning knobs (`household.size` weights, `staffCount` range,
+  `neighborPick`/`friendPick` counts) are cross-cutting bake-time rules, not per-actor-type
+  stat blocks — they don't belong scattered across nine `actors/<type_id>.json` files. This
+  addendum's call: **one small shared file**, `content/raws/actors/household.json`,
+  parallel to `jobs.json` being one shared file for a cross-cutting concern (§10.3's
+  precedent — "the taxonomy is small and the 1:1 audit reads better in one place"). Loader
+  validation (boot fails): weight arrays non-negative integers, `staffCount`/`neighborPick`/
+  `friendPick` ranges `min ≤ max`, both `≥ 0`.
+- **Inventory's quantity field needs no new file either** — it rides the existing
+  ItemsLite table (§2.6/§2.8), and until a future items-raws system declares a stackable
+  kind, the `stackableKinds` set referenced in §11.2 is simply empty (no file to author
+  until there's something to put in it).
+
+```json
+{
+  "version": 1,
+  "householdSizeWeights": { "1": 20, "2": 35, "3": 25, "4": 15, "5": 5 },
+  "staffCountRange": [0, 2],
+  "neighborFlavorCountRange": [0, 2],
+  "friendFlavorCountRange": [0, 2]
+}
+```
+
+All numbers **(placeholder)**.
+
+### 11.6 Deltas to earlier sections (the §4.9/§10.7 convention; applied at F2.5 build)
+
+- **§1.1 Actor base:** + `int homeId` field (bounded, one int, alongside `ownerId`/
+  `anchorCell`). No other Actor field changes; `inventory[]`/`inventoryCount` unchanged.
+- **§1.2 reasonCode enum:** + `NEED_REST_LOW`, `RHYTHM_NIGHT_HOME` (the `RETURN_HOME`
+  PolicyChanged reasons; append-only, same enum §1.2 already declares).
+- **§1.3 policy library table:** + `RETURN_HOME` row (§11.1), NEED band.
+- **§2.2 RNG stream registry:** + `household.size`, `household.staffCount`,
+  `household.neighborPick`, `household.friendPick` (append-only; all bake-time, spatialKey
+  = actorId, the §10.4 bake-draw convention — no new runtime streams).
+- **§2.6 ItemsLite record:** + `quantity` field (§11.2); no change to `pickUp`/`take`/
+  `give`/`drop`/`VEND`/`GIVE_ALMS` semantics in v1.
+- **§2.8 events:** no new events (household formation is bake-time, not tick-time, so it
+  emits no `Actor*` events — the `Home`/`RelationshipEdge` tables are simply present in
+  tick-0 `ACTR`, the same way baked spawns already are, §2.8/§10.7).
+- **§2.8 `ACTR` section:** + per-actor `homeId i32`; + a `Homes` table (header count, then
+  records sorted by `homeId`: `homeId i32 · homeCell i32`); + a `Relationships` table
+  (header count, then records sorted by the canonical `(min,max,kind)` key: `fromId i32 ·
+  toId i32 · kind i8`); ItemsLite table entries gain `quantity i16`. `WorldHasher` gains
+  Homes/Relationships sub-hashes in the same canonical order (the §2.8 pattern, applied a
+  third time after `ACTR`'s own and Feral's).
+  **Save-version note:** like §10's `ACTR` fields, none of this has shipped yet — no
+  formatVersion churn, these fields are born with the table.
+- **§3.1/§3.3 needs:** no change to the decay/threshold mechanism — `RETURN_HOME` only
+  READS the existing REST need urgency and the existing rhythm-window bonus (§3.3/§3.4),
+  it adds no new need and no new scoring formula.
+- **§4.1–4.8 per-type stacks:** + `Policies.RETURN_HOME` one-line stack edit per type (the
+  §10.1/§4.9 convention — "eight/nine one-line stack edits" becomes nine/ten), placed in
+  the NEED band next to `EAT`/`REST`.
+- **§6 loader:** + `household.json` schema (§11.5) validation; existing `actors/<type>.json`
+  schema is UNCHANGED (no new per-type fields required — `schedule_anchor` already lives on
+  the MAP side, per DOCKS-GAZETTEER §8.2, not actor raws).
+- **§7.2 inspector:** + a Home line ("Home #H @ (cell) · N housemates") and a Relationships
+  line (kind-grouped counts, click-through to `relationshipsOf`) directly under the
+  existing owner/owned-links row.
+
+### 11.7 Tests (extends §8/§10.8; numbered after A44; SPEC-INDEX total 44 → 54)
+
+45. `A45_homeInventoryRelationships_twinRun_deterministic` — 2,000-tick twin run, full
+    Docks roster with homes/relationships/inventory-quantity live: identical hash chains
+    including the new `Homes`/`Relationships` `ACTR` sub-hashes; household-formation bake
+    draws (`household.*`) match the §2.2 addressing exactly across both engines.
+46. `A46_everyActorHasExactlyOneHome` — after bake, every actor's `homeId != NONE`; an
+    actor left unhoused at the end of the §11.4 pass is a boot/scenario error (message
+    names the offending actor); re-run from the same seed reproduces the identical
+    `Home`/occupant assignment.
+47. `A47_householdFormation_coResidentsShareHome_deterministic` — a fixture zone of N
+    un-anchored Serfs: `household.size` draws reproduce the same grouping and the same
+    `Home` count/cell assignment across two engines; every pair within a group has a
+    `HOUSEHOLD` edge, no pair across groups does.
+48. `A48_relationshipQuery_symmetricBothDirections` — for every constructed edge,
+    `relationshipsOf(fromId)` contains `(toId, kindOrInverse)` and `relationshipsOf(toId)`
+    contains `(fromId, kindOrInverse)`; symmetric kinds report identically from both
+    sides; `EMPLOYER`/`EMPLOYEE` report as exact inverses of each other.
+49. `A49_noActorIsItsOwnRelation` — constructing an edge with `fromId == toId` hard-fails
+    at the registry insert; the `-ea` full-table audit (§11.4 step 5's sibling check)
+    finds zero self-edges after any bake or scenario load.
+50. `A50_employerEmployee_neverStoredAsEmployee` — scan every constructed
+    `RelationshipEdge` after bake: no edge's stored `kind` is ever `EMPLOYEE` (only
+    `EMPLOYER`, resolved to `EMPLOYEE` by the query helper on the `toId` side, §11.3);
+    the §4.5 Priest↔Disciple invariant pairing produces exactly one `EMPLOYER` edge per
+    pair, no draw consumed (step 1 of §11.4).
+51. `A51_returnHome_firesAtRhythmWindow_perType` — for each type with `Home != anchorCell`,
+    `RETURN_HOME` scores 0 outside the night window while REST reserve is above LOW, and
+    > 0 the tick the window opens (or the tick REST crosses LOW/CRITICAL, whichever is
+    sooner); `stepToward(homeCell)` makes deterministic progress every
+    `speedTicksPerStep` ticks; `REST` takes over the exact tick `self.cell == homeCell`
+    and `RETURN_HOME` drops to 0 that same tick.
+52. `A52_returnHome_interruptedResumes_sameTarget` — a `RETURN_HOME` walk interrupted by
+    `FLEE` (fire/violence stimulus mid-walk) resumes toward the same `homeCell` once FLEE
+    stops winning, with `policyTimer`/target state carried unchanged (the §10.1/A36
+    goal-resume property, proved a second time for a NEED-band policy).
+53. `A53_itemsLiteQuantity_defaultOne_loaderClampsUntilStackable` — every baked
+    `ItemsLiteEntry.quantity` is exactly 1 in v1 (no kind yet declared stackable);
+    round-trips byte-identical through `ACTR`; a scenario fixture that manually declares
+    a kind stackable (test-only override) permits `quantity > 1` and the loader accepts
+    it — proving the field is inert-but-wired, not dead.
+54. `A54_householdBake_namedDrawsMatch_bothEngines` — every `household.size`/
+    `household.staffCount`/`household.neighborPick`/`household.friendPick` draw's
+    `(spatialKey, drawIndex, systemSalt, result)` tuple is identical across two engines
+    seeded identically (the §2.2 addressing rule, exercised for the four new streams);
+    removing a scenario's crowd-filler actors and re-adding them in a different shuffled
+    spawn order still yields identical households (spawn order is itself deterministic,
+    §2.2 — this test guards that the household pass doesn't accidentally depend on
+    incidental iteration order beyond the documented one).
+
+### 11.8 Frictions surfaced (NOT silently resolved — listed for Eli)
+
+1. **Disposition/Relationship coupling is undecided.** §11.3 explicitly does NOT couple
+   `HOUSEHOLD`/`FRIEND` edges to the §2.10 disposition FSM's starting state or clamp floor
+   — a stranger and a lifelong neighbor start at the same faction-table default disposition
+   today. A small nudge (e.g. `HOUSEHOLD`/`FRIEND` → +1 starting disposition step) would be
+   cheap and plausible but changes §2.10's "default = faction table" rule. **(needs-blessing)**
+2. **`MENTOR`'s missing inverse label.** Unlike `EMPLOYER`/`EMPLOYEE`, `MENTOR` reports the
+   same kind from both sides (§11.3) — fine for v1 (only the Priest↔Disciple pair uses it),
+   but a second mentor-flavored relationship (e.g. a Shopkeeper apprentice) would want an
+   `APPRENTICE` inverse label for inspector legibility. Flagged, not built. **(needs-blessing)**
+3. **FRIEND/NEIGHBOR are pure flavor with no consumer.** No policy, no BEG-ranking (§5.3),
+   no rumor system reads them in v1 — they exist so the invariant tests and the inspector
+   have something to show. Whether Streetwise (PROGRESSION §9.1's fence, §9.1 above) should
+   eventually read `FRIEND` edges as informant-quality bonuses is a real hook, deliberately
+   not pulled here. **(needs-blessing)**
+4. **Household size distribution ignores type mix.** §11.4 step 2 groups crowd-filler
+   actors within a zone by ascending ActorId without regard to type (a Serf could be
+   grouped with a stray Wastrel spawn in the same zone) — plausible for a squalid suburb
+   (novel's mixed-poverty texture, L2328) but unblessed as an intentional rule vs an
+   accident of the simple grouping mechanism. **(needs-blessing)**
+5. All §11.4/§11.5 numbers (household size weights, staff/neighbor/friend flavor counts,
+   `RETURN_HOME`'s priority/rhythmBonus) are **(placeholder)**, folded into the existing
+   §9.2 blessing queue as item 13.
+
+### 11.9 Blessing queue addition (folds into §9.2)
+
+13. **Home/Inventory/Relationships addendum (§11):** the `RETURN_HOME` priority/rhythmBonus
+    numbers; the `household.json` distribution/range placeholders; the four frictions in
+    §11.8 (disposition coupling, MENTOR inverse label, FRIEND/NEIGHBOR consumers, household
+    type-mix); and the `content/raws/actors/household.json` file split call (§11.5) itself,
+    if Eli would rather fold these knobs into each type's existing raws file instead.
+
+---
+
 *Spec produced 2026-07-12 for the F2.5 actors milestone; §10 Goals & Jobs addendum added
 same date per Eli's binding DECISIONS.md ruling; §4.9 Feral ninth type added same date
-per the Q7 Docks blessing (DOCKS-GAZETTEER §9 resolution 7). Consumes the Streets of
-Rogue emergence dossier and the canon-types dossier; every canon claim carries a novel/WB
-cite; every invention is marked. SPEC-INDEX.md should gain this row (44 tests) at the
-next index refresh.*
+per the Q7 Docks blessing (DOCKS-GAZETTEER §9 resolution 7); §11 Home/Inventory/
+Relationships addendum added same date, closing the city-block-population gap ahead of
+F2.5. Consumes the Streets of Rogue emergence dossier and the canon-types dossier; every
+canon claim carries a novel/WB cite; every invention is marked. SPEC-INDEX.md should gain
+this row (54 tests) at the next index refresh.*

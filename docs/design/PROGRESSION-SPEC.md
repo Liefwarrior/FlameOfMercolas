@@ -64,7 +64,9 @@ Naming: canon terms cited; everything else **(placeholder)**. "Gov" = governing 
 (§5); "Apt" = Gabri's aptitude (aptitudes placeholder / needs-blessing except where a
 2026-07-12 ruling is noted). Skill-list rulings applied 2026-07-12 (Eli): Saxework +
 Repeaterwork merged (name below is a placeholder awaiting Eli); Shadow-Wait + Skylining
-merged as **Deftness** (Eli-named); **The Draw → Dire Bows** and **Gutter-Ken → Streetwise**
+merged as **Deftness** (Eli-named), **renamed to Skyrunning 2026-07-13** (Eli) to match the
+new "Skyrunner" villain archetype (Granadad's ceiling-breaching, rooftop-leaping burglars/
+assassins — see DECISIONS.md); **The Draw → Dire Bows** and **Gutter-Ken → Streetwise**
 (both Eli-named). Count 18 → 16.
 
 | # | Skill | Covers | Gov | Apt | Canon anchor |
@@ -78,7 +80,7 @@ merged as **Deftness** (Eli-named); **The Draw → Dire Bows** and **Gutter-Ken 
 | 7 | **Shieldwall** (canon term, L2390) | block, shield use | VIG | Neglected | shieldman drill (L2221) |
 | 8 | **Harness** (placeholder) | armor familiarity (all slots) | VIG | Trained | layered per-part kit canon (Gundleas, L2209) |
 | 9 | **Grit** (placeholder) | toughness: pain, falls, burns | VIG | Trained | pain-teaches; Hordrar's 20-hour endurance flavor (L2213) |
-| 10 | **Deftness** (Eli-named 2026-07-12 — merge of Shadow-Wait + Skylining) | sneak, pickpocket, takedown, jumps, climbs, rooftop runs | AGI | **Favored** (merge choice — Skylining was Favored, Shadow-Wait Trained; Favored kept for the walkable-roofs/Wielder theme; **needs-confirmation**) | Hart's sentry craft, "counted out five minutes" (L3030–3038, L3037); walkable roofs kept for the Wielder (BLESSING-QUEUE #6) |
+| 10 | **Skyrunning** (Eli-named 2026-07-12 as "Deftness"; renamed 2026-07-13 to match the Skyrunner villain archetype — merge of Shadow-Wait + Skylining) | sneak, pickpocket, takedown, jumps, climbs, rooftop runs | AGI | **Favored** (merge choice — Skylining was Favored, Shadow-Wait Trained; Favored kept for the walkable-roofs/Wielder theme — **retroactively explained 2026-07-13**: rooftops are socially unseemly for everyone but the presented-Wielder, whose maxed social immunity is exactly what exempts him; needs-confirmation on the aptitude tier itself) | Hart's sentry craft, "counted out five minutes" (L3030–3038, L3037); walkable roofs kept for the Wielder (BLESSING-QUEUE #6) |
 | 11 | **Cracksmanship** (placeholder) | locks, traps | WIT | Trained | urban-dungeon invention; canon [SILENT] |
 | 12 | **Kit-Keeping** (placeholder) | repair, maintenance | MGT | Trained | nicked dagger (L186); barbed arrows ruin shields (L2813) |
 | 13 | **Mixtures** (canon-adjacent: "phorys mixture", L2908) | venoms, draughts, reagents | WIT | Trained | nighthawk venom (L3025); Revlin's mixtures (L1630) |
@@ -119,7 +121,7 @@ All values (placeholder / needs-blessing) — Morrowind-derived scale (MW 1.0 us
 | Shieldwall | successful block 250 |
 | Harness | struck on a covered location (post-1a location roll) 100 |
 | Grit | took ≥ 1 post-mitigation damage from blunt/burn 150 · from a fall 300 |
-| Deftness | risky leap landed (gap ≥ 2 tiles or drop ≥ 2 z) 150 · climb completed 50 · proximity check evaded 25 · pickpocket 200 · silent takedown 400 |
+| Skyrunning | risky leap landed (gap ≥ 2 tiles or drop ≥ 2 z) 150 · climb completed 50 · proximity check evaded 25 · pickpocket 200 · silent takedown 400 |
 | Cracksmanship | lock picked 200 × lockTier · trap disarmed 300 × trapTier |
 | Kit-Keeping | repair restoring ≥ 1 durability 40 |
 | Mixtures | successful brew 200 · ingredient property identified (first time) 50 |
@@ -137,11 +139,11 @@ is the *discoverable seam*; the economy prices the inputs, satiation floors the 
 2. **Harness/Grit:** the striking source must be capable of ≥ 1 pre-mitigation damage.
    Feather-tap farming with harmless sources awards 0 — but a real (if weak) thug's real
    blows qualify. This is the sanctioned seam E1 (§4).
-3. **Deftness (sneak uses):** proximity checks require a live observer entity within 10 tiles
+3. **Skyrunning (sneak uses):** proximity checks require a live observer entity within 10 tiles
    (placeholder) actively able to detect. **No banked time, no AFK accrual** — the Morrowind
    AFK-sneak lesson (dossier A2).
 4. **Movement:** no per-second locomotion XP at all — walking into walls teaches nothing
-   (Morrowind Athletics lesson A3). Deftness's movement uses pay only on discrete risky events.
+   (Morrowind Athletics lesson A3). Skyrunning's movement uses pay only on discrete risky events.
 5. **Channeling:** energy must actually move (ledgered through `ChargeCommandBuffer` /
    `ExternalChargeApplied` — ARCHITECTURE §5); the source is real (a fire, a fed link), so
    fuel burns in the sim.
@@ -158,7 +160,7 @@ Per `(actorId, skillId, contextKey)` an int tier 0–4:
   Variety pays full rate (fresh contextKey ⇒ tier 0).
 
 contextKey per skill (placeholder set): weapon skills → target species id · Shieldwall/
-Harness/Grit → attacker entity id · Deftness → tile-region id of the leap (movement uses) /
+Harness/Grit → attacker entity id · Skyrunning → tile-region id of the leap (movement uses) /
 observer entity id (sneak uses) · Cracksmanship → lock/trap instance id (each instance also
 awards only once per re-lock) · Kit-Keeping → item id · Mixtures → recipe id · Channeling →
 item id · Streetwise → informant id · The Flame → constant key.
@@ -176,7 +178,7 @@ this addressing** — they use COMBAT-SPEC §2.4's own scheme (spatialKey =
 | Stream | Used by |
 |---|---|
 | `combat.hit` | weapon hit checks (owned by COMBAT-SPEC §2.4/§2.3) |
-| `prog.sneakCheck` | Deftness proximity evasion |
+| `prog.sneakCheck` | Skyrunning proximity evasion |
 | `prog.pickLock` / `prog.trapDisarm` | Cracksmanship |
 | `prog.mixBrew` | Mixtures brew success |
 | `prog.flameVigil` | Flame unlock rite (§7) |
@@ -199,7 +201,7 @@ pain-XP (rule 3.2#2) + lawful immunity + hireling labor market. **Soft limits:**
 real (HP, healing costs through the economy), hireling wages scale with what you ask of
 them, satiation floors the rate at 25% per attacker, and dead trainers stop swinging.
 
-**E2 — The Rooftop Drop Circuit**. Deftness leap-XP + Grit fall-XP (300 cp) + walkable
+**E2 — The Rooftop Drop Circuit**. Skyrunning leap-XP + Grit fall-XP (300 cp) + walkable
 roofs (BLESSING-QUEUE #6). Engineer a circuit of survivable drops; every landing that costs
 ≥ 1 HP pays Grit. **Soft limits:** fall damage grows superlinearly with z-drop (COMBAT-SPEC
 §5.3), death is permanent, healing costs, satiation per tile-region forces circuit variety.
@@ -235,13 +237,13 @@ unparenthesized `10 + Σ >> 8` would parse as `(10 + Σ) >> 8`. Weights per attr
 | Attribute | Weights (placeholder) |
 |---|---|
 | **Might (MGT)** | Heavy Arms 40 · Lancework 32 · Kit-Keeping 24 · Bladework 16 · Grit 16 |
-| **Agility (AGI)** | Deftness 64 · Sidearms 44 · Open Hand 20 |
-| **Vigor (VIG)** | Grit 48 · Harness 32 · Shieldwall 28 · Deftness 20 |
+| **Agility (AGI)** | Skyrunning 64 · Sidearms 44 · Open Hand 20 |
+| **Vigor (VIG)** | Grit 48 · Harness 32 · Shieldwall 28 · Skyrunning 20 |
 | **Wits (WIT)** | Mixtures 28 · Channeling 28 · Cracksmanship 24 · Streetwise 24 · Dire Bows 24 |
 | **Presence (PRS)** | **STATIC 100.** Not derived, not trainable, not lowerable. This *is* the north star: the Wielder's social weight is a constant of the world. |
 
 Post-merge rebalance (2026-07-12, minimal): each merged skill takes the exact sum of its
-parents' weights — AGI: Deftness 36+28 = 64, Sidearms 24+20 = 44. Sums check (invariant
+parents' weights — AGI: Skyrunning 36+28 = 64, Sidearms 24+20 = 44. Sums check (invariant
 intact): MGT 40+32+24+16+16 = **128** · AGI 64+44+20 = **128** · VIG 48+32+28+20 = **128** ·
 WIT 28+28+24+24+24 = **128**.
 
@@ -274,7 +276,7 @@ that produce exploits beat special cases that prevent them).
   novel L2406) — Grit, Open Hand, The Flame's rite (§7). **Traveling Blademaster journeymen**
   (they pass through, L983) — Bladework, Shieldwall; rare, expensive, capped high.
   **Runemasters** (graduating-thesis scholars, L2479) — Channeling, Mixtures.
-  **Darkstreets fixers** (placeholder) — Cracksmanship, Streetwise, Deftness.
+  **Darkstreets fixers** (placeholder) — Cracksmanship, Streetwise, Skyrunning.
 
 **Drunair meditation** (canon: Alir/relar discipline, "control the Alir and focus the
 relar", L1899; melar tutelage L2013–2061): not skill points — a **Focus** state. After a
@@ -285,7 +287,7 @@ grind-efficiency accelerator; it stacks with, and rewards, deliberate grinding.
 **Books:** +1 level, once per title, ignores all caps, ~3 titles per skill (placeholder),
 placed as exploration/black-market loot. Example titles (all placeholder): *On the Swan
 Stance* (Bladework; stance canon L3002), *Stahl's Omission, Annotated* (Lancework, form
-canon L1537), *The Channeler's Primer* (Channeling), *Counted Minutes* (Deftness; title from Hart's
+canon L1537), *The Channeler's Primer* (Channeling), *Counted Minutes* (Skyrunning; title from Hart's
 "counted out five minutes", L3037).
 
 ---
@@ -336,7 +338,7 @@ section states how skills feed those formulas. Placeholder markers as noted.
   placeholder inputs to incomplete statlines.)
 - Weapon skill tier grants modify action economy/damage (per-skill tables §8.1).
 - Fall damage is COMBAT-SPEC §5.3: `fallDmg = max(0, 2×drop² − fallMitigation)`,
-  `fallMitigation = (Grit + Deftness) >> 2` (placeholder) — the E2 price curve.
+  `fallMitigation = (Grit + Skyrunning) >> 2` (placeholder) — the E2 price curve.
 - Harness: armor mitigation `MIT_final = MIT_eff × (1000 + 2×Harness) / 1000` and wear
   `max(1, wear_base × (200 − Harness) / 200)` — both formulas live in COMBAT-SPEC §4.1.
 
@@ -368,8 +370,8 @@ technique line has no specced tiers yet (placeholder — queue with the Sidearms
 | 75 | **Read the Blow** — on an unblocked covered-location hit, 10% chance (draw `combat.readblow`, dedicated subDraw 6 in COMBAT-SPEC §2.4) to shift the hit to an adjacent better-armored location |
 | 100 | **Iron Habit** — bare-location weak-spot penalty halved |
 
-**Deftness** — main terms: +5‰ per level to evade detection (contested vs. observer), and
-the level feeds fall mitigation `(Grit + Deftness) >> 2` (COMBAT-SPEC §5.3). Grants below
+**Skyrunning** — main terms: +5‰ per level to evade detection (contested vs. observer), and
+the level feeds fall mitigation `(Grit + Skyrunning) >> 2` (COMBAT-SPEC §5.3). Grants below
 are the sneak line (inherited from pre-merge Shadow-Wait); the movement line (pre-merge
 Skylining) never had tier grants — its whole payoff is the fall-mitigation hook and leap/climb
 XP — so the merged table carries the sneak grants unchanged (placeholder: movement tiers may
@@ -491,7 +493,7 @@ milestone.
     thug ⇒ award (seam E1's gate).
 12. `sneakXp_requiresLiveObserver` — no observer in 10 tiles ⇒ no award; no time-banking
     across observer absence.
-13. `movementXp_noPerTickAccrual` — 10,000 ticks of walking ⇒ Deftness unchanged.
+13. `movementXp_noPerTickAccrual` — 10,000 ticks of walking ⇒ Skyrunning unchanged.
 14. `trainer_priceReadsBaseSkill` — temporary skill modifiers (up or down) never change
     price or eligibility (anti Drain-and-Train).
 15. `trainer_capsByTrainerAndAttribute` — cannot buy past trainer level nor 2×governing
@@ -530,10 +532,10 @@ milestone.
 ## 11. Open blessing items (queue candidates)
 
 1. Remaining skill names and aptitude assignments (§2) — 16 skills after the 2026-07-12
-   rulings (Saxework+Repeaterwork merged; Shadow-Wait+Skylining merged as Deftness;
-   The Draw → Dire Bows; Gutter-Ken → Streetwise). Two follow-ups outstanding:
-   **"Sidearms" is a placeholder name awaiting Eli**, and **Deftness's Favored aptitude
-   (kept from Skylining) needs-confirmation**; unruled names/aptitudes remain placeholder.
+   rulings (Saxework+Repeaterwork merged; Shadow-Wait+Skylining merged as Deftness, renamed
+   Skyrunning 2026-07-13; The Draw → Dire Bows; Gutter-Ken → Streetwise). Two follow-ups
+   outstanding: **"Sidearms" is a placeholder name awaiting Eli**, and **Skyrunning's Favored
+   aptitude (kept from Skylining) needs-confirmation**; unruled names/aptitudes remain placeholder.
 2. Weak-start Gabri numbers (skills ~0–5, Flame locked) — north-star invention, zero canon.
 3. Seam E1 "Wielder's Bruise" — is goading thugs to strike the Wielder tonally acceptable?
 4. Flame unlock rite shape (Grit gate + vigils) and ability ladder names (§7).

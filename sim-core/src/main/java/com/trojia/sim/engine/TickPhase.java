@@ -36,6 +36,20 @@ public enum TickPhase {
     /** Opacity cache update from change logs, then budgeted four-queue relight. */
     LIGHT,
 
+    /**
+     * Decay needs -&gt; sense -&gt; select policy -&gt; act, in ascending ActorId
+     * order (ACTORS-SPEC.md §2.1, F2.5 amendment). Placed after LIGHT so
+     * perception reads THIS tick's darkness/fire-light, not yesterday's, and
+     * before BOUNDARY_FLUX/ECONOMY so actor trade/theft lap events fold into
+     * {@code EconomyAccumulator} with no added latency. Actors never write
+     * world lanes (§2.3): effects route out via events/command buffers,
+     * consumed next tick by the owning system — this insertion renumbers the
+     * phases after it and is a deliberate, one-time, documented amendment of
+     * the otherwise append-only enum (ACTORS-SPEC.md §2.1's "Save-version
+     * event").
+     */
+    ACTORS,
+
     /** Applies hull credits to chunk summaries/incidents; macro inflows into BORDER. */
     BOUNDARY_FLUX,
 
