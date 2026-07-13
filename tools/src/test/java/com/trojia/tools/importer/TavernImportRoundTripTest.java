@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.trojia.sim.material.MaterialRegistry;
+import com.trojia.sim.material.RawsBundle;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
 import com.trojia.sim.world.TickableWorld;
@@ -43,13 +44,14 @@ class TavernImportRoundTripTest {
         ImporterTestSupport.Fixture fixture = ImporterTestSupport.tavernFixture();
         TmxMap map = fixture.map();
         TmxTileset tileset = fixture.tileset();
-        MaterialRegistry registry = ImporterTestSupport.raws().materials();
+        RawsBundle raws = ImporterTestSupport.raws();
+        MaterialRegistry registry = raws.materials();
         int firstGid = map.tilesets().get(0).firstGid();
         int minZ = minZ(map);
 
         // Import -> write -> reload.
         TiledWorldImporter importer = new TiledWorldImporter();
-        TickableWorld baked = importer.importWorld(map, tileset, registry);
+        TickableWorld baked = importer.importWorld(map, tileset, registry, raws.fluids());
         Path out = tmp.resolve("tavern.trojsav");
         importer.toTrojSav(baked, registry.fingerprint()).writeTo(out);
         TickableWorld reloaded = new WorldLoader().load(TrojSav.read(out));

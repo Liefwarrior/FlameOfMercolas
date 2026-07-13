@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.trojia.sim.material.MaterialRegistry;
+import com.trojia.sim.material.RawsBundle;
 import com.trojia.sim.world.TickableWorld;
 
 import java.io.IOException;
@@ -23,16 +24,17 @@ class TiledImporterDeterminismTest {
     @Test
     void twoImportsAreByteIdentical(@TempDir Path tmp) throws IOException {
         ImporterTestSupport.Fixture fixture = ImporterTestSupport.tavernFixture();
-        MaterialRegistry registry = ImporterTestSupport.raws().materials();
+        RawsBundle raws = ImporterTestSupport.raws();
+        MaterialRegistry registry = raws.materials();
         TiledWorldImporter importer = new TiledWorldImporter();
 
         Path first = tmp.resolve("first.trojsav");
         Path second = tmp.resolve("second.trojsav");
 
-        TickableWorld worldA = importer.importWorld(fixture.map(), fixture.tileset(), registry);
+        TickableWorld worldA = importer.importWorld(fixture.map(), fixture.tileset(), registry, raws.fluids());
         importer.toTrojSav(worldA, registry.fingerprint()).writeTo(first);
 
-        TickableWorld worldB = importer.importWorld(fixture.map(), fixture.tileset(), registry);
+        TickableWorld worldB = importer.importWorld(fixture.map(), fixture.tileset(), registry, raws.fluids());
         importer.toTrojSav(worldB, registry.fingerprint()).writeTo(second);
 
         byte[] bytesA = Files.readAllBytes(first);

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.trojia.sim.material.MaterialRegistry;
+import com.trojia.sim.material.RawsBundle;
 import com.trojia.tools.tmx.TmxLayer;
 import com.trojia.tools.tmx.TmxMap;
 import com.trojia.tools.tmx.TmxProperties;
@@ -30,12 +31,13 @@ class TiledImporterUnknownMaterialTest {
 
     @Test
     void unknownMaterialThrowsWithSuggestion() {
-        MaterialRegistry registry = ImporterTestSupport.raws().materials();
+        RawsBundle raws = ImporterTestSupport.raws();
+        MaterialRegistry registry = raws.materials();
         TmxTileset tileset = tilesetWithMaterial("granitte"); // one edit from "granite"
         TmxMap map = singleTerrainCellMap();
 
         TiledImportException failure = assertThrows(TiledImportException.class,
-                () -> new TiledWorldImporter().importWorld(map, tileset, registry));
+                () -> new TiledWorldImporter().importWorld(map, tileset, registry, raws.fluids()));
 
         String message = failure.getMessage();
         assertTrue(message.contains("granitte"),

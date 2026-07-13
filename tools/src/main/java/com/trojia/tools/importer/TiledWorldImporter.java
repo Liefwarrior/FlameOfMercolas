@@ -1,5 +1,6 @@
 package com.trojia.tools.importer;
 
+import com.trojia.sim.fluid.FluidRegistry;
 import com.trojia.sim.material.MaterialRegistry;
 import com.trojia.sim.world.ChunkWriter;
 import com.trojia.sim.world.Coords;
@@ -33,9 +34,15 @@ import java.util.regex.Pattern;
  * z-level: a filled {@code terrain} tile wins as {@code (fillMaterial,
  * fillForm)}; else a {@code floor} tile becomes {@code (floorMaterial,
  * FLOOR)} (the floor tile's own form is ignored); else the cell is left OPEN
- * (air) — OPEN is authored by leaving both tile sublayers empty. The
- * {@code fluids} sublayer and the {@code markers} object layer are parsed but
- * not baked here (initial fluid seeding and marker baking are deferred).
+ * (air) — OPEN is authored by leaving both tile sublayers empty. The optional
+ * {@code fluids} sublayer seeds the FLUID lane: each fluid tile's registry raw
+ * id and authored depth (1..7) are packed as {@code depth | (fluidId << 3)}
+ * (lane layout per {@code Lanes.FLUID}: depth bits 0–2, fluidId bits 3–5; the
+ * SETTLED bit 6 is left clear — a freshly seeded pool has not been settled by
+ * the fluid system, which owns that bit). The {@code markers} object layer is
+ * parsed but not baked here (marker baking is deferred). Superseded-history
+ * note: fluid seeding itself was deferred until the faux-3D composite render
+ * pass (2026-07-13) needed the docks harbor to render as water, not void.
  *
  * <p><b>Placement.</b> The map is baked at the origin of the first interior
  * chunk (just inside the permanent VOID border): map cell {@code (x, y)} at
@@ -54,6 +61,10 @@ public final class TiledWorldImporter {
     private static final Pattern Z_NAME = Pattern.compile("z:([+-])(\\d+)");
     private static final String TERRAIN = "terrain";
     private static final String FLOOR = "floor";
+    private static final String FLUIDS = "fluids";
+
+    /** Bit shift of the FLUID lane's fluidId field ({@code Lanes.FLUID}: bits 3–5). */
+    private static final int FLUID_ID_SHIFT = 3;
 
     /** Creates a stateless importer. */
     public TiledWorldImporter() {
@@ -65,15 +76,19 @@ public final class TiledWorldImporter {
      * @param map      the parsed map (exactly one external tileset; z-group layout per README)
      * @param tileset  the parsed external tileset the map's gids index into
      * @param registry the material universe the {@code material=} ids resolve against
+     * @param fluids   the fluid universe the {@code fluid=} ids resolve against
      * @return the baked world (all interior chunks concrete, tick 0, uncommitted — save-legal)
      * @throws NullPointerException if an argument is {@code null}
-     * @throws TiledImportException on any authoring/binding error (unknown material, bad z-group,
-     *                              a non-material tile on terrain/floor, or a rejected write)
+     * @throws TiledImportException on any authoring/binding error (unknown material or fluid,
+     *                              bad z-group, a non-material tile on terrain/floor, a
+     *                              non-fluid tile on fluids, or a rejected write)
      */
-    public TickableWorld importWorld(TmxMap map, TmxTileset tileset, MaterialRegistry registry) {
+    public TickableWorld importWorld(TmxMap map, TmxTileset tileset, MaterialRegistry registry,
+            FluidRegistry fluids) {
         Objects.requireNonNull(map, "map");
         Objects.requireNonNull(tileset, "tileset");
         Objects.requireNonNull(registry, "registry");
+        Objects.requireNonNull(fluids, "fluids");
         if (map.tilesets().size() != 1) {
             throw new TiledImportException("v0 maps must reference exactly one external tileset, found "
                     + map.tilesets().size());
@@ -103,7 +118,7 @@ public final class TiledWorldImporter {
         }
         TickableWorld world = WorldBuilder.create(config).build();
 
-        MaterialBinding binding = new MaterialBinding(registry, tileset, firstGid);
+        MaterialBinding binding = new MaterialBinding(registry, fluids, tileset, firstGid);
         ChunkWriter writer = world.writer();
         for (ZGroup group : groups) {
             int worldZ = Coords.CHUNK_SIZE_Z + (group.z() - minZ);
@@ -136,6 +151,7 @@ public final class TiledWorldImporter {
     private void bakeGroup(ZGroup group, int worldZ, MaterialBinding binding, ChunkWriter writer) {
         TmxTileLayer terrain = group.terrain();
         TmxTileLayer floor = group.floor();
+        TmxTileLayer fluids = group.fluids();
         int width = group.width();
         int height = group.height();
         for (int y = 0; y < height; y++) {
@@ -163,6 +179,20 @@ public final class TiledWorldImporter {
                             binding.materialRaw(floorGid), TileForm.FLOOR, group, x, y);
                 }
                 // else: no fill and no floor -> OPEN (the fresh interior chunk is already OPEN)
+
+                int fluidGid = fluids != null ? fluids.gidAt(x, y) : 0;
+                if (fluidGid != 0) {
+                    if (!binding.hasFluid(fluidGid)) {
+                        throw new TiledImportException("fluids cell (" + x + "," + y + ") in "
+                                + group.name() + " references non-fluid tile gid " + fluidGid
+                                + " (material tiles are illegal on the fluids sublayer)");
+                    }
+                    applyFluid(writer,
+                            PackedPos.pack(Coords.CHUNK_SIZE_X + x, Coords.CHUNK_SIZE_Y + y, worldZ),
+                            binding.fluidDepth(fluidGid)
+                                    | (binding.fluidRaw(fluidGid) << FLUID_ID_SHIFT),
+                            group, x, y);
+                }
             }
         }
     }
@@ -173,6 +203,16 @@ public final class TiledWorldImporter {
         if (status != ChunkWriter.APPLIED) {
             throw new TiledImportException("write rejected (writer status " + status + ") for cell ("
                     + x + "," + y + ") in " + group.name()
+                    + " — the map does not fit the interior chunk box");
+        }
+    }
+
+    private static void applyFluid(ChunkWriter writer, int packedPos, int fluidBits,
+            ZGroup group, int x, int y) {
+        int status = writer.setFluidBits(packedPos, fluidBits);
+        if (status != ChunkWriter.APPLIED) {
+            throw new TiledImportException("fluid write rejected (writer status " + status
+                    + ") for cell (" + x + "," + y + ") in " + group.name()
                     + " — the map does not fit the interior chunk box");
         }
     }
@@ -189,13 +229,14 @@ public final class TiledWorldImporter {
             }
             TmxTileLayer terrain = tileSublayer(group, TERRAIN);
             TmxTileLayer floor = tileSublayer(group, FLOOR);
+            TmxTileLayer fluids = tileSublayer(group, FLUIDS);
             if (terrain == null && floor == null) {
                 throw new TiledImportException("z-group " + group.name()
                         + " has neither a terrain nor a floor tile sublayer");
             }
             int width = terrain != null ? terrain.width() : floor.width();
             int height = terrain != null ? terrain.height() : floor.height();
-            groups.add(new ZGroup(group.name(), z, terrain, floor, width, height));
+            groups.add(new ZGroup(group.name(), z, terrain, floor, fluids, width, height));
         }
         return groups;
     }
@@ -236,8 +277,8 @@ public final class TiledWorldImporter {
         return (a + b - 1) / b;
     }
 
-    /** One z-level's baking inputs: its z value and its two tile sublayers. */
+    /** One z-level's baking inputs: its z value and its three tile sublayers. */
     private record ZGroup(String name, int z, TmxTileLayer terrain, TmxTileLayer floor,
-            int width, int height) {
+            TmxTileLayer fluids, int width, int height) {
     }
 }

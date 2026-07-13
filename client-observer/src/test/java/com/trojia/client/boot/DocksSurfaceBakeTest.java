@@ -57,7 +57,7 @@ class DocksSurfaceBakeTest {
         MaterialRegistry registry = raws.materials();
 
         TiledWorldImporter importer = new TiledWorldImporter();
-        TickableWorld baked = importer.importWorld(map, tileset, registry);
+        TickableWorld baked = importer.importWorld(map, tileset, registry, raws.fluids());
 
         Path outFile = RepoPaths.locate("content", "maps")
                 .resolve("baked").resolve(FixtureWorldLoader.DOCKS_FILE);

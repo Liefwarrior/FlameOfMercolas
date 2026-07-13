@@ -1,5 +1,6 @@
 package com.trojia.tools.importer;
 
+import com.trojia.sim.fluid.FluidRegistry;
 import com.trojia.sim.material.Material;
 import com.trojia.sim.material.MaterialRegistry;
 import com.trojia.sim.world.TileForm;
@@ -25,14 +26,22 @@ import java.util.Optional;
  * (content/maps/README.md) and any directional encoding is out of scope here.
  *
  * <p>Tiles carrying a {@code fluid=} property instead of {@code material=} carry
- * no material binding ({@link #hasMaterial(int)} is {@code false}); initial
- * fluid seeding from the {@code fluids} sublayer is deferred, so those tiles are
- * simply not resolvable through this binding.
+ * no material binding ({@link #hasMaterial(int)} is {@code false}) but a
+ * <em>fluid</em> binding instead ({@link #hasFluid(int)}): the {@code fluid=}
+ * string resolves against the {@link FluidRegistry} to a FLUID-lane raw id and
+ * the required {@code depth=} int (1..7) becomes the lane's depth field. The
+ * importer bakes these from the {@code fluids} sublayer (content/maps/README.md
+ * "Initial pooled fluid"); the superseded-history note in this class's git
+ * history recorded fluid seeding as deferred until the faux-3D composite pass
+ * needed the docks harbor to stop rendering as void (2026-07-13).
  */
 public final class MaterialBinding {
 
     /** Maximum Levenshtein distance still offered as a suggestion. */
     private static final int MAX_SUGGESTION_DISTANCE = 3;
+
+    /** Maximum FLUID-lane pooled depth (the lane's 3-bit depth field). */
+    private static final int MAX_FLUID_DEPTH = 7;
 
     private final int firstGid;
     private final int tileCount;
@@ -40,20 +49,30 @@ public final class MaterialBinding {
     private final short[] materialRaw;
     /** Per local-id collapsed form, or {@code null} when the tile has no material binding. */
     private final TileForm[] form;
+    /** Per local-id FLUID-lane raw fluid id, or {@code -1} when the tile has no fluid binding. */
+    private final short[] fluidRaw;
+    /** Per local-id fluid depth 1..7; meaningful only where {@code fluidRaw >= 0}. */
+    private final byte[] fluidDepth;
 
     /**
-     * Precomputes the gid → (material, form) table from {@code tileset}.
+     * Precomputes the gid → (material, form) and gid → (fluid, depth) tables from
+     * {@code tileset}.
      *
      * @param registry the material universe the {@code material=} strings resolve against
+     * @param fluids   the fluid universe the {@code fluid=} strings resolve against
      * @param tileset  the parsed external tileset carrying the per-tile properties
      * @param firstGid the map's {@code firstgid} for this tileset (gid = localId + firstGid)
      * @throws NullPointerException     if an argument is {@code null}
      * @throws IllegalArgumentException if {@code firstGid < 1}
-     * @throws TiledImportException     if a tile's {@code material=} id is unknown, or a
-     *                                  material tile carries no/invalid {@code form=}
+     * @throws TiledImportException     if a tile's {@code material=} id is unknown, a
+     *                                  material tile carries no/invalid {@code form=}, a
+     *                                  tile's {@code fluid=} id is unknown, or a fluid tile
+     *                                  carries no/out-of-range {@code depth=}
      */
-    public MaterialBinding(MaterialRegistry registry, TmxTileset tileset, int firstGid) {
+    public MaterialBinding(MaterialRegistry registry, FluidRegistry fluids, TmxTileset tileset,
+            int firstGid) {
         Objects.requireNonNull(registry, "registry");
+        Objects.requireNonNull(fluids, "fluids");
         Objects.requireNonNull(tileset, "tileset");
         if (firstGid < 1) {
             throw new IllegalArgumentException("firstGid must be >= 1, was " + firstGid);
@@ -62,22 +81,36 @@ public final class MaterialBinding {
         this.tileCount = tileset.tileCount();
         this.materialRaw = new short[Math.max(0, tileCount)];
         this.form = new TileForm[Math.max(0, tileCount)];
+        this.fluidRaw = new short[Math.max(0, tileCount)];
+        this.fluidDepth = new byte[Math.max(0, tileCount)];
         Arrays.fill(materialRaw, (short) -1);
+        Arrays.fill(fluidRaw, (short) -1);
         for (TmxTilesetTile tile : tileset.tiles()) {
             int localId = tile.localId();
             if (localId < 0 || localId >= tileCount) {
                 continue; // outside the declared range; the gid-bounds pass owns this
             }
             Optional<TmxProperty> material = tile.properties().find("material");
-            if (material.isEmpty()) {
-                continue; // a fluid (or otherwise unbound) tile — fluid seeding is deferred
+            if (material.isPresent()) {
+                String id = material.get().value();
+                if (!registry.contains(id)) {
+                    throw new TiledImportException(unknownMaterialMessage(id, registry));
+                }
+                materialRaw[localId] = registry.id(id).raw();
+                form[localId] = resolveForm(tile);
+                continue;
             }
-            String id = material.get().value();
-            if (!registry.contains(id)) {
-                throw new TiledImportException(unknownMaterialMessage(id, registry));
+            Optional<TmxProperty> fluid = tile.properties().find("fluid");
+            if (fluid.isEmpty()) {
+                continue; // an otherwise unbound tile — the gid-usage passes own any error
             }
-            materialRaw[localId] = registry.id(id).raw();
-            form[localId] = resolveForm(tile);
+            String id = fluid.get().value();
+            if (!fluids.contains(id)) {
+                throw new TiledImportException("tile localId " + localId
+                        + " has unknown fluid \"" + id + "\" (not in the fluid registry)");
+            }
+            fluidRaw[localId] = fluids.id(id).raw();
+            fluidDepth[localId] = resolveDepth(tile);
         }
     }
 
@@ -110,10 +143,66 @@ public final class MaterialBinding {
         return form[gid - firstGid];
     }
 
+    /**
+     * @param gid a decoded global tile id ({@code 0} means "no tile")
+     * @return {@code true} iff {@code gid} maps to a tile with a resolved fluid binding
+     */
+    public boolean hasFluid(int gid) {
+        int localId = gid - firstGid;
+        return localId >= 0 && localId < tileCount && fluidRaw[localId] >= 0;
+    }
+
+    /**
+     * @param gid a gid with {@link #hasFluid(int)} {@code true}
+     * @return the tile's FLUID-lane raw fluid id
+     * @throws TiledImportException if {@code gid} carries no fluid binding
+     */
+    public short fluidRaw(int gid) {
+        requireFluidBound(gid);
+        return fluidRaw[gid - firstGid];
+    }
+
+    /**
+     * @param gid a gid with {@link #hasFluid(int)} {@code true}
+     * @return the tile's authored pooled depth, 1..7
+     * @throws TiledImportException if {@code gid} carries no fluid binding
+     */
+    public int fluidDepth(int gid) {
+        requireFluidBound(gid);
+        return fluidDepth[gid - firstGid];
+    }
+
     private void requireBound(int gid) {
         if (!hasMaterial(gid)) {
             throw new TiledImportException("gid " + gid + " carries no material binding");
         }
+    }
+
+    private void requireFluidBound(int gid) {
+        if (!hasFluid(gid)) {
+            throw new TiledImportException("gid " + gid + " carries no fluid binding");
+        }
+    }
+
+    private byte resolveDepth(TmxTilesetTile tile) {
+        Optional<TmxProperty> value = tile.properties().find("depth");
+        if (value.isEmpty()) {
+            throw new TiledImportException(
+                    "tile localId " + tile.localId() + " carries fluid= but no depth= property");
+        }
+        int depth;
+        try {
+            depth = Integer.parseInt(value.get().value());
+        } catch (NumberFormatException e) {
+            throw new TiledImportException("tile localId " + tile.localId()
+                    + " has non-integer depth \"" + value.get().value() + "\"");
+        }
+        if (depth < 1 || depth > MAX_FLUID_DEPTH) {
+            throw new TiledImportException("tile localId " + tile.localId() + " has depth "
+                    + depth + " outside 1.." + MAX_FLUID_DEPTH
+                    + " (content/maps/README.md fluid tiles)");
+        }
+        return (byte) depth;
     }
 
     private TileForm resolveForm(TmxTilesetTile tile) {
