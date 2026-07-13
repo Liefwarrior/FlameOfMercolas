@@ -208,11 +208,13 @@ Roll `combat.weakspot`; rider applies iff `r16 < riderQ16` (rider per location t
 | `mace` | Devin's — one-hit jaw-crush through a bloodletter (L2976) | 6–11 | 3 | +0 | crush |
 | `lance` | Eric's ground-work lance (L186) | 5–12 | 2 | +5 | longReach, throwable |
 | `repeater_bolt` | repeater crossbow (L2703); "Reman" manufacture attribution **(inferred — placeholder)** | 5–10 | 2 | +0 | ranged, slowReload (L2908) |
-| `chromatis_blade` | Blademaster sword (L1257); AP 8 extrapolated from "hole through steel three inches thick" (L1246 — a chromatis BOW + broadhead feat at 180-lb draw; the blade-AP transfer is extrapolation, **needs-blessing**, same pattern as §4.3) | 8–15 | 8 | +15 | noWear, chargeReservoir (hook) |
+| `chromatis_blade` | Blademaster sword (L1257) | 8–15 | *(material)* | +15 | noWear, chargeReservoir (hook) |
 
 - `longReach`: −15 ACC **(placeholder)** when attacker and defender are in press/adjacent-grapple range — direct systemization of "No man would be able to swing a long blade in those conditions" (L2390). Range states owned by COMBAT-SCREEN-SPEC.
 - `chargeReservoir`: chromatis blades as tap-able energy stores (L2213, L3002) — hook only; Flame/charge combat riders are a separate future spec (reserved sub-draws 5–7).
 - Melee-as-energy-transfer (Gerik's lecture, L447–449) is the *fictional physics* behind AP and crush tags; v1 does not simulate transfer magnitudes.
+
+**Material-derived AP (Eli ruling, 2026-07-12 — resolves C9 and C10):** chromatis is canon-widespread, not Trojia-exclusive — "many advanced civilizations, Rema included, can make chromatis; almost none know the dark cost of making it" (Eli, new GAME-CANON-ADDITION lore; the dark-cost half stays deliberately vague, a hook for later). Per Eli: *"treat it as a material type"* — AP 8 on `chromatis_blade` was never a bespoke stat on one named sword, it is the material's inherent edge, derived directly from the `hardness: 8` already sitting in `content/raws/materials/chromatis.json` (§1.2 already reads this registry — no new raws field needed). **Rule: `AP = max(weaponBaseAP, materialHardness)` whenever a weapon's `materialId` resolves to a material with `hardness ≥ 8`.** This generalizes automatically to any future chromatis weapon (dagger, spear, arrowhead) without a new placeholder stat each time, and retroactively legitimizes C10: if Reman engineers are among the "many advanced civilizations" who can work chromatis, Devin's Reman-attributed repeater crossbow needs no separate extrapolation — it is unremarkable competence, not a stretch. Both C9 and C10 close as **BLESSED** under this one material-typed rule.
 
 ### 5.2 Damage arithmetic (armored location)
 
@@ -232,7 +234,7 @@ Falls resolve through this spec so PROGRESSION-SPEC's seam E2 has a real hook:
 
 ```
 fallDmg       = max(0, 2 * drop * drop - fallMitigation)   // drop = z-levels fallen, pure integer, no draw
-fallMitigation = (Grit + Skylining) >> 2                    // (placeholder shape; skill semantics owned by PROGRESSION-SPEC)
+fallMitigation = (Grit + Deftness) >> 2                     // (placeholder shape; skill semantics owned by PROGRESSION-SPEC; Deftness = merged Shadow-Wait+Skylining, Eli-named 2026-07-12)
 ```
 
 Deterministic — **no RNG draw**, no location roll, no armor mitigation (a fall is not a strike; placeholder ruling). Superlinear in `drop` by design: 1z = 2, 2z = 8, 3z = 18, 4z = 32 (before mitigation) — survivable practice drops stay cheap while real falls stay lethal. Damage ≥ 1 from a fall qualifies for Grit fall-XP (PROGRESSION-SPEC §3.1/§4 E2). All constants **(placeholder)**.
@@ -416,4 +418,4 @@ Class/method names are binding; each row is the exact assertion.
 | C8 | Ranged-specific rules (reload, range bands, cover) — repeater slowReload canon L2908 | COMBAT-SCREEN-SPEC owns action economy; damage/AP resolve through this spec unchanged |
 | C9 | `chromatis_blade` AP 8 — extrapolated from the chromatis BOW three-inch-steel feat (L1246) to blades | keep the number, flag the transfer — **needs-blessing** |
 | C10 | "Reman" manufacture attribution on the repeater crossbow (canon has Reman engineering L277/L1398 but never names the repeater's maker) | inferred — **needs-blessing** or drop the attribution |
-| C11 | Fall damage §5.3 (2×drop² curve, (Grit+Skylining)>>2 mitigation, no-armor ruling) | all constants placeholder — **needs-blessing** |
+| C11 | Fall damage §5.3 (2×drop² curve, (Grit+Deftness)>>2 mitigation, no-armor ruling) | all constants placeholder — **needs-blessing** |

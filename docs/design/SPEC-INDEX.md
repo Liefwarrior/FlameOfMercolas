@@ -3,15 +3,16 @@
 Status: all four specs verified (math recompute + canon citation audit) and reconciled
 2026-07-12. Single sources of truth: **COMBAT-SPEC §2.3/§2.4** own all combat coefficients
 and every `combat.*` draw name; **PROGRESSION-SPEC §8** owns evasion; **FACES-SPEC §4.2**
-owns the facegen mixer. North star holds in every doc: PRS static 100, Gutter-Ken
-information-only, no levels, use-based growth, weak-start Gabri flagged as pure invention.
+owns the facegen mixer. North star holds in every doc: PRS static 100, Streetwise (née
+Gutter-Ken) information-only, no levels, use-based growth, weak-start Gabri flagged as pure
+invention.
 
 ## The four specs
 
 | Spec | Decision | Owns | Tests |
 |---|---|---|---:|
 | `COMBAT-SPEC.md` | 1a hybrid per-part defense | slot/coverage model, aggregate AC, hit roll (`hitQ16 = clamp(32768+(ACC−DEF)·328, 3277, 62259)`), block, location/mitigation/wear (+Harness terms), weak spots, damage, fall damage (§5.3), the full combat draw schedule (§2.4: attack-scoped subDraws 0–7, encounter-scoped init/flee/morale/aiTarget) | **42** |
-| `PROGRESSION-SPEC.md` | 3a use-based skills | 18-skill list, grains/aptitude XP model, satiation, exploit seams E1–E3, attributes (PRS static 100), evasion + armorBulk, trainers/books/meditation, Flame track, worked grind goldens | **28** |
+| `PROGRESSION-SPEC.md` | 3a use-based skills | 16-skill list, grains/aptitude XP model, satiation, exploit seams E1–E3, attributes (PRS static 100), evasion + armorBulk, trainers/books/meditation, Flame track, worked grind goldens | **28** |
 | `COMBAT-SCREEN-SPEC.md` | 2b dedicated combat screen | encounter transition + `CombatEntryState`, screen layout/log, ranks, action economy, aimed attacks, flee, morale, return consequences + Wielder-immunity law hook | **16** |
 | `FACES-SPEC.md` | 4c text-art faces | 15×9 frame + silhouette contract, named-face file format (Devin, Minister John), FaceGen LITE parts/archetypes/overlays, pinned SplitMix64 mixer, reference vectors | **19** |
 
@@ -48,14 +49,14 @@ the collected decision-needing items (spec § in parentheses).
 | C8 | COMBAT | ranged rules (reload/range/cover) split (§9) | SCREEN owns action economy |
 | C9 | COMBAT | `chromatis_blade` AP 8 (§5.1) | extrapolated from the chromatis BOW 3-inch-steel feat L1246 |
 | C10 | COMBAT | "Reman" repeater manufacture attribution (§5.1) | inferred — bless or drop |
-| C11 | COMBAT | fall damage constants (2×drop², (Grit+Skylining)>>2, no-armor ruling) (§5.3) | invented curve for seam E2 |
-| P1 | PROGRESSION | all 18 skill names + aptitude assignments (§2) | incl. **Shadow-Wait** — placeholder NAME, craft canon L3030–3038 |
+| C11 | COMBAT | fall damage constants (2×drop², (Grit+Deftness)>>2, no-armor ruling) (§5.3) | invented curve for seam E2 |
+| P1 | PROGRESSION | skill names + aptitude assignments (§2) | **RESOLVED 2026-07-12** (skill-list rulings, below): Saxework+Repeaterwork merged ("Sidearms" placeholder name); Shadow-Wait+Skylining merged as **Deftness** (Eli-named); The Draw → **Dire Bows**; Gutter-Ken → **Streetwise**; 18 → 16 skills. Follow-ups: Sidearms name awaits Eli; Deftness aptitude Favored needs-confirmation |
 | P2 | PROGRESSION | weak-start Gabri numbers (skills ~0–5, Flame locked) | north-star invention, zero canon |
 | P3 | PROGRESSION | seam E1 "Wielder's Bruise" tone check (§4) | goading thugs to strike the Wielder |
 | P4 | PROGRESSION | Flame unlock rite + ability ladder names (§7) | Grit gate, vigils, Candleflame…Declaration |
 | P5 | PROGRESSION | satiation constants (3,000-tick decay, 25% floor, 4 tiers) (§3.3) | |
 | P6 | PROGRESSION | trainer constants (trainMod 1,000 cp, 25% social floor, 2×attr cap) (§6) | |
-| P7 | PROGRESSION | Gutter-Ken information-only fence (§2 #17) | confirm it reads as intended in play |
+| P7 | PROGRESSION | Streetwise (née Gutter-Ken) information-only fence (§2 #15) | confirm it reads as intended in play |
 | P8 | PROGRESSION | evasion shape + per-material armorBulk table (§8) | invented to make DEF derivable |
 | S1 | SCREEN | all placeholder tuning (light tiers, press penalties, aim-penalty shape, flee formula, cartridge size, morale threshold, pursuit window) (§6.1) | |
 | S2 | SCREEN | weak-Gabri v0 Flame powers (Flicker/Dazzle/Declare) (§4.6) | feeble-but-present from fight one |
@@ -83,9 +84,68 @@ the collected decision-needing items (spec § in parentheses).
   penalty). COMBAT-SPEC §3's location table gains the aimed-attack bypass note at F-implementation.
 - **C4 BLESSED**: `gladius` is the common short-sword.
 - **F4 BLESSED**: Minister John's invented appearance stands.
-- **P1 PARTIAL**: Eli reviewing the 18 skill names (Shadow-Wait pending); remaining batch
-  (C1, C3/P2, C5-C11, P5-P8, S1, S4-S5, F1-F3, F5-F6) queued for a full walkthrough docket
-  next downtime — NOT batch-blessed.
+- **P1 PARTIAL** *(superseded — see skill-list rulings below)*: Eli reviewing the 18 skill
+  names (Shadow-Wait pending); remaining batch (C1, C3/P2, C5-C11, P5-P8, S1, S4-S5, F1-F3,
+  F5-F6) queued for a full walkthrough docket next downtime — NOT batch-blessed.
+
+## Blessing resolutions (Eli, 2026-07-12 — docket round 4, full queue cleared)
+
+- **C3/P2 CONFIRMED**: weak-start Gabri's canonical statline is the numbers already used in
+  COMBAT-SPEC §6.1's worked example — shortblade skill 15, gladius, DEF 20, Flame locked.
+  No separate invention needed; the worked example IS the spec.
+- **C9 + C10 BLESSED via new lore**: chromatis-working is canonically widespread (Rema
+  included), not Trojia-exclusive, with an unspecified "dark cost" — see
+  docs/lore/MATERIALS-CANON.md §1.1 GAME-CANON-ADDITION. AP 8 is retired as a bespoke
+  `chromatis_blade` stat and reborn as a material-derived rule (COMBAT-SPEC §5.1:
+  `AP = max(weaponBaseAP, materialHardness)` for `hardness ≥ 8`), generalizing to any future
+  chromatis weapon. The Reman-attributed repeater (C10) needs no separate extrapolation once
+  Rema is canonically a chromatis-working civilization.
+- **C11 BLESSED**: fall-damage curve `2×drop² − (Grit+Deftness)>>2` stands (Deftness
+  supersedes the old Skylining reference post skill-merge).
+- **S4 + S5 CONFIRMED**: Devin is downed-not-dead (no companion permadeath in v0); fleeing
+  is whole-side only — no abandoning him mid-fight.
+- **P7 LOOSENED**: the Streetwise fence widens from information-only to information +
+  economic/tactical edge — black-market price shading and patrol/raid timing knowledge join
+  rumors/routes/informants. Deference and combat draws remain permanently outside the fence
+  (binding, unchanged). Applied to PROGRESSION-SPEC §2 row 15 + its north-star guard, and to
+  ACTORS-SPEC's Watch/Wastrel deference rows.
+- **ACTORS budget ACCEPTED**: 8.2ms worst-case tick (was 7.8ms pre-ACTORS) stands as the new
+  reference line; 8ms was always a soft target, not a hard contract.
+- **ACTORS architecture fork RESOLVED**: WORK/PATROL/VEND behavior folds into the §10
+  Job-goal cycle — one source of truth for actor schedules, consistent with "Job = why
+  you're here." Structural edit to ACTORS-SPEC §1.3/§4/§10 in progress.
+- **FINAL BATCH BLESSED**: C1 (leather/cloth raws), C5 (layered armor, deferred v2),
+  C6 (called shots, deferred — aiming lives on the combat screen instead), C7 (Flame/charge
+  damage riders, deferred to a future Flame spec), C8 (ranged reload/range/cover, owned by
+  COMBAT-SCREEN-SPEC), P5 (satiation constants), P6 (trainer constants), P8 (evasion +
+  armorBulk table), S1 (all combat-screen tuning), F1-F3 (face frame/salt/archetype weights),
+  F5-F6 (overlay rarity, targeted-face-only panel). All confirmed as designed; every value
+  remains individually vetoable later since these are all plain data files.
+
+**Every item in the original 32-row blessing queue is now resolved.** No open design
+questions remain in the G-track specs as of 2026-07-12.
+
+## Skill-list rulings (Eli, 2026-07-12 — P1 RESOLVED)
+
+Four binding rulings, applied across PROGRESSION/COMBAT/COMBAT-SCREEN the same day; the
+skill list is now **16 skills** (was 18):
+
+1. **MERGE Saxework + Repeaterwork** → one skill covering saxe blades, knives held & thrown,
+   and the repeater crossbow. Eli did not name it; **"Sidearms" is a placeholder name
+   awaiting Eli**. Aptitude-clean merge (both parents AGI/Trained). AGI weight = sum of
+   parents (24+20 = 44); §9.1 worked-example arithmetic unchanged (same aptNum 20, same
+   ACC hook) except the AGI side-effect note (weight 20 → 44).
+2. **MERGE Shadow-Wait + Skylining** → **Deftness** (Eli-named). Covers sneak, pickpocket,
+   takedown, jumps, climbs, rooftop runs. AGI weight = sum of parents (28+36 = 64).
+   Aptitude set to **Favored** (Skylining's; preserves the walkable-roofs/Wielder theme) —
+   Shadow-Wait was Trained, so this choice **needs-confirmation** from Eli.
+3. **RENAME The Draw → Dire Bows** (Eli-named; coverage and canon anchors unchanged).
+4. **RENAME Gutter-Ken → Streetwise** (Eli-named; the information-only north-star fence
+   remains verbatim in force — PROGRESSION §2 guard, now on skill #15; P7 confirm-in-play
+   stays open).
+
+Attribute-weight invariant intact post-merge (every row still sums to 128; PROGRESSION §5
+shows the sums; test 26 updated).
 
 ## Verification-pass fix log (2026-07-12)
 

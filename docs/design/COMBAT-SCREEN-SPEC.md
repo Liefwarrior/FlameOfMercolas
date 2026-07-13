@@ -327,7 +327,7 @@ the real Flame economy is PROGRESSION-SPEC's problem. Canon constraint carried f
 is emotion-linked and fails under emotional shock (L2729) — reserved as a future condition hook,
 not modeled in v0.
 
-Use-XP: every combat action reports a `SkillUseEvent` (weapon skill on attack, Sneak on surprise
+Use-XP: every combat action reports a `SkillUseEvent` (weapon skill on attack, Deftness on surprise
 kill, etc.) to PROGRESSION-SPEC's accumulator at combat end — awards are part of `CombatResult`,
 not applied mid-combat (keeps combat state closed, §4.7).
 
