@@ -1,7 +1,7 @@
-# Material raws
+# Material raws (classpath root)
 
-Data-driven material definitions land here in M1 (JSON, loaded into the immutable
-`MaterialRegistry` at boot). Canonical materials derive from the novel via
-`..\..\LordOfTrojia-MVP\Documentation\WorldBible.md` §9 — each raw carries a
-`provenance` note. First entries: granite, trudgeon wood, getilia-treated trudgeon,
-steel, chromatis, phorys, lightstone, glowstone.
+The editable raws live at `content/raws/**` (the source of truth — tools read that
+disk path). The content build copies `content/raws/**/*.json` into the jar under
+`trojia/raws/**` (see `content/build.gradle.kts`), which is what the runtime loads
+via `MaterialRawsLoader.load(classLoader, "trojia/raws")`. Do not add raws here —
+add them under `content/raws/` instead.

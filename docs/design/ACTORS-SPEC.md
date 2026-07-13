@@ -15,7 +15,7 @@ complete contract for that milestone.
   canonical iteration, events are records of primitives, saves at TICK_END only. Actors are
   FEW (hundreds, not millions) — real Java objects are legal, per the MacroSite precedent.
 - NORTH STAR: social power maxed from tick zero — per-group deference to the Wielder is a
-  **design table (§4.9), never a stat**; physical power grows via systems. Actors are the chaos
+  **design table (§4.10), never a stat**; physical power grows via systems. Actors are the chaos
   engine: their needs colliding with the sim pillars (fire, water, property, law) produce the
   wild scenarios.
 - Canon: novel cites `(novel L<n>)` per MATERIALS-CANON.md convention; WorldBible cites
@@ -31,7 +31,7 @@ complete contract for that milestone.
   pillars or the type is not done**); hurt-but-don't-kill pacing; actors in their own stories.
 
 Cross-references: COMBAT-SCREEN-SPEC.md §1 (encounter trigger contract — reconciled §2.7),
-FACES-SPEC.md §3.3 (archetype mapping — §4 table), PROGRESSION-SPEC.md (XP hooks — §9.1).
+FACES-SPEC.md §3.3 (archetype mapping — §7.2 table), PROGRESSION-SPEC.md (XP hooks — §9.1).
 
 ---
 
@@ -68,7 +68,7 @@ public abstract class Actor {
 
     // ---- faction + deference ----
     final short factionId;            // raws
-    // deference profile: resolved from the §4.9 design TABLE by typeId — not stored per actor
+    // deference profile: resolved from the §4.10 design TABLE by typeId — not stored per actor
 
     // ---- health-lite hook ----
     short hp;                         // full body model arrives with combat (G-track);
@@ -134,11 +134,12 @@ parameters, never a subclass method. (All ids append-only.)
 
 | PolicyId | Band | What it does (one tick) | Draws used |
 |---|---|---|---|
-| `DEFER_WIELDER` | EMERGENCY | posture per the §4.9 table when the presented-Wielder is in sight: step aside / approach / kneel; suppresses APPREHEND vs the Wielder | `actor.bark` |
+| `DEFER_WIELDER` | EMERGENCY | posture per the §4.10 table when the presented-Wielder is in sight: step aside / approach / kneel; suppresses APPREHEND vs the Wielder. **One PolicyId** — the stack names in §4 (`REVERE_WIELDER`, `APPROACH`/`APPEASE` variants) are the SAME policy with a different raws `posture` param, never separate ids | `actor.bark` |
 | `FLEE` | EMERGENCY | run from the danger cell (fire/water/violence), greedy away-step; drops carried item on a panic draw | `actor.fleeJitter`, `actor.panicDrop` |
 | `APPREHEND` | RESPONSE | Watch only in v1 rosters: chase target actor; adjacent → scuffle → arrest (target DOWNED+ALERTED, escorted to post) | `actor.scuffle` |
 | `INVESTIGATE` | RESPONSE | walk to a heard/reported stimulus cell, look around, dwell | `actor.loiter` |
 | `REPORT` | RESPONSE | walk to nearest Watch (or post) and hand over a witnessed-crime memory → re-emits `CrimeWitnessed` to that Watch | — |
+| `PLEAD` | RESPONSE | Priest only in v1 rosters: petition an arresting Watch for custody of the culprit at the arrest cell; draw-free disposition lookup vs raws `pleadThresholdQ16` (§5.5 trace) | — |
 | `DEFEND_STOCK` | RESPONSE | Shopkeeper: chase the thief of own property; give-up timer; mishap draw when chasing through cluttered tiles | `actor.mishap`, `actor.scuffle` |
 | `RECAPTURE` | RESPONSE | Keeper: chase own strayed Animal; adjacent → compliance draw → leash restored | `actor.comply` |
 | `DOUSE_FIRE` | RESPONSE | fetch water from nearest water tile (bucket = 1 unit), throw on burning tile via `requestDouse` — **moves real FLUID-lane water** | — |
@@ -169,7 +170,7 @@ real example — this is the WHOLE file:
 public final class Ratcatcher extends Actor {
     public static final ActorTypeId TYPE = ActorTypeId.of("ratcatcher");
     private static final PolicyStack STACK = PolicyStack.of(
-        Policies.DEFER_WIELDER,   // §4.9 row comes from raws
+        Policies.DEFER_WIELDER,   // §4.10 row comes from raws
         Policies.FLEE,
         Policies.WORK,            // raws param: job = HUNT_VERMIN
         Policies.VEND,            // raws param: sells = rat_tail bounty
@@ -257,7 +258,13 @@ fluids reserve)**. CI perf gate from the first actors milestone.
   `actor.fleeJitter`, `actor.panicDrop`, `actor.targetPick`, `actor.loiter`, `actor.bark` —
   registry append-only), **spatialKey = actorId**, **drawIndex = per-actor per-tick draw
   sequence number, reset to 0 each tick** (sound because tick is already mixed into the
-  counter hash — zero saved RNG state, same argument as ARCHITECTURE #16). `actor.bark` is
+  counter hash — zero saved RNG state, same argument as ARCHITECTURE #16). **Counter
+  attribution (pinned):** the sequence counter belongs to the actor named by `spatialKey`
+  and increments on ANY draw keyed to that actor, regardless of whose `act()` performs it —
+  e.g. a Keeper's RECAPTURE draws `actor.comply` keyed to the ANIMAL's id and bumps the
+  animal's counter (that is why §5.4 +26 is `actor.comply(41, idx 0)` inside Keeper #40's
+  turn). One counter per actor shared across all streams; unambiguous because phase-7
+  execution order is total (ascending ActorId, sequential acts). `actor.bark` is
   presentation-only: no game state ever reads its result (COMBAT-SCREEN `combat.logline`
   precedent, test A21).
 - Policy SELECTION is draw-free (deterministic argmax); draws happen only inside `act()` and
@@ -294,6 +301,15 @@ to actors (§2.9), so actor writes can never even reach the BoundaryFlux path.
   it can hear, (b) actors/items within sight radius **only when a policy asks** (Patrol,
   DEFEND_STOCK, witness scan §2.6), capped at the 4-bucket max radius. Sense results are
   transient (`StimulusSet`, never saved — rebuilt every tick, so save/load can't fork).
+- **Intra-phase stimulus visibility (pinned rule):** the event bus never delivers a system's
+  own phase-7 emissions back to it same tick (ARCHITECTURE §4 visibility). So ActorSystem
+  keeps an **intra-tick stimulus queue**: stimuli an actor emits during its `act()`
+  (`NoiseEmitted`, `AlarmRaised`, `CrimeCommitted` → witness scan) are appended and are
+  visible to actors **later in the same ascending-ActorId iteration** this tick; actors with
+  lower ids perceive them next tick via the bus like everyone else. Deterministic (iteration
+  order fixed), and it is why in trace §5.4 Keeper #40 hears Shopkeeper #12's alarm the same
+  tick while Watch #5 (id < 12) reacts the tick after. The queue is transient like
+  StimulusSet. Pinned by A28's golden and asserted in A2.
 
 ### 2.5 Movement
 
@@ -336,7 +352,7 @@ refinement — flow fields or A* — flagged for later, greedy is v1.)**
   the combat screen. The ACTORS layer supplies the inputs: disposition FSM state (§2.10),
   engagement zone from raws. **Reconciliation of the standing conflict:** COMBAT-SCREEN L46
   "Guards are HOSTILE-capable toward everyone" is now gated: Watch can never enter HOSTILE
-  toward the **presented Wielder** (§4.9 clamp; L2967 immunity); a disguised Gabri
+  toward the **presented Wielder** (§4.10 clamp; L2967 immunity); a disguised Gabri
   (presented ≠ Wielder) is arrest-able like anyone — disguise sheds immunity by design
   (DECISIONS Identity row).
 - While the combat screen is open the sim is paused (COMBAT-SCREEN §1.2); actors freeze
@@ -392,7 +408,23 @@ StimulusSet is transient and RNG needs no state.
    vice versa), the registry marks the live one's partner ABSENT: the Animal runs a leashed
    stray-lite stack at the pen (not full ORPHANED); the Keeper's RECAPTURE won't fire on a
    frozen Animal. Reunion is automatic at thaw (ownerId link is by id, ids never reused).
-5. **Flagged refinements (post-v1, explicitly out):** cross-chunk travel goals, co-freeze
+5. **Death across the boundary (thaw ownership repair):** the §4.8 ladders only run over
+   registry-resident actors, so a partner frozen in a blob CANNOT be retargeted at death
+   time — the repair is deferred to thaw, deterministically: `rehydrate` validates every
+   thawed Animal's `ownerId` against registry liveness (dead/absent Keeper → run the
+   §4.8.2 transfer-else-ORPHAN ladder AT THAW, in ActorId order), and every thawed Keeper's
+   owned set (all owned Animals dead → the §4.8.3 adoption/grace clock starts at thaw; the
+   grace timer never runs while frozen). The freeze blob header records `freezeTick`, which
+   also supplies `frozenTicks` for the needs repair in rule 3. Keeper-side owned lists are
+   NOT saved anywhere — they are derived by scanning Animal `ownerId`s at load/thaw (single
+   source of truth; no two-way link to desync). Test A33.
+6. **Feral exception (Q7, §4.9):** Ferals are never written verbatim into the freeze
+   blob — `contributeSummary` folds them into the per-species population counts only, and
+   thaw REMATERIALIZES fresh Ferals (new ActorIds, default stack, needs at raws `start`)
+   at the chunk's roost/spawn-zone cells up to the species cap, deterministically
+   (species id asc, then cell asc) — simpler than Animal because there is no ownership to
+   repair. Test A41.
+7. **Flagged refinements (post-v1, explicitly out):** cross-chunk travel goals, co-freeze
    dragging of Keeper↔Animal pairs, frozen-actor schedule advancement ("the shopkeeper
    restocked while you were away"), migration between districts.
 
@@ -402,10 +434,10 @@ Per-pair relationship is a 4-state integer enum **(invention, trimmed from SoR's
 `HOSTILE < WARY < NEUTRAL < FRIENDLY`. Default = faction table (raws); only non-default
 pairs are stored (sparse list on the actor, sorted by other actorId). Transitions ONLY via
 named events: CrimeWitnessed vs me → HOSTILE; gift → +1 step; ALARM about you → WARY;
-decay to default after 6,000 ticks (placeholder). **Toward the presented Wielder the §4.9
+decay to default after 6,000 ticks (placeholder). **Toward the presented Wielder the §4.10
 table sets the STARTING state and a clamp floor — no event may lower it** (north star;
 test A18). Disposition feeds the combat-screen trigger (HOSTILE + engagement zone) and
-VEND prices never (social power is static; PROGRESSION §5 fence).
+VEND prices never (social power is static; PROGRESSION §2 #17 north-star guard).
 
 ---
 
@@ -440,8 +472,9 @@ needs[i] = max(0, needs[i] - 1); }` — exact, drift-free, save-stable (accumula
 ### 3.3 Threshold → policy coupling
 
 Need urgency feeds scores, not special cases: a NEED-band policy's score =
-`priority + urgencyBonus` where `urgencyBonus = raws.lowBonus` if reserve < LOW else
-`raws.critBonus` if < CRITICAL else 0 (critBonus > lowBonus stacks the band jump). One
+`priority + urgencyBonus` where `urgencyBonus = raws.critBonus` if reserve < CRITICAL
+else `raws.lowBonus` if reserve < LOW else 0 — **CRITICAL is checked first** (everything
+< 1,000 is also < 3,000; loader validates critBonus > lowBonus so the band jump holds). One
 mechanism, all types, all raws-tuned. The observer inspector (§7.2) shows the five bars,
 the current policy, its reason code, and the target — an observer must be able to read
 "HUNGER 8/100 → SEEK_FOOD → fish stall" at a glance. Legibility is the acceptance bar.
@@ -456,10 +489,10 @@ schedules later; this is the minimal schedule). Windows per type in §4.
 
 ---
 
-## 4. The eight types
+## 4. The nine types
 
 Format per type: role · needs weighting (decay tuning) · policy stack (priority order) ·
-daily rhythm · deference row (summary; full table §4.9) · world-event reactions · pillars
+daily rhythm · deference row (summary; full table §4.10) · world-event reactions · pillars
 touched (acceptance: ≥ 2).
 
 ### 4.1 Militia Watch
@@ -476,7 +509,7 @@ touched (acceptance: ≥ 2).
   off-shift Watch sleep at the post.
 - **Deference:** UNCONDITIONAL COMPLIANCE (novel L2967, L2968, L2414). Will do: step aside,
   open doors, answer any question. Will tell: patrol routes, crime reports, rumors
-  (Gutter-Ken quality-gated). Will give: escort on request. Never: arrest/obstruct the
+  (Streetwise quality-gated). Will give: escort on request. Never: arrest/obstruct the
   presented Wielder.
 - **Reactions:** fire → AlarmRaised(FIRE) + INVESTIGATE, then DOUSE_FIRE if burning
   structure is attended-property or post; water rising → herd civilians (INVESTIGATE +
@@ -521,13 +554,13 @@ touched (acceptance: ≥ 2).
   irregular.
 - **Deference:** APPROACH — the one suburb group drawn TO the white robes: the order feeds
   them (alms canon, novel L2420). Begs, follows, complies instantly. Will tell: everything
-  (gutter rumors — the Gutter-Ken informant pool). Will give: nothing; will take: anything.
+  (gutter rumors — the Streetwise informant pool). Will give: nothing; will take: anything.
 - **Reactions:** fire → watch from safe distance, then LOOT_RUSH the abandoned property
   (the signature chaos move); water → knows the grates, flees early; dropped
   coins/goods → converging frenzy, all wastrels in sight (the L386 juggler scene as a
   mechanic); theft witnessed → nothing (not their problem); Watch approaching → scatter
   (WARY default toward Watch faction); bloodletter sign → flee, won't speak of it above a
-  whisper (rumor available only at BEG/gift — Gutter-Ken hook).
+  whisper (rumor available only at BEG/gift — Streetwise hook).
 - **Pillars:** property (theft/looting — owner-pressure), law (the Watch's main customer),
   fire (loot-after-fire) — 3. ✓
 
@@ -542,7 +575,7 @@ touched (acceptance: ≥ 2).
   visually/structurally Divine Light (white robes, monastery chain of report).
 - **Needs:** FAITH dominant (preach/alms restore); HUNGER/REST modest (monastic); COIN
   nil; SAFETY steady (faith steels him).
-- **Stack:** `REVERE_WIELDER(DEFER variant) · FLEE · GIVE_ALMS · PREACH · REPORT ·
+- **Stack:** `REVERE_WIELDER(DEFER variant) · FLEE · PLEAD · GIVE_ALMS · PREACH · REPORT ·
   INVESTIGATE(pastoral: the injured, the uncanny) · EAT · REST · LOITER(station)`.
 - **Rhythm:** dawn office 0–1,000; alms 2,000–6,000; circuit walk 7,000–11,000; dusk
   sermon 12,000–13,000; retire.
@@ -628,12 +661,14 @@ touched (acceptance: ≥ 2).
 ### 4.8 Animal — and the Keeper↔Animal invariant (registry-enforced)
 
 - **Role:** the innocent chaos vector. v1 species set **(GAME-CANON-ADDITION per dossier):**
-  dock dog (ratter), pig (canon L238/L1044), goat (canon L789), dray mule. Rats stay
-  ambient vermin texture, not Actors; **no wyverns/pegii as civilian animals ever** (canon:
-  military/sacred — novel L316, WB §8, WB §1); gulls skipped in v1.
+  dock dog (ratter), pig (canon L238/L1044), goat (canon L789), dray mule. ~~Rats stay
+  ambient vermin texture, not Actors; gulls skipped in v1~~ — **superseded by the Q7 Docks
+  blessing:** rats, gulls, and strays are Actors too, as the ownerless `Feral` type (§4.9);
+  **no wyverns/pegii as civilian animals ever** (canon: military/sacred — novel L316,
+  WB §8, WB §1).
 - **Needs:** HUNGER, REST, SAFETY only (COIN/DUTY frozen at 10,000, never decay — the
   vector stays uniform, the raws zero the rates). No deference row: INDIFFERENT (no canon
-  of animals reacting to the Flame; §4.9).
+  of animals reacting to the Flame; §4.10).
 - **Stack:** `FLEE(panic — hair-trigger vs fire/loud noise) · SEEK_FOOD(steal branch,
   boldness raws per species) · FOLLOW(owner, leash) · GRAZE_WANDER · REST`.
 - **ORPHANED override stack** (statusBit swaps the stack — the ONE sanctioned stack swap,
@@ -641,7 +676,9 @@ touched (acceptance: ≥ 2).
   pen)` — a stray dog is bolder, shyer of people, and hungrier: a standing street story.
 - **The invariant (ruled: enforced by the registry, not convention):**
   1. **Spawn-time pairing is atomic.** `ActorRegistry.spawnKeeper(...)` spawns the Keeper
-     AND its raws-declared animals in one operation, wiring ownerId both ways. Spawning an
+     AND its raws-declared animals in one operation, setting each Animal's `ownerId`. The
+     Keeper-side owned set is a registry-derived view over Animal ownerIds (never a stored
+     second link — one truth, nothing to desync; §2.9.5). Spawning an
      Animal with no live Keeper ownerId **hard-fails** (boot/scenario error, not a warning)
      — test A5.
   2. **Ownership transfer on Keeper death:** same phase, deterministically: candidate =
@@ -661,7 +698,123 @@ touched (acceptance: ≥ 2).
 - **Pillars:** property (theft, being property), fire (panic vector + ON_FIRE spread —
   a burning animal fleeing across dry tiles IS fire spread, dossier principle 4) — 2+. ✓
 
-### 4.9 Deference design table (per-group, a TABLE not a stat — north star)
+### 4.9 Feral — the ninth type (Q7 ruling; the add-a-type walkthrough exercised for real)
+
+**Binding ruling (Eli, 2026-07-12 — DOCKS-GAZETTEER §9 resolution 7, off-recommendation):
+ALL animals are Actors**, gulls and vermin included. Reconciliation as blessed there: the
+Keeper-owned `Animal` type (§4.8) keeps its invariant UNTOUCHED; wild creatures are a NEW
+thin subclass `Feral` — no owner, scavenging behavior, raws-driven population caps so a
+gull colony can't eat the tick budget. This is the §1.4 walkthrough exercised for real:
+ONE subclass (`FeralActor`, shared by every feral species exactly as `AnimalActor` is
+shared by dog/pig/goat/mule) + one raws entry per species + one sorted line in
+`ActorTypes`. No engine change, no new verbs, no new PolicyIds — the stack composes
+entirely from the §1.3 library.
+
+- **Role:** ambience with teeth — the harbor gull, the dock rat, the stray cur
+  **(GAME-CANON-ADDITION per dossier; species set (placeholder))**. Background texture
+  that is REAL: it steals fish, spreads panic, carries fire on its back, and the observer
+  can select and read every one of them like any other actor.
+- **Needs:** HUNGER dominant — the fastest decay in the roster; scavenging IS the type.
+  REST cheap (roosts anywhere); SAFETY hair-trigger (biggest event deltas, fastest
+  recovery); COIN/DUTY frozen at 10,000 exactly as Animal (raws zero the rates — the
+  vector stays uniform).
+- **Stack:** `FLEE(panic, hair-trigger) · SEEK_FOOD(steal branch, high boldness) ·
+  LOOT_RUSH(raws `foodOnly` — dropped/abandoned FOOD only, never coins) · GRAZE_WANDER ·
+  REST` (+ `GOAL_PURSUE` per §10.1, like every type). All existing PolicyIds; the only
+  §1.3 delta is the `foodOnly` LOOT_RUSH raws param (parameters-in-raws is the sanctioned
+  extension mechanism, §1.3 — no new policy needed).
+- **Rhythm:** none in v1 — the hunger clock is the schedule. (Nocturnal rats vs diurnal
+  gulls = flagged refinement: per-species rhythm windows on SEEK_FOOD.)
+- **Deference:** **NO deference row** — INDIFFERENT, explicitly extending the §4.8 Animal
+  no-deference fence (§4.10 table row added; no canon of vermin reacting to the Flame).
+  No `DEFER_WIELDER` in the stack, ever.
+- **Reactions:** fire → FLEE (and an ON_FIRE feral fleeing across dry tiles IS fire
+  spread — §2.7/A27, dossier principle 4); rising water → FLEE early (rats know the
+  grates before anyone; polls FLUID like everyone, §2.8); **food events attract:**
+  dropped/unattended food in sight → LOOT_RUSH/SEEK_FOOD converge (the gull swoop; the
+  §2.6 deterrence gate applies — a rat grabs the fish when nobody's looking, the same
+  legible rule as the Wastrel); crime: feral theft emits `CrimeCommitted`/`CrimeWitnessed`
+  normally, but the §5.2 liability ladder DEAD-ENDS — there is no owner to route to; the
+  victim's DEFEND_STOCK whack (hurt-not-kill) is the law's only answer. No arrests, no
+  APPREHEND, ever.
+- **Spawn zones & population (the tick-budget fence):** spawn zones `quayside`,
+  `fish_market`, `middens` (placeholder); per-species raws `population` block (§6) —
+  `cap` (hard ceiling; counts concrete + frozen-summary ferals of the species), `floor`
+  (steady-state target), `respawnTicks` (spawn cooldown), `roostZones` (map-edge/
+  off-stage cells). A registry-side `FeralSpawner` pass runs each tick alongside the
+  §4.8.4 orphan pass, deterministically (species id asc): count < floor and cooldown
+  expired → spawn ONE at the first free roost cell (zone id asc, cell asc),
+  `ActorSpawned`; count is NEVER allowed above cap by any path — spawner, thaw, or
+  scenario bake (loader/registry enforced). **Despawn (pinned rule — no vanishing of a
+  watched gull):** a feral is despawn-eligible only when (a) standing in a roost-zone
+  cell AND (b) no non-Feral actor has sight of it (§2.4 rule) — "off-screen" is
+  SIM-defined, never camera-defined: the observer camera is not sim state and consulting
+  it would fork determinism. Eligible ferals in excess of floor despawn one per species
+  per pass, ascending ActorId, emitting `ActorDespawned`; ids are never reused. A watched
+  gull simply flies to the pilings first — legible, deterministic, boring in exactly the
+  right way.
+- **The invariant carve-out (stated plainly):** **Feral has NO owner.** `ownerId` is NONE
+  from spawn to despawn, forever; Feral is EXEMPT from the entire §4.8 ownership
+  machinery — no spawn pairing, no transfer ladder on any death, no orphan adoption,
+  never ORPHANED, never counted toward any Keeper's owned set, invisible to the A9/A33
+  audits (they skip the type by construction). The `Animal` type and its
+  registry-enforced invariant are **unchanged**.
+- **Freeze/thaw:** the §2.9.6 counts-only exception — summarize, don't serialize;
+  rematerialize up to cap at thaw. Simpler than Animal: no ownership to repair.
+- **Pillars:** property (scavenging theft pressure), fire (panic + ON_FIRE spread
+  vector), water (flood-flush flee response) — 3. ✓
+
+**Deltas to earlier sections (the §10.7 convention; applied at F2.5 build):**
+
+- **§2.8 events:** + `ActorDespawned(actorId, typeId, cell)` (observer-drained, record
+  of primitives). Append-only; no new RNG streams (spawn/despawn placement is draw-free).
+- **§2.9:** + rule 6 (Feral freeze exception); flagged-refinements renumbered to 7.
+- **§4.10 table:** + Feral row (INDIFFERENT — the Animal fence, extended).
+- **§6:** loader validation items + the complete `feral_gull` example entry.
+- **§7.1/§7.2:** glyph row; Feral → null face panel (Animals-get-no-face-panel blessing
+  extended).
+- **§10.6:** + `beast.feral` (`Job.Beast.Feral`) default-job row. No other §10 change.
+
+**Tests (extend §8 + §10.8; numbered after A34–A40; SPEC-INDEX total 40 → 44):**
+
+41. `A41_feralPopulationCap_deterministic` — 10k-tick soak with aggressive floors:
+    per-species concrete+frozen count never exceeds `cap` under any path (spawner, thaw,
+    bake); floor respawn fires at exact cooldown expiry at the (zone asc, cell asc) roost
+    cell; twin-run identical hash chains including `ACTR`.
+42. `A42_feralNoOwner_animalInvariantCoexists` — full roster with ferals live: every
+    Feral's ownerId is NONE every tick; never ORPHANED, never adopted, never satisfies a
+    Keeper's §4.8.3 adoption scan; the A9 audit and the A33 thaw-repair goldens pass
+    UNCHANGED with ferals present (the carve-out costs the Animal machinery nothing).
+43. `A43_feralDespawn_neverWatched_twinRun` — a feral held in any non-Feral actor's sight
+    is never despawned; despawns occur only at roost cells, ascending ActorId, at
+    identical ticks across twin runs; ArchUnit/instrumented: no camera/render state
+    reachable from the despawn decision.
+44. `A44_feralJob_beastFeralBound` — every spawned/thawed/respawned Feral carries
+    `jobOrdinal = beast.feral` (its `defaultFor`); removing the `beast.feral` jobs.json
+    entry ⇒ the §10.3 every-actor-has-a-job boot fail names the feral types.
+
+**Frictions surfaced (NOT silently resolved — listed for Eli):**
+
+1. **Gull brazenness vs the §2.6 deterrence gate.** As written, LOOT_RUSH/SEEK_FOOD score
+   0 while the victim/Watch has LOS — right for rats and curs, arguably wrong for harbor
+   gulls (real gulls rob you to your face). v1 keeps the one rule for all types; a raws
+   `witnessDeterred: false` per-species override is the flagged fix. **(needs-blessing)**
+2. **"Eight" wording left standing in §10.** §10.1 ("eight one-line stack edits") and the
+   §10.6 heading still say eight; the ninth type makes both nine. §10 is Eli's bound
+   ruling text, so only the §10.6 ROW was added — the two word-level counts await his
+   pen. (§10.3 item 8's "all eight + any added type" already covers Feral as written.)
+3. **§4.9 numbering collision (resolved the only sane direction, recorded).** The
+   deference table's header was misnumbered "4.9" while every cross-reference in this doc
+   already said §4.10; the table header now reads §4.10 and Feral takes the §4.9 slot the
+   references always implied.
+4. **Feral death vs the floor.** Fire/drowning deaths (§2.7) can drop a species below
+   floor; the spawner refills on cooldown — so a dockside fire is followed by a gull
+   repopulation wave from the roosts. Intended (chaos-positive) but unblessed pacing.
+   **(needs-blessing)**
+5. All §4.9/§6 population numbers, boldness Q16s, and the v1 species set
+   (gull/rat/stray cur) are **(placeholder)** — folded into blessing-queue item 8.
+
+### 4.10 Deference design table (per-group, a TABLE not a stat — north star)
 
 Read by `DEFER_WIELDER`/`REVERE_WIELDER` variants against the **presented** identity.
 Starting disposition + clamp floor per §2.10. No event, skill, or system may modify this
@@ -677,6 +830,7 @@ table at runtime; raws-load only (test A18).
 | Shopkeeper | COMPLY + APPEASE | free goods, nervous service | customer gossip, prices | goods gratis | NEUTRAL | novel L2967 + INFERRED |
 | Animal Keeper | COMPLY + AVOID (Serf tier) | as Serf | animal trade gossip | a day's cartage | NEUTRAL | INFERRED |
 | Animal | INDIFFERENT (no deference policy in stack) | — | — | — | — | no canon of animal Flame-reaction |
+| Feral | INDIFFERENT (no deference policy in stack — the Animal fence, extended §4.9) | — | — | — | — | no canon of vermin Flame-reaction |
 
 Canon hostile exception (recorded for the dungeon/encounter roster, NOT these eight):
 Beast-aligned creatures flee the Wielder on instinct and feel "true fear" (novel L2344,
@@ -699,7 +853,7 @@ never author).
 | **Disciple × Wastrel alms** | GIVE_ALMS at station | queue forms (actorId order) → stock runs out → jostling (shove scuffle-lite) → coin/bread dropped → converging frenzy (L386 as mechanic) → Watch move-along | fed wastrels · frenzy tramples a Serf (violence witness chain) · Disciple flees, Priest PLEADs |
 | **Priest × crime** | Priest witnesses theft/violence | REPORT to Watch → arrest at scene → Priest PLEAD (mercy petition) → Watch disposition check | culprit released to the Priest's custody (fed, preached at) · arrest proceeds, Priest tends the DOWNED · Priest becomes rumor node about the culprit |
 | **Serf × Watch** | Serf witnesses crime with Watch in hearing | REPORT (only if Watch near — legible cowardice) → Watch INVESTIGATE → culprit fled? dwell + alarm | crime solved · false-quiet (no Watch near ⇒ crime pays — Wastrel learns nothing, PLAYER learns the map's dark spots) |
-| **Wielder × everyone** | presented-Wielder enters sight | every type's deference posture fires per §4.9 — the street reshapes itself: Watch parts, Serfs make way, Wastrels converge begging, clergy revere, Shopkeepers press goods | free goods, open doors, a begging tail — and total witness silence: no CrimeWitnessed against the presented Wielder is actionable (immunity); disguise flips ALL of it (Persona seam) |
+| **Wielder × everyone** | presented-Wielder enters sight | every type's deference posture fires per §4.10 — the street reshapes itself: Watch parts, Serfs make way, Wastrels converge begging, clergy revere, Shopkeepers press goods | free goods, open doors, a begging tail — and total witness silence: no CrimeWitnessed against the presented Wielder is actionable (immunity); disguise flips ALL of it (Persona seam) |
 
 ### 5.2 Watch liability ladder for Animal crime **(invention)**
 
@@ -711,7 +865,7 @@ DEFEND_STOCK scuffles (a shopkeeper may whack the dog: hurt-not-kill). No animal
 
 Richest visible: Disciple/Priest (they give) > Shopkeeper > Serf > Watch (never gives,
 moves you along). Ties by actorId. Presented-Wielder present → all Wastrel BEG targets
-him (§4.9 APPROACH).
+him (§4.10 APPROACH).
 
 ### 5.4 Trace 1 — "The dog, the fish, the fire" (~30 ticks)
 
@@ -792,9 +946,14 @@ asleep on grate; Shopkeeper #13 asleep in shuttered chandlery fronting the alley
 
 **Path:** `content/raws/actors/<type_id>.json` (relocates with the raws move like
 materials). Loader validation (boot fails): every policy id exists; policy params complete
-for the stack; needs rows complete (5); deference posture ∈ enum; spawn zones exist in the
+for the stack; needs rows complete (5); critBonus > lowBonus wherever both present (§3.3);
+deference posture ∈ enum; spawn zones exist in the
 map's zone annotations; Animal types declare `species`; Keeper types declare `owns` with
-min ≥ 1; glyph is one printable ASCII char; all numbers integer; sightRadiusByLight has
+min ≥ 1 and `orphanOverrides.stack` ids exist on Animal types; Feral types declare
+`species` plus a complete `population` block (`cap ≥ floor ≥ 0`, `respawnTicks ≥ 1`,
+every roost zone exists in the map's zone annotations) and must NOT declare `ownedBy` or
+`owns` (the §4.9 carve-out is loader-enforced, boot fail); glyph is one printable
+ASCII char; all numbers integer; sightRadiusByLight has
 exactly 4 entries; scuffle stats present for any type whose stack includes a scuffle-capable
 policy.
 
@@ -883,6 +1042,7 @@ policy.
     "REST":         { "priority": 260 }
   },
   "orphanOverrides": {
+    "stack": ["FLEE", "SEEK_FOOD", "GRAZE_WANDER"],
     "SEEK_FOOD": { "stealBoldnessQ16": 29491 },
     "GRAZE_WANDER": { "leashRadius": 20 }
   },
@@ -893,6 +1053,48 @@ policy.
 
 Keeper side (excerpt): `"owns": [{ "type": "animal_dock_dog", "count": [1, 3] }],
 "reacquireTicks": 12000` — the registry reads this for the atomic pairing (§4.8).
+
+Feral entry, complete (§4.9 — note `population` block, no `ownedBy`, no owner anywhere;
+its JOB lives in `jobs.json` as `beast.feral` per §10.6 — actor raws stay about the BODY):
+
+```json
+{
+  "id": "feral_gull",
+  "displayName": "Harbor Gull",
+  "actorClass": "FeralActor",
+  "species": "gull",
+  "faceArchetype": null,
+  "glyph": "v", "tint": "#C0C8CC",
+  "factionId": "feral",
+  "hp": 4,
+  "speedTicksPerStep": 1,
+  "sightRadiusByLight": [3, 6, 10, 12],
+  "hearingRadius": 14,
+  "inventoryCap": 1,
+  "leashRadius": 14,
+  "scuffle": { "strike": 1, "grit": 1 },
+  "needs": {
+    "hunger": { "start": 7000, "decayPerKilotick": 2000, "lowBonus": 350, "critBonus": 700 },
+    "rest":   { "start": 9000, "decayPerKilotick": 600, "lowBonus": 150, "critBonus": 300 },
+    "coin":   { "start": 10000, "decayPerKilotick": 0 },
+    "safety": { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 6,
+                "fireSeenDelta": -5000, "violenceSeenDelta": -2500, "waterDelta": -1500,
+                "loudNoiseDelta": -2000, "lowBonus": 500, "critBonus": 900 },
+    "duty":   { "start": 10000, "decayPerKilotick": 0 }
+  },
+  "policies": {
+    "FLEE":         { "priority": 950, "ignoresLeash": true },
+    "SEEK_FOOD":    { "priority": 500, "stealBoldnessQ16": 26214,
+                      "panicBoldnessMulQ16": 131072, "foodKinds": ["fish", "bread"] },
+    "LOOT_RUSH":    { "priority": 460, "foodOnly": true },
+    "GRAZE_WANDER": { "priority": 20 },
+    "REST":         { "priority": 240 }
+  },
+  "population": { "cap": 12, "floor": 6, "respawnTicks": 3000,
+                  "roostZones": ["quay_pilings", "map_edge_sea"] },
+  "spawn": { "zones": { "quayside": 3, "fish_market": 2, "middens": 1 } }
+}
+```
 
 All numbers above **(placeholder / needs-blessing)**.
 
@@ -912,6 +1114,7 @@ All numbers above **(placeholder / needs-blessing)**.
 | Shopkeeper | `$` | amber `#E0A030` | lamplit commerce |
 | Animal Keeper | `K` | tan `#B09048` | |
 | Animal | per-species: dog `d`, pig `g`, goat `t`, mule `m` | species tint from raws | |
+| Feral | per-species: gull `v`, rat `r`, stray cur `c` | species tint from raws (dim — ambience register) | barely-there until it steals your fish |
 
 Status ring accents (glyph background/overlay): ON_FIRE flicker orange · DOWNED dark red ·
 ORPHANED dim pulse · ALERTED white tick. Actors render above tiles, below UI; the LIGHT
@@ -921,7 +1124,12 @@ lane tints them like everything else — an actor in the dark is genuinely hard 
 ### 7.2 Selection inspector (`InspectorPanel` extension)
 
 Selected actor shows: name/typeId + glyph · FACES-SPEC portrait (archetype per §6 raws;
-`(worldSeed, actorId)` — actors ARE the npcIds) · the five need bars (0–100 with LOW/CRIT
+`(worldSeed, actorId)` — actors ARE the npcIds). Archetype mapping vs FACES §3.3's v0 set
+(`guard, cultist, monk, noble, thug, laborer`) — all (placeholder): Watch → `guard` ·
+Serf / Shopkeeper / Animal Keeper → `laborer` · Wastrel → `thug` (a leaner `beggar`
+archetype is a flagged FACES addition) · Priest / Disciple → `monk` · Animal / Feral →
+none (`faceArchetype: null`, no portrait — the Animals-get-no-face-panel blessing, Feral
+per Q7) · the five need bars (0–100 with LOW/CRIT
 notches) · **current policy + reason code + target** ("SEEK_FOOD · NEED_HUNGER_LOW · fish
 stall (312,88)") · status bits · inventory list · owner/owned links (click-through) ·
 deference row (posture + canon cite) · disposition overrides list · last 10
@@ -968,7 +1176,8 @@ in the purity suite. (Names unique across all specs; SPEC-INDEX totals to be upd
 10. `A10_policySelection_maxScore_tieByStackOrder` — crafted scores equal → earlier stack
     entry wins; `ActorPolicyChanged` carries the right reasonCode.
 11. `A11_needDecay_exactBoundary` — decayPerKilotick accumulator: reserve crosses LOW at
-    the exact predicted tick; 2,999→no switch, 3,000-boundary semantics pinned (< LOW).
+    the exact predicted tick; 3,000 → no switch, 2,999 → switch (semantics pinned: strict
+    `< LOW`); same strictness at CRITICAL, and CRITICAL evaluated before LOW (§3.3).
 12. `A12_needClamp_saturating_noWrap` — massive event deltas clamp to [0, 10,000]; no
     negative/overflow ever.
 13. `A13_perception_lightBucketsGateSight` — same thief at dist 6: BRIGHT seen, DARK
@@ -984,7 +1193,7 @@ in the purity suite. (Names unique across all specs; SPEC-INDEX totals to be upd
     frozen.
 17. `A17_frozenChunks_impassable_leashHolds` — actor at bubble rim never steps into
     non-concrete chunk; no BoundaryFlux credits ever originate from phase 7.
-18. `A18_deferenceTable_immutable_presentedIdentity` — no runtime write path to the §4.9
+18. `A18_deferenceTable_immutable_presentedIdentity` — no runtime write path to the §4.10
     table; Watch never enters HOSTILE toward presented-Wielder under any event storm;
     presented ≠ Wielder (disguise seam) → APPREHEND eligible; clamp floors hold.
 19. `A19_witnessScan_losOrderAndDeterrence` — crime with 3 witnesses emits CrimeWitnessed
@@ -1019,6 +1228,19 @@ in the purity suite. (Names unique across all specs; SPEC-INDEX totals to be upd
     pinned.
 30. `A30_rhythmWindow_scoringOnly` — inside/outside window changes scores by exactly
     rhythmBonus; no policy is ever hard-scheduled (needs can override rhythm).
+31. `A31_dispositionFsm_namedEventsOnly_decayAtDeadline` — disposition changes ONLY via
+    the §2.10 named events (CrimeWitnessed → HOSTILE, gift → +1, alarm → WARY); decays to
+    faction default at exactly the 6,000-tick deadline; sparse overrides round-trip via
+    ACTR; no other code path can write disposition (ArchUnit).
+32. `A32_leashAndSidestep_deterministic` — non-`ignoresLeash` policy never steps beyond
+    leashRadius from anchorCell; FLEE/APPREHEND/RECAPTURE may; blocked `stepToward` scans
+    sidesteps in fixed Dir order (twin-run identical paths through a cluttered fixture);
+    blocked N ticks ⇒ TARGET_LOST reason emitted.
+33. `A33_thawOwnershipRepair_deathAcrossBoundary` — Keeper dies while its Animal is
+    frozen: Animal thaws → transfer-else-ORPHAN ladder runs at thaw in ActorId order;
+    Animal dead while Keeper frozen: Keeper thaws → adoption/grace clock starts at thaw
+    (never advanced while frozen); frozenTicks needs-repair uses the blob's freezeTick;
+    registry audit green through both (§2.9.5).
 
 ---
 
@@ -1026,10 +1248,11 @@ in the purity suite. (Names unique across all specs; SPEC-INDEX totals to be upd
 
 ### 9.1 PROGRESSION-SPEC hooks (actors feed the XP economy)
 
-Actors are the live entities PROGRESSION's gates require: Shadow-Wait's "live observer
+Actors are the live entities PROGRESSION's gates require: Deftness's "live observer
 within 10 tiles" = any Actor with sight of the tile (gate 3.2#3); pickpocket targets and
-satiation contextKeys (observer/target entity id) are ActorIds; Gutter-Ken informants are
-Wastrels/Shopkeepers with raws rumor tables (information only — the §2 #17 fence holds);
+satiation contextKeys (observer/target entity id) are ActorIds; Streetwise informants are
+Wastrels/Shopkeepers with raws rumor tables (§2 #15 fence — loosened 2026-07-12, see
+SPEC-INDEX: information/routes/pricing only, still never deference/combat);
 trainers (Monastery, fixers) will be placed as actors post-MVP. Seam E1's hireling thugs
 are encounter-roster actors, not the eight civic types.
 
@@ -1040,7 +1263,9 @@ are encounter-roster actors, not the eight civic types.
 2. "Priest/Disciple of the Flame" slot-in framing (§4.4–4.5) — ordained-monk-seconded /
    gray-apprentice reading of the canon order.
 3. "Serf" label scope (novel's servant/laborer/peasant stratum, never army slaves).
-4. Animal roster (dog/pig/goat/mule; rats ambient; no gulls v1; wyverns/pegii excluded).
+4. Animal roster (dog/pig/goat/mule; wyverns/pegii excluded). **Superseded in part by the
+   Q7 Docks blessing (item 12): "rats ambient; no gulls v1" is out — they are Feral
+   Actors now (§4.9); the owned-Animal roster and the wyvern/pegii exclusion stand.**
 5. Hurt-not-kill rules: scuffle/DOWNED, no NPC-NPC sim deaths except fire/drowning; the
    Watch arrests, never executes (§2.7).
 6. Keeper liability ladder (§5.2) and the "sow farrows" invariant-restore (§4.8.3).
@@ -1050,10 +1275,339 @@ are encounter-roster actors, not the eight civic types.
 9. Disposition FSM trimmed to 4 states (§2.10) vs SoR's 6.
 10. Watch HOSTILE-capable wording in COMBAT-SCREEN §1.1 amended per §2.7 (presented-
     identity gate) — co-sign needed from that spec.
+11. **RESOLVED — Goals & Jobs taxonomy: see §10 (binding per Eli's DECISIONS.md ruling).**
+    The reconciliation previously recommended here (Job as a raws-assigned VALUE selecting
+    WORK parameter bundles) was **REJECTED** — the ruling mandates the real nested `Job`
+    class hierarchy (`Job.Serf.Farmer`, `Job.Villain.Cutpurse`, …), bound 1:1 against
+    `jobs.json` at startup, fail-fast both directions. §10 is the addendum + tests
+    (A34–A40) required before the F2.5 build starts; the depth-2/thin-subclass guardrails
+    on the ACTOR hierarchy are unaffected (§10.9.3). **Still open for Eli inside §10:**
+    the §10.9.1 rhythm-window data-split question and all (placeholder) job ids/numbers.
+    The ACTORS phase-slot/budget items already queued above (item 1, item 8) are
+    UNCHANGED by this addendum and remain queued.
+12. **RESOLVED — Q7 Docks blessing (Eli, 2026-07-12, DOCKS-GAZETTEER §9 resolution 7):
+    ALL animals are Actors**, gulls/rats/strays included. Applied as the §4.9 `Feral`
+    ninth type: no owner (the §4.8 invariant untouched), raws-driven population caps +
+    deterministic spawn/despawn (§6), counts-only freeze (§2.9.6), null face panel
+    (§7.2), `beast.feral` default job (§10.6), tests A41–A44. **Still open inside it:**
+    the §4.9 frictions list (gull-brazenness deterrence override; despawn-after-fire
+    repopulation pacing) and all (placeholder) population numbers — folded into item 8.
 
 ---
 
-*Spec produced 2026-07-12 for the F2.5 actors milestone. Consumes the Streets of Rogue
-emergence dossier and the canon-types dossier; every canon claim carries a novel/WB cite;
-every invention is marked. SPEC-INDEX.md should gain this row (30 tests) at the next index
-refresh.*
+## 10. Goals & Jobs (addendum — DECISIONS.md ruling, binding)
+
+**Status:** resolves §9.2 item 11. Eli's DECISIONS.md "Goals & Jobs" row is BINDING and is
+stronger than the reconciliation this spec previously recommended: jobs are **not** a
+raws-value enum that selects WORK parameter bundles — that recommendation is REJECTED. Jobs
+are a real class taxonomy: an abstract `Job` base with **hierarchical nested subclasses**
+giving type-safe signatures (`Job.Serf`, `Job.Serf.Farmer`, `Job.FlameOfMerc`,
+`Job.Villain.Robber`, `Job.Villain.Cutpurse`), enumerated/bound from `jobs.json` at startup
+by a binder that validates the two **1:1, fail-fast in both directions**. Classes define
+type identity + goal behavior; JSON defines data (spawn weights, goal parameters,
+schedules).
+
+**Relationship (ruled): Actor subtype = what you ARE; Job = WHY you're on-screen.** Every
+actor carries exactly one Job, and the Job grants exactly one GOAL at a time — a reason for
+being on-screen that the observer can read. Secret jobs pair with `presentedIdentity` via
+the existing Persona seam: a `Job.Villain.Cutpurse` presents as a Wastrel, and the §2.6
+crime machinery — which already attributes everything to the PRESENTED identity — needs no
+change to make that work.
+
+### 10.1 The `Job` base contract: the GOAL it grants
+
+Jobs are **stateless singletons** (the §1.2 policy convention): one bound instance per leaf
+class, immutable `params` injected from `jobs.json` by the binder, zero mutable fields
+(ArchUnit, test A34). All per-actor goal state lives on the **Actor base** (§1.1 "subclasses
+add zero fields" holds — the base grows, subclasses don't):
+
+```
+jobOrdinal i16 (index into the sorted JobRegistry) · goalState i8
+(SELECTING | PURSUING | COOLDOWN) · goalTargetKind i8 + goalTargetKey i32 (the §1.1
+NONE|CELL|ACTOR|ITEM vocabulary) · goalProgress i16 · goalCooldown i32
+```
+
+**Goal lifecycle** (all integer math; every random choice a named draw — streams
+`job.assign`, `job.targetPick`, `job.renew`, appended to the §2.2 registry, spatialKey =
+actorId, sharing the per-actor per-tick draw counter under the §2.2 attribution rule):
+
+| Step | When | What |
+|---|---|---|
+| SELECT | goalState = SELECTING and GOAL_PURSUE wins the score pass | `selectTarget(self, ctx)` picks deterministically per the json `targetSelect` rule (nearest-zone-cell by (Chebyshev, cell asc); ranked-visible by the §5.3-style ladder, ties by actorId; weighted picks via `job.targetPick`). Emits `ActorGoalSelected(actorId, jobId, goalKind, targetKind, targetKey)` |
+| PURSUE | each GOAL_PURSUE tick | `pursue(self, ctx)`: one tick of behavior via the §1.1 shared verbs ONLY (stepToward/pickUp/take/give/emitNoise/…) — jobs get no new verbs and never touch lanes (A4 covers phase 7 wholesale) |
+| COMPLETE | `isComplete(self, ctx)` true (pure check) | `goalProgress` reached json `unitsToComplete`; emits `ActorGoalCompleted(actorId, jobId, goalKind)`; DUTY/FAITH restored per progress unit (the §3.1 "job drive" now has a named object) |
+| RENEW | after COMPLETE | json `renew` rule: `IMMEDIATE` → back to SELECTING; `COOLDOWN` → goalState COOLDOWN for `cooldownTicks`; `RHYTHM` → SELECTING at next rhythm-window entry. Renewal jitter, where declared, is one `job.renew` draw |
+
+**Injection — how a Job enters the policy stack:** one new PolicyId in the §1.3 library
+(append-only), sitting in the JOB band alongside PATROL/VEND/WORK:
+
+| PolicyId | Band | What it does (one tick) | Draws used |
+|---|---|---|---|
+| `GOAL_PURSUE` | JOB | delegate to `self.job().pursue(self, ctx)`; score = jobs.json `priority` (validated ∈ JOB band 100–299) + `rhythmBonus` inside the job's window + DUTY urgency (§3.3 mechanism unchanged) | `job.targetPick`, `job.renew` |
+
+Every type's stack gains `Policies.GOAL_PURSUE` at the top of its JOB band (eight one-line
+stack edits at F2.5 build; loader validates every stack contains it — §10.3 item 10).
+Higher bands interrupt goals exactly as they interrupt jobs today: a fleeing farmer abandons
+the plot mid-goal, and because goal state is Actor-resident plain data, he resumes the SAME
+goal when FLEE stops winning — no re-selection fork (test A36). Policy selection stays
+draw-free; job draws happen only inside `pursue()`/`selectTarget()`.
+
+### 10.2 The nested static hierarchy (Java 21, sealed) + the add-a-job walkthrough
+
+```java
+/** The Job taxonomy — DECISIONS.md "Goals & Jobs" ruling. Nested static classes give
+ *  type-safe signatures: a method can demand Job.Villain and the compiler enforces it. */
+public sealed abstract class Job {
+    public final JobId id;          // dotted mirror of the nesting, derived + validated
+                                    // by the binder: Job.Villain.Cutpurse ⇔ "villain.cutpurse",
+                                    // Job.FlameOfMerc ⇔ "flame_of_merc"
+    public final JobParams params;  // immutable ints, bound from jobs.json (binder-injected)
+
+    // ---- goal contract (deterministic; integer; named draws job.* only) ----
+    public abstract GoalKind goalKind();                       // enum, append-only
+    public abstract void     selectTarget(Actor self, ActorContext ctx);
+    public abstract void     pursue(Actor self, ActorContext ctx);
+    public abstract boolean  isComplete(Actor self, ActorContext ctx);   // pure
+
+    // ================== taxonomy (families abstract, leaves final) ==================
+    public static sealed abstract class Serf extends Job {
+        public static final class Farmer  extends Serf { /* tend plot cycle */ }
+        public static final class Laborer extends Serf { /* haul/gut/porter */ }  // (placeholder)
+    }
+    public static sealed abstract class Villain extends Job {
+        public abstract CoverSpec cover();   // type-safe: EVERY villain job has a cover
+        public static final class Robber   extends Villain { /* waylay route */ }
+        public static final class Cutpurse extends Villain { /* lift purses  */ }
+    }
+    public static final class FlameOfMerc extends Job { /* the Wielder's job — PC seam */ }
+    // Job.Watch, Job.Clergy, Job.Trade, Job.Husbandry, Job.Beast families: §10.6
+}
+```
+
+- **Registration:** `Jobs.ALL` lists one constructor reference per LEAF class, sorted by
+  job id (one line per job, the `ActorTypes` pattern). `JobBinder.bind(raws)` instantiates
+  each leaf with its matched json params and freezes the `JobRegistry` (ordinals = sorted
+  index; append-only for `ACTR` stability). Families are abstract and never bound.
+- **Hierarchy rules (ArchUnit, test A34):** every Job class is nested inside `Job`
+  (one file, the taxonomy is the table of contents); depth ≤ 3 (`Job` → family → leaf);
+  leaves are `final`, families `sealed abstract`; no mutable fields anywhere; no
+  ChunkWriter reachable. This is a SEPARATE rule set from the Actor depth-2 guard —
+  see friction note §10.9.3.
+- **Add a job = one nested class + one jobs.json entry** (mirroring §1.4's add-a-type
+  walkthrough). Example: a `serf.netmender` **(placeholder)**: add
+  `public static final class Netmender extends Serf { … }` implementing the four contract
+  methods with shared verbs, add its constructor to `Jobs.ALL` (one sorted line), add one
+  `jobs.json` entry with goal params + assign weights. Boot binds it or fails loudly.
+  **No engine change, no new phase logic, no new verbs** — test A39 proves it in-test,
+  exactly as A23 proves the type walkthrough.
+
+### 10.3 `jobs.json` schema + binder validation
+
+**Path:** `content/raws/jobs/jobs.json` — ONE file (the taxonomy is small and the 1:1
+audit reads better in one place; per-file split is a non-goal until the roster grows).
+Two complete example entries (all numbers **(placeholder)**):
+
+```json
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "serf.farmer",
+      "goal": {
+        "kind": "TEND_PLOT",
+        "targetSelect": "NEAREST_ZONE_CELL",
+        "targetZone": "garden_plots",
+        "workTicksPerUnit": 40,
+        "unitsToComplete": 5
+      },
+      "priority": 240,
+      "rhythmWindow": [1000, 11000],
+      "rhythmBonus": 60,
+      "renew": { "mode": "COOLDOWN", "cooldownTicks": 2000 },
+      "assign": { "serf": 30 },
+      "defaultFor": [],
+      "secret": false
+    },
+    {
+      "id": "villain.cutpurse",
+      "goal": {
+        "kind": "LIFT_PURSE",
+        "targetSelect": "RICHEST_VISIBLE_MARK",
+        "liftChanceQ16": 22938,
+        "marksPerDay": 3,
+        "fenceZone": "sewer_grate"
+      },
+      "priority": 260,
+      "rhythmWindow": [2000, 10000],
+      "rhythmBonus": 80,
+      "renew": { "mode": "COOLDOWN", "cooldownTicks": 6000 },
+      "assign": { "wastrel": 10 },
+      "defaultFor": [],
+      "secret": true,
+      "cover": { "actorType": "wastrel", "presentedJob": "wastrel.streetlife" }
+    }
+  ]
+}
+```
+
+**Startup binder validation (boot hard-fails, every message names the offender):**
+
+1. **Unknown class:** json `id` with no registered leaf class in `Jobs.ALL`.
+2. **Missing json:** registered leaf class with no json entry. (1 + 2 = the 1:1 rule,
+   fail-fast BOTH directions — no silent defaults, ever.)
+3. **Name drift:** `id` ≠ the dotted path derived from the class nesting.
+4. **Duplicate ids** in the file.
+5. **Param shape:** `goal.kind` ∈ the append-only `GoalKind` enum; the exact required
+   param set for that kind present, all integers, no unknown keys (typo = boot fail, the
+   §6 loader discipline).
+6. `priority` ∈ JOB band [100, 299]; `rhythmWindow` ⊂ [0, DAY); `renew.mode` ∈ enum.
+7. `assign` keys are real actor type ids; weights positive integers.
+8. **Every-actor-has-a-job invariant:** every actor type id (all eight + any added type)
+   appears in EXACTLY ONE entry's `defaultFor` — its civic default job. An actor type
+   with no default job is a boot error, not a warning.
+9. **Secret shape:** `secret: true` ⇒ `cover` present; `cover.actorType` exists and is
+   named in `assign`; `cover.presentedJob` exists, is non-secret, and lists
+   `cover.actorType` in its own `assign` or `defaultFor` (the cover must be a job that
+   type could plausibly hold). `secret: false` ⇒ no `cover` block.
+10. Cross-check vs actor raws: every actor type's policy stack contains `GOAL_PURSUE`;
+    zone spawn tables that pin a `jobId` reference a bound id assignable to that type.
+
+### 10.4 Assignment: spawn tables, defaults, secret jobs
+
+- **At spawn bake** (ActorSeeder, the A29 deterministic order): a zone spawn-table row may
+  pin `"jobId"` explicitly; otherwise one weighted draw over the entries whose `assign`
+  names the actor's type — named draw `job.assign` (spatialKey = actorId, idx 0 at bake);
+  no `assign` weights for the type → its `defaultFor` job. Job assignment is baked into
+  the tick-0 TROJSAV like everything else the seeder does.
+- **Default job per type:** the `defaultFor` entry (§10.6 table). Runtime respawns
+  (the §4.8.3 "sow farrows" juvenile) take the type's default job.
+- **Secret jobs:** a villain job rides a HOST civic type — the ruling's Cutpurse **is** a
+  Wastrel (Actor subtype = what you ARE: a street dweller); his true Job is
+  `villain.cutpurse`; his PRESENTED layer shows the cover. Concretely: assignment gives
+  the actor `jobOrdinal = villain.cutpurse`; his presented job is **derived, never
+  stored** — it is the job's static `cover.presentedJob` (single source of truth, nothing
+  to desync; the same argument as Keeper owned-lists, §2.9.5). ALL social reads — §4.10
+  deference, §2.6 witness scans, event logs, faces — already use the presented identity,
+  so `CrimeWitnessed` fingers a wastrel, the Watch hunts a wastrel, and the true job
+  surfaces only when the Persona is pierced (Flame pierce, DECISIONS Identity row) or in
+  the god view. The §2.6 machinery is UNCHANGED — this section adds data, not mechanism.
+- v1 villain roster: `villain.cutpurse` live at a configured fraction of the Wastrel
+  population (`assign.wastrel` weight vs `wastrel.streetlife`'s — **(placeholder)**
+  ~1 in 10); `villain.robber` bound but weight 0 in MVP civic tables (dungeon/encounter
+  roster hook) **(placeholder)**.
+- `flame_of_merc` is in `jobs.json` like every job (the 1:1 rule has no exceptions) but
+  appears in no civic `assign`/`defaultFor`: it is reserved for the PC (Gabri/Wielder,
+  Play-mode `actAs()` seam) and future named actors **(placeholder until Play mode)**.
+
+### 10.5 Observer legibility
+
+The §7.2 inspector gains one line directly under the policy line:
+
+```
+Job villain.cutpurse (presents: wastrel.streetlife) · GOAL LIFT_PURSE · mark: Serf #24 · 1/3
+     ^^^^ god view only — the default inspector shows the PRESENTED job
+```
+
+- Default inspector (and every social surface): **presented** job — a covered Cutpurse
+  reads as "Job wastrel.streetlife · GOAL BEG_CIRCUIT · station (214,67)".
+- Debug/god view toggle: true job + cover in parentheses, tinted warning-red, plus the
+  goal ledger (last 10 `ActorGoalSelected/Completed` in the drained-event scrollback).
+- The §7.3 roster sidebar gains a per-job population count (god view splits true/cover).
+  Legibility acceptance extends: an observer in god view must be able to reconstruct WHY
+  the wastrel at the alms queue keeps drifting toward purse-heavy marks.
+
+### 10.6 The eight types × default jobs (ids all **(placeholder)** — invented here)
+
+| Actor type | Default job (`defaultFor`) | Goal texture |
+|---|---|---|
+| Militia Watch | `watch.patrol` (`Job.Watch.Patrol`) | walk the waypoint loop, respond, return; shift from rhythm window |
+| Serf | `serf.laborer` (`Job.Serf.Laborer`) | haul/gut quota at the work anchor; `serf.farmer` assignable where garden-plot zones exist |
+| Wastrel | `wastrel.streetlife` (`Job.Wastrel.Streetlife`) | beg circuit + scavenge sweep; **a configured fraction instead carries `villain.cutpurse` with wastrel cover** — §4.3's petty-thief texture now has a NAMED reason for being on-screen, and §2.6 already handles the rest |
+| Priest of the Flame | `clergy.shepherd` (`Job.Clergy.Shepherd`) | alms-station cycle: stock, serve, sermon, circuit |
+| Disciple of the Flame | `clergy.acolyte` (`Job.Clergy.Acolyte`) | fetch-and-carry runs for the assigned Priest |
+| Shopkeeper | `trade.stallkeep` (`Job.Trade.Stallkeep`) | open/vend/restock/shutter cycle at the stall |
+| Animal Keeper | `husbandry.keeper` (`Job.Husbandry.Keeper`) | tend/feed/work the owned beasts |
+| Animal | `beast.chattel` (`Job.Beast.Chattel`) | degenerate goal (graze/stay-near-owner) — satisfies the every-actor invariant without pretending animals have ambitions **(invention)** |
+| Feral | `beast.feral` (`Job.Beast.Feral`) | degenerate goal (scavenge circuit between roost and spawn zones) — the every-actor invariant holds even for a rat **(invention; Q7 addendum §4.9)** |
+
+The §1.4 Ratcatcher walkthrough extends: type #9 now also needs a job —
+`trade.ratcatcher` (`Job.Trade.Ratcatcher`, vermin bounty quota) **(placeholder)**. Cost:
+still one class + one entry EACH (one Actor subclass + one actor raws entry, one Job leaf +
+one jobs.json entry). Test A40.
+
+### 10.7 Deltas to earlier sections (recorded here, applied at F2.5 build)
+
+- **§1.3 library:** + `GOAL_PURSUE` (JOB band), table row in §10.1. Append-only.
+- **§2.2 RNG streams:** + `job.assign`, `job.targetPick`, `job.renew`. Append-only.
+- **§2.8 events:** + `ActorGoalSelected(actorId, jobId, goalKind, targetKind, targetKey)`
+  · `ActorGoalCompleted(actorId, jobId, goalKind)` (both observer-drained legibility
+  events, records of primitives).
+- **§2.8 `ACTR` record:** + `jobOrdinal i16 · goalState i8 · goalTargetKind i8 ·
+  goalTargetKey i32 · goalProgress i16 · goalCooldown i32` per actor. No extra
+  formatVersion churn: `ACTR` has never shipped — it is born with these fields.
+- **§2.9.3 thaw repair:** invalid goal target at thaw → goalState SELECTING (the policy
+  anchor-reset rule, extended verbatim to goals).
+- **§6 loader:** + validation items in §10.3; actor raws gain nothing (jobs live in
+  jobs.json — actor raws stay about the BODY, jobs about the WHY).
+- **§7.2/§7.3 observer:** the §10.5 line + roster counts.
+
+### 10.8 Tests (extends §8; SPEC-INDEX total 33 → 40)
+
+34. `A34_jobBinder_oneToOne_failFast_bothDirections` — leaf class without json entry ⇒
+    boot fail; json entry without class ⇒ boot fail; name drift, duplicate id, bad param
+    shape, out-of-band priority, secret-shape violations (§10.3 list) each fail with a
+    message naming the offender; ArchUnit: Job nesting/depth/final/statelessness rules.
+35. `A35_everyActorHasJob_defaultAssignment` — after spawn bake every actor (Animals
+    included) has a bound jobOrdinal; an actor type absent from every `defaultFor` ⇒ boot
+    fail; zone-pinned jobId overrides the weighted draw; `job.assign` draws match §2.2
+    addressing.
+36. `A36_goalLifecycle_twinRun_deterministic` — 2,000-tick twin run over the full roster
+    with jobs live: identical hash chains including goal fields; a goal interrupted by
+    FLEE resumes (same target, same progress) — never re-selects; SELECT/COMPLETE/RENEW
+    tick-exact across runs.
+37. `A37_secretJob_coverConsistency` — covered Cutpurse: every social read (witness
+    events, deference, inspector default view, logs) carries the PRESENTED identity/job;
+    `CrimeWitnessed` attributes to the presented wastrel until pierced; pierce (test
+    hook) flips the god-view surfaces only; presented job is derived from the job's
+    cover spec, never stored.
+38. `A38_jobGoal_saveLoad_roundTrip` — jobOrdinal + all goal fields byte-identical
+    through TROJSAV round-trip; save at TICK_END mid-PURSUE, load, run N ≡ uninterrupted
+    K+N (A15 extended); freeze/thaw: valid goal survives verbatim, dead target ⇒
+    SELECTING with TARGET_LOST-style legibility.
+39. `A39_addAJob_oneClassOneEntry` — register a throwaway Job leaf + jobs.json entry
+    in-test (§10.2 walkthrough); binder binds it; twin-run suite passes; removing both
+    restores prior goldens (proves isolation — the A23 pattern for jobs).
+40. `A40_ratcatcherWalkthrough_typePlusJob` — the A23 Ratcatcher extended: one Actor
+    subclass + one actor raws entry + one Job leaf + one jobs.json entry ⇒ boots, binds,
+    twin-runs green; omitting ONLY the job entry ⇒ every-actor-has-a-job boot fail (the
+    invariant catches the half-added type).
+
+### 10.9 Frictions surfaced (NOT silently resolved — listed for Eli)
+
+1. **Rhythm-window data now lives in two places.** §6 actor raws keep
+   `rhythmWindow`/`rhythmBonus` on non-goal JOB/NEED-band policies (the militia example's
+   PATROL and REST rows), while `jobs.json` owns the GOAL's schedule. v1 rule as written:
+   GOAL_PURSUE reads jobs.json; everything else reads actor raws. Whether the per-type
+   `WORK`/`PATROL`/`VEND` policies (and their §4 stack placements + §6 param blobs)
+   should DISSOLVE into `GOAL_PURSUE` pursue-steps — collapsing the duplication — is a
+   real design fork this addendum does not decide. **(needs-blessing)**
+2. **WORK vs GOAL overlap.** §1.3's `WORK` ("type-parameterized job at anchor") and §10's
+   goal cycle describe the same activity for Serf/Keeper/Shopkeeper. v1 keeps both
+   (GOAL_PURSUE outranks WORK inside the JOB band; WORK remains idle-texture fallback),
+   pending the #1 fork. **(needs-blessing)**
+3. **Depth guardrails are per-hierarchy.** DECISIONS' depth-2 rule governs the ACTOR
+   hierarchy (A24, untouched). The Job taxonomy is depth-3 by ruling (Job → family →
+   leaf) with its OWN ArchUnit rules (§10.2, A34). Recorded so nobody reads A24 as
+   violated.
+4. **§3.1 DUTY wording** ("restored by doing the type's JOB policies") now reads:
+   restored by goal progress units and by JOB-band policy ticks — same mechanism, the
+   goal is just the named chunk of it.
+
+---
+
+*Spec produced 2026-07-12 for the F2.5 actors milestone; §10 Goals & Jobs addendum added
+same date per Eli's binding DECISIONS.md ruling; §4.9 Feral ninth type added same date
+per the Q7 Docks blessing (DOCKS-GAZETTEER §9 resolution 7). Consumes the Streets of
+Rogue emergence dossier and the canon-types dossier; every canon claim carries a novel/WB
+cite; every invention is marked. SPEC-INDEX.md should gain this row (44 tests) at the
+next index refresh.*
