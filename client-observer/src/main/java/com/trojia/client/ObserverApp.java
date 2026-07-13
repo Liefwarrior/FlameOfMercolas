@@ -18,6 +18,8 @@ import com.trojia.client.boot.FixtureWorldLoader;
 import com.trojia.client.boot.RepoPaths;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.hud.HudText;
+import com.trojia.client.hud.icons.IconAtlas;
+import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.InspectorInput;
 import com.trojia.client.input.TimeControlInput;
@@ -28,6 +30,8 @@ import com.trojia.client.render.ActorRenderer;
 import com.trojia.client.render.InspectorRenderer;
 import com.trojia.client.render.WorldRenderer;
 import com.trojia.client.scenario.CompoundBlockPopulation;
+import com.trojia.client.scenario.DocksPopulation;
+import com.trojia.client.scenario.ScenarioPopulation;
 import com.trojia.client.time.SimulationDriver;
 import com.trojia.client.time.SpeedSetting;
 import com.trojia.client.world.ZLevelCursor;
@@ -65,7 +69,7 @@ import java.util.Locale;
 public final class ObserverApp extends ApplicationAdapter {
 
     /** Which baked fixture the observer boots. */
-    public enum Fixture { TAVERN, COMPOUND }
+    public enum Fixture { TAVERN, COMPOUND, DOCKS }
 
     /** Sentinel for {@code --debug-select}: no forced selection (the shipped default). */
     private static final int NO_DEBUG_SELECT = Actor.NONE;
@@ -83,12 +87,13 @@ public final class ObserverApp extends ApplicationAdapter {
     private SimulationDriver driver;
     private SpriteBatch batch;
     private BitmapFont font;
+    private IconAtlas icons;
     private final Matrix4 projection = new Matrix4();
 
-    // Compound fixture only (null for the tavern):
+    // Populated fixtures only (null for the tavern):
     private ActorRenderer actorRenderer;
     private BitmapFont actorFont;
-    private CompoundBlockPopulation population;
+    private ScenarioPopulation population;
     private InspectorState inspector;
     private EventLog eventLog;
     private EventLogTracker eventLogTracker;
@@ -125,9 +130,12 @@ public final class ObserverApp extends ApplicationAdapter {
 
     @Override
     public void create() {
-        boolean compound = fixture == Fixture.COMPOUND;
-        FixtureWorldLoader.Loaded loaded =
-                compound ? FixtureWorldLoader.loadCompoundBlock() : FixtureWorldLoader.loadTavern();
+        boolean populated = fixture != Fixture.TAVERN;
+        FixtureWorldLoader.Loaded loaded = switch (fixture) {
+            case TAVERN -> FixtureWorldLoader.loadTavern();
+            case COMPOUND -> FixtureWorldLoader.loadCompoundBlock();
+            case DOCKS -> FixtureWorldLoader.loadDocksSurface();
+        };
         TickableWorld world = loaded.world();
 
         WorldConfig config = world.config();
@@ -151,13 +159,18 @@ public final class ObserverApp extends ApplicationAdapter {
 
         this.camera = new MapCamera(JsonTileArtResolver.TILE_PX, worldWidthTiles, worldHeightTiles,
                 Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        int streetLevelZ = compound
-                ? FixtureWorldLoader.COMPOUND_GROUND_LEVEL_Z : FixtureWorldLoader.TAVERN_STREET_LEVEL_Z;
+        int streetLevelZ = switch (fixture) {
+            case TAVERN -> FixtureWorldLoader.TAVERN_STREET_LEVEL_Z;
+            case COMPOUND -> FixtureWorldLoader.COMPOUND_GROUND_LEVEL_Z;
+            case DOCKS -> FixtureWorldLoader.DOCKS_QUAYSIDE_LEVEL_Z;
+        };
         this.zLevel = new ZLevelCursor(0, worldZTiles - 1, streetLevelZ);
         this.renderer = new WorldRenderer(world, loaded.materials(), artResolver, atlas);
 
-        if (compound) {
-            this.population = CompoundBlockPopulation.build(loaded.worldSeed());
+        if (populated) {
+            this.population = fixture == Fixture.DOCKS
+                    ? DocksPopulation.build(loaded.worldSeed())
+                    : ScenarioPopulation.of(CompoundBlockPopulation.build(loaded.worldSeed()));
             this.driver = new SimulationDriver(world, loaded.worldSeed(),
                     List.<SimulationSystem>of(population.system()));
             this.actorRenderer = new ActorRenderer(population.registry());
@@ -194,6 +207,8 @@ public final class ObserverApp extends ApplicationAdapter {
 
         this.batch = new SpriteBatch();
         this.font = new BitmapFont();
+        this.icons = IconAtlas.load(RepoPaths.locate(
+                "content", "art", "kenney-input-prompts", "Keyboard & Mouse", "Default"));
     }
 
     @Override
@@ -205,7 +220,9 @@ public final class ObserverApp extends ApplicationAdapter {
 
     @Override
     public void render() {
-        ScreenUtils.clear(0.055f, 0.05f, 0.08f, 1f);
+        // Kept in sync with art-mapping.json's voidColor (#180F14) by hand — TILE-ART-SPEC
+        // section 5.2; not read dynamically from the mapping file.
+        ScreenUtils.clear(0.0941f, 0.0588f, 0.0784f, 1f);
 
         float deltaSeconds = Gdx.graphics.getDeltaTime();
         CameraInput.poll(camera, zLevel, deltaSeconds);
@@ -223,14 +240,14 @@ public final class ObserverApp extends ApplicationAdapter {
         if (actorRenderer != null) {
             actorRenderer.draw(batch, actorFont, camera, zLevel.z());
         }
-        font.draw(batch, HudText.describe(zLevel.z(), camera.zoom()), 8,
-                camera.viewportHeightPx() - 8);
+        IconTextLine.draw(batch, font, icons, 8, camera.viewportHeightPx() - 8,
+                HudText.describeTokens(zLevel.z(), camera.zoom()));
         long simElapsedSeconds = driver.currentTick() * TickClock.MILLIS_PER_TICK / 1000;
-        font.draw(batch,
-                HudText.describeTime(driver.currentTick(), driver.speed().name(), simElapsedSeconds),
-                8, camera.viewportHeightPx() - 8 - font.getLineHeight());
+        IconTextLine.draw(batch, font, icons, 8, camera.viewportHeightPx() - 8 - font.getLineHeight(),
+                HudText.describeTimeTokens(driver.currentTick(), driver.speed().name(),
+                        simElapsedSeconds));
         if (inspectorRenderer != null) {
-            inspectorRenderer.draw(batch, font, camera, inspector, zLevel.z());
+            inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());
         }
         batch.end();
 
@@ -295,7 +312,8 @@ public final class ObserverApp extends ApplicationAdapter {
     private void reportTrackedMover() {
         int id = population.trackedGroundMoverId();
         int cell = population.registry().get(id).cell();
-        System.out.println("observer[compound] frame=" + framesRendered + " tick="
+        System.out.println("observer[" + fixture.name().toLowerCase(Locale.ROOT)
+                + "] frame=" + framesRendered + " tick="
                 + driver.currentTick() + " mover#" + id + " cell=(" + PackedPos.x(cell) + ","
                 + PackedPos.y(cell) + "," + PackedPos.z(cell) + ")");
     }
@@ -313,6 +331,9 @@ public final class ObserverApp extends ApplicationAdapter {
         }
         if (actorFont != null) {
             actorFont.dispose();
+        }
+        if (icons != null) {
+            icons.dispose();
         }
     }
 

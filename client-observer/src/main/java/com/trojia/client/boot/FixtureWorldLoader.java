@@ -32,6 +32,9 @@ public final class FixtureWorldLoader {
     /** File name of the baked compound-block world under {@code content/maps/baked/}. */
     public static final String COMPOUND_FILE = "compound_block.trojsav";
 
+    /** File name of the baked Docks-ward world under {@code content/maps/baked/}. */
+    public static final String DOCKS_FILE = "docks_surface.trojsav";
+
     /**
      * World z of the tavern fixture's authored {@code z:+0} street level:
      * {@code Coords.CHUNK_SIZE_Z + (0 - minZ)} per {@code TiledWorldImporter}'s
@@ -51,6 +54,16 @@ public final class FixtureWorldLoader {
      * {@link #TAVERN_STREET_LEVEL_Z}.
      */
     public static final int COMPOUND_GROUND_LEVEL_Z = Coords.CHUNK_SIZE_Z;
+
+    /**
+     * World z of the Docks-ward fixture's quayside street baseline. Same placement rule
+     * ({@code Coords.CHUNK_SIZE_Z + (z - minZ)}): this map's authored z-range is
+     * {@code +0..+15} (content/maps/README.md), so {@code minZ = 0}, and the gazetteer's
+     * §2.1 quayside walk plane is authored {@code z:+11} — Band A (Tarwalk, the quay, most
+     * establishments). Band B walks one above, Band C two. Same hardcoded-per-fixture
+     * caveat as {@link #TAVERN_STREET_LEVEL_Z}.
+     */
+    public static final int DOCKS_QUAYSIDE_LEVEL_Z = Coords.CHUNK_SIZE_Z + 11;
 
     private FixtureWorldLoader() {
     }
@@ -86,6 +99,18 @@ public final class FixtureWorldLoader {
      */
     public static Loaded loadCompoundBlock() {
         return load(COMPOUND_FILE);
+    }
+
+    /**
+     * Loads the Docks-ward fixture world (the full district surface —
+     * content/maps/README.md, docs/design/DOCKS-GAZETTEER.md). Same contract as
+     * {@link #loadTavern()}: raws-fingerprint guarded, rebake via
+     * {@code DocksSurfaceBakeTest} on a mismatch.
+     *
+     * @return the world and the registry its MATERIAL-lane raw ids resolve against
+     */
+    public static Loaded loadDocksSurface() {
+        return load(DOCKS_FILE);
     }
 
     private static Loaded load(String bakedFileName) {

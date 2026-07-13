@@ -68,6 +68,21 @@ public final class PlaceholderAtlas implements TileAtlas {
         return region;
     }
 
+    /**
+     * The placeholder pack rasters exactly one cell per name, so every variant index maps
+     * to that single region (TILE-ART-SPEC section 12 — the single-cell pack).
+     */
+    @Override
+    public TextureRegion region(String regionName, int variantIndex) {
+        return region(regionName);
+    }
+
+    /** Always {@code 1} for a known name, {@code 0} otherwise: one cell per placeholder name. */
+    @Override
+    public int variantCount(String regionName) {
+        return contains(regionName) ? 1 : 0;
+    }
+
     /** Whether {@code regionName} has a cell. */
     public boolean contains(String regionName) {
         return regionName != null && regions.containsKey(regionName);

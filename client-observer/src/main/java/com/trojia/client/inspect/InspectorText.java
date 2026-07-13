@@ -1,5 +1,7 @@
 package com.trojia.client.inspect;
 
+import com.trojia.client.hud.icons.HudToken;
+import com.trojia.client.hud.icons.IconKey;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorTypeStats;
@@ -36,6 +38,31 @@ public final class InspectorText {
     private static final String[] NEED_LABELS = {"HUNGER", "REST", "COIN", "SAFETY", "DUTY"};
 
     private InspectorText() {
+    }
+
+    /**
+     * Icon-augmented version of the "nothing selected" hint (a mouse-left-click icon and a
+     * {@code C} key icon in place of the words) — for the draw call site only;
+     * {@link #describe} keeps the plain-text version below for headless testing.
+     */
+    public static List<HudToken> selectionHintTokens() {
+        return List.of(
+                HudToken.text("("),
+                HudToken.icon(IconKey.MOUSE_LEFT_CLICK),
+                HudToken.text(" click an actor to inspect  ·  "),
+                HudToken.icon(IconKey.C),
+                HudToken.text(" follows selection)"));
+    }
+
+    /**
+     * Icon-augmented version of the "[FOLLOW]" badge shown while the camera follows the
+     * selected actor — a {@code C} key icon in place of the word.
+     */
+    public static List<HudToken> followBadgeTokens() {
+        return List.of(
+                HudToken.text("[FOLLOW]  "),
+                HudToken.icon(IconKey.C),
+                HudToken.text(" to release"));
     }
 
     /**

@@ -1,171 +1,195 @@
 {
   "schemaVersion": 1,
-  "provenance": "docs/art/TILE-ART-SPEC.md governs this file's schema (section 7); section 8 is the pack-swap procedure this file enacts. DECISIONS.md art register (Eli 2026-07-12): 'Luminous-on-black (Moonring style): deep black base, glowing color'. Pack: Kenney 1-Bit Pack v1.2 (CC0), content/art/kenney/License.txt.",
-  "notes": "Real-art mapping for the Kenney 1-bit pack. Unlike the placeholder mapping (content/art/placeholder/art-mapping.json, still a valid procedural fallback), 'atlas' points at a real PNG sheet and adds 'sheet' + 'regions' (name -> [col,row] tile) read by SheetAtlasSpec. The sheet is white-on-transparent monochrome: ONE grayscale sprite per visual category (wall/floor/...) is shared across materials, each glowing its own 'tint' (client-only presentation data; sim-core material raws stay appearance-agnostic). Tinting is a batch color multiply in WorldRenderer, restored to white after each tile. chromatis' heatGlowTint / colorStops emissive mechanism is untouched.",
-  "atlas": "art/kenney/Tilesheet/monochrome-transparent_packed.png",
+  "provenance": "docs/art/TILE-ART-SPEC.md governs this file's schema (section 7 fields, section 11 tile vocabulary, section 12 cosmetic variants); section 8 is the pack-swap procedure this file enacts. DECISIONS.md art register (Eli 2026-07-13): 'Full-color Kenney... material differentiation comes from picking an appropriately-colored real sprite per material (not a tint multiply)', reversing the 2026-07-12 'Luminous-on-black' ruling quoted in this file's git history. Pack: Kenney 1-Bit Pack v1.2 (CC0), content/art/kenney/License.txt.",
+  "notes": "Real-art mapping for the Kenney 1-bit pack, COLORED variant (superseded-history note: v1 of this file pointed 'atlas' at the monochrome-transparent_packed sheet and gave every material a saturated 'tint' that was multiplied over a shared white-on-transparent silhouette — see git history / TILE-ART-SPEC section 5 historical note for the mechanism that ran until 2026-07-13). This version points 'atlas' at colored-transparent_packed.png: each region name's cells already carry their own baked color from the pack (a small fixed palette — see TILE-ART-SPEC section 11.1 for the measured swatches), so most materials carry NO 'tint' field at all and draw the sprite exactly as authored. A minority of materials keep a 'tint' as a deliberate SECONDARY multiply — never the primary color source — used only where the shipped palette has no cell in the needed hue (e.g. phorys' teal, chromatis_melt's gold) or where two materials would otherwise be pixel-identical (e.g. steel vs reman_concrete, both on wall_masonry). Tint multiply can only darken/re-hue a texel, never lighten it past the sprite's own color (SpriteBatch tinting is multiplicative) — see per-material 'notes' below for why each surviving tint earns its keep. The cosmetic-variant axis (section 12) is unchanged and orthogonal to appearanceBucket: chromatis' heatGlowTint / colorStops emissive charge mechanism is untouched by this pass.",
+  "atlas": "art/kenney/Tilesheet/colored-transparent_packed.png",
   "tilePx": 16,
   "sheet": { "columns": 49, "rows": 22 },
   "regions": {
-    "wall":        [10, 17],
-    "floor":       [1, 17],
-    "floor_wood":  [4, 6],
-    "floor_earth": [2, 0],
-    "water":       [4, 6],
-    "missing":     [1, 17]
+    "wall_brick":   [[6, 15], [7, 15], [6, 14]],
+    "wall_stone":   [[1, 18], [19, 18], [7, 17]],
+    "wall_rubble":  [[10, 0], [11, 0], [16, 0], [17, 0]],
+    "wall_hatch":   [[1, 4], [2, 4]],
+    "wall_plank":   [[13, 16], [14, 16]],
+    "wall_masonry": [[19, 13], [20, 13], [21, 13]],
+    "wall_crystal": [[8, 5], [9, 5], [10, 5], [11, 5]],
+    "wall_moss":    [[18, 11], [19, 11], [20, 11]],
+    "floor_tile":   [[1, 17], [2, 17], [19, 17]],
+    "floor_stone":  [[1, 18], [19, 18], [7, 17]],
+    "floor_plank":  [[4, 6], [7, 5], [13, 16], [14, 16]],
+    "floor_earth":  [[10, 0], [11, 0], [16, 0], [17, 0]],
+    "floor_cobble": [[16, 0], [17, 0]],
+    "floor_crystal":[[8, 5], [9, 5], [10, 5], [11, 5]],
+    "floor_moss":   [[5, 0], [6, 0], [7, 0]],
+    "roof_thatch":  [[7, 5], [4, 6]],
+    "roof_tile":    [[10, 18], [11, 18], [10, 17]],
+    "roof_cloth":   [[1, 4], [2, 4]],
+    "water":        [[8, 4], [9, 4], [10, 4], [11, 4], [12, 4]],
+    "missing":      [[13, 18]]
   },
-  "regionsProvenance": "Cells picked from the packed sheet (content/art/kenney/Tilesheet/monochrome-transparent_packed.png, 49x22 tiles @16px). wall=(10,17) offset brick courses; floor=(1,17) fine checker; floor_wood=(4,6) horizontal planks; floor_earth=(2,0) gravel speckle; water reuses the (4,6) ripple sprite tinted cyan; missing reuses the checker as a fallback. Walls share ONE brick sprite tint-differentiated per material (task-sanctioned reuse); floors get three textures for variety.",
+  "regionsProvenance": "Cells hand-picked from colored-transparent_packed.png (49x22 @16px) after zoom-reading and pixel-sampling the actual sheet (not guessed from filenames, and not assumed identical to the superseded monochrome-era cell choices — several of those cells recolor to a DIFFERENT family in the colored sheet, e.g. old wall_stone included (9,5) which is baked blue here, not beige, so it moved to wall_crystal instead). The whole colored sheet's terrain/architecture area uses only ~7 baked palette colors (TILE-ART-SPEC 11.1); region names below are grouped by which of those 7 colors their cells carry: wall_brick/RED = brick coursing (6,15)(7,15) + shelf-coursed variant (6,14); wall_stone/BEIGE = smooth dressed ashlar panel (1,18)(19,18)(7,17); wall_rubble/MAROON = speckle + basket-weave rough texture (10,0)(11,0)(16,0)(17,0); wall_hatch/BEIGE = crosshatch wattle-or-veining (1,4)(2,4); wall_plank/BROWN = vertical picket fencing (13,16)(14,16); wall_masonry/BEIGE = coursed horizontal banding, reads as cast/engineered (19,13)(20,13)(21,13); wall_crystal/BLUE = flat glassy panel, genuinely baked blue in this sheet (not a tint) (8,5)(9,5)(10,5)(11,5); wall_moss/GREEN = blobby natural mineral-or-moss chunk (18,11)(19,11)(20,11); floor_tile/BEIGE = fine checker (1,17)(2,17)(19,17); floor_stone/BEIGE = shares wall_stone's smooth-panel cells; floor_plank/BROWN = horizontal decking + reused picket cells (4,6)(7,5)(13,16)(14,16); floor_earth/MAROON = shares wall_rubble's speckle cells; floor_cobble/MAROON = the denser basket-weave/grid subset (16,0)(17,0); floor_crystal/BLUE = shares wall_crystal's cells; floor_moss/GREEN = sparse-to-dense grass speckle (5,0)(6,0)(7,0); roof_thatch/BROWN = reuses the horizontal-decking wood cells, tinted straw-gold per material; roof_tile/BEIGE = documented + available, not yet assigned to a material (10,18)(11,18)(10,17); roof_cloth/BEIGE = reuses wall_hatch's crosshatch cells (reads as woven fabric), tinted per material; water/BLUE = irregular pond-edge and ripple blob shapes, distinct cells from wall_crystal's flat panels (8,4)(9,4)(10,4)(11,4)(12,4); missing = framed X, baked red in this sheet too (13,18).",
   "missingRegion": "missing",
-  "voidColor": "#0E0E12",
+  "voidColor": "#180F14",
+  "voidColorNotes": "Was #0E0E12 (cold near-black blue) under the monochrome-tint pass. Eli's ruling (DECISIONS.md, 2026-07-13) asked for a mood closer to the Kenney colored-city sample (content/art/kenney/Sample_urban.png ground color samples ~#472D3C — a lit midtone plum) without going bright/daylight. #180F14 keeps the void reading as dark background-behind-nothing (this fills cells beyond max z-peek depth, not a lit ground tile) but shifts the hue from blue-black to a warm plum-black echoing the reference. ObserverApp.java's ScreenUtils.clear(...) is a hand-kept duplicate of this same color (TILE-ART-SPEC section 5.2) — kept in sync here, not read dynamically from this file.",
   "lightTintQ8": [36, 36, 36, 38, 39, 41, 44, 47, 50, 54, 58, 63, 68, 74, 80, 87, 94, 102, 110, 118, 127, 136, 146, 157, 167, 179, 190, 202, 215, 228, 242, 256],
   "zPeekDimQ8": [256, 168, 112, 76],
   "materials": {
     "granite": {
-      "tint": "#8FA6C7",
+      "notes": "Common default building stone: dressed ashlar walls, fine tiled floor. No tint — the sheet's native warm-beige panel is close enough to 'dressed stone' to trust as-is, and granite is the baseline every other stone-family material is judged against.",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_stone"] },
+        "floor": { "byAppearance": ["floor_tile"] }
       }
     },
     "dirt": {
-      "tint": "#9C8352",
+      "notes": "No tint: the native maroon rubble/speckle cell is the base case the region was chosen for. ash and glowstone share this same region but carry their own tint, so the three read as distinct despite one shape family.",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
+        "block": { "byAppearance": ["wall_rubble"] },
         "floor": { "byAppearance": ["floor_earth"] }
       }
     },
     "oak": {
-      "tint": "#D69A4C",
+      "notes": "No tint: native brown/orange picket-fence cell already reads as timber.",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor_wood"] }
+        "block": { "byAppearance": ["wall_plank"] },
+        "floor": { "byAppearance": ["floor_plank"] }
       }
     },
     "thatch": {
-      "tint": "#DDB84E",
+      "notes": "Roofing straw: no native gold-colored tileable texture exists in the sheet (the only gold-baked cells are item/crown icons, not surfaces), so this keeps a deliberate straw-gold tint over the reused wood-decking shape — the one case in the roof group where tint supplies a hue the pack simply does not ship.",
+      "tint": "#E8D67A",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor_earth"] }
+        "block": { "byAppearance": ["roof_thatch"] },
+        "floor": { "byAppearance": ["floor_plank"] }
       }
     },
     "trudgeon_wood": {
+      "notes": "Regional timber, lore-distinct from oak. Native wood cells are identical to oak's, so a modest darkening/burnt-orange tint (kept from the pre-colored-pack value) is the only thing stopping the two woods from being pixel-twins.",
       "tint": "#C6803C",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor_wood"] }
+        "block": { "byAppearance": ["wall_plank"] },
+        "floor": { "byAppearance": ["floor_plank"] }
       }
     },
     "trudgeon_wood@getilia_soak": {
-      "notes": "Treatment-derived id minted at load (getilia_soak); the '@' is verbatim in the material key but not a filesystem path (regions are grid coords, not files).",
+      "notes": "Treatment-derived id minted at load (getilia_soak); the '@' is verbatim in the material key but not a filesystem path (regions are grid coords, not files). Darker tint than raw trudgeon_wood so the treatment reads as a visible change, not just a name change.",
       "tint": "#A88C46",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor_wood"] }
+        "block": { "byAppearance": ["wall_plank"] },
+        "floor": { "byAppearance": ["floor_plank"] }
       }
     },
     "steel": {
-      "tint": "#D6DCE8",
+      "notes": "Coursed/riveted plate reads as banded masonry. Shares the wall_masonry region with reman_concrete; without a tint the two would be identical beige, so steel keeps a cool-gray multiply to read as metal against concrete's plain cast-beige.",
+      "tint": "#AEB8C2",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_masonry"] },
+        "floor": { "byAppearance": ["floor_stone"] }
       }
     },
     "brick": {
-      "tint": "#C15A3C",
+      "notes": "No tint: the sheet bakes this cell family in genuine terracotta red already, which is what brick is supposed to look like.",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_brick"] },
+        "floor": { "byAppearance": ["floor_tile"] }
       }
     },
     "chromatis": {
-      "provenance": "tint is the canon bucket-0 silver-blue (ARCHITECTURE section 10 / WorldBible section 9). heatGlowTint is the discharge/saturation overlay read by JsonTileArtResolver.heatGlowTintRgb; the colorStops/appearance-bucket emissive mechanism is a separate feature this tile tint does not touch.",
-      "tint": "#9FB8D8",
+      "provenance": "heatGlowTint is the discharge/saturation overlay read by JsonTileArtResolver.heatGlowTintRgb (BLESSING-QUEUE ruling 5) — untouched by this pass, exactly as before.",
+      "notes": "No base tint: wall_crystal/floor_crystal are genuinely baked blue in the colored sheet (not a tint-onto-white trick), which lands close enough to canon silver-blue to trust as-is.",
       "heatGlowTint": "#E8842A",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_crystal"] },
+        "floor": { "byAppearance": ["floor_crystal"] }
       }
     },
     "chromatis_melt": {
-      "tint": "#D8B23A",
+      "notes": "Molten/cooling chromatis reads gold. No gold-baked tileable surface exists in the sheet, so this reuses the beige stone shape (a 'melted stone' silhouette) with a warm gold multiply rather than the blue crystal shape, which would multiply toward a muddy green.",
+      "tint": "#D9A83C",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_stone"] },
+        "floor": { "byAppearance": ["floor_stone"] }
       }
     },
     "phorys": {
-      "tint": "#46A6BE",
+      "notes": "Crystalline/veined mineral: kept on the crosshatch shape (reads as veining) rather than moving to the flat wall_crystal panel, since the pack has no baked teal cell — the crosshatch's beige is tinted toward teal-cyan so phorys keeps its own identity distinct from both wall_stone materials and chromatis/ice's flat crystal panel.",
+      "tint": "#6FB0C0",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_hatch"] },
+        "floor": { "byAppearance": ["floor_stone"] }
       }
     },
     "lightstone": {
-      "notes": "Chargeable emissive. If colorStops ship, add per-bucket regions later; bucket clamp keeps the single region correct until then.",
-      "tint": "#A6E86A",
+      "notes": "Chargeable emissive natural mineral: the sheet's baked green moss/rock-blob cell already reads as a natural glowing stone, so no tint. If colorStops ship, add per-bucket regions later; bucket clamp keeps the single region correct until then.",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_moss"] },
+        "floor": { "byAppearance": ["floor_moss"] }
       }
     },
     "lightstone_shards": {
+      "notes": "Shares lightstone's region; a yellow-green multiply (kept from the pre-colored-pack value) keeps shards visually distinct from whole lightstone.",
       "tint": "#BFD05A",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_moss"] },
+        "floor": { "byAppearance": ["floor_moss"] }
       }
     },
     "glowstone": {
       "provenance": "WorldBible section 9: eerie red light. minLight is the cosmetic observer clamp (TILE-ART-SPEC section 5.1).",
+      "notes": "Shares the maroon wall_rubble/floor_cobble region with dirt/ash; without a tint it would look like plain dirt, so it keeps the canon eerie-red multiply (same #E5433B value as the pre-colored-pack mapping) to read as a glowing mineral instead of a clod of earth.",
       "tint": "#E5433B",
       "minLight": 8,
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_rubble"] },
+        "floor": { "byAppearance": ["floor_cobble"] }
       }
     },
     "ash": {
+      "notes": "Shares the maroon wall_rubble/floor_earth region with dirt; a muted gray-brown multiply (kept from the pre-colored-pack value) reads as burnt/soot rather than raw dirt.",
       "tint": "#ADA79E",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
+        "block": { "byAppearance": ["wall_rubble"] },
         "floor": { "byAppearance": ["floor_earth"] }
       }
     },
     "ice": {
-      "tint": "#B8E0EC",
+      "notes": "No tint. Ice's canon color is pale/frosty, but SpriteBatch tinting is strictly multiplicative — it can darken or re-hue a texel, never lighten it past the sprite's own baked color — so there is no honest tint that makes the already-fairly-saturated baked blue paler; multiplying toward white is a visual no-op and multiplying toward anything else only makes it darker and muddier. The genuinely-baked blue crystal panel is used as-is; a paler ice look would need a different sheet cell, not a tint.",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_crystal"] },
+        "floor": { "byAppearance": ["floor_crystal"] }
       }
     },
     "reman_concrete": {
-      "provenance": "Reman engineering = concrete-equivalent, the wealth-high compound material (canon-trojian-compounds). Cool blue-white glow reads as engineered/high-status, brighter than the slum leather/cloth below.",
-      "tint": "#BCCEE2",
+      "provenance": "Reman engineering = concrete-equivalent, the wealth-high compound material (canon-trojian-compounds).",
+      "notes": "No tint: real cast concrete IS beige-gray, so the sheet's native banded-masonry beige is trusted as-is. Differs from granite by SHAPE (coursed/banded = cast and modular, vs granite's smooth dressed-ashlar panel) rather than by color, and from steel (which shares this same wall_masonry region) by steel's added cool-gray tint.",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor"] }
+        "block": { "byAppearance": ["wall_masonry"] },
+        "floor": { "byAppearance": ["floor_tile"] }
       }
     },
     "leather": {
-      "provenance": "Rooftop-slum construction (canon-trojian-compounds): cheap hide. Dim warm tan, deliberately poorer/dimmer than reman_concrete.",
+      "provenance": "Rooftop-slum construction (canon-trojian-compounds): cheap stretched hide.",
+      "notes": "Crosshatch roof_cloth shape reads as woven/stretched material. Dim warm-brown multiply (kept from the pre-colored-pack value) makes it deliberately poorer/dimmer than reman_concrete and than cloth's slightly lighter tint, per the canon wealth gradient.",
       "tint": "#8A6B44",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor_earth"] }
+        "block": { "byAppearance": ["roof_cloth"] },
+        "floor": { "byAppearance": ["floor_plank"] }
       }
     },
     "cloth": {
-      "provenance": "Rooftop-slum construction: cheap fabric/tent. Dim tan, poorer/dimmer than reman_concrete.",
+      "provenance": "Rooftop-slum construction: cheap fabric/tent.",
+      "notes": "Same roof_cloth shape as leather; a slightly lighter dim-tan multiply (kept from the pre-colored-pack value) keeps cloth and leather as two distinguishable slum materials rather than one.",
       "tint": "#9C8560",
       "forms": {
-        "block": { "byAppearance": ["wall"] },
-        "floor": { "byAppearance": ["floor_earth"] }
+        "block": { "byAppearance": ["roof_cloth"] },
+        "floor": { "byAppearance": ["floor_plank"] }
       }
     }
   },
   "fluids": {
     "water": {
+      "notes": "No tint: the water region's cells are genuinely baked blue in the colored sheet, close to the old #5FC8E0 tint value anyway, so it draws as authored.",
       "region": "water",
-      "tint": "#5FC8E0",
       "depthAlphaQ8": [0, 96, 120, 144, 168, 192, 216, 240]
     }
   }

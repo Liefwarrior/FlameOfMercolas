@@ -5,7 +5,9 @@ Parent spec: `ARCHITECTURE.md` §3 (client-observer package entry), §10 (raws /
 §1.1 #17 (one material + form), #19 (light 0–31). Where this document and ARCHITECTURE.md
 disagree, ARCHITECTURE.md wins.
 
-Owned files: this spec + `content/art/placeholder/art-mapping.json`.
+Owned files: this spec + `content/art/placeholder/art-mapping.json` (procedural fallback pack)
++ `content/art/kenney/art-mapping.json` (the shipped real Kenney 1-bit pack; §11 vocabulary,
+§12 cosmetic variants).
 
 ---
 
@@ -141,6 +143,38 @@ depthAlphaQ8 = [0, 96, 120, 144, 168, 192, 216, 240]      // index = depth 0..7
 Ice is NOT a fluid render: `FluidFrozenEvent` → PhaseTransition places grid material
 `ice`, which resolves like any other material (§6 table).
 
+### 5.4 Per-material tint: secondary adjustment, not the color source
+
+**Current rule (Eli 2026-07-13, full-color Kenney art register).** Each region's sheet
+cells already carry their own baked color. `WorldRenderer` still multiplies every tile's
+quad by `TileArtResolver.materialTintRgb(materialId)` before drawing (§5's formula runs on
+top of whatever this multiply produces), but for most materials in
+`content/art/kenney/art-mapping.json` that field is simply **absent**, which resolves to
+`TileArtResolver.NO_TINT` and leaves the batch color white — the cell draws exactly as
+authored. A minority of materials still carry a `tint`, used only as a deliberate
+**secondary** adjustment where it earns its keep: the shipped palette has no cell in the
+hue a material's lore demands (`phorys` teal, `chromatis_melt` gold), or two materials
+share one region's cells and would otherwise be visually identical (`steel` vs
+`reman_concrete`, both on `wall_masonry`; `dirt`/`ash`/`glowstone`, all on `wall_rubble`).
+Every surviving tint's reasoning is recorded in that material's `notes` field in the
+mapping — read those before adding a new one. Because batch-color tinting is strictly
+**multiplicative**, a tint can only darken or re-hue a texel; it can never lighten it past
+the sprite's own baked color (multiplying by white, `#FFFFFF`, is a no-op, and that is the
+ceiling). A material that wants to look *paler* than its region's native cell (the `ice`
+case) cannot get there via tint — it needs a different, already-paler sheet cell instead.
+
+**Superseded rule, kept for history.** Before this ruling, the shipped pack
+(`monochrome-transparent_packed.png`) was white-on-transparent grayscale and *every*
+material carried a saturated `tint` as its **primary** color source — one shared grayscale
+wall/floor sprite served many materials, each glowing its own flat color on the black void
+(DECISIONS.md "Luminous-on-black" register, Eli 2026-07-12, itself reversed the next day).
+Region names were shared across materials expecting the full-strength tint to fully repaint
+them; several of those monochrome-era cell picks do not carry over unchanged to the colored
+sheet (§11 explains why) because a cell chosen only for its grayscale *shape* can bake to an
+unexpected color once the pack itself supplies one (e.g. the old `wall_stone` set included a
+cell that bakes solid **blue** in the colored sheet, not beige — it moved to the new
+`wall_crystal` region instead of staying put and fighting its own tint).
+
 ## 6. Placeholder art: flat color + glyph
 
 Every placeholder region is generated, never drawn by hand:
@@ -260,7 +294,15 @@ No Java changes. That is the M7 art-swap acceptance test.
 
 Fire/smoke overlays (`fx.` prefix reserved; Fire renders via ON_FIRE flag pass, art TBD),
 brush cursors and HUD icons (`ui.`), animation frames, multi-tile art, autotile/blob
-transitions, per-biome variants.
+transitions.
+
+**Re-scoped in (Eli, 2026-07-13):** cosmetic per-tile texture variety — several
+interchangeable sheet cells per logical region, selected deterministically by tile position
+— is now **in** scope and shipped in the Kenney pack. See §11 (the real-pack tile vocabulary)
+and §12 (the variant mechanism). What stays out: this is *cosmetic* variety only, not
+*per-biome* material substitution (a biome swapping which material a tile is made of is a
+content/worldgen decision, not an art one) and not autotile/blob edge transitions or
+animation frames — those remain out per the list above.
 
 ## 10. Open questions for Eli
 
@@ -279,3 +321,183 @@ transitions, per-biome variants.
    resources/`; whether the mapping+atlas are copied onto the classpath by the content
    build or read from the content dir by the observer is build wiring owned by the
    observer/build crew (this spec only fixes the file's schema and location).
+
+## 11. Real-pack tile vocabulary (Kenney 1-bit)
+
+**Current pack (Eli 2026-07-13 art register, full-color Kenney).** The shipped sheet is
+`content/art/kenney/Tilesheet/colored-transparent_packed.png` — the same **49×22** grid of
+**16 px** cells as the monochrome sheet (confirmed against `Tilesheet.txt` and by direct
+pixel measurement: both are 784×352 px, i.e. 49×22 cells with no inter-tile spacing), but
+full-color-on-transparent instead of white-on-transparent. Cell `[col, row]` occupies pixel
+rect `(col*16, row*16, 16, 16)`, unchanged. Cells below were chosen by zoom-reading and
+pixel-sampling the *actual colored sheet* (composited over a mid-gray background, cropped
+into labelled bands), not assumed to carry over unchanged from the monochrome-era picks —
+several do not (see the §11.1 palette note and the historical subsection below for why).
+
+### 11.1 The sheet's palette is a small fixed set, not free color
+
+Measuring the dominant opaque color of every cell in the terrain/architecture area (rows
+0–21, all 49 columns) turns up almost the whole sheet baked from just **seven** flat
+colors — this is a recolored 1-bit pack, not a painted-per-tile pack:
+
+| swatch | hex | role on the sheet |
+|---|---|---|
+| beige/bone | `#CFC6B8` | the overwhelming default — most walls, floors, masonry, dungeon-UI props |
+| brown/orange | `#BF7958` | wood: fences, planking, furniture |
+| red/orange | `#E6482E` | brick, hazard/"missing" markers |
+| blue | `#3CACD7` | water, ice/glass panels, a handful of blue creature sprites |
+| green | `#38D973` | foliage, grass speckle, a green creature family |
+| maroon/rose | `#7A444A` | rubble/dirt speckle, weave patterns |
+| gold | `#F4B41B` | crowns, coins, torches — **item icons only**, no tileable gold surface exists |
+
+This matters for material design: several lore-distinct materials that used to be told
+apart purely by a saturated `tint` over identical grayscale cells (granite vs steel vs
+reman_concrete vs ice vs chromatis, all "stone-family") now have to share one of seven
+native hues, differentiated by **shape** (which region name) and, where that still is not
+enough, a secondary tint (§5.4) — not by inventing colors the sheet does not ship. There is
+no tileable gold-baked surface at all (the only gold cells are crown/coin/torch icons), so
+`thatch` and `chromatis_melt` are the two materials that keep a tint purely to supply a hue
+absent from the pack outright, not to differentiate from a sibling material.
+
+Region names are **role-named categories**, not the §3 `<materialId>` grammar — legal per §8
+("pack names need not follow §3's grammar; the JSON is the alias layer"). Each category is a
+**variant SET** (§12); several materials can share a category, told apart by shape family,
+by their (usually absent) `tint`, or both.
+
+**Wall / `block`-form textures**
+
+| region | baked color | look | cells `[col,row]` |
+|---|---|---|---|
+| `wall_brick` | red | brick/shelf coursing | (6,15) (7,15) (6,14) |
+| `wall_stone` | beige | smooth dressed ashlar panel | (1,18) (19,18) (7,17) |
+| `wall_rubble` | maroon | speckle + basket-weave rough texture | (10,0) (11,0) (16,0) (17,0) |
+| `wall_hatch` | beige | crosshatch — wattle/plaster/veining | (1,4) (2,4) |
+| `wall_plank` | brown | vertical picket fencing | (13,16) (14,16) |
+| `wall_masonry` | beige | coursed ashlar with horizontal bands (reads as cast/engineered) | (19,13) (20,13) (21,13) |
+| `wall_crystal` | blue | flat glassy/crystalline panel — **genuinely baked blue**, not a tint | (8,5) (9,5) (10,5) (11,5) |
+| `wall_moss` | green | blobby natural mineral/moss chunk | (18,11) (19,11) (20,11) |
+
+**Floor / `floor`-form textures**
+
+| region | baked color | look | cells `[col,row]` |
+|---|---|---|---|
+| `floor_tile` | beige | fine tiled/checker floor | (1,17) (2,17) (19,17) |
+| `floor_stone` | beige | smooth flagstone slab (shares `wall_stone`'s cells) | (1,18) (19,18) (7,17) |
+| `floor_plank` | brown | horizontal decking + reused picket cells | (4,6) (7,5) (13,16) (14,16) |
+| `floor_earth` | maroon | speckle (shares `wall_rubble`'s cells) | (10,0) (11,0) (16,0) (17,0) |
+| `floor_cobble` | maroon | the denser basket-weave/grid subset of `floor_earth` | (16,0) (17,0) |
+| `floor_crystal` | blue | shares `wall_crystal`'s cells | (8,5) (9,5) (10,5) (11,5) |
+| `floor_moss` | green | sparse-to-dense grass speckle | (5,0) (6,0) (7,0) |
+
+**Roof textures** (drawn on a `block`-form tile whose *material* is a roofing material —
+there is no mechanical "roof" `TileForm`; a rooftop is a `WALL`/`FLOOR` tile of thatch /
+cloth / leather per the Trojian-compounds canon, ARCHITECTURE/WorldBible)
+
+| region | baked color | look | cells `[col,row]` |
+|---|---|---|---|
+| `roof_thatch` | brown | reuses the horizontal-decking wood cells; `thatch` tints it straw-gold (§5.4 — no gold tileable cell exists) | (7,5) (4,6) |
+| `roof_tile` | beige | clay tiles/shingles from above (documented + available; not yet assigned to a material) | (10,18) (11,18) (10,17) |
+| `roof_cloth` | beige | reuses `wall_hatch`'s crosshatch cells (reads as woven fabric); `leather`/`cloth` each tint it dim brown/tan | (1,4) (2,4) |
+
+**Fluid & fallback**
+
+| region | baked color | look | cells `[col,row]` |
+|---|---|---|---|
+| `water` | blue | irregular pond-edge and ripple blob shapes — distinct cells from `wall_crystal`'s flat panels, no tint needed | (8,4) (9,4) (10,4) (11,4) (12,4) |
+| `missing` | red | framed X — reads as invalid/unmapped (happens to bake the same red family as brick; distinguishable by its X shape) | (13,18) |
+
+Cells are deliberately shared across roles where one texture serves both (e.g. the smooth
+beige panel serves both `wall_stone` and `floor_stone`; the crosshatch cells serve both
+`wall_hatch` and `roof_cloth`). The current material→region assignment, including every
+surviving `tint` and why, lives in `content/art/kenney/art-mapping.json`'s per-material
+`notes`/`provenance`.
+
+Not every terrain tile on the sheet is mapped — this is the useful, tileable subset. More
+categories (fences, doors, windows, furniture, slope/ramp diagonals, stairs, the sheet's
+character/monster/item area in the right ~25 columns) exist on the sheet and can be added
+the same way when a consumer needs them.
+
+### 11.2 Historical note: the monochrome-tint pass (superseded 2026-07-13)
+
+Before the full-color ruling, this section described
+`content/art/kenney/Tilesheet/monochrome-transparent_packed.png` — the same grid,
+white-on-transparent — with region cells chosen purely for **grayscale shape**, since every
+material's saturated `tint` was multiplied in as the primary color (§5.4 historical note).
+Several of those cell choices do not carry over unchanged to the colored sheet: a cell
+picked only because its silhouette looked like "smooth stone" can bake to an unrelated
+color once the pack supplies one. The clearest example: the old `wall_stone` variant set
+included cell `(9,5)`, chosen because it read as a plain white panel in monochrome — in the
+colored sheet that exact cell bakes solid **blue** (it is one of the pack's water/glass
+tiles wearing the same silhouette as the stone panels). It was moved to the new
+`wall_crystal` region rather than kept in `wall_stone` fighting its own baked color. The old
+`wall_brick` set mixed genuinely-red cells with beige ones that turned out to belong to the
+`roof_tile` shape family instead; the old `floor_plank`/`roof_thatch` sets mixed brown-wood
+cells with beige-stone ones for the same reason. The lesson generalized into §11.1's
+palette table: a monochrome silhouette is not a reliable predictor of a colored pack's baked
+hue, so every cell in the table above was re-verified by direct pixel sampling of the actual
+colored sheet, not carried over from the superseded picks.
+
+## 12. Cosmetic tile variants (real-pack)
+
+**Problem.** With one sheet cell per logical region, a large granite wall or dirt floor
+draws the *same* 16 px sprite in every cell — a flat, obviously-repeating grid. Real
+tilesets break this up with several interchangeable looks per surface.
+
+**Schema.** In a sheet pack's `regions` map, a region value is **either** a single
+`[col, row]` pair (one variant, the shorthand) **or** an array of pairs
+`[[col,row], [col,row], …]` (several cosmetic variants). Parsed GL-free by `SheetAtlasSpec`;
+every pair is bounds-checked against `sheet.columns`/`sheet.rows` at boot, aggregating all
+defects into one `ArtMappingException` (same "boot fails" rule as §7.2). Order is preserved
+and significant only in that it fixes each variant's index.
+
+```
+regions.<name> := [col, row]  |  [ [col,row], [col,row], … ]     (each pair 0-based, in-bounds)
+```
+
+**Selection.** `WorldRenderer` picks a variant per drawn tile:
+
+```
+count   = atlas.variantCount(regionName)                       // ≥ 1
+variant = count ≤ 1 ? 0
+        : floorMod( hash(x, y, z, materialLane, formOrdinal), count )
+region  = atlas.region(regionName, variant)
+```
+
+`hash` is a MurmurHash3-style integer mix of the tile's **world position** plus a
+material/form salt (`WorldRenderer.cosmeticVariant`). It is a **pure function** — no RNG, no
+stored state — so:
+
+- **Deterministic & reproducible.** The same map always looks identical, on every run and
+  every machine. Re-rendering a fixture twice is pixel-for-pixel the same; there is nothing
+  to seed or persist.
+- **Presentation-only.** This lives entirely in the client render path. It does **not** touch
+  sim-core, the FORM/MATERIAL lanes, or the `WorldHasher` / determinism-proof machinery — the
+  tile's simulated state is unchanged; only *which of a region's interchangeable cells* is
+  drawn changes. It is not a "gameplay determinism" concern.
+- **Good local variety.** The hash avalanches between adjacent coordinates, so neighbouring
+  tiles usually land on different variants (probability of a matching neighbour ≈ `1/count`),
+  visibly breaking up the repeat.
+
+**Unchanged by the full-color art register (§5.4, §11).** This mechanism does not care what
+color a region's cells carry — it only ever picks *an index*. Under the colored pack, a
+region's variants are typically several different-shaped cells of the **same baked hue**
+(e.g. `wall_rubble`'s four maroon speckle/weave cells), so the variety a player sees is real
+shape variety, not the old scheme's identical-grayscale-shape-under-one-flat-tint. Nothing
+about `SheetAtlasSpec`, `WorldRenderer.cosmeticVariant`, or the hash itself changed for the
+pack swap — only which cells the `regions` map points at (§11).
+
+**Orthogonal to the appearance bucket (§2).** The variant axis is *not* `appearanceBucket`.
+`appearanceBucket` is a **gameplay-meaningful** key — the material's active `colorStops`
+ordinal (0..3), driven by `ChargeStopChangedEvent` for chargeable materials like chromatis
+(charge level → glow colour). It selects *which region name* resolves and is served by the
+GL-free `TileArtResolver`. The variant axis selects *which cell of that already-resolved
+region* is drawn, is keyed on world position, and is resolved GL-side in the atlas. They
+compose without interference: chromatis' charge visualization (`heatGlowTint`, per-bucket
+regions) is completely untouched, and adding variants to a region never changes its bucket
+behaviour.
+
+**Atlas seam.** The `TileAtlas` interface carries the axis GL-side: `variantCount(name)` and
+`region(name, variantIndex)` (indices folded mod count defensively). `SheetTileAtlas` slices
+one `TextureRegion` per variant cell at boot; the single-cell placeholder pack
+(`PlaceholderAtlas`) reports `variantCount == 1` and ignores the index, so the same renderer
+drives both packs unchanged (§8).

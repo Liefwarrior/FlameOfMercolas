@@ -28,3 +28,4 @@ replay_pid*
 # Carrier-pigeon watch (local operational log, not project content)
 /PIGEON-TO-CLAUDE.md
 /PIGEON-FROM-CLAUDE.md
+/.claude/worktrees/

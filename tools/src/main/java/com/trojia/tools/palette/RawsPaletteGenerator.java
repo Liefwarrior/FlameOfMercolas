@@ -39,8 +39,15 @@ import java.util.Set;
  */
 public final class RawsPaletteGenerator implements PaletteGenerator {
 
-    /** Tags whose solid materials also get RAMP/STAIR_UP/STAIR_DOWN tiles. */
-    static final Set<String> STRUCTURAL_TAGS = Set.of("stone", "wood");
+    /**
+     * Tags whose solid materials also get RAMP/STAIR_UP/STAIR_DOWN tiles.
+     * {@code masonry}/{@code earth} joined for the docks_surface map: Saltgate
+     * Rise climbs on brick RAMPs and the shipyard slipways on dirt RAMPs
+     * (materials.tsx tile ids 35-36), and the hand-authored-tiles-exist-in-
+     * generated-palette compatibility invariant requires the generator to know
+     * every structural family the maps actually build ramps from.
+     */
+    static final Set<String> STRUCTURAL_TAGS = Set.of("stone", "wood", "masonry", "earth");
 
     /** Fixed pooled-depth variants per fluid, in canonical (descending) order. */
     static final int[] FLUID_DEPTHS = {7, 4, 2};

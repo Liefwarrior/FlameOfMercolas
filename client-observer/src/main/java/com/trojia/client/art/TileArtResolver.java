@@ -82,12 +82,15 @@ public interface TileArtResolver {
      * {@link #NO_TINT} when the mapping lists none.
      *
      * <p>Client-only presentation data (sim-core's material raws stay
-     * appearance-agnostic — ARCHITECTURE.md). For a monochrome/tintable art pack this is
-     * multiplied into the shared grayscale sprite at draw time so one wall/floor sprite
-     * serves many materials, each glowing its own color on the black base
-     * (DECISIONS.md "Luminous-on-black" register). The placeholder pack lists no tints,
-     * so this returns {@link #NO_TINT} there and the pre-colored placeholder cells draw
-     * untinted.
+     * appearance-agnostic — ARCHITECTURE.md). In the shipped full-colour Kenney pack
+     * (DECISIONS.md art register, Eli 2026-07-13) each region's cells already carry their
+     * own baked colour, so this is {@link #NO_TINT} for most materials and the cell draws
+     * exactly as authored; a minority of materials still list a tint here as a deliberate
+     * <em>secondary</em> multiply — never the primary colour source — used only where the
+     * pack has no cell in the needed hue, or to keep two materials that share one region's
+     * cells from looking identical (art-mapping.json's per-material {@code notes} record
+     * the reasoning). The placeholder pack lists no tints at all, so this returns
+     * {@link #NO_TINT} there and the pre-colored placeholder cells draw untinted.
      */
     int materialTintRgb(String materialId);
 }

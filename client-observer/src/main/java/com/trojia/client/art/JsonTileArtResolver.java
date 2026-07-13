@@ -33,9 +33,10 @@ import java.util.TreeSet;
  * under the unknown-fields-ignored convention (other loaders skip them):
  * {@code materials.<id>.heatGlowTint} ({@code #RRGGBB}, BLESSING-QUEUE.md ruling 5 —
  * chromatis' discharge/saturation overlay tint {@code #E8842A}); optional
- * {@code materials.<id>.tint} / {@code fluids.<id>.tint} ({@code #RRGGBB}, the
- * monochrome-pack base tint of {@link #materialTintRgb(String)} — absent in the
- * placeholder pack, present in the Kenney pack); {@code provenance} / {@code notes} /
+ * {@code materials.<id>.tint} / {@code fluids.<id>.tint} ({@code #RRGGBB}, the optional
+ * secondary-adjustment tint of {@link #materialTintRgb(String)} — absent in the
+ * placeholder pack; present but sparse in the Kenney pack, which trusts each region's own
+ * baked colour by default); {@code provenance} / {@code notes} /
  * {@code placeholderGen} / {@code sheet} / {@code regions} are ignored here (the last two
  * belong to the GL-side sheet-atlas loader).
  *
@@ -424,9 +425,11 @@ public final class JsonTileArtResolver implements TileArtResolver {
 
     /**
      * A pooled fluid's base presentation tint as packed {@code 0xRRGGBB}, or
-     * {@link #NO_TINT}. Same monochrome-pack role as {@link #materialTintRgb(String)}:
-     * multiplied into the shared water sprite so it glows cyan on the black base. Ready
-     * for the FLUID render pass (no in-tree consumer yet — v0 draws no fluids).
+     * {@link #NO_TINT}. Same optional secondary-adjustment role as
+     * {@link #materialTintRgb(String)} — the shipped water region is already baked blue, so
+     * the Kenney pack's {@code fluids.water} lists no tint and this returns
+     * {@link #NO_TINT}. Ready for the FLUID render pass (no in-tree consumer yet — v0 draws
+     * no fluids).
      *
      * @throws IllegalArgumentException if {@code fluidId} is null or blank
      */

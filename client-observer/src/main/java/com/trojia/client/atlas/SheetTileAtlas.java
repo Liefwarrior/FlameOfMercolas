@@ -4,40 +4,46 @@ import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.TreeMap;
 
 /**
  * The GL half of a real sprite-sheet pack: owns one {@link Texture} loaded from disk (the
- * Kenney 1-bit {@code monochrome-transparent_packed} sheet) and interns a
- * {@link TextureRegion} per region name from a GL-free {@link SheetAtlasSpec}. The
- * shipped-pack analogue of {@link PlaceholderAtlas}, and like it a {@link TileAtlas} the
- * world renderer draws through unchanged.
+ * Kenney 1-bit {@code colored-transparent_packed} sheet, DECISIONS.md art register, Eli
+ * 2026-07-13) and interns a {@link TextureRegion} per region name from a GL-free
+ * {@link SheetAtlasSpec}. The shipped-pack analogue of {@link PlaceholderAtlas}, and like it
+ * a {@link TileAtlas} the world renderer draws through unchanged.
  *
- * <p>The sheet is white-on-transparent grayscale; the black luminous-on-black base shows
- * through the transparent texels and the renderer multiplies each material's tint into the
- * white ones (DECISIONS.md art register), so one grayscale wall/floor sprite serves many
- * materials. {@code Nearest} filtering keeps the 16 px pixel-art crisp (TILE-ART-SPEC
- * section 4). Requires a live GL context to construct; {@link #dispose() dispose} when the
- * screen goes away. Immutable after construction (texture disposal aside).
+ * <p>The sheet is full-colour-on-transparent; each region's cells already carry their own
+ * baked colour, so most materials draw them as authored with no per-material tint (a
+ * minority still multiply a secondary tint over the baked colour — see
+ * {@code TileArtResolver#materialTintRgb}). A region name may back <b>several
+ * interchangeable cells</b> (cosmetic variants, TILE-ART-SPEC section 12); the renderer picks
+ * one per tile by world position via {@link #region(String, int)} /
+ * {@link #variantCount(String)}, so a large surface does not repeat one sprite.
+ * {@code Nearest} filtering keeps the 16 px pixel-art crisp (TILE-ART-SPEC section 4).
+ * Requires a live GL context to construct; {@link #dispose() dispose} when the screen goes
+ * away. Immutable after construction (texture disposal aside).
  */
 public final class SheetTileAtlas implements TileAtlas {
 
     private final Texture texture;
-    private final NavigableMap<String, TextureRegion> regions;
+    private final NavigableMap<String, List<TextureRegion>> regions;
 
-    private SheetTileAtlas(Texture texture, NavigableMap<String, TextureRegion> regions) {
+    private SheetTileAtlas(Texture texture, NavigableMap<String, List<TextureRegion>> regions) {
         this.texture = texture;
         this.regions = regions;
     }
 
     /**
-     * Loads {@code sheetFile} and slices one region per entry in {@code spec}.
+     * Loads {@code sheetFile} and slices every variant cell of every region in {@code spec}.
      *
      * <p>Must run on the render thread with a live GL context (boot / {@code create()}).
      *
-     * @param spec      the GL-free layout (cell rects per region name)
+     * @param spec      the GL-free layout (variant cell rects per region name)
      * @param sheetFile the sheet image on disk, sized to cover every cell in {@code spec}
      * @return the atlas; caller owns disposal
      * @throws IllegalArgumentException if either argument is null
@@ -51,23 +57,38 @@ public final class SheetTileAtlas implements TileAtlas {
         }
         Texture texture = new Texture(sheetFile);
         texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-        NavigableMap<String, TextureRegion> built = new TreeMap<>();
+        NavigableMap<String, List<TextureRegion>> built = new TreeMap<>();
         for (String name : spec.regionNames()) {
-            AtlasCellRect rect = spec.cellRect(name);
-            built.put(name, new TextureRegion(texture, rect.x(), rect.y(),
-                    rect.width(), rect.height()));
+            List<TextureRegion> variants = new ArrayList<>();
+            for (AtlasCellRect rect : spec.cellRects(name)) {
+                variants.add(new TextureRegion(texture, rect.x(), rect.y(),
+                        rect.width(), rect.height()));
+            }
+            built.put(name, List.copyOf(variants));
         }
         return new SheetTileAtlas(texture, built);
     }
 
     @Override
     public TextureRegion region(String regionName) {
-        TextureRegion region = regionName == null ? null : regions.get(regionName);
-        if (region == null) {
+        return region(regionName, 0);
+    }
+
+    @Override
+    public TextureRegion region(String regionName, int variantIndex) {
+        List<TextureRegion> variants = regionName == null ? null : regions.get(regionName);
+        if (variants == null) {
             throw new IllegalArgumentException(
                     "unknown region \"" + regionName + "\" (have " + regions.size() + ")");
         }
-        return region;
+        // Defensive fold so any (even negative) index resolves to a real cell.
+        return variants.get(Math.floorMod(variantIndex, variants.size()));
+    }
+
+    @Override
+    public int variantCount(String regionName) {
+        List<TextureRegion> variants = regionName == null ? null : regions.get(regionName);
+        return variants == null ? 0 : variants.size();
     }
 
     @Override

@@ -48,3 +48,13 @@ tasks.register<JavaExec>("runCompoundActors") {
     mainClass.set("com.trojia.client.scenario.CompoundBlockActorsMain")
     classpath = sourceSets["main"].runtimeClasspath
 }
+
+// Docks-ward district population: same GL-free proof surface at ~6x the actor count, plus
+// the --perf wall-clock gate for the observer's FAST budget. Example:
+//   ./gradlew.bat :client-observer:runDocksActors --args="--ticks 50000 --perf"
+tasks.register<JavaExec>("runDocksActors") {
+    group = "application"
+    description = "Prints the docks-ward actor population + daily-life movement proof."
+    mainClass.set("com.trojia.client.scenario.DocksActorsMain")
+    classpath = sourceSets["main"].runtimeClasspath
+}

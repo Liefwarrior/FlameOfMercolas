@@ -1,5 +1,7 @@
 package com.trojia.client.inspect;
 
+import com.trojia.client.hud.icons.HudToken;
+import com.trojia.client.hud.icons.IconKey;
 import com.trojia.client.scenario.CompoundBlockPopulation;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.job.Job;
@@ -68,6 +70,22 @@ class InspectorTextTest {
         assertTrue(text.contains("(secret)"), () -> "villain must be flagged secret: " + text);
         // Its tell rides the inventory (a lockpick), resolved via ItemsLite kind + quantity.
         assertTrue(text.contains("kind 5 x1"), () -> "expected the lockpick item: " + text);
+    }
+
+    @Test
+    void selectionHintTokensCarryTheMouseAndCIcons() {
+        List<HudToken> tokens = InspectorText.selectionHintTokens();
+        assertTrue(tokens.contains(HudToken.icon(IconKey.MOUSE_LEFT_CLICK)),
+                () -> "expected a mouse-left-click icon: " + tokens);
+        assertTrue(tokens.contains(HudToken.icon(IconKey.C)),
+                () -> "expected a C key icon: " + tokens);
+    }
+
+    @Test
+    void followBadgeTokensCarryTheCIcon() {
+        List<HudToken> tokens = InspectorText.followBadgeTokens();
+        assertTrue(tokens.contains(HudToken.icon(IconKey.C)),
+                () -> "expected a C key icon: " + tokens);
     }
 
     /** The lowest-id actor whose TRUE (not presented) job is {@code jobId}. */

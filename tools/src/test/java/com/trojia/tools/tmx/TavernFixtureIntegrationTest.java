@@ -68,7 +68,7 @@ class TavernFixtureIntegrationTest {
 
     @Test
     void tilesetMatchesFixtureGidRange() {
-        assertEquals(35, tileset.tileCount());
+        assertEquals(37, tileset.tileCount());
         int firstGid = map.tilesets().get(0).firstGid();
         int maxGid = firstGid + tileset.tileCount() - 1;
 

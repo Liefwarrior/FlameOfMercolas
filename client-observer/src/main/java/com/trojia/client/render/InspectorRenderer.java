@@ -5,6 +5,8 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.trojia.client.camera.MapCamera;
+import com.trojia.client.hud.icons.IconAtlas;
+import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.InspectorText;
@@ -64,26 +66,32 @@ public final class InspectorRenderer {
      * {@code state} and viewed z-level {@code z}. {@code font} is left at scale 1 / white
      * afterward so the caller's other font uses are unaffected.
      */
-    public void draw(SpriteBatch batch, BitmapFont font, MapCamera camera, InspectorState state, int z) {
+    public void draw(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
+            InspectorState state, int z) {
         drawSelectionHighlight(batch, font, camera, state, z);
-        drawPanel(batch, font, camera, state);
+        drawPanel(batch, font, icons, camera, state);
         drawEventLog(batch, font, camera);
         font.getData().setScale(1f);
         font.setColor(Color.WHITE);
     }
 
-    private void drawPanel(SpriteBatch batch, BitmapFont font, MapCamera camera, InspectorState state) {
-        List<String> lines = InspectorText.describe(state.selectedActorId(), registry, homes,
-                relationships, jobs, items);
+    private void drawPanel(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
+            InspectorState state) {
         font.getData().setScale(1f);
         font.setColor(PANEL_COLOR);
         float lineHeight = font.getLineHeight();
         float x = camera.viewportWidthPx() - PANEL_WIDTH;
         float y = camera.viewportHeightPx() - MARGIN;
         if (state.followActive()) {
-            font.draw(batch, "[FOLLOW]  C to release", x, y);
+            IconTextLine.draw(batch, font, icons, x, y, InspectorText.followBadgeTokens());
             y -= lineHeight;
         }
+        if (!state.hasSelection()) {
+            IconTextLine.draw(batch, font, icons, x, y, InspectorText.selectionHintTokens());
+            return;
+        }
+        List<String> lines = InspectorText.describe(state.selectedActorId(), registry, homes,
+                relationships, jobs, items);
         for (String line : lines) {
             font.draw(batch, line, x, y);
             y -= lineHeight;

@@ -8,9 +8,10 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
  *
  * <p>{@code --smoke=N} renders N frames and exits cleanly — used by automated
  * verification to prove the GL pipeline works without a human closing the window.
- * {@code --fixture=tavern|compound} selects which baked world boots (default
+ * {@code --fixture=tavern|compound|docks} selects which baked world boots (default
  * {@code tavern}); {@code --fixture=compound} additionally spawns and renders the
- * Trojian-Compound population (see {@link ObserverApp}). {@code --screenshot=path.png},
+ * Trojian-Compound population, {@code --fixture=docks} the whole Docks-ward district
+ * population (see {@link ObserverApp}). {@code --screenshot=path.png},
  * combined with {@code --smoke=N}, dumps the final frame to disk — a verification aid,
  * never used on the shipped interactive path.
  */

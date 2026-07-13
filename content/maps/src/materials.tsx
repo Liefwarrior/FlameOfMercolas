@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tileset version="1.10" name="materials" tilewidth="16" tileheight="16" tilecount="35" columns="0">
+<tileset version="1.10" name="materials" tilewidth="16" tileheight="16" tilecount="37" columns="0">
  <grid orientation="orthogonal" width="16" height="16"/>
  <tile id="0" type="granite/WALL">
   <properties>
@@ -209,6 +209,18 @@
   <properties>
    <property name="material" value="cloth"/>
    <property name="form" value="WALL"/>
+  </properties>
+ </tile>
+ <tile id="35" type="dirt/RAMP">
+  <properties>
+   <property name="material" value="dirt"/>
+   <property name="form" value="RAMP"/>
+  </properties>
+ </tile>
+ <tile id="36" type="brick/RAMP">
+  <properties>
+   <property name="material" value="brick"/>
+   <property name="form" value="RAMP"/>
   </properties>
  </tile>
 </tileset>
