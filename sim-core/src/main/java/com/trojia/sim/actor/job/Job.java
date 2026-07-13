@@ -210,6 +210,39 @@ public sealed abstract class Job {
                 return JobBehaviors.isCompleteAtUnits(self, params());
             }
         }
+
+        /**
+         * Granadad's compound burglar/assassin (DECISIONS.md "Trojian housing:
+         * Compounds"): breaks in through a compound ceiling and flees across the
+         * rooftop-slum layer, so it presents as an ordinary rooftop tenant (a
+         * Wastrel on {@code wastrel.streetlife} cover). Same shared pursue-at-anchor
+         * cycle as the other MVP villains — its {@code BURGLE_ROOST} goal kind is
+         * legibility only in this foundation milestone; a rooftop-scoped waylay/lift
+         * behavior is a later extension that swaps this leaf's delegate without
+         * touching the taxonomy.
+         */
+        public static final class Skyrunner extends Villain {
+            public static final JobId ID = JobId.of("villain.skyrunner");
+
+            public Skyrunner(JobParams params, CoverSpec cover) {
+                super(ID, params, cover);
+            }
+
+            @Override
+            public void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectAnchorTarget(self, ctx);
+            }
+
+            @Override
+            public void pursue(Actor self, ActorContext ctx) {
+                JobBehaviors.pursueAtAnchor(self, ctx, params());
+            }
+
+            @Override
+            public boolean isComplete(Actor self, ActorContext ctx) {
+                return JobBehaviors.isCompleteAtUnits(self, params());
+            }
+        }
     }
 
     /**

@@ -3,6 +3,9 @@ package com.trojia.client;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.files.FileHandle;
+import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.PixmapIO;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.Matrix4;
@@ -17,11 +20,16 @@ import com.trojia.client.camera.MapCamera;
 import com.trojia.client.hud.HudText;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.TimeControlInput;
+import com.trojia.client.render.ActorRenderer;
 import com.trojia.client.render.WorldRenderer;
+import com.trojia.client.scenario.CompoundBlockPopulation;
 import com.trojia.client.time.SimulationDriver;
+import com.trojia.client.time.SpeedSetting;
 import com.trojia.client.world.ZLevelCursor;
+import com.trojia.sim.engine.SimulationSystem;
 import com.trojia.sim.engine.TickClock;
 import com.trojia.sim.world.Coords;
+import com.trojia.sim.world.PackedPos;
 import com.trojia.sim.world.TickableWorld;
 import com.trojia.sim.world.WorldConfig;
 
@@ -29,19 +37,32 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.List;
+import java.util.Locale;
 
 /**
- * The observer application. M0 was an empty window; M1 boots the baked tavern fixture
- * world (see {@link FixtureWorldLoader}) and renders its currently selected z-level as
- * atlas tiles under {@link MapCamera}, navigable via {@link CameraInput}. The world is
- * wrapped in a {@link SimulationDriver} so simulated time actually advances (paced per
- * frame by {@link TimeControlInput}); {@code --smoke=N} still renders exactly N frames
- * then exits (see {@link ObserverLauncher}) regardless of the active speed setting, since
- * frame counting is independent of tick counting.
+ * The observer application. M0 was an empty window; M1 boots a baked fixture world (see
+ * {@link FixtureWorldLoader}) and renders its currently selected z-level as atlas tiles
+ * under {@link MapCamera}, navigable via {@link CameraInput}, its time advanced by a
+ * {@link SimulationDriver} paced per frame by {@link TimeControlInput}.
+ *
+ * <p>Two fixtures boot through the same pipeline (selected by {@link Fixture}, wired by
+ * {@link ObserverLauncher} from {@code --fixture=}): the system-less {@link Fixture#TAVERN}
+ * walk-through, and {@link Fixture#COMPOUND}, which additionally spawns the wealth-stratified
+ * {@link CompoundBlockPopulation} into an {@code ActorsSystem} the driver ticks, and draws
+ * that population over the tiles via an {@link ActorRenderer} that reads live positions every
+ * frame. {@code --smoke=N} renders exactly N frames then exits (see {@link ObserverLauncher});
+ * on the compound fixture a smoke run forces {@link SpeedSetting#FAST} so the population
+ * visibly advances (the shipped default stays {@link SpeedSetting#PAUSED}).
  */
 public final class ObserverApp extends ApplicationAdapter {
 
+    /** Which baked fixture the observer boots. */
+    public enum Fixture { TAVERN, COMPOUND }
+
+    private final Fixture fixture;
     private final int smokeFrames;
+    private final String screenshotPath;
     private int framesRendered;
 
     private MapCamera camera;
@@ -53,22 +74,45 @@ public final class ObserverApp extends ApplicationAdapter {
     private BitmapFont font;
     private final Matrix4 projection = new Matrix4();
 
+    // Compound fixture only (null for the tavern):
+    private ActorRenderer actorRenderer;
+    private BitmapFont actorFont;
+    private CompoundBlockPopulation population;
+
     public ObserverApp(int smokeFrames) {
+        this(Fixture.TAVERN, smokeFrames);
+    }
+
+    public ObserverApp(Fixture fixture, int smokeFrames) {
+        this(fixture, smokeFrames, null);
+    }
+
+    /**
+     * @param screenshotPath if non-null, a PNG of the final smoke frame is written here
+     *                       right before exit (debug/verification aid only — never used
+     *                       on the shipped interactive path).
+     */
+    public ObserverApp(Fixture fixture, int smokeFrames, String screenshotPath) {
+        this.fixture = fixture;
         this.smokeFrames = smokeFrames;
+        this.screenshotPath = screenshotPath;
     }
 
     @Override
     public void create() {
-        FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadTavern();
+        boolean compound = fixture == Fixture.COMPOUND;
+        FixtureWorldLoader.Loaded loaded =
+                compound ? FixtureWorldLoader.loadCompoundBlock() : FixtureWorldLoader.loadTavern();
         TickableWorld world = loaded.world();
 
         WorldConfig config = world.config();
         int worldWidthTiles = config.chunksX() * Coords.CHUNK_SIZE_X;
         int worldHeightTiles = config.chunksY() * Coords.CHUNK_SIZE_Y;
         int worldZTiles = config.chunksZ() * Coords.CHUNK_SIZE_Z;
-        System.out.println("observer: loaded tavern world " + worldWidthTiles + "x"
-                + worldHeightTiles + "x" + worldZTiles + " tiles (chunks "
-                + config.chunksX() + "x" + config.chunksY() + "x" + config.chunksZ() + ")");
+        System.out.println("observer: loaded " + fixture.name().toLowerCase(Locale.ROOT)
+                + " world " + worldWidthTiles + "x" + worldHeightTiles + "x" + worldZTiles
+                + " tiles (chunks " + config.chunksX() + "x" + config.chunksY() + "x"
+                + config.chunksZ() + ")");
 
         String mappingJson = readArtMapping();
         JsonTileArtResolver artResolver = JsonTileArtResolver.parse(mappingJson);
@@ -77,9 +121,29 @@ public final class ObserverApp extends ApplicationAdapter {
 
         this.camera = new MapCamera(JsonTileArtResolver.TILE_PX, worldWidthTiles, worldHeightTiles,
                 Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        this.zLevel = new ZLevelCursor(0, worldZTiles - 1, FixtureWorldLoader.TAVERN_STREET_LEVEL_Z);
+        int streetLevelZ = compound
+                ? FixtureWorldLoader.COMPOUND_GROUND_LEVEL_Z : FixtureWorldLoader.TAVERN_STREET_LEVEL_Z;
+        this.zLevel = new ZLevelCursor(0, worldZTiles - 1, streetLevelZ);
         this.renderer = new WorldRenderer(world, loaded.materials(), artResolver, atlas);
-        this.driver = new SimulationDriver(world, loaded.worldSeed());
+
+        if (compound) {
+            this.population = CompoundBlockPopulation.build(loaded.worldSeed());
+            this.driver = new SimulationDriver(world, loaded.worldSeed(),
+                    List.<SimulationSystem>of(population.system()));
+            this.actorRenderer = new ActorRenderer(population.registry());
+            this.actorFont = new BitmapFont();
+            System.out.println("observer: spawned " + population.registry().size()
+                    + " actors; homes=" + population.homes().size()
+                    + " relationships=" + population.relationships().size()
+                    + " items=" + population.items().size());
+            if (smokeFrames > 0) {
+                // Proof run only: force a non-PAUSED speed so the population advances; the
+                // shipped interactive default stays PAUSED (SimulationDriver's own default).
+                this.driver.setSpeed(SpeedSetting.FAST);
+            }
+        } else {
+            this.driver = new SimulationDriver(world, loaded.worldSeed());
+        }
 
         this.batch = new SpriteBatch();
         this.font = new BitmapFont();
@@ -105,6 +169,9 @@ public final class ObserverApp extends ApplicationAdapter {
         batch.setProjectionMatrix(projection);
         batch.begin();
         renderer.draw(batch, camera, zLevel.z());
+        if (actorRenderer != null) {
+            actorRenderer.draw(batch, actorFont, camera, zLevel.z());
+        }
         font.draw(batch, HudText.describe(zLevel.z(), camera.zoom()), 8,
                 camera.viewportHeightPx() - 8);
         long simElapsedSeconds = driver.currentTick() * TickClock.MILLIS_PER_TICK / 1000;
@@ -114,13 +181,54 @@ public final class ObserverApp extends ApplicationAdapter {
         batch.end();
 
         framesRendered++;
+        if (population != null && smokeFrames > 0
+                && (framesRendered == 1 || framesRendered % 60 == 0 || framesRendered == smokeFrames)) {
+            reportTrackedMover();
+        }
         boolean smokeDone = smokeFrames > 0 && framesRendered >= smokeFrames;
         if (smokeDone || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
             if (smokeDone) {
                 System.out.println("observer smoke test: rendered " + framesRendered + " frames OK");
+                if (screenshotPath != null) {
+                    writeScreenshot();
+                }
             }
             Gdx.app.exit();
         }
+    }
+
+    /** Debug/verification aid only: dumps the final smoke frame's framebuffer to a PNG. */
+    private void writeScreenshot() {
+        int w = camera.viewportWidthPx();
+        int h = camera.viewportHeightPx();
+        Pixmap pixmap = ScreenUtils.getFrameBufferPixmap(0, 0, w, h);
+        flipVertically(pixmap);
+        FileHandle handle = Gdx.files.absolute(screenshotPath);
+        PixmapIO.writePNG(handle, pixmap);
+        pixmap.dispose();
+        System.out.println("observer: wrote screenshot to " + screenshotPath);
+    }
+
+    /** glReadPixels (behind getFrameBufferPixmap) is bottom-up; PNGs are top-down. */
+    private static void flipVertically(Pixmap pixmap) {
+        int w = pixmap.getWidth();
+        int h = pixmap.getHeight();
+        for (int y = 0; y < h / 2; y++) {
+            for (int x = 0; x < w; x++) {
+                int top = pixmap.getPixel(x, y);
+                int bottom = pixmap.getPixel(x, h - 1 - y);
+                pixmap.drawPixel(x, y, bottom);
+                pixmap.drawPixel(x, h - 1 - y, top);
+            }
+        }
+    }
+
+    private void reportTrackedMover() {
+        int id = population.trackedGroundMoverId();
+        int cell = population.registry().get(id).cell();
+        System.out.println("observer[compound] frame=" + framesRendered + " tick="
+                + driver.currentTick() + " mover#" + id + " cell=(" + PackedPos.x(cell) + ","
+                + PackedPos.y(cell) + "," + PackedPos.z(cell) + ")");
     }
 
     @Override
@@ -133,6 +241,9 @@ public final class ObserverApp extends ApplicationAdapter {
         }
         if (font != null) {
             font.dispose();
+        }
+        if (actorFont != null) {
+            actorFont.dispose();
         }
     }
 

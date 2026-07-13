@@ -37,7 +37,18 @@ public final class SimulationDriver {
      * forward-compatible with whatever systems register later).
      */
     public SimulationDriver(TickableWorld world, long worldSeed) {
-        this(Simulations.create(new EngineConfig(worldSeed), world, List.<SimulationSystem>of()));
+        this(world, worldSeed, List.<SimulationSystem>of());
+    }
+
+    /**
+     * Wraps {@code world} in a fresh tick-0 engine bound to {@code worldSeed} with
+     * {@code systems} registered (in list order = event-visibility order within a phase).
+     * The compound-block boot path passes an {@code ActorsSystem} here so the {@code ACTORS}
+     * phase actually advances its population every tick; the no-arg-systems overload above is
+     * the tavern's system-less world walk-through.
+     */
+    public SimulationDriver(TickableWorld world, long worldSeed, List<SimulationSystem> systems) {
+        this(Simulations.create(new EngineConfig(worldSeed), world, systems));
     }
 
     /** Package-visible seam for tests to drive a lighter (possibly world-less) engine. */

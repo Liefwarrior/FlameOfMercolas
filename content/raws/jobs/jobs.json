@@ -69,6 +69,20 @@
       "cover": { "actorType": "wastrel", "presentedJob": "wastrel.streetlife" }
     },
     {
+      "id": "villain.skyrunner",
+      "goalKind": "BURGLE_ROOST",
+      "priority": 265,
+      "rhythmWindow": [18000, 24000],
+      "rhythmBonus": 80,
+      "workTicksPerUnit": 40,
+      "unitsToComplete": 3,
+      "renew": { "mode": "COOLDOWN", "cooldownTicks": 8000 },
+      "assign": { "wastrel": 1 },
+      "defaultFor": [],
+      "secret": true,
+      "cover": { "actorType": "wastrel", "presentedJob": "wastrel.streetlife" }
+    },
+    {
       "id": "flame_of_merc",
       "goalKind": "PC_SEAM",
       "priority": 299,

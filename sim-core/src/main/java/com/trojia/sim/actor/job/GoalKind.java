@@ -21,5 +21,6 @@ public enum GoalKind {
     STALL_CYCLE,
     TEND_BEASTS,
     STAY_NEAR_OWNER,
-    SCAVENGE_CIRCUIT
+    SCAVENGE_CIRCUIT,
+    BURGLE_ROOST
 }

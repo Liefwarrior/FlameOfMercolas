@@ -29,6 +29,9 @@ public final class FixtureWorldLoader {
     /** File name of the baked tavern world under {@code content/maps/baked/}. */
     public static final String TAVERN_FILE = "tavern_fixture.trojsav";
 
+    /** File name of the baked compound-block world under {@code content/maps/baked/}. */
+    public static final String COMPOUND_FILE = "compound_block.trojsav";
+
     /**
      * World z of the tavern fixture's authored {@code z:+0} street level:
      * {@code Coords.CHUNK_SIZE_Z + (0 - minZ)} per {@code TiledWorldImporter}'s
@@ -38,6 +41,16 @@ public final class FixtureWorldLoader {
      * instead of a client-side constant (flagged for later milestones).
      */
     public static final int TAVERN_STREET_LEVEL_Z = Coords.CHUNK_SIZE_Z + 1;
+
+    /**
+     * World z of the compound-block fixture's authored {@code z:+0} ground level.
+     * Same placement rule ({@code Coords.CHUNK_SIZE_Z + (0 - minZ)}), but this map's
+     * authored z-range is {@code +0..+2} (content/maps/README.md), so {@code minZ = 0}
+     * and the ground level lands at {@code Coords.CHUNK_SIZE_Z} exactly (the upper floor
+     * is {@code +1}, the roof slum {@code +2}). Same hardcoded-per-fixture caveat as
+     * {@link #TAVERN_STREET_LEVEL_Z}.
+     */
+    public static final int COMPOUND_GROUND_LEVEL_Z = Coords.CHUNK_SIZE_Z;
 
     private FixtureWorldLoader() {
     }
@@ -60,23 +73,39 @@ public final class FixtureWorldLoader {
      *                                {@code TavernFixtureBakeTest}
      */
     public static Loaded loadTavern() {
+        return load(TAVERN_FILE);
+    }
+
+    /**
+     * Loads the compound-block fixture world (the wealth-stratified Trojian
+     * Compound population stage — content/maps/README.md). Same contract as
+     * {@link #loadTavern()}: raws-fingerprint guarded, rebake via
+     * {@code CompoundBlockBakeTest} on a mismatch.
+     *
+     * @return the world and the registry its MATERIAL-lane raw ids resolve against
+     */
+    public static Loaded loadCompoundBlock() {
+        return load(COMPOUND_FILE);
+    }
+
+    private static Loaded load(String bakedFileName) {
         try {
             RawsBundle raws = MaterialRawsLoader.load(RepoPaths.locate("content", "raws"));
             MaterialRegistry materials = raws.materials();
 
-            Path bakedFile = RepoPaths.locate("content", "maps", "baked", TAVERN_FILE);
+            Path bakedFile = RepoPaths.locate("content", "maps", "baked", bakedFileName);
             TrojSav save = TrojSav.read(bakedFile);
             long fingerprint = materials.fingerprint();
             if (save.header().rawsFingerprint() != fingerprint) {
                 throw new IllegalStateException(
-                        "tavern_fixture.trojsav was baked against a different raws fingerprint ("
+                        bakedFileName + " was baked against a different raws fingerprint ("
                                 + save.header().rawsFingerprint() + " != " + fingerprint
-                                + ") -- rerun TavernFixtureBakeTest to rebake it");
+                                + ") -- rerun the matching bake test to rebake it");
             }
             TickableWorld world = new WorldLoader().load(save);
             return new Loaded(world, materials, save.header().worldSeed());
         } catch (IOException e) {
-            throw new UncheckedIOException("failed to load the tavern fixture world", e);
+            throw new UncheckedIOException("failed to load the fixture world " + bakedFileName, e);
         }
     }
 }

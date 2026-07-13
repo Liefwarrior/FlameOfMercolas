@@ -8,6 +8,11 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
  *
  * <p>{@code --smoke=N} renders N frames and exits cleanly — used by automated
  * verification to prove the GL pipeline works without a human closing the window.
+ * {@code --fixture=tavern|compound} selects which baked world boots (default
+ * {@code tavern}); {@code --fixture=compound} additionally spawns and renders the
+ * Trojian-Compound population (see {@link ObserverApp}). {@code --screenshot=path.png},
+ * combined with {@code --smoke=N}, dumps the final frame to disk — a verification aid,
+ * never used on the shipped interactive path.
  */
 public final class ObserverLauncher {
 
@@ -21,7 +26,18 @@ public final class ObserverLauncher {
         configuration.useVsync(true);
         configuration.setForegroundFPS(60);
 
-        new Lwjgl3Application(new ObserverApp(parseSmokeFrames(args)), configuration);
+        new Lwjgl3Application(
+                new ObserverApp(parseFixture(args), parseSmokeFrames(args), parseScreenshotPath(args)),
+                configuration);
+    }
+
+    private static String parseScreenshotPath(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--screenshot=")) {
+                return arg.substring("--screenshot=".length());
+            }
+        }
+        return null;
     }
 
     private static int parseSmokeFrames(String[] args) {
@@ -31,5 +47,16 @@ public final class ObserverLauncher {
             }
         }
         return 0;
+    }
+
+    private static ObserverApp.Fixture parseFixture(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--fixture=")) {
+                String value = arg.substring("--fixture=".length()).trim().toUpperCase(
+                        java.util.Locale.ROOT);
+                return ObserverApp.Fixture.valueOf(value);
+            }
+        }
+        return ObserverApp.Fixture.TAVERN;
     }
 }

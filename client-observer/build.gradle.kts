@@ -37,3 +37,14 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
+// Compound-block actor population legibility listing (ACTORS-SPEC.md §7.2 / the "prove it"
+// surface): GL-free, so it runs headless. Separate entry point/task so the GL :run
+// (ObserverLauncher) is untouched. Example:
+//   ./gradlew.bat :client-observer:runCompoundActors --args="--ticks 600"
+tasks.register<JavaExec>("runCompoundActors") {
+    group = "application"
+    description = "Prints the compound-block actor population (id/type/job/home/position/goal)."
+    mainClass.set("com.trojia.client.scenario.CompoundBlockActorsMain")
+    classpath = sourceSets["main"].runtimeClasspath
+}

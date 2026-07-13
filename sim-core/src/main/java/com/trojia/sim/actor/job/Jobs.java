@@ -32,6 +32,7 @@ public final class Jobs {
             new Registration(Job.Wastrel.Streetlife.ID, (p, c) -> new Job.Wastrel.Streetlife(p)),
             new Registration(Job.Villain.Robber.ID, Job.Villain.Robber::new),
             new Registration(Job.Villain.Cutpurse.ID, Job.Villain.Cutpurse::new),
+            new Registration(Job.Villain.Skyrunner.ID, Job.Villain.Skyrunner::new),
             new Registration(Job.FlameOfMerc.ID, (p, c) -> new Job.FlameOfMerc(p)),
             new Registration(Job.Watch.Patrol.ID, (p, c) -> new Job.Watch.Patrol(p)),
             new Registration(Job.Clergy.Shepherd.ID, (p, c) -> new Job.Clergy.Shepherd(p)),
