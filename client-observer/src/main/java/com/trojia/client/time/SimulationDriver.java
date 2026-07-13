@@ -7,6 +7,7 @@ import com.trojia.sim.engine.Simulations;
 import com.trojia.sim.world.TickableWorld;
 
 import java.util.List;
+import java.util.function.LongConsumer;
 
 /**
  * Wall-clock pacing layer around a {@link SimulationEngine}: the observer's fixed-timestep
@@ -29,6 +30,7 @@ public final class SimulationDriver {
     private final SimulationEngine engine;
     private SpeedSetting speed = SpeedSetting.PAUSED;
     private double accumulatedMillis;
+    private LongConsumer afterTick;
 
     /**
      * Wraps {@code world} in a fresh tick-0 engine (no systems registered — see class
@@ -77,11 +79,32 @@ public final class SimulationDriver {
     }
 
     /**
+     * Registers a callback invoked once after <em>every</em> executed tick, in every path
+     * that ticks ({@link #requestStep} and {@link #update}'s RUN/FAST loops), receiving the
+     * just-completed tick number ({@link #currentTick()}). This is the correct seam for
+     * per-tick observers (the inspector's event log): it fires exactly as many times as
+     * ticks actually run — zero on a paused frame, once per tick when FAST advances several
+     * within one render frame — so no tick's transitions are missed or double-counted. Pass
+     * {@code null} to clear. Fires <em>after</em> the engine tick, so live state reflects it.
+     */
+    public void setAfterTick(LongConsumer afterTick) {
+        this.afterTick = afterTick;
+    }
+
+    /** Executes one engine tick and notifies {@link #afterTick} (if any) of its number. */
+    private void tickOnce() {
+        engine.tick();
+        if (afterTick != null) {
+            afterTick.accept(engine.currentTick());
+        }
+    }
+
+    /**
      * Executes exactly one tick, independent of {@link #speed}. The manual-step control:
      * callers gate this on their own policy (e.g. only while {@link SpeedSetting#PAUSED}).
      */
     public void requestStep() {
-        engine.tick();
+        tickOnce();
     }
 
     /**
@@ -113,12 +136,12 @@ public final class SimulationDriver {
                     accumulatedMillis = 0; // drop the backlog rather than spiraling
                     return;
                 }
-                engine.tick();
+                tickOnce();
                 accumulatedMillis -= periodMillis;
             }
         } else {
             while (accumulatedMillis >= periodMillis) {
-                engine.tick();
+                tickOnce();
                 accumulatedMillis -= periodMillis;
             }
         }

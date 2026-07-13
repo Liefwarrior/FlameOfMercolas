@@ -27,8 +27,18 @@ public final class ObserverLauncher {
         configuration.setForegroundFPS(60);
 
         new Lwjgl3Application(
-                new ObserverApp(parseFixture(args), parseSmokeFrames(args), parseScreenshotPath(args)),
+                new ObserverApp(parseFixture(args), parseSmokeFrames(args), parseScreenshotPath(args),
+                        parseDebugSelect(args)),
                 configuration);
+    }
+
+    private static int parseDebugSelect(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--debug-select=")) {
+                return Integer.parseInt(arg.substring("--debug-select=".length()));
+            }
+        }
+        return -1;
     }
 
     private static String parseScreenshotPath(String[] args) {

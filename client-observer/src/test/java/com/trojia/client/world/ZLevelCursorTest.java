@@ -34,6 +34,14 @@ class ZLevelCursorTest {
     }
 
     @Test
+    void toJumpsDirectlyAndClampsIntoRange() {
+        ZLevelCursor cursor = new ZLevelCursor(0, 10, 5);
+        assertEquals(8, cursor.to(8), "to() jumps straight to an in-range level");
+        assertEquals(10, cursor.to(999), "to() saturates at maxZ");
+        assertEquals(0, cursor.to(-999), "to() saturates at minZ");
+    }
+
+    @Test
     void constructorRejectsMinGreaterThanMax() {
         assertThrows(IllegalArgumentException.class, () -> new ZLevelCursor(5, 4, 4));
     }

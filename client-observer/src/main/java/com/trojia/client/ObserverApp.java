@@ -19,13 +19,19 @@ import com.trojia.client.boot.RepoPaths;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.hud.HudText;
 import com.trojia.client.input.CameraInput;
+import com.trojia.client.input.InspectorInput;
 import com.trojia.client.input.TimeControlInput;
+import com.trojia.client.inspect.EventLog;
+import com.trojia.client.inspect.EventLogTracker;
+import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.render.ActorRenderer;
+import com.trojia.client.render.InspectorRenderer;
 import com.trojia.client.render.WorldRenderer;
 import com.trojia.client.scenario.CompoundBlockPopulation;
 import com.trojia.client.time.SimulationDriver;
 import com.trojia.client.time.SpeedSetting;
 import com.trojia.client.world.ZLevelCursor;
+import com.trojia.sim.actor.Actor;
 import com.trojia.sim.engine.SimulationSystem;
 import com.trojia.sim.engine.TickClock;
 import com.trojia.sim.world.Coords;
@@ -60,9 +66,13 @@ public final class ObserverApp extends ApplicationAdapter {
     /** Which baked fixture the observer boots. */
     public enum Fixture { TAVERN, COMPOUND }
 
+    /** Sentinel for {@code --debug-select}: no forced selection (the shipped default). */
+    private static final int NO_DEBUG_SELECT = Actor.NONE;
+
     private final Fixture fixture;
     private final int smokeFrames;
     private final String screenshotPath;
+    private final int debugSelectActorId;
     private int framesRendered;
 
     private MapCamera camera;
@@ -78,6 +88,10 @@ public final class ObserverApp extends ApplicationAdapter {
     private ActorRenderer actorRenderer;
     private BitmapFont actorFont;
     private CompoundBlockPopulation population;
+    private InspectorState inspector;
+    private EventLog eventLog;
+    private EventLogTracker eventLogTracker;
+    private InspectorRenderer inspectorRenderer;
 
     public ObserverApp(int smokeFrames) {
         this(Fixture.TAVERN, smokeFrames);
@@ -87,15 +101,25 @@ public final class ObserverApp extends ApplicationAdapter {
         this(fixture, smokeFrames, null);
     }
 
-    /**
-     * @param screenshotPath if non-null, a PNG of the final smoke frame is written here
-     *                       right before exit (debug/verification aid only — never used
-     *                       on the shipped interactive path).
-     */
     public ObserverApp(Fixture fixture, int smokeFrames, String screenshotPath) {
+        this(fixture, smokeFrames, screenshotPath, NO_DEBUG_SELECT);
+    }
+
+    /**
+     * @param screenshotPath      if non-null, a PNG of the final smoke frame is written
+     *                            here right before exit (debug/verification aid only —
+     *                            never used on the shipped interactive path).
+     * @param debugSelectActorId  if &ge; 0 (and the compound fixture is loaded), force-
+     *                            selects this actor at boot, bypassing the mouse — the
+     *                            headless proof seam for the selection panel + follow, since
+     *                            the {@code --smoke} path has no cursor to click with.
+     */
+    public ObserverApp(Fixture fixture, int smokeFrames, String screenshotPath,
+            int debugSelectActorId) {
         this.fixture = fixture;
         this.smokeFrames = smokeFrames;
         this.screenshotPath = screenshotPath;
+        this.debugSelectActorId = debugSelectActorId;
     }
 
     @Override
@@ -132,6 +156,23 @@ public final class ObserverApp extends ApplicationAdapter {
                     List.<SimulationSystem>of(population.system()));
             this.actorRenderer = new ActorRenderer(population.registry());
             this.actorFont = new BitmapFont();
+
+            // Inspector: click-to-select panel, all-population event feed, follow-camera.
+            this.inspector = new InspectorState();
+            this.eventLog = new EventLog(30);
+            this.eventLogTracker = new EventLogTracker(population.registry(), population.homes(),
+                    eventLog);
+            // The per-tick seam (not per-frame): fires once per executed tick, so the feed
+            // never misses a FAST-skipped tick nor double-logs a re-rendered one.
+            this.driver.setAfterTick(eventLogTracker::afterTick);
+            this.inspectorRenderer = new InspectorRenderer(population.registry(), population.homes(),
+                    population.relationships(), population.jobs(), population.items(), eventLog);
+            if (debugSelectActorId >= 0 && debugSelectActorId < population.registry().size()) {
+                inspector.select(debugSelectActorId);
+                inspector.toggleFollow(); // exercise the follow path in the headless proof
+                camera.setZoom(4);        // legible glyph + highlight for the screenshot aid
+            }
+
             System.out.println("observer: spawned " + population.registry().size()
                     + " actors; homes=" + population.homes().size()
                     + " relationships=" + population.relationships().size()
@@ -163,7 +204,11 @@ public final class ObserverApp extends ApplicationAdapter {
         float deltaSeconds = Gdx.graphics.getDeltaTime();
         CameraInput.poll(camera, zLevel, deltaSeconds);
         TimeControlInput.poll(driver);
+        if (inspector != null) {
+            InspectorInput.poll(inspector, camera, population.registry(), zLevel.z());
+        }
         driver.update(deltaSeconds);
+        applyFollowCamera();
 
         projection.setToOrtho2D(0, 0, camera.viewportWidthPx(), camera.viewportHeightPx());
         batch.setProjectionMatrix(projection);
@@ -178,6 +223,9 @@ public final class ObserverApp extends ApplicationAdapter {
         font.draw(batch,
                 HudText.describeTime(driver.currentTick(), driver.speed().name(), simElapsedSeconds),
                 8, camera.viewportHeightPx() - 8 - font.getLineHeight());
+        if (inspectorRenderer != null) {
+            inspectorRenderer.draw(batch, font, camera, inspector, zLevel.z());
+        }
         batch.end();
 
         framesRendered++;
@@ -221,6 +269,21 @@ public final class ObserverApp extends ApplicationAdapter {
                 pixmap.drawPixel(x, h - 1 - y, top);
             }
         }
+    }
+
+    /**
+     * While follow is active, re-center the camera on the selected actor's live tile every
+     * frame (read fresh from the registry — no cached position), and snap the viewed z-level
+     * to the actor's floor so an actor changing levels stays in view. A no-op with no
+     * selection or follow off — free camera then.
+     */
+    private void applyFollowCamera() {
+        if (inspector == null || !inspector.followActive()) {
+            return;
+        }
+        int cell = population.registry().get(inspector.selectedActorId()).cell();
+        zLevel.to(PackedPos.z(cell));
+        camera.centerOnTile(PackedPos.x(cell), PackedPos.y(cell));
     }
 
     private void reportTrackedMover() {

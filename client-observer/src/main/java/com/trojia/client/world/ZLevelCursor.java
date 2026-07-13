@@ -57,6 +57,16 @@ public final class ZLevelCursor {
         return z;
     }
 
+    /**
+     * Jumps directly to {@code targetZ}, clamped into {@code [minZ, maxZ]} (the
+     * follow-camera snaps the viewed floor to the followed actor's z when it changes
+     * levels). Out-of-range targets saturate at the nearer bound rather than throwing.
+     */
+    public int to(int targetZ) {
+        z = clamp(targetZ);
+        return z;
+    }
+
     private int clamp(int value) {
         return Math.max(minZ, Math.min(maxZ, value));
     }

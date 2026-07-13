@@ -1,6 +1,7 @@
 package com.trojia.client.scenario;
 
 import com.trojia.client.boot.FixtureWorldLoader;
+import com.trojia.client.inspect.JobDisplay;
 import com.trojia.client.time.SimulationDriver;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
@@ -79,9 +80,9 @@ public final class CompoundBlockActorsMain {
         for (int i = 0; i < registry.size(); i++) {
             Actor actor = registry.get(i);
             Job job = actor.jobOrdinal() >= 0 ? jobs.get(actor.jobOrdinal()) : null;
-            String trueJob = job != null ? job.id().value() : "-";
-            String presented = presentedJob(job);
-            String cover = trueJob.equals(presented) ? "" : "  <-- secret";
+            String trueJob = JobDisplay.trueJobId(job);
+            String presented = JobDisplay.presentedJobId(job);
+            String cover = JobDisplay.isSecret(job) ? "  <-- secret" : "";
             Home home = homes.get(actor.homeId());
             short[] needs = actor.needsSnapshot();
             System.out.printf("%-3d %-22s %-18s %-18s %-5d %-13s %-13s %-10s %d/%d/%d/%d/%d%s%n",
@@ -118,16 +119,6 @@ public final class CompoundBlockActorsMain {
         if (relationships.size() > shown) {
             System.out.println("  ... (" + (relationships.size() - shown) + " more)");
         }
-    }
-
-    private static String presentedJob(Job job) {
-        if (job == null) {
-            return "-";
-        }
-        if (job instanceof Job.Villain villain) {
-            return villain.cover().presentedJob().value();   // §10.4: presented, derived not stored
-        }
-        return job.id().value();
     }
 
     private static String policyName(Actor actor) {
