@@ -2,6 +2,8 @@ package com.trojia.client.inspect;
 
 import com.trojia.client.scenario.CompoundBlockPopulation;
 import com.trojia.sim.actor.Actor;
+import com.trojia.sim.actor.job.Job;
+import com.trojia.sim.actor.job.JobId;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -54,8 +56,11 @@ class InspectorTextTest {
     @Test
     void villainPanelShowsPresentedCoverAndSecretMarker() {
         CompoundBlockPopulation p = build();
-        // Actor #25 secretly runs villain.skyrunner under a wastrel.streetlife cover.
-        String text = join(InspectorText.describe(25, p.registry(), p.homes(),
+        // A rooftop-slum Wastrel secretly runs villain.skyrunner under a wastrel.streetlife
+        // cover; locate it by its TRUE job so the test survives population re-balancing (ids
+        // are not a stable contract).
+        int skyrunnerId = firstWithTrueJob(p, Job.Villain.Skyrunner.ID);
+        String text = join(InspectorText.describe(skyrunnerId, p.registry(), p.homes(),
                 p.relationships(), p.jobs(), p.items()));
 
         assertTrue(text.contains("villain.skyrunner"), text);
@@ -63,5 +68,16 @@ class InspectorTextTest {
         assertTrue(text.contains("(secret)"), () -> "villain must be flagged secret: " + text);
         // Its tell rides the inventory (a lockpick), resolved via ItemsLite kind + quantity.
         assertTrue(text.contains("kind 5 x1"), () -> "expected the lockpick item: " + text);
+    }
+
+    /** The lowest-id actor whose TRUE (not presented) job is {@code jobId}. */
+    private static int firstWithTrueJob(CompoundBlockPopulation p, JobId jobId) {
+        for (int i = 0; i < p.registry().size(); i++) {
+            Actor a = p.registry().get(i);
+            if (a.jobOrdinal() >= 0 && p.jobs().get(a.jobOrdinal()).id().equals(jobId)) {
+                return a.id();
+            }
+        }
+        throw new AssertionError("no actor with true job " + jobId + " in the population");
     }
 }

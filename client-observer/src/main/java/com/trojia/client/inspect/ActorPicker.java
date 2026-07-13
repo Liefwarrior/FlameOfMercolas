@@ -13,7 +13,7 @@ import com.trojia.sim.world.PackedPos;
  * <p><b>Linear scan.</b> A single pass over the {@link ActorRegistry} in ascending
  * {@code ActorId} order — the project's documented "hundreds, not millions" convention
  * (ARCHITECTURE §3; the same scan {@code RelationshipRegistry}/{@code HomeRegistry} use),
- * fine at the compound's 40 actors. When two actors share a tile (household members spawn
+ * fine at the compound's ~64 actors. When two actors share a tile (household members spawn
  * co-located), the lowest {@code ActorId} wins, deterministically.
  */
 public final class ActorPicker {

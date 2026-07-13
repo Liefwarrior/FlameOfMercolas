@@ -14,7 +14,7 @@ and read the tile *Class* label, e.g. `granite/WALL`).
 | `src/materials.tsx` | Shared imageless tileset. One tile per (material, form) pair in use, plus fluid tiles. 16×16 px declared size. Includes `reman_concrete` (WALL/FLOOR) and `leather`/`cloth` (WALL) for the Compound typology (tile ids 31–34). |
 | `src/tavern_fixture.tmx` | 48×32, z-levels −1/+0/+1. The Tavern Fire flagship stage (M1/M2 acceptance: imports byte-identical twice). |
 | `src/ubend_fixture.tmx` | 24×16, z-levels −1/+0. Sealed U-bend duct for the M3 fluids pressure test. |
-| `src/compound_block.tmx` | 128×128, z-levels +0/+1/+2. A DOCKS-GAZETTEER city-block slice built on the corrected **Trojian Compound** housing typology (canon: courtyard-farm ecosystem, not detached homes; see `docs/design/DOCKS-GAZETTEER.md` §2.5) — 1 Compound (12 dwelling units) + 2 businesses (K22, K24), populated with 40 actors for F2.5. Supersedes an earlier detached-"12 homes" prototype (`city_block.tmx`, removed — the corrected Compound typology replaced it before it was ever populated). |
+| `src/compound_block.tmx` | 128×128, z-levels +0/+1/+2. A DOCKS-GAZETTEER city-block slice built on the corrected **Trojian Compound** housing typology (canon: courtyard-farm ecosystem, not detached homes; see `docs/design/DOCKS-GAZETTEER.md` §2.5) — 1 Compound (12 dwelling units) + 2 businesses (K22, K24), populated at lore-derived full occupancy with ~64 actors (all 9 actor groups, all 13 civic jobs, all 6 relationship kinds — see `CompoundBlockPopulation`'s Javadoc for the canon troop-number derivation). Supersedes an earlier detached-"12 homes" prototype (`city_block.tmx`, removed — the corrected Compound typology replaced it before it was ever populated). |
 
 ## Map-level rules
 

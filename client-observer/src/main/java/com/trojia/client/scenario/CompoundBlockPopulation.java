@@ -15,9 +15,11 @@ import com.trojia.sim.actor.HouseholdRaws;
 import com.trojia.sim.actor.HouseholdRawsLoader;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.Need;
+import com.trojia.sim.actor.RelationshipKind;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobBinder;
+import com.trojia.sim.actor.job.JobId;
 import com.trojia.sim.actor.job.JobRegistry;
 import com.trojia.sim.actor.type.AnimalActor;
 import com.trojia.sim.actor.type.AnimalKeeper;
@@ -37,11 +39,23 @@ import java.util.List;
 
 /**
  * The deterministic Trojian-Compound population (ACTORS-SPEC.md §11.4, DECISIONS.md
- * "Trojian housing: Compounds"): spawns a wealth-stratified roster of 40 actors onto the
- * baked {@code compound_block} world and wires their jobs, homes, household/employment
- * relationship edges and starting inventory — the single source of truth shared by the
- * observer's compound boot path (which renders it, {@code ObserverApp}) and the headless
- * legibility listing ({@code CompoundBlockActorsMain}).
+ * "Trojian housing: Compounds"): spawns a lore-derived, wealth-stratified roster (~64 actors)
+ * onto the baked {@code compound_block} world and wires their jobs, homes, household/
+ * employment/neighbour/friend/mentor relationship edges and starting inventory — the single
+ * source of truth shared by the observer's compound boot path (which renders it,
+ * {@code ObserverApp}) and the headless legibility listing ({@code CompoundBlockActorsMain}).
+ *
+ * <p><b>Lore-derived density (DOCKS-GAZETTEER §4, canon troop numbers).</b> The whole Docks
+ * ward's lore target is derived from canon: a single harbour ward is garrisoned at
+ * internal-security scale — ~1 platoon (canon platoon ≈ 100 men, novel L2074; cf. palace
+ * household-guard ≈ 60, L2074), <em>not</em> the field army deployed to the fifteen-year
+ * six-front war (30–40k at one front, L2146). Applying the ruled 1:10 enlisted-to-not-enlisted
+ * heads-of-household ratio to ~100 enlisted heads gives 1,100 households; the canonical
+ * household-size distribution ({@code household.json} weights {1:20,2:35,3:25,4:15,5:5},
+ * mean 2.5) yields a ward target of <b>~2,750 people</b>. One fully-occupied Compound holds
+ * ~64 — so the ward implies ~40 Compounds; this fixture realizes ONE of them (~2.3% of the
+ * ward), the rest being off-map narrative context (gazetteer framing). Every number above the
+ * platoon anchor is <b>(placeholder)</b> — canon fixes no Docks garrison.
  *
  * <p><b>Placement.</b> Actors live in <em>world-tile</em> coordinates, matching the
  * {@code TiledWorldImporter} placement rule the baked world uses: authored map cell
@@ -72,8 +86,11 @@ public final class CompoundBlockPopulation {
     private static final int[] NETMENDERS = {27, 19};   // K22 Netmenders' Arcade
     private static final int[] EELPOTS = {99, 19};      // K24 The Eel-Pots
     // Workplace anchors distinct from any dwelling (derived from known coordinates, no new map
-    // marker): the courtyard alms post the resident clergy commute out to work each day.
-    private static final int[] ALMS_STATION = {60, 40};
+    // marker): commute destinations for the compound's daily round trips (§4.6, JobBehaviors
+    // pursueAtAnchor). All lie on authored walkable floor (courtyard dirt / gate-corridor dirt).
+    private static final int[] ALMS_STATION = {68, 44};        // gate-corridor alms post (clergy)
+    private static final int[] COURTYARD_FARM = {63, 65};      // courtyard atrium centre (farmers)
+    private static final int[] COURTYARD_STALL = {70, 66};     // courtyard market stall (a stallholder)
     // z:+1 upper-floor condos (east wing built up a second story)
     private static final int[] CONDO_07 = {99, 44};
     private static final int[] CONDO_08 = {99, 65};
@@ -230,53 +247,132 @@ public final class CompoundBlockPopulation {
         }
 
         void populate() {
-            // ---------------- Settled owning-family units (Reman-concrete, z:+0/+1) --------
-            // Mansion: the wealthiest household — three Serfs and a shop-owning family member.
-            Actor mansionSerfA = spawn(Serf.TYPE, MANSION_01, 0);
-            Actor mansionSerfB = spawn(Serf.TYPE, MANSION_01, 0);
-            Actor mansionMover = spawn(Serf.TYPE, MANSION_01, 0);   // ground-floor tracked mover
+            // Lore-derived FULL-OCCUPANCY population of ONE Trojian Compound (~64 actors) — the
+            // realistic ceiling for a single compound (owning-family mansion + servant households,
+            // one household per condo, canon-packed rooftop slum, business proprietors + commuting
+            // staff, civic texture). It realizes ~1/40 of the ~2,750-person Docks ward the canon
+            // troop numbers imply (class Javadoc); the ward is a many-compound district, the rest
+            // off-map. Spawn order is fixed => ActorIds deterministic; the only RNG is
+            // HouseholdFormer's named draws. Extra households cluster on each unit's confirmed-
+            // walkable centre anchor (small offsets stay inside the same authored room).
+
+            // ===================== OWNING-FAMILY MANSION (Reman-concrete, z:+0) =====================
+            // The great house (40x60, ~8x a condo's floor): the owning family plus SIX
+            // servant/dependent households — the wealth signal is the household COUNT one shell holds.
+            // M1 owning family (wealthiest): a shop-owning head who works a courtyard stall by day
+            // (commuter) + kin (one is the tracked ground mover).
             Actor mansionOwner = spawn(Shopkeeper.TYPE, MANSION_01, 0);
-            household(List.of(mansionSerfA, mansionSerfB, mansionMover, mansionOwner));
+            Actor mansionSpouse = spawn(Serf.TYPE, MANSION_01, 0);
+            Actor mansionHeir = spawn(Serf.TYPE, MANSION_01, 0);
+            Actor mansionMover = spawn(Serf.TYPE, MANSION_01, 0);   // ground-floor tracked mover
+            household(List.of(mansionOwner, mansionSpouse, mansionHeir, mansionMover));
+            mansionOwner.setAnchorCell(worldCell(COURTYARD_STALL, 0));   // runs a stall (commuter)
 
-            // Condo_02: a devout household — the Priest/Disciple pairing plus a lay Serf.
+            // M2 steward's family (three) · M3 cook's pair.
+            Actor steward = spawn(Serf.TYPE, new int[]{24, 61}, 0);
+            household(List.of(steward, spawn(Serf.TYPE, new int[]{24, 61}, 0),
+                    spawn(Serf.TYPE, new int[]{24, 61}, 0)));
+            Actor cook = spawn(Serf.TYPE, new int[]{30, 61}, 0);
+            household(List.of(cook, spawn(Serf.TYPE, new int[]{30, 61}, 0)));
+
+            // M4 groundskeeper household — an Animal Keeper (the §4.8 Keeper<->Animal invariant)
+            // and a Serf apprentice (MENTOR, below), with the house watchdog sharing their Home.
+            Actor houseKeeper = spawn(AnimalKeeper.TYPE, new int[]{24, 69}, 0);
+            Actor houseKeeperMate = spawn(Serf.TYPE, new int[]{24, 69}, 0);
+            household(List.of(houseKeeper, houseKeeperMate));
+            Actor houseDog = spawn(AnimalActor.TYPE, new int[]{25, 69}, 0);
+            houseDog.setOwnerId(houseKeeper.id());
+            houseDog.setHomeId(houseKeeper.homeId());
+
+            // M5 poor-relation pair · M6 laundry household (three) · M7 aged-retainer pair.
+            Actor poorRel = spawn(Serf.TYPE, new int[]{30, 69}, 0);
+            household(List.of(poorRel, spawn(Serf.TYPE, new int[]{30, 69}, 0)));
+            Actor laundry = spawn(Serf.TYPE, new int[]{22, 65}, 0);
+            household(List.of(laundry, spawn(Serf.TYPE, new int[]{22, 65}, 0),
+                    spawn(Serf.TYPE, new int[]{22, 65}, 0)));
+            Actor aged = spawn(Serf.TYPE, new int[]{32, 65}, 0);
+            household(List.of(aged, spawn(Serf.TYPE, new int[]{32, 65}, 0)));
+
+            // ===================== GROUND-FLOOR CONDOS (one household per unit, §2.5) ==============
+            // C02 devout clergy household: the ward's ONE Priest (canon: exactly one) + TWO
+            // Disciples (canon: 2-3), commuting to the gate-corridor alms post daily.
             Actor priest = spawn(PriestOfTheFlame.TYPE, CONDO_02, 0);
-            Actor disciple = spawn(DiscipleOfTheFlame.TYPE, CONDO_02, 0);
-            Actor condo2Serf = spawn(Serf.TYPE, CONDO_02, 0);
-            household(List.of(priest, disciple, condo2Serf));
-            // §4.5 Priest -> Disciple oversight (EMPLOYER edge, no draw consumed).
-            HouseholdFormer.bindMentorPairFree(priest, disciple, relationships);
-            // Clergy commute: both work the courtyard alms station (anchor), lodging back home
-            // in Condo_02 off shift — a genuine daily round trip (anchor != home, §4.4/§4.5).
+            Actor disciple1 = spawn(DiscipleOfTheFlame.TYPE, CONDO_02, 0);
+            Actor disciple2 = spawn(DiscipleOfTheFlame.TYPE, CONDO_02, 0);
+            household(List.of(priest, disciple1, disciple2));
+            HouseholdFormer.bindMentorPairFree(priest, disciple1, relationships);   // §4.5 EMPLOYER
             priest.setAnchorCell(worldCell(ALMS_STATION, 0));
-            disciple.setAnchorCell(worldCell(ALMS_STATION, 0));
+            disciple1.setAnchorCell(worldCell(ALMS_STATION, 0));
+            disciple2.setAnchorCell(worldCell(ALMS_STATION, 0));
 
-            household(List.of(spawn(Serf.TYPE, CONDO_03, 0), spawn(Serf.TYPE, CONDO_03, 0)));
-            household(List.of(spawn(Serf.TYPE, CONDO_04, 0), spawn(Serf.TYPE, CONDO_04, 0),
-                    spawn(Serf.TYPE, CONDO_04, 0)));
-            household(List.of(spawn(Serf.TYPE, CONDO_05, 0), spawn(Serf.TYPE, CONDO_05, 0)));
-            // Condo_06: a small shop-owning household.
-            household(List.of(spawn(Shopkeeper.TYPE, CONDO_06, 0), spawn(Serf.TYPE, CONDO_06, 0)));
-            // Upper-floor east-wing condos (z:+1).
-            household(List.of(spawn(Serf.TYPE, CONDO_07, 1), spawn(Serf.TYPE, CONDO_07, 1)));
-            household(List.of(spawn(Serf.TYPE, CONDO_08, 1), spawn(Serf.TYPE, CONDO_08, 1),
-                    spawn(Serf.TYPE, CONDO_08, 1)));
-            household(List.of(spawn(Serf.TYPE, CONDO_09, 1), spawn(Serf.TYPE, CONDO_09, 1)));
+            // C03 farmer family (three) — work the courtyard atrium farm (serf.farmer commuters).
+            Actor c03a = spawn(Serf.TYPE, CONDO_03, 0);
+            Actor c03b = spawn(Serf.TYPE, CONDO_03, 0);
+            Actor c03c = spawn(Serf.TYPE, CONDO_03, 0);
+            household(List.of(c03a, c03b, c03c));
+            makeFarmer(c03a);
+            makeFarmer(c03b);
+            makeFarmer(c03c);
 
-            // ---------------- Rooftop slum (cloth/leather huts, z:+2) ----------------------
-            household(List.of(spawn(Wastrel.TYPE, ROOF_HUT_10, 2), spawn(Wastrel.TYPE, ROOF_HUT_10, 2)));
-            // Roof_hut_11: the Skyrunner household — one secret villain presenting as an
-            // ordinary rooftop tenant, plus an ordinary Wastrel partner.
+            // C04 dock-labour pair — haul at the Eel-Pots quay (serf.laborer commuters).
+            Actor c04a = spawn(Serf.TYPE, CONDO_04, 0);
+            Actor c04b = spawn(Serf.TYPE, CONDO_04, 0);
+            household(List.of(c04a, c04b));
+            c04a.setAnchorCell(worldCell(EELPOTS, 0));
+            c04b.setAnchorCell(worldCell(EELPOTS, 0));
+
+            // C05 stallholder household — a second Shopkeeper working a courtyard stall + kin.
+            Actor c05shop = spawn(Shopkeeper.TYPE, CONDO_05, 0);
+            household(List.of(c05shop, spawn(Serf.TYPE, CONDO_05, 0)));
+            c05shop.setAnchorCell(worldCell(COURTYARD_STALL, 0));
+
+            // C06 farmer pair — also work the courtyard farm (serf.farmer commuters).
+            Actor c06a = spawn(Serf.TYPE, CONDO_06, 0);
+            Actor c06b = spawn(Serf.TYPE, CONDO_06, 0);
+            household(List.of(c06a, c06b));
+            makeFarmer(c06a);
+            makeFarmer(c06b);
+
+            // ===================== UPPER-FLOOR CONDOS (east wing, z:+1) ============================
+            Actor c07a = spawn(Serf.TYPE, CONDO_07, 1);
+            household(List.of(c07a, spawn(Serf.TYPE, CONDO_07, 1), spawn(Serf.TYPE, CONDO_07, 1),
+                    spawn(Serf.TYPE, CONDO_07, 1)));
+            Actor c08a = spawn(Serf.TYPE, CONDO_08, 1);
+            household(List.of(c08a, spawn(Serf.TYPE, CONDO_08, 1)));
+            Actor c09a = spawn(Serf.TYPE, CONDO_09, 1);
+            household(List.of(c09a, spawn(Serf.TYPE, CONDO_09, 1), spawn(Serf.TYPE, CONDO_09, 1)));
+
+            // ===================== ROOFTOP SLUM (cloth/leather huts, z:+2 — packed mass housing) ===
+            // Hut 10: a Wastrel pair (one a secret cutpurse under streetlife cover) + a lone
+            // destitute Serf who cannot afford a condo.
+            Actor r10a = spawn(Wastrel.TYPE, ROOF_HUT_10, 2);
+            household(List.of(r10a, spawn(Wastrel.TYPE, ROOF_HUT_10, 2)));
+            assignJob(r10a, Job.Villain.Cutpurse.ID);
+            household(List.of(spawn(Serf.TYPE, new int[]{87, 47}, 2)));
+
+            // Hut 11: the Skyrunner household (secret compound-burglar under a rooftop-tenant cover)
+            // + partner; and a second pair hiding a robber.
             Actor skyrunner = spawn(Wastrel.TYPE, ROOF_HUT_11, 2);
             Actor skyPartner = spawn(Wastrel.TYPE, ROOF_HUT_11, 2);
-            skyrunner.setJobOrdinal((short) jobs.ordinalOf(Job.Villain.Skyrunner.ID));
+            assignJob(skyrunner, Job.Villain.Skyrunner.ID);
             household(List.of(skyrunner, skyPartner));
-            household(List.of(spawn(Wastrel.TYPE, ROOF_HUT_12, 2), spawn(Wastrel.TYPE, ROOF_HUT_12, 2)));
+            Actor robber = spawn(Wastrel.TYPE, new int[]{101, 66}, 2);
+            household(List.of(robber, spawn(Wastrel.TYPE, new int[]{101, 66}, 2)));
+            assignJob(robber, Job.Villain.Robber.ID);
 
-            // ---------------- Street-frontage businesses (outside the compound walls) ------
-            // Each proprietor lives over the shop (home == workplace, no commute). Each hired
-            // hand lodges INSIDE the compound and commutes to the counter: home != anchor, so
-            // the commute-aware pursueAtAnchor walks the daily round trip — to the shop through
-            // the job's rhythm window, home again once the shift ends (§4.6/§4.2, §10.1).
+            // Hut 12: a Wastrel family (three), a lone cutpurse, and a destitute Serf.
+            Actor r12a = spawn(Wastrel.TYPE, ROOF_HUT_12, 2);
+            household(List.of(r12a, spawn(Wastrel.TYPE, ROOF_HUT_12, 2),
+                    spawn(Wastrel.TYPE, ROOF_HUT_12, 2)));
+            Actor cutpurse2 = spawn(Wastrel.TYPE, new int[]{89, 86}, 2);
+            household(List.of(cutpurse2));
+            assignJob(cutpurse2, Job.Villain.Cutpurse.ID);
+            household(List.of(spawn(Serf.TYPE, new int[]{85, 82}, 2)));
+
+            // ===================== STREET-FRONTAGE BUSINESSES (outside the compound walls) =========
+            // Each proprietor lives over the shop (home == workplace, no commute). Each hired hand
+            // lodges in a compound condo and commutes to the counter: home != anchor, so the
+            // commute-aware pursueAtAnchor walks a daily round trip (§4.6/§4.2, §10.1).
             Actor netKeeper = spawn(Shopkeeper.TYPE, NETMENDERS, 0);
             soloHome(netKeeper);                                // over the shop
             Actor netStaff = spawn(Serf.TYPE, CONDO_03, 0);     // lodges in a compound condo
@@ -291,11 +387,14 @@ public final class CompoundBlockPopulation {
             eelStaff.setAnchorCell(worldCell(EELPOTS, 0));      // works the Eel-Pots counter
             hire(eelKeeper, eelStaff);
 
-            // ---------------- Civic / street texture ---------------------------------------
-            // Two Militia Watch on patrol — sleep at post (home == anchor).
-            soloHome(spawn(MilitiaWatch.TYPE, new int[]{71, 44}, 0));   // compound gate
-            soloHome(spawn(MilitiaWatch.TYPE, new int[]{48, 8}, 0));    // street frontage
-            // Animal Keeper with a pen and two beasts (the §4.8 Keeper<->Animal invariant).
+            // ===================== CIVIC / STREET TEXTURE ==========================================
+            // Three Militia Watch on patrol — sleep at post (home == anchor): the ward's "enlisted"
+            // (the "1" in the 1:10 heads-of-household ratio, class Javadoc).
+            Actor watchGate = spawn(MilitiaWatch.TYPE, new int[]{71, 44}, 0);   // gate chokepoint
+            soloHome(watchGate);
+            soloHome(spawn(MilitiaWatch.TYPE, new int[]{48, 8}, 0));            // street frontage
+            soloHome(spawn(MilitiaWatch.TYPE, new int[]{90, 25}, 0));           // Eel-Pots beat
+            // Kennel-Row Animal Keeper with a pen and two beasts (Keeper<->Animal invariant).
             Actor keeper = spawn(AnimalKeeper.TYPE, new int[]{48, 58}, 0);
             Actor beastA = spawn(AnimalActor.TYPE, new int[]{49, 58}, 0);
             Actor beastB = spawn(AnimalActor.TYPE, new int[]{50, 58}, 0);
@@ -309,9 +408,35 @@ public final class CompoundBlockPopulation {
             soloHome(spawn(FeralActor.TYPE, new int[]{98, 22}, 0));     // by the Eel-Pots' fish
             soloHome(spawn(FeralActor.TYPE, new int[]{30, 22}, 0));     // by the Netmenders
 
-            // ---------------- Civic default jobs + presented-job cover ---------------------
-            // Every actor without an explicit job (only the Skyrunner has one) takes its
-            // type's defaultFor job — the §10.4 spawn-bake simplification.
+            // ===================== FLAVOUR RELATIONSHIP EDGES (deterministic, no RNG) ==============
+            // Beyond the auto HOUSEHOLD cliques and business EMPLOYER edges, wire the remaining
+            // RelationshipKinds so the graph exercises the full set (§11.3):
+            // MENTOR — heir apprenticed to the head of house; the Keeper's mate learning the dogs;
+            //          the Priest guiding both Disciples.
+            relationships.addDirected(mansionOwner.id(), mansionHeir.id(), RelationshipKind.MENTOR);
+            relationships.addDirected(houseKeeper.id(), houseKeeperMate.id(), RelationshipKind.MENTOR);
+            relationships.addDirected(priest.id(), disciple1.id(), RelationshipKind.MENTOR);
+            relationships.addDirected(priest.id(), disciple2.id(), RelationshipKind.MENTOR);
+            // EMPLOYER — the great house employs its steward and its groundskeeper.
+            relationships.addDirected(mansionOwner.id(), steward.id(), RelationshipKind.EMPLOYER);
+            relationships.addDirected(mansionOwner.id(), houseKeeper.id(), RelationshipKind.EMPLOYER);
+            // NEIGHBOR — adjacent Homes across the ring (mansion wing, condo stack, rooftop huts).
+            relationships.addSymmetric(steward.id(), cook.id(), RelationshipKind.NEIGHBOR);
+            relationships.addSymmetric(poorRel.id(), laundry.id(), RelationshipKind.NEIGHBOR);
+            relationships.addSymmetric(priest.id(), c03a.id(), RelationshipKind.NEIGHBOR);
+            relationships.addSymmetric(c03a.id(), c04a.id(), RelationshipKind.NEIGHBOR);
+            relationships.addSymmetric(c05shop.id(), c06a.id(), RelationshipKind.NEIGHBOR);
+            relationships.addSymmetric(c07a.id(), c08a.id(), RelationshipKind.NEIGHBOR);
+            relationships.addSymmetric(r10a.id(), r12a.id(), RelationshipKind.NEIGHBOR);
+            // FRIEND — cross-household social bonds the courtyard / quay throw together.
+            relationships.addSymmetric(c03a.id(), c06a.id(), RelationshipKind.FRIEND);     // fellow farmers
+            relationships.addSymmetric(c04a.id(), eelStaff.id(), RelationshipKind.FRIEND);  // quay mates
+            relationships.addSymmetric(netKeeper.id(), watchGate.id(), RelationshipKind.FRIEND);
+            relationships.addSymmetric(aged.id(), laundry.id(), RelationshipKind.FRIEND);
+
+            // ===================== Civic default jobs + presented-job cover (§10.4) ================
+            // Every actor without an explicit job (the four villains + the five farmers already have
+            // one) takes its type's defaultFor job.
             for (int i = 0; i < registry.size(); i++) {
                 Actor actor = registry.get(i);
                 if (actor.jobOrdinal() < 0) {
@@ -319,22 +444,31 @@ public final class CompoundBlockPopulation {
                 }
             }
 
-            // ---------------- Starting inventory (placeholder ids + quantities, §11.2) -----
+            // ===================== Starting inventory (placeholder ids + quantities, §11.2) ========
             for (int i = 0; i < registry.size(); i++) {
                 giveStartingInventory(registry.get(i));
             }
 
-            // ---------------- Movers: displace + deplete REST so RETURN_HOME visibly fires --
-            // These spawn already home; nudging them off their home cell and dropping REST
-            // below LOW makes RETURN_HOME (NEED band, leash-ignoring) win the argmax and walk
-            // them back over many ticks — the movement the render/smoke proof observes.
+            // ===================== Movers: displace + deplete REST so RETURN_HOME visibly fires ====
+            // These spawn already home; nudging them off their home cell and dropping REST below LOW
+            // makes RETURN_HOME (NEED band, leash-ignoring) win the argmax and walk them back over
+            // many ticks — the movement the render/smoke proof observes. (Commuters/patrollers/
+            // wanderers already move under their jobs, so only a few RETURN_HOME demos are needed.)
             trackedGroundMoverId = mansionMover.id();
             makeMover(mansionMover, 6, 4);          // z:+0, tracked
-            makeMover(condo2Serf, 5, 3);            // z:+0
+            makeMover(poorRel, 5, 3);               // z:+0
             makeMover(skyPartner, 4, 3);            // z:+2 rooftop
-            // (netStaff/eelStaff are commuters now — their daily home<->shop walk is the movement
-            // proof for the general population, so they no longer double as displaced RETURN_HOME
-            // demo movers.)
+        }
+
+        /** Sets one explicit (non-default) job by its raws id — the villain/farmer overrides. */
+        private void assignJob(Actor actor, JobId jobId) {
+            actor.setJobOrdinal((short) jobs.ordinalOf(jobId));
+        }
+
+        /** serf.farmer working the courtyard atrium farm: a commuter (anchor != home). */
+        private void makeFarmer(Actor serf) {
+            assignJob(serf, Job.Serf.Farmer.ID);
+            serf.setAnchorCell(worldCell(COURTYARD_FARM, 0));
         }
 
         private Actor spawn(ActorTypeId type, int[] mapXY, int mapZ) {
