@@ -352,3 +352,15 @@ Importer contract: emits TROJSAV at tick 0, byte-deterministic (ARCHITECTURE §9
 7. Gulls/vermin as ambience vs Actor instances (recommended: ambience; Animals-as-Actors only when Keeper-owned, per the roster invariant).
 8. Named-NPC list (§4.4) — bless names or rename freely; all placeholder.
 9. Vertical extent: keep 192×128×16 (48 chunks) with z0–7 as importer-baked solid substrate, or shrink to 192×128×8 (24 chunks) — all authored content lives in z8–z15 either way (§2.1, §8.1); sim/importer crew's call.
+
+### §9 RESOLUTIONS — all nine blessed by Eli, 2026-07-12
+
+1. **BLESSED**: prequel framing stands (lesser vector by sea, before the novel's abbey events).
+2. **RULED**: the vector is a **lesser bloodletter spawn**, off-screen in MVP — sign only; the L3 bottom hook implies it without showing it.
+3. **BLESSED**: sailors' shrine stays as tolerated folk practice; Disciples quietly disapprove (tension intended).
+4. **RULED (off-recommendation)**: ONE 16-z map file — §8.1 authoring plan updates to a single tavern-convention file with 16 z layer-groups; no split files.
+5. **DELEGATED**: tide period + spring-tide events → sim crew picks deterministic values (F4 fluids milestone).
+6. **BLESSED**: FACES extensions approved — merchant, urchin, acolyte profiles; Animals get no face panel.
+7. **RULED (off-recommendation)**: ALL animals are Actors, including gulls/vermin. Reconciliation (Claude, veto-able): the Keeper-owned `Animal` type keeps its invariant; wild creatures become a new thin `Feral` subclass (no owner, scavenging policies, raws-driven population caps) — the add-a-type walkthrough's first real exercise. ACTORS-SPEC addendum required.
+8. **BLESSED**: named-NPC list as shipped (§4.4).
+9. **RULED**: keep 192×128×16 (48 chunks) with z0–7 solid substrate — digging headroom retained.
