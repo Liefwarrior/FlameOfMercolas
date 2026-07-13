@@ -11,9 +11,9 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.trojia.client.art.JsonTileArtResolver;
-import com.trojia.client.atlas.PlaceholderAtlas;
-import com.trojia.client.atlas.PlaceholderAtlasFactory;
-import com.trojia.client.atlas.PlaceholderSheetRaster;
+import com.trojia.client.atlas.SheetAtlasSpec;
+import com.trojia.client.atlas.SheetTileAtlas;
+import com.trojia.client.atlas.TileAtlas;
 import com.trojia.client.boot.FixtureWorldLoader;
 import com.trojia.client.boot.RepoPaths;
 import com.trojia.client.camera.MapCamera;
@@ -43,6 +43,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 
@@ -77,7 +78,7 @@ public final class ObserverApp extends ApplicationAdapter {
 
     private MapCamera camera;
     private ZLevelCursor zLevel;
-    private PlaceholderAtlas atlas;
+    private TileAtlas atlas;
     private WorldRenderer renderer;
     private SimulationDriver driver;
     private SpriteBatch batch;
@@ -140,8 +141,13 @@ public final class ObserverApp extends ApplicationAdapter {
 
         String mappingJson = readArtMapping();
         JsonTileArtResolver artResolver = JsonTileArtResolver.parse(mappingJson);
-        PlaceholderSheetRaster raster = PlaceholderAtlasFactory.buildRaster(mappingJson);
-        this.atlas = PlaceholderAtlasFactory.create(raster);
+        SheetAtlasSpec sheetSpec = SheetAtlasSpec.parse(mappingJson);
+        // Boot fails loudly if any byAppearance/fluid region name has no cell in the sheet
+        // (TILE-ART-SPEC section 7.2), rather than silently drawing the wrong tile.
+        sheetSpec.validateReferenced(artResolver.referencedRegionNames());
+        Path sheetFile = RepoPaths.locate("content").resolve(sheetSpec.sheetPath());
+        this.atlas = SheetTileAtlas.create(sheetSpec,
+                Gdx.files.absolute(sheetFile.toAbsolutePath().toString()));
 
         this.camera = new MapCamera(JsonTileArtResolver.TILE_PX, worldWidthTiles, worldHeightTiles,
                 Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -313,7 +319,7 @@ public final class ObserverApp extends ApplicationAdapter {
     private static String readArtMapping() {
         try {
             return Files.readString(
-                    RepoPaths.locate("content", "art", "placeholder", "art-mapping.json"),
+                    RepoPaths.locate("content", "art", "kenney", "art-mapping.json"),
                     StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to read art-mapping.json", e);

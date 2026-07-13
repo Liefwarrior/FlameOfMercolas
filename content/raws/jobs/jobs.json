@@ -176,9 +176,9 @@
     {
       "id": "beast.feral",
       "goalKind": "SCAVENGE_CIRCUIT",
-      "priority": 150,
+      "priority": 250,
       "rhythmWindow": [0, 24000],
-      "rhythmBonus": 0,
+      "rhythmBonus": 60,
       "workTicksPerUnit": 20,
       "unitsToComplete": 3,
       "renew": { "mode": "IMMEDIATE", "cooldownTicks": 0 },

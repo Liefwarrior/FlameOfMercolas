@@ -5,6 +5,7 @@ import com.trojia.client.inspect.JobDisplay;
 import com.trojia.client.time.SimulationDriver;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
+import com.trojia.sim.actor.DailyRhythm;
 import com.trojia.sim.actor.Home;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.Need;
@@ -15,19 +16,22 @@ import com.trojia.sim.actor.job.JobRegistry;
 import com.trojia.sim.engine.SimulationSystem;
 import com.trojia.sim.world.PackedPos;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * GL-free legibility listing for the Trojian-Compound population (ACTORS-SPEC.md §7.2 shape,
- * the "PROVE IT" surface): loads the baked {@code compound_block} world, spawns the
- * deterministic {@link CompoundBlockPopulation} onto it, ticks the real {@code ACTORS} phase
- * through a {@link SimulationDriver} (the observer's own driver, run headless via
- * {@code requestStep}), and prints one row per actor — id / type / true+presented job /
- * home / position / goal state / needs — so the whole 40-actor roster is inspectable without
- * a GL window. The displaced, REST-depleted movers are reported before and after ticking to
- * make {@code RETURN_HOME} movement visible as concrete coordinate deltas.
+ * GL-free legibility listing + <em>daily-life proof</em> for the Trojian-Compound population
+ * (ACTORS-SPEC.md §7.2 shape, the "PROVE IT" surface): loads the baked {@code compound_block}
+ * world, spawns the deterministic {@link CompoundBlockPopulation} onto it, ticks the real
+ * {@code ACTORS} phase through a {@link SimulationDriver} (run headless via {@code requestStep}),
+ * and prints one row per actor plus a tracked sample of the general population's real movement.
  *
- * <p>Run: {@code ./gradlew.bat :client-observer:runCompoundActors --args="--ticks 600"}.
+ * <p>The daily-life section is the acceptance evidence that jobs now drive genuine position
+ * changes (not just goal-state cycling): a commuter sampled at its workplace during its shift
+ * and back home at night; a Watch beat's visited bounding box (a loop, not a point); a Wastrel's
+ * drift away from spawn; and an Animal's live distance to its moving Keeper.
+ *
+ * <p>Run: {@code ./gradlew.bat :client-observer:runCompoundActors --args="--ticks 50000"}.
  */
 public final class CompoundBlockActorsMain {
 
@@ -35,7 +39,7 @@ public final class CompoundBlockActorsMain {
     }
 
     public static void main(String[] args) {
-        int ticks = parseTicks(args, 600);
+        int ticks = parseTicks(args, 50_000);
 
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadCompoundBlock();
         CompoundBlockPopulation population = CompoundBlockPopulation.build(loaded.worldSeed());
@@ -45,12 +49,12 @@ public final class CompoundBlockActorsMain {
         RelationshipRegistry relationships = population.relationships();
         JobRegistry jobs = population.jobs();
 
-        // Capture the movers' spawn cells before any tick so RETURN_HOME movement shows as
-        // a before/after coordinate delta.
         List<Integer> movers = population.moverIds();
 
         System.out.println("compound_block: spawned " + registry.size()
-                + " actors over the baked world; ticking " + ticks + " ACTORS-phase ticks.");
+                + " actors over the baked world; ticking " + ticks + " ACTORS-phase ticks ("
+                + ((double) ticks / DailyRhythm.DAY) + " simulated days at DAY="
+                + DailyRhythm.DAY + ").");
         System.out.println("movers (displaced at spawn, REST depleted -> RETURN_HOME):");
         for (int id : movers) {
             Actor a = registry.get(id);
@@ -59,10 +63,43 @@ public final class CompoundBlockActorsMain {
                     + " home=" + xyz(home.homeCell()));
         }
 
+        // ---- pick the tracked general-population actors + capture their spawn cells ----------
+        Tracked commuter = trackCommuter(registry, homes);
+        Tracked patroller = track(registry, firstOfType(registry, "militia_watch"), "Watch patrol");
+        Tracked wanderer = track(registry, firstWanderer(registry, movers), "Wastrel wander");
+        int keeperId = firstOfType(registry, "animal_keeper");
+        Tracked keeper = track(registry, keeperId, "Animal Keeper");
+        List<Tracked> beasts = new ArrayList<>();
+        for (int i = 0; i < registry.size(); i++) {
+            if (registry.get(i).ownerId() != Actor.NONE) {
+                beasts.add(track(registry, i, "Animal#" + i));
+            }
+        }
+        List<Tracked> all = new ArrayList<>();
+        addIfPresent(all, commuter, patroller, wanderer, keeper);
+        all.addAll(beasts);
+
+        // Sample at a work-window tick (tod 5000) and a deep-night tick (tod 20000) of each day.
+        List<Long> sampleTicks = new ArrayList<>();
+        for (long d = 0; d * DailyRhythm.DAY + 20_000 <= ticks; d++) {
+            sampleTicks.add(d * DailyRhythm.DAY + 5_000);
+            sampleTicks.add(d * DailyRhythm.DAY + 20_000);
+        }
+
+        // ---- run, observing every tick and snapshotting at the sample ticks -----------------
         SimulationDriver driver = new SimulationDriver(loaded.world(), loaded.worldSeed(),
                 List.<SimulationSystem>of(population.system()));
         for (int i = 0; i < ticks; i++) {
             driver.requestStep();
+            long tick = driver.currentTick();
+            boolean isSample = sampleTicks.contains(tick);
+            for (Tracked t : all) {
+                int cell = registry.get(t.id).cell();
+                t.observe(cell);
+                if (isSample) {
+                    t.sample(tick, cell);
+                }
+            }
         }
 
         printRoster(registry, homes, jobs);
@@ -70,7 +107,217 @@ public final class CompoundBlockActorsMain {
         printGraphSample(homes, relationships);
         System.out.println("items minted (placeholder ids + quantities, §11.2): "
                 + population.items().size());
+        printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
     }
+
+    // ==================================================================================
+    // Daily-life proof
+    // ==================================================================================
+
+    private static void printDailyLifeProof(ActorRegistry registry, JobRegistry jobs,
+            Tracked commuter, Tracked patroller, Tracked wanderer, Tracked keeper,
+            List<Tracked> beasts) {
+        System.out.println();
+        System.out.println("================ DAILY-LIFE MOVEMENT PROOF (real position deltas) ===========");
+
+        if (commuter != null) {
+            Actor a = registry.get(commuter.id);
+            System.out.println();
+            System.out.println("(a) COMMUTER  " + label(a, jobs) + "  home=" + xyz(commuter.spawnCell)
+                    + " workplace(anchor)=" + xyz(a.anchorCell())
+                    + "  (Chebyshev home<->work = "
+                    + chebyshev(commuter.spawnCell, a.anchorCell()) + ")");
+            for (long[] s : commuter.samples) {
+                long tod = DailyRhythm.tickOfDay(s[0]);
+                int cell = (int) s[1];
+                String where = cell == a.anchorCell() ? "AT WORKPLACE"
+                        : cell == commuter.spawnCell ? "AT HOME"
+                        : "en route (d_work=" + chebyshev(cell, a.anchorCell())
+                                + ", d_home=" + chebyshev(cell, commuter.spawnCell) + ")";
+                System.out.println("    tick=" + s[0] + " (tod=" + tod + ", "
+                        + (tod >= 1000 && tod < 11000 ? "ON SHIFT" : "off shift") + ")  pos="
+                        + xyz(cell) + "  -> " + where);
+            }
+        }
+
+        if (patroller != null) {
+            System.out.println();
+            System.out.println("(b) WATCH PATROL  actor#" + patroller.id + "  spawn/post="
+                    + xyz(patroller.spawnCell));
+            System.out.println("    visited bounding box over the run: x[" + patroller.minX + ","
+                    + patroller.maxX + "] y[" + patroller.minY + "," + patroller.maxY
+                    + "]  span=" + patroller.spanX() + "x" + patroller.spanY()
+                    + "  (a point would be 0x0; a real beat spans the loop)");
+            printSamples(patroller);
+        }
+
+        if (wanderer != null) {
+            System.out.println();
+            System.out.println("(c) WASTREL WANDER  actor#" + wanderer.id + "  spawn="
+                    + xyz(wanderer.spawnCell));
+            System.out.println("    visited bounding box over the run: x[" + wanderer.minX + ","
+                    + wanderer.maxX + "] y[" + wanderer.minY + "," + wanderer.maxY
+                    + "]  span=" + wanderer.spanX() + "x" + wanderer.spanY());
+            int maxDisplacement = 0;
+            for (long[] s : wanderer.samples) {
+                int d = chebyshev(wanderer.spawnCell, (int) s[1]);
+                maxDisplacement = Math.max(maxDisplacement, d);
+                long tod = DailyRhythm.tickOfDay(s[0]);
+                System.out.println("    tick=" + s[0] + " (tod=" + tod + ", "
+                        + (tod >= 2000 && tod < 10000 ? "roaming" : "home-ward at night")
+                        + ")  pos=" + xyz((int) s[1]) + "  displacement from spawn="
+                        + d + " tiles");
+            }
+            System.out.println("    max sampled displacement from spawn: " + maxDisplacement
+                    + " tiles (wanders by day, returns to the hut at night)");
+        }
+
+        if (keeper != null && !beasts.isEmpty()) {
+            System.out.println();
+            System.out.println("(d) OWNER-FOLLOW  Keeper actor#" + keeper.id + " spawn="
+                    + xyz(keeper.spawnCell));
+            // Report each sample tick: keeper's displacement from its spawn (it moved) and each
+            // beast's live distance to the keeper (it trailed).
+            for (int s = 0; s < keeper.samples.size(); s++) {
+                long tick = keeper.samples.get(s)[0];
+                int keeperCell = (int) keeper.samples.get(s)[1];
+                StringBuilder line = new StringBuilder();
+                line.append("    tick=").append(tick).append("  keeper=").append(xyz(keeperCell))
+                        .append(" (moved ").append(chebyshev(keeper.spawnCell, keeperCell))
+                        .append(" from spawn)");
+                for (Tracked b : beasts) {
+                    int beastCell = sampleAt(b, tick);
+                    if (beastCell != Actor.NONE) {
+                        line.append("  | ").append(b.label).append("=").append(xyz(beastCell))
+                                .append(" d_keeper=").append(chebyshev(beastCell, keeperCell));
+                    }
+                }
+                System.out.println(line);
+            }
+        }
+        System.out.println("============================================================================");
+    }
+
+    private static void printSamples(Tracked t) {
+        for (long[] s : t.samples) {
+            System.out.println("    tick=" + s[0] + " (tod=" + DailyRhythm.tickOfDay(s[0]) + ")  pos="
+                    + xyz((int) s[1]));
+        }
+    }
+
+    // ==================================================================================
+    // Tracked-actor identification
+    // ==================================================================================
+
+    /** First Serf whose work anchor differs from its home cell — a genuine commuter (shop staff). */
+    private static Tracked trackCommuter(ActorRegistry registry, HomeRegistry homes) {
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            if (!a.typeId().key().equals("serf") || a.homeId() == Actor.NONE) {
+                continue;
+            }
+            int homeCell = homes.get(a.homeId()).homeCell();
+            if (a.anchorCell() != homeCell) {
+                Tracked t = new Tracked(i, "commuter", homeCell); // spawnCell := home cell
+                return t;
+            }
+        }
+        return null;
+    }
+
+    private static int firstOfType(ActorRegistry registry, String typeKey) {
+        for (int i = 0; i < registry.size(); i++) {
+            if (registry.get(i).typeId().key().equals(typeKey)) {
+                return i;
+            }
+        }
+        return Actor.NONE;
+    }
+
+    /** First Wastrel that was not deliberately displaced as a demo mover. */
+    private static int firstWanderer(ActorRegistry registry, List<Integer> movers) {
+        for (int i = 0; i < registry.size(); i++) {
+            if (registry.get(i).typeId().key().equals("wastrel") && !movers.contains(i)) {
+                return i;
+            }
+        }
+        return firstOfType(registry, "wastrel");
+    }
+
+    private static Tracked track(ActorRegistry registry, int id, String label) {
+        if (id == Actor.NONE) {
+            return null;
+        }
+        return new Tracked(id, label, registry.get(id).cell());
+    }
+
+    private static void addIfPresent(List<Tracked> out, Tracked... tracks) {
+        for (Tracked t : tracks) {
+            if (t != null) {
+                out.add(t);
+            }
+        }
+    }
+
+    /** A tracked actor's spawn cell, per-tick visited bounding box, and sampled positions. */
+    private static final class Tracked {
+        private final int id;
+        private final String label;
+        private final int spawnCell;
+        private int minX = Integer.MAX_VALUE;
+        private int maxX = Integer.MIN_VALUE;
+        private int minY = Integer.MAX_VALUE;
+        private int maxY = Integer.MIN_VALUE;
+        private final List<long[]> samples = new ArrayList<>();
+
+        Tracked(int id, String label, int spawnCell) {
+            this.id = id;
+            this.label = label;
+            this.spawnCell = spawnCell;
+        }
+
+        void observe(int cell) {
+            minX = Math.min(minX, PackedPos.x(cell));
+            maxX = Math.max(maxX, PackedPos.x(cell));
+            minY = Math.min(minY, PackedPos.y(cell));
+            maxY = Math.max(maxY, PackedPos.y(cell));
+        }
+
+        void sample(long tick, int cell) {
+            samples.add(new long[] {tick, cell});
+        }
+
+        int spanX() {
+            return maxX - minX;
+        }
+
+        int spanY() {
+            return maxY - minY;
+        }
+    }
+
+    private static int sampleAt(Tracked t, long tick) {
+        for (long[] s : t.samples) {
+            if (s[0] == tick) {
+                return (int) s[1];
+            }
+        }
+        return Actor.NONE;
+    }
+
+    private static String label(Actor a, JobRegistry jobs) {
+        Job job = a.jobOrdinal() >= 0 ? jobs.get(a.jobOrdinal()) : null;
+        return "actor#" + a.id() + " " + a.typeId().key() + " [" + JobDisplay.trueJobId(job) + "]";
+    }
+
+    private static int chebyshev(int cellA, int cellB) {
+        return Math.max(Math.abs(PackedPos.x(cellA) - PackedPos.x(cellB)),
+                Math.abs(PackedPos.y(cellA) - PackedPos.y(cellB)));
+    }
+
+    // ==================================================================================
+    // Existing roster / mover / graph listings
+    // ==================================================================================
 
     private static void printRoster(ActorRegistry registry, HomeRegistry homes, JobRegistry jobs) {
         System.out.println();

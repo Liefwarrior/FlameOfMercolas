@@ -2,7 +2,6 @@ package com.trojia.client.atlas;
 
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.utils.Disposable;
 
 import java.util.NavigableMap;
 import java.util.NavigableSet;
@@ -21,7 +20,7 @@ import java.util.TreeMap;
  *
  * <p>Immutable after construction (texture disposal aside).
  */
-public final class PlaceholderAtlas implements Disposable {
+public final class PlaceholderAtlas implements TileAtlas {
 
     private final Texture texture;
     private final AtlasRegionTable table;

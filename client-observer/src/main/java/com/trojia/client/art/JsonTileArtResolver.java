@@ -29,11 +29,15 @@ import java.util.TreeSet;
  * <em>every</em> defect into one {@link ArtMappingException}. Checks that need the GL
  * side — atlas file existence and region names resolving in {@code AtlasRegionTable} —
  * are deferred to that boot step; {@link #referencedRegionNames()} hands it the exact
- * name set to verify. Two schema extensions beyond the section 7.1 table are read here
+ * name set to verify. Three schema extensions beyond the section 7.1 table are read here
  * under the unknown-fields-ignored convention (other loaders skip them):
  * {@code materials.<id>.heatGlowTint} ({@code #RRGGBB}, BLESSING-QUEUE.md ruling 5 —
- * chromatis' discharge/saturation overlay tint {@code #E8842A}); {@code provenance} /
- * {@code notes} / {@code placeholderGen} are ignored per the spec.
+ * chromatis' discharge/saturation overlay tint {@code #E8842A}); optional
+ * {@code materials.<id>.tint} / {@code fluids.<id>.tint} ({@code #RRGGBB}, the
+ * monochrome-pack base tint of {@link #materialTintRgb(String)} — absent in the
+ * placeholder pack, present in the Kenney pack); {@code provenance} / {@code notes} /
+ * {@code placeholderGen} / {@code sheet} / {@code regions} are ignored here (the last two
+ * belong to the GL-side sheet-atlas loader).
  *
  * <p>Immutable after construction; all queries are deterministic pure functions of the
  * parsed document.
@@ -235,8 +239,9 @@ public final class JsonTileArtResolver implements TileArtResolver {
 
         int heatGlowTint = readColor(mat.get("heatGlowTint"), where + ".heatGlowTint",
                 false, errors);
+        int tint = readColor(mat.get("tint"), where + ".tint", false, errors);
 
-        return new MaterialArt(forms, minLight, heatGlowTint);
+        return new MaterialArt(forms, minLight, heatGlowTint, tint);
     }
 
     private static String[] parseByAppearance(JsonValue form, String where, List<String> errors) {
@@ -307,10 +312,11 @@ public final class JsonTileArtResolver implements TileArtResolver {
                 prev = alpha[i];
             }
         }
+        int tint = readColor(fluid.get("tint"), where + ".tint", false, errors);
         if (region == null || !shapeOk) {
             return null;
         }
-        return new FluidArt(region, alpha);
+        return new FluidArt(region, alpha, tint);
     }
 
     private static String readRequiredString(JsonValue obj, String field, List<String> errors) {
@@ -409,6 +415,27 @@ public final class JsonTileArtResolver implements TileArtResolver {
         return art == null ? NO_TINT : art.heatGlowTintRgb;
     }
 
+    @Override
+    public int materialTintRgb(String materialId) {
+        requireNonBlank(materialId, "materialId");
+        MaterialArt art = materials.get(materialId);
+        return art == null ? NO_TINT : art.tintRgb;
+    }
+
+    /**
+     * A pooled fluid's base presentation tint as packed {@code 0xRRGGBB}, or
+     * {@link #NO_TINT}. Same monochrome-pack role as {@link #materialTintRgb(String)}:
+     * multiplied into the shared water sprite so it glows cyan on the black base. Ready
+     * for the FLUID render pass (no in-tree consumer yet — v0 draws no fluids).
+     *
+     * @throws IllegalArgumentException if {@code fluidId} is null or blank
+     */
+    public int fluidTintRgb(String fluidId) {
+        requireNonBlank(fluidId, "fluidId");
+        FluidArt art = fluids.get(fluidId);
+        return art == null ? NO_TINT : art.tintRgb;
+    }
+
     /** The atlas path from the mapping, relative to the {@code content/} root. */
     public String atlasPath() {
         return atlasPath;
@@ -491,11 +518,14 @@ public final class JsonTileArtResolver implements TileArtResolver {
         final Map<String, String[]> formsToBuckets;
         final int minLight;
         final int heatGlowTintRgb;
+        final int tintRgb;
 
-        MaterialArt(Map<String, String[]> formsToBuckets, int minLight, int heatGlowTintRgb) {
+        MaterialArt(Map<String, String[]> formsToBuckets, int minLight, int heatGlowTintRgb,
+                    int tintRgb) {
             this.formsToBuckets = formsToBuckets;
             this.minLight = minLight;
             this.heatGlowTintRgb = heatGlowTintRgb;
+            this.tintRgb = tintRgb;
         }
     }
 
@@ -503,10 +533,12 @@ public final class JsonTileArtResolver implements TileArtResolver {
     private static final class FluidArt {
         final String region;
         final int[] depthAlphaQ8;
+        final int tintRgb;
 
-        FluidArt(String region, int[] depthAlphaQ8) {
+        FluidArt(String region, int[] depthAlphaQ8, int tintRgb) {
             this.region = region;
             this.depthAlphaQ8 = depthAlphaQ8;
+            this.tintRgb = tintRgb;
         }
     }
 }

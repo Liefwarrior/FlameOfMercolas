@@ -25,6 +25,14 @@ public abstract class Actor {
     /** Sentinel for "no cell / no target / no owner / no home / no job". */
     public static final int NONE = -1;
 
+    /**
+     * REST reserve regained per tick while standing on the home cell (a "sleep"
+     * recovery, §11.1). Chosen above every type's REST {@code decayPerKilotick}
+     * so a night at home refills REST and the actor heads back out next day —
+     * see {@link #recoverRestAtHome}.
+     */
+    private static final int REST_RECOVERED_PER_TICK_AT_HOME = 6;
+
     // ---- identity ----
     private final int id;
     private final ActorTypeId typeId;
@@ -96,6 +104,7 @@ public abstract class Actor {
 
     public final void tick(ActorContext ctx) {
         decayNeeds();
+        recoverRestAtHome(ctx);
         tickGoalCooldown();
         int winningIndex = policies().selectIndex(this, ctx);
         if (winningIndex < 0) {
@@ -118,6 +127,26 @@ public abstract class Actor {
             if (cfg.recoverPerTick() > 0) {
                 needs[i] = (short) NeedThresholds.clamp(needs[i] + cfg.recoverPerTick());
             }
+        }
+    }
+
+    /**
+     * Sleeping at home restores REST — the daily-cycle counterpart to
+     * {@code RETURN_HOME} (§11.1). Without this, every need decays monotonically
+     * (REST has no passive recovery in raws), so after roughly a day every actor
+     * is permanently REST-low and {@code RETURN_HOME} pins the whole population at
+     * home forever, freezing the sim. Recovering while standing on the home cell
+     * closes the loop: work/roam by day → walk home → sleep restores REST →
+     * REST-low clears → back out the next day. The rate outpaces every type's
+     * REST decay so a night's stay refills it; it is a plain integer delta on the
+     * home cell only, so it changes no determinism property.
+     */
+    private void recoverRestAtHome(ActorContext ctx) {
+        if (homeId == NONE) {
+            return;
+        }
+        if (cell == ctx.homes().get(homeId).homeCell()) {
+            applyNeedDelta(Need.REST, REST_RECOVERED_PER_TICK_AT_HOME);
         }
     }
 

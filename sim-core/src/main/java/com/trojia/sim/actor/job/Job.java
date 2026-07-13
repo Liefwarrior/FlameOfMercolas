@@ -130,17 +130,17 @@ public sealed abstract class Job {
 
             @Override
             public void selectTarget(Actor self, ActorContext ctx) {
-                JobBehaviors.selectAnchorTarget(self, ctx);
+                JobBehaviors.selectWanderTarget(self, ctx);
             }
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                JobBehaviors.pursueWander(self, ctx, params());
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return JobBehaviors.isCompleteAtUnits(self, params());
+                return false; // the beg circuit / scavenge sweep drifts perpetually (§4.3)
             }
         }
     }
@@ -173,17 +173,17 @@ public sealed abstract class Job {
 
             @Override
             public void selectTarget(Actor self, ActorContext ctx) {
-                JobBehaviors.selectAnchorTarget(self, ctx);
+                JobBehaviors.selectWanderTarget(self, ctx);
             }
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                JobBehaviors.pursueWander(self, ctx, params());
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return JobBehaviors.isCompleteAtUnits(self, params());
+                return false; // drifts under its Wastrel cover (§10.4); waylay is a later extension
             }
         }
 
@@ -197,17 +197,17 @@ public sealed abstract class Job {
 
             @Override
             public void selectTarget(Actor self, ActorContext ctx) {
-                JobBehaviors.selectAnchorTarget(self, ctx);
+                JobBehaviors.selectWanderTarget(self, ctx);
             }
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                JobBehaviors.pursueWander(self, ctx, params());
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return JobBehaviors.isCompleteAtUnits(self, params());
+                return false; // drifts under its Wastrel cover (§10.4); lift is a later extension
             }
         }
 
@@ -230,17 +230,17 @@ public sealed abstract class Job {
 
             @Override
             public void selectTarget(Actor self, ActorContext ctx) {
-                JobBehaviors.selectAnchorTarget(self, ctx);
+                JobBehaviors.selectWanderTarget(self, ctx);
             }
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                JobBehaviors.pursueWander(self, ctx, params());
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return JobBehaviors.isCompleteAtUnits(self, params());
+                return false; // drifts the rooftop under its Wastrel cover; BURGLE_ROOST is later
             }
         }
     }
@@ -285,23 +285,26 @@ public sealed abstract class Job {
         public static final class Patrol extends Watch {
             public static final JobId ID = JobId.of("watch.patrol");
 
+            /** The half-side of the square beat, kept well inside the Watch leash (24). */
+            private static final int BEAT_RADIUS = 6;
+
             public Patrol(JobParams params) {
                 super(ID, params);
             }
 
             @Override
             public void selectTarget(Actor self, ActorContext ctx) {
-                JobBehaviors.selectAnchorTarget(self, ctx);
+                JobBehaviors.selectRouteStart(self, ctx);
             }
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                JobBehaviors.pursuePatrol(self, ctx, BEAT_RADIUS);
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return JobBehaviors.isCompleteAtUnits(self, params());
+                return false; // a beat never "finishes" — it loops through duty hours (§4.1)
             }
         }
     }
@@ -411,17 +414,19 @@ public sealed abstract class Job {
 
             @Override
             public void selectTarget(Actor self, ActorContext ctx) {
-                JobBehaviors.selectAnchorTarget(self, ctx);
+                JobBehaviors.selectWanderTarget(self, ctx);
             }
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                // Tend/feed/work the beasts by moving among them near the pen (the
+                // anchor); the owned Animals' STAY_NEAR_OWNER goal trails this motion.
+                JobBehaviors.pursueWander(self, ctx, params());
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return JobBehaviors.isCompleteAtUnits(self, params());
+                return false; // tending is continuous through the working day (§4.7)
             }
         }
     }
@@ -447,17 +452,17 @@ public sealed abstract class Job {
 
             @Override
             public void selectTarget(Actor self, ActorContext ctx) {
-                JobBehaviors.selectAnchorTarget(self, ctx);
+                JobBehaviors.selectOwnerTarget(self, ctx);
             }
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                JobBehaviors.pursueFollowOwner(self, ctx, params());
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return JobBehaviors.isCompleteAtUnits(self, params());
+                return false; // a beast stays at its Keeper's heel — no quota to finish (§4.8)
             }
         }
 
@@ -475,17 +480,17 @@ public sealed abstract class Job {
 
             @Override
             public void selectTarget(Actor self, ActorContext ctx) {
-                JobBehaviors.selectAnchorTarget(self, ctx);
+                JobBehaviors.selectWanderTarget(self, ctx);
             }
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                JobBehaviors.pursueWander(self, ctx, params());
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return JobBehaviors.isCompleteAtUnits(self, params());
+                return false; // an ownerless scavenger roams its range without end (§4.9)
             }
         }
     }

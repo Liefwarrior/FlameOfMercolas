@@ -71,6 +71,9 @@ public final class CompoundBlockPopulation {
     private static final int[] CONDO_06 = {63, 86};
     private static final int[] NETMENDERS = {27, 19};   // K22 Netmenders' Arcade
     private static final int[] EELPOTS = {99, 19};      // K24 The Eel-Pots
+    // Workplace anchors distinct from any dwelling (derived from known coordinates, no new map
+    // marker): the courtyard alms post the resident clergy commute out to work each day.
+    private static final int[] ALMS_STATION = {60, 40};
     // z:+1 upper-floor condos (east wing built up a second story)
     private static final int[] CONDO_07 = {99, 44};
     private static final int[] CONDO_08 = {99, 65};
@@ -242,6 +245,10 @@ public final class CompoundBlockPopulation {
             household(List.of(priest, disciple, condo2Serf));
             // §4.5 Priest -> Disciple oversight (EMPLOYER edge, no draw consumed).
             HouseholdFormer.bindMentorPairFree(priest, disciple, relationships);
+            // Clergy commute: both work the courtyard alms station (anchor), lodging back home
+            // in Condo_02 off shift — a genuine daily round trip (anchor != home, §4.4/§4.5).
+            priest.setAnchorCell(worldCell(ALMS_STATION, 0));
+            disciple.setAnchorCell(worldCell(ALMS_STATION, 0));
 
             household(List.of(spawn(Serf.TYPE, CONDO_03, 0), spawn(Serf.TYPE, CONDO_03, 0)));
             household(List.of(spawn(Serf.TYPE, CONDO_04, 0), spawn(Serf.TYPE, CONDO_04, 0),
@@ -266,14 +273,22 @@ public final class CompoundBlockPopulation {
             household(List.of(spawn(Wastrel.TYPE, ROOF_HUT_12, 2), spawn(Wastrel.TYPE, ROOF_HUT_12, 2)));
 
             // ---------------- Street-frontage businesses (outside the compound walls) ------
+            // Each proprietor lives over the shop (home == workplace, no commute). Each hired
+            // hand lodges INSIDE the compound and commutes to the counter: home != anchor, so
+            // the commute-aware pursueAtAnchor walks the daily round trip — to the shop through
+            // the job's rhythm window, home again once the shift ends (§4.6/§4.2, §10.1).
             Actor netKeeper = spawn(Shopkeeper.TYPE, NETMENDERS, 0);
-            Actor netStaff = spawn(Serf.TYPE, NETMENDERS, 0);
-            household(List.of(netKeeper, netStaff));            // flat over the shop
+            soloHome(netKeeper);                                // over the shop
+            Actor netStaff = spawn(Serf.TYPE, CONDO_03, 0);     // lodges in a compound condo
+            netStaff.setHomeId(homes.addHome(worldCell(CONDO_03, 0)));
+            netStaff.setAnchorCell(worldCell(NETMENDERS, 0));   // works the Netmenders counter
             hire(netKeeper, netStaff);                          // EMPLOYER edge
 
             Actor eelKeeper = spawn(Shopkeeper.TYPE, EELPOTS, 0);
-            Actor eelStaff = spawn(Serf.TYPE, EELPOTS, 0);
-            household(List.of(eelKeeper, eelStaff));
+            soloHome(eelKeeper);                                // over the shop
+            Actor eelStaff = spawn(Serf.TYPE, CONDO_04, 0);     // lodges in a compound condo
+            eelStaff.setHomeId(homes.addHome(worldCell(CONDO_04, 0)));
+            eelStaff.setAnchorCell(worldCell(EELPOTS, 0));      // works the Eel-Pots counter
             hire(eelKeeper, eelStaff);
 
             // ---------------- Civic / street texture ---------------------------------------
@@ -317,7 +332,9 @@ public final class CompoundBlockPopulation {
             makeMover(mansionMover, 6, 4);          // z:+0, tracked
             makeMover(condo2Serf, 5, 3);            // z:+0
             makeMover(skyPartner, 4, 3);            // z:+2 rooftop
-            makeMover(netStaff, 5, 4);              // z:+0 business
+            // (netStaff/eelStaff are commuters now — their daily home<->shop walk is the movement
+            // proof for the general population, so they no longer double as displaced RETURN_HOME
+            // demo movers.)
         }
 
         private Actor spawn(ActorTypeId type, int[] mapXY, int mapZ) {

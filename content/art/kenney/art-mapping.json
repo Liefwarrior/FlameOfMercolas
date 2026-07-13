@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "provenance": "docs/art/TILE-ART-SPEC.md governs this file's schema (section 7); section 8 is the pack-swap procedure this file enacts. DECISIONS.md art register (Eli 2026-07-12): 'Luminous-on-black (Moonring style): deep black base, glowing color'. Pack: Kenney 1-Bit Pack v1.2 (CC0), content/art/kenney/License.txt.",
+  "notes": "Real-art mapping for the Kenney 1-bit pack. Unlike the placeholder mapping (content/art/placeholder/art-mapping.json, still a valid procedural fallback), 'atlas' points at a real PNG sheet and adds 'sheet' + 'regions' (name -> [col,row] tile) read by SheetAtlasSpec. The sheet is white-on-transparent monochrome: ONE grayscale sprite per visual category (wall/floor/...) is shared across materials, each glowing its own 'tint' (client-only presentation data; sim-core material raws stay appearance-agnostic). Tinting is a batch color multiply in WorldRenderer, restored to white after each tile. chromatis' heatGlowTint / colorStops emissive mechanism is untouched.",
+  "atlas": "art/kenney/Tilesheet/monochrome-transparent_packed.png",
+  "tilePx": 16,
+  "sheet": { "columns": 49, "rows": 22 },
+  "regions": {
+    "wall":        [10, 17],
+    "floor":       [1, 17],
+    "floor_wood":  [4, 6],
+    "floor_earth": [2, 0],
+    "water":       [4, 6],
+    "missing":     [1, 17]
+  },
+  "regionsProvenance": "Cells picked from the packed sheet (content/art/kenney/Tilesheet/monochrome-transparent_packed.png, 49x22 tiles @16px). wall=(10,17) offset brick courses; floor=(1,17) fine checker; floor_wood=(4,6) horizontal planks; floor_earth=(2,0) gravel speckle; water reuses the (4,6) ripple sprite tinted cyan; missing reuses the checker as a fallback. Walls share ONE brick sprite tint-differentiated per material (task-sanctioned reuse); floors get three textures for variety.",
+  "missingRegion": "missing",
+  "voidColor": "#0E0E12",
+  "lightTintQ8": [36, 36, 36, 38, 39, 41, 44, 47, 50, 54, 58, 63, 68, 74, 80, 87, 94, 102, 110, 118, 127, 136, 146, 157, 167, 179, 190, 202, 215, 228, 242, 256],
+  "zPeekDimQ8": [256, 168, 112, 76],
+  "materials": {
+    "granite": {
+      "tint": "#8FA6C7",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "dirt": {
+      "tint": "#9C8352",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor_earth"] }
+      }
+    },
+    "oak": {
+      "tint": "#D69A4C",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor_wood"] }
+      }
+    },
+    "thatch": {
+      "tint": "#DDB84E",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor_earth"] }
+      }
+    },
+    "trudgeon_wood": {
+      "tint": "#C6803C",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor_wood"] }
+      }
+    },
+    "trudgeon_wood@getilia_soak": {
+      "notes": "Treatment-derived id minted at load (getilia_soak); the '@' is verbatim in the material key but not a filesystem path (regions are grid coords, not files).",
+      "tint": "#A88C46",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor_wood"] }
+      }
+    },
+    "steel": {
+      "tint": "#D6DCE8",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "brick": {
+      "tint": "#C15A3C",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "chromatis": {
+      "provenance": "tint is the canon bucket-0 silver-blue (ARCHITECTURE section 10 / WorldBible section 9). heatGlowTint is the discharge/saturation overlay read by JsonTileArtResolver.heatGlowTintRgb; the colorStops/appearance-bucket emissive mechanism is a separate feature this tile tint does not touch.",
+      "tint": "#9FB8D8",
+      "heatGlowTint": "#E8842A",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "chromatis_melt": {
+      "tint": "#D8B23A",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "phorys": {
+      "tint": "#46A6BE",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "lightstone": {
+      "notes": "Chargeable emissive. If colorStops ship, add per-bucket regions later; bucket clamp keeps the single region correct until then.",
+      "tint": "#A6E86A",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "lightstone_shards": {
+      "tint": "#BFD05A",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "glowstone": {
+      "provenance": "WorldBible section 9: eerie red light. minLight is the cosmetic observer clamp (TILE-ART-SPEC section 5.1).",
+      "tint": "#E5433B",
+      "minLight": 8,
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "ash": {
+      "tint": "#ADA79E",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor_earth"] }
+      }
+    },
+    "ice": {
+      "tint": "#B8E0EC",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "reman_concrete": {
+      "provenance": "Reman engineering = concrete-equivalent, the wealth-high compound material (canon-trojian-compounds). Cool blue-white glow reads as engineered/high-status, brighter than the slum leather/cloth below.",
+      "tint": "#BCCEE2",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor"] }
+      }
+    },
+    "leather": {
+      "provenance": "Rooftop-slum construction (canon-trojian-compounds): cheap hide. Dim warm tan, deliberately poorer/dimmer than reman_concrete.",
+      "tint": "#8A6B44",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor_earth"] }
+      }
+    },
+    "cloth": {
+      "provenance": "Rooftop-slum construction: cheap fabric/tent. Dim tan, poorer/dimmer than reman_concrete.",
+      "tint": "#9C8560",
+      "forms": {
+        "block": { "byAppearance": ["wall"] },
+        "floor": { "byAppearance": ["floor_earth"] }
+      }
+    }
+  },
+  "fluids": {
+    "water": {
+      "region": "water",
+      "tint": "#5FC8E0",
+      "depthAlphaQ8": [0, 96, 120, 144, 168, 192, 216, 240]
+    }
+  }
+}

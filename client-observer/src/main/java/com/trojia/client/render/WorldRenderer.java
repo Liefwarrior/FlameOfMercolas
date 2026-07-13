@@ -1,9 +1,10 @@
 package com.trojia.client.render;
 
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.trojia.client.art.TileArtResolver;
-import com.trojia.client.atlas.PlaceholderAtlas;
+import com.trojia.client.atlas.TileAtlas;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.sim.material.MaterialRegistry;
 import com.trojia.sim.world.PackedPos;
@@ -26,6 +27,16 @@ import java.util.Locale;
  * rather than throwing, matching the resolver's own no-crash contract (belt-and-suspenders
  * since the atlas is always built from the same resolver's referenced region set).
  *
+ * <p><b>Per-material tint</b> (DECISIONS.md "Luminous-on-black" register): each tile's
+ * quad is multiplied by the material's {@link TileArtResolver#materialTintRgb} before it
+ * draws and the batch colour is restored to white afterward — the same shared-glyph-times-
+ * per-type-tint trick {@link ActorRenderer} uses. That lets one tintable grayscale wall or
+ * floor sprite in the {@link TileAtlas} glow a different colour per material (granite blue-
+ * grey, oak amber, glowstone red…) with no per-material atlas cell. A pack that ships
+ * pre-coloured cells instead (the procedural placeholder) simply lists no tints, so
+ * {@code materialTintRgb} returns {@link TileArtResolver#NO_TINT} and the cell draws
+ * untinted.
+ *
  * <p>Reuses one {@link TileCursor} across the whole draw call, per {@code World.cursor()}'s
  * "callers keep and reuse it" contract — no per-tile cursor allocation.
  */
@@ -37,7 +48,7 @@ public final class WorldRenderer {
     private final World world;
     private final MaterialRegistry materials;
     private final TileArtResolver artResolver;
-    private final PlaceholderAtlas atlas;
+    private final TileAtlas atlas;
     private final TileCursor cursor;
 
     /**
@@ -47,7 +58,7 @@ public final class WorldRenderer {
      * @param atlas       the built atlas the region names are looked up in
      */
     public WorldRenderer(World world, MaterialRegistry materials, TileArtResolver artResolver,
-                          PlaceholderAtlas atlas) {
+                          TileAtlas atlas) {
         this.world = world;
         this.materials = materials;
         this.artResolver = artResolver;
@@ -83,6 +94,8 @@ public final class WorldRenderer {
                         ? atlas.region(regionName)
                         : atlas.region(artResolver.missingRegionName());
 
+                setTint(batch, artResolver.materialTintRgb(materialId));
+
                 int screenXTopLeft = camera.tileToScreenX(tx);
                 int screenYTopLeftDown = camera.tileToScreenY(ty);
                 float drawX = screenXTopLeft;
@@ -92,5 +105,23 @@ public final class WorldRenderer {
                 batch.draw(region, drawX, drawY, span, span);
             }
         }
+        // Restore so downstream draws in the same batch (actors, HUD) are untinted.
+        batch.setColor(Color.WHITE);
+    }
+
+    /**
+     * Multiplies the batch by a material's {@code 0xRRGGBB} tint (glowing-on-black), or
+     * leaves it white for {@link TileArtResolver#NO_TINT} — a pre-coloured pack draws its
+     * cell as authored.
+     */
+    private static void setTint(SpriteBatch batch, int rgb) {
+        if (rgb == TileArtResolver.NO_TINT) {
+            batch.setColor(Color.WHITE);
+            return;
+        }
+        float r = ((rgb >> 16) & 0xFF) / 255f;
+        float g = ((rgb >> 8) & 0xFF) / 255f;
+        float b = (rgb & 0xFF) / 255f;
+        batch.setColor(r, g, b, 1f);
     }
 }

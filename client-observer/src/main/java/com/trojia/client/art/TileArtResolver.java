@@ -29,8 +29,8 @@ package com.trojia.client.art;
 public interface TileArtResolver {
 
     /**
-     * Sentinel returned by {@link #heatGlowTintRgb(String)} when a material has no
-     * heat-glow overlay tint.
+     * Sentinel returned by {@link #heatGlowTintRgb(String)} and
+     * {@link #materialTintRgb(String)} when a material carries no such tint.
      */
     int NO_TINT = -1;
 
@@ -76,4 +76,18 @@ public interface TileArtResolver {
      * when-to-render decision belongs to the GL renderer (lands with F5 light).
      */
     int heatGlowTintRgb(String materialId);
+
+    /**
+     * The material's base presentation tint as packed {@code 0xRRGGBB}, or
+     * {@link #NO_TINT} when the mapping lists none.
+     *
+     * <p>Client-only presentation data (sim-core's material raws stay
+     * appearance-agnostic — ARCHITECTURE.md). For a monochrome/tintable art pack this is
+     * multiplied into the shared grayscale sprite at draw time so one wall/floor sprite
+     * serves many materials, each glowing its own color on the black base
+     * (DECISIONS.md "Luminous-on-black" register). The placeholder pack lists no tints,
+     * so this returns {@link #NO_TINT} there and the pre-colored placeholder cells draw
+     * untinted.
+     */
+    int materialTintRgb(String materialId);
 }
