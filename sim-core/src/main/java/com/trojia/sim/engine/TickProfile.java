@@ -12,6 +12,10 @@ package com.trojia.sim.engine;
  */
 public record TickProfile(long tick, long totalNanos, long[] phaseNanos) {
 
+    public TickProfile {
+        phaseNanos = phaseNanos.clone(); // never share the caller's mutable array
+    }
+
     /** An all-zero profile (before the first tick). */
     public static TickProfile empty() {
         return new TickProfile(0L, 0L, new long[TickPhase.values().length]);

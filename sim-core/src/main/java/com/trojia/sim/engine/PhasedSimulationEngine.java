@@ -187,10 +187,12 @@ final class PhasedSimulationEngine implements SimulationEngine {
                 RAWS_FINGERPRINT_NONE));
         save.putSection(TrojSav.INPT, toBytes(inputGate::serialize));
         save.putSection(TrojSav.EVNT, toBytes(events::serializeCarryOver));
+        save.putSection(TrojSav.AETH, new byte[0]); // §9 reserved-empty section
         if (world != null) {
             WorldSaver saver = new WorldSaver(new ChunkCodec(world.lanes()));
             save.putSection(TrojSav.META, saver.writeMetaSection(world));
             save.putSection(TrojSav.WRLD, saver.writeWorldSection(world));
+            save.putSection(TrojSav.CHNG, toBytes(world.changeLogs()::serialize));
         }
         for (SimulationSystem system : systems) {
             save.putSection(system.id().sectionId(), toBytes(system::serialize));
@@ -201,13 +203,17 @@ final class PhasedSimulationEngine implements SimulationEngine {
     /**
      * Load-path restore (engine already booted over the loaded world): resets
      * the clock to the saved tick, then restores the input log, the event
-     * carry-over lap and every system section (a registered system whose
-     * section is absent is a hard fail).
+     * carry-over lap, the change-log carry-over (CHNG — retained backlog +
+     * reader cursors, against the readers registered at boot) and every system
+     * section (a registered system whose section is absent is a hard fail).
      */
     void restore(TrojSav save) throws IOException {
         clock.resetTo(save.header().tick());
         inputGate.load(dataInput(save.section(TrojSav.INPT)));
         events.loadCarryOver(dataInput(save.section(TrojSav.EVNT)));
+        if (world != null) {
+            world.changeLogs().load(dataInput(save.section(TrojSav.CHNG)));
+        }
         for (SimulationSystem system : systems) {
             system.load(dataInput(save.section(system.id().sectionId())));
         }

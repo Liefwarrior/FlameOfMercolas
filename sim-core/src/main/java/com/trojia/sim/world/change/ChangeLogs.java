@@ -3,6 +3,9 @@ package com.trojia.sim.world.change;
 import com.trojia.sim.engine.SystemId;
 import com.trojia.sim.world.LaneId;
 
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.util.Arrays;
 
 /**
@@ -23,6 +26,11 @@ import java.util.Arrays;
  * existed at the <em>previous</em> compact; a reader lagging further throws
  * {@code IllegalStateException} in all builds (not an {@code assert} — the
  * failure must be identical with and without {@code -ea}).
+ *
+ * <p><b>Persistence:</b> the one-lap backlog is sim state — {@link #serialize}
+ * and {@link #load} carry the retained entry tails and reader cursors through
+ * the engine's {@code CHNG} save section so the §6 save/load equivalence holds
+ * for readers positioned before late-phase writers.
  *
  * <p><b>Allocation discipline:</b> {@link #append} and reader pulls allocate
  * nothing in steady state; the only allocations are amortized log-array
@@ -112,6 +120,112 @@ public final class ChangeLogs {
             LaneLog log = logs[i];
             if (log != null) {
                 log.compact(tick);
+            }
+        }
+    }
+
+    /**
+     * Serializes the change-log carry-over (the engine's {@code CHNG} save
+     * section): per lane in ascending lane index, the retained (unconsumed)
+     * entry tail plus every registered reader's identity and position within
+     * it. Pure. Legal only at a TICK_END boundary (after {@link #compact}),
+     * where the retained tail is exactly the one-lap backlog the §6 save/load
+     * contract ({@code run K+N ≡ save@K, load, run N}) must preserve —
+     * without it, readers positioned before late-phase writers would silently
+     * miss their tick-K wake-ups after a load.
+     */
+    public void serialize(DataOutput out) throws IOException {
+        int laneLogCount = 0;
+        for (LaneLog log : logs) {
+            if (log != null) {
+                laneLogCount++;
+            }
+        }
+        out.writeInt(laneLogCount);
+        for (int i = 0; i < logs.length; i++) {
+            LaneLog log = logs[i];
+            if (log == null) {
+                continue;
+            }
+            out.writeInt(i);
+            out.writeInt(log.size);
+            for (int e = 0; e < log.size; e++) {
+                out.writeInt(log.entries[e]);
+            }
+            out.writeInt(log.readerCount);
+            for (int r = 0; r < log.readerCount; r++) {
+                Cursor cursor = log.readers[r];
+                out.writeUTF(cursor.owner.name());
+                out.writeLong(cursor.owner.salt());
+                out.writeInt((int) (cursor.pos - log.base));
+            }
+        }
+    }
+
+    /**
+     * Restores the state written by {@link #serialize} into this instance's
+     * <em>already registered</em> logs: the boot registration list must
+     * reproduce the saved lane/reader structure exactly (same lanes, same
+     * readers per lane in the same registration order) — any mismatch is a
+     * hard {@code IOException}, never a silent partial restore. Replaces every
+     * retained entry tail and reader cursor position.
+     */
+    public void load(DataInput in) throws IOException {
+        int registered = 0;
+        for (LaneLog log : logs) {
+            if (log != null) {
+                registered++;
+            }
+        }
+        int laneLogCount = in.readInt();
+        if (laneLogCount != registered) {
+            throw new IOException("change-log mismatch: save carries " + laneLogCount
+                    + " lane logs, registration has " + registered);
+        }
+        for (int k = 0; k < laneLogCount; k++) {
+            int laneIndex = in.readInt();
+            LaneLog log = laneIndex >= 0 && laneIndex < logs.length ? logs[laneIndex] : null;
+            if (log == null) {
+                throw new IOException("change-log mismatch: save carries lane index "
+                        + laneIndex + " but no reader is registered on it");
+            }
+            int entryCount = in.readInt();
+            if (entryCount < 0) {
+                throw new IOException("corrupt change-log section: lane '" + log.lane.name()
+                        + "' carries negative entry count " + entryCount);
+            }
+            if (entryCount > log.entries.length) {
+                log.entries = new int[entryCount];
+            }
+            for (int e = 0; e < entryCount; e++) {
+                log.entries[e] = in.readInt();
+            }
+            log.size = entryCount;
+            log.base = 0;
+            log.lagWatermark = entryCount;
+            int readerCount = in.readInt();
+            if (readerCount != log.readerCount) {
+                throw new IOException("change-log mismatch on lane '" + log.lane.name()
+                        + "': save has " + readerCount + " readers, registration has "
+                        + log.readerCount);
+            }
+            for (int r = 0; r < readerCount; r++) {
+                String name = in.readUTF();
+                long salt = in.readLong();
+                Cursor cursor = log.readers[r];
+                if (!cursor.owner.name().equals(name) || cursor.owner.salt() != salt) {
+                    throw new IOException("change-log mismatch on lane '" + log.lane.name()
+                            + "' reader " + r + ": save has '" + name
+                            + "', registration has '" + cursor.owner.name()
+                            + "' (boot registration must reproduce the saved order)");
+                }
+                int pos = in.readInt();
+                if (pos < 0 || pos > entryCount) {
+                    throw new IOException("corrupt change-log section: lane '"
+                            + log.lane.name() + "' reader '" + name + "' position " + pos
+                            + " outside retained tail [0, " + entryCount + "]");
+                }
+                cursor.pos = pos;
             }
         }
     }

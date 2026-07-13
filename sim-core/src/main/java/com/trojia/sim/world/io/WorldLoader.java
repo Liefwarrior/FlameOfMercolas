@@ -5,6 +5,7 @@ import com.trojia.sim.world.LaneId;
 import com.trojia.sim.world.LaneRegistry;
 import com.trojia.sim.world.OverlayId;
 import com.trojia.sim.world.TickableWorld;
+import com.trojia.sim.world.TileClassifier;
 import com.trojia.sim.world.WorldBuilder;
 import com.trojia.sim.world.WorldConfig;
 
@@ -31,11 +32,31 @@ public final class WorldLoader {
 
     /**
      * Builds the world described by {@code save}'s META section and populates
-     * it from the WRLD section (layouts documented on {@link WorldSaver}).
+     * it from the WRLD section, with {@link TileClassifier#formOnly()} as the
+     * derived-FLAGS policy — legal ONLY for worlds that were built with the
+     * default policy. Worlds built with a custom classifier must load through
+     * {@link #load(TrojSav, TileClassifier)} with the identical policy (the
+     * policy is part of the determinism contract; a different one makes
+     * subsequent writes derive different FLAGS and the hash chain diverge).
      *
      * @throws IOException on missing/corrupt sections or lane-set mismatch
      */
     public TickableWorld load(TrojSav save) throws IOException {
+        return load(save, TileClassifier.formOnly());
+    }
+
+    /**
+     * Builds the world described by {@code save}'s META section with
+     * {@code classifier} as its derived-FLAGS policy and populates it from the
+     * WRLD section (layouts documented on {@link WorldSaver}). The caller must
+     * supply the same policy the saved world was built with.
+     *
+     * @throws IOException on missing/corrupt sections or lane-set mismatch
+     */
+    public TickableWorld load(TrojSav save, TileClassifier classifier) throws IOException {
+        if (classifier == null) {
+            throw new IllegalArgumentException("classifier must be non-null");
+        }
         DataInputStream meta = new DataInputStream(
                 new ByteArrayInputStream(save.section(TrojSav.META)));
         int metaVersion = meta.readUnsignedByte();
@@ -48,7 +69,8 @@ public final class WorldLoader {
         int chunksZ = LittleEndian.readInt(meta);
         WorldBuilder builder;
         try {
-            builder = WorldBuilder.create(new WorldConfig(chunksX, chunksY, chunksZ));
+            builder = WorldBuilder.create(new WorldConfig(chunksX, chunksY, chunksZ))
+                    .classifier(classifier);
         } catch (IllegalArgumentException e) {
             throw new IOException("META carries invalid world dimensions: " + e.getMessage(), e);
         }
@@ -65,6 +87,11 @@ public final class WorldLoader {
                 new ByteArrayInputStream(save.section(TrojSav.WRLD)));
         int chunkCount = LittleEndian.readInt(wrld);
         int worldChunks = world.coords().chunkCount();
+        if (chunkCount != worldChunks) {
+            throw new IOException("WRLD section carries " + chunkCount
+                    + " chunk frames; the world has " + worldChunks
+                    + " chunks (the saver always writes all of them)");
+        }
         WriterOverlays overlays = new WriterOverlays(world);
         int prevIndex = -1;
         for (int k = 0; k < chunkCount; k++) {

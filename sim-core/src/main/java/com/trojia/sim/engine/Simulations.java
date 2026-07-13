@@ -1,8 +1,10 @@
 package com.trojia.sim.engine;
 
 import com.trojia.sim.world.TickableWorld;
+import com.trojia.sim.world.TileClassifier;
 import com.trojia.sim.world.World;
 import com.trojia.sim.world.io.TrojSav;
+import com.trojia.sim.world.io.WorldHasher;
 import com.trojia.sim.world.io.WorldLoader;
 
 import java.io.IOException;
@@ -17,8 +19,10 @@ import java.util.List;
  * exactly this).
  *
  * <p>Boot validation (hard failures, never silent fixes): duplicate system
- * names, {@link SystemId} salt collisions, use of the reserved
- * {@code "input-gate"} identity (the InputGate's bus position).
+ * names, {@link SystemId} salt collisions, TROJSAV section-id collisions, use
+ * of the reserved {@code "input-gate"} identity (the InputGate's bus position)
+ * or the reserved {@code "world"} identity (the {@link WorldHasher} WRLD
+ * sub-hash).
  */
 public final class Simulations {
 
@@ -91,13 +95,33 @@ public final class Simulations {
      */
     public static SimulationEngine load(EngineConfig config, Path saveFile,
             SystemsFactory systemsFactory) throws IOException {
+        return load(config, saveFile, systemsFactory, TileClassifier.formOnly());
+    }
+
+    /**
+     * Restores an engine as {@link #load(EngineConfig, Path, SystemsFactory)}
+     * but rebuilding the world with {@code classifier} as its derived-FLAGS
+     * policy. The classifier is part of the determinism contract
+     * ({@link com.trojia.sim.world.WorldBuilder#classifier}): a world built
+     * with a non-default policy MUST be reloaded through this overload with
+     * the identical policy, or subsequent writes derive different FLAGS than
+     * the original run and the hash chains silently diverge. The list- and
+     * factory-based overloads default to {@link TileClassifier#formOnly()} —
+     * the same default {@code WorldBuilder} applies.
+     */
+    public static SimulationEngine load(EngineConfig config, Path saveFile,
+            SystemsFactory systemsFactory, TileClassifier classifier) throws IOException {
         if (config == null) {
             throw new IllegalArgumentException("config must be non-null");
+        }
+        if (classifier == null) {
+            throw new IllegalArgumentException("classifier must be non-null");
         }
         TrojSav save = TrojSav.read(saveFile);
         TrojSav.Header header = save.header();
         EngineConfig bound = new EngineConfig(header.worldSeed());
-        TickableWorld world = save.hasSection(TrojSav.WRLD) ? new WorldLoader().load(save) : null;
+        TickableWorld world = save.hasSection(TrojSav.WRLD)
+                ? new WorldLoader().load(save, classifier) : null;
         SimulationSystem[] ordered = systemsFactory.create(world)
                 .toArray(new SimulationSystem[0]);
         checkIdentities(ordered);
@@ -118,25 +142,39 @@ public final class Simulations {
 
     /** TROJSAV section ids owned by the container/engine, never by a system. */
     private static final String[] RESERVED_SECTION_IDS = {
-            TrojSav.META, TrojSav.INPT, TrojSav.EVNT, TrojSav.WRLD, "AETH"
+            TrojSav.META, TrojSav.INPT, TrojSav.EVNT, TrojSav.WRLD, TrojSav.CHNG, TrojSav.AETH
+    };
+
+    /**
+     * Identities owned by the engine/world, never by a system: the InputGate's
+     * bus position and the {@link WorldHasher#WORLD_SECTION} sub-hash identity
+     * (a system sharing the latter's salt would silently interleave its
+     * {@code hashInto} bytes with the world's WRLD sub-hash).
+     */
+    private static final SystemId[] RESERVED_IDENTITIES = {
+            PhasedSimulationEngine.INPUT_GATE_ID, WorldHasher.WORLD_SECTION
     };
 
     /**
      * Rejects duplicate names, salt collisions and TROJSAV section-id
      * collisions across the registration list, including the engine's
-     * reserved InputGate identity and the container's reserved section ids.
+     * reserved InputGate and world-hasher identities and the container's
+     * reserved section ids.
      */
     private static void checkIdentities(SimulationSystem[] systems) {
-        String[] names = new String[systems.length + 1];
-        long[] salts = new long[systems.length + 1];
+        int reserved = RESERVED_IDENTITIES.length;
+        String[] names = new String[systems.length + reserved];
+        long[] salts = new long[systems.length + reserved];
         String[] sections = new String[systems.length + RESERVED_SECTION_IDS.length];
-        names[0] = PhasedSimulationEngine.INPUT_GATE_ID.name();
-        salts[0] = PhasedSimulationEngine.INPUT_GATE_ID.salt();
+        for (int i = 0; i < reserved; i++) {
+            names[i] = RESERVED_IDENTITIES[i].name();
+            salts[i] = RESERVED_IDENTITIES[i].salt();
+        }
         System.arraycopy(RESERVED_SECTION_IDS, 0, sections, 0, RESERVED_SECTION_IDS.length);
         for (int i = 0; i < systems.length; i++) {
             SystemId id = systems[i].id();
-            names[i + 1] = id.name();
-            salts[i + 1] = id.salt();
+            names[reserved + i] = id.name();
+            salts[reserved + i] = id.salt();
             sections[RESERVED_SECTION_IDS.length + i] = id.sectionId();
         }
         Arrays.sort(names);
@@ -154,8 +192,9 @@ public final class Simulations {
         for (int i = 1; i < sections.length; i++) {
             if (sections[i].equals(sections[i - 1])) {
                 throw new IllegalArgumentException("TROJSAV section-id collision: '"
-                        + sections[i] + "' (rename one system — ids are the first four "
-                        + "letters/digits of the name, upper-cased)");
+                        + sections[i] + "' (ids default to the first four letters/digits "
+                        + "of the name, upper-cased — rename one system or pin an "
+                        + "explicit id via SystemId.of(name, sectionId))");
             }
         }
     }

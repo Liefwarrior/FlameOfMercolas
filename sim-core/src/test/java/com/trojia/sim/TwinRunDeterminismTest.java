@@ -43,10 +43,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * loading a third engine from the file and running the remaining 500 scripted
  * ticks lands on the same per-tick chain and final hash.
  *
- * <p>The registered system exercises the full change plumbing end-to-end each
+ * <p>The registered systems exercise the full change plumbing end-to-end each
  * tick: InputGate paints → ChunkWriter → MATERIAL ChangeLog → ActiveSet dedupe
  * → RNG-derived TEMPERATURE writes → ChunkRevisions commit; plus FLUID lane
- * and CHARGE overlay writes so lanes and overlays all carry hash weight.
+ * and CHARGE overlay writes so lanes and overlays all carry hash weight. A
+ * second system in the REACTIONS phase writes MATERIAL <em>after</em> the
+ * THERMAL reader's position, so a one-lap change-log backlog is genuinely
+ * pending at every TICK_END — the save at tick 500 must carry it (CHNG
+ * section) or the resumed run misses tick-500 wake-ups and diverges.
  */
 final class TwinRunDeterminismTest {
 
@@ -60,9 +64,11 @@ final class TwinRunDeterminismTest {
      * The plumbing-exercising system: drains its MATERIAL change-log cursor
      * into an {@link ActiveSet} frontier (dedupe), then writes an RNG-derived
      * temperature at every frontier cell, one FLUID-lane value per tick, and a
-     * CHARGE overlay cell every 5th tick (cleared every 7th). Stateless across
-     * tick boundaries: the cursor is fully drained and the frontier fully
-     * polled every tick, so serialize/load are empty.
+     * CHARGE overlay cell every 5th tick (cleared every 7th). Owns no
+     * persisted state: the frontier is fully polled every tick, and the
+     * cursor (which lags one lap behind {@link LateMutator}'s REACTIONS-phase
+     * writes) is engine-persisted via the CHNG section — so serialize/load
+     * are empty.
      */
     private static final class LaneScribbler implements SimulationSystem {
 
@@ -127,6 +133,55 @@ final class TwinRunDeterminismTest {
         }
     }
 
+    /**
+     * A REACTIONS-phase MATERIAL writer: because REACTIONS runs after THERMAL,
+     * its writes land in the MATERIAL change log behind the scribbler's cursor
+     * and are consumed one lap later (tick T+1) — the §6 topology whose
+     * backlog must survive the save boundary. Stateless: the pending entries
+     * live in the engine-persisted change log, not in this system.
+     */
+    private static final class LateMutator implements SimulationSystem {
+
+        private static final SystemId ID = SystemId.of("late-mutator");
+
+        private final ChunkWriter writer;
+
+        LateMutator(World world) {
+            this.writer = world.writer();
+        }
+
+        @Override
+        public SystemId id() {
+            return ID;
+        }
+
+        @Override
+        public TickPhase phase() {
+            return TickPhase.REACTIONS;
+        }
+
+        @Override
+        public void tick(TickContext context) {
+            long r = context.rng().draw(0x1A7EL, 0);
+            writer.setMaterial(interiorCell(r), (short) (1 + ((r >>> 32) & 0xFF)));
+        }
+
+        @Override
+        public void serialize(DataOutput out) {
+            // The undelivered MATERIAL entries are engine state (CHNG section).
+        }
+
+        @Override
+        public void load(DataInput in) {
+            // Nothing persisted.
+        }
+
+        @Override
+        public void hashInto(WorldHasher.Sink sink) {
+            // All authored state lives in world lanes.
+        }
+    }
+
     /** Maps 64 random bits onto an interior tile of {@link #CONFIG}. */
     private static int interiorCell(long r) {
         int x = 32 + (int) (r & 63);           // interior x: [32, 96)
@@ -172,7 +227,7 @@ final class TwinRunDeterminismTest {
     private static SimulationEngine boot() {
         TickableWorld world = WorldBuilder.create(CONFIG).build();
         return Simulations.create(new EngineConfig(SEED), world,
-                List.of(new LaneScribbler(world)));
+                List.of(new LaneScribbler(world), new LateMutator(world)));
     }
 
     private static long hashOf(World world) {
@@ -213,7 +268,7 @@ final class TwinRunDeterminismTest {
         // run K+N ≡ save@K, load, run N — including the world, the input log,
         // the event carry-over lap and the per-system RNG rebinding.
         SimulationEngine c = Simulations.load(new EngineConfig(SEED), save,
-                world -> List.<SimulationSystem>of(new LaneScribbler(world)));
+                world -> List.of(new LaneScribbler(world), new LateMutator(world)));
         assertEquals(SAVE_TICK, c.currentTick(), "loaded engine resumes at the save tick");
         assertEquals(chainA[SAVE_TICK], hashOf(c.world()),
                 "loaded world must hash identically to the saved world");

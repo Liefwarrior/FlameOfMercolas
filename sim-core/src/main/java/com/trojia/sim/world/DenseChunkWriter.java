@@ -191,10 +191,11 @@ final class DenseChunkWriter implements ChunkWriter {
         }
         int localIdx = coords.localIdx(packedPos);
         SparseOverlay stored = chunks[chunkIndex].overlayOrNull(overlay);
-        if (stored != null) {
-            stored.remove(localIdx);
+        if (stored != null && stored.remove(localIdx)) {
+            // Only an actual removal marks a revision: a no-op clear must not
+            // force an observer remesh.
+            revisions.mark(chunkIndex, localIdx);
         }
-        revisions.mark(chunkIndex, localIdx);
         return APPLIED;
     }
 

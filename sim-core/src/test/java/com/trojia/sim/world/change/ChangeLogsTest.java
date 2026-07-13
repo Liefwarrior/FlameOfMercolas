@@ -5,6 +5,11 @@ import com.trojia.sim.world.LaneId;
 import com.trojia.sim.world.Lanes;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,8 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Contract tests for {@link ChangeLogs}: append/pull ordering, duplicate
  * tolerance, reader-less lane skip, sealing, independent cursors, TICK_END
- * compaction with the one-commit reader-lag cap, and cross-instance
- * determinism of identical operation sequences.
+ * compaction with the one-commit reader-lag cap, cross-instance determinism
+ * of identical operation sequences, and CHNG-section serialize/load carrying
+ * the one-lap backlog + reader cursors across a save boundary.
  */
 final class ChangeLogsTest {
 
@@ -184,6 +190,98 @@ final class ChangeLogsTest {
             logs.compact(tick);
         }
         return journal;
+    }
+
+    /**
+     * The save/load equivalence hole of review F1-1: a backlog appended after
+     * a reader's phase position must survive serialize/load — the loaded twin
+     * must pull exactly the entries the original would have pulled at T+1,
+     * and the restored lag watermark must still trip on a lagging reader.
+     */
+    @Test
+    void serializeAndLoadCarryBacklogAndCursorsAcrossASaveBoundary() throws IOException {
+        ChangeLogs original = new ChangeLogs();
+        ChangeLogReader thermal = original.register(SystemId.of("thermal"), MATERIAL);
+        ChangeLogReader light = original.register(SystemId.of("light"), MATERIAL);
+        ChangeLogReader fluids = original.register(SystemId.of("fluids"), FORM);
+        original.seal();
+
+        // Tick 1: thermal consumes everything, light lags two entries, the
+        // FORM lane keeps one undelivered entry.
+        original.append(MATERIAL, 11);
+        original.append(MATERIAL, 22);
+        original.append(MATERIAL, 33);
+        original.append(FORM, 44);
+        assertEquals(List.of(11, 22, 33), drain(thermal));
+        assertEquals(11, light.next());
+        original.compact(1); // TICK_END of the save tick
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        original.serialize(new DataOutputStream(bytes));
+
+        // The loaded instance registers the same readers in the same order
+        // (the boot registration list reproduces this deterministically).
+        ChangeLogs loaded = new ChangeLogs();
+        ChangeLogReader thermal2 = loaded.register(SystemId.of("thermal"), MATERIAL);
+        ChangeLogReader light2 = loaded.register(SystemId.of("light"), MATERIAL);
+        ChangeLogReader fluids2 = loaded.register(SystemId.of("fluids"), FORM);
+        loaded.seal();
+        loaded.load(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())));
+
+        assertFalse(thermal2.hasNext());
+        assertEquals(List.of(22, 33), drain(light2));
+        assertEquals(List.of(44), drain(fluids2));
+        loaded.compact(2); // everyone consumed the carried backlog: legal
+
+        // Twin check: the original behaves identically after its own compact.
+        assertEquals(List.of(22, 33), drain(light));
+        assertEquals(List.of(44), drain(fluids));
+        original.compact(2);
+    }
+
+    /** The restored lag watermark still fails loudly on a lagging reader. */
+    @Test
+    void loadedBacklogStillEnforcesTheLagCap() throws IOException {
+        ChangeLogs original = new ChangeLogs();
+        original.register(SystemId.of("sleeper"), MATERIAL);
+        original.seal();
+        original.append(MATERIAL, 99);
+        original.compact(1);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        original.serialize(new DataOutputStream(bytes));
+
+        ChangeLogs loaded = new ChangeLogs();
+        loaded.register(SystemId.of("sleeper"), MATERIAL);
+        loaded.seal();
+        loaded.load(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())));
+
+        IllegalStateException failure =
+                assertThrows(IllegalStateException.class, () -> loaded.compact(2));
+        assertTrue(failure.getMessage().contains("sleeper"));
+    }
+
+    /** A registration list that does not reproduce the saved shape is a hard fail. */
+    @Test
+    void loadRejectsAMismatchedRegistrationList() throws IOException {
+        ChangeLogs original = new ChangeLogs();
+        original.register(SystemId.of("thermal"), MATERIAL);
+        original.seal();
+        original.compact(1);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        original.serialize(new DataOutputStream(bytes));
+        byte[] saved = bytes.toByteArray();
+
+        ChangeLogs differentReader = new ChangeLogs();
+        differentReader.register(SystemId.of("light"), MATERIAL);
+        differentReader.seal();
+        assertThrows(IOException.class, () -> differentReader.load(
+                new DataInputStream(new ByteArrayInputStream(saved))));
+
+        ChangeLogs differentLane = new ChangeLogs();
+        differentLane.register(SystemId.of("thermal"), FORM);
+        differentLane.seal();
+        assertThrows(IOException.class, () -> differentLane.load(
+                new DataInputStream(new ByteArrayInputStream(saved))));
     }
 
     private static List<Integer> drain(ChangeLogReader reader) {

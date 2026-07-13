@@ -243,6 +243,18 @@ final class SimulationEngineTest {
                         new RecordingSystem("input-gate", TickPhase.FLUIDS, journal))));
     }
 
+    /**
+     * A system named "world" would share WorldHasher.WORLD_SECTION's salt and
+     * silently interleave its hashInto bytes with the WRLD sub-hash.
+     */
+    @Test
+    void worldHasherIdentityIsReserved() {
+        List<String> journal = new ArrayList<>();
+        assertThrows(IllegalArgumentException.class, () -> Simulations.create(
+                new EngineConfig(42L), List.of(
+                        new RecordingSystem("world", TickPhase.FLUIDS, journal))));
+    }
+
     @Test
     void contextRngIsDeterministicAcrossTwinEngines() {
         List<Long> drawsA = new ArrayList<>();

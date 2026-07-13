@@ -10,6 +10,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -165,5 +166,44 @@ final class ActiveSetTest {
             polled.add(set.poll());
         }
         return polled;
+    }
+
+    /**
+     * The pure-serialization seam: {@link ActiveSet#peek} enumerates queued
+     * cells in FIFO order without mutating, and replaying clear() + add in
+     * that order reproduces identical poll order — the frontier round trip a
+     * system's contractually-pure serialize/load relies on (§9).
+     */
+    @Test
+    void peekEnumeratesFifoOrderWithoutMutatingAndRoundTrips() {
+        ActiveSet set = new ActiveSet(COORDS);
+        int a = PackedPos.pack(33, 40, 8);
+        int b = PackedPos.pack(90, 33, 9);
+        int c = PackedPos.pack(35, 41, 10);
+        set.add(a);
+        set.add(b);
+        set.add(c);
+        set.poll(); // head advances: peek must be relative to the current head
+        set.add(a); // re-add after poll: goes to the tail
+
+        int[] snapshot = new int[set.size()];
+        for (int i = 0; i < set.size(); i++) {
+            snapshot[i] = set.peek(i);
+        }
+        assertEquals(3, set.size(), "peek must not mutate");
+        assertEquals(b, snapshot[0]);
+        assertEquals(c, snapshot[1]);
+        assertEquals(a, snapshot[2]);
+        assertThrows(IndexOutOfBoundsException.class, () -> set.peek(3));
+        assertThrows(IndexOutOfBoundsException.class, () -> set.peek(-1));
+
+        ActiveSet restored = new ActiveSet(COORDS);
+        for (int packedPos : snapshot) {
+            restored.add(packedPos);
+        }
+        for (int packedPos : snapshot) {
+            assertEquals(packedPos, restored.poll(), "replayed add order IS poll order");
+        }
+        assertTrue(restored.isEmpty());
     }
 }

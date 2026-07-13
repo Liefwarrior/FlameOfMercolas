@@ -111,6 +111,22 @@ public final class ActiveSet {
     }
 
     /**
+     * The {@code i}-th queued cell in FIFO order ({@code 0 <= i < size()})
+     * WITHOUT removing it — the pure enumeration a system's contractually-pure
+     * {@code serialize} persists its frontier through (§9: frontiers survive
+     * save/load). Replaying {@link #clear()} then {@link #add} in this order
+     * reproduces identical frontier state and {@link #poll} order. Not a hot
+     * path: bounds-checked.
+     */
+    public int peek(int i) {
+        if (i < 0 || i >= size) {
+            throw new IndexOutOfBoundsException(
+                    "frontier index " + i + " outside [0, " + size + ")");
+        }
+        return ring[(head + i) & (ring.length - 1)];
+    }
+
+    /**
      * Drops every queued cell of {@code chunkIndex} (on ChunkFrozen). Queued
      * order of the survivors is preserved; the chunk's bitset is released.
      */

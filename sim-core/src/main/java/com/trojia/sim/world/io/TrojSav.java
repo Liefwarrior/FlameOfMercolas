@@ -55,15 +55,33 @@ public final class TrojSav {
     public static final String EVNT = "EVNT";
     /** Section: world lanes + overlays via {@link ChunkCodec}, canonical chunk order. */
     public static final String WRLD = "WRLD";
-    /** Section: fluid system state (frontiers, quiet counters, ledger). */
+    /** Section: change-log carry-over (unconsumed entry tails + reader cursors), engine-owned. */
+    public static final String CHNG = "CHNG";
+    /**
+     * Section: fluid system state (frontiers, quiet counters, ledger). Not
+     * name-derivable from {@code "fluids"} — the owning system must pin it via
+     * {@code SystemId.of("fluids", TrojSav.FLUD)}.
+     */
     public static final String FLUD = "FLUD";
-    /** Section: thermal/fire state (frontiers, residual carry, burn table). */
+    /**
+     * Section: thermal/fire state (frontiers, residual carry, burn table). Not
+     * name-derivable from {@code "thermal"} — the owning system must pin it via
+     * {@code SystemId.of("thermal", TrojSav.THRM)}.
+     */
     public static final String THRM = "THRM";
     /** Section: reaction state (wear counters, charge buffers). */
     public static final String REAC = "REAC";
-    /** Section: light state (in-flight queues as packed longs, source registry). */
+    /**
+     * Section: light state (in-flight queues as packed longs, source registry).
+     * Not name-derivable from {@code "light"} — the owning system must pin it
+     * via {@code SystemId.of("light", TrojSav.LGHT)}.
+     */
     public static final String LGHT = "LGHT";
-    /** Section: bubble state (tickets, summaries, journals, grace deadlines). */
+    /**
+     * Section: bubble state (tickets, summaries, journals, grace deadlines).
+     * Not name-derivable from {@code "bubble"} — the owning system must pin it
+     * via {@code SystemId.of("bubble", TrojSav.BUBL)}.
+     */
     public static final String BUBL = "BUBL";
     /** Section: macro economy state (ledgers, scheduler wheel, incidents). */
     public static final String ECON = "ECON";
