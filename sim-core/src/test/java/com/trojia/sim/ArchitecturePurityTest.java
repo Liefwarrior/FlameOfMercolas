@@ -47,13 +47,26 @@ final class ArchitecturePurityTest {
      * state — iteration order of HashMap/HashSet is JVM-dependent, so any
      * side-effect-relevant iteration must run over sorted/insertion-ordered
      * structures instead. Allowlist: none.
+     *
+     * <p>Also bans declaring a field as the bare {@code Map}/{@code Set}
+     * interface: {@code haveRawType} matches only a field's declared
+     * (bytecode) type, so a field declared {@code Map<K,V>} and constructed
+     * with {@code new HashMap<>()} would otherwise slip past this rule
+     * undetected. Requiring a concrete deterministic type (e.g. TreeMap) as
+     * the declared type makes the field's signature itself prove
+     * determinism, instead of relying on the constructor call site.
      */
     @ArchTest
     static final ArchRule NO_HASH_CONTAINER_FIELDS = noFields()
             .should().haveRawType(java.util.HashMap.class)
             .orShould().haveRawType(java.util.HashSet.class)
+            .orShould().haveRawType(java.util.Map.class)
+            .orShould().haveRawType(java.util.Set.class)
             .because("hash iteration order is JVM-dependent; sim state and side-effectful "
-                    + "iteration must use canonical sorted key order (ARCHITECTURE.md §6)");
+                    + "iteration must use canonical sorted key order (ARCHITECTURE.md §6) — "
+                    + "fields must declare a concrete type (e.g. TreeMap), not the bare "
+                    + "Map/Set interface, so a HashMap/HashSet-backed field can't hide behind "
+                    + "an interface-typed declaration");
 
     /**
      * §6 determinism rule: no float/double in sim state — integer/fixed-point

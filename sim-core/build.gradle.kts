@@ -20,5 +20,23 @@ dependencies {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // WritePathBenchTest is a hard wall-clock ceiling assertion — inherently
+        // timing-sensitive (JIT warmup, GC pauses, CPU frequency scaling, or
+        // contention from parallel Gradle test workers can flake it on a busy
+        // shared runner for reasons unrelated to any write-path regression).
+        // Excluded from the default build; run explicitly via `benchmarkTest`.
+        excludeTags("benchmark")
+    }
+}
+
+tasks.register<Test>("benchmarkTest") {
+    description = "Runs timing-sensitive benchmark tests (e.g. WritePathBenchTest) excluded " +
+            "from the default `test` task."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("benchmark")
+    }
 }

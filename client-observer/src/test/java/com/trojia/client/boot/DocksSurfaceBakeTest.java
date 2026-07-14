@@ -68,12 +68,12 @@ class DocksSurfaceBakeTest {
         int interiorChunksX = ceilDiv(map.width(), Coords.CHUNK_SIZE_X);
         int interiorChunksY = ceilDiv(map.height(), Coords.CHUNK_SIZE_Y);
         int zLevelCount = countZGroups(map);
-        int interiorChunksZ = ceilDiv(zLevelCount, Coords.CHUNK_SIZE_Z);
+        int interiorChunksZ = ceilDiv(zSpan(map), Coords.CHUNK_SIZE_Z);
         WorldConfig expected = new WorldConfig(
                 interiorChunksX + 2, interiorChunksY + 2, interiorChunksZ + 2);
 
         assertEquals(expected, reloaded.config(),
-                "baked world dimensions must match the authored map's footprint and z-group count");
+                "baked world dimensions must match the authored map's footprint and z-group span");
         assertEquals(16, zLevelCount,
                 "content/maps/README.md documents docks_surface.tmx as sixteen z-levels (+0..+15)");
     }
@@ -86,6 +86,28 @@ class DocksSurfaceBakeTest {
             }
         }
         return count;
+    }
+
+    /**
+     * {@code maxZ - minZ + 1} over every z-group's parsed signed value — the same span
+     * {@link TiledWorldImporter#importWorld} itself derives {@code interiorChunksZ} from.
+     * Deliberately NOT a raw z-group count ({@link #countZGroups}): the importer never
+     * requires z-groups to be contiguous, so a count and a min/max span only agree when the
+     * authored z-groups happen to have no gaps. Computing the same span here (instead of a
+     * count) keeps this test's "independently derived" dimension check honest even if a
+     * future fixture ever authors a gap.
+     */
+    private static int zSpan(TmxMap map) {
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        for (TmxLayer layer : map.layers()) {
+            if (layer instanceof TmxLayerGroup group && group.name().matches("z:[+-]\\d+")) {
+                int z = Integer.parseInt(group.name().substring("z:".length()));
+                min = Math.min(min, z);
+                max = Math.max(max, z);
+            }
+        }
+        return max - min + 1;
     }
 
     private static int ceilDiv(int a, int b) {

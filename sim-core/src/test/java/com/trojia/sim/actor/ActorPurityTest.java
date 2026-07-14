@@ -35,12 +35,23 @@ final class ActorPurityTest {
             .because("sim-core (and every subpackage) is zero-third-party-dependency, "
                     + "JDK + sim-core only (ARCHITECTURE.md §2)");
 
+    /**
+     * Also bans the bare {@code Map}/{@code Set} interface as a field's
+     * declared type: {@code haveRawType} matches only the declared
+     * (bytecode) type, so a field declared {@code Map<K,V>} and backed by
+     * {@code new HashMap<>()} would otherwise slip past undetected. See the
+     * project-wide twin of this rule in {@code ArchitecturePurityTest} for
+     * the full rationale.
+     */
     @ArchTest
     static final ArchRule NO_HASH_CONTAINER_FIELDS = noFields()
             .should().haveRawType(java.util.HashMap.class)
             .orShould().haveRawType(java.util.HashSet.class)
+            .orShould().haveRawType(java.util.Map.class)
+            .orShould().haveRawType(java.util.Set.class)
             .because("hash iteration order is JVM-dependent (ARCHITECTURE.md §6) — actor "
-                    + "registries/side-tables use sorted arrays instead");
+                    + "registries/side-tables use sorted arrays instead, and fields must "
+                    + "declare a concrete type, not the bare Map/Set interface");
 
     @ArchTest
     static final ArchRule NO_FLOATING_POINT_FIELDS = noFields()

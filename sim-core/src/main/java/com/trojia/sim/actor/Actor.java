@@ -201,8 +201,22 @@ public abstract class Actor {
         int dx = Integer.compare(tx, x);
         int dy = Integer.compare(ty, y);
         int stepped = PackedPos.pack(x + dx, y + dy, z);
-        if (!ignoresLeash && ActorGeometry.chebyshev(stepped, anchorCell) > stats.leashRadius()) {
-            return; // leash holds; deterministic no-op (§2.5)
+        if (!ignoresLeash) {
+            int newDist = ActorGeometry.chebyshev(stepped, anchorCell);
+            // Relative (monotonic-improvement) check, not absolute containment: block only
+            // when the step would leave the actor beyond its leash AND no closer to the
+            // anchor than it already is. An absolute "> leashRadius" check on the
+            // destination alone would permanently freeze an actor whose current cell is
+            // already more than leashRadius away from anchorCell (e.g. after a content
+            // change moves anchorCell post-spawn) — chebyshev distance can only shrink by 1
+            // per step, so every step back home would itself still read "> leashRadius" and
+            // be rejected forever. Allowing any step that does not increase the distance
+            // keeps the leash effective (an in-leash actor still can't wander out) while
+            // letting an out-of-leash actor walk itself back in, one cell at a time.
+            int curDist = ActorGeometry.chebyshev(cell, anchorCell);
+            if (newDist > stats.leashRadius() && newDist >= curDist) {
+                return; // leash holds; deterministic no-op (§2.5)
+            }
         }
         cell = stepped;
         if (dx != 0) {

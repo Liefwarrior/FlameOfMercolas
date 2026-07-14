@@ -165,11 +165,14 @@ public final class TiledWorldImporter {
                                 + " (fluid tiles are illegal on terrain/floor)");
                     }
                     TileForm form = binding.form(fillGid);
-                    if (form == TileForm.OPEN) {
-                        continue; // an authored OPEN fill is air — leave the cell empty
+                    if (form != TileForm.OPEN) {
+                        // an authored OPEN fill is air — leave the material/form cell empty,
+                        // but (unlike a `continue` here) still fall through below so an
+                        // authored fluid tile at this same (x,y) is not silently dropped.
+                        apply(writer,
+                                PackedPos.pack(Coords.CHUNK_SIZE_X + x, Coords.CHUNK_SIZE_Y + y, worldZ),
+                                binding.materialRaw(fillGid), form, group, x, y);
                     }
-                    apply(writer, PackedPos.pack(Coords.CHUNK_SIZE_X + x, Coords.CHUNK_SIZE_Y + y, worldZ),
-                            binding.materialRaw(fillGid), form, group, x, y);
                 } else if (floorGid != 0) {
                     if (!binding.hasMaterial(floorGid)) {
                         throw new TiledImportException("floor cell (" + x + "," + y + ") in "

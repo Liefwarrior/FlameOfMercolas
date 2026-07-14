@@ -371,7 +371,7 @@ public final class ObserverApp extends ApplicationAdapter {
     private void writeScreenshot() {
         int w = camera.viewportWidthPx();
         int h = camera.viewportHeightPx();
-        Pixmap pixmap = ScreenUtils.getFrameBufferPixmap(0, 0, w, h);
+        Pixmap pixmap = Pixmap.createFromFrameBuffer(0, 0, w, h);
         flipVertically(pixmap);
         FileHandle handle = Gdx.files.absolute(screenshotPath);
         PixmapIO.writePNG(handle, pixmap);

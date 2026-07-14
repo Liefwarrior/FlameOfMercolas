@@ -12,6 +12,12 @@ final class ActorTestFixtures {
     }
 
     static ActorTypeStats statsWithDefer(ActorTypeId typeId, boolean hasDefer) {
+        return statsWithSpeedAndLeash(typeId, hasDefer, 1, 24);
+    }
+
+    /** Like {@link #statsWithDefer}, but with a caller-chosen speed/leash for movement tests. */
+    static ActorTypeStats statsWithSpeedAndLeash(ActorTypeId typeId, boolean hasDefer,
+            int speedTicksPerStep, int leashRadius) {
         NeedConfig[] needs = new NeedConfig[Need.COUNT];
         needs[Need.HUNGER.ordinal()] = new NeedConfig(9000, 700, 0, 250, 500);
         needs[Need.REST.ordinal()] = new NeedConfig(9000, 550, 0, 250, 500);
@@ -19,7 +25,7 @@ final class ActorTestFixtures {
         needs[Need.SAFETY.ordinal()] = new NeedConfig(10000, 0, 2, 400, 800);
         needs[Need.DUTY.ordinal()] = new NeedConfig(9000, 900, 0, 300, 400);
         return new ActorTypeStats(typeId, "Test " + typeId, 'X', 0xFFFFFF, "test",
-                (short) 20, 1, 24, 4, needs,
+                (short) 20, speedTicksPerStep, leashRadius, 4, needs,
                 hasDefer, 980, 6, 940, 305, 80, 12000, 24000, 10);
     }
 }

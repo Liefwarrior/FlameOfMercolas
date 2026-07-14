@@ -46,6 +46,21 @@ public record JobParams(
             throw new IllegalArgumentException("invalid rhythm window ["
                     + rhythmWindowStart + ", " + rhythmWindowEnd + "]");
         }
+        if (priority + (long) rhythmBonus > JOB_BAND_MAX) {
+            // GoalPursuePolicy.score() = priority + (inWindow ? rhythmBonus : 0), and the
+            // NEED-band RETURN_HOME policy is priced at a fixed 305 specifically so it always
+            // outranks every JOB-band score (ACTORS-SPEC.md's RETURN_HOME addendum: "this
+            // deliberately outranks every JOB-band policy (100-299)... the same way a
+            // NEED-band policy always outranks JOB today"). If priority + rhythmBonus could
+            // exceed JOB_BAND_MAX, an in-window job could outscore RETURN_HOME and an actor
+            // that ever strays from its home cell would never be able to walk back (its REST
+            // need would decay forever). Keeping the in-window total inside the JOB band
+            // makes that invariant hold by construction instead of by authoring discipline.
+            throw new IllegalArgumentException("priority + rhythmBonus must not exceed the "
+                    + "JOB band ceiling " + JOB_BAND_MAX + " (else an in-window job could "
+                    + "outrank NEED-band RETURN_HOME, priced at 305): " + priority + " + "
+                    + rhythmBonus);
+        }
         if (workTicksPerUnit < 1) {
             throw new IllegalArgumentException("workTicksPerUnit must be >= 1: " + workTicksPerUnit);
         }

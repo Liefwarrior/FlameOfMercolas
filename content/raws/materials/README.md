@@ -1,11 +1,17 @@
-# Material raws — v0 canonical set (14)
+# Material raws — v0 canonical set (17)
 
 Schema: ARCHITECTURE.md §10 (Chromatis example is normative). Temps integer Kelvin, Q8 fixed-point,
 charge in 16-bit-safe cu. Every raw carries `provenance` (canon citation or "invented for v0")
 and `notes`; loaders ignore both. Sibling raws (treatments/getilia_soak, reactions/phorys,
 fluids/water) are owned elsewhere — `trudgeon_wood@getilia_soak` is minted at load, not a file here.
 (`ice.json` in this directory is owned by the fluids crew per their freeze/thaw ruling and is not
-part of the 14-id canonical vocabulary below.)
+part of the 17-id canonical vocabulary below.)
+
+Added after the original 14-id set was tabled: `cloth` and `leather` (already-blessed per
+docs/design/SPEC-INDEX.md item C1 — COMBAT-SPEC.md §1.2's gear-material raws) and
+`reman_concrete` (2026-07-13 Trojian Compounds housing ruling, docs/design/DECISIONS.md —
+values below are still placeholders pending Eli's blessing, per that file's own provenance
+field).
 
 | id | phase | dens | hard | cond | cap | flammable (ignK / fuelTicks -> burnsTo) | melt | opac | features | valueCp | provenance |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -23,19 +29,25 @@ part of the 14-id canonical vocabulary below.)
 | lightstone_shards | SOLID | 2600 | 2 | 40 | 48 | no | — | 6 | — | 500 | derived (shatter product); invented numbers |
 | glowstone | SOLID | 2500 | 5 | 44 | 64 | no | — | 31 | emissive 7, red | 6000 | WorldBible §9 (eerie red; U'mar shrine) |
 | ash | SOLID | 300 | 1 | 4 | 16 | no | — | 4 | — | 1 | invented (terminal burnsTo target, §11) |
+| cloth | SOLID | 250 | 0 | 6 | 16 | 400 K / 150 -> ash | — | 8 | fabric | 8 | SPEC-INDEX C1 (blessed hardness/durability); rest invented, needs-blessing |
+| leather | SOLID | 860 | 2 | 14 | 40 | 700 K / 900 -> ash | — | 20 | hide | 45 | SPEC-INDEX C1 (blessed hardness/durability); rest invented, needs-blessing |
+| reman_concrete | SOLID | 2400 | 7 | 80 | 90 | no | — | 31 | masonry, engineered | 200 | DECISIONS.md 2026-07-13 Compounds ruling; all values placeholder, needs-blessing |
 
-## Loader invariants (ARCHITECTURE §10) — verified for every file above
+## Loader invariants (ARCHITECTURE §10) — verified for every file above, including cloth/leather/reman_concrete
 
-1. **conductivityQ8 ≤ 256** — max in set is steel at 230. ✓
+1. **conductivityQ8 ≤ 256** — max in set is still steel at 230 (cloth 6, leather 14, reman_concrete 80
+   all clear it easily). ✓
 2. **Per-material stability Σ(w/cap) ≤ ½ (min heatCapacity enforced)** — every heatCapacityQ8 ≥ 16,
    so even against a worst-case max-conductivity neighbor (w = 256/256 = 1 on all 6 faces):
    6·(256/256)/capQ8 ≤ 6/16 = 0.375 ≤ ½. With own conductivities the worst case is thatch:
-   6·(8/256)/16 ≈ 0.0117. Minimum cap in set (16) clears the enforced floor of 12. ✓
-3. **FLAMMABLE ⇒ ignitionK + fuelTicks (≤ 4095) + burnsTo** — exactly three flammables, all complete,
+   6·(8/256)/16 ≈ 0.0117. Minimum cap in set (16, tied by cloth) clears the enforced floor of 12.
+   leather (3·14=42 ≤ 64·40=2560) and reman_concrete (3·80=240 ≤ 64·90=5760) both clear it too. ✓
+3. **FLAMMABLE ⇒ ignitionK + fuelTicks (≤ 4095) + burnsTo** — now five flammables, all complete,
    all burnsTo = ash (which is itself non-flammable, so no burn cycles):
-   thatch 450/240, oak 550/1800, trudgeon_wood 650/3400. Max fuelTicks 3400 ≤ 4095; even the
-   stricter sum-parse holds (650+3400 = 4050 ≤ 4095). Ordering: thatch ignites easier and burns
-   faster than oak. ✓
+   thatch 450/240, oak 550/1800, trudgeon_wood 650/3400, cloth 400/150, leather 700/900. Max
+   fuelTicks is still trudgeon_wood's 3400 ≤ 4095. Ordering: cloth ignites easier and burns faster
+   than thatch (the previous fastest-burning solid); leather ignites harder than the structural
+   woods but burns out faster than lumber, consistent with a thin worn-goods profile. ✓
 4. **melt ⇒ meltsTo + meltYieldUnits** — only chromatis melts (→ chromatis_melt ×7, both fields
    present; target id exists in this directory). Steel/granite deliberately have meltK = null:
    no melt-product ids exist in the v0 vocabulary. ✓
@@ -44,7 +56,8 @@ part of the 14-id canonical vocabulary below.)
 6. **chargeable/spike values fit 16 bits** — chromatis 60000/600, lightstone 5000/150/2000,
    heat 20/0 deciK·tick⁻¹, equilibria 6000/2930 deciK: all ≤ 65535. ✓
 7. **treatment targets exist** — getilia_soak targets trudgeon_wood (present). ✓
-8. **derived-id collisions** — no raw file claims `trudgeon_wood@getilia_soak`; ids are unique. ✓
+8. **derived-id collisions** — no raw file claims `trudgeon_wood@getilia_soak`; ids are unique
+   (including `cloth`/`leather`/`reman_concrete`, which collide with nothing above). ✓
 9. **reaction refs resolve** — phorys present and flagged contactReactive for the reactions raw. ✓
 10. **color stops monotone** — chromatis 60 < 95 < 100; lightstone 5 < 60 < 100; both end at 100
     and use ≤ 4 stops (appearance bucket 0..3). ✓

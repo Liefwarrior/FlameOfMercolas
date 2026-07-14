@@ -64,7 +64,71 @@ public final class ActorRawsLoader {
         for (Path file : files) {
             parsed.add(parseFile(file));
         }
+        crossCheckAgainstRegisteredTypes(actorsRawsDir, parsed);
         return ActorTypeStatsTable.of(parsed);
+    }
+
+    /**
+     * Fail-fast, both-directions cross-check against {@link ActorTypes#ALL} — the actor-type
+     * analogue of {@code JobBinder}'s 1:1 job/leaf validation. Without this, a typo'd {@code id}
+     * field or a newly-registered {@link ActorTypes} entry missing its raws file both load
+     * silently and surface only as a lazy {@code IllegalArgumentException} the first time
+     * {@link ActorTypeStatsTable#get} is asked for that type (e.g. at first spawn), which a
+     * scenario that never exercises the type could ship without ever hitting.
+     */
+    private static void crossCheckAgainstRegisteredTypes(Path actorsRawsDir,
+            List<ActorTypeStats> parsed) {
+        String dir = actorsRawsDir.toString();
+
+        // No duplicate ids across raws files (e.g. a copy-paste "id" typo colliding with
+        // another file's real id).
+        for (int i = 0; i < parsed.size(); i++) {
+            for (int j = i + 1; j < parsed.size(); j++) {
+                if (parsed.get(i).typeId().equals(parsed.get(j).typeId())) {
+                    throw new ActorRawsValidationException(dir, "id",
+                            "duplicate actor type id \"" + parsed.get(i).typeId()
+                                    + "\" across raws files");
+                }
+            }
+        }
+
+        // Every parsed raws id must match a registered ActorTypes.ALL entry — otherwise a
+        // typo'd id is silently accepted as a "valid" but orphaned type, while the actor
+        // subclass it was meant to bind stays unbound.
+        for (ActorTypeStats stats : parsed) {
+            boolean registered = false;
+            for (ActorTypes.Registration reg : ActorTypes.ALL) {
+                if (reg.id().equals(stats.typeId())) {
+                    registered = true;
+                    break;
+                }
+            }
+            if (!registered) {
+                throw new ActorRawsValidationException(dir, "id",
+                        "actor raws id \"" + stats.typeId() + "\" has no registered "
+                                + "ActorTypes.ALL entry (Actor subclass) — either the id is "
+                                + "misspelled or the type was never registered");
+            }
+        }
+
+        // Every registered ActorTypes.ALL entry must have a matching raws file — adding a
+        // new Actor subclass without (or with a misspelled) content/raws/actors/<type>.json
+        // must fail at load time, not lazily at first spawn/stat lookup.
+        for (ActorTypes.Registration reg : ActorTypes.ALL) {
+            boolean bound = false;
+            for (ActorTypeStats stats : parsed) {
+                if (stats.typeId().equals(reg.id())) {
+                    bound = true;
+                    break;
+                }
+            }
+            if (!bound) {
+                throw new ActorRawsValidationException(dir, "id",
+                        "registered actor type \"" + reg.id() + "\" (ActorTypes.ALL) has no "
+                                + "content/raws/actors/*.json entry — every registered type "
+                                + "needs data");
+            }
+        }
     }
 
     private static ActorTypeStats parseFile(Path path) {

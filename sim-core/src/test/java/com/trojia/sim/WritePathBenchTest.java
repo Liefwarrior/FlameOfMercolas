@@ -5,6 +5,7 @@ import com.trojia.sim.world.PackedPos;
 import com.trojia.sim.world.TickableWorld;
 import com.trojia.sim.world.WorldBuilder;
 import com.trojia.sim.world.WorldConfig;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,7 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * measurement is what the milestone report records. The measured configuration
  * matches production thermal writes: no readers on the TEMPERATURE lane, so
  * the change-log skip branch is taken (§6 reader-less skip rule).
+ *
+ * <p>Tagged {@code benchmark} and excluded from the default {@code test} task
+ * (see {@code build.gradle.kts}): a hard wall-clock ceiling assertion is
+ * inherently timing-sensitive (JIT warm-up variance, GC pauses, CPU frequency
+ * scaling, or contention from parallel Gradle test workers can all push the
+ * measurement above 150 ns on a busy shared runner for reasons unrelated to
+ * any write-path regression) — this is the milestone-report/benchmark task
+ * this class's own javadoc already describes, not a correctness gate that
+ * should be able to fail the default build non-deterministically. Run it
+ * explicitly via the {@code benchmarkTest} task.
  */
+@Tag("benchmark")
 final class WritePathBenchTest {
 
     private static final int WRITES_PER_TICK = 1_000_000;

@@ -1125,9 +1125,11 @@ lane tints them like everything else — an actor in the dark is genuinely hard 
 
 Selected actor shows: name/typeId + glyph · FACES-SPEC portrait (archetype per §6 raws;
 `(worldSeed, actorId)` — actors ARE the npcIds). Archetype mapping vs FACES §3.3's v0 set
-(`guard, cultist, monk, noble, thug, laborer`) — all (placeholder): Watch → `guard` ·
-Serf / Shopkeeper / Animal Keeper → `laborer` · Wastrel → `thug` (a leaner `beggar`
-archetype is a flagged FACES addition) · Priest / Disciple → `monk` · Animal / Feral →
+(`guard, cultist, monk, noble, thug, laborer`) — all (placeholder), matching the shipped
+`content/art/faces/face-archetypes.json`/FACES-SPEC.md §3.3 amendment verbatim: Watch →
+`guard` · Serf / Animal Keeper → `laborer` · Wastrel → `thug` (a leaner `beggar`
+archetype is a flagged FACES addition) · Priest of the Flame → `monk` · Disciple of the
+Flame → `cultist` · Shopkeeper → `noble` · Animal / Feral →
 none (`faceArchetype: null`, no portrait — the Animals-get-no-face-panel blessing, Feral
 per Q7) · the five need bars (0–100 with LOW/CRIT
 notches) · **current policy + reason code + target** ("SEEK_FOOD · NEED_HUNGER_LOW · fish
