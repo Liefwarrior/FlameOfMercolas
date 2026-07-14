@@ -1,5 +1,6 @@
 package com.trojia.client.boot;
 
+import com.trojia.sim.fluid.FluidRegistry;
 import com.trojia.sim.material.MaterialRawsLoader;
 import com.trojia.sim.material.MaterialRegistry;
 import com.trojia.sim.material.RawsBundle;
@@ -69,11 +70,13 @@ public final class FixtureWorldLoader {
     }
 
     /**
-     * The loaded world, the material registry it was baked against, and the world seed
-     * its TROJSAV header carries (the only persisted RNG state — see {@code EngineConfig}
+     * The loaded world, the material and fluid registries it was baked against (the
+     * MATERIAL and FLUID lanes' raw ids resolve against these), and the world seed its
+     * TROJSAV header carries (the only persisted RNG state — see {@code EngineConfig}
      * javadoc — needed to wrap this world in a {@code SimulationEngine}).
      */
-    public record Loaded(TickableWorld world, MaterialRegistry materials, long worldSeed) {
+    public record Loaded(TickableWorld world, MaterialRegistry materials, FluidRegistry fluids,
+            long worldSeed) {
     }
 
     /**
@@ -128,7 +131,7 @@ public final class FixtureWorldLoader {
                                 + ") -- rerun the matching bake test to rebake it");
             }
             TickableWorld world = new WorldLoader().load(save);
-            return new Loaded(world, materials, save.header().worldSeed());
+            return new Loaded(world, materials, raws.fluids(), save.header().worldSeed());
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load the fixture world " + bakedFileName, e);
         }

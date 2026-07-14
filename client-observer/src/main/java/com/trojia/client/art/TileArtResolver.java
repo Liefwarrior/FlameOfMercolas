@@ -93,4 +93,58 @@ public interface TileArtResolver {
      * {@link #NO_TINT} there and the pre-colored placeholder cells draw untinted.
      */
     int materialTintRgb(String materialId);
+
+    /**
+     * The overlay region for a pooled fluid (TILE-ART-SPEC section 5.3). The default —
+     * for packs that map no fluids — is {@link #missingRegionName()}, mirroring the
+     * unknown-material fallback; such a pack also reports alpha 0 for every depth (see
+     * {@link #fluidDepthAlphaQ8}), so the fallback name is never actually drawn.
+     *
+     * @param fluidId canonical raws fluid id
+     * @return the region name; never {@code null}
+     * @throws IllegalArgumentException if {@code fluidId} is null or blank
+     */
+    default String fluidRegion(String fluidId) {
+        if (fluidId == null || fluidId.isBlank()) {
+            throw new IllegalArgumentException("fluidId must be non-blank");
+        }
+        return missingRegionName();
+    }
+
+    /**
+     * The Q8 overlay alpha for a pooled-fluid depth (TILE-ART-SPEC section 5.3). Depth 0
+     * is always 0 (renders nothing); unmapped fluids are 0 at every depth, which is the
+     * renderer's draw-nothing signal — a pack opts out of fluid overlays simply by not
+     * mapping the fluid.
+     *
+     * @param fluidId canonical raws fluid id
+     * @param depth   FLUID-lane depth 0..7
+     * @return the alpha factor 0..256
+     * @throws IllegalArgumentException if {@code fluidId} is null or blank, or
+     *                                  {@code depth} is outside 0..7
+     */
+    default int fluidDepthAlphaQ8(String fluidId, int depth) {
+        if (fluidId == null || fluidId.isBlank()) {
+            throw new IllegalArgumentException("fluidId must be non-blank");
+        }
+        if (depth < 0 || depth > 7) {
+            throw new IllegalArgumentException("depth " + depth + " outside 0..7");
+        }
+        return 0;
+    }
+
+    /**
+     * A pooled fluid's base presentation tint as packed {@code 0xRRGGBB}, or
+     * {@link #NO_TINT}. Same optional secondary-adjustment role as
+     * {@link #materialTintRgb(String)}: a pack whose fluid region is already baked in the
+     * right hue lists no tint and the overlay draws as authored.
+     *
+     * @throws IllegalArgumentException if {@code fluidId} is null or blank
+     */
+    default int fluidTintRgb(String fluidId) {
+        if (fluidId == null || fluidId.isBlank()) {
+            throw new IllegalArgumentException("fluidId must be non-blank");
+        }
+        return NO_TINT;
+    }
 }

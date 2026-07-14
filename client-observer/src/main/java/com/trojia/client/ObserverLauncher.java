@@ -13,7 +13,11 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
  * Trojian-Compound population, {@code --fixture=docks} the whole Docks-ward district
  * population (see {@link ObserverApp}). {@code --screenshot=path.png},
  * combined with {@code --smoke=N}, dumps the final frame to disk — a verification aid,
- * never used on the shipped interactive path.
+ * never used on the shipped interactive path. {@code --art=dir} loads
+ * {@code content/art/dir/art-mapping.json} instead of the shipped {@code custom} pack —
+ * the escape hatch back to {@code kenney} or {@code placeholder}. {@code --z=N} boots on
+ * z-level N (clamped) instead of the fixture's street level — a screenshot aid for
+ * below/above-grade slices (e.g. the docks harbor water surface).
  */
 public final class ObserverLauncher {
 
@@ -29,7 +33,8 @@ public final class ObserverLauncher {
 
         new Lwjgl3Application(
                 new ObserverApp(parseFixture(args), parseSmokeFrames(args), parseScreenshotPath(args),
-                        parseDebugSelect(args)),
+                        parseDebugSelect(args), parseArtDir(args), parseStartZ(args),
+                        parseCenter(args), parseZoom(args)),
                 configuration);
     }
 
@@ -37,6 +42,46 @@ public final class ObserverLauncher {
         for (String arg : args) {
             if (arg.startsWith("--debug-select=")) {
                 return Integer.parseInt(arg.substring("--debug-select=".length()));
+            }
+        }
+        return -1;
+    }
+
+    private static String parseArtDir(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--art=")) {
+                return arg.substring("--art=".length()).trim();
+            }
+        }
+        return ObserverApp.DEFAULT_ART_DIR;
+    }
+
+    /** {@code --center=x,y}: boot camera center in tile coords (screenshot aid). */
+    private static int[] parseCenter(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--center=")) {
+                String[] parts = arg.substring("--center=".length()).split(",", 2);
+                return new int[] {Integer.parseInt(parts[0].trim()),
+                        Integer.parseInt(parts[1].trim())};
+            }
+        }
+        return null;
+    }
+
+    /** {@code --zoom=N}: boot camera zoom (screenshot aid; clamped by the camera). */
+    private static int parseZoom(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--zoom=")) {
+                return Integer.parseInt(arg.substring("--zoom=".length()));
+            }
+        }
+        return 0;
+    }
+
+    private static int parseStartZ(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--z=")) {
+                return Integer.parseInt(arg.substring("--z=".length()));
             }
         }
         return -1;

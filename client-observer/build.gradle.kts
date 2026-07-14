@@ -36,6 +36,10 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // Golden-bless seam (FACES-SPEC T16): forwards -Dfacegen.bless=true into the test JVM
+    // so `gradlew :client-observer:test -Dfacegen.bless=true` re-blesses the committed
+    // golden face sheet. Defaults to false — goldens never move silently.
+    systemProperty("facegen.bless", System.getProperty("facegen.bless", "false"))
 }
 
 // Compound-block actor population legibility listing (ACTORS-SPEC.md §7.2 / the "prove it"

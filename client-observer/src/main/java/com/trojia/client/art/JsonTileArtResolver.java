@@ -428,11 +428,11 @@ public final class JsonTileArtResolver implements TileArtResolver {
      * {@link #NO_TINT}. Same optional secondary-adjustment role as
      * {@link #materialTintRgb(String)} — the shipped water region is already baked blue, so
      * the Kenney pack's {@code fluids.water} lists no tint and this returns
-     * {@link #NO_TINT}. Ready for the FLUID render pass (no in-tree consumer yet — v0 draws
-     * no fluids).
+     * {@link #NO_TINT}. Consumed by {@code WorldRenderer}'s fluid overlay pass.
      *
      * @throws IllegalArgumentException if {@code fluidId} is null or blank
      */
+    @Override
     public int fluidTintRgb(String fluidId) {
         requireNonBlank(fluidId, "fluidId");
         FluidArt art = fluids.get(fluidId);
@@ -474,6 +474,7 @@ public final class JsonTileArtResolver implements TileArtResolver {
      * @return the region name, or {@link #missingRegionName()} for unmapped fluids
      * @throws IllegalArgumentException if {@code fluidId} is null or blank
      */
+    @Override
     public String fluidRegion(String fluidId) {
         requireNonBlank(fluidId, "fluidId");
         FluidArt art = fluids.get(fluidId);
@@ -489,6 +490,7 @@ public final class JsonTileArtResolver implements TileArtResolver {
      * @throws IllegalArgumentException if {@code fluidId} is null or blank, or
      *                                  {@code depth} is outside 0..7
      */
+    @Override
     public int fluidDepthAlphaQ8(String fluidId, int depth) {
         requireNonBlank(fluidId, "fluidId");
         if (depth < 0 || depth >= FLUID_DEPTHS) {

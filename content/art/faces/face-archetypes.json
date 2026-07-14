@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "provenance": "Hand-authored design data - GRANADAD ART UNIFIED SPEC v1 section 4.6 / FACES-SPEC.md section 3.3 (retained; path amended, gearWeights renamed headwearWeights). All weights and the actorArchetypes map are (placeholder), needs-blessing register.",
+  "notes": "An archetype is a weighted VIEW over the one shared part library: integer effective weight = part.weight x product of tagMultipliers over the part's tags (missing tag = x1, 0 excludes, small nonzero = rare-not-never). headwearWeights drive the k=0 class draw (spec 4.3). actorArchetypes maps actor type ids to archetypes; beast types (animal, feral) are deliberately absent - beasts show their actor sprite, not a face (spec 4.6).",
+  "archetypes": {
+    "guard":   { "headwearWeights": { "OPEN_HELM": 50, "CLOSED_HELM": 10, "COIF": 25, "BARE": 15 },
+                 "tagMultipliers": { "grim": 2, "scarred": 2 } },
+    "cultist": { "headwearWeights": { "HOOD": 70, "COWL": 25, "BARE": 5 },
+                 "tagMultipliers": { "grim": 3, "fine": 0 } },
+    "monk":    { "headwearWeights": { "BARE": 55, "COIF": 35, "HOOD": 10 },
+                 "tagMultipliers": { "grim": 1 } },
+    "noble":   { "headwearWeights": { "BARE": 80, "HOOD": 10, "COIF": 10 },
+                 "tagMultipliers": { "fine": 3 } },
+    "thug":    { "headwearWeights": { "BARE": 70, "HOOD": 20, "OPEN_HELM": 10 },
+                 "tagMultipliers": { "scarred": 3, "grim": 3 } },
+    "laborer": { "headwearWeights": { "BARE": 75, "HOOD": 15, "COIF": 10 },
+                 "tagMultipliers": {} }
+  },
+  "actorArchetypes": {
+    "militia_watch": "guard",
+    "serf": "laborer",
+    "wastrel": "thug",
+    "priest_of_the_flame": "monk",
+    "disciple_of_the_flame": "cultist",
+    "shopkeeper": "noble",
+    "animal_keeper": "laborer"
+  }
+}

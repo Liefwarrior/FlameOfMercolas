@@ -1,4 +1,20 @@
-# FACES-SPEC — Decision 4c: text-art faces
+# FACES-SPEC — Decision 4c: layered faces (amended to tile parts)
+
+> **AMENDED 2026-07-13 — medium change, composition logic retained** (DECISIONS.md Art
+> register row, Eli 2026-07-13 FOURTH revision, pillar 4; GRANADAD ART UNIFIED SPEC v1 §4).
+> Faces are no longer ASCII glyph bands: FaceGen LITE composes **16 px-grid pixel-art
+> parts** from the tag-queryable sprite index onto a **48×48 canvas** (3×3 cells of 16 px),
+> pre-colored in MERCOLAS-24. What this amendment does NOT change: the deterministic
+> named-draw pipeline, the pinned SplitMix64 mixer + `FACEGEN_SALT`, id-ordinal weighted
+> pools, archetype tag-multiplier views over one shared library, class gating, and the
+> named-face override (§4.1–§4.2, §3.2–§3.3 — retained verbatim in spirit, re-targeted in
+> medium). Section-by-section disposition notes are inlined below, DECISIONS.md
+> supersession style: superseded text is kept for history under a clearly marked note,
+> never silently rewritten. Shipped implementation: `tools/scripts/gen_face_parts.py`
+> (part library generator) → `content/art/faces/face-parts.png` +
+> `face-parts-index.json` + hand-authored `face-archetypes.json`;
+> `com.trojia.client.face.FaceGen` (GL-free) + `InspectorFaces` (observer inspector
+> panel); golden review artifact `content/art/faces/golden-faces.png`.
 
 **Status:** spec-first deliverable for DECISIONS.md row 4c. Consumes `FACEGEN-RESEARCH.md` (the
 Warsim dossier). Implementation lands in the G-track; nothing here touches sim-core F-milestones.
@@ -14,6 +30,18 @@ Two systems, one frame:
 ---
 
 ## 1. Canonical frame
+
+> **[SUPERSEDED 2026-07-13 — §1, §1.1, §1.2, §1.3 REPLACED.]** The canonical frame is now
+> a **48×48 px canvas** (3×3 grid of 16 px cells) with a pinned slot table (layer order
+> bottom→top, anchor px from top-left; all anchors placeholder until the first golden
+> bless): base 3×3 @ (0,0) · scar 1×1 @ the §4.6 anchor table · mouth 2×1 @ (8,30) ·
+> nose 1×1 @ (16,22) · eyes 2×1 @ (8,16) · brow 2×1 @ (8,8) · hair 3×2 @ (0,0) ·
+> headwear 3×2 @ (0,0). Composition = ordered alpha-over of transparent-background parts;
+> a part never carries pixels outside its slot rect (generator-validated). The §1.2
+> anti-mush silhouette contract becomes: slot-rect containment + the MERCOLAS-24 palette
+> whitelist + line-art palette restriction on eyes/brow/nose/clean-mouth/scar parts
+> ({N0, G1, B2, R1, R2} only, so baked skin shows through). The §1.3 ASCII charset dies
+> with the medium. Original text kept below for history.
 
 One canonical face size for the whole game: **15 columns × 9 rows**, monospace (placeholder,
 adopted from dossier §C1; wider than Warsim's ~11–13 to give headgear room).
@@ -67,6 +95,15 @@ Named faces must satisfy the same contract (keeps named and generated NPCs visua
 ---
 
 ## 2. Named-NPC face format
+
+> **[SUPERSEDED 2026-07-13 — medium REPLACED; lookup rule + §2.1/§2.2 STAND.]** The
+> `.face` text format is superseded: a named face is an index entry tagged `face_named`
+> with id `face_named_<npcId>` — a complete 3×3-cell (48×48) pixel portrait on the part
+> sheet. The lookup rule stands verbatim: if a named entry exists for an NPC's id it wins
+> and the generator is never invoked (zero draws consumed, T14). §2.1's Devin and §2.2's
+> Minister John descriptions stand as the authoring references for their pixel portraits,
+> both shipped (`face_named_devin`, `face_named_john` — John's visuals remain all-invented
+> and flagged for Eli per §9.4).
 
 **Path:** `content/faces/named/<npc_id>.face` (relocates with the F2 raws move to
 `content/src/main/resources/trojia/faces/named/` per BLESSING-QUEUE ruling 1; loaders read the
@@ -173,6 +210,15 @@ File art block (verbatim, 9 × 15):
 
 ### 3.1 Part files
 
+> **[SUPERSEDED 2026-07-13 — REPLACED by sprite-index entries.]** Parts are entries in
+> `content/art/faces/face-parts-index.json` (the unified sprite-index schema; the
+> integration phase may merge them into the shared `content/art/sprites/sprite-index.json`
+> — identical format). `weight` and the tag/multiplier semantics carry over unchanged;
+> band/`gear:` fields die with the ASCII medium (slot = `face_*` tag; gear gating = §3.2's
+> occlusion rule). Data-driven as before: adding an index entry + sheet cells adds the
+> part, no code change — the sheet and index are emitted together by
+> `tools/scripts/gen_face_parts.py` so they can never drift.
+
 **Path:** `content/faces/parts/<category>/*.facepart` — one part per file, `<category>` is the
 band name: `crown/ brow/ eyes/ nose/ lip/ mouth/ jaw/ collar/` plus `overlay/` (§4.6).
 Data-driven: adding a `.facepart` file adds the part; no code change.
@@ -202,6 +248,22 @@ gear: HOOD,COWL
 
 ### 3.2 Headgear classes (cross-band coherence)
 
+> **[AMENDED 2026-07-13 — class set STANDS; per-band `gear:` lists REPLACED.]** The class
+> is still drawn once (k=0) from the archetype's `headwearWeights` (renamed from
+> `gearWeights`). `BARE` → no headwear composed, the hair pick composes. Non-`BARE` → the
+> `face_headwear` pool filters to entries carrying the matching `hw_*` tag
+> (`hw_hood|hw_open_helm|hw_closed_helm|hw_coif|hw_cowl`); the hair pick (k=6) is still
+> consumed but not composed — hidden under the headwear. Pixel occlusion does what
+> glyph-row conflict management used to: eyes/brow/nose/mouth pools are no longer
+> gear-filtered, and the ear-glyph rule dies with the medium (headwear simply covers
+> ears). The §7-T10 non-empty-pool invariant stands, enforced by
+> `FaceGen.validateCoverage()` at boot. A second class draw joins it: **hair color**
+> (k=8, global weights BLACK 5 / BROWN 6 / GREY 4 / WHITE 2 / RED 1 — placeholder, RED
+> rare per canon): a part carrying any `hair_*` tag is eligible iff it matches the drawn
+> class, untagged parts always eligible; applies to `face_hair`, `face_brow`, and bearded
+> `face_mouth` variants. Skin needs no class draw — it is baked into `face_base` variants
+> tagged `skin_pale|skin_tan|skin_dark`.
+
 Warsim gets coherence by authoring within a race; we need explicit gating because a hood or
 helm spans multiple bands (dossier §C3.2 — guard kettle-helm vs cultist cowl is the point of
 Decision 4c).
@@ -216,6 +278,17 @@ Decision 4c).
   non-empty (§7-T10). No runtime fallbacks — holes are a content build error.
 
 ### 3.3 Archetypes
+
+> **[STANDS 2026-07-13 — path + one key name amended.]** Everything here stands: weighted
+> views over one shared library, integer effective weight = `part.weight × Π multipliers`,
+> `0` excludes, small nonzero = rare-not-never. Amendments: one file
+> `content/art/faces/face-archetypes.json` instead of one file per archetype;
+> `gearWeights` → `headwearWeights`; the file also carries the `actorArchetypes` actor-type
+> → archetype map (placeholder: militia_watch→guard · serf→laborer · wastrel→thug ·
+> priest_of_the_flame→monk · disciple_of_the_flame→cultist · shopkeeper→noble ·
+> animal_keeper→laborer; **animal/feral deliberately absent — beasts show their actor
+> sprite in the inspector, no face**). Part flavor tags in v0 are the pinned set
+> `grim|fine|scarred` (unified spec §2.5).
 
 **Path:** `content/faces/archetypes/<archetype>.json`. v0 set (per Decision 4c crew brief):
 `guard, cultist, monk, noble, thug, laborer` (placeholder list; dossier's "commoner" folds into
@@ -246,6 +319,15 @@ private pool (dossier §A5.4/§C3.3: partitioned outcomes, shared authoring cost
 
 ### 4.1 Pipeline
 
+> **[AMENDED 2026-07-13 — pipeline shape STANDS; draw map re-pinned.]** The ASCII-era
+> band draw map dies with its goldens; the §4.2 append-only rule restarts on THIS map:
+> `0` headwear class · `1` base · `2` eyes · `3` brow · `4` nose · `5` mouth · `6` hair ·
+> `7` headwear · `8` hair-color class · `9` scar count (weights 13/2/1 for 0/1/2, total
+> 16 — retained) · `10+2i / 11+2i` scar pick / anchor · future features append ≥ 12+2i_max.
+> Composition layer order (bottom→top): base, scars, mouth, nose, eyes, brow, then hair
+> (BARE) or headwear (non-BARE). Draw-value independence means the gating draws (0, 8)
+> may be consumed "after" the picks they filter — order is irrelevant in a stateless map.
+
 ```
 input: worldSeed (long), npcId (long), archetype (id)
 1. if named face exists for npcId → return it (no draws)
@@ -258,6 +340,12 @@ input: worldSeed (long), npcId (long), archetype (id)
 ```
 
 ### 4.2 Determinism (binding)
+
+> **[STANDS 2026-07-13 — verbatim.]** The pinned SplitMix64 mixer, `FACEGEN_SALT`,
+> `base`/`draw(k)`, archetype-independent draws, id-ordinal weighted picks with
+> `remainderUnsigned`, no floats (T15): all retained unchanged; shipped as
+> `com.trojia.client.face.FaceGen` over `SpriteIndex.mix64`. Only the draw-index map is
+> re-pinned (see §4.1 note) — append-only from there on.
 
 - A face is a **pure function of `(worldSeed, npcId)`** — no tick term, no stored face state;
   stable for the NPC's lifetime, reproducible in any run of that world seed (dossier §C5).
@@ -291,11 +379,21 @@ input: worldSeed (long), npcId (long), archetype (id)
 
 ### 4.3 Row stacking
 
+> **[SUPERSEDED 2026-07-13 — REPLACED.]** Row concatenation is replaced by layered
+> alpha-over of parts at the §1-note's pinned slot anchors. Width alignment is replaced by
+> the slot-rect containment rule (generator-validated); there is still no runtime
+> padding/clipping code path.
+
 Bands never overlap: composition is pure line concatenation in band order (Warsim's model,
 dossier §A1). Width alignment is trivially guaranteed because the validator rejects any part
 line ≠ 15 chars — there is no runtime padding/clipping code path.
 
 ### 4.4 Cross-band consistency
+
+> **[AMENDED 2026-07-13.]** The "exactly two coherence mechanisms" rule stands with new
+> members: **class gating** (§3.2 note: headwear class + hair-color class) and **slot
+> rects** (§1 note). No part may paint outside its slot rect; multi-slot art remains an
+> overlay-pass feature, not a part.
 
 All cross-band coherence comes from exactly two mechanisms — gear-class gating (§3.2) and the
 silhouette contract (§1.2). No part may "reach into" another band's rows. If a future feature
@@ -307,6 +405,14 @@ Reserved: sub-template system (Warsim's race-template analogue) if archetype cou
 weighting. Empty in v0 so §4.6 numbering never shifts.
 
 ### 4.6 Overlay pass
+
+> **[AMENDED 2026-07-13.]** Scars are now `face_scar` parts (1×1 cell) composited at
+> **layer 2** (above base, below features/hair) at a fixed px anchor table (append-only,
+> placeholder): `A0=(4,22)` left cheek · `A1=(28,22)` right cheek · `A2=(16,10)` brow ·
+> `A3=(16,36)` chin; anchor = `remainderUnsigned(draw, 4)`. **The blank-cell
+> deterministic-drop rule is RETIRED** — pixel layers occlude naturally; every rolled scar
+> is composed, and hair/headwear may legitimately hide it (draws stay fixed; T13 amended
+> accordingly).
 
 Scars, brands, pox, warpaint — post-compose **single-cell substitutions** at fixed anchors
 (dossier §C2 overlay row), rare by weight.
@@ -325,6 +431,15 @@ Scars, brands, pox, warpaint — post-compose **single-cell substitutions** at f
 
 ## 5. Rendering
 
+> **[AMENDED 2026-07-13.]** One canonical size stands as **48×48 px**, varied on screen
+> only by integer scale. The combat-screen and dialogue rules stand for the G-track. New
+> observer surface: the face renders at the top of the inspector's selection panel
+> (`InspectorFaces`, 48×48 at ×2 = 96×96 placeholder, centered above the name line; panel
+> text shifts down 100 px placeholder). Beasts (animal/feral) get no face — the panel
+> stays text-only in v0 (the beast-sprite-in-panel idea rides with the actor-sprite
+> track). The cache rule stands: derivable, never serialized. `tint.*` hints die with the
+> medium — parts are pre-colored in MERCOLAS-24.
+
 - **One canonical size, everywhere.** 15×9 glyphs rendered in the UI monospace font; size on
   screen varies only by font point-size, never by re-authoring or algorithmic scaling
   (down-scaled text art is exactly the mush we're avoiding). No size variants in v0 (ruling).
@@ -342,6 +457,14 @@ Scars, brands, pox, warpaint — post-compose **single-cell substitutions** at f
 ---
 
 ## 6. Worked examples — four generated faces
+
+> **[SUPERSEDED 2026-07-13 — pool resolutions regenerated.]** The mixer and draw values
+> below stand (same pinned SplitMix64); the pools they resolve against are now the shipped
+> sprite library, so the picks below are historical. The live normative reference vectors
+> (worldSeed `0x5EEDF00D`, actors 1000/1111/1296/1481) are pinned twice, adversarially:
+> in `FaceGenTest.referenceVectors_matchPythonMirror` (Java) and by
+> `tools/scripts/gen_face_parts.py --samples` (the independent Python mirror that
+> produced them).
 
 Hand-verifiable trace using the pinned mixer (§4.2), `worldSeed = 0x5EEDF00D` (placeholder),
 NPCs `4101` and `7777`, archetypes `guard` and `cultist`. Pools are the **spec sample library**
@@ -459,6 +582,20 @@ initiate; rare-not-never); same scar applied, same pock dropped.
 
 ## 7. Unit-test list (facegen module + content validator)
 
+> **[AMENDED 2026-07-13 — re-targeted to tile parts; shipped in
+> `client-observer/src/test/java/com/trojia/client/face/`.]** Disposition: T1–T3,
+> T10–T12, T14, T17–T18 stand re-targeted (T17/T18 are now the sprite-index loader's
+> id-order/uniqueness validation, covered by `SpriteIndexTest`); T4/T5 → 48×48 raster +
+> MERCOLAS-24 palette-whitelist asserts (`FaceRasterTest`); T6–T9 → index-validator
+> asserts (bounds/format/slot-rect/palette — `SpriteIndexTest` + the generator's own
+> validation pass); T11's vectors regenerate against the sprite library
+> (`referenceVectors_matchPythonMirror`, cross-checked by the Python mirror); T13 →
+> "occluded scar still consumes fixed draws, composition byte-stable"
+> (`rolledScars_alwaysComposed_atLayerTwo`); T15 → integer-only source scan
+> (`FaceGenPurityTest`); T16 → `FaceGoldenTest` against
+> `content/art/faces/golden-faces.png`, blessed only via `-Dfacegen.bless=true`; T19 →
+> named-entry validation (`namedEntries_carryTheNamedTag_andFullCanvas`).
+
 Reference vectors for T11 are §6's tables. Golden face sheet (T16) = headless-generated grid of
 N seeded faces per archetype, committed as a review artifact (dossier §C6).
 
@@ -506,6 +643,18 @@ ruling). Sources: dossier Part B, items 1, 2, 8.
 ---
 
 ## 9. Open items / needs-blessing
+
+> **[AMENDED 2026-07-13.]** Item 1's freeze-before-golden warning now applies to the §1
+> note's **slot anchors and sizes** (a first golden IS now blessed —
+> `content/art/faces/golden-faces.png` — so moving an anchor is a spec change plus a
+> conscious re-bless, never a drive-by). New needs-blessing items from the amendment:
+> the hair-color class weights (§3.2 note), the skin/hair ramps and part-inventory minima
+> (unified spec §4.5), the px scar-anchor table (§4.6 note), the actor-type → archetype
+> map incl. beasts-have-no-face (§3.3 note), the inspector ×2 scale + 100 px panel shift
+> (§5 note), and the monk bald-skew gap — bald looks currently come from luck
+> (shaved/tonsure/tuft weights), because the pinned flavor-tag vocabulary
+> (`grim|fine|scarred`) has no `bald` tag for a multiplier to grab; extending the
+> vocabulary is spec-first, append-only.
 
 1. Frame 15×9 and the `HUMAN_BASE` contract cells (§1.2) — placeholder geometry, freeze before
    first golden bless (T16), because every part ever authored depends on it.

@@ -5,6 +5,7 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.trojia.client.camera.MapCamera;
+import com.trojia.client.face.InspectorFaces;
 import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.inspect.EventLog;
@@ -48,17 +49,23 @@ public final class InspectorRenderer {
     private final JobRegistry jobs;
     private final ItemsLiteRegistry items;
     private final EventLog eventLog;
+    private final InspectorFaces faces;
     private final GlyphLayout layout = new GlyphLayout();
 
+    /**
+     * @param faces the FaceGen portrait panel (unified art spec §4.8), or {@code null} to
+     *              render the text-only panel (headless-ish callers, tests)
+     */
     public InspectorRenderer(ActorRegistry registry, HomeRegistry homes,
             RelationshipRegistry relationships, JobRegistry jobs, ItemsLiteRegistry items,
-            EventLog eventLog) {
+            EventLog eventLog, InspectorFaces faces) {
         this.registry = registry;
         this.homes = homes;
         this.relationships = relationships;
         this.jobs = jobs;
         this.items = items;
         this.eventLog = eventLog;
+        this.faces = faces;
     }
 
     /**
@@ -89,6 +96,14 @@ public final class InspectorRenderer {
         if (!state.hasSelection()) {
             IconTextLine.draw(batch, font, icons, x, y, InspectorText.selectionHintTokens());
             return;
+        }
+        // FaceGen portrait at the top of the panel (unified art spec §4.8): 48x48 at x2,
+        // centered above the name line; the text block shifts down under it. Beast types
+        // have no archetype mapping and keep the text-only panel.
+        String typeKey = registry.get(state.selectedActorId()).typeId().key();
+        if (faces != null && faces.hasFaceFor(typeKey)) {
+            faces.draw(batch, state.selectedActorId(), typeKey, x + PANEL_WIDTH / 2f, y);
+            y -= InspectorFaces.PANEL_SHIFT_PX;
         }
         List<String> lines = InspectorText.describe(state.selectedActorId(), registry, homes,
                 relationships, jobs, items);
