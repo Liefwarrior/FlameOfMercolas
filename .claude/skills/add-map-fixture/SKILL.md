@@ -23,3 +23,17 @@ If a concurrent task is mid-edit on `sim-core` (e.g. the actor system foundation
 ## Canon note
 
 If the fixture represents in-world housing, re-read `docs/design/DECISIONS.md`'s "Trojian housing: Compounds" ruling before laying out buildings — Trojian residential space is walled Compounds (courtyard/atrium farm center, condo/mansion ring, rooftop slum), not detached single-family houses.
+
+## Establishment sizing standard
+
+Before authoring any named building/business (shop, tavern, warehouse, civic site), pin its
+footprint deliberately — **never let two named establishments share an identical W×H**, even
+rotated. The baseline anchor is the "simple shop" standard (DOCKS-GAZETTEER.md §3.1): **7×8
+tiles total (walls included)** = 5×3 interior walking/customer space + a 3×3 storage nook + a
+2×2 shopkeeper's sleeping nook. Scale every other building relative to this anchor using
+whatever design-doc language describes its character (grand/civic bigger; taverns bigger than
+shops for table/patron floor; a genuinely-long structure like a ropewalk stays long — don't
+force it to the standard; hovels/niches smaller). Before finalizing a map, list every named
+building's W×H in one place and check it pairwise for duplicates — this is the single most
+common failure mode ("every building came out the same size") and the cheapest to catch before
+generating tiles.

@@ -212,17 +212,26 @@ frect(13, 4, 120, 188, 122, DIRT_FLOOR)     # Gallows Row (placeholder)
 frect(13, 98, 119, 105, 123, DIRT_FLOOR)    # Gallows Row well plaza bulge
 frect(13, 132, 122, 135, 127, DIRT_FLOOR)   # Abbey lane (placeholder)
 
-frect(11, 0, 26, 79, 33, GRANITE_FLOOR)     # Tarwalk A: quay apron
-frect(11, 80, 26, 129, 33, BRICK_FLOOR)     # Tarwalk A: east half
+# DEV (Eli 2026-07-13 sizing pass, DOCKS-GAZETTEER.md 3.1): the long uniform-width
+# quay/rise bands read as monolithic ("big squares everywhere"); narrowed the long
+# middle stretches and kept 8-wide plazas only at deliberate frontages/crossings.
+frect(11, 0, 28, 79, 33, GRANITE_FLOOR)     # Tarwalk A: quay apron (narrow, 6-wide)
+frect(11, 56, 26, 79, 33, GRANITE_FLOOR)    # ...plaza bulge, the Weighhouse frontage
+frect(11, 80, 28, 129, 33, BRICK_FLOOR)     # Tarwalk A: east half (narrow, 6-wide)
+frect(11, 114, 26, 129, 33, BRICK_FLOOR)    # ...plaza bulge outside the Gilded Gull
 frect(11, 130, 30, 163, 35, BRICK_FLOOR)    # Tarwalk B (bends inland)
 for y in range(26, 34):                     # Tarwalk C: broken paving checker
     for x in range(164, 192):
         F[11][y][x] = BRICK_FLOOR if (x + y) % 2 == 0 else DIRT_FLOOR
 frect(11, 4, 60, 147, 65, BRICK_FLOOR)      # Ropewynd, paved reach
+frect(11, 30, 58, 67, 59, BRICK_FLOOR)      # ...bulge, the Ropewalk frontage
+frect(11, 40, 58, 53, 59, BRICK_FLOOR)      # ...bulge, Cooper & Blockmaker's frontage
 frect(11, 148, 60, 177, 65, DIRT_FLOOR)     # Ropewynd, paving gives out
 frect(11, 32, 34, 35, 59, BRICK_FLOOR)      # Herring Lane
 frect(12, 80, 97, 188, 100, BRICK_FLOOR)    # Terrace Walk (placeholder)
-frect(11, 72, 26, 79, 95, BRICK_FLOOR)      # Saltgate Rise, Band A leg
+frect(11, 72, 26, 79, 65, BRICK_FLOOR)      # Saltgate Rise, Band A leg: wide near the
+                                             # quay civic cluster + Ropewynd crossing (8-wide)
+frect(11, 72, 66, 77, 95, BRICK_FLOOR)      # ...narrows south of Ropewynd (6-wide)
 frect(12, 72, 97, 79, 115, BRICK_FLOOR)     # Saltgate Rise, Band B leg
 frect(13, 72, 117, 79, 127, BRICK_FLOOR)    # Saltgate Rise, Band C leg
 frect(11, 33, 26, 33, 59, DIRT_FLOOR)       # Herring Lane offal gutter (no fluid)
@@ -241,10 +250,11 @@ mk(11, "script_anchor", "berth_03_anchor", 61, 27)
 mk(11, "script_anchor", "crane_longquay_anchor", 41, 29)
 mk(11, "script_anchor", "muster_quay_anchor", 45, 30)
 
-# K16 Drowned-Name Wall (niche shrine against the seawall)
-cells(11, [(94, 26), (95, 26)], GRANITE_WALL)
-mk(11, "script_anchor", "shrine_drowned_name_wall_anchor", 94, 27)
-mk(11, "light_source", "lamp_shrine_candles", 94, 27, luminance=8)
+# K16 Drowned-Name Wall (niche shrine against the seawall; DEV: grown 2x1 -> 3x2,
+# Eli 2026-07-13 sizing pass — a second course set into the seawall face itself)
+cells(11, [(94, 25), (95, 25), (96, 25), (94, 26), (95, 26), (96, 26)], GRANITE_WALL)
+mk(11, "script_anchor", "shrine_drowned_name_wall_anchor", 95, 27)
+mk(11, "light_source", "lamp_shrine_candles", 95, 27, luminance=8)
 
 # K20 Merle's Boats — boathouse over the water
 frect(11, 82, 14, 93, 25, TRUDGEON_FLOOR)                     # deck over water
@@ -284,6 +294,56 @@ for (x0, x1, y0, aname, ay) in PIERS:
             FL[10][py][px] = 0
     mk(11, "script_anchor", aname, (x0 + x1) // 2, ay)
 mk(11, "script_anchor", "hazard_wormwood_pier_anchor", 123, 12)
+
+# K30-K33 moored/wrecked hulls (Eli 2026-07-13 sizing pass, DOCKS-GAZETTEER.md 3.1):
+# the 3 Long Quay berths + the condemned Wormwood Pier were bare mooring markers with
+# no hull geometry; each gets a walkable deck (no interior simulation) displacing the
+# water it sits in, sized to increasing scale west->east per the Long Quay's own
+# "deep-water berths" description.
+# K30 Long Quay Berth 1 hull -- "The Kestrel" (10x5 fishing lugger, smallest craft)
+frect(11, 16, 20, 25, 24, OAK_FLOOR)
+border(11, 16, 20, 25, 24, OAK_WALL)
+for y in range(20, 25):
+    for x in range(16, 26):
+        FL[9][y][x] = 0
+        FL[10][y][x] = 0
+        T[10][y][x] = OAK_WALL
+mk(11, "script_anchor", "ship_k30_kestrel_anchor", 20, 22)
+
+# K31 Long Quay Berth 2 hull -- "Bregga's Promise" (14x7 mid trade cog, flanks the crane)
+frect(11, 44, 18, 57, 24, OAK_FLOOR)
+border(11, 44, 18, 57, 24, OAK_WALL)
+for y in range(18, 25):
+    for x in range(44, 58):
+        FL[9][y][x] = 0
+        FL[10][y][x] = 0
+        T[10][y][x] = OAK_WALL
+mk(11, "script_anchor", "ship_k31_breggas_promise_anchor", 50, 21)
+
+# K32 Long Quay Berth 3 hull -- "The Deep Keel" (16x8, largest, deepest-water berth)
+frect(11, 60, 17, 75, 24, OAK_FLOOR)
+border(11, 60, 17, 75, 24, OAK_WALL)
+for y in range(17, 25):
+    for x in range(60, 76):
+        FL[9][y][x] = 0
+        FL[10][y][x] = 0
+        T[10][y][x] = OAK_WALL
+mk(11, "script_anchor", "ship_k32_deepkeel_anchor", 67, 20)
+
+# K33 Wormwood Pier wreck -- "The Widow's Grief" (5x9 half-capsized derelict, oriented
+# N-S along the pier's own run; a wreck reinforces the condemned-pier hazard texture
+# rather than contradicting it with a pristine ship)
+frect(11, 125, 10, 129, 18, OAK_FLOOR)
+border(11, 125, 10, 129, 18, OAK_WALL, skip_sides=("n",))
+for (hx, hy) in ((126, 12), (128, 15), (127, 17)):   # breached hull -- holes to the sea
+    T[11][hy][hx] = 0
+    FL[11][hy][hx] = WATER2
+for y in range(10, 19):
+    for x in range(125, 130):
+        FL[9][y][x] = 0
+        FL[10][y][x] = 0
+        T[10][y][x] = OAK_WALL
+mk(11, "script_anchor", "wreck_k33_widowsgrief_anchor", 127, 14)
 
 # The Beaching Strand — public careening ground (west part)
 mk(10, "script_anchor", "strand_beaching_anchor", 132, 18)
@@ -361,238 +421,250 @@ for dx in (178, 181, 184, 186, 189, 191):
 # ======================================================================
 # 3. Establishments K01-K25 (blueprint section 3)
 # ======================================================================
-# K01 The Weighhouse (grand, 2-story granite; tile roof; signal mast)
-shell(11, 58, 34, 71, 51, GRANITE_WALL, BRICK_FLOOR,
-      doors=[(63, 34), (64, 34), (71, 42), (71, 43)])
-trect(11, 63, 40, 64, 41, STEEL_WALL)               # tariff scale
-for y in range(35, 51):                             # ledger-room partition
-    T[11][y][66] = OAK_WALL
-T[11][38][66] = 0
-trect(11, 60, 38, 62, 38, OAK_WALL)                 # counter
-T[11][49][60] = OAK_STAIR_UP
-shell(12, 58, 34, 71, 51, GRANITE_WALL, GRANITE_FLOOR)
-T[12][49][60] = OAK_STAIR_DOWN
-frect(13, 58, 34, 71, 51, BRICK_FLOOR)              # tile roof
+# DEV (Eli 2026-07-13 sizing pass, DOCKS-GAZETTEER.md 3.1 "Establishment sizing
+# standard"): every K01-K25 footprint below is resized to the pinned combined size
+# table (no two named sites share a W x H, even rotated); interiors are re-derived
+# to fit the new bounds sensibly, not just cropped. K26-K35 are new sites.
+
+# K01 The Weighhouse (grand, 2-story granite; tile roof; signal mast) -- 16x17
+shell(11, 56, 34, 71, 50, GRANITE_WALL, BRICK_FLOOR,
+      doors=[(63, 34), (64, 34), (71, 41), (71, 42)])
+trect(11, 61, 39, 62, 40, STEEL_WALL)               # tariff scale
+for y in range(35, 50):                             # ledger-room partition
+    T[11][y][65] = OAK_WALL
+T[11][37][65] = 0
+trect(11, 58, 37, 60, 37, OAK_WALL)                 # counter
+T[11][48][58] = OAK_STAIR_UP
+shell(12, 56, 34, 71, 50, GRANITE_WALL, GRANITE_FLOOR)
+T[12][48][58] = OAK_STAIR_DOWN
+frect(13, 56, 34, 71, 50, BRICK_FLOOR)              # tile roof
 mk(13, "light_source", "lamp_weighhouse_mast", 64, 35, luminance=26)
-mk(11, "script_anchor", "business_k01_weighhouse_anchor", 64, 42)
+mk(11, "script_anchor", "business_k01_weighhouse_anchor", 64, 41)
 mk(11, "script_anchor", "clue_c2_weighhouse_ledger", 68, 37)
 
-# K02 Impound Yard (steel spike fence, watchman shed, crates, dog)
-border(11, 58, 53, 71, 59, STEEL_WALL)
-for g in ((64, 53), (65, 53)):
+# K02 Impound Yard (steel spike fence, watchman shed, crates, dog) -- 13x6,
+# shares the Weighhouse's new west edge and abuts its south wall
+border(11, 56, 53, 68, 58, STEEL_WALL)
+for g in ((62, 53), (63, 53)):
     T[11][g[1]][g[0]] = 0
-shell(11, 58, 55, 61, 58, OAK_WALL, DIRT_FLOOR, doors=[(61, 56)])
-cells(11, [(66, 55), (68, 57), (69, 54)], OAK_WALL)
-mk(11, "script_anchor", "business_k02_impound_anchor", 65, 56)
-mk(11, "script_anchor", "impound_dog_anchor", 62, 57)
+shell(11, 56, 55, 59, 58, OAK_WALL, DIRT_FLOOR, doors=[(59, 56)])
+cells(11, [(64, 55), (66, 57), (67, 54)], OAK_WALL)
+mk(11, "script_anchor", "business_k02_impound_anchor", 63, 56)
+mk(11, "script_anchor", "impound_dog_anchor", 60, 57)
 
-# K03 The Gilded Gull (large 2-story tavern)
-shell(11, 114, 34, 129, 49, GRANITE_WALL, OAK_FLOOR, doors=[(121, 34), (122, 34)])
-trect(11, 117, 40, 124, 40, GRANITE_WALL)           # bar
-for y in range(35, 49):                             # snug partition
-    T[11][y][126] = OAK_WALL
-T[11][37][126] = 0
-T[11][44][126] = 0
-cells(11, [(116, 37), (119, 37), (116, 43), (119, 43), (122, 46), (117, 46)], OAK_WALL)
-T[11][47][128] = OAK_STAIR_UP
-shell(12, 114, 34, 129, 49, OAK_WALL, OAK_FLOOR)
-for y in range(35, 49):                             # guest-room cross partitions
-    T[12][y][121] = OAK_WALL
-for x in range(115, 129):
-    T[12][41][x] = OAK_WALL
-T[12][38][121] = 0
-T[12][41][118] = 0
-T[12][41][124] = 0
-T[12][47][128] = OAK_STAIR_DOWN
-frect(13, 114, 34, 129, 49, THATCH_FLOOR)
+# K03 The Gilded Gull (large 2-story tavern; district's grandest) -- 15x14
+shell(11, 114, 34, 128, 47, GRANITE_WALL, OAK_FLOOR, doors=[(121, 34), (122, 34)])
+trect(11, 117, 39, 123, 39, GRANITE_WALL)           # bar
+for y in range(35, 47):                             # snug partition
+    T[11][y][125] = OAK_WALL
+T[11][37][125] = 0
+T[11][43][125] = 0
+cells(11, [(116, 37), (119, 37), (116, 42), (119, 42)], OAK_WALL)
+T[11][45][127] = OAK_STAIR_UP
+shell(12, 114, 34, 128, 47, OAK_WALL, OAK_FLOOR)
+for y in range(35, 47):                             # guest-room cross partitions
+    T[12][y][120] = OAK_WALL
+for x in range(115, 128):
+    T[12][40][x] = OAK_WALL
+T[12][37][120] = 0
+T[12][40][117] = 0
+T[12][40][123] = 0
+T[12][45][127] = OAK_STAIR_DOWN
+frect(13, 114, 34, 128, 47, THATCH_FLOOR)
 mk(11, "light_source", "lamp_gull_door", 121, 33, luminance=18)
-mk(11, "light_source", "lamp_gull_bar", 120, 40, luminance=16)
-mk(11, "script_anchor", "business_k03_gilded_gull_anchor", 120, 42)
+mk(11, "light_source", "lamp_gull_bar", 120, 39, luminance=16)
+mk(11, "script_anchor", "business_k03_gilded_gull_anchor", 120, 41)
 
-# K04 The Bilge (mid tavern + hammock loft)
-shell(11, 100, 34, 113, 45, TRUDGEON_WALL, OAK_FLOOR, doors=[(105, 34), (106, 34)])
-trect(11, 103, 38, 108, 38, OAK_WALL)               # bar
-cells(11, [(101, 41), (110, 41)], OAK_WALL)         # tables
-T[11][43][111] = OAK_STAIR_UP
-shell(12, 100, 34, 113, 45, TRUDGEON_WALL, OAK_FLOOR)
-cells(12, [(102, 38), (105, 38), (108, 38), (102, 42), (105, 42), (108, 42)], OAK_WALL)
-T[12][43][111] = OAK_STAIR_DOWN
-frect(13, 100, 34, 113, 45, THATCH_FLOOR)
+# K04 The Bilge (mid tavern + hammock loft) -- 12x10
+shell(11, 100, 34, 111, 43, TRUDGEON_WALL, OAK_FLOOR, doors=[(105, 34), (106, 34)])
+trect(11, 103, 37, 107, 37, OAK_WALL)               # bar
+cells(11, [(101, 40), (109, 40)], OAK_WALL)         # tables
+T[11][41][109] = OAK_STAIR_UP
+shell(12, 100, 34, 111, 43, TRUDGEON_WALL, OAK_FLOOR)
+cells(12, [(102, 37), (105, 37), (108, 37)], OAK_WALL)
+T[12][41][109] = OAK_STAIR_DOWN
+frect(13, 100, 34, 111, 43, THATCH_FLOOR)
 mk(11, "light_source", "lamp_bilge_door", 105, 33, luminance=14)
-mk(11, "script_anchor", "business_k04_bilge_anchor", 106, 39)
+mk(11, "script_anchor", "business_k04_bilge_anchor", 106, 38)
 
-# K05 The Lantern Room (crossroads tavern, neutral ground)
-shell(11, 58, 66, 71, 79, GRANITE_WALL, OAK_FLOOR,
-      doors=[(63, 66), (64, 66), (71, 71), (71, 72)])
-cells(11, [(59, 73), (60, 73)], GRANITE_WALL)       # hearth
-trect(11, 62, 74, 65, 74, OAK_WALL)                 # counter
-cells(11, [(60, 69), (63, 70), (66, 69), (67, 74)], OAK_WALL)
-T[11][77][69] = OAK_STAIR_UP
-shell(12, 58, 66, 71, 79, OAK_WALL, OAK_FLOOR)
-for x in range(59, 71):                             # landlady's rooms
-    T[12][72][x] = OAK_WALL
-T[12][72][64] = 0
-T[12][77][69] = OAK_STAIR_DOWN
-frect(13, 58, 66, 71, 79, THATCH_FLOOR)
+# K05 The Lantern Room (crossroads tavern, neutral ground) -- 13x12
+shell(11, 58, 66, 70, 77, GRANITE_WALL, OAK_FLOOR,
+      doors=[(63, 66), (64, 66), (70, 71), (70, 72)])
+cells(11, [(59, 72), (60, 72)], GRANITE_WALL)       # hearth
+trect(11, 62, 73, 64, 73, OAK_WALL)                 # counter
+cells(11, [(60, 69), (63, 70), (66, 69)], OAK_WALL)
+T[11][75][68] = OAK_STAIR_UP
+shell(12, 58, 66, 70, 77, OAK_WALL, OAK_FLOOR)
+for x in range(59, 70):                             # landlady's rooms
+    T[12][71][x] = OAK_WALL
+T[12][71][64] = 0
+T[12][75][68] = OAK_STAIR_DOWN
+frect(13, 58, 66, 70, 77, THATCH_FLOOR)
 mk(11, "light_source", "lamp_lantern_room", 63, 65, luminance=22)
-mk(11, "script_anchor", "business_k05_lantern_room_anchor", 64, 72)
+mk(11, "script_anchor", "business_k05_lantern_room_anchor", 64, 71)
 
-# K07 The Ropewalk (the district's longest sightline; fire tier High)
-shell(11, 4, 82, 69, 91, TRUDGEON_WALL, DIRT_FLOOR,
-      doors=[(4, 86), (4, 87), (69, 86), (69, 87)])
-cells(11, [(12, 86), (20, 87), (28, 86), (36, 87), (44, 86), (52, 87), (60, 86)],
+# K07 The Ropewalk (the district's longest sightline; fire tier High) -- 64x9,
+# deliberately kept elongated (canon: the ward's one 60-tile-shed trade)
+shell(11, 4, 82, 67, 90, TRUDGEON_WALL, DIRT_FLOOR,
+      doors=[(4, 85), (4, 86), (67, 85), (67, 86)])
+cells(11, [(12, 85), (20, 86), (28, 85), (36, 86), (44, 85), (52, 86), (60, 85)],
       OAK_WALL)                                     # rope-laying posts
-frect(12, 4, 82, 69, 91, THATCH_FLOOR)
-shell(11, 60, 92, 68, 95, THATCH_WALL, DIRT_FLOOR, skip_sides=("n",))  # hemp lean-to
-frect(12, 60, 92, 68, 95, THATCH_FLOOR)             # DEV: lean-to roof (unspecified)
-mk(11, "script_anchor", "business_k07_ropewalk_anchor", 36, 86)
+frect(12, 4, 82, 67, 90, THATCH_FLOOR)
+shell(11, 60, 91, 66, 94, THATCH_WALL, DIRT_FLOOR, skip_sides=("n",))  # hemp lean-to
+frect(12, 60, 91, 66, 94, THATCH_FLOOR)             # DEV: lean-to roof (unspecified)
+mk(11, "script_anchor", "business_k07_ropewalk_anchor", 36, 85)
 
-# K08 Brann's Chandlery (+ the gray-ledger cellar)
-shell(11, 24, 66, 37, 79, OAK_WALL, OAK_FLOOR, doors=[(29, 66), (30, 66)])
-for x in range(25, 37):                             # stockroom partition
-    T[11][73][x] = OAK_WALL
-T[11][73][32] = 0
-# DEV: blueprint's oil barrel at (35,77) dropped — that cell is the cellar stair.
-cells(11, [(25, 75), (25, 77), (27, 76), (35, 75)], OAK_WALL)
-shell(10, 30, 72, 36, 78, GRANITE_WALL, GRANITE_FLOOR)   # cellar carve
-cells(10, [(31, 73), (31, 77), (33, 74), (33, 76)], OAK_WALL)
-T[10][77][35] = OAK_STAIR_UP
-T[11][77][35] = OAK_STAIR_DOWN
-frect(12, 24, 66, 37, 79, THATCH_FLOOR)
-mk(11, "script_anchor", "business_k08_branns_anchor", 30, 70)
-mk(10, "script_anchor", "clue_brann_grayledger_anchor", 33, 75)
-mk(11, "light_source", "lamp_branns_door", 29, 65, luminance=14)
+# K08 Brann's Chandlery (+ the gray-ledger cellar) -- 8x9, THE flagged oversized
+# "plain shop" (was 14x14, identical to K05's old footprint); brought down near
+# the new shop standard, freeing the lot east of it for K27 (the Hardtack Oven)
+shell(11, 24, 66, 31, 74, OAK_WALL, OAK_FLOOR, doors=[(27, 66), (28, 66)])
+for x in range(25, 31):                             # stockroom partition
+    T[11][71][x] = OAK_WALL
+T[11][71][27] = 0
+cells(11, [(25, 73), (30, 73)], OAK_WALL)
+shell(10, 26, 70, 30, 73, GRANITE_WALL, GRANITE_FLOOR)   # cellar carve (gray ledger)
+T[10][72][28] = OAK_STAIR_UP
+T[11][72][28] = OAK_STAIR_DOWN
+frect(12, 24, 66, 31, 74, THATCH_FLOOR)
+mk(11, "script_anchor", "business_k08_branns_anchor", 27, 69)
+mk(10, "script_anchor", "clue_brann_grayledger_anchor", 28, 71)
+mk(11, "light_source", "lamp_branns_door", 27, 65, luminance=14)
 
-# K09 Pitchfield (tar yard, west fire-sort; getilia-soaked firebreak fence)
+# K09 Pitchfield (tar yard, west fire-sort; getilia-soaked firebreak fence) --
+# shed shrunk to 9x6; the fenced 28x23 tar yard itself is unchanged
 border(11, 2, 36, 29, 58, GETILIA_WALL)
 for gx in range(14, 18):
     T[11][36][gx] = 0                               # gate
-shell(11, 6, 44, 15, 52, TRUDGEON_WALL, DIRT_FLOOR, skip_sides=("n",))  # cauldron shed
-cells(11, [(9, 48), (12, 48)], GRANITE_WALL)        # cauldrons
-frect(12, 6, 44, 15, 52, BRICK_FLOOR)               # tile roof at the tar yard
+shell(11, 6, 44, 14, 49, TRUDGEON_WALL, DIRT_FLOOR, skip_sides=("n",))  # cauldron shed
+cells(11, [(9, 47), (12, 47)], GRANITE_WALL)        # cauldrons
+frect(12, 6, 44, 14, 49, BRICK_FLOOR)               # tile roof at the tar yard
 for bx in (20, 22, 24, 26, 28):                     # tar barrel grid
     for by in (40, 43, 46, 49, 52, 55):
         if (bx, by) != (24, 46):                    # aisle
             T[11][by][bx] = OAK_WALL
-mk(11, "light_source", "lamp_pitchfield_cauldron", 10, 48, luminance=16)
-mk(11, "script_anchor", "business_k09_pitchfield_anchor", 15, 46)
+mk(11, "light_source", "lamp_pitchfield_cauldron", 10, 47, luminance=16)
+mk(11, "script_anchor", "business_k09_pitchfield_anchor", 10, 46)
 
-# K10 Dawnstalls (open-air fish market)
+# K10 Dawnstalls (open-air fish market) -- pinned bounding box x40-50/y36-47,
+# distinctness marker only; furniture unchanged (already within the box)
 for sy in (38, 42, 46):
     trect(11, 40, sy, 43, sy, TRUDGEON_WALL)
-    trect(11, 48, sy, 51, sy, TRUDGEON_WALL)
+    trect(11, 48, sy, 50, sy, TRUDGEON_WALL)
 T[11][40][46] = GRANITE_WALL                        # auction block
 mk(11, "script_anchor", "business_k10_dawnstalls_anchor", 46, 41)
 mk(11, "script_anchor", "muster_dawnstalls_anchor", 46, 37)
 
-# K11 Salt Row (gutting sheds + smokehouses)
-for (sx0, sx1) in ((38, 42), (44, 48), (50, 54)):
+# K11 Salt Row (gutting sheds + smokehouses) -- 16x9, same lot
+for (sx0, sx1) in ((38, 41), (43, 46), (48, 51)):
     shell(11, sx0, 50, sx1, 53, TRUDGEON_WALL, DIRT_FLOOR, skip_sides=("n",))
-for (mx0, mx1, d, hx) in ((40, 43, (41, 55), 42), (48, 51, (49, 55), 50)):
-    shell(11, mx0, 55, mx1, 59, GRANITE_WALL, DIRT_FLOOR, doors=[d])
-    T[11][58][hx] = GRANITE_WALL                    # contained hearth
-mk(11, "script_anchor", "business_k11_saltrow_anchor", 46, 52)
+for (mx0, mx1, d, hx) in ((39, 42, (40, 54), 41), (47, 50, (48, 54), 49)):
+    shell(11, mx0, 54, mx1, 58, GRANITE_WALL, DIRT_FLOOR, doors=[d])
+    T[11][57][hx] = GRANITE_WALL                    # contained hearth
+mk(11, "script_anchor", "business_k11_saltrow_anchor", 45, 51)
 
-# K12 The King's Bond (bonded warehouse: brick, one double door, no windows)
-shell(11, 82, 34, 97, 49, BRICK_WALL, BRICK_FLOOR, doors=[(88, 34), (89, 34)])
-trect(11, 84, 44, 85, 45, OAK_WALL)                 # crates
-trect(11, 92, 40, 93, 41, OAK_WALL)
-frect(12, 82, 34, 97, 49, BRICK_FLOOR)
-mk(11, "script_anchor", "business_k12_kingsbond_anchor", 89, 41)
-mk(11, "script_anchor", "watch_bond_post_anchor", 89, 33)
+# K12 The King's Bond (bonded warehouse: brick, one double door, no windows) -- 17x13
+shell(11, 82, 34, 98, 46, BRICK_WALL, BRICK_FLOOR, doors=[(89, 34), (90, 34)])
+trect(11, 84, 42, 85, 43, OAK_WALL)                 # crates
+trect(11, 93, 38, 94, 39, OAK_WALL)
+frect(12, 82, 34, 98, 46, BRICK_FLOOR)
+mk(11, "script_anchor", "business_k12_kingsbond_anchor", 90, 40)
+mk(11, "script_anchor", "watch_bond_post_anchor", 90, 33)
 
-# K13 The Drowned Hold (condemned hulk; Gullet-only entry; no lamps)
-shell(11, 178, 34, 190, 56, TRUDGEON_WALL, doors=[(178, 50)])
-for rot in ((183, 34), (188, 56), (178, 41)):       # rot gaps in the shell
+# K13 The Drowned Hold (condemned hulk; Gullet-only entry; no lamps) -- 12x21,
+# stays sprawling on purpose, trimmed 1-2 tiles off the old 13x23
+shell(11, 178, 34, 189, 54, TRUDGEON_WALL, doors=[(178, 49)])
+for rot in ((183, 34), (188, 54), (178, 41)):       # rot gaps in the shell
     T[11][rot[1]][rot[0]] = 0
-for y in range(35, 56):                             # oak floor, sagging NE quadrant
-    for x in range(179, 190):
-        if 184 <= x <= 189 and 36 <= y <= 43:
+for y in range(35, 54):                             # oak floor, sagging NE quadrant
+    for x in range(179, 189):
+        if 184 <= x <= 188 and 36 <= y <= 43:
             F[11][y][x] = 0                         # truly OPEN: drops to the undercellar
         else:
             F[11][y][x] = OAK_FLOOR
-for d in ((178, 50), (183, 34), (178, 41), (188, 56)):
+for d in ((178, 49), (183, 34), (178, 41), (188, 54)):
     F[11][d[1]][d[0]] = OAK_FLOOR                   # thresholds under the gaps
-cells(11, [(180, 45), (182, 52), (186, 50), (188, 47)], OAK_WALL)  # debris
-T[11][54][188] = OAK_STAIR_UP
-shell(12, 178, 46, 190, 56, TRUDGEON_WALL, OAK_FLOOR)  # 2nd story, south half only
-F[12][49][181] = 0                                  # floor holes
-F[12][53][185] = 0
-T[12][54][188] = OAK_STAIR_DOWN
+cells(11, [(180, 45), (182, 51), (186, 49), (188, 46)], OAK_WALL)  # debris
+T[11][53][187] = OAK_STAIR_UP
+shell(12, 178, 46, 189, 54, TRUDGEON_WALL, OAK_FLOOR)  # 2nd story, south half only
+F[12][48][181] = 0                                  # floor holes
+F[12][52][185] = 0
+T[12][53][187] = OAK_STAIR_DOWN
 # (no roof: z13 stays empty — open to sky)
-for y in range(36, 45):                             # undercellar stub z10
-    for x in range(180, 189):
+for y in range(36, 44):                             # undercellar stub z10
+    for x in range(180, 188):
         T[10][y][x] = 0
         F[10][y][x] = GRANITE_FLOOR
         if x >= 186:
             FL[10][y][x] = WATER2                   # permanent shin-wet east rooms
-mk(11, "script_anchor", "clue_c3_drowned_hold", 184, 48)
+mk(11, "script_anchor", "clue_c3_drowned_hold", 184, 47)
 mk(10, "script_anchor", "dungeon_seam_drowned_hold", 184, 40)
 
-# K14 Wrackhouse (salvage house)
-shell(11, 164, 34, 175, 45, TRUDGEON_WALL, DIRT_FLOOR, doors=[(168, 34), (169, 34)])
-trect(11, 165, 40, 167, 40, OAK_WALL)               # salvage racks
-trect(11, 172, 40, 174, 40, OAK_WALL)
-T[11][36][174] = STEEL_WALL                         # the diving bell
-for x in range(165, 175):                           # stockroom partition
-    T[11][41][x] = OAK_WALL
-T[11][41][169] = 0
-frect(12, 164, 34, 175, 45, TRUDGEON_FLOOR)
-mk(11, "script_anchor", "business_k14_wrackhouse_anchor", 169, 38)
-mk(11, "script_anchor", "clue_wrackhouse_salvage_anchor", 170, 43)
+# K14 Wrackhouse (salvage house) -- 10x9
+shell(11, 164, 34, 173, 42, TRUDGEON_WALL, DIRT_FLOOR, doors=[(168, 34), (169, 34)])
+trect(11, 165, 38, 166, 38, OAK_WALL)               # salvage racks
+trect(11, 171, 38, 172, 38, OAK_WALL)
+T[11][36][172] = STEEL_WALL                         # the diving bell
+for x in range(165, 173):                           # stockroom partition
+    T[11][39][x] = OAK_WALL
+T[11][39][168] = 0
+frect(12, 164, 34, 173, 42, TRUDGEON_FLOOR)
+mk(11, "script_anchor", "business_k14_wrackhouse_anchor", 168, 37)
+mk(11, "script_anchor", "clue_wrackhouse_salvage_anchor", 170, 40)
 
-# K15 Fenner's Pawn (deliberately cramped; caged counter)
-shell(11, 122, 52, 129, 59, BRICK_WALL, BRICK_FLOOR, doors=[(125, 52)])
-for x in range(123, 129):                           # cage partition with slot
-    T[11][55][x] = STEEL_WALL
-T[11][55][126] = 0
-T[11][58][128] = OAK_WALL                           # strongbox
-frect(12, 122, 52, 129, 59, BRICK_FLOOR)
-mk(11, "script_anchor", "business_k15_fenners_anchor", 125, 57)
+# K15 Fenner's Pawn (deliberately cramped; caged counter) -- 7x7, pushed BELOW
+# the new shop standard per the gazetteer's own "deliberately cramped" language
+shell(11, 122, 52, 128, 58, BRICK_WALL, BRICK_FLOOR, doors=[(125, 52)])
+for x in range(123, 128):                           # cage partition with slot
+    T[11][54][x] = STEEL_WALL
+T[11][54][125] = 0
+T[11][57][127] = OAK_WALL                           # strongbox
+frect(12, 122, 52, 128, 58, BRICK_FLOOR)
+mk(11, "script_anchor", "business_k15_fenners_anchor", 125, 56)
 mk(11, "script_anchor", "fenner_sign_anchor", 125, 51)
 mk(11, "light_source", "lamp_fenners_door", 125, 51, luminance=10)
 
-# K17 Mission of the Flame (+ garden)
-shell(11, 82, 66, 99, 81, GRANITE_WALL, BRICK_FLOOR,
-      doors=[(88, 66), (89, 66), (82, 74), (82, 75)])
-for y in range(67, 81):                             # chapel partition
-    T[11][y][91] = OAK_WALL
-T[11][72][91] = 0
-trect(11, 84, 70, 87, 70, OAK_WALL)                 # alms-hall tables
-trect(11, 84, 73, 87, 73, OAK_WALL)
-for x in range(83, 91):                             # dormitory partition
-    T[11][76][x] = OAK_WALL
-T[11][76][86] = 0
-for x in range(92, 99):                             # back room (the body)
-    T[11][76][x] = OAK_WALL
-T[11][76][95] = 0
-frect(12, 82, 66, 99, 81, THATCH_FLOOR)
-mk(11, "script_anchor", "business_k17_mission_anchor", 88, 72)
-mk(11, "script_anchor", "mission_bunks_anchor", 86, 79)
-mk(11, "script_anchor", "clue_c1_mission_backroom", 95, 79)
+# K17 Mission of the Flame (+ garden) -- 17x15
+shell(11, 82, 66, 98, 80, GRANITE_WALL, BRICK_FLOOR,
+      doors=[(88, 66), (89, 66), (82, 73), (82, 74)])
+for y in range(67, 80):                             # chapel partition
+    T[11][y][90] = OAK_WALL
+T[11][71][90] = 0
+trect(11, 84, 69, 87, 69, OAK_WALL)                 # alms-hall tables
+trect(11, 84, 72, 87, 72, OAK_WALL)
+for x in range(83, 90):                             # dormitory partition
+    T[11][75][x] = OAK_WALL
+T[11][75][86] = 0
+for x in range(91, 98):                             # back room (the body)
+    T[11][75][x] = OAK_WALL
+T[11][75][94] = 0
+frect(12, 82, 66, 98, 80, THATCH_FLOOR)
+mk(11, "script_anchor", "business_k17_mission_anchor", 88, 71)
+mk(11, "script_anchor", "mission_bunks_anchor", 85, 78)
+mk(11, "script_anchor", "clue_c1_mission_backroom", 94, 78)
 mk(11, "light_source", "lamp_mission_night", 88, 65, luminance=22)
 mk(11, "script_anchor", "mission_garden_anchor", 90, 88)
 
-# K18 Squall's Bathhouse (real pooled water)
-shell(11, 102, 66, 113, 79, GRANITE_WALL, GRANITE_FLOOR, doors=[(107, 66), (108, 66)])
-cells(11, [(104, 76), (106, 76)], STEEL_WALL)       # boilers
-T[11][76][103] = GRANITE_WALL                       # hearth
-for y in range(69, 74):
-    for x in range(105, 111):
+# K18 Squall's Bathhouse (real pooled water) -- 11x13
+shell(11, 102, 66, 112, 78, GRANITE_WALL, GRANITE_FLOOR, doors=[(107, 66), (108, 66)])
+cells(11, [(104, 75), (106, 75)], STEEL_WALL)       # boilers
+T[11][75][103] = GRANITE_WALL                       # hearth
+for y in range(69, 73):
+    for x in range(105, 110):
         FL[11][y][x] = WATER2                       # the pools
-frect(12, 102, 66, 113, 79, BRICK_FLOOR)
-mk(11, "script_anchor", "business_k18_bathhouse_anchor", 107, 74)
+frect(12, 102, 66, 112, 78, BRICK_FLOOR)
+mk(11, "script_anchor", "business_k18_bathhouse_anchor", 107, 73)
 
-# K19 The Rows (22x8 flophouse)
-shell(11, 100, 52, 121, 59, TRUDGEON_WALL, DIRT_FLOOR, doors=[(104, 52), (105, 52)])
-for hx in (102, 105, 108, 111, 114, 117, 120):      # hammock posts
+# K19 The Rows (flophouse) -- 20x7
+shell(11, 100, 52, 119, 58, TRUDGEON_WALL, DIRT_FLOOR, doors=[(104, 52), (105, 52)])
+for hx in (102, 105, 108, 111, 114, 117):           # hammock posts
     T[11][54][hx] = OAK_WALL
     T[11][57][hx] = OAK_WALL
 T[11][53][101] = OAK_WALL                           # landlord counter
-frect(12, 100, 52, 121, 59, THATCH_FLOOR)
-mk(11, "script_anchor", "business_k19_rows_anchor", 110, 55)
+frect(12, 100, 52, 119, 58, THATCH_FLOOR)
+mk(11, "script_anchor", "business_k19_rows_anchor", 109, 55)
 
-# K21 Saltgate Watch-Post (Band C: ground z13, roof z14)
+# K21 Saltgate Watch-Post (Band C: ground z13, roof z14) -- 10x10, unchanged;
+# becomes the Rise's HEAD garrison, paired with the new K34 at the foot
 shell(13, 62, 117, 71, 126, GRANITE_WALL, GRANITE_FLOOR, doors=[(71, 120), (71, 121)])
 for y in range(118, 126):                           # cell partition
     T[13][y][64] = STEEL_WALL
@@ -605,47 +677,103 @@ mk(13, "script_anchor", "notice_board_anchor", 73, 119)
 mk(13, "script_anchor", "gibbet_anchor", 80, 119)
 mk(13, "light_source", "lamp_watchpost_brazier", 73, 118, luminance=20)
 
-# K22 Netmenders' Arcade (leaky colonnade fronting Dawnstalls)
-cells(11, [(38, 35), (42, 35), (46, 35), (50, 35), (53, 35)], OAK_WALL)
-frect(12, 38, 34, 53, 35, THATCH_FLOOR)
+# K22 Netmenders' Arcade (leaky colonnade fronting Dawnstalls) -- 15x2
+cells(11, [(38, 35), (41, 35), (45, 35), (48, 35), (52, 35)], OAK_WALL)
+frect(12, 38, 34, 52, 35, THATCH_FLOOR)
 mk(11, "script_anchor", "business_k22_netmenders_anchor", 45, 34)
 
-# K23 Cooper & Blockmaker (sawdust register; open double doors)
-shell(11, 40, 66, 55, 77, TRUDGEON_WALL, DIRT_FLOOR,
-      doors=[(46, 66), (47, 66), (48, 66), (49, 66)])
-trect(11, 41, 74, 42, 75, OAK_WALL)                 # barrel stacks
-trect(11, 52, 68, 53, 69, OAK_WALL)
-trect(11, 44, 72, 47, 72, OAK_WALL)                 # workbench
-frect(12, 40, 66, 55, 77, THATCH_FLOOR)
-mk(11, "script_anchor", "business_k23_coopers_anchor", 47, 71)
+# K23 Cooper & Blockmaker (sawdust register; open double doors) -- 14x11
+shell(11, 40, 66, 53, 76, TRUDGEON_WALL, DIRT_FLOOR, doors=[(46, 66), (47, 66)])
+trect(11, 41, 73, 42, 74, OAK_WALL)                 # barrel stacks
+trect(11, 50, 68, 51, 69, OAK_WALL)
+trect(11, 44, 71, 47, 71, OAK_WALL)                 # workbench
+frect(12, 40, 66, 53, 76, THATCH_FLOOR)
+mk(11, "script_anchor", "business_k23_coopers_anchor", 47, 70)
 
-# K24 The Eel-Pots (lantern-lit night stalls on the Tarwalk)
-for i, sx in enumerate((84, 96, 104, 112)):
+# K24 The Eel-Pots (lantern-lit night stalls on the Tarwalk) -- 28x3, the extra
+# tile of depth is a stallfront apron
+for i, sx in enumerate((84, 92, 100, 108)):
     trect(11, sx, 30, sx + 1, 31, TRUDGEON_WALL)
     mk(11, "light_source", "lamp_eelpot_%02d" % (i + 1), sx + 1, 32, luminance=18)
+frect(11, 84, 32, 111, 32, DIRT_FLOOR)              # stallfront apron
 mk(11, "script_anchor", "business_k24_eelpots_anchor", 97, 31)
 
-# K25 Kennel Row. DEV: shrunk to y48-56 (blueprint's y48-59 crossed the Gullet
-# "Bottom" link rows y57-59); shed y52-56 open east; the y56 cage pair moved to
-# y55 and kennel_dog_anchor_03 (172,57)->(172,54).
-border(11, 164, 48, 175, 56, TRUDGEON_WALL)
-for g in ((168, 48), (169, 48)):
+# K25 Kennel Row (rat-catchers' yard + small shed) -- 11x8
+border(11, 164, 48, 174, 55, TRUDGEON_WALL)
+for g in ((167, 48), (168, 48)):
     T[11][g[1]][g[0]] = 0
-shell(11, 164, 52, 169, 56, TRUDGEON_WALL, DIRT_FLOOR, skip_sides=("e",))
-cells(11, [(171, 50), (173, 50), (171, 53), (173, 53), (171, 55), (173, 55)],
+shell(11, 164, 51, 168, 55, TRUDGEON_WALL, DIRT_FLOOR, skip_sides=("e",))
+cells(11, [(170, 49), (172, 49), (170, 52), (172, 52), (170, 54), (172, 54)],
       STEEL_WALL)
-mk(11, "script_anchor", "business_k25_kennelrow_anchor", 168, 55)
-mk(11, "script_anchor", "kennel_dog_anchor_01", 166, 55)
-mk(11, "script_anchor", "kennel_dog_anchor_02", 172, 51)
-mk(11, "script_anchor", "kennel_dog_anchor_03", 172, 54)
+mk(11, "script_anchor", "business_k25_kennelrow_anchor", 167, 54)
+mk(11, "script_anchor", "kennel_dog_anchor_01", 165, 54)
+mk(11, "script_anchor", "kennel_dog_anchor_02", 171, 50)
+mk(11, "script_anchor", "kennel_dog_anchor_03", 171, 53)
 
-# Unkeyed texture business: Sailmaker's Loft (2-story)
-shell(11, 6, 66, 21, 77, TRUDGEON_WALL, OAK_FLOOR, doors=[(12, 66), (13, 66)])
-T[11][75][19] = OAK_STAIR_UP
-shell(12, 6, 66, 21, 77, TRUDGEON_WALL, OAK_FLOOR)
-T[12][75][19] = OAK_STAIR_DOWN
-frect(13, 6, 66, 21, 77, THATCH_FLOOR)
-mk(11, "script_anchor", "business_sailmaker_anchor", 13, 71)
+# K26 Sailmaker's Loft (formalizes the previously-unkeyed sailmaker structure into
+# the roster; net-mending/sail-repair, distinct trade from Brann's general
+# chandlery) -- 8x8, shrunk into the same lot
+shell(11, 8, 70, 15, 77, TRUDGEON_WALL, OAK_FLOOR, doors=[(11, 70), (12, 70)])
+trect(11, 9, 74, 10, 75, OAK_WALL)                  # canvas-cutting table
+mk(11, "script_anchor", "business_k26_sailmaker_anchor", 11, 73)
+mk(11, "light_source", "lamp_sailmaker_door", 11, 69, luminance=12)
+
+# K27 The Hardtack Oven (ship's-biscuit bakery, distinct from Brann's -- which
+# only stocks biscuit, doesn't bake it) -- 7x9, sited in the lot Brann's resize
+# freed; granite shell per the Salt Row smokehouse fire-safety precedent
+shell(11, 32, 70, 38, 78, GRANITE_WALL, OAK_FLOOR, doors=[(35, 70)])
+cells(11, [(33, 75), (34, 75)], GRANITE_WALL)       # bake oven
+trect(11, 36, 73, 37, 73, OAK_WALL)                 # counter
+mk(11, "script_anchor", "business_k27_hardtack_anchor", 35, 74)
+mk(11, "light_source", "lamp_hardtack_oven", 33, 75, luminance=10)
+
+# K28 The Slop-Chest (sailors' clothing/dry-goods; the plainest shop in the
+# ward) -- 6x7. DEV (overlap-audit pass, Eli 2026-07-13): the sizing pass's
+# lot at (92,52)-(97,58) physically overlapped Hovel #3 (93,53)-(97,59) AND
+# K34 The Guardhouse (hovels/establishments were only checked against each
+# other's W x H size table, never against placed coordinates) -- relocated
+# to the free lot immediately south of K15 Fenner's Pawn (122-128,52-58),
+# still in the same pawn/flophouse/dry-goods cluster the design intent calls
+# for ("outfit near where they bunk" -- K19 The Rows is a few tiles further
+# west along the same row).
+shell(11, 130, 58, 135, 64, OAK_WALL, OAK_FLOOR, doors=[(133, 58)])
+trect(11, 132, 61, 134, 61, OAK_WALL)               # counter + racks
+mk(11, "script_anchor", "business_k28_slopchest_anchor", 133, 62)
+
+# K29 The Long Store (general dry-goods warehouse: open floor, racking, a
+# foreman's desk nook, NO bed -- no canon night-watchman posted there, unlike
+# the Weighhouse clerks) -- 19x11, genuinely different in character from K12
+# (sealed/bonded) and K13 (condemned/decayed). DEV (overlap-audit pass, Eli
+# 2026-07-13): the sizing pass's lot at (140,48)-(158,58) fully swallowed
+# Hovel #45 (144,50)-(149,56) -- relocated to the free lot along Saltgate
+# Rise's narrow southern leg, south of K17 Mission of the Flame and just
+# east of the Rise itself: still "near foot traffic" (the Rise + Ropewynd
+# corridor), and a plausible warehouse footprint hugging the road.
+shell(11, 79, 82, 97, 92, BRICK_WALL, DIRT_FLOOR, doors=[(87, 82), (88, 82)])
+for rx in (83, 89, 93):
+    trect(11, rx, 85, rx + 1, 88, OAK_WALL)         # racking islands, aisles between
+trect(11, 81, 89, 82, 90, OAK_WALL)                 # foreman's desk nook
+frect(12, 79, 82, 97, 92, BRICK_FLOOR)              # flat roof, single story, no bed
+mk(11, "script_anchor", "business_k29_longstore_anchor", 88, 87)
+
+# K34 Guardhouse (Militia Watch foot-garrison; pairs with K21 at the Rise's
+# head per DOCKS-GAZETTEER 2.4's own stated intent -- only the head post was
+# ever authored) -- 13x9. DEV (overlap-audit pass, Eli 2026-07-13): the
+# sizing pass's lot at (82,53)-(94,61) overlapped Hovels #1 and #2 AND K28
+# (all three only ever cross-checked by W x H, never by placed coordinates)
+# -- relocated to the free lot just south of Squall's Bathhouse (K18), still
+# inside the same Band-A quay-civic cluster (Weighhouse/King's Bond/Mission/
+# Bathhouse) it was meant to garrison, and still the "foot" counterpart to
+# K21's post at the Rise's head.
+shell(11, 100, 80, 112, 88, GRANITE_WALL, GRANITE_FLOOR, doors=[(106, 80), (107, 80)])
+cells(11, [(102, 84), (103, 84)], STEEL_WALL)       # holding-cell cage
+for y in range(81, 88):                             # armory partition
+    T[11][y][109] = OAK_WALL
+T[11][85][109] = 0
+trect(11, 105, 86, 107, 86, OAK_WALL)               # watch-room table
+frect(12, 100, 80, 112, 88, BRICK_FLOOR)            # roof
+mk(11, "script_anchor", "business_k34_guardhouse_anchor", 106, 85)
+mk(11, "light_source", "lamp_guardhouse_door", 106, 79, luminance=18)
 
 # ======================================================================
 # 4. Residential Compounds C1-C4 (blueprint section 4)
@@ -846,6 +974,20 @@ for i, (x0, y0, x1, y1, wall, d) in enumerate(C4_HUTS):
     shell(13, x0, y0, x1, y1, wall, doors=[d])
     F[13][d[1]][d[0]] = DIRT_FLOOR
     unit_anchor(13, "cmp4_roofhut_%02d_anchor" % (i + 7), x0, y0, x1, y1)
+
+# K35 The Skyrunner's Roost (Eli 2026-07-13 sizing pass, DOCKS-GAZETTEER.md 3.1) --
+# 3x5, concealed nook on the Gullet Compound's own rooftop-slum deck (z:+13), in the
+# open gap beside roofhut_09 (184-187,86-90) and roofhut_08 (187-190,82-85). Per
+# DECISIONS.md's Trojian Compounds ruling, Skyrunners use the rooftop-slum layer as
+# their highway and present as ordinary tenants -- this must NOT read as a shopfront:
+# no lamp, no sign, and NO new door -- it reuses roofhut_09's own existing door gap
+# at (187,88), so the only way in is through that hut's own wall.
+frect(13, 188, 86, 190, 90, DIRT_FLOOR)
+border(13, 188, 86, 190, 90, BRICK_WALL)
+T[13][88][188] = 0                                  # opens onto roofhut_09's door (187,88)
+F[13][88][188] = DIRT_FLOOR
+mk(13, "script_anchor", "lair_skyrunner_anchor", 189, 88)
+
 # Ring rot gaps (after all walls are up)
 for rot in ((170, 66), (190, 80), (166, 88)):
     T[11][rot[1]][rot[0]] = 0

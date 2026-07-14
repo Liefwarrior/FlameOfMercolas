@@ -95,33 +95,45 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] PIER_04 = {123, 24};
 
     // ---- establishment anchors (markers `business_k*`, z:+11) ---------------------------
-    private static final int[] K01_WEIGHHOUSE = {64, 42};
-    private static final int[] K02_IMPOUND = {65, 56};
-    private static final int[] K03_GILDED_GULL = {120, 42};
-    private static final int[] K04_BILGE = {106, 39};
-    private static final int[] K05_LANTERN_ROOM = {64, 72};
+    // DEV (Eli 2026-07-13 sizing pass, DOCKS-GAZETTEER.md 3.1): every K01-K25 anchor
+    // below moved to match the resized footprints in gen_docks_surface.py; K26-K29/K34
+    // are new. Values are read straight from the regenerated docks_surface.tmx markers.
+    private static final int[] K01_WEIGHHOUSE = {64, 41};
+    private static final int[] K02_IMPOUND = {63, 56};
+    private static final int[] K03_GILDED_GULL = {120, 41};
+    private static final int[] K04_BILGE = {106, 38};
+    private static final int[] K05_LANTERN_ROOM = {64, 71};
     private static final int[] K06_HARLS_YARD = {141, 41};
-    private static final int[] K07_ROPEWALK = {36, 86};
-    private static final int[] K08_BRANNS = {30, 70};
-    private static final int[] K09_PITCHFIELD = {15, 46};
+    private static final int[] K07_ROPEWALK = {36, 85};
+    private static final int[] K08_BRANNS = {27, 69};
+    private static final int[] K09_PITCHFIELD = {10, 46};
     private static final int[] K10_DAWNSTALLS = {46, 41};
-    private static final int[] K11_SALT_ROW = {46, 52};
-    private static final int[] K12_KINGS_BOND = {89, 41};
-    private static final int[] K13_DROWNED_HOLD = {184, 48};   // clue_c3_drowned_hold (squat)
-    private static final int[] K14_WRACKHOUSE = {169, 38};
-    private static final int[] K15_FENNERS = {125, 57};
-    private static final int[] K17_MISSION = {88, 72};
-    private static final int[] K18_BATHHOUSE = {107, 74};
-    private static final int[] K19_ROWS = {110, 55};
+    private static final int[] K11_SALT_ROW = {45, 51};
+    private static final int[] K12_KINGS_BOND = {90, 40};
+    private static final int[] K13_DROWNED_HOLD = {184, 47};   // clue_c3_drowned_hold (squat)
+    private static final int[] K14_WRACKHOUSE = {168, 37};
+    private static final int[] K15_FENNERS = {125, 56};
+    private static final int[] K17_MISSION = {88, 71};
+    private static final int[] K18_BATHHOUSE = {107, 73};
+    private static final int[] K19_ROWS = {109, 55};
     private static final int[] K20_MERLES = {88, 18};
     private static final int[] K22_NETMENDERS = {45, 34};
-    private static final int[] K23_COOPERS = {47, 71};
-    private static final int[] K25_KENNEL_ROW = {168, 55};
-    private static final int[] SAILMAKER = {13, 71};
-    private static final int[] MISSION_BUNKS = {86, 79};
+    private static final int[] K23_COOPERS = {47, 70};
+    private static final int[] K25_KENNEL_ROW = {167, 54};
+    private static final int[] SAILMAKER = {11, 73};           // K26 Sailmaker's Loft
+    private static final int[] K27_HARDTACK = {35, 74};
+    // K28/K29/K34 moved again (overlap-audit pass, Eli 2026-07-13): the sizing
+    // pass's lots physically overlapped pre-existing hovels (and, for K28/K34,
+    // each other) in real map coordinates -- relocated in gen_docks_surface.py;
+    // anchors below match the regenerated docks_surface.tmx markers.
+    private static final int[] K28_SLOPCHEST = {133, 62};
+    private static final int[] K29_LONGSTORE = {88, 87};
+    private static final int[] K34_GUARDHOUSE = {106, 85};
+    private static final int[] LAIR_SKYRUNNER = {189, 88};     // K35, z:+13, unmarked
+    private static final int[] MISSION_BUNKS = {85, 78};
     private static final int[] MISSION_GARDEN = {90, 88};
-    private static final int[] IMPOUND_DOG = {62, 57};
-    private static final int[][] KENNEL_DOGS = {{166, 55}, {172, 51}, {172, 54}};
+    private static final int[] IMPOUND_DOG = {60, 57};
+    private static final int[][] KENNEL_DOGS = {{165, 54}, {171, 50}, {171, 53}};
     private static final int[] PEN_GOATS = {152, 111};         // z:+12
 
     // Eel-pot stall fronts: the Tarwalk cells beside the four authored stall counters
@@ -135,7 +147,7 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] PATROL_RISE_FOOT = {75, 34};
     private static final int[] PATROL_TARWALK_WEST = {30, 30};
     private static final int[] PATROL_TARWALK_MID = {100, 30};
-    private static final int[] WATCH_BOND_POST = {89, 33};
+    private static final int[] WATCH_BOND_POST = {90, 33};
 
     // ---- Compound C1 Quayward (grand, Band B: ground z:+12, upper z:+13) -----------------
     private static final int[] C1_MANSION = {19, 106};
@@ -383,7 +395,9 @@ public final class DocksPopulation implements ScenarioPopulation {
             business(K20_MERLES, 1);                           // K20 boathouse
             business(K22_NETMENDERS, 2);                       // K22 colonnade
             business(K23_COOPERS, 2);                          // K23 barrel shop
-            business(SAILMAKER, 2);                            // unkeyed loft
+            business(SAILMAKER, 2);                            // K26 Sailmaker's Loft
+            business(K27_HARDTACK, 1);                         // K27 the Hardtack Oven
+            business(K28_SLOPCHEST, 1);                        // K28 the Slop-Chest
 
             // K10 Dawnstalls — three self-employed stallholders commuting to the market.
             for (int i = 0; i < 3; i++) {
@@ -405,6 +419,16 @@ public final class DocksPopulation implements ScenarioPopulation {
                 lodger.setHomeId(homes.addHome(lodger.cell()));
                 lodger.setAnchorCell(worldCell(nextDockWork(), ZA));
             }
+            // K29 The Long Store — warehouse, no bed: the foreman lodges elsewhere and
+            // commutes in with one hand (per the design note: no canon night-watchman here).
+            Actor longStoreForeman = spawn(Shopkeeper.TYPE, nextLodging(), ZA);
+            longStoreForeman.setHomeId(homes.addHome(longStoreForeman.cell()));
+            longStoreForeman.setAnchorCell(worldCell(K29_LONGSTORE, ZA));
+            Actor longStoreHand = spawn(Serf.TYPE, nextLodging(), ZA);
+            longStoreHand.setHomeId(homes.addHome(longStoreHand.cell()));
+            longStoreHand.setAnchorCell(worldCell(K29_LONGSTORE, ZA));
+            hire(longStoreForeman, longStoreHand);
+
             // K13 The Drowned Hold — condemned; two Wastrel squatters, no lamps, no trade.
             Actor holdSquatter = spawn(Wastrel.TYPE, K13_DROWNED_HOLD, ZA);
             household(List.of(holdSquatter, spawn(Wastrel.TYPE, K13_DROWNED_HOLD, ZA)));
@@ -447,6 +471,11 @@ public final class DocksPopulation implements ScenarioPopulation {
                     PATROL_TARWALK_MID, WATCH_BOND_POST}) {
                 soloHome(spawn(MilitiaWatch.TYPE, post, ZA));
             }
+            // K34 Guardhouse — the Rise's FOOT garrison (pairs with K21 at the head, per
+            // gazetteer 2.4's own stated intent): two Watch quartered at the new post.
+            Actor guardhouseSergeant = spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA);
+            guardhouseSergeant.setHomeId(homes.addHome(guardhouseSergeant.cell()));
+            soloHome(spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA));
 
             // ===================== ANIMAL KEEPERS + BEASTS (§4.8 Keeper<->Animal) =============
             // K25 Kennel Row: the kennelmaster and three dogs at their authored cage anchors.
@@ -583,9 +612,16 @@ public final class DocksPopulation implements ScenarioPopulation {
             assignJob(c4Robber, Job.Villain.Robber.ID);
             Actor c4RoofPairA = spawn(Wastrel.TYPE, C4_ROOFHUTS[1], ZC);
             household(List.of(c4RoofPairA, spawn(Wastrel.TYPE, C4_ROOFHUTS[1], ZC)));
+            // roofhut_09 (C4_ROOFHUTS[2]) is the hut beside K35, the Skyrunner's Roost: its
+            // second tenant presents as an ordinary rooftop dweller (home = the hut) but
+            // works the concealed lair through the hut's own wall — never a business
+            // anchor, never lit, never on any discoverable establishments list.
             Actor c4Cutpurse = spawn(Wastrel.TYPE, C4_ROOFHUTS[2], ZC);
-            household(List.of(c4Cutpurse, spawn(Wastrel.TYPE, C4_ROOFHUTS[2], ZC)));
+            Actor c4Skyrunner = spawn(Wastrel.TYPE, C4_ROOFHUTS[2], ZC);
+            household(List.of(c4Cutpurse, c4Skyrunner));
             assignJob(c4Cutpurse, Job.Villain.Cutpurse.ID);
+            assignJob(c4Skyrunner, Job.Villain.Skyrunner.ID);
+            c4Skyrunner.setAnchorCell(worldCell(LAIR_SKYRUNNER, ZC));
             Actor c4LeanTo = spawn(Wastrel.TYPE, C4_ROOFHUTS[3], ZC);
             household(List.of(c4LeanTo, spawn(Wastrel.TYPE, C4_ROOFHUTS[3], ZC)));
             Actor ruinSquatter = spawn(Wastrel.TYPE, C4_RUIN, ZA);

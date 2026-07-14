@@ -111,6 +111,52 @@ All names and proprietors **(placeholder)** unless cited. "Runs it" gives the §
 | K24 | **The Eel-Pots** | Night food stalls on the Tarwalk, lantern-lit; the only honest light after dark | Serf | Night-rhythm anchor; lantern light profile (§7.2) |
 | K25 | **Kennel Row** | Rat-catchers' yard: dogs, cages, the men the city calls when things gnaw | Animal Keeper (**Old Cobb**, placeholder) | The underworld's surface interface — rat-catchers are the natural dungeon guides; Cobb's dog refuses the Drowned Hold's door (clue texture) |
 
+### 3.1 Establishment sizing standard and the K26–K35 roster (Eli 2026-07-13)
+
+**The shop standard.** A "simple shop" = **7×8 tiles (56 total, walls included)**: 5×3 interior
+walking/customer space (the room the customer stands in, door included) + a 3×3 storage nook
+(one shelf run + a restocking aisle — 2×3 was tried and rejected: no room for both) + a 2×2
+sleeping nook for the shopkeeper (one bed cell + one tile of breathing room — home==work, per
+the Compound wealth-tier convention, §2.5). This is the baseline scale anchor for every ordinary
+shop trade in the ward; taverns scale up modestly beyond it (they need floor for tables and
+patrons, not just counter trade); civic/grand sites (Weighhouse, King's Bond, the Mission) scale
+up further still; the Ropewalk stays a genuine long shed per its own description below — it is
+NOT shrunk to this standard, it is deliberately elongated.
+
+**No two K-sites may share an identical footprint.** Every establishment below is sized
+individually against the gazetteer's own descriptive language (grand/civic biggest; taverns
+above shop-scale for their trade; ordinary shops at-or-near the 7×8 standard; hovels/niches
+smaller still) and checked pairwise against every other site's W×H (as an unordered pair — a
+building rotated 90° still counts as a repeat). Implemented in `tools/scripts/gen_docks_surface.py`
+(regenerate `content/maps/src/docks_surface.tmx` from it — never hand-edit the `.tmx`); every
+K01–K25 footprint was resized to this pass's pinned table (e.g. K08 Brann's Chandlery, the
+flagged 14×14 oversized "plain shop" that was identical in size to K05's old footprint, is now
+8×8, near the new baseline).
+
+**K26–K35 — new establishments (per Eli's directive, 2026-07-13):**
+
+| K# | Name | One line | Runs it | Sim/investigation relevance |
+|---|---|---|---|---|
+| K26 | **Sailmaker's Loft** | Net-mending and sail repair; canvas laid out floor-to-wall on slack days | Shopkeeper | Distinct trade from Brann's general chandlery; formalizes the ward's previously-unkeyed sailmaker structure into the roster **(placeholder)** |
+| K27 | **The Hardtack Oven** | Ship's-biscuit bakery; one bake-oven, one counter, flour dust everywhere | Shopkeeper | Provisions outbound ships — distinct from Brann's (which only stocks biscuit, doesn't bake it); adds a contained-daily-flame site to §7.3's fire map **(placeholder)** |
+| K28 | **The Slop-Chest** | Sailors' clothing and dry-goods; a counter and a few racks, nothing more | Shopkeeper | The plainest shop in the ward, sited by K19 The Rows so crews can outfit near where they bunk **(placeholder)** |
+| K29 | **The Long Store** | General dry-goods warehouse: open floor, racking, a foreman's desk nook, no bed | Shopkeeper (foreman) | Storage-dominant, genuinely different in character from K12 (sealed/bonded, civic) and K13 (condemned, decayed) **(placeholder)** |
+| K30–K32 | **Long Quay hulls** (*The Kestrel*, *Bregga's Promise*, *The Deep Keel*) | Three moored trade vessels of increasing size, occupying the Long Quay's 3 deep-water berths | — (ambient) | Gives the previously-bare berth anchors visible hulls; a walkable deck each, no interior simulation **(placeholder)** |
+| K33 | **Wormwood Pier wreck** (*The Widow's Grief*) | A half-capsized derelict hull under the condemned finger-pier | — (ambient) | Reinforces the pier's existing hazard/condemned texture rather than contradicting it with a pristine ship **(placeholder)** |
+| K34 | **Guardhouse** (Militia Watch foot-garrison) | Holding cell, armory nook, watch-room, at the QUAY end of Saltgate Rise | Militia Watch | Fulfills §2.4's own stated pairing ("Weighhouse + watch-post flank the foot and head of Saltgate Rise") — only the head post (K21) was ever authored; this is the foot post |
+| K35 | **The Skyrunner's Roost** *(unmarked — no sign, no door on the establishments layer)* | A concealed nook on the Gullet Compound's rooftop-slum deck, reached only through a crawl-gap, not a threshold | nobody — a Skyrunner (villain.skyrunner) presents as an ordinary rooftop tenant | Per DECISIONS.md's Trojian Compounds ruling: rooftops are the burglar/assassin highway precisely because they're socially unseemly. This site must never appear on any discoverable establishments list — that IS the design |
+
+Every W×H figure for K01–K35 is recorded in `gen_docks_surface.py`'s per-site comments; the
+rule going forward is the same one applied there: **pin the footprint from the gazetteer's own
+descriptive adjectives before writing a single `shell()` call, and check it against every other
+named site's footprint before finalizing.**
+
+Street-width note (also this pass): the long uniform-width Tarwalk quay apron and Saltgate
+Rise's Band-A leg read as monolithic ("big squares everywhere," alongside the oversized
+buildings); both were narrowed to 6-wide along their long middle stretches, keeping 8-wide only
+as deliberate plazas (the Weighhouse frontage, outside the Gilded Gull, the quay civic cluster
+at the Rise's foot) — see the generator's section-1 comments for the exact bands.
+
 ---
 
 ## 4. People — the eight actor groups (RULED BY ELI, 2026-07-12)
