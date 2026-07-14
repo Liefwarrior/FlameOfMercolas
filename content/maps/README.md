@@ -181,21 +181,30 @@ bible: §2.1 fixes the 192×128×16 footprint, §2.2 the waterfront, §2.3 the s
   **Band B** mid-slope (y 96–115, walk z:+12), **Band C** upper (y 116–127, walk z:+13),
   joined by granite/brick RAMP rows at y 96 and y 116 (Saltgate Rise ramps are brick).
   Harbor water is depth-7 fluid at z:+9/+10 over a dirt bed at z:+8 (tick-0 = high tide).
-- **Waterfront.** The Long Quay (3 mooring-post berths + trudgeon crane gantry), Pier Row
-  (4 timber finger-piers; the condemned Wormwood Pier has deck holes open to the water and
-  no lamps), the west strand, the Beaching Strand, and **K06 Harl's Yard**: slipway skid
-  rails running into the water, a hull-on-blocks, a floating-log timber pond, a workshop
-  with a saw pit carved to z:+10, and a fenced timber store.
+- **Waterfront.** The Long Quay (3 generic overflow mooring posts + trudgeon crane gantry —
+  the named hulls moved onto the fishbone pier, below), Pier Row (4 timber finger-piers; the
+  condemned Wormwood Pier has deck holes open to the water and no lamps), the west strand,
+  the Beaching Strand, and **K06 Harl's Yard**: slipway skid rails running into the water, a
+  hull-on-blocks, a floating-log timber pond, a workshop with a saw pit carved to z:+10, and a
+  fenced timber store.
+- **The fishbone pier (napkin-sketch redesign, 2026-07-14 — gazetteer §3.2).** Saltgate Rise's
+  own N–S spine continues north through the seawall as an 8-wide timber pier deck (x72–79,
+  y1–25, z:+11), crossed by 3 perpendicular finger piers (`finger_01/02/03_anchor`) whose gaps
+  form 3 hull slips: **K30 *The Kestrel***, **K31 *Bregga's Promise***, **K32 *The Deep Keel***
+  — all re-sited here from their old Long Quay berths (W×H unchanged; old footprints reverted
+  to plain water). **K33 the *Widow's Grief* wreck stays at the condemned Wormwood Pier**
+  (Pier Row, east) — deliberately not folded into the working fishbone.
 - **Streets.** Tarwalk (granite quay apron west, brick mid, broken brick/dirt checker
-  east), Saltgate Rise (brick, the only z:+11→+13 climb), Ropewynd (paving gives out
-  east of x 147), Herring Lane with its dirt offal gutter, the Gullet alley-net (dirt),
-  Terrace Walk and Gallows Row above.
+  east), Saltgate Rise (brick, the only z:+11→+13 climb, now continuing onto the fishbone pier
+  above the seawall), Ropewynd (paving gives out east of x 147), Herring Lane with its dirt
+  offal gutter, the Bilgewater Gap market lane (formalized as a covered market walk with 3
+  stall-awning posts), the Gullet alley-net (dirt), Terrace Walk and Gallows Row above.
 - **Establishments.** K01–K35 per gazetteer §3/§3.1, every footprint individually pinned so
   no two named sites share a W×H (Eli's 2026-07-13 sizing pass) — from the 16×17 2-story
   Weighhouse and 64×9 Ropewalk down to Fenner's Pawn (7×7, deliberately cramped) and the new
   "simple shop" baseline (7×8: 5×3 walking space + 3×3 storage + 2×2 sleeping nook), used by
   K26 Sailmaker's Loft, K27 the Hardtack Oven, and K28 the Slop-Chest. K29 the Long Store is
-  a storage-dominant warehouse (no bed). K30–K33 give the Long Quay/Wormwood Pier berths
+  a storage-dominant warehouse (no bed). K30–K33 give the fishbone pier/Wormwood Pier berths
   visible hulls (*The Kestrel*, *Bregga's Promise*, *The Deep Keel*, and the wrecked *Widow's
   Grief*) — ambient, no interior simulation. K34 is the Rise's foot-garrison (Militia Watch,
   pairing with K21 at the head). K35, the Skyrunner's Roost, is a deliberately unmarked 3×5
@@ -206,18 +215,24 @@ bible: §2.1 fixes the 192×128×16 footprint, §2.2 the waterfront, §2.3 the s
   Rise Band A) were narrowed from a uniform 8-wide to 6-wide along their long middle
   stretches, keeping 8-wide only as deliberate frontage plazas — the fix for "big squares
   everywhere" alongside the footprint resizing.
+- **Ambient features (no K-site, napkin-sketch redesign, gazetteer §3.2):** the **West Garden
+  Court** — two fenced garden plots flanking an open, unwalled courtyard blob, between K26
+  Sailmaker's Loft and K08 Brann's Chandlery — and **Cache Row** — 3 unlicensed off-grid dirt
+  sheds in Band B (x165–190, y112–115), no lamps, no door onto any street layer.
 - **Housing.** Four Compounds on the §2.5 typology at four wealth registers: C1 Quayward
   (grand, all-reman, private roof terrace instead of a slum), C2 Netters' (precedent-scale,
   3-hut roof slum), C3 Saltgate Terrace (cramped shallow variant), C4 Gullet (decayed
   brick, rot gaps, no mansion, 4 crammed roof huts, no lamps) — 12–13 dwelling units each —
   plus 45 hovels (oak/trudgeon/mud/tent shells rotating) across all three bands.
-- **Markers.** 202: `business_k01…k29_*`/`k34_*` + unit/hovel/courtyard anchors, berth/pier/
-  ship/wreck/muster/patrol/exit anchors, `lair_skyrunner_anchor` (K35 — deliberately not a
-  `business_*` name, no light source), 3 sealed **dungeon seams** (`dungeon_seam_outfall`
-  z:+9, `dungeon_seam_drowned_hold` z:+10, `dungeon_seam_merles_floor` z:+11 — the starter
-  dungeon is a separate later authoring effort; only these access stubs exist), and light
-  sources graded per §7.2 (mast lamp 26 down to shrine candles 8; zero lights in the Gullet
-  east end, on Wormwood Pier, and at the Skyrunner's Roost — design law).
+- **Markers.** 212: `business_k01…k29_*`/`k34_*` + unit/hovel/courtyard anchors, berth/pier/
+  ship/wreck/finger/muster/patrol/exit anchors, `west_garden_court_anchor` +
+  `west_garden_plot_01/02_anchor`, `cache_shed_01/02/03_anchor`, `lair_skyrunner_anchor` (K35
+  — deliberately not a `business_*` name, no light source), 3 sealed **dungeon seams**
+  (`dungeon_seam_outfall` z:+9, `dungeon_seam_drowned_hold` z:+10, `dungeon_seam_merles_floor`
+  z:+11 — the starter dungeon is a separate later authoring effort; only these access stubs
+  exist), and light sources graded per §7.2 (mast lamp 26 down to shrine candles 8; zero
+  lights in the Gullet east end, on Wormwood Pier, on the fishbone pier, and at the
+  Skyrunner's Roost — design law).
 - **Pipeline.** Baked to `baked/docks_surface.trojsav` by `DocksSurfaceBakeTest`
   (byte-deterministic, rerun after any map/raws change); boots in the observer via
   `--fixture=docks`, which spawns the ~350-actor district population

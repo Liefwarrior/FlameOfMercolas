@@ -300,35 +300,83 @@ mk(11, "script_anchor", "hazard_wormwood_pier_anchor", 123, 12)
 # no hull geometry; each gets a walkable deck (no interior simulation) displacing the
 # water it sits in, sized to increasing scale west->east per the Long Quay's own
 # "deep-water berths" description.
-# K30 Long Quay Berth 1 hull -- "The Kestrel" (10x5 fishing lugger, smallest craft)
-frect(11, 16, 20, 25, 24, OAK_FLOOR)
-border(11, 16, 20, 25, 24, OAK_WALL)
-for y in range(20, 25):
-    for x in range(16, 26):
-        FL[9][y][x] = 0
-        FL[10][y][x] = 0
-        T[10][y][x] = OAK_WALL
-mk(11, "script_anchor", "ship_k30_kestrel_anchor", 20, 22)
+# DEV (napkin-sketch redesign, 2026-07-14, docs/design/DOCKS-GAZETTEER.md "Redesigned
+# topology" subsection): Saltgate Rise's own spine continues north into the water as a
+# fishbone pier (spine + 3 perpendicular finger piers). K30/K31/K32 are RE-SITED into
+# the fishbone's 3 slips, W x H unchanged (10x5 / 14x7 / 16x8) -- only moved. Their old
+# footprints are reverted to plain water first (required cleanup, hard-lesson-driven).
 
-# K31 Long Quay Berth 2 hull -- "Bregga's Promise" (14x7 mid trade cog, flanks the crane)
-frect(11, 44, 18, 57, 24, OAK_FLOOR)
-border(11, 44, 18, 57, 24, OAK_WALL)
-for y in range(18, 25):
-    for x in range(44, 58):
-        FL[9][y][x] = 0
-        FL[10][y][x] = 0
-        T[10][y][x] = OAK_WALL
-mk(11, "script_anchor", "ship_k31_breggas_promise_anchor", 50, 21)
+# Revert old K30/K31/K32 footprints to plain open water before repainting.
+for (ox0, oy0, ox1, oy1) in ((16, 20, 25, 24), (44, 18, 57, 24), (60, 17, 75, 24)):
+    for y in range(oy0, oy1 + 1):
+        for x in range(ox0, ox1 + 1):
+            F[11][y][x] = 0
+            T[11][y][x] = 0
+            T[10][y][x] = 0
+            FL[9][y][x] = WATER7
+            FL[10][y][x] = WATER7
 
-# K32 Long Quay Berth 3 hull -- "The Deep Keel" (16x8, largest, deepest-water berth)
-frect(11, 60, 17, 75, 24, OAK_FLOOR)
-border(11, 60, 17, 75, 24, OAK_WALL)
-for y in range(17, 25):
-    for x in range(60, 76):
+# The fishbone pier spine: Saltgate Rise's own N-S axis continues through the seawall
+# (new bridge row at y25, since y25 was previously an unfloored SEAWALL lip) and out
+# into open water as an 8-wide timber pier deck, x72-79 y1-25, pilings at the spine's
+# own edges (mirrors the Pier Row piling convention, L289-294 in the pre-redesign file).
+frect(11, 72, 1, 79, 25, TRUDGEON_FLOOR)
+for py in (3, 9, 15, 21):
+    for px in (72, 79):
+        T[9][py][px] = TRUDGEON_WALL
+        T[10][py][px] = TRUDGEON_WALL
+        FL[9][py][px] = 0
+        FL[10][py][px] = 0
+
+# Three finger piers, 1 tile thick, crossing the spine at even intervals -- the gaps
+# between them are the 3 hull slips (standard fishbone-marina geometry). East arms are
+# capped at x81 where K20 Merle's Boats (x82-93 y14-25) would otherwise be crossed.
+frect(11, 60, 9, 71, 9, TRUDGEON_FLOOR)      # finger 1 west arm
+frect(11, 80, 9, 91, 9, TRUDGEON_FLOOR)      # finger 1 east arm (y9 < K20's y14 start)
+mk(11, "script_anchor", "finger_01_anchor", 75, 9)
+frect(11, 62, 17, 71, 17, TRUDGEON_FLOOR)    # finger 2 west arm
+frect(11, 80, 17, 81, 17, TRUDGEON_FLOOR)    # finger 2 east arm, capped short of K20
+mk(11, "script_anchor", "finger_02_anchor", 75, 17)
+frect(11, 62, 23, 71, 23, TRUDGEON_FLOOR)    # finger 3 west arm
+frect(11, 80, 23, 81, 23, TRUDGEON_FLOOR)    # finger 3 east arm, capped short of K20
+mk(11, "script_anchor", "finger_03_anchor", 75, 23)
+
+# K32 Long Quay Berth 3 hull -- "The Deep Keel" (16x8, largest) -- Slip 1, west arm,
+# flush against the spine's own x=72 edge
+frect(11, 56, 1, 71, 8, OAK_FLOOR)
+border(11, 56, 1, 71, 8, OAK_WALL)
+for y in range(1, 9):
+    for x in range(56, 72):
         FL[9][y][x] = 0
         FL[10][y][x] = 0
         T[10][y][x] = OAK_WALL
-mk(11, "script_anchor", "ship_k32_deepkeel_anchor", 67, 20)
+mk(11, "script_anchor", "ship_k32_deepkeel_anchor", 63, 4)
+
+# K31 Long Quay Berth 2 hull -- "Bregga's Promise" (14x7) -- Slip 2
+frect(11, 58, 10, 71, 16, OAK_FLOOR)
+border(11, 58, 10, 71, 16, OAK_WALL)
+for y in range(10, 17):
+    for x in range(58, 72):
+        FL[9][y][x] = 0
+        FL[10][y][x] = 0
+        T[10][y][x] = OAK_WALL
+mk(11, "script_anchor", "ship_k31_breggas_promise_anchor", 64, 13)
+
+# K30 Long Quay Berth 1 hull -- "The Kestrel" (10x5, smallest) -- Slip 3
+frect(11, 62, 18, 71, 22, OAK_FLOOR)
+border(11, 62, 18, 71, 22, OAK_WALL)
+for y in range(18, 23):
+    for x in range(62, 72):
+        FL[9][y][x] = 0
+        FL[10][y][x] = 0
+        T[10][y][x] = OAK_WALL
+mk(11, "script_anchor", "ship_k30_kestrel_anchor", 66, 20)
+
+# Bridge row: y25 crosses the seawall lip, connecting finger 3/spine down to Tarwalk
+# (y26) -- already covered by the spine's own frect(11, 72, 1, 79, 25, ...) above,
+# whose y1-25 range includes y25 (previously an unfloored SEAWALL-lip row with no
+# z:+11 floor authored at all -- this IS the "new bridge tile", not a separate one).
+# y24 stays open water (the approach gap between finger 3 and the seawall).
 
 # K33 Wormwood Pier wreck -- "The Widow's Grief" (5x9 half-capsized derelict, oriented
 # N-S along the pier's own run; a wreck reinforces the condemned-pier hazard texture
@@ -776,6 +824,49 @@ mk(11, "script_anchor", "business_k34_guardhouse_anchor", 106, 85)
 mk(11, "light_source", "lamp_guardhouse_door", 106, 79, luminance=18)
 
 # ======================================================================
+# 3.5 Napkin-sketch ambient features (redesign, 2026-07-14): the West Garden
+# Court, the Bilgewater Gap market-lane stall posts, and Cache Row. None of
+# these are K-sites -- exempt from the establishment sizing standard, same
+# tier as hovels/compound courtyards (DOCKS-GAZETTEER.md 3.1/7).
+# ======================================================================
+
+# West Garden Court -- the sketch's garden blob + 2 fenced plots, sited in the
+# one open pocket in the west cluster: between K26 Sailmaker's Loft (x8-15)
+# and K08 Brann's Chandlery (x24-31), Ropewynd (y60-65) to the north, the
+# Walkback path (y78-81) to the south.
+shell(11, 16, 66, 23, 69, OAK_WALL, DIRT_FLOOR, doors=[(19, 69), (20, 69)])
+frect(11, 16, 70, 23, 73, DIRT_FLOOR)               # open courtyard blob, unwalled
+shell(11, 16, 74, 23, 77, OAK_WALL, DIRT_FLOOR, doors=[(19, 74), (20, 74)])
+mk(11, "script_anchor", "west_garden_court_anchor", 19, 71)
+mk(11, "script_anchor", "west_garden_plot_01_anchor", 19, 67)
+mk(11, "script_anchor", "west_garden_plot_02_anchor", 19, 75)
+
+# East market lane: formalizing the Bilgewater Gap (x80-131 y50-51, already
+# authored above) as a covered market walk with an open gutter -- 3 stall-awning
+# posts, mirroring the Eel-Pots' post style.
+cells(11, [(90, 50), (105, 50), (120, 50)], TRUDGEON_WALL)
+
+# Cache Row -- 3 unlicensed off-grid sheds in Band B's unclaimed field (the
+# sketch's 3 isolated far-right rectangles, read as a smuggling-adjacent
+# unlicensed pocket). Cheap dirt-shell construction, no lamps, NO door onto
+# any street layer -- access is across open Band-B dirt only.
+# DEV (overlap-audit pass, 2026-07-14): the plan's original lot (166,101)-(173,114)
+# stacked 3 sheds vertically inside what the plan called "Band B's one large
+# unclaimed field, x164-191 y101-115" -- but that field is NOT actually unclaimed:
+# Hovel #11 (168,103)-(173,108) sits directly in it (the plan checked hovels #12/#13
+# but missed #11). Relocated to the genuinely free strip below the whole hovel row
+# and the goat pen, y112-115 (after hovel #13 ends at y111; the goat pen is x146-158,
+# west of this range) -- 3 sheds side-by-side instead of stacked.
+CACHE_SHEDS = [
+    (165, 112, 172, 115, "cache_shed_01_anchor", 168, 113),
+    (174, 112, 181, 115, "cache_shed_02_anchor", 177, 113),
+    (183, 112, 190, 115, "cache_shed_03_anchor", 186, 113),
+]
+for (sx0, sy0, sx1, sy1, name, ax, ay) in CACHE_SHEDS:
+    shell(12, sx0, sy0, sx1, sy1, DIRT_WALL, DIRT_FLOOR)
+    mk(12, "script_anchor", name, ax, ay)
+
+# ======================================================================
 # 4. Residential Compounds C1-C4 (blueprint section 4)
 # ======================================================================
 def unit_anchor(z, name, x0, y0, x1, y1):
@@ -1057,6 +1148,10 @@ mk(13, "script_anchor", "exit_saltgate_road", 75, 126)
 mk(11, "script_anchor", "exit_coast_road_west", 2, 30)
 mk(11, "script_anchor", "exit_shambles_east", 189, 30)
 mk(13, "script_anchor", "exit_abbey_road", 133, 126)
+# Napkin-sketch redesign (2026-07-14): the top-of-district road's off-map
+# continuation, mirrored in Band C -- Gallows Row's own east-edge marker,
+# alongside Band A's exit_shambles_east.
+mk(13, "script_anchor", "exit_shambles_east_upper", 188, 121)
 
 # ======================================================================
 # XML emission (byte-deterministic; CSV rows carry exactly W tokens,

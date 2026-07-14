@@ -157,6 +157,59 @@ buildings); both were narrowed to 6-wide along their long middle stretches, keep
 as deliberate plazas (the Weighhouse frontage, outside the Gilded Gull, the quay civic cluster
 at the Rise's foot) — see the generator's section-1 comments for the exact bands.
 
+### 3.2 Redesigned topology — the napkin-sketch pass (Eli 2026-07-14)
+
+Eli hand-sketched a rough "DOCKS" napkin map and asked for it as inspiration to redesign the
+district's real topology (street backbone + pier/shipyard shape), not a literal tile-by-tile
+blueprint. Grounded against the roster and generator above, here is what changed and what was
+found to already satisfy the sketch:
+
+- **The road spine needed no relocation.** Saltgate Rise already *is* the sketch's single
+  strongest N–S axis — it already crosses Ropewynd (the "lower-middle" road) at its own 8-wide
+  plaza and Gallows Row (the "top of district" road) at Band C, and it already splits the ward
+  into a denser west cluster (K01, K02, K05, K07–K11, K16, K21–K23, K26, K27) from a more open
+  east cluster (K03, K12–K15, K17–K19, K24, K25, K29, K34). No perimeter wall was retrofitted
+  around the west cluster — its existing density plus the new Garden Court (below) already read
+  as a distinct, older quarter without new geometry risk. The sketch's diagonal road (east
+  cluster → bottom-right) was already satisfied by the existing Gullet lane network (G2, the
+  Bottom link, G3, Backwall Alley). One point-marker addition: `exit_shambles_east_upper`
+  (188,121) mirrors Band A's `exit_shambles_east` for the top road's off-map continuation.
+- **The fishbone pier.** The spine's water-ward continuation (x72–79) now runs from Gallows Row
+  all the way to the seawall as an 8-wide timber pier deck (z:+11, y1–25 — the previous y25
+  seawall-lip row, which had no floor at all, is now part of this authored run), crossed by 3
+  perpendicular finger piers (`finger_01/02/03_anchor`) at y9/17/23. The gaps between the
+  fingers became the 3 hull slips: **K30 *The Kestrel*** (66,20), **K31 *Bregga's Promise***
+  (64,13), **K32 *The Deep Keel*** (63,4) — all three re-sited from their old Long Quay berths
+  onto the fishbone, W×H unchanged, their old footprints reverted to plain water. **K33 the
+  *Widow's Grief* wreck stays put** at the condemned Wormwood Pier (Pier Row, east) — folding it
+  into the new fishbone would have crowded a condemned derelict next to three working hulls,
+  undercutting its own "condemned" character. No new light sources on the pier (design law:
+  waterline dim, §7.2).
+- **West Garden Court** (ambient, no K-site) — the sketch's garden blob + 2 plots, sited in the
+  open pocket between K26 Sailmaker's Loft and K08 Brann's Chandlery: two fenced garden plots
+  (`west_garden_plot_01/02_anchor`) flanking an open, unwalled courtyard blob
+  (`west_garden_court_anchor`) — a shared kitchen-garden for the shopkeeper cluster around it.
+- **East market lane** — the sketch's green squiggle is the district's existing Bilgewater Gap
+  (x80–131 y50–51), now formalized as a covered market walk with an open gutter (Herring Lane's
+  "cosmetic fluid" precedent), marked by 3 stall-awning posts at (90,50)/(105,50)/(120,50).
+- **Cache Row** (ambient, no K-site) — the sketch's 3 isolated far-right rectangles, read as an
+  unlicensed/off-grid smuggling pocket (no road drawn to them in the sketch = no legitimate
+  access here either). Sited at (165–190, 112–115) in Band B, south of the hovel row and the
+  goat pen — cheap `dirt` shell construction, no lamps, no door onto any street layer. (The
+  first-drafted siting at y101–114 physically overlapped Hovel #11 — caught and fixed by the
+  overlap checker described below, not by re-reading the plan text alone.)
+- **Hard-lesson compliance:** every relocated/new rect in this pass was checked with a
+  from-scratch Python overlap checker (parses every `shell()`/`border()`/`frect()`/`trect()`/
+  `cells()` call for every named structure into `(z,x0,y0,x1,y1)` rects, groups them by true
+  runtime call order — not source line number, since loops like HOVELS/compound wings/cache
+  sheds reuse the same source lines per iteration — and AABB-tests every same-z pair across
+  different structures, exempting full bounding-box containment as the documented
+  nested-parent case, e.g. a roof-hut inside its own compound's roof deck). Final result: zero
+  collisions across 139 structure labels / 318 rects.
+
+Street/waterfront names, K-site roster identity, and every un-mentioned coordinate above are
+unchanged from §3/§3.1.
+
 ---
 
 ## 4. People — the eight actor groups (RULED BY ELI, 2026-07-12)
