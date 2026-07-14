@@ -13,6 +13,7 @@ public final class Policies {
     public static final BehaviorPolicy GOAL_PURSUE = new GoalPursuePolicy();
     public static final BehaviorPolicy RETURN_HOME = new ReturnHomePolicy();
     public static final BehaviorPolicy LOITER = new LoiterPolicy();
+    public static final BehaviorPolicy SEEK_FOOD = new SeekFoodPolicy();
 
     private Policies() {
     }

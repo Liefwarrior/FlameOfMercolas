@@ -16,6 +16,7 @@
     "duty":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 }
   },
   "flee": { "priority": 950 },
+  "seekFood": { "priority": 305 },
   "returnHome": { "priority": 305, "rhythmBonus": 0, "nightWindowStart": 0, "nightWindowEnd": 24000 },
   "loiter": { "priority": 20 }
 }

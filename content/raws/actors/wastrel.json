@@ -17,6 +17,7 @@
   },
   "deferWielder": { "enabled": true, "priority": 960, "radius": 8 },
   "flee": { "priority": 955 },
+  "seekFood": { "priority": 305 },
   "returnHome": { "priority": 305, "rhythmBonus": 60, "nightWindowStart": 16000, "nightWindowEnd": 22000 },
   "loiter": { "priority": 15 }
 }

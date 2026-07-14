@@ -33,13 +33,15 @@ public final class ActorRawsLoader {
     private static final String HOUSEHOLD_FILE = "household.json";
     private static final List<String> ROOT_FIELDS = List.of(
             "id", "displayName", "glyph", "tint", "factionId", "hp", "speedTicksPerStep",
-            "leashRadius", "inventoryCap", "needs", "deferWielder", "flee", "returnHome", "loiter");
+            "leashRadius", "inventoryCap", "needs", "deferWielder", "flee", "seekFood",
+            "returnHome", "loiter");
     private static final List<String> NEED_KEYS =
             List.of("hunger", "rest", "coin", "safety", "duty");
     private static final List<String> NEED_FIELDS =
             List.of("start", "decayPerKilotick", "recoverPerTick", "lowBonus", "critBonus");
     private static final List<String> DEFER_FIELDS = List.of("enabled", "priority", "radius");
     private static final List<String> FLEE_FIELDS = List.of("priority");
+    private static final List<String> SEEK_FOOD_FIELDS = List.of("priority");
     private static final List<String> RETURN_HOME_FIELDS =
             List.of("priority", "rhythmBonus", "nightWindowStart", "nightWindowEnd");
     private static final List<String> LOITER_FIELDS = List.of("priority");
@@ -180,6 +182,11 @@ public final class ActorRawsLoader {
         rejectUnknown(name, "flee.", flee, FLEE_FIELDS);
         int fleePriority = requireInt(name, "flee.priority", flee, "priority", 900, 999);
 
+        JsonObject seekFood = requireObject(name, root, "seekFood");
+        rejectUnknown(name, "seekFood.", seekFood, SEEK_FOOD_FIELDS);
+        int seekFoodPriority =
+                requireInt(name, "seekFood.priority", seekFood, "priority", 300, 499);
+
         JsonObject returnHome = requireObject(name, root, "returnHome");
         rejectUnknown(name, "returnHome.", returnHome, RETURN_HOME_FIELDS);
         int returnHomePriority =
@@ -191,13 +198,59 @@ public final class ActorRawsLoader {
         int nightEnd = requireInt(name, "returnHome.nightWindowEnd", returnHome,
                 "nightWindowEnd", nightStart, (int) DailyRhythm.DAY);
 
+        // The needs-hierarchy invariant (design §2a): SEEK_FOOD (HUNGER) must always be able to
+        // outrank RETURN_HOME (REST) at comparable urgency, so an actor never quietly prioritizes
+        // sleep over starving. The priority floor is checked first, then every (HUNGER band x
+        // REST band) combination the two policies can actually compete in.
+        if (seekFoodPriority < returnHomePriority) {
+            throw new ActorRawsValidationException(name, "seekFood.priority",
+                    "seekFood.priority (" + seekFoodPriority + ") must be >= returnHome.priority ("
+                            + returnHomePriority + ") so SEEK_FOOD always outranks RETURN_HOME");
+        }
+        NeedConfig hunger = needs[Need.HUNGER.ordinal()];
+        NeedConfig rest = needs[Need.REST.ordinal()];
+        // Exhaustive cross-band check (fixes a real validation gap): SEEK_FOOD and RETURN_HOME
+        // each pick exactly one of {lowBonus, critBonus} depending on which threshold band their
+        // own need (HUNGER, REST respectively) is in — independently of each other. A prior
+        // version of this check only compared same-band pairs (LOW-vs-LOW, CRITICAL-vs-CRITICAL),
+        // missing the cross-band case where HUNGER is merely LOW while REST is CRITICAL. Using the
+        // real committed raws, 7 of 9 actor types had hunger.lowBonus < rest.critBonus, so an actor
+        // with HUNGER low-not-critical and REST critical would have RETURN_HOME silently outscore
+        // SEEK_FOOD — contradicting the "food first" invariant. Comparing every one of the 4
+        // (hunger band x rest band) pairs directly here — rather than deriving the cross-band case
+        // from the two same-band checks via NeedConfig's own lowBonus/critBonus monotonicity —
+        // keeps this check self-evidently exhaustive and independent of that unrelated invariant.
+        int[] hungerBonus = {hunger.lowBonus(), hunger.critBonus()};
+        int[] restBonus = {rest.lowBonus(), rest.critBonus()};
+        String[] hungerField = {"needs.hunger.lowBonus", "needs.hunger.critBonus"};
+        String[] hungerBandLabel = {"lowBonus", "critBonus"};
+        String[] restBandLabel = {"lowBonus", "critBonus"};
+        String[] bandName = {"LOW", "CRITICAL"};
+        for (int hi = 0; hi < 2; hi++) {
+            for (int ri = 0; ri < 2; ri++) {
+                int seekFoodScore = seekFoodPriority + hungerBonus[hi];
+                int returnHomeScore = returnHomePriority + restBonus[ri];
+                if (seekFoodScore < returnHomeScore) {
+                    throw new ActorRawsValidationException(name, hungerField[hi],
+                            "SEEK_FOOD score (seekFood.priority " + seekFoodPriority + " + hunger."
+                                    + hungerBandLabel[hi] + " " + hungerBonus[hi] + " = " + seekFoodScore
+                                    + ") must be >= RETURN_HOME score (returnHome.priority "
+                                    + returnHomePriority + " + rest." + restBandLabel[ri] + " "
+                                    + restBonus[ri] + " = " + returnHomeScore + ") when HUNGER is "
+                                    + bandName[hi] + " and REST is " + bandName[ri] + ", so SEEK_FOOD "
+                                    + "always outranks RETURN_HOME (excluding RETURN_HOME's "
+                                    + "night-rhythm term, a deliberate schedule-effect exclusion)");
+                }
+            }
+        }
+
         JsonObject loiter = requireObject(name, root, "loiter");
         rejectUnknown(name, "loiter.", loiter, LOITER_FIELDS);
         int loiterPriority = requireInt(name, "loiter.priority", loiter, "priority", 1, 99);
 
         return new ActorTypeStats(typeId, displayName,
                 glyph, tint, factionId, hp, speedTicksPerStep, leashRadius, inventoryCap, needs,
-                hasDefer, deferPriority, deferRadius, fleePriority,
+                hasDefer, deferPriority, deferRadius, fleePriority, seekFoodPriority,
                 returnHomePriority, returnHomeRhythmBonus, nightStart, nightEnd, loiterPriority);
     }
 

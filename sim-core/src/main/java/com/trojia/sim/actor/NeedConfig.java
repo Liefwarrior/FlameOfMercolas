@@ -6,10 +6,18 @@ package com.trojia.sim.actor;
  * §3.2; {@code recoverPerTick} models the event-driven "recovers +N per quiet
  * tick" needs (SAFETY, §3.1) — most needs set it to {@code 0} and rely on
  * decay alone. {@code lowBonus}/{@code critBonus} are carried for the §3.3
- * threshold→policy coupling a later, richer policy library reads; this
- * foundation's five-policy starter set does not yet consume them, but the
- * loader still enforces the band-jump invariant so the raws are correct from
- * day one.
+ * threshold-to-policy coupling: {@link ReturnHomePolicy} (REST) and
+ * {@link SeekFoodPolicy} (HUNGER) both add {@code lowBonus}/{@code critBonus}
+ * on top of their raws priority once the need crosses the matching threshold
+ * (the needs-hierarchy pass). {@code ActorRawsLoader} validates every one of
+ * the 4 (HUNGER band x REST band) combinations directly — not just the
+ * same-band pairs — so SEEK_FOOD provably outscores RETURN_HOME regardless of
+ * which band each need happens to be in. SAFETY's bonuses stay authored but inert
+ * ({@link FleePolicy} is a deliberate hard critical-only gate, not a
+ * graduated score — see its javadoc) and COIN/DUTY have no consuming policy
+ * yet (later extensions). The loader still enforces the band-jump invariant
+ * for every need regardless of whether it's consumed yet, so the raws are
+ * correct from day one.
  *
  * @param start             initial reserve, {@code [0, 10000]}
  * @param decayPerKilotick  integer units decayed per 1,000 ticks, {@code >= 0}

@@ -47,10 +47,10 @@ final class ReturnHomePolicyTest {
 
         assertEquals(0, Policies.RETURN_HOME.score(actor, ctx), "REST is full, no window: not applicable");
 
-        actor.applyNeedDelta(Need.REST, -6100); // 9000 -> 2900, below LOW (3000)
+        actor.applyNeedDelta(Need.REST, -6100); // 9000 -> 2900, below LOW (3000), not below CRITICAL (1000)
         int score = Policies.RETURN_HOME.score(actor, ctx);
-        assertEquals(actor.stats().returnHomePriority(), score,
-                "REST-low outside the window scores the base priority only");
+        assertEquals(actor.stats().returnHomePriority() + actor.stats().need(Need.REST).lowBonus(), score,
+                "REST-low outside the window scores the base priority plus the low urgency bonus");
     }
 
     @Test

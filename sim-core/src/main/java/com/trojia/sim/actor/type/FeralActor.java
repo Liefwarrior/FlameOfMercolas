@@ -18,6 +18,7 @@ public final class FeralActor extends Actor {
 
     private static final PolicyStack STACK = PolicyStack.of(
             Policies.FLEE,
+            Policies.SEEK_FOOD,
             Policies.RETURN_HOME,
             Policies.GOAL_PURSUE,
             Policies.LOITER);

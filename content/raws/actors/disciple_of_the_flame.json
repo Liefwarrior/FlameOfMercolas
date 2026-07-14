@@ -9,7 +9,7 @@
   "leashRadius": 20,
   "inventoryCap": 4,
   "needs": {
-    "hunger": { "start": 8500, "decayPerKilotick": 900, "recoverPerTick": 0, "lowBonus": 250, "critBonus": 500 },
+    "hunger": { "start": 8500, "decayPerKilotick": 900, "recoverPerTick": 0, "lowBonus": 400, "critBonus": 800 },
     "rest":   { "start": 9000, "decayPerKilotick": 500, "recoverPerTick": 0, "lowBonus": 200, "critBonus": 400 },
     "coin":   { "start": 10000, "decayPerKilotick": 0, "recoverPerTick": 0, "lowBonus": 0, "critBonus": 0 },
     "safety": { "start": 9000, "decayPerKilotick": 0, "recoverPerTick": 3, "lowBonus": 400, "critBonus": 800 },
@@ -17,6 +17,7 @@
   },
   "deferWielder": { "enabled": true, "priority": 995, "radius": 10 },
   "flee": { "priority": 960 },
+  "seekFood": { "priority": 305 },
   "returnHome": { "priority": 305, "rhythmBonus": 80, "nightWindowStart": 13000, "nightWindowEnd": 24000 },
   "loiter": { "priority": 8 }
 }

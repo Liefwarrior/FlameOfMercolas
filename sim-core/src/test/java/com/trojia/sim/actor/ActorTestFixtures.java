@@ -26,6 +26,6 @@ final class ActorTestFixtures {
         needs[Need.DUTY.ordinal()] = new NeedConfig(9000, 900, 0, 300, 400);
         return new ActorTypeStats(typeId, "Test " + typeId, 'X', 0xFFFFFF, "test",
                 (short) 20, speedTicksPerStep, leashRadius, 4, needs,
-                hasDefer, 980, 6, 940, 305, 80, 12000, 24000, 10);
+                hasDefer, 980, 6, 940, 305, 305, 80, 12000, 24000, 10);
     }
 }

@@ -46,6 +46,17 @@ public abstract class Actor {
      */
     private static final int REST_RECOVERED_PER_TICK_AT_HOME = 6;
 
+    /**
+     * HUNGER reserve regained per tick while standing on the home cell — the
+     * {@code SEEK_FOOD} counterpart to {@link #REST_RECOVERED_PER_TICK_AT_HOME}
+     * (the needs-hierarchy pass, ACTORS-SPEC.md §3.3). Chosen with the same
+     * "comfortably outpaces every type's worst-case decay" headroom style
+     * (~6x the Harbor Gull's worst-case 2.0/tick HUNGER decay, versus REST's
+     * constant's ~7.5x margin over the Dock Dog's 0.8/tick REST decay) — see
+     * {@link #recoverHungerAtHome}.
+     */
+    private static final int HUNGER_RECOVERED_PER_TICK_AT_HOME = 12;
+
     // ---- identity ----
     private final int id;
     private final ActorTypeId typeId;
@@ -118,6 +129,7 @@ public abstract class Actor {
     public final void tick(ActorContext ctx) {
         decayNeeds();
         recoverRestAtHome(ctx);
+        recoverHungerAtHome(ctx);
         tickGoalCooldown();
         int winningIndex = policies().selectIndex(this, ctx);
         if (winningIndex < 0) {
@@ -160,6 +172,26 @@ public abstract class Actor {
         }
         if (cell == ctx.homes().get(homeId).homeCell()) {
             applyNeedDelta(Need.REST, REST_RECOVERED_PER_TICK_AT_HOME);
+        }
+    }
+
+    /**
+     * Sleeping at home also restores HUNGER — the {@code SEEK_FOOD} daily-cycle
+     * counterpart to {@link #recoverRestAtHome} (the needs-hierarchy pass,
+     * ACTORS-SPEC.md §3.3). Deliberate scope cut: no food-establishment routing
+     * exists (no economy machinery to consume/track a meal, and no sim-core-
+     * visible tagging of which map fixtures count as "food" — that's
+     * observer/tools-layer content, and sim-core must not import client/tools).
+     * Recovering at home is symmetric with REST, ships with zero new plumbing,
+     * and closes the same "actor never satisfies HUNGER, freezes seeking food
+     * forever" loop that {@link #recoverRestAtHome} closes for REST.
+     */
+    private void recoverHungerAtHome(ActorContext ctx) {
+        if (homeId == NONE) {
+            return;
+        }
+        if (cell == ctx.homes().get(homeId).homeCell()) {
+            applyNeedDelta(Need.HUNGER, HUNGER_RECOVERED_PER_TICK_AT_HOME);
         }
     }
 

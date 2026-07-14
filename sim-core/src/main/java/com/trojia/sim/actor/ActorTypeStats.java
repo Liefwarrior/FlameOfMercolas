@@ -10,9 +10,9 @@ import java.util.Objects;
  *
  * <p>Scoped to what this foundation milestone's starter policy library
  * ({@code DEFER_WIELDER}, {@code FLEE}, {@code GOAL_PURSUE},
- * {@code RETURN_HOME}, {@code LOITER}) actually reads; the full §6 schema
- * (scuffle stats, sightRadiusByLight, per-policy param blobs for the entire
- * v1 library) is a later extension of this same record.
+ * {@code RETURN_HOME}, {@code SEEK_FOOD}, {@code LOITER}) actually reads; the
+ * full §6 schema (scuffle stats, sightRadiusByLight, per-policy param blobs
+ * for the entire v1 library) is a later extension of this same record.
  */
 public record ActorTypeStats(
         ActorTypeId typeId,
@@ -29,6 +29,7 @@ public record ActorTypeStats(
         int deferWielderPriority,
         int deferWielderRadius,
         int fleeEmergencyPriority,
+        int seekFoodPriority,
         int returnHomePriority,
         int returnHomeRhythmBonus,
         int nightWindowStart,
