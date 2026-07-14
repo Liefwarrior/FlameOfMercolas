@@ -2,6 +2,7 @@ package com.trojia.client.hud;
 
 import com.trojia.client.hud.icons.HudToken;
 import com.trojia.client.hud.icons.IconKey;
+import com.trojia.sim.actor.DailyRhythm;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -28,20 +29,33 @@ class HudTextTest {
     }
 
     @Test
-    void describesTickSpeedAndElapsedClock() {
-        // 3661 seconds = 1h 01m 01s.
-        String line = HudText.describeTime(37, "RUN", 3661);
-        assertTrue(line.contains("tick=37"), () -> "expected tick=37 in: " + line);
+    void describesTickSpeedAndDayClock() {
+        // At 1 tick = 1 simulated second, tick=3661 is same-day (day 0): 1h 01m 01s.
+        String line = HudText.describeTime(3661, "RUN");
+        assertTrue(line.contains("tick=3661"), () -> "expected tick=3661 in: " + line);
         assertTrue(line.contains("speed=RUN"), () -> "expected speed=RUN in: " + line);
+        assertTrue(line.contains("Day 0"), () -> "expected Day 0 in: " + line);
         assertTrue(line.contains("01:01:01"), () -> "expected 01:01:01 in: " + line);
     }
 
     @Test
     void describesTheDefaultBootTimeState() {
-        String line = HudText.describeTime(0, "PAUSED", 0);
+        String line = HudText.describeTime(0, "PAUSED");
         assertTrue(line.contains("tick=0"));
         assertTrue(line.contains("speed=PAUSED"));
+        assertTrue(line.contains("Day 0"));
         assertTrue(line.contains("00:00:00"));
+    }
+
+    @Test
+    void describesDayRollover() {
+        // One day is DailyRhythm.DAY simulated seconds; a tick just past that wraps time of
+        // day back down while advancing the day counter.
+        long tick = DailyRhythm.DAY + 3661;
+        String line = HudText.describeTime(tick, "FAST");
+        assertTrue(line.contains("Day 1"), () -> "expected Day 1 in: " + line);
+        assertTrue(line.contains("01:01:01"), () -> "expected 01:01:01 in: " + line);
+        assertTrue(line.contains("tick=" + tick), () -> "expected tick=" + tick + " in: " + line);
     }
 
     @Test
@@ -66,8 +80,6 @@ class HudTextTest {
         assertTrue(tokens.contains(HudToken.icon(IconKey.ARROW_RIGHT)));
         assertTrue(tokens.contains(HudToken.icon(IconKey.BRACKET_OPEN)));
         assertTrue(tokens.contains(HudToken.icon(IconKey.BRACKET_CLOSE)));
-        assertTrue(tokens.contains(HudToken.icon(IconKey.PAGE_UP)));
-        assertTrue(tokens.contains(HudToken.icon(IconKey.PAGE_DOWN)));
         assertTrue(tokens.contains(HudToken.icon(IconKey.ESCAPE)));
     }
 
@@ -88,8 +100,8 @@ class HudTextTest {
 
     @Test
     void describeTimeTokensStartsWithTheStatusTextThenTheKeybindingLegend() {
-        List<HudToken> tokens = HudText.describeTimeTokens(37, "RUN", 3661);
-        assertEquals(HudToken.text(HudText.describeTime(37, "RUN", 3661)), tokens.get(0));
+        List<HudToken> tokens = HudText.describeTimeTokens(37, "RUN");
+        assertEquals(HudToken.text(HudText.describeTime(37, "RUN")), tokens.get(0));
         assertTrue(tokens.containsAll(HudText.timeKeybindingTokens()));
     }
 }

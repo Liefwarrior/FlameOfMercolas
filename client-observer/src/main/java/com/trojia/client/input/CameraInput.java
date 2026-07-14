@@ -10,11 +10,14 @@ import com.trojia.client.world.ZLevelCursor;
  * (M1 Behavior 3). GL-dependent (reads {@link Gdx#input}); call once per {@code render()}
  * frame.
  *
- * <p>Bindings: {@code W}/{@code A}/{@code S}/{@code D} and the arrow keys pan
- * continuously, scaled by frame delta so pan speed is frame-rate independent;
- * {@code [ }/{@code ]} step {@link MapCamera#zoomOut()}/{@link MapCamera#zoomIn()} one
- * integer level per key press; {@code Page Up}/{@code Page Down} step
- * {@link ZLevelCursor#up()}/{@link ZLevelCursor#down()} one z-level per key press.
+ * <p>Bindings: {@code W}/{@code S} pan vertically and {@code A}/{@code D} (aliased by
+ * {@code Left}/{@code Right}) pan horizontally, continuously, scaled by frame delta so pan
+ * speed is frame-rate independent; {@code [ }/{@code ]} step
+ * {@link MapCamera#zoomOut()}/{@link MapCamera#zoomIn()} one integer level per key press;
+ * {@code Up}/{@code Down} arrow step {@link ZLevelCursor#up()}/{@link ZLevelCursor#down()}
+ * one z-level per key press (Dwarf-Fortress-style level scrub). {@code Up}/{@code Down} are
+ * deliberately excluded from panning so the two behaviors never fight over the same key in
+ * the same frame.
  */
 public final class CameraInput {
 
@@ -26,23 +29,14 @@ public final class CameraInput {
 
     /** Reads the current keyboard state and applies one frame's worth of navigation. */
     public static void poll(MapCamera camera, ZLevelCursor zLevel, float deltaSeconds) {
-        int dx = 0;
-        int dy = 0;
-        if (Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT)) {
-            dx -= 1;
-        }
-        if (Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT)) {
-            dx += 1;
-        }
-        if (Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP)) {
-            dy -= 1;
-        }
-        if (Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN)) {
-            dy += 1;
-        }
-        if (dx != 0 || dy != 0) {
+        boolean left = Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT);
+        boolean right = Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT);
+        boolean up = Gdx.input.isKeyPressed(Input.Keys.W);
+        boolean down = Gdx.input.isKeyPressed(Input.Keys.S);
+        int[] pan = panDelta(left, right, up, down);
+        if (pan[0] != 0 || pan[1] != 0) {
             int step = Math.round(PAN_SPEED_SCREEN_PX_PER_SEC * deltaSeconds);
-            camera.pan(dx * step, dy * step);
+            camera.pan(pan[0] * step, pan[1] * step);
         }
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT_BRACKET)) {
@@ -52,11 +46,40 @@ public final class CameraInput {
             camera.zoomIn();
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.PAGE_UP)) {
+        // Dwarf-Fortress-style level scrub: Up/Down are step (justPressed) events, never
+        // held-repeat panning — z should move exactly one level per key press.
+        if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
             zLevel.up();
         }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.PAGE_DOWN)) {
+        if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
             zLevel.down();
         }
+    }
+
+    /**
+     * Pure pan-delta computation, package-private so {@code CameraInputTest} can exercise the
+     * binding logic itself without a live GL context. Note {@code up}/{@code down} here are
+     * ONLY {@code W}/{@code S} — the arrow Up/Down keys never reach this method, which is the
+     * structural fix for the z-level bug (arrow Up/Down used to double as pan keys here,
+     * silently overriding any attempt to bind them to the z-cursor).
+     *
+     * @return {@code [dx, dy]}, each in {@code {-1, 0, 1}}
+     */
+    static int[] panDelta(boolean left, boolean right, boolean up, boolean down) {
+        int dx = 0;
+        int dy = 0;
+        if (left) {
+            dx -= 1;
+        }
+        if (right) {
+            dx += 1;
+        }
+        if (up) {
+            dy -= 1;
+        }
+        if (down) {
+            dy += 1;
+        }
+        return new int[] {dx, dy};
     }
 }

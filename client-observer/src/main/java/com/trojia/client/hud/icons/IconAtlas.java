@@ -1,6 +1,8 @@
 package com.trojia.client.hud.icons;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.utils.Disposable;
@@ -24,10 +26,15 @@ public final class IconAtlas implements Disposable {
 
     private final Map<IconKey, Texture> textures;
     private final Map<IconKey, TextureRegion> regions;
+    private final Texture whitePixelTexture;
+    private final TextureRegion whitePixel;
 
-    private IconAtlas(Map<IconKey, Texture> textures, Map<IconKey, TextureRegion> regions) {
+    private IconAtlas(Map<IconKey, Texture> textures, Map<IconKey, TextureRegion> regions,
+            Texture whitePixelTexture, TextureRegion whitePixel) {
         this.textures = textures;
         this.regions = regions;
+        this.whitePixelTexture = whitePixelTexture;
+        this.whitePixel = whitePixel;
     }
 
     /**
@@ -51,7 +58,13 @@ public final class IconAtlas implements Disposable {
             textures.put(key, texture);
             regions.put(key, new TextureRegion(texture));
         }
-        return new IconAtlas(textures, regions);
+        Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pixmap.setColor(Color.WHITE);
+        pixmap.fill();
+        Texture whitePixelTexture = new Texture(pixmap);
+        pixmap.dispose();
+        TextureRegion whitePixel = new TextureRegion(whitePixelTexture);
+        return new IconAtlas(textures, regions, whitePixelTexture, whitePixel);
     }
 
     /** The icon glyph for {@code key}; every {@link IconKey} is loaded, so never null. */
@@ -59,9 +72,19 @@ public final class IconAtlas implements Disposable {
         return regions.get(key);
     }
 
-    /** Disposes every owned texture; every handed-out region dangles afterward. */
+    /** A 1&times;1 opaque white texture region — {@code com.trojia.client.hud.HudPanel}'s
+     * solid-color fill primitive, stretched to any rectangle via {@code SpriteBatch}'s own
+     * tint/scale (no new GL resource needs threading through every draw call site since this
+     * atlas is already everywhere). */
+    public TextureRegion whitePixel() {
+        return whitePixel;
+    }
+
+    /** Disposes every owned texture (including the synthesized white pixel); every handed-out
+     * region dangles afterward. */
     @Override
     public void dispose() {
         textures.values().forEach(Texture::dispose);
+        whitePixelTexture.dispose();
     }
 }

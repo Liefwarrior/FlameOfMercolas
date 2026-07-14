@@ -10,8 +10,9 @@ package com.trojia.sim.engine;
  */
 public final class TickClock {
 
-    /** Simulated milliseconds per tick: 100 ms (10 ticks per world second). */
-    public static final int MILLIS_PER_TICK = 100;
+    /** Simulated milliseconds per tick: 1000 ms (one simulated second per tick, Dwarf-
+     * Fortress-style — see the observer's HUD clock, {@code HudText.describeTime}). */
+    public static final int MILLIS_PER_TICK = 1000;
 
     private long tick;
 
@@ -24,7 +25,7 @@ public final class TickClock {
         return tick;
     }
 
-    /** Simulated world time in milliseconds: {@code currentTick() * 100}. */
+    /** Simulated world time in milliseconds: {@code currentTick() * 1000}. */
     public long simTimeMillis() {
         return tick * MILLIS_PER_TICK;
     }

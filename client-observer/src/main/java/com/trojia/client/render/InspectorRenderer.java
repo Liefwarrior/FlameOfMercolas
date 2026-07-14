@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.face.InspectorFaces;
+import com.trojia.client.hud.HudPanel;
 import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.inspect.EventLog;
@@ -77,7 +78,7 @@ public final class InspectorRenderer {
             InspectorState state, int z) {
         drawSelectionHighlight(batch, font, camera, state, z);
         drawPanel(batch, font, icons, camera, state);
-        drawEventLog(batch, font, camera);
+        drawEventLog(batch, font, icons, camera);
         font.getData().setScale(1f);
         font.setColor(Color.WHITE);
     }
@@ -88,38 +89,83 @@ public final class InspectorRenderer {
         font.setColor(PANEL_COLOR);
         float lineHeight = font.getLineHeight();
         float x = camera.viewportWidthPx() - PANEL_WIDTH;
-        float y = camera.viewportHeightPx() - MARGIN;
-        if (state.followActive()) {
+        float topY = camera.viewportHeightPx() - MARGIN;
+
+        // Tally content height before drawing anything, so the DF-style black backing block
+        // can be sized to the actual content (follow badge + face portrait shift + text lines,
+        // or just the no-selection hint) rather than a fixed guess.
+        boolean showFollowBadge = state.followActive();
+        boolean hasSelection = state.hasSelection();
+        String typeKey = hasSelection ? registry.get(state.selectedActorId()).typeId().key() : null;
+        boolean showFace = hasSelection && faces != null && faces.hasFaceFor(typeKey);
+        List<String> lines = hasSelection
+                ? InspectorText.describe(state.selectedActorId(), registry, homes, relationships,
+                        jobs, items)
+                : null;
+
+        float contentHeight = 0f;
+        if (showFollowBadge) {
+            contentHeight += lineHeight;
+        }
+        if (!hasSelection) {
+            contentHeight += lineHeight; // the selection-hint line
+        } else {
+            if (showFace) {
+                contentHeight += InspectorFaces.PANEL_SHIFT_PX;
+            }
+            contentHeight += lines.size() * lineHeight;
+        }
+
+        float panelWidth = PANEL_WIDTH + 2 * HudPanel.PADDING;
+        float panelHeight = contentHeight + 2 * HudPanel.PADDING;
+        float panelX = x - HudPanel.PADDING;
+        float panelBottomY = topY - contentHeight - HudPanel.PADDING;
+        HudPanel.draw(batch, icons.whitePixel(), panelX, panelBottomY, panelWidth, panelHeight);
+
+        float y = topY;
+        if (showFollowBadge) {
             IconTextLine.draw(batch, font, icons, x, y, InspectorText.followBadgeTokens());
             y -= lineHeight;
         }
-        if (!state.hasSelection()) {
+        if (!hasSelection) {
             IconTextLine.draw(batch, font, icons, x, y, InspectorText.selectionHintTokens());
             return;
         }
         // FaceGen portrait at the top of the panel (unified art spec §4.8): 48x48 at x2,
         // centered above the name line; the text block shifts down under it. Beast types
         // have no archetype mapping and keep the text-only panel.
-        String typeKey = registry.get(state.selectedActorId()).typeId().key();
-        if (faces != null && faces.hasFaceFor(typeKey)) {
+        if (showFace) {
             faces.draw(batch, state.selectedActorId(), typeKey, x + PANEL_WIDTH / 2f, y);
             y -= InspectorFaces.PANEL_SHIFT_PX;
         }
-        List<String> lines = InspectorText.describe(state.selectedActorId(), registry, homes,
-                relationships, jobs, items);
         for (String line : lines) {
             font.draw(batch, line, x, y);
             y -= lineHeight;
         }
     }
 
-    private void drawEventLog(SpriteBatch batch, BitmapFont font, MapCamera camera) {
+    private void drawEventLog(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera) {
         List<EventLog.Entry> entries = eventLog.recentNewestFirst(LOG_VISIBLE_LINES);
         font.getData().setScale(1f);
         font.setColor(LOG_COLOR);
         float lineHeight = font.getLineHeight();
         float topY = MARGIN + (entries.size() + 1) * lineHeight;
-        font.draw(batch, "EVENTS (newest first)  ·  " + eventLog.size() + " held", MARGIN, topY);
+
+        String header = "EVENTS (newest first)  ·  " + eventLog.size() + " held";
+        layout.setText(font, header);
+        float contentWidth = layout.width;
+        for (EventLog.Entry entry : entries) {
+            layout.setText(font, "t" + entry.tick() + "  " + entry.text());
+            contentWidth = Math.max(contentWidth, layout.width);
+        }
+
+        float panelWidth = contentWidth + 2 * HudPanel.PADDING;
+        float panelHeight = (entries.size() + 1) * lineHeight + 2 * HudPanel.PADDING;
+        float panelX = MARGIN - HudPanel.PADDING;
+        float panelBottomY = MARGIN - HudPanel.PADDING;
+        HudPanel.draw(batch, icons.whitePixel(), panelX, panelBottomY, panelWidth, panelHeight);
+
+        font.draw(batch, header, MARGIN, topY);
         float y = topY - lineHeight;
         for (EventLog.Entry entry : entries) {
             font.draw(batch, "t" + entry.tick() + "  " + entry.text(), MARGIN, y);

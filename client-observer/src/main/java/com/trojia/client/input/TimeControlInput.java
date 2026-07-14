@@ -9,7 +9,7 @@ import com.trojia.client.time.SpeedSetting;
  * Polls keyboard state each frame and drives a {@link SimulationDriver} (M1 time-advancement
  * behavior). GL-dependent (reads {@link Gdx#input}); call once per {@code render()} frame,
  * alongside {@link CameraInput#poll} (bindings are disjoint from that class's WASD/arrows,
- * {@code [ }/{@code ]} and Page Up/Page Down).
+ * {@code [ }/{@code ]} and the Up/Down arrow z-level scrub).
  *
  * <p>Bindings:
  * <ul>

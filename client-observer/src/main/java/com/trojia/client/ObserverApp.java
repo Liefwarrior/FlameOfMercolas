@@ -22,7 +22,9 @@ import com.trojia.client.camera.MapCamera;
 import com.trojia.client.face.FaceArchetypes;
 import com.trojia.client.face.FaceGen;
 import com.trojia.client.face.InspectorFaces;
+import com.trojia.client.hud.HudPanel;
 import com.trojia.client.hud.HudText;
+import com.trojia.client.hud.icons.HudToken;
 import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
@@ -44,7 +46,6 @@ import com.trojia.client.time.SpeedSetting;
 import com.trojia.client.world.ZLevelCursor;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.engine.SimulationSystem;
-import com.trojia.sim.engine.TickClock;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
 import com.trojia.sim.world.TickableWorld;
@@ -85,6 +86,9 @@ public final class ObserverApp extends ApplicationAdapter {
      * register, fourth revision: custom original MERCOLAS-24 art). {@code --art=kenney}
      * and {@code --art=placeholder} are the escape hatches back to the fallback packs. */
     public static final String DEFAULT_ART_DIR = "custom";
+
+    /** Screen-edge margin, px, for the top-left status HUD block (nav + clock lines). */
+    private static final float HUD_MARGIN_PX = 8f;
 
     private final Fixture fixture;
     private final int smokeFrames;
@@ -321,12 +325,26 @@ public final class ObserverApp extends ApplicationAdapter {
         if (actorRenderer != null) {
             actorRenderer.draw(batch, camera, zLevel.z());
         }
-        IconTextLine.draw(batch, font, icons, 8, camera.viewportHeightPx() - 8,
-                HudText.describeTokens(zLevel.z(), camera.zoom()));
-        long simElapsedSeconds = driver.currentTick() * TickClock.MILLIS_PER_TICK / 1000;
-        IconTextLine.draw(batch, font, icons, 8, camera.viewportHeightPx() - 8 - font.getLineHeight(),
-                HudText.describeTimeTokens(driver.currentTick(), driver.speed().name(),
-                        simElapsedSeconds));
+
+        // DF-style HUD block (Behavior 2 of this pass): a solid black panel behind the nav +
+        // clock lines, sized to their actual content so it never clips or over-extends.
+        List<HudToken> navTokens = HudText.describeTokens(zLevel.z(), camera.zoom());
+        List<HudToken> timeTokens =
+                HudText.describeTimeTokens(driver.currentTick(), driver.speed().name());
+        float lineHeight = font.getLineHeight();
+        float navWidth = IconTextLine.measure(font, navTokens);
+        float timeWidth = IconTextLine.measure(font, timeTokens);
+        float statusPanelWidth = Math.max(navWidth, timeWidth) + 2 * HudPanel.PADDING;
+        float statusPanelHeight = 2 * lineHeight + 2 * HudPanel.PADDING;
+        float statusPanelX = HUD_MARGIN_PX - HudPanel.PADDING;
+        float statusPanelBottomY = camera.viewportHeightPx() - HUD_MARGIN_PX - 2 * lineHeight
+                - HudPanel.PADDING;
+        HudPanel.draw(batch, icons.whitePixel(), statusPanelX, statusPanelBottomY,
+                statusPanelWidth, statusPanelHeight);
+        IconTextLine.draw(batch, font, icons, HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX,
+                navTokens);
+        IconTextLine.draw(batch, font, icons,
+                HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX - lineHeight, timeTokens);
         if (inspectorRenderer != null) {
             inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());
         }

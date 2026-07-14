@@ -305,14 +305,14 @@ final class SimulationEngineTest {
     }
 
     @Test
-    void clockRunsAtHundredMillisPerTick() {
+    void clockRunsAtOneThousandMillisPerTick() {
         TickClock clock = new TickClock();
         assertEquals(0, clock.currentTick());
         clock.advance();
         clock.advance();
         assertEquals(2, clock.currentTick());
-        assertEquals(200, clock.simTimeMillis());
-        assertEquals(100, TickClock.MILLIS_PER_TICK);
+        assertEquals(2000, clock.simTimeMillis());
+        assertEquals(1000, TickClock.MILLIS_PER_TICK);
     }
 
     @Test

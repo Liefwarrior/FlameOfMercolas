@@ -2,6 +2,7 @@ package com.trojia.client.hud;
 
 import com.trojia.client.hud.icons.HudToken;
 import com.trojia.client.hud.icons.IconKey;
+import com.trojia.sim.actor.DailyRhythm;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,28 +36,34 @@ public final class HudText {
     }
 
     /**
-     * The status portion of the time-control HUD line: current tick, active speed setting and
-     * total simulated elapsed time as an {@code HH:MM:SS} clock derived cleanly from
-     * {@code tick * TickClock.MILLIS_PER_TICK} — no ticks-per-day constant exists yet in
-     * sim-core, so this reports a raw elapsed clock rather than a guessed calendar day count.
-     * No keybinding reminder — see {@link #timeKeybindingTokens}.
+     * The status portion of the time-control HUD line: a {@code Day N, HH:MM:SS} clock derived
+     * straight from {@code tick} (one tick is one simulated second — {@code TickClock.
+     * MILLIS_PER_TICK}), plus the active speed setting and the raw tick count. The day/time
+     * split uses {@link DailyRhythm#DAY} (24,000 simulated seconds); at 1 tick = 1 second that
+     * is a real, honest ~6h40m day, not a literal 24-hour one — {@code DailyRhythm.DAY} is left
+     * unchanged because every job/actor-type rhythm window in {@code content/raws} is tuned
+     * against that scale. No keybinding reminder — see {@link #timeKeybindingTokens}.
      *
-     * @param tick               the engine's current tick ({@code SimulationEngine#currentTick()})
-     * @param speedLabel         the active {@code SpeedSetting}'s name (e.g. {@code "PAUSED"})
-     * @param simElapsedSeconds  total simulated elapsed time in seconds
+     * @param tick       the engine's current tick ({@code SimulationEngine#currentTick()})
+     * @param speedLabel the active {@code SpeedSetting}'s name (e.g. {@code "PAUSED"})
      */
-    public static String describeTime(long tick, String speedLabel, long simElapsedSeconds) {
-        long hours = simElapsedSeconds / 3600;
-        long minutes = (simElapsedSeconds % 3600) / 60;
-        long seconds = simElapsedSeconds % 60;
-        return String.format("tick=%d  speed=%-6s  elapsed=%02d:%02d:%02d",
-                tick, speedLabel, hours, minutes, seconds);
+    public static String describeTime(long tick, String speedLabel) {
+        long day = tick / DailyRhythm.DAY;
+        long secondsOfDay = tick % DailyRhythm.DAY;
+        long hours = secondsOfDay / 3600;
+        long minutes = (secondsOfDay % 3600) / 60;
+        long seconds = secondsOfDay % 60;
+        return String.format("Day %d, %02d:%02d:%02d  speed=%-6s  tick=%d",
+                day, hours, minutes, seconds, speedLabel, tick);
     }
 
     /**
-     * The navigation keybinding legend: WASD/arrow icons for pan, bracket icons for zoom,
-     * Page Up/Down icons for z-level, an Escape icon to quit — the icon-augmented replacement
-     * for the old {@code "WASD/Arrows pan   [ ] zoom   PgUp/PgDn z-level   ESC quit"} text.
+     * The navigation keybinding legend: WASD/left-right-arrow icons for pan, bracket icons for
+     * zoom, up/down-arrow icons for z-level, an Escape icon to quit — the icon-augmented
+     * replacement for the old {@code "WASD/Arrows pan   [ ] zoom   PgUp/PgDn z-level   ESC
+     * quit"} text. Up/Down arrows are z-level ONLY (Dwarf-Fortress-style level scrub); they are
+     * deliberately absent from the pan group since {@link com.trojia.client.input.CameraInput}
+     * no longer binds them to panning.
      */
     public static List<HudToken> navKeybindingTokens() {
         return List.of(
@@ -65,11 +72,10 @@ public final class HudText {
                 HudToken.icon(IconKey.S), HudToken.icon(IconKey.D),
                 HudToken.text(" / "),
                 HudToken.icon(IconKey.ARROW_LEFT), HudToken.icon(IconKey.ARROW_RIGHT),
-                HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
                 HudToken.text(" pan   "),
                 HudToken.icon(IconKey.BRACKET_OPEN), HudToken.icon(IconKey.BRACKET_CLOSE),
                 HudToken.text(" zoom   "),
-                HudToken.icon(IconKey.PAGE_UP), HudToken.icon(IconKey.PAGE_DOWN),
+                HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
                 HudToken.text(" z-level   "),
                 HudToken.icon(IconKey.ESCAPE),
                 HudToken.text(" quit"));
@@ -102,10 +108,9 @@ public final class HudText {
 
     /** {@link #describeTime}'s status text followed by {@link #timeKeybindingTokens} — the
      * full time-control HUD line, ready to hand to {@code IconTextLine.draw}. */
-    public static List<HudToken> describeTimeTokens(long tick, String speedLabel,
-            long simElapsedSeconds) {
+    public static List<HudToken> describeTimeTokens(long tick, String speedLabel) {
         List<HudToken> tokens = new ArrayList<>();
-        tokens.add(HudToken.text(describeTime(tick, speedLabel, simElapsedSeconds)));
+        tokens.add(HudToken.text(describeTime(tick, speedLabel)));
         tokens.addAll(timeKeybindingTokens());
         return tokens;
     }

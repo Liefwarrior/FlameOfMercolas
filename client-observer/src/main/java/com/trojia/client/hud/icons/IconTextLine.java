@@ -51,4 +51,25 @@ public final class IconTextLine {
         }
         return cursorX - x;
     }
+
+    /**
+     * Computes the width {@link #draw} would occupy for {@code tokens}, without a batch or an
+     * {@link IconAtlas} — icon width is always the font's line height regardless of which icon,
+     * so no texture lookup is needed. Lets a caller size a background panel to its content
+     * before drawing either.
+     */
+    public static float measure(BitmapFont font, List<HudToken> tokens) {
+        GlyphLayout layout = new GlyphLayout();
+        float lineHeight = font.getLineHeight();
+        float width = 0f;
+        for (HudToken token : tokens) {
+            if (token instanceof HudToken.Text text) {
+                layout.setText(font, text.value());
+                width += layout.width;
+            } else if (token instanceof HudToken.Icon) {
+                width += lineHeight + ICON_GAP_PX;
+            }
+        }
+        return width;
+    }
 }

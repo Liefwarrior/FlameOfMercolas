@@ -25,8 +25,6 @@ public enum IconKey {
     ARROW_RIGHT("keyboard_arrow_right.png"),
     BRACKET_OPEN("keyboard_bracket_open.png"),
     BRACKET_CLOSE("keyboard_bracket_close.png"),
-    PAGE_UP("keyboard_page_up.png"),
-    PAGE_DOWN("keyboard_page_down.png"),
     ESCAPE("keyboard_escape.png"),
     F("keyboard_f.png"),
     PERIOD("keyboard_period.png"),
