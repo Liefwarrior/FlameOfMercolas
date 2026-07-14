@@ -26,6 +26,19 @@ public abstract class Actor {
     public static final int NONE = -1;
 
     /**
+     * A narrow, decoupled walkability probe (§2.5 addendum): kept in this
+     * package rather than depending on the full {@link ActorContext} surface,
+     * so {@link #stepToward(int, boolean, WalkabilityQuery)} stays as
+     * world-agnostic as reasonably possible. Production call sites pass
+     * {@code ctx::isWalkable} (a method reference — {@link ActorContext}
+     * doesn't need to implement this interface, structural fit is enough).
+     */
+    @FunctionalInterface
+    public interface WalkabilityQuery {
+        boolean isWalkable(int cell);
+    }
+
+    /**
      * REST reserve regained per tick while standing on the home cell (a "sleep"
      * recovery, §11.1). Chosen above every type's REST {@code decayPerKilotick}
      * so a night at home refills REST and the actor heads back out next day —
@@ -173,14 +186,48 @@ public abstract class Actor {
     // Shared verbs (§1.1) — implemented once, used by every policy/job
     // ======================================================================
 
+    /** A world-less/test-convenience probe: every cell reads as walkable. */
+    private static final WalkabilityQuery ALWAYS_WALKABLE = cell -> true;
+
     /**
      * Greedy Chebyshev-reducing step toward {@code targetCell} (§2.5), gated
      * by the type's {@code speedTicksPerStep} accumulator. Actors move on one
      * z-level only (top-down grid); a target on a different z is a no-op.
      * Leash-enforced unless {@code ignoresLeash} (FLEE/APPREHEND/RECAPTURE-
      * style overrides, §2.5).
+     *
+     * <p>Collision-free convenience overload (no world/lanes are consulted —
+     * every candidate step reads as walkable): the documented "no-world / test
+     * convenience" path, kept byte-identical to its original shape so
+     * {@code ActorTest} needs no changes.
      */
     public final void stepToward(int targetCell, boolean ignoresLeash) {
+        stepToward(targetCell, ignoresLeash, ALWAYS_WALKABLE);
+    }
+
+    /** Convenience overload: leash-respecting step (the common case), no world lookup. */
+    public final void stepToward(int targetCell) {
+        stepToward(targetCell, false, ALWAYS_WALKABLE);
+    }
+
+    /**
+     * Greedy Chebyshev-reducing step toward {@code targetCell} (§2.5), gated
+     * by the type's {@code speedTicksPerStep} accumulator, world-aware: each
+     * candidate step is checked against {@code walk} before being committed.
+     * Actors move on one z-level only; a target on a different z is a no-op.
+     * Leash-enforced unless {@code ignoresLeash}.
+     *
+     * <p>Wall-slide (§2.5 addendum): a blocked diagonal primary step retries
+     * the two orthogonal component steps before giving up, so an actor
+     * grazing a wall corner slides along it instead of freezing dead. Every
+     * candidate (primary and each slide alternative) is independently
+     * walkability- <em>and</em> leash-checked. A tick that finds every
+     * candidate blocked is a deterministic no-op (same shape as today's
+     * leash freeze) — {@code moveAccumTicks} still resets unconditionally
+     * above, so a blocked tick still consumes the speed budget, matching
+     * today's leash-block semantics.
+     */
+    public final void stepToward(int targetCell, boolean ignoresLeash, WalkabilityQuery walk) {
         if (cell == targetCell) {
             return;
         }
@@ -200,7 +247,34 @@ public abstract class Actor {
         int ty = PackedPos.y(targetCell);
         int dx = Integer.compare(tx, x);
         int dy = Integer.compare(ty, y);
+        if (tryStep(dx, dy, z, ignoresLeash, walk)) {
+            return; // primary step (diagonal or straight)
+        }
+        if (dx != 0 && dy != 0) {
+            // Diagonal blocked -> wall-slide: try the two orthogonal component steps.
+            if (tryStep(dx, 0, z, ignoresLeash, walk)) {
+                return;
+            }
+            if (tryStep(0, dy, z, ignoresLeash, walk)) {
+                return;
+            }
+        }
+        // Every candidate blocked: deterministic no-op (§2.5).
+    }
+
+    /**
+     * Attempts one candidate step {@code (dx, dy)} from the current cell on
+     * z-level {@code z}: rejects it if {@code walk} reports it unwalkable,
+     * then applies the existing leash math; commits {@code cell} and facing
+     * only if both checks pass. Returns whether the step was committed.
+     */
+    private boolean tryStep(int dx, int dy, int z, boolean ignoresLeash, WalkabilityQuery walk) {
+        int x = PackedPos.x(cell);
+        int y = PackedPos.y(cell);
         int stepped = PackedPos.pack(x + dx, y + dy, z);
+        if (!walk.isWalkable(stepped)) {
+            return false;
+        }
         if (!ignoresLeash) {
             int newDist = ActorGeometry.chebyshev(stepped, anchorCell);
             // Relative (monotonic-improvement) check, not absolute containment: block only
@@ -215,7 +289,7 @@ public abstract class Actor {
             // letting an out-of-leash actor walk itself back in, one cell at a time.
             int curDist = ActorGeometry.chebyshev(cell, anchorCell);
             if (newDist > stats.leashRadius() && newDist >= curDist) {
-                return; // leash holds; deterministic no-op (§2.5)
+                return false; // leash holds; deterministic no-op (§2.5)
             }
         }
         cell = stepped;
@@ -224,11 +298,7 @@ public abstract class Actor {
         } else if (dy != 0) {
             facing = (byte) (dy < 0 ? Dir.NORTH.ordinal() : Dir.SOUTH.ordinal());
         }
-    }
-
-    /** Convenience overload: leash-respecting step (the common case). */
-    public final void stepToward(int targetCell) {
-        stepToward(targetCell, false);
+        return true;
     }
 
     /** Applies a saturating (clamped [0,10000]) delta to one need (§3.2). */

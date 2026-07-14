@@ -41,7 +41,7 @@ public final class ReturnHomePolicy implements BehaviorPolicy {
         // RETURN_HOME must ignore it too whenever home != anchor (a Serf's tenement
         // is routinely outside the work anchor's leash) or the walk home could never
         // complete — a resolved-here consistency gap, not a spec contradiction.
-        self.stepToward(home.homeCell(), true);
+        self.stepToward(home.homeCell(), true, ctx::isWalkable);
         boolean restLow = NeedThresholds.isLow(self.need(Need.REST));
         self.setLastReasonCode(restLow ? ReasonCode.NEED_REST_LOW : ReasonCode.RHYTHM_NIGHT_HOME);
     }

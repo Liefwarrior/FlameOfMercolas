@@ -228,8 +228,8 @@ public final class ObserverApp extends ApplicationAdapter {
 
         if (populated) {
             this.population = fixture == Fixture.DOCKS
-                    ? DocksPopulation.build(loaded.worldSeed())
-                    : ScenarioPopulation.of(CompoundBlockPopulation.build(loaded.worldSeed()));
+                    ? DocksPopulation.build(loaded.worldSeed(), world)
+                    : ScenarioPopulation.of(CompoundBlockPopulation.build(loaded.worldSeed(), world));
             this.driver = new SimulationDriver(world, loaded.worldSeed(),
                     List.<SimulationSystem>of(population.system()));
             // THE unified sprite index (unified art spec §2 / DECISIONS pillar 3+4): one

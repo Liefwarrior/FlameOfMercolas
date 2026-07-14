@@ -102,4 +102,9 @@ class NoOpActorContext implements ActorContext {
     public int wielderId() {
         return Actor.NONE;
     }
+
+    @Override
+    public boolean isWalkable(int cell) {
+        return true; // no world quirks (class javadoc) — every cell reads as walkable
+    }
 }

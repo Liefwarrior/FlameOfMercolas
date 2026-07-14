@@ -71,7 +71,7 @@ public final class JobBehaviors {
             // Commuting home<->work legitimately crosses the work leash (a home
             // routinely sits outside the workplace anchor's leash), exactly as
             // RETURN_HOME's walk home does — so this leg ignores the leash too.
-            self.stepToward(target, true);
+            self.stepToward(target, true, ctx::isWalkable);
             return;
         }
         if (self.cell() == workplace) {
@@ -108,6 +108,9 @@ public final class JobBehaviors {
         self.setGoalWorkTicks(0);
     }
 
+    /** Bounded retry budget for {@link #retargetPatrolCorner} — draw-free, fixed geometry. */
+    private static final int PATROL_RETRY_BUDGET = 8;
+
     /**
      * PURSUE (patrol beat): walk a square loop of side {@code 2*radius} centered
      * on the actor's anchor, advancing to the next corner each time the current
@@ -116,20 +119,53 @@ public final class JobBehaviors {
      * duty hours instead of stopping at a unit quota. {@code radius} is kept
      * inside the type's leash by the caller, so the leash-respecting step always
      * makes progress.
+     *
+     * <p>Corners are fixed geometry ({@code anchor + radius*dir}), not draws, so
+     * a water/wall corner is not resampled with a redraw — instead the corner is
+     * pre-validated once per leg and cached in {@code goalTarget} ({@link
+     * #retargetPatrolCorner}), mirroring the wander/anchor-cycle pattern already
+     * in this file, rather than recomputing (and re-walkability-checking) every
+     * tick.
      */
     public static void pursuePatrol(Actor self, ActorContext ctx, int radius) {
+        if (self.goalTargetKind() != TargetKind.CELL) {
+            retargetPatrolCorner(self, ctx, radius);
+        }
+        int target = self.goalTargetKey();
+        if (self.cell() != target) {
+            self.stepToward(target, false, ctx::isWalkable);
+            return;
+        }
+        self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
+        self.setGoalTarget(TargetKind.NONE, Actor.NONE); // force next leg's corner to be revalidated
+    }
+
+    /**
+     * Deterministically shrinks the radius along the current leg's fixed corner
+     * direction — {@code radius, radius-1, ...} for up to
+     * {@link #PATROL_RETRY_BUDGET} attempts (capped at {@code radius} itself) —
+     * and caches the first walkable candidate as the leg's target. Falls back to
+     * {@code anchorCell()} (guaranteed walkable by spawn/bake) if nothing in
+     * budget is walkable. Draw-free (fixed geometry, not randomness), bounded,
+     * deterministic.
+     */
+    private static void retargetPatrolCorner(Actor self, ActorContext ctx, int radius) {
         int leg = Math.floorMod(self.goalProgress(), 4);
         int ax = PackedPos.x(self.anchorCell());
         int ay = PackedPos.y(self.anchorCell());
         int z = PackedPos.z(self.anchorCell());
-        int tx = clamp(ax + PATROL_DX[leg] * radius, PackedPos.X_MASK);
-        int ty = clamp(ay + PATROL_DY[leg] * radius, PackedPos.Y_MASK);
-        int target = PackedPos.pack(tx, ty, z);
-        if (self.cell() != target) {
-            self.stepToward(target);
-            return;
+        int attempts = Math.min(radius, PATROL_RETRY_BUDGET);
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            int r = radius - attempt;
+            int tx = clamp(ax + PATROL_DX[leg] * r, PackedPos.X_MASK);
+            int ty = clamp(ay + PATROL_DY[leg] * r, PackedPos.Y_MASK);
+            int candidate = PackedPos.pack(tx, ty, z);
+            if (ctx.isWalkable(candidate)) {
+                self.setGoalTarget(TargetKind.CELL, candidate);
+                return;
+            }
         }
-        self.setGoalProgress((short) ((leg + 1) % 4));
+        self.setGoalTarget(TargetKind.CELL, self.anchorCell());
     }
 
     // ======================================================================
@@ -157,7 +193,7 @@ public final class JobBehaviors {
         }
         int target = self.goalTargetKey();
         if (self.cell() != target) {
-            self.stepToward(target);
+            self.stepToward(target, false, ctx::isWalkable);
             return;
         }
         int dwell = self.goalWorkTicks() + 1;
@@ -168,18 +204,37 @@ public final class JobBehaviors {
         }
     }
 
+    /** Bounded redraw budget for {@link #retargetWander} — same named draw, never unbounded. */
+    private static final int WANDER_RETRY_BUDGET = 8;
+
+    /**
+     * Draws a fresh nearby cell within the wander radius; if the draw lands on an
+     * unwalkable cell (water, a wall), redraws with the next {@code JOB_TARGET_PICK}
+     * index (the same named-RNG stream, never unnamed/unseeded randomness) up to
+     * {@link #WANDER_RETRY_BUDGET} attempts, then falls back to
+     * {@code self.anchorCell()} (guaranteed walkable by spawn/bake) — bounded, can
+     * never infinite-loop.
+     */
     private static void retargetWander(Actor self, ActorContext ctx) {
         int radius = wanderRadius(self);
-        long draw = ctx.draw(ActorRngStream.JOB_TARGET_PICK, self.id(), ctx.nextDrawIndex(self.id()));
-        int span = 2 * radius + 1;
-        int dx = (int) Long.remainderUnsigned(draw, span) - radius;
-        int dy = (int) Long.remainderUnsigned(draw >>> 20, span) - radius;
         int ax = PackedPos.x(self.anchorCell());
         int ay = PackedPos.y(self.anchorCell());
         int z = PackedPos.z(self.anchorCell());
-        int target = PackedPos.pack(clamp(ax + dx, PackedPos.X_MASK),
-                clamp(ay + dy, PackedPos.Y_MASK), z);
-        self.setGoalTarget(TargetKind.CELL, target);
+        int span = 2 * radius + 1;
+        for (int attempt = 0; attempt < WANDER_RETRY_BUDGET; attempt++) {
+            long draw = ctx.draw(ActorRngStream.JOB_TARGET_PICK, self.id(),
+                    ctx.nextDrawIndex(self.id()));
+            int dx = (int) Long.remainderUnsigned(draw, span) - radius;
+            int dy = (int) Long.remainderUnsigned(draw >>> 20, span) - radius;
+            int candidate = PackedPos.pack(clamp(ax + dx, PackedPos.X_MASK),
+                    clamp(ay + dy, PackedPos.Y_MASK), z);
+            if (ctx.isWalkable(candidate)) {
+                self.setGoalTarget(TargetKind.CELL, candidate);
+                self.setGoalWorkTicks(0);
+                return;
+            }
+        }
+        self.setGoalTarget(TargetKind.CELL, self.anchorCell());
         self.setGoalWorkTicks(0);
     }
 
@@ -215,7 +270,7 @@ public final class JobBehaviors {
         int target = ctx.registry().get(owner).cell();
         self.setGoalTarget(TargetKind.CELL, target);
         if (self.cell() != target) {
-            self.stepToward(target, true);
+            self.stepToward(target, true, ctx::isWalkable);
         }
     }
 

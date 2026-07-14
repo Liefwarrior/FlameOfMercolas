@@ -26,7 +26,8 @@ class EventLogTrackerTest {
     @Test
     void logsRealTransitionsOncePerTick() {
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadCompoundBlock();
-        CompoundBlockPopulation population = CompoundBlockPopulation.build(loaded.worldSeed());
+        CompoundBlockPopulation population =
+                CompoundBlockPopulation.build(loaded.worldSeed(), loaded.world());
 
         // Big enough to retain the whole run's history for assertions (the live app caps at 30).
         EventLog log = new EventLog(5000);

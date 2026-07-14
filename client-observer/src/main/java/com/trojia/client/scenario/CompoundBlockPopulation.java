@@ -32,6 +32,7 @@ import com.trojia.sim.actor.type.Shopkeeper;
 import com.trojia.sim.actor.type.Wastrel;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
+import com.trojia.sim.world.World;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -189,9 +190,20 @@ public final class CompoundBlockPopulation {
     /**
      * Builds the full population over a fresh set of registries, keyed to {@code worldSeed}
      * (the baked world's own seed). Loads the committed actor/job/household raws from
-     * {@code content/raws}.
+     * {@code content/raws}. World-less convenience (no collision checking — every cell reads
+     * as walkable); prefer {@link #build(long, World)} wherever a baked world is in scope.
      */
     public static CompoundBlockPopulation build(long worldSeed) {
+        return build(worldSeed, null);
+    }
+
+    /**
+     * Builds the full population exactly as {@link #build(long)}, but wires {@code world} into
+     * the {@link ActorsSystem} so {@code JobBehaviors}' patrol/wander/commute movement respects
+     * real walls, doors and water (§2.5's walkability check). {@code world} may be {@code null}
+     * (equivalent to {@link #build(long)}).
+     */
+    public static CompoundBlockPopulation build(long worldSeed, World world) {
         Path rawsRoot = RepoPaths.locate("content", "raws");
         ActorTypeStatsTable typeStats = ActorRawsLoader.load(rawsRoot.resolve("actors"));
         HouseholdRaws householdRaws = HouseholdRawsLoader.load(
@@ -209,7 +221,7 @@ public final class CompoundBlockPopulation {
         builder.populate();
 
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
-                relationships, items);
+                relationships, items, world);
         return new CompoundBlockPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers);
     }

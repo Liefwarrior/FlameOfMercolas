@@ -42,7 +42,7 @@ public final class CompoundBlockActorsMain {
         int ticks = parseTicks(args, 50_000);
 
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadCompoundBlock();
-        CompoundBlockPopulation population = CompoundBlockPopulation.build(loaded.worldSeed());
+        CompoundBlockPopulation population = CompoundBlockPopulation.build(loaded.worldSeed(), loaded.world());
 
         ActorRegistry registry = population.registry();
         HomeRegistry homes = population.homes();

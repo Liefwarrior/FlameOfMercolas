@@ -44,7 +44,7 @@ public final class DocksActorsMain {
         boolean perf = hasFlag(args, "--perf");
 
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadDocksSurface();
-        DocksPopulation population = DocksPopulation.build(loaded.worldSeed());
+        DocksPopulation population = DocksPopulation.build(loaded.worldSeed(), loaded.world());
 
         ActorRegistry registry = population.registry();
         HomeRegistry homes = population.homes();

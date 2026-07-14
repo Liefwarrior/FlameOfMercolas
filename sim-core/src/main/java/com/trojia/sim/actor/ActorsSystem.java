@@ -6,6 +6,9 @@ import com.trojia.sim.engine.SimulationSystem;
 import com.trojia.sim.engine.SystemId;
 import com.trojia.sim.engine.TickContext;
 import com.trojia.sim.engine.TickPhase;
+import com.trojia.sim.world.TileCursor;
+import com.trojia.sim.world.Walkability;
+import com.trojia.sim.world.World;
 import com.trojia.sim.world.io.WorldHasher;
 
 import java.io.DataInput;
@@ -35,12 +38,28 @@ public final class ActorsSystem implements SimulationSystem {
     private final HomeRegistry homes;
     private final RelationshipRegistry relationships;
     private final ItemsLiteRegistry items;
+    /** Nullable — {@code null} for the world-less bootstrap ({@code ActorsDemoMain}). */
+    private final World world;
+    /** Reused flyweight cursor for {@code isWalkable} reads; {@code null} iff {@link #world} is. */
+    private final TileCursor cursor;
     /** Per-actor per-tick draw-index counter (§2.2's "one counter per actor"); reset each tick. */
     private int[] drawCounters = new int[0];
 
+    /** World-less constructor (test/headless convenience) — {@code isWalkable} always true. */
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items) {
+        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, null);
+    }
+
+    /**
+     * World-aware constructor: {@code world} backs {@link ActorContext#isWalkable(int)} via a
+     * reused {@link TileCursor} and {@link Walkability}. {@code world} may be {@code null}
+     * (equivalent to the world-less constructor above).
+     */
+    public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
+            ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
+            ItemsLiteRegistry items, World world) {
         this.worldSeed = worldSeed;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -48,6 +67,8 @@ public final class ActorsSystem implements SimulationSystem {
         this.homes = homes;
         this.relationships = relationships;
         this.items = items;
+        this.world = world;
+        this.cursor = world == null ? null : world.cursor();
     }
 
     public ActorRegistry registry() {
@@ -340,6 +361,11 @@ public final class ActorsSystem implements SimulationSystem {
                 }
             }
             return Actor.NONE;
+        }
+
+        @Override
+        public boolean isWalkable(int cell) {
+            return cursor == null || Walkability.isWalkable(cursor.moveTo(cell));
         }
     }
 }

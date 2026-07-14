@@ -58,4 +58,13 @@ public interface ActorContext {
 
     /** The actor id backing {@link #wielderCell()}, or {@link Actor#NONE} if none is spawned. */
     int wielderId();
+
+    /**
+     * Pure read (§2.3 "actors never write lanes"): {@code true} if {@code cell}
+     * is safe to step onto right now ({@code com.trojia.sim.world.Walkability
+     * .isWalkable}). Systems bound to no world (the headless world-less
+     * bootstrap, {@code ActorsDemoMain}) return {@code true} unconditionally —
+     * there is nothing to collide with.
+     */
+    boolean isWalkable(int cell);
 }
