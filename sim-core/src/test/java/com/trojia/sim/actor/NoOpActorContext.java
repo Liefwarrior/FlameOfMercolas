@@ -36,6 +36,8 @@ class NoOpActorContext implements ActorContext {
     private final HomeRegistry homes = new HomeRegistry();
     private final RelationshipRegistry relationships = new RelationshipRegistry();
     private final ItemsLiteRegistry items = new ItemsLiteRegistry();
+    private final BankLedger bank = new BankLedger();
+    private RestrictedZoneTable zones = RestrictedZoneTable.EMPTY;
     private long tick = 1L;
     private final int[] drawCounters;
 
@@ -76,6 +78,21 @@ class NoOpActorContext implements ActorContext {
     @Override
     public ItemsLiteRegistry items() {
         return items;
+    }
+
+    @Override
+    public BankLedger bankAccounts() {
+        return bank;
+    }
+
+    @Override
+    public RestrictedZoneTable restrictedZones() {
+        return zones;
+    }
+
+    /** Test hook: swap in a synthetic restricted-zone table. */
+    void setRestrictedZones(RestrictedZoneTable zones) {
+        this.zones = zones;
     }
 
     @Override

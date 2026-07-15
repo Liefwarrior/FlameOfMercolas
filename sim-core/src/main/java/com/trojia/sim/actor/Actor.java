@@ -111,9 +111,11 @@ public abstract class Actor {
     private final short[] needs;
     private final int[] needAccum;
 
-    // ---- inventory-lite (§1.1, §11.2 quantity rides ItemsLiteRegistry, not here) ----
-    private final short[] inventory;
-    private byte inventoryCount;
+    // ---- inventory (§1.1, §11.2): carried items live ENTIRELY in ItemsLiteRegistry (indexed by
+    // carrier), the single source of truth. There is deliberately no parallel per-actor id list
+    // here — a short[] of item ids both duplicated that state and truncated once an id passed
+    // Short.MAX_VALUE (landmine G); ItemsLite's dense-slot recycling keeps ids bounded and the
+    // by-carrier queries make a mirror unnecessary. ----
 
     // ---- health-lite hook ----
     private short hp;
@@ -182,7 +184,6 @@ public abstract class Actor {
         for (Need need : Need.values()) {
             this.needs[need.ordinal()] = (short) stats.need(need).start();
         }
-        this.inventory = new short[stats.inventoryCap()];
     }
 
     /** Returns the type's static policy stack constant (§1.4). Never {@code null}. */
@@ -744,24 +745,5 @@ public abstract class Actor {
 
     public final void setLastReasonCode(ReasonCode reasonCode) {
         this.lastReasonCode = reasonCode;
-    }
-
-    // ---- inventory-lite (item ids only; ItemsLiteRegistry §2.6/§11.2 holds the entries) ----
-
-    public final byte inventoryCount() {
-        return inventoryCount;
-    }
-
-    public final short inventoryItemAt(int slot) {
-        return inventory[slot];
-    }
-
-    /** Appends an item id at the next free slot (canonical pickup order, §1.1); {@code false} if full. */
-    public final boolean addInventoryItem(short itemId) {
-        if (inventoryCount >= inventory.length) {
-            return false;
-        }
-        inventory[inventoryCount++] = itemId;
-        return true;
     }
 }

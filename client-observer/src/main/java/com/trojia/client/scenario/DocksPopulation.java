@@ -9,12 +9,15 @@ import com.trojia.sim.actor.ActorTypeStats;
 import com.trojia.sim.actor.ActorTypeStatsTable;
 import com.trojia.sim.actor.ActorTypes;
 import com.trojia.sim.actor.ActorsSystem;
+import com.trojia.sim.actor.BankLedger;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.HouseholdFormer;
 import com.trojia.sim.actor.HouseholdRaws;
 import com.trojia.sim.actor.HouseholdRawsLoader;
+import com.trojia.sim.actor.ItemKinds;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.Need;
+import com.trojia.sim.actor.RestrictedZoneTable;
 import com.trojia.sim.actor.RelationshipKind;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.job.Job;
@@ -264,7 +267,9 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] HOUSEHOLD_SIZES = {2, 3, 2, 1, 4};
 
     // ---- placeholder ItemsLite kind ids (no items-raws system yet, §11.2) ---------------
-    private static final short KIND_COIN = 1;
+    // COIN is the shared sim-core vocabulary (ItemKinds.COIN == the legacy KIND_COIN == 1); the
+    // rest stay observer-only flavor placeholders on the same short.
+    private static final short KIND_COIN = ItemKinds.COIN;
     private static final short KIND_STOCK = 2;
     private static final short KIND_ALMS_TOKEN = 3;
     private static final short KIND_SCRAP = 4;
@@ -383,14 +388,21 @@ public final class DocksPopulation implements ScenarioPopulation {
         HomeRegistry homes = new HomeRegistry();
         RelationshipRegistry relationships = new RelationshipRegistry();
         ItemsLiteRegistry items = new ItemsLiteRegistry();
+        BankLedger bank = new BankLedger();
 
         Builder builder = new Builder(registry, homes, relationships, items, typeStats, jobs,
                 householdRaws, worldSeed, world);
         builder.populate();
 
+        // Phase-0 economy bake: one account per actor (accountId == actorId) + one stamped ID_CARD
+        // per citizen. No live bank building yet — verbs are exercised by unit tests, not here.
+        CivicAccounts.bake(registry, bank, items);
+
         int arrestHoldCell = worldCell(HOLDING_CELL_K34, ZA);
+        // No restricted zones are wired into the live district in Phase 0 (F3 resolver/gate are
+        // exercised by unit tests with synthetic zones); the seam is threaded here regardless.
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
-                relationships, items, world, arrestHoldCell);
+                relationships, items, bank, world, arrestHoldCell, RestrictedZoneTable.EMPTY);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers);
     }
@@ -1173,10 +1185,9 @@ public final class DocksPopulation implements ScenarioPopulation {
                     && jobs.get(actor.jobOrdinal()).id().equals(Job.Villain.Skyrunner.ID);
         }
 
-        /** Mints a carried ItemsLite entry and links its id into the actor's inventory-lite. */
+        /** Credits {@code quantity} units of {@code kindId} to the actor's carried stack (ItemsLite). */
         private void mint(Actor actor, short kindId, int quantity) {
-            int itemId = items.mint(kindId, actor.id(), actor.id(), Actor.NONE, (short) quantity);
-            actor.addInventoryItem((short) itemId);
+            items.addCarried(actor.id(), kindId, quantity);
         }
     }
 }

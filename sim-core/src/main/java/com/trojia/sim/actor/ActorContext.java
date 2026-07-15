@@ -1,5 +1,6 @@
 package com.trojia.sim.actor;
 
+import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobRegistry;
 
 /**
@@ -30,8 +31,52 @@ public interface ActorContext {
     /** The ItemsLite side-table (ACTORS-SPEC.md §2.6, §11.2). */
     ItemsLiteRegistry items();
 
+    /**
+     * The Royals ledger (Phase-0 economy F2). The world-less bootstrap returns a degraded, empty
+     * {@link BankLedger} (no accounts opened) — the {@code arrestHoldCell == NONE} analogue.
+     */
+    BankLedger bankAccounts();
+
+    /**
+     * The baked restricted-zone side-table (Phase-0 job/access F3), injected like {@code
+     * arrestHoldCell}. {@link RestrictedZoneTable#EMPTY} where no zones are wired (Phase 0's live
+     * district, and the world-less bootstrap).
+     */
+    RestrictedZoneTable restrictedZones();
+
     /** The bound Job taxonomy (ACTORS-SPEC.md §10.2). */
     JobRegistry jobs();
+
+    /**
+     * The job an actor is PRESENTING (Phase-0 job/access F3) — the exact inverse of {@link
+     * #wielderId()}: resolve {@code actor.identity().presentedId()} to that actor's {@code
+     * jobOrdinal} and return its bound {@link Job}; return the actor's own job when it is not
+     * disguised. A live registry read (no cache), so a {@code setActAs} takes effect immediately.
+     * {@code null} if the resolved actor holds no job.
+     *
+     * <p>Every access gate must read THIS, never {@code actor.jobOrdinal()} directly — reading the
+     * true job under a disguise is a bypass bug (PLAY-MODE §4). Guarded against an out-of-range
+     * presented id (a stale/never-spawned target resolves as "self").
+     */
+    default Job presentedJob(Actor actor) {
+        int presentedId = actor.identity().presentedId();
+        Actor presented = (presentedId == actor.id()
+                || presentedId < 0 || presentedId >= registry().size())
+                ? actor
+                : registry().get(presentedId);
+        short ordinal = presented.jobOrdinal();
+        return ordinal >= 0 ? jobs().get(ordinal) : null;
+    }
+
+    /**
+     * Access gate (Phase-0 job/access F3): {@code true} iff the actor's PRESENTED job satisfies
+     * {@code zone}'s required job. A Farmer presenting as a Guard passes a Guard-only zone and
+     * fails a Farmer-only zone. Reads {@link #presentedJob(Actor)} — never the true job.
+     */
+    default boolean canAccess(Actor actor, RestrictedZone zone) {
+        Job presented = presentedJob(actor);
+        return presented != null && presented.id().equals(zone.requiredJob());
+    }
 
     /**
      * One named draw (ACTORS-SPEC.md §2.2): {@code spatialKey = actorId}

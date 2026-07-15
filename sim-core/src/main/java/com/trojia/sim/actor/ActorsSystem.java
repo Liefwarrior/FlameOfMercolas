@@ -38,6 +38,10 @@ public final class ActorsSystem implements SimulationSystem {
     private final HomeRegistry homes;
     private final RelationshipRegistry relationships;
     private final ItemsLiteRegistry items;
+    /** The Royals ledger (Phase-0 economy F2); empty (no accounts) for the world-less bootstrap. */
+    private final BankLedger bank;
+    /** The baked restricted-zone side-table (Phase-0 job/access F3); {@code EMPTY} where unwired. */
+    private final RestrictedZoneTable zones;
     /** Nullable — {@code null} for the world-less bootstrap ({@code ActorsDemoMain}). */
     private final World world;
     /** Reused flyweight cursor for {@code isWalkable} reads; {@code null} iff {@link #world} is. */
@@ -58,29 +62,34 @@ public final class ActorsSystem implements SimulationSystem {
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items) {
-        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, null, Actor.NONE);
+        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, new BankLedger(),
+                null, Actor.NONE, RestrictedZoneTable.EMPTY);
     }
 
     /**
      * World-aware constructor: {@code world} backs {@link ActorContext#isWalkable(int)} via a
      * reused {@link TileCursor} and {@link Walkability}. {@code world} may be {@code null}
-     * (equivalent to the world-less constructor above).
+     * (equivalent to the world-less constructor above). Empty ledger, no zones.
      */
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, World world) {
-        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, world, Actor.NONE);
+        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, new BankLedger(),
+                world, Actor.NONE, RestrictedZoneTable.EMPTY);
     }
 
     /**
-     * Full constructor: additionally wires the baked {@code arrestHoldCell} (ARREST-SPEC
-     * addendum) — the one well-known K34 Guardhouse cell {@link HeldPolicy} escorts arrested
-     * actors to. {@code Actor.NONE} (the two convenience constructors above) means "unwired":
-     * {@link HeldPolicy} degrades to holding the actor in place.
+     * Full constructor: additionally wires the baked {@code bank} ledger (Phase-0 economy F2), the
+     * {@code arrestHoldCell} (ARREST-SPEC addendum — the one well-known K34 Guardhouse cell {@link
+     * HeldPolicy} escorts arrested actors to), and the {@code zones} restricted-zone side-table
+     * (Phase-0 job/access F3). {@code Actor.NONE}/{@link RestrictedZoneTable#EMPTY}/an empty {@link
+     * BankLedger} mean "unwired" (the convenience constructors above): {@link HeldPolicy} holds in
+     * place, no cell is restricted, and no account exists.
      */
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
-            ItemsLiteRegistry items, World world, int arrestHoldCell) {
+            ItemsLiteRegistry items, BankLedger bank, World world, int arrestHoldCell,
+            RestrictedZoneTable zones) {
         this.worldSeed = worldSeed;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -88,6 +97,8 @@ public final class ActorsSystem implements SimulationSystem {
         this.homes = homes;
         this.relationships = relationships;
         this.items = items;
+        this.bank = bank;
+        this.zones = zones;
         this.world = world;
         this.cursor = world == null ? null : world.cursor();
         this.arrestHoldCell = arrestHoldCell;
@@ -107,6 +118,14 @@ public final class ActorsSystem implements SimulationSystem {
 
     public ItemsLiteRegistry items() {
         return items;
+    }
+
+    public BankLedger bankAccounts() {
+        return bank;
+    }
+
+    public RestrictedZoneTable restrictedZones() {
+        return zones;
     }
 
     @Override
@@ -172,6 +191,17 @@ public final class ActorsSystem implements SimulationSystem {
             out.writeInt(entry.locationCarriedBy());
             out.writeInt(entry.locationCell());
             out.writeShort(entry.quantity());
+            out.writeInt(entry.accountId());
+        }
+        // Recycling free-slot stack (LIFO push order) — genuine state, kept faithful across save.
+        out.writeInt(items.freeSlotCount());
+        for (int i = 0; i < items.freeSlotCount(); i++) {
+            out.writeInt(items.freeSlotAt(i));
+        }
+        // The Royals ledger (Phase-0 economy F2), in canonical order after items (landmine E).
+        out.writeInt(bank.accountCount());
+        for (int i = 0; i < bank.accountCount(); i++) {
+            out.writeLong(bank.balanceOf(i));
         }
     }
 
@@ -203,10 +233,8 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeInt(actor.goalWorkTicks());
         out.writeLong(actor.heldUntilTick());
         out.writeByte(actor.offenseCount());
-        out.writeByte(actor.inventoryCount());
-        for (int i = 0; i < actor.inventoryCount(); i++) {
-            out.writeShort(actor.inventoryItemAt(i));
-        }
+        // Carried items are not written per-actor: ItemsLite (serialized above, keyed by carrier)
+        // is the single source of truth for inventory — no parallel per-actor id list exists.
     }
 
     @Override
@@ -238,7 +266,18 @@ public final class ActorsSystem implements SimulationSystem {
             int carriedBy = in.readInt();
             int cell = in.readInt();
             short quantity = in.readShort();
-            items.mint(kindId, ownerActorId, carriedBy, cell, quantity);
+            int accountId = in.readInt();
+            items.mint(kindId, ownerActorId, carriedBy, cell, quantity, accountId);
+        }
+        int freeSlots = in.readInt();
+        for (int i = 0; i < freeSlots; i++) {
+            items.restoreFreeSlot(in.readInt());
+        }
+        int accountCount = in.readInt();
+        for (int i = 0; i < accountCount; i++) {
+            long balance = in.readLong();
+            int accountId = bank.openAccount();
+            bank.credit(accountId, balance);
         }
     }
 
@@ -271,11 +310,6 @@ public final class ActorsSystem implements SimulationSystem {
         int goalWorkTicks = in.readInt();
         long heldUntilTick = in.readLong();
         byte offenseCount = in.readByte();
-        int invCount = in.readByte() & 0xFF;
-        short[] inventory = new short[invCount];
-        for (int i = 0; i < invCount; i++) {
-            inventory[i] = in.readShort();
-        }
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
         actor.setIdentity(new Persona(trueId, presentedId));
@@ -305,9 +339,6 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setGoalWorkTicks(goalWorkTicks);
         actor.setHeldUntilTick(heldUntilTick);
         actor.setOffenseCount(offenseCount);
-        for (short itemId : inventory) {
-            actor.addInventoryItem(itemId);
-        }
     }
 
     @Override
@@ -337,6 +368,13 @@ public final class ActorsSystem implements SimulationSystem {
             sink.putInt(edge.fromId());
             sink.putInt(edge.toId());
             sink.putByte(edge.kind().ordinal());
+        }
+        // Ledger balances (Phase-0 economy F2): the hash previously omitted every money-ish scalar
+        // (landmine F), so a divergence isolated to a balance would have slipped past the twin-run
+        // check. Hashing the ledger closes that gap — a money-only desync now fails determinism.
+        sink.putInt(bank.accountCount());
+        for (int i = 0; i < bank.accountCount(); i++) {
+            sink.putLong(bank.balanceOf(i));
         }
     }
 
@@ -377,6 +415,16 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public ItemsLiteRegistry items() {
             return items;
+        }
+
+        @Override
+        public BankLedger bankAccounts() {
+            return bank;
+        }
+
+        @Override
+        public RestrictedZoneTable restrictedZones() {
+            return zones;
         }
 
         @Override

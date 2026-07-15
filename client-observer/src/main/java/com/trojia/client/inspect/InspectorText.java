@@ -142,14 +142,13 @@ public final class InspectorText {
     }
 
     private static void appendInventory(List<String> lines, Actor actor, ItemsLiteRegistry items) {
-        int count = actor.inventoryCount();
-        lines.add("inventory (" + count + "):");
-        if (count == 0) {
+        List<ItemsLiteEntry> carried = items.carriedBy(actor.id());
+        lines.add("inventory (" + carried.size() + "):");
+        if (carried.isEmpty()) {
             lines.add("  (empty)");
             return;
         }
-        for (int slot = 0; slot < count; slot++) {
-            ItemsLiteEntry entry = items.get(actor.inventoryItemAt(slot));
+        for (ItemsLiteEntry entry : carried) {
             lines.add("  kind " + entry.kindId() + " x" + entry.quantity());
         }
     }

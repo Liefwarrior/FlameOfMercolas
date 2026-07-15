@@ -9,12 +9,15 @@ import com.trojia.sim.actor.ActorTypeStats;
 import com.trojia.sim.actor.ActorTypeStatsTable;
 import com.trojia.sim.actor.ActorTypes;
 import com.trojia.sim.actor.ActorsSystem;
+import com.trojia.sim.actor.BankLedger;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.HouseholdFormer;
 import com.trojia.sim.actor.HouseholdRaws;
 import com.trojia.sim.actor.HouseholdRawsLoader;
+import com.trojia.sim.actor.ItemKinds;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.Need;
+import com.trojia.sim.actor.RestrictedZoneTable;
 import com.trojia.sim.actor.RelationshipKind;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.job.Job;
@@ -102,7 +105,7 @@ public final class CompoundBlockPopulation {
     private static final int[] ROOF_HUT_12 = {87, 84};
 
     // ---- placeholder ItemsLite kind ids (no items-raws system yet, §11.2) ---------------
-    private static final short KIND_COIN = 1;
+    private static final short KIND_COIN = ItemKinds.COIN; // shared sim-core vocabulary (== 1)
     private static final short KIND_STOCK = 2;
     private static final short KIND_ALMS_TOKEN = 3;
     private static final short KIND_SCRAP = 4;
@@ -215,13 +218,18 @@ public final class CompoundBlockPopulation {
         HomeRegistry homes = new HomeRegistry();
         RelationshipRegistry relationships = new RelationshipRegistry();
         ItemsLiteRegistry items = new ItemsLiteRegistry();
+        BankLedger bank = new BankLedger();
 
         Builder builder = new Builder(registry, homes, relationships, items, typeStats, jobs,
                 householdRaws, worldSeed);
         builder.populate();
 
+        // Phase-0 economy bake: one account per actor (accountId == actorId) + one ID_CARD per
+        // citizen — the same substrate the Docks scenario opens (no live bank yet).
+        CivicAccounts.bake(registry, bank, items);
+
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
-                relationships, items, world);
+                relationships, items, bank, world, Actor.NONE, RestrictedZoneTable.EMPTY);
         return new CompoundBlockPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers);
     }
@@ -554,10 +562,9 @@ public final class CompoundBlockPopulation {
                     && jobs.get(actor.jobOrdinal()).id().equals(Job.Villain.Skyrunner.ID);
         }
 
-        /** Mints a carried ItemsLite entry and links its id into the actor's inventory-lite. */
+        /** Credits {@code quantity} units of {@code kindId} to the actor's carried stack (ItemsLite). */
         private void mint(Actor actor, short kindId, int quantity) {
-            int itemId = items.mint(kindId, actor.id(), actor.id(), Actor.NONE, (short) quantity);
-            actor.addInventoryItem((short) itemId);
+            items.addCarried(actor.id(), kindId, quantity);
         }
     }
 }
