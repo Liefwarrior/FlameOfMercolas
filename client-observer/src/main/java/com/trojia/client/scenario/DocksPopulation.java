@@ -32,11 +32,17 @@ import com.trojia.sim.actor.type.Shopkeeper;
 import com.trojia.sim.actor.type.Wastrel;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
+import com.trojia.sim.world.TileCursor;
+import com.trojia.sim.world.Walkability;
 import com.trojia.sim.world.World;
 
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The deterministic Docks-ward population (DOCKS-GAZETTEER.md §3/§4, ACTORS-SPEC.md §11.4):
@@ -379,7 +385,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         ItemsLiteRegistry items = new ItemsLiteRegistry();
 
         Builder builder = new Builder(registry, homes, relationships, items, typeStats, jobs,
-                householdRaws, worldSeed);
+                householdRaws, worldSeed, world);
         builder.populate();
 
         int arrestHoldCell = worldCell(HOLDING_CELL_K34, ZA);
@@ -405,6 +411,17 @@ public final class DocksPopulation implements ScenarioPopulation {
         private final JobRegistry jobs;
         private final HouseholdRaws householdRaws;
         private final long seed;
+        /** Reused flyweight walkability cursor; {@code null} in the world-less build (all walkable). */
+        private final TileCursor cursor;
+        /**
+         * Running spawn-time occupancy (packedCell -&gt; count) over the WHOLE bake, so every spawn
+         * — via {@link #spawnAt} — lands on a cell holding fewer than
+         * {@link Actor#MAX_OCCUPANTS_PER_CELL} actors. This is what guarantees no cell begins the
+         * sim with more than two occupants, across every site and any overlap between sites (a
+         * proprietor already on an anchor, two nearby dwellings, etc.). Never iterated for output,
+         * so its hash-map iteration order is irrelevant to determinism.
+         */
+        private final Map<Integer, Integer> spawnOccupancy = new HashMap<>();
         private final List<Integer> movers = new ArrayList<>();
         private int trackedGroundMoverId = Actor.NONE;
         private int lodgingCursor;
@@ -412,7 +429,7 @@ public final class DocksPopulation implements ScenarioPopulation {
 
         Builder(ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
                 ItemsLiteRegistry items, ActorTypeStatsTable typeStats, JobRegistry jobs,
-                HouseholdRaws householdRaws, long seed) {
+                HouseholdRaws householdRaws, long seed, World world) {
             this.registry = registry;
             this.homes = homes;
             this.relationships = relationships;
@@ -421,6 +438,7 @@ public final class DocksPopulation implements ScenarioPopulation {
             this.jobs = jobs;
             this.householdRaws = householdRaws;
             this.seed = seed;
+            this.cursor = world == null ? null : world.cursor();
         }
 
         void populate() {
@@ -500,56 +518,53 @@ public final class DocksPopulation implements ScenarioPopulation {
             // mean-2.4 distribution, overstaffing small/cramped sites past their established
             // character, or authoring new dwelling anchors (a real map/tmx change) -- all
             // three off-limits. The K30-K32 ship crews above already used a cleaner escape
-            // hatch: Serf.TYPE spawned directly AT the work anchor, home == anchor == spawn
-            // cell (soloHomeAtCell, no setAnchorCell -- Actor's constructor already sets
-            // anchorCell = spawn cell). That pattern consumes zero household-registry
-            // capacity and needs no new dwelling anchor, so it can be extended far more
-            // aggressively than the first pass used it -- applied here to every genuinely
-            // large/storage/industrial site in the district (all anchors below are the
-            // site's own already-established, already-walkable business anchor constant).
+            // hatch: Serf.TYPE bunking at the work anchor, home == anchor == the site. That
+            // pattern consumes zero household-registry capacity and needs no new dwelling
+            // anchor, so it can be extended far more aggressively than the first pass used it --
+            // applied here to every genuinely large/storage/industrial site in the district
+            // (all anchors below are the site's own already-established business anchor).
+            //
+            // Occupancy-cap spread (2026-07-15): {@link #bunkAtSite} keeps home + leash anchor
+            // pinned to the site, but the SPAWN cell now spreads over the site's nearby walkable
+            // floor (deterministic outward BFS, <=2 per cell) so a live-in crew no longer starts
+            // stacked dozens-deep on one tile -- the actor-actor occupancy cap
+            // (Actor.MAX_OCCUPANTS_PER_CELL) forbids it at spawn as well as in motion.
 
             // K06 Harl's Yard — 24 shipwrights/caulkers/sawyers bunking across the
             // workshop+timber-yard+slipway complex (the district's biggest multi-part
             // industrial site after the Ropewalk).
             for (int i = 0; i < 24; i++) {
-                Actor yardHand = spawn(Serf.TYPE, K06_HARLS_YARD, ZA);
-                soloHomeAtCell(yardHand);
+                bunkAtSite(Serf.TYPE, K06_HARLS_YARD, ZA);
             }
             // K07 Ropewalk — 34 more rope-gang hands bunking in the shed itself (576 tiles,
             // the single largest floor in the district; §3.1 "deliberately elongated").
             for (int i = 0; i < 34; i++) {
-                Actor ropeGangHand = spawn(Serf.TYPE, K07_ROPEWALK, ZA);
-                soloHomeAtCell(ropeGangHand);
+                bunkAtSite(Serf.TYPE, K07_ROPEWALK, ZA);
             }
             // K12 King's Bond — 20 more porters/night-watch bunking in the sealed, windowless
             // bonded warehouse (bonded goods need round-the-clock security; 221 tiles).
             for (int i = 0; i < 20; i++) {
-                Actor bondBunk = spawn(Serf.TYPE, K12_KINGS_BOND, ZA);
-                soloHomeAtCell(bondBunk);
+                bunkAtSite(Serf.TYPE, K12_KINGS_BOND, ZA);
             }
             // K11 Salt Row — 8 seasonal herring-curing hands bunking in the gutting
             // sheds/smokehouse lofts (time-sensitive salt-and-smoke work, dawn starts).
             for (int i = 0; i < 8; i++) {
-                Actor curingHand = spawn(Serf.TYPE, K11_SALT_ROW, ZA);
-                soloHomeAtCell(curingHand);
+                bunkAtSite(Serf.TYPE, K11_SALT_ROW, ZA);
             }
             // K14 Wrackhouse — 6 salvage haulers bunking rough among the flotsam (fits the
             // "buys what the sea spits up, no questions" salvage-broker character).
             for (int i = 0; i < 6; i++) {
-                Actor salvageHand = spawn(Serf.TYPE, K14_WRACKHOUSE, ZA);
-                soloHomeAtCell(salvageHand);
+                bunkAtSite(Serf.TYPE, K14_WRACKHOUSE, ZA);
             }
             // K23 Cooper & Blockmaker — 6 apprentices bunking in the workshop loft (a live-in
             // cooper's apprentice is the historically standard arrangement for the trade).
             for (int i = 0; i < 6; i++) {
-                Actor coopersHand = spawn(Serf.TYPE, K23_COOPERS, ZA);
-                soloHomeAtCell(coopersHand);
+                bunkAtSite(Serf.TYPE, K23_COOPERS, ZA);
             }
             // K18 Squall's Bathhouse — 6 boiler stokers bunking by the boilers (the fires
             // can't be left untended overnight).
             for (int i = 0; i < 6; i++) {
-                Actor stoker = spawn(Serf.TYPE, K18_BATHHOUSE, ZA);
-                soloHomeAtCell(stoker);
+                bunkAtSite(Serf.TYPE, K18_BATHHOUSE, ZA);
             }
 
             // K10 Dawnstalls — three self-employed stallholders commuting to the market.
@@ -603,16 +618,13 @@ public final class DocksPopulation implements ScenarioPopulation {
             // building's floor space is. Bumped up while keeping the same increasing-scale
             // ordering (4/6/8 -> 10/16/22).
             for (int i = 0; i < 10; i++) {   // K30 The Kestrel (smallest, 10x5)
-                Actor crew = spawn(Serf.TYPE, SHIP_K30_KESTREL, ZA);
-                soloHomeAtCell(crew);
+                bunkAtSite(Serf.TYPE, SHIP_K30_KESTREL, ZA);
             }
             for (int i = 0; i < 16; i++) {   // K31 Bregga's Promise (mid, 14x7)
-                Actor crew = spawn(Serf.TYPE, SHIP_K31_BREGGAS_PROMISE, ZA);
-                soloHomeAtCell(crew);
+                bunkAtSite(Serf.TYPE, SHIP_K31_BREGGAS_PROMISE, ZA);
             }
             for (int i = 0; i < 22; i++) {   // K32 The Deep Keel (largest, 16x8)
-                Actor crew = spawn(Serf.TYPE, SHIP_K32_DEEPKEEL, ZA);
-                soloHomeAtCell(crew);
+                bunkAtSite(Serf.TYPE, SHIP_K32_DEEPKEEL, ZA);
             }
 
             // K13 The Drowned Hold — condemned; two Wastrel squatters, no lamps, no trade.
@@ -999,8 +1011,87 @@ public final class DocksPopulation implements ScenarioPopulation {
         }
 
         private Actor spawn(ActorTypeId type, int[] mapXY, int mapZ) {
+            return spawnAt(type, worldCell(mapXY, mapZ));
+        }
+
+        /**
+         * The single spawn funnel: places one actor of {@code type} on the nearest walkable cell
+         * to {@code desiredWorldCell} that currently holds fewer than
+         * {@link Actor#MAX_OCCUPANTS_PER_CELL} actors (spilling outward only when the desired cell
+         * is already full), then records the placement. Because every spawn in this file goes
+         * through here, no cell can begin the simulation over the occupancy cap — regardless of
+         * how many separate loops or overlapping sites target the same anchor.
+         */
+        private Actor spawnAt(ActorTypeId type, int desiredWorldCell) {
+            int cell = findFreeSpawnCell(desiredWorldCell);
             ActorTypeStats stats = typeStats.get(type);
-            return registry.spawn(type, stats, worldCell(mapXY, mapZ));
+            Actor actor = registry.spawn(type, stats, cell);
+            spawnOccupancy.merge(cell, 1, Integer::sum);
+            return actor;
+        }
+
+        /**
+         * A "bunk at the site" crew member (the ship crews and the K06/K07/K11/K12/K14/K18/K23
+         * live-in workforces): its SPAWN cell spreads via {@link #spawnAt} so the site does not
+         * start stacked, but its leash anchor and home stay pinned to the SITE anchor, so
+         * return-home and the leash still target the workplace exactly as before the spread.
+         */
+        private Actor bunkAtSite(ActorTypeId type, int[] siteMapXY, int siteZ) {
+            int site = worldCell(siteMapXY, siteZ);
+            Actor actor = spawnAt(type, site);
+            actor.setAnchorCell(site);
+            actor.setHomeId(homes.addHome(site));
+            return actor;
+        }
+
+        // 8-neighborhood, fixed order (E, W, S, N, then the four diagonals) — a deterministic
+        // outward ring BFS. Order is arbitrary but FIXED, which is all determinism requires.
+        private static final int[] SPREAD_DX = {1, -1, 0, 0, 1, 1, -1, -1};
+        private static final int[] SPREAD_DY = {0, 0, 1, -1, 1, -1, 1, -1};
+        /** Generous visit cap for the spread BFS — the open docks map never approaches it. */
+        private static final int SPREAD_MAX_VISITS = 200_000;
+
+        /**
+         * Deterministic outward BFS from {@code desiredWorldCell} over same-z cells, returning the
+         * first WALKABLE cell whose running spawn count is below the occupancy cap. The frontier
+         * expands geometrically (through walls too) so it can always reach open ground, but only a
+         * walkable, under-cap cell is ever returned. Falls back to the desired cell if nothing is
+         * found within {@link #SPREAD_MAX_VISITS} (unreachable on the real map — the invariant test
+         * would catch it).
+         */
+        private int findFreeSpawnCell(int desiredWorldCell) {
+            int z = PackedPos.z(desiredWorldCell);
+            ArrayDeque<Integer> frontier = new ArrayDeque<>();
+            HashSet<Integer> visited = new HashSet<>();
+            frontier.add(desiredWorldCell);
+            visited.add(desiredWorldCell);
+            int visits = 0;
+            while (!frontier.isEmpty() && visits++ < SPREAD_MAX_VISITS) {
+                int cur = frontier.poll();
+                if (isWalkableCell(cur)
+                        && spawnOccupancy.getOrDefault(cur, 0) < Actor.MAX_OCCUPANTS_PER_CELL) {
+                    return cur;
+                }
+                int cx = PackedPos.x(cur);
+                int cy = PackedPos.y(cur);
+                for (int d = 0; d < SPREAD_DX.length; d++) {
+                    int nx = cx + SPREAD_DX[d];
+                    int ny = cy + SPREAD_DY[d];
+                    if (nx < 0 || ny < 0 || nx > PackedPos.X_MASK || ny > PackedPos.Y_MASK) {
+                        continue;
+                    }
+                    int ncell = PackedPos.pack(nx, ny, z);
+                    if (visited.add(ncell)) {
+                        frontier.add(ncell);
+                    }
+                }
+            }
+            return desiredWorldCell; // pathological fallback (never hit on the baked docks world)
+        }
+
+        /** Whether {@code cell} is walkable (world-less bake: every cell reads walkable). */
+        private boolean isWalkableCell(int cell) {
+            return cursor == null || Walkability.isWalkable(cursor.moveTo(cell));
         }
 
         /** One shared Home at the group leader's cell + a HOUSEHOLD clique, via the real former. */
@@ -1038,10 +1129,17 @@ public final class DocksPopulation implements ScenarioPopulation {
         }
 
         private void makeMover(Actor actor, int dx, int dy) {
-            int x = PackedPos.x(actor.cell());
-            int y = PackedPos.y(actor.cell());
-            int z = PackedPos.z(actor.cell());
-            actor.setCell(PackedPos.pack(x + dx, y + dy, z));
+            int old = actor.cell();
+            int x = Math.max(0, Math.min(PackedPos.X_MASK, PackedPos.x(old) + dx));
+            int y = Math.max(0, Math.min(PackedPos.Y_MASK, PackedPos.y(old) + dy));
+            int desired = PackedPos.pack(x, y, PackedPos.z(old));
+            // Keep the displaced cell within the occupancy cap: vacate the old cell, then land on
+            // the nearest walkable under-cap cell to the intended displacement, so t=0 stays
+            // <=2 per cell even though this teleport bypasses the normal spawn funnel.
+            spawnOccupancy.merge(old, -1, Integer::sum);
+            int dest = findFreeSpawnCell(desired);
+            spawnOccupancy.merge(dest, 1, Integer::sum);
+            actor.setCell(dest);
             // Deplete REST well below LOW (3000) so RETURN_HOME scores above every JOB policy.
             actor.applyNeedDelta(Need.REST, -(actor.need(Need.REST) - 400));
             movers.add(actor.id());

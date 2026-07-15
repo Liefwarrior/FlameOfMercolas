@@ -30,7 +30,7 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
     public void act(Actor self, ActorContext ctx) {
         int target = self.playerMoveTargetCell();
         if (target != Actor.NONE) {
-            self.stepToward(target, true, ctx::isWalkable);
+            self.stepToward(target, true, ctx::isWalkable, ctx.occupancy());
             // Consume the intent so a stale target never re-fires after the driver pauses
             // (the observer re-arms it every frame a movement key is held, §5.2).
             self.setPlayerMoveTarget(Actor.NONE);
