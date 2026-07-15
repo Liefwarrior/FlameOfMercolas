@@ -140,6 +140,18 @@ def sidewalk(z, x0, y0, x1, y1):
     frect(z, x0, y0, x1, y1, GRANITE_FLOOR)
 
 
+def safe_sidewalk(z, x0, y0, x1, y1):
+    """Paint the periodic floor_pave weave (GRANITE_FLOOR) onto a rect, but ONLY on
+    cells that are currently bare exterior dirt (terrain open, DIRT_FLOOR, no fluid).
+    Walls, doors' interior thresholds, interior floors, stairs, ramps, water and
+    already-paved street are all left untouched -- so a rect may span whole buildings
+    to pave the dirt SEAMS between them in one call without moving any footprint."""
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            if T[z][y][x] == 0 and F[z][y][x] == DIRT_FLOOR and FL[z][y][x] == 0:
+                F[z][y][x] = GRANITE_FLOOR
+
+
 def roadway(z, x0, y0, x1, y1, spine_gid=BRICK_FLOOR):
     """A smooth arterial roadway spine -> BRICK_FLOOR (the homogeneous floor_tile
     avenue). Sleek and regular, flanked by sidewalk() bands."""
@@ -232,6 +244,30 @@ def compound_unit_interior(z, x0, y0, x1, y1, door, wall=REMAN_WALL):
     bed(z, px + 1, back_y)
     bed(z, px + 2, back_y)
     chest(z, x1 - 1, front_y)
+
+
+def hovel_touches(z, x0, y0, x1, y1, door, anchor):
+    """Squalor-tier lived-in touches for an un-partitionable shanty: hearth + up to
+    two beds + a chest, all on the interior strip against the wall OPPOSITE the door,
+    skipping the anchor cell and the door-aligned cell so the door->anchor spine and
+    every open cell stay one connected component. NO partition (would trap a 2-deep box)."""
+    ix0, iy0, ix1, iy1 = x0 + 1, y0 + 1, x1 - 1, y1 - 1
+    (dx, dy) = door
+    if dy == y0:      strip = [(x, iy1) for x in range(ix0, ix1 + 1)]   # door N -> back S row
+    elif dy == y1:    strip = [(x, iy0) for x in range(ix0, ix1 + 1)]   # door S -> back N row
+    elif dx == x0:    strip = [(ix1, y) for y in range(iy0, iy1 + 1)]   # door W -> back E col
+    else:             strip = [(ix0, y) for y in range(iy0, iy1 + 1)]   # door E -> back W col
+    (ax, ay) = anchor
+    strip = [c for c in strip if c != (ax, ay)
+             and not (dy in (y0, y1) and c[0] == dx)      # keep door column clear
+             and not (dx in (x0, x1) and c[1] == dy)]     # keep door row clear
+    if not strip:
+        return
+    hearth(z, *strip[0])
+    for c in strip[1:-1][:2]:
+        bed(z, *c)
+    if len(strip) >= 2:
+        chest(z, *strip[-1])
 
 
 # ======================================================================
@@ -1158,8 +1194,23 @@ for y in range(98, 115):
 T[12][105][20] = 0
 for x in range(9, 20):
     T[12][106][x] = REMAN_WALL
-T[12][106][14] = 0
+# DEV (interiors plan §7, 2026-07-15): the mansion household anchor cmp1_mansion_anchor =
+# center(8,97,31,115) = (19,106) previously landed ON this horizontal wall (gap was at
+# (14,106)) -- a pre-existing anchor-on-wall defect that fails the walkable-anchor
+# invariant. Fix: punch the gap AT the anchor cell (19,106) instead of (14,106). The
+# west-south room still reaches the rest via (19,106)->(19,105)/(19,107); DocksPopulation
+# C1_MANSION={19,106} is unchanged (no footprint/anchor move), the anchor is now walkable.
+T[12][106][19] = 0
 T[12][100][12] = OAK_STAIR_UP
+# Homey touches (interiors plan §7, unblocked now the anchor is walkable): a hearth+table
+# common in the east hall, sleeping beds/chests hugging the outer walls of all three rooms.
+# Trap-free (blind flood from (19,106) reaches all interior cells); keeps the east door
+# approach (30,105)/(30,106) and the stair (12,100) clear.
+hearth(12, 21, 106)
+table(12, 25, 106, 26, 106)
+bed(12, 21, 98); bed(12, 22, 98); bed(12, 29, 98); chest(12, 30, 114)
+bed(12, 9, 98); bed(12, 10, 98); chest(12, 9, 104)
+bed(12, 9, 114); bed(12, 10, 114); chest(12, 9, 107)
 shell(13, 8, 97, 31, 115, REMAN_WALL, REMAN_FLOOR)
 # Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): the compound's one
 # public gate is the mansion shell's own east border (x=31, the doors at (31,105)/(31,106))
@@ -1248,6 +1299,53 @@ for i, (x0, y0, x1, y1, _) in enumerate(C2_GROUND[3:]):
     shell(12, x0, y0, x1, y1, REMAN_WALL, REMAN_FLOOR)
     T[12][sy][sx] = OAK_STAIR_DOWN
     unit_anchor(12, "cmp2_condo_%02d_anchor" % (i + 7), x0, y0, x1, y1)
+# --- C2 meaningful rooms + homey touches (interiors plan §3). Explicit primitive calls
+# (not compound_unit_interior, which fits only C1's 12x7 S-door condos): one straight
+# partition per unit + wall-hugging furniture => two/three connected rooms, anchor/door/
+# stair always on open floor. Blind flood-verified from each anchor (verify_interiors.py).
+# C2 mansion (116-127,66-93): 3 rooms, central common holds the E door + anchor (121,79).
+partition(11, 117, 75, 126, 75, REMAN_WALL, (121, 75))
+partition(11, 117, 84, 126, 84, REMAN_WALL, (121, 84))
+bed(11, 117, 67); bed(11, 118, 67); bed(11, 119, 67); bed(11, 125, 67); bed(11, 126, 67)
+chest(11, 117, 74); chest(11, 126, 74)
+hearth(11, 117, 79); table(11, 118, 82, 119, 82); table(11, 123, 82, 124, 82); chest(11, 126, 82)
+bed(11, 117, 92); bed(11, 118, 92); bed(11, 125, 92); bed(11, 126, 92); chest(11, 117, 85)
+# c01 (128-135,66-75): 8-wide -> horizontal split (sleeping N | common S).
+partition(11, 129, 69, 134, 69, REMAN_WALL, (131, 69))
+bed(11, 129, 67); bed(11, 130, 67); chest(11, 134, 67)
+hearth(11, 129, 74); table(11, 133, 74, 134, 74)
+# c02 (144-151,66-75): c01 shifted +16x.
+partition(11, 145, 69, 150, 69, REMAN_WALL, (147, 69))
+bed(11, 145, 67); bed(11, 146, 67); chest(11, 150, 67)
+hearth(11, 145, 74); table(11, 149, 74, 150, 74)
+# c03 (128-147,86-93): 18-wide -> three rooms (two vertical partitions); door+anchor central.
+partition(11, 133, 87, 133, 92, REMAN_WALL, (133, 89))
+partition(11, 142, 87, 142, 92, REMAN_WALL, (142, 89))
+bed(11, 129, 87); bed(11, 130, 87); chest(11, 129, 92)
+hearth(11, 134, 92); table(11, 139, 92, 140, 92)
+bed(11, 145, 87); bed(11, 146, 87); chest(11, 146, 92)
+# c04 (152-163,66-75): W door + interior stair (155,70) -> west common | east sleeping.
+partition(11, 159, 67, 159, 74, REMAN_WALL, (159, 70))
+bed(11, 161, 67); bed(11, 162, 67); chest(11, 162, 74)
+hearth(11, 153, 74); table(11, 157, 74, 158, 74); chest(11, 158, 67)
+# c05 (152-163,76-84).
+partition(11, 159, 77, 159, 83, REMAN_WALL, (159, 80))
+bed(11, 161, 77); bed(11, 162, 77); chest(11, 162, 83)
+hearth(11, 153, 83); table(11, 157, 83, 158, 83); chest(11, 158, 77)
+# c06 (152-163,85-93).
+partition(11, 159, 86, 159, 92, REMAN_WALL, (159, 89))
+bed(11, 161, 86); bed(11, 162, 86); chest(11, 162, 92)
+hearth(11, 153, 86); table(11, 157, 92, 158, 92); chest(11, 158, 86)
+# c04u/c05u/c06u (z12 uppers): same calls, z=12 (no wall door; stair-only access).
+partition(12, 159, 67, 159, 74, REMAN_WALL, (159, 70))
+bed(12, 161, 67); bed(12, 162, 67); chest(12, 162, 74)
+hearth(12, 153, 74); table(12, 157, 74, 158, 74); chest(12, 158, 67)
+partition(12, 159, 77, 159, 83, REMAN_WALL, (159, 80))
+bed(12, 161, 77); bed(12, 162, 77); chest(12, 162, 83)
+hearth(12, 153, 83); table(12, 157, 83, 158, 83); chest(12, 158, 77)
+partition(12, 159, 86, 159, 92, REMAN_WALL, (159, 89))
+bed(12, 161, 86); bed(12, 162, 86); chest(12, 162, 92)
+hearth(12, 153, 86); table(12, 157, 92, 158, 92); chest(12, 158, 86)
 # Roof slum z13 over the east wing. DEV: roof stair moved (159,80)->(154,79)
 # (the blueprint cell lands inside roofhut_11's rect).
 frect(13, 152, 66, 163, 93, REMAN_FLOOR)
@@ -1295,6 +1393,50 @@ for i, (x0, y0, x1, y1, _) in enumerate(C3_GROUND[2:]):
     shell(13, x0, y0, x1, y1, REMAN_WALL, REMAN_FLOOR)
     T[13][sy][sx] = OAK_STAIR_DOWN
     unit_anchor(13, "cmp3_condo_%02d_anchor" % (i + 7), x0, y0, x1, y1)
+# --- C3 meaningful rooms + homey touches (interiors plan §4). Same explicit-primitive
+# idiom as C2; blind flood-verified from each anchor. C3 mansion (84-95,101-115): 2 rooms,
+# south common holds the E door + anchor (89,108); column 89 spine kept clear.
+partition(12, 85, 106, 94, 106, REMAN_WALL, (89, 106))
+bed(12, 85, 102); bed(12, 86, 102); bed(12, 93, 102); bed(12, 94, 102)
+chest(12, 85, 105); chest(12, 94, 105)
+hearth(12, 85, 110); table(12, 87, 113, 88, 113); table(12, 90, 113, 91, 113); chest(12, 94, 114)
+# c01 (124-131,101-107): W door -> west common (door+anchor) | east sleeping.
+partition(12, 128, 102, 128, 106, REMAN_WALL, (128, 104))
+bed(12, 129, 102); bed(12, 130, 102); chest(12, 130, 106)
+hearth(12, 125, 102); table(12, 126, 106, 127, 106)
+# c02 (132-139,101-107): S door.
+partition(12, 136, 102, 136, 106, REMAN_WALL, (136, 104))
+bed(12, 137, 102); bed(12, 138, 102); chest(12, 138, 106)
+hearth(12, 133, 102); table(12, 133, 106, 134, 106)
+# c03 (96-106,108-115): N door + stair (98,113) -> west common (door+stair+anchor) | east.
+partition(12, 102, 109, 102, 114, REMAN_WALL, (102, 111))
+bed(12, 104, 109); bed(12, 105, 109); chest(12, 105, 114)
+hearth(12, 97, 109); table(12, 100, 114, 101, 114)
+# c04 (107-117,108-115): stair (109,113).
+partition(12, 113, 109, 113, 114, REMAN_WALL, (113, 111))
+bed(12, 115, 109); bed(12, 116, 109); chest(12, 116, 114)
+hearth(12, 108, 109); table(12, 111, 114, 112, 114)
+# c05 (118-128,108-115): stair (120,113).
+partition(12, 124, 109, 124, 114, REMAN_WALL, (124, 111))
+bed(12, 126, 109); bed(12, 127, 109); chest(12, 127, 114)
+hearth(12, 119, 109); table(12, 122, 114, 123, 114)
+# c06 (129-139,108-115): stair (131,113).
+partition(12, 135, 109, 135, 114, REMAN_WALL, (135, 111))
+bed(12, 137, 109); bed(12, 138, 109); chest(12, 138, 114)
+hearth(12, 130, 109); table(12, 133, 114, 134, 114)
+# c03u/c04u/c05u/c06u (z13 uppers): same calls, z=13.
+partition(13, 102, 109, 102, 114, REMAN_WALL, (102, 111))
+bed(13, 104, 109); bed(13, 105, 109); chest(13, 105, 114)
+hearth(13, 97, 109); table(13, 100, 114, 101, 114)
+partition(13, 113, 109, 113, 114, REMAN_WALL, (113, 111))
+bed(13, 115, 109); bed(13, 116, 109); chest(13, 116, 114)
+hearth(13, 108, 109); table(13, 111, 114, 112, 114)
+partition(13, 124, 109, 124, 114, REMAN_WALL, (124, 111))
+bed(13, 126, 109); bed(13, 127, 109); chest(13, 127, 114)
+hearth(13, 119, 109); table(13, 122, 114, 123, 114)
+partition(13, 135, 109, 135, 114, REMAN_WALL, (135, 111))
+bed(13, 137, 109); bed(13, 138, 109); chest(13, 138, 114)
+hearth(13, 130, 109); table(13, 133, 114, 134, 114)
 frect(14, 96, 108, 139, 115, REMAN_FLOOR)           # roof slum deck
 border(14, 96, 108, 139, 115, REMAN_WALL)
 T[13][113][114] = OAK_STAIR_UP
@@ -1326,12 +1468,38 @@ for i, (x0, y0, x1, y1, d) in enumerate(C4_GROUND):
     shell(11, x0, y0, x1, y1, BRICK_WALL, OAK_FLOOR, doors=[d])
     frect(12, x0, y0, x1, y1, THATCH_FLOOR)         # DEV: roof material unspecified
     unit_anchor(11, "cmp4_condo_%02d_anchor" % (i + 1), x0, y0, x1, y1)
+# --- C4 meaningful rooms + homey touches (interiors plan §5; BRICK_WALL partitions to
+# match the brick shells). Layouts keep the intentional rot gaps (170,66)/(166,88)/(190,80)
+# reachable. Blind flood-verified from each anchor.
+# c01 (166-171,66-79): 4-wide -> horizontal split (common N with door+anchor | sleeping S).
+partition(11, 167, 73, 170, 73, BRICK_WALL, (168, 73))
+hearth(11, 167, 67); table(11, 169, 68, 170, 68); chest(11, 167, 72)
+bed(11, 167, 74); bed(11, 170, 74); bed(11, 167, 78); chest(11, 170, 78)
+# c02 (166-171,80-93): beds shifted off (167,88) so the (166,88) rot gap stays reachable.
+partition(11, 167, 87, 170, 87, BRICK_WALL, (168, 87))
+hearth(11, 167, 81); table(11, 169, 82, 170, 82)
+bed(11, 169, 88); bed(11, 170, 88); bed(11, 167, 92); chest(11, 170, 92)
+# c03 (172-175,66-75): 2-wide interior -> NO partition (would trap 1-wide rooms); col 173 spine.
+hearth(11, 174, 67); bed(11, 174, 69); bed(11, 174, 71); chest(11, 174, 73)
+# c04 (180-190,66-75): vertical split (west common with door+anchor | east sleeping).
+partition(11, 186, 67, 186, 74, BRICK_WALL, (186, 70))
+bed(11, 188, 67); bed(11, 189, 67); chest(11, 189, 74)
+hearth(11, 181, 67); table(11, 181, 73, 182, 73)
 shell(11, 184, 76, 190, 93, BRICK_WALL, OAK_FLOOR, doors=[(184, 84)])  # c05 (2-story)
 T[11][80][186] = OAK_STAIR_UP
 shell(12, 184, 76, 190, 93, BRICK_WALL, OAK_FLOOR)  # c06 upper
 T[12][80][186] = OAK_STAIR_DOWN
 unit_anchor(11, "cmp4_condo_05_anchor", 184, 76, 190, 93)
 unit_anchor(12, "cmp4_condo_06_anchor", 184, 76, 190, 93)
+# c05 (184-190,76-93): 5x16 tall -> horizontal split, north room holds the stair (186,80)
+# and the (190,80) rot gap; south room holds the W door + anchor (187,84).
+partition(11, 185, 82, 189, 82, BRICK_WALL, (187, 82))
+bed(11, 185, 77); bed(11, 189, 77); chest(11, 185, 78)
+hearth(11, 189, 83); table(11, 185, 91, 186, 91); bed(11, 188, 92); bed(11, 189, 92)
+# c06 (upper of c05, z12): same calls, z=12 (no wall door, no rot gap; stair-only access).
+partition(12, 185, 82, 189, 82, BRICK_WALL, (187, 82))
+bed(12, 185, 77); bed(12, 189, 77); chest(12, 185, 78)
+hearth(12, 189, 83); table(12, 185, 91, 186, 91); bed(12, 188, 92); bed(12, 189, 92)
 # Collapsed south unit: perimeter only, no roof, rubble
 border(11, 172, 86, 183, 93, BRICK_WALL)
 cells(11, [(175, 89), (180, 91)], OAK_WALL)
@@ -1418,6 +1586,10 @@ for (n, x0, y0, x1, y1, door, z) in HOVELS:
     if roof is not None:
         frect(z + 1, x0, y0, x1, y1, roof)
     cx, cy = center(x0, y0, x1, y1)
+    # Homey touches (design §1/§2): hearth + beds + chest on the back strip opposite the
+    # door; NO partition (hovels are too shallow to divide without trapping). Placed
+    # before the anchor marker so the anchor/door spine stays clear by construction.
+    hovel_touches(z, x0, y0, x1, y1, door, (cx, cy))
     mk(z, "script_anchor", "hovel_%02d_anchor" % n, cx, cy)
 
 # Band B east field: goat pen
@@ -1427,6 +1599,63 @@ mk(12, "script_anchor", "pen_goats_anchor", 152, 111)
 # Band C well plaza
 trect(13, 101, 120, 102, 121, GRANITE_WALL)
 mk(13, "script_anchor", "well_gallows_row_anchor", 101, 122)
+
+# ======================================================================
+# 5.7 Frontage & plaza paving (2026-07-15 exteriors/streetscape pass, Eli:
+# "it's a city so buildings would be smashed in together"). safe_sidewalk paints
+# the periodic floor_pave weave onto bare exterior dirt only (walls/interiors/water
+# auto-preserved), so adjacent buildings share a continuous laid-paver sidewalk and
+# read as one dense block; the seams between near-touching buildings are filled.
+# Working yards are DELIBERATELY excluded (kept as bare-dirt working ground for
+# grit/contrast): tar yard K09, Ropewalk K07, Impound K02, Kennel K25, Harl's yard
+# K06, West Garden, C4 courtyard, Cache Row, the Gullet dirt lanes, Band-B/C fields.
+# DEV (implementation audit, this pass): cluster-F west-field rect trimmed x145->x143
+# so it stops one cell short of hovel 8's west wall (x144) and never repaints a hovel
+# interior; every other rect was audited to touch only exterior dirt + door thresholds.
+# ======================================================================
+
+# --- CLUSTER A: Quay fish-market plaza (Dawnstalls/Salt Row open market ground) ---
+safe_sidewalk(11, 36, 36, 55, 49)     # the open market square; stall posts auto-skipped
+safe_sidewalk(11, 51, 50, 55, 52)     # corridor Dawnstalls -> Weighhouse
+
+# --- CLUSTER B: East Tarwalk shop-row seams (King's Bond | Bilge | Gilded Gull) ---
+safe_sidewalk(11, 99, 34, 99, 46)     # King's Bond | Bilge seam
+safe_sidewalk(11, 112, 34, 113, 47)   # Bilge | Gilded Gull seam
+
+# --- CLUSTER C: quay-back hovels 1-3 + Rows/Fenner/Slop seams & Ropewynd frontage ---
+safe_sidewalk(11, 87, 52, 87, 57)     # hovel 1 | hovel 2
+safe_sidewalk(11, 92, 53, 92, 57)     # hovel 2 | hovel 3
+safe_sidewalk(11, 98, 52, 99, 59)     # hovel 3 | The Rows
+safe_sidewalk(11, 120, 52, 121, 58)   # The Rows | Fenner's Pawn
+safe_sidewalk(11, 129, 58, 129, 64)   # Fenner | Slop-Chest
+safe_sidewalk(11, 82, 59, 146, 59)    # frontage strip along Ropewynd's north kerb (y60)
+
+# --- CLUSTER D: Mission / Bathhouse / Guardhouse civic island corridors ---
+safe_sidewalk(11, 80, 66, 81, 88)     # west frontage (Saltgate east kerb x79 -> Mission)
+safe_sidewalk(11, 99, 66, 99, 79)     # Mission | Bathhouse seam
+safe_sidewalk(11, 100, 79, 112, 79)   # Bathhouse | Guardhouse seam
+safe_sidewalk(11, 98, 89, 113, 93)    # south apron (east of Long Store) toward Backwall
+
+# --- CLUSTER E: Ropewynd south shop-row frontage + inter-shop corridors ---
+safe_sidewalk(11, 4, 66, 70, 66)      # frontage line just below Ropewynd south kerb (y65)
+safe_sidewalk(11, 39, 70, 39, 78)     # Hardtack | Coopers seam
+safe_sidewalk(11, 54, 66, 57, 77)     # Coopers | Lantern Room seam
+
+# --- CLUSTER F: Band B (z12) frontage south of Terrace Walk ---
+safe_sidewalk(12, 80, 101, 139, 101)  # frontage strip under Terrace Walk (C3 + hovel fronts)
+safe_sidewalk(12, 140, 101, 143, 111) # west edge of the east-hovel field (trimmed off hovel 8)
+
+# --- CLUSTER G: Band C (z13) Gallows Row well plaza ---
+safe_sidewalk(13, 96, 119, 107, 123)  # pave the well plaza around the existing wellhead
+
+# --- §5.7 plaza fixtures (single solid cells on open paved plaza; verified off every
+#     anchor/door/path, each with >=3 walkable 4-neighbours so it never plugs a route) ---
+cells(11, [(18, 28), (26, 28), (38, 28), (58, 28), (66, 28)], STEEL_WALL)   # Long-Quay mooring bollards
+T[11][29][74] = GRANITE_WALL                        # public well, Weighhouse frontage plaza
+cells(11, [(76, 31), (77, 31)], OAK_WALL)           # Weighhouse-plaza market crates
+cells(11, [(52, 38), (53, 38), (52, 44), (37, 45)], OAK_WALL)  # fish-market fishmonger crates
+cells(13, [(104, 121)], OAK_WALL)                   # Gallows well-plaza crate
+cells(13, [(99, 120)], STEEL_WALL)                  # Gallows well-plaza hitching post
 
 # ======================================================================
 # 6. Patrol, muster, exits (blueprint section 6; script_anchors only —
