@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "provenance": "docs/art/TILE-ART-SPEC.md governs this file's schema (section 7 fields, section 11 tile vocabulary, section 12 cosmetic variants); section 8 is the pack-swap procedure this file enacts. DECISIONS.md art register (Eli 2026-07-13): 'Full-color Kenney... material differentiation comes from picking an appropriately-colored real sprite per material (not a tint multiply)', reversing the 2026-07-12 'Luminous-on-black' ruling quoted in this file's git history. Pack: Kenney 1-Bit Pack v1.2 (CC0), content/art/kenney/License.txt.",
-  "notes": "Real-art mapping for the Kenney 1-bit pack, COLORED variant (superseded-history note: v1 of this file pointed 'atlas' at the monochrome-transparent_packed sheet and gave every material a saturated 'tint' that was multiplied over a shared white-on-transparent silhouette — see git history / TILE-ART-SPEC section 5 historical note for the mechanism that ran until 2026-07-13). This version points 'atlas' at colored-transparent_packed.png: each region name's cells already carry their own baked color from the pack (a small fixed palette — see TILE-ART-SPEC section 11.1 for the measured swatches), so most materials carry NO 'tint' field at all and draw the sprite exactly as authored. A minority of materials keep a 'tint' as a deliberate SECONDARY multiply — never the primary color source — used only where the shipped palette has no cell in the needed hue (e.g. phorys' teal, chromatis_melt's gold) or where two materials would otherwise be pixel-identical (e.g. steel vs reman_concrete, both on wall_masonry). Tint multiply can only darken/re-hue a texel, never lighten it past the sprite's own color (SpriteBatch tinting is multiplicative) — see per-material 'notes' below for why each surviving tint earns its keep. The cosmetic-variant axis (section 12) is unchanged and orthogonal to appearanceBucket: chromatis' heatGlowTint / colorStops emissive charge mechanism is untouched by this pass.",
+  "provenance": "docs/art/TILE-ART-SPEC.md governs this file's schema (section 7 fields, section 11 tile vocabulary, section 12 cosmetic variants); section 8 is the pack-swap procedure this file enacts. DECISIONS.md art register, FIFTH revision (Eli 2026-07-15, verbatim: 'The map looks very very ugly... completely black background so that you can use the best Kenney assets and specifically create complex architectural buildings. Trojia is very inspired by Rome, use pillars more... Roleplay as a senior gameplay and senior level designer'). Muse, confirmed with Eli, settled: Dwarf Fortress's own visual language translated from ASCII glyphs to real Kenney sprite tiles -- true black voids in unbuilt/unlit space, buildings as dense architectural masonry silhouettes, warm torch/brazier light pools cutting through the black (WorldRenderer light-mask overlay, fast-follow), and pillared/colonnaded facades on the district's grand civic buildings specifically. Pack: Kenney 1-Bit Pack v1.2 (CC0), content/art/kenney/License.txt -- the SAME single sheet as the fourth revision (no second pack mixed in, to keep one coherent line-weight/scale).",
+  "notes": "Superseding the fourth revision's full-color Kenney mapping (voidColor #180F14, no ramp/stair/facade regions). This revision: (1) voidColor -> #000000, true black, per the explicit directive -- read dynamically by ObserverApp.java (~line 239) every boot, no second hardcoded copy to keep in sync. (2) Added ramp/stair regions (slope_a, stair_rung) -- the fourth revision never mapped RAMP/STAIR forms for the Kenney pack at all (only 'custom' had them); every material below now gets ramp/stair keys alongside block/wall/floor. (3) Added 3 pedimented-colonnade/baluster facade regions (facade_cornice/facade_colonnade/facade_baluster), real cells re-verified at 24x zoom on the actual sheet, not assumed from Preview.png composites. (4) Added 'wall' as an explicit key duplicating 'block' for every material (the same convention content/art/custom/art-mapping.json already established) -- previously relied on JsonTileArtResolver's forms['block'] fallback (TILE-ART-SPEC section 7.3); still correct either way, this just makes it explicit. (5) Three new civic-only facade materials -- granite_facade/brick_facade/reman_facade, each a physical clone of its base material (see content/raws/materials/*_facade.json) -- carry ONLY a wall form (facades are never floors/ramps/stairs); gen_docks_surface.py tags just the street-facing frontage wall of the Weighhouse (K01), Mission of the Flame (K17), King's Bond (K12), and the Quayward Compound's gate wall (C1) with these, leaving every other granite/brick/reman_concrete wall in the district plain masonry -- the Rome cue stays deliberately rare per the directive ('use pillars more', not 'use pillars everywhere'). Existing tint/heatGlowTint/minLight values and every wall_*/floor_*/roof_*/water region cell are BYTE-IDENTICAL to the fourth revision -- nothing about the non-facade material palette changed. lightTintQ8/zPeekDimQ8 also byte-identical per the assignment's own instruction (true-black only changes what fills cells beyond max z-peek depth, not the dimming curve for lit-but-dark tiles). Caveat, stated plainly: chromatis/lightstone/ice have no baked-blue/green slope cell in this sheet, so their ramps/stairs render in slope_a/stair_rung's native beige rather than their signature hue (TILE-ART-SPEC section 5.4's tint-can-only-darken rule) -- low practical impact since gen_docks_surface.py's own gid table never places those three materials on the Docks surface map today.",
   "atlas": "art/kenney/Tilesheet/colored-transparent_packed.png",
   "tilePx": 16,
   "sheet": { "columns": 49, "rows": 22 },
@@ -25,12 +25,17 @@
     "roof_tile":    [[10, 18], [11, 18], [10, 17]],
     "roof_cloth":   [[1, 4], [2, 4]],
     "water":        [[8, 4], [9, 4], [10, 4], [11, 4], [12, 4]],
-    "missing":      [[13, 18]]
+    "missing":      [[13, 18]],
+    "facade_cornice":   [[6, 4]],
+    "facade_colonnade": [[6, 5]],
+    "facade_baluster":  [[7, 5]],
+    "slope_a":          [[0, 16], [4, 16], [0, 18]],
+    "stair_rung":       [[21, 1]]
   },
-  "regionsProvenance": "Cells hand-picked from colored-transparent_packed.png (49x22 @16px) after zoom-reading and pixel-sampling the actual sheet (not guessed from filenames, and not assumed identical to the superseded monochrome-era cell choices — several of those cells recolor to a DIFFERENT family in the colored sheet, e.g. old wall_stone included (9,5) which is baked blue here, not beige, so it moved to wall_crystal instead). The whole colored sheet's terrain/architecture area uses only ~7 baked palette colors (TILE-ART-SPEC 11.1); region names below are grouped by which of those 7 colors their cells carry: wall_brick/RED = brick coursing (6,15)(7,15) + shelf-coursed variant (6,14); wall_stone/BEIGE = smooth dressed ashlar panel (1,18)(19,18)(7,17); wall_rubble/MAROON = speckle + basket-weave rough texture (10,0)(11,0)(16,0)(17,0); wall_hatch/BEIGE = crosshatch wattle-or-veining (1,4)(2,4); wall_plank/BROWN = vertical picket fencing (13,16)(14,16); wall_masonry/BEIGE = coursed horizontal banding, reads as cast/engineered (19,13)(20,13)(21,13); wall_crystal/BLUE = flat glassy panel, genuinely baked blue in this sheet (not a tint) (8,5)(9,5)(10,5)(11,5); wall_moss/GREEN = blobby natural mineral-or-moss chunk (18,11)(19,11)(20,11); floor_tile/BEIGE = fine checker (1,17)(2,17)(19,17); floor_stone/BEIGE = shares wall_stone's smooth-panel cells; floor_plank/BROWN = horizontal decking + reused picket cells (4,6)(7,5)(13,16)(14,16); floor_earth/MAROON = shares wall_rubble's speckle cells; floor_cobble/MAROON = the denser basket-weave/grid subset (16,0)(17,0); floor_crystal/BLUE = shares wall_crystal's cells; floor_moss/GREEN = sparse-to-dense grass speckle (5,0)(6,0)(7,0); roof_thatch/BROWN = reuses the horizontal-decking wood cells, tinted straw-gold per material; roof_tile/BEIGE = documented + available, not yet assigned to a material (10,18)(11,18)(10,17); roof_cloth/BEIGE = reuses wall_hatch's crosshatch cells (reads as woven fabric), tinted per material; water/BLUE = irregular pond-edge and ripple blob shapes, distinct cells from wall_crystal's flat panels (8,4)(9,4)(10,4)(11,4)(12,4); missing = framed X, baked red in this sheet too (13,18).",
+  "regionsProvenance": "Cells hand-picked from colored-transparent_packed.png (49x22 @16px) after zoom-reading and pixel-sampling the actual sheet. Fourth-revision cells (wall_*/floor_*/roof_*/water/missing) unchanged, re-verified by eye this pass. FIFTH-revision additions, re-verified this session at pixel resolution, not reused from any earlier prose survey: facade_cornice (6,4) = a two-story facade cell, banded cornice/window register over its own column row over a base band, baked beige (near granite's native hue); facade_colonnade (6,5) = a genuine pedimented mini-portico -- arched/scalloped cornice band over four evenly-spaced vertical column shafts on a plinth base, baked terracotta/warm-brown (confirmed at 24x zoom: pediment-over-columns-over-base, not a fence or shelf); facade_baluster (7,5) = the same column-shaft spacing without the pediment cap (a plainer post/baluster row), same terracotta; slope_a = three genuine diagonal-corner slope tiles at (0,16)/(4,16)/(0,18), solid beige triangles of different sizes/orientations -- the fourth revision never mapped a RAMP form for this pack at all; stair_rung = (21,1), the middle segment of a 3-row ladder graphic at (21,0)-(21,2), cropped to its single rung-row cell (the top/bottom cells carry the ladder's end-caps and do not tile cleanly alone) -- the fourth revision never mapped a STAIR form for this pack at all. No true fluted-shaft-and-capital asset exists anywhere in the full extracted kenney-all-in-1 catalog (exhaustively surveyed) -- (6,4)/(6,5)/(7,5) are the closest real thing this pack ships, and read unambiguously as 'columned facade', which is the bar that matters for the Rome cue.",
   "missingRegion": "missing",
-  "voidColor": "#180F14",
-  "voidColorNotes": "Was #0E0E12 (cold near-black blue) under the monochrome-tint pass. Eli's ruling (DECISIONS.md, 2026-07-13) asked for a mood closer to the Kenney colored-city sample (content/art/kenney/Sample_urban.png ground color samples ~#472D3C — a lit midtone plum) without going bright/daylight. #180F14 keeps the void reading as dark background-behind-nothing (this fills cells beyond max z-peek depth, not a lit ground tile) but shifts the hue from blue-black to a warm plum-black echoing the reference. ObserverApp.java's ScreenUtils.clear(...) is a hand-kept duplicate of this same color (TILE-ART-SPEC section 5.2) — kept in sync here, not read dynamically from this file.",
+  "voidColor": "#000000",
+  "voidColorNotes": "FIFTH revision (Eli 2026-07-15, verbatim: 'let's go for a completely black background'): true black, superseding the fourth revision's #180F14 warm-plum-black (itself superseding the monochrome-era #0E0E12). This fills cells beyond max z-peek depth (unbuilt/unlit space), not a lit ground tile -- the DF-translated muse reads unbuilt darkness as genuine black void, with warm torch/brazier light pools (a WorldRenderer overlay pass, fast-follow, layered on the existing light-tint pipeline) cutting through it. ObserverApp.java's ScreenUtils.clear(...) reads this value dynamically every boot (TILE-ART-SPEC section 5.2) -- no second hardcoded copy to keep in sync.",
   "lightTintQ8": [36, 36, 36, 38, 39, 41, 44, 47, 50, 54, 58, 63, 68, 74, 80, 87, 94, 102, 110, 118, 127, 136, 146, 157, 167, 179, 190, 202, 215, 228, 242, 256],
   "zPeekDimQ8": [256, 168, 112, 76],
   "materials": {
@@ -38,21 +43,38 @@
       "notes": "Common default building stone: dressed ashlar walls, fine tiled floor. No tint — the sheet's native warm-beige panel is close enough to 'dressed stone' to trust as-is, and granite is the baseline every other stone-family material is judged against.",
       "forms": {
         "block": { "byAppearance": ["wall_stone"] },
-        "floor": { "byAppearance": ["floor_tile"] }
+        "wall":  { "byAppearance": ["wall_stone"] },
+        "floor": { "byAppearance": ["floor_tile"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
+      }
+    },
+    "granite_facade": {
+      "provenance": "Civic-only material, minted via the add-material-raw skill as a physical clone of granite (content/raws/materials/granite_facade.json) -- identical density/hardness/conductivity/etc., different id so it can carry its OWN art mapping without repainting every plain granite wall in the district.",
+      "notes": "Rome cue (DECISIONS.md 2026-07-15 fifth revision): used ONLY for the Weighhouse (K01) and Mission of the Flame (K17) street-facing frontage walls (gen_docks_surface.py tags just those two edges). facade_cornice's plain 2-story banded-beige register is the primary look; facade_colonnade's pedimented portico is the second variant for the ground-floor door register, so a long frontage run isn't monotonous.",
+      "forms": {
+        "block": { "byAppearance": ["facade_cornice", "facade_colonnade"] },
+        "wall":  { "byAppearance": ["facade_cornice", "facade_colonnade"] }
       }
     },
     "dirt": {
       "notes": "No tint: the native maroon rubble/speckle cell is the base case the region was chosen for. ash and glowstone share this same region but carry their own tint, so the three read as distinct despite one shape family.",
       "forms": {
         "block": { "byAppearance": ["wall_rubble"] },
-        "floor": { "byAppearance": ["floor_earth"] }
+        "wall":  { "byAppearance": ["wall_rubble"] },
+        "floor": { "byAppearance": ["floor_earth"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "oak": {
       "notes": "No tint: native brown/orange picket-fence cell already reads as timber.",
       "forms": {
         "block": { "byAppearance": ["wall_plank"] },
-        "floor": { "byAppearance": ["floor_plank"] }
+        "wall":  { "byAppearance": ["wall_plank"] },
+        "floor": { "byAppearance": ["floor_plank"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "thatch": {
@@ -60,7 +82,10 @@
       "tint": "#E8D67A",
       "forms": {
         "block": { "byAppearance": ["roof_thatch"] },
-        "floor": { "byAppearance": ["floor_plank"] }
+        "wall":  { "byAppearance": ["roof_thatch"] },
+        "floor": { "byAppearance": ["floor_plank"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "trudgeon_wood": {
@@ -68,7 +93,10 @@
       "tint": "#C6803C",
       "forms": {
         "block": { "byAppearance": ["wall_plank"] },
-        "floor": { "byAppearance": ["floor_plank"] }
+        "wall":  { "byAppearance": ["wall_plank"] },
+        "floor": { "byAppearance": ["floor_plank"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "trudgeon_wood@getilia_soak": {
@@ -76,7 +104,10 @@
       "tint": "#A88C46",
       "forms": {
         "block": { "byAppearance": ["wall_plank"] },
-        "floor": { "byAppearance": ["floor_plank"] }
+        "wall":  { "byAppearance": ["wall_plank"] },
+        "floor": { "byAppearance": ["floor_plank"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "steel": {
@@ -84,23 +115,40 @@
       "tint": "#AEB8C2",
       "forms": {
         "block": { "byAppearance": ["wall_masonry"] },
-        "floor": { "byAppearance": ["floor_stone"] }
+        "wall":  { "byAppearance": ["wall_masonry"] },
+        "floor": { "byAppearance": ["floor_stone"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "brick": {
       "notes": "No tint: the sheet bakes this cell family in genuine terracotta red already, which is what brick is supposed to look like.",
       "forms": {
         "block": { "byAppearance": ["wall_brick"] },
-        "floor": { "byAppearance": ["floor_tile"] }
+        "wall":  { "byAppearance": ["wall_brick"] },
+        "floor": { "byAppearance": ["floor_tile"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
+      }
+    },
+    "brick_facade": {
+      "provenance": "Civic-only material, minted via the add-material-raw skill as a physical clone of brick (content/raws/materials/brick_facade.json).",
+      "notes": "Rome cue: used ONLY for the King's Bond (K12) street-facing frontage wall. King's Bond is 'no windows' per its own gazetteer description, so the plainer facade_baluster post-row reads better there than a full pediment; facade_colonnade kept as the second variant so the run isn't monotonous.",
+      "forms": {
+        "block": { "byAppearance": ["facade_colonnade", "facade_baluster"] },
+        "wall":  { "byAppearance": ["facade_colonnade", "facade_baluster"] }
       }
     },
     "chromatis": {
       "provenance": "heatGlowTint is the discharge/saturation overlay read by JsonTileArtResolver.heatGlowTintRgb (BLESSING-QUEUE ruling 5) — untouched by this pass, exactly as before.",
-      "notes": "No base tint: wall_crystal/floor_crystal are genuinely baked blue in the colored sheet (not a tint-onto-white trick), which lands close enough to canon silver-blue to trust as-is.",
+      "notes": "No base tint: wall_crystal/floor_crystal are genuinely baked blue in the colored sheet (not a tint-onto-white trick), which lands close enough to canon silver-blue to trust as-is. Ramp/stair fall back to slope_a/stair_rung's native beige (no baked-blue slope cell exists in this sheet) — a stated, low-impact caveat since chromatis is not placed on the Docks surface map today.",
       "heatGlowTint": "#E8842A",
       "forms": {
         "block": { "byAppearance": ["wall_crystal"] },
-        "floor": { "byAppearance": ["floor_crystal"] }
+        "wall":  { "byAppearance": ["wall_crystal"] },
+        "floor": { "byAppearance": ["floor_crystal"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "chromatis_melt": {
@@ -108,7 +156,10 @@
       "tint": "#D9A83C",
       "forms": {
         "block": { "byAppearance": ["wall_stone"] },
-        "floor": { "byAppearance": ["floor_stone"] }
+        "wall":  { "byAppearance": ["wall_stone"] },
+        "floor": { "byAppearance": ["floor_stone"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "phorys": {
@@ -116,14 +167,20 @@
       "tint": "#6FB0C0",
       "forms": {
         "block": { "byAppearance": ["wall_hatch"] },
-        "floor": { "byAppearance": ["floor_stone"] }
+        "wall":  { "byAppearance": ["wall_hatch"] },
+        "floor": { "byAppearance": ["floor_stone"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "lightstone": {
-      "notes": "Chargeable emissive natural mineral: the sheet's baked green moss/rock-blob cell already reads as a natural glowing stone, so no tint. If colorStops ship, add per-bucket regions later; bucket clamp keeps the single region correct until then.",
+      "notes": "Chargeable emissive natural mineral: the sheet's baked green moss/rock-blob cell already reads as a natural glowing stone, so no tint. If colorStops ship, add per-bucket regions later; bucket clamp keeps the single region correct until then. Ramp/stair fall back to slope_a/stair_rung's native beige (no baked-green slope cell exists) — stated caveat, low impact (not placed on the Docks surface map today).",
       "forms": {
         "block": { "byAppearance": ["wall_moss"] },
-        "floor": { "byAppearance": ["floor_moss"] }
+        "wall":  { "byAppearance": ["wall_moss"] },
+        "floor": { "byAppearance": ["floor_moss"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "lightstone_shards": {
@@ -131,7 +188,10 @@
       "tint": "#BFD05A",
       "forms": {
         "block": { "byAppearance": ["wall_moss"] },
-        "floor": { "byAppearance": ["floor_moss"] }
+        "wall":  { "byAppearance": ["wall_moss"] },
+        "floor": { "byAppearance": ["floor_moss"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "glowstone": {
@@ -141,7 +201,10 @@
       "minLight": 8,
       "forms": {
         "block": { "byAppearance": ["wall_rubble"] },
-        "floor": { "byAppearance": ["floor_cobble"] }
+        "wall":  { "byAppearance": ["wall_rubble"] },
+        "floor": { "byAppearance": ["floor_cobble"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "ash": {
@@ -149,14 +212,20 @@
       "tint": "#ADA79E",
       "forms": {
         "block": { "byAppearance": ["wall_rubble"] },
-        "floor": { "byAppearance": ["floor_earth"] }
+        "wall":  { "byAppearance": ["wall_rubble"] },
+        "floor": { "byAppearance": ["floor_earth"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "ice": {
-      "notes": "No tint. Ice's canon color is pale/frosty, but SpriteBatch tinting is strictly multiplicative — it can darken or re-hue a texel, never lighten it past the sprite's own baked color — so there is no honest tint that makes the already-fairly-saturated baked blue paler; multiplying toward white is a visual no-op and multiplying toward anything else only makes it darker and muddier. The genuinely-baked blue crystal panel is used as-is; a paler ice look would need a different sheet cell, not a tint.",
+      "notes": "No tint. Ice's canon color is pale/frosty, but SpriteBatch tinting is strictly multiplicative — it can darken or re-hue a texel, never lighten it past the sprite's own baked color — so there is no honest tint that makes the already-fairly-saturated baked blue paler; multiplying toward white is a visual no-op and multiplying toward anything else only makes it darker and muddier. The genuinely-baked blue crystal panel is used as-is; a paler ice look would need a different sheet cell, not a tint. Ramp/stair fall back to slope_a/stair_rung's native beige for the same no-baked-blue-slope reason as chromatis/lightstone.",
       "forms": {
         "block": { "byAppearance": ["wall_crystal"] },
-        "floor": { "byAppearance": ["floor_crystal"] }
+        "wall":  { "byAppearance": ["wall_crystal"] },
+        "floor": { "byAppearance": ["floor_crystal"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "reman_concrete": {
@@ -164,7 +233,18 @@
       "notes": "No tint: real cast concrete IS beige-gray, so the sheet's native banded-masonry beige is trusted as-is. Differs from granite by SHAPE (coursed/banded = cast and modular, vs granite's smooth dressed-ashlar panel) rather than by color, and from steel (which shares this same wall_masonry region) by steel's added cool-gray tint.",
       "forms": {
         "block": { "byAppearance": ["wall_masonry"] },
-        "floor": { "byAppearance": ["floor_tile"] }
+        "wall":  { "byAppearance": ["wall_masonry"] },
+        "floor": { "byAppearance": ["floor_tile"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
+      }
+    },
+    "reman_facade": {
+      "provenance": "Civic-only material, minted via the add-material-raw skill as a physical clone of reman_concrete (content/raws/materials/reman_facade.json).",
+      "notes": "Rome cue: used ONLY for the Quayward Compound's (C1) gate wall. Reman engineering reads as cast/beige, matches facade_cornice natively, no tint needed (same logic the existing mapping already uses for plain reman_concrete) — single variant, since one gate wall doesn't need multiple looks the way a long street frontage does.",
+      "forms": {
+        "block": { "byAppearance": ["facade_cornice"] },
+        "wall":  { "byAppearance": ["facade_cornice"] }
       }
     },
     "leather": {
@@ -173,7 +253,10 @@
       "tint": "#8A6B44",
       "forms": {
         "block": { "byAppearance": ["roof_cloth"] },
-        "floor": { "byAppearance": ["floor_plank"] }
+        "wall":  { "byAppearance": ["roof_cloth"] },
+        "floor": { "byAppearance": ["floor_plank"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "cloth": {
@@ -182,7 +265,10 @@
       "tint": "#9C8560",
       "forms": {
         "block": { "byAppearance": ["roof_cloth"] },
-        "floor": { "byAppearance": ["floor_plank"] }
+        "wall":  { "byAppearance": ["roof_cloth"] },
+        "floor": { "byAppearance": ["floor_plank"] },
+        "ramp":  { "byAppearance": ["slope_a"] },
+        "stair": { "byAppearance": ["stair_rung"] }
       }
     }
   },

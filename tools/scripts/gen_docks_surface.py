@@ -44,6 +44,14 @@ LEATHER_WALL = 34
 CLOTH_WALL = 35
 DIRT_RAMP = 36   # appended to materials.tsx (append-only, tile id 35)
 BRICK_RAMP = 37  # appended to materials.tsx (append-only, tile id 36)
+# DECISIONS.md Art register FIFTH revision (Eli 2026-07-15, DF-translated Kenney /
+# Roman-pillared civic facades): 3 civic-only material clones (content/raws/materials/
+# *_facade.json), WALL-only, appended to materials.tsx (tile ids 37-39). Used ONLY on the
+# specific street-facing frontage walls tagged in section 3 below -- everywhere else,
+# granite/brick/reman_concrete stay plain.
+GRANITE_FACADE_WALL = 38
+BRICK_FACADE_WALL = 39
+REMAN_FACADE_WALL = 40
 
 # 3D lattices: [z][y][x]
 T = [[[0] * W for _ in range(H)] for _ in range(ZCOUNT)]   # terrain (fill)
@@ -477,6 +485,14 @@ for dx in (178, 181, 184, 186, 189, 191):
 # K01 The Weighhouse (grand, 2-story granite; tile roof; signal mast) -- 16x17
 shell(11, 56, 34, 71, 50, GRANITE_WALL, BRICK_FLOOR,
       doors=[(63, 34), (64, 34), (71, 41), (71, 42)])
+# Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): the north edge is
+# the street-facing frontage (door-bearing, faces the Tarwalk quay apron) -- overwrite it
+# with the civic-facade material so it resolves to a pedimented-colonnade sprite, then
+# re-punch its two doors (border painting solid over them first).
+trect(11, 56, 34, 71, 34, GRANITE_FACADE_WALL)
+for (dx, dy) in ((63, 34), (64, 34)):
+    T[11][dy][dx] = 0
+    F[11][dy][dx] = BRICK_FLOOR
 trect(11, 61, 39, 62, 40, STEEL_WALL)               # tariff scale
 for y in range(35, 50):                             # ledger-room partition
     T[11][y][65] = OAK_WALL
@@ -677,6 +693,13 @@ mk(11, "script_anchor", "business_k11_saltrow_anchor", 45, 51)
 
 # K12 The King's Bond (bonded warehouse: brick, one double door, no windows) -- 17x13
 shell(11, 82, 34, 98, 46, BRICK_WALL, BRICK_FLOOR, doors=[(89, 34), (90, 34)])
+# Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): north edge is the
+# street-facing frontage (its one double door). Overwrite with the civic-facade material,
+# re-punch the doors afterward.
+trect(11, 82, 34, 98, 34, BRICK_FACADE_WALL)
+for (dx, dy) in ((89, 34), (90, 34)):
+    T[11][dy][dx] = 0
+    F[11][dy][dx] = BRICK_FLOOR
 trect(11, 84, 42, 85, 43, OAK_WALL)                 # crates
 trect(11, 93, 38, 94, 39, OAK_WALL)
 frect(12, 82, 34, 98, 46, BRICK_FLOOR)
@@ -739,6 +762,13 @@ mk(11, "light_source", "lamp_fenners_door", 125, 51, luminance=10)
 # K17 Mission of the Flame (+ garden) -- 17x15
 shell(11, 82, 66, 98, 80, GRANITE_WALL, BRICK_FLOOR,
       doors=[(88, 66), (89, 66), (82, 73), (82, 74)])
+# Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): north edge is the
+# street-facing frontage (its main doors); the west-edge garden door (82,73)/(82,74) stays
+# plain granite -- only the street face gets the colonnade treatment.
+trect(11, 82, 66, 98, 66, GRANITE_FACADE_WALL)
+for (dx, dy) in ((88, 66), (89, 66)):
+    T[11][dy][dx] = 0
+    F[11][dy][dx] = BRICK_FLOOR
 for y in range(67, 80):                             # chapel partition
     T[11][y][90] = OAK_WALL
 T[11][71][90] = 0
@@ -991,6 +1021,16 @@ for x in range(9, 20):
 T[12][106][14] = 0
 T[12][100][12] = OAK_STAIR_UP
 shell(13, 8, 97, 31, 115, REMAN_WALL, REMAN_FLOOR)
+# Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): the compound's one
+# public gate is the mansion shell's own east border (x=31, the doors at (31,105)/(31,106))
+# -- overwrite just that column with the civic-facade material, both the ground story (z12,
+# where the doors live -- re-punch them) and the solid upper story above the gate (z13, no
+# door there, so the whole column stays solid facade).
+trect(12, 31, 97, 31, 115, REMAN_FACADE_WALL)
+for (dx, dy) in ((31, 105), (31, 106)):
+    T[12][dy][dx] = 0
+    F[12][dy][dx] = REMAN_FLOOR
+trect(13, 31, 97, 31, 115, REMAN_FACADE_WALL)
 for y in range(98, 115):
     T[13][y][20] = REMAN_WALL
 T[13][105][20] = 0

@@ -1,0 +1,20 @@
+{
+  "id": "brick_facade",
+  "displayName": "Brick (Civic Facade)",
+  "phase": "SOLID",
+  "density": 1900,
+  "hardness": 4,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 40,
+  "heatCapacityQ8": 72,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 15,
+  "tags": ["masonry"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "Civic-only material minted via the add-material-raw skill, DECISIONS.md Art register FIFTH revision (Eli 2026-07-15): a physical clone of brick (identical density/hardness/flammability/conductivity/heatCapacity/value/tags/light/features) so the art-mapping can give ONLY the King's Bond (K12) street-facing frontage wall a colonnade/baluster sprite (content/art/kenney/art-mapping.json) without repainting every plain brick wall in the district. No physical/simulation difference from brick whatsoever - this id exists purely to be a distinct art-resolution key.",
+  "notes": "Byte-identical physical stats to brick.json; see that file for the reasoning behind each value. This material is never expected to appear anywhere except gen_docks_surface.py-tagged frontage walls."
+}

@@ -437,6 +437,52 @@ palette table: a monochrome silhouette is not a reliable predictor of a colored 
 hue, so every cell in the table above was re-verified by direct pixel sampling of the actual
 colored sheet, not carried over from the superseded picks.
 
+### 11.3 Fifth revision (2026-07-15): true-black void, ramp/stair, Roman civic facades
+
+**DECISIONS.md Art register, FIFTH revision (Eli 2026-07-15).** Muse: Dwarf Fortress's own
+visual language translated from ASCII glyphs to the same Kenney sheet used since §11.1 — no
+second pack mixed in. Three concrete changes to `content/art/kenney/art-mapping.json`, all
+pure content edits (no code, no schema change):
+
+1. **`voidColor` → `#000000`.** Was `#180F14` (a warm plum-black, §11's fourth-revision
+   mood target). True black per the explicit directive; fills cells beyond max z-peek depth
+   only — the lit-but-dark dimming curve (§5.1/§5.2) is byte-identical.
+2. **Ramp/stair regions, newly mapped.** The fourth revision never gave the Kenney pack a
+   RAMP or STAIR form at all (only `custom` had one) — every material now also resolves
+   `ramp`/`stair`, both pointing at two newly-picked cells: `slope_a` (three diagonal-corner
+   slope cells, `(0,16)`/`(4,16)`/`(0,18)`, native beige) and `stair_rung` (`(21,1)`, the
+   middle rung-row of a 3-cell ladder graphic — the top/bottom cells carry end-caps and don't
+   tile alone). Caveat: `chromatis`/`lightstone`/`ice` have no baked-hue slope cell in this
+   sheet, so their ramps/stairs render in `slope_a`/`stair_rung`'s native beige rather than
+   their signature color (§5.4's tint-can-only-darken rule) — low impact, since none of the
+   three are placed on the Docks surface map today.
+3. **Civic facade regions + materials — the Rome cue.** Three new sheet cells read as
+   genuine classical-order silhouettes (re-verified at 24× zoom, not assumed from
+   `Preview.png`): `facade_cornice` `(6,4)` (banded cornice/window register over a column row
+   over a base band, beige), `facade_colonnade` `(6,5)` (a pedimented mini-portico — arched
+   cornice over four column shafts on a plinth, terracotta), `facade_baluster` `(7,5)` (the
+   same shaft spacing without the pediment cap, terracotta). No fluted-shaft-and-capital
+   asset exists anywhere in the extracted Kenney catalog; these three are the closest real
+   thing the pack ships and read unambiguously as "columned facade." Three new **civic-only**
+   material ids — `granite_facade`, `brick_facade`, `reman_facade` — are physical clones of
+   `granite`/`brick`/`reman_concrete` (identical raws stats, `content/raws/materials/
+   *_facade.json`, minted via the `add-material-raw` skill) that exist purely to carry a
+   *different* wall art mapping. `gen_docks_surface.py` paints them onto exactly four
+   street-facing frontage wall runs — the Weighhouse (K01) and Mission of the Flame (K17)
+   north edges (`granite_facade`), the King's Bond (K12) north edge (`brick_facade`), and the
+   Quayward Compound's (C1) east gate wall (`reman_facade`) — leaving every other
+   granite/brick/reman_concrete wall in the district plain. This is the mechanism for
+   "pillars on some buildings, not all": a distinguishing key has to live at the *material*
+   level, since `WorldRenderer` keys art purely on `(materialId, form, appearanceBucket)` with
+   no "which building" input, and adding one would be a render-layer regression, not a
+   content one.
+
+Actor sprites (`SpriteIndex`) and `FaceGen` are unchanged — still the custom MERCOLAS-24
+sheet (a separate parallel workflow's territory; see DECISIONS.md's fifth-revision entry for
+the full reasoning). Torch/brazier light pools (`content/art/kenney-light-masks/`) are a
+flagged fast-follow: an additive `WorldRenderer` overlay pass over the existing multiplicative
+light-tint pipeline, not required to land the void/facade changes above.
+
 ## 12. Cosmetic tile variants (real-pack)
 
 **Problem.** With one sheet cell per logical region, a large granite wall or dirt floor

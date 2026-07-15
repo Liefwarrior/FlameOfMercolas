@@ -1,0 +1,25 @@
+{
+  "id": "granite_facade",
+  "displayName": "Granite (Civic Facade)",
+  "phase": "SOLID",
+  "density": 2700,
+  "hardness": 6,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 60,
+  "heatCapacityQ8": 88,
+  "fuelTicks": 0,
+  "burnsTo": null,
+  "valueCp": 20,
+  "tags": [
+    "stone"
+  ],
+  "light": {
+    "opacity": 31
+  },
+  "features": {},
+  "provenance": "Civic-only material minted via the add-material-raw skill, DECISIONS.md Art register FIFTH revision (Eli 2026-07-15): a physical clone of granite (identical density/hardness/flammability/conductivity/heatCapacity/value/tags/light/features) so the art-mapping can give ONLY the street-facing frontage wall of the Weighhouse (K01) and Mission of the Flame (K17) a pedimented-colonnade sprite (content/art/kenney/art-mapping.json) without repainting every plain granite wall in the district. No physical/simulation difference from granite whatsoever -- this id exists purely to be a distinct art-resolution key.",
+  "notes": "Byte-identical physical stats to granite.json; see that file for the reasoning behind each value. This material is never expected to appear anywhere except gen_docks_surface.py-tagged frontage walls."
+}

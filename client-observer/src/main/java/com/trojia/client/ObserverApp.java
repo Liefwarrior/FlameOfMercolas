@@ -86,9 +86,11 @@ public final class ObserverApp extends ApplicationAdapter {
     private static final int NO_DEBUG_SELECT = Actor.NONE;
 
     /** The shipped art pack directory under {@code content/art/} (DECISIONS.md Art
-     * register, fourth revision: custom original MERCOLAS-24 art). {@code --art=kenney}
-     * and {@code --art=placeholder} are the escape hatches back to the fallback packs. */
-    public static final String DEFAULT_ART_DIR = "custom";
+     * register, FIFTH revision, 2026-07-15: DF-translated Kenney, true-black void,
+     * Roman-pillared civic facades — supersedes the fourth revision's custom
+     * MERCOLAS-24 pack). {@code --art=custom} and {@code --art=placeholder} are the
+     * escape hatches back to the superseded/fallback packs. */
+    public static final String DEFAULT_ART_DIR = "kenney";
 
     /** Screen-edge margin, px, for the top-left status HUD block (nav + clock lines). */
     private static final float HUD_MARGIN_PX = 8f;
@@ -235,7 +237,8 @@ public final class ObserverApp extends ApplicationAdapter {
         String mappingJson = readArtMapping(artDir);
         JsonTileArtResolver artResolver = JsonTileArtResolver.parse(mappingJson);
         // The void clear color comes from the loaded mapping (TILE-ART-SPEC section 5.2)
-        // — packs disagree (#0D0B10 custom, #180F14 kenney), so it is read, not hand-kept.
+        // — packs disagree (#0D0B10 custom, #000000 kenney/DF-black), so it is read, not
+        // hand-kept.
         int voidRgb = artResolver.voidColorRgb();
         this.voidR = ((voidRgb >>> 16) & 0xFF) / 255f;
         this.voidG = ((voidRgb >>> 8) & 0xFF) / 255f;
