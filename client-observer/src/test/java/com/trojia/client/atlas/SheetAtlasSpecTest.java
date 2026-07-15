@@ -110,8 +110,12 @@ class SheetAtlasSpecTest {
 
         @Test
         void gridDimensionsMatchTheKenneySheet() {
-            assertEquals(49, spec.columns());
-            assertEquals(22, spec.rows());
+            // Sixth revision (DECISIONS.md art register): the dominant-surface atlas swapped
+            // from the Kenney 1-Bit sheet (49x22, an icon atlas that tiled into ugly glyph
+            // noise) to Kenney's Roguelike Modern City Pack (37x28, a seamless masonry terrain
+            // set). Same SheetAtlasSpec grid mechanism, different sheet + cell coords.
+            assertEquals(37, spec.columns());
+            assertEquals(28, spec.rows());
             assertEquals(16, spec.tilePx());
         }
 
@@ -125,20 +129,19 @@ class SheetAtlasSpecTest {
         @Test
         void surfacesCarryRealVariety() {
             // The whole point of the re-scope: a large wall/floor is not one repeated sprite.
-            // Counts reflect the colored-pack cell picks (art-mapping.json regionsProvenance);
-            // several of the monochrome-era cells recolor to a different family in the colored
-            // sheet (e.g. old wall_stone's (9,5) bakes blue, not beige) so the sets differ from
-            // the superseded monochrome-tint mapping.
-            assertEquals(3, spec.variantCount("wall_brick"));
-            assertEquals(3, spec.variantCount("wall_stone"));
-            assertEquals(4, spec.variantCount("wall_rubble"));
-            assertEquals(2, spec.variantCount("wall_plank"));
-            assertEquals(3, spec.variantCount("floor_tile"));
+            // Counts reflect the sixth-revision City-Pack cell picks (art-mapping.json
+            // regionsProvenance): interior (border-free) coursing/flagstone cells of each
+            // building block, chosen to tile into a solid low-frequency masonry mass.
+            assertEquals(8, spec.variantCount("wall_brick"));
+            assertEquals(6, spec.variantCount("wall_stone"));
+            assertEquals(5, spec.variantCount("wall_rubble"));
+            assertEquals(4, spec.variantCount("wall_plank"));
+            assertEquals(6, spec.variantCount("floor_tile"));
             assertEquals(4, spec.variantCount("floor_plank"));
-            assertEquals(4, spec.variantCount("floor_earth"));
+            assertEquals(3, spec.variantCount("floor_earth"));
             assertEquals(4, spec.variantCount("wall_crystal"));
-            assertEquals(3, spec.variantCount("wall_moss"));
-            assertEquals(5, spec.variantCount("water"));
+            assertEquals(4, spec.variantCount("wall_moss"));
+            assertEquals(4, spec.variantCount("water"));
         }
 
         @Test

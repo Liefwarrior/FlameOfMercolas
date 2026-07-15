@@ -483,6 +483,55 @@ the full reasoning). Torch/brazier light pools (`content/art/kenney-light-masks/
 flagged fast-follow: an additive `WorldRenderer` overlay pass over the existing multiplicative
 light-tint pipeline, not required to land the void/facade changes above.
 
+### 11.4 Sixth revision (2026-07-15): dominant-surface atlas swap to the Roguelike City Pack
+
+**DECISIONS.md Art register, SIXTH revision (Eli 2026-07-15).** The fifth revision's
+infrastructure (true-black void, the three civic-facade materials, the light/peek pipeline,
+the cosmetic-variant hash) was correct, but its dominant-tile SELECTION off the Kenney 1-Bit
+sheet read as an ugly low-contrast **icon-noise carpet**: the 1-Bit pack is fundamentally an
+atlas of ~1024 tiny distinct glyphs, not a seamless terrain tileset, so a large granite/dirt/
+brick surface tiled into a restless field of square-in-square icons rather than solid
+masonry. This revision keeps every fifth-revision invariant and re-**skins** only which sheet
+the dominant surfaces draw from, swapping `atlas` to Kenney's **Roguelike Modern City Pack**
+(CC0, `content/art/kenney/CityPack/tilemap_packed.png`, `License.txt`; **37×28** @16 px, zero
+spacing — the `SheetAtlasSpec` grid mechanism is unchanged, only the sheet and cell coords
+differ, still zero Java change). That pack's Tilemap is a genuine seamless masonry terrain
+set: solid low-frequency red-brick / grey-ashlar / warm-sandstone coursing walls and grey/tan
+flagstone + tilled-earth + grass floors that tile into calm, weighty, architectural masses
+(the Dwarf-Fortress-mass muse + Eli's gritty-Rome cue), not icon noise. Concrete changes, all
+pure content edits in `content/art/kenney/art-mapping.json` (see its `regionsProvenance` /
+per-material `notes` for exact cells and reasoning):
+
+1. **`atlas` / `sheet` → City Pack, 37×28.** Every `wall_*/floor_*/roof_*/water/slope/stair`
+   region re-pointed at the **interior (border-free)** cells of each City-Pack building block
+   so coursing/flagstone tiles seamlessly (verified by tiling proofs into masses).
+2. **Palette pushed to warm-gritty-Rome.** Granite — the district's *dominant* material —
+   gains a warm travertine `#D8C6A2` multiply so the whole city reads as warm Roman dressed
+   stone rather than monochrome grey; `dirt`/`ash`/the timber ids/`glowstone` retuned to keep
+   the warm register coherent. `fluids.water` gains a `#4E9AB0` harbor-teal tint (honored by
+   `JsonTileArtResolver.fluidTintRgb`).
+3. **Facade regions renamed by stone.** The fifth revision's shared-hue
+   `facade_cornice/facade_colonnade/facade_baluster` are replaced by stone-matched
+   `facade_granite/facade_brick/facade_reman` — one grand multi-register **stone elevation
+   block** per civic material (grey / red-brick / sandstone), since a single portico cell
+   cannot serve three stone colours. These read as ornate windowed ashlar frontages, a
+   stronger Rome cue than the 1-Bit portico glyph the fifth revision itself flagged as weak.
+   No literal free-standing colonnade/arch cell exists in the City Pack (its vertical-rhythm
+   cells are modern glass storefronts), so this is a "grand elevation, not free-standing
+   columns" compromise — flagged, honest, palette-coherent.
+
+**Deliberate compromise (flagged for Eli).** The City Pack ships **no seamless wood surface**
+— every wood cell is a discrete crate/board on transparency that tiles into a pile of objects
+with black gaps — so `oak`/`trudgeon_wood` route onto the solid sandstone coursing shape with
+warm-brown multiplies, reading as solid **timber-framed masonry masses** rather than broken
+crate cells. Trades literal wood-grain for solidity, the right call under the DF-mass muse +
+single-atlas constraint, low-impact in this stone/brick-dominated Docks district.
+
+`voidColor` (`#000000`), `lightTintQ8`, `zPeekDimQ8`, `tilePx` (16) are **byte-identical** to
+the fifth revision. `SheetAtlasSpecTest.ShippedKenneyPack` updated for the new grid dimensions
+(37×28) and City-Pack variant counts. §11.1–§11.3 above describe the *superseded* 1-Bit sheet
+and are kept for history; the live pack is the City Pack described here.
+
 ## 12. Cosmetic tile variants (real-pack)
 
 **Problem.** With one sheet cell per logical region, a large granite wall or dirt floor
