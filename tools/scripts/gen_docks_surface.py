@@ -44,6 +44,14 @@ LEATHER_WALL = 34
 CLOTH_WALL = 35
 DIRT_RAMP = 36   # appended to materials.tsx (append-only, tile id 35)
 BRICK_RAMP = 37  # appended to materials.tsx (append-only, tile id 36)
+# DECISIONS.md Art register FIFTH revision (Eli 2026-07-15, DF-translated Kenney /
+# Roman-pillared civic facades): 3 civic-only material clones (content/raws/materials/
+# *_facade.json), WALL-only, appended to materials.tsx (tile ids 37-39). Used ONLY on the
+# specific street-facing frontage walls tagged in section 3 below -- everywhere else,
+# granite/brick/reman_concrete stay plain.
+GRANITE_FACADE_WALL = 38
+BRICK_FACADE_WALL = 39
+REMAN_FACADE_WALL = 40
 
 # 3D lattices: [z][y][x]
 T = [[[0] * W for _ in range(H)] for _ in range(ZCOUNT)]   # terrain (fill)
@@ -104,6 +112,195 @@ def mk(z, cls, name, tx, ty, **props):
 
 def center(x0, y0, x1, y1):
     return (x0 + x1) // 2, (y0 + y1) // 2
+
+
+# ======================================================================
+# FIXTURE LIBRARY (2026-07-15 senior-level-design pass, Eli's directive to
+# "create a lot of re-usable fixtures within these city blocks because it would
+# make sense that things are standardized"). A layer of STANDARDIZED, repeatable
+# stamps composed from the low-level primitives above (frect/trect/border/cells/
+# shell) -- so the city reads as standardized, not bespoke-random. Everything
+# reuses existing material gids ONLY (no new art). Furniture idioms are the ones
+# already used throughout this file: bed = CLOTH_WALL, chest/trunk = LEATHER_WALL,
+# hearth = GRANITE_WALL cells, counter/table/shelf/nightstand = OAK_WALL.
+#
+# The single most important fixture is sidewalk(): it paints GRANITE_FLOOR, which
+# (SEVENTH art revision, art-mapping.json variantPatterns) resolves to the periodic
+# floor_pave region -- an OBVIOUS regular laid-paver weave, visually distinct from
+# the smooth homogeneous brick roadway spine (floor_tile) and the deliberately-rough
+# dirt intersections (floor_earth, hash-scattered). That is exactly Eli's street
+# hierarchy: "Sidewalks should be obvious and not irregularly patterned ... the
+# middle of the street and intersections in the street would have less regularity."
+# ======================================================================
+
+# --- surface / street fixtures ---
+def sidewalk(z, x0, y0, x1, y1):
+    """A paved sidewalk band -> GRANITE_FLOOR (the periodic floor_pave paver weave).
+    The one call that makes a street frontage read as an obvious laid sidewalk."""
+    frect(z, x0, y0, x1, y1, GRANITE_FLOOR)
+
+
+def safe_sidewalk(z, x0, y0, x1, y1):
+    """Paint the periodic floor_pave weave (GRANITE_FLOOR) onto a rect, but ONLY on
+    cells that are currently bare exterior dirt (terrain open, DIRT_FLOOR, no fluid).
+    Walls, doors' interior thresholds, interior floors, stairs, ramps, water and
+    already-paved street are all left untouched -- so a rect may span whole buildings
+    to pave the dirt SEAMS between them in one call without moving any footprint."""
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            if T[z][y][x] == 0 and F[z][y][x] == DIRT_FLOOR and FL[z][y][x] == 0:
+                F[z][y][x] = GRANITE_FLOOR
+
+
+def roadway(z, x0, y0, x1, y1, spine_gid=BRICK_FLOOR):
+    """A smooth arterial roadway spine -> BRICK_FLOOR (the homogeneous floor_tile
+    avenue). Sleek and regular, flanked by sidewalk() bands."""
+    frect(z, x0, y0, x1, y1, spine_gid)
+
+
+def intersection(z, x0, y0, x1, y1):
+    """A junction/crossing square -> DIRT_FLOOR (rough floor_earth, hash-scattered):
+    the deliberately 'less regular' middle-of-street/junction Eli reserves
+    irregularity for."""
+    frect(z, x0, y0, x1, y1, DIRT_FLOOR)
+
+
+# --- slab-clutter fixtures (dressing pass; break up barren smooth expanses) ---
+def crate_grid(z, x0, y0, x1, y1, gid=OAK_WALL, bw=2, bh=2, gx=1, gy=1):
+    """Standardized grid of storage stacks: bw x bh solid crate/barrel islands (gid,
+    default OAK_WALL) tiled from the NW corner with gx/gy-wide aisles between, so a
+    warehouse/cargo bay reads as neatly racked goods that stay traversable. Like
+    safe_sidewalk it SELF-GUARDS -- paints a cell only when it is currently open floor
+    (terrain==0, floor set, no fluid) -- auto-skipping walls, doors, stairs, existing
+    furniture and water. Aisles between/around the islands stay one connected component
+    by construction; caller keeps the rect off anchors/through-spines."""
+    y = y0
+    while y <= y1:
+        x = x0
+        while x <= x1:
+            for yy in range(y, min(y + bh, y1 + 1)):
+                for xx in range(x, min(x + bw, x1 + 1)):
+                    if T[z][yy][xx] == 0 and F[z][yy][xx] != 0 and FL[z][yy][xx] == 0:
+                        T[z][yy][xx] = gid
+            x += bw + gx
+        y += bh + gy
+
+
+def rug(z, x0, y0, x1, y1, gid=GRANITE_FLOOR):
+    """Floor-variation 'rug'/inlaid medallion: repaint a rect of finished floor to gid
+    (default GRANITE_FLOOR -> the periodic floor_pave weave, which reads as a checkered
+    marble/mosaic inlay on the pale REMAN/BRICK slab). FLOOR layer only => entirely
+    walkability-neutral (never traps, never blocks). Only repaints cells that already
+    hold a non-fluid floor, so it hugs the room and won't spill onto walls/void/water."""
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            if F[z][y][x] != 0 and FL[z][y][x] == 0:
+                F[z][y][x] = gid
+
+
+# --- atomic homey pieces (a furniture cell is a solid WALL-gid tile) ---
+def bed(z, x, y):
+    T[z][y][x] = CLOTH_WALL
+
+
+def chest(z, x, y):
+    T[z][y][x] = LEATHER_WALL
+
+
+def hearth(z, x, y):
+    T[z][y][x] = GRANITE_WALL
+
+
+def table(z, x0, y0, x1, y1):
+    trect(z, x0, y0, x1, y1, OAK_WALL)
+
+
+def shelf(z, x0, y0, x1, y1):
+    trect(z, x0, y0, x1, y1, OAK_WALL)
+
+
+def shop_counter(z, x0, y0, x1, y1):
+    trect(z, x0, y0, x1, y1, OAK_WALL)
+
+
+# --- interior room fixtures ---
+def partition(z, x0, y0, x1, y1, wall, door):
+    """A single interior partition-wall segment (a straight run) with one door gap
+    punched through it -- the standardized 'divide a shell into rooms' primitive the
+    homes/compound units compose (formalizes the hand-rolled partition idiom used at
+    K01/K03/K17 etc.)."""
+    trect(z, x0, y0, x1, y1, wall)
+    (dx, dy) = door
+    T[z][dy][dx] = 0
+
+
+def homey_touches(z, hearth_xy, bed_xys, chest_xy=None, table_rect=None):
+    """Standardized 'lived-in home' furniture drop: a hearth, one bed per household
+    member, an optional chest and table -- so every home feels lived-in without being
+    hand-bespoke (Eli: "Homes should have homey touches"). Callers pass cells that sit
+    against walls / off the room's walkable center + door approach + any stair, so the
+    furniture ZONES the room (a sleeping corner, a hearth-and-table common area) without
+    trapping the occupants."""
+    (hx, hy) = hearth_xy
+    hearth(z, hx, hy)
+    for (bx, by) in bed_xys:
+        bed(z, bx, by)
+    if chest_xy is not None:
+        chest(z, chest_xy[0], chest_xy[1])
+    if table_rect is not None:
+        table(z, table_rect[0], table_rect[1], table_rect[2], table_rect[3])
+
+
+def compound_unit_interior(z, x0, y0, x1, y1, door, wall=REMAN_WALL):
+    """Divide a compound dwelling unit into a common/hearth room + a sleeping room
+    (one partition wall with a connecting door) and drop standardized homey touches --
+    a real home circulation instead of one undivided box (Eli #5: "homes in the
+    compounds should have rooms that are organized in a meaningful way", #6 homey
+    touches). Parametric and standardized across every unit. Guarantees, by
+    construction, that the unit's ANCHOR (its centre, where the household spawns), its
+    ENTRY DOOR, its interior STAIR (always at x0+2), and the interior door between the
+    two rooms all stay on OPEN floor -- furniture only ever hugs the back/front walls
+    and the 3-wide sleeping alcove, never the central walkable rows/columns. Sized for
+    the ~12x6-7 compound condos; a no-op-safe partition for anything narrower is the
+    caller's responsibility (not called on the tiny hovels)."""
+    (dx, dy) = door
+    door_south = (dy == y1)
+    back_y = y0 + 1 if door_south else y1 - 1   # hearth/beds hug the wall opposite the door
+    front_y = y1 - 1 if door_south else y0 + 1
+    mid_y = (y0 + y1) // 2
+    px = x1 - 4                                  # partition -> a 3-wide sleeping alcove east
+    partition(z, px, y0 + 1, px, y1 - 1, wall, (px, mid_y))
+    # common/hearth room (west of the partition): hearth on the back wall + a table
+    homey_touches(z, (x0 + 1, back_y), bed_xys=(),
+                  table_rect=(x0 + 3, back_y, x0 + 4, back_y))
+    # sleeping alcove (east of the partition): two beds along the back wall + a chest
+    bed(z, px + 1, back_y)
+    bed(z, px + 2, back_y)
+    chest(z, x1 - 1, front_y)
+
+
+def hovel_touches(z, x0, y0, x1, y1, door, anchor):
+    """Squalor-tier lived-in touches for an un-partitionable shanty: hearth + up to
+    two beds + a chest, all on the interior strip against the wall OPPOSITE the door,
+    skipping the anchor cell and the door-aligned cell so the door->anchor spine and
+    every open cell stay one connected component. NO partition (would trap a 2-deep box)."""
+    ix0, iy0, ix1, iy1 = x0 + 1, y0 + 1, x1 - 1, y1 - 1
+    (dx, dy) = door
+    if dy == y0:      strip = [(x, iy1) for x in range(ix0, ix1 + 1)]   # door N -> back S row
+    elif dy == y1:    strip = [(x, iy0) for x in range(ix0, ix1 + 1)]   # door S -> back N row
+    elif dx == x0:    strip = [(ix1, y) for y in range(iy0, iy1 + 1)]   # door W -> back E col
+    else:             strip = [(ix0, y) for y in range(iy0, iy1 + 1)]   # door E -> back W col
+    (ax, ay) = anchor
+    strip = [c for c in strip if c != (ax, ay)
+             and not (dy in (y0, y1) and c[0] == dx)      # keep door column clear
+             and not (dx in (x0, x1) and c[1] == dy)]     # keep door row clear
+    if not strip:
+        return
+    hearth(z, *strip[0])
+    for c in strip[1:-1][:2]:
+        bed(z, *c)
+    if len(strip) >= 2:
+        chest(z, *strip[-1])
 
 
 # ======================================================================
@@ -236,6 +433,26 @@ frect(12, 72, 97, 79, 115, BRICK_FLOOR)     # Saltgate Rise, Band B leg
 frect(13, 72, 117, 79, 127, BRICK_FLOOR)    # Saltgate Rise, Band C leg
 frect(11, 33, 26, 33, 59, DIRT_FLOOR)       # Herring Lane offal gutter (no fluid)
 frect(11, 34, 54, 55, 54, DIRT_FLOOR)       # Salt Row offal-gutter link
+
+# --- Sidewalk frontage bands (2026-07-15 senior-level-design pass, Eli directive #2
+# "Sidewalks should be obvious and not irregularly patterned"). These repaint the
+# OUTERMOST walkable row/column of an already-paved arterial (brick spine) as
+# GRANITE_FLOOR -- which resolves to the periodic floor_pave paver weave -- so the
+# smooth brick roadway centre now reads as flanked by OBVIOUS laid-paver sidewalks
+# (the §5 street hierarchy: sidewalk band | smooth spine | sidewalk band). They only
+# ever repaint existing STREET floor (brick -> granite), never touch a building, so
+# no K-site/compound/hovel footprint and no DocksPopulation anchor moves. The Tarwalk
+# A quay apron is already GRANITE (now periodic pavers); Tarwalk C keeps its
+# deliberately-worn broken-paving checker as the §5 "less regular" junction texture.
+sidewalk(11, 80, 33, 129, 33)               # Tarwalk east: sidewalk along the shopfronts
+sidewalk(11, 4, 60, 147, 60)                # Ropewynd north kerb
+sidewalk(11, 4, 65, 147, 65)                # Ropewynd south kerb (the frontage side)
+sidewalk(11, 72, 34, 72, 65)               # Saltgate Rise, Band A: west kerb
+sidewalk(11, 79, 34, 79, 65)               # Saltgate Rise, Band A: east kerb
+sidewalk(12, 72, 97, 72, 115)              # Saltgate Rise, Band B: west kerb
+sidewalk(12, 79, 97, 79, 115)              # Saltgate Rise, Band B: east kerb
+sidewalk(13, 72, 117, 72, 127)             # Saltgate Rise, Band C: west kerb
+sidewalk(13, 79, 117, 79, 127)             # Saltgate Rise, Band C: east kerb
 
 # ======================================================================
 # 2. Waterfront (blueprint section 2)
@@ -477,6 +694,14 @@ for dx in (178, 181, 184, 186, 189, 191):
 # K01 The Weighhouse (grand, 2-story granite; tile roof; signal mast) -- 16x17
 shell(11, 56, 34, 71, 50, GRANITE_WALL, BRICK_FLOOR,
       doors=[(63, 34), (64, 34), (71, 41), (71, 42)])
+# Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): the north edge is
+# the street-facing frontage (door-bearing, faces the Tarwalk quay apron) -- overwrite it
+# with the civic-facade material so it resolves to a pedimented-colonnade sprite, then
+# re-punch its two doors (border painting solid over them first).
+trect(11, 56, 34, 71, 34, GRANITE_FACADE_WALL)
+for (dx, dy) in ((63, 34), (64, 34)):
+    T[11][dy][dx] = 0
+    F[11][dy][dx] = BRICK_FLOOR
 trect(11, 61, 39, 62, 40, STEEL_WALL)               # tariff scale
 for y in range(35, 50):                             # ledger-room partition
     T[11][y][65] = OAK_WALL
@@ -664,6 +889,11 @@ for sy in (38, 42, 46):
     trect(11, 40, sy, 43, sy, TRUDGEON_WALL)
     trect(11, 48, sy, 50, sy, TRUDGEON_WALL)
 T[11][40][46] = GRANITE_WALL                        # auction block
+# Dressing pass (slab-clutter): a fishmonger's well, extra stall counters, and produce
+# crates in the empty south/margins; central x46 spine (muster->auction->anchor) stays clear.
+trect(11, 37, 47, 38, 48, GRANITE_WALL)             # fishmonger's well, SW corner
+cells(11, [(53, 46), (53, 47), (37, 38), (37, 39), (44, 45), (45, 45)], TRUDGEON_WALL)  # extra fish stalls
+cells(11, [(40, 48), (41, 48), (48, 48), (49, 48), (51, 40), (51, 41), (40, 44), (41, 44)], OAK_WALL)  # produce crates
 mk(11, "script_anchor", "business_k10_dawnstalls_anchor", 46, 41)
 mk(11, "script_anchor", "muster_dawnstalls_anchor", 46, 37)
 
@@ -677,8 +907,22 @@ mk(11, "script_anchor", "business_k11_saltrow_anchor", 45, 51)
 
 # K12 The King's Bond (bonded warehouse: brick, one double door, no windows) -- 17x13
 shell(11, 82, 34, 98, 46, BRICK_WALL, BRICK_FLOOR, doors=[(89, 34), (90, 34)])
+# Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): north edge is the
+# street-facing frontage (its one double door). Overwrite with the civic-facade material,
+# re-punch the doors afterward.
+trect(11, 82, 34, 98, 34, BRICK_FACADE_WALL)
+for (dx, dy) in ((89, 34), (90, 34)):
+    T[11][dy][dx] = 0
+    F[11][dy][dx] = BRICK_FLOOR
 trect(11, 84, 42, 85, 43, OAK_WALL)                 # crates
 trect(11, 93, 38, 94, 39, OAK_WALL)
+# Dressing pass (slab-clutter): bonded goods -- standardized crate stacks packing the four
+# quadrants (N-S spine x89-90 and E-W cross-aisle y40-41 stay clear: door(89-90,34) ->
+# anchor(90,40) -> south wall). SW grid origin x84 aligns to the existing (84-85,42-43)
+# stack so no aisle seals; existing stacks are auto-skipped by crate_grid's open-floor guard.
+for (qx0, qy0, qx1, qy1) in [(83, 35, 88, 39), (91, 35, 97, 39), (84, 42, 88, 45), (91, 42, 97, 45)]:
+    crate_grid(11, qx0, qy0, qx1, qy1)
+trect(11, 87, 44, 88, 44, LEATHER_WALL)             # a pallet of sacks in the SW bay
 frect(12, 82, 34, 98, 46, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k12_kingsbond_anchor", 90, 40)
 mk(11, "script_anchor", "watch_bond_post_anchor", 90, 33)
@@ -739,6 +983,13 @@ mk(11, "light_source", "lamp_fenners_door", 125, 51, luminance=10)
 # K17 Mission of the Flame (+ garden) -- 17x15
 shell(11, 82, 66, 98, 80, GRANITE_WALL, BRICK_FLOOR,
       doors=[(88, 66), (89, 66), (82, 73), (82, 74)])
+# Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): north edge is the
+# street-facing frontage (its main doors); the west-edge garden door (82,73)/(82,74) stays
+# plain granite -- only the street face gets the colonnade treatment.
+trect(11, 82, 66, 98, 66, GRANITE_FACADE_WALL)
+for (dx, dy) in ((88, 66), (89, 66)):
+    T[11][dy][dx] = 0
+    F[11][dy][dx] = BRICK_FLOOR
 for y in range(67, 80):                             # chapel partition
     T[11][y][90] = OAK_WALL
 T[11][71][90] = 0
@@ -877,6 +1128,14 @@ shell(11, 79, 82, 97, 92, BRICK_WALL, DIRT_FLOOR, doors=[(87, 82), (88, 82)])
 for rx in (83, 89, 93):
     trect(11, rx, 85, rx + 1, 88, OAK_WALL)         # racking islands, aisles between
 trect(11, 81, 89, 82, 90, OAK_WALL)                 # foreman's desk nook
+# Dressing pass (slab-clutter): receiving strip -- extend the 3 racking islands up into
+# y83-84 (taller stacks, no gaps); dispatch bay -- two free-standing crate islands + a
+# sack pallet (anchor aisle x87-88 stays clear full height). Foreman's desk untouched.
+for rx in (83, 89, 93):
+    trect(11, rx, 83, rx + 1, 84, OAK_WALL)
+trect(11, 84, 90, 85, 91, OAK_WALL)
+trect(11, 90, 90, 91, 91, OAK_WALL)
+trect(11, 95, 90, 96, 90, LEATHER_WALL)
 frect(12, 79, 82, 97, 92, BRICK_FLOOR)              # flat roof, single story, no bed
 mk(11, "script_anchor", "business_k29_longstore_anchor", 88, 87)
 
@@ -988,9 +1247,46 @@ for y in range(98, 115):
 T[12][105][20] = 0
 for x in range(9, 20):
     T[12][106][x] = REMAN_WALL
-T[12][106][14] = 0
+# DEV (interiors plan §7, 2026-07-15): the mansion household anchor cmp1_mansion_anchor =
+# center(8,97,31,115) = (19,106) previously landed ON this horizontal wall (gap was at
+# (14,106)) -- a pre-existing anchor-on-wall defect that fails the walkable-anchor
+# invariant. Fix: punch the gap AT the anchor cell (19,106) instead of (14,106). The
+# west-south room still reaches the rest via (19,106)->(19,105)/(19,107); DocksPopulation
+# C1_MANSION={19,106} is unchanged (no footprint/anchor move), the anchor is now walkable.
+T[12][106][19] = 0
 T[12][100][12] = OAK_STAIR_UP
+# Homey touches (interiors plan §7, unblocked now the anchor is walkable): a hearth+table
+# common in the east hall, sleeping beds/chests hugging the outer walls of all three rooms.
+# Trap-free (blind flood from (19,106) reaches all interior cells); keeps the east door
+# approach (30,105)/(30,106) and the stair (12,100) clear.
+hearth(12, 21, 106)
+table(12, 25, 106, 26, 106)
+bed(12, 21, 98); bed(12, 22, 98); bed(12, 29, 98); chest(12, 30, 114)
+bed(12, 9, 98); bed(12, 10, 98); chest(12, 9, 104)
+bed(12, 9, 114); bed(12, 10, 114); chest(12, 9, 107)
+# Dressing pass (slab-clutter): the great east hall is the one genuinely barren mansion
+# room. OAK renders as a crate, so a genteel hall gets the "rug (floor variation)" treatment
+# -- two checkered floor-medallion RUGS (floor_pave weave), each with a 1x3 trestle table,
+# plus LEATHER presses/wardrobe hugging the walls. y105 spine + east door(30,105/106) +
+# hearth(21,106) kept clear (owner commutes anchor->courtyard through here).
+rug(12, 23, 100, 28, 103)                           # north medallion
+rug(12, 23, 109, 27, 112)                           # south medallion
+table(12, 24, 101, 26, 101)                         # trestle on north rug
+table(12, 24, 110, 26, 110)                         # trestle on south rug
+trect(12, 30, 100, 30, 103, LEATHER_WALL)           # press, east wall (door 30,105/106 clear below)
+trect(12, 21, 100, 21, 101, LEATHER_WALL)           # linen press, west wall (hearth 21,106 clear below)
+trect(12, 30, 111, 30, 113, LEATHER_WALL)           # wardrobe beside the existing chest (30,114)
 shell(13, 8, 97, 31, 115, REMAN_WALL, REMAN_FLOOR)
+# Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): the compound's one
+# public gate is the mansion shell's own east border (x=31, the doors at (31,105)/(31,106))
+# -- overwrite just that column with the civic-facade material, both the ground story (z12,
+# where the doors live -- re-punch them) and the solid upper story above the gate (z13, no
+# door there, so the whole column stays solid facade).
+trect(12, 31, 97, 31, 115, REMAN_FACADE_WALL)
+for (dx, dy) in ((31, 105), (31, 106)):
+    T[12][dy][dx] = 0
+    F[12][dy][dx] = REMAN_FLOOR
+trect(13, 31, 97, 31, 115, REMAN_FACADE_WALL)
 for y in range(98, 115):
     T[13][y][20] = REMAN_WALL
 T[13][105][20] = 0
@@ -1013,8 +1309,12 @@ C1_STAIRS_S = ((34, 113), (46, 113), (58, 113))
 for i, (x0, x1) in enumerate(C1_N):
     d = ((x0 + 5, 103),)
     shell(12, x0, 97, x1, 103, REMAN_WALL, REMAN_FLOOR, doors=d)
+    # Meaningful rooms + homey touches (design §3/§6): common/hearth room + sleeping
+    # alcove, anchor/door/stair kept clear by the fixture's construction.
+    compound_unit_interior(12, x0, 97, x1, 103, (x0 + 5, 103))
     T[12][C1_STAIRS_N[i][1]][C1_STAIRS_N[i][0]] = OAK_STAIR_UP
     shell(13, x0, 97, x1, 103, REMAN_WALL, REMAN_FLOOR)
+    compound_unit_interior(13, x0, 97, x1, 103, (x0 + 5, 103))
     T[13][C1_STAIRS_N[i][1]][C1_STAIRS_N[i][0]] = OAK_STAIR_DOWN
     frect(14, x0, 97, x1, 103, REMAN_FLOOR)
     unit_anchor(12, "cmp1_condo_%02d_anchor" % (i + 1), x0, 97, x1, 103)
@@ -1022,8 +1322,10 @@ for i, (x0, x1) in enumerate(C1_N):
 for i, (x0, x1) in enumerate(C1_S):
     d = ((x0 + 5, 110),)
     shell(12, x0, 110, x1, 115, REMAN_WALL, REMAN_FLOOR, doors=d)
+    compound_unit_interior(12, x0, 110, x1, 115, (x0 + 5, 110))
     T[12][C1_STAIRS_S[i][1]][C1_STAIRS_S[i][0]] = OAK_STAIR_UP
     shell(13, x0, 110, x1, 115, REMAN_WALL, REMAN_FLOOR)
+    compound_unit_interior(13, x0, 110, x1, 115, (x0 + 5, 110))
     T[13][C1_STAIRS_S[i][1]][C1_STAIRS_S[i][0]] = OAK_STAIR_DOWN
     frect(14, x0, 110, x1, 115, REMAN_FLOOR)
     unit_anchor(12, "cmp1_condo_%02d_anchor" % (i + 4), x0, 110, x1, 115)
@@ -1062,6 +1364,54 @@ for i, (x0, y0, x1, y1, _) in enumerate(C2_GROUND[3:]):
     shell(12, x0, y0, x1, y1, REMAN_WALL, REMAN_FLOOR)
     T[12][sy][sx] = OAK_STAIR_DOWN
     unit_anchor(12, "cmp2_condo_%02d_anchor" % (i + 7), x0, y0, x1, y1)
+# --- C2 meaningful rooms + homey touches (interiors plan §3). Explicit primitive calls
+# (not compound_unit_interior, which fits only C1's 12x7 S-door condos): one straight
+# partition per unit + wall-hugging furniture => two/three connected rooms, anchor/door/
+# stair always on open floor. Blind flood-verified from each anchor (verify_interiors.py).
+# C2 mansion (116-127,66-93): 3 rooms, central common holds the E door + anchor (121,79).
+partition(11, 117, 75, 126, 75, REMAN_WALL, (121, 75))
+partition(11, 117, 84, 126, 84, REMAN_WALL, (121, 84))
+bed(11, 117, 67); bed(11, 118, 67); bed(11, 119, 67); bed(11, 125, 67); bed(11, 126, 67)
+chest(11, 117, 74); chest(11, 126, 74)
+hearth(11, 117, 79); table(11, 118, 82, 119, 82); table(11, 123, 82, 124, 82); chest(11, 126, 82)
+bed(11, 117, 92); bed(11, 118, 92); bed(11, 125, 92); bed(11, 126, 92); chest(11, 117, 85)
+rug(11, 119, 77, 123, 78)                           # dressing: mid great-room medallion (anchor 121,79 clear)
+# c01 (128-135,66-75): 8-wide -> horizontal split (sleeping N | common S).
+partition(11, 129, 69, 134, 69, REMAN_WALL, (131, 69))
+bed(11, 129, 67); bed(11, 130, 67); chest(11, 134, 67)
+hearth(11, 129, 74); table(11, 133, 74, 134, 74)
+# c02 (144-151,66-75): c01 shifted +16x.
+partition(11, 145, 69, 150, 69, REMAN_WALL, (147, 69))
+bed(11, 145, 67); bed(11, 146, 67); chest(11, 150, 67)
+hearth(11, 145, 74); table(11, 149, 74, 150, 74)
+# c03 (128-147,86-93): 18-wide -> three rooms (two vertical partitions); door+anchor central.
+partition(11, 133, 87, 133, 92, REMAN_WALL, (133, 89))
+partition(11, 142, 87, 142, 92, REMAN_WALL, (142, 89))
+bed(11, 129, 87); bed(11, 130, 87); chest(11, 129, 92)
+hearth(11, 134, 92); table(11, 139, 92, 140, 92)
+bed(11, 145, 87); bed(11, 146, 87); chest(11, 146, 92)
+# c04 (152-163,66-75): W door + interior stair (155,70) -> west common | east sleeping.
+partition(11, 159, 67, 159, 74, REMAN_WALL, (159, 70))
+bed(11, 161, 67); bed(11, 162, 67); chest(11, 162, 74)
+hearth(11, 153, 74); table(11, 157, 74, 158, 74); chest(11, 158, 67)
+# c05 (152-163,76-84).
+partition(11, 159, 77, 159, 83, REMAN_WALL, (159, 80))
+bed(11, 161, 77); bed(11, 162, 77); chest(11, 162, 83)
+hearth(11, 153, 83); table(11, 157, 83, 158, 83); chest(11, 158, 77)
+# c06 (152-163,85-93).
+partition(11, 159, 86, 159, 92, REMAN_WALL, (159, 89))
+bed(11, 161, 86); bed(11, 162, 86); chest(11, 162, 92)
+hearth(11, 153, 86); table(11, 157, 92, 158, 92); chest(11, 158, 86)
+# c04u/c05u/c06u (z12 uppers): same calls, z=12 (no wall door; stair-only access).
+partition(12, 159, 67, 159, 74, REMAN_WALL, (159, 70))
+bed(12, 161, 67); bed(12, 162, 67); chest(12, 162, 74)
+hearth(12, 153, 74); table(12, 157, 74, 158, 74); chest(12, 158, 67)
+partition(12, 159, 77, 159, 83, REMAN_WALL, (159, 80))
+bed(12, 161, 77); bed(12, 162, 77); chest(12, 162, 83)
+hearth(12, 153, 83); table(12, 157, 83, 158, 83); chest(12, 158, 77)
+partition(12, 159, 86, 159, 92, REMAN_WALL, (159, 89))
+bed(12, 161, 86); bed(12, 162, 86); chest(12, 162, 92)
+hearth(12, 153, 86); table(12, 157, 92, 158, 92); chest(12, 158, 86)
 # Roof slum z13 over the east wing. DEV: roof stair moved (159,80)->(154,79)
 # (the blueprint cell lands inside roofhut_11's rect).
 frect(13, 152, 66, 163, 93, REMAN_FLOOR)
@@ -1109,6 +1459,51 @@ for i, (x0, y0, x1, y1, _) in enumerate(C3_GROUND[2:]):
     shell(13, x0, y0, x1, y1, REMAN_WALL, REMAN_FLOOR)
     T[13][sy][sx] = OAK_STAIR_DOWN
     unit_anchor(13, "cmp3_condo_%02d_anchor" % (i + 7), x0, y0, x1, y1)
+# --- C3 meaningful rooms + homey touches (interiors plan §4). Same explicit-primitive
+# idiom as C2; blind flood-verified from each anchor. C3 mansion (84-95,101-115): 2 rooms,
+# south common holds the E door + anchor (89,108); column 89 spine kept clear.
+partition(12, 85, 106, 94, 106, REMAN_WALL, (89, 106))
+bed(12, 85, 102); bed(12, 86, 102); bed(12, 93, 102); bed(12, 94, 102)
+chest(12, 85, 105); chest(12, 94, 105)
+hearth(12, 85, 110); table(12, 87, 113, 88, 113); table(12, 90, 113, 91, 113); chest(12, 94, 114)
+rug(12, 86, 111, 91, 112)                           # dressing: south great-room medallion (anchor 89,108 clear)
+# c01 (124-131,101-107): W door -> west common (door+anchor) | east sleeping.
+partition(12, 128, 102, 128, 106, REMAN_WALL, (128, 104))
+bed(12, 129, 102); bed(12, 130, 102); chest(12, 130, 106)
+hearth(12, 125, 102); table(12, 126, 106, 127, 106)
+# c02 (132-139,101-107): S door.
+partition(12, 136, 102, 136, 106, REMAN_WALL, (136, 104))
+bed(12, 137, 102); bed(12, 138, 102); chest(12, 138, 106)
+hearth(12, 133, 102); table(12, 133, 106, 134, 106)
+# c03 (96-106,108-115): N door + stair (98,113) -> west common (door+stair+anchor) | east.
+partition(12, 102, 109, 102, 114, REMAN_WALL, (102, 111))
+bed(12, 104, 109); bed(12, 105, 109); chest(12, 105, 114)
+hearth(12, 97, 109); table(12, 100, 114, 101, 114)
+# c04 (107-117,108-115): stair (109,113).
+partition(12, 113, 109, 113, 114, REMAN_WALL, (113, 111))
+bed(12, 115, 109); bed(12, 116, 109); chest(12, 116, 114)
+hearth(12, 108, 109); table(12, 111, 114, 112, 114)
+# c05 (118-128,108-115): stair (120,113).
+partition(12, 124, 109, 124, 114, REMAN_WALL, (124, 111))
+bed(12, 126, 109); bed(12, 127, 109); chest(12, 127, 114)
+hearth(12, 119, 109); table(12, 122, 114, 123, 114)
+# c06 (129-139,108-115): stair (131,113).
+partition(12, 135, 109, 135, 114, REMAN_WALL, (135, 111))
+bed(12, 137, 109); bed(12, 138, 109); chest(12, 138, 114)
+hearth(12, 130, 109); table(12, 133, 114, 134, 114)
+# c03u/c04u/c05u/c06u (z13 uppers): same calls, z=13.
+partition(13, 102, 109, 102, 114, REMAN_WALL, (102, 111))
+bed(13, 104, 109); bed(13, 105, 109); chest(13, 105, 114)
+hearth(13, 97, 109); table(13, 100, 114, 101, 114)
+partition(13, 113, 109, 113, 114, REMAN_WALL, (113, 111))
+bed(13, 115, 109); bed(13, 116, 109); chest(13, 116, 114)
+hearth(13, 108, 109); table(13, 111, 114, 112, 114)
+partition(13, 124, 109, 124, 114, REMAN_WALL, (124, 111))
+bed(13, 126, 109); bed(13, 127, 109); chest(13, 127, 114)
+hearth(13, 119, 109); table(13, 122, 114, 123, 114)
+partition(13, 135, 109, 135, 114, REMAN_WALL, (135, 111))
+bed(13, 137, 109); bed(13, 138, 109); chest(13, 138, 114)
+hearth(13, 130, 109); table(13, 133, 114, 134, 114)
 frect(14, 96, 108, 139, 115, REMAN_FLOOR)           # roof slum deck
 border(14, 96, 108, 139, 115, REMAN_WALL)
 T[13][113][114] = OAK_STAIR_UP
@@ -1140,12 +1535,38 @@ for i, (x0, y0, x1, y1, d) in enumerate(C4_GROUND):
     shell(11, x0, y0, x1, y1, BRICK_WALL, OAK_FLOOR, doors=[d])
     frect(12, x0, y0, x1, y1, THATCH_FLOOR)         # DEV: roof material unspecified
     unit_anchor(11, "cmp4_condo_%02d_anchor" % (i + 1), x0, y0, x1, y1)
+# --- C4 meaningful rooms + homey touches (interiors plan §5; BRICK_WALL partitions to
+# match the brick shells). Layouts keep the intentional rot gaps (170,66)/(166,88)/(190,80)
+# reachable. Blind flood-verified from each anchor.
+# c01 (166-171,66-79): 4-wide -> horizontal split (common N with door+anchor | sleeping S).
+partition(11, 167, 73, 170, 73, BRICK_WALL, (168, 73))
+hearth(11, 167, 67); table(11, 169, 68, 170, 68); chest(11, 167, 72)
+bed(11, 167, 74); bed(11, 170, 74); bed(11, 167, 78); chest(11, 170, 78)
+# c02 (166-171,80-93): beds shifted off (167,88) so the (166,88) rot gap stays reachable.
+partition(11, 167, 87, 170, 87, BRICK_WALL, (168, 87))
+hearth(11, 167, 81); table(11, 169, 82, 170, 82)
+bed(11, 169, 88); bed(11, 170, 88); bed(11, 167, 92); chest(11, 170, 92)
+# c03 (172-175,66-75): 2-wide interior -> NO partition (would trap 1-wide rooms); col 173 spine.
+hearth(11, 174, 67); bed(11, 174, 69); bed(11, 174, 71); chest(11, 174, 73)
+# c04 (180-190,66-75): vertical split (west common with door+anchor | east sleeping).
+partition(11, 186, 67, 186, 74, BRICK_WALL, (186, 70))
+bed(11, 188, 67); bed(11, 189, 67); chest(11, 189, 74)
+hearth(11, 181, 67); table(11, 181, 73, 182, 73)
 shell(11, 184, 76, 190, 93, BRICK_WALL, OAK_FLOOR, doors=[(184, 84)])  # c05 (2-story)
 T[11][80][186] = OAK_STAIR_UP
 shell(12, 184, 76, 190, 93, BRICK_WALL, OAK_FLOOR)  # c06 upper
 T[12][80][186] = OAK_STAIR_DOWN
 unit_anchor(11, "cmp4_condo_05_anchor", 184, 76, 190, 93)
 unit_anchor(12, "cmp4_condo_06_anchor", 184, 76, 190, 93)
+# c05 (184-190,76-93): 5x16 tall -> horizontal split, north room holds the stair (186,80)
+# and the (190,80) rot gap; south room holds the W door + anchor (187,84).
+partition(11, 185, 82, 189, 82, BRICK_WALL, (187, 82))
+bed(11, 185, 77); bed(11, 189, 77); chest(11, 185, 78)
+hearth(11, 189, 83); table(11, 185, 91, 186, 91); bed(11, 188, 92); bed(11, 189, 92)
+# c06 (upper of c05, z12): same calls, z=12 (no wall door, no rot gap; stair-only access).
+partition(12, 185, 82, 189, 82, BRICK_WALL, (187, 82))
+bed(12, 185, 77); bed(12, 189, 77); chest(12, 185, 78)
+hearth(12, 189, 83); table(12, 185, 91, 186, 91); bed(12, 188, 92); bed(12, 189, 92)
 # Collapsed south unit: perimeter only, no roof, rubble
 border(11, 172, 86, 183, 93, BRICK_WALL)
 cells(11, [(175, 89), (180, 91)], OAK_WALL)
@@ -1232,6 +1653,10 @@ for (n, x0, y0, x1, y1, door, z) in HOVELS:
     if roof is not None:
         frect(z + 1, x0, y0, x1, y1, roof)
     cx, cy = center(x0, y0, x1, y1)
+    # Homey touches (design §1/§2): hearth + beds + chest on the back strip opposite the
+    # door; NO partition (hovels are too shallow to divide without trapping). Placed
+    # before the anchor marker so the anchor/door spine stays clear by construction.
+    hovel_touches(z, x0, y0, x1, y1, door, (cx, cy))
     mk(z, "script_anchor", "hovel_%02d_anchor" % n, cx, cy)
 
 # Band B east field: goat pen
@@ -1243,6 +1668,168 @@ trect(13, 101, 120, 102, 121, GRANITE_WALL)
 mk(13, "script_anchor", "well_gallows_row_anchor", 101, 122)
 
 # ======================================================================
+# 5.7 Frontage & plaza paving (2026-07-15 exteriors/streetscape pass, Eli:
+# "it's a city so buildings would be smashed in together"). safe_sidewalk paints
+# the periodic floor_pave weave onto bare exterior dirt only (walls/interiors/water
+# auto-preserved), so adjacent buildings share a continuous laid-paver sidewalk and
+# read as one dense block; the seams between near-touching buildings are filled.
+# Working yards are DELIBERATELY excluded (kept as bare-dirt working ground for
+# grit/contrast): tar yard K09, Ropewalk K07, Impound K02, Kennel K25, Harl's yard
+# K06, West Garden, C4 courtyard, Cache Row, the Gullet dirt lanes, Band-B/C fields.
+# DEV (implementation audit, this pass): cluster-F west-field rect trimmed x145->x143
+# so it stops one cell short of hovel 8's west wall (x144) and never repaints a hovel
+# interior; every other rect was audited to touch only exterior dirt + door thresholds.
+# ======================================================================
+
+# --- CLUSTER A: Quay fish-market plaza (Dawnstalls/Salt Row open market ground) ---
+safe_sidewalk(11, 36, 36, 55, 49)     # the open market square; stall posts auto-skipped
+safe_sidewalk(11, 51, 50, 55, 52)     # corridor Dawnstalls -> Weighhouse
+
+# --- CLUSTER B: East Tarwalk shop-row seams (King's Bond | Bilge | Gilded Gull) ---
+safe_sidewalk(11, 99, 34, 99, 46)     # King's Bond | Bilge seam
+safe_sidewalk(11, 112, 34, 113, 47)   # Bilge | Gilded Gull seam
+
+# --- CLUSTER C: quay-back hovels 1-3 + Rows/Fenner/Slop seams & Ropewynd frontage ---
+safe_sidewalk(11, 87, 52, 87, 57)     # hovel 1 | hovel 2
+safe_sidewalk(11, 92, 53, 92, 57)     # hovel 2 | hovel 3
+safe_sidewalk(11, 98, 52, 99, 59)     # hovel 3 | The Rows
+safe_sidewalk(11, 120, 52, 121, 58)   # The Rows | Fenner's Pawn
+safe_sidewalk(11, 129, 58, 129, 64)   # Fenner | Slop-Chest
+safe_sidewalk(11, 82, 59, 146, 59)    # frontage strip along Ropewynd's north kerb (y60)
+
+# --- CLUSTER D: Mission / Bathhouse / Guardhouse civic island corridors ---
+safe_sidewalk(11, 80, 66, 81, 88)     # west frontage (Saltgate east kerb x79 -> Mission)
+safe_sidewalk(11, 99, 66, 99, 79)     # Mission | Bathhouse seam
+safe_sidewalk(11, 100, 79, 112, 79)   # Bathhouse | Guardhouse seam
+safe_sidewalk(11, 98, 89, 113, 93)    # south apron (east of Long Store) toward Backwall
+
+# --- CLUSTER E: Ropewynd south shop-row frontage + inter-shop corridors ---
+safe_sidewalk(11, 4, 66, 70, 66)      # frontage line just below Ropewynd south kerb (y65)
+safe_sidewalk(11, 39, 70, 39, 78)     # Hardtack | Coopers seam
+safe_sidewalk(11, 54, 66, 57, 77)     # Coopers | Lantern Room seam
+
+# --- CLUSTER F: Band B (z12) frontage south of Terrace Walk ---
+safe_sidewalk(12, 80, 101, 139, 101)  # frontage strip under Terrace Walk (C3 + hovel fronts)
+safe_sidewalk(12, 140, 101, 143, 111) # west edge of the east-hovel field (trimmed off hovel 8)
+
+# --- CLUSTER G: Band C (z13) Gallows Row well plaza ---
+safe_sidewalk(13, 96, 119, 107, 123)  # pave the well plaza around the existing wellhead
+
+# --- §5.7 plaza fixtures (single solid cells on open paved plaza; verified off every
+#     anchor/door/path, each with >=3 walkable 4-neighbours so it never plugs a route) ---
+cells(11, [(18, 28), (26, 28), (38, 28), (58, 28), (66, 28)], STEEL_WALL)   # Long-Quay mooring bollards
+T[11][29][74] = GRANITE_WALL                        # public well, Weighhouse frontage plaza
+cells(11, [(76, 31), (77, 31)], OAK_WALL)           # Weighhouse-plaza market crates
+cells(11, [(52, 38), (53, 38), (52, 44), (37, 45)], OAK_WALL)  # fish-market fishmonger crates
+cells(13, [(104, 121)], OAK_WALL)                   # Gallows well-plaza crate
+cells(13, [(99, 120)], STEEL_WALL)                  # Gallows well-plaza hitching post
+
+# --- Dressing pass: Weighhouse civic frontage plaza centerpiece (quay-edge band y26,
+#     off the y28-33 Tarwalk through-lane) + market barrels beside the existing crates ---
+cells(11, [(63, 26)], GRANITE_WALL)                 # brazier plinth (centerpiece)
+mk(11, "light_source", "brazier_weighhouse_plaza", 63, 27, luminance=16)
+cells(11, [(57, 26), (70, 26)], GRANITE_WALL)       # planter boxes flanking the frontage
+cells(11, [(75, 32), (75, 33)], OAK_WALL)           # market barrels by the crates
+
+# --- Dressing pass: Long Quay loading apron -- cargo stacks on the south apron rows
+#     y32-33 only, clear of the y26-30 mustering strip and every berth/pier/crane anchor ---
+for (cx, cy) in [(15, 32), (32, 32), (52, 32)]:
+    crate_grid(11, cx, cy, cx + 2, cy + 1)          # cargo stacks between berths
+cells(11, [(24, 33), (25, 33), (48, 33), (49, 33)], LEATHER_WALL)  # sack pallets
+
+# --- Dressing pass: Gallows Row well plaza top-up (mirror crate + night-market brazier) ---
+cells(13, [(105, 121)], OAK_WALL)                   # mirror crate (matches 104,121)
+mk(13, "light_source", "brazier_gallows_plaza", 106, 120, luminance=14)
+
+# ======================================================================
+# 5.8 District densification -- pave the inter-building dirt (streetscape pass, Eli:
+# "it's a city so logically the buildings would be smashed in together"). The wide plan
+# still read as buildings floating as islands in wide bare-brown-dirt streets/lots. This
+# pass paves the inter-building STREETS, connective LANES and CIVIC SQUARES so the district
+# reads as continuous urban fabric, while PRESERVING deliberate grit (hovel/slum yards, the
+# tar-yard, working yards, offal gutters, the condemned NE quarter). Paint-only: repaints
+# bare exterior DIRT_FLOOR -> paver; walls/doors/interiors/water are auto-preserved by the
+# guard, grit zones + a 1-cell hovel apron by _grit(). No T/FL/marker cell is touched, so
+# no footprint moves and walkability (a function of T only) is provably unchanged.
+# Two-tier hierarchy (the only two FLOOR gids that render correctly, swatch-verified):
+# smooth brick spine (BRICK_FLOOR->floor_tile) for ARTERIALS vs the periodic weave
+# (GRANITE_FLOOR->floor_pave) for every pedestrian/civic/lane fill.
+# ======================================================================
+GRIT_KEEP = [  # (z, x0, y0, x1, y1) -- dirt that STAYS dirt (deliberate grit; never paved)
+    (11,   2, 36,  29, 58),   # K09 Pitchfield tar yard (fenced tar/pitch fire-sort ground)
+    (11,  56, 53,  68, 58),   # K02 Impound Yard (spike-fenced working yard)
+    (11, 164, 48, 174, 55),   # K25 Kennel Row yard (rat-catchers' fenced dog yard)
+    (11, 150, 36, 159, 46),   # K06 Harl's timber store (fenced log-stack yard)
+    (11,  16, 66,  23, 77),   # West Garden Court (garden allotment -- dirt is the feature)
+    (11, 172, 76, 183, 93),   # C4 Gullet courtyard/ruin (decayed compound gone to trash)
+    (11, 160, 30, 191, 75),   # Gullet/Wrackhouse NE condemned/decayed quarter
+    (11, 162, 57, 191, 59),   # Gullet bottom link (poor-quarter back-lane)
+    (11, 164, 66, 165, 95),   # Gullet G3 lane (poor-quarter back-lane)
+    (11,  33, 26,  33, 59),   # Herring/Salt offal gutter
+    (11,  34, 54,  55, 54),   # Salt Row offal-gutter link
+    (11,  38, 50,  51, 58),   # K11 Salt Row gutting sheds/smokehouses (working sheds)
+    (11,   4, 82,  67, 90),   # K07 Ropewalk (canon: the ward's one long clear-sightline dirt shed)
+    (11,  60, 91,  66, 94),   # K07 hemp lean-to (dirt working floor under the ropewalk roof)
+    (11, 100, 52, 119, 58),   # K19 The Rows flophouse (explicit squalor -- packed-dirt doss floor)
+    (12, 146,109, 158,114),   # goat pen yard (livestock pen)
+    (12, 165,112, 190,115),   # Cache Row sheds (unlicensed smuggling-pocket dirt shells)
+]
+
+
+def _grit(x, y, z):
+    """True if (x,y,z) is deliberate grit that must stay bare dirt: an explicit GRIT_KEEP
+    zone, or within a 1-cell apron of any hovel (packed-dirt slum yards, incl. the roofless
+    cloth-tent interiors which are visible and must not be paved)."""
+    for (kz, kx0, ky0, kx1, ky1) in GRIT_KEEP:
+        if z == kz and kx0 <= x <= kx1 and ky0 <= y <= ky1:
+            return True
+    for (n, hx0, hy0, hx1, hy1, door, hz) in HOVELS:   # 1-cell slum-yard apron
+        if z == hz and hx0 - 1 <= x <= hx1 + 1 and hy0 - 1 <= y <= hy1 + 1:
+            return True
+    return False
+
+
+def pave_dirt(z, x0, y0, x1, y1, gid):
+    """Guarded street paver: repaint a rect's bare exterior DIRT_FLOOR (terrain open,
+    no fluid, not a grit cell) to gid. Walls/interiors/water/stairs and every grit zone
+    are auto-skipped, so a rect may span whole buildings/yards and paint only the dirt
+    seams between them -- same guarded idiom as safe_sidewalk, with grit-awareness added."""
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            if T[z][y][x] == 0 and F[z][y][x] == DIRT_FLOOR and FL[z][y][x] == 0 \
+               and not _grit(x, y, z):
+                F[z][y][x] = gid
+
+
+# --- ARTERIAL SPINES (smooth brick floor_tile) -- painted first so they win at overlaps ---
+pave_dirt(11,  80, 50, 133, 51, BRICK_FLOOR)   # Bilgewater Gap market spine (E-W)
+pave_dirt(11,  80, 94, 190, 95, BRICK_FLOOR)   # Backwall Alley service arterial
+pave_dirt(13,   0,120, 191,122, BRICK_FLOOR)   # Gallows Row arterial spine (Band C)
+
+# --- CIVIC WEAVE FILL (granite floor_pave) -- squares / frontages / lanes ---
+# Band A (z11): the "islands in mud" merchant/civic core
+pave_dirt(11,  78, 47, 159, 95, GRANITE_FLOOR) # east merchant heart (the big lot sea)
+pave_dirt(11,  80, 34, 135, 46, GRANITE_FLOOR) # north shopfront seams up to the Tarwalk
+pave_dirt(11,   0, 34,  31, 35, GRANITE_FLOOR) # west quay-back strip
+pave_dirt(11,   4, 59,  31, 59, GRANITE_FLOOR) # lane south of the tar-yard fence
+pave_dirt(11,   0, 60,   3, 95, GRANITE_FLOOR) # Pitch Lane, Band A leg (connective spine)
+pave_dirt(11,  52, 50,  71, 59, GRANITE_FLOOR) # Weighhouse|Impound|Lantern|Saltgate junction
+pave_dirt(11,  66, 82,  71, 90, GRANITE_FLOOR) # Lantern|Saltgate south seam
+pave_dirt(11,   0, 66,  71, 81, GRANITE_FLOOR) # west shop row + Walkback path
+pave_dirt(11,   0, 91,  71, 95, GRANITE_FLOOR) # west Band-A south strip
+pave_dirt(11,   0, 26,  79, 33, GRANITE_FLOOR) # quay apron residual frontage (west)
+pave_dirt(11,  80, 26, 129, 33, GRANITE_FLOOR) # Tarwalk east apron residual (eel-pot fronts)
+# Band B (z12): compound courts + Terrace Walk frontage + connective field lanes
+pave_dirt(12,   0, 97,   7,115, GRANITE_FLOOR) # Pitch Lane, Band B leg
+pave_dirt(12,   4, 96,  71,115, GRANITE_FLOOR) # C1 courtyard + west field
+pave_dirt(12,  80, 96, 143,115, GRANITE_FLOOR) # Terrace Walk frontage + C3 courtyard
+pave_dirt(12, 144, 96, 191,115, GRANITE_FLOOR) # Band-B east field connective lanes
+# Band C (z13): Gallows well plaza + hovel-row connective lanes (slum aprons kept)
+pave_dirt(13,  96,119, 107,123, GRANITE_FLOOR) # Gallows Row well plaza
+pave_dirt(13,   0,116, 191,119, GRANITE_FLOOR) # N hovel-row connective lanes
+pave_dirt(13,   0,123, 191,127, GRANITE_FLOOR) # S hovel-row connective lanes
+
+# ======================================================================
 # 6. Patrol, muster, exits (blueprint section 6; script_anchors only —
 # the importer supports only light_source/script_anchor marker classes)
 # ======================================================================
@@ -1250,6 +1837,28 @@ mk(13, "script_anchor", "patrol_post_rise_top", 75, 118)
 mk(11, "script_anchor", "patrol_post_rise_foot", 75, 34)
 mk(11, "script_anchor", "patrol_post_tarwalk_west", 30, 30)
 mk(11, "script_anchor", "patrol_post_tarwalk_mid", 100, 30)
+
+# ======================================================================
+# 6.5 Job-site zones (2026-07-15 senior-level-design pass, Eli directive #7:
+# "mark logical job-site locations/zones for a SEPARATE upcoming sim pass ...
+# the actual job BEHAVIORS are out of scope here"). MARKERS ONLY -- no new solid
+# fixtures that could block pathfinding -- placed on already-walkable street/quay
+# floor, ready for a later jobs pass to bind. Behavior (sweeping, patrolling,
+# loading) is explicitly NOT wired here.
+# ======================================================================
+# Street-sweep routes: ordered waypoint anchors a street-cleaning behavior can walk.
+for i, sx in enumerate((20, 50, 95, 120)):
+    mk(11, "script_anchor", "sweep_tarwalk_%02d" % (i + 1), sx, 30)   # Tarwalk sidewalk
+for i, sy in enumerate((45, 72, 90)):
+    mk(11, "script_anchor", "sweep_saltgate_%02d" % (i + 1), 75, sy)  # Saltgate Rise
+# Dock loading zones: legible work spots on the quay apron (the berths already have
+# ship anchors; these mark the shore-side muster/loading points beside them).
+mk(11, "script_anchor", "dock_load_west_anchor", 25, 30)
+mk(11, "script_anchor", "dock_load_east_anchor", 100, 32)
+# Guard beats gain braziers (light markers only) at the two Tarwalk posts (K21/K34
+# already have their brazier lamps; the open Tarwalk beats had none).
+mk(11, "light_source", "brazier_tarwalk_west", 30, 30, luminance=16)
+mk(11, "light_source", "brazier_tarwalk_mid", 100, 30, luminance=16)
 mk(13, "script_anchor", "exit_saltgate_road", 75, 126)
 mk(11, "script_anchor", "exit_coast_road_west", 2, 30)
 mk(11, "script_anchor", "exit_shambles_east", 189, 30)

@@ -38,7 +38,7 @@ public final class FleePolicy implements BehaviorPolicy {
         int x = clamp(PackedPos.x(self.cell()) + heading.dx(), PackedPos.X_MASK);
         int y = clamp(PackedPos.y(self.cell()) + heading.dy(), PackedPos.Y_MASK);
         int fled = PackedPos.pack(x, y, PackedPos.z(self.cell()));
-        self.stepToward(fled, true, ctx::isWalkable); // FLEE ignores the leash (§1.3, §2.5)
+        self.stepToward(fled, true, ctx::isWalkable, ctx.occupancy()); // FLEE ignores the leash (§1.3, §2.5)
         self.setLastReasonCode(ReasonCode.SAFETY_CRITICAL);
     }
 

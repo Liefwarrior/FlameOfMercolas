@@ -109,6 +109,11 @@ class NoOpActorContext implements ActorContext {
     }
 
     @Override
+    public Actor.OccupancyQuery occupancy() {
+        return Actor.OccupancyQuery.UNLIMITED; // no cap in the test double; subclass to override
+    }
+
+    @Override
     public int arrestHoldCell() {
         return Actor.NONE; // no fixture wired by default; override in a subclass to test escort
     }

@@ -40,7 +40,7 @@ final class MaterialRawsLoaderClasspathTest {
         try (URLClassLoader loader =
                 new URLClassLoader(new URL[] {jar.toUri().toURL()}, null)) {
             RawsBundle fromJar = MaterialRawsLoader.load(loader, RESOURCE_ROOT);
-            assertEquals(19, fromJar.materials().size());
+            assertEquals(22, fromJar.materials().size());
             assertEquals(fromDisk.fingerprint(), fromJar.fingerprint());
             assertEquals(fromDisk.materials().fingerprint(), fromJar.materials().fingerprint());
         }

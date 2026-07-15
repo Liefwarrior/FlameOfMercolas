@@ -1,0 +1,20 @@
+{
+  "id": "reman_facade",
+  "displayName": "Reman Concrete (Civic Facade)",
+  "phase": "SOLID",
+  "density": 2400,
+  "hardness": 7,
+  "flammability": 0,
+  "ignitionK": null,
+  "meltK": null,
+  "boilK": null,
+  "conductivityQ8": 80,
+  "heatCapacityQ8": 90,
+  "fuelTicks": 0, "burnsTo": null,
+  "valueCp": 200,
+  "tags": ["masonry", "engineered"],
+  "light": { "opacity": 31 },
+  "features": {},
+  "provenance": "Civic-only material minted via the add-material-raw skill, DECISIONS.md Art register FIFTH revision (Eli 2026-07-15): a physical clone of reman_concrete (identical density/hardness/flammability/conductivity/heatCapacity/value/tags/light/features) so the art-mapping can give ONLY the Quayward Compound's (C1) gate wall a colonnade-facade sprite (content/art/kenney/art-mapping.json) without repainting every plain reman_concrete wall in the district. No physical/simulation difference from reman_concrete whatsoever - this id exists purely to be a distinct art-resolution key.",
+  "notes": "Byte-identical physical stats to reman_concrete.json; see that file for the reasoning behind each value. This material is never expected to appear anywhere except the C1 gate wall gen_docks_surface.py tags."
+}

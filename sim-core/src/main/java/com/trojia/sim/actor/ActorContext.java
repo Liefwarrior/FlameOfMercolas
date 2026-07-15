@@ -76,4 +76,14 @@ public interface ActorContext {
      * there is nothing to collide with.
      */
     boolean isWalkable(int cell);
+
+    /**
+     * The live actor-actor occupancy view for this tick (the "only 2 to a cell" cap, {@link
+     * Actor#MAX_OCCUPANTS_PER_CELL}). {@link ActorsSystem} rebuilds a shared {@link
+     * OccupancyIndex} from every actor's cell before ticking and returns a view whose {@code
+     * occupantsAt} reads it and whose {@code onEnter} keeps it live as actors move; the world-less
+     * bootstrap and test doubles return {@link Actor.OccupancyQuery#UNLIMITED} (no cap). Movement
+     * call sites pass this into {@code stepToward}/{@code stepAlongRoute}.
+     */
+    Actor.OccupancyQuery occupancy();
 }

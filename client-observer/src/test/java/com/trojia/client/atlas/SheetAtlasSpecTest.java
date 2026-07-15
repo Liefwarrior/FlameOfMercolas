@@ -33,6 +33,18 @@ class SheetAtlasSpecTest {
                 """.formatted(regions);
     }
 
+    private static String docWithPatterns(String regions, String patterns) {
+        return """
+                {
+                  "atlas": "sheet.png",
+                  "tilePx": 16,
+                  "sheet": { "columns": 49, "rows": 22 },
+                  "regions": %s,
+                  "variantPatterns": %s
+                }
+                """.formatted(regions, patterns);
+    }
+
     @Nested
     class VariantSchema {
 
@@ -102,6 +114,40 @@ class SheetAtlasSpecTest {
     }
 
     @Nested
+    class VariantPatterns {
+
+        @Test
+        void absentPatternDefaultsToHash() {
+            SheetAtlasSpec spec = SheetAtlasSpec.parse(doc("{ \"w\": [[0, 0], [1, 0]] }"));
+            assertEquals(VariantPattern.HASH, spec.variantPattern("w"));
+        }
+
+        @Test
+        void periodicPatternIsParsed() {
+            SheetAtlasSpec spec = SheetAtlasSpec.parse(docWithPatterns(
+                    "{ \"pave\": [[0, 0], [2, 0]] }", "{ \"pave\": \"periodic\" }"));
+            assertEquals(VariantPattern.PERIODIC, spec.variantPattern("pave"));
+        }
+
+        @Test
+        void patternForUnknownRegionFails() {
+            ArtMappingException e = assertThrows(ArtMappingException.class,
+                    () -> SheetAtlasSpec.parse(docWithPatterns(
+                            "{ \"w\": [0, 0] }", "{ \"nope\": \"periodic\" }")));
+            assertTrue(e.getMessage().contains("variantPatterns.nope"), e.getMessage());
+        }
+
+        @Test
+        void unknownPatternTokenFails() {
+            ArtMappingException e = assertThrows(ArtMappingException.class,
+                    () -> SheetAtlasSpec.parse(docWithPatterns(
+                            "{ \"w\": [0, 0] }", "{ \"w\": \"stripey\" }")));
+            assertTrue(e.getMessage().contains("variantPatterns.w"), e.getMessage());
+            assertTrue(e.getMessage().contains("stripey"), e.getMessage());
+        }
+    }
+
+    @Nested
     class ShippedKenneyPack {
 
         private final SheetAtlasSpec spec = SheetAtlasSpec.parse(ShippedArtMapping.kenneyJson());
@@ -110,8 +156,12 @@ class SheetAtlasSpecTest {
 
         @Test
         void gridDimensionsMatchTheKenneySheet() {
-            assertEquals(49, spec.columns());
-            assertEquals(22, spec.rows());
+            // Sixth revision (DECISIONS.md art register): the dominant-surface atlas swapped
+            // from the Kenney 1-Bit sheet (49x22, an icon atlas that tiled into ugly glyph
+            // noise) to Kenney's Roguelike Modern City Pack (37x28, a seamless masonry terrain
+            // set). Same SheetAtlasSpec grid mechanism, different sheet + cell coords.
+            assertEquals(37, spec.columns());
+            assertEquals(28, spec.rows());
             assertEquals(16, spec.tilePx());
         }
 
@@ -123,32 +173,47 @@ class SheetAtlasSpecTest {
         }
 
         @Test
-        void surfacesCarryRealVariety() {
-            // The whole point of the re-scope: a large wall/floor is not one repeated sprite.
-            // Counts reflect the colored-pack cell picks (art-mapping.json regionsProvenance);
-            // several of the monochrome-era cells recolor to a different family in the colored
-            // sheet (e.g. old wall_stone's (9,5) bakes blue, not beige) so the sets differ from
-            // the superseded monochrome-tint mapping.
-            assertEquals(3, spec.variantCount("wall_brick"));
-            assertEquals(3, spec.variantCount("wall_stone"));
-            assertEquals(4, spec.variantCount("wall_rubble"));
-            assertEquals(2, spec.variantCount("wall_plank"));
-            assertEquals(3, spec.variantCount("floor_tile"));
-            assertEquals(4, spec.variantCount("floor_plank"));
-            assertEquals(4, spec.variantCount("floor_earth"));
-            assertEquals(4, spec.variantCount("wall_crystal"));
-            assertEquals(3, spec.variantCount("wall_moss"));
-            assertEquals(5, spec.variantCount("water"));
+        void smoothSurfacesRenderHomogeneously() {
+            // Seventh revision (DECISIONS.md art register, Eli 2026-07-15 senior-level-design
+            // homogeneity pass, art-mapping.json variantPatternsProvenance): Eli's biggest issue
+            // was the AI-generated patchwork the multi-cell hash scatter produced on every
+            // dominant SMOOTH surface. Each such region is now trimmed to ONE cell, so
+            // variantCount<=1 => the renderer draws variant 0 => one clean repeated tile.
+            for (String smooth : List.of("wall_brick", "wall_stone", "wall_masonry", "wall_plank",
+                    "wall_hatch", "floor_tile", "floor_stone", "floor_plank",
+                    "roof_thatch", "roof_tile", "roof_cloth",
+                    "facade_granite", "facade_brick", "facade_reman")) {
+                assertEquals(1, spec.variantCount(smooth),
+                        smooth + " must be a single homogeneous cell");
+            }
         }
 
         @Test
-        void mostReferencedRegionsHaveMoreThanOneVariant() {
-            long multi = resolver.referencedRegionNames().stream()
-                    .filter(name -> spec.variantCount(name) > 1)
-                    .count();
-            // Only `missing` (the framed-X fallback) is deliberately single-cell.
-            assertTrue(multi >= 10, "expected many multi-variant regions, got " + multi);
-            assertEquals(1, spec.variantCount("missing"));
+        void roughSurfacesAndWaterKeepTheScatter() {
+            // Only the deliberately-rough materials (bare dirt/ash ground, rubble walls) and the
+            // moving harbor water keep the multi-cell HASH scatter — the "less regular" zones
+            // Eli explicitly reserved irregularity for.
+            assertTrue(spec.variantCount("floor_earth") > 1);
+            assertTrue(spec.variantCount("wall_rubble") > 1);
+            assertTrue(spec.variantCount("water") > 1);
+            for (String rough : List.of("floor_earth", "wall_rubble", "water")) {
+                assertEquals(VariantPattern.HASH, spec.variantPattern(rough),
+                        rough + " scatters via the position hash");
+            }
+        }
+
+        @Test
+        void theSidewalkIsAPeriodicTwoTonePaver() {
+            // The one surface Eli calls out as needing to be "obvious and not irregularly
+            // patterned": floor_pave is a dedicated 2-cell region tagged periodic, so the
+            // renderer draws a fixed (x^y)&1 laid-paver weave a random hash cannot produce.
+            assertTrue(spec.contains("floor_pave"));
+            assertEquals(2, spec.variantCount("floor_pave"));
+            assertEquals(VariantPattern.PERIODIC, spec.variantPattern("floor_pave"));
+            // Granite floor (the civic-paving material — quay apron, bathhouse, guardhouse,
+            // watch-post, well plaza) resolves onto it; smooth interior floors default to HASH
+            // (harmless, since their single cell always draws variant 0).
+            assertEquals(VariantPattern.HASH, spec.variantPattern("floor_tile"));
         }
 
         @Test

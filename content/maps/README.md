@@ -11,7 +11,7 @@ and read the tile *Class* label, e.g. `granite/WALL`).
 
 | File | What |
 |---|---|
-| `src/materials.tsx` | Shared imageless tileset. One tile per (material, form) pair in use, plus fluid tiles. 16×16 px declared size. Includes `reman_concrete` (WALL/FLOOR) and `leather`/`cloth` (WALL) for the Compound typology (tile ids 31–34), and `dirt`/`brick` RAMP tiles for the Docks terraces (ids 35–36). |
+| `src/materials.tsx` | Shared imageless tileset. One tile per (material, form) pair in use, plus fluid tiles. 16×16 px declared size. Includes `reman_concrete` (WALL/FLOOR) and `leather`/`cloth` (WALL) for the Compound typology (tile ids 31–34), `dirt`/`brick` RAMP tiles for the Docks terraces (ids 35–36), and (DECISIONS.md Art register, FIFTH revision, 2026-07-15) `granite_facade`/`brick_facade`/`reman_facade` WALL-only tiles (ids 37–39) — civic-only material clones `gen_docks_surface.py` tags onto the Weighhouse/Mission of the Flame/King's Bond/Quayward Compound street-facing frontage walls so those specific edges resolve to a pedimented-colonnade sprite (`content/art/kenney/art-mapping.json`) without repainting every plain granite/brick/reman_concrete wall in the district. |
 | `src/tavern_fixture.tmx` | 48×32, z-levels −1/+0/+1. The Tavern Fire flagship stage (M1/M2 acceptance: imports byte-identical twice). |
 | `src/ubend_fixture.tmx` | 24×16, z-levels −1/+0. Sealed U-bend duct for the M3 fluids pressure test. |
 | `src/compound_block.tmx` | 128×128, z-levels +0/+1/+2. A DOCKS-GAZETTEER city-block slice built on the corrected **Trojian Compound** housing typology (canon: courtyard-farm ecosystem, not detached homes; see `docs/design/DOCKS-GAZETTEER.md` §2.5) — 1 Compound (12 dwelling units) + 2 businesses (K22, K24), populated at lore-derived full occupancy with ~64 actors (all 9 actor groups, all 13 civic jobs, all 6 relationship kinds — see `CompoundBlockPopulation`'s Javadoc for the canon troop-number derivation). Supersedes an earlier detached-"12 homes" prototype (`city_block.tmx`, removed — the corrected Compound typology replaced it before it was ever populated). |
@@ -53,8 +53,10 @@ Every material tile carries string properties:
 - `material` — a raws material id. Must resolve against `MaterialRegistry` at import;
   unknown names **fail the import** (with a nearest-name suggestion). v0 vocabulary:
   `granite, dirt, oak, thatch, trudgeon_wood, steel, brick, chromatis, chromatis_melt,
-  phorys, lightstone, lightstone_shards, glowstone, ash, reman_concrete, leather, cloth`
-  and the treatment-minted `trudgeon_wood@getilia_soak`.
+  phorys, lightstone, lightstone_shards, glowstone, ash, reman_concrete, leather, cloth`,
+  the treatment-minted `trudgeon_wood@getilia_soak`, and the civic-facade clones
+  `granite_facade, brick_facade, reman_facade` (WALL-only; DECISIONS.md Art register
+  fifth revision).
 - `form` — one of `WALL | FLOOR | OPEN | RAMP | STAIR_UP | STAIR_DOWN` (`TileForm`).
   No tile in the set uses `OPEN` (see collapse rule); the value exists in the enum only.
 

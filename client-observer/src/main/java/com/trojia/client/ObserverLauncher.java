@@ -14,8 +14,8 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
  * population (see {@link ObserverApp}). {@code --screenshot=path.png},
  * combined with {@code --smoke=N}, dumps the final frame to disk — a verification aid,
  * never used on the shipped interactive path. {@code --art=dir} loads
- * {@code content/art/dir/art-mapping.json} instead of the shipped {@code custom} pack —
- * the escape hatch back to {@code kenney} or {@code placeholder}. {@code --z=N} boots on
+ * {@code content/art/dir/art-mapping.json} instead of the shipped {@code kenney} pack —
+ * the escape hatch back to {@code custom} or {@code placeholder}. {@code --z=N} boots on
  * z-level N (clamped) instead of the fixture's street level — a screenshot aid for
  * below/above-grade slices (e.g. the docks harbor water surface).
  */

@@ -67,7 +67,7 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         Home home = ctx.homes().get(self.homeId());
         // Ignores the leash for the same reason RETURN_HOME does (§11.1): home is routinely
         // outside the work anchor's leash, and a hungry actor must still be able to walk there.
-        self.stepAlongRoute(home.homeCell(), true, ctx::isWalkable);
+        self.stepAlongRoute(home.homeCell(), true, ctx::isWalkable, ctx.occupancy());
         self.setLastReasonCode(ReasonCode.NEED_HUNGER_LOW);
     }
 }
