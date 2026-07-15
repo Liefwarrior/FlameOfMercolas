@@ -144,13 +144,43 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] K28_SLOPCHEST = {133, 62};
     private static final int[] K29_LONGSTORE = {88, 87};
     private static final int[] K34_GUARDHOUSE = {106, 85};
-    // The arrest holding cell (ARREST-SPEC addendum): gen_docks_surface.py's K34 cage bars are
-    // two STEEL_WALL tiles at (102,84)/(103,84) -- not walkable floor by construction -- so the
-    // actual escort target is the granite floor immediately beside them. No dedicated marker
-    // was authored for this cell; derived the same way this file's other unmarked work stands
-    // are (TERRACE_WALK_STAND et al., "no marker; known street/floor cells, precedent
-    // convention"), pinned against the committed gen_docks_surface.py cage geometry.
-    private static final int[] HOLDING_CELL_K34 = {103, 85};
+    // ---- PASS 5-8 (Phase-1 living-docks): K36 bank, K34 prison cell block, shop guards,
+    // farm plots, guard patrol routes. Every coordinate below is read straight from the
+    // regenerated docks_surface.tmx markers, is on authored walkable floor (blind-verified),
+    // and is single-z. Markers are not runtime-baked, so each anchor needs a constant here. --
+
+    // K36 The Royal Counting-House (bank): banker at the counter + two flanking guard posts;
+    // the queue lane + vault chest are markers for the later economy pass (Phase 2 seeds the
+    // vault -- it is empty now). All z:+11.
+    private static final int[] BANK_COUNTER = {154, 53};            // banker stand (behind the counter)
+    private static final int[] GUARD_POST_BANK_WEST = {152, 53};
+    private static final int[] GUARD_POST_BANK_EAST = {156, 53};
+    private static final int[] BANK_VAULT_CHEST = {152, 57};        // future Royal COIN vault (empty in Phase 1)
+    private static final int[][] BANK_QUEUE = {{154, 51}, {154, 50}, {154, 49}};  // front -> back
+
+    // K34 prison cell block: six STEEL_WALL cells (>=12 capacity at MAX_OCCUPANTS_PER_CELL=2),
+    // filled at arrest time by a later justice pass (no actors spawned here). PRISON_CELLS_K34[0]
+    // is also the Phase-0 scalar arrest-hold escort cell (the retired (103,85) cage-side floor).
+    private static final int[][] PRISON_CELLS_K34 =
+            {{101, 90}, {103, 90}, {105, 90}, {107, 90}, {109, 90}, {111, 90}};
+
+    // One militia_watch per retail shop, at the exterior guard post just outside each door
+    // (K08/K14/K15/K23/K26/K27/K28). All z:+11 sidewalk cells.
+    private static final int[][] SHOP_GUARD_POSTS =
+            {{28, 65}, {168, 33}, {126, 51}, {47, 65}, {12, 69}, {35, 69}, {133, 57}};
+
+    // Compound farm plots (markers for the later farm-yield pass). C1/C3 courtyards are Band B
+    // (z:+12); C2's is Band A (z:+11). Placed clear of each courtyard's gate spine + anchors.
+    private static final int[][] FARM_TILES_C1 = {{40, 105}, {56, 105}, {40, 108}, {56, 108}};
+    private static final int[][] FARM_TILES_C2 = {{133, 78}, {147, 78}, {133, 83}, {147, 83}};
+    private static final int[][] FARM_TILES_C3 = {{102, 103}, {118, 103}, {102, 106}, {118, 106}};
+
+    // Ordered single-z (z:+11) guard patrol routes (markers for the later patrol pass): the
+    // Tarwalk sidewalk, the west quay/berth apron, and Ropewynd's continuous south kerb.
+    private static final int[][] PATROL_TARWALK = {{20, 33}, {45, 33}, {70, 33}, {96, 33}, {122, 33}};
+    private static final int[][] PATROL_QUAY = {{14, 30}, {28, 30}, {42, 30}, {56, 30}, {68, 30}};
+    private static final int[][] PATROL_ROPEWYND =
+            {{10, 65}, {35, 65}, {55, 65}, {78, 65}, {100, 65}, {122, 65}, {145, 65}};
     private static final int[] LAIR_SKYRUNNER = {189, 88};     // K35, z:+13, unmarked
     private static final int[] MISSION_BUNKS = {85, 78};
     private static final int[] MISSION_GARDEN = {90, 88};
@@ -398,7 +428,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         // per citizen. No live bank building yet — verbs are exercised by unit tests, not here.
         CivicAccounts.bake(registry, bank, items);
 
-        int arrestHoldCell = worldCell(HOLDING_CELL_K34, ZA);
+        int arrestHoldCell = worldCell(PRISON_CELLS_K34[0], ZA);
         // No restricted zones are wired into the live district in Phase 0 (F3 resolver/gate are
         // exercised by unit tests with synthetic zones); the seam is threaded here regardless.
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
@@ -411,6 +441,51 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static int worldCell(int[] mapXY, int mapZ) {
         return PackedPos.pack(Coords.CHUNK_SIZE_X + mapXY[0], Coords.CHUNK_SIZE_Y + mapXY[1],
                 Coords.CHUNK_SIZE_Z + mapZ);
+    }
+
+    /** Packs a list of authored map cells on one z-level to world tiles, in order. */
+    private static List<Integer> worldCells(int[][] mapXYs, int mapZ) {
+        List<Integer> out = new ArrayList<>(mapXYs.length);
+        for (int[] xy : mapXYs) {
+            out.add(worldCell(xy, mapZ));
+        }
+        return out;
+    }
+
+    // ---- Phase-1 marker bindings (Passes 5-8). These expose the map anchors that carry no
+    // live actor yet -- the prison cells (fill at arrest time, Pass 10), the bank queue/vault
+    // (economy, Pass 9), the compound farm plots (Pass 14) and the guard patrol routes
+    // (Pass 13) -- as world-packed cells so a later sim pass binds behaviour to real geometry
+    // without re-transcribing coordinates. Every cell is single-z (the z rule).
+
+    /** The six K34 prison-cell floor cells (z:+11), world-packed; capacity 2 each. */
+    public static List<Integer> prisonCellsK34() {
+        return worldCells(PRISON_CELLS_K34, ZA);
+    }
+
+    /** The bank's ordered waiting-queue slots (front-to-back, z:+11), world-packed. */
+    public static List<Integer> bankQueue() {
+        return worldCells(BANK_QUEUE, ZA);
+    }
+
+    /** The bank vault chest cell (z:+11) -- the future Royal COIN stack; empty in Phase 1. */
+    public static int bankVaultChestCell() {
+        return worldCell(BANK_VAULT_CHEST, ZA);
+    }
+
+    /** Every compound farm plot (C1/C3 on z:+12, C2 on z:+11), world-packed. */
+    public static List<Integer> farmPlots() {
+        List<Integer> out = new ArrayList<>();
+        out.addAll(worldCells(FARM_TILES_C1, ZB));
+        out.addAll(worldCells(FARM_TILES_C2, ZA));
+        out.addAll(worldCells(FARM_TILES_C3, ZB));
+        return out;
+    }
+
+    /** The three ordered single-z guard patrol routes (Tarwalk / quay / Ropewynd), world-packed. */
+    public static List<List<Integer>> patrolRoutes() {
+        return List.of(worldCells(PATROL_TARWALK, ZA), worldCells(PATROL_QUAY, ZA),
+                worldCells(PATROL_ROPEWYND, ZA));
     }
 
     /** The mutable spawn walker — all wiring lives here so the outer type stays an immutable handle. */
@@ -707,6 +782,22 @@ public final class DocksPopulation implements ScenarioPopulation {
             Actor roofWatch = spawn(MilitiaWatch.TYPE, C2_ROOF_WATCHPOST, ZC);
             soloHome(roofWatch);
             roofWatch.setAnchorCell(worldCell(C2_ROOF_WATCHPOST, ZC));
+
+            // ===================== K36 THE BANK + SHOP GUARDS (Phase-1 living-docks) ===========
+            // The ward's bank (K36): a Shopkeeper banker living/working at the teller counter and
+            // two militia_watch stationed at the flanking guard posts INSIDE the hall. Deposit/
+            // withdraw verbs + vault seeding are a later economy pass; here the site is physically
+            // real and manned (the queue/vault anchors are markers for that pass). All z:+11, so
+            // home == work == post is single-band by construction.
+            Actor banker = spawn(Shopkeeper.TYPE, BANK_COUNTER, ZA);
+            soloHomeAtCell(banker);
+            soloHome(spawn(MilitiaWatch.TYPE, GUARD_POST_BANK_WEST, ZA));
+            soloHome(spawn(MilitiaWatch.TYPE, GUARD_POST_BANK_EAST, ZA));
+            // One militia_watch per retail shop, stationed at its exterior guard post (Eli: "each
+            // shop should have one guard"). Enforcement behaviour lands in a later pass.
+            for (int[] post : SHOP_GUARD_POSTS) {
+                soloHome(spawn(MilitiaWatch.TYPE, post, ZA));
+            }
 
             // ===================== ANIMAL KEEPERS + BEASTS (§4.8 Keeper<->Animal) =============
             // K25 Kennel Row: the kennelmaster and three dogs at their authored cage anchors.

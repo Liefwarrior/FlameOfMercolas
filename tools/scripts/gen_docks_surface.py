@@ -1148,15 +1148,47 @@ mk(11, "script_anchor", "business_k29_longstore_anchor", 88, 87)
 # inside the same Band-A quay-civic cluster (Weighhouse/King's Bond/Mission/
 # Bathhouse) it was meant to garrison, and still the "foot" counterpart to
 # K21's post at the Rise's head.
-shell(11, 100, 80, 112, 88, GRANITE_WALL, GRANITE_FLOOR, doors=[(106, 80), (107, 80)])
-cells(11, [(102, 84), (103, 84)], STEEL_WALL)       # holding-cell cage
-for y in range(81, 88):                             # armory partition
+# PASS 6 (Phase-1 living-docks): the guardhouse grows south from y88 to a new south
+# wall at y92, and the old 2-tile cage is replaced by a real 6-cell prison block -- a
+# corridor (y89) fronting six STEEL_WALL cells (floor cells at x101/103/105/107/109/111
+# on y90, steel dividers between them at even x, a steel back wall at y91). Six cells x
+# MAX_OCCUPANTS_PER_CELL(2) = 12 capacity. The watch room + armory + north doors are
+# unchanged; cells fill at arrest time in a later justice pass (no actors spawned in them).
+shell(11, 100, 80, 112, 92, GRANITE_WALL, GRANITE_FLOOR, doors=[(106, 80), (107, 80)])
+for y in range(81, 88):                             # armory partition (unchanged)
     T[11][y][109] = OAK_WALL
 T[11][85][109] = 0
-trect(11, 105, 86, 107, 86, OAK_WALL)               # watch-room table
-frect(12, 100, 80, 112, 88, BRICK_FLOOR)            # roof
+trect(11, 105, 86, 107, 86, OAK_WALL)               # watch-room table (unchanged)
+for dx in (102, 104, 106, 108, 110):                # steel dividers between the six cells
+    T[11][90][dx] = STEEL_WALL
+for x in range(101, 112):                           # steel cell back wall (south)
+    T[11][91][x] = STEEL_WALL
+frect(12, 100, 80, 112, 92, BRICK_FLOOR)            # roof (extended over the cell block)
 mk(11, "script_anchor", "business_k34_guardhouse_anchor", 106, 85)
+for i, cx in enumerate((101, 103, 105, 107, 109, 111)):
+    mk(11, "script_anchor", "cell_k34_%02d_anchor" % (i + 1), cx, 90)
 mk(11, "light_source", "lamp_guardhouse_door", 106, 79, luminance=18)
+
+# PASS 5 (Phase-1 living-docks) -- K36 The Royal Counting-House (the ward's bank), on the
+# one empty Band-A civic lot: x150-159 y48-59 (the Gullet G1 lane at x160-161 and Ropewynd
+# at y60-65 are deliberately left intact east/south; hovel 45 abuts the west wall, the K06
+# timber-store fence the north). Granite civic shell, a north door + interior queue lane, a
+# STEEL_WALL vault ring enclosing ONE chest cell (the future Royal COIN vault -- Phase 2
+# seeds it, NOT here), a teller counter + banker stand, two flanking guard posts.
+shell(11, 150, 48, 159, 59, GRANITE_WALL, GRANITE_FLOOR, doors=[(154, 48)])
+trect(11, 152, 52, 155, 52, OAK_WALL)               # teller counter (both flanks left open)
+for (vx, vy) in ((151, 56), (153, 56), (151, 57), (153, 57),
+                 (151, 58), (152, 58), (153, 58)):  # STEEL vault ring; (152,56) stays the door
+    T[11][vy][vx] = STEEL_WALL                       # -> ONE enclosed chest cell at (152,57)
+frect(12, 150, 48, 159, 59, BRICK_FLOOR)            # tile roof
+mk(11, "script_anchor", "business_k36_bank_anchor", 154, 53)      # banker stand (behind counter)
+mk(11, "script_anchor", "bank_queue_01_anchor", 154, 51)         # queue: front (at counter) -> back
+mk(11, "script_anchor", "bank_queue_02_anchor", 154, 50)
+mk(11, "script_anchor", "bank_queue_03_anchor", 154, 49)
+mk(11, "script_anchor", "bank_vault_chest_anchor", 152, 57)      # future Royal COIN vault (empty now)
+mk(11, "script_anchor", "guard_post_bank_west_anchor", 152, 53)
+mk(11, "script_anchor", "guard_post_bank_east_anchor", 156, 53)
+mk(11, "light_source", "lamp_bank_door", 154, 47, luminance=18)
 
 # ======================================================================
 # 3.5 Napkin-sketch ambient features (redesign, 2026-07-14): the West Garden
@@ -1611,6 +1643,20 @@ for rot in ((170, 66), (190, 80), (166, 88)):
     T[11][rot[1]][rot[0]] = 0
 
 # ======================================================================
+# 4.5 Compound farm plots (PASS 7, Phase-1 living-docks; Feature-5 prerequisite):
+# farm_tile_* script_anchors on EXISTING walkable courtyard floor -- MARKERS ONLY, no
+# material/gid change (plots are anchors, not tilled-soil art), placed clear of each
+# courtyard's gate spine + existing courtyard/gate anchors. A later farm-yield pass binds
+# farmers to them. C1/C3 courtyards are Band B (z:+12); C2's is Band A (z:+11).
+# ======================================================================
+for i, (fx, fy) in enumerate(((40, 105), (56, 105), (40, 108), (56, 108))):   # C1, avoid (43,107)
+    mk(12, "script_anchor", "farm_tile_c1_%02d_anchor" % (i + 1), fx, fy)
+for i, (fx, fy) in enumerate(((133, 78), (147, 78), (133, 83), (147, 83))):   # C2, avoid (137,80)
+    mk(11, "script_anchor", "farm_tile_c2_%02d_anchor" % (i + 1), fx, fy)
+for i, (fx, fy) in enumerate(((102, 103), (118, 103), (102, 106), (118, 106))):  # C3, avoid gate/anchor
+    mk(12, "script_anchor", "farm_tile_c3_%02d_anchor" % (i + 1), fx, fy)
+
+# ======================================================================
 # 5. Hovels & shanties (blueprint section 5) + extras
 # ======================================================================
 # (n, x0, y0, x1, y1, door, band_z). Materials rotate by (n-1) % 4:
@@ -1867,6 +1913,31 @@ mk(13, "script_anchor", "exit_abbey_road", 133, 126)
 # continuation, mirrored in Band C -- Gallows Row's own east-edge marker,
 # alongside Band A's exit_shambles_east.
 mk(13, "script_anchor", "exit_shambles_east_upper", 188, 121)
+
+# ======================================================================
+# 6.6 Guard patrol routes (PASS 8, Phase-1 living-docks; Feature-1 prerequisite):
+# ordered patrol_* waypoint anchors along three SINGLE-Z (z:+11) routes -- the Tarwalk
+# thoroughfare (sidewalk row y33), the west quay/berth apron (y30), and Ropewynd (the
+# continuous south kerb y65, which clears the K28 Slop-Chest frontage that interrupts the
+# mid-street). MARKERS ONLY; a later patrol-behavior pass walks them in order. stepToward
+# never crosses z, so every route is deliberately single-band + on connected paved street.
+for i, (px, py) in enumerate(((20, 33), (45, 33), (70, 33), (96, 33), (122, 33))):
+    mk(11, "script_anchor", "patrol_tarwalk_wp_%02d" % (i + 1), px, py)
+for i, (px, py) in enumerate(((14, 30), (28, 30), (42, 30), (56, 30), (68, 30))):
+    mk(11, "script_anchor", "patrol_quay_wp_%02d" % (i + 1), px, py)
+for i, (px, py) in enumerate(((10, 65), (35, 65), (55, 65), (78, 65),
+                              (100, 65), (122, 65), (145, 65))):
+    mk(11, "script_anchor", "patrol_ropewynd_wp_%02d" % (i + 1), px, py)
+
+# 6.7 Shop guard posts (PASS 8, Phase-1 living-docks; Feature-2 "one guard per shop"): one
+# guard_post_<shop>_anchor on the exterior sidewalk cell just outside each retail shop's
+# street door (a militia_watch spawns at each -- see DocksPopulation). Markerless walkable
+# sidewalk cells, verified clear of the door threshold + the shops' own lamp/sign markers.
+for (key, gx, gy) in (("k08_branns", 28, 65), ("k14_wrackhouse", 168, 33),
+                      ("k15_fenners", 126, 51), ("k23_coopers", 47, 65),
+                      ("k26_sailmaker", 12, 69), ("k27_hardtack", 35, 69),
+                      ("k28_slopchest", 133, 57)):
+    mk(11, "script_anchor", "guard_post_%s_anchor" % key, gx, gy)
 
 # ======================================================================
 # XML emission (byte-deterministic; CSV rows carry exactly W tokens,
