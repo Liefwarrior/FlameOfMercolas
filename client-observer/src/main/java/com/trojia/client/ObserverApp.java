@@ -29,10 +29,12 @@ import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.InspectorInput;
+import com.trojia.client.input.PlayModeInput;
 import com.trojia.client.input.TimeControlInput;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.InspectorState;
+import com.trojia.client.inspect.PlayModeState;
 import com.trojia.client.render.ActorRenderer;
 import com.trojia.client.render.InspectorRenderer;
 import com.trojia.client.render.WorldRenderer;
@@ -45,6 +47,7 @@ import com.trojia.client.time.SimulationDriver;
 import com.trojia.client.time.SpeedSetting;
 import com.trojia.client.world.ZLevelCursor;
 import com.trojia.sim.actor.Actor;
+import com.trojia.sim.actor.StatusBit;
 import com.trojia.sim.engine.SimulationSystem;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
@@ -98,6 +101,10 @@ public final class ObserverApp extends ApplicationAdapter {
     private final int debugStartZ;
     private final int[] debugCenterTile;
     private final int debugZoom;
+    private final boolean debugPlayMode;
+    private final int debugMoveDx;
+    private final int debugMoveDy;
+    private final int debugActAsActorId;
     private int framesRendered;
     private float voidR;
     private float voidG;
@@ -119,6 +126,7 @@ public final class ObserverApp extends ApplicationAdapter {
     private InspectorFaces inspectorFaces;
     private ScenarioPopulation population;
     private InspectorState inspector;
+    private PlayModeState playMode;
     private EventLog eventLog;
     private EventLogTracker eventLogTracker;
     private InspectorRenderer inspectorRenderer;
@@ -167,6 +175,30 @@ public final class ObserverApp extends ApplicationAdapter {
     public ObserverApp(Fixture fixture, int smokeFrames, String screenshotPath,
             int debugSelectActorId, String artDir, int debugStartZ, int[] debugCenterTile,
             int debugZoom) {
+        this(fixture, smokeFrames, screenshotPath, debugSelectActorId, artDir, debugStartZ,
+                debugCenterTile, debugZoom, false, 0, 0, NO_DEBUG_SELECT);
+    }
+
+    /**
+     * Play-mode verification aid (PLAY-MODE-SPEC.md §5, the same "bypass the input device,
+     * exercise the same code path" convention {@code debugSelectActorId} already established
+     * for the mouse): only meaningful when {@code debugSelectActorId} is also set.
+     *
+     * @param debugPlayMode      if {@code true}, forces Play mode on for
+     *                           {@code debugSelectActorId} at boot (bypassing the {@code P}
+     *                           key).
+     * @param debugMoveDx        signed step direction ({@code -1/0/1}), applied every rendered
+     *                           frame while {@code debugPlayMode} is on (bypassing WASD) — the
+     *                           held-key movement proof.
+     * @param debugMoveDy        the paired vertical signed step direction.
+     * @param debugActAsActorId  if &ge; 0, calls {@code Actor.setActAs} once at boot so
+     *                           {@code debugSelectActorId} presents as this other actor
+     *                           (bypassing the {@code I} key + click) — the disguise proof.
+     */
+    public ObserverApp(Fixture fixture, int smokeFrames, String screenshotPath,
+            int debugSelectActorId, String artDir, int debugStartZ, int[] debugCenterTile,
+            int debugZoom, boolean debugPlayMode, int debugMoveDx, int debugMoveDy,
+            int debugActAsActorId) {
         this.fixture = fixture;
         this.smokeFrames = smokeFrames;
         this.screenshotPath = screenshotPath;
@@ -175,6 +207,10 @@ public final class ObserverApp extends ApplicationAdapter {
         this.debugStartZ = debugStartZ;
         this.debugCenterTile = debugCenterTile == null ? null : debugCenterTile.clone();
         this.debugZoom = debugZoom;
+        this.debugPlayMode = debugPlayMode;
+        this.debugMoveDx = debugMoveDx;
+        this.debugMoveDy = debugMoveDy;
+        this.debugActAsActorId = debugActAsActorId;
     }
 
     @Override
@@ -245,6 +281,7 @@ public final class ObserverApp extends ApplicationAdapter {
 
             // Inspector: click-to-select panel, all-population event feed, follow-camera.
             this.inspector = new InspectorState();
+            this.playMode = new PlayModeState();
             this.eventLog = new EventLog(30);
             this.eventLogTracker = new EventLogTracker(population.registry(), population.homes(),
                     eventLog);
@@ -268,6 +305,17 @@ public final class ObserverApp extends ApplicationAdapter {
                 inspector.select(debugSelectActorId);
                 inspector.toggleFollow(); // exercise the follow path in the headless proof
                 camera.setZoom(4);        // legible sprite + highlight for the screenshot aid
+                // Play-mode debug hooks (PLAY-MODE-SPEC.md §5): bypass the P/I keys and the
+                // mouse — the same "exercise the real code path without the input device"
+                // convention debugSelectActorId itself established, for the headless proof.
+                if (debugPlayMode) {
+                    population.registry().get(debugSelectActorId)
+                            .setStatus(StatusBit.PLAYER_CONTROLLED, true);
+                    playMode.enable(debugSelectActorId);
+                }
+                if (debugActAsActorId >= 0 && debugActAsActorId < population.registry().size()) {
+                    population.registry().get(debugSelectActorId).setActAs(debugActAsActorId);
+                }
             }
 
             System.out.println("observer: spawned " + population.registry().size()
@@ -302,10 +350,24 @@ public final class ObserverApp extends ApplicationAdapter {
         ScreenUtils.clear(voidR, voidG, voidB, 1f);
 
         float deltaSeconds = Gdx.graphics.getDeltaTime();
-        CameraInput.poll(camera, zLevel, deltaSeconds);
+        boolean playModeActive = playMode != null && playMode.active();
+        // Play mode repurposes WASD to drive the played actor (PLAY-MODE-SPEC.md §5.1) —
+        // camera panning is suppressed while it is active; zoom/z-scrub still work either way.
+        CameraInput.poll(camera, zLevel, deltaSeconds, !playModeActive);
         TimeControlInput.poll(driver);
         if (inspector != null) {
-            InspectorInput.poll(inspector, camera, population.registry(), zLevel.z());
+            boolean clickConsumedByPlayMode = PlayModeInput.poll(playMode, inspector, camera,
+                    population.registry(), zLevel.z());
+            if (!clickConsumedByPlayMode) {
+                InspectorInput.poll(inspector, camera, population.registry(), zLevel.z());
+            }
+            // Screenshot/verification aid only (bypasses WASD, mirrors debugSelectActorId's
+            // "bypass the input device" convention): re-applies the same movement-application
+            // code PlayModeInput's real WASD poll uses, every rendered frame, so a held key can
+            // be proven deterministically without a live keyboard (PLAY-MODE-SPEC.md §5.2).
+            if (debugPlayMode && (debugMoveDx != 0 || debugMoveDy != 0)) {
+                PlayModeInput.applyMovement(playMode, population.registry(), debugMoveDx, debugMoveDy);
+            }
         }
         if (smokeFrames > 0 && population != null) {
             // Smoke/verification runs advance exactly ONE tick per rendered frame instead

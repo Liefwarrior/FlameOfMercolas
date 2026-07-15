@@ -17,6 +17,7 @@ public final class Wastrel extends Actor {
     private static final PolicyStack STACK = PolicyStack.of(
             Policies.EXECUTED,
             Policies.HELD,
+            Policies.PLAYER_CONTROL,
             Policies.DEFER_WIELDER,
             Policies.FLEE,
             Policies.SEEK_FOOD,

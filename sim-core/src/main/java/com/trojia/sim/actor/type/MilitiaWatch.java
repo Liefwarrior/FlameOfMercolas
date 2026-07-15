@@ -16,6 +16,7 @@ public final class MilitiaWatch extends Actor {
     public static final ActorTypeId TYPE = ActorTypeId.of("militia_watch");
 
     private static final PolicyStack STACK = PolicyStack.of(
+            Policies.PLAYER_CONTROL,
             Policies.DEFER_WIELDER,
             Policies.FLEE,
             Policies.SEEK_FOOD,

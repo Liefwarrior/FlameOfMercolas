@@ -109,6 +109,12 @@ public abstract class Actor {
     /** Villain arrest count so far; only Skyrunner escalation (maim/hang) reads it today. */
     private byte offenseCount;
 
+    // ---- Play mode (PLAY-MODE-SPEC.md §5.2/§6): plain scalar, the same goalProgress/
+    // heldUntilTick precedent — per-frame input intent, not simulation state, so it is
+    // deliberately NOT part of the ACTR persisted record (§6). ----
+    /** Next cell to step toward under direct player control, or {@link #NONE} if none pending. */
+    private int playerMoveTargetCell = NONE;
+
     // ---- legibility (inspector line, §7.2/§10.5) ----
     private ReasonCode lastReasonCode;
 
@@ -371,6 +377,18 @@ public abstract class Actor {
         this.identity = identity;
     }
 
+    /**
+     * Play mode's disguise verb (DECISIONS.md Identity row, PLAY-MODE-SPEC.md §5.3): presents
+     * as {@code otherActorId} — an existing {@code ActorId} in the registry — instead of this
+     * actor's true identity. Pass this actor's own {@link #id()} to drop the disguise. A plain
+     * field rewrite, no validation that {@code otherActorId} resolves to a live actor: the
+     * caller (Play mode's impersonation picker) only ever passes ids resolved via the same
+     * {@code ActorPicker} the click-to-select panel already trusts.
+     */
+    public final void setActAs(int otherActorId) {
+        this.identity = new Persona(identity.trueId(), otherActorId);
+    }
+
     public final int cell() {
         return cell;
     }
@@ -549,6 +567,16 @@ public abstract class Actor {
 
     public final void setOffenseCount(byte offenseCount) {
         this.offenseCount = offenseCount;
+    }
+
+    /** The pending Play-mode step target, or {@link #NONE} (PLAY-MODE-SPEC.md §5.2). */
+    public final int playerMoveTargetCell() {
+        return playerMoveTargetCell;
+    }
+
+    /** Sets (or clears, with {@link #NONE}) the pending Play-mode step target. */
+    public final void setPlayerMoveTarget(int cell) {
+        this.playerMoveTargetCell = cell;
     }
 
     public final ReasonCode lastReasonCode() {

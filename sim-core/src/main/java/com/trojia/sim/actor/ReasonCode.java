@@ -22,5 +22,7 @@ public enum ReasonCode {
     HELD_IN_CUSTODY,
     RELEASED_FROM_CUSTODY,
     MAIMED_FIRST_OFFENSE,
-    EXECUTED_SECOND_OFFENSE
+    EXECUTED_SECOND_OFFENSE,
+    /** Play mode: this tick's movement/idle came from direct human input (PLAY-MODE-SPEC.md §5.2). */
+    PLAYER_CONTROLLED
 }

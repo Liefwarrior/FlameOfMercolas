@@ -261,6 +261,11 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setHp(hp);
         actor.setDownedTimer(downedTimer);
         actor.setStatusBits(statusBits);
+        // Thaw repair (PLAY-MODE-SPEC.md §6, the same shape as the goalTarget-at-thaw repair):
+        // a fresh app launch never has a live human reattached to a specific actor. Without
+        // this, an actor saved mid-Play-mode would permanently win selectIndex (score 2000 > 0)
+        // with act() doing nothing useful (no target ever arrives again) — frozen forever.
+        actor.setStatus(StatusBit.PLAYER_CONTROLLED, false);
         actor.setPolicyOrdinal(policyOrdinal);
         actor.setTarget(targetKind, targetKey);
         actor.setPolicyTimer(policyTimer);

@@ -15,6 +15,7 @@ public final class AnimalKeeper extends Actor {
     public static final ActorTypeId TYPE = ActorTypeId.of("animal_keeper");
 
     private static final PolicyStack STACK = PolicyStack.of(
+            Policies.PLAYER_CONTROL,
             Policies.DEFER_WIELDER,
             Policies.FLEE,
             Policies.SEEK_FOOD,

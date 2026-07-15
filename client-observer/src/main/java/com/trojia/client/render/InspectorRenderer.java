@@ -96,7 +96,14 @@ public final class InspectorRenderer {
         // or just the no-selection hint) rather than a fixed guess.
         boolean showFollowBadge = state.followActive();
         boolean hasSelection = state.hasSelection();
-        String typeKey = hasSelection ? registry.get(state.selectedActorId()).typeId().key() : null;
+        // Play mode (PLAY-MODE-SPEC.md §5.3): resolve the portrait/type from the PRESENTED
+        // actor when disguised, so the panel visibly becomes the impersonated actor's face —
+        // the same Bledhreft/Senator-Harris canon example, made observable end to end.
+        Actor selectedActor = hasSelection ? registry.get(state.selectedActorId()) : null;
+        Actor presentedActor = hasSelection && selectedActor.identity().isDisguised()
+                ? registry.get(selectedActor.identity().presentedId())
+                : selectedActor;
+        String typeKey = hasSelection ? presentedActor.typeId().key() : null;
         boolean showFace = hasSelection && faces != null && faces.hasFaceFor(typeKey);
         List<String> lines = hasSelection
                 ? InspectorText.describe(state.selectedActorId(), registry, homes, relationships,
@@ -135,7 +142,7 @@ public final class InspectorRenderer {
         // centered above the name line; the text block shifts down under it. Beast types
         // have no archetype mapping and keep the text-only panel.
         if (showFace) {
-            faces.draw(batch, state.selectedActorId(), typeKey, x + PANEL_WIDTH / 2f, y);
+            faces.draw(batch, presentedActor.id(), typeKey, x + PANEL_WIDTH / 2f, y);
             y -= InspectorFaces.PANEL_SHIFT_PX;
         }
         for (String line : lines) {

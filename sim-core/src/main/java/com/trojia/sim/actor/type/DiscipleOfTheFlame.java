@@ -17,6 +17,7 @@ public final class DiscipleOfTheFlame extends Actor {
     public static final ActorTypeId TYPE = ActorTypeId.of("disciple_of_the_flame");
 
     private static final PolicyStack STACK = PolicyStack.of(
+            Policies.PLAYER_CONTROL,
             Policies.DEFER_WIELDER,
             Policies.FLEE,
             Policies.SEEK_FOOD,

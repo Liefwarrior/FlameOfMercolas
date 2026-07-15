@@ -34,8 +34,39 @@ public final class ObserverLauncher {
         new Lwjgl3Application(
                 new ObserverApp(parseFixture(args), parseSmokeFrames(args), parseScreenshotPath(args),
                         parseDebugSelect(args), parseArtDir(args), parseStartZ(args),
-                        parseCenter(args), parseZoom(args)),
+                        parseCenter(args), parseZoom(args), hasFlag(args, "--debug-play-mode"),
+                        parseDebugMove(args)[0], parseDebugMove(args)[1], parseDebugActAs(args)),
                 configuration);
+    }
+
+    private static boolean hasFlag(String[] args, String flag) {
+        for (String arg : args) {
+            if (flag.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** {@code --debug-move=dx,dy}: Play-mode movement proof aid, bypasses WASD (see ObserverApp). */
+    private static int[] parseDebugMove(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--debug-move=")) {
+                String[] parts = arg.substring("--debug-move=".length()).split(",", 2);
+                return new int[] {Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim())};
+            }
+        }
+        return new int[] {0, 0};
+    }
+
+    /** {@code --debug-act-as=id}: Play-mode disguise proof aid, bypasses the I key + click. */
+    private static int parseDebugActAs(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--debug-act-as=")) {
+                return Integer.parseInt(arg.substring("--debug-act-as=".length()));
+            }
+        }
+        return -1;
     }
 
     private static int parseDebugSelect(String[] args) {

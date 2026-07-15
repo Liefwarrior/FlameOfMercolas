@@ -19,6 +19,13 @@ public final class StatusBit {
     public static final short MAIMED = 1 << 7;
     /** Permanent: a Skyrunner hanged on a 2nd repeat offense — inert forever, never removed. */
     public static final short EXECUTED = 1 << 8;
+    /**
+     * Play mode (PLAY-MODE-SPEC.md §5.1): a human is directly steering this actor via
+     * {@code PlayerControlPolicy} instead of its own AI. Cleared unconditionally on every
+     * load/thaw (§6) — a fresh app launch never has a live human reattached to a specific
+     * actor.
+     */
+    public static final short PLAYER_CONTROLLED = 1 << 9;
 
     private StatusBit() {
     }

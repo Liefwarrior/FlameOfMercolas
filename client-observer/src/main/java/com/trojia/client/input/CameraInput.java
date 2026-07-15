@@ -18,6 +18,10 @@ import com.trojia.client.world.ZLevelCursor;
  * one z-level per key press (Dwarf-Fortress-style level scrub). {@code Up}/{@code Down} are
  * deliberately excluded from panning so the two behaviors never fight over the same key in
  * the same frame.
+ *
+ * <p>{@code panEnabled} (PLAY-MODE-SPEC.md §5.1): Play mode repurposes {@code WASD} to drive
+ * the played actor instead of the camera, so the caller passes {@code false} while it is
+ * active — zoom and z-scrub keep working either way (harmless, useful even mid-Play-mode).
  */
 public final class CameraInput {
 
@@ -27,16 +31,23 @@ public final class CameraInput {
     private CameraInput() {
     }
 
-    /** Reads the current keyboard state and applies one frame's worth of navigation. */
-    public static void poll(MapCamera camera, ZLevelCursor zLevel, float deltaSeconds) {
-        boolean left = Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT);
-        boolean right = Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT);
-        boolean up = Gdx.input.isKeyPressed(Input.Keys.W);
-        boolean down = Gdx.input.isKeyPressed(Input.Keys.S);
-        int[] pan = panDelta(left, right, up, down);
-        if (pan[0] != 0 || pan[1] != 0) {
-            int step = Math.round(PAN_SPEED_SCREEN_PX_PER_SEC * deltaSeconds);
-            camera.pan(pan[0] * step, pan[1] * step);
+    /**
+     * Reads the current keyboard state and applies one frame's worth of navigation.
+     * {@code panEnabled} gates only the {@code WASD}/arrow pan (zoom and z-scrub are
+     * unaffected) — {@code false} while Play mode owns {@code WASD} (PLAY-MODE-SPEC.md §5.1).
+     */
+    public static void poll(MapCamera camera, ZLevelCursor zLevel, float deltaSeconds,
+            boolean panEnabled) {
+        if (panEnabled) {
+            boolean left = Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT);
+            boolean right = Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT);
+            boolean up = Gdx.input.isKeyPressed(Input.Keys.W);
+            boolean down = Gdx.input.isKeyPressed(Input.Keys.S);
+            int[] pan = panDelta(left, right, up, down);
+            if (pan[0] != 0 || pan[1] != 0) {
+                int step = Math.round(PAN_SPEED_SCREEN_PX_PER_SEC * deltaSeconds);
+                camera.pan(pan[0] * step, pan[1] * step);
+            }
         }
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT_BRACKET)) {

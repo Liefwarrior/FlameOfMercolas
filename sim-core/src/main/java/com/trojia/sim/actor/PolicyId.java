@@ -29,5 +29,7 @@ public enum PolicyId {
     /** In-custody EMERGENCY-band override (arrest/hold/release, ARREST-SPEC addendum). */
     HELD,
     /** Permanent EMERGENCY-band override for a hanged Skyrunner (ARREST-SPEC addendum). */
-    EXECUTED
+    EXECUTED,
+    /** Play mode's direct-control override (PLAY-MODE-SPEC.md §5.2). */
+    PLAYER_CONTROL
 }

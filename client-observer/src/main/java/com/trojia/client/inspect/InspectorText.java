@@ -82,6 +82,7 @@ public final class InspectorText {
 
         lines.add("ACTOR #" + actor.id() + "  " + stats.displayName() + "  '" + stats.glyph() + "'");
         lines.add("type:   " + actor.typeId().key());
+        lines.add("presents: " + presentedTypeLine(actor, registry));
 
         Job job = actor.jobOrdinal() >= 0 ? jobs.get(actor.jobOrdinal()) : null;
         String trueJob = JobDisplay.trueJobId(job);
@@ -108,6 +109,19 @@ public final class InspectorText {
         appendInventory(lines, actor, items);
         appendRelationships(lines, actor, registry, relationships);
         return lines;
+    }
+
+    /**
+     * The Persona seam (PLAY-MODE-SPEC.md §5.3, distinct from the Job-cover "presents:" line
+     * above — that one is {@code JobDisplay}'s type-level cover, this is {@code Persona}'s
+     * ActorId-shaped disguise): {@code "(self)"} when not disguised, else the presented
+     * actor's type key — proving {@code setActAs} genuinely changes what the panel shows.
+     */
+    private static String presentedTypeLine(Actor actor, ActorRegistry registry) {
+        if (!actor.identity().isDisguised()) {
+            return "(self)";
+        }
+        return registry.get(actor.identity().presentedId()).typeId().key();
     }
 
     private static String reason(Actor actor) {

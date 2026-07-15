@@ -16,6 +16,7 @@ public final class Policies {
     public static final BehaviorPolicy SEEK_FOOD = new SeekFoodPolicy();
     public static final BehaviorPolicy HELD = new HeldPolicy();
     public static final BehaviorPolicy EXECUTED = new ExecutedPolicy();
+    public static final BehaviorPolicy PLAYER_CONTROL = new PlayerControlPolicy();
 
     private Policies() {
     }

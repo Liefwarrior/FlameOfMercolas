@@ -73,6 +73,46 @@ class InspectorTextTest {
     }
 
     @Test
+    void ordinaryActorShowsSelfInThePresentsLine() {
+        CompoundBlockPopulation p = build();
+        String text = join(InspectorText.describe(2, p.registry(), p.homes(),
+                p.relationships(), p.jobs(), p.items()));
+        assertTrue(text.contains("presents: (self)"), text);
+    }
+
+    @Test
+    void disguisedActorPanelShowsThePresentedActorsType() {
+        // PLAY-MODE-SPEC.md §5.3: setActAs is the Persona seam, distinct from the Job-cover
+        // mechanism the other "presents:" test above exercises. Actor #2 is a serf; disguise
+        // it as the militia_watch actor and confirm the panel's Persona line follows.
+        CompoundBlockPopulation p = build();
+        Actor serf = p.registry().get(2);
+        Actor watch = firstOfType(p, "militia_watch");
+        assertFalse(serf.identity().isDisguised(), "sanity: not disguised yet");
+
+        serf.setActAs(watch.id());
+        String text = join(InspectorText.describe(2, p.registry(), p.homes(),
+                p.relationships(), p.jobs(), p.items()));
+
+        assertTrue(text.contains("presents: militia_watch"), text);
+        assertTrue(text.contains("type:   serf"), "true type must be unaffected: " + text);
+
+        serf.setActAs(serf.id()); // drop the disguise
+        text = join(InspectorText.describe(2, p.registry(), p.homes(),
+                p.relationships(), p.jobs(), p.items()));
+        assertTrue(text.contains("presents: (self)"), text);
+    }
+
+    private static Actor firstOfType(CompoundBlockPopulation p, String typeKey) {
+        for (int i = 0; i < p.registry().size(); i++) {
+            if (p.registry().get(i).typeId().key().equals(typeKey)) {
+                return p.registry().get(i);
+            }
+        }
+        throw new AssertionError("no actor of type " + typeKey + " in the population");
+    }
+
+    @Test
     void selectionHintTokensCarryTheMouseAndCIcons() {
         List<HudToken> tokens = InspectorText.selectionHintTokens();
         assertTrue(tokens.contains(HudToken.icon(IconKey.MOUSE_LEFT_CLICK)),
