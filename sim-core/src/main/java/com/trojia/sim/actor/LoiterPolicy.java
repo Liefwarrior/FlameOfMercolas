@@ -35,7 +35,8 @@ public final class LoiterPolicy implements BehaviorPolicy {
         Dir heading = HEADINGS[(int) Long.remainderUnsigned(draw >>> 8, HEADINGS.length)];
         int x = clamp(PackedPos.x(self.cell()) + heading.dx(), PackedPos.X_MASK);
         int y = clamp(PackedPos.y(self.cell()) + heading.dy(), PackedPos.Y_MASK);
-        self.stepToward(PackedPos.pack(x, y, PackedPos.z(self.cell())), false, ctx::isWalkable);
+        self.stepToward(PackedPos.pack(x, y, PackedPos.z(self.cell())), false, ctx::isWalkable,
+                ctx.occupancy());
     }
 
     private static int clamp(int coordinate, int max) {

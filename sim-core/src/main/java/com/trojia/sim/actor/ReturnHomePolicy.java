@@ -70,7 +70,7 @@ public final class ReturnHomePolicy implements BehaviorPolicy {
         // RETURN_HOME must ignore it too whenever home != anchor (a Serf's tenement
         // is routinely outside the work anchor's leash) or the walk home could never
         // complete — a resolved-here consistency gap, not a spec contradiction.
-        self.stepAlongRoute(home.homeCell(), true, ctx::isWalkable);
+        self.stepAlongRoute(home.homeCell(), true, ctx::isWalkable, ctx.occupancy());
         // !isRecovered rather than isLow for legibility consistency with the score()
         // hysteresis gate above (cosmetic — doesn't change which reason fires, since
         // score() already guarantees this act() only runs while the REST branch applies).

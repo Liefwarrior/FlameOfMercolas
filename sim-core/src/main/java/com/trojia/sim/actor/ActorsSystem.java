@@ -46,6 +46,13 @@ public final class ActorsSystem implements SimulationSystem {
     private final int arrestHoldCell;
     /** Per-actor per-tick draw-index counter (§2.2's "one counter per actor"); reset each tick. */
     private int[] drawCounters = new int[0];
+    /**
+     * The shared actor-actor occupancy index (the "only 2 to a cell" cap). Rebuilt from every
+     * actor's cell at the top of each {@link #tick} — O(N), so it is robust to spawns, loads and
+     * teleports that never routed through {@code onEnter} — then kept live as actors move.
+     * Lazily sized to the current actor count on first tick.
+     */
+    private OccupancyIndex occupancy;
 
     /** World-less constructor (test/headless convenience) — {@code isWalkable} always true. */
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
@@ -119,7 +126,25 @@ public final class ActorsSystem implements SimulationSystem {
         } else {
             java.util.Arrays.fill(drawCounters, 0, registry.size(), 0);
         }
+        rebuildOccupancy();
         registry.tickAll(new ActorContextImpl(context));
+    }
+
+    /**
+     * Rebuilds the occupancy index from scratch (clear + one {@code add} per actor cell) before
+     * the tick's moves run, so it always reflects true start-of-tick positions regardless of how
+     * actors got there (spawn/load/teleport bypass {@code onEnter}). Lazily allocated, sized to
+     * the actor count so the steady state needs no rehash.
+     */
+    private void rebuildOccupancy() {
+        if (occupancy == null) {
+            occupancy = new OccupancyIndex(registry.size());
+        } else {
+            occupancy.clear();
+        }
+        for (int i = 0; i < registry.size(); i++) {
+            occupancy.add(registry.get(i).cell());
+        }
     }
 
     @Override
@@ -395,8 +420,31 @@ public final class ActorsSystem implements SimulationSystem {
         }
 
         @Override
+        public Actor.OccupancyQuery occupancy() {
+            return OCCUPANCY_VIEW;
+        }
+
+        @Override
         public int arrestHoldCell() {
             return arrestHoldCell;
         }
     }
+
+    /**
+     * The per-system occupancy view handed to movers: {@code occupantsAt} reads the shared index
+     * and {@code onEnter} keeps it live (remove the vacated cell, add the entered one). Stateless
+     * over {@link #occupancy}, so one instance is reused across ticks.
+     */
+    private final Actor.OccupancyQuery OCCUPANCY_VIEW = new Actor.OccupancyQuery() {
+        @Override
+        public int occupantsAt(int cell) {
+            return occupancy.count(cell);
+        }
+
+        @Override
+        public void onEnter(int fromCell, int toCell) {
+            occupancy.remove(fromCell);
+            occupancy.add(toCell);
+        }
+    };
 }

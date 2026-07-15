@@ -39,6 +39,45 @@ public abstract class Actor {
     }
 
     /**
+     * The hard actor-actor occupancy cap: at most this many actors may share one tile cell,
+     * enforced at movement commit ({@link #tryStep}) exactly like a wall — a full cell reads as
+     * blocked, so wall-slide tries alternatives and, failing those, the tick is a deterministic
+     * no-op. Spawn-time crowding is prevented separately by the scenario spawner.
+     */
+    public static final int MAX_OCCUPANTS_PER_CELL = 2;
+
+    /**
+     * A narrow occupancy probe threaded alongside {@link WalkabilityQuery} into the world-aware
+     * movers (§2.5 addendum, the "only 2 to a cell" rule). {@link #occupantsAt(int)} reports the
+     * live occupant count of a candidate cell (excluding the moving actor, which still sits on its
+     * own cell); {@link #onEnter(int, int)} lets the mover keep a shared occupancy index live as
+     * it commits a step (decrement the vacated cell, increment the entered one). The {@link
+     * #UNLIMITED} no-op is the default for the world-less/test overloads, so occupancy never
+     * blocks and no index bookkeeping happens there — {@code ActorTest} and the collision-free
+     * convenience paths are untouched.
+     */
+    public interface OccupancyQuery {
+
+        /** No cap, no bookkeeping: {@code occupantsAt} is always 0, {@code onEnter} does nothing. */
+        OccupancyQuery UNLIMITED = new OccupancyQuery() {
+            @Override
+            public int occupantsAt(int cell) {
+                return 0;
+            }
+
+            @Override
+            public void onEnter(int fromCell, int toCell) {
+            }
+        };
+
+        /** Live occupant count of {@code cell} right now (not counting the moving actor). */
+        int occupantsAt(int cell);
+
+        /** Commit hook: the moving actor just left {@code fromCell} for {@code toCell}. */
+        void onEnter(int fromCell, int toCell);
+    }
+
+    /**
      * REST reserve regained per tick while standing on the home cell (a "sleep"
      * recovery, §11.1). Chosen above every type's REST {@code decayPerKilotick}
      * so a night at home refills REST and the actor heads back out next day —
@@ -261,12 +300,22 @@ public abstract class Actor {
      * {@code ActorTest} needs no changes.
      */
     public final void stepToward(int targetCell, boolean ignoresLeash) {
-        stepToward(targetCell, ignoresLeash, ALWAYS_WALKABLE);
+        stepToward(targetCell, ignoresLeash, ALWAYS_WALKABLE, OccupancyQuery.UNLIMITED);
     }
 
     /** Convenience overload: leash-respecting step (the common case), no world lookup. */
     public final void stepToward(int targetCell) {
-        stepToward(targetCell, false, ALWAYS_WALKABLE);
+        stepToward(targetCell, false, ALWAYS_WALKABLE, OccupancyQuery.UNLIMITED);
+    }
+
+    /**
+     * World-aware step with no occupancy cap ({@link OccupancyQuery#UNLIMITED}) — the pre-cap
+     * overload, kept so the direct {@code stepToward}/{@code stepAlongRoute} test coverage
+     * ({@code ActorStepTowardWalkabilityTest} et al.) is untouched. Production call sites pass a
+     * real {@link OccupancyQuery} via the four-arg overload below.
+     */
+    public final void stepToward(int targetCell, boolean ignoresLeash, WalkabilityQuery walk) {
+        stepToward(targetCell, ignoresLeash, walk, OccupancyQuery.UNLIMITED);
     }
 
     /**
@@ -286,7 +335,8 @@ public abstract class Actor {
      * above, so a blocked tick still consumes the speed budget, matching
      * today's leash-block semantics.
      */
-    public final void stepToward(int targetCell, boolean ignoresLeash, WalkabilityQuery walk) {
+    public final void stepToward(int targetCell, boolean ignoresLeash, WalkabilityQuery walk,
+            OccupancyQuery occ) {
         if (cell == targetCell) {
             return;
         }
@@ -306,28 +356,33 @@ public abstract class Actor {
         int ty = PackedPos.y(targetCell);
         int dx = Integer.compare(tx, x);
         int dy = Integer.compare(ty, y);
-        if (tryStep(dx, dy, z, ignoresLeash, walk)) {
+        if (tryStep(dx, dy, z, ignoresLeash, walk, occ)) {
             return; // primary step (diagonal or straight)
         }
         if (dx != 0 && dy != 0) {
             // Diagonal blocked -> wall-slide: try the two orthogonal component steps.
-            if (tryStep(dx, 0, z, ignoresLeash, walk)) {
+            if (tryStep(dx, 0, z, ignoresLeash, walk, occ)) {
                 return;
             }
-            if (tryStep(0, dy, z, ignoresLeash, walk)) {
+            if (tryStep(0, dy, z, ignoresLeash, walk, occ)) {
                 return;
             }
         }
-        // Every candidate blocked: deterministic no-op (§2.5).
+        // Every candidate blocked (wall, leash, or a full cell): deterministic no-op (§2.5).
     }
 
     /**
      * Attempts one candidate step {@code (dx, dy)} from the current cell on
      * z-level {@code z}: rejects it if {@code walk} reports it unwalkable,
-     * then applies the existing leash math; commits {@code cell} and facing
-     * only if both checks pass. Returns whether the step was committed.
+     * then applies the existing leash math, then rejects it if {@code stepped}
+     * is already at the {@link #MAX_OCCUPANTS_PER_CELL} occupancy cap (a full
+     * cell behaves exactly like a wall). Commits {@code cell} and facing only
+     * if all three checks pass, then notifies {@code occ} of the vacated/entered
+     * cells so a shared occupancy index stays live mid-tick. Returns whether the
+     * step was committed.
      */
-    private boolean tryStep(int dx, int dy, int z, boolean ignoresLeash, WalkabilityQuery walk) {
+    private boolean tryStep(int dx, int dy, int z, boolean ignoresLeash, WalkabilityQuery walk,
+            OccupancyQuery occ) {
         int x = PackedPos.x(cell);
         int y = PackedPos.y(cell);
         int stepped = PackedPos.pack(x + dx, y + dy, z);
@@ -351,12 +406,17 @@ public abstract class Actor {
                 return false; // leash holds; deterministic no-op (§2.5)
             }
         }
+        if (occ.occupantsAt(stepped) >= MAX_OCCUPANTS_PER_CELL) {
+            return false; // cell full: a hard occupancy wall (§2.5, the "only 2 to a cell" cap)
+        }
+        int from = cell;
         cell = stepped;
         if (dx != 0) {
             facing = (byte) (dx < 0 ? Dir.WEST.ordinal() : Dir.EAST.ordinal());
         } else if (dy != 0) {
             facing = (byte) (dy < 0 ? Dir.NORTH.ordinal() : Dir.SOUTH.ordinal());
         }
+        occ.onEnter(from, stepped);
         return true;
     }
 
@@ -391,6 +451,18 @@ public abstract class Actor {
      * single tick.
      */
     public final void stepAlongRoute(int targetCell, boolean ignoresLeash, WalkabilityQuery walk) {
+        stepAlongRoute(targetCell, ignoresLeash, walk, OccupancyQuery.UNLIMITED);
+    }
+
+    /**
+     * Occupancy-aware route follower (the production overload): identical to
+     * {@link #stepAlongRoute(int, boolean, WalkabilityQuery)} but threads the {@link
+     * OccupancyQuery} into each per-tick hop, so a waypoint whose cell is already at the
+     * occupancy cap is refused just like a wall — the {@code cell == before} branch below then
+     * forces a replan, letting the actor route around the full cell instead of stalling on it.
+     */
+    public final void stepAlongRoute(int targetCell, boolean ignoresLeash, WalkabilityQuery walk,
+            OccupancyQuery occ) {
         if (cell == targetCell) {
             return;
         }
@@ -414,11 +486,11 @@ public abstract class Actor {
         }
         int waypoint = cachedRoute[cachedRouteIndex];
         int before = cell;
-        stepToward(waypoint, ignoresLeash, walk); // reuses the existing single-cell mover verbatim
+        stepToward(waypoint, ignoresLeash, walk, occ); // reuses the existing single-cell mover
         if (cell == waypoint) {
             cachedRouteIndex++;
         } else if (cell == before) {
-            cachedRouteTargetCell = NONE; // waypoint went stale -> force replan next call
+            cachedRouteTargetCell = NONE; // blocked/full waypoint went stale -> force replan next call
         }
     }
 
