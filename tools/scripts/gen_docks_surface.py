@@ -165,6 +165,39 @@ def intersection(z, x0, y0, x1, y1):
     frect(z, x0, y0, x1, y1, DIRT_FLOOR)
 
 
+# --- slab-clutter fixtures (dressing pass; break up barren smooth expanses) ---
+def crate_grid(z, x0, y0, x1, y1, gid=OAK_WALL, bw=2, bh=2, gx=1, gy=1):
+    """Standardized grid of storage stacks: bw x bh solid crate/barrel islands (gid,
+    default OAK_WALL) tiled from the NW corner with gx/gy-wide aisles between, so a
+    warehouse/cargo bay reads as neatly racked goods that stay traversable. Like
+    safe_sidewalk it SELF-GUARDS -- paints a cell only when it is currently open floor
+    (terrain==0, floor set, no fluid) -- auto-skipping walls, doors, stairs, existing
+    furniture and water. Aisles between/around the islands stay one connected component
+    by construction; caller keeps the rect off anchors/through-spines."""
+    y = y0
+    while y <= y1:
+        x = x0
+        while x <= x1:
+            for yy in range(y, min(y + bh, y1 + 1)):
+                for xx in range(x, min(x + bw, x1 + 1)):
+                    if T[z][yy][xx] == 0 and F[z][yy][xx] != 0 and FL[z][yy][xx] == 0:
+                        T[z][yy][xx] = gid
+            x += bw + gx
+        y += bh + gy
+
+
+def rug(z, x0, y0, x1, y1, gid=GRANITE_FLOOR):
+    """Floor-variation 'rug'/inlaid medallion: repaint a rect of finished floor to gid
+    (default GRANITE_FLOOR -> the periodic floor_pave weave, which reads as a checkered
+    marble/mosaic inlay on the pale REMAN/BRICK slab). FLOOR layer only => entirely
+    walkability-neutral (never traps, never blocks). Only repaints cells that already
+    hold a non-fluid floor, so it hugs the room and won't spill onto walls/void/water."""
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            if F[z][y][x] != 0 and FL[z][y][x] == 0:
+                F[z][y][x] = gid
+
+
 # --- atomic homey pieces (a furniture cell is a solid WALL-gid tile) ---
 def bed(z, x, y):
     T[z][y][x] = CLOTH_WALL
@@ -856,6 +889,11 @@ for sy in (38, 42, 46):
     trect(11, 40, sy, 43, sy, TRUDGEON_WALL)
     trect(11, 48, sy, 50, sy, TRUDGEON_WALL)
 T[11][40][46] = GRANITE_WALL                        # auction block
+# Dressing pass (slab-clutter): a fishmonger's well, extra stall counters, and produce
+# crates in the empty south/margins; central x46 spine (muster->auction->anchor) stays clear.
+trect(11, 37, 47, 38, 48, GRANITE_WALL)             # fishmonger's well, SW corner
+cells(11, [(53, 46), (53, 47), (37, 38), (37, 39), (44, 45), (45, 45)], TRUDGEON_WALL)  # extra fish stalls
+cells(11, [(40, 48), (41, 48), (48, 48), (49, 48), (51, 40), (51, 41), (40, 44), (41, 44)], OAK_WALL)  # produce crates
 mk(11, "script_anchor", "business_k10_dawnstalls_anchor", 46, 41)
 mk(11, "script_anchor", "muster_dawnstalls_anchor", 46, 37)
 
@@ -878,6 +916,13 @@ for (dx, dy) in ((89, 34), (90, 34)):
     F[11][dy][dx] = BRICK_FLOOR
 trect(11, 84, 42, 85, 43, OAK_WALL)                 # crates
 trect(11, 93, 38, 94, 39, OAK_WALL)
+# Dressing pass (slab-clutter): bonded goods -- standardized crate stacks packing the four
+# quadrants (N-S spine x89-90 and E-W cross-aisle y40-41 stay clear: door(89-90,34) ->
+# anchor(90,40) -> south wall). SW grid origin x84 aligns to the existing (84-85,42-43)
+# stack so no aisle seals; existing stacks are auto-skipped by crate_grid's open-floor guard.
+for (qx0, qy0, qx1, qy1) in [(83, 35, 88, 39), (91, 35, 97, 39), (84, 42, 88, 45), (91, 42, 97, 45)]:
+    crate_grid(11, qx0, qy0, qx1, qy1)
+trect(11, 87, 44, 88, 44, LEATHER_WALL)             # a pallet of sacks in the SW bay
 frect(12, 82, 34, 98, 46, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k12_kingsbond_anchor", 90, 40)
 mk(11, "script_anchor", "watch_bond_post_anchor", 90, 33)
@@ -1083,6 +1128,14 @@ shell(11, 79, 82, 97, 92, BRICK_WALL, DIRT_FLOOR, doors=[(87, 82), (88, 82)])
 for rx in (83, 89, 93):
     trect(11, rx, 85, rx + 1, 88, OAK_WALL)         # racking islands, aisles between
 trect(11, 81, 89, 82, 90, OAK_WALL)                 # foreman's desk nook
+# Dressing pass (slab-clutter): receiving strip -- extend the 3 racking islands up into
+# y83-84 (taller stacks, no gaps); dispatch bay -- two free-standing crate islands + a
+# sack pallet (anchor aisle x87-88 stays clear full height). Foreman's desk untouched.
+for rx in (83, 89, 93):
+    trect(11, rx, 83, rx + 1, 84, OAK_WALL)
+trect(11, 84, 90, 85, 91, OAK_WALL)
+trect(11, 90, 90, 91, 91, OAK_WALL)
+trect(11, 95, 90, 96, 90, LEATHER_WALL)
 frect(12, 79, 82, 97, 92, BRICK_FLOOR)              # flat roof, single story, no bed
 mk(11, "script_anchor", "business_k29_longstore_anchor", 88, 87)
 
@@ -1211,6 +1264,18 @@ table(12, 25, 106, 26, 106)
 bed(12, 21, 98); bed(12, 22, 98); bed(12, 29, 98); chest(12, 30, 114)
 bed(12, 9, 98); bed(12, 10, 98); chest(12, 9, 104)
 bed(12, 9, 114); bed(12, 10, 114); chest(12, 9, 107)
+# Dressing pass (slab-clutter): the great east hall is the one genuinely barren mansion
+# room. OAK renders as a crate, so a genteel hall gets the "rug (floor variation)" treatment
+# -- two checkered floor-medallion RUGS (floor_pave weave), each with a 1x3 trestle table,
+# plus LEATHER presses/wardrobe hugging the walls. y105 spine + east door(30,105/106) +
+# hearth(21,106) kept clear (owner commutes anchor->courtyard through here).
+rug(12, 23, 100, 28, 103)                           # north medallion
+rug(12, 23, 109, 27, 112)                           # south medallion
+table(12, 24, 101, 26, 101)                         # trestle on north rug
+table(12, 24, 110, 26, 110)                         # trestle on south rug
+trect(12, 30, 100, 30, 103, LEATHER_WALL)           # press, east wall (door 30,105/106 clear below)
+trect(12, 21, 100, 21, 101, LEATHER_WALL)           # linen press, west wall (hearth 21,106 clear below)
+trect(12, 30, 111, 30, 113, LEATHER_WALL)           # wardrobe beside the existing chest (30,114)
 shell(13, 8, 97, 31, 115, REMAN_WALL, REMAN_FLOOR)
 # Rome cue (DECISIONS.md Art register FIFTH revision, Eli 2026-07-15): the compound's one
 # public gate is the mansion shell's own east border (x=31, the doors at (31,105)/(31,106))
@@ -1310,6 +1375,7 @@ bed(11, 117, 67); bed(11, 118, 67); bed(11, 119, 67); bed(11, 125, 67); bed(11, 
 chest(11, 117, 74); chest(11, 126, 74)
 hearth(11, 117, 79); table(11, 118, 82, 119, 82); table(11, 123, 82, 124, 82); chest(11, 126, 82)
 bed(11, 117, 92); bed(11, 118, 92); bed(11, 125, 92); bed(11, 126, 92); chest(11, 117, 85)
+rug(11, 119, 77, 123, 78)                           # dressing: mid great-room medallion (anchor 121,79 clear)
 # c01 (128-135,66-75): 8-wide -> horizontal split (sleeping N | common S).
 partition(11, 129, 69, 134, 69, REMAN_WALL, (131, 69))
 bed(11, 129, 67); bed(11, 130, 67); chest(11, 134, 67)
@@ -1400,6 +1466,7 @@ partition(12, 85, 106, 94, 106, REMAN_WALL, (89, 106))
 bed(12, 85, 102); bed(12, 86, 102); bed(12, 93, 102); bed(12, 94, 102)
 chest(12, 85, 105); chest(12, 94, 105)
 hearth(12, 85, 110); table(12, 87, 113, 88, 113); table(12, 90, 113, 91, 113); chest(12, 94, 114)
+rug(12, 86, 111, 91, 112)                           # dressing: south great-room medallion (anchor 89,108 clear)
 # c01 (124-131,101-107): W door -> west common (door+anchor) | east sleeping.
 partition(12, 128, 102, 128, 106, REMAN_WALL, (128, 104))
 bed(12, 129, 102); bed(12, 130, 102); chest(12, 130, 106)
@@ -1656,6 +1723,111 @@ cells(11, [(76, 31), (77, 31)], OAK_WALL)           # Weighhouse-plaza market cr
 cells(11, [(52, 38), (53, 38), (52, 44), (37, 45)], OAK_WALL)  # fish-market fishmonger crates
 cells(13, [(104, 121)], OAK_WALL)                   # Gallows well-plaza crate
 cells(13, [(99, 120)], STEEL_WALL)                  # Gallows well-plaza hitching post
+
+# --- Dressing pass: Weighhouse civic frontage plaza centerpiece (quay-edge band y26,
+#     off the y28-33 Tarwalk through-lane) + market barrels beside the existing crates ---
+cells(11, [(63, 26)], GRANITE_WALL)                 # brazier plinth (centerpiece)
+mk(11, "light_source", "brazier_weighhouse_plaza", 63, 27, luminance=16)
+cells(11, [(57, 26), (70, 26)], GRANITE_WALL)       # planter boxes flanking the frontage
+cells(11, [(75, 32), (75, 33)], OAK_WALL)           # market barrels by the crates
+
+# --- Dressing pass: Long Quay loading apron -- cargo stacks on the south apron rows
+#     y32-33 only, clear of the y26-30 mustering strip and every berth/pier/crane anchor ---
+for (cx, cy) in [(15, 32), (32, 32), (52, 32)]:
+    crate_grid(11, cx, cy, cx + 2, cy + 1)          # cargo stacks between berths
+cells(11, [(24, 33), (25, 33), (48, 33), (49, 33)], LEATHER_WALL)  # sack pallets
+
+# --- Dressing pass: Gallows Row well plaza top-up (mirror crate + night-market brazier) ---
+cells(13, [(105, 121)], OAK_WALL)                   # mirror crate (matches 104,121)
+mk(13, "light_source", "brazier_gallows_plaza", 106, 120, luminance=14)
+
+# ======================================================================
+# 5.8 District densification -- pave the inter-building dirt (streetscape pass, Eli:
+# "it's a city so logically the buildings would be smashed in together"). The wide plan
+# still read as buildings floating as islands in wide bare-brown-dirt streets/lots. This
+# pass paves the inter-building STREETS, connective LANES and CIVIC SQUARES so the district
+# reads as continuous urban fabric, while PRESERVING deliberate grit (hovel/slum yards, the
+# tar-yard, working yards, offal gutters, the condemned NE quarter). Paint-only: repaints
+# bare exterior DIRT_FLOOR -> paver; walls/doors/interiors/water are auto-preserved by the
+# guard, grit zones + a 1-cell hovel apron by _grit(). No T/FL/marker cell is touched, so
+# no footprint moves and walkability (a function of T only) is provably unchanged.
+# Two-tier hierarchy (the only two FLOOR gids that render correctly, swatch-verified):
+# smooth brick spine (BRICK_FLOOR->floor_tile) for ARTERIALS vs the periodic weave
+# (GRANITE_FLOOR->floor_pave) for every pedestrian/civic/lane fill.
+# ======================================================================
+GRIT_KEEP = [  # (z, x0, y0, x1, y1) -- dirt that STAYS dirt (deliberate grit; never paved)
+    (11,   2, 36,  29, 58),   # K09 Pitchfield tar yard (fenced tar/pitch fire-sort ground)
+    (11,  56, 53,  68, 58),   # K02 Impound Yard (spike-fenced working yard)
+    (11, 164, 48, 174, 55),   # K25 Kennel Row yard (rat-catchers' fenced dog yard)
+    (11, 150, 36, 159, 46),   # K06 Harl's timber store (fenced log-stack yard)
+    (11,  16, 66,  23, 77),   # West Garden Court (garden allotment -- dirt is the feature)
+    (11, 172, 76, 183, 93),   # C4 Gullet courtyard/ruin (decayed compound gone to trash)
+    (11, 160, 30, 191, 75),   # Gullet/Wrackhouse NE condemned/decayed quarter
+    (11, 162, 57, 191, 59),   # Gullet bottom link (poor-quarter back-lane)
+    (11, 164, 66, 165, 95),   # Gullet G3 lane (poor-quarter back-lane)
+    (11,  33, 26,  33, 59),   # Herring/Salt offal gutter
+    (11,  34, 54,  55, 54),   # Salt Row offal-gutter link
+    (11,  38, 50,  51, 58),   # K11 Salt Row gutting sheds/smokehouses (working sheds)
+    (11,   4, 82,  67, 90),   # K07 Ropewalk (canon: the ward's one long clear-sightline dirt shed)
+    (11,  60, 91,  66, 94),   # K07 hemp lean-to (dirt working floor under the ropewalk roof)
+    (11, 100, 52, 119, 58),   # K19 The Rows flophouse (explicit squalor -- packed-dirt doss floor)
+    (12, 146,109, 158,114),   # goat pen yard (livestock pen)
+    (12, 165,112, 190,115),   # Cache Row sheds (unlicensed smuggling-pocket dirt shells)
+]
+
+
+def _grit(x, y, z):
+    """True if (x,y,z) is deliberate grit that must stay bare dirt: an explicit GRIT_KEEP
+    zone, or within a 1-cell apron of any hovel (packed-dirt slum yards, incl. the roofless
+    cloth-tent interiors which are visible and must not be paved)."""
+    for (kz, kx0, ky0, kx1, ky1) in GRIT_KEEP:
+        if z == kz and kx0 <= x <= kx1 and ky0 <= y <= ky1:
+            return True
+    for (n, hx0, hy0, hx1, hy1, door, hz) in HOVELS:   # 1-cell slum-yard apron
+        if z == hz and hx0 - 1 <= x <= hx1 + 1 and hy0 - 1 <= y <= hy1 + 1:
+            return True
+    return False
+
+
+def pave_dirt(z, x0, y0, x1, y1, gid):
+    """Guarded street paver: repaint a rect's bare exterior DIRT_FLOOR (terrain open,
+    no fluid, not a grit cell) to gid. Walls/interiors/water/stairs and every grit zone
+    are auto-skipped, so a rect may span whole buildings/yards and paint only the dirt
+    seams between them -- same guarded idiom as safe_sidewalk, with grit-awareness added."""
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            if T[z][y][x] == 0 and F[z][y][x] == DIRT_FLOOR and FL[z][y][x] == 0 \
+               and not _grit(x, y, z):
+                F[z][y][x] = gid
+
+
+# --- ARTERIAL SPINES (smooth brick floor_tile) -- painted first so they win at overlaps ---
+pave_dirt(11,  80, 50, 133, 51, BRICK_FLOOR)   # Bilgewater Gap market spine (E-W)
+pave_dirt(11,  80, 94, 190, 95, BRICK_FLOOR)   # Backwall Alley service arterial
+pave_dirt(13,   0,120, 191,122, BRICK_FLOOR)   # Gallows Row arterial spine (Band C)
+
+# --- CIVIC WEAVE FILL (granite floor_pave) -- squares / frontages / lanes ---
+# Band A (z11): the "islands in mud" merchant/civic core
+pave_dirt(11,  78, 47, 159, 95, GRANITE_FLOOR) # east merchant heart (the big lot sea)
+pave_dirt(11,  80, 34, 135, 46, GRANITE_FLOOR) # north shopfront seams up to the Tarwalk
+pave_dirt(11,   0, 34,  31, 35, GRANITE_FLOOR) # west quay-back strip
+pave_dirt(11,   4, 59,  31, 59, GRANITE_FLOOR) # lane south of the tar-yard fence
+pave_dirt(11,   0, 60,   3, 95, GRANITE_FLOOR) # Pitch Lane, Band A leg (connective spine)
+pave_dirt(11,  52, 50,  71, 59, GRANITE_FLOOR) # Weighhouse|Impound|Lantern|Saltgate junction
+pave_dirt(11,  66, 82,  71, 90, GRANITE_FLOOR) # Lantern|Saltgate south seam
+pave_dirt(11,   0, 66,  71, 81, GRANITE_FLOOR) # west shop row + Walkback path
+pave_dirt(11,   0, 91,  71, 95, GRANITE_FLOOR) # west Band-A south strip
+pave_dirt(11,   0, 26,  79, 33, GRANITE_FLOOR) # quay apron residual frontage (west)
+pave_dirt(11,  80, 26, 129, 33, GRANITE_FLOOR) # Tarwalk east apron residual (eel-pot fronts)
+# Band B (z12): compound courts + Terrace Walk frontage + connective field lanes
+pave_dirt(12,   0, 97,   7,115, GRANITE_FLOOR) # Pitch Lane, Band B leg
+pave_dirt(12,   4, 96,  71,115, GRANITE_FLOOR) # C1 courtyard + west field
+pave_dirt(12,  80, 96, 143,115, GRANITE_FLOOR) # Terrace Walk frontage + C3 courtyard
+pave_dirt(12, 144, 96, 191,115, GRANITE_FLOOR) # Band-B east field connective lanes
+# Band C (z13): Gallows well plaza + hovel-row connective lanes (slum aprons kept)
+pave_dirt(13,  96,119, 107,123, GRANITE_FLOOR) # Gallows Row well plaza
+pave_dirt(13,   0,116, 191,119, GRANITE_FLOOR) # N hovel-row connective lanes
+pave_dirt(13,   0,123, 191,127, GRANITE_FLOOR) # S hovel-row connective lanes
 
 # ======================================================================
 # 6. Patrol, muster, exits (blueprint section 6; script_anchors only —
