@@ -68,6 +68,37 @@ public interface TileAtlas extends Disposable {
         return VariantPattern.HASH;
     }
 
+    /**
+     * A cosmetic variant of a region name drawn from a precomputed depth-blur level — the
+     * "look-down through empty air" effect (the air-depth renderer, Eli 2026-07-15). Level
+     * {@code 0} is always the sharp source cell (identical to {@link #region(String, int)});
+     * higher levels are the same cell gaussian-blurred more, so a tile seen from further
+     * above through empty air reads softer and more recessed.
+     *
+     * <p>The default ignores {@code blurLevel} and returns the sharp cell, so packs that
+     * ship no blur pyramid (the procedural placeholder, and headless test fakes) satisfy the
+     * seam unchanged; {@link SheetTileAtlas} overrides it with real per-level textures. The
+     * index is clamped defensively to {@code 0..blurLevelCount()-1}.
+     *
+     * @param regionName   the name from the art mapping
+     * @param variantIndex which interchangeable cell to draw
+     * @param blurLevel    depth-blur level; {@code 0} is sharp, higher is blurrier
+     * @return the region; never null
+     * @throws IllegalArgumentException if the name has no cell
+     */
+    default TextureRegion region(String regionName, int variantIndex, int blurLevel) {
+        return region(regionName, variantIndex);
+    }
+
+    /**
+     * How many depth-blur levels this atlas precomputed, including the sharp level 0. A pack
+     * with no blur pyramid reports {@code 1} (sharp only); {@link SheetTileAtlas} reports its
+     * pyramid depth. The renderer clamps its chosen level to {@code 0..blurLevelCount()-1}.
+     */
+    default int blurLevelCount() {
+        return 1;
+    }
+
     /** Whether {@code regionName} has a cell in this atlas. */
     boolean contains(String regionName);
 }
