@@ -31,14 +31,32 @@ final class SeekFoodPolicyTest {
     }
 
     @Test
-    void scoresZeroWhenAlreadyHome() {
+    void scoresNonZeroWhenHomeButNotYetRecovered() {
+        // The oscillation-hysteresis fix (NeedThresholds.RECOVERED): merely crossing back
+        // above LOW while at home must NOT drop this score to 0 — otherwise GOAL_PURSUE
+        // immediately re-wins and walks the actor straight back out, forever.
         ActorRegistry registry = new ActorRegistry();
         Actor actor = serfAt(registry, 5, 5);
         NoOpActorContext ctx = new NoOpActorContext(registry);
         int homeId = ctx.homes().addHome(actor.cell());
         actor.setHomeId(homeId);
         actor.applyNeedDelta(Need.HUNGER, -9000); // drive HUNGER to 0 (well below LOW)
-        assertEquals(0, Policies.SEEK_FOOD.score(actor, ctx), "already home — not applicable regardless of HUNGER");
+        assertTrue(Policies.SEEK_FOOD.score(actor, ctx) > 0, "still critical — must keep winning at home");
+
+        actor.applyNeedDelta(Need.HUNGER, 3500); // 0 -> 3500: above LOW (3000), still below RECOVERED (6000)
+        assertTrue(Policies.SEEK_FOOD.score(actor, ctx) > 0,
+                "above LOW but below RECOVERED — must still win, or the actor oscillates back out");
+    }
+
+    @Test
+    void scoresZeroWhenHomeAndRecovered() {
+        ActorRegistry registry = new ActorRegistry();
+        Actor actor = serfAt(registry, 5, 5);
+        NoOpActorContext ctx = new NoOpActorContext(registry);
+        int homeId = ctx.homes().addHome(actor.cell());
+        actor.setHomeId(homeId);
+        actor.applyNeedDelta(Need.HUNGER, -3000); // 9000 -> 6000, exactly RECOVERED
+        assertEquals(0, Policies.SEEK_FOOD.score(actor, ctx), "comfortably recovered — releases back to GOAL_PURSUE");
     }
 
     @Test
@@ -79,7 +97,12 @@ final class SeekFoodPolicyTest {
     }
 
     @Test
-    void actIsDeterministicGreedyWalkThatArrivesHome() {
+    void actIsDeterministicRouteWalkThatArrivesHomeAndEventuallyReleases() {
+        // Drives through actor.tick() (never bare act()) so recoverHungerAtHome actually runs —
+        // score() no longer drops to 0 the instant HUNGER merely crosses back above LOW (the
+        // hysteresis fix), so a bare act()-only loop can no longer observe score==0 right after
+        // arrival while still below RECOVERED; this mirrors the sibling
+        // tickingAtHomeRecoversHungerAboveLowSoTheActorEventuallyHeadsBackOut test's shape.
         ActorRegistry registry = new ActorRegistry();
         Actor actor = serfAt(registry, 10, 0);
         NoOpActorContext ctx = new NoOpActorContext(registry);
@@ -87,11 +110,23 @@ final class SeekFoodPolicyTest {
         actor.setHomeId(homeId);
         actor.applyNeedDelta(Need.HUNGER, -8100); // below CRITICAL
 
-        for (int i = 0; i < 10 && actor.cell() != PackedPos.pack(0, 0, 1); i++) {
-            Policies.SEEK_FOOD.act(actor, ctx);
+        for (int i = 0; i < 20 && actor.cell() != PackedPos.pack(0, 0, 1); i++) {
+            actor.tick(ctx);
         }
-        assertEquals(PackedPos.pack(0, 0, 1), actor.cell());
-        assertEquals(0, Policies.SEEK_FOOD.score(actor, ctx), "score drops to 0 the instant it arrives");
+        assertEquals(PackedPos.pack(0, 0, 1), actor.cell(), "must have walked all the way home");
+        assertTrue(Policies.SEEK_FOOD.score(actor, ctx) > 0,
+                "still below RECOVERED right at arrival — must not release yet");
+
+        for (int i = 0; i < 2_000 && Policies.SEEK_FOOD.score(actor, ctx) > 0; i++) {
+            actor.tick(ctx);
+        }
+        assertEquals(0, Policies.SEEK_FOOD.score(actor, ctx), "eventually recovers and releases");
+        // Within one cell of home: the very tick recovery completes, LOITER (the fallback
+        // once SEEK_FOOD/GOAL_PURSUE both score 0 for a jobless actor) may have already taken
+        // its occasional one-cell shuffle step that same tick — a real, deterministic (seeded)
+        // outcome, not a bug in the hysteresis fix.
+        assertTrue(ActorGeometry.chebyshev(actor.cell(), PackedPos.pack(0, 0, 1)) <= 1,
+                "must still be at or immediately adjacent to home when it releases");
     }
 
     @Test

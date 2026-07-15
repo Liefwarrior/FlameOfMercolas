@@ -14,6 +14,22 @@ public final class NeedThresholds {
     /** Need scores jump a band below this reserve; barks turn desperate. */
     public static final int CRITICAL = 1_000;
 
+    /**
+     * Reserve level a NEED-band policy must climb back up to (via its at-home
+     * recovery) before releasing the actor back to its job, rather than the
+     * instant it merely stops being {@link #isLow}. Fixes the SEEK_FOOD /
+     * RETURN_HOME <-> GOAL_PURSUE oscillation (arrive home -> one recovery
+     * tick nudges the reserve just above {@code LOW} -> the NEED policy's
+     * score drops to 0 -> GOAL_PURSUE immediately wins and walks the actor
+     * straight back out -> repeat): double {@link #LOW}, comfortably inside
+     * every committed type's HUNGER/REST {@code start} range (6000-9000), so
+     * a single recovery tick standing on the home cell can never satisfy it —
+     * the actor stays put, letting the always-unconditional home recovery
+     * climb the reserve for a bounded few hundred ticks (at the documented
+     * +12/+6-per-tick recovery rates), then releases.
+     */
+    public static final int RECOVERED = 6_000;
+
     /** Saturating clamp ceiling for every need reserve. */
     public static final int MAX = 10_000;
 
@@ -28,6 +44,11 @@ public final class NeedThresholds {
     /** {@code true} iff {@code reserve < LOW} (CRITICAL implies LOW). */
     public static boolean isLow(int reserve) {
         return reserve < LOW;
+    }
+
+    /** {@code true} iff {@code reserve >= RECOVERED} — see {@link #RECOVERED}'s javadoc. */
+    public static boolean isRecovered(int reserve) {
+        return reserve >= RECOVERED;
     }
 
     /** Saturating clamp to {@code [0, MAX]} (ACTORS-SPEC.md §3.2 — test A12). */

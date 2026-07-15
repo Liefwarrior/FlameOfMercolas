@@ -4,9 +4,12 @@ package com.trojia.sim.actor;
  * {@code RETURN_HOME} (ACTORS-SPEC.md §11.1): the sleep-at-home NEED-band
  * policy. Scores when REST need urgency is at/below {@code LOW}, OR the
  * type's night rhythm window is open, AND the actor is not already at its
- * {@code homeCell} — mutual exclusivity with any future {@code REST} policy
- * is by construction (score 0 the instant {@code cell == homeCell}, the
- * §1.2 "0 = not applicable" convention), not by new interruption logic.
+ * {@code homeCell}. At the home cell during the day it keeps scoring — the
+ * oscillation-hysteresis fix, {@link NeedThresholds#RECOVERED}'s javadoc —
+ * until REST is comfortably {@code RECOVERED}, not merely the instant it
+ * stops being {@code LOW}; at night it is 0 at home regardless (§1.2's
+ * "0 = not applicable" convention), since {@code pursueAtAnchor}'s own
+ * off-shift target already keeps the actor there through the night.
  *
  * <p>Score is {@code priority + urgencyBonus (+ rhythmBonus if night)} — the
  * urgency-bonus term (§3.3) was added by the needs-hierarchy pass alongside
@@ -29,14 +32,29 @@ public final class ReturnHomePolicy implements BehaviorPolicy {
             return 0; // not yet baked (defensive — every actor has a home post-bake, §11.4 step 5)
         }
         Home home = ctx.homes().get(self.homeId());
-        if (self.cell() == home.homeCell()) {
-            return 0; // already home — not applicable (§11.1)
-        }
         int rest = self.need(Need.REST);
-        boolean restLow = NeedThresholds.isLow(rest);
         long tickOfDay = DailyRhythm.tickOfDay(ctx.tick());
         ActorTypeStats stats = self.stats();
         boolean night = tickOfDay >= stats.nightWindowStart() && tickOfDay < stats.nightWindowEnd();
+        if (self.cell() == home.homeCell()) {
+            if (night) {
+                return 0; // pursueAtAnchor's own off-shift target already keeps the actor
+                          // home through the night regardless of this policy's score — not
+                          // susceptible to the oscillation this gate exists to prevent
+            }
+            // Gated on RECOVERED, not merely "not LOW" (the oscillation fix,
+            // NeedThresholds.RECOVERED's javadoc — the SEEK_FOOD counterpart to this):
+            // without it, one recovery tick nudging REST just above LOW drops this score
+            // to 0 the same tick GOAL_PURSUE re-wins, walking the actor straight back out
+            // and repeating forever.
+            if (NeedThresholds.isRecovered(rest)) {
+                return 0;
+            }
+            NeedConfig cfg = stats.need(Need.REST);
+            int urgencyBonus = NeedThresholds.isCritical(rest) ? cfg.critBonus() : cfg.lowBonus();
+            return stats.returnHomePriority() + urgencyBonus;
+        }
+        boolean restLow = NeedThresholds.isLow(rest);
         if (!restLow && !night) {
             return 0;
         }
@@ -52,8 +70,11 @@ public final class ReturnHomePolicy implements BehaviorPolicy {
         // RETURN_HOME must ignore it too whenever home != anchor (a Serf's tenement
         // is routinely outside the work anchor's leash) or the walk home could never
         // complete — a resolved-here consistency gap, not a spec contradiction.
-        self.stepToward(home.homeCell(), true, ctx::isWalkable);
-        boolean restLow = NeedThresholds.isLow(self.need(Need.REST));
-        self.setLastReasonCode(restLow ? ReasonCode.NEED_REST_LOW : ReasonCode.RHYTHM_NIGHT_HOME);
+        self.stepAlongRoute(home.homeCell(), true, ctx::isWalkable);
+        // !isRecovered rather than isLow for legibility consistency with the score()
+        // hysteresis gate above (cosmetic — doesn't change which reason fires, since
+        // score() already guarantees this act() only runs while the REST branch applies).
+        boolean restNotRecovered = !NeedThresholds.isRecovered(self.need(Need.REST));
+        self.setLastReasonCode(restNotRecovered ? ReasonCode.NEED_REST_LOW : ReasonCode.RHYTHM_NIGHT_HOME);
     }
 }

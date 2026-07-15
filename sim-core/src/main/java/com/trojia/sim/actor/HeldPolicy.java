@@ -35,7 +35,7 @@ public final class HeldPolicy implements BehaviorPolicy {
         }
         int holdCell = ctx.arrestHoldCell();
         if (holdCell != Actor.NONE) {
-            self.stepToward(holdCell, true, ctx::isWalkable);
+            self.stepAlongRoute(holdCell, true, ctx::isWalkable);
         }
         self.setLastReasonCode(ReasonCode.HELD_IN_CUSTODY);
     }

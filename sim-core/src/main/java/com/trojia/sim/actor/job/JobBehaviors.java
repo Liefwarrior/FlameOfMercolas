@@ -75,7 +75,7 @@ public final class JobBehaviors {
             // Commuting home<->work legitimately crosses the work leash (a home
             // routinely sits outside the workplace anchor's leash), exactly as
             // RETURN_HOME's walk home does — so this leg ignores the leash too.
-            self.stepToward(target, true, ctx::isWalkable);
+            self.stepAlongRoute(target, true, ctx::isWalkable);
             return;
         }
         if (self.cell() == workplace) {
@@ -137,7 +137,7 @@ public final class JobBehaviors {
         }
         int target = self.goalTargetKey();
         if (self.cell() != target) {
-            self.stepToward(target, false, ctx::isWalkable);
+            self.stepAlongRoute(target, false, ctx::isWalkable);
             return;
         }
         self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
@@ -197,7 +197,7 @@ public final class JobBehaviors {
         }
         int target = self.goalTargetKey();
         if (self.cell() != target) {
-            self.stepToward(target, false, ctx::isWalkable);
+            self.stepAlongRoute(target, false, ctx::isWalkable);
             return;
         }
         int dwell = self.goalWorkTicks() + 1;

@@ -115,6 +115,19 @@ public abstract class Actor {
     /** Next cell to step toward under direct player control, or {@link #NONE} if none pending. */
     private int playerMoveTargetCell = NONE;
 
+    // ---- cached A* route (§2.5 pathfinding addendum): a derived/recomputable cache, not
+    // ground-truth state — the same "per-actor bookkeeping vs. registry" distinction the
+    // heldUntilTick/offenseCount comment above already draws. Deliberately NOT part of
+    // ActorsSystem.serialize/load/hashInto: findRoute is a pure function of
+    // (startCell, targetCell, walkability), so losing the cache on load just costs one
+    // recompute that reproduces the identical route — no determinism divergence. ----
+    private static final int[] EMPTY_ROUTE = new int[0];
+    private int[] cachedRoute = EMPTY_ROUTE;
+    private short cachedRouteIndex;
+    private int cachedRouteTargetCell = NONE;
+    /** Ticks left before retrying a target whose search just failed (bounded backoff). */
+    private short cachedRouteRetryCooldown;
+
     // ---- legibility (inspector line, §7.2/§10.5) ----
     private ReasonCode lastReasonCode;
 
@@ -345,6 +358,80 @@ public abstract class Actor {
             facing = (byte) (dy < 0 ? Dir.NORTH.ordinal() : Dir.SOUTH.ordinal());
         }
         return true;
+    }
+
+    /** Bounded backoff before retrying a target whose bounded search just failed. */
+    private static final int ROUTE_RETRY_COOLDOWN_TICKS = 500;
+
+    /**
+     * Route-following mover (§2.5 pathfinding addendum): walks toward
+     * {@code targetCell} one hop at a time along a cached {@link PathFinder}
+     * route instead of {@link #stepToward}'s pure greedy Chebyshev reduction —
+     * fixes the class of stuck/looping actors a greedy walk (even with its
+     * wall-slide fallback) cannot escape (a concave pocket, a door on the
+     * wrong wall face, an interior obstacle wider than the slide's one-cell
+     * retry).
+     *
+     * <p>The cache is keyed on {@code targetCell}: a target change forces a
+     * fresh search (see {@link #replan}). Each per-tick hop still runs
+     * through the existing, unmodified {@link #stepToward(int, boolean,
+     * WalkabilityQuery)} — its leash math, speed accumulator, facing update,
+     * and wall-slide fallback are all reused verbatim (the wall-slide branch
+     * is inert-but-harmless here, since every A*-emitted waypoint is already
+     * adjacent+walkable). The {@code chebyshev(...) == 1} adjacency guard
+     * defends against a stale cache surviving an unrelated teleport (Play
+     * mode's direct control, or a save/load): if the actor's position no
+     * longer lines up with the next cached waypoint, it is forced to replan
+     * rather than silently walking toward a now-meaningless stale cell.
+     *
+     * <p>A search that fails (unreachable/over-budget/cross-z/target
+     * unwalkable) is not retried every tick — it cools down for
+     * {@link #ROUTE_RETRY_COOLDOWN_TICKS} ticks first, a bounded backoff so a
+     * genuinely-stuck actor cannot re-run an expensive failed search every
+     * single tick.
+     */
+    public final void stepAlongRoute(int targetCell, boolean ignoresLeash, WalkabilityQuery walk) {
+        if (cell == targetCell) {
+            return;
+        }
+        if (PackedPos.z(cell) != PackedPos.z(targetCell)) {
+            return;
+        }
+
+        boolean cacheValid = targetCell == cachedRouteTargetCell
+                && cachedRouteIndex < cachedRoute.length
+                && ActorGeometry.chebyshev(cell, cachedRoute[cachedRouteIndex]) == 1;
+        if (!cacheValid && targetCell == cachedRouteTargetCell
+                && cachedRoute.length == 0 && cachedRouteRetryCooldown > 0) {
+            cachedRouteRetryCooldown--;
+            return; // cooling down after a bounded-search failure
+        }
+        if (!cacheValid) {
+            replan(targetCell, walk);
+            if (cachedRoute.length == 0) {
+                return; // freshly failed: deterministic no-op this tick
+            }
+        }
+        int waypoint = cachedRoute[cachedRouteIndex];
+        int before = cell;
+        stepToward(waypoint, ignoresLeash, walk); // reuses the existing single-cell mover verbatim
+        if (cell == waypoint) {
+            cachedRouteIndex++;
+        } else if (cell == before) {
+            cachedRouteTargetCell = NONE; // waypoint went stale -> force replan next call
+        }
+    }
+
+    private void replan(int targetCell, WalkabilityQuery walk) {
+        cachedRouteTargetCell = targetCell;
+        cachedRouteIndex = 0;
+        int[] route = PathFinder.findRoute(cell, targetCell, walk, PathFinder.DEFAULT_MAX_NODES);
+        if (route == null) {
+            cachedRoute = EMPTY_ROUTE;
+            cachedRouteRetryCooldown = (short) ROUTE_RETRY_COOLDOWN_TICKS;
+        } else {
+            cachedRoute = route;
+        }
     }
 
     /** Applies a saturating (clamped [0,10000]) delta to one need (§3.2). */
