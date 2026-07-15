@@ -130,6 +130,13 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] K28_SLOPCHEST = {133, 62};
     private static final int[] K29_LONGSTORE = {88, 87};
     private static final int[] K34_GUARDHOUSE = {106, 85};
+    // The arrest holding cell (ARREST-SPEC addendum): gen_docks_surface.py's K34 cage bars are
+    // two STEEL_WALL tiles at (102,84)/(103,84) -- not walkable floor by construction -- so the
+    // actual escort target is the granite floor immediately beside them. No dedicated marker
+    // was authored for this cell; derived the same way this file's other unmarked work stands
+    // are (TERRACE_WALK_STAND et al., "no marker; known street/floor cells, precedent
+    // convention"), pinned against the committed gen_docks_surface.py cage geometry.
+    private static final int[] HOLDING_CELL_K34 = {103, 85};
     private static final int[] LAIR_SKYRUNNER = {189, 88};     // K35, z:+13, unmarked
     private static final int[] MISSION_BUNKS = {85, 78};
     private static final int[] MISSION_GARDEN = {90, 88};
@@ -149,6 +156,14 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] PATROL_TARWALK_WEST = {30, 30};
     private static final int[] PATROL_TARWALK_MID = {100, 30};
     private static final int[] WATCH_BOND_POST = {90, 33};
+    // ARREST-SPEC addendum: every post above sits on Band-A ground (z:+11) or the Rise
+    // (z:+13, x62-80) -- none is within the same-z + chebyshev-8 detection window of ANY
+    // Job.Villain actor (all six live on rooftop planes z:+13/z:+14, x136+). Without a post
+    // actually up there, the new arrest mechanic could never trigger in this fixture. This
+    // one reaches C2's roof deck (open REMAN_FLOOR between roofhut_10/11, gen_docks_surface.py
+    // C2_HUTS) -- within chebyshev 5 of both the Cutpurse (roofhut_10) and the Skyrunner
+    // (roofhut_11) hiding there under their wastrel.streetlife covers.
+    private static final int[] C2_ROOF_WATCHPOST = {159, 74};
 
     // ---- Compound C1 Quayward (grand, Band B: ground z:+12, upper z:+13) -----------------
     private static final int[] C1_MANSION = {19, 106};
@@ -342,8 +357,9 @@ public final class DocksPopulation implements ScenarioPopulation {
                 householdRaws, worldSeed);
         builder.populate();
 
+        int arrestHoldCell = worldCell(HOLDING_CELL_K34, ZA);
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
-                relationships, items, world);
+                relationships, items, world, arrestHoldCell);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers);
     }
@@ -488,6 +504,12 @@ public final class DocksPopulation implements ScenarioPopulation {
             Actor guardhouseSergeant = spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA);
             guardhouseSergeant.setHomeId(homes.addHome(guardhouseSergeant.cell()));
             soloHome(spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA));
+            // C2 roof deck post (ARREST-SPEC addendum, see the constant's own comment above):
+            // the one Watch actually positioned to exercise the new arrest/hold/escalation
+            // mechanic against a real Cutpurse and Skyrunner in this fixture.
+            Actor roofWatch = spawn(MilitiaWatch.TYPE, C2_ROOF_WATCHPOST, ZC);
+            soloHome(roofWatch);
+            roofWatch.setAnchorCell(worldCell(C2_ROOF_WATCHPOST, ZC));
 
             // ===================== ANIMAL KEEPERS + BEASTS (§4.8 Keeper<->Animal) =============
             // K25 Kennel Row: the kennelmaster and three dogs at their authored cage anchors.

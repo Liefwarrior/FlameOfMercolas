@@ -31,7 +31,11 @@ public enum ActorRngStream {
     /** Neighbor flavor-edge count draw at bake (§11.4 step 4). */
     HOUSEHOLD_NEIGHBOR_PICK("household.neighborPick"),
     /** Friend flavor-edge count draw at bake (§11.4 step 4). */
-    HOUSEHOLD_FRIEND_PICK("household.friendPick");
+    HOUSEHOLD_FRIEND_PICK("household.friendPick"),
+    /** Per-exposure arrest-chance draw when a Villain is caught near the Watch (ARREST-SPEC). */
+    WATCH_ARREST_CHECK("watch.arrestCheck"),
+    /** One-time custody-length draw at arrest, uniform 1-3 days (ARREST-SPEC). */
+    WATCH_SENTENCE_LENGTH("watch.sentenceLength");
 
     private final String streamName;
     private final long salt;

@@ -2,8 +2,12 @@ package com.trojia.sim.actor.job;
 
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorContext;
+import com.trojia.sim.actor.ActorGeometry;
+import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorRngStream;
 import com.trojia.sim.actor.DailyRhythm;
+import com.trojia.sim.actor.ReasonCode;
+import com.trojia.sim.actor.StatusBit;
 import com.trojia.sim.actor.TargetKind;
 import com.trojia.sim.world.PackedPos;
 
@@ -272,6 +276,119 @@ public final class JobBehaviors {
         if (self.cell() != target) {
             self.stepToward(target, true, ctx::isWalkable);
         }
+    }
+
+    // ======================================================================
+    // Arrest exposure (Villain jobs only) — ARREST-SPEC addendum, Eli's
+    // 2026-07-14 directive (guards hold non-Skyrunners 1-3 days; a Skyrunner
+    // is maimed on a 1st repeat offense and hanged on a 2nd, superseding
+    // ACTORS-SPEC.md's older "the Watch arrests, never executes" for
+    // Skyrunners specifically — see the DECISIONS.md addendum).
+    // ======================================================================
+
+    /** Chebyshev radius (same z only) within which a working Villain can be spotted. */
+    private static final int ARREST_DETECT_RADIUS = 8;
+    /** Per-exposure arrest chance, Q16 (~10%: 6554/65536) — placeholder pending Eli's numbers. */
+    private static final int ARREST_CHANCE_Q16 = 6554;
+    private static final int Q16_SCALE = 65536;
+    /** Sentence floor: 1 day (DailyRhythm.DAY = 24,000 ticks). */
+    private static final long SENTENCE_MIN_TICKS = 24_000L;
+    /** Draw span so {@code MIN + (draw mod SPAN)} lands uniformly in [24000, 72000] (1-3 days). */
+    private static final long SENTENCE_SPAN_TICKS = 48_001L;
+
+    /**
+     * True exactly when self's current wander dwell is about to complete this tick (the
+     * cadence {@link #pursueWander} itself uses to decide whether to retarget) — lets a
+     * {@link Job.Villain} leaf's {@code pursue()} hook {@link #checkArrestExposure} at the
+     * dwell-boundary cadence (~20-40 ticks per active Villain, matching each job's
+     * {@code workTicksPerUnit}) instead of every tick, without touching this shared helper's
+     * own internals. Draw-free (pure state read).
+     */
+    public static boolean isWanderDwellComplete(Actor self, JobParams params) {
+        return self.goalTargetKind() == TargetKind.CELL
+                && self.cell() == self.goalTargetKey()
+                && self.goalWorkTicks() + 1 >= params.workTicksPerUnit();
+    }
+
+    /**
+     * Crime detection + arrest transition. Scans {@link ActorContext#registry()} by index
+     * (mirrors {@code ActorsSystem.wielderId()}'s shape — no {@code .all()} allocation) for
+     * any same-z actor whose bound job is a {@link Job.Watch} within
+     * {@link #ARREST_DETECT_RADIUS}; on a hit, draws {@link ActorRngStream#WATCH_ARREST_CHECK}
+     * and, on success, transitions {@code self} into custody: an ordinary Robber/Cutpurse is
+     * {@code HELD} with a freshly drawn 1-3 day sentence (§ below); a Skyrunner's 1st offense
+     * is {@code MAIMED} only (cosmetic — resumes its own job untouched, no combat system
+     * exists to attach a stat penalty to); a Skyrunner's 2nd offense is permanently
+     * {@code DOWNED + EXECUTED} (hanged — inert forever, never removed from the registry).
+     *
+     * @return {@code true} iff {@code self} is now {@code HELD} or {@code EXECUTED} — the
+     *         caller's cue to skip this tick's own wander step, since one of those two
+     *         policies now dominates the type's stack and will win next tick's selection
+     *         regardless (this only avoids one redundant step the same tick as the transition)
+     */
+    public static boolean checkArrestExposure(Actor self, ActorContext ctx, Job.Villain job) {
+        if (self.hasStatus(StatusBit.HELD) || self.hasStatus(StatusBit.EXECUTED)) {
+            return true; // defensive: HELD/EXECUTED already dominate the policy stack
+        }
+        if (!watchIsNearby(self, ctx)) {
+            return false;
+        }
+        long draw = ctx.draw(ActorRngStream.WATCH_ARREST_CHECK, self.id(), ctx.nextDrawIndex(self.id()));
+        if (Long.remainderUnsigned(draw, Q16_SCALE) >= ARREST_CHANCE_Q16) {
+            return false; // exposed to a nearby Watch but not caught this time
+        }
+        if (job instanceof Job.Villain.Skyrunner) {
+            return escalateSkyrunner(self);
+        }
+        arrestAndHold(self, ctx);
+        return true;
+    }
+
+    /**
+     * Index-based scan (bounded: ~14 active Villains x one ~350-actor scan every ~30-40 ticks
+     * each — cheaper than {@code ActorsSystem.wielderId()}'s precedent, which scans every
+     * tick per deferring actor) for any same-z {@link Job.Watch} within detection radius.
+     */
+    private static boolean watchIsNearby(Actor self, ActorContext ctx) {
+        ActorRegistry registry = ctx.registry();
+        int selfCell = self.cell();
+        int selfZ = PackedPos.z(selfCell);
+        for (int i = 0; i < registry.size(); i++) {
+            Actor other = registry.get(i);
+            if (other.jobOrdinal() < 0 || PackedPos.z(other.cell()) != selfZ) {
+                continue;
+            }
+            if (ctx.jobs().get(other.jobOrdinal()) instanceof Job.Watch
+                    && ActorGeometry.chebyshev(selfCell, other.cell()) <= ARREST_DETECT_RADIUS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Ordinary Robber/Cutpurse arrest: HELD + a freshly drawn 1-3 day sentence. */
+    private static void arrestAndHold(Actor self, ActorContext ctx) {
+        self.setOffenseCount((byte) (self.offenseCount() + 1));
+        self.setStatus(StatusBit.HELD, true);
+        long draw = ctx.draw(ActorRngStream.WATCH_SENTENCE_LENGTH, self.id(), ctx.nextDrawIndex(self.id()));
+        long sentence = SENTENCE_MIN_TICKS + Long.remainderUnsigned(draw, SENTENCE_SPAN_TICKS);
+        self.setHeldUntilTick(ctx.tick() + sentence);
+        self.setLastReasonCode(ReasonCode.ARRESTED);
+    }
+
+    /** Skyrunner escalation: 1st offense maims (cosmetic), 2nd offense hangs (permanent). */
+    private static boolean escalateSkyrunner(Actor self) {
+        int offense = self.offenseCount() + 1;
+        self.setOffenseCount((byte) offense);
+        if (offense <= 1) {
+            self.setStatus(StatusBit.MAIMED, true);
+            self.setLastReasonCode(ReasonCode.MAIMED_FIRST_OFFENSE);
+            return false; // cosmetic only — self resumes its own job untouched this tick
+        }
+        self.setStatus(StatusBit.DOWNED, true);
+        self.setStatus(StatusBit.EXECUTED, true);
+        self.setLastReasonCode(ReasonCode.EXECUTED_SECOND_OFFENSE);
+        return true;
     }
 
     // ======================================================================

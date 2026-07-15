@@ -60,6 +60,15 @@ public interface ActorContext {
     int wielderId();
 
     /**
+     * The one well-known arrest holding-cell (ARREST-SPEC addendum): the walkable floor cell
+     * beside the K34 Guardhouse's cage bars, wired in at scenario-bake time (mirrors how
+     * {@link #wielderCell()}/homes are populated) — a fixed baked cell, not a spatial query.
+     * {@link Actor#NONE} for scenarios/tests that never wire one (e.g. the world-less
+     * bootstrap): {@link HeldPolicy} degrades to "hold in place" when this is unset.
+     */
+    int arrestHoldCell();
+
+    /**
      * Pure read (§2.3 "actors never write lanes"): {@code true} if {@code cell}
      * is safe to step onto right now ({@code com.trojia.sim.world.Walkability
      * .isWalkable}). Systems bound to no world (the headless world-less

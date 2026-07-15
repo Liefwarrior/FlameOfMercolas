@@ -25,5 +25,9 @@ public enum PolicyId {
     GOAL_PURSUE,
     RETURN_HOME,
     LOITER,
-    SEEK_FOOD
+    SEEK_FOOD,
+    /** In-custody EMERGENCY-band override (arrest/hold/release, ARREST-SPEC addendum). */
+    HELD,
+    /** Permanent EMERGENCY-band override for a hanged Skyrunner (ARREST-SPEC addendum). */
+    EXECUTED
 }

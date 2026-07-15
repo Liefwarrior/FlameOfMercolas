@@ -107,4 +107,9 @@ class NoOpActorContext implements ActorContext {
     public boolean isWalkable(int cell) {
         return true; // no world quirks (class javadoc) — every cell reads as walkable
     }
+
+    @Override
+    public int arrestHoldCell() {
+        return Actor.NONE; // no fixture wired by default; override in a subclass to test escort
+    }
 }

@@ -14,6 +14,8 @@ public final class Policies {
     public static final BehaviorPolicy RETURN_HOME = new ReturnHomePolicy();
     public static final BehaviorPolicy LOITER = new LoiterPolicy();
     public static final BehaviorPolicy SEEK_FOOD = new SeekFoodPolicy();
+    public static final BehaviorPolicy HELD = new HeldPolicy();
+    public static final BehaviorPolicy EXECUTED = new ExecutedPolicy();
 
     private Policies() {
     }

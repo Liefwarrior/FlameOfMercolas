@@ -42,6 +42,8 @@ public final class ActorsSystem implements SimulationSystem {
     private final World world;
     /** Reused flyweight cursor for {@code isWalkable} reads; {@code null} iff {@link #world} is. */
     private final TileCursor cursor;
+    /** The baked arrest holding-cell (ARREST-SPEC addendum), or {@code Actor.NONE} if unwired. */
+    private final int arrestHoldCell;
     /** Per-actor per-tick draw-index counter (§2.2's "one counter per actor"); reset each tick. */
     private int[] drawCounters = new int[0];
 
@@ -49,7 +51,7 @@ public final class ActorsSystem implements SimulationSystem {
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items) {
-        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, null);
+        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, null, Actor.NONE);
     }
 
     /**
@@ -60,6 +62,18 @@ public final class ActorsSystem implements SimulationSystem {
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, World world) {
+        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, world, Actor.NONE);
+    }
+
+    /**
+     * Full constructor: additionally wires the baked {@code arrestHoldCell} (ARREST-SPEC
+     * addendum) — the one well-known K34 Guardhouse cell {@link HeldPolicy} escorts arrested
+     * actors to. {@code Actor.NONE} (the two convenience constructors above) means "unwired":
+     * {@link HeldPolicy} degrades to holding the actor in place.
+     */
+    public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
+            ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
+            ItemsLiteRegistry items, World world, int arrestHoldCell) {
         this.worldSeed = worldSeed;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -69,6 +83,7 @@ public final class ActorsSystem implements SimulationSystem {
         this.items = items;
         this.world = world;
         this.cursor = world == null ? null : world.cursor();
+        this.arrestHoldCell = arrestHoldCell;
     }
 
     public ActorRegistry registry() {
@@ -161,6 +176,8 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeShort(actor.goalProgress());
         out.writeInt(actor.goalCooldown());
         out.writeInt(actor.goalWorkTicks());
+        out.writeLong(actor.heldUntilTick());
+        out.writeByte(actor.offenseCount());
         out.writeByte(actor.inventoryCount());
         for (int i = 0; i < actor.inventoryCount(); i++) {
             out.writeShort(actor.inventoryItemAt(i));
@@ -227,6 +244,8 @@ public final class ActorsSystem implements SimulationSystem {
         short goalProgress = in.readShort();
         int goalCooldown = in.readInt();
         int goalWorkTicks = in.readInt();
+        long heldUntilTick = in.readLong();
+        byte offenseCount = in.readByte();
         int invCount = in.readByte() & 0xFF;
         short[] inventory = new short[invCount];
         for (int i = 0; i < invCount; i++) {
@@ -254,6 +273,8 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setGoalProgress(goalProgress);
         actor.setGoalCooldown(goalCooldown);
         actor.setGoalWorkTicks(goalWorkTicks);
+        actor.setHeldUntilTick(heldUntilTick);
+        actor.setOffenseCount(offenseCount);
         for (short itemId : inventory) {
             actor.addInventoryItem(itemId);
         }
@@ -366,6 +387,11 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public boolean isWalkable(int cell) {
             return cursor == null || Walkability.isWalkable(cursor.moveTo(cell));
+        }
+
+        @Override
+        public int arrestHoldCell() {
+            return arrestHoldCell;
         }
     }
 }

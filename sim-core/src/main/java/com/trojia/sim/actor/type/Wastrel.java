@@ -11,7 +11,12 @@ public final class Wastrel extends Actor {
 
     public static final ActorTypeId TYPE = ActorTypeId.of("wastrel");
 
+    // HELD/EXECUTED lead the stack (ARREST-SPEC addendum): every Job.Villain leaf rides a
+    // wastrel.streetlife cover, so this is the only stack that ever needs them. Both score 0
+    // unless their status bit is set, so ordinary (never-arrested) Wastrels are unaffected.
     private static final PolicyStack STACK = PolicyStack.of(
+            Policies.EXECUTED,
+            Policies.HELD,
             Policies.DEFER_WIELDER,
             Policies.FLEE,
             Policies.SEEK_FOOD,

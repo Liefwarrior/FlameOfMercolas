@@ -101,6 +101,14 @@ public abstract class Actor {
     private int goalCooldown;
     private int goalWorkTicks;
 
+    // ---- arrest/custody state (ARREST-SPEC addendum): plain scalars, the same
+    // goalProgress/goalWorkTicks precedent — not a side-table (this is per-actor
+    // bookkeeping, not the relational many-to-one shape a registry solves) ----
+    /** Tick the current custody sentence ends; only meaningful while {@code HELD}. */
+    private long heldUntilTick;
+    /** Villain arrest count so far; only Skyrunner escalation (maim/hang) reads it today. */
+    private byte offenseCount;
+
     // ---- legibility (inspector line, §7.2/§10.5) ----
     private ReasonCode lastReasonCode;
 
@@ -525,6 +533,22 @@ public abstract class Actor {
 
     public final void setGoalWorkTicks(int goalWorkTicks) {
         this.goalWorkTicks = goalWorkTicks;
+    }
+
+    public final long heldUntilTick() {
+        return heldUntilTick;
+    }
+
+    public final void setHeldUntilTick(long heldUntilTick) {
+        this.heldUntilTick = heldUntilTick;
+    }
+
+    public final byte offenseCount() {
+        return offenseCount;
+    }
+
+    public final void setOffenseCount(byte offenseCount) {
+        this.offenseCount = offenseCount;
     }
 
     public final ReasonCode lastReasonCode() {

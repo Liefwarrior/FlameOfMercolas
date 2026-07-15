@@ -2,6 +2,7 @@ package com.trojia.sim.actor.job;
 
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorContext;
+import com.trojia.sim.actor.StatusBit;
 
 /**
  * The Job taxonomy — DECISIONS.md "Goals & Jobs" ruling, ACTORS-SPEC.md §10.
@@ -178,6 +179,13 @@ public sealed abstract class Job {
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
+                if (self.hasStatus(StatusBit.HELD) || self.hasStatus(StatusBit.EXECUTED)) {
+                    return; // defensive: HELD/EXECUTED already dominate the policy stack
+                }
+                if (JobBehaviors.isWanderDwellComplete(self, params())
+                        && JobBehaviors.checkArrestExposure(self, ctx, this)) {
+                    return; // arrested this tick (ARREST-SPEC addendum)
+                }
                 JobBehaviors.pursueWander(self, ctx, params());
             }
 
@@ -202,6 +210,13 @@ public sealed abstract class Job {
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
+                if (self.hasStatus(StatusBit.HELD) || self.hasStatus(StatusBit.EXECUTED)) {
+                    return; // defensive: HELD/EXECUTED already dominate the policy stack
+                }
+                if (JobBehaviors.isWanderDwellComplete(self, params())
+                        && JobBehaviors.checkArrestExposure(self, ctx, this)) {
+                    return; // arrested this tick (ARREST-SPEC addendum)
+                }
                 JobBehaviors.pursueWander(self, ctx, params());
             }
 
@@ -235,6 +250,13 @@ public sealed abstract class Job {
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
+                if (self.hasStatus(StatusBit.HELD) || self.hasStatus(StatusBit.EXECUTED)) {
+                    return; // defensive: HELD/EXECUTED already dominate the policy stack
+                }
+                if (JobBehaviors.isWanderDwellComplete(self, params())
+                        && JobBehaviors.checkArrestExposure(self, ctx, this)) {
+                    return; // maimed/hanged this tick (ARREST-SPEC addendum's escalation)
+                }
                 JobBehaviors.pursueWander(self, ctx, params());
             }
 
