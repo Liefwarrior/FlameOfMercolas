@@ -29,3 +29,6 @@ replay_pid*
 /PIGEON-TO-CLAUDE.md
 /PIGEON-FROM-CLAUDE.md
 /.claude/worktrees/
+
+# Extracted survey asset pack (1GB, not referenced by the active art mapping)
+content/art/kenney-all-in-1/
