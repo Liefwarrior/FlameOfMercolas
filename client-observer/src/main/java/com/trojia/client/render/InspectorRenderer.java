@@ -16,6 +16,7 @@ import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.ItemsLiteRegistry;
+import com.trojia.sim.actor.Need;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.job.JobRegistry;
 import com.trojia.sim.world.PackedPos;
@@ -43,6 +44,33 @@ public final class InspectorRenderer {
     private static final Color PANEL_COLOR = new Color(0.86f, 0.90f, 0.98f, 1f);
     private static final Color LOG_COLOR = new Color(0.72f, 0.80f, 0.72f, 1f);
     private static final Color HIGHLIGHT_COLOR = new Color(1f, 0.86f, 0.20f, 1f);
+
+    // Zelda-II-style segmented need bars (2026-07-15 stat-box redesign, design doc §3): 10
+    // discrete square segments per need, each worth a fixed 1000 of the 0..10000 range —
+    // "one segment = fixed point slice," mirroring the NES life meter's own square segments.
+    private static final int NEED_SEGMENTS = 10;
+    private static final int NEED_SEGMENT_VALUE = 10000 / NEED_SEGMENTS;
+    private static final float NEED_SEGMENT_SIZE_PX = 14f;
+    private static final float NEED_SEGMENT_GAP_PX = 2f;
+    private static final float NEED_BAR_WIDTH_PX =
+            NEED_SEGMENTS * NEED_SEGMENT_SIZE_PX + (NEED_SEGMENTS - 1) * NEED_SEGMENT_GAP_PX;
+    private static final float NEED_LABEL_WIDTH_PX = 70f;
+    private static final float NEED_VALUE_GAP_PX = 8f;
+    private static final float NEED_ROW_GAP_PX = 4f;
+    private static final float NEED_EMPTY_OUTLINE_PX = 1f;
+    private static final Color NEED_EMPTY_OUTLINE_COLOR = new Color(0.35f, 0.35f, 0.38f, 1f);
+    /** The dark interior the portrait sits on, so the gold border reads as a ring, not a fill
+     * (FaceGen parts draw on transparency and have no background of their own). */
+    private static final Color PORTRAIT_INTERIOR_COLOR = new Color(0.02f, 0.02f, 0.03f, 1f);
+    /** One saturated hue per need, indexed by {@link Need#ordinal()}; COIN reuses the panel's
+     *  existing gold highlight instead of adding a new constant. */
+    private static final Color[] NEED_COLORS = {
+            new Color(0.90f, 0.45f, 0.15f, 1f), // HUNGER: orange
+            new Color(0.35f, 0.55f, 0.95f, 1f), // REST: blue
+            HIGHLIGHT_COLOR,                    // COIN: gold
+            new Color(0.35f, 0.80f, 0.40f, 1f), // SAFETY: green
+            new Color(0.65f, 0.40f, 0.85f, 1f), // DUTY: purple
+    };
 
     private final ActorRegistry registry;
     private final HomeRegistry homes;
@@ -120,6 +148,7 @@ public final class InspectorRenderer {
             if (showFace) {
                 contentHeight += InspectorFaces.PANEL_SHIFT_PX;
             }
+            contentHeight += needsGridHeight(font);
             contentHeight += lines.size() * lineHeight;
         }
 
@@ -138,16 +167,86 @@ public final class InspectorRenderer {
             IconTextLine.draw(batch, font, icons, x, y, InspectorText.selectionHintTokens());
             return;
         }
-        // FaceGen portrait at the top of the panel (unified art spec §4.8): 48x48 at x2,
-        // centered above the name line; the text block shifts down under it. Beast types
-        // have no archetype mapping and keep the text-only panel.
+        // FaceGen portrait at the top of the panel (unified art spec §4.8): 48x48 at x4,
+        // ringed with a gold Zelda-II-style border frame, centered above the name line; the
+        // text block shifts down under it. Beast types have no archetype mapping and keep
+        // the text-only panel.
         if (showFace) {
-            faces.draw(batch, presentedActor.id(), typeKey, x + PANEL_WIDTH / 2f, y);
+            float centerX = x + PANEL_WIDTH / 2f;
+            float borderSize = InspectorFaces.FACE_SIZE_PX + 2 * InspectorFaces.PORTRAIT_BORDER_PX;
+            float borderX = centerX - InspectorFaces.FACE_SIZE_PX / 2f - InspectorFaces.PORTRAIT_BORDER_PX;
+            float borderY = y - InspectorFaces.FACE_SIZE_PX - InspectorFaces.PORTRAIT_BORDER_PX;
+            HudPanel.draw(batch, icons.whitePixel(), borderX, borderY, borderSize, borderSize,
+                    HIGHLIGHT_COLOR);
+            // Dark interior inset by the border width, so the gold reads as a ring around the
+            // portrait rather than a solid backdrop the transparent face parts sit on top of.
+            float interiorX = centerX - InspectorFaces.FACE_SIZE_PX / 2f;
+            float interiorY = y - InspectorFaces.FACE_SIZE_PX;
+            HudPanel.draw(batch, icons.whitePixel(), interiorX, interiorY,
+                    InspectorFaces.FACE_SIZE_PX, InspectorFaces.FACE_SIZE_PX, PORTRAIT_INTERIOR_COLOR);
+            faces.draw(batch, presentedActor.id(), typeKey, centerX, y);
             y -= InspectorFaces.PANEL_SHIFT_PX;
         }
+        // Zelda-II-style segmented need bars (design doc §3), rendered from the true selected
+        // actor's live needs — same actor the rest of the text lines below describe.
+        drawNeedsBarGrid(batch, font, icons, x, y, selectedActor);
+        y -= needsGridHeight(font);
+        font.setColor(PANEL_COLOR);
         for (String line : lines) {
             font.draw(batch, line, x, y);
             y -= lineHeight;
+        }
+    }
+
+    /** Row height for one need's bar: tall enough for both the 14px segments and the font. */
+    private static float needRowHeight(BitmapFont font) {
+        return Math.max(font.getLineHeight(), NEED_SEGMENT_SIZE_PX) + NEED_ROW_GAP_PX;
+    }
+
+    /** Total height of the five-row need bar grid, for the panel's content-height tally. */
+    private static float needsGridHeight(BitmapFont font) {
+        return Need.COUNT * needRowHeight(font);
+    }
+
+    /**
+     * Draws the five-row Zelda-II-style stat box: LABEL &rarr; 10-segment bar (each segment
+     * worth 1000 of the 0..10000 need range, filled left-to-right, empty slots outlined so
+     * they still read as slots) &rarr; exact numeric value, one row per {@link Need}, top
+     * edge at {@code topY}.
+     */
+    private void drawNeedsBarGrid(SpriteBatch batch, BitmapFont font, IconAtlas icons, float x,
+            float topY, Actor actor) {
+        short[] needs = actor.needsSnapshot();
+        float rowHeight = needRowHeight(font);
+        float barLeft = x + NEED_LABEL_WIDTH_PX;
+        float y = topY;
+        for (int i = 0; i < Need.COUNT; i++) {
+            short value = needs[i];
+            int filled = Math.max(0, Math.min(NEED_SEGMENTS, value / NEED_SEGMENT_VALUE));
+            float segBottomY = y - NEED_SEGMENT_SIZE_PX;
+
+            font.setColor(PANEL_COLOR);
+            font.draw(batch, InspectorText.NEED_LABELS[i], x, y);
+
+            for (int s = 0; s < NEED_SEGMENTS; s++) {
+                float segX = barLeft + s * (NEED_SEGMENT_SIZE_PX + NEED_SEGMENT_GAP_PX);
+                if (s < filled) {
+                    HudPanel.draw(batch, icons.whitePixel(), segX, segBottomY, NEED_SEGMENT_SIZE_PX,
+                            NEED_SEGMENT_SIZE_PX, NEED_COLORS[i]);
+                } else {
+                    HudPanel.draw(batch, icons.whitePixel(), segX - NEED_EMPTY_OUTLINE_PX,
+                            segBottomY - NEED_EMPTY_OUTLINE_PX,
+                            NEED_SEGMENT_SIZE_PX + 2 * NEED_EMPTY_OUTLINE_PX,
+                            NEED_SEGMENT_SIZE_PX + 2 * NEED_EMPTY_OUTLINE_PX, NEED_EMPTY_OUTLINE_COLOR);
+                    HudPanel.draw(batch, icons.whitePixel(), segX, segBottomY, NEED_SEGMENT_SIZE_PX,
+                            NEED_SEGMENT_SIZE_PX, HudPanel.BACKGROUND);
+                }
+            }
+
+            font.setColor(PANEL_COLOR);
+            font.draw(batch, String.format("%5d", value), barLeft + NEED_BAR_WIDTH_PX + NEED_VALUE_GAP_PX, y);
+
+            y -= rowHeight;
         }
     }
 

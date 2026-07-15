@@ -34,8 +34,13 @@ import java.util.List;
  */
 public final class InspectorText {
 
-    /** Short labels for the five-slot needs vector, indexed by {@link Need#ordinal()}. */
-    private static final String[] NEED_LABELS = {"HUNGER", "REST", "COIN", "SAFETY", "DUTY"};
+    /**
+     * Short labels for the five-slot needs vector, indexed by {@link Need#ordinal()}. Public:
+     * also used by {@code InspectorRenderer}'s Zelda-II-style segmented need-bar grid, which
+     * renders these values as bars instead of the plain-number lines this class used to emit
+     * (2026-07-15 stat-box redesign).
+     */
+    public static final String[] NEED_LABELS = {"HUNGER", "REST", "COIN", "SAFETY", "DUTY"};
 
     private InspectorText() {
     }
@@ -95,13 +100,9 @@ public final class InspectorText {
         lines.add("hp: " + actor.hp() + "   status: 0x" + Integer.toHexString(actor.statusBits() & 0xFFFF)
                 + "   facing: " + facing(actor.facing()));
 
-        short[] needs = actor.needsSnapshot();
-        lines.add("needs (0..10000, high=satisfied):");
-        lines.add("  " + NEED_LABELS[Need.HUNGER.ordinal()] + " " + pad(needs[Need.HUNGER.ordinal()])
-                + "  " + NEED_LABELS[Need.REST.ordinal()] + " " + pad(needs[Need.REST.ordinal()])
-                + "  " + NEED_LABELS[Need.COIN.ordinal()] + " " + pad(needs[Need.COIN.ordinal()]));
-        lines.add("  " + NEED_LABELS[Need.SAFETY.ordinal()] + " " + pad(needs[Need.SAFETY.ordinal()])
-                + "  " + NEED_LABELS[Need.DUTY.ordinal()] + " " + pad(needs[Need.DUTY.ordinal()]));
+        // Needs are rendered by the caller as the Zelda-II-style segmented bar grid
+        // (InspectorRenderer#drawNeedsBarGrid), not as plain-number lines here — this class
+        // stays the GL-free text formatter for everything else in the panel.
 
         lines.add("pos:    " + xyz(actor.cell()));
         lines.add(homeLine(actor, homes, registry));
@@ -165,11 +166,6 @@ public final class InspectorText {
             String otherType = registry.get(view.otherId()).typeId().key();
             lines.add("  " + view.kindAsSeen() + " -> #" + view.otherId() + " (" + otherType + ")");
         }
-    }
-
-    /** Right-pads a need value to 5 columns so the two needs rows line up. */
-    private static String pad(short value) {
-        return String.format("%-5d", value);
     }
 
     private static String facing(byte facing) {

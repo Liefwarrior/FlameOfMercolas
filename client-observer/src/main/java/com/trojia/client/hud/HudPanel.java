@@ -34,7 +34,18 @@ public final class HudPanel {
      */
     public static void draw(SpriteBatch batch, TextureRegion whitePixel, float x, float y, float w,
             float h) {
-        batch.setColor(BACKGROUND);
+        draw(batch, whitePixel, x, y, w, h, BACKGROUND);
+    }
+
+    /**
+     * Same as {@link #draw(SpriteBatch, TextureRegion, float, float, float, float)} but with a
+     * caller-chosen fill color instead of {@link #BACKGROUND} — the single colored-quad
+     * primitive reused for the portrait border frame and every need-bar segment in the
+     * Zelda-II-style stat box (2026-07-15), so no new drawing system is needed for either.
+     */
+    public static void draw(SpriteBatch batch, TextureRegion whitePixel, float x, float y, float w,
+            float h, Color color) {
+        batch.setColor(color);
         batch.draw(whitePixel, x, y, w, h);
         batch.setColor(Color.WHITE); // matches IconTextLine's existing white-reset convention
     }

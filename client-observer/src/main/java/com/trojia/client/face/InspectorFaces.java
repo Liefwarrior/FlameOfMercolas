@@ -25,14 +25,29 @@ import java.util.Objects;
  */
 public final class InspectorFaces {
 
-    /** Integer on-screen scale for the inspector portrait (spec §4.8, placeholder). */
-    public static final int SCALE = 2;
+    /**
+     * Integer on-screen scale for the inspector portrait (Zelda II stat-box redesign,
+     * 2026-07-15: bumped from the original placeholder 2x to 4x per Eli's "faces should be
+     * a lot bigger" directive). Must stay an integer — TILE-ART-SPEC.md §4 mandates
+     * nearest-filtering/integer-only zoom for this 16px-grid pixel art.
+     */
+    public static final int SCALE = 4;
 
     /** On-screen portrait edge, px. */
     public static final int FACE_SIZE_PX = FaceComposition.CANVAS_PX * SCALE;
 
-    /** How far the inspector panel's text shifts down under the portrait (placeholder). */
-    public static final int PANEL_SHIFT_PX = 100;
+    /** Gold portrait border frame thickness, px (Zelda II "bordered box" convention). */
+    public static final int PORTRAIT_BORDER_PX = 3;
+
+    /** Gap between the portrait border and the text block beneath it, px. */
+    private static final int PORTRAIT_GAP_PX = 10;
+
+    /**
+     * How far the inspector panel's text shifts down under the portrait: the portrait
+     * itself, plus its border frame on both edges, plus a breathing gap.
+     */
+    public static final int PANEL_SHIFT_PX =
+            FACE_SIZE_PX + 2 * PORTRAIT_BORDER_PX + PORTRAIT_GAP_PX;
 
     private final FaceGen gen;
     private final FaceArchetypes archetypes;

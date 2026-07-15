@@ -47,12 +47,23 @@ class InspectorTextTest {
         assertTrue(text.contains("ACTOR #2"), text);
         assertTrue(text.contains("serf"), text);
         assertTrue(text.contains("serf.laborer"), text);
-        assertTrue(text.contains("HUNGER") && text.contains("REST") && text.contains("COIN")
-                && text.contains("SAFETY") && text.contains("DUTY"), text);
         assertTrue(text.contains("home:") && text.contains("#0"), text);
         assertTrue(text.contains("HOUSEHOLD -> #"), text);
         assertTrue(text.contains("inventory ("), text);
         assertFalse(text.contains("(secret)"), "an ordinary serf has no cover: " + text);
+    }
+
+    /**
+     * Needs are no longer plain-number lines in {@link InspectorText#describe} (2026-07-15
+     * Zelda-II stat-box redesign) — {@code InspectorRenderer} draws them directly from
+     * {@code Actor#needsSnapshot()} as a segmented bar grid instead. {@link
+     * InspectorText#NEED_LABELS} is the shared label source both the old text lines and the
+     * new bar grid draw from; this is the surviving unit-testable contract for it.
+     */
+    @Test
+    void needLabelsCoverAllFiveNeedsInOrder() {
+        assertTrue(java.util.List.of("HUNGER", "REST", "COIN", "SAFETY", "DUTY")
+                .equals(java.util.List.of(InspectorText.NEED_LABELS)));
     }
 
     @Test
