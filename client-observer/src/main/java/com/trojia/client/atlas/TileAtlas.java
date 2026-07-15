@@ -56,6 +56,18 @@ public interface TileAtlas extends Disposable {
      */
     int variantCount(String regionName);
 
+    /**
+     * How the renderer picks which variant cell of {@code regionName} to draw per tile
+     * (TILE-ART-SPEC section 12). Defaults to {@link VariantPattern#HASH} — the position
+     * scatter every existing pack uses — so a single-cell placeholder pack (whose regions
+     * report {@code variantCount == 1} and always draw variant 0 regardless) needs no override.
+     * A sheet pack overrides this for regions its {@code variantPatterns} map tags
+     * {@code "periodic"} (the laid-paver sidewalk).
+     */
+    default VariantPattern variantPattern(String regionName) {
+        return VariantPattern.HASH;
+    }
+
     /** Whether {@code regionName} has a cell in this atlas. */
     boolean contains(String regionName);
 }

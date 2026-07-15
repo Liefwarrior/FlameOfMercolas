@@ -32,10 +32,13 @@ public final class SheetTileAtlas implements TileAtlas {
 
     private final Texture texture;
     private final NavigableMap<String, List<TextureRegion>> regions;
+    private final SheetAtlasSpec spec;
 
-    private SheetTileAtlas(Texture texture, NavigableMap<String, List<TextureRegion>> regions) {
+    private SheetTileAtlas(Texture texture, NavigableMap<String, List<TextureRegion>> regions,
+                          SheetAtlasSpec spec) {
         this.texture = texture;
         this.regions = regions;
+        this.spec = spec;
     }
 
     /**
@@ -66,7 +69,7 @@ public final class SheetTileAtlas implements TileAtlas {
             }
             built.put(name, List.copyOf(variants));
         }
-        return new SheetTileAtlas(texture, built);
+        return new SheetTileAtlas(texture, built, spec);
     }
 
     @Override
@@ -89,6 +92,11 @@ public final class SheetTileAtlas implements TileAtlas {
     public int variantCount(String regionName) {
         List<TextureRegion> variants = regionName == null ? null : regions.get(regionName);
         return variants == null ? 0 : variants.size();
+    }
+
+    @Override
+    public VariantPattern variantPattern(String regionName) {
+        return spec.variantPattern(regionName);
     }
 
     @Override

@@ -115,6 +115,126 @@ def center(x0, y0, x1, y1):
 
 
 # ======================================================================
+# FIXTURE LIBRARY (2026-07-15 senior-level-design pass, Eli's directive to
+# "create a lot of re-usable fixtures within these city blocks because it would
+# make sense that things are standardized"). A layer of STANDARDIZED, repeatable
+# stamps composed from the low-level primitives above (frect/trect/border/cells/
+# shell) -- so the city reads as standardized, not bespoke-random. Everything
+# reuses existing material gids ONLY (no new art). Furniture idioms are the ones
+# already used throughout this file: bed = CLOTH_WALL, chest/trunk = LEATHER_WALL,
+# hearth = GRANITE_WALL cells, counter/table/shelf/nightstand = OAK_WALL.
+#
+# The single most important fixture is sidewalk(): it paints GRANITE_FLOOR, which
+# (SEVENTH art revision, art-mapping.json variantPatterns) resolves to the periodic
+# floor_pave region -- an OBVIOUS regular laid-paver weave, visually distinct from
+# the smooth homogeneous brick roadway spine (floor_tile) and the deliberately-rough
+# dirt intersections (floor_earth, hash-scattered). That is exactly Eli's street
+# hierarchy: "Sidewalks should be obvious and not irregularly patterned ... the
+# middle of the street and intersections in the street would have less regularity."
+# ======================================================================
+
+# --- surface / street fixtures ---
+def sidewalk(z, x0, y0, x1, y1):
+    """A paved sidewalk band -> GRANITE_FLOOR (the periodic floor_pave paver weave).
+    The one call that makes a street frontage read as an obvious laid sidewalk."""
+    frect(z, x0, y0, x1, y1, GRANITE_FLOOR)
+
+
+def roadway(z, x0, y0, x1, y1, spine_gid=BRICK_FLOOR):
+    """A smooth arterial roadway spine -> BRICK_FLOOR (the homogeneous floor_tile
+    avenue). Sleek and regular, flanked by sidewalk() bands."""
+    frect(z, x0, y0, x1, y1, spine_gid)
+
+
+def intersection(z, x0, y0, x1, y1):
+    """A junction/crossing square -> DIRT_FLOOR (rough floor_earth, hash-scattered):
+    the deliberately 'less regular' middle-of-street/junction Eli reserves
+    irregularity for."""
+    frect(z, x0, y0, x1, y1, DIRT_FLOOR)
+
+
+# --- atomic homey pieces (a furniture cell is a solid WALL-gid tile) ---
+def bed(z, x, y):
+    T[z][y][x] = CLOTH_WALL
+
+
+def chest(z, x, y):
+    T[z][y][x] = LEATHER_WALL
+
+
+def hearth(z, x, y):
+    T[z][y][x] = GRANITE_WALL
+
+
+def table(z, x0, y0, x1, y1):
+    trect(z, x0, y0, x1, y1, OAK_WALL)
+
+
+def shelf(z, x0, y0, x1, y1):
+    trect(z, x0, y0, x1, y1, OAK_WALL)
+
+
+def shop_counter(z, x0, y0, x1, y1):
+    trect(z, x0, y0, x1, y1, OAK_WALL)
+
+
+# --- interior room fixtures ---
+def partition(z, x0, y0, x1, y1, wall, door):
+    """A single interior partition-wall segment (a straight run) with one door gap
+    punched through it -- the standardized 'divide a shell into rooms' primitive the
+    homes/compound units compose (formalizes the hand-rolled partition idiom used at
+    K01/K03/K17 etc.)."""
+    trect(z, x0, y0, x1, y1, wall)
+    (dx, dy) = door
+    T[z][dy][dx] = 0
+
+
+def homey_touches(z, hearth_xy, bed_xys, chest_xy=None, table_rect=None):
+    """Standardized 'lived-in home' furniture drop: a hearth, one bed per household
+    member, an optional chest and table -- so every home feels lived-in without being
+    hand-bespoke (Eli: "Homes should have homey touches"). Callers pass cells that sit
+    against walls / off the room's walkable center + door approach + any stair, so the
+    furniture ZONES the room (a sleeping corner, a hearth-and-table common area) without
+    trapping the occupants."""
+    (hx, hy) = hearth_xy
+    hearth(z, hx, hy)
+    for (bx, by) in bed_xys:
+        bed(z, bx, by)
+    if chest_xy is not None:
+        chest(z, chest_xy[0], chest_xy[1])
+    if table_rect is not None:
+        table(z, table_rect[0], table_rect[1], table_rect[2], table_rect[3])
+
+
+def compound_unit_interior(z, x0, y0, x1, y1, door, wall=REMAN_WALL):
+    """Divide a compound dwelling unit into a common/hearth room + a sleeping room
+    (one partition wall with a connecting door) and drop standardized homey touches --
+    a real home circulation instead of one undivided box (Eli #5: "homes in the
+    compounds should have rooms that are organized in a meaningful way", #6 homey
+    touches). Parametric and standardized across every unit. Guarantees, by
+    construction, that the unit's ANCHOR (its centre, where the household spawns), its
+    ENTRY DOOR, its interior STAIR (always at x0+2), and the interior door between the
+    two rooms all stay on OPEN floor -- furniture only ever hugs the back/front walls
+    and the 3-wide sleeping alcove, never the central walkable rows/columns. Sized for
+    the ~12x6-7 compound condos; a no-op-safe partition for anything narrower is the
+    caller's responsibility (not called on the tiny hovels)."""
+    (dx, dy) = door
+    door_south = (dy == y1)
+    back_y = y0 + 1 if door_south else y1 - 1   # hearth/beds hug the wall opposite the door
+    front_y = y1 - 1 if door_south else y0 + 1
+    mid_y = (y0 + y1) // 2
+    px = x1 - 4                                  # partition -> a 3-wide sleeping alcove east
+    partition(z, px, y0 + 1, px, y1 - 1, wall, (px, mid_y))
+    # common/hearth room (west of the partition): hearth on the back wall + a table
+    homey_touches(z, (x0 + 1, back_y), bed_xys=(),
+                  table_rect=(x0 + 3, back_y, x0 + 4, back_y))
+    # sleeping alcove (east of the partition): two beds along the back wall + a chest
+    bed(z, px + 1, back_y)
+    bed(z, px + 2, back_y)
+    chest(z, x1 - 1, front_y)
+
+
+# ======================================================================
 # 0. Bands / base ground (blueprint section 0)
 # ======================================================================
 RAMP1_X = set(range(0, 4)) | set(range(72, 80)) | set(range(160, 164))    # y96, z11
@@ -244,6 +364,26 @@ frect(12, 72, 97, 79, 115, BRICK_FLOOR)     # Saltgate Rise, Band B leg
 frect(13, 72, 117, 79, 127, BRICK_FLOOR)    # Saltgate Rise, Band C leg
 frect(11, 33, 26, 33, 59, DIRT_FLOOR)       # Herring Lane offal gutter (no fluid)
 frect(11, 34, 54, 55, 54, DIRT_FLOOR)       # Salt Row offal-gutter link
+
+# --- Sidewalk frontage bands (2026-07-15 senior-level-design pass, Eli directive #2
+# "Sidewalks should be obvious and not irregularly patterned"). These repaint the
+# OUTERMOST walkable row/column of an already-paved arterial (brick spine) as
+# GRANITE_FLOOR -- which resolves to the periodic floor_pave paver weave -- so the
+# smooth brick roadway centre now reads as flanked by OBVIOUS laid-paver sidewalks
+# (the §5 street hierarchy: sidewalk band | smooth spine | sidewalk band). They only
+# ever repaint existing STREET floor (brick -> granite), never touch a building, so
+# no K-site/compound/hovel footprint and no DocksPopulation anchor moves. The Tarwalk
+# A quay apron is already GRANITE (now periodic pavers); Tarwalk C keeps its
+# deliberately-worn broken-paving checker as the §5 "less regular" junction texture.
+sidewalk(11, 80, 33, 129, 33)               # Tarwalk east: sidewalk along the shopfronts
+sidewalk(11, 4, 60, 147, 60)                # Ropewynd north kerb
+sidewalk(11, 4, 65, 147, 65)                # Ropewynd south kerb (the frontage side)
+sidewalk(11, 72, 34, 72, 65)               # Saltgate Rise, Band A: west kerb
+sidewalk(11, 79, 34, 79, 65)               # Saltgate Rise, Band A: east kerb
+sidewalk(12, 72, 97, 72, 115)              # Saltgate Rise, Band B: west kerb
+sidewalk(12, 79, 97, 79, 115)              # Saltgate Rise, Band B: east kerb
+sidewalk(13, 72, 117, 72, 127)             # Saltgate Rise, Band C: west kerb
+sidewalk(13, 79, 117, 79, 127)             # Saltgate Rise, Band C: east kerb
 
 # ======================================================================
 # 2. Waterfront (blueprint section 2)
@@ -1053,8 +1193,12 @@ C1_STAIRS_S = ((34, 113), (46, 113), (58, 113))
 for i, (x0, x1) in enumerate(C1_N):
     d = ((x0 + 5, 103),)
     shell(12, x0, 97, x1, 103, REMAN_WALL, REMAN_FLOOR, doors=d)
+    # Meaningful rooms + homey touches (design §3/§6): common/hearth room + sleeping
+    # alcove, anchor/door/stair kept clear by the fixture's construction.
+    compound_unit_interior(12, x0, 97, x1, 103, (x0 + 5, 103))
     T[12][C1_STAIRS_N[i][1]][C1_STAIRS_N[i][0]] = OAK_STAIR_UP
     shell(13, x0, 97, x1, 103, REMAN_WALL, REMAN_FLOOR)
+    compound_unit_interior(13, x0, 97, x1, 103, (x0 + 5, 103))
     T[13][C1_STAIRS_N[i][1]][C1_STAIRS_N[i][0]] = OAK_STAIR_DOWN
     frect(14, x0, 97, x1, 103, REMAN_FLOOR)
     unit_anchor(12, "cmp1_condo_%02d_anchor" % (i + 1), x0, 97, x1, 103)
@@ -1062,8 +1206,10 @@ for i, (x0, x1) in enumerate(C1_N):
 for i, (x0, x1) in enumerate(C1_S):
     d = ((x0 + 5, 110),)
     shell(12, x0, 110, x1, 115, REMAN_WALL, REMAN_FLOOR, doors=d)
+    compound_unit_interior(12, x0, 110, x1, 115, (x0 + 5, 110))
     T[12][C1_STAIRS_S[i][1]][C1_STAIRS_S[i][0]] = OAK_STAIR_UP
     shell(13, x0, 110, x1, 115, REMAN_WALL, REMAN_FLOOR)
+    compound_unit_interior(13, x0, 110, x1, 115, (x0 + 5, 110))
     T[13][C1_STAIRS_S[i][1]][C1_STAIRS_S[i][0]] = OAK_STAIR_DOWN
     frect(14, x0, 110, x1, 115, REMAN_FLOOR)
     unit_anchor(12, "cmp1_condo_%02d_anchor" % (i + 4), x0, 110, x1, 115)
@@ -1290,6 +1436,28 @@ mk(13, "script_anchor", "patrol_post_rise_top", 75, 118)
 mk(11, "script_anchor", "patrol_post_rise_foot", 75, 34)
 mk(11, "script_anchor", "patrol_post_tarwalk_west", 30, 30)
 mk(11, "script_anchor", "patrol_post_tarwalk_mid", 100, 30)
+
+# ======================================================================
+# 6.5 Job-site zones (2026-07-15 senior-level-design pass, Eli directive #7:
+# "mark logical job-site locations/zones for a SEPARATE upcoming sim pass ...
+# the actual job BEHAVIORS are out of scope here"). MARKERS ONLY -- no new solid
+# fixtures that could block pathfinding -- placed on already-walkable street/quay
+# floor, ready for a later jobs pass to bind. Behavior (sweeping, patrolling,
+# loading) is explicitly NOT wired here.
+# ======================================================================
+# Street-sweep routes: ordered waypoint anchors a street-cleaning behavior can walk.
+for i, sx in enumerate((20, 50, 95, 120)):
+    mk(11, "script_anchor", "sweep_tarwalk_%02d" % (i + 1), sx, 30)   # Tarwalk sidewalk
+for i, sy in enumerate((45, 72, 90)):
+    mk(11, "script_anchor", "sweep_saltgate_%02d" % (i + 1), 75, sy)  # Saltgate Rise
+# Dock loading zones: legible work spots on the quay apron (the berths already have
+# ship anchors; these mark the shore-side muster/loading points beside them).
+mk(11, "script_anchor", "dock_load_west_anchor", 25, 30)
+mk(11, "script_anchor", "dock_load_east_anchor", 100, 32)
+# Guard beats gain braziers (light markers only) at the two Tarwalk posts (K21/K34
+# already have their brazier lamps; the open Tarwalk beats had none).
+mk(11, "light_source", "brazier_tarwalk_west", 30, 30, luminance=16)
+mk(11, "light_source", "brazier_tarwalk_mid", 100, 30, luminance=16)
 mk(13, "script_anchor", "exit_saltgate_road", 75, 126)
 mk(11, "script_anchor", "exit_coast_road_west", 2, 30)
 mk(11, "script_anchor", "exit_shambles_east", 189, 30)

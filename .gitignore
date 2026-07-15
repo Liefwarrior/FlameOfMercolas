@@ -29,3 +29,7 @@ replay_pid*
 /PIGEON-TO-CLAUDE.md
 /PIGEON-FROM-CLAUDE.md
 /.claude/worktrees/
+
+# 1GB Kenney survey/extract pack — local-only reference, never committed.
+# (The curated, tracked tiles live under content/art/kenney/CityPack/.)
+/content/art/kenney-all-in-1/

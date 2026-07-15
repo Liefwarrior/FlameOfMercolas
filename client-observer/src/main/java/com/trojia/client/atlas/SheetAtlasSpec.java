@@ -7,6 +7,8 @@ import com.trojia.client.art.ArtMappingException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.TreeMap;
@@ -32,6 +34,12 @@ import java.util.TreeSet;
  *       section 12). The single-pair form is the one-variant shorthand. Multiple materials
  *       point at one shared region; the per-material colour comes from the resolver's tint,
  *       not the pixels.</li>
+ *   <li>{@code variantPatterns} (optional) — a map of region name &rarr; the variant-selection
+ *       {@link VariantPattern} for that region ({@code "hash"} or {@code "periodic"}). A region
+ *       with no entry defaults to {@link VariantPattern#HASH} (the original position scatter);
+ *       {@code "periodic"} draws a fixed regular laid-paver pattern, used for the sidewalk /
+ *       civic flagstone (the senior-level-design homogeneity rule, DECISIONS.md art register
+ *       Eli 2026-07-15). Unknown region names here are a defect (aggregated like the rest).</li>
  * </ul>
  *
  * <p>Cells are {@code tilePx}&times;{@code tilePx} (16 in v0) with no inter-tile spacing
@@ -48,14 +56,17 @@ public final class SheetAtlasSpec {
     private final int columns;
     private final int rows;
     private final NavigableMap<String, List<AtlasCellRect>> cells;
+    private final Map<String, VariantPattern> patterns;
 
     private SheetAtlasSpec(String sheetPath, int tilePx, int columns, int rows,
-                           NavigableMap<String, List<AtlasCellRect>> cells) {
+                           NavigableMap<String, List<AtlasCellRect>> cells,
+                           Map<String, VariantPattern> patterns) {
         this.sheetPath = sheetPath;
         this.tilePx = tilePx;
         this.columns = columns;
         this.rows = rows;
         this.cells = cells;
+        this.patterns = patterns;
     }
 
     /**
@@ -104,10 +115,49 @@ public final class SheetAtlasSpec {
             }
         }
 
+        Map<String, VariantPattern> patterns = parsePatterns(root, cells.keySet(), errors);
+
         if (!errors.isEmpty()) {
             throw new ArtMappingException(String.join("\n", errors));
         }
-        return new SheetAtlasSpec(sheetPath, tilePx, columns, rows, cells);
+        return new SheetAtlasSpec(sheetPath, tilePx, columns, rows, cells, patterns);
+    }
+
+    /**
+     * Parses the optional {@code variantPatterns} map (region name &rarr; {@code "hash"} |
+     * {@code "periodic"}). Absent entries default to {@link VariantPattern#HASH}. A name that
+     * has no cell in {@code regions}, or an unrecognized pattern token, is a recorded defect.
+     */
+    private static Map<String, VariantPattern> parsePatterns(JsonValue root,
+            Collection<String> knownRegions, List<String> errors) {
+        Map<String, VariantPattern> patterns = new TreeMap<>();
+        JsonValue node = root.get("variantPatterns");
+        if (node == null) {
+            return patterns;
+        }
+        if (!node.isObject()) {
+            errors.add("variantPatterns: must be an object of region name -> pattern");
+            return patterns;
+        }
+        for (JsonValue entry = node.child; entry != null; entry = entry.next) {
+            String where = "variantPatterns." + entry.name;
+            if (!knownRegions.contains(entry.name)) {
+                errors.add(where + ": no such region in 'regions'");
+                continue;
+            }
+            if (!entry.isString()) {
+                errors.add(where + ": must be a string (\"hash\" or \"periodic\")");
+                continue;
+            }
+            String token = entry.asString().toLowerCase(Locale.ROOT);
+            switch (token) {
+                case "hash" -> patterns.put(entry.name, VariantPattern.HASH);
+                case "periodic" -> patterns.put(entry.name, VariantPattern.PERIODIC);
+                default -> errors.add(where + ": unknown pattern \"" + entry.asString()
+                        + "\" (want \"hash\" or \"periodic\")");
+            }
+        }
+        return patterns;
     }
 
     /**
@@ -257,6 +307,14 @@ public final class SheetAtlasSpec {
     public int variantCount(String regionName) {
         List<AtlasCellRect> rects = regionName == null ? null : cells.get(regionName);
         return rects == null ? 0 : rects.size();
+    }
+
+    /**
+     * The variant-selection pattern for {@code regionName} — {@link VariantPattern#HASH} unless
+     * the mapping's {@code variantPatterns} declared otherwise (TILE-ART-SPEC section 12).
+     */
+    public VariantPattern variantPattern(String regionName) {
+        return patterns.getOrDefault(regionName, VariantPattern.HASH);
     }
 
     /** All region names in ascending ASCII order. */

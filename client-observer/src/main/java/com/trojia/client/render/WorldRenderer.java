@@ -163,13 +163,16 @@ public final class WorldRenderer {
                         regionName = artResolver.missingRegionName();
                     }
                     // Pick a cosmetic variant deterministically from the tile's world position
-                    // (plus material/form salt) so a large wall or floor shows real tile-to-tile
-                    // variety instead of one repeated sprite — a pure function, identical every
-                    // run and machine (TILE-ART-SPEC section 12).
+                    // (TILE-ART-SPEC section 12). A single-cell (homogeneous) region always
+                    // draws variant 0 — the senior-level-design default for smooth surfaces.
+                    // A PERIODIC region draws a fixed regular laid-paver weave (the sidewalk /
+                    // civic flagstone). Otherwise the material/form-salted position hash scatters
+                    // variety, the intended look for deliberately-rough surfaces only. All three
+                    // are pure functions of world position — presentation-only, never read by
+                    // WorldHasher, identical every run and machine.
                     int variantCount = atlas.variantCount(regionName);
-                    int variant = variantCount <= 1 ? 0
-                            : Math.floorMod(cosmeticVariant(tx, ty, z, materialLane, form.ordinal()),
-                                    variantCount);
+                    int variant = pickVariant(regionName, variantCount, tx, ty, z, materialLane,
+                            form.ordinal());
                     TextureRegion region = atlas.region(regionName, variant);
 
                     setTint(batch, artResolver.materialTintRgb(materialId));
@@ -277,6 +280,34 @@ public final class WorldRenderer {
         float g = ((rgb >> 8) & 0xFF) / 255f;
         float b = (rgb & 0xFF) / 255f;
         batch.setColor(r, g, b, 1f);
+    }
+
+    /**
+     * Chooses the cosmetic-variant cell index for one base tile (TILE-ART-SPEC section 12),
+     * dispatching on the region's {@link com.trojia.client.atlas.VariantPattern}:
+     *
+     * <ul>
+     *   <li>{@code variantCount <= 1} &rarr; {@code 0}: a homogeneous single-cell region (the
+     *       smooth-surface default) always draws its one clean tile.</li>
+     *   <li>{@link com.trojia.client.atlas.VariantPattern#PERIODIC} &rarr; {@code (x ^ y) & 1}
+     *       folded into the count: a fixed 2-tone laid-paver weave (the sidewalk / civic
+     *       flagstone), a regular pattern a random hash cannot produce.</li>
+     *   <li>otherwise &rarr; the material/form-salted position hash: scattered variety, the
+     *       intended look for deliberately-rough surfaces (dirt, rubble) and moving water.</li>
+     * </ul>
+     *
+     * Every branch is a pure function of world position — presentation-only, never read by the
+     * {@code WorldHasher}, byte-identical every run.
+     */
+    private int pickVariant(String regionName, int variantCount, int tx, int ty, int z,
+            int materialLane, int formOrdinal) {
+        if (variantCount <= 1) {
+            return 0;
+        }
+        if (atlas.variantPattern(regionName) == com.trojia.client.atlas.VariantPattern.PERIODIC) {
+            return Math.floorMod((tx ^ ty) & 1, variantCount);
+        }
+        return Math.floorMod(cosmeticVariant(tx, ty, z, materialLane, formOrdinal), variantCount);
     }
 
     /**
