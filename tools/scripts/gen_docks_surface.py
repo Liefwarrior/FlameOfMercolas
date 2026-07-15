@@ -483,8 +483,38 @@ for y in range(35, 50):                             # ledger-room partition
 T[11][37][65] = 0
 trect(11, 58, 37, 60, 37, OAK_WALL)                 # counter
 T[11][48][58] = OAK_STAIR_UP
+# Ledger-room library-stack racking (2026-07-15 interior-detail pass, design 3): the K29
+# racking-island idiom -- two rack columns with an aisle gap, inside the ledger room (x66-70).
+for rx in (67, 69):
+    trect(11, rx, 39, rx, 42, OAK_WALL)
+    trect(11, rx, 45, rx, 48, OAK_WALL)
 shell(12, 56, 34, 71, 50, GRANITE_WALL, GRANITE_FLOOR)
 T[12][48][58] = OAK_STAIR_DOWN
+# The customs archive / clerks' loft (2026-07-15 interior-detail pass, design 5): the z12
+# upper floor was a completely bare shell() with nothing else drawn on it -- now record-stack
+# racking (K29 idiom verbatim), a clerks' rest nook, and a strongroom sealed like K15's cage.
+RACK_COLS_K01 = [(59, 60), (63, 64), (67, 68)]
+for (rx0, rx1) in RACK_COLS_K01:
+    trect(12, rx0, 37, rx1, 46, OAK_WALL)
+for aisle_y in (38, 41, 44):                        # cross-aisle breaks through every rack
+    for (rx0, rx1) in RACK_COLS_K01:
+        for x in range(rx0, rx1 + 1):
+            T[12][aisle_y][x] = 0
+for x in range(66, 71):                             # clerks' rest nook, SE corner
+    T[12][46][x] = OAK_WALL
+for y in range(46, 50):
+    T[12][y][66] = OAK_WALL
+cells(12, [(67, 48), (69, 48)], CLOTH_WALL)          # 2 beds
+for x in range(57, 61):                             # strongroom, SW corner (K15 cage idiom)
+    T[12][46][x] = STEEL_WALL
+for y in range(46, 50):
+    T[12][y][60] = STEEL_WALL
+cells(12, [(58, 48)], STEEL_WALL)                    # lockbox
+T[12][46][68] = 0                                    # nook door
+F[12][46][68] = GRANITE_FLOOR
+T[12][46][58] = 0                                    # strongroom slot (reached via the stair)
+F[12][46][58] = GRANITE_FLOOR
+mk(12, "script_anchor", "k01_archive_anchor", 64, 42)
 frect(13, 56, 34, 71, 50, BRICK_FLOOR)              # tile roof
 mk(13, "light_source", "lamp_weighhouse_mast", 64, 35, luminance=26)
 mk(11, "script_anchor", "business_k01_weighhouse_anchor", 64, 41)
@@ -508,6 +538,9 @@ for y in range(35, 47):                             # snug partition
 T[11][37][125] = 0
 T[11][43][125] = 0
 cells(11, [(116, 37), (119, 37), (116, 42), (119, 42)], OAK_WALL)
+# Classic top-down tavern convention (A Link to the Past / Secret of Mana), design 3.1: bar
+# perpendicular to the door (already true), a hearth against the back wall, patrons seated.
+cells(11, [(117, 45), (118, 45)], GRANITE_WALL)     # hearth, south back wall
 T[11][45][127] = OAK_STAIR_UP
 shell(12, 114, 34, 128, 47, OAK_WALL, OAK_FLOOR)
 for y in range(35, 47):                             # guest-room cross partitions
@@ -518,22 +551,42 @@ T[12][37][120] = 0
 T[12][40][117] = 0
 T[12][40][123] = 0
 T[12][45][127] = OAK_STAIR_DOWN
+# Rentable upper rooms (2026-07-15 interior-detail pass, design 5): the 4 "guest-room" quadrants
+# were bare shells with zero furniture -- each now has a bed + storage piece.
+cells(12, [(116, 36), (124, 36), (116, 44), (124, 44)], CLOTH_WALL)   # beds, one per quadrant
+cells(12, [(118, 38), (118, 46)], LEATHER_WALL)     # NW/SW trunks
+cells(12, [(126, 38), (126, 46)], OAK_WALL)         # NE/SE nightstands (127,45 stair kept clear)
 frect(13, 114, 34, 128, 47, THATCH_FLOOR)
 mk(11, "light_source", "lamp_gull_door", 121, 33, luminance=18)
 mk(11, "light_source", "lamp_gull_bar", 120, 39, luminance=16)
 mk(11, "script_anchor", "business_k03_gilded_gull_anchor", 120, 41)
+mk(11, "script_anchor", "patron_seat_gull_01_anchor", 117, 37)
+mk(11, "script_anchor", "patron_seat_gull_02_anchor", 118, 37)
+mk(11, "script_anchor", "patron_seat_gull_03_anchor", 117, 42)
+mk(11, "script_anchor", "patron_seat_gull_04_anchor", 118, 42)
+mk(11, "script_anchor", "patron_seat_gull_05_anchor", 119, 40)
+mk(11, "script_anchor", "patron_seat_gull_06_anchor", 121, 40)
 
 # K04 The Bilge (mid tavern + hammock loft) -- 12x10
 shell(11, 100, 34, 111, 43, TRUDGEON_WALL, OAK_FLOOR, doors=[(105, 34), (106, 34)])
 trect(11, 103, 37, 107, 37, OAK_WALL)               # bar
 cells(11, [(101, 40), (109, 40)], OAK_WALL)         # tables
+cells(11, [(104, 41), (105, 41)], GRANITE_WALL)     # hearth, back wall (design 3.1)
 T[11][41][109] = OAK_STAIR_UP
 shell(12, 100, 34, 111, 43, TRUDGEON_WALL, OAK_FLOOR)
 cells(12, [(102, 37), (105, 37), (108, 37)], OAK_WALL)
+# Triple the hammock density (2026-07-15 interior-detail pass, design 5): 2 more post rows
+# mirroring the existing y37 row -- 3 posts -> 9, a genuinely crowded dive-bar loft.
+cells(12, [(102, 39), (105, 39), (108, 39)], OAK_WALL)
+cells(12, [(102, 41), (105, 41), (108, 41)], OAK_WALL)
 T[12][41][109] = OAK_STAIR_DOWN
 frect(13, 100, 34, 111, 43, THATCH_FLOOR)
 mk(11, "light_source", "lamp_bilge_door", 105, 33, luminance=14)
 mk(11, "script_anchor", "business_k04_bilge_anchor", 106, 38)
+mk(11, "script_anchor", "patron_seat_bilge_01_anchor", 102, 40)
+mk(11, "script_anchor", "patron_seat_bilge_02_anchor", 101, 39)
+mk(11, "script_anchor", "patron_seat_bilge_03_anchor", 108, 40)
+mk(11, "script_anchor", "patron_seat_bilge_04_anchor", 110, 41)
 
 # K05 The Lantern Room (crossroads tavern, neutral ground) -- 13x12
 shell(11, 58, 66, 70, 77, GRANITE_WALL, OAK_FLOOR,
@@ -550,6 +603,12 @@ T[12][75][68] = OAK_STAIR_DOWN
 frect(13, 58, 66, 70, 77, THATCH_FLOOR)
 mk(11, "light_source", "lamp_lantern_room", 63, 65, luminance=22)
 mk(11, "script_anchor", "business_k05_lantern_room_anchor", 64, 71)
+# Lighter tavern-convention treatment (design 3.1): already has a hearth -- just seat markers
+# around the existing hearth+counter.
+mk(11, "script_anchor", "patron_seat_lantern_01_anchor", 59, 71)
+mk(11, "script_anchor", "patron_seat_lantern_02_anchor", 61, 72)
+mk(11, "script_anchor", "patron_seat_lantern_03_anchor", 62, 72)
+mk(11, "script_anchor", "patron_seat_lantern_04_anchor", 65, 73)
 
 # K07 The Ropewalk (the district's longest sightline; fire tier High) -- 64x9,
 # deliberately kept elongated (canon: the ward's one 60-tile-shed trade)
@@ -570,6 +629,12 @@ for x in range(25, 31):                             # stockroom partition
     T[11][71][x] = OAK_WALL
 T[11][71][27] = 0
 cells(11, [(25, 73), (30, 73)], OAK_WALL)
+# Earthbound/Stardew Valley shop convention (design 3.2): shelving lines two walls, a counter
+# sits near the door, distinct trade-flavored fixtures -- rope racks + oil-lamp shelving here.
+cells(11, [(25, 68), (25, 69)], OAK_WALL)           # west-wall rope racks
+cells(11, [(30, 68), (30, 69)], OAK_WALL)           # east-wall oil-lamp shelving
+cells(11, [(26, 70), (29, 70)], OAK_WALL)           # sales counter (x27/28 kept clear, door-aligned)
+cells(11, [(27, 73)], OAK_WALL)                     # stockroom rope-coil pile
 shell(10, 26, 70, 30, 73, GRANITE_WALL, GRANITE_FLOOR)   # cellar carve (gray ledger)
 T[10][72][28] = OAK_STAIR_UP
 T[11][72][28] = OAK_STAIR_DOWN
@@ -679,9 +744,15 @@ for y in range(67, 80):                             # chapel partition
 T[11][71][90] = 0
 trect(11, 84, 69, 87, 69, OAK_WALL)                 # alms-hall tables
 trect(11, 84, 72, 87, 72, OAK_WALL)
+# Compound/civic-hall convention (Ald-ruhn "big crab" reading + Earthbound church-pew
+# register, design 3.3): pew rows flanking the tables, real bunks in the dormitory.
+cells(11, [(84, 68), (85, 68), (86, 68), (87, 68)], GRANITE_WALL)   # pew row, north
+cells(11, [(84, 73), (85, 73), (86, 73), (87, 73)], GRANITE_WALL)   # pew row, south
 for x in range(83, 90):                             # dormitory partition
     T[11][75][x] = OAK_WALL
 T[11][75][86] = 0
+cells(11, [(84, 77), (86, 77), (88, 77)], CLOTH_WALL)   # bunks, row 1
+cells(11, [(84, 79), (86, 79), (88, 79)], CLOTH_WALL)   # bunks, row 2
 for x in range(91, 98):                             # back room (the body)
     T[11][75][x] = OAK_WALL
 T[11][75][94] = 0
@@ -735,6 +806,11 @@ shell(11, 40, 66, 53, 76, TRUDGEON_WALL, DIRT_FLOOR, doors=[(46, 66), (47, 66)])
 trect(11, 41, 73, 42, 74, OAK_WALL)                 # barrel stacks
 trect(11, 50, 68, 51, 69, OAK_WALL)
 trect(11, 44, 71, 47, 71, OAK_WALL)                 # workbench
+# Earthbound/Stardew Valley shop convention (design 3.2): stave stacks + workbench tools --
+# the cooper's own trade-flavored fixtures, distinct from Brann's rope/lamp register.
+trect(11, 48, 73, 49, 74, OAK_WALL)                 # stave stack, mirrors the barrel stack
+cells(11, [(43, 68), (45, 68)], OAK_WALL)           # stave-drying rack, north wall
+cells(11, [(44, 72), (47, 72)], OAK_WALL)           # tool cells flanking the workbench
 frect(12, 40, 66, 53, 76, THATCH_FLOOR)
 mk(11, "script_anchor", "business_k23_coopers_anchor", 47, 70)
 
@@ -865,6 +941,36 @@ CACHE_SHEDS = [
 for (sx0, sy0, sx1, sy1, name, ax, ay) in CACHE_SHEDS:
     shell(12, sx0, sy0, sx1, sy1, DIRT_WALL, DIRT_FLOOR)
     mk(12, "script_anchor", name, ax, ay)
+
+# ======================================================================
+# 3.6 Benches (2026-07-15 interior-detail pass, design 6): existing-material cells, no new
+# art -- placed off the walking spine, in already-authored ambient/plaza floor.
+# ======================================================================
+cells(11, [(18, 71), (21, 71)], OAK_WALL)           # West Garden Court, flanking its anchor
+cells(11, [(60, 29), (62, 29), (68, 29), (70, 29)], GRANITE_WALL)   # Weighhouse frontage plaza
+cells(11, [(117, 29), (119, 29), (123, 29), (125, 29)], OAK_WALL)   # outside the Gilded Gull
+cells(13, [(100, 120), (103, 120)], GRANITE_WALL)   # Gallows Row well plaza
+
+# ======================================================================
+# 3.7 Horse-riders scope call (2026-07-15 interior-detail pass, design 6): a "horse" flavor of
+# the existing generic AnimalActor, tied at hitching posts -- no rider-coupling mechanic (see
+# DocksPopulation.java for the reasoning). This also completes a pre-existing gap: the
+# gazetteer names a carter (dray horse) as one of the ward's Animal Keepers, but only 3 of
+# the 4 were ever spawned.
+# DEV (this pass): the design's literal hitch coordinates for K03/K04 sat ON the building's own
+# border-wall row (y34, solid GRANITE_WALL/TRUDGEON_WALL) or one step inside the door threshold
+# -- moved to the open plaza/street row just outside each door (y33) so the post doesn't
+# silently no-op on top of an existing wall tile and the horse doesn't spawn inside the tavern.
+# K19's hitch was shifted a few tiles off-axis from its door for the same reason: the given
+# coordinates sat directly in one of the door's two walkable columns, and a post there (a wall
+# tile) would have narrowed 18 lodgers' own commute down to a single-tile lane.
+mk(11, "script_anchor", "carter_stand_anchor", 50, 30)
+cells(11, [(124, 33)], OAK_WALL)                    # hitch_gull post
+mk(11, "script_anchor", "hitch_gull_anchor", 125, 33)
+cells(11, [(103, 33)], OAK_WALL)                    # hitch_bilge post
+mk(11, "script_anchor", "hitch_bilge_anchor", 102, 33)
+cells(11, [(108, 51)], OAK_WALL)                    # hitch_rows post
+mk(11, "script_anchor", "hitch_rows_anchor", 109, 51)
 
 # ======================================================================
 # 4. Residential Compounds C1-C4 (blueprint section 4)

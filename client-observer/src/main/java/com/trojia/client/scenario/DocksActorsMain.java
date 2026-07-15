@@ -363,8 +363,8 @@ public final class DocksActorsMain {
 
     private static void printRoster(ActorRegistry registry, HomeRegistry homes, JobRegistry jobs) {
         System.out.println();
-        System.out.printf("%-3s %-22s %-18s %-18s %-5s %-13s %-13s %-10s %s%n",
-                "id", "type", "job(true)", "presents", "home", "homeCell", "position",
+        System.out.printf("%-3s %-22s %-18s %-18s %-5s %-13s %-13s %-13s %-10s %s%n",
+                "id", "type", "job(true)", "presents", "home", "homeCell", "anchorCell", "position",
                 "goalState", "needs(H/R/C/S/D)");
         for (int i = 0; i < registry.size(); i++) {
             Actor actor = registry.get(i);
@@ -374,9 +374,9 @@ public final class DocksActorsMain {
             String cover = JobDisplay.isSecret(job) ? "  <-- secret" : "";
             Home home = homes.get(actor.homeId());
             short[] needs = actor.needsSnapshot();
-            System.out.printf("%-3d %-22s %-18s %-18s %-5d %-13s %-13s %-10s %d/%d/%d/%d/%d%s%n",
+            System.out.printf("%-3d %-22s %-18s %-18s %-5d %-13s %-13s %-13s %-10s %d/%d/%d/%d/%d%s%n",
                     actor.id(), actor.typeId().key(), trueJob, presented, actor.homeId(),
-                    xyz(home.homeCell()), xyz(actor.cell()), actor.goalState(),
+                    xyz(home.homeCell()), xyz(actor.anchorCell()), xyz(actor.cell()), actor.goalState(),
                     needs[0], needs[1], needs[2], needs[3], needs[4], cover);
         }
         System.out.println("homes baked: " + homes.size());

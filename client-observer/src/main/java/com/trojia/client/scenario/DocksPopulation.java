@@ -153,6 +153,21 @@ public final class DocksPopulation implements ScenarioPopulation {
     // (lamp_eelpot_01..04 sit on these) — derived work stands, no dedicated marker.
     private static final int[][] EELPOT_STALLS = {{85, 32}, {97, 32}, {105, 32}, {113, 32}};
 
+    // ---- tavern patron seat anchors (markers `patron_seat_*`, 2026-07-15 interior-detail
+    // pass, design §4) — seated, home-elsewhere residents, not staff.
+    private static final int[][] PATRON_SEATS_GULL =
+            {{117, 37}, {118, 37}, {117, 42}, {118, 42}, {119, 40}, {121, 40}};
+    private static final int[][] PATRON_SEATS_BILGE = {{102, 40}, {101, 39}, {108, 40}, {110, 41}};
+    private static final int[][] PATRON_SEATS_LANTERN = {{59, 71}, {61, 72}, {62, 72}, {65, 73}};
+
+    // ---- the carter's stand + hitching posts (markers, 2026-07-15 interior-detail pass,
+    // design §6 — completes the gazetteer §4.2 Animal Keeper roster: kennelmaster, impound
+    // keeper, goatherd, and now the carter, blessed in the gazetteer but never spawned) --------
+    private static final int[] CARTER_STAND = {50, 30};
+    private static final int[] HITCH_GULL = {125, 33};
+    private static final int[] HITCH_BILGE = {102, 33};
+    private static final int[] HITCH_ROWS = {109, 51};
+
     // ---- Watch posts (markers; K21 + gazetteer §4.2 beat) --------------------------------
     private static final int[] WATCHPOST_K21 = {67, 122};      // z:+13
     private static final int[] PATROL_RISE_TOP = {75, 118};    // z:+13
@@ -421,6 +436,18 @@ public final class DocksPopulation implements ScenarioPopulation {
             Actor gullHost = business(K03_GILDED_GULL, 6);     // K03 large tavern (+3)
             business(K04_BILGE, 4);                            // K04 mid tavern (+2)
             Actor lanternLandlady = business(K05_LANTERN_ROOM, 4);   // (+2)
+
+            // ===================== TAVERN PATRONS (2026-07-15 interior-detail pass, design §4) ==
+            // Bunk-at-seat (see spawnPatrons' Javadoc for why a nextLodging()-homed commuter
+            // never reliably arrives): a patron is a real district resident, not an employee, so
+            // there's no hire() EMPLOYER edge -- just always seated. Type mix matched to each
+            // tavern's own gazetteer character (14 patrons total).
+            spawnPatrons(PATRON_SEATS_GULL, Serf.TYPE, Serf.TYPE, Serf.TYPE, Serf.TYPE,
+                    Wastrel.TYPE, Wastrel.TYPE);          // K03: rumor-tier eavesdropping texture
+            spawnPatrons(PATRON_SEATS_BILGE, Serf.TYPE, Serf.TYPE, Wastrel.TYPE, Wastrel.TYPE);
+            //                                                    // K04: "Wastrel/Serf mixing bowl"
+            spawnPatrons(PATRON_SEATS_LANTERN, Serf.TYPE, Serf.TYPE, Serf.TYPE, Wastrel.TYPE);
+            //                                          // K05: neutral ground, calmer mixed crowd
             Actor harl = business(K06_HARLS_YARD, 8);          // K06 shipyard wrights (+4)
             // K07 Ropewalk: staffCount left at the original 4 -- the +10 warehouse-crew
             // hands are hired explicitly below via the captured foreman (2026-07-14 pass).
@@ -683,6 +710,20 @@ public final class DocksPopulation implements ScenarioPopulation {
                 goat.setOwnerId(goatherd.id());
                 goat.setHomeId(penHome);
             }
+            // The carter (2026-07-15 interior-detail pass, design §6): DOCKS-GAZETTEER.md §4.2
+            // names a carter (dray horse) among the ward's Animal Keepers, but only 3 of the 4
+            // were ever spawned in this fixture — completing that gap, not new scope. A "horse"
+            // flavor of the existing generic AnimalActor (same raws, same policy stack as the
+            // kennel dogs/pen goats above — no rider-coupling mechanic; see the field comments
+            // on HITCH_GULL et al. for the full scope reasoning).
+            Actor carter = spawn(AnimalKeeper.TYPE, CARTER_STAND, ZA);
+            int carterHome = homes.addHome(carter.cell());
+            carter.setHomeId(carterHome);
+            for (int[] hitch : new int[][] {HITCH_GULL, HITCH_BILGE, HITCH_ROWS}) {
+                Actor horse = spawn(AnimalActor.TYPE, hitch, ZA);
+                horse.setOwnerId(carter.id());
+                horse.setHomeId(carterHome);
+            }
 
             // ===================== FERALS (scavengers; ownerless, roost at spawn) ==============
             soloHome(spawn(FeralActor.TYPE, new int[] {30, 31}, ZA));    // Tarwalk west gutter
@@ -864,6 +905,30 @@ public final class DocksPopulation implements ScenarioPopulation {
                 hire(proprietor, staff);
             }
             return proprietor;
+        }
+
+        /**
+         * Tavern patrons (design §4, reworked 2026-07-15 -- see the bunk-crew pattern this
+         * section already uses for K06/K07/K12/etc. and the K30-K32 ship crews): each seat gets
+         * one actor of the matching type spawned <em>directly at the seat</em>, home == anchor
+         * == seat cell ({@link #soloHomeAtCell}, no {@link #setAnchorCell} call needed since
+         * {@code Actor}'s constructor already sets anchorCell = spawn cell). A patron homed via
+         * {@link #nextLodging()} at a distant dwelling and merely anchored at the seat was found
+         * to never reliably arrive: {@code stepToward}'s greedy Chebyshev-reduce + single-level
+         * wall-slide is not a real pathfinder, and the cross-district walk from a rotating
+         * lodging cell into a tavern's furnished interior can walk an actor into a concave wall
+         * pocket it can never route around (confirmed by tracing the exact walk: patron actors
+         * parked permanently a dozen-plus tiles short of their seat, stuck against a wall corner,
+         * across every sampled tick from 2,000 to 40,000). Spawning at the seat removes the
+         * commute (and the pathing hazard) entirely -- a patron is simply always there, exactly
+         * like a ship's crew never actually walks aboard. {@code types.length} must equal
+         * {@code seats.length}.
+         */
+        private void spawnPatrons(int[][] seats, ActorTypeId... types) {
+            for (int i = 0; i < seats.length; i++) {
+                Actor patron = spawn(types[i], seats[i], ZA);
+                soloHomeAtCell(patron);
+            }
         }
 
         /**
