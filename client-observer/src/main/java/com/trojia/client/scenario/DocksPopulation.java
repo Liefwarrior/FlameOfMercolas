@@ -95,6 +95,11 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] PIER_03 = {115, 10};
     private static final int[] PIER_04 = {123, 24};
 
+    // ---- ship-crew hull anchors (markers `ship_k3*_anchor`, z:+11 — 2026-07-14 crew pass) ----
+    private static final int[] SHIP_K30_KESTREL = {66, 20};
+    private static final int[] SHIP_K31_BREGGAS_PROMISE = {64, 13};
+    private static final int[] SHIP_K32_DEEPKEEL = {63, 4};
+
     // ---- establishment anchors (markers `business_k*`, z:+11) ---------------------------
     // DEV (Eli 2026-07-13 sizing pass, DOCKS-GAZETTEER.md 3.1): every K01-K25 anchor
     // below moved to match the resized footprints in gen_docks_surface.py; K26-K29/K34
@@ -211,6 +216,11 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] SALTGATE_PORTERS = {75, 105};     // z:+12 Saltgate roadbed
     private static final int[] WELL_PLAZA = {101, 122};          // z:+13 well_gallows_row_anchor
     private static final int[] ABBEY_LANE = {133, 124};          // z:+13 abbey lane dirt
+    // K06 Harl's Yard timber store yard aisle (border/trect-derived, gen_docks_surface.py
+    // border(11,150,36,159,46) fence + trect log-stack rows at y39/42/45) — sits in the open
+    // aisle between the y39 and y42 stack rows, same "no marker; known street/floor cells"
+    // convention as the rest of this section (2026-07-14 warehouse-crew pass).
+    private static final int[] TIMBER_YARD_STAND = {155, 40};    // z:+11
 
     // The waterfront job cycle: where Band-A dockworker households commute (all z:+11).
     private static final int[][] DOCK_WORK = {BERTH_01, PIER_02, BERTH_02, PIER_01, BERTH_03,
@@ -407,25 +417,113 @@ public final class DocksPopulation implements ScenarioPopulation {
             // Every staffed business: a Shopkeeper living over the shop (home == anchor) plus
             // hired Serf staff lodging across the district's Band-A dwellings and commuting to
             // the counter every shift (pursueAtAnchor round trips + EMPLOYER edges).
-            Actor weighmaster = business(K01_WEIGHHOUSE, 2);   // K01 tariff clerks
-            Actor gullHost = business(K03_GILDED_GULL, 3);     // K03 large tavern
-            business(K04_BILGE, 2);                            // K04 mid tavern
-            Actor lanternLandlady = business(K05_LANTERN_ROOM, 2);
-            Actor harl = business(K06_HARLS_YARD, 4);          // K06 shipyard wrights
-            business(K07_ROPEWALK, 4);                         // K07 rope gang
-            business(K08_BRANNS, 1);                           // K08 chandlery
-            business(K09_PITCHFIELD, 2);                       // K09 tar yard
-            business(K11_SALT_ROW, 3);                         // K11 gutting sheds
-            business(K12_KINGS_BOND, 2);                       // K12 bonded warehouse
-            business(K14_WRACKHOUSE, 2);                       // K14 salvage
-            business(K15_FENNERS, 1);                          // K15 pawn cage
-            business(K18_BATHHOUSE, 2);                        // K18 boilers
-            business(K20_MERLES, 1);                           // K20 boathouse
-            business(K22_NETMENDERS, 2);                       // K22 colonnade
-            business(K23_COOPERS, 2);                          // K23 barrel shop
-            business(SAILMAKER, 2);                            // K26 Sailmaker's Loft
-            business(K27_HARDTACK, 1);                         // K27 the Hardtack Oven
-            business(K28_SLOPCHEST, 1);                        // K28 the Slop-Chest
+            Actor weighmaster = business(K01_WEIGHHOUSE, 4);   // K01 tariff clerks (2026-07-14: +2)
+            Actor gullHost = business(K03_GILDED_GULL, 6);     // K03 large tavern (+3)
+            business(K04_BILGE, 4);                            // K04 mid tavern (+2)
+            Actor lanternLandlady = business(K05_LANTERN_ROOM, 4);   // (+2)
+            Actor harl = business(K06_HARLS_YARD, 8);          // K06 shipyard wrights (+4)
+            // K07 Ropewalk: staffCount left at the original 4 -- the +10 warehouse-crew
+            // hands are hired explicitly below via the captured foreman (2026-07-14 pass).
+            Actor ropewalkForeman = business(K07_ROPEWALK, 4);
+            business(K08_BRANNS, 2);                           // K08 chandlery (+1)
+            business(K09_PITCHFIELD, 2);                       // K09 tar yard (fire-risk, left lean)
+            business(K11_SALT_ROW, 6);                         // K11 gutting sheds (+3)
+            // K12 King's Bond: staffCount left at the original 2 -- the +6 warehouse-crew
+            // porters are hired explicitly below via the captured foreman (2026-07-14 pass).
+            Actor bondForeman = business(K12_KINGS_BOND, 2);
+            business(K14_WRACKHOUSE, 4);                       // K14 salvage (+2)
+            business(K15_FENNERS, 1);                          // K15 pawn cage (deliberately cramped, left untouched)
+            business(K18_BATHHOUSE, 4);                        // K18 boilers (+2)
+            business(K20_MERLES, 2);                           // K20 boathouse (+1)
+            business(K22_NETMENDERS, 4);                       // K22 colonnade (+2)
+            business(K23_COOPERS, 4);                          // K23 barrel shop (+2)
+            business(SAILMAKER, 4);                            // K26 Sailmaker's Loft (+2)
+            business(K27_HARDTACK, 2);                         // K27 the Hardtack Oven (+1)
+            business(K28_SLOPCHEST, 2);                        // K28 the Slop-Chest (+1)
+
+            // K06 Harl's Yard timber store yard — 6 new warehouse-flavored log-stack hands,
+            // hired under Harl (the existing K06 proprietor), anchored in the yard's own
+            // fenced aisle (2026-07-14 warehouse-crew pass, design §5).
+            for (int i = 0; i < 6; i++) {
+                Actor timberHand = spawn(Serf.TYPE, nextLodging(), ZA);
+                timberHand.setHomeId(homes.addHome(timberHand.cell()));
+                timberHand.setAnchorCell(worldCell(TIMBER_YARD_STAND, ZA));
+                hire(harl, timberHand);
+            }
+            // K07 Ropewalk — 10 additional rope-gang hands under the captured foreman
+            // (2026-07-14 warehouse-crew pass, design §5: 4 -> 14).
+            for (int i = 0; i < 10; i++) {
+                Actor ropeHand = spawn(Serf.TYPE, nextLodging(), ZA);
+                ropeHand.setHomeId(homes.addHome(ropeHand.cell()));
+                ropeHand.setAnchorCell(worldCell(K07_ROPEWALK, ZA));
+                hire(ropewalkForeman, ropeHand);
+            }
+            // K12 King's Bond — 6 additional porters under the captured foreman
+            // (2026-07-14 warehouse-crew pass, design §5: 2 -> 8).
+            for (int i = 0; i < 6; i++) {
+                Actor bondHand = spawn(Serf.TYPE, nextLodging(), ZA);
+                bondHand.setHomeId(homes.addHome(bondHand.cell()));
+                bondHand.setAnchorCell(worldCell(K12_KINGS_BOND, ZA));
+                hire(bondForeman, bondHand);
+            }
+
+            // ===== BUNK-AT-WORKPLACE CREWS (2026-07-14 serf-doubling pass, round 2) ===========
+            // Eli's directive: double the ward's serf count (252 -> 504). Reaching that
+            // through ordinary hired staff would require either breaking household.json's
+            // mean-2.4 distribution, overstaffing small/cramped sites past their established
+            // character, or authoring new dwelling anchors (a real map/tmx change) -- all
+            // three off-limits. The K30-K32 ship crews above already used a cleaner escape
+            // hatch: Serf.TYPE spawned directly AT the work anchor, home == anchor == spawn
+            // cell (soloHomeAtCell, no setAnchorCell -- Actor's constructor already sets
+            // anchorCell = spawn cell). That pattern consumes zero household-registry
+            // capacity and needs no new dwelling anchor, so it can be extended far more
+            // aggressively than the first pass used it -- applied here to every genuinely
+            // large/storage/industrial site in the district (all anchors below are the
+            // site's own already-established, already-walkable business anchor constant).
+
+            // K06 Harl's Yard — 24 shipwrights/caulkers/sawyers bunking across the
+            // workshop+timber-yard+slipway complex (the district's biggest multi-part
+            // industrial site after the Ropewalk).
+            for (int i = 0; i < 24; i++) {
+                Actor yardHand = spawn(Serf.TYPE, K06_HARLS_YARD, ZA);
+                soloHomeAtCell(yardHand);
+            }
+            // K07 Ropewalk — 34 more rope-gang hands bunking in the shed itself (576 tiles,
+            // the single largest floor in the district; §3.1 "deliberately elongated").
+            for (int i = 0; i < 34; i++) {
+                Actor ropeGangHand = spawn(Serf.TYPE, K07_ROPEWALK, ZA);
+                soloHomeAtCell(ropeGangHand);
+            }
+            // K12 King's Bond — 20 more porters/night-watch bunking in the sealed, windowless
+            // bonded warehouse (bonded goods need round-the-clock security; 221 tiles).
+            for (int i = 0; i < 20; i++) {
+                Actor bondBunk = spawn(Serf.TYPE, K12_KINGS_BOND, ZA);
+                soloHomeAtCell(bondBunk);
+            }
+            // K11 Salt Row — 8 seasonal herring-curing hands bunking in the gutting
+            // sheds/smokehouse lofts (time-sensitive salt-and-smoke work, dawn starts).
+            for (int i = 0; i < 8; i++) {
+                Actor curingHand = spawn(Serf.TYPE, K11_SALT_ROW, ZA);
+                soloHomeAtCell(curingHand);
+            }
+            // K14 Wrackhouse — 6 salvage haulers bunking rough among the flotsam (fits the
+            // "buys what the sea spits up, no questions" salvage-broker character).
+            for (int i = 0; i < 6; i++) {
+                Actor salvageHand = spawn(Serf.TYPE, K14_WRACKHOUSE, ZA);
+                soloHomeAtCell(salvageHand);
+            }
+            // K23 Cooper & Blockmaker — 6 apprentices bunking in the workshop loft (a live-in
+            // cooper's apprentice is the historically standard arrangement for the trade).
+            for (int i = 0; i < 6; i++) {
+                Actor coopersHand = spawn(Serf.TYPE, K23_COOPERS, ZA);
+                soloHomeAtCell(coopersHand);
+            }
+            // K18 Squall's Bathhouse — 6 boiler stokers bunking by the boilers (the fires
+            // can't be left untended overnight).
+            for (int i = 0; i < 6; i++) {
+                Actor stoker = spawn(Serf.TYPE, K18_BATHHOUSE, ZA);
+                soloHomeAtCell(stoker);
+            }
 
             // K10 Dawnstalls — three self-employed stallholders commuting to the market.
             for (int i = 0; i < 3; i++) {
@@ -442,7 +540,7 @@ public final class DocksPopulation implements ScenarioPopulation {
             // K19 The Rows — the landlord plus ten hammock lodgers who work the waterfront.
             Actor rowsLandlord = spawn(Shopkeeper.TYPE, K19_ROWS, ZA);
             soloHomeAtCell(rowsLandlord);
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 18; i++) {   // 10 -> 18 (2026-07-14 serf-doubling pass, +8)
                 Actor lodger = spawn(Serf.TYPE, K19_ROWS, ZA);
                 lodger.setHomeId(homes.addHome(lodger.cell()));
                 lodger.setAnchorCell(worldCell(nextDockWork(), ZA));
@@ -456,6 +554,39 @@ public final class DocksPopulation implements ScenarioPopulation {
             longStoreHand.setHomeId(homes.addHome(longStoreHand.cell()));
             longStoreHand.setAnchorCell(worldCell(K29_LONGSTORE, ZA));
             hire(longStoreForeman, longStoreHand);
+            // 10 additional Long Store hands (2026-07-14 warehouse-crew pass, design §5:
+            // 1 -> 11; round 2 bumped 6 -> 10). Still commuting, NOT bunk-at-workplace: the
+            // gazetteer explicitly states "no canon night-watchman posted there" for K29,
+            // unlike every other site in this file's bunk-crew section above -- respected.
+            for (int i = 0; i < 10; i++) {
+                Actor extraHand = spawn(Serf.TYPE, nextLodging(), ZA);
+                extraHand.setHomeId(homes.addHome(extraHand.cell()));
+                extraHand.setAnchorCell(worldCell(K29_LONGSTORE, ZA));
+                hire(longStoreForeman, extraHand);
+            }
+
+            // ===================== SHIP CREWS (K30-K32 hulls, 2026-07-14 crew pass) ===========
+            // Crew bunk aboard: Serf spawned directly at the hull anchor, home == anchor ==
+            // deck cell (soloHomeAtCell), no setAnchorCell call -- Actor's constructor already
+            // sets anchorCell = spawn cell, so these are non-commuters by construction (design
+            // §4). Counts scale with hull size. K33 Widow's Grief (condemned derelict): no crew.
+            // Round-2 bump (2026-07-14 serf-doubling pass): these hulls have "no interior
+            // simulation" (§3.1) -- below-decks berths aren't tile-modeled at all, so crew
+            // count isn't actually constrained by the walkable deck footprint the way a real
+            // building's floor space is. Bumped up while keeping the same increasing-scale
+            // ordering (4/6/8 -> 10/16/22).
+            for (int i = 0; i < 10; i++) {   // K30 The Kestrel (smallest, 10x5)
+                Actor crew = spawn(Serf.TYPE, SHIP_K30_KESTREL, ZA);
+                soloHomeAtCell(crew);
+            }
+            for (int i = 0; i < 16; i++) {   // K31 Bregga's Promise (mid, 14x7)
+                Actor crew = spawn(Serf.TYPE, SHIP_K31_BREGGAS_PROMISE, ZA);
+                soloHomeAtCell(crew);
+            }
+            for (int i = 0; i < 22; i++) {   // K32 The Deep Keel (largest, 16x8)
+                Actor crew = spawn(Serf.TYPE, SHIP_K32_DEEPKEEL, ZA);
+                soloHomeAtCell(crew);
+            }
 
             // K13 The Drowned Hold — condemned; two Wastrel squatters, no lamps, no trade.
             Actor holdSquatter = spawn(Wastrel.TYPE, K13_DROWNED_HOLD, ZA);
@@ -483,6 +614,21 @@ public final class DocksPopulation implements ScenarioPopulation {
             household(List.of(gardener1, gardener2));
             makeFarmer(gardener1, MISSION_GARDEN, ZA);
             makeFarmer(gardener2, MISSION_GARDEN, ZA);
+            // 30 additional almshouse lodgers (2026-07-14 serf-doubling pass, bunk-crew
+            // round 2): the Mission's whole canon purpose is housing the ward's destitute
+            // (DOCKS-GAZETTEER.md K17 -- "soup, bunks, a disciple always awake"), and this
+            // fixture only realizes ~13% of the ward's lore-scale population (class
+            // Javadoc) -- there is real headroom here before it reads as implausibly
+            // overcrowded. Typed Serf (not Wastrel): indigent laborers taken in between
+            // casual dock work, not beggars/villains-under-cover. Ten cohesive 3-person
+            // households at the same bunks anchor, no separate dwelling authored (same
+            // bunk-at-workplace escape hatch as the crews above).
+            for (int i = 0; i < 10; i++) {
+                Actor almsLodger1 = spawn(Serf.TYPE, MISSION_BUNKS, ZA);
+                Actor almsLodger2 = spawn(Serf.TYPE, MISSION_BUNKS, ZA);
+                Actor almsLodger3 = spawn(Serf.TYPE, MISSION_BUNKS, ZA);
+                household(List.of(almsLodger1, almsLodger2, almsLodger3));
+            }
 
             // ===================== THE WATCH (gazetteer §4.2 — never a Gullet anchor) ==========
             // K21 watch-post: three Watch quartered at the post, beats at the Rise head.
