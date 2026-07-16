@@ -387,6 +387,44 @@ public sealed abstract class Job {
         }
     }
 
+    /**
+     * Ship crews and shipyard hands of the Docks waterfront (living-docks Pass 4, DF-depth
+     * economy): a genuinely new dock trade riding the existing anchor-cycle, distinct from the
+     * generic {@link Serf.Laborer} haul-quota — a Sailor commutes to and works a ship hull or the
+     * shipyard slipway. Its own family (not a {@link Trade} shop leaf) because a crewman is not a
+     * shopkeeper; the {@code CREW_SHIP} goal kind is legibility only in this milestone.
+     */
+    public static sealed abstract class Maritime extends Job {
+
+        Maritime(JobId id, JobParams params) {
+            super(id, params);
+        }
+
+        /** Crew a ship or work the shipyard — the new maritime dock trade (anchor-cycle). */
+        public static final class Sailor extends Maritime {
+            public static final JobId ID = JobId.of("maritime.sailor");
+
+            public Sailor(JobParams params) {
+                super(ID, params);
+            }
+
+            @Override
+            public void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectAnchorTarget(self, ctx);
+            }
+
+            @Override
+            public void pursue(Actor self, ActorContext ctx) {
+                JobBehaviors.pursueAtAnchor(self, ctx, params());
+            }
+
+            @Override
+            public boolean isComplete(Actor self, ActorContext ctx) {
+                return JobBehaviors.isCompleteAtUnits(self, params());
+            }
+        }
+    }
+
     /** Stall/shop keepers of the Docks set (ACTORS-SPEC.md §4.6). */
     public static sealed abstract class Trade extends Job {
 
@@ -399,6 +437,36 @@ public sealed abstract class Job {
             public static final JobId ID = JobId.of("trade.stallkeep");
 
             public Stallkeep(JobParams params) {
+                super(ID, params);
+            }
+
+            @Override
+            public void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectAnchorTarget(self, ctx);
+            }
+
+            @Override
+            public void pursue(Actor self, ActorContext ctx) {
+                JobBehaviors.pursueAtAnchor(self, ctx, params());
+            }
+
+            @Override
+            public boolean isComplete(Actor self, ActorContext ctx) {
+                return JobBehaviors.isCompleteAtUnits(self, params());
+            }
+        }
+
+        /**
+         * Works a shop counter with access to its special/back-room inventory (living-docks
+         * Pass 4): a hired clerk trade distinct from the self-employed {@link Stallkeep}
+         * proprietor and from a generic {@link Serf.Laborer} — a Trader commutes to a shop anchor
+         * and vends. The {@code VEND_WARES} goal kind is legibility only in this milestone; the
+         * "special inventory" is realized as the shop's restricted-zone gate (F3), not a new verb.
+         */
+        public static final class Trader extends Trade {
+            public static final JobId ID = JobId.of("trade.trader");
+
+            public Trader(JobParams params) {
                 super(ID, params);
             }
 

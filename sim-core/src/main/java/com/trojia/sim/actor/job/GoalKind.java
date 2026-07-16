@@ -22,5 +22,7 @@ public enum GoalKind {
     TEND_BEASTS,
     STAY_NEAR_OWNER,
     SCAVENGE_CIRCUIT,
-    BURGLE_ROOST
+    BURGLE_ROOST,
+    CREW_SHIP,
+    VEND_WARES
 }

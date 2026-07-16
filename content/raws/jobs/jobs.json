@@ -135,6 +135,19 @@
       "secret": false
     },
     {
+      "id": "maritime.sailor",
+      "goalKind": "CREW_SHIP",
+      "priority": 235,
+      "rhythmWindow": [1000, 11000],
+      "rhythmBonus": 60,
+      "workTicksPerUnit": 30,
+      "unitsToComplete": 5,
+      "renew": { "mode": "IMMEDIATE", "cooldownTicks": 0 },
+      "assign": { "serf": 10 },
+      "defaultFor": [],
+      "secret": false
+    },
+    {
       "id": "trade.stallkeep",
       "goalKind": "STALL_CYCLE",
       "priority": 245,
@@ -145,6 +158,19 @@
       "renew": { "mode": "IMMEDIATE", "cooldownTicks": 0 },
       "assign": { "shopkeeper": 100 },
       "defaultFor": ["shopkeeper"],
+      "secret": false
+    },
+    {
+      "id": "trade.trader",
+      "goalKind": "VEND_WARES",
+      "priority": 240,
+      "rhythmWindow": [1000, 10000],
+      "rhythmBonus": 45,
+      "workTicksPerUnit": 20,
+      "unitsToComplete": 5,
+      "renew": { "mode": "IMMEDIATE", "cooldownTicks": 0 },
+      "assign": { "serf": 10 },
+      "defaultFor": [],
       "secret": false
     },
     {

@@ -21,6 +21,7 @@ import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.Need;
 import com.trojia.sim.actor.Payroll;
 import com.trojia.sim.actor.PrisonCellRegistry;
+import com.trojia.sim.actor.RestrictedZone;
 import com.trojia.sim.actor.RestrictedZoneTable;
 import com.trojia.sim.actor.RelationshipKind;
 import com.trojia.sim.actor.RelationshipRegistry;
@@ -441,10 +442,14 @@ public final class DocksPopulation implements ScenarioPopulation {
 
         int arrestHoldCell = worldCell(PRISON_CELLS_K34[0], ZA);
         // Multi-cell prison registry (Pass 10) + bank fixtures (Pass 9), wired from the Phase-1
-        // markers. No restricted zones live yet (F3 gate is unit-tested with synthetic zones).
+        // markers; the restricted-zone table (Pass 4) is baked from the same markers just below.
         BankQueue bankQueue = new BankQueue(toIntArray(bankQueue()));
         PrisonCellRegistry prisonCells = new PrisonCellRegistry(toIntArray(prisonCellsK34()));
-        CivicFixtures fixtures = new CivicFixtures(arrestHoldCell, RestrictedZoneTable.EMPTY,
+        // Living-docks Pass 4 (F3 data): bake the restricted-zone side-table (shipyard/ships ->
+        // sailor, guardhouse -> guard, bank vault -> guard, shop special-inventory -> trader).
+        // Data + accessors only this pass -- no live enforcement reads it yet (the law&order pass
+        // does); the gate itself (canAccess) is unit-tested against these zones.
+        CivicFixtures fixtures = new CivicFixtures(arrestHoldCell, restrictedZoneTable(),
                 vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll);
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
                 relationships, items, bank, world, fixtures);
@@ -510,6 +515,55 @@ public final class DocksPopulation implements ScenarioPopulation {
     public static List<List<Integer>> patrolRoutes() {
         return List.of(worldCells(PATROL_TARWALK, ZA), worldCells(PATROL_QUAY, ZA),
                 worldCells(PATROL_ROPEWYND, ZA));
+    }
+
+    // ---- Living-docks Pass 4: the two new dock trades + the restricted-zone access data. The
+    // anchor sets below are the SAME z:+11 work cells the reassignment pass relabels
+    // serf.laborer -> Sailor/Trader at (so a Sailor's gate is exactly the site a Sailor works),
+    // and the cells the F3 gate tests exercise. Every cell is single-z (the z rule).
+
+    /** Ship-hull + shipyard work anchors: their serf.laborer hands become Sailors; the Sailor gate. */
+    static int[] maritimeTradeAnchors() {
+        return new int[] {
+            worldCell(SHIP_K30_KESTREL, ZA), worldCell(SHIP_K31_BREGGAS_PROMISE, ZA),
+            worldCell(SHIP_K32_DEEPKEEL, ZA), worldCell(K06_HARLS_YARD, ZA),
+            worldCell(TIMBER_YARD_STAND, ZA)};
+    }
+
+    /** Retail-shop counter anchors: their serf.laborer clerks become Traders; the Trader gate. */
+    static int[] traderShopAnchors() {
+        return new int[] {
+            worldCell(K08_BRANNS, ZA), worldCell(K14_WRACKHOUSE, ZA), worldCell(K15_FENNERS, ZA),
+            worldCell(K23_COOPERS, ZA), worldCell(SAILMAKER, ZA), worldCell(K27_HARDTACK, ZA),
+            worldCell(K28_SLOPCHEST, ZA)};
+    }
+
+    /** The guardhouse interior + its six K34 holding cells (z:+11) — the guard-only zone. */
+    private static int[] guardhouseInteriorCells() {
+        int[] cells = new int[1 + PRISON_CELLS_K34.length];
+        cells[0] = worldCell(K34_GUARDHOUSE, ZA);
+        for (int i = 0; i < PRISON_CELLS_K34.length; i++) {
+            cells[i + 1] = worldCell(PRISON_CELLS_K34[i], ZA);
+        }
+        return cells;
+    }
+
+    /**
+     * The baked restricted-zone side-table (F3 data). Four zones, each gated on a PRESENTED job:
+     * the shipyard/ships (Sailor), the guardhouse interior + cells (Guard = watch.patrol), the
+     * bank vault chest (Guard — there is no distinct banker job this pass, so the Watch protects
+     * it), and the shops' special/back-room inventory (Trader). Data only: {@code canAccess}
+     * reads this, but no live enforcement behavior does yet.
+     */
+    public static RestrictedZoneTable restrictedZoneTable() {
+        List<RestrictedZone> zones = new ArrayList<>(4);
+        zones.add(new RestrictedZone(Job.Maritime.Sailor.ID, Actor.NONE, maritimeTradeAnchors()));
+        zones.add(new RestrictedZone(Job.Watch.Patrol.ID, worldCell(K34_GUARDHOUSE, ZA),
+                guardhouseInteriorCells()));
+        zones.add(new RestrictedZone(Job.Watch.Patrol.ID, worldCell(GUARD_POST_BANK_WEST, ZA),
+                new int[] {worldCell(BANK_VAULT_CHEST, ZA)}));
+        zones.add(new RestrictedZone(Job.Trade.Trader.ID, Actor.NONE, traderShopAnchors()));
+        return new RestrictedZoneTable(zones);
     }
 
     /** The mutable spawn walker — all wiring lives here so the outer type stays an immutable handle. */
@@ -1014,6 +1068,12 @@ public final class DocksPopulation implements ScenarioPopulation {
                 }
             }
 
+            // ===================== Dock trades: cut undifferentiated unemployment (Pass 4) =====
+            // Promote the generic serf.laborer hands standing at the ships/shipyard into the new
+            // maritime.sailor trade, and the clerks at the retail shops into trade.trader. Runs
+            // AFTER the default-job loop (so every idle Serf already reads serf.laborer).
+            assignDockTrades();
+
             // ===================== Starting inventory (placeholder ids, §11.2) =================
             for (int i = 0; i < registry.size(); i++) {
                 giveStartingInventory(registry.get(i));
@@ -1129,6 +1189,46 @@ public final class DocksPopulation implements ScenarioPopulation {
         /** Sets one explicit (non-default) job by its raws id — the villain/farmer overrides. */
         private void assignJob(Actor actor, JobId jobId) {
             actor.setJobOrdinal((short) jobs.ordinalOf(jobId));
+        }
+
+        /**
+         * Cut undifferentiated dock unemployment (living-docks Pass 4): relabel the generic
+         * {@code serf.laborer} hands already anchored at the ships/shipyard as {@code
+         * maritime.sailor}, and those already staffing the retail-shop counters as {@code
+         * trade.trader}. This rewrites ONLY the job leaf — every actor keeps its exact existing
+         * spawn cell, home and work anchor — so it can introduce no new cross-z commute (the
+         * z-rule) and no new cell-occupancy pressure (the 2-per-cell cap): a pure relabel of
+         * workers who were already standing at those z:+11 sites. Deterministic ascending-id
+         * scan; villains (secret jobs), shopkeepers ({@code trade.stallkeep}), clergy and farmers
+         * are never {@code serf.laborer}, so they are left untouched.
+         */
+        private void assignDockTrades() {
+            int laborer = jobs.ordinalOf(Job.Serf.Laborer.ID);
+            short sailor = (short) jobs.ordinalOf(Job.Maritime.Sailor.ID);
+            short trader = (short) jobs.ordinalOf(Job.Trade.Trader.ID);
+            int[] shipyards = maritimeTradeAnchors();
+            int[] shops = traderShopAnchors();
+            for (int i = 0; i < registry.size(); i++) {
+                Actor actor = registry.get(i);
+                if (actor.jobOrdinal() != laborer) {
+                    continue;
+                }
+                int anchor = actor.anchorCell();
+                if (containsCell(shipyards, anchor)) {
+                    actor.setJobOrdinal(sailor);
+                } else if (containsCell(shops, anchor)) {
+                    actor.setJobOrdinal(trader);
+                }
+            }
+        }
+
+        private static boolean containsCell(int[] cells, int cell) {
+            for (int c : cells) {
+                if (c == cell) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /** serf.farmer working a plot: a commuter when the plot differs from home. */

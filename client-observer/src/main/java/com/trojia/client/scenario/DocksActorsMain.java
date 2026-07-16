@@ -155,12 +155,19 @@ public final class DocksActorsMain {
     /** Actor-type/job composition — the report's headline numbers, printed deterministically. */
     private static void printComposition(ActorRegistry registry, JobRegistry jobs) {
         Map<String, Integer> byType = new LinkedHashMap<>();
+        Map<String, Integer> byJob = new java.util.TreeMap<>();
         int villains = 0;
         int commuters = 0;
+        int undifferentiated = 0; // serf.laborer + wastrel.streetlife (idle/undifferentiated labor)
         for (int i = 0; i < registry.size(); i++) {
             Actor a = registry.get(i);
             byType.merge(a.typeId().key(), 1, Integer::sum);
             Job job = a.jobOrdinal() >= 0 ? jobs.get(a.jobOrdinal()) : null;
+            String trueJobId = JobDisplay.trueJobId(job);
+            byJob.merge(trueJobId, 1, Integer::sum);
+            if (job != null && (trueJobId.equals("serf.laborer") || trueJobId.equals("wastrel.streetlife"))) {
+                undifferentiated++;
+            }
             if (JobDisplay.isSecret(job)) {
                 villains++;
             }
@@ -169,6 +176,11 @@ public final class DocksActorsMain {
             }
         }
         System.out.println("composition by type: " + byType);
+        System.out.println("composition by job (true): " + byJob);
+        System.out.println("undifferentiated labor (serf.laborer + wastrel.streetlife): "
+                + undifferentiated
+                + "; specialised dock trades: maritime.sailor=" + byJob.getOrDefault("maritime.sailor", 0)
+                + " trade.trader=" + byJob.getOrDefault("trade.trader", 0));
         System.out.println("secret villain jobs under covers: " + villains
                 + "; actors with a distinct work anchor (commuters): " + commuters);
     }

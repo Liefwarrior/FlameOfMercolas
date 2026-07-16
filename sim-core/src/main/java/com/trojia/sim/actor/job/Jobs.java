@@ -37,7 +37,9 @@ public final class Jobs {
             new Registration(Job.Watch.Patrol.ID, (p, c) -> new Job.Watch.Patrol(p)),
             new Registration(Job.Clergy.Shepherd.ID, (p, c) -> new Job.Clergy.Shepherd(p)),
             new Registration(Job.Clergy.Acolyte.ID, (p, c) -> new Job.Clergy.Acolyte(p)),
+            new Registration(Job.Maritime.Sailor.ID, (p, c) -> new Job.Maritime.Sailor(p)),
             new Registration(Job.Trade.Stallkeep.ID, (p, c) -> new Job.Trade.Stallkeep(p)),
+            new Registration(Job.Trade.Trader.ID, (p, c) -> new Job.Trade.Trader(p)),
             new Registration(Job.Husbandry.Keeper.ID, (p, c) -> new Job.Husbandry.Keeper(p)),
             new Registration(Job.Beast.Chattel.ID, (p, c) -> new Job.Beast.Chattel(p)),
             new Registration(Job.Beast.Feral.ID, (p, c) -> new Job.Beast.Feral(p))));
