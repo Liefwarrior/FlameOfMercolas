@@ -1,6 +1,7 @@
 package com.trojia.client.atlas;
 
 import com.badlogic.gdx.files.FileHandle;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 
@@ -27,22 +28,52 @@ import java.util.TreeMap;
  * {@code Nearest} filtering keeps the 16 px pixel-art crisp (TILE-ART-SPEC section 4).
  * Requires a live GL context to construct; {@link #dispose() dispose} when the screen goes
  * away. Immutable after construction (texture disposal aside).
+ *
+ * <p><b>Depth-blur pyramid</b> (the air-depth renderer, Eli 2026-07-15). At load this owns
+ * not one texture but {@link #BLUR_LEVELS}: level 0 is the sharp sheet as before, and each
+ * higher level is the whole sheet re-uploaded with every referenced cell gaussian-blurred
+ * <em>in isolation</em> (edge-clamped, no cross-tile bleed — see {@link TileGaussianBlur}) at
+ * an increasing {@link #SIGMAS} sigma. The world renderer draws a tile seen from {@code d}
+ * z-levels above through empty air from a deeper level, so it reads softer the further down it
+ * lives. The blur is done once here on the CPU at boot, never per frame and never in a shader;
+ * lookups stay a plain region fetch. {@code region(name, variant, 0)} is byte-identical to the
+ * old sharp path, so the top (non-air) render layer is unchanged.
  */
 public final class SheetTileAtlas implements TileAtlas {
 
-    private final Texture texture;
-    private final NavigableMap<String, List<TextureRegion>> regions;
+    /**
+     * Depth-blur pyramid depth including the sharp level 0. Level {@code k} blurs at
+     * {@link #SIGMAS}{@code [k]}; the renderer picks {@code clamp(d-1, 0, BLUR_LEVELS-1)} for a
+     * tile {@code d} z-levels below empty air (deeper ⇒ blurrier), so the nearest look-down
+     * ({@code d==1}) still uses the sharp cell and only its depth-dim marks it as recessed.
+     */
+    static final int BLUR_LEVELS = 5;
+
+    /**
+     * Per-level gaussian sigma, in sheet pixels, indexed by blur level. Index 0 is unused (the
+     * sharp source texture is reused verbatim); the ramp stays gentle — even the deepest level
+     * blurs with a radius (~{@code ceil(3*sigma)}) well under the 16 px tile — so the effect
+     * reads as haze/recession rather than a smear.
+     */
+    static final float[] SIGMAS = {0f, 0.6f, 1.1f, 1.7f, 2.4f};
+
+    /** One texture per blur level; index 0 is the sharp sheet. */
+    private final List<Texture> textures;
+    /** Per-blur-level region interning (index-aligned with {@link #textures}). */
+    private final List<NavigableMap<String, List<TextureRegion>>> regionsByLevel;
     private final SheetAtlasSpec spec;
 
-    private SheetTileAtlas(Texture texture, NavigableMap<String, List<TextureRegion>> regions,
+    private SheetTileAtlas(List<Texture> textures,
+                          List<NavigableMap<String, List<TextureRegion>>> regionsByLevel,
                           SheetAtlasSpec spec) {
-        this.texture = texture;
-        this.regions = regions;
+        this.textures = textures;
+        this.regionsByLevel = regionsByLevel;
         this.spec = spec;
     }
 
     /**
-     * Loads {@code sheetFile} and slices every variant cell of every region in {@code spec}.
+     * Loads {@code sheetFile}, precomputes the {@link #BLUR_LEVELS}-deep depth-blur pyramid,
+     * and slices every variant cell of every region in {@code spec} at each level.
      *
      * <p>Must run on the render thread with a live GL context (boot / {@code create()}).
      *
@@ -58,8 +89,41 @@ public final class SheetTileAtlas implements TileAtlas {
         if (sheetFile == null) {
             throw new IllegalArgumentException("sheetFile must be non-null");
         }
-        Texture texture = new Texture(sheetFile);
+        // Load the sheet CPU-side once so the higher blur levels can be convolved without a
+        // GPU read-back; level 0 uploads it verbatim (identical to the old new Texture(file)).
+        Pixmap sheet = new Pixmap(sheetFile);
+        List<Texture> textures = new ArrayList<>(BLUR_LEVELS);
+        try {
+            textures.add(upload(sheet));
+            for (int level = 1; level < BLUR_LEVELS; level++) {
+                Pixmap blurred = TileGaussianBlur.blurSheet(sheet, spec, SIGMAS[level]);
+                try {
+                    textures.add(upload(blurred));
+                } finally {
+                    blurred.dispose();
+                }
+            }
+        } finally {
+            sheet.dispose();
+        }
+        List<NavigableMap<String, List<TextureRegion>>> regionsByLevel =
+                new ArrayList<>(BLUR_LEVELS);
+        for (Texture texture : textures) {
+            regionsByLevel.add(slice(texture, spec));
+        }
+        return new SheetTileAtlas(textures, regionsByLevel, spec);
+    }
+
+    /** Uploads a pixmap as a Nearest-filtered texture (crisp 16 px pixel-art). */
+    private static Texture upload(Pixmap pixmap) {
+        Texture texture = new Texture(pixmap);
         texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        return texture;
+    }
+
+    /** Interns a region-name -> variant-cell list map against one level's texture. */
+    private static NavigableMap<String, List<TextureRegion>> slice(Texture texture,
+            SheetAtlasSpec spec) {
         NavigableMap<String, List<TextureRegion>> built = new TreeMap<>();
         for (String name : spec.regionNames()) {
             List<TextureRegion> variants = new ArrayList<>();
@@ -69,28 +133,50 @@ public final class SheetTileAtlas implements TileAtlas {
             }
             built.put(name, List.copyOf(variants));
         }
-        return new SheetTileAtlas(texture, built, spec);
+        return built;
     }
 
     @Override
     public TextureRegion region(String regionName) {
-        return region(regionName, 0);
+        return region(regionName, 0, 0);
     }
 
     @Override
     public TextureRegion region(String regionName, int variantIndex) {
-        List<TextureRegion> variants = regionName == null ? null : regions.get(regionName);
+        return region(regionName, variantIndex, 0);
+    }
+
+    @Override
+    public TextureRegion region(String regionName, int variantIndex, int blurLevel) {
+        int level = clampLevel(blurLevel);
+        List<TextureRegion> variants =
+                regionName == null ? null : regionsByLevel.get(level).get(regionName);
         if (variants == null) {
             throw new IllegalArgumentException(
-                    "unknown region \"" + regionName + "\" (have " + regions.size() + ")");
+                    "unknown region \"" + regionName + "\" (have "
+                            + regionsByLevel.get(level).size() + ")");
         }
         // Defensive fold so any (even negative) index resolves to a real cell.
         return variants.get(Math.floorMod(variantIndex, variants.size()));
     }
 
     @Override
+    public int blurLevelCount() {
+        return textures.size();
+    }
+
+    private int clampLevel(int blurLevel) {
+        if (blurLevel < 0) {
+            return 0;
+        }
+        int last = textures.size() - 1;
+        return blurLevel > last ? last : blurLevel;
+    }
+
+    @Override
     public int variantCount(String regionName) {
-        List<TextureRegion> variants = regionName == null ? null : regions.get(regionName);
+        List<TextureRegion> variants =
+                regionName == null ? null : regionsByLevel.get(0).get(regionName);
         return variants == null ? 0 : variants.size();
     }
 
@@ -101,22 +187,24 @@ public final class SheetTileAtlas implements TileAtlas {
 
     @Override
     public boolean contains(String regionName) {
-        return regionName != null && regions.containsKey(regionName);
+        return regionName != null && regionsByLevel.get(0).containsKey(regionName);
     }
 
     /** All region names in ascending ASCII order; unmodifiable. */
     public NavigableSet<String> regionNames() {
-        return regions.navigableKeySet();
+        return regionsByLevel.get(0).navigableKeySet();
     }
 
-    /** The owned sheet texture (regions reference it). */
+    /** The owned sharp (level 0) sheet texture (regions reference it). */
     public Texture texture() {
-        return texture;
+        return textures.get(0);
     }
 
-    /** Disposes the owned texture; every handed-out region dangles afterwards. */
+    /** Disposes every blur-level texture; all handed-out regions dangle afterwards. */
     @Override
     public void dispose() {
-        texture.dispose();
+        for (Texture texture : textures) {
+            texture.dispose();
+        }
     }
 }

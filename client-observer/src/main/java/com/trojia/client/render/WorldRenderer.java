@@ -2,7 +2,6 @@ package com.trojia.client.render;
 
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.trojia.client.art.TileArtResolver;
 import com.trojia.client.atlas.TileAtlas;
 import com.trojia.client.camera.MapCamera;
@@ -14,6 +13,7 @@ import com.trojia.sim.world.TileForm;
 import com.trojia.sim.world.World;
 
 import java.util.Locale;
+import java.util.function.IntPredicate;
 
 /**
  * Draws one z-level of a {@link World} as atlas tiles (M1 Behavior 2). Culls to
@@ -70,13 +70,49 @@ import java.util.Locale;
  * axis the resolver keys on, pinned to 0 here) — variety never changes which region name
  * resolves, only which of its cells is drawn.
  *
+ * <p><b>Air-depth "look-down" pass</b> (Eli 2026-07-15). Empty-air cells at the camera's
+ * z-level are no longer left black. Instead of the two {@code continue} cases below (a
+ * {@link TileForm#VOID} cell, or a dry {@link TileForm#OPEN} cell with no pooled fluid), the
+ * renderer walks downward — {@code z-1, z-2, …} up to {@link #MAX_LOOKDOWN} levels — for the
+ * first cell that <em>would</em> draw something (a base tile or a fluid). If found at depth
+ * {@code d = z - z'}, that lower cell is drawn at the same screen quad through the identical
+ * base-tile / fluid-overlay resolution as the top layer, but from a precomputed gaussian-blur
+ * atlas level (deeper ⇒ blurrier, {@link TileAtlas#region(String, int, int)}) and multiplied
+ * by a subtle depth-dim / cool-haze factor so it reads recessed. Nothing found within
+ * {@link #MAX_LOOKDOWN} (or down to the world floor) stays black exactly as before. This pass
+ * is presentation-only — like the rest of the renderer it never feeds {@code WorldHasher}, so
+ * it carries no determinism constraint.
+ *
  * <p>Reuses one {@link TileCursor} across the whole draw call, per {@code World.cursor()}'s
- * "callers keep and reuse it" contract — no per-tile cursor allocation.
+ * "callers keep and reuse it" contract — no per-tile cursor allocation. The look-down probe
+ * moves that same cursor down the z-column and the next tile's {@code moveTo} resets it.
  */
 public final class WorldRenderer {
 
     /** Appearance bucket used for every tile in v0 (F5 will read real charge state). */
     private static final int APPEARANCE_BUCKET = 0;
+
+    /**
+     * How many z-levels below the camera the air-depth pass searches for a tile to show
+     * through empty air. Capped so a deep air column costs a bounded probe and never reads a
+     * silly distance down; beyond this (or past the world floor) the cell stays black.
+     */
+    static final int MAX_LOOKDOWN = 8;
+
+    /** Sentinel from {@link #findLookdownZ}: no drawable cell within reach (stay black). */
+    static final int LOOKDOWN_NONE = -1;
+
+    /** Per-depth brightness base: a look-down tile {@code d} levels down keeps {@code 0.90^d}. */
+    private static final double DIM_BASE = 0.90;
+
+    /** Floor on the depth-dim brightness so the deepest look-down never goes murky-dark. */
+    private static final float DIM_FLOOR = 0.55f;
+
+    /** Faint cool (blue-ward) haze added per depth level, capped by {@link #COOL_MAX}. */
+    private static final float COOL_PER_DEPTH = 0.012f;
+
+    /** Cap on the cumulative cool haze, so the tint stays a hint of depth, never a blue cast. */
+    private static final float COOL_MAX = 0.10f;
 
     /**
      * The {@code formOrdinal} argument {@link #cosmeticVariant} receives for fluid-overlay
@@ -137,14 +173,10 @@ public final class WorldRenderer {
             for (int tx = minX; tx <= maxX; tx++) {
                 cursor.moveTo(PackedPos.pack(tx, ty, z));
                 TileForm form = cursor.form();
-                if (form == TileForm.VOID) {
-                    continue;
-                }
-                int fluidBits = cursor.fluidBits();
-                boolean hasBaseTile = form != TileForm.OPEN;
-                if (!hasBaseTile && (fluidBits & FLUID_DEPTH_MASK) == 0) {
-                    continue; // dry OPEN air: nothing to draw, as before
-                }
+                int fluidBits = form == TileForm.VOID ? 0 : cursor.fluidBits();
+                boolean hasBaseTile = form != TileForm.VOID && form != TileForm.OPEN;
+                boolean emptyAir = form == TileForm.VOID
+                        || (!hasBaseTile && (fluidBits & FLUID_DEPTH_MASK) == 0);
 
                 int screenXTopLeft = camera.tileToScreenX(tx);
                 int screenYTopLeftDown = camera.tileToScreenY(ty);
@@ -153,46 +185,172 @@ public final class WorldRenderer {
                 // default projection is y-up from the bottom-left, so flip per tile.
                 float drawY = viewportHeight - screenYTopLeftDown - span;
 
-                if (hasBaseTile) {
-                    int materialLane = cursor.materialId();
-                    String materialId = materials.get(materialLane).key();
-                    String formToken = form.name().toLowerCase(Locale.ROOT);
-                    String regionName =
-                            artResolver.regionName(materialId, formToken, APPEARANCE_BUCKET);
-                    if (!atlas.contains(regionName)) {
-                        regionName = artResolver.missingRegionName();
+                if (!emptyAir) {
+                    // TOP LAYER — the cell at the camera's own z, drawn sharp and undimmed
+                    // exactly as before (blur level 0, no depth shade).
+                    if (hasBaseTile) {
+                        BaseTilePlan plan = baseTilePlan(cursor, tx, ty, z);
+                        setTint(batch, plan.materialTintRgb());
+                        batch.draw(atlas.region(plan.regionName(), plan.variant(), 0),
+                                drawX, drawY, span, span);
                     }
-                    // Pick a cosmetic variant deterministically from the tile's world position
-                    // (TILE-ART-SPEC section 12). A single-cell (homogeneous) region always
-                    // draws variant 0 — the senior-level-design default for smooth surfaces.
-                    // A PERIODIC region draws a fixed regular laid-paver weave (the sidewalk /
-                    // civic flagstone). Otherwise the material/form-salted position hash scatters
-                    // variety, the intended look for deliberately-rough surfaces only. All three
-                    // are pure functions of world position — presentation-only, never read by
-                    // WorldHasher, identical every run and machine.
-                    int variantCount = atlas.variantCount(regionName);
-                    int variant = pickVariant(regionName, variantCount, tx, ty, z, materialLane,
-                            form.ordinal());
-                    TextureRegion region = atlas.region(regionName, variant);
-
-                    setTint(batch, artResolver.materialTintRgb(materialId));
-                    batch.draw(region, drawX, drawY, span, span);
+                    // Fluid overlay pass: over the base tile, or alone on a fluid-bearing OPEN
+                    // cell (the harbor's water column shows a surface on every z-slice it
+                    // occupies, not just where it touches a floor).
+                    FluidOverlay overlay = fluidOverlay(fluidBits, tx, ty, z, fluids, artResolver,
+                            atlas);
+                    if (overlay != null) {
+                        setOverlayColor(batch, overlay.tintRgb(), overlay.alphaQ8());
+                        batch.draw(atlas.region(overlay.regionName(), overlay.variant(), 0),
+                                drawX, drawY, span, span);
+                    }
+                    continue;
                 }
 
-                // Fluid overlay pass: over the base tile, or alone on a fluid-bearing OPEN
-                // cell (the harbor's water column shows a surface on every z-slice it
-                // occupies, not just where it touches a floor).
-                FluidOverlay overlay = fluidOverlay(fluidBits, tx, ty, z, fluids, artResolver,
-                        atlas);
+                // AIR-DEPTH LOOK-DOWN — this cell is empty air, so peer down the z-column for
+                // the nearest cell that would draw something and show it blurred + dimmed.
+                final int fx = tx;
+                final int fy = ty;
+                int foundZ = findLookdownZ(z, MAX_LOOKDOWN, zPrime -> {
+                    cursor.moveTo(PackedPos.pack(fx, fy, zPrime));
+                    return cellDrawsSomething(cursor);
+                });
+                if (foundZ == LOOKDOWN_NONE) {
+                    continue; // nothing within reach: stay black, exactly as before
+                }
+                int depth = z - foundZ;
+                int blurLevel = blurLevelFor(depth);
+                float dim = depthDim(depth);
+                float cool = Math.min(COOL_MAX, COOL_PER_DEPTH * depth);
+                // A faint blue-ward haze: pull red down most, green half as much, leave blue.
+                float shadeR = dim * (1f - cool);
+                float shadeG = dim * (1f - 0.5f * cool);
+                float shadeB = dim;
+
+                cursor.moveTo(PackedPos.pack(tx, ty, foundZ));
+                TileForm lowForm = cursor.form();
+                int lowFluidBits = cursor.fluidBits();
+                if (lowForm != TileForm.OPEN) { // solid form -> has a base tile (never VOID here)
+                    BaseTilePlan plan = baseTilePlan(cursor, tx, ty, foundZ);
+                    setShadedTint(batch, plan.materialTintRgb(), shadeR, shadeG, shadeB);
+                    batch.draw(atlas.region(plan.regionName(), plan.variant(), blurLevel),
+                            drawX, drawY, span, span);
+                }
+                FluidOverlay overlay = fluidOverlay(lowFluidBits, tx, ty, foundZ, fluids,
+                        artResolver, atlas);
                 if (overlay != null) {
-                    setOverlayColor(batch, overlay.tintRgb(), overlay.alphaQ8());
-                    batch.draw(atlas.region(overlay.regionName(), overlay.variant()),
+                    setShadedOverlayColor(batch, overlay.tintRgb(), overlay.alphaQ8(),
+                            shadeR, shadeG, shadeB);
+                    batch.draw(atlas.region(overlay.regionName(), overlay.variant(), blurLevel),
                             drawX, drawY, span, span);
                 }
             }
         }
         // Restore so downstream draws in the same batch (actors, HUD) are untinted.
         batch.setColor(Color.WHITE);
+    }
+
+    /**
+     * Whether the cell the cursor is currently positioned on would draw anything in the top
+     * layer — the exact same "not one of the two {@code continue} cases" test the main loop
+     * applies at the camera z, reused by the air-depth look-down probe. A {@link TileForm#VOID}
+     * cell draws nothing; any solid form draws a base tile; a {@link TileForm#OPEN} cell draws
+     * only when its FLUID lane carries pooled depth.
+     */
+    static boolean cellDrawsSomething(TileCursor cur) {
+        TileForm form = cur.form();
+        if (form == TileForm.VOID) {
+            return false;
+        }
+        if (form != TileForm.OPEN) {
+            return true;
+        }
+        return (cur.fluidBits() & FLUID_DEPTH_MASK) != 0;
+    }
+
+    /**
+     * Walks the z-column downward from just below {@code viewZ} for the first level whose cell
+     * draws something, capping the search at {@code maxLookdown} levels and never probing below
+     * the world floor ({@code z' >= 0}). Pure over its {@code drawsAt} predicate — the renderer
+     * passes a lambda that repositions the cursor and calls {@link #cellDrawsSomething}, and the
+     * headless test passes a synthetic column — so it unit-tests with no world or GL.
+     *
+     * @param viewZ       the camera's z-level (the empty-air cell's level)
+     * @param maxLookdown how many levels down to search, {@code >= 0}
+     * @param drawsAt     tests whether the cell at a given z' would draw something
+     * @return the nearest z' at or above the floor whose cell draws, or {@link #LOOKDOWN_NONE}
+     */
+    static int findLookdownZ(int viewZ, int maxLookdown, IntPredicate drawsAt) {
+        int floor = Math.max(0, viewZ - maxLookdown);
+        for (int zPrime = viewZ - 1; zPrime >= floor; zPrime--) {
+            if (drawsAt.test(zPrime)) {
+                return zPrime;
+            }
+        }
+        return LOOKDOWN_NONE;
+    }
+
+    /**
+     * The blur-pyramid level for a tile {@code depth} z-levels below empty air:
+     * {@code clamp(depth-1, 0, atlas.blurLevelCount()-1)}. So the nearest look-down
+     * ({@code depth 1}) still draws the sharp cell (level 0) and only its depth-dim recesses it,
+     * and each level deeper steps one blur level up until the pyramid is exhausted. A pack with
+     * no blur pyramid (placeholder / test fakes report {@code blurLevelCount() == 1}) always
+     * clamps to 0.
+     */
+    private int blurLevelFor(int depth) {
+        int last = atlas.blurLevelCount() - 1;
+        int level = depth - 1;
+        if (level < 0) {
+            return 0;
+        }
+        return level > last ? last : level;
+    }
+
+    /**
+     * The depth-dim brightness for a look-down tile {@code depth} levels down:
+     * {@code max(DIM_FLOOR, DIM_BASE^depth)}. Subtle and monotone — deeper reads hazier /
+     * recessed — with a floor so the deepest tiles never fall to murky darkness.
+     */
+    static float depthDim(int depth) {
+        float f = (float) Math.pow(DIM_BASE, depth);
+        return Math.max(DIM_FLOOR, f);
+    }
+
+    /**
+     * Resolves the base tile of the cell the cursor is positioned on — material lane &rarr;
+     * raws key &rarr; region name &rarr; cosmetic variant + secondary tint — into a GL-free
+     * plan. Shared verbatim by the top layer and the air-depth look-down so a lower cell
+     * resolves identically to how it would draw at the camera's own z (only the blur level and
+     * depth shade differ at the draw). The caller guarantees a base-tile-bearing cell (a solid,
+     * non-VOID form).
+     *
+     * <p>Variant pick is the same deterministic position hash as before (TILE-ART-SPEC section
+     * 12): a single-cell region always draws variant 0, a PERIODIC region a fixed laid-paver
+     * weave, otherwise the material/form-salted position hash — all pure functions of world
+     * position, presentation-only, never read by {@code WorldHasher}.
+     */
+    private BaseTilePlan baseTilePlan(TileCursor cur, int tx, int ty, int z) {
+        TileForm form = cur.form();
+        int materialLane = cur.materialId();
+        String materialId = materials.get(materialLane).key();
+        String formToken = form.name().toLowerCase(Locale.ROOT);
+        String regionName = artResolver.regionName(materialId, formToken, APPEARANCE_BUCKET);
+        if (!atlas.contains(regionName)) {
+            regionName = artResolver.missingRegionName();
+        }
+        int variantCount = atlas.variantCount(regionName);
+        int variant = pickVariant(regionName, variantCount, tx, ty, z, materialLane,
+                form.ordinal());
+        return new BaseTilePlan(regionName, variant, artResolver.materialTintRgb(materialId));
+    }
+
+    /**
+     * One cell's resolved base-tile draw: which region cell to draw and the material's optional
+     * secondary tint ({@link TileArtResolver#NO_TINT} when the pre-colored cell draws as
+     * authored). The blur level and any depth shade are applied at the draw site, not here.
+     */
+    record BaseTilePlan(String regionName, int variant, int materialTintRgb) {
     }
 
     /**
@@ -280,6 +438,46 @@ public final class WorldRenderer {
         float g = ((rgb >> 8) & 0xFF) / 255f;
         float b = (rgb & 0xFF) / 255f;
         batch.setColor(r, g, b, 1f);
+    }
+
+    /**
+     * Like {@link #setTint} but for the air-depth look-down: the material tint (white for
+     * {@link TileArtResolver#NO_TINT}) times the per-channel depth shade
+     * ({@code shadeR/G/B} are {@code depthDim} with a faint cool bias), so the lower tile draws
+     * dimmed and slightly cooled on top of its own colour. Full opacity — the blur level, not
+     * alpha, carries the softness.
+     */
+    private static void setShadedTint(SpriteBatch batch, int rgb,
+            float shadeR, float shadeG, float shadeB) {
+        float r = 1f;
+        float g = 1f;
+        float b = 1f;
+        if (rgb != TileArtResolver.NO_TINT) {
+            r = ((rgb >> 16) & 0xFF) / 255f;
+            g = ((rgb >> 8) & 0xFF) / 255f;
+            b = (rgb & 0xFF) / 255f;
+        }
+        batch.setColor(r * shadeR, g * shadeG, b * shadeB, 1f);
+    }
+
+    /**
+     * Like {@link #setOverlayColor} but for a fluid seen through empty air: the fluid tint
+     * (white for {@link TileArtResolver#NO_TINT}) times the per-channel depth shade, at the
+     * fluid's own per-depth alpha. So water glimpsed several z-levels down blurs and dims by the
+     * same depth factor as the terrain beneath it, keeping the look-down layer coherent.
+     */
+    private static void setShadedOverlayColor(SpriteBatch batch, int tintRgb, int alphaQ8,
+            float shadeR, float shadeG, float shadeB) {
+        float a = alphaQ8 / ALPHA_Q8_ONE;
+        float r = 1f;
+        float g = 1f;
+        float b = 1f;
+        if (tintRgb != TileArtResolver.NO_TINT) {
+            r = ((tintRgb >> 16) & 0xFF) / 255f;
+            g = ((tintRgb >> 8) & 0xFF) / 255f;
+            b = (tintRgb & 0xFF) / 255f;
+        }
+        batch.setColor(r * shadeR, g * shadeG, b * shadeB, a);
     }
 
     /**
