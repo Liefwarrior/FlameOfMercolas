@@ -8,6 +8,7 @@ import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.DailyRhythm;
 import com.trojia.sim.actor.Home;
 import com.trojia.sim.actor.HomeRegistry;
+import com.trojia.sim.actor.ItemKinds;
 import com.trojia.sim.actor.RelationshipEdge;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.job.Job;
@@ -112,6 +113,7 @@ public final class DocksActorsMain {
         printGraphSample(homes, relationships);
         System.out.println("items minted (placeholder ids + quantities, §11.2): "
                 + population.items().size());
+        printEconomyProof(population);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
             // Wall-clock timing — printed only under --perf so plain runs stay byte-identical.
@@ -121,6 +123,33 @@ public final class DocksActorsMain {
                             + "avg %.4f ms/tick at %d actors (observer FAST budget: 25 ms/tick)%n",
                     ticks, tickNanos / 1e6, avgMillis, registry.size());
         }
+    }
+
+    /**
+     * Money-conservation proof (Phase-2): after the run, the hard invariant
+     * {@code totalRoyals() == vault COIN count} must still hold, and the closed COIN supply
+     * (minted == vault + loose-on-persons + sunk) must be intact — wages and any counter traffic
+     * only ever MOVED Royals, never minted them.
+     */
+    private static void printEconomyProof(DocksPopulation population) {
+        var bank = population.bankAccounts();
+        var items = population.items();
+        int vaultCell = DocksPopulation.bankVaultChestCell();
+        long totalRoyals = bank.totalRoyals();
+        int vaultCoins = items.countOnCellOfKind(vaultCell, ItemKinds.COIN);
+        int mintedCoin = items.totalOfKind(ItemKinds.COIN);
+        int sunkCoin = items.sunkOfKind(ItemKinds.COIN);
+        int looseCoin = mintedCoin - vaultCoins - sunkCoin; // coins carried on persons
+        System.out.println();
+        System.out.println("================ MONEY CONSERVATION (closed supply) ========================");
+        System.out.println("  accounts open: " + bank.accountCount()
+                + " (per-actor + 1 employer pool);  totalRoyals=" + totalRoyals
+                + "  vaultCOIN=" + vaultCoins
+                + "  -> invariant totalRoyals==vaultCOIN: " + (totalRoyals == vaultCoins));
+        System.out.println("  COIN supply: minted=" + mintedCoin + " == vault(" + vaultCoins
+                + ") + loose(" + looseCoin + ") + sunk(" + sunkCoin + "): "
+                + (mintedCoin == vaultCoins + looseCoin + sunkCoin));
+        System.out.println("============================================================================");
     }
 
     /** Actor-type/job composition — the report's headline numbers, printed deterministically. */

@@ -10,6 +10,8 @@ import com.trojia.sim.actor.ActorTypeStatsTable;
 import com.trojia.sim.actor.ActorTypes;
 import com.trojia.sim.actor.ActorsSystem;
 import com.trojia.sim.actor.BankLedger;
+import com.trojia.sim.actor.BankQueue;
+import com.trojia.sim.actor.CivicFixtures;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.HouseholdFormer;
 import com.trojia.sim.actor.HouseholdRaws;
@@ -17,6 +19,8 @@ import com.trojia.sim.actor.HouseholdRawsLoader;
 import com.trojia.sim.actor.ItemKinds;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.Need;
+import com.trojia.sim.actor.Payroll;
+import com.trojia.sim.actor.PrisonCellRegistry;
 import com.trojia.sim.actor.RestrictedZoneTable;
 import com.trojia.sim.actor.RelationshipKind;
 import com.trojia.sim.actor.RelationshipRegistry;
@@ -359,6 +363,11 @@ public final class DocksPopulation implements ScenarioPopulation {
         return items;
     }
 
+    /** The Royals ledger (Phase-2 economy) — for the money-conservation proof in the run harness. */
+    public BankLedger bankAccounts() {
+        return system.bankAccounts();
+    }
+
     @Override
     public JobRegistry jobs() {
         return jobs;
@@ -424,15 +433,21 @@ public final class DocksPopulation implements ScenarioPopulation {
                 householdRaws, worldSeed, world);
         builder.populate();
 
-        // Phase-0 economy bake: one account per actor (accountId == actorId) + one stamped ID_CARD
-        // per citizen. No live bank building yet — verbs are exercised by unit tests, not here.
-        CivicAccounts.bake(registry, bank, items);
+        // Phase-2 economy bake (Pass 9): open + tier-seed one account per actor, mint ID cards,
+        // fund the finite employer pool, and stock the vault chest so totalRoyals() == vault COIN
+        // count. Returns the payroll the sim ticks wages from. Closed supply — all minting is here.
+        int vaultChestCell = bankVaultChestCell();
+        Payroll payroll = CivicAccounts.bake(registry, bank, items, vaultChestCell);
 
         int arrestHoldCell = worldCell(PRISON_CELLS_K34[0], ZA);
-        // No restricted zones are wired into the live district in Phase 0 (F3 resolver/gate are
-        // exercised by unit tests with synthetic zones); the seam is threaded here regardless.
+        // Multi-cell prison registry (Pass 10) + bank fixtures (Pass 9), wired from the Phase-1
+        // markers. No restricted zones live yet (F3 gate is unit-tested with synthetic zones).
+        BankQueue bankQueue = new BankQueue(toIntArray(bankQueue()));
+        PrisonCellRegistry prisonCells = new PrisonCellRegistry(toIntArray(prisonCellsK34()));
+        CivicFixtures fixtures = new CivicFixtures(arrestHoldCell, RestrictedZoneTable.EMPTY,
+                vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll);
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
-                relationships, items, bank, world, arrestHoldCell, RestrictedZoneTable.EMPTY);
+                relationships, items, bank, world, fixtures);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers);
     }
@@ -448,6 +463,15 @@ public final class DocksPopulation implements ScenarioPopulation {
         List<Integer> out = new ArrayList<>(mapXYs.length);
         for (int[] xy : mapXYs) {
             out.add(worldCell(xy, mapZ));
+        }
+        return out;
+    }
+
+    /** Unboxes an ordered {@code List<Integer>} of world cells to the {@code int[]} the sim seams take. */
+    private static int[] toIntArray(List<Integer> cells) {
+        int[] out = new int[cells.size()];
+        for (int i = 0; i < cells.size(); i++) {
+            out[i] = cells.get(i);
         }
         return out;
     }

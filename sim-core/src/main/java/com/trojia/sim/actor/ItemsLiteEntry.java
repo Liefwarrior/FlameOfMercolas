@@ -19,13 +19,17 @@ package com.trojia.sim.actor;
  * @param locationCarriedBy  carrying actor id, or {@link Actor#NONE}
  * @param locationCell       cell it sits on, or {@link Actor#NONE} — mutually
  *                          exclusive with {@code locationCarriedBy}
- * @param quantity           stack count; {@code >= 1}
+ * @param quantity           stack count; {@code >= 1}. An {@code int} (not a
+ *                          {@code short}): a vault COIN stack holds a whole
+ *                          district's Royals ({@link BankLedger#totalRoyals()}),
+ *                          which a {@code short}'s 32767 ceiling would clamp and
+ *                          silently destroy specie (Phase-2 STEP A money-width fix)
  * @param accountId          bank account this item authorizes (ID_CARD), else
  *                          {@link Actor#NONE}
  */
 public record ItemsLiteEntry(
         int itemId, short kindId, int ownerActorId,
-        int locationCarriedBy, int locationCell, short quantity, int accountId) {
+        int locationCarriedBy, int locationCell, int quantity, int accountId) {
 
     public ItemsLiteEntry {
         if (locationCarriedBy != Actor.NONE && locationCell != Actor.NONE) {
@@ -43,7 +47,7 @@ public record ItemsLiteEntry(
 
     /** Convenience for the common non-account item (stamps {@link Actor#NONE}). */
     public ItemsLiteEntry(int itemId, short kindId, int ownerActorId,
-            int locationCarriedBy, int locationCell, short quantity) {
+            int locationCarriedBy, int locationCell, int quantity) {
         this(itemId, kindId, ownerActorId, locationCarriedBy, locationCell, quantity, Actor.NONE);
     }
 }

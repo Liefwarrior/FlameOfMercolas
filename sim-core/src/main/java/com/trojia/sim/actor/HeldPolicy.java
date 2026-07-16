@@ -33,7 +33,12 @@ public final class HeldPolicy implements BehaviorPolicy {
             release(self);
             return;
         }
-        int holdCell = ctx.arrestHoldCell();
+        // Escort to the prison cell assigned at arrest (Phase-2 STEP C, Pass 10); fall back to the
+        // single well-known K34 cell when no multi-cell registry is wired (or it was full), and to
+        // "hold in place" when neither is set (the world-less/unwired degradation the scalar had).
+        int holdCell = self.assignedHoldCell() != Actor.NONE
+                ? self.assignedHoldCell()
+                : ctx.arrestHoldCell();
         if (holdCell != Actor.NONE) {
             self.stepAlongRoute(holdCell, true, ctx::isWalkable, ctx.occupancy());
         }
@@ -42,6 +47,7 @@ public final class HeldPolicy implements BehaviorPolicy {
 
     private void release(Actor self) {
         self.setStatus(StatusBit.HELD, false);
+        self.setAssignedHoldCell(Actor.NONE); // free the prison-cell slot for the next arrest
         self.setGoalState(GoalState.SELECTING);
         self.setGoalTarget(TargetKind.NONE, Actor.NONE);
         self.setGoalWorkTicks(0);

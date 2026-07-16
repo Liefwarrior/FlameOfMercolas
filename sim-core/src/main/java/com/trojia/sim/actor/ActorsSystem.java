@@ -40,14 +40,16 @@ public final class ActorsSystem implements SimulationSystem {
     private final ItemsLiteRegistry items;
     /** The Royals ledger (Phase-0 economy F2); empty (no accounts) for the world-less bootstrap. */
     private final BankLedger bank;
-    /** The baked restricted-zone side-table (Phase-0 job/access F3); {@code EMPTY} where unwired. */
-    private final RestrictedZoneTable zones;
+    /**
+     * The baked civic seams (Phase-2 Passes 9-10): arrest hold-cell + restricted zones (Phase 0)
+     * plus the bank (vault/banker/queue), the multi-cell prison registry, and the payroll table.
+     * {@link CivicFixtures#NONE} for the world-less bootstrap and economy-free tests.
+     */
+    private final CivicFixtures fixtures;
     /** Nullable — {@code null} for the world-less bootstrap ({@code ActorsDemoMain}). */
     private final World world;
     /** Reused flyweight cursor for {@code isWalkable} reads; {@code null} iff {@link #world} is. */
     private final TileCursor cursor;
-    /** The baked arrest holding-cell (ARREST-SPEC addendum), or {@code Actor.NONE} if unwired. */
-    private final int arrestHoldCell;
     /** Per-actor per-tick draw-index counter (§2.2's "one counter per actor"); reset each tick. */
     private int[] drawCounters = new int[0];
     /**
@@ -63,7 +65,7 @@ public final class ActorsSystem implements SimulationSystem {
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items) {
         this(worldSeed, typeStats, jobs, registry, homes, relationships, items, new BankLedger(),
-                null, Actor.NONE, RestrictedZoneTable.EMPTY);
+                null, CivicFixtures.NONE);
     }
 
     /**
@@ -75,21 +77,33 @@ public final class ActorsSystem implements SimulationSystem {
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, World world) {
         this(worldSeed, typeStats, jobs, registry, homes, relationships, items, new BankLedger(),
-                world, Actor.NONE, RestrictedZoneTable.EMPTY);
+                world, CivicFixtures.NONE);
     }
 
     /**
-     * Full constructor: additionally wires the baked {@code bank} ledger (Phase-0 economy F2), the
-     * {@code arrestHoldCell} (ARREST-SPEC addendum — the one well-known K34 Guardhouse cell {@link
-     * HeldPolicy} escorts arrested actors to), and the {@code zones} restricted-zone side-table
-     * (Phase-0 job/access F3). {@code Actor.NONE}/{@link RestrictedZoneTable#EMPTY}/an empty {@link
-     * BankLedger} mean "unwired" (the convenience constructors above): {@link HeldPolicy} holds in
-     * place, no cell is restricted, and no account exists.
+     * Phase-0-compatibility constructor: wires the {@code bank} ledger plus only the two Phase-0
+     * justice seams — {@code arrestHoldCell} (ARREST-SPEC addendum) and {@code zones} (job/access
+     * F3) — leaving the bank/prison/payroll fixtures unwired. Retained so existing call sites and
+     * tests keep compiling; the live district uses the {@link CivicFixtures} constructor below.
      */
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, BankLedger bank, World world, int arrestHoldCell,
             RestrictedZoneTable zones) {
+        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, bank, world,
+                CivicFixtures.ofJustice(arrestHoldCell, zones));
+    }
+
+    /**
+     * Full constructor (Phase-2 Passes 9-10): wires the baked {@code bank} ledger and the whole
+     * {@link CivicFixtures} bundle — arrest hold-cell + restricted zones, plus the bank vault/
+     * banker/queue, the multi-cell prison registry, and the payroll table. {@link
+     * CivicFixtures#NONE} means "fully unwired" (world-less bootstrap): custody holds in place, no
+     * cell is restricted, no bank fixture resolves, and no wages are paid.
+     */
+    public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
+            ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
+            ItemsLiteRegistry items, BankLedger bank, World world, CivicFixtures fixtures) {
         this.worldSeed = worldSeed;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -98,10 +112,9 @@ public final class ActorsSystem implements SimulationSystem {
         this.relationships = relationships;
         this.items = items;
         this.bank = bank;
-        this.zones = zones;
+        this.fixtures = fixtures;
         this.world = world;
         this.cursor = world == null ? null : world.cursor();
-        this.arrestHoldCell = arrestHoldCell;
     }
 
     public ActorRegistry registry() {
@@ -125,7 +138,7 @@ public final class ActorsSystem implements SimulationSystem {
     }
 
     public RestrictedZoneTable restrictedZones() {
-        return zones;
+        return fixtures.zones();
     }
 
     @Override
@@ -146,7 +159,30 @@ public final class ActorsSystem implements SimulationSystem {
             java.util.Arrays.fill(drawCounters, 0, registry.size(), 0);
         }
         rebuildOccupancy();
+        runPayroll(context.tick());
         registry.tickAll(new ActorContextImpl(context));
+    }
+
+    /**
+     * Live wages (Phase-2 STEP B, Pass 9): on a payday tick, transfer each worker's wage from the
+     * finite employer pool to the worker's account, ascending actor id. A ledger transfer, never a
+     * mint — an insufficient pool skips that wage ({@link BankLedger#transfer} returns {@code
+     * false}), so {@link BankLedger#totalRoyals()} (and the vault COIN count) is invariant across
+     * every payday. Deterministic: fixed cadence against the absolute tick, ascending-id dense-array
+     * walk, no map/insertion-order iteration, no draws.
+     */
+    private void runPayroll(long tick) {
+        Payroll payroll = fixtures.payroll();
+        if (!payroll.isPayday(tick)) {
+            return;
+        }
+        int employer = payroll.employerAccountId();
+        for (int id = 0; id < registry.size(); id++) {
+            long wage = payroll.wageForActor(id);
+            if (wage > 0) {
+                bank.transfer(employer, id, wage); // skipped (no-op) if the pool can't cover it
+            }
+        }
     }
 
     /**
@@ -190,8 +226,8 @@ public final class ActorsSystem implements SimulationSystem {
             out.writeInt(entry.ownerActorId());
             out.writeInt(entry.locationCarriedBy());
             out.writeInt(entry.locationCell());
-            out.writeShort(entry.quantity());
-            out.writeInt(entry.accountId());
+            out.writeInt(entry.quantity()); // int, not short (STEP A money-width fix): a vault
+            out.writeInt(entry.accountId()); // COIN stack counts a whole district's Royals
         }
         // Recycling free-slot stack (LIFO push order) — genuine state, kept faithful across save.
         out.writeInt(items.freeSlotCount());
@@ -233,6 +269,7 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeInt(actor.goalWorkTicks());
         out.writeLong(actor.heldUntilTick());
         out.writeByte(actor.offenseCount());
+        out.writeInt(actor.assignedHoldCell()); // Phase-2 STEP C: per-prisoner cell (heldUntilTick triad)
         // Carried items are not written per-actor: ItemsLite (serialized above, keyed by carrier)
         // is the single source of truth for inventory — no parallel per-actor id list exists.
     }
@@ -265,7 +302,7 @@ public final class ActorsSystem implements SimulationSystem {
             int ownerActorId = in.readInt();
             int carriedBy = in.readInt();
             int cell = in.readInt();
-            short quantity = in.readShort();
+            int quantity = in.readInt(); // int, not short (STEP A money-width fix)
             int accountId = in.readInt();
             items.mint(kindId, ownerActorId, carriedBy, cell, quantity, accountId);
         }
@@ -310,6 +347,7 @@ public final class ActorsSystem implements SimulationSystem {
         int goalWorkTicks = in.readInt();
         long heldUntilTick = in.readLong();
         byte offenseCount = in.readByte();
+        int assignedHoldCell = in.readInt(); // Phase-2 STEP C: per-prisoner cell
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
         actor.setIdentity(new Persona(trueId, presentedId));
@@ -339,6 +377,7 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setGoalWorkTicks(goalWorkTicks);
         actor.setHeldUntilTick(heldUntilTick);
         actor.setOffenseCount(offenseCount);
+        actor.setAssignedHoldCell(assignedHoldCell);
     }
 
     @Override
@@ -357,6 +396,11 @@ public final class ActorsSystem implements SimulationSystem {
             sink.putShort(actor.jobOrdinal());
             sink.putByte(actor.goalState().ordinal());
             sink.putShort(actor.goalProgress());
+            // Phase-2 STEP C: the per-prisoner assigned cell (landmine F — otherwise a divergence
+            // isolated to cell assignment, e.g. two prisoners colliding on one cell, slips the
+            // twin-run check). heldUntilTick/offenseCount remain out; the cell is the state the
+            // multi-cell pass adds and must not be able to desync silently.
+            sink.putInt(actor.assignedHoldCell());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {
@@ -424,7 +468,7 @@ public final class ActorsSystem implements SimulationSystem {
 
         @Override
         public RestrictedZoneTable restrictedZones() {
-            return zones;
+            return fixtures.zones();
         }
 
         @Override
@@ -474,7 +518,27 @@ public final class ActorsSystem implements SimulationSystem {
 
         @Override
         public int arrestHoldCell() {
-            return arrestHoldCell;
+            return fixtures.arrestHoldCell();
+        }
+
+        @Override
+        public int vaultChestCell() {
+            return fixtures.vaultChestCell();
+        }
+
+        @Override
+        public int bankerCell() {
+            return fixtures.bankerCell();
+        }
+
+        @Override
+        public BankQueue bankQueue() {
+            return fixtures.bankQueue();
+        }
+
+        @Override
+        public PrisonCellRegistry prisonCells() {
+            return fixtures.prisonCells();
         }
     }
 

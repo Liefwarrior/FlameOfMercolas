@@ -60,14 +60,22 @@ final class ActorsSystemEconomyRoundTripTest {
         a1.setJobOrdinal((short) jobs.ordinalOf(Job.Serf.Laborer.ID));
         a0.applyNeedDelta(Need.HUNGER, -1234);
         a0.setHeldUntilTick(42_000L);
+        // Phase-2 STEP C: a held prisoner with an assigned cell — the new serialized scalar.
+        a1.setStatus(StatusBit.HELD, true);
+        a1.setHeldUntilTick(60_000L);
+        a1.setAssignedHoldCell(PackedPos.pack(105, 90, 11));
         relationships.addSymmetric(a0.id(), a1.id(), RelationshipKind.HOUSEHOLD);
 
-        // Items: a purse, a larder, a stamped ID_CARD, and a sunk stack (populates the free stack).
-        items.addCarried(a0.id(), ItemKinds.COIN, 5);
-        items.addCarried(a1.id(), ItemKinds.FOOD, 3);
-        items.mintIdCard(a0.id(), a0.id());
-        int scrap = items.mintCarried(ItemKinds.FOOD, a1.id());
-        items.sink(scrap); // leaves a free-slot to round-trip
+        // Items: a purse, a larder, a stamped ID_CARD, a vault stack, then a sunk stack (last, so
+        // its vacated free-slot survives to round-trip rather than being recycled by a later mint).
+        items.addCarried(a0.id(), ItemKinds.COIN, 5);       // itemId 0
+        items.addCarried(a1.id(), ItemKinds.FOOD, 3);       // itemId 1
+        items.mintIdCard(a0.id(), a0.id());                 // itemId 2
+        // A vault-sized COIN stack past a short's ceiling — STEP A's int quantity must round-trip.
+        int vaultCell = PackedPos.pack(152, 57, 11);
+        items.addOnCell(vaultCell, ItemKinds.COIN, 2_000_000); // itemId 3
+        int scrap = items.mintCarried(ItemKinds.FOOD, a1.id()); // itemId 4
+        items.sink(scrap); // leaves free-slot 4 to round-trip
 
         // Ledger: two accounts with non-trivial balances.
         bank.openAccount();
@@ -123,6 +131,13 @@ final class ActorsSystemEconomyRoundTripTest {
         assertEquals(250, loaded.bankAccounts().balanceOf(1));
         assertEquals(750, loaded.bankAccounts().totalRoyals());
 
+        // Phase-2 STEP C: the assigned prison cell survived the round-trip (the new serialized scalar).
+        assertEquals(PackedPos.pack(105, 90, 11), loaded.registry().get(1).assignedHoldCell());
+        assertEquals(Actor.NONE, loaded.registry().get(0).assignedHoldCell(), "unheld actor: no cell");
+        // STEP A: the vault-sized COIN stack (> Short.MAX_VALUE) round-tripped intact (int quantity).
+        assertEquals(2_000_000,
+                loaded.items().countOnCellOfKind(PackedPos.pack(152, 57, 11), ItemKinds.COIN));
+
         // The ID_CARD's stamped accountId survived the round-trip.
         int card = loaded.items().firstCarriedOfKind(0, ItemKinds.ID_CARD);
         assertEquals(0, loaded.items().get(card).accountId());
@@ -130,6 +145,6 @@ final class ActorsSystemEconomyRoundTripTest {
         // The sunk stack and its recycled free slot round-tripped: the next mint reuses that slot.
         assertEquals(1, loaded.items().freeSlotCount());
         int reused = loaded.items().mintCarried(ItemKinds.COIN, 1);
-        assertEquals(3, reused, "the recycled slot (itemId 3) is reused before appending");
+        assertEquals(4, reused, "the recycled slot (itemId 4, the sunk scrap) is reused before appending");
     }
 }

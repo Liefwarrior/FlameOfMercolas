@@ -89,6 +89,45 @@ final class ItemsLiteConservationTest {
     }
 
     @Test
+    void quantityExceedsShortCeilingWithoutClampingOrTruncating() {
+        // STEP A money-width fix: a vault-sized COIN stack (well past a short's 32767 ceiling) must
+        // survive add/take/move intact — the old short quantity silently clamped and destroyed units.
+        ItemsLiteRegistry items = new ItemsLiteRegistry();
+        int big = 2_000_000; // > Short.MAX_VALUE (32767), the amount a short would have truncated
+
+        assertEquals(big, items.addOnCell(VAULT_CELL, ItemKinds.COIN, big),
+                "the full amount is added, not clamped to Short.MAX_VALUE");
+        assertEquals(big, items.countOnCellOfKind(VAULT_CELL, ItemKinds.COIN));
+        assertEquals(big, items.totalOfKind(ItemKinds.COIN), "no truncation of the minted total");
+
+        // A single add on top of a near-2M stack still lands (int headroom), not wrapping.
+        assertEquals(500_000, items.addOnCell(VAULT_CELL, ItemKinds.COIN, 500_000));
+        assertEquals(big + 500_000, items.countOnCellOfKind(VAULT_CELL, ItemKinds.COIN));
+
+        // Move the whole vault stack into a carrier: the move returns what LANDED, and it is exact.
+        int moved = items.moveCellToCarried(VAULT_CELL, BUYER, ItemKinds.COIN, big + 500_000);
+        assertEquals(big + 500_000, moved, "moveCellToCarried returns the dest-added amount, exact");
+        assertEquals(big + 500_000, items.countCarriedOfKind(BUYER, ItemKinds.COIN));
+        assertEquals(0, items.countOnCellOfKind(VAULT_CELL, ItemKinds.COIN));
+        assertEquals(big + 500_000, items.totalOfKind(ItemKinds.COIN), "conserved across the move");
+    }
+
+    @Test
+    void moveReturnsDestinationAddedAmount() {
+        // STEP A: the deposit pattern credits Royals by the move's return, so it must equal what
+        // actually landed in the destination (not merely what was removed from the source).
+        ItemsLiteRegistry items = new ItemsLiteRegistry();
+        items.addCarried(BUYER, ItemKinds.COIN, 40);
+        assertEquals(25, items.moveCarried(BUYER, SHOP, ItemKinds.COIN, 25),
+                "returns the amount added to the destination");
+        assertEquals(25, items.countCarriedOfKind(SHOP, ItemKinds.COIN));
+        assertEquals(15, items.countCarriedOfKind(BUYER, ItemKinds.COIN));
+        assertEquals(15, items.moveCarriedToCell(BUYER, VAULT_CELL, ItemKinds.COIN, 100),
+                "capped at what the source held; returns the dest-added amount");
+        assertEquals(15, items.countOnCellOfKind(VAULT_CELL, ItemKinds.COIN));
+    }
+
+    @Test
     void stampedAccountIdSurvivesTransferAndMove() {
         ItemsLiteRegistry items = new ItemsLiteRegistry();
         int card = items.mintIdCard(5, 42);

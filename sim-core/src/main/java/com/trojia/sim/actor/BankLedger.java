@@ -52,6 +52,10 @@ public final class BankLedger {
         if (amount < 0) {
             throw new IllegalArgumentException("credit amount must be >= 0: " + amount);
         }
+        if (royals[accountId] > Long.MAX_VALUE - amount) {
+            throw new IllegalArgumentException("credit would overflow account " + accountId
+                    + ": have " + royals[accountId] + ", adding " + amount);
+        }
         royals[accountId] += amount;
     }
 
@@ -75,6 +79,12 @@ public final class BankLedger {
      */
     public boolean transfer(int fromAccount, int toAccount, long amount) {
         if (amount < 0 || royals[fromAccount] < amount) {
+            return false;
+        }
+        // Overflow guard (STEP A): reject before the destination wraps rather than mint negative
+        // Royals. Within a closed supply the total can never exceed a long, so this never fires
+        // live — but a rejected transfer leaves both balances untouched, preserving the invariant.
+        if (fromAccount != toAccount && royals[toAccount] > Long.MAX_VALUE - amount) {
             return false;
         }
         royals[fromAccount] -= amount;

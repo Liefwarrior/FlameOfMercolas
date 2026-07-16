@@ -149,6 +149,14 @@ public abstract class Actor {
     private long heldUntilTick;
     /** Villain arrest count so far; only Skyrunner escalation (maim/hang) reads it today. */
     private byte offenseCount;
+    /**
+     * The specific prison cell this actor is assigned to while {@code HELD} (Phase-2 STEP C,
+     * Pass 10), or {@link #NONE} when free. De-scalarizes the single {@code arrestHoldCell}: at
+     * arrest the lowest-free cell is stamped here, {@link HeldPolicy} escorts to it, and release
+     * clears it back to {@link #NONE} — so six prisoners hold in six distinct cells, and the slot
+     * frees on release. A persisted scalar (serialize/load/hash, the {@code heldUntilTick} triad).
+     */
+    private int assignedHoldCell = NONE;
 
     // ---- Play mode (PLAY-MODE-SPEC.md §5.2/§6): plain scalar, the same goalProgress/
     // heldUntilTick precedent — per-frame input intent, not simulation state, so it is
@@ -727,6 +735,16 @@ public abstract class Actor {
 
     public final void setOffenseCount(byte offenseCount) {
         this.offenseCount = offenseCount;
+    }
+
+    /** The prison cell assigned at arrest (Phase-2 STEP C), or {@link #NONE} when free. */
+    public final int assignedHoldCell() {
+        return assignedHoldCell;
+    }
+
+    /** Stamps (at arrest) or clears (with {@link #NONE}, at release) the assigned prison cell. */
+    public final void setAssignedHoldCell(int cell) {
+        this.assignedHoldCell = cell;
     }
 
     /** The pending Play-mode step target, or {@link #NONE} (PLAY-MODE-SPEC.md §5.2). */

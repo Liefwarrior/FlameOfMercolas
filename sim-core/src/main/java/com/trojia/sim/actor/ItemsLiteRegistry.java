@@ -54,16 +54,17 @@ public final class ItemsLiteRegistry {
     // ---------------------------------------------------------------- mint
 
     /** Mints a new item (accountId {@link Actor#NONE}). */
-    public int mint(short kindId, int ownerActorId, int carriedBy, int cell, short quantity) {
+    public int mint(short kindId, int ownerActorId, int carriedBy, int cell, int quantity) {
         return mint(kindId, ownerActorId, carriedBy, cell, quantity, Actor.NONE);
     }
 
     /**
      * Mints a new item carried by {@code carriedBy} (or on {@code cell} if {@code carriedBy} is
      * NONE), stamping {@code accountId} (only meaningful for {@link ItemKinds#ID_CARD}). Recycles a
-     * vacated dense slot first when one is available (deterministic LIFO).
+     * vacated dense slot first when one is available (deterministic LIFO). {@code quantity} is an
+     * {@code int} (STEP A money-width fix): a vault COIN stack counts a whole district's Royals.
      */
-    public int mint(short kindId, int ownerActorId, int carriedBy, int cell, short quantity,
+    public int mint(short kindId, int ownerActorId, int carriedBy, int cell, int quantity,
             int accountId) {
         if (freeCount > 0) {
             int itemId = freeStack[--freeCount]; // recycle a vacated slot
@@ -79,12 +80,12 @@ public final class ItemsLiteRegistry {
 
     /** Convenience: mint one unit carried and owned by {@code actorId}. */
     public int mintCarried(short kindId, int actorId) {
-        return mint(kindId, actorId, actorId, Actor.NONE, (short) 1);
+        return mint(kindId, actorId, actorId, Actor.NONE, 1);
     }
 
     /** Convenience: mint one unit sitting on {@code cell}, owned by {@code ownerActorId} (or NONE). */
     public int mintOnCell(short kindId, int ownerActorId, int cell) {
-        return mint(kindId, ownerActorId, Actor.NONE, cell, (short) 1);
+        return mint(kindId, ownerActorId, Actor.NONE, cell, 1);
     }
 
     /**
@@ -94,7 +95,7 @@ public final class ItemsLiteRegistry {
      * the card keeps authorizing that account even if it is later lifted onto a thief).
      */
     public int mintIdCard(int holderId, int accountId) {
-        return mint(ItemKinds.ID_CARD, holderId, holderId, Actor.NONE, (short) 1, accountId);
+        return mint(ItemKinds.ID_CARD, holderId, holderId, Actor.NONE, 1, accountId);
     }
 
     public int size() {
@@ -302,21 +303,39 @@ public final class ItemsLiteRegistry {
     private void replaceQuantity(int itemId, int newQuantity) {
         ItemsLiteEntry e = entries.get(itemId);
         entries.set(itemId, new ItemsLiteEntry(itemId, e.kindId(), e.ownerActorId(),
-                e.locationCarriedBy(), e.locationCell(), (short) newQuantity, e.accountId()));
+                e.locationCarriedBy(), e.locationCell(), newQuantity, e.accountId()));
     }
 
-    /** Credits {@code n} units of {@code kindId} to {@code actorId}'s carried stack. */
-    public void addCarried(int actorId, short kindId, int n) {
+    /**
+     * The largest number of units that can be added to a stack currently holding {@code existing}
+     * without overflowing {@code int} (STEP A money-width guard) — {@code n}, clamped so the sum
+     * never wraps negative. With {@code int} quantities the ceiling is {@code Integer.MAX_VALUE},
+     * far above any realistic Coin/Food supply, so the clamp is a safety net, not a live limiter.
+     */
+    private static int addableWithoutOverflow(int existing, int n) {
+        long headroom = (long) Integer.MAX_VALUE - existing;
+        return (int) Math.min(n, headroom);
+    }
+
+    /**
+     * Credits up to {@code n} units of {@code kindId} to {@code actorId}'s carried stack. Returns
+     * the amount actually added (which the overflow guard can only reduce below {@code n} at the
+     * {@code int} ceiling — a case the closed money/food supply never reaches). The move verbs read
+     * this return so a deposit credits the ledger by exactly what landed, never by what was removed.
+     */
+    public int addCarried(int actorId, short kindId, int n) {
         if (n <= 0) {
-            return;
+            return 0;
         }
         int existing = firstCarriedOfKind(actorId, kindId);
         if (existing != Actor.NONE) {
-            int q = Math.min(Short.MAX_VALUE, entries.get(existing).quantity() + n);
-            replaceQuantity(existing, q);
-        } else {
-            mint(kindId, actorId, actorId, Actor.NONE, (short) Math.min(Short.MAX_VALUE, n));
+            int add = addableWithoutOverflow(entries.get(existing).quantity(), n);
+            replaceQuantity(existing, entries.get(existing).quantity() + add);
+            return add;
         }
+        int add = addableWithoutOverflow(0, n);
+        mint(kindId, actorId, actorId, Actor.NONE, add);
+        return add;
     }
 
     /**
@@ -342,25 +361,33 @@ public final class ItemsLiteRegistry {
         return n - remaining;
     }
 
-    /** Moves up to {@code n} units of {@code kindId} from {@code fromId} to {@code toId}. Returns moved. */
+    /**
+     * Moves up to {@code n} units of {@code kindId} from {@code fromId} to {@code toId}. Returns the
+     * amount that actually LANDED in the destination (STEP A fix), not the amount removed from the
+     * source — the deposit pattern credits Royals by this return, so it must equal what arrived.
+     */
     public int moveCarried(int fromId, int toId, short kindId, int n) {
         int taken = takeCarried(fromId, kindId, n);
-        addCarried(toId, kindId, taken);
-        return taken;
+        return addCarried(toId, kindId, taken);
     }
 
-    /** Stages {@code n} units of {@code kindId} on {@code cell}, owned by nobody (a vault / cargo cell). */
-    public void addOnCell(int cell, short kindId, int n) {
+    /**
+     * Stages up to {@code n} units of {@code kindId} on {@code cell}, owned by nobody (a vault /
+     * cargo cell). Returns the amount actually added (overflow-guarded, STEP A money-width fix).
+     */
+    public int addOnCell(int cell, short kindId, int n) {
         if (n <= 0 || cell == SINK_CELL) {
-            return;
+            return 0;
         }
         int existing = firstOnCellOfKind(cell, kindId);
         if (existing != Actor.NONE) {
-            int q = Math.min(Short.MAX_VALUE, entries.get(existing).quantity() + n);
-            replaceQuantity(existing, q);
-        } else {
-            mint(kindId, Actor.NONE, Actor.NONE, cell, (short) Math.min(Short.MAX_VALUE, n));
+            int add = addableWithoutOverflow(entries.get(existing).quantity(), n);
+            replaceQuantity(existing, entries.get(existing).quantity() + add);
+            return add;
         }
+        int add = addableWithoutOverflow(0, n);
+        mint(kindId, Actor.NONE, Actor.NONE, cell, add);
+        return add;
     }
 
     /** Removes up to {@code n} units of {@code kindId} from {@code cell}, sinking emptied stacks. Returns taken. */
@@ -386,17 +413,22 @@ public final class ItemsLiteRegistry {
         return n - remaining;
     }
 
-    /** Moves up to {@code n} units of {@code kindId} from {@code actorId}'s carry onto {@code cell}. Returns moved. */
+    /**
+     * Moves up to {@code n} units of {@code kindId} from {@code actorId}'s carry onto {@code cell}.
+     * Returns the amount that LANDED on the cell (STEP A fix) — a counter deposit credits Royals by
+     * exactly this, so it must equal the destination delta, not the source removal.
+     */
     public int moveCarriedToCell(int actorId, int cell, short kindId, int n) {
         int taken = takeCarried(actorId, kindId, n);
-        addOnCell(cell, kindId, taken);
-        return taken;
+        return addOnCell(cell, kindId, taken);
     }
 
-    /** Moves up to {@code n} units of {@code kindId} off {@code cell} into {@code actorId}'s carry. Returns moved. */
+    /**
+     * Moves up to {@code n} units of {@code kindId} off {@code cell} into {@code actorId}'s carry.
+     * Returns the amount that LANDED in the actor's carry (STEP A fix).
+     */
     public int moveCellToCarried(int cell, int actorId, short kindId, int n) {
         int taken = takeOnCell(cell, kindId, n);
-        addCarried(actorId, kindId, taken);
-        return taken;
+        return addCarried(actorId, kindId, taken);
     }
 }

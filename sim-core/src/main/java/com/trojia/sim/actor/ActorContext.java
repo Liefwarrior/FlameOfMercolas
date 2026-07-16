@@ -114,6 +114,41 @@ public interface ActorContext {
     int arrestHoldCell();
 
     /**
+     * The bank vault chest cell (Phase-2 STEP B), holding the single COIN stack that backs every
+     * Royal ({@code countOnCellOfKind(vaultChestCell, COIN) == bankAccounts().totalRoyals()}).
+     * {@link Actor#NONE} where no live bank is wired (world-less bootstrap, economy-free tests) —
+     * {@link BankVerbs} deposit/withdraw degrade to no-ops.
+     */
+    default int vaultChestCell() {
+        return Actor.NONE;
+    }
+
+    /**
+     * The banker's counter cell (Phase-2 STEP B): deposit/withdraw fire when a citizen with an ID
+     * reaches it. {@link Actor#NONE} where no live bank is wired.
+     */
+    default int bankerCell() {
+        return Actor.NONE;
+    }
+
+    /**
+     * The bank's deterministic waiting queue (Phase-2 STEP B). {@link BankQueue#EMPTY} where no
+     * live bank is wired.
+     */
+    default BankQueue bankQueue() {
+        return BankQueue.EMPTY;
+    }
+
+    /**
+     * The baked multi-cell prison registry (Phase-2 STEP C): the K34 holding cells an arrest
+     * assigns from (lowest-free, ascending). {@link PrisonCellRegistry#EMPTY} where none are wired
+     * — custody then falls back to the single {@link #arrestHoldCell()} (or "hold in place").
+     */
+    default PrisonCellRegistry prisonCells() {
+        return PrisonCellRegistry.EMPTY;
+    }
+
+    /**
      * Pure read (§2.3 "actors never write lanes"): {@code true} if {@code cell}
      * is safe to step onto right now ({@code com.trojia.sim.world.Walkability
      * .isWalkable}). Systems bound to no world (the headless world-less

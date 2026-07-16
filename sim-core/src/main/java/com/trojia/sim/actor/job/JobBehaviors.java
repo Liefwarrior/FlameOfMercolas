@@ -6,6 +6,7 @@ import com.trojia.sim.actor.ActorGeometry;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorRngStream;
 import com.trojia.sim.actor.DailyRhythm;
+import com.trojia.sim.actor.PrisonCellRegistry;
 import com.trojia.sim.actor.ReasonCode;
 import com.trojia.sim.actor.StatusBit;
 import com.trojia.sim.actor.TargetKind;
@@ -366,14 +367,58 @@ public final class JobBehaviors {
         return false;
     }
 
-    /** Ordinary Robber/Cutpurse arrest: HELD + a freshly drawn 1-3 day sentence. */
+    /** Ordinary Robber/Cutpurse arrest: HELD + a freshly drawn 1-3 day sentence + a prison cell. */
     private static void arrestAndHold(Actor self, ActorContext ctx) {
         self.setOffenseCount((byte) (self.offenseCount() + 1));
         self.setStatus(StatusBit.HELD, true);
         long draw = ctx.draw(ActorRngStream.WATCH_SENTENCE_LENGTH, self.id(), ctx.nextDrawIndex(self.id()));
         long sentence = SENTENCE_MIN_TICKS + Long.remainderUnsigned(draw, SENTENCE_SPAN_TICKS);
         self.setHeldUntilTick(ctx.tick() + sentence);
+        self.setAssignedHoldCell(assignPrisonCell(self, ctx));
         self.setLastReasonCode(ReasonCode.ARRESTED);
+    }
+
+    /**
+     * Assigns the least-crowded free K34 prison cell (Phase-2 STEP C, Pass 10): a deterministic
+     * ascending scan of {@link ActorContext#prisonCells()} that picks the cell holding the FEWEST
+     * already-{@code HELD} prisoners (ties broken by lowest index), provided it is under {@link
+     * Actor#MAX_OCCUPANTS_PER_CELL}. Spreading to the emptiest cell means six simultaneous arrests
+     * fan out across six distinct cells (none piled in the street), and a cell only doubles up once
+     * every cell already holds one — respecting the 2-occupant cap. Returns {@link Actor#NONE} when
+     * no cell is wired or all are at capacity, whereupon {@link com.trojia.sim.actor.HeldPolicy}
+     * falls back to the single {@link ActorContext#arrestHoldCell()}. {@code self} is not yet placed
+     * (its assigned cell is still {@link Actor#NONE}), so it never counts against its own candidate.
+     * Draw-free, pure scan.
+     */
+    private static int assignPrisonCell(Actor self, ActorContext ctx) {
+        PrisonCellRegistry cells = ctx.prisonCells();
+        int bestCell = Actor.NONE;
+        int bestCount = Actor.MAX_OCCUPANTS_PER_CELL; // only cells strictly below the cap qualify
+        for (int i = 0; i < cells.size(); i++) {
+            int cell = cells.cellAt(i);
+            int count = occupantsHeldAt(ctx, cell);
+            if (count < bestCount) { // strict + ascending scan -> lowest-index emptiest cell wins
+                bestCount = count;
+                bestCell = cell;
+                if (count == 0) {
+                    break; // an empty cell is the global optimum; the lowest-index one is found first
+                }
+            }
+        }
+        return bestCell;
+    }
+
+    /** Count of currently-{@code HELD} actors assigned to {@code cell} (ascending-index scan). */
+    private static int occupantsHeldAt(ActorContext ctx, int cell) {
+        ActorRegistry registry = ctx.registry();
+        int count = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            Actor other = registry.get(i);
+            if (other.hasStatus(StatusBit.HELD) && other.assignedHoldCell() == cell) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /** Skyrunner escalation: 1st offense maims (cosmetic), 2nd offense hangs (permanent). */
