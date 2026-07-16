@@ -24,5 +24,9 @@ public enum ReasonCode {
     MAIMED_FIRST_OFFENSE,
     EXECUTED_SECOND_OFFENSE,
     /** Play mode: this tick's movement/idle came from direct human input (PLAY-MODE-SPEC.md §5.2). */
-    PLAYER_CONTROLLED
+    PLAYER_CONTROLLED,
+    /** Ate a FOOD from a home larder or a free commons cell (economy-loop pass). */
+    ATE_FOOD,
+    /** Bought a FOOD at a shop counter (ID-authorized Royal transfer) and ate it (economy-loop pass). */
+    BOUGHT_FOOD
 }

@@ -60,6 +60,16 @@ public final class ActorsSystem implements SimulationSystem {
      */
     private OccupancyIndex occupancy;
 
+    /**
+     * Closed-supply FOOD accounting (economy-loop pass): running totals of FOOD ever minted (larder
+     * seed at bake + farm work-unit yields + periodic imports) and ever eaten (sunk). Pure
+     * accounting for the conservation proof {@code minted == liveOfKind(FOOD) + eaten} — read by no
+     * behavior, so they change no determinism property and ride no save (two fresh runs reproduce
+     * them identically). {@code long} (purity-gate clean).
+     */
+    private long foodMinted;
+    private long foodEaten;
+
     /** World-less constructor (test/headless convenience) — {@code isWalkable} always true. */
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
@@ -141,6 +151,25 @@ public final class ActorsSystem implements SimulationSystem {
         return fixtures.zones();
     }
 
+    /** Total FOOD ever minted (larder seed + farm yield + imports) — conservation-proof numerator. */
+    public long foodMinted() {
+        return foodMinted;
+    }
+
+    /** Total FOOD ever eaten/sunk — the conservation-proof sink count. */
+    public long foodEaten() {
+        return foodEaten;
+    }
+
+    /**
+     * Records FOOD minted OUTSIDE the tick loop (the bake-time larder seed), so the harness's
+     * conservation identity {@code minted == liveOfKind(FOOD) + eaten} accounts for every unit that
+     * ever existed. Called once by the scenario bake; no effect on determinism (pure accounting).
+     */
+    public void recordFoodMintedAtBake(long n) {
+        foodMinted += n;
+    }
+
     @Override
     public SystemId id() {
         return id;
@@ -160,7 +189,47 @@ public final class ActorsSystem implements SimulationSystem {
         }
         rebuildOccupancy();
         runPayroll(context.tick());
+        runFoodImports(context.tick());
         registry.tickAll(new ActorContextImpl(context));
+    }
+
+    /**
+     * The periodic FOOD provisioning (economy-loop pass): on an import tick, the quay restocks
+     * every vendor shop's carried stock up to {@link FoodEconomy#SHOP_STOCK_CAP}, and the
+     * provisioning ration tops every free commons cell and every guaranteed larder cell up to
+     * {@link FoodEconomy#LARDER_CAP}. Each source is filled only to its cap (never beyond), so
+     * supply is demand-driven and {@code liveOfKind(FOOD)} stays bounded rather than growing without
+     * limit. Minting FOOD, never Royals, so the money invariant is untouched. Deterministic: fixed
+     * cadence against the absolute tick (mirrors {@link #runPayroll}), ascending dense-index walks,
+     * no draws. Every minted unit is accounted for the conservation proof.
+     */
+    private void runFoodImports(long tick) {
+        FoodMarket market = fixtures.foodMarket();
+        if (tick <= 0 || tick % FoodEconomy.IMPORT_PERIOD != 0
+                || (market.vendorCount() == 0 && market.commonsCount() == 0
+                        && market.larderCount() == 0)) {
+            return;
+        }
+        for (int i = 0; i < market.vendorCount(); i++) {
+            int shopId = market.vendorAt(i);
+            int deficit = FoodEconomy.SHOP_STOCK_CAP
+                    - items.countCarriedOfKind(shopId, ItemKinds.FOOD);
+            if (deficit > 0) {
+                foodMinted += items.addCarried(shopId, ItemKinds.FOOD, deficit);
+            }
+        }
+        for (int i = 0; i < market.commonsCount(); i++) {
+            foodMinted += topUpCell(market.commonsAt(i));
+        }
+        for (int i = 0; i < market.larderCount(); i++) {
+            foodMinted += topUpCell(market.larderAt(i));
+        }
+    }
+
+    /** Tops one cell's FOOD up to {@link FoodEconomy#LARDER_CAP}; returns the units minted. */
+    private int topUpCell(int cell) {
+        int deficit = FoodEconomy.LARDER_CAP - items.countOnCellOfKind(cell, ItemKinds.FOOD);
+        return deficit > 0 ? items.addOnCell(cell, ItemKinds.FOOD, deficit) : 0;
     }
 
     /**
@@ -539,6 +608,21 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public PrisonCellRegistry prisonCells() {
             return fixtures.prisonCells();
+        }
+
+        @Override
+        public FoodMarket foodMarket() {
+            return fixtures.foodMarket();
+        }
+
+        @Override
+        public void recordFoodMinted(int n) {
+            foodMinted += n;
+        }
+
+        @Override
+        public void recordFoodEaten(int n) {
+            foodEaten += n;
         }
     }
 

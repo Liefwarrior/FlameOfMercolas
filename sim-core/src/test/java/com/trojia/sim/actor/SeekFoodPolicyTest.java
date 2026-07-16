@@ -97,67 +97,50 @@ final class SeekFoodPolicyTest {
     }
 
     @Test
-    void actIsDeterministicRouteWalkThatArrivesHomeAndEventuallyReleases() {
-        // Drives through actor.tick() (never bare act()) so recoverHungerAtHome actually runs —
-        // score() no longer drops to 0 the instant HUNGER merely crosses back above LOW (the
-        // hysteresis fix), so a bare act()-only loop can no longer observe score==0 right after
-        // arrival while still below RECOVERED; this mirrors the sibling
-        // tickingAtHomeRecoversHungerAboveLowSoTheActorEventuallyHeadsBackOut test's shape.
+    void actWalksToTheHomeLarderEatsAndReleases() {
+        // The economy-loop rework: HUNGER no longer recovers passively at home — the actor must
+        // EAT a FOOD. A stocked home larder is the free source; the hungry actor A*-walks to it,
+        // eats one (+EAT_RESTORE, sunk), and SEEK_FOOD releases once comfortably RECOVERED.
         ActorRegistry registry = new ActorRegistry();
         Actor actor = serfAt(registry, 10, 0);
         NoOpActorContext ctx = new NoOpActorContext(registry);
-        int homeId = ctx.homes().addHome(PackedPos.pack(0, 0, 1));
-        actor.setHomeId(homeId);
+        int home = PackedPos.pack(0, 0, 1);
+        actor.setHomeId(ctx.homes().addHome(home));
+        ctx.items().addOnCell(home, ItemKinds.FOOD, 5); // a stocked larder
         actor.applyNeedDelta(Need.HUNGER, -8100); // below CRITICAL
 
-        for (int i = 0; i < 20 && actor.cell() != PackedPos.pack(0, 0, 1); i++) {
+        for (int i = 0; i < 200 && Policies.SEEK_FOOD.score(actor, ctx) > 0; i++) {
             actor.tick(ctx);
         }
-        assertEquals(PackedPos.pack(0, 0, 1), actor.cell(), "must have walked all the way home");
-        assertTrue(Policies.SEEK_FOOD.score(actor, ctx) > 0,
-                "still below RECOVERED right at arrival — must not release yet");
-
-        for (int i = 0; i < 2_000 && Policies.SEEK_FOOD.score(actor, ctx) > 0; i++) {
-            actor.tick(ctx);
-        }
-        assertEquals(0, Policies.SEEK_FOOD.score(actor, ctx), "eventually recovers and releases");
-        // Within one cell of home: the very tick recovery completes, LOITER (the fallback
-        // once SEEK_FOOD/GOAL_PURSUE both score 0 for a jobless actor) may have already taken
-        // its occasional one-cell shuffle step that same tick — a real, deterministic (seeded)
-        // outcome, not a bug in the hysteresis fix.
-        assertTrue(ActorGeometry.chebyshev(actor.cell(), PackedPos.pack(0, 0, 1)) <= 1,
-                "must still be at or immediately adjacent to home when it releases");
+        assertEquals(0, Policies.SEEK_FOOD.score(actor, ctx),
+                "ate from the home larder and released back to the job");
+        assertTrue(actor.need(Need.HUNGER) >= NeedThresholds.RECOVERED,
+                "eating restored HUNGER comfortably above RECOVERED, was " + actor.need(Need.HUNGER));
+        assertTrue(ActorGeometry.chebyshev(actor.cell(), home) <= FoodEconomy.EAT_REACH,
+                "must have reached within EAT_REACH of the home larder to eat");
+        assertTrue(ctx.items().countOnCellOfKind(home, ItemKinds.FOOD) < 5,
+                "a FOOD must have been consumed (sunk) from the larder");
     }
 
     @Test
-    void tickingAtHomeRecoversHungerAboveLowSoTheActorEventuallyHeadsBackOut() {
-        // Drives through the whole Actor#tick() template (decay + recoverHungerAtHome +
-        // policy selection), not just act() directly, to prove the recovery loop actually
-        // closes: hungry -> SEEK_FOOD walks home -> recoverHungerAtHome refills HUNGER ->
-        // SEEK_FOOD's score drops back to 0. Mirrors the REST rationale in Actor.java's
-        // recoverRestAtHome javadoc ("without this... RETURN_HOME pins the population home
-        // forever") — the same freeze would happen to HUNGER without this recovery.
+    void eatingIsTheOnlyWayHungerRecovers() {
+        // With the passive at-home recovery deleted, an actor sitting on its home cell with NO
+        // reachable FOOD (empty larder, no shop, no commons) must NEVER recover — HUNGER only
+        // falls. This is what makes starvation possible (the whole point of the pass).
         ActorRegistry registry = new ActorRegistry();
-        Actor actor = serfAt(registry, 3, 0);
+        int home = PackedPos.pack(0, 0, 1);
+        Actor actor = registry.spawn(Serf.TYPE, ActorTestFixtures.stats(Serf.TYPE), home);
         NoOpActorContext ctx = new NoOpActorContext(registry);
-        int homeId = ctx.homes().addHome(PackedPos.pack(0, 0, 1));
-        actor.setHomeId(homeId);
-        actor.applyNeedDelta(Need.HUNGER, -8100); // 9000 -> 900, below CRITICAL
+        actor.setHomeId(ctx.homes().addHome(home)); // stands ON its home cell, empty larder
+        actor.applyNeedDelta(Need.HUNGER, -6100); // 9000 -> 2900, low
+        int before = actor.need(Need.HUNGER);
 
-        for (int i = 0; i < 2_000 && actor.cell() != PackedPos.pack(0, 0, 1); i++) {
+        for (int i = 0; i < 100; i++) {
             actor.tick(ctx);
         }
-        assertEquals(PackedPos.pack(0, 0, 1), actor.cell(), "must have walked all the way home");
-
-        // One more tick while still at home: LOITER may fire (the winning policy once
-        // SEEK_FOOD's score drops to 0), but recoverHungerAtHome runs unconditionally in
-        // Actor#tick() based on position alone, independent of which policy wins — so HUNGER
-        // must climb this tick regardless.
-        int hungerJustArrived = actor.need(Need.HUNGER);
-        actor.tick(ctx);
-        assertTrue(actor.need(Need.HUNGER) > hungerJustArrived,
-                "HUNGER must climb the very next tick at home (recoverHungerAtHome), was "
-                        + hungerJustArrived + " now " + actor.need(Need.HUNGER));
+        assertTrue(actor.need(Need.HUNGER) < before,
+                "no food anywhere -> HUNGER must only fall, never recover at home (was " + before
+                        + ", now " + actor.need(Need.HUNGER) + ")");
     }
 
     @Test

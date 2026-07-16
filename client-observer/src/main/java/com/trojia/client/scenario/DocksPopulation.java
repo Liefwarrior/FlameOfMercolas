@@ -12,6 +12,8 @@ import com.trojia.sim.actor.ActorsSystem;
 import com.trojia.sim.actor.BankLedger;
 import com.trojia.sim.actor.BankQueue;
 import com.trojia.sim.actor.CivicFixtures;
+import com.trojia.sim.actor.FoodEconomy;
+import com.trojia.sim.actor.FoodMarket;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.HouseholdFormer;
 import com.trojia.sim.actor.HouseholdRaws;
@@ -97,6 +99,10 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int ZA = 11;   // Band A quayside walk plane
     private static final int ZB = 12;   // Band B mid-slope walk plane
     private static final int ZC = 13;   // Band C upper walk plane
+
+    // Band-A world z-level (map band + chunk pad) — the economy-loop food-market marks a shopkeeper
+    // as a z:+11 vendor by comparing its cell z against this.
+    private static final int ZA_WORLD = Coords.CHUNK_SIZE_Z + ZA;
 
     // ---- waterfront work anchors (markers, z:+11) ----------------------------------------
     private static final int[] BERTH_01 = {21, 27};
@@ -440,6 +446,13 @@ public final class DocksPopulation implements ScenarioPopulation {
         int vaultChestCell = bankVaultChestCell();
         Payroll payroll = CivicAccounts.bake(registry, bank, items, vaultChestCell);
 
+        // Economy-loop pass: seed every home-cell larder with the boot ration and bake the
+        // FOOD-distribution market (vendor shops + commons + guaranteed larders). All FOOD minting
+        // outside the tick loop happens here; its count is recorded so the closed-supply
+        // conservation proof (minted == live + eaten) accounts for the seed.
+        long foodSeeded = seedLarders(homes, items);
+        FoodMarket foodMarket = buildFoodMarket(registry, homes, world);
+
         int arrestHoldCell = worldCell(PRISON_CELLS_K34[0], ZA);
         // Multi-cell prison registry (Pass 10) + bank fixtures (Pass 9), wired from the Phase-1
         // markers; the restricted-zone table (Pass 4) is baked from the same markers just below.
@@ -450,9 +463,11 @@ public final class DocksPopulation implements ScenarioPopulation {
         // Data + accessors only this pass -- no live enforcement reads it yet (the law&order pass
         // does); the gate itself (canAccess) is unit-tested against these zones.
         CivicFixtures fixtures = new CivicFixtures(arrestHoldCell, restrictedZoneTable(),
-                vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll);
+                vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll,
+                foodMarket);
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
                 relationships, items, bank, world, fixtures);
+        system.recordFoodMintedAtBake(foodSeeded);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers);
     }
@@ -564,6 +579,124 @@ public final class DocksPopulation implements ScenarioPopulation {
                 new int[] {worldCell(BANK_VAULT_CHEST, ZA)}));
         zones.add(new RestrictedZone(Job.Trade.Trader.ID, Actor.NONE, traderShopAnchors()));
         return new RestrictedZoneTable(zones);
+    }
+
+    // ---- Economy-loop pass: FOOD seeding + the distribution market -----------------------------
+
+    /**
+     * Seeds every unique home-cell larder with {@link FoodEconomy#LARDER_SEED} FOOD so the first
+     * hunger cycles are covered before farm yield / imports ramp. Deterministic: ascending home
+     * order, dedup by cell (a bunk crew shares one home cell — seed it once). Returns the total
+     * FOOD minted, for the closed-supply conservation proof.
+     */
+    private static long seedLarders(HomeRegistry homes, ItemsLiteRegistry items) {
+        long minted = 0;
+        HashSet<Integer> seeded = new HashSet<>();
+        for (int i = 0; i < homes.size(); i++) {
+            int cell = homes.get(i).homeCell();
+            if (seeded.add(cell)) {
+                minted += items.addOnCell(cell, ItemKinds.FOOD, FoodEconomy.LARDER_SEED);
+            }
+        }
+        return minted;
+    }
+
+    /**
+     * Bakes the FOOD-distribution {@link FoodMarket} (economy-loop pass). Three deterministic
+     * ascending-scan lists, respecting the z-rule (every channel a hungry actor uses is same-z):
+     * <ul>
+     *   <li><b>vendor shops</b> — every z:+11 shopkeeper. The dense cash market the z:+11 serf mass
+     *       buys from (waged &rArr; solvent &rArr; survives); the quay import keeps them stocked.</li>
+     *   <li><b>guaranteed larders</b> — BOTH the home cell AND the work-anchor cell of every
+     *       non-wastrel citizen (serf, shopkeeper, watch, clergy, keeper). An actor always dwells at
+     *       one or the other, and both are kept stocked by the provisioning ration, so wherever it
+     *       is stranded — a hovel serf who never reaches the distant quay, a disciple walled inside
+     *       the mission — a free meal is within reach. This is the pathing-proof safety net that
+     *       carries the middle-class-0%/serf-&le;5% bar. Not publicly scanned, so topping a cell
+     *       feeds only its own residents/workers (a neighbouring roof wastrel is NOT fed).</li>
+     *   <li><b>free commons</b> — a walkable {@link FoodEconomy#COMMONS_GRID_SPACING}-spaced grid
+     *       over every band (scanned from the baked world): the pathing dead-zone backstop, so a
+     *       serf stranded by a broken long commute in a pocket that reaches neither its home nor its
+     *       anchor still finds a stocked commons within {@link FoodEconomy#EAT_REACH}. Roof decks,
+     *       being disconnected from the walk-plane grid on their z, get none - the starvation margin.</li>
+     * </ul>
+     */
+    private static FoodMarket buildFoodMarket(ActorRegistry registry, HomeRegistry homes,
+            World world) {
+        List<Integer> vendors = new ArrayList<>();
+        List<Integer> larders = new ArrayList<>();
+        HashSet<Integer> larderSeen = new HashSet<>();
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            String type = a.typeId().key();
+            if (type.equals("shopkeeper") && PackedPos.z(a.cell()) == ZA_WORLD) {
+                vendors.add(a.id());
+            }
+            if (a.homeId() == Actor.NONE || !isProvisionedCitizen(type)) {
+                continue; // wastrels + beasts get no stocked larder (the intended starvation margin)
+            }
+            int homeCell = homes.get(a.homeId()).homeCell();
+            if (larderSeen.add(homeCell)) {
+                larders.add(homeCell);
+            }
+            int anchorCell = a.anchorCell();
+            if (anchorCell != homeCell && larderSeen.add(anchorCell)) {
+                larders.add(anchorCell);
+            }
+        }
+        return new FoodMarket(toIntArray(vendors), toIntArray(commonsGrid(world)),
+                toIntArray(larders));
+    }
+
+    /**
+     * The free-food commons grid (economy-loop pass): every walkable cell on each band's
+     * {@link FoodEconomy#COMMONS_GRID_SPACING}-spaced lattice, so every reachable spot is within
+     * {@link FoodEconomy#EAT_REACH} of a commons. Deterministic ascending scan. In the world-less
+     * bake (no walkability) it falls back to a handful of known street cells so the market is never
+     * wholly empty. Roof-deck cells are naturally excluded: their z is the walk-plane's z but the
+     * grid points that land on a roof are separated by walls, so a roof dweller cannot reach one.
+     */
+    private static List<Integer> commonsGrid(World world) {
+        List<Integer> commons = new ArrayList<>();
+        if (world == null) {
+            commons.add(worldCell(TERRACE_WALK_STAND, ZB));
+            commons.add(worldCell(SALTGATE_PORTERS, ZB));
+            commons.add(worldCell(WELL_PLAZA, ZC));
+            commons.add(worldCell(NOTICE_BOARD, ZC));
+            commons.add(worldCell(ABBEY_LANE, ZC));
+            commons.add(worldCell(PATROL_RISE_TOP, ZC));
+            return commons;
+        }
+        TileCursor cursor = world.cursor();
+        int step = FoodEconomy.COMMONS_GRID_SPACING;
+        for (int band : new int[] {ZA, ZB, ZC}) {
+            for (int mapY = 0; mapY <= GRID_SCAN_MAX_Y; mapY += step) {
+                for (int mapX = 0; mapX <= GRID_SCAN_MAX_X; mapX += step) {
+                    int cell = worldCell(new int[] {mapX, mapY}, band);
+                    if (Walkability.isWalkable(cursor.moveTo(cell))) {
+                        commons.add(cell);
+                    }
+                }
+            }
+        }
+        return commons;
+    }
+
+    /** Map-space extent of the commons-grid scan (the docks fixture is well inside these). */
+    private static final int GRID_SCAN_MAX_X = 208;
+    private static final int GRID_SCAN_MAX_Y = 176;
+
+    /**
+     * Whether {@code typeKey} is a provisioned citizen — the working population that must not
+     * starve (the middle class AND the serf mass), guaranteed a stocked home + anchor larder.
+     * Wastrels (the wageless poor + roof decks) and beasts are excluded: they are the margin.
+     */
+    private static boolean isProvisionedCitizen(String typeKey) {
+        return switch (typeKey) {
+            case "serf", "shopkeeper", "militia_watch", "priest_of_the_flame",
+                    "disciple_of_the_flame", "animal_keeper" -> true;
+            default -> false;
+        };
     }
 
     /** The mutable spawn walker — all wiring lives here so the outer type stays an immutable handle. */

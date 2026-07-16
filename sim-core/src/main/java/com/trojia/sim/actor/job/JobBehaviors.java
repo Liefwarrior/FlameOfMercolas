@@ -6,6 +6,10 @@ import com.trojia.sim.actor.ActorGeometry;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorRngStream;
 import com.trojia.sim.actor.DailyRhythm;
+import com.trojia.sim.actor.FoodEconomy;
+import com.trojia.sim.actor.FoodMarket;
+import com.trojia.sim.actor.ItemKinds;
+import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.PrisonCellRegistry;
 import com.trojia.sim.actor.ReasonCode;
 import com.trojia.sim.actor.StatusBit;
@@ -97,6 +101,87 @@ public final class JobBehaviors {
         } else {
             self.setGoalWorkTicks(workTicks);
         }
+    }
+
+    // ======================================================================
+    // Farm cycle (Serf.Farmer) — the anchor cycle that also PRODUCES FOOD
+    // ======================================================================
+
+    /**
+     * PURSUE (farm): identical commute to {@link #pursueAtAnchor} — plot during the rhythm window,
+     * home outside it — but every completed work-unit at the plot mints FOOD (the economy-loop
+     * pass). The yield first fills the household larder (the home cell, same z as the plot for
+     * every baked farmer) up to {@link FoodEconomy#LARDER_CAP}; once that is full it is sold as
+     * surplus to the nearest same-z shop for {@link FoodEconomy#FARM_SELL_PRICE} Royals (a Royal
+     * transfer shop-&gt;farmer, recirculating money to the land), and where no same-z cash market
+     * exists (the z:+12 courtyard farms) production simply pauses until the household eats the
+     * larder down — demand-driven, so live FOOD stays bounded. Integer yield, no draws.
+     */
+    public static void pursueFarm(Actor self, ActorContext ctx, JobParams params) {
+        int workplace = self.anchorCell();
+        int home = homeCellOr(self, ctx, workplace);
+        boolean onShift = params.inWindow(DailyRhythm.tickOfDay(ctx.tick()));
+        int target = onShift ? workplace : home;
+        self.setGoalTarget(TargetKind.CELL, target);
+        if (self.cell() != target) {
+            self.stepAlongRoute(target, true, ctx::isWalkable, ctx.occupancy());
+            return;
+        }
+        if (self.cell() == workplace) {
+            accrueFarmWork(self, ctx, params, home);
+        }
+    }
+
+    private static void accrueFarmWork(Actor self, ActorContext ctx, JobParams params, int homeCell) {
+        int workTicks = self.goalWorkTicks() + 1;
+        if (workTicks < params.workTicksPerUnit()) {
+            self.setGoalWorkTicks(workTicks);
+            return;
+        }
+        self.setGoalWorkTicks(0);
+        self.setGoalProgress((short) (self.goalProgress() + 1));
+        produceFood(self, ctx, homeCell);
+    }
+
+    /** One work-unit's FOOD yield: fill the household larder first, then sell surplus at market. */
+    private static void produceFood(Actor self, ActorContext ctx, int homeCell) {
+        ItemsLiteRegistry items = ctx.items();
+        if (items.countOnCellOfKind(homeCell, ItemKinds.FOOD) < FoodEconomy.LARDER_CAP) {
+            int added = items.addOnCell(homeCell, ItemKinds.FOOD, FoodEconomy.FARM_FOOD_PER_UNIT);
+            ctx.recordFoodMinted(added);
+            return;
+        }
+        int shopId = nearestSameZVendor(self, ctx);
+        if (shopId != Actor.NONE
+                && items.countCarriedOfKind(shopId, ItemKinds.FOOD) < FoodEconomy.SHOP_STOCK_CAP
+                && ctx.bankAccounts().transfer(shopId, self.id(), FoodEconomy.FARM_SELL_PRICE)) {
+            int added = items.addCarried(shopId, ItemKinds.FOOD, FoodEconomy.FARM_FOOD_PER_UNIT);
+            ctx.recordFoodMinted(added);
+        }
+        // else: larder full and no same-z market with room/funds -> pause (demand-driven).
+    }
+
+    /** Nearest same-z vendor shop by chebyshev (ascending index tiebreak), or {@link Actor#NONE}. */
+    private static int nearestSameZVendor(Actor self, ActorContext ctx) {
+        FoodMarket market = ctx.foodMarket();
+        ActorRegistry registry = ctx.registry();
+        int selfCell = self.cell();
+        int selfZ = PackedPos.z(selfCell);
+        int best = Actor.NONE;
+        int bestDist = Integer.MAX_VALUE;
+        for (int i = 0; i < market.vendorCount(); i++) {
+            int shopId = market.vendorAt(i);
+            int shopCell = registry.get(shopId).cell();
+            if (PackedPos.z(shopCell) != selfZ) {
+                continue;
+            }
+            int d = ActorGeometry.chebyshev(selfCell, shopCell);
+            if (d < bestDist) {
+                bestDist = d;
+                best = shopId;
+            }
+        }
+        return best;
     }
 
     // ======================================================================

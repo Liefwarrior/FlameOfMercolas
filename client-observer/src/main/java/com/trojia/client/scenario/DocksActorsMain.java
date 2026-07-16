@@ -114,6 +114,8 @@ public final class DocksActorsMain {
         System.out.println("items minted (placeholder ids + quantities, §11.2): "
                 + population.items().size());
         printEconomyProof(population);
+        printFoodConservation(population);
+        printStarvationByClass(registry);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
             // Wall-clock timing — printed only under --perf so plain runs stay byte-identical.
@@ -150,6 +152,75 @@ public final class DocksActorsMain {
                 + ") + loose(" + looseCoin + ") + sunk(" + sunkCoin + "): "
                 + (mintedCoin == vaultCoins + looseCoin + sunkCoin));
         System.out.println("============================================================================");
+    }
+
+    /**
+     * FOOD closed-supply conservation proof (economy-loop pass): every unit ever minted (larder
+     * seed at bake + farm work-unit yields + periodic imports) is either still in circulation
+     * ({@code liveOfKind(FOOD)}) or has been eaten/sunk — {@code minted == live + eaten}. A stable,
+     * bounded {@code live} is the demand-driven-supply signal (growing ⇒ over-import; → 0 ⇒
+     * under-supply). Eating is the only FOOD sink; imports mint FOOD, never Royals, so the money
+     * invariant above is untouched.
+     */
+    private static void printFoodConservation(DocksPopulation population) {
+        var items = population.items();
+        long minted = population.system().foodMinted();
+        long eaten = population.system().foodEaten();
+        int live = items.liveOfKind(ItemKinds.FOOD);
+        System.out.println();
+        System.out.println("================ FOOD CONSERVATION (closed supply) =========================");
+        System.out.println("  FOOD minted=" + minted + " (seed + farm yield + imports);  live(held)="
+                + live + "  eaten(sunk)=" + eaten);
+        System.out.println("  invariant minted == live + eaten: " + (minted == live + eaten)
+                + "  (" + minted + " == " + (live + eaten) + ")");
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * Starvation-by-class report (the economy-loop acceptance bar): the share of each actor class
+     * whose HUNGER is stuck at 0 (starved) at the end of the soak. Eli's hard bar — SERF starvation
+     * &le; 5%, and the MIDDLE CLASS (shopkeeper / clergy / watch) NEVER starves. Wastrels are the
+     * intended margin (the wageless poor + the roof decks). Deterministic ascending-id scan.
+     */
+    private static void printStarvationByClass(ActorRegistry registry) {
+        Map<String, int[]> byType = new java.util.TreeMap<>(); // key -> {total, starved}
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            int[] row = byType.computeIfAbsent(a.typeId().key(), k -> new int[2]);
+            row[0]++;
+            if (a.need(com.trojia.sim.actor.Need.HUNGER) == 0) {
+                row[1]++;
+            }
+        }
+        System.out.println();
+        System.out.println("================ STARVATION BY CLASS (HUNGER == 0 at soak end) ==============");
+        System.out.printf("  %-22s %6s %8s %8s%n", "type", "total", "starved", "pct");
+        for (Map.Entry<String, int[]> e : byType.entrySet()) {
+            int total = e.getValue()[0];
+            int starved = e.getValue()[1];
+            System.out.printf("  %-22s %6d %8d %7.1f%%%n", e.getKey(), total, starved,
+                    100.0 * starved / total);
+        }
+        // Aggregates against the bar.
+        int[] serf = byType.getOrDefault("serf", new int[2]);
+        int[] mid = new int[2];
+        for (String m : new String[] {"shopkeeper", "militia_watch", "priest_of_the_flame",
+                "disciple_of_the_flame"}) {
+            int[] r = byType.getOrDefault(m, new int[2]);
+            mid[0] += r[0];
+            mid[1] += r[1];
+        }
+        System.out.println("  --------------------------------------------------------------------------");
+        System.out.printf("  SERF starvation:         %d / %d = %.2f%%  (bar: <= 5%%)  -> %s%n",
+                serf[1], serf[0], pct(serf), serf[0] == 0 || 100.0 * serf[1] / serf[0] <= 5.0
+                        ? "PASS" : "FAIL");
+        System.out.printf("  MIDDLE CLASS starvation: %d / %d = %.2f%%  (bar: 0%%)     -> %s%n",
+                mid[1], mid[0], pct(mid), mid[1] == 0 ? "PASS" : "FAIL");
+        System.out.println("============================================================================");
+    }
+
+    private static double pct(int[] row) {
+        return row[0] == 0 ? 0.0 : 100.0 * row[1] / row[0];
     }
 
     /** Actor-type/job composition — the report's headline numbers, printed deterministically. */

@@ -65,7 +65,12 @@ public sealed abstract class Job {
             super(id, params);
         }
 
-        /** Tends a garden plot cycle (placeholder default texture, §10.6). */
+        /**
+         * Tends a garden plot cycle and PRODUCES FOOD (the economy-loop pass): each completed
+         * work-unit mints a {@link com.trojia.sim.actor.ItemKinds#FOOD} into the household larder
+         * (or, once that is full, sells the surplus to a same-z shop for Royals). Same commute-aware
+         * anchor cycle as {@link Laborer} otherwise.
+         */
         public static final class Farmer extends Serf {
             public static final JobId ID = JobId.of("serf.farmer");
 
@@ -80,7 +85,7 @@ public sealed abstract class Job {
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursueAtAnchor(self, ctx, params());
+                JobBehaviors.pursueFarm(self, ctx, params());
             }
 
             @Override

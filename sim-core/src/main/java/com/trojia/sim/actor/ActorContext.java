@@ -149,6 +149,29 @@ public interface ActorContext {
     }
 
     /**
+     * The baked FOOD-distribution side-table (the economy-loop pass): the vending z:+11 shops,
+     * the free commons cells, and the guaranteed home larders {@link SeekFoodPolicy} consults and
+     * the periodic import restocks. {@link FoodMarket#EMPTY} where no live district is wired
+     * (world-less bootstrap, economy-free tests) — the eat machine then finds no shop/commons and
+     * every hungry actor falls to the home-larder / starve branch.
+     */
+    default FoodMarket foodMarket() {
+        return FoodMarket.EMPTY;
+    }
+
+    /**
+     * Records {@code n} units of FOOD minted at runtime (a farm work-unit yield) for the
+     * closed-supply conservation proof {@code minted == held(live) + eaten}. Pure accounting —
+     * read by no behavior, so it changes no determinism property; a no-op where unwired.
+     */
+    default void recordFoodMinted(int n) {
+    }
+
+    /** Records {@code n} units of FOOD eaten (sunk) for the conservation proof; pure accounting. */
+    default void recordFoodEaten(int n) {
+    }
+
+    /**
      * Pure read (§2.3 "actors never write lanes"): {@code true} if {@code cell}
      * is safe to step onto right now ({@code com.trojia.sim.world.Walkability
      * .isWalkable}). Systems bound to no world (the headless world-less
