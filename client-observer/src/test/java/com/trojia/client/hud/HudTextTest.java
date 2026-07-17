@@ -30,12 +30,12 @@ class HudTextTest {
 
     @Test
     void describesTickSpeedAndDayClock() {
-        // At 1 tick = 1 simulated second, tick=3661 is same-day (day 0): 1h 01m 01s.
+        // The 24,000-tick day reads as 24h: tick 3661 -> 3661*1440/24000 = 219 min = 03:39,
+        // squarely in the Day phase (all job windows open, no night window yet).
         String line = HudText.describeTime(3661, "RUN");
         assertTrue(line.contains("tick=3661"), () -> "expected tick=3661 in: " + line);
         assertTrue(line.contains("speed=RUN"), () -> "expected speed=RUN in: " + line);
-        assertTrue(line.contains("Day 0"), () -> "expected Day 0 in: " + line);
-        assertTrue(line.contains("01:01:01"), () -> "expected 01:01:01 in: " + line);
+        assertTrue(line.contains("Day 1, 03:39 Day"), () -> "expected Day 1, 03:39 Day in: " + line);
     }
 
     @Test
@@ -43,18 +43,16 @@ class HudTextTest {
         String line = HudText.describeTime(0, "PAUSED");
         assertTrue(line.contains("tick=0"));
         assertTrue(line.contains("speed=PAUSED"));
-        assertTrue(line.contains("Day 0"));
-        assertTrue(line.contains("00:00:00"));
+        assertTrue(line.contains("Day 1, 00:00 Dawn"), () -> "expected Day 1, 00:00 Dawn in: " + line);
     }
 
     @Test
     void describesDayRollover() {
-        // One day is DailyRhythm.DAY simulated seconds; a tick just past that wraps time of
-        // day back down while advancing the day counter.
+        // A tick just past DailyRhythm.DAY wraps time of day back down while advancing the
+        // 1-based day counter.
         long tick = DailyRhythm.DAY + 3661;
         String line = HudText.describeTime(tick, "FAST");
-        assertTrue(line.contains("Day 1"), () -> "expected Day 1 in: " + line);
-        assertTrue(line.contains("01:01:01"), () -> "expected 01:01:01 in: " + line);
+        assertTrue(line.contains("Day 2, 03:39"), () -> "expected Day 2, 03:39 in: " + line);
         assertTrue(line.contains("tick=" + tick), () -> "expected tick=" + tick + " in: " + line);
     }
 
@@ -100,8 +98,17 @@ class HudTextTest {
 
     @Test
     void describeTimeTokensStartsWithTheStatusTextThenTheKeybindingLegend() {
+        // The status text is split across two leading text tokens — the bright clock+speed
+        // part, then the raw-tick suffix as a DIM token (dev detail, visually subordinate) —
+        // which together are exactly describeTime's string.
         List<HudToken> tokens = HudText.describeTimeTokens(37, "RUN");
-        assertEquals(HudToken.text(HudText.describeTime(37, "RUN")), tokens.get(0));
+        HudToken.Text clockAndSpeed = (HudToken.Text) tokens.get(0);
+        HudToken.Text tickSuffix = (HudToken.Text) tokens.get(1);
+        assertFalse(clockAndSpeed.dim(), "clock+speed run must be full brightness");
+        assertTrue(tickSuffix.dim(), "raw-tick suffix must be the dim run");
+        assertTrue(tickSuffix.value().contains("tick=37"),
+                () -> "expected tick=37 in dim suffix: " + tickSuffix.value());
+        assertEquals(HudText.describeTime(37, "RUN"), clockAndSpeed.value() + tickSuffix.value());
         assertTrue(tokens.containsAll(HudText.timeKeybindingTokens()));
     }
 }

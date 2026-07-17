@@ -20,6 +20,9 @@ public final class IconTextLine {
 
     private static final float ICON_GAP_PX = 3f;
 
+    /** Brightness multiplier for {@link HudToken.Text#dim() dim} text runs (alpha untouched). */
+    private static final float DIM_FACTOR = 0.55f;
+
     private IconTextLine() {
     }
 
@@ -39,8 +42,20 @@ public final class IconTextLine {
         float cursorX = x;
         for (HudToken token : tokens) {
             if (token instanceof HudToken.Text text) {
-                layout.setText(font, text.value());
-                font.draw(batch, layout, cursorX, y);
+                if (text.dim()) {
+                    // GlyphLayout bakes the font's color at setText time, so scale the font
+                    // color down for this run and restore it after — the caller's color keeps
+                    // tinting every non-dim run on the line.
+                    Color bright = new Color(font.getColor());
+                    font.setColor(bright.r * DIM_FACTOR, bright.g * DIM_FACTOR,
+                            bright.b * DIM_FACTOR, bright.a);
+                    layout.setText(font, text.value());
+                    font.draw(batch, layout, cursorX, y);
+                    font.setColor(bright);
+                } else {
+                    layout.setText(font, text.value());
+                    font.draw(batch, layout, cursorX, y);
+                }
                 cursorX += layout.width;
             } else if (token instanceof HudToken.Icon iconToken) {
                 TextureRegion region = icons.region(iconToken.key());
