@@ -40,11 +40,19 @@ public final class FoodMarket {
     private final int[] vendorShopIds;
     private final int[] commonsCells;
     private final int[] provisionedCitizenIds;
+    private final int[] garbageBinCells;
 
+    /** Bin-less convenience (pre-law&amp;order call sites and tests): no garbage bins. */
     public FoodMarket(int[] vendorShopIds, int[] commonsCells, int[] provisionedCitizenIds) {
+        this(vendorShopIds, commonsCells, provisionedCitizenIds, new int[0]);
+    }
+
+    public FoodMarket(int[] vendorShopIds, int[] commonsCells, int[] provisionedCitizenIds,
+            int[] garbageBinCells) {
         this.vendorShopIds = vendorShopIds.clone();
         this.commonsCells = commonsCells.clone();
         this.provisionedCitizenIds = provisionedCitizenIds.clone();
+        this.garbageBinCells = garbageBinCells.clone();
     }
 
     /** Number of vending shopkeepers. */
@@ -75,5 +83,18 @@ public final class FoodMarket {
     /** The provisioned citizen's actor id at dense index {@code i} (ascending bake order). */
     public int provisionedAt(int i) {
         return provisionedCitizenIds[i];
+    }
+
+    /**
+     * Number of garbage-bin cells (law &amp; order pass): the exterior sidewalk bins beside each
+     * FOOD business a daily scrap drop tops up and the broke's last-resort SCAVENGE eats from.
+     */
+    public int garbageBinCount() {
+        return garbageBinCells.length;
+    }
+
+    /** The garbage-bin cell (world-packed) at dense index {@code i} (ascending bake order). */
+    public int garbageBinAt(int i) {
+        return garbageBinCells[i];
     }
 }

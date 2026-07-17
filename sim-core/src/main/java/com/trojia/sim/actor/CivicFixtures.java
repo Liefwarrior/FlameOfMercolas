@@ -25,6 +25,8 @@ package com.trojia.sim.actor;
  * @param payroll          the wage table + finite employer pool (Pass 9), or {@link Payroll#NONE}
  * @param foodMarket       the FOOD-distribution side-table (economy-loop pass: vendor shops, free
  *                         commons, guaranteed larders), or {@link FoodMarket#EMPTY}
+ * @param patrolRoutes     the ordered single-z guard patrol routes (law &amp; order pass, Pass 13),
+ *                         or {@link PatrolRouteTable#EMPTY}
  */
 public record CivicFixtures(
         int arrestHoldCell,
@@ -34,16 +36,19 @@ public record CivicFixtures(
         BankQueue bankQueue,
         PrisonCellRegistry prisonCells,
         Payroll payroll,
-        FoodMarket foodMarket) {
+        FoodMarket foodMarket,
+        PatrolRouteTable patrolRoutes) {
 
     /** The fully-unwired bundle (world-less bootstrap, economy-free tests). */
     public static final CivicFixtures NONE = new CivicFixtures(
             Actor.NONE, RestrictedZoneTable.EMPTY, Actor.NONE, Actor.NONE,
-            BankQueue.EMPTY, PrisonCellRegistry.EMPTY, Payroll.NONE, FoodMarket.EMPTY);
+            BankQueue.EMPTY, PrisonCellRegistry.EMPTY, Payroll.NONE, FoodMarket.EMPTY,
+            PatrolRouteTable.EMPTY);
 
     /** A bundle wiring only the Phase-0 seams ({@code arrestHoldCell} + {@code zones}); bank/prison unwired. */
     public static CivicFixtures ofJustice(int arrestHoldCell, RestrictedZoneTable zones) {
         return new CivicFixtures(arrestHoldCell, zones, Actor.NONE, Actor.NONE,
-                BankQueue.EMPTY, PrisonCellRegistry.EMPTY, Payroll.NONE, FoodMarket.EMPTY);
+                BankQueue.EMPTY, PrisonCellRegistry.EMPTY, Payroll.NONE, FoodMarket.EMPTY,
+                PatrolRouteTable.EMPTY);
     }
 }

@@ -131,6 +131,18 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
             eat(self, ctx, ReasonCode.ATE_FOOD);
             return true;
         }
+        // 5. SCAVENGE (law & order pass, the broke's last resort): only when the money gate is
+        //    shut — no carried FOOD (step 1), no affordable counter (step 2), no larder/commons
+        //    (steps 3-4) AND genuinely broke — eat a scrap off a same-z garbage bin in reach.
+        //    Strictly last in the ordering, so a solvent citizen always buys instead.
+        if (isBroke(self, ctx)) {
+            int bin = nearestStockedBin(self, ctx, selfCell, selfZ, FoodEconomy.EAT_REACH, false);
+            if (bin != Actor.NONE) {
+                items.takeOnCell(bin, ItemKinds.FOOD, 1);
+                eat(self, ctx, ReasonCode.SCAVENGED_FOOD);
+                return true;
+            }
+        }
         return false;
     }
 
@@ -162,9 +174,52 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         if (shopCell != Actor.NONE) {
             return shopCell;
         }
+        // SCAVENGE walk (law & order pass): broke, nothing carried, no larder/commons/counter —
+        // walk to the nearest same-z garbage bin holding scraps (skipping A*-unroutable bins,
+        // so an isolated roof deck still starves: the intended margin). Strictly after every
+        // legitimate branch above, so it never outcompetes a purchase.
+        if (isBroke(self, ctx)) {
+            int bin = nearestStockedBin(self, ctx, selfCell, selfZ, Integer.MAX_VALUE, true);
+            if (bin != Actor.NONE) {
+                return bin;
+            }
+        }
         // Last resort: keep heading for the own larder even if the route just failed (it may open up
         // as the crowd shifts), rather than giving up while a stocked cell exists on the band.
         return larder;
+    }
+
+    /** Broke = the money gate is shut: no carried ID at all, or a balance under one meal. */
+    private static boolean isBroke(Actor self, ActorContext ctx) {
+        int account = BankLedger.purchaseAuth(idCardOf(self, ctx));
+        return account == Actor.NONE || ctx.bankAccounts().balanceOf(account) < FoodEconomy.FOOD_PRICE;
+    }
+
+    /**
+     * The nearest same-z garbage-bin cell currently holding FOOD scraps, within {@code maxDist}
+     * chebyshev (ascending index breaks ties) — the SCAVENGE source scan, shaped exactly like
+     * {@link #nearestStockedCommons}. When {@code skipRouteFailed}, a bin the last A* could not
+     * route to is skipped (an unroutable bin cannot pin a starving actor).
+     */
+    private static int nearestStockedBin(Actor self, ActorContext ctx, int selfCell, int selfZ,
+            int maxDist, boolean skipRouteFailed) {
+        FoodMarket market = ctx.foodMarket();
+        ItemsLiteRegistry items = ctx.items();
+        int best = Actor.NONE;
+        int bestDist = maxDist == Integer.MAX_VALUE ? Integer.MAX_VALUE : maxDist + 1;
+        for (int i = 0; i < market.garbageBinCount(); i++) {
+            int cell = market.garbageBinAt(i);
+            if (PackedPos.z(cell) != selfZ) {
+                continue;
+            }
+            int d = ActorGeometry.chebyshev(selfCell, cell);
+            if (d < bestDist && items.countOnCellOfKind(cell, ItemKinds.FOOD) > 0
+                    && !(skipRouteFailed && self.routeFailedTo(cell))) {
+                bestDist = d;
+                best = cell;
+            }
+        }
+        return best;
     }
 
     // ======================================================================

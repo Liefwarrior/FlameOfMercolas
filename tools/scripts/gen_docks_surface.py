@@ -1940,6 +1940,49 @@ for (key, gx, gy) in (("k08_branns", 28, 65), ("k14_wrackhouse", 168, 33),
     mk(11, "script_anchor", "guard_post_%s_anchor" % key, gx, gy)
 
 # ======================================================================
+# 6.8 Garbage bins (law & order pass; Eli's garbage-can request): ONE walkable bin
+# cell on the exterior street/sidewalk beside each FOOD business (taverns K03/K04/K05,
+# the Dawnstalls fish market, Salt Row, the Mission soup kitchen, the Hardtack Oven,
+# the Eel-Pots row, and the off-band victualler stalls on Band B/C). Existing gid only:
+# the bin is a FLOOR repaint (OAK_FLOOR -- a wooden refuse platform visibly distinct
+# from the surrounding pavers/dirt) + a script_anchor, so walkability is untouched by
+# construction (floor stays floor). A daily sim-side scrap drop tops each bin cell up;
+# the broke scavenge off it. Each cell is SELF-GUARDED below: it must already be open
+# (no terrain), floored and dry, or generation aborts -- a bin can never silently land
+# in a wall/water and strand the scavenge walk. Two compound-upper Band-C victuallers
+# (49,112)/(123,111) deliberately get NO bin: their z:+13 floors serve provisioned
+# serf residents, and the roof-deck wastrels must keep a genuine starvation margin.
+# ======================================================================
+GARBAGE_BINS = [
+    # z11 -- the Band-A food row
+    (11, 118, 33),   # K03 The Gilded Gull, Tarwalk frontage
+    (11, 108, 33),   # K04 The Bilge, Tarwalk frontage (clear of the 103,33 hitch post)
+    (11, 66, 65),    # K05 The Lantern Room, Ropewynd kerb
+    (11, 54, 44),    # K10 Dawnstalls, east market margin
+    (11, 52, 52),    # K11 Salt Row, gutting-shed corridor
+    (11, 91, 65),    # K17 Mission of the Flame (soup kitchen), Ropewynd kerb
+    (11, 37, 69),    # K27 The Hardtack Oven, north frontage
+    (11, 89, 32),    # K24 The Eel-Pots, stallfront apron
+    # z12 -- the Band-B victualler stalls
+    (12, 102, 98),   # Terrace Walk victualler stand
+    (12, 77, 105),   # Saltgate porters' victualler stand
+    (12, 170, 102),  # Hovels-B victualler (north apron of hovel 11)
+    (12, 154, 110),  # goat-pen victualler (inside the pen yard, by the gate)
+    # z13 -- the Band-C victualler stalls / plazas
+    (13, 21, 121),   # hovel-row victualler, mid-lane between the two rows
+    (13, 75, 120),   # Saltgate Rise Band-C leg victualler (notice-board stand)
+    (13, 99, 122),   # Gallows Row well-plaza victualler
+    (13, 134, 125),  # abbey-lane victualler (gap between hovels 38/39)
+]
+for i, (bz, bx, by) in enumerate(GARBAGE_BINS):
+    if not (T[bz][by][bx] == 0 and F[bz][by][bx] != 0 and FL[bz][by][bx] == 0):
+        raise SystemExit("garbage bin %02d at z%d (%d,%d) is not open+floored+dry "
+                         "(T=%d F=%d FL=%d) -- pick a neighbouring street cell"
+                         % (i + 1, bz, bx, by, T[bz][by][bx], F[bz][by][bx], FL[bz][by][bx]))
+    F[bz][by][bx] = OAK_FLOOR
+    mk(bz, "script_anchor", "garbage_bin_%02d_anchor" % (i + 1), bx, by)
+
+# ======================================================================
 # XML emission (byte-deterministic; CSV rows carry exactly W tokens,
 # no trailing comma before </data>)
 # ======================================================================

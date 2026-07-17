@@ -10,18 +10,22 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Living-docks Pass 4 (F3 data): the baked {@link RestrictedZoneTable} the Docks injects into the
- * {@code ActorsSystem} carries the four expected zones — shipyard/ships gated on the Sailor job,
- * the guardhouse interior + holding cells on the Guard (watch.patrol) job, the bank vault chest on
- * the Guard job, and the shops' special-inventory counters on the Trader job — each keyed to the
- * real map anchors. Data + accessors only this pass; no live enforcement reads it yet.
+ * Living-docks Pass 4 (F3 data) + the law &amp; order pass (Passes 11-12): the baked {@link
+ * RestrictedZoneTable} the Docks injects into the {@code ActorsSystem} carries the four Pass-4
+ * access-gate zones — shipyard/ships gated on the Sailor job, the guardhouse interior + holding
+ * cells on the Guard (watch.patrol) job, the bank vault chest on the Guard job, and the shops'
+ * special-inventory counters on the Trader job — PLUS the seven policed retail-shop interiors
+ * and the bank hall the Watch's APPREHEND now enforces live. Zone order is append-only, so the
+ * original four keep their indices and win their own cells under {@code zoneAt}'s
+ * lowest-index-wins rule.
  */
 final class DocksRestrictedZoneBakeTest {
 
     @Test
     void theBakedTableHasTheFourExpectedGatedZones() {
         RestrictedZoneTable table = DocksPopulation.restrictedZoneTable();
-        assertEquals(4, table.size(), "shipyard + guardhouse + vault + shops");
+        assertEquals(12, table.size(),
+                "shipyard + guardhouse + vault + shops + 7 policed shop interiors + bank hall");
 
         int shipCell = DocksPopulation.maritimeTradeAnchors()[0];
         RestrictedZone shipyard = table.zoneAt(shipCell);

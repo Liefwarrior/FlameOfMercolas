@@ -31,5 +31,12 @@ public enum PolicyId {
     /** Permanent EMERGENCY-band override for a hanged Skyrunner (ARREST-SPEC addendum). */
     EXECUTED,
     /** Play mode's direct-control override (PLAY-MODE-SPEC.md §5.2). */
-    PLAYER_CONTROL
+    PLAYER_CONTROL,
+    /**
+     * Watch-side enforcement (law &amp; order pass, Pass 11): sense an offender in a
+     * restricted/policed zone (or a bank-queue jumper), intercept, then correct —
+     * warn → fine → arrest. The guard-side inversion of the old villain-side
+     * self-arrest hack.
+     */
+    APPREHEND
 }

@@ -326,7 +326,16 @@ public sealed abstract class Job {
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
-                JobBehaviors.pursuePatrol(self, ctx, BEAT_RADIUS);
+                // Law & order pass (Pass 13): a Watch whose anchor sits on a baked patrol
+                // route walks that route's ordered waypoints (Tarwalk/quay/Ropewynd);
+                // everyone else (stationed shop/bank/roof guards, unwired bakes) keeps the
+                // legacy square beat unchanged.
+                int route = ctx.patrolRoutes().routeContaining(self.anchorCell());
+                if (route >= 0) {
+                    JobBehaviors.pursueRoutePatrol(self, ctx, route);
+                } else {
+                    JobBehaviors.pursuePatrol(self, ctx, BEAT_RADIUS);
+                }
             }
 
             @Override

@@ -118,6 +118,7 @@ public final class DocksActorsMain {
         printStarvationByClass(registry);
         printSerfStarvationByBand(registry, jobs);
         printMoneyGateProof(population, jobs);
+        printJusticeReport(population, jobs);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
             // Wall-clock timing — printed only under --perf so plain runs stay byte-identical.
@@ -171,7 +172,8 @@ public final class DocksActorsMain {
         int live = items.liveOfKind(ItemKinds.FOOD);
         System.out.println();
         System.out.println("================ FOOD CONSERVATION (closed supply) =========================");
-        System.out.println("  FOOD minted=" + minted + " (seed + farm yield + imports);  live(held)="
+        System.out.println("  FOOD minted=" + minted
+                + " (seed + farm yield + imports + garbage scraps);  live(held)="
                 + live + "  eaten(sunk)=" + eaten);
         System.out.println("  invariant minted == live + eaten: " + (minted == live + eaten)
                 + "  (" + minted + " == " + (live + eaten) + ")");
@@ -304,6 +306,76 @@ public final class DocksActorsMain {
         long balance = id < bank.accountCount() ? bank.balanceOf(id) : -1;
         System.out.printf("  %s actor#%-4d [%-16s] HUNGER=%-5d Royals=%d%n",
                 label, id, JobDisplay.trueJobId(job), a.need(com.trojia.sim.actor.Need.HUNGER), balance);
+    }
+
+    /**
+     * Law &amp; order report (Pass 11-13 acceptance): proves the guard-side APPREHEND loop fired
+     * LIVE — every {@code offenseCount} bump is one completed correction (a guard-side loiter
+     * arrest, a villain-exposure arrest, or a Skyrunner maim/hang escalation), so a nonzero
+     * total with offenders outside the old villain pool means the new enforcement is really
+     * running. Prints who is in custody right now (and in WHICH assigned cell), who has served
+     * and been released, and one sample offender trace. Deterministic ascending-id scans only,
+     * so twin runs stay byte-identical.
+     */
+    private static void printJusticeReport(DocksPopulation population, JobRegistry jobs) {
+        ActorRegistry registry = population.registry();
+        var bank = population.bankAccounts();
+        int totalOffenses = 0;
+        int offenders = 0;
+        int heldNow = 0;
+        int released = 0;
+        int maimedOrHanged = 0;
+        int warnedNow = 0;
+        int sample = Actor.NONE;
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            totalOffenses += a.offenseCount();
+            if (a.offenseCount() > 0) {
+                offenders++;
+                if (sample == Actor.NONE) {
+                    sample = i;
+                }
+            }
+            if (a.hasStatus(com.trojia.sim.actor.StatusBit.HELD)) {
+                heldNow++;
+            } else if (a.hasStatus(com.trojia.sim.actor.StatusBit.EXECUTED)
+                    || a.hasStatus(com.trojia.sim.actor.StatusBit.MAIMED)) {
+                maimedOrHanged++;
+            } else if (a.offenseCount() > 0) {
+                released++;
+            }
+            if (a.hasStatus(com.trojia.sim.actor.StatusBit.MOVE_ALONG)) {
+                warnedNow++;
+            }
+        }
+        System.out.println();
+        System.out.println("================ LAW & ORDER (guard-side APPREHEND live) ====================");
+        System.out.println("  corrections completed (sum offenseCount): " + totalOffenses
+                + " across " + offenders + " distinct offenders  -> arrests firing: "
+                + (totalOffenses > 0 ? "YES" : "NO"));
+        System.out.println("  in custody now: " + heldNow + ";  served + released: " + released
+                + ";  maimed/hanged (Skyrunner escalation): " + maimedOrHanged
+                + ";  move-along warnings outstanding: " + warnedNow);
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            if (a.hasStatus(com.trojia.sim.actor.StatusBit.HELD)) {
+                System.out.println("    HELD  actor#" + a.id() + " [" + a.typeId().key()
+                        + "] cell=" + xyz(a.cell()) + " assignedCell=" + xyz(a.assignedHoldCell())
+                        + " heldUntil=" + a.heldUntilTick());
+            }
+        }
+        if (sample != Actor.NONE) {
+            Actor a = registry.get(sample);
+            Job job = a.jobOrdinal() >= 0 ? jobs.get(a.jobOrdinal()) : null;
+            long balance = sample < bank.accountCount() ? bank.balanceOf(sample) : -1;
+            System.out.println("  sample offender trace: actor#" + a.id() + " [" + a.typeId().key()
+                    + " / " + JobDisplay.trueJobId(job) + "] offenses=" + a.offenseCount()
+                    + " held=" + a.hasStatus(com.trojia.sim.actor.StatusBit.HELD)
+                    + " assignedCell=" + xyz(a.assignedHoldCell())
+                    + " heldUntil=" + a.heldUntilTick()
+                    + " Royals=" + balance + " (post-fine) lastReason=" + policyName(a));
+        }
+        System.out.println("============================================================================");
     }
 
     /** Actor-type/job composition — the report's headline numbers, printed deterministically. */

@@ -191,6 +191,7 @@ public final class ActorsSystem implements SimulationSystem {
         runPayroll(context.tick());
         runFoodImports(context.tick());
         runFoodProvision(context.tick());
+        runGarbageDrops(context.tick());
         registry.tickAll(new ActorContextImpl(context));
     }
 
@@ -255,6 +256,31 @@ public final class ActorsSystem implements SimulationSystem {
             }
             if (bank.transfer(id, pool, units * FoodEconomy.FOOD_PRICE)) {
                 foodMinted += items.addCarried(id, ItemKinds.FOOD, units);
+            }
+        }
+    }
+
+    /**
+     * The daily garbage drop (law &amp; order pass, Eli's garbage-can request): once a day each
+     * garbage-bin cell beside a FOOD business is topped up to {@link FoodEconomy#BIN_SCRAP_CAP}
+     * FOOD scraps — the district's kitchens and stalls throwing out the day's refuse. Minted
+     * FOOD (accounted in the closed-supply conservation proof), never Royals, capped so live
+     * FOOD stays bounded. Deterministic: fixed absolute-tick cadence, ascending dense-index
+     * walk, no draws — the exact {@link #runFoodImports} shape. The broke's last-resort
+     * SCAVENGE branch ({@link SeekFoodPolicy}) eats off these cells, softening the wastrel
+     * margin from 100% starvation to a real, geography-driven margin.
+     */
+    private void runGarbageDrops(long tick) {
+        FoodMarket market = fixtures.foodMarket();
+        if (tick <= 0 || tick % FoodEconomy.SCRAP_DROP_PERIOD != 0
+                || market.garbageBinCount() == 0) {
+            return;
+        }
+        for (int i = 0; i < market.garbageBinCount(); i++) {
+            int bin = market.garbageBinAt(i);
+            int deficit = FoodEconomy.BIN_SCRAP_CAP - items.countOnCellOfKind(bin, ItemKinds.FOOD);
+            if (deficit > 0) {
+                foodMinted += items.addOnCell(bin, ItemKinds.FOOD, deficit);
             }
         }
     }
@@ -366,6 +392,11 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeLong(actor.heldUntilTick());
         out.writeByte(actor.offenseCount());
         out.writeInt(actor.assignedHoldCell()); // Phase-2 STEP C: per-prisoner cell (heldUntilTick triad)
+        out.writeInt(actor.apprehendTargetId()); // law & order pass: the guard's locked offender
+        out.writeLong(actor.moveAlongUntilTick()); // law & order pass: warn-grace absolute deadline
+        // lastReasonCode is load-bearing in ApprehendPolicy's buying-customer exemption, so a
+        // loaded run must see the same value a continuous run would (-1 = never set).
+        out.writeByte(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
         // Carried items are not written per-actor: ItemsLite (serialized above, keyed by carrier)
         // is the single source of truth for inventory — no parallel per-actor id list exists.
     }
@@ -444,6 +475,9 @@ public final class ActorsSystem implements SimulationSystem {
         long heldUntilTick = in.readLong();
         byte offenseCount = in.readByte();
         int assignedHoldCell = in.readInt(); // Phase-2 STEP C: per-prisoner cell
+        int apprehendTargetId = in.readInt(); // law & order pass
+        long moveAlongUntilTick = in.readLong(); // law & order pass
+        byte lastReasonOrdinal = in.readByte(); // law & order pass: -1 = never set
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
         actor.setIdentity(new Persona(trueId, presentedId));
@@ -474,6 +508,10 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setHeldUntilTick(heldUntilTick);
         actor.setOffenseCount(offenseCount);
         actor.setAssignedHoldCell(assignedHoldCell);
+        actor.setApprehendTargetId(apprehendTargetId);
+        actor.setMoveAlongUntilTick(moveAlongUntilTick);
+        actor.setLastReasonCode(
+                lastReasonOrdinal < 0 ? null : ReasonCode.values()[lastReasonOrdinal]);
     }
 
     @Override
@@ -497,6 +535,11 @@ public final class ActorsSystem implements SimulationSystem {
             // twin-run check). heldUntilTick/offenseCount remain out; the cell is the state the
             // multi-cell pass adds and must not be able to desync silently.
             sink.putInt(actor.assignedHoldCell());
+            // Law & order pass: the guard's locked offender + the offender's warn deadline (the
+            // same landmine-F reasoning — an enforcement-only desync must fail the twin-run).
+            sink.putInt(actor.apprehendTargetId());
+            sink.putLong(actor.moveAlongUntilTick());
+            sink.putInt(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {
@@ -640,6 +683,17 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public FoodMarket foodMarket() {
             return fixtures.foodMarket();
+        }
+
+        @Override
+        public PatrolRouteTable patrolRoutes() {
+            return fixtures.patrolRoutes();
+        }
+
+        @Override
+        public int civicPoolAccount() {
+            Payroll payroll = fixtures.payroll();
+            return payroll.isWired() ? payroll.employerAccountId() : Actor.NONE;
         }
 
         @Override

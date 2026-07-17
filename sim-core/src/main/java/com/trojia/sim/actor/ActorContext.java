@@ -149,6 +149,26 @@ public interface ActorContext {
     }
 
     /**
+     * The baked ordered patrol-route side-table (law &amp; order pass, Pass 13): the Tarwalk /
+     * quay / Ropewynd waypoint lists a route-bound Watch walks in order. {@link
+     * PatrolRouteTable#EMPTY} where no routes are wired — every Watch then square-beats as
+     * before.
+     */
+    default PatrolRouteTable patrolRoutes() {
+        return PatrolRouteTable.EMPTY;
+    }
+
+    /**
+     * The civic/market pool account loiter fines are paid into (law &amp; order pass, Pass 11) —
+     * the same finite employer/market pool payroll draws from, so fines recirculate as wages.
+     * {@link Actor#NONE} where no payroll is wired: the fine step is then skipped entirely
+     * (never minted, never burned — conservation holds trivially).
+     */
+    default int civicPoolAccount() {
+        return Actor.NONE;
+    }
+
+    /**
      * The baked FOOD-distribution side-table (the economy-loop pass): the vending z:+11 shops,
      * the free commons cells, and the guaranteed home larders {@link SeekFoodPolicy} consults and
      * the periodic import restocks. {@link FoodMarket#EMPTY} where no live district is wired

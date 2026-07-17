@@ -151,6 +151,21 @@ public abstract class Actor {
      * frees on release. A persisted scalar (serialize/load/hash, the {@code heldUntilTick} triad).
      */
     private int assignedHoldCell = NONE;
+    /**
+     * The offender this guard is actively apprehending (law &amp; order pass, APPREHEND), or
+     * {@link #NONE}. Set by the guard-side sense scan, cleared when the case closes (offender
+     * complied, was arrested, or turned unreachable). While set, {@code ApprehendPolicy} scores a
+     * high fixed constant so the guard never abandons an apprehension mid-chase. A persisted
+     * scalar (serialize/load/hash — the {@code assignedHoldCell} triad).
+     */
+    private int apprehendTargetId = NONE;
+    /**
+     * The absolute tick this actor's move-along warning expires (only meaningful while
+     * {@link StatusBit#MOVE_ALONG} is set): leave the zone before it and the warning clears
+     * free; still in violation at/after it and the guard escalates to fine + arrest. Absolute
+     * tick, never a countdown (determinism rule). Persisted (serialize/load/hash).
+     */
+    private long moveAlongUntilTick;
 
     // ---- Play mode (PLAY-MODE-SPEC.md §5.2/§6): plain scalar, the same goalProgress/
     // heldUntilTick precedent — per-frame input intent, not simulation state, so it is
@@ -730,6 +745,26 @@ public abstract class Actor {
     /** Stamps (at arrest) or clears (with {@link #NONE}, at release) the assigned prison cell. */
     public final void setAssignedHoldCell(int cell) {
         this.assignedHoldCell = cell;
+    }
+
+    /** The offender this guard is actively apprehending, or {@link #NONE} (law &amp; order pass). */
+    public final int apprehendTargetId() {
+        return apprehendTargetId;
+    }
+
+    /** Locks (or, with {@link #NONE}, closes) this guard's active apprehension case. */
+    public final void setApprehendTargetId(int actorId) {
+        this.apprehendTargetId = actorId;
+    }
+
+    /** Absolute expiry tick of this actor's move-along warning (meaningful while MOVE_ALONG). */
+    public final long moveAlongUntilTick() {
+        return moveAlongUntilTick;
+    }
+
+    /** Stamps the move-along warning's absolute expiry tick (law &amp; order pass). */
+    public final void setMoveAlongUntilTick(long tick) {
+        this.moveAlongUntilTick = tick;
     }
 
     /** The pending Play-mode step target, or {@link #NONE} (PLAY-MODE-SPEC.md §5.2). */

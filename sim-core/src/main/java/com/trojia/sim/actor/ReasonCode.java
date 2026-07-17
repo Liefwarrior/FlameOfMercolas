@@ -28,5 +28,11 @@ public enum ReasonCode {
     /** Ate a FOOD from a home larder or a free commons cell (economy-loop pass). */
     ATE_FOOD,
     /** Bought a FOOD at a shop counter (ID-authorized Royal transfer) and ate it (economy-loop pass). */
-    BOUGHT_FOOD
+    BOUGHT_FOOD,
+    /** A guard is actively intercepting/holding a locked offender (law &amp; order pass, APPREHEND). */
+    APPREHENDING,
+    /** An offender was told to move along (first-contact warning; leave the zone and it clears). */
+    WARNED_MOVE_ALONG,
+    /** Ate a FOOD scrap off a garbage-bin cell — the broke's last resort (law &amp; order pass). */
+    SCAVENGED_FOOD
 }

@@ -15,6 +15,10 @@ public final class PriestOfTheFlame extends Actor {
     public static final ActorTypeId TYPE = ActorTypeId.of("priest_of_the_flame");
 
     private static final PolicyStack STACK = PolicyStack.of(
+            // Law & order pass: the guard-side APPREHEND can now arrest ANY civic type (not just
+            // the villain-hosting Wastrel), so custody must dominate this stack too or a HELD
+            // offender of this type would never be escorted or released.
+            Policies.HELD,
             Policies.PLAYER_CONTROL,
             Policies.DEFER_WIELDER,
             Policies.FLEE,

@@ -21,6 +21,7 @@ import com.trojia.sim.actor.HouseholdRawsLoader;
 import com.trojia.sim.actor.ItemKinds;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.Need;
+import com.trojia.sim.actor.PatrolRouteTable;
 import com.trojia.sim.actor.Payroll;
 import com.trojia.sim.actor.PrisonCellRegistry;
 import com.trojia.sim.actor.RestrictedZone;
@@ -196,12 +197,23 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[][] FARM_TILES_C2 = {{133, 78}, {147, 78}, {133, 83}, {147, 83}};
     private static final int[][] FARM_TILES_C3 = {{102, 103}, {118, 103}, {102, 106}, {118, 106}};
 
-    // Ordered single-z (z:+11) guard patrol routes (markers for the later patrol pass): the
-    // Tarwalk sidewalk, the west quay/berth apron, and Ropewynd's continuous south kerb.
+    // Ordered single-z (z:+11) guard patrol routes (walked in order by the law & order pass's
+    // waypoint patrol): the Tarwalk sidewalk, the west quay/berth apron, and Ropewynd's
+    // continuous south kerb.
     private static final int[][] PATROL_TARWALK = {{20, 33}, {45, 33}, {70, 33}, {96, 33}, {122, 33}};
     private static final int[][] PATROL_QUAY = {{14, 30}, {28, 30}, {42, 30}, {56, 30}, {68, 30}};
     private static final int[][] PATROL_ROPEWYND =
             {{10, 65}, {35, 65}, {55, 65}, {78, 65}, {100, 65}, {122, 65}, {145, 65}};
+
+    // Garbage bins (law & order pass, Eli's garbage-can request): one walkable OAK_FLOOR bin
+    // cell on the exterior street beside each FOOD business, mirroring gen_docks_surface.py's
+    // garbage_bin_* markers EXACTLY (lockstep rule). A daily sim-side scrap drop tops each up
+    // to BIN_SCRAP_CAP; the broke's SCAVENGE branch eats off them. The two compound-upper
+    // Band-C victuallers deliberately have no bin (the roof decks keep their starvation margin).
+    private static final int[][] GARBAGE_BINS_ZA = {{118, 33}, {108, 33}, {66, 65}, {54, 44},
+            {52, 52}, {91, 65}, {37, 69}, {89, 32}};
+    private static final int[][] GARBAGE_BINS_ZB = {{102, 98}, {77, 105}, {170, 102}, {154, 110}};
+    private static final int[][] GARBAGE_BINS_ZC = {{21, 121}, {75, 120}, {99, 122}, {134, 125}};
     private static final int[] LAIR_SKYRUNNER = {189, 88};     // K35, z:+13, unmarked
     private static final int[] MISSION_BUNKS = {85, 78};
     private static final int[] MISSION_GARDEN = {90, 88};
@@ -476,7 +488,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         // does); the gate itself (canAccess) is unit-tested against these zones.
         CivicFixtures fixtures = new CivicFixtures(arrestHoldCell, restrictedZoneTable(),
                 vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll,
-                foodMarket);
+                foodMarket, PatrolRouteTable.of(patrolRoutes()));
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
                 relationships, items, bank, world, fixtures);
         system.recordFoodMintedAtBake(foodSeeded);
@@ -575,21 +587,74 @@ public final class DocksPopulation implements ScenarioPopulation {
         return cells;
     }
 
+    // ---- Law & order pass: the POLICED shop interiors + the bank hall. Each policed rect is
+    // the shop's exact generator shell footprint (walls included -- wall cells are unwalkable,
+    // so tagging them is harmless), so no policed cell spills onto the public street. The bank
+    // hall is its shell minus the three queue slots (queueing there is legitimate business,
+    // and offense (c) -- standing on the WRONG slot -- is judged separately by BankQueue rank).
+    private static final int[][] POLICED_SHOP_RECTS = {   // {x0, y0, x1, y1}, all z:+11
+            {24, 66, 31, 74},     // K08 Brann's Chandlery
+            {164, 34, 173, 42},   // K14 Wrackhouse
+            {122, 52, 128, 58},   // K15 Fenner's Pawn
+            {40, 66, 53, 76},     // K23 Cooper & Blockmaker
+            {8, 70, 15, 77},      // K26 Sailmaker's Loft
+            {32, 70, 38, 78},     // K27 The Hardtack Oven
+            {130, 58, 135, 64},   // K28 The Slop-Chest
+    };
+    private static final int[] BANK_HALL_RECT = {150, 48, 159, 59};   // K36 shell, z:+11
+
+    /** A generator shell rect as world-packed cells, minus {@code excluded} cells. */
+    private static int[] rectCells(int[] rect, int z, int... excludedWorldCells) {
+        List<Integer> cells = new ArrayList<>();
+        for (int y = rect[1]; y <= rect[3]; y++) {
+            for (int x = rect[0]; x <= rect[2]; x++) {
+                int cell = worldCell(new int[] {x, y}, z);
+                if (!containsCell(excludedWorldCells, cell)) {
+                    cells.add(cell);
+                }
+            }
+        }
+        return toIntArray(cells);
+    }
+
+    private static boolean containsCell(int[] cells, int cell) {
+        for (int c : cells) {
+            if (c == cell) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
-     * The baked restricted-zone side-table (F3 data). Four zones, each gated on a PRESENTED job:
-     * the shipyard/ships (Sailor), the guardhouse interior + cells (Guard = watch.patrol), the
-     * bank vault chest (Guard — there is no distinct banker job this pass, so the Watch protects
-     * it), and the shops' special/back-room inventory (Trader). Data only: {@code canAccess}
-     * reads this, but no live enforcement behavior does yet.
+     * The baked restricted-zone side-table. The four Pass-4 access-gate zones (each gated on a
+     * PRESENTED job): the shipyard/ships (Sailor), the guardhouse interior + cells (Guard =
+     * watch.patrol), the bank vault chest (Guard — there is no distinct banker job this pass, so
+     * the Watch protects it), and the shops' special/back-room inventory (Trader) — PLUS, law &amp;
+     * order pass (Passes 11-12), the POLICED zones the Watch's APPREHEND enforces live: the seven
+     * retail-shop interiors (Trader-gated, so anchored staff and correctly-presenting actors pass)
+     * and the bank hall (Guard-gated; the queue slots are carved out as legitimate ground). Zone
+     * order is append-only: the four Pass-4 zones keep their indices, and {@code zoneAt}'s
+     * lowest-index-wins rule means the original single-cell gates still win their own cells.
      */
     public static RestrictedZoneTable restrictedZoneTable() {
-        List<RestrictedZone> zones = new ArrayList<>(4);
+        List<RestrictedZone> zones = new ArrayList<>();
         zones.add(new RestrictedZone(Job.Maritime.Sailor.ID, Actor.NONE, maritimeTradeAnchors()));
         zones.add(new RestrictedZone(Job.Watch.Patrol.ID, worldCell(K34_GUARDHOUSE, ZA),
                 guardhouseInteriorCells()));
         zones.add(new RestrictedZone(Job.Watch.Patrol.ID, worldCell(GUARD_POST_BANK_WEST, ZA),
                 new int[] {worldCell(BANK_VAULT_CHEST, ZA)}));
         zones.add(new RestrictedZone(Job.Trade.Trader.ID, Actor.NONE, traderShopAnchors()));
+        // Law & order pass: the policed shop interiors, one zone per shop, each stationed with
+        // the shop's exterior guard post (same order as SHOP_GUARD_POSTS).
+        for (int i = 0; i < POLICED_SHOP_RECTS.length; i++) {
+            zones.add(new RestrictedZone(Job.Trade.Trader.ID,
+                    worldCell(SHOP_GUARD_POSTS[i], ZA), rectCells(POLICED_SHOP_RECTS[i], ZA)));
+        }
+        // The bank hall (queue slots carved out): loitering inside the Counting-House is the
+        // Watch's business; standing in line is not.
+        zones.add(new RestrictedZone(Job.Watch.Patrol.ID, worldCell(GUARD_POST_BANK_EAST, ZA),
+                rectCells(BANK_HALL_RECT, ZA, toIntArray(bankQueue()))));
         return new RestrictedZoneTable(zones);
     }
 
@@ -681,7 +746,15 @@ public final class DocksPopulation implements ScenarioPopulation {
         List<Integer> commons = List.of(
                 worldCell(C1_COURTYARD, ZB), worldCell(C3_COURTYARD, ZB),
                 worldCell(MISSION_GARDEN, ZA));
-        return new FoodMarket(toIntArray(vendors), toIntArray(commons), toIntArray(provisioned));
+        // Garbage bins (law & order pass): the walkable bin cells beside each FOOD business the
+        // daily scrap drop tops up and the broke's SCAVENGE eats from. Mirrors the generator's
+        // garbage_bin_* markers (lockstep).
+        List<Integer> bins = new ArrayList<>();
+        bins.addAll(worldCells(GARBAGE_BINS_ZA, ZA));
+        bins.addAll(worldCells(GARBAGE_BINS_ZB, ZB));
+        bins.addAll(worldCells(GARBAGE_BINS_ZC, ZC));
+        return new FoodMarket(toIntArray(vendors), toIntArray(commons), toIntArray(provisioned),
+                toIntArray(bins));
     }
 
     /**
@@ -993,10 +1066,22 @@ public final class DocksPopulation implements ScenarioPopulation {
                 watch.setHomeId(homes.addHome(watch.cell()));
                 watch.setAnchorCell(worldCell(beat, ZC));
             }
-            // Band-A posts: the Rise foot, the two Tarwalk beats, the King's Bond door.
-            for (int[] post : new int[][] {PATROL_RISE_FOOT, PATROL_TARWALK_WEST,
-                    PATROL_TARWALK_MID, WATCH_BOND_POST}) {
-                soloHome(spawn(MilitiaWatch.TYPE, post, ZA));
+            // Band-A posts -> REAL patrollers (law & order pass, Pass 13): the four
+            // non-stationed Band-A watch keep their posts as HOME (they still sleep there) but
+            // their work anchor moves onto a route waypoint, which binds each to one of the
+            // three ordered single-z routes (PatrolRouteTable.routeContaining reads the anchor).
+            // The Rise-foot and Tarwalk-mid watch walk the Tarwalk; the Tarwalk-west watch
+            // walks the quay/berth apron; the King's Bond watch walks Ropewynd. All z:+11 —
+            // home and every waypoint share one band (the z rule). Stationed shop/bank/roof
+            // guards are deliberately NOT bound: they stay at their posts on the square beat.
+            int[][] patrollerPosts = {PATROL_RISE_FOOT, PATROL_TARWALK_WEST,
+                    PATROL_TARWALK_MID, WATCH_BOND_POST};   // original spawn order kept
+            int[][] patrollerWaypoints = {PATROL_TARWALK[2], PATROL_QUAY[1],
+                    PATROL_TARWALK[3], PATROL_ROPEWYND[4]};
+            for (int i = 0; i < patrollerPosts.length; i++) {
+                Actor patroller = spawn(MilitiaWatch.TYPE, patrollerPosts[i], ZA);
+                soloHome(patroller);
+                patroller.setAnchorCell(worldCell(patrollerWaypoints[i], ZA));
             }
             // K34 Guardhouse — the Rise's FOOT garrison (pairs with K21 at the head, per
             // gazetteer 2.4's own stated intent): two Watch quartered at the new post.

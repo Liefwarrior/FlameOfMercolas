@@ -54,7 +54,7 @@ final class ActorsSystemPayrollTest {
         Payroll payroll = new Payroll(employer, PERIOD, new long[] {wage, wage});
         CivicFixtures fixtures = new CivicFixtures(Actor.NONE, RestrictedZoneTable.EMPTY,
                 Actor.NONE, Actor.NONE, BankQueue.EMPTY, PrisonCellRegistry.EMPTY, payroll,
-                FoodMarket.EMPTY);
+                FoodMarket.EMPTY, PatrolRouteTable.EMPTY);
         return new ActorsSystem(99L, typeStats, jobs, registry, new HomeRegistry(),
                 new RelationshipRegistry(), new ItemsLiteRegistry(), bank, null, fixtures);
     }

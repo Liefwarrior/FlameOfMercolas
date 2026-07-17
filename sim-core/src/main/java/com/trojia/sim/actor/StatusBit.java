@@ -26,6 +26,14 @@ public final class StatusBit {
      * actor.
      */
     public static final short PLAYER_CONTROLLED = 1 << 9;
+    /**
+     * Warned by the Watch to move along (law &amp; order pass, APPREHEND's first-contact
+     * correction): set with a short {@code moveAlongUntilTick} grace deadline. Leaving the
+     * offending zone before the deadline clears it (no fine); still in violation at the
+     * deadline escalates to fine + arrest. Rides {@code statusBits}, so it needs no
+     * serializer change.
+     */
+    public static final short MOVE_ALONG = 1 << 10;
 
     private StatusBit() {
     }

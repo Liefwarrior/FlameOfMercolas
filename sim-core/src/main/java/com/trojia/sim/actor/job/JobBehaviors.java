@@ -272,6 +272,42 @@ public final class JobBehaviors {
     }
 
     // ======================================================================
+    // Waypoint route patrol (law & order pass, Pass 13) — the REAL beat
+    // ======================================================================
+
+    /**
+     * PURSUE (waypoint route patrol): walk the ordered waypoint list of {@code routeIndex}
+     * (a baked {@link com.trojia.sim.actor.PatrolRouteTable} route) waypoint {@code i} →
+     * {@code i+1} → … , wrapping forever — the genuine Tarwalk/quay/Ropewynd beat replacing
+     * the blind square loop for every Watch whose anchor sits on a route. The current
+     * waypoint index rides the already-persisted {@code goalProgress} (no new scalar); legs
+     * are single-z by route construction (the z-rule) and leash-ignoring like a commute (a
+     * route's far end routinely sits outside the anchor leash). An UNREACHABLE waypoint —
+     * the route-following A* failed and that failure is still cached ({@link
+     * Actor#routeFailedTo}) — is skipped by advancing to the next waypoint instead of
+     * freezing on the failed leg. Draw-free, never completes.
+     */
+    public static void pursueRoutePatrol(Actor self, ActorContext ctx, int routeIndex) {
+        var routes = ctx.patrolRoutes();
+        int count = routes.waypointCount(routeIndex);
+        if (count == 0) {
+            return; // degenerate empty route: deterministic no-op
+        }
+        int index = Math.floorMod(self.goalProgress(), count);
+        int waypoint = routes.waypoint(routeIndex, index);
+        if (self.cell() == waypoint) {
+            self.setGoalProgress((short) ((index + 1) % count)); // arrived: next leg next tick
+            return;
+        }
+        self.stepAlongRoute(waypoint, true, ctx::isWalkable, ctx.occupancy());
+        if (self.routeFailedTo(waypoint)) {
+            // Route-failure cache says this waypoint is unreachable right now: skip it rather
+            // than freeze the whole beat on one blocked leg (Pass-13 DoD).
+            self.setGoalProgress((short) ((index + 1) % count));
+        }
+    }
+
+    // ======================================================================
     // Bounded wander (Wastrels, Ferals) — beg circuit / scavenge sweep
     // ======================================================================
 
@@ -467,13 +503,25 @@ public final class JobBehaviors {
 
     /** Ordinary Robber/Cutpurse arrest: HELD + a freshly drawn 1-3 day sentence + a prison cell. */
     private static void arrestAndHold(Actor self, ActorContext ctx) {
-        self.setOffenseCount((byte) (self.offenseCount() + 1));
-        self.setStatus(StatusBit.HELD, true);
         long draw = ctx.draw(ActorRngStream.WATCH_SENTENCE_LENGTH, self.id(), ctx.nextDrawIndex(self.id()));
-        long sentence = SENTENCE_MIN_TICKS + Long.remainderUnsigned(draw, SENTENCE_SPAN_TICKS);
-        self.setHeldUntilTick(ctx.tick() + sentence);
-        self.setAssignedHoldCell(assignPrisonCell(self, ctx));
-        self.setLastReasonCode(ReasonCode.ARRESTED);
+        arrestAndHold(self, ctx, SENTENCE_MIN_TICKS + Long.remainderUnsigned(draw, SENTENCE_SPAN_TICKS));
+    }
+
+    /**
+     * The shared arrest transition (villain-exposure drawn sentences AND the guard-side
+     * APPREHEND's fixed 1-day loiter sentence, law &amp; order pass): bumps {@code offenseCount},
+     * sets {@link StatusBit#HELD} with an absolute-tick sentence end, assigns the
+     * least-crowded free prison cell, and reason-codes the transition. Draw-free — a caller
+     * wanting a random sentence draws it first. From here {@link
+     * com.trojia.sim.actor.HeldPolicy} dominates the offender's stack, escorts it to the
+     * assigned cell, and releases it at exactly {@code heldUntilTick}.
+     */
+    public static void arrestAndHold(Actor offender, ActorContext ctx, long sentenceTicks) {
+        offender.setOffenseCount((byte) (offender.offenseCount() + 1));
+        offender.setStatus(StatusBit.HELD, true);
+        offender.setHeldUntilTick(ctx.tick() + sentenceTicks);
+        offender.setAssignedHoldCell(assignPrisonCell(offender, ctx));
+        offender.setLastReasonCode(ReasonCode.ARRESTED);
     }
 
     /**

@@ -91,6 +91,22 @@ public final class FoodEconomy {
     public static final int SHOP_STOCK_CAP = 120;
 
     /**
+     * Garbage-scrap drop cadence (law &amp; order pass, Eli's garbage-can request): once a DAY
+     * ({@code tick % 24000 == 0}) each garbage-bin cell beside a FOOD business is topped up to
+     * {@link #BIN_SCRAP_CAP} FOOD scraps — the businesses' daily refuse. Minted (and
+     * conservation-accounted) like the quay import; capped, so live FOOD stays bounded.
+     */
+    public static final int SCRAP_DROP_PERIOD = 24_000;
+
+    /**
+     * Cap on FOOD scraps sitting on one garbage-bin cell: the daily drop tops up to here, never
+     * beyond. Deliberately thin — the whole point is a REAL margin: bins keep the reachable
+     * street wastrels alive between beg-circuits, but there is not enough refuse for everyone
+     * (the roof decks can't route to any bin at all and still starve).
+     */
+    public static final int BIN_SCRAP_CAP = 4;
+
+    /**
      * Import cadence (ticks): every period the quay restocks each vendor shop counter to
      * {@link #SHOP_STOCK_CAP} (the ONLY periodic import — larders and the compound atria are fed by
      * farm production alone, never a free ration). Fixed {@code tick % PERIOD == 0} (mirrors {@code
