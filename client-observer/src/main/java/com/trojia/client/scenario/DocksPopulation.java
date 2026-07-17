@@ -100,10 +100,6 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int ZB = 12;   // Band B mid-slope walk plane
     private static final int ZC = 13;   // Band C upper walk plane
 
-    // Band-A world z-level (map band + chunk pad) — the economy-loop food-market marks a shopkeeper
-    // as a z:+11 vendor by comparing its cell z against this.
-    private static final int ZA_WORLD = Coords.CHUNK_SIZE_Z + ZA;
-
     // ---- waterfront work anchors (markers, z:+11) ----------------------------------------
     private static final int[] BERTH_01 = {21, 27};
     private static final int[] BERTH_02 = {41, 28};
@@ -179,6 +175,20 @@ public final class DocksPopulation implements ScenarioPopulation {
     // (K08/K14/K15/K23/K26/K27/K28). All z:+11 sidewalk cells.
     private static final int[][] SHOP_GUARD_POSTS =
             {{28, 65}, {168, 33}, {126, 51}, {47, 65}, {12, 69}, {35, 69}, {133, 57}};
+
+    // ---- Money-gated market victuallers (economy pass): on-band FOOD vendors that make every
+    // INHABITED band reachably fed. On-hull victuallers provision the crewed ships (no mainland
+    // counter is A*-reachable across the water); the off-band victuallers provision the z:+12/z:+13
+    // terraces (whose residents have no organic dockside z:+11 shop on their OWN band). Each cell is
+    // authored walkable floor on its single band (reused work/dwelling anchors), so a victualler is
+    // a real manned stall, not a marker. Spread across each band's clusters so every resident routes
+    // to a nearby counter within its HUNGER/commute budget. --
+    private static final int[][] VICTUALLERS_ZA =
+            {SHIP_K30_KESTREL, SHIP_K31_BREGGAS_PROMISE, SHIP_K32_DEEPKEEL};
+    private static final int[][] VICTUALLERS_ZB =
+            {{100, 98}, {75, 105}, {170, 105}, {152, 111}}; // Terrace Walk, Saltgate, Hovels-B, goat pen
+    private static final int[][] VICTUALLERS_ZC =
+            {{19, 117}, {73, 119}, {101, 122}, {133, 124}, {49, 112}, {123, 111}};
 
     // Compound farm plots (markers for the later farm-yield pass). C1/C3 courtyards are Band B
     // (z:+12); C2's is Band A (z:+11). Placed clear of each courtyard's gate spine + anchors.
@@ -446,12 +456,14 @@ public final class DocksPopulation implements ScenarioPopulation {
         int vaultChestCell = bankVaultChestCell();
         Payroll payroll = CivicAccounts.bake(registry, bank, items, vaultChestCell);
 
-        // Economy-loop pass: seed every home-cell larder with the boot ration and bake the
-        // FOOD-distribution market (vendor shops + commons + guaranteed larders). All FOOD minting
-        // outside the tick loop happens here; its count is recorded so the closed-supply
-        // conservation proof (minted == live + eaten) accounts for the seed.
-        long foodSeeded = seedLarders(homes, items);
-        FoodMarket foodMarket = buildFoodMarket(registry, homes, world);
+        // Money-gated market bake: build the FOOD market (every shopkeeper is a vendor + the
+        // farm-fed compound commons), seed each home-cell larder with the boot ration, and stock
+        // every vendor counter to SHOP_STOCK_CAP so the market is provisioned before the first quay
+        // import (tick 6000) — no free ration ever reaches homes/commons. All FOOD minting outside
+        // the tick loop happens here; its count is recorded for the closed-supply conservation proof.
+        FoodMarket foodMarket = buildFoodMarket(registry);
+        long foodSeeded = seedLarders(homes, items) + seedVendorStock(foodMarket, items)
+                + seedRations(foodMarket, items);
 
         int arrestHoldCell = worldCell(PRISON_CELLS_K34[0], ZA);
         // Multi-cell prison registry (Pass 10) + bank fixtures (Pass 9), wired from the Phase-1
@@ -602,94 +614,81 @@ public final class DocksPopulation implements ScenarioPopulation {
     }
 
     /**
-     * Bakes the FOOD-distribution {@link FoodMarket} (economy-loop pass). Three deterministic
+     * Stocks every vendor counter to {@link FoodEconomy#SHOP_STOCK_CAP} at bake, so the market is
+     * already provisioned when the first synchronised hunger wave arrives (before the first quay
+     * import at tick {@link FoodEconomy#IMPORT_PERIOD}). Deterministic ascending-index scan; returns
+     * the FOOD minted for the conservation proof. This is the same imported supply the quay tops up
+     * each period — a citizen still must BUY it with Royals, so the money gate is untouched.
+     */
+    private static long seedVendorStock(FoodMarket market, ItemsLiteRegistry items) {
+        long minted = 0;
+        for (int i = 0; i < market.vendorCount(); i++) {
+            minted += items.addCarried(market.vendorAt(i), ItemKinds.FOOD, FoodEconomy.SHOP_STOCK_CAP);
+        }
+        return minted;
+    }
+
+    /**
+     * Seeds each provisioned citizen with a starting {@link FoodEconomy#CARRY_RATION}-meal pantry at
+     * bake, so the population is fed through the first synchronised hunger wave before the first paid
+     * provisioning (tick {@link FoodEconomy#IMPORT_PERIOD}) — the food analogue of the seed larder /
+     * seed Royals. Deterministic ascending-index scan; returns the FOOD minted for the conservation
+     * proof. From tick {@link FoodEconomy#IMPORT_PERIOD} on, every refill of this pantry is BOUGHT.
+     */
+    private static long seedRations(FoodMarket market, ItemsLiteRegistry items) {
+        long minted = 0;
+        for (int i = 0; i < market.provisionedCount(); i++) {
+            minted += items.addCarried(market.provisionedAt(i), ItemKinds.FOOD, FoodEconomy.CARRY_RATION);
+        }
+        return minted;
+    }
+
+    /**
+     * Bakes the FOOD-distribution {@link FoodMarket} (money-gated market pass). Two deterministic
      * ascending-scan lists, respecting the z-rule (every channel a hungry actor uses is same-z):
      * <ul>
-     *   <li><b>vendor shops</b> — every z:+11 shopkeeper. The dense cash market the z:+11 serf mass
-     *       buys from (waged &rArr; solvent &rArr; survives); the quay import keeps them stocked.</li>
-     *   <li><b>guaranteed larders</b> — BOTH the home cell AND the work-anchor cell of every
-     *       non-wastrel citizen (serf, shopkeeper, watch, clergy, keeper). An actor always dwells at
-     *       one or the other, and both are kept stocked by the provisioning ration, so wherever it
-     *       is stranded — a hovel serf who never reaches the distant quay, a disciple walled inside
-     *       the mission — a free meal is within reach. This is the pathing-proof safety net that
-     *       carries the middle-class-0%/serf-&le;5% bar. Not publicly scanned, so topping a cell
-     *       feeds only its own residents/workers (a neighbouring roof wastrel is NOT fed).</li>
-     *   <li><b>free commons</b> — a walkable {@link FoodEconomy#COMMONS_GRID_SPACING}-spaced grid
-     *       over every band (scanned from the baked world): the pathing dead-zone backstop, so a
-     *       serf stranded by a broken long commute in a pocket that reaches neither its home nor its
-     *       anchor still finds a stocked commons within {@link FoodEconomy#EAT_REACH}. Roof decks,
-     *       being disconnected from the walk-plane grid on their z, get none - the starvation margin.</li>
+     *   <li><b>vendor shops</b> — every {@code shopkeeper}, on any band: the organic dockside
+     *       proprietors (z:+11), the on-hull victuallers aboard the crewed ships, the compound
+     *       owners who vend to their own courtyard (z:+12), and the off-band victuallers stationed
+     *       on the terraces (z:+12/z:+13). This is the market the waged mass BUYS from (solvent
+     *       &rArr; eats, broke &rArr; starves — the money lever); the quay import keeps them stocked.
+     *       A hungry citizen buys from the nearest reachable same-z counter, so placing a vendor on
+     *       every inhabited band is what makes the whole population reachably fed.</li>
+     *   <li><b>farm-fed commons</b> — the compound atria (C1/C3 courtyards) and the mission garden:
+     *       shared subsistence larders stocked ONLY by the compound's own farmers (never a free
+     *       ration), so a same-band compound resident eats the harvest free — legitimately
+     *       non-market. A cell exists, and stays stocked, only where a farmer actually works, so no
+     *       shop-dependent cohort is fed for free. The roof-slum poor reach neither a vendor they
+     *       can afford nor a farm larder — the intended starvation margin.</li>
      * </ul>
      */
-    private static FoodMarket buildFoodMarket(ActorRegistry registry, HomeRegistry homes,
-            World world) {
+    private static FoodMarket buildFoodMarket(ActorRegistry registry) {
         List<Integer> vendors = new ArrayList<>();
-        List<Integer> larders = new ArrayList<>();
-        HashSet<Integer> larderSeen = new HashSet<>();
+        List<Integer> provisioned = new ArrayList<>();
         for (int i = 0; i < registry.size(); i++) {
             Actor a = registry.get(i);
             String type = a.typeId().key();
-            if (type.equals("shopkeeper") && PackedPos.z(a.cell()) == ZA_WORLD) {
-                vendors.add(a.id());
+            if (type.equals("shopkeeper")) {
+                vendors.add(a.id()); // every shopkeeper vends food, on whatever band it stands
             }
-            if (a.homeId() == Actor.NONE || !isProvisionedCitizen(type)) {
-                continue; // wastrels + beasts get no stocked larder (the intended starvation margin)
-            }
-            int homeCell = homes.get(a.homeId()).homeCell();
-            if (larderSeen.add(homeCell)) {
-                larders.add(homeCell);
-            }
-            int anchorCell = a.anchorCell();
-            if (anchorCell != homeCell && larderSeen.add(anchorCell)) {
-                larders.add(anchorCell);
+            if (a.homeId() != Actor.NONE && isProvisionedCitizen(type)) {
+                provisioned.add(a.id()); // the serf mass + middle class do their periodic shopping
             }
         }
-        return new FoodMarket(toIntArray(vendors), toIntArray(commonsGrid(world)),
-                toIntArray(larders));
+        // The farm-fed commons: each compound's courtyard/atrium (the farmers' own work anchor,
+        // which produceFood tops after the household larder) plus the mission garden. Same-z by
+        // construction — the C1/C3 courtyards are Band B (z:+12), the mission garden Band A (z:+11).
+        List<Integer> commons = List.of(
+                worldCell(C1_COURTYARD, ZB), worldCell(C3_COURTYARD, ZB),
+                worldCell(MISSION_GARDEN, ZA));
+        return new FoodMarket(toIntArray(vendors), toIntArray(commons), toIntArray(provisioned));
     }
 
     /**
-     * The free-food commons grid (economy-loop pass): every walkable cell on each band's
-     * {@link FoodEconomy#COMMONS_GRID_SPACING}-spaced lattice, so every reachable spot is within
-     * {@link FoodEconomy#EAT_REACH} of a commons. Deterministic ascending scan. In the world-less
-     * bake (no walkability) it falls back to a handful of known street cells so the market is never
-     * wholly empty. Roof-deck cells are naturally excluded: their z is the walk-plane's z but the
-     * grid points that land on a roof are separated by walls, so a roof dweller cannot reach one.
-     */
-    private static List<Integer> commonsGrid(World world) {
-        List<Integer> commons = new ArrayList<>();
-        if (world == null) {
-            commons.add(worldCell(TERRACE_WALK_STAND, ZB));
-            commons.add(worldCell(SALTGATE_PORTERS, ZB));
-            commons.add(worldCell(WELL_PLAZA, ZC));
-            commons.add(worldCell(NOTICE_BOARD, ZC));
-            commons.add(worldCell(ABBEY_LANE, ZC));
-            commons.add(worldCell(PATROL_RISE_TOP, ZC));
-            return commons;
-        }
-        TileCursor cursor = world.cursor();
-        int step = FoodEconomy.COMMONS_GRID_SPACING;
-        for (int band : new int[] {ZA, ZB, ZC}) {
-            for (int mapY = 0; mapY <= GRID_SCAN_MAX_Y; mapY += step) {
-                for (int mapX = 0; mapX <= GRID_SCAN_MAX_X; mapX += step) {
-                    int cell = worldCell(new int[] {mapX, mapY}, band);
-                    if (Walkability.isWalkable(cursor.moveTo(cell))) {
-                        commons.add(cell);
-                    }
-                }
-            }
-        }
-        return commons;
-    }
-
-    /** Map-space extent of the commons-grid scan (the docks fixture is well inside these). */
-    private static final int GRID_SCAN_MAX_X = 208;
-    private static final int GRID_SCAN_MAX_Y = 176;
-
-    /**
-     * Whether {@code typeKey} is a provisioned citizen — the working population that must not
-     * starve (the middle class AND the serf mass), guaranteed a stocked home + anchor larder.
-     * Wastrels (the wageless poor + roof decks) and beasts are excluded: they are the margin.
+     * Whether {@code typeKey} is a provisioned citizen — the working population that must not starve
+     * (the serf mass AND the middle class), whose household does its periodic market shopping (a
+     * paid ration into carry). Wastrels (the wageless poor + roof decks) and beasts are excluded:
+     * they are the intended starvation margin.
      */
     private static boolean isProvisionedCitizen(String typeKey) {
         return switch (typeKey) {
@@ -923,6 +922,23 @@ public final class DocksPopulation implements ScenarioPopulation {
             }
             for (int i = 0; i < 22; i++) {   // K32 The Deep Keel (largest, 16x8)
                 bunkAtSite(Serf.TYPE, SHIP_K32_DEEPKEEL, ZA);
+            }
+
+            // ===================== MARKET VICTUALLERS (money-gated economy pass) ================
+            // A FOOD-vending Shopkeeper living/vending in place (home == anchor == cell) on every
+            // inhabited band, so a hungry citizen always has a reachable same-z counter to BUY at:
+            // on-hull victuallers for the crewed ships (whose crews cannot route to any mainland
+            // shop across the water), and off-band victuallers on the z:+12/z:+13 terraces (whose
+            // residents have no organic dockside z:+11 shop on their own band). buildFoodMarket
+            // picks each up as a vendor; the bake seeds its counter to SHOP_STOCK_CAP.
+            for (int[] cell : VICTUALLERS_ZA) {
+                soloHomeAtCell(spawn(Shopkeeper.TYPE, cell, ZA));
+            }
+            for (int[] cell : VICTUALLERS_ZB) {
+                soloHomeAtCell(spawn(Shopkeeper.TYPE, cell, ZB));
+            }
+            for (int[] cell : VICTUALLERS_ZC) {
+                soloHomeAtCell(spawn(Shopkeeper.TYPE, cell, ZC));
             }
 
             // K13 The Drowned Hold — condemned; two Wastrel squatters, no lamps, no trade.

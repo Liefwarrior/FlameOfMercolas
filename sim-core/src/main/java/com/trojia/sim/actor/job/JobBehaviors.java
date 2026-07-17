@@ -109,13 +109,15 @@ public final class JobBehaviors {
 
     /**
      * PURSUE (farm): identical commute to {@link #pursueAtAnchor} — plot during the rhythm window,
-     * home outside it — but every completed work-unit at the plot mints FOOD (the economy-loop
-     * pass). The yield first fills the household larder (the home cell, same z as the plot for
-     * every baked farmer) up to {@link FoodEconomy#LARDER_CAP}; once that is full it is sold as
-     * surplus to the nearest same-z shop for {@link FoodEconomy#FARM_SELL_PRICE} Royals (a Royal
-     * transfer shop-&gt;farmer, recirculating money to the land), and where no same-z cash market
-     * exists (the z:+12 courtyard farms) production simply pauses until the household eats the
-     * larder down — demand-driven, so live FOOD stays bounded. Integer yield, no draws.
+     * home outside it — but every completed work-unit at the plot mints FOOD (the money-gated market
+     * pass). The yield cascades: it first fills the farming household's OWN home-cell larder up to
+     * {@link FoodEconomy#LARDER_CAP} (the family eats what it grew); once that is full it fills the
+     * compound's SHARED atrium/courtyard larder — the farmer's own work anchor, same z — so the
+     * whole same-band courtyard eats the harvest free (the "subsistence larder stocked by real farm
+     * production", the legitimately non-market half of the economy); and only once BOTH are full is
+     * the surplus sold to the nearest same-z shop for {@link FoodEconomy#FARM_SELL_PRICE} Royals (a
+     * Royal transfer shop-&gt;farmer, recirculating money to the land). With no room and no market
+     * it pauses — demand-driven, so live FOOD stays bounded. Integer yield, no draws.
      */
     public static void pursueFarm(Actor self, ActorContext ctx, JobParams params) {
         int workplace = self.anchorCell();
@@ -143,22 +145,33 @@ public final class JobBehaviors {
         produceFood(self, ctx, homeCell);
     }
 
-    /** One work-unit's FOOD yield: fill the household larder first, then sell surplus at market. */
+    /**
+     * One work-unit's FOOD yield, cascaded: household home larder -&gt; shared compound atrium (the
+     * farmer's own work anchor) -&gt; sell surplus at the nearest same-z shop for Royals.
+     */
     private static void produceFood(Actor self, ActorContext ctx, int homeCell) {
         ItemsLiteRegistry items = ctx.items();
+        // 1. The farm family eats first: fill its own home-cell larder.
         if (items.countOnCellOfKind(homeCell, ItemKinds.FOOD) < FoodEconomy.LARDER_CAP) {
-            int added = items.addOnCell(homeCell, ItemKinds.FOOD, FoodEconomy.FARM_FOOD_PER_UNIT);
-            ctx.recordFoodMinted(added);
+            ctx.recordFoodMinted(items.addOnCell(homeCell, ItemKinds.FOOD, FoodEconomy.FARM_FOOD_PER_UNIT));
             return;
         }
+        // 2. The compound eats what it grew: fill the shared atrium/courtyard larder — the farmer's
+        //    own work anchor, always the farmer's own band, so no cross-z channel is implied.
+        int atrium = self.anchorCell();
+        if (atrium != homeCell && PackedPos.z(atrium) == PackedPos.z(homeCell)
+                && items.countOnCellOfKind(atrium, ItemKinds.FOOD) < FoodEconomy.LARDER_CAP) {
+            ctx.recordFoodMinted(items.addOnCell(atrium, ItemKinds.FOOD, FoodEconomy.FARM_FOOD_PER_UNIT));
+            return;
+        }
+        // 3. Both full: sell the surplus to the nearest same-z shop for Royals (money to the land).
         int shopId = nearestSameZVendor(self, ctx);
         if (shopId != Actor.NONE
                 && items.countCarriedOfKind(shopId, ItemKinds.FOOD) < FoodEconomy.SHOP_STOCK_CAP
                 && ctx.bankAccounts().transfer(shopId, self.id(), FoodEconomy.FARM_SELL_PRICE)) {
-            int added = items.addCarried(shopId, ItemKinds.FOOD, FoodEconomy.FARM_FOOD_PER_UNIT);
-            ctx.recordFoodMinted(added);
+            ctx.recordFoodMinted(items.addCarried(shopId, ItemKinds.FOOD, FoodEconomy.FARM_FOOD_PER_UNIT));
         }
-        // else: larder full and no same-z market with room/funds -> pause (demand-driven).
+        // else: everything full and no same-z market with room/funds -> pause (demand-driven).
     }
 
     /** Nearest same-z vendor shop by chebyshev (ascending index tiebreak), or {@link Actor#NONE}. */

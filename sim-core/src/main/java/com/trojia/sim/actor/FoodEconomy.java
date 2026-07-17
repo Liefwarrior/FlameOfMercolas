@@ -5,17 +5,26 @@ package com.trojia.sim.actor;
  * pass): production yield, larder/shop caps, prices, the import cadence, and the HUNGER a
  * single meal restores. One place so the Verifier can tune numbers without hunting call sites.
  *
- * <p><b>The core change this pass makes.</b> HUNGER used to recover PASSIVELY while an actor
- * stood on its home cell ({@code Actor.HUNGER_RECOVERED_PER_TICK_AT_HOME}, now deleted). That
- * crutch is replaced with real consumption: a hungry actor restores HUNGER only by EATING a
- * {@link ItemKinds#FOOD} item, which it must first ACQUIRE — from a home-cell larder (seeded at
- * bake, refilled by farmers or the provisioning import), or bought at a same-z shop counter via
- * an ID-authorized {@link BankVerbs#buyFood} Royal transfer. Farmers PRODUCE the FOOD; eating
- * SINKS it. Food is now a real economic good, and starvation is possible — which is the point.
+ * <p><b>A real, money-gated market (this pass's rework).</b> HUNGER recovers only by EATING a
+ * {@link ItemKinds#FOOD} item, which an actor must first ACQUIRE. There is NO free food blanket:
+ * the two legitimate ways food reaches a mouth are
+ * <ol>
+ *   <li><b>BUY it</b> at a reachable same-z shop counter via an ID-authorized {@link
+ *       BankVerbs#buyFood} Royal transfer — the money lever: a waged, solvent citizen eats, the
+ *       wageless broke (wastrels, the roof-slum poor) cannot. Shops are stocked ONLY by the
+ *       <b>same-z quay FOOD import</b> (ships landing provisions at the market), so money still
+ *       gates every mouthful even though the supply is imported; or</li>
+ *   <li><b>eat a subsistence larder stocked by REAL farm production</b> — a farming household
+ *       eats its own home-cell yield, and a compound eats the shared atrium/courtyard larder its
+ *       farmers fill (legitimately non-market: you grew it). Never topped by a free import.</li>
+ * </ol>
+ * Farmers PRODUCE the FOOD; the quay imports it to the market; eating SINKS it. Food is a real
+ * scarce good, and starvation is the intended fate of anyone with neither Royals for the market
+ * nor a reachable farm larder.
  *
  * <p><b>Everything is integer</b> (determinism: no float/Map state, integer yields, named-RNG
- * only — none of these levers draw RNG at all). FOOD mint (yield + import + larder seed) and
- * sink (eating) are accounted so the closed-supply conservation identity
+ * only — none of these levers draw RNG at all). FOOD mint (farm yield + quay import + bake seed)
+ * and sink (eating) are accounted so the closed-supply conservation identity
  * {@code minted == held(live) + eaten} holds across a soak, alongside the untouched money
  * invariant {@code totalRoyals() == vault COIN count}.
  */
@@ -28,24 +37,29 @@ public final class FoodEconomy {
     public static final int EAT_RESTORE = 8_000;
 
     /**
-     * Chebyshev radius a hungry actor can reach food across — both to EAT from a larder/commons
-     * cell and to BUY from a nearby shopkeeper, WITHOUT walking onto the exact cell. Sized above 1
-     * on purpose: a live-in crew of 20-48 serfs shares ONE anchor/home cell, and the 2-per-cell
-     * occupancy cap keeps most of them a few tiles off it, so a chebyshev-1 reach would strand the
-     * overflow. A reach of {@value} lets the whole crowd draw from the single stocked cell, and lets
-     * an actor beside its co-located work-shop buy there without a (possibly unroutable) walk to the
-     * counter — the buy path never walks, so no actor is ever stranded chasing an unreachable shop.
+     * FOOD each provisioned citizen keeps in its own carry as a household ration — the money-gated
+     * reachability backstop. Every import period a citizen tops its carry up to this many FOOD by
+     * BUYING them from the market ({@link #FOOD_PRICE} Royals each, transferred to the market pool):
+     * the "household does its shopping". Because the ration rides in the citizen's OWN carry, a
+     * hungry actor eats it exactly where it stands ({@link SeekFoodPolicy} step 1) — no walk to a
+     * counter, no crowd jam, no walled-pocket stranding, which the walk-to-shop path cannot survive
+     * on this map. It is a genuine purchase (Royals leave the buyer), so the wageless margin — who
+     * are NOT provisioned and cannot sustain counter purchases — still starves. Two meals covers ~2
+     * import periods of HUNGER decay, so a citizen never runs its pantry dry between shops.
      */
-    public static final int EAT_REACH = 8;
+    public static final int CARRY_RATION = 2;
 
     /**
-     * Spacing (tiles) of the walkable free-food commons grid the scenario lays over every band at
-     * bake, sized {@code 2 * EAT_REACH} so every walkable cell sits within {@link #EAT_REACH} of a
-     * grid cell. The pathing dead-zone backstop: an actor stranded by a broken long commute in a
-     * pocket that reaches neither its home nor its work anchor still finds a stocked commons a few
-     * tiles away, instead of starving where it stands.
+     * Chebyshev radius a hungry actor can reach food across — to EAT in place from a larder/commons
+     * cell it is beside, and to BUY in place from a shopkeeper it is beside, WITHOUT walking onto the
+     * exact cell. Sized above 1 on purpose: a live-in crew of 20-48 serfs shares ONE anchor/home
+     * cell, and the 2-per-cell occupancy cap keeps most of them a few tiles off it, so a chebyshev-1
+     * reach would strand the overflow. A reach of {@value} lets the whole crowd draw from the single
+     * stocked cell, and lets an actor beside its co-located work-shop buy there in place. When the
+     * nearest source is FURTHER than this, the eat machine WALKS to it (route-following A*, re-scans
+     * on an unroutable target) rather than pinning itself to an unreachable one and starving.
      */
-    public static final int COMMONS_GRID_SPACING = 2 * EAT_REACH;
+    public static final int EAT_REACH = 8;
 
     /** Royals a shopper pays a shopkeeper for one FOOD (an ID-authorized ledger transfer). */
     public static final long FOOD_PRICE = 5;
@@ -60,23 +74,28 @@ public final class FoodEconomy {
     public static final int LARDER_SEED = 3;
 
     /**
-     * Cap on FOOD held on one home-cell larder (and on a free commons cell): farm production and
-     * the provisioning import both stop topping a larder at this level, so live FOOD stays bounded
-     * (demand-driven) instead of growing without limit. Sized generously because one shared
-     * work-anchor / bunk cell feeds a whole rotating crowd — a smaller buffer drains between the
-     * fixed-cadence refills and the crowd starves mid-period.
+     * Cap on FOOD held on one subsistence larder cell (a farming household's home cell, or a
+     * compound's shared atrium/courtyard larder): farm production stops topping a larder at this
+     * level, so live FOOD stays bounded (demand-driven) rather than growing without limit. Sized
+     * generously because a compound atrium feeds a whole same-band courtyard's worth of households.
      */
     public static final int LARDER_CAP = 40;
 
-    /** Cap on FOOD carried as sale stock by one shopkeeper; the quay import tops up to here. */
-    public static final int SHOP_STOCK_CAP = 60;
+    /**
+     * Cap on FOOD carried as sale stock by one shopkeeper; the quay import tops up to here, and the
+     * bake seeds each vendor to this level so the market is already stocked before the first import.
+     * Sized generously because one dockside/hull victualler can be the sole reachable market for a
+     * 20-48-strong live-in crew whose hunger waves arrive near-synchronised — a thin counter would
+     * drain between the fixed-cadence imports and the crew would starve mid-period.
+     */
+    public static final int SHOP_STOCK_CAP = 120;
 
     /**
-     * Import cadence (ticks): every period the quay restocks each z:+11 shop counter to
-     * {@link #SHOP_STOCK_CAP} and the provisioning ration tops each guaranteed larder / free
-     * commons cell to {@link #LARDER_CAP}. Fixed {@code tick % PERIOD == 0} (mirrors {@code
-     * Payroll}) — draw-free, no persisted cadence state. Matches the wage period so the two civic
-     * flows share a rhythm.
+     * Import cadence (ticks): every period the quay restocks each vendor shop counter to
+     * {@link #SHOP_STOCK_CAP} (the ONLY periodic import — larders and the compound atria are fed by
+     * farm production alone, never a free ration). Fixed {@code tick % PERIOD == 0} (mirrors {@code
+     * Payroll}) — draw-free, no persisted cadence state. Matches the wage period so the citizen's
+     * pay and the market's restock share a rhythm.
      */
     public static final int IMPORT_PERIOD = 6_000;
 }

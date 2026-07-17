@@ -3,34 +3,33 @@ package com.trojia.sim.actor;
 import com.trojia.sim.world.PackedPos;
 
 /**
- * {@code SEEK_FOOD} (ACTORS-SPEC.md §3.3, the needs-hierarchy pass) — reworked by the economy
- * loop pass into a real acquire-and-eat state machine. The score is unchanged: this policy fires
- * once HUNGER crosses {@link NeedThresholds#LOW}, scoring {@code priority + urgencyBonus}, and —
- * the oscillation-hysteresis fix ({@link NeedThresholds#RECOVERED}) — keeps winning at home until
+ * {@code SEEK_FOOD} (ACTORS-SPEC.md §3.3, the needs-hierarchy pass) — the acquire-and-eat state
+ * machine of the money-gated market. The score is unchanged: this policy fires once HUNGER crosses
+ * {@link NeedThresholds#LOW}, scoring {@code priority + urgencyBonus}, and — the
+ * oscillation-hysteresis fix ({@link NeedThresholds#RECOVERED}) — keeps winning at home until
  * HUNGER is comfortably {@code RECOVERED}, so it never flip-flops back to {@code GOAL_PURSUE}
- * mid-recovery. What changed is {@link #act}: HUNGER no longer recovers passively for standing on
- * the home cell (that crutch, {@code Actor.HUNGER_RECOVERED_PER_TICK_AT_HOME}, is deleted). A
- * hungry actor now restores HUNGER only by EATING a {@link ItemKinds#FOOD} item, which it must
- * first ACQUIRE.
+ * mid-recovery. HUNGER recovers ONLY by EATING a {@link ItemKinds#FOOD} item the actor first
+ * ACQUIRES; there is no passive at-home recovery and no free-food blanket.
  *
- * <p><b>The acquire-and-eat machine</b> (evaluated in order; every walk is same-z A* via {@link
- * Actor#stepAlongRoute}, so the z-rule is respected and no branch ever implies a cross-z step):
+ * <p><b>The reachability rule (the stranding fix).</b> Every tick {@link #act} first tries to eat
+ * something ALREADY within {@link FoodEconomy#EAT_REACH} — carried stock, a counter it can buy at,
+ * its own subsistence larder, a farm-fed commons — and a cached walk target can NEVER suppress
+ * that in-reach meal (the old step-1 lock: a hungry actor pinned to a far, unroutable cell while
+ * standing beside food). Only when nothing is in reach does it WALK to the nearest reachable
+ * stocked same-z source, and if that source turns out to be A*-unroutable ({@link
+ * Actor#routeFailedTo}) it re-scans for another instead of freezing.
+ *
+ * <p><b>The two ways to eat (money gates one of them):</b>
  * <ol>
- *   <li><b>Eat from own carry</b> — a shopkeeper's shelf stock, a farmer's fresh yield, or a FOOD
- *       just bought: consume one, {@code +}{@link FoodEconomy#EAT_RESTORE} HUNGER (no pathing).</li>
- *   <li><b>Nearby shop counter</b> — buy one FOOD at a same-z, stocked, affordable shopkeeper within
- *       {@link FoodEconomy#SHOP_NEAR} tiles via {@link BankVerbs#buyFood} (an ID-authorized Royal
- *       transfer), then eat it. This is where the cash market runs and the money lever bites (the
- *       broke cannot buy) — most working actors are near their work-site shop, so it fires often.</li>
- *   <li><b>Home / anchor larder</b> — else eat one, free, from whichever of the actor's own home
- *       cell or work-anchor cell it is at/beside (or walk to the nearer stocked one). Both are kept
- *       stocked for every non-wastrel, and an actor always dwells at one or the other, so this is
- *       the reliable, pathing-proof safety net that guarantees the middle class and the working
- *       serf mass never starve even when a shop is unreachable or out of stock.</li>
- *   <li><b>Free commons</b> — else eat one from the nearest same-z commons cell, free.</li>
- *   <li><b>No reachable source</b> — keep heading to a larder but do NOT recover: HUNGER falls to 0
- *       and the actor starves. The intended margin: roof-deck dwellers (cross-z from every source)
- *       and the wageless poor whose seed Royals ran out (wastrels get no stocked larder).</li>
+ *   <li><b>Buy at a shop</b> — a same-z, stocked, AFFORDABLE shopkeeper (an ID-authorized {@link
+ *       BankVerbs#buyFood} Royal transfer). The broke cannot buy — the money lever that starves the
+ *       wageless margin (wastrels, the roof-slum poor) while every waged, solvent citizen eats.
+ *       Reachable in place ({@link FoodEconomy#EAT_REACH}) or by walking to the nearest routable
+ *       counter.</li>
+ *   <li><b>Eat a subsistence larder / commons</b> — free, but stocked ONLY by real farm production:
+ *       a farming household's own home-cell yield, or the shared atrium/courtyard larder its
+ *       farmers fill (the compound eating what it grew). No such cell exists where no farmer works,
+ *       so this never feeds a shop-dependent cohort for free — money still decides who eats there.</li>
  * </ol>
  * Eating SINKS the FOOD ({@code takeCarried}/{@code takeOnCell}); the mint/sink counts feed the
  * closed-supply conservation proof. No branch draws RNG — the whole machine is deterministic
@@ -70,103 +69,143 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
 
     @Override
     public void act(Actor self, ActorContext ctx) {
-        ItemsLiteRegistry items = ctx.items();
-        int selfCell = self.cell();
-        int selfZ = PackedPos.z(selfCell);
-
-        // Fast path: resume walking to the larder/commons cell chosen on a prior tick (cached in the
-        // otherwise-unused target slot), so a walk tick does one probe instead of the full plan scan.
-        if (self.targetKind() == TargetKind.CELL) {
-            int cell = self.targetKey();
-            if (cell != Actor.NONE && PackedPos.z(cell) == selfZ
-                    && items.countOnCellOfKind(cell, ItemKinds.FOOD) > 0) {
-                if (eatFromCellWhenReached(self, ctx, cell, ReasonCode.ATE_FOOD)) {
-                    clearTarget(self);
-                } else {
-                    walkTo(self, ctx, cell);
-                }
-                return;
-            }
-            clearTarget(self); // the cached source emptied / went cross-z: replan below
-        }
-
-        // ---- Plan a fresh source (the scans run here, roughly once per hunger trip) ----
-
-        // 1. Eat what we already carry (shopkeeper shelf stock / farmer fresh yield).
-        if (items.countCarriedOfKind(self.id(), ItemKinds.FOOD) > 0) {
-            items.takeCarried(self.id(), ItemKinds.FOOD, 1);
-            eat(self, ctx, ReasonCode.ATE_FOOD);
-            return;
-        }
-
-        // 2. Shop counter (paid): if a same-z, stocked, affordable shopkeeper is within reach, buy
-        //    and eat WITHOUT walking to it — this never strands an actor chasing an unroutable
-        //    counter, and it is where the cash market runs (the money lever: the broke cannot buy).
-        int shopId = nearestAffordableVendor(self, ctx, selfCell, selfZ, FoodEconomy.EAT_REACH);
-        if (shopId != Actor.NONE) {
-            buyAndEat(self, ctx, shopId);
+        // A cached walk target must NEVER suppress a meal already within reach: always try to eat
+        // in place THIS tick before honoring any walk (the step-1 lock fix).
+        if (eatInReach(self, ctx)) {
             clearTarget(self);
             return;
         }
-
-        // 3. Home / anchor larder (free): the pathing-proof safety net. Eat from whichever of the
-        //    actor's own home or anchor cell it is already beside; otherwise walk to the nearer
-        //    stocked one (an actor always dwells at one or the other, so the nearer is reachable).
-        int larder = reachableOwnLarder(self, ctx, selfCell, selfZ);
-        if (larder != Actor.NONE) {
-            self.setTarget(TargetKind.CELL, larder);
-            if (eatFromCellWhenReached(self, ctx, larder, ReasonCode.ATE_FOOD)) {
-                clearTarget(self);
-            } else {
-                walkTo(self, ctx, larder);
-            }
+        // Nothing in reach: walk to the nearest reachable stocked same-z source. An unroutable
+        // candidate is skipped (routeFailedTo) so the actor re-scans instead of freezing.
+        int target = planWalkTarget(self, ctx);
+        if (target != Actor.NONE) {
+            self.setTarget(TargetKind.CELL, target);
+            walkTo(self, ctx, target);
             return;
         }
-
-        // 4. Free commons cell on the same band (the pathing dead-zone backstop grid).
-        int commons = nearestCommons(self, ctx, selfZ);
-        if (commons != Actor.NONE) {
-            self.setTarget(TargetKind.CELL, commons);
-            if (eatFromCellWhenReached(self, ctx, commons, ReasonCode.ATE_FOOD)) {
-                clearTarget(self);
-            } else {
-                walkTo(self, ctx, commons);
-            }
-            return;
-        }
-
-        // 5. No reachable source: keep heading to the home cell, but recover nothing — HUNGER falls
-        //    to 0 (the intended margin: roof decks + the broke wageless poor).
+        // No reachable source at all: head home, recover nothing — HUNGER falls to 0 and the actor
+        // starves (the intended margin: roof decks cross-z from every source, and the broke poor).
         clearTarget(self);
         walkTo(self, ctx, ctx.homes().get(self.homeId()).homeCell());
     }
 
+    // ======================================================================
+    // Eat in place (within EAT_REACH) — never suppressed by a cached walk target
+    // ======================================================================
+
     /**
-     * The actor's own reachable free larder: whichever of its home cell or work-anchor cell (both
-     * kept stocked for non-wastrels) it is already within {@link FoodEconomy#EAT_REACH} of —
-     * preferred so it eats in place with no pathing — else the nearer of the two that currently
-     * holds FOOD, to walk to. {@link Actor#NONE} if neither is same-z and stocked. This "eat where
-     * you dwell" rule, with a reach above 1, is what makes the safety net robust against both the
-     * long-commute / walled-interior pathing failures AND the occupancy-cap crowding that packs a
-     * 20-48-strong live-in crew a few tiles off its single shared anchor cell.
+     * Eats one FOOD from whatever source is already within {@link FoodEconomy#EAT_REACH} this tick,
+     * in priority order (carried stock, a buyable counter, the own subsistence larder, a farm-fed
+     * commons); returns whether it ate. No walking — this is the "eat where you stand" fast path
+     * that makes the safety net robust against pathing failures and occupancy crowding.
      */
-    private static int reachableOwnLarder(Actor self, ActorContext ctx, int selfCell, int selfZ) {
+    private static boolean eatInReach(Actor self, ActorContext ctx) {
+        ItemsLiteRegistry items = ctx.items();
+        // 1. Eat what we already carry (a shopkeeper's shelf stock, a farmer's fresh yield, a
+        //    FOOD just bought). No pathing, no cost.
+        if (items.countCarriedOfKind(self.id(), ItemKinds.FOOD) > 0) {
+            items.takeCarried(self.id(), ItemKinds.FOOD, 1);
+            eat(self, ctx, ReasonCode.ATE_FOOD);
+            return true;
+        }
+        int selfCell = self.cell();
+        int selfZ = PackedPos.z(selfCell);
+        // 2. Buy from a same-z, stocked, affordable counter within reach (the money lever). The
+        //    scan already rejects an unaffordable/bare shop, so a returned shop always sells here.
+        int shopId = nearestAffordableVendor(self, ctx, selfCell, selfZ, FoodEconomy.EAT_REACH);
+        if (shopId != Actor.NONE) {
+            buyAndEat(self, ctx, shopId);
+            return true;
+        }
+        // 3. Eat free from the own home/anchor subsistence larder within reach (farm/seed stocked).
+        int larder = ownLarderInReach(self, ctx, selfCell, selfZ);
+        if (larder != Actor.NONE) {
+            items.takeOnCell(larder, ItemKinds.FOOD, 1);
+            eat(self, ctx, ReasonCode.ATE_FOOD);
+            return true;
+        }
+        // 4. Eat free from a same-z farm-fed commons within reach (a compound atrium / the mission).
+        int commons = nearestStockedCommons(self, ctx, selfCell, selfZ, FoodEconomy.EAT_REACH, false);
+        if (commons != Actor.NONE) {
+            items.takeOnCell(commons, ItemKinds.FOOD, 1);
+            eat(self, ctx, ReasonCode.ATE_FOOD);
+            return true;
+        }
+        return false;
+    }
+
+    // ======================================================================
+    // Plan a walk to the nearest reachable stocked source (route-fail aware)
+    // ======================================================================
+
+    /**
+     * The cell to walk toward when no meal is in reach: the nearest reachable stocked same-z source,
+     * preferring a FREE one it owns (its own subsistence larder, then a farm-fed commons) over a
+     * paid counter — but a candidate the last A* could not route to ({@link Actor#routeFailedTo}) is
+     * skipped so the actor tries the next one instead of pinning itself to an unreachable source.
+     * {@link Actor#NONE} when this actor has no reachable stocked same-z source at all (the margin).
+     */
+    private static int planWalkTarget(Actor self, ActorContext ctx) {
+        int selfCell = self.cell();
+        int selfZ = PackedPos.z(selfCell);
+        // Prefer a free source the actor owns / can share, if it is routable.
+        int larder = ownStockedLarder(self, ctx, selfZ);
+        if (larder != Actor.NONE && !self.routeFailedTo(larder)) {
+            return larder;
+        }
+        int commons = nearestStockedCommons(self, ctx, selfCell, selfZ, Integer.MAX_VALUE, true);
+        if (commons != Actor.NONE) {
+            return commons;
+        }
+        // Else buy: walk to the nearest affordable stocked counter that is not known-unroutable.
+        int shopCell = nearestAffordableVendorCell(self, ctx, selfCell, selfZ);
+        if (shopCell != Actor.NONE) {
+            return shopCell;
+        }
+        // Last resort: keep heading for the own larder even if the route just failed (it may open up
+        // as the crowd shifts), rather than giving up while a stocked cell exists on the band.
+        return larder;
+    }
+
+    // ======================================================================
+    // Source scans (deterministic: nearest by chebyshev, ascending tiebreak)
+    // ======================================================================
+
+    /**
+     * The actor's own subsistence larder within {@link FoodEconomy#EAT_REACH}: whichever of its home
+     * cell or work-anchor cell (both potentially farm/seed stocked) it is already beside and that
+     * currently holds FOOD — preferred so it eats in place with no pathing — or {@link Actor#NONE}.
+     */
+    private static int ownLarderInReach(Actor self, ActorContext ctx, int selfCell, int selfZ) {
         int home = ctx.homes().get(self.homeId()).homeCell();
         int anchor = self.anchorCell();
         ItemsLiteRegistry items = ctx.items();
-        boolean homeOk = PackedPos.z(home) == selfZ
-                && items.countOnCellOfKind(home, ItemKinds.FOOD) > 0;
-        boolean anchorOk = anchor != home && PackedPos.z(anchor) == selfZ
-                && items.countOnCellOfKind(anchor, ItemKinds.FOOD) > 0;
-        // Prefer a source we can already reach (no walk, no pathing risk).
-        if (homeOk && ActorGeometry.chebyshev(selfCell, home) <= FoodEconomy.EAT_REACH) {
+        if (PackedPos.z(home) == selfZ && ActorGeometry.chebyshev(selfCell, home) <= FoodEconomy.EAT_REACH
+                && items.countOnCellOfKind(home, ItemKinds.FOOD) > 0) {
             return home;
         }
-        if (anchorOk && ActorGeometry.chebyshev(selfCell, anchor) <= FoodEconomy.EAT_REACH) {
+        if (anchor != home && PackedPos.z(anchor) == selfZ
+                && ActorGeometry.chebyshev(selfCell, anchor) <= FoodEconomy.EAT_REACH
+                && items.countOnCellOfKind(anchor, ItemKinds.FOOD) > 0) {
             return anchor;
         }
+        return Actor.NONE;
+    }
+
+    /**
+     * The nearer of the actor's own home / work-anchor cell that is same-z and currently stocked,
+     * to walk to (used only once the in-reach check has already failed). {@link Actor#NONE} if
+     * neither is same-z and holds FOOD.
+     */
+    private static int ownStockedLarder(Actor self, ActorContext ctx, int selfZ) {
+        int home = ctx.homes().get(self.homeId()).homeCell();
+        int anchor = self.anchorCell();
+        ItemsLiteRegistry items = ctx.items();
+        boolean homeOk = PackedPos.z(home) == selfZ && items.countOnCellOfKind(home, ItemKinds.FOOD) > 0;
+        boolean anchorOk = anchor != home && PackedPos.z(anchor) == selfZ
+                && items.countOnCellOfKind(anchor, ItemKinds.FOOD) > 0;
         if (homeOk && anchorOk) {
-            return ActorGeometry.chebyshev(selfCell, home) <= ActorGeometry.chebyshev(selfCell, anchor)
+            return ActorGeometry.chebyshev(self.cell(), home) <= ActorGeometry.chebyshev(self.cell(), anchor)
                     ? home : anchor;
         }
         if (homeOk) {
@@ -176,44 +215,31 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
     }
 
     /**
-     * Buys one FOOD (ID-authorized Royal transfer) then immediately eats it. {@link
-     * BankVerbs#buyFood} transfers the Royals before moving the FOOD, so we only eat / count a meal
-     * once the FOOD actually landed in carry (defensive — callers pre-check stock, so the shop is
-     * never empty here — but this keeps the conservation count exact even if that ever slipped).
+     * The nearest same-z commons cell that currently holds FOOD, within {@code maxDist} chebyshev
+     * (pass {@link Integer#MAX_VALUE} for an unbounded walk-target scan), ascending index breaking
+     * ties. The commons set is now a handful of farm-fed atrium/mission cells (not a district-wide
+     * grid), so probing FOOD per candidate is cheap. When {@code skipRouteFailed}, a cell the last
+     * A* could not route to is skipped so an unroutable commons cannot pin the actor.
      */
-    private static void buyAndEat(Actor self, ActorContext ctx, int shopId) {
-        ItemsLiteEntry card = idCardOf(self, ctx);
-        boolean bought = BankVerbs.buyFood(ctx.bankAccounts(), ctx.items(), self.id(), shopId, card,
-                FoodEconomy.FOOD_PRICE, 1);
-        if (bought && ctx.items().takeCarried(self.id(), ItemKinds.FOOD, 1) > 0) {
-            eat(self, ctx, ReasonCode.BOUGHT_FOOD);
-        } else {
-            // Card gone / can't afford (the broke starve), or the counter was bare: no recovery.
-            self.setLastReasonCode(ReasonCode.NEED_HUNGER_LOW);
+    private static int nearestStockedCommons(Actor self, ActorContext ctx, int selfCell, int selfZ,
+            int maxDist, boolean skipRouteFailed) {
+        FoodMarket market = ctx.foodMarket();
+        ItemsLiteRegistry items = ctx.items();
+        int best = Actor.NONE;
+        int bestDist = maxDist + 1;
+        for (int i = 0; i < market.commonsCount(); i++) {
+            int cell = market.commonsAt(i);
+            if (PackedPos.z(cell) != selfZ) {
+                continue;
+            }
+            int d = ActorGeometry.chebyshev(selfCell, cell);
+            if (d < bestDist && items.countOnCellOfKind(cell, ItemKinds.FOOD) > 0
+                    && !(skipRouteFailed && self.routeFailedTo(cell))) {
+                bestDist = d;
+                best = cell;
+            }
         }
-    }
-
-    /** Eats one FOOD off {@code cell} when within {@link FoodEconomy#EAT_REACH}; returns if it ate. */
-    private static boolean eatFromCellWhenReached(Actor self, ActorContext ctx, int cell,
-            ReasonCode reason) {
-        if (ActorGeometry.chebyshev(self.cell(), cell) <= FoodEconomy.EAT_REACH
-                && ctx.items().takeOnCell(cell, ItemKinds.FOOD, 1) > 0) {
-            eat(self, ctx, reason);
-            return true;
-        }
-        return false;
-    }
-
-    /** Applies the eaten meal: {@code +EAT_RESTORE} HUNGER, sink-accounted, reason-coded. */
-    private static void eat(Actor self, ActorContext ctx, ReasonCode reason) {
-        ctx.recordFoodEaten(1);
-        self.applyNeedDelta(Need.HUNGER, FoodEconomy.EAT_RESTORE);
-        self.setLastReasonCode(reason);
-    }
-
-    /** Drops the cached food target (after eating, or when the cached source went stale). */
-    private static void clearTarget(Actor self) {
-        self.setTarget(TargetKind.NONE, Actor.NONE);
+        return best;
     }
 
     /**
@@ -253,29 +279,74 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
     }
 
     /**
-     * The nearest same-z commons cell by chebyshev (ascending index breaks ties). Deliberately does
-     * NOT probe stock per candidate — the commons grid can be a few hundred cells and an O(items)
-     * probe on each would dominate the tick; the import refills every commons to cap each period and
-     * only the rare stranded actor draws on one, so a commons is effectively always stocked, and the
-     * on-arrival {@code takeOnCell} handles the exceptional empty cell (the fast path then replans).
+     * The CELL of the nearest same-z stocked affordable vendor to WALK to — the same scan as {@link
+     * #nearestAffordableVendor} but returning the counter's cell and skipping the one counter the
+     * last A* could not route to, so the actor walks to a routable market instead of re-pinning an
+     * unreachable one. {@link Actor#NONE} if the actor cannot afford any / none is stocked/routable.
      */
-    private static int nearestCommons(Actor self, ActorContext ctx, int selfZ) {
+    private static int nearestAffordableVendorCell(Actor self, ActorContext ctx, int selfCell,
+            int selfZ) {
+        int account = BankLedger.purchaseAuth(idCardOf(self, ctx));
+        if (account == Actor.NONE || ctx.bankAccounts().balanceOf(account) < FoodEconomy.FOOD_PRICE) {
+            return Actor.NONE;
+        }
         FoodMarket market = ctx.foodMarket();
-        int selfCell = self.cell();
+        ItemsLiteRegistry items = ctx.items();
+        ActorRegistry registry = ctx.registry();
         int best = Actor.NONE;
         int bestDist = Integer.MAX_VALUE;
-        for (int i = 0; i < market.commonsCount(); i++) {
-            int cell = market.commonsAt(i);
-            if (PackedPos.z(cell) != selfZ) {
+        for (int i = 0; i < market.vendorCount(); i++) {
+            int shopId = market.vendorAt(i);
+            if (shopId == self.id()) {
                 continue;
             }
-            int d = ActorGeometry.chebyshev(selfCell, cell);
-            if (d < bestDist) {
+            int shopCell = registry.get(shopId).cell();
+            if (PackedPos.z(shopCell) != selfZ) {
+                continue;
+            }
+            int d = ActorGeometry.chebyshev(selfCell, shopCell);
+            if (d < bestDist && items.countCarriedOfKind(shopId, ItemKinds.FOOD) > 0
+                    && !self.routeFailedTo(shopCell)) {
                 bestDist = d;
-                best = cell;
+                best = shopCell;
             }
         }
         return best;
+    }
+
+    // ======================================================================
+    // Eat / buy verbs
+    // ======================================================================
+
+    /**
+     * Buys one FOOD (ID-authorized Royal transfer) then immediately eats it. {@link
+     * BankVerbs#buyFood} transfers the Royals before moving the FOOD, so we only eat / count a meal
+     * once the FOOD actually landed in carry (defensive — callers pre-check stock+affordability, so
+     * this never fails in practice — but it keeps the conservation count exact if that ever slipped).
+     */
+    private static void buyAndEat(Actor self, ActorContext ctx, int shopId) {
+        ItemsLiteEntry card = idCardOf(self, ctx);
+        boolean bought = BankVerbs.buyFood(ctx.bankAccounts(), ctx.items(), self.id(), shopId, card,
+                FoodEconomy.FOOD_PRICE, 1);
+        if (bought && ctx.items().takeCarried(self.id(), ItemKinds.FOOD, 1) > 0) {
+            clearTarget(self);
+            eat(self, ctx, ReasonCode.BOUGHT_FOOD);
+        } else {
+            // Card gone / can't afford (the broke starve), or the counter was bare: no recovery.
+            self.setLastReasonCode(ReasonCode.NEED_HUNGER_LOW);
+        }
+    }
+
+    /** Applies the eaten meal: {@code +EAT_RESTORE} HUNGER, sink-accounted, reason-coded. */
+    private static void eat(Actor self, ActorContext ctx, ReasonCode reason) {
+        ctx.recordFoodEaten(1);
+        self.applyNeedDelta(Need.HUNGER, FoodEconomy.EAT_RESTORE);
+        self.setLastReasonCode(reason);
+    }
+
+    /** Drops the cached food target (after eating, or when the cached source went stale). */
+    private static void clearTarget(Actor self) {
+        self.setTarget(TargetKind.NONE, Actor.NONE);
     }
 
     /** This actor's carried ID card entry (authorizes its account), or {@code null}. */

@@ -190,24 +190,24 @@ public final class ActorsSystem implements SimulationSystem {
         rebuildOccupancy();
         runPayroll(context.tick());
         runFoodImports(context.tick());
+        runFoodProvision(context.tick());
         registry.tickAll(new ActorContextImpl(context));
     }
 
     /**
-     * The periodic FOOD provisioning (economy-loop pass): on an import tick, the quay restocks
-     * every vendor shop's carried stock up to {@link FoodEconomy#SHOP_STOCK_CAP}, and the
-     * provisioning ration tops every free commons cell and every guaranteed larder cell up to
-     * {@link FoodEconomy#LARDER_CAP}. Each source is filled only to its cap (never beyond), so
-     * supply is demand-driven and {@code liveOfKind(FOOD)} stays bounded rather than growing without
-     * limit. Minting FOOD, never Royals, so the money invariant is untouched. Deterministic: fixed
-     * cadence against the absolute tick (mirrors {@link #runPayroll}), ascending dense-index walks,
-     * no draws. Every minted unit is accounted for the conservation proof.
+     * The periodic quay FOOD import (money-gated market pass): on an import tick the quay lands
+     * provisions at the market — restocking every vendor shop's carried stock up to {@link
+     * FoodEconomy#SHOP_STOCK_CAP}, and NOTHING else. Larders and the compound atria are fed by farm
+     * production alone (there is no free ration to homes/commons any more), so the only way this
+     * imported supply reaches a mouth is a Royal-paid {@link BankVerbs#buyFood} at the counter — the
+     * money lever. Each vendor is filled only to its cap (never beyond), so supply is demand-driven
+     * and {@code liveOfKind(FOOD)} stays bounded. Minting FOOD, never Royals, so the money invariant
+     * is untouched. Deterministic: fixed cadence against the absolute tick (mirrors {@link
+     * #runPayroll}), an ascending dense-index walk, no draws. Every minted unit is accounted.
      */
     private void runFoodImports(long tick) {
         FoodMarket market = fixtures.foodMarket();
-        if (tick <= 0 || tick % FoodEconomy.IMPORT_PERIOD != 0
-                || (market.vendorCount() == 0 && market.commonsCount() == 0
-                        && market.larderCount() == 0)) {
+        if (tick <= 0 || tick % FoodEconomy.IMPORT_PERIOD != 0 || market.vendorCount() == 0) {
             return;
         }
         for (int i = 0; i < market.vendorCount(); i++) {
@@ -218,18 +218,45 @@ public final class ActorsSystem implements SimulationSystem {
                 foodMinted += items.addCarried(shopId, ItemKinds.FOOD, deficit);
             }
         }
-        for (int i = 0; i < market.commonsCount(); i++) {
-            foodMinted += topUpCell(market.commonsAt(i));
-        }
-        for (int i = 0; i < market.larderCount(); i++) {
-            foodMinted += topUpCell(market.larderAt(i));
-        }
     }
 
-    /** Tops one cell's FOOD up to {@link FoodEconomy#LARDER_CAP}; returns the units minted. */
-    private int topUpCell(int cell) {
-        int deficit = FoodEconomy.LARDER_CAP - items.countOnCellOfKind(cell, ItemKinds.FOOD);
-        return deficit > 0 ? items.addOnCell(cell, ItemKinds.FOOD, deficit) : 0;
+    /**
+     * The periodic market provisioning (the money-gated reachability backstop): on an import tick,
+     * every provisioned citizen (the serf mass + the middle class; never a wastrel) does its
+     * household shopping — it BUYS FOOD up to {@link FoodEconomy#CARRY_RATION} meals into its OWN
+     * carry, paying {@link FoodEconomy#FOOD_PRICE} Royals apiece (transferred to the finite employer/
+     * market pool, so the money supply is invariant), but only as many meals as it can AFFORD. A
+     * solvent, waged citizen keeps its pantry full and eats the ration in place ({@link
+     * SeekFoodPolicy} step 1) wherever a walled pocket or crowd would have stranded a walk to a
+     * counter; the broke buy nothing and the wageless (absent from the list) get nothing — the
+     * intended starvation margin. FOOD is minted here (the imported supply the citizen just bought)
+     * and accounted; the Royals only move, never mint. Deterministic: fixed cadence against the
+     * absolute tick (mirrors {@link #runPayroll}), an ascending dense-index walk, no draws. The
+     * account id equals the actor id (the bake convention the economy accounts and payroll share).
+     */
+    private void runFoodProvision(long tick) {
+        Payroll payroll = fixtures.payroll();
+        FoodMarket market = fixtures.foodMarket();
+        if (tick <= 0 || tick % FoodEconomy.IMPORT_PERIOD != 0 || !payroll.isWired()
+                || market.provisionedCount() == 0) {
+            return;
+        }
+        int pool = payroll.employerAccountId();
+        for (int i = 0; i < market.provisionedCount(); i++) {
+            int id = market.provisionedAt(i);
+            int deficit = FoodEconomy.CARRY_RATION - items.countCarriedOfKind(id, ItemKinds.FOOD);
+            if (deficit <= 0) {
+                continue; // pantry already stocked
+            }
+            long affordable = bank.balanceOf(id) / FoodEconomy.FOOD_PRICE;
+            int units = (int) Math.min(deficit, affordable);
+            if (units <= 0) {
+                continue; // broke this period — buys no ration (will go hungry, then starve)
+            }
+            if (bank.transfer(id, pool, units * FoodEconomy.FOOD_PRICE)) {
+                foodMinted += items.addCarried(id, ItemKinds.FOOD, units);
+            }
+        }
     }
 
     /**

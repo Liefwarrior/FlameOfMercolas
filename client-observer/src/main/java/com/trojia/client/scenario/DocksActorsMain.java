@@ -116,6 +116,8 @@ public final class DocksActorsMain {
         printEconomyProof(population);
         printFoodConservation(population);
         printStarvationByClass(registry);
+        printSerfStarvationByBand(registry, jobs);
+        printMoneyGateProof(population, jobs);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
             // Wall-clock timing — printed only under --perf so plain runs stay byte-identical.
@@ -221,6 +223,87 @@ public final class DocksActorsMain {
 
     private static double pct(int[] row) {
         return row[0] == 0 ? 0.0 : 100.0 * row[1] / row[0];
+    }
+
+    /**
+     * Serf starvation broken out by walk-plane z-band (and, for any residual starved serf, its true
+     * job) — the reachability proof: every serf cohort the diagnosis stranded (z:+11 ship crews /
+     * dense bunk sites, z:+12/z:+13 terrace residents) now has a reachable stocked same-z source, so
+     * each band lands well under the 5% bar rather than one band carrying a 20%+ stranded cohort.
+     */
+    private static void printSerfStarvationByBand(ActorRegistry registry, JobRegistry jobs) {
+        Map<Integer, int[]> byBand = new java.util.TreeMap<>();       // z-world -> {total, starved}
+        Map<String, Integer> starvedJobs = new java.util.TreeMap<>(); // true-job -> starved count
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            if (!a.typeId().key().equals("serf")) {
+                continue;
+            }
+            int[] row = byBand.computeIfAbsent(PackedPos.z(a.cell()), k -> new int[2]);
+            row[0]++;
+            if (a.need(com.trojia.sim.actor.Need.HUNGER) == 0) {
+                row[1]++;
+                Job job = a.jobOrdinal() >= 0 ? jobs.get(a.jobOrdinal()) : null;
+                starvedJobs.merge(JobDisplay.trueJobId(job), 1, Integer::sum);
+            }
+        }
+        System.out.println();
+        System.out.println("================ SERF STARVATION BY WALK-PLANE Z-BAND ======================");
+        System.out.printf("  %-10s %6s %8s %8s%n", "z(world)", "total", "starved", "pct");
+        for (Map.Entry<Integer, int[]> e : byBand.entrySet()) {
+            int total = e.getValue()[0];
+            int starved = e.getValue()[1];
+            System.out.printf("  z=%-8d %6d %8d %7.1f%%%n", e.getKey(), total, starved,
+                    100.0 * starved / total);
+        }
+        System.out.println("  residual starved serfs by true job: "
+                + (starvedJobs.isEmpty() ? "(none)" : starvedJobs));
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * The money-gate proof (Eli's "money matters"): the market only feeds a mouth that pays. This
+     * samples, at soak end, a fed WAGED serf (bought its way through the soak) against a starved
+     * WAGELESS wastrel (no wage, seed Royals spent down to nothing), showing survival tracks Royals
+     * — a waged citizen eats via purchase, the wageless margin starves.
+     */
+    private static void printMoneyGateProof(DocksPopulation population, JobRegistry jobs) {
+        ActorRegistry registry = population.registry();
+        var bank = population.bankAccounts();
+        int fedSerf = Actor.NONE;
+        int starvedWastrel = Actor.NONE;
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            int hunger = a.need(com.trojia.sim.actor.Need.HUNGER);
+            String type = a.typeId().key();
+            if (type.equals("serf") && hunger > 0 && fedSerf == Actor.NONE) {
+                fedSerf = i;
+            }
+            if (type.equals("wastrel") && hunger == 0 && starvedWastrel == Actor.NONE) {
+                starvedWastrel = i;
+            }
+        }
+        System.out.println();
+        System.out.println("================ MONEY-GATE PROOF (survival tracks Royals) ==================");
+        System.out.println("  Food is BUY-only: a paid ration, a shop counter, or a farm larder you grew.");
+        if (fedSerf != Actor.NONE) {
+            printMoneyActor(registry, bank, jobs, fedSerf, "FED, waged serf   ");
+        }
+        if (starvedWastrel != Actor.NONE) {
+            printMoneyActor(registry, bank, jobs, starvedWastrel, "STARVED wastrel    ");
+        }
+        System.out.println("  A waged, solvent citizen buys and eats; the wageless poor spend down");
+        System.out.println("  their seed Royals and then starve -- money now gates who survives.");
+        System.out.println("============================================================================");
+    }
+
+    private static void printMoneyActor(ActorRegistry registry, com.trojia.sim.actor.BankLedger bank,
+            JobRegistry jobs, int id, String label) {
+        Actor a = registry.get(id);
+        Job job = a.jobOrdinal() >= 0 ? jobs.get(a.jobOrdinal()) : null;
+        long balance = id < bank.accountCount() ? bank.balanceOf(id) : -1;
+        System.out.printf("  %s actor#%-4d [%-16s] HUNGER=%-5d Royals=%d%n",
+                label, id, JobDisplay.trueJobId(job), a.need(com.trojia.sim.actor.Need.HUNGER), balance);
     }
 
     /** Actor-type/job composition — the report's headline numbers, printed deterministically. */

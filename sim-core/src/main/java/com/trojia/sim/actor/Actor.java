@@ -488,6 +488,18 @@ public abstract class Actor {
         }
     }
 
+    /**
+     * True iff the most recent {@link #stepAlongRoute} search to {@code target} found NO path (an
+     * over-budget / genuinely-unreachable target) and that failure is still cached — i.e. walking
+     * to {@code target} right now is a known no-op. A pure read of the route cache, so it adds no
+     * persisted state and no determinism surface; it lets a food-seeking policy re-scan for a
+     * routable source instead of pinning itself to an unroutable one and freezing (the stranding
+     * failure the economy-loop reachability fix targets).
+     */
+    public final boolean routeFailedTo(int target) {
+        return cachedRouteTargetCell == target && cachedRoute.length == 0;
+    }
+
     /** Applies a saturating (clamped [0,10000]) delta to one need (§3.2). */
     public final void applyNeedDelta(Need need, int delta) {
         int i = need.ordinal();

@@ -27,11 +27,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DocksOccupancyInvariantTest {
 
     /**
-     * The whole-district roster size. 630 baseline + 10 Phase-1 living-docks stationed actors:
-     * the K36 banker, its 2 flanking bank guards, and 7 shop guards (one militia_watch per
-     * retail shop). Grows with any further stationed spawns.
+     * The whole-district roster size. 630 baseline + 10 Phase-1 living-docks stationed actors
+     * (the K36 banker, its 2 flanking bank guards, and 7 shop guards) + 13 money-gated-market
+     * victuallers (3 on-hull + 4 Band-B + 6 Band-C FOOD vendors). Grows with any further stationed
+     * spawns.
      */
-    private static final int EXPECTED_ACTOR_COUNT = 640;
+    private static final int EXPECTED_ACTOR_COUNT = 653;
 
     /** Enough ticks to exercise commuting, return-home crowding, patrols, and wander. */
     private static final int TICKS = 600;
