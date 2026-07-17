@@ -281,7 +281,10 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         FoodMarket market = ctx.foodMarket();
         ItemsLiteRegistry items = ctx.items();
         int best = Actor.NONE;
-        int bestDist = maxDist + 1;
+        // Overflow guard (mirrors nearestStockedBin): the unbounded walk-target scan passes
+        // Integer.MAX_VALUE, and MAX_VALUE + 1 wraps negative — strict-< would then reject
+        // every commons and the walk planner could never target one.
+        int bestDist = maxDist == Integer.MAX_VALUE ? Integer.MAX_VALUE : maxDist + 1;
         for (int i = 0; i < market.commonsCount(); i++) {
             int cell = market.commonsAt(i);
             if (PackedPos.z(cell) != selfZ) {
@@ -314,7 +317,9 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         ItemsLiteRegistry items = ctx.items();
         ActorRegistry registry = ctx.registry();
         int best = Actor.NONE;
-        int bestDist = maxDist + 1; // strict-< below keeps the lowest-index shop on a distance tie
+        // Strict-< below keeps the lowest-index shop on a distance tie; MAX_VALUE-guarded like
+        // nearestStockedCommons/Bin so an unbounded caller can never wrap the bound negative.
+        int bestDist = maxDist == Integer.MAX_VALUE ? Integer.MAX_VALUE : maxDist + 1;
         for (int i = 0; i < market.vendorCount(); i++) {
             int shopId = market.vendorAt(i);
             if (shopId == self.id()) {

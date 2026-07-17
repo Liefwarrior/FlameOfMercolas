@@ -123,6 +123,50 @@ final class SeekFoodPolicyTest {
     }
 
     @Test
+    void actWalksToAFarStockedCommonsAndEats() {
+        // Regression (overflow bug): planWalkTarget passes maxDist=Integer.MAX_VALUE into
+        // nearestStockedCommons, whose `bestDist = maxDist + 1` wrapped to MIN_VALUE — the
+        // strict-< then rejected every commons, so a hungry actor beyond EAT_REACH of a
+        // stocked commons could never plan a walk to it and silently starved in place.
+        // Setup makes the commons the ONLY food anywhere: the actor stands on its own home
+        // (empty larder — nothing in reach), the stocked commons is far beyond EAT_REACH.
+        ActorRegistry registry = new ActorRegistry();
+        Actor actor = serfAt(registry, 30, 0);
+        MarketContext ctx = new MarketContext(registry);
+        actor.setHomeId(ctx.homes().addHome(actor.cell())); // home == start, larder empty
+        int commons = PackedPos.pack(2, 0, 1); // chebyshev 28 away, well beyond EAT_REACH (8)
+        ctx.market = new FoodMarket(new int[0], new int[] {commons}, new int[0]);
+        ctx.items().addOnCell(commons, ItemKinds.FOOD, 5);
+        actor.applyNeedDelta(Need.HUNGER, -8100); // below CRITICAL
+
+        for (int i = 0; i < 600 && Policies.SEEK_FOOD.score(actor, ctx) > 0; i++) {
+            actor.tick(ctx);
+        }
+        assertEquals(0, Policies.SEEK_FOOD.score(actor, ctx),
+                "walked to the far commons, ate, and released back to the job");
+        assertTrue(actor.need(Need.HUNGER) >= NeedThresholds.RECOVERED,
+                "eating restored HUNGER above RECOVERED, was " + actor.need(Need.HUNGER));
+        assertTrue(ActorGeometry.chebyshev(actor.cell(), commons) <= FoodEconomy.EAT_REACH,
+                "must have planned the walk to the commons (the overflow made this impossible)");
+        assertTrue(ctx.items().countOnCellOfKind(commons, ItemKinds.FOOD) < 5,
+                "a FOOD must have been consumed (sunk) from the commons");
+    }
+
+    /** Ctx double with a synthetic {@link FoodMarket} (same idiom as GarbageScavengeTest). */
+    private static final class MarketContext extends NoOpActorContext {
+        private FoodMarket market = FoodMarket.EMPTY;
+
+        MarketContext(ActorRegistry registry) {
+            super(registry);
+        }
+
+        @Override
+        public FoodMarket foodMarket() {
+            return market;
+        }
+    }
+
+    @Test
     void eatingIsTheOnlyWayHungerRecovers() {
         // With the passive at-home recovery deleted, an actor sitting on its home cell with NO
         // reachable FOOD (empty larder, no shop, no commons) must NEVER recover — HUNGER only
