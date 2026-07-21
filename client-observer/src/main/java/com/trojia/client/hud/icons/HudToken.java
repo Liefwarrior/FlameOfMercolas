@@ -9,8 +9,10 @@ package com.trojia.client.hud.icons;
  */
 public sealed interface HudToken {
 
-    /** A literal text run, drawn with the caller's current font/color. */
-    record Text(String value) implements HudToken {
+    /** A literal text run, drawn with the caller's current font/color; a {@code dim} run is
+     * drawn at reduced brightness (same hue) — for de-emphasized dev detail like the raw tick
+     * count next to the HUD clock. */
+    record Text(String value, boolean dim) implements HudToken {
     }
 
     /** One icon glyph, drawn at the font's line height from {@link IconAtlas}. */
@@ -18,7 +20,11 @@ public sealed interface HudToken {
     }
 
     static HudToken text(String value) {
-        return new Text(value);
+        return new Text(value, false);
+    }
+
+    static HudToken dimText(String value) {
+        return new Text(value, true);
     }
 
     static HudToken icon(IconKey key) {

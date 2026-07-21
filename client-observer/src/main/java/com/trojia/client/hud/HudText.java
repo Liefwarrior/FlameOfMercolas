@@ -35,26 +35,47 @@ public final class HudText {
         return String.format("z=%d  zoom=%dx", z, zoom);
     }
 
+    /** Displayed minutes in a day: the {@link DailyRhythm#DAY}-tick sim day reads as 24h. */
+    private static final long MINUTES_PER_DAY = 24 * 60;
+
     /**
-     * The status portion of the time-control HUD line: a {@code Day N, HH:MM:SS} clock derived
-     * straight from {@code tick} (one tick is one simulated second — {@code TickClock.
-     * MILLIS_PER_TICK}), plus the active speed setting and the raw tick count. The day/time
-     * split uses {@link DailyRhythm#DAY} (24,000 simulated seconds); at 1 tick = 1 second that
-     * is a real, honest ~6h40m day, not a literal 24-hour one — {@code DailyRhythm.DAY} is left
-     * unchanged because every job/actor-type rhythm window in {@code content/raws} is tuned
-     * against that scale. No keybinding reminder — see {@link #timeKeybindingTokens}.
+     * The time-of-day clock: {@code Day N, HH:MM Phase}. The {@link DailyRhythm#DAY}-tick sim
+     * day (24,000 ticks) is mapped onto a 24-hour readout — {@code minutesOfDay = tickOfDay *
+     * 1440 / 24000}, so 1,000 ticks read as one displayed hour and the digits line up with the
+     * rhythm anchors the sim actually keys off ({@code tick % DAY}): dawn 00:00, noon 06:00,
+     * dusk 12:00, midnight 18:00. Days are 1-based ({@code Day 1} at boot). The trailing
+     * {@link DayPhase} tag ({@code Dawn}/{@code Day}/{@code Dusk}/{@code Night}) is derived
+     * from the same tick and padded to a fixed width so the columns after it never jitter.
+     * Pure presentation — {@code DailyRhythm.DAY} itself is untouched.
+     *
+     * @param tick the engine's current tick ({@code SimulationEngine#currentTick()})
+     */
+    public static String clock(long tick) {
+        long day = tick / DailyRhythm.DAY + 1;
+        long minutesOfDay = DailyRhythm.tickOfDay(tick) * MINUTES_PER_DAY / DailyRhythm.DAY;
+        return String.format("Day %d, %02d:%02d %-5s",
+                day, minutesOfDay / 60, minutesOfDay % 60, DayPhase.of(tick).label());
+    }
+
+    /**
+     * The full status portion of the time-control HUD line: the {@link #clock} readout, the
+     * active speed setting, and the raw tick count (kept for dev use; rendered as a dim suffix
+     * by {@link #describeTimeTokens}). No keybinding reminder — see
+     * {@link #timeKeybindingTokens}.
      *
      * @param tick       the engine's current tick ({@code SimulationEngine#currentTick()})
      * @param speedLabel the active {@code SpeedSetting}'s name (e.g. {@code "PAUSED"})
      */
     public static String describeTime(long tick, String speedLabel) {
-        long day = tick / DailyRhythm.DAY;
-        long secondsOfDay = tick % DailyRhythm.DAY;
-        long hours = secondsOfDay / 3600;
-        long minutes = (secondsOfDay % 3600) / 60;
-        long seconds = secondsOfDay % 60;
-        return String.format("Day %d, %02d:%02d:%02d  speed=%-6s  tick=%d",
-                day, hours, minutes, seconds, speedLabel, tick);
+        return clockAndSpeed(tick, speedLabel) + tickSuffix(tick);
+    }
+
+    private static String clockAndSpeed(long tick, String speedLabel) {
+        return clock(tick) + String.format("  speed=%-6s", speedLabel);
+    }
+
+    private static String tickSuffix(long tick) {
+        return "  tick=" + tick;
     }
 
     /**
@@ -107,10 +128,13 @@ public final class HudText {
     }
 
     /** {@link #describeTime}'s status text followed by {@link #timeKeybindingTokens} — the
-     * full time-control HUD line, ready to hand to {@code IconTextLine.draw}. */
+     * full time-control HUD line, ready to hand to {@code IconTextLine.draw}. The raw-tick
+     * suffix is a {@link HudToken#dimText dim} token: still on screen for devs, but visually
+     * subordinate to the {@code Day N, HH:MM Phase} clock. */
     public static List<HudToken> describeTimeTokens(long tick, String speedLabel) {
         List<HudToken> tokens = new ArrayList<>();
-        tokens.add(HudToken.text(describeTime(tick, speedLabel)));
+        tokens.add(HudToken.text(clockAndSpeed(tick, speedLabel)));
+        tokens.add(HudToken.dimText(tickSuffix(tick)));
         tokens.addAll(timeKeybindingTokens());
         return tokens;
     }
