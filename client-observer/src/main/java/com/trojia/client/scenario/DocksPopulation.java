@@ -168,11 +168,14 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] BANK_VAULT_CHEST = {152, 57};        // future Royal COIN vault (empty in Phase 1)
     private static final int[][] BANK_QUEUE = {{154, 51}, {154, 50}, {154, 49}};  // front -> back
 
-    // K34 prison cell block: six STEEL_WALL cells (>=12 capacity at MAX_OCCUPANTS_PER_CELL=2),
-    // filled at arrest time by a later justice pass (no actors spawned here). PRISON_CELLS_K34[0]
-    // is also the Phase-0 scalar arrest-hold escort cell (the retired (103,85) cage-side floor).
+    // K34 prison cell block: NINE STEEL_WALL cells -- the six originals fronting the corridor's
+    // south side (y90) plus the three PASS-9 cells on its north side (y88, anchors
+    // cell_k34_07..09), grown so capacity survives the occupancy cap dropping to 1/cell.
+    // Filled at arrest time (no actors spawned here). Append-only: PRISON_CELLS_K34[0] stays
+    // the Phase-0 scalar arrest-hold escort cell (the retired (103,85) cage-side floor).
     private static final int[][] PRISON_CELLS_K34 =
-            {{101, 90}, {103, 90}, {105, 90}, {107, 90}, {109, 90}, {111, 90}};
+            {{101, 90}, {103, 90}, {105, 90}, {107, 90}, {109, 90}, {111, 90},
+             {101, 88}, {103, 88}, {105, 88}};
 
     // One militia_watch per retail shop, at the exterior guard post just outside each door
     // (K08/K14/K15/K23/K26/K27/K28). All z:+11 sidewalk cells.
@@ -295,13 +298,16 @@ public final class DocksPopulation implements ScenarioPopulation {
     // unhuntable and would deadlock the gulls' nearest-prey sense against unroutable chases.
     // SIX dens because the Gullet is isolated (nothing else within the courtyard gull's hunt
     // sense) and the realized per-mouse yield (revive cooldown + real catch latency) runs
-    // well under naive theory — the 30k soak starved a Gullet gull with fewer. {185,85} sits
-    // MID-CORRIDOR in the C4 condo strip: a predator wedged by occupancy-parked residents
-    // survives exactly when a den mouse's scurry orbit covers the wedge (adjacency catches
-    // need no movement), and that one-wide corridor is the quarter's proven wedge trap — the
-    // soak starved a gull to 0 there before this den existed.
+    // well under naive theory — the 30k soak starved a Gullet gull with fewer. PASS 9
+    // (density revisit): the sixth den moved {185,85} -> {183,84}, c05's exterior DOORSTEP
+    // on the open courtyard. Inside c05 it was a LURE: every hunt for it pathed into the
+    // condo's interior, where the resident household idle-parks the room to the occupancy
+    // cap and seals the predator in (13k-tick roam stalls even after the room gained a
+    // circulation loop). On the doorstep the scurry orbit (leash 8) still covers the door
+    // mouth and the old wedge cells — a stuck predator still gets adjacency catches — but
+    // chases for it now resolve on open courtyard ground.
     private static final int[][] GULLET_MOUSE_DENS =
-            {{176, 84}, {176, 84}, {178, 76}, {180, 80}, {170, 95}, {185, 85}};
+            {{176, 84}, {176, 84}, {178, 76}, {180, 80}, {170, 95}, {183, 84}};
 
     // ---- hovels (markers `hovel_NN_anchor`, grouped by band) ------------------------------
     private static final int[][] HOVELS_A = {{84, 55}, {89, 54}, {95, 56}, {10, 93}, {22, 93},
@@ -542,7 +548,7 @@ public final class DocksPopulation implements ScenarioPopulation {
     // (Pass 13) -- as world-packed cells so a later sim pass binds behaviour to real geometry
     // without re-transcribing coordinates. Every cell is single-z (the z rule).
 
-    /** The six K34 prison-cell floor cells (z:+11), world-packed; capacity 2 each. */
+    /** The nine K34 prison-cell floor cells (z:+11), world-packed. */
     public static List<Integer> prisonCellsK34() {
         return worldCells(PRISON_CELLS_K34, ZA);
     }
@@ -593,31 +599,44 @@ public final class DocksPopulation implements ScenarioPopulation {
             worldCell(K28_SLOPCHEST, ZA)};
     }
 
-    /** The guardhouse interior + its six K34 holding cells (z:+11) — the guard-only zone. */
+    /**
+     * The K34 holding-cell block (z:+11) — the guard-only zone. PASS 9: the watch-room anchor
+     * cell was REMOVED from the zone (it stays the zone's station): a citizen drifting through
+     * the widened guardhouse doors and pausing in the watch room must not draw a 1-day unfed
+     * custody term. The cell block sits behind the corridor, where only escorts ever stand.
+     */
     private static int[] guardhouseInteriorCells() {
-        int[] cells = new int[1 + PRISON_CELLS_K34.length];
-        cells[0] = worldCell(K34_GUARDHOUSE, ZA);
+        int[] cells = new int[PRISON_CELLS_K34.length];
         for (int i = 0; i < PRISON_CELLS_K34.length; i++) {
-            cells[i + 1] = worldCell(PRISON_CELLS_K34[i], ZA);
+            cells[i] = worldCell(PRISON_CELLS_K34[i], ZA);
         }
         return cells;
     }
 
-    // ---- Law & order pass: the POLICED shop interiors + the bank hall. Each policed rect is
-    // the shop's exact generator shell footprint (walls included -- wall cells are unwalkable,
-    // so tagging them is harmless), so no policed cell spills onto the public street. The bank
-    // hall is its shell minus the three queue slots (queueing there is legitimate business,
-    // and offense (c) -- standing on the WRONG slot -- is judged separately by BankQueue rank).
+    // ---- Law & order pass: the POLICED shop zones + the bank vault room. PASS 9 (density
+    // revisit, lockstep with the >=2-wide door standard): the original rects were each shop's
+    // WHOLE shell footprint. Under the widened doors, ordinary leashed wander drifts inside,
+    // pauses, and draws the fixed 1-day loiter sentence -- and custody does not feed, so any
+    // WALKABLE policed cell is a starvation lottery ticket (the 30k soak starved animal
+    // keepers in K34 custody three different ways: one arrested a cell inside K23's door, one
+    // deep in K23's rear workshop, one pausing in the bank hall). A back-of-house shrink was
+    // soak-tested and still lost. So each zone is now its shop's SOLID STOCK FIXTURE cluster
+    // only -- structurally present in the table (stations, order and count unchanged), but
+    // with no standable cell, it cannot arrest a wanderer. The trader-anchor zone (index 3)
+    // still guards the real special-inventory counters; shop policing re-arms when the push /
+    // house-arrest pass makes custody survivable (house arrest sends offenders HOME, fed).
     private static final int[][] POLICED_SHOP_RECTS = {   // {x0, y0, x1, y1}, all z:+11
-            {24, 66, 31, 74},     // K08 Brann's Chandlery
-            {164, 34, 173, 42},   // K14 Wrackhouse
-            {122, 52, 128, 58},   // K15 Fenner's Pawn
-            {40, 66, 53, 76},     // K23 Cooper & Blockmaker
-            {8, 70, 15, 77},      // K26 Sailmaker's Loft
-            {32, 70, 38, 78},     // K27 The Hardtack Oven
-            {130, 58, 135, 64},   // K28 The Slop-Chest
+            {27, 73, 27, 73},     // K08 Brann's Chandlery -- stockroom rope-coil pile
+            {172, 36, 172, 36},   // K14 Wrackhouse -- the diving bell
+            {127, 57, 127, 57},   // K15 Fenner's Pawn -- the strongbox
+            {41, 73, 42, 74},     // K23 Cooper & Blockmaker -- barrel stack
+            {9, 74, 10, 75},      // K26 Sailmaker's Loft -- canvas-cutting table
+            {33, 75, 34, 75},     // K27 The Hardtack Oven -- the bake oven
+            {132, 61, 134, 61},   // K28 The Slop-Chest -- the counter run
     };
-    private static final int[] BANK_HALL_RECT = {150, 48, 159, 59};   // K36 shell, z:+11
+    // The vault room only (ring walls + the one chest cell), NOT the public banking hall:
+    // customers and queue-jumpers pausing in the hall must not draw a lethal custody term.
+    private static final int[] BANK_HALL_RECT = {151, 57, 153, 58};   // K36 vault room, z:+11
 
     /** A generator shell rect as world-packed cells, minus {@code excluded} cells. */
     private static int[] rectCells(int[] rect, int z, int... excludedWorldCells) {
@@ -1195,6 +1214,12 @@ public final class DocksPopulation implements ScenarioPopulation {
             // courtyard so its roam envelope clears the C2 Netters' compound interior — a
             // wander leg into C2's walled courtyard got trapped behind occupancy-parked
             // residents for 13k+ ticks in the 30k soak and starved the gull to 0).
+            // PASS 9 (density revisit): the roost STAYS at {176,84} (a Backwall-corner
+            // relocation was tried and failed the roam-bbox floor — the band edge clips any
+            // y>=94 roost's envelope to 13 rows). The wedge legs into c02/c05 are fixed
+            // STRUCTURALLY instead: both condos' partitions are detached from their west
+            // shell wall in the generator, so their rooms form circulation loops and an
+            // occupancy-parked household can no longer seal a beast into a partition doorway.
             soloHome(spawn(FeralActor.TYPE, new int[] {176, 84}, ZA));
             soloHome(spawn(FeralActor.TYPE, new int[] {132, 18}, 10));   // Beaching Strand (z:+10)
             // Ropewynd garbage bin (beast pass: WAS the C4 courtyard at {176,84} — the decayed
@@ -1358,23 +1383,33 @@ public final class DocksPopulation implements ScenarioPopulation {
             for (int[] den : GARBAGE_BINS_ZA) {
                 soloHome(spawn(MouseActor.TYPE, den, ZA));
             }
+            // PASS 9 (density revisit): {87,81} is a NEW seam den (a DUPLICATED pair, the
+            // GULLET {176,84} precedent) on the 1-wide K17|K29 lane, right at K29's own north
+            // door -- the 30k soak wedged the Mission-garden cat at (82,81) in that lane for
+            // 6000+ ticks behind occupancy-parked citizens and starved it. The orbit-coverage
+            // rule (a den mouse's scurry leash covers the wedge, and adjacency catches need no
+            // movement) is the same remedy that saved the C4 corridor gull; TWO mice because a
+            // lone den mouse serving a resident wedged predator spends too much of its life
+            // DOWNED to keep its own nibble cycle above the hungry bar (the soak measured it
+            // at 2999). Reallocated: one from the ZB Saltgate ambience bin (fed no predator),
+            // one from the open-strand trio (3 mice for one beach gull; the strand is open
+            // ground with no wedge risk) -- the roster stays exactly 691.
             for (int[] den : new int[][] {MUSTER_QUAY, EELPOT_STALLS[0], EELPOT_STALLS[3],
                     WATCH_BOND_POST, SHOP_GUARD_POSTS[1], MISSION_GARDEN,
-                    PATROL_TARWALK_MID, K10_DAWNSTALLS, HITCH_GULL, new int[] {30, 31}}) {
+                    PATROL_TARWALK_MID, K10_DAWNSTALLS, HITCH_GULL, new int[] {30, 31},
+                    new int[] {87, 81}, new int[] {87, 81}}) {
                 soloHome(spawn(MouseActor.TYPE, den, ZA));
             }
             for (int[] den : GULLET_MOUSE_DENS) {
                 soloHome(spawn(MouseActor.TYPE, den, ZA));
             }
-            // ZB (2) / ZC (1): the bins beside the terrace/well cats (orbit coverage) plus the
-            // Saltgate bin for ambience; the other terrace bins fed no predator — their mice
-            // went to the deficit clusters above.
-            for (int[] den : new int[][] {GARBAGE_BINS_ZB[0], GARBAGE_BINS_ZB[1]}) {
-                soloHome(spawn(MouseActor.TYPE, den, ZB));
-            }
+            // ZB (1) / ZC (1): the bins beside the terrace/well cats (orbit coverage); the other
+            // terrace bins fed no predator — their mice went to the deficit clusters above (the
+            // Saltgate ambience mouse moved to the PASS-9 K17|K29 seam den, see the ZA block).
+            soloHome(spawn(MouseActor.TYPE, GARBAGE_BINS_ZB[0], ZB));
             soloHome(spawn(MouseActor.TYPE, GARBAGE_BINS_ZC[2], ZC));
-            for (int i = 0; i < 3; i++) {
-                soloHome(spawn(MouseActor.TYPE, new int[] {132, 18}, 10));   // Beaching Strand
+            for (int i = 0; i < 2; i++) {   // PASS 9: was 3 -- one strand mouse moved to the
+                soloHome(spawn(MouseActor.TYPE, new int[] {132, 18}, 10));   // K17|K29 seam den
             }
             // 8 wharf cats prowling from open-street anchors (see the interior crowd-lock note
             // above); every anchor has >=1 mouse den inside both its wander envelope and the

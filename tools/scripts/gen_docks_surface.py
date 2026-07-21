@@ -95,12 +95,39 @@ def cells(z, pts, gid, layer=None):
         grid[z][y][x] = gid
 
 
+def _second_door_cell(x0, y0, x1, y1, dx, dy, doors):
+    """PASS 9 (living-docks density revisit; Eli: "just make sure all doors are at least
+    2 wide"): the deterministic second cell for a 1-wide door punch -- the adjacent cell
+    along the same wall run (+1 tried first, then -1), clamped STRICTLY inside the run so
+    a load-bearing corner is never removed. Returns None when the door already has an
+    orthogonally adjacent partner in doors (>=2 wide already) or the run has no room
+    (those stay 1-wide and are listed in the door-width audit's exception table)."""
+    for (ox, oy) in doors:
+        if (ox, oy) != (dx, dy) and abs(ox - dx) + abs(oy - dy) == 1:
+            return None
+    if dy in (y0, y1) and x0 < dx < x1:            # door in a horizontal wall run
+        for cx in (dx + 1, dx - 1):
+            if x0 < cx < x1 and (cx, dy) not in doors:
+                return (cx, dy)
+    elif dx in (x0, x1) and y0 < dy < y1:          # door in a vertical wall run
+        for cy in (dy + 1, dy - 1):
+            if y0 < cy < y1 and (dx, cy) not in doors:
+                return (dx, cy)
+    return None
+
+
 def shell(z, x0, y0, x1, y1, wall, floor=None, doors=(), skip_sides=()):
-    """Walled building story: border walls, full-rect floor, door gaps."""
+    """Walled building story: border walls, full-rect floor, door gaps. PASS 9: every
+    1-wide door is auto-widened to the >=2-wide door standard via _second_door_cell."""
     if floor is not None:
         frect(z, x0, y0, x1, y1, floor)
     border(z, x0, y0, x1, y1, wall, skip_sides)
+    punches = list(doors)
     for (dx, dy) in doors:
+        w = _second_door_cell(x0, y0, x1, y1, dx, dy, doors)
+        if w is not None:
+            punches.append(w)
+    for (dx, dy) in punches:
         T[z][dy][dx] = 0
         if floor is not None:
             F[z][dy][dx] = floor
@@ -228,10 +255,22 @@ def partition(z, x0, y0, x1, y1, wall, door):
     """A single interior partition-wall segment (a straight run) with one door gap
     punched through it -- the standardized 'divide a shell into rooms' primitive the
     homes/compound units compose (formalizes the hand-rolled partition idiom used at
-    K01/K03/K17 etc.)."""
+    K01/K03/K17 etc.). PASS 9 (door standard): the gap is auto-widened to 2 contiguous
+    cells along the run (+1 tried first, then -1, strictly inside the run so the
+    partition's load-bearing junctions with the shell walls survive)."""
     trect(z, x0, y0, x1, y1, wall)
     (dx, dy) = door
     T[z][dy][dx] = 0
+    if y0 == y1:                                   # horizontal run
+        for cx in (dx + 1, dx - 1):
+            if x0 < cx < x1:
+                T[z][dy][cx] = 0
+                break
+    else:                                          # vertical run
+        for cy in (dy + 1, dy - 1):
+            if y0 < cy < y1:
+                T[z][cy][dx] = 0
+                break
 
 
 def homey_touches(z, hearth_xy, bed_xys, chest_xy=None, table_rect=None):
@@ -306,8 +345,17 @@ def hovel_touches(z, x0, y0, x1, y1, door, anchor):
 # ======================================================================
 # 0. Bands / base ground (blueprint section 0)
 # ======================================================================
-RAMP1_X = set(range(0, 4)) | set(range(72, 80)) | set(range(160, 164))    # y96, z11
-RAMP2_X = set(range(4, 8)) | set(range(72, 80)) | set(range(160, 164))    # y116, z12
+# PASS 9 (living-docks density revisit, route redundancy): two NEW ramp clusters so the
+# inter-band N-S traffic is no longer funneled through Saltgate Rise (x72-79) alone --
+# x100-103 at y96 (A<->B "Terrace Steps": Backwall Alley y94-95 up to Terrace Walk y97,
+# through the K34/K17 civic island, a genuinely distinct route to C3/Band B), and
+# x144-147 at y116 (B<->C "Goatwalk Steps": the open field east of C3/south of the goat
+# pen down to the y117-119 lane between hovels 25 and 26). Both clusters sit on bare
+# band ground: no building footprint, fence, marker or anchor is touched.
+RAMP1_X = (set(range(0, 4)) | set(range(72, 80)) | set(range(100, 104))
+           | set(range(160, 164)))                                        # y96, z11
+RAMP2_X = (set(range(4, 8)) | set(range(72, 80)) | set(range(144, 148))
+           | set(range(160, 164)))                                        # y116, z12
 POND_X = range(150, 162)  # timber pond: water pushed to y<=9 (DEV: pond spec y2-9
 #                           vs general strand water y0-7; carved as water y0-9)
 
@@ -706,6 +754,7 @@ trect(11, 61, 39, 62, 40, STEEL_WALL)               # tariff scale
 for y in range(35, 50):                             # ledger-room partition
     T[11][y][65] = OAK_WALL
 T[11][37][65] = 0
+T[11][38][65] = 0                                   # PASS 9: door standard (>=2 wide)
 trect(11, 58, 37, 60, 37, OAK_WALL)                 # counter
 T[11][48][58] = OAK_STAIR_UP
 # Ledger-room library-stack racking (2026-07-15 interior-detail pass, design 3): the K29
@@ -737,8 +786,12 @@ for y in range(46, 50):
 cells(12, [(58, 48)], STEEL_WALL)                    # lockbox
 T[12][46][68] = 0                                    # nook door
 F[12][46][68] = GRANITE_FLOOR
+T[12][46][69] = 0                                    # PASS 9: door standard (>=2 wide)
+F[12][46][69] = GRANITE_FLOOR
 T[12][46][58] = 0                                    # strongroom slot (reached via the stair)
 F[12][46][58] = GRANITE_FLOOR
+T[12][46][59] = 0                                    # PASS 9: door standard (>=2 wide)
+F[12][46][59] = GRANITE_FLOOR
 mk(12, "script_anchor", "k01_archive_anchor", 64, 42)
 frect(13, 56, 34, 71, 50, BRICK_FLOOR)              # tile roof
 mk(13, "light_source", "lamp_weighhouse_mast", 64, 35, luminance=26)
@@ -761,7 +814,9 @@ trect(11, 117, 39, 123, 39, GRANITE_WALL)           # bar
 for y in range(35, 47):                             # snug partition
     T[11][y][125] = OAK_WALL
 T[11][37][125] = 0
+T[11][38][125] = 0                                  # PASS 9: door standard (>=2 wide)
 T[11][43][125] = 0
+T[11][44][125] = 0                                  # PASS 9: door standard (>=2 wide)
 cells(11, [(116, 37), (119, 37), (116, 42), (119, 42)], OAK_WALL)
 # Classic top-down tavern convention (A Link to the Past / Secret of Mana), design 3.1: bar
 # perpendicular to the door (already true), a hearth against the back wall, patrons seated.
@@ -773,8 +828,11 @@ for y in range(35, 47):                             # guest-room cross partition
 for x in range(115, 128):
     T[12][40][x] = OAK_WALL
 T[12][37][120] = 0
+T[12][38][120] = 0                                  # PASS 9: door standard (>=2 wide)
 T[12][40][117] = 0
+T[12][40][118] = 0                                  # PASS 9: door standard (>=2 wide)
 T[12][40][123] = 0
+T[12][40][124] = 0                                  # PASS 9: door standard (>=2 wide)
 T[12][45][127] = OAK_STAIR_DOWN
 # Rentable upper rooms (2026-07-15 interior-detail pass, design 5): the 4 "guest-room" quadrants
 # were bare shells with zero furniture -- each now has a bed + storage piece.
@@ -824,6 +882,7 @@ shell(12, 58, 66, 70, 77, OAK_WALL, OAK_FLOOR)
 for x in range(59, 70):                             # landlady's rooms
     T[12][71][x] = OAK_WALL
 T[12][71][64] = 0
+T[12][71][65] = 0                                   # PASS 9: door standard (>=2 wide)
 T[12][75][68] = OAK_STAIR_DOWN
 frect(13, 58, 66, 70, 77, THATCH_FLOOR)
 mk(11, "light_source", "lamp_lantern_room", 63, 65, luminance=22)
@@ -853,6 +912,7 @@ shell(11, 24, 66, 31, 74, OAK_WALL, OAK_FLOOR, doors=[(27, 66), (28, 66)])
 for x in range(25, 31):                             # stockroom partition
     T[11][71][x] = OAK_WALL
 T[11][71][27] = 0
+T[11][71][28] = 0                                   # PASS 9: door standard (>=2 wide)
 cells(11, [(25, 73), (30, 73)], OAK_WALL)
 # Earthbound/Stardew Valley shop convention (design 3.2): shelving lines two walls, a counter
 # sits near the door, distinct trade-flavored fixtures -- rope racks + oil-lamp shelving here.
@@ -930,7 +990,10 @@ mk(11, "script_anchor", "watch_bond_post_anchor", 90, 33)
 # K13 The Drowned Hold (condemned hulk; Gullet-only entry; no lamps) -- 12x21,
 # stays sprawling on purpose, trimmed 1-2 tiles off the old 13x23
 shell(11, 178, 34, 189, 54, TRUDGEON_WALL, doors=[(178, 49)])
-for rot in ((183, 34), (188, 54), (178, 41)):       # rot gaps in the shell
+# PASS 9 (door standard): the rot gaps double as entries, so each gets a second
+# contiguous gap cell along its wall run ((184,34) / (187,54) -- (189,54) is the SE
+# load-bearing corner -- / (178,42)); shell() auto-widened the (178,49) door to (178,50).
+for rot in ((183, 34), (184, 34), (188, 54), (187, 54), (178, 41), (178, 42)):
     T[11][rot[1]][rot[0]] = 0
 for y in range(35, 54):                             # oak floor, sagging NE quadrant
     for x in range(179, 189):
@@ -938,7 +1001,8 @@ for y in range(35, 54):                             # oak floor, sagging NE quad
             F[11][y][x] = 0                         # truly OPEN: drops to the undercellar
         else:
             F[11][y][x] = OAK_FLOOR
-for d in ((178, 49), (183, 34), (178, 41), (188, 54)):
+for d in ((178, 49), (178, 50), (183, 34), (184, 34), (178, 41), (178, 42),
+          (188, 54), (187, 54)):                    # incl. the PASS 9 second gap cells
     F[11][d[1]][d[0]] = OAK_FLOOR                   # thresholds under the gaps
 cells(11, [(180, 45), (182, 51), (186, 49), (188, 46)], OAK_WALL)  # debris
 T[11][53][187] = OAK_STAIR_UP
@@ -964,6 +1028,7 @@ T[11][36][172] = STEEL_WALL                         # the diving bell
 for x in range(165, 173):                           # stockroom partition
     T[11][39][x] = OAK_WALL
 T[11][39][168] = 0
+T[11][39][169] = 0                                  # PASS 9: door standard (>=2 wide)
 frect(12, 164, 34, 173, 42, TRUDGEON_FLOOR)
 mk(11, "script_anchor", "business_k14_wrackhouse_anchor", 168, 37)
 mk(11, "script_anchor", "clue_wrackhouse_salvage_anchor", 170, 40)
@@ -974,6 +1039,7 @@ shell(11, 122, 52, 128, 58, BRICK_WALL, BRICK_FLOOR, doors=[(125, 52)])
 for x in range(123, 128):                           # cage partition with slot
     T[11][54][x] = STEEL_WALL
 T[11][54][125] = 0
+T[11][54][124] = 0                                  # PASS 9: door standard (>=2 wide)
 T[11][57][127] = OAK_WALL                           # strongbox
 frect(12, 122, 52, 128, 58, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k15_fenners_anchor", 125, 56)
@@ -993,6 +1059,7 @@ for (dx, dy) in ((88, 66), (89, 66)):
 for y in range(67, 80):                             # chapel partition
     T[11][y][90] = OAK_WALL
 T[11][71][90] = 0
+T[11][72][90] = 0                                   # PASS 9: door standard (>=2 wide)
 trect(11, 84, 69, 87, 69, OAK_WALL)                 # alms-hall tables
 trect(11, 84, 72, 87, 72, OAK_WALL)
 # Compound/civic-hall convention (Ald-ruhn "big crab" reading + Earthbound church-pew
@@ -1002,11 +1069,13 @@ cells(11, [(84, 73), (85, 73), (86, 73), (87, 73)], GRANITE_WALL)   # pew row, s
 for x in range(83, 90):                             # dormitory partition
     T[11][75][x] = OAK_WALL
 T[11][75][86] = 0
+T[11][75][87] = 0                                   # PASS 9: door standard (>=2 wide)
 cells(11, [(84, 77), (86, 77), (88, 77)], CLOTH_WALL)   # bunks, row 1
 cells(11, [(84, 79), (86, 79), (88, 79)], CLOTH_WALL)   # bunks, row 2
 for x in range(91, 98):                             # back room (the body)
     T[11][75][x] = OAK_WALL
 T[11][75][94] = 0
+T[11][75][95] = 0                                   # PASS 9: door standard (>=2 wide)
 frect(12, 82, 66, 98, 80, THATCH_FLOOR)
 mk(11, "script_anchor", "business_k17_mission_anchor", 88, 71)
 mk(11, "script_anchor", "mission_bunks_anchor", 85, 78)
@@ -1039,6 +1108,7 @@ shell(13, 62, 117, 71, 126, GRANITE_WALL, GRANITE_FLOOR, doors=[(71, 120), (71, 
 for y in range(118, 126):                           # cell partition
     T[13][y][64] = STEEL_WALL
 T[13][121][64] = 0
+T[13][122][64] = 0                                  # PASS 9: door standard (>=2 wide)
 cells(13, [(66, 118), (66, 119)], OAK_WALL)         # bunks
 frect(14, 62, 117, 71, 126, BRICK_FLOOR)
 T[13][119][80] = STEEL_WALL                         # gibbet cage on the row
@@ -1158,15 +1228,28 @@ shell(11, 100, 80, 112, 92, GRANITE_WALL, GRANITE_FLOOR, doors=[(106, 80), (107,
 for y in range(81, 88):                             # armory partition (unchanged)
     T[11][y][109] = OAK_WALL
 T[11][85][109] = 0
+T[11][86][109] = 0                                  # PASS 9: door standard (>=2 wide)
 trect(11, 105, 86, 107, 86, OAK_WALL)               # watch-room table (unchanged)
 for dx in (102, 104, 106, 108, 110):                # steel dividers between the six cells
     T[11][90][dx] = STEEL_WALL
 for x in range(101, 112):                           # steel cell back wall (south)
     T[11][91][x] = STEEL_WALL
+# PASS 9 (living-docks density revisit): +3 prison cells (07-09) on the corridor's NORTH
+# side -- capacity halves when the occupancy cap drops to 1/cell, so the block grows from
+# 6 to 9 cells inside the existing footprint. A steel back wall at y87 x101-106 walls the
+# watch room off, dividers at x102/104/106 on y88, cell floors at x101/103/105 opening
+# SOUTH onto the same y89 corridor the old cells front. The x107-108 strip at y87-88
+# stays open: the >=2-wide watch-room<->corridor passage (door standard).
+for x in range(101, 107):
+    T[11][87][x] = STEEL_WALL
+for dx in (102, 104, 106):
+    T[11][88][dx] = STEEL_WALL
 frect(12, 100, 80, 112, 92, BRICK_FLOOR)            # roof (extended over the cell block)
 mk(11, "script_anchor", "business_k34_guardhouse_anchor", 106, 85)
 for i, cx in enumerate((101, 103, 105, 107, 109, 111)):
     mk(11, "script_anchor", "cell_k34_%02d_anchor" % (i + 1), cx, 90)
+for i, cx in enumerate((101, 103, 105)):            # PASS 9: the three new north cells
+    mk(11, "script_anchor", "cell_k34_%02d_anchor" % (i + 7), cx, 88)
 mk(11, "light_source", "lamp_guardhouse_door", 106, 79, luminance=18)
 
 # PASS 5 (Phase-1 living-docks) -- K36 The Royal Counting-House (the ward's bank), on the
@@ -1177,9 +1260,11 @@ mk(11, "light_source", "lamp_guardhouse_door", 106, 79, luminance=18)
 # seeds it, NOT here), a teller counter + banker stand, two flanking guard posts.
 shell(11, 150, 48, 159, 59, GRANITE_WALL, GRANITE_FLOOR, doors=[(154, 48)])
 trect(11, 152, 52, 155, 52, OAK_WALL)               # teller counter (both flanks left open)
-for (vx, vy) in ((151, 56), (153, 56), (151, 57), (153, 57),
+for (vx, vy) in ((151, 56), (151, 57), (153, 57),
                  (151, 58), (152, 58), (153, 58)):  # STEEL vault ring; (152,56) stays the door
-    T[11][vy][vx] = STEEL_WALL                       # -> ONE enclosed chest cell at (152,57)
+    T[11][vy][vx] = STEEL_WALL                       # -> ONE enclosed chest cell at (152,57);
+#                                                      PASS 9: (153,56) left open so the vault
+#                                                      mouth meets the >=2-wide door standard
 frect(12, 150, 48, 159, 59, BRICK_FLOOR)            # tile roof
 mk(11, "script_anchor", "business_k36_bank_anchor", 154, 53)      # banker stand (behind counter)
 mk(11, "script_anchor", "bank_queue_01_anchor", 154, 51)         # queue: front (at counter) -> back
@@ -1277,6 +1362,7 @@ shell(12, 8, 97, 31, 115, REMAN_WALL, REMAN_FLOOR, doors=[(31, 105), (31, 106)])
 for y in range(98, 115):
     T[12][y][20] = REMAN_WALL
 T[12][105][20] = 0
+T[12][104][20] = 0                                  # PASS 9: door standard (>=2 wide)
 for x in range(9, 20):
     T[12][106][x] = REMAN_WALL
 # DEV (interiors plan §7, 2026-07-15): the mansion household anchor cmp1_mansion_anchor =
@@ -1286,6 +1372,8 @@ for x in range(9, 20):
 # west-south room still reaches the rest via (19,106)->(19,105)/(19,107); DocksPopulation
 # C1_MANSION={19,106} is unchanged (no footprint/anchor move), the anchor is now walkable.
 T[12][106][19] = 0
+T[12][106][18] = 0                                  # PASS 9: door standard (>=2 wide;
+#                                                     the anchor cell (19,106) never moves)
 T[12][100][12] = OAK_STAIR_UP
 # Homey touches (interiors plan §7, unblocked now the anchor is walkable): a hearth+table
 # common in the east hall, sleeping beds/chests hugging the outer walls of all three rooms.
@@ -1322,9 +1410,11 @@ trect(13, 31, 97, 31, 115, REMAN_FACADE_WALL)
 for y in range(98, 115):
     T[13][y][20] = REMAN_WALL
 T[13][105][20] = 0
+T[13][104][20] = 0                                  # PASS 9: door standard (>=2 wide)
 for x in range(9, 20):
     T[13][106][x] = REMAN_WALL
 T[13][106][14] = 0
+T[13][106][15] = 0                                  # PASS 9: door standard (>=2 wide)
 T[13][100][12] = OAK_STAIR_DOWN
 T[13][100][16] = OAK_STAIR_UP
 frect(14, 8, 97, 31, 115, REMAN_FLOOR)              # roof terrace
@@ -1471,16 +1561,20 @@ mk(13, "light_source", "lamp_cmp2_roof", 158, 84, luminance=14)
 shell(12, 84, 101, 95, 115, REMAN_WALL, REMAN_FLOOR, doors=[(95, 107), (95, 108)])
 frect(13, 84, 101, 95, 115, REMAN_FLOOR)
 unit_anchor(12, "cmp3_mansion_anchor", 84, 101, 95, 115)
+# PASS 9 (door standard): c02-c06 carry explicit pre-widened pairs -- the auto +1 cell
+# would land directly against each unit's interior partition head (a dead pocket), so the
+# second cell is taken on the OTHER side of the original door instead. c01's auto cell
+# (124,105) is clean and stays automatic.
 C3_GROUND = [
-    (124, 101, 131, 107, (124, 104)),               # c01 east
-    (132, 101, 139, 107, (135, 107)),               # c02 east
-    (96, 108, 106, 115, (101, 108)),                # c03 south
-    (107, 108, 117, 115, (112, 108)),               # c04 south
-    (118, 108, 128, 115, (123, 108)),               # c05 south
-    (129, 108, 139, 115, (134, 108)),               # c06 south
+    (124, 101, 131, 107, [(124, 104)]),             # c01 east
+    (132, 101, 139, 107, [(134, 107), (135, 107)]),  # c02 east
+    (96, 108, 106, 115, [(100, 108), (101, 108)]),  # c03 south
+    (107, 108, 117, 115, [(111, 108), (112, 108)]),  # c04 south
+    (118, 108, 128, 115, [(122, 108), (123, 108)]),  # c05 south
+    (129, 108, 139, 115, [(133, 108), (134, 108)]),  # c06 south
 ]
-for i, (x0, y0, x1, y1, d) in enumerate(C3_GROUND):
-    shell(12, x0, y0, x1, y1, REMAN_WALL, REMAN_FLOOR, doors=[d])
+for i, (x0, y0, x1, y1, ds) in enumerate(C3_GROUND):
+    shell(12, x0, y0, x1, y1, REMAN_WALL, REMAN_FLOOR, doors=ds)
     unit_anchor(12, "cmp3_condo_%02d_anchor" % (i + 1), x0, y0, x1, y1)
     if i < 2:
         frect(13, x0, y0, x1, y1, REMAN_FLOOR)      # east condos: flat roof
@@ -1503,10 +1597,11 @@ rug(12, 86, 111, 91, 112)                           # dressing: south great-room
 partition(12, 128, 102, 128, 106, REMAN_WALL, (128, 104))
 bed(12, 129, 102); bed(12, 130, 102); chest(12, 130, 106)
 hearth(12, 125, 102); table(12, 126, 106, 127, 106)
-# c02 (132-139,101-107): S door.
+# c02 (132-139,101-107): S door. PASS 9: table moved one row north off the south wall so
+# the widened door pair (134,107)/(135,107) keeps an open interior approach on both cells.
 partition(12, 136, 102, 136, 106, REMAN_WALL, (136, 104))
 bed(12, 137, 102); bed(12, 138, 102); chest(12, 138, 106)
-hearth(12, 133, 102); table(12, 133, 106, 134, 106)
+hearth(12, 133, 102); table(12, 133, 105, 134, 105)
 # c03 (96-106,108-115): N door + stair (98,113) -> west common (door+stair+anchor) | east.
 partition(12, 102, 109, 102, 114, REMAN_WALL, (102, 111))
 bed(12, 104, 109); bed(12, 105, 109); chest(12, 105, 114)
@@ -1557,14 +1652,16 @@ mk(12, "script_anchor", "cmp3_courtyard_anchor", 111, 104)
 mk(12, "light_source", "lamp_cmp3_gate", 111, 102, luminance=18)
 
 # --- C4 The Gullet Compound (decayed, Band A: z11/z12/z13; brick+oak, no lamps)
+# PASS 9 (door standard): c01/c02/c04 carry explicit pre-widened pairs (the auto +1 cell
+# would abut each unit's interior partition head); c03's auto cell (174,75) is clean.
 C4_GROUND = [
-    (166, 66, 171, 79, (171, 72)),                  # c01 west (DEV: door cell invented)
-    (166, 80, 171, 93, (171, 86)),                  # c02 west (DEV: door cell invented)
-    (172, 66, 175, 75, (173, 75)),                  # c03 north
-    (180, 66, 190, 75, (185, 75)),                  # c04 north
+    (166, 66, 171, 79, [(171, 71), (171, 72)]),     # c01 west (DEV: door cell invented)
+    (166, 80, 171, 93, [(171, 85), (171, 86)]),     # c02 west (DEV: door cell invented)
+    (172, 66, 175, 75, [(173, 75)]),                # c03 north
+    (180, 66, 190, 75, [(184, 75), (185, 75)]),     # c04 north
 ]
-for i, (x0, y0, x1, y1, d) in enumerate(C4_GROUND):
-    shell(11, x0, y0, x1, y1, BRICK_WALL, OAK_FLOOR, doors=[d])
+for i, (x0, y0, x1, y1, ds) in enumerate(C4_GROUND):
+    shell(11, x0, y0, x1, y1, BRICK_WALL, OAK_FLOOR, doors=ds)
     frect(12, x0, y0, x1, y1, THATCH_FLOOR)         # DEV: roof material unspecified
     unit_anchor(11, "cmp4_condo_%02d_anchor" % (i + 1), x0, y0, x1, y1)
 # --- C4 meaningful rooms + homey touches (interiors plan §5; BRICK_WALL partitions to
@@ -1575,16 +1672,32 @@ partition(11, 167, 73, 170, 73, BRICK_WALL, (168, 73))
 hearth(11, 167, 67); table(11, 169, 68, 170, 68); chest(11, 167, 72)
 bed(11, 167, 74); bed(11, 170, 74); bed(11, 167, 78); chest(11, 170, 78)
 # c02 (166-171,80-93): beds shifted off (167,88) so the (166,88) rot gap stays reachable.
-partition(11, 167, 87, 170, 87, BRICK_WALL, (168, 87))
+# PASS 9: ALL beds hug the south back wall (y92) -- the old (169,88)/(170,88) pair sat
+# directly under the partition doorway and made the widened door cell (169,87) a pocket;
+# the 30k soak wedged the Gullet gull there for 4600+ ticks behind occupancy-parked
+# residents. Both partition-door approaches (168,88)/(169,88) and both rot-gap approaches
+# (167,88)/(167,89) are now open floor, so the south room circulates.
+# PASS 9 (continued): c02's partition is REMOVED outright (a fully collapsed divider --
+# on register for the decayed quarter). Detaching it from the west wall was tried and a
+# gull still stalled 2990 ticks in the doorway: the resident household idle-parks around
+# its own anchor (168,86) and can cap every neighbour of any pinch cell the partition
+# leaves. An open single room has no pinch cells at all -- a beast can always circle the
+# parked residents. (The hearth-north / sleeping-south zoning survives via furniture.)
 hearth(11, 167, 81); table(11, 169, 82, 170, 82)
-bed(11, 169, 88); bed(11, 170, 88); bed(11, 167, 92); chest(11, 170, 92)
+bed(11, 167, 92); bed(11, 168, 92); bed(11, 169, 92); chest(11, 170, 92)
 # c03 (172-175,66-75): 2-wide interior -> NO partition (would trap 1-wide rooms); col 173 spine.
 hearth(11, 174, 67); bed(11, 174, 69); bed(11, 174, 71); chest(11, 174, 73)
 # c04 (180-190,66-75): vertical split (west common with door+anchor | east sleeping).
 partition(11, 186, 67, 186, 74, BRICK_WALL, (186, 70))
 bed(11, 188, 67); bed(11, 189, 67); chest(11, 189, 74)
 hearth(11, 181, 67); table(11, 181, 73, 182, 73)
-shell(11, 184, 76, 190, 93, BRICK_WALL, OAK_FLOOR, doors=[(184, 84)])  # c05 (2-story)
+# PASS 9 (route redundancy): c05 gains a SECOND exit -- a rot-eaten south door pair onto
+# Backwall Alley (y94) -- because the strip is the quarter's proven predator wedge trap
+# (see DocksPopulation's Gullet-gull/mouse-den history): a beast boxed in by occupancy-
+# parked residents behind the single west door had no second way out. Two genuinely
+# distinct exits break the wedge; the decayed register absorbs another hole.
+shell(11, 184, 76, 190, 93, BRICK_WALL, OAK_FLOOR,
+      doors=[(184, 84), (186, 93), (187, 93)])                         # c05 (2-story)
 T[11][80][186] = OAK_STAIR_UP
 shell(12, 184, 76, 190, 93, BRICK_WALL, OAK_FLOOR)  # c06 upper
 T[12][80][186] = OAK_STAIR_DOWN
@@ -1592,11 +1705,17 @@ unit_anchor(11, "cmp4_condo_05_anchor", 184, 76, 190, 93)
 unit_anchor(12, "cmp4_condo_06_anchor", 184, 76, 190, 93)
 # c05 (184-190,76-93): 5x16 tall -> horizontal split, north room holds the stair (186,80)
 # and the (190,80) rot gap; south room holds the W door + anchor (187,84).
-partition(11, 185, 82, 189, 82, BRICK_WALL, (187, 82))
+# PASS 9: the ground-story partition is REMOVED outright (fully collapsed, like c02's --
+# on register for the condemned quarter). Every lesser step was soak-tested and lost:
+# detaching it from the west wall left a (185,83) pocket (12-14k-tick gull stalls), and
+# its stub row still boxed a beast at (186,83) for 9371 ticks once the resident household
+# idle-parked around its own anchor (187,84) at the room's waist. A fully open 5x16 room
+# with three door pairs (west, south, east rot gaps) has no pinch cell anywhere -- a beast
+# can always circle the parked residents. Zoning survives via the furniture.
 bed(11, 185, 77); bed(11, 189, 77); chest(11, 185, 78)
 hearth(11, 189, 83); table(11, 185, 91, 186, 91); bed(11, 188, 92); bed(11, 189, 92)
 # c06 (upper of c05, z12): same calls, z=12 (no wall door, no rot gap; stair-only access).
-partition(12, 185, 82, 189, 82, BRICK_WALL, (187, 82))
+partition(12, 186, 82, 189, 82, BRICK_WALL, (187, 82))
 bed(12, 185, 77); bed(12, 189, 77); chest(12, 185, 78)
 hearth(12, 189, 83); table(12, 185, 91, 186, 91); bed(12, 188, 92); bed(12, 189, 92)
 # Collapsed south unit: perimeter only, no roof, rubble
@@ -1617,7 +1736,11 @@ C4_HUTS = [
     (184, 77, 187, 81, CLOTH_WALL, (185, 81)),      # roofhut_07
     (187, 82, 190, 85, LEATHER_WALL, (187, 83)),    # roofhut_08
     (184, 86, 187, 90, CLOTH_WALL, (187, 88)),      # roofhut_09
-    (188, 91, 190, 93, LEATHER_WALL, (189, 91)),    # roofhut_10
+    # PASS 9 door audit: roofhut_10's authored north door (189,91) opened INTO the K35
+    # roost's own south wall (188-190,90) -- a sealed 1-cell pocket. Door moved to the
+    # west wall (188,92), onto open deck; a 3-cell wall run has no room to widen, so this
+    # stays 1-wide (listed audit exception; the interior is a single cell anyway).
+    (188, 91, 190, 93, LEATHER_WALL, (188, 92)),    # roofhut_10
 ]
 for i, (x0, y0, x1, y1, wall, d) in enumerate(C4_HUTS):
     frect(13, x0, y0, x1, y1, DIRT_FLOOR)
@@ -1636,10 +1759,13 @@ frect(13, 188, 86, 190, 90, DIRT_FLOOR)
 border(13, 188, 86, 190, 90, BRICK_WALL)
 T[13][88][188] = 0                                  # opens onto roofhut_09's door (187,88)
 F[13][88][188] = DIRT_FLOOR
+T[13][89][188] = 0                                  # PASS 9: door standard (>=2 wide),
+F[13][89][188] = DIRT_FLOOR                         # aligned with roofhut_09's widened door
 mk(13, "script_anchor", "lair_skyrunner_anchor", 189, 88)
 
-# Ring rot gaps (after all walls are up)
-for rot in ((170, 66), (190, 80), (166, 88)):
+# Ring rot gaps (after all walls are up). PASS 9 (door standard): each rot gap doubles
+# as an entry, so each gets a second contiguous gap cell along its wall run.
+for rot in ((170, 66), (169, 66), (190, 80), (190, 81), (166, 88), (166, 89)):
     T[11][rot[1]][rot[0]] = 0
 
 # ======================================================================
@@ -1708,6 +1834,7 @@ for (n, x0, y0, x1, y1, door, z) in HOVELS:
 # Band B east field: goat pen
 border(12, 146, 109, 158, 114, TRUDGEON_WALL)
 T[12][109][151] = 0                                 # gate
+T[12][109][152] = 0                                 # PASS 9: door standard (>=2 wide)
 mk(12, "script_anchor", "pen_goats_anchor", 152, 111)
 # Band C well plaza
 trect(13, 101, 120, 102, 121, GRANITE_WALL)
@@ -1857,6 +1984,12 @@ pave_dirt(13,   0,120, 191,122, BRICK_FLOOR)   # Gallows Row arterial spine (Ban
 pave_dirt(11,  78, 47, 159, 95, GRANITE_FLOOR) # east merchant heart (the big lot sea)
 pave_dirt(11,  80, 34, 135, 46, GRANITE_FLOOR) # north shopfront seams up to the Tarwalk
 pave_dirt(11,   0, 34,  31, 35, GRANITE_FLOOR) # west quay-back strip
+pave_dirt(11,  30, 36,  31, 58, GRANITE_FLOOR) # PASS 9 route redundancy: Tarback Lane --
+#                                                formalizes the 2-wide walkable sliver
+#                                                between the tar-yard fence (x29) and
+#                                                Herring Lane's gutter (x32-33) as a
+#                                                painted N-S lane, a visible parallel to
+#                                                Herring Lane for quay<->Ropewynd traffic
 pave_dirt(11,   4, 59,  31, 59, GRANITE_FLOOR) # lane south of the tar-yard fence
 pave_dirt(11,   0, 60,   3, 95, GRANITE_FLOOR) # Pitch Lane, Band A leg (connective spine)
 pave_dirt(11,  52, 50,  71, 59, GRANITE_FLOOR) # Weighhouse|Impound|Lantern|Saltgate junction
