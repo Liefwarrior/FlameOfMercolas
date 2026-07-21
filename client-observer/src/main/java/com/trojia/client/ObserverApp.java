@@ -17,6 +17,7 @@ import com.trojia.client.atlas.SheetAtlasSpec;
 import com.trojia.client.atlas.SheetTileAtlas;
 import com.trojia.client.atlas.TileAtlas;
 import com.trojia.client.boot.FixtureWorldLoader;
+import com.trojia.client.boot.LampMarkersLoader;
 import com.trojia.client.boot.RepoPaths;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.face.FaceArchetypes;
@@ -36,7 +37,9 @@ import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.PlayModeState;
 import com.trojia.client.render.ActorRenderer;
+import com.trojia.client.render.AmbientLight;
 import com.trojia.client.render.InspectorRenderer;
+import com.trojia.client.render.LampGlowMap;
 import com.trojia.client.render.WorldRenderer;
 import com.trojia.client.scenario.CompoundBlockPopulation;
 import com.trojia.client.scenario.DocksPopulation;
@@ -262,8 +265,14 @@ public final class ObserverApp extends ApplicationAdapter {
         if (debugZoom > 0) {
             camera.setZoom(debugZoom);   // clamped by the camera; screenshot aid only
         }
+        // Day/night lighting: static lamp/brazier markers -> precomputed glow pools.
+        // Markers are not baked into the TROJSAV yet (importer defers them), so they are
+        // read straight from the fixture's authored source map — see LampMarkersLoader's
+        // javadoc for the contract exception. Missing source map = no pools, never a
+        // boot failure.
+        LampGlowMap lampGlow = loadLampGlow(fixture, worldWidthTiles, worldHeightTiles);
         this.renderer = new WorldRenderer(world, loaded.materials(), loaded.fluids(),
-                artResolver, atlas);
+                artResolver, atlas, lampGlow);
 
         if (populated) {
             this.population = fixture == Fixture.DOCKS
@@ -280,7 +289,7 @@ public final class ObserverApp extends ApplicationAdapter {
             this.spriteSheet = SpriteSheet.create(spriteIndex,
                     Gdx.files.absolute(spriteSheetFile.toAbsolutePath().toString()));
             this.actorRenderer = new ActorRenderer(population.registry(), spriteIndex,
-                    spriteSheet);
+                    spriteSheet, lampGlow);
 
             // Inspector: click-to-select panel, all-population event feed, follow-camera.
             this.inspector = new InspectorState();
@@ -386,9 +395,13 @@ public final class ObserverApp extends ApplicationAdapter {
         projection.setToOrtho2D(0, 0, camera.viewportWidthPx(), camera.viewportHeightPx());
         batch.setProjectionMatrix(projection);
         batch.begin();
-        renderer.draw(batch, camera, zLevel.z());
+        // Day/night cycle: one ambient per frame, a pure function of the tick, anchored on
+        // the same DayPhase boundaries as the HUD clock tag. Scene draws only — the HUD
+        // below stays untinted (both renderers restore the batch to white).
+        AmbientLight ambient = AmbientLight.at(driver.currentTick());
+        renderer.draw(batch, camera, zLevel.z(), ambient);
         if (actorRenderer != null) {
-            actorRenderer.draw(batch, camera, zLevel.z());
+            actorRenderer.draw(batch, camera, zLevel.z(), ambient);
         }
 
         // DF-style HUD block (Behavior 2 of this pass): a solid black panel behind the nav +
@@ -499,6 +512,32 @@ public final class ObserverApp extends ApplicationAdapter {
         if (icons != null) {
             icons.dispose();
         }
+    }
+
+    /**
+     * Builds the fixture's static lamp-influence map from its authored source map's
+     * {@code light_source} markers (the importer does not bake markers yet — see
+     * {@link LampMarkersLoader}). Degrades to {@link LampGlowMap#EMPTY} when the source
+     * map is not present (e.g. a checkout without {@code content/maps/src}): the night
+     * still darkens, there are just no lamp pools.
+     */
+    private static LampGlowMap loadLampGlow(Fixture fixture, int worldWidthTiles,
+            int worldHeightTiles) {
+        String tmxName = switch (fixture) {
+            case TAVERN -> "tavern_fixture.tmx";
+            case COMPOUND -> "compound_block.tmx";
+            case DOCKS -> "docks_surface.tmx";
+        };
+        List<LampGlowMap.Lamp> lampMarkers;
+        try {
+            lampMarkers = LampMarkersLoader.load(
+                    RepoPaths.locate("content", "maps", "src", tmxName));
+        } catch (IllegalStateException e) {
+            lampMarkers = List.of(); // no content/maps/src in this checkout
+        }
+        System.out.println("observer: lamp light sources loaded: " + lampMarkers.size());
+        return lampMarkers.isEmpty() ? LampGlowMap.EMPTY
+                : new LampGlowMap(lampMarkers, worldWidthTiles, worldHeightTiles);
     }
 
     private static String readArtMapping(String artDir) {

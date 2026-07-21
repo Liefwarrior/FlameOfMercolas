@@ -83,6 +83,19 @@ import java.util.function.IntPredicate;
  * is presentation-only — like the rest of the renderer it never feeds {@code WorldHasher}, so
  * it carries no determinism constraint.
  *
+ * <p><b>Day/night lighting</b> (presentation-only, like everything here): the 4-arg
+ * {@link #draw(SpriteBatch, MapCamera, int, AmbientLight)} multiplies every scene draw —
+ * base tiles, fluid overlays, and both air-depth look-down draws — by the frame's
+ * {@link AmbientLight}, per-cell lifted toward warm lamplight where the precomputed
+ * {@link LampGlowMap} says a static lamp/brazier reaches (gated by
+ * {@code AmbientLight.lampFactor()}, so pools only appear as the light fails). Night water
+ * additionally sits slightly darker and cooler than land ({@link #WATER_NIGHT_COOL_R}/
+ * {@code _G} scale the fluid overlay's ambient by nightness). At
+ * {@link AmbientLight#NEUTRAL} every multiply is the identity — the daytime scene is
+ * pixel-identical to the pre-cycle renderer, and the 3-arg {@link #draw(SpriteBatch,
+ * MapCamera, int)} keeps exactly that behavior. HUD/UI draws happen after this pass with
+ * the batch colour restored to white, so they are never tinted.
+ *
  * <p>Reuses one {@link TileCursor} across the whole draw call, per {@code World.cursor()}'s
  * "callers keep and reuse it" contract — no per-tile cursor allocation. The look-down probe
  * moves that same cursor down the z-column and the next tile's {@code moveTo} resets it.
@@ -130,12 +143,35 @@ public final class WorldRenderer {
     /** Q8 alpha denominator: {@code alphaQ8 / 256f} is the batch alpha. */
     private static final float ALPHA_Q8_ONE = 256f;
 
+    /** How much the fluid overlay's ambient red is pulled down at full night (water reads
+     * a touch darker + cooler than the lamplit land around it; identity by day). */
+    static final float WATER_NIGHT_COOL_R = 0.18f;
+
+    /** The paired (smaller) green pull-down — together with the red pull this cools the
+     * night water blue-ward without ever brightening anything. */
+    static final float WATER_NIGHT_COOL_G = 0.10f;
+
     private final World world;
     private final MaterialRegistry materials;
     private final FluidRegistry fluids;
     private final TileArtResolver artResolver;
     private final TileAtlas atlas;
     private final TileCursor cursor;
+    private final LampGlowMap lamps;
+
+    /** Per-cell lit-ambient scratch written by {@link #lit} (single render thread). */
+    private float litR;
+    private float litG;
+    private float litB;
+
+    /**
+     * Convenience constructor with no lamp map ({@link LampGlowMap#EMPTY}) — night scenes
+     * get the ambient cycle but no lamp pools.
+     */
+    public WorldRenderer(World world, MaterialRegistry materials, FluidRegistry fluids,
+                          TileArtResolver artResolver, TileAtlas atlas) {
+        this(world, materials, fluids, artResolver, atlas, LampGlowMap.EMPTY);
+    }
 
     /**
      * @param world       the world to read tiles from
@@ -144,25 +180,42 @@ public final class WorldRenderer {
      * @param artResolver resolves (materialId, form, bucket) to an atlas region name, and
      *                    fluid ids to overlay region/alpha/tint
      * @param atlas       the built atlas the region names are looked up in
+     * @param lamps       the precomputed static-lamp influence map for Dusk/Night pools
      */
     public WorldRenderer(World world, MaterialRegistry materials, FluidRegistry fluids,
-                          TileArtResolver artResolver, TileAtlas atlas) {
+                          TileArtResolver artResolver, TileAtlas atlas, LampGlowMap lamps) {
         this.world = world;
         this.materials = materials;
         this.fluids = fluids;
         this.artResolver = artResolver;
         this.atlas = atlas;
         this.cursor = world.cursor();
+        this.lamps = lamps;
+    }
+
+    /**
+     * Draws every visible tile of z-level {@code z} at {@link AmbientLight#NEUTRAL} — the
+     * exact pre-day/night-cycle look, kept for headless proofs and any caller with no clock.
+     */
+    public void draw(SpriteBatch batch, MapCamera camera, int z) {
+        draw(batch, camera, z, AmbientLight.NEUTRAL);
     }
 
     /**
      * Draws every visible tile of z-level {@code z} within {@code camera}'s current
-     * viewport. Caller owns {@code batch}'s begin/end and projection matrix; this method
-     * assumes a standard y-up, bottom-left-origin projection sized to the viewport (the
-     * libGDX default), and converts {@link MapCamera}'s y-down, top-left screen
-     * coordinates into that space per tile.
+     * viewport, lit by {@code ambient} (see the class javadoc's day/night section). Caller
+     * owns {@code batch}'s begin/end and projection matrix; this method assumes a standard
+     * y-up, bottom-left-origin projection sized to the viewport (the libGDX default), and
+     * converts {@link MapCamera}'s y-down, top-left screen coordinates into that space per
+     * tile.
      */
-    public void draw(SpriteBatch batch, MapCamera camera, int z) {
+    public void draw(SpriteBatch batch, MapCamera camera, int z, AmbientLight ambient) {
+        float lampF = ambient.lampFactor();
+        // Touch of night water: the fluid overlay's ambient sits slightly darker + cooler
+        // than the land's as nightness rises (identity at lampFactor 0).
+        float waterAmbR = ambient.r() * (1f - WATER_NIGHT_COOL_R * lampF);
+        float waterAmbG = ambient.g() * (1f - WATER_NIGHT_COOL_G * lampF);
+        float waterAmbB = ambient.b();
         int span = camera.tileSpanPx();
         int viewportHeight = camera.viewportHeightPx();
         int minX = camera.visibleTileMinX();
@@ -187,10 +240,11 @@ public final class WorldRenderer {
 
                 if (!emptyAir) {
                     // TOP LAYER — the cell at the camera's own z, drawn sharp and undimmed
-                    // exactly as before (blur level 0, no depth shade).
+                    // exactly as before (blur level 0, no depth shade), in the frame's light.
                     if (hasBaseTile) {
+                        lit(ambient.r(), ambient.g(), ambient.b(), lampF, tx, ty, z);
                         BaseTilePlan plan = baseTilePlan(cursor, tx, ty, z);
-                        setTint(batch, plan.materialTintRgb());
+                        setTint(batch, plan.materialTintRgb(), litR, litG, litB);
                         batch.draw(atlas.region(plan.regionName(), plan.variant(), 0),
                                 drawX, drawY, span, span);
                     }
@@ -200,7 +254,9 @@ public final class WorldRenderer {
                     FluidOverlay overlay = fluidOverlay(fluidBits, tx, ty, z, fluids, artResolver,
                             atlas);
                     if (overlay != null) {
-                        setOverlayColor(batch, overlay.tintRgb(), overlay.alphaQ8());
+                        lit(waterAmbR, waterAmbG, waterAmbB, lampF, tx, ty, z);
+                        setOverlayColor(batch, overlay.tintRgb(), overlay.alphaQ8(),
+                                litR, litG, litB);
                         batch.draw(atlas.region(overlay.regionName(), overlay.variant(), 0),
                                 drawX, drawY, span, span);
                     }
@@ -231,16 +287,21 @@ public final class WorldRenderer {
                 TileForm lowForm = cursor.form();
                 int lowFluidBits = cursor.fluidBits();
                 if (lowForm != TileForm.OPEN) { // solid form -> has a base tile (never VOID here)
+                    // The look-down cell sits in the same scene light — ambient (with any
+                    // lamp pool at the *found* cell) times the existing depth shade.
+                    lit(ambient.r(), ambient.g(), ambient.b(), lampF, tx, ty, foundZ);
                     BaseTilePlan plan = baseTilePlan(cursor, tx, ty, foundZ);
-                    setShadedTint(batch, plan.materialTintRgb(), shadeR, shadeG, shadeB);
+                    setShadedTint(batch, plan.materialTintRgb(),
+                            shadeR * litR, shadeG * litG, shadeB * litB);
                     batch.draw(atlas.region(plan.regionName(), plan.variant(), blurLevel),
                             drawX, drawY, span, span);
                 }
                 FluidOverlay overlay = fluidOverlay(lowFluidBits, tx, ty, foundZ, fluids,
                         artResolver, atlas);
                 if (overlay != null) {
+                    lit(waterAmbR, waterAmbG, waterAmbB, lampF, tx, ty, foundZ);
                     setShadedOverlayColor(batch, overlay.tintRgb(), overlay.alphaQ8(),
-                            shadeR, shadeG, shadeB);
+                            shadeR * litR, shadeG * litG, shadeB * litB);
                     batch.draw(atlas.region(overlay.regionName(), overlay.variant(), blurLevel),
                             drawX, drawY, span, span);
                 }
@@ -407,37 +468,71 @@ public final class WorldRenderer {
     }
 
     /**
-     * Sets the batch color for a fluid-overlay draw: the fluid's optional secondary tint
-     * (white for {@link TileArtResolver#NO_TINT}) at the per-depth alpha
-     * {@code alphaQ8 / 256} — the default SpriteBatch alpha blending does the rest, so
-     * deeper water covers the tile beneath more opaquely (TILE-ART-SPEC section 5.3).
+     * Writes the scene-lit ambient for one cell into the {@link #litR}/{@code G}/{@code B}
+     * scratch: the frame's ambient channels lifted toward the cell's precomputed lamp-glow
+     * colour by {@code glowStrength * lampFactor} (the day/night pass's core lerp). With
+     * lamps out ({@code lampFactor == 0}) or no lamp reaching the cell, this is just the
+     * ambient — and at {@link AmbientLight#NEUTRAL} exactly {@code (1, 1, 1)}, the
+     * pre-cycle identity.
      */
-    private static void setOverlayColor(SpriteBatch batch, int tintRgb, int alphaQ8) {
+    private void lit(float ambR, float ambG, float ambB, float lampFactor,
+            int x, int y, int z) {
+        float r = ambR;
+        float g = ambG;
+        float b = ambB;
+        if (lampFactor > 0f) {
+            int glow = lamps.glow(x, y, z);
+            if (glow != 0) {
+                float s = ((glow >>> 24) & 0xFF) / 255f * lampFactor;
+                float warmR = ((glow >> 16) & 0xFF) / 255f;
+                float warmG = ((glow >> 8) & 0xFF) / 255f;
+                float warmB = (glow & 0xFF) / 255f;
+                r += (warmR - r) * s;
+                g += (warmG - g) * s;
+                b += (warmB - b) * s;
+            }
+        }
+        litR = r;
+        litG = g;
+        litB = b;
+    }
+
+    /**
+     * Sets the batch color for a fluid-overlay draw: the fluid's optional secondary tint
+     * (white for {@link TileArtResolver#NO_TINT}) times the cell's lit ambient, at the
+     * per-depth alpha {@code alphaQ8 / 256} — the default SpriteBatch alpha blending does
+     * the rest, so deeper water covers the tile beneath more opaquely (TILE-ART-SPEC
+     * section 5.3).
+     */
+    private static void setOverlayColor(SpriteBatch batch, int tintRgb, int alphaQ8,
+            float litR, float litG, float litB) {
         float a = alphaQ8 / ALPHA_Q8_ONE;
         if (tintRgb == TileArtResolver.NO_TINT) {
-            batch.setColor(1f, 1f, 1f, a);
+            batch.setColor(litR, litG, litB, a);
             return;
         }
         float r = ((tintRgb >> 16) & 0xFF) / 255f;
         float g = ((tintRgb >> 8) & 0xFF) / 255f;
         float b = (tintRgb & 0xFF) / 255f;
-        batch.setColor(r, g, b, a);
+        batch.setColor(r * litR, g * litG, b * litB, a);
     }
 
     /**
      * Multiplies the batch by a material's {@code 0xRRGGBB} tint (the secondary adjustment
-     * described above), or leaves it white for {@link TileArtResolver#NO_TINT} — the common
-     * case in the colored pack, where the cell draws exactly as authored.
+     * described above) times the cell's lit ambient; {@link TileArtResolver#NO_TINT} (the
+     * common case in the colored pack) draws at the lit ambient alone — which is white,
+     * exactly as authored, whenever the light is neutral.
      */
-    private static void setTint(SpriteBatch batch, int rgb) {
+    private static void setTint(SpriteBatch batch, int rgb,
+            float litR, float litG, float litB) {
         if (rgb == TileArtResolver.NO_TINT) {
-            batch.setColor(Color.WHITE);
+            batch.setColor(litR, litG, litB, 1f);
             return;
         }
         float r = ((rgb >> 16) & 0xFF) / 255f;
         float g = ((rgb >> 8) & 0xFF) / 255f;
         float b = (rgb & 0xFF) / 255f;
-        batch.setColor(r, g, b, 1f);
+        batch.setColor(r * litR, g * litG, b * litB, 1f);
     }
 
     /**

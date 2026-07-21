@@ -32,12 +32,15 @@ public enum DayPhase {
     DUSK("Dusk"),
     NIGHT("Night");
 
+    // Public: the day/night lighting cycle (render.AmbientLight) anchors its curve on these
+    // same boundaries so the light and the HUD clock tag can never disagree.
+
     /** First tick-of-day where every day-shift job rhythm window is open (jobs.json). */
-    static final long DAY_START = 2_000L;
+    public static final long DAY_START = 2_000L;
     /** DailyRhythm's dusk anchor; earliest actor-type nightWindowStart (militia_watch). */
-    static final long DUSK_START = 12_000L;
+    public static final long DUSK_START = 12_000L;
     /** Latest actor-type nightWindowStart (serf/shopkeeper) — all night windows open here. */
-    static final long NIGHT_START = 14_000L;
+    public static final long NIGHT_START = 14_000L;
 
     private final String label;
 
