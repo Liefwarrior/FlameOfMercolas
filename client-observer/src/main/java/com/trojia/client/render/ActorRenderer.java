@@ -20,8 +20,12 @@ import java.util.Map;
  * (DECISIONS.md Art register pillar 3, Eli 2026-07-13 fourth revision; unified art spec
  * §3). Each actor draws {@code index.forActor(typeId, actorId)} — a pure, stateless pick,
  * so an actor keeps its sprite for life — through the {@link SpriteSheet}'s region,
- * <b>untinted</b> (batch color white): sprites are pre-colored in MERCOLAS-24, and a
- * multiply tint would fight the baked colors (§3.3).
+ * <b>untinted by material colour</b> (batch color white by day): sprites are pre-colored,
+ * and a multiply tint would fight the baked colors (§3.3). The one exception is the scene's
+ * {@link AmbientLight} — the day/night pass multiplies each actor by the same lit ambient
+ * as the tile it stands on (ambient plus any lamp pool at its cell), so actors sit in the
+ * scene's light instead of glowing full-bright at midnight. At {@link AmbientLight#NEUTRAL}
+ * that multiply is the identity and the historical untinted behavior is preserved exactly.
  *
  * <p>The raws {@code glyph}/{@code tint} stay in {@code ActorTypeStats} as data for text
  * surfaces (event log, HUD tokens) — this renderer no longer consumes them, and the old
@@ -45,11 +49,19 @@ public final class ActorRenderer {
     private final ActorRegistry registry;
     private final SpriteIndex index;
     private final SpriteSheet sheet;
+    private final LampGlowMap lamps;
 
+    /** Convenience constructor with no lamp map (actors still get the ambient cycle). */
     public ActorRenderer(ActorRegistry registry, SpriteIndex index, SpriteSheet sheet) {
+        this(registry, index, sheet, LampGlowMap.EMPTY);
+    }
+
+    public ActorRenderer(ActorRegistry registry, SpriteIndex index, SpriteSheet sheet,
+            LampGlowMap lamps) {
         this.registry = registry;
         this.index = index;
         this.sheet = sheet;
+        this.lamps = lamps;
     }
 
     /** Screen-px cascade per co-located actor beyond the first, so a Keeper standing on
@@ -59,19 +71,29 @@ public final class ActorRenderer {
     private static final int STACK_OFFSET_MAX = 3;
 
     /**
-     * Draws every actor on z-level {@code z} within {@code camera}'s viewport, as its
-     * per-life sprite filling its tile quad (16px art scaled to the camera's tile span,
-     * pixel-snapped to the tile grid; nearest filtering keeps it crisp). The batch color is
-     * forced white for the duration and left white afterwards — the convention every
-     * renderer here restores to.
+     * Draws every visible actor at {@link AmbientLight#NEUTRAL} — the exact historical
+     * untinted look, kept for headless proofs and any caller with no clock.
      */
     public void draw(SpriteBatch batch, MapCamera camera, int z) {
+        draw(batch, camera, z, AmbientLight.NEUTRAL);
+    }
+
+    /**
+     * Draws every actor on z-level {@code z} within {@code camera}'s viewport, as its
+     * per-life sprite filling its tile quad (16px art scaled to the camera's tile span,
+     * pixel-snapped to the tile grid; nearest filtering keeps it crisp), multiplied by the
+     * lit ambient of the actor's own cell (see the class javadoc). The batch color is
+     * restored to white afterwards — the convention every renderer here restores to.
+     */
+    public void draw(SpriteBatch batch, MapCamera camera, int z, AmbientLight ambient) {
         int span = camera.tileSpanPx();
         int viewportHeight = camera.viewportHeightPx();
         int minX = camera.visibleTileMinX();
         int maxX = camera.visibleTileMaxX();
         int minY = camera.visibleTileMinY();
         int maxY = camera.visibleTileMaxY();
+        float lampF = ambient.lampFactor();
+        boolean neutral = ambient.isNeutral();
 
         // Ascending-id draw order is already deterministic; this only tracks how many
         // actors this frame have landed on a given cell so each later one past the first
@@ -92,6 +114,24 @@ public final class ActorRenderer {
             SpriteRef ref = index.forActor(actor.typeId().key(), actor.id());
             TextureRegion region = sheet.region(ref);
 
+            if (!neutral) {
+                // Same lit-ambient lerp as WorldRenderer's tiles: ambient lifted toward
+                // the cell's lamp-glow colour by strength * lampFactor.
+                float r = ambient.r();
+                float g = ambient.g();
+                float b = ambient.b();
+                if (lampF > 0f) {
+                    int glow = lamps.glow(tx, ty, z);
+                    if (glow != 0) {
+                        float s = ((glow >>> 24) & 0xFF) / 255f * lampF;
+                        r += (((glow >> 16) & 0xFF) / 255f - r) * s;
+                        g += (((glow >> 8) & 0xFF) / 255f - g) * s;
+                        b += ((glow & 0xFF) / 255f - b) * s;
+                    }
+                }
+                batch.setColor(r, g, b, 1f);
+            }
+
             int stackIndex = Math.min(stackCountByCell.merge(cell, 1, Integer::sum) - 1,
                     STACK_OFFSET_MAX);
             int screenXLeft = camera.tileToScreenX(tx) + stackIndex * STACK_OFFSET_PX;
@@ -102,5 +142,7 @@ public final class ActorRenderer {
             batch.draw(region, screenXLeft, tileBottomYUp,
                     span * ref.cellsW(), span * ref.cellsH());
         }
+        // Restore so downstream draws in the same batch (HUD, inspector) are untinted.
+        batch.setColor(Color.WHITE);
     }
 }
