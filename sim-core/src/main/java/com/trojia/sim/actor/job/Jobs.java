@@ -42,7 +42,9 @@ public final class Jobs {
             new Registration(Job.Trade.Trader.ID, (p, c) -> new Job.Trade.Trader(p)),
             new Registration(Job.Husbandry.Keeper.ID, (p, c) -> new Job.Husbandry.Keeper(p)),
             new Registration(Job.Beast.Chattel.ID, (p, c) -> new Job.Beast.Chattel(p)),
-            new Registration(Job.Beast.Feral.ID, (p, c) -> new Job.Beast.Feral(p))));
+            new Registration(Job.Beast.Feral.ID, (p, c) -> new Job.Beast.Feral(p)),
+            new Registration(Job.Beast.Prey.ID, (p, c) -> new Job.Beast.Prey(p)),
+            new Registration(Job.Beast.Prowler.ID, (p, c) -> new Job.Beast.Prowler(p))));
 
     private Jobs() {
     }

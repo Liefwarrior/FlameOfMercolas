@@ -223,9 +223,34 @@ def human(skin, hair, garment, extra=None, patches=(), rows=HUMAN):
 
 
 # --------------------------------------------------------------------------
-# the 23 sprites (unified spec section 3.2 inventory). Ascending ASCII id
+# the 25 sprites (unified spec section 3.2 inventory). Ascending ASCII id
 # order — the packer and the index serializer both walk this order.
 # --------------------------------------------------------------------------
+
+def sp_cat_0():
+    # Wharf cat: side-stance, pricked ears, Y1 amber eye, B1 moon-grey chest,
+    # tail curled up right (beast food channel pass). NOT tagged vermin — the
+    # feral (gull) actorQueries pool is a superset match and must not gain it.
+    rows = [
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "...A..A.........",
+        "...AAAA.....A...",
+        "...AeAA.....A...",
+        "...ACCA....AB...",
+        "....AABAAAAB....",
+        "....ABAABAA.....",
+        "....AABABAA.....",
+        "....AAAAAAA.....",
+        "....AB..AB......",
+        "....AB..AB......",
+        "................",
+    ]
+    return parse(rows, {"A": "G4", "B": "G3", "C": "B1", "e": "Y1"})
+
 
 def sp_disciple_0():
     # Street acolyte: ragged E2 robe, cowl up, shadowed face, R2 armband,
@@ -577,6 +602,31 @@ def sp_merchant_1():
                                    "g": "E2", "f": "E1"}))
 
 
+def sp_mouse_0():
+    # Quay mouse: tiny dust-brown body low to the boards, one big ear, E5
+    # nose + thin tail left (beast food channel pass). NOT tagged vermin —
+    # see sp_cat_0's note (the gull pool must not gain it).
+    rows = [
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "......AA.AA.....",
+        ".....ABAAAAe....",
+        "...t.ABBAAAnn...",
+        "..tt..AB.AA.....",
+        "................",
+    ]
+    return parse(rows, {"A": "E4", "B": "E3", "t": "E5", "n": "E5", "e": "N0"})
+
+
 def sp_priest_0():
     # Priest of the Flame: G1 vestment, hood up, R2 stole, Y1 medallion.
     rows = [
@@ -687,6 +737,7 @@ def sp_vagrant_2():
 
 # id -> (paint function, tags). Ascending ASCII id order is asserted below.
 SPRITES = [
+    ("actor_cat_0", sp_cat_0, ["actor", "beast", "cat"]),
     ("actor_disciple_0", sp_disciple_0, ["actor", "humanoid", "clergy", "ragged"]),
     ("actor_disciple_1", sp_disciple_1, ["actor", "humanoid", "clergy", "ragged"]),
     ("actor_dog_0", sp_dog_0, ["actor", "beast", "livestock", "dog"]),
@@ -704,6 +755,7 @@ SPRITES = [
     ("actor_laborer_2", sp_laborer_2, ["actor", "humanoid", "laborer"]),
     ("actor_merchant_0", sp_merchant_0, ["actor", "humanoid", "merchant"]),
     ("actor_merchant_1", sp_merchant_1, ["actor", "humanoid", "merchant"]),
+    ("actor_mouse_0", sp_mouse_0, ["actor", "beast", "mouse"]),
     ("actor_priest_0", sp_priest_0, ["actor", "humanoid", "clergy", "robed"]),
     ("actor_priest_1", sp_priest_1, ["actor", "humanoid", "clergy", "robed"]),
     ("actor_rat_0", sp_rat_0, ["actor", "beast", "vermin"]),
@@ -720,9 +772,11 @@ HUMANOID_IDS = {sid for sid, _, tags in SPRITES if "humanoid" in tags}
 ACTOR_QUERIES = [
     ("animal", ["actor", "beast", "livestock"]),
     ("animal_keeper", ["actor", "humanoid", "laborer", "keeper"]),
+    ("cat", ["actor", "beast", "cat"]),
     ("disciple_of_the_flame", ["actor", "humanoid", "clergy", "ragged"]),
     ("feral", ["actor", "beast", "vermin"]),
     ("militia_watch", ["actor", "humanoid", "guard"]),
+    ("mouse", ["actor", "beast", "mouse"]),
     ("priest_of_the_flame", ["actor", "humanoid", "clergy", "robed"]),
     ("serf", ["actor", "humanoid", "laborer"]),
     ("shopkeeper", ["actor", "humanoid", "merchant"]),
@@ -731,9 +785,9 @@ ACTOR_QUERIES = [
 
 # Minimum variant counts per type (unified spec section 3.2, placeholders).
 MIN_VARIANTS = {
-    "animal": 4, "animal_keeper": 2, "disciple_of_the_flame": 2, "feral": 2,
-    "militia_watch": 3, "priest_of_the_flame": 2, "serf": 3, "shopkeeper": 2,
-    "wastrel": 3,
+    "animal": 4, "animal_keeper": 2, "cat": 1, "disciple_of_the_flame": 2,
+    "feral": 2, "militia_watch": 3, "mouse": 1, "priest_of_the_flame": 2,
+    "serf": 3, "shopkeeper": 2, "wastrel": 3,
 }
 
 # --------------------------------------------------------------------------

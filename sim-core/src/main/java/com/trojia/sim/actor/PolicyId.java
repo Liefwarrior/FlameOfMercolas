@@ -38,5 +38,20 @@ public enum PolicyId {
      * warn → fine → arrest. The guard-side inversion of the old villain-side
      * self-arrest hack.
      */
-    APPREHEND
+    APPREHEND,
+    /**
+     * The BEAST food channel (living-docks beast pass): a hungry predator (gull/cat)
+     * senses the nearest live mouse, chases it, catches at adjacency, and restores
+     * HUNGER — replacing the citizen SEEK_FOOD machine (which no beast can act on)
+     * in beast stacks. Acquire-gated scoring (the APPREHEND shape): 0 without an
+     * actionable target, so it can never pin a beast the way SEEK_FOOD did.
+     */
+    BEAST_HUNT,
+    /**
+     * Caught-prey inertness (living-docks beast pass): a {@code DOWNED} mouse holds
+     * still (score 5500 — above HELD 5000, below EXECUTED 6000) until the existing
+     * {@code downedTimer} machinery revives it, whereupon its ordinary stack resumes
+     * and the leash walks it back to its den.
+     */
+    DOWNED_INERT
 }

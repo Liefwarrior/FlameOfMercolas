@@ -5,7 +5,9 @@ import com.trojia.sim.actor.ActorContext;
 import com.trojia.sim.actor.ActorGeometry;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorRngStream;
+import com.trojia.sim.actor.ActorTypeId;
 import com.trojia.sim.actor.DailyRhythm;
+import com.trojia.sim.actor.Need;
 import com.trojia.sim.actor.FoodEconomy;
 import com.trojia.sim.actor.FoodMarket;
 import com.trojia.sim.actor.ItemKinds;
@@ -325,6 +327,14 @@ public final class JobBehaviors {
      * type's leash, so the sweep stays inside the leashed home range without a
      * new raws field, and the leash-respecting step never stalls.
      */
+    /**
+     * Ticks a wander leg may spend traveling before the target is declared a lost cause and
+     * redrawn. Generous: the widest committed wander envelope (gull leash 48 → radius 24) is
+     * ~50 direct cells plus detours at 1 tile/tick — a leg that has not arrived in {@value}
+     * ticks is stuck, not slow. Bounds BOTH stall modes the beast-pass soak surfaced (below).
+     */
+    private static final int WANDER_TRAVEL_BUDGET_TICKS = 200;
+
     public static void pursueWander(Actor self, ActorContext ctx, JobParams params) {
         if (self.goalTargetKind() != TargetKind.CELL) {
             retargetWander(self, ctx);
@@ -332,7 +342,40 @@ public final class JobBehaviors {
         }
         int target = self.goalTargetKey();
         if (self.cell() != target) {
+            int before = self.cell();
             self.stepAlongRoute(target, false, ctx::isWalkable, ctx.occupancy());
+            if (self.cell() == target) {
+                self.setGoalWorkTicks(0); // arrived: the dwell count starts clean next tick
+                return;
+            }
+            if (self.routeFailedTo(target)) {
+                // Stall mode 1 — an UNREACHABLE target (walled pocket, over-budget detour):
+                // stepAlongRoute retries the failed search on its 500-tick cooldown while this
+                // pursue never re-targeted, freezing the sweep forever (the beast-pass gull
+                // soak surfaced actors parked on one cell for thousands of ticks). Draw a
+                // fresh target instead — the pursueRoutePatrol failed-leg skip, applied here.
+                retargetWander(self, ctx);
+                return;
+            }
+            if (self.cell() == before) {
+                // Stall mode 2 — a ROUTABLE target whose next hop is held at the occupancy
+                // cap (residents parked in a doorway/corridor for a whole shift): A* is
+                // occupancy-blind, so the identical route is replanned and blocked every
+                // tick with routeFailedTo never set. Drift one random orthogonal cell (the
+                // LOITER shuffle discipline: named draw, leash-respecting, walkability- and
+                // occupancy-checked) so a crowd-boxed actor bleeds out through transient
+                // gaps instead of standing wedged for thousands of ticks.
+                driftOneCell(self, ctx);
+            }
+            // Stall backstop — the travel budget rides the already-persisted goalWorkTicks
+            // (unused while traveling; reset on arrival above and by every retarget), so a
+            // leg that cannot complete costs a bounded wait and one redraw, never the sweep.
+            int travelTicks = self.goalWorkTicks() + 1;
+            if (travelTicks >= WANDER_TRAVEL_BUDGET_TICKS) {
+                retargetWander(self, ctx);
+            } else {
+                self.setGoalWorkTicks(travelTicks);
+            }
             return;
         }
         int dwell = self.goalWorkTicks() + 1;
@@ -380,6 +423,93 @@ public final class JobBehaviors {
     /** Half the leash (min 4): a sweep that visibly ranges without leaving the leashed range. */
     private static int wanderRadius(Actor self) {
         return Math.max(4, self.stats().leashRadius() / 2);
+    }
+
+    /** W/E/N/S drift offsets (orthogonal only — the corner rule makes diagonals wall-gated). */
+    private static final int[] DRIFT_DX = {-1, 1, 0, 0};
+    private static final int[] DRIFT_DY = {0, 0, -1, 1};
+
+    /**
+     * One random orthogonal escape step for an occupancy-blocked wanderer (stall mode 2 in
+     * {@link #pursueWander}): a named {@code ACTOR_WANDER} draw picks a heading, and the
+     * ordinary leash-respecting, walkability- and occupancy-checked {@code stepToward}
+     * commits it or no-ops. Deterministic (named stream, per-actor draw counter).
+     */
+    private static void driftOneCell(Actor self, ActorContext ctx) {
+        long draw = ctx.draw(ActorRngStream.ACTOR_WANDER, self.id(), ctx.nextDrawIndex(self.id()));
+        int heading = (int) Long.remainderUnsigned(draw, DRIFT_DX.length);
+        int x = clamp(PackedPos.x(self.cell()) + DRIFT_DX[heading], PackedPos.X_MASK);
+        int y = clamp(PackedPos.y(self.cell()) + DRIFT_DY[heading], PackedPos.Y_MASK);
+        self.stepToward(PackedPos.pack(x, y, PackedPos.z(self.cell())), false,
+                ctx::isWalkable, ctx.occupancy());
+    }
+
+    // ======================================================================
+    // Prey scurry (Mouse, living-docks beast pass) — wander + vigilance + nibble
+    // ======================================================================
+
+    /** Predator-vigilance scan cadence (absolute tick % PERIOD == 0) — the exposure-scan shape. */
+    static final int PREY_SENSE_PERIOD_TICKS = 8;
+    /** Same-z chebyshev radius at which a nearby gull/cat scares a mouse. */
+    static final int PREY_SENSE_RADIUS = 6;
+    /**
+     * SAFETY debit per vigilance hit: three consecutive hits (a predator LINGERING ~24 ticks)
+     * drive SAFETY under CRITICAL (1000) and the shared {@code FleePolicy} takes over, while a
+     * fast direct chase usually catches the mouse before it panics (the hunt-closure math
+     * depends on catches actually landing). The mouse raws' {@code safety.recoverPerTick 25}
+     * ends the panic in ~40 ticks.
+     */
+    static final int PREY_SCARE = 3500;
+    /**
+     * HUNGER restored at each wander-dwell boundary — the den nibble (crumbs and spilled grain
+     * around the den hole; every dwell is within the den radius by construction). Deliberately
+     * NOT the bin-scrap item channel: mice consuming the daily {@code BIN_SCRAP_CAP} scraps
+     * would eat the wastrel scavenge margin — the nibble touches no item, so the FOOD
+     * conservation identity and the citizen margins are byte-identical.
+     */
+    static final int MOUSE_NIBBLE_RESTORE = 1500;
+
+    private static final ActorTypeId PREDATOR_FERAL = ActorTypeId.of("feral");
+    private static final ActorTypeId PREDATOR_CAT = ActorTypeId.of("cat");
+
+    /**
+     * PURSUE (prey scurry): {@link #pursueWander} plus the two mouse hooks, nested inside the
+     * job's own pursue exactly the way the villain leaves hook {@code checkArrestExposure}:
+     * (1) on the vigilance cadence, a same-z ascending-index scan for any gull/cat within
+     * {@link #PREY_SENSE_RADIUS} debits SAFETY by {@link #PREY_SCARE} (a lingering predator
+     * eventually triggers FLEE); (2) at the wander-dwell boundary the mouse nibbles the den
+     * (+{@link #MOUSE_NIBBLE_RESTORE} HUNGER, no FOOD item). Draw-free beyond the wander's own
+     * named draws; all scans ascending-index, same-z, chebyshev, allocation-free.
+     */
+    public static void pursuePreyScurry(Actor self, ActorContext ctx, JobParams params) {
+        if (ctx.tick() % PREY_SENSE_PERIOD_TICKS == 0 && predatorIsNear(self, ctx)) {
+            self.applyNeedDelta(Need.SAFETY, -PREY_SCARE);
+        }
+        if (isWanderDwellComplete(self, params)) {
+            self.applyNeedDelta(Need.HUNGER, MOUSE_NIBBLE_RESTORE);
+            self.setLastReasonCode(ReasonCode.NIBBLED_DEN);
+        }
+        pursueWander(self, ctx, params);
+    }
+
+    /** Any same-z gull/cat within {@link #PREY_SENSE_RADIUS} chebyshev (ascending-index scan). */
+    private static boolean predatorIsNear(Actor self, ActorContext ctx) {
+        ActorRegistry registry = ctx.registry();
+        int selfCell = self.cell();
+        int selfZ = PackedPos.z(selfCell);
+        for (int i = 0; i < registry.size(); i++) {
+            Actor other = registry.get(i);
+            ActorTypeId type = other.typeId();
+            if (!type.equals(PREDATOR_FERAL) && !type.equals(PREDATOR_CAT)) {
+                continue;
+            }
+            int cell = other.cell();
+            if (PackedPos.z(cell) == selfZ
+                    && ActorGeometry.chebyshev(selfCell, cell) <= PREY_SENSE_RADIUS) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ======================================================================

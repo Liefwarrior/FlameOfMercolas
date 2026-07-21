@@ -540,6 +540,14 @@ public final class ActorsSystem implements SimulationSystem {
             sink.putInt(actor.apprehendTargetId());
             sink.putLong(actor.moveAlongUntilTick());
             sink.putInt(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
+            // Beast food channel (landmine F again): the hunt lock (targetKind/targetKey),
+            // the caught-prey revive countdown (downedTimer) and the chase budget
+            // (policyTimer) are now behavior-carrying state — a hunt-only or revive-only
+            // desync must fail the twin-run hash, not slip past it.
+            sink.putShort(actor.downedTimer());
+            sink.putByte(actor.targetKind().ordinal());
+            sink.putInt(actor.targetKey());
+            sink.putShort(actor.policyTimer());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {

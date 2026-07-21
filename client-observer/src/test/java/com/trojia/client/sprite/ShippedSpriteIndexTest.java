@@ -21,18 +21,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The SHIPPED {@code content/art/sprites/sprite-index.json} + {@code sprites.png} (emitted
  * together by {@code tools/scripts/gen_actor_sprites.py}) honor the unified art spec's actor
- * contract: all 9 actor types resolve with at least the §3.2 minimum variant counts, and
+ * contract: all 11 actor types resolve with at least the §3.2 minimum variant counts, and
  * every sheet pixel is MERCOLAS-24 or transparent. Located by walking up from the test
  * working directory (same convention as {@code ShippedArtMapping}).
  */
 class ShippedSpriteIndexTest {
 
-    /** §3.2 minimum variants per type — the whole table, all 9 types. */
-    private static final Map<String, Integer> MIN_VARIANTS = Map.of(
-            "militia_watch", 3, "serf", 3, "wastrel", 3,
-            "priest_of_the_flame", 2, "disciple_of_the_flame", 2,
-            "shopkeeper", 2, "animal_keeper", 2,
-            "animal", 4, "feral", 2);
+    /** §3.2 minimum variants per type — the whole table, all 11 types. */
+    private static final Map<String, Integer> MIN_VARIANTS = Map.ofEntries(
+            Map.entry("militia_watch", 3), Map.entry("serf", 3), Map.entry("wastrel", 3),
+            Map.entry("priest_of_the_flame", 2), Map.entry("disciple_of_the_flame", 2),
+            Map.entry("shopkeeper", 2), Map.entry("animal_keeper", 2),
+            Map.entry("animal", 4), Map.entry("feral", 2),
+            Map.entry("mouse", 1), Map.entry("cat", 1));
 
     /** MERCOLAS-24 (unified art spec §1.2), as 0xRRGGBB. */
     private static final Set<Integer> MERCOLAS_24 = Set.of(
@@ -42,10 +43,10 @@ class ShippedSpriteIndexTest {
             0x46708A, 0x83A7B4, 0xB98F42);
 
     @Test
-    void allNineActorTypesResolveWithSpecMinimumVariants() {
+    void allActorTypesResolveWithSpecMinimumVariants() {
         SpriteIndex index = loadShipped();
         assertEquals(MIN_VARIANTS.keySet(), index.actorTypeIds(),
-                "actorQueries must map exactly the 9 raws actor types");
+                "actorQueries must map exactly the 11 raws actor types");
         for (Map.Entry<String, Integer> entry : MIN_VARIANTS.entrySet()) {
             Set<String> seen = new java.util.HashSet<>();
             for (long actorId = 0; actorId < 512; actorId++) {

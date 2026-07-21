@@ -1115,6 +1115,8 @@ All numbers above **(placeholder / needs-blessing)**.
 | Animal Keeper | `K` | tan `#B09048` | |
 | Animal | per-species: dog `d`, pig `g`, goat `t`, mule `m` | species tint from raws | |
 | Feral | per-species: gull `v`, rat `r`, stray cur `c` | species tint from raws (dim — ambience register) | barely-there until it steals your fish |
+| Mouse | `r` | dust-brown `#9A8468` (dim — ambience register) | prey underfoot |
+| Cat | `c` | moon-grey `#C8C0B4` | the warehouse hunter |
 
 Status ring accents (glyph background/overlay): ON_FIRE flicker orange · DOWNED dark red ·
 ORPHANED dim pulse · ALERTED white tick. Actors render above tiles, below UI; the LIGHT

@@ -34,9 +34,11 @@ import com.trojia.sim.actor.job.JobId;
 import com.trojia.sim.actor.job.JobRegistry;
 import com.trojia.sim.actor.type.AnimalActor;
 import com.trojia.sim.actor.type.AnimalKeeper;
+import com.trojia.sim.actor.type.CatActor;
 import com.trojia.sim.actor.type.DiscipleOfTheFlame;
 import com.trojia.sim.actor.type.FeralActor;
 import com.trojia.sim.actor.type.MilitiaWatch;
+import com.trojia.sim.actor.type.MouseActor;
 import com.trojia.sim.actor.type.PriestOfTheFlame;
 import com.trojia.sim.actor.type.Serf;
 import com.trojia.sim.actor.type.Shopkeeper;
@@ -286,6 +288,20 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[] C4_CONDO_UPPER = {187, 84};
     private static final int[][] C4_ROOFHUTS = {{185, 79}, {188, 83}, {185, 88}, {189, 92}};
     private static final int[] C4_RUIN = {177, 89};
+    // Gullet mouse dens (beast food channel pass): OPEN courtyard-trash cells of the decayed
+    // C4 quarter, A*-verified reachable from BOTH Gullet gull roosts ({165,80} G3 lane and
+    // {176,84} courtyard). Deliberately NOT C4_RUIN — the ruin anchor sits inside a sealed,
+    // doorless room (walkable floor, no z:+11 entrance), where a den would be permanently
+    // unhuntable and would deadlock the gulls' nearest-prey sense against unroutable chases.
+    // SIX dens because the Gullet is isolated (nothing else within the courtyard gull's hunt
+    // sense) and the realized per-mouse yield (revive cooldown + real catch latency) runs
+    // well under naive theory — the 30k soak starved a Gullet gull with fewer. {185,85} sits
+    // MID-CORRIDOR in the C4 condo strip: a predator wedged by occupancy-parked residents
+    // survives exactly when a den mouse's scurry orbit covers the wedge (adjacency catches
+    // need no movement), and that one-wide corridor is the quarter's proven wedge trap — the
+    // soak starved a gull to 0 there before this den existed.
+    private static final int[][] GULLET_MOUSE_DENS =
+            {{176, 84}, {176, 84}, {178, 76}, {180, 80}, {170, 95}, {185, 85}};
 
     // ---- hovels (markers `hovel_NN_anchor`, grouped by band) ------------------------------
     private static final int[][] HOVELS_A = {{84, 55}, {89, 54}, {95, 56}, {10, 93}, {22, 93},
@@ -474,7 +490,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         // import (tick 6000) — no free ration ever reaches homes/commons. All FOOD minting outside
         // the tick loop happens here; its count is recorded for the closed-supply conservation proof.
         FoodMarket foodMarket = buildFoodMarket(registry);
-        long foodSeeded = seedLarders(homes, items) + seedVendorStock(foodMarket, items)
+        long foodSeeded = seedLarders(registry, homes, items) + seedVendorStock(foodMarket, items)
                 + seedRations(foodMarket, items);
 
         int arrestHoldCell = worldCell(PRISON_CELLS_K34[0], ZA);
@@ -661,21 +677,41 @@ public final class DocksPopulation implements ScenarioPopulation {
     // ---- Economy-loop pass: FOOD seeding + the distribution market -----------------------------
 
     /**
-     * Seeds every unique home-cell larder with {@link FoodEconomy#LARDER_SEED} FOOD so the first
-     * hunger cycles are covered before farm yield / imports ramp. Deterministic: ascending home
-     * order, dedup by cell (a bunk crew shares one home cell — seed it once). Returns the total
-     * FOOD minted, for the closed-supply conservation proof.
+     * Seeds every unique CITIZEN home-cell larder with {@link FoodEconomy#LARDER_SEED} FOOD so
+     * the first hunger cycles are covered before farm yield / imports ramp. Deterministic:
+     * ascending home order, dedup by cell (a bunk crew shares one home cell — seed it once).
+     * Returns the total FOOD minted, for the closed-supply conservation proof.
+     *
+     * <p>Beast-only home cells — feral gull roosts, mouse dens, cat prowl anchors — get NO
+     * seed (the beast food channel pass): none of those three types runs {@code SEEK_FOOD}, so
+     * their seeds would be permanently-inert live FOOD, and — critically — mouse dens sit ON
+     * garbage-bin cells, where a 3-FOOD "larder seed" would pre-stock the bins at t=0 and
+     * silently widen the wastrel scavenge margin. {@code animal} homes are NOT skipped:
+     * chattel goats/dogs still run SEEK_FOOD and eat their pen seeds today.
      */
-    private static long seedLarders(HomeRegistry homes, ItemsLiteRegistry items) {
+    private static long seedLarders(ActorRegistry registry, HomeRegistry homes,
+            ItemsLiteRegistry items) {
+        HashSet<Integer> citizenHomeCells = new HashSet<>();
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            if (a.homeId() != Actor.NONE && !isSeedlessBeast(a.typeId().key())) {
+                citizenHomeCells.add(homes.get(a.homeId()).homeCell());
+            }
+        }
         long minted = 0;
         HashSet<Integer> seeded = new HashSet<>();
         for (int i = 0; i < homes.size(); i++) {
             int cell = homes.get(i).homeCell();
-            if (seeded.add(cell)) {
+            if (citizenHomeCells.contains(cell) && seeded.add(cell)) {
                 minted += items.addOnCell(cell, ItemKinds.FOOD, FoodEconomy.LARDER_SEED);
             }
         }
         return minted;
+    }
+
+    /** The types whose stacks have no {@code SEEK_FOOD} — their home cells get no larder seed. */
+    private static boolean isSeedlessBeast(String typeKey) {
+        return typeKey.equals("feral") || typeKey.equals("mouse") || typeKey.equals("cat");
     }
 
     /**
@@ -1155,9 +1191,19 @@ public final class DocksPopulation implements ScenarioPopulation {
             // ===================== FERALS (scavengers; ownerless, roost at spawn) ==============
             soloHome(spawn(FeralActor.TYPE, new int[] {30, 31}, ZA));    // Tarwalk west gutter
             soloHome(spawn(FeralActor.TYPE, new int[] {120, 30}, ZA));   // east storm grate
-            soloHome(spawn(FeralActor.TYPE, new int[] {165, 80}, ZA));   // the Gullet G3
+            // Gullet gull (beast pass: roost moved off the G3 lane {165,80} onto the open C4
+            // courtyard so its roam envelope clears the C2 Netters' compound interior — a
+            // wander leg into C2's walled courtyard got trapped behind occupancy-parked
+            // residents for 13k+ ticks in the 30k soak and starved the gull to 0).
+            soloHome(spawn(FeralActor.TYPE, new int[] {176, 84}, ZA));
             soloHome(spawn(FeralActor.TYPE, new int[] {132, 18}, 10));   // Beaching Strand (z:+10)
-            soloHome(spawn(FeralActor.TYPE, new int[] {176, 84}, ZA));   // C4 courtyard trash
+            // Ropewynd garbage bin (beast pass: WAS the C4 courtyard at {176,84} — the decayed
+            // quarter's one-wide condo corridors can box a wandering beast behind occupancy-
+            // parked residents for thousands of ticks, which starved this gull through every
+            // soak; the Gullet stays hunted by the G3 gull above, whose roost is on the open
+            // lane). The bin cell is authored-walkable street with a mouse den on it — a gull
+            // living off the Ropewynd trash.
+            soloHome(spawn(FeralActor.TYPE, new int[] {91, 65}, ZA));
 
             // ===================== COMPOUND C1 — Quayward (grand, Band B) =====================
             // The owning family's Shopkeeper head runs the courtyard market; three condo
@@ -1293,6 +1339,52 @@ public final class DocksPopulation implements ScenarioPopulation {
                     RelationshipKind.FRIEND);
             relationships.addSymmetric(bunkWastrel.id(), bunkSerf.id(), RelationshipKind.NEIGHBOR);
             relationships.addSymmetric(watchSergeant.id(), goatherd.id(), RelationshipKind.FRIEND);
+
+            // ===================== MICE + CATS (beast food channel pass) ======================
+            // 30 quay mice at dens on EXISTING authored cells — den = home = anchor, the feral
+            // soloHome pattern; spawnAt's free-cell funnel spreads any crowding. EVERY den (and
+            // every cat anchor below) is an OPEN STREET cell — bins, stall fronts, quay stands,
+            // the mission garden, courtyard trash — NEVER a crewed building interior: the 30k
+            // soak proved a warehouse with a work crew (K29/K12-class narrow crate aisles plus
+            // a dozen hands parked at the 2/cell cap) crowd-locks any beast that follows prey
+            // or a wander draw inside, wedging it until it starves. The Gullet is an ISOLATED
+            // hunt cluster (nothing else within hunt sense of the G3 roost), so it holds SIX
+            // dens; the three strand mice feed the z:+10 gull (no other prey on its band).
+            // Beasts stay outside the citizen economy: no ID card / account (CivicAccounts)
+            // and no larder seed (seedLarders skips beast-only home cells).
+            // ZA (24): the 8 bin cells, the quay/stall/post/garden street dens, one den on or
+            // beside EVERY predator anchor (the orbit-coverage rule above), and the 6 Gullet
+            // dens.
+            for (int[] den : GARBAGE_BINS_ZA) {
+                soloHome(spawn(MouseActor.TYPE, den, ZA));
+            }
+            for (int[] den : new int[][] {MUSTER_QUAY, EELPOT_STALLS[0], EELPOT_STALLS[3],
+                    WATCH_BOND_POST, SHOP_GUARD_POSTS[1], MISSION_GARDEN,
+                    PATROL_TARWALK_MID, K10_DAWNSTALLS, HITCH_GULL, new int[] {30, 31}}) {
+                soloHome(spawn(MouseActor.TYPE, den, ZA));
+            }
+            for (int[] den : GULLET_MOUSE_DENS) {
+                soloHome(spawn(MouseActor.TYPE, den, ZA));
+            }
+            // ZB (2) / ZC (1): the bins beside the terrace/well cats (orbit coverage) plus the
+            // Saltgate bin for ambience; the other terrace bins fed no predator — their mice
+            // went to the deficit clusters above.
+            for (int[] den : new int[][] {GARBAGE_BINS_ZB[0], GARBAGE_BINS_ZB[1]}) {
+                soloHome(spawn(MouseActor.TYPE, den, ZB));
+            }
+            soloHome(spawn(MouseActor.TYPE, GARBAGE_BINS_ZC[2], ZC));
+            for (int i = 0; i < 3; i++) {
+                soloHome(spawn(MouseActor.TYPE, new int[] {132, 18}, 10));   // Beaching Strand
+            }
+            // 8 wharf cats prowling from open-street anchors (see the interior crowd-lock note
+            // above); every anchor has >=1 mouse den inside both its wander envelope and the
+            // hunt sense radius.
+            for (int[] ground : new int[][] {PATROL_TARWALK_WEST, PATROL_TARWALK_MID,
+                    SHOP_GUARD_POSTS[1], K10_DAWNSTALLS, HITCH_GULL, MISSION_GARDEN}) {
+                soloHome(spawn(CatActor.TYPE, ground, ZA));
+            }
+            soloHome(spawn(CatActor.TYPE, TERRACE_WALK_STAND, ZB));
+            soloHome(spawn(CatActor.TYPE, WELL_PLAZA, ZC));
 
             // ===================== Civic default jobs + presented-job covers (§10.4) ===========
             for (int i = 0; i < registry.size(); i++) {

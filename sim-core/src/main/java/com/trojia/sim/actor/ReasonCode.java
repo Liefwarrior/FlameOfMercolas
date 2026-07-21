@@ -34,5 +34,13 @@ public enum ReasonCode {
     /** An offender was told to move along (first-contact warning; leave the zone and it clears). */
     WARNED_MOVE_ALONG,
     /** Ate a FOOD scrap off a garbage-bin cell — the broke's last resort (law &amp; order pass). */
-    SCAVENGED_FOOD
+    SCAVENGED_FOOD,
+    /** A hungry beast is chasing a locked live mouse (beast food channel, BEAST_HUNT). */
+    HUNTING,
+    /** A predator caught its mouse at adjacency and restored HUNGER (no FOOD item involved). */
+    ATE_PREY,
+    /** This mouse was just caught: DOWNED with a revive countdown on {@code downedTimer}. */
+    PREY_CAUGHT,
+    /** A mouse nibbled crumbs/spilled grain around its den at a wander-dwell boundary. */
+    NIBBLED_DEN
 }

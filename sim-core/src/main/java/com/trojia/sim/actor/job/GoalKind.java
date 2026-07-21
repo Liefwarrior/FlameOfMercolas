@@ -24,5 +24,7 @@ public enum GoalKind {
     SCAVENGE_CIRCUIT,
     BURGLE_ROOST,
     CREW_SHIP,
-    VEND_WARES
+    VEND_WARES,
+    SCURRY_DEN,
+    PROWL_GROUNDS
 }

@@ -135,9 +135,10 @@ final class CivicAccounts {
         };
     }
 
-    /** A citizen holds a bank identity; a beast (owned animal / feral) does not. */
+    /** A citizen holds a bank identity; a beast (owned animal / feral / mouse / cat) does not. */
     private static boolean isCitizen(Actor actor) {
         String type = actor.typeId().key();
-        return !type.equals("animal") && !type.equals("feral");
+        return !type.equals("animal") && !type.equals("feral")
+                && !type.equals("mouse") && !type.equals("cat");
     }
 }

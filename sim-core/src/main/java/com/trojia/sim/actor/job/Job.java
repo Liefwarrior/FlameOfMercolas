@@ -597,5 +597,65 @@ public sealed abstract class Job {
                 return false; // an ownerless scavenger roams its range without end (§4.9)
             }
         }
+
+        /**
+         * The prey scurry (living-docks beast pass) — the civic default for Mouse: an
+         * ordinary bounded wander around the den plus two hooks nested inside its own
+         * {@code pursue} (the villain {@code checkArrestExposure} precedent): a throttled
+         * predator-vigilance scan that debits SAFETY when a gull/cat lingers close (letting
+         * the shared {@code FleePolicy} take over), and the den nibble — +HUNGER at each
+         * wander-dwell boundary — that closes the mouse's own need loop without touching a
+         * single FOOD item.
+         */
+        public static final class Prey extends Beast {
+            public static final JobId ID = JobId.of("beast.prey");
+
+            public Prey(JobParams params) {
+                super(ID, params);
+            }
+
+            @Override
+            public void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectWanderTarget(self, ctx);
+            }
+
+            @Override
+            public void pursue(Actor self, ActorContext ctx) {
+                JobBehaviors.pursuePreyScurry(self, ctx, params());
+            }
+
+            @Override
+            public boolean isComplete(Actor self, ActorContext ctx) {
+                return false; // a mouse scurries its den radius without end
+            }
+        }
+
+        /**
+         * The prowl (living-docks beast pass) — the civic default for Cat: the plain
+         * bounded wander over the shop/warehouse grounds (the {@link Feral} shape). The
+         * cat's food behavior lives in its policy stack ({@code BEAST_HUNT}), not here.
+         */
+        public static final class Prowler extends Beast {
+            public static final JobId ID = JobId.of("beast.prowl");
+
+            public Prowler(JobParams params) {
+                super(ID, params);
+            }
+
+            @Override
+            public void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectWanderTarget(self, ctx);
+            }
+
+            @Override
+            public void pursue(Actor self, ActorContext ctx) {
+                JobBehaviors.pursueWander(self, ctx, params());
+            }
+
+            @Override
+            public boolean isComplete(Actor self, ActorContext ctx) {
+                return false; // a prowl never finishes
+            }
+        }
     }
 }

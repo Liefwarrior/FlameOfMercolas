@@ -377,6 +377,16 @@ public abstract class Actor {
      * if all three checks pass, then notifies {@code occ} of the vacated/entered
      * cells so a shared occupancy index stays live mid-tick. Returns whether the
      * step was committed.
+     *
+     * <p><b>Solid-corner rule (PathFinder parity, beast-pass wedge fix):</b> a diagonal step
+     * is additionally rejected when either orthogonal flank cell is unwalkable — exactly
+     * {@code PathFinder}'s "never cut a solid diagonal wall corner" expansion rule. Without
+     * it the two movers disagreed: a greedy/slid step could squeeze diagonally BETWEEN two
+     * wall corners into a pocket whose every A* exit needs the cut A* refuses, permanently
+     * sealing the actor in (the docks soak surfaced beasts — and, historically, tavern
+     * patrons — starving in exactly such pockets). Movement and pathfinding now share one
+     * notion of passable geometry, so an actor can never walk somewhere it cannot route back
+     * out of. Flanks are checked against WALLS only (not occupancy), matching A*.
      */
     private boolean tryStep(int dx, int dy, int z, boolean ignoresLeash, WalkabilityQuery walk,
             OccupancyQuery occ) {
@@ -385,6 +395,11 @@ public abstract class Actor {
         int stepped = PackedPos.pack(x + dx, y + dy, z);
         if (!walk.isWalkable(stepped)) {
             return false;
+        }
+        if (dx != 0 && dy != 0
+                && (!walk.isWalkable(PackedPos.pack(x + dx, y, z))
+                        || !walk.isWalkable(PackedPos.pack(x, y + dy, z)))) {
+            return false; // never cut a solid diagonal wall corner (PathFinder parity)
         }
         if (!ignoresLeash) {
             int newDist = ActorGeometry.chebyshev(stepped, anchorCell);

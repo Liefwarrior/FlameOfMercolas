@@ -24,7 +24,8 @@ final class JobBinderTest {
             ActorTypeId.of("militia_watch"), ActorTypeId.of("serf"), ActorTypeId.of("wastrel"),
             ActorTypeId.of("priest_of_the_flame"), ActorTypeId.of("disciple_of_the_flame"),
             ActorTypeId.of("shopkeeper"), ActorTypeId.of("animal_keeper"),
-            ActorTypeId.of("animal"), ActorTypeId.of("feral"));
+            ActorTypeId.of("animal"), ActorTypeId.of("feral"),
+            ActorTypeId.of("mouse"), ActorTypeId.of("cat"));
 
     @TempDir
     Path temp;

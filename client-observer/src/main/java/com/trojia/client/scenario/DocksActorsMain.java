@@ -82,6 +82,22 @@ public final class DocksActorsMain {
         addIfPresent(all, commuter, patroller, wanderer, keeper);
         all.addAll(beasts);
 
+        // ---- beast food channel watch (living-docks beast pass): per-gull roam (the
+        // anti-oscillation DoD numbers), the hunt catch/revive counters, and mouse den
+        // discipline. LinkedHashMap = insertion order, so the report stays byte-identical. ----
+        List<Integer> gullIds = idsOfType(registry, "feral");
+        List<Integer> catIds = idsOfType(registry, "cat");
+        List<Integer> mouseIds = idsOfType(registry, "mouse");
+        Map<Integer, BeastRoam> gullRoam = new LinkedHashMap<>();
+        for (int id : gullIds) {
+            gullRoam.put(id, new BeastRoam());
+        }
+        Map<Integer, Boolean> mouseDowned = new LinkedHashMap<>();
+        for (int id : mouseIds) {
+            mouseDowned.put(id, false);
+        }
+        int[] huntCounters = new int[2]; // [0] catches, [1] revives
+
         // Sample at a work-window tick (tod 5000) and a deep-night tick (tod 20000) of each day.
         List<Long> sampleTicks = new ArrayList<>();
         for (long d = 0; d * DailyRhythm.DAY + 20_000 <= ticks; d++) {
@@ -106,6 +122,20 @@ public final class DocksActorsMain {
                     t.sample(tick, cell);
                 }
             }
+            for (int id : gullIds) {
+                gullRoam.get(id).observe(registry.get(id).cell());
+            }
+            for (int id : mouseIds) {
+                boolean downed = registry.get(id)
+                        .hasStatus(com.trojia.sim.actor.StatusBit.DOWNED);
+                boolean was = mouseDowned.get(id);
+                if (downed && !was) {
+                    huntCounters[0]++;
+                } else if (!downed && was) {
+                    huntCounters[1]++;
+                }
+                mouseDowned.put(id, downed);
+            }
         }
 
         printRoster(registry, homes, jobs);
@@ -119,6 +149,7 @@ public final class DocksActorsMain {
         printSerfStarvationByBand(registry, jobs);
         printMoneyGateProof(population, jobs);
         printJusticeReport(population, jobs);
+        printBeastReport(population, gullIds, catIds, mouseIds, gullRoam, huntCounters);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
             // Wall-clock timing — printed only under --perf so plain runs stay byte-identical.
@@ -376,6 +407,88 @@ public final class DocksActorsMain {
                     + " Royals=" + balance + " (post-fine) lastReason=" + policyName(a));
         }
         System.out.println("============================================================================");
+    }
+
+    /**
+     * Beast food channel report (living-docks beast pass): the anti-oscillation DoD numbers —
+     * per-gull distinct-cells-visited + roam bounding box + longest single-cell stall — plus
+     * the hunt loop's catch/revive counters, the down-right-now count, mouse den discipline
+     * (live mice standing within leash+flee slack of their den), and gull/cat HUNGER health.
+     * Deterministic: insertion-ordered maps, integer stats only.
+     */
+    private static void printBeastReport(DocksPopulation population, List<Integer> gullIds,
+            List<Integer> catIds, List<Integer> mouseIds, Map<Integer, BeastRoam> gullRoam,
+            int[] huntCounters) {
+        ActorRegistry registry = population.registry();
+        System.out.println();
+        System.out.println("================ BEAST FOOD CHANNEL (gulls range, cats+gulls hunt mice) =====");
+        for (int id : gullIds) {
+            BeastRoam r = gullRoam.get(id);
+            Actor gull = registry.get(id);
+            System.out.println("  gull#" + id + " roost=" + xyz(gull.anchorCell())
+                    + " distinctCells=" + r.visited.size()
+                    + " bbox=" + (r.maxX - r.minX) + "x" + (r.maxY - r.minY)
+                    + " maxConsecutiveTicksOnOneCell=" + r.maxRun
+                    + " HUNGER=" + gull.need(com.trojia.sim.actor.Need.HUNGER));
+        }
+        int downNow = 0;
+        int atDen = 0;
+        for (int id : mouseIds) {
+            Actor mouse = registry.get(id);
+            if (mouse.hasStatus(com.trojia.sim.actor.StatusBit.DOWNED)) {
+                downNow++;
+            } else if (chebyshev(mouse.cell(),
+                    population.homes().get(mouse.homeId()).homeCell()) <= 12) {
+                atDen++;
+            }
+        }
+        int minGullHunger = Integer.MAX_VALUE;
+        for (int id : gullIds) {
+            minGullHunger = Math.min(minGullHunger, registry.get(id).need(com.trojia.sim.actor.Need.HUNGER));
+        }
+        int minCatHunger = Integer.MAX_VALUE;
+        for (int id : catIds) {
+            minCatHunger = Math.min(minCatHunger, registry.get(id).need(com.trojia.sim.actor.Need.HUNGER));
+        }
+        System.out.println("  hunt loop: catches=" + huntCounters[0] + " revives=" + huntCounters[1]
+                + " miceDownNow=" + downNow + " liveMiceNearDen=" + atDen + "/"
+                + (mouseIds.size() - downNow));
+        System.out.println("  hunger floor at soak end: minGull=" + minGullHunger
+                + " minCat=" + minCatHunger + " (starving would read 0)");
+        System.out.println("============================================================================");
+    }
+
+    private static List<Integer> idsOfType(ActorRegistry registry, String typeKey) {
+        List<Integer> ids = new ArrayList<>();
+        for (int i = 0; i < registry.size(); i++) {
+            if (registry.get(i).typeId().key().equals(typeKey)) {
+                ids.add(i);
+            }
+        }
+        return ids;
+    }
+
+    /** Roam stats for one beast: distinct cells, bounding box, longest single-cell stall. */
+    private static final class BeastRoam {
+        private final java.util.HashSet<Integer> visited = new java.util.HashSet<>();
+        private int minX = Integer.MAX_VALUE;
+        private int maxX = Integer.MIN_VALUE;
+        private int minY = Integer.MAX_VALUE;
+        private int maxY = Integer.MIN_VALUE;
+        private int lastCell = Actor.NONE;
+        private int run;
+        private int maxRun;
+
+        void observe(int cell) {
+            visited.add(cell);
+            minX = Math.min(minX, PackedPos.x(cell));
+            maxX = Math.max(maxX, PackedPos.x(cell));
+            minY = Math.min(minY, PackedPos.y(cell));
+            maxY = Math.max(maxY, PackedPos.y(cell));
+            run = cell == lastCell ? run + 1 : 1;
+            lastCell = cell;
+            maxRun = Math.max(maxRun, run);
+        }
     }
 
     /** Actor-type/job composition — the report's headline numbers, printed deterministically. */

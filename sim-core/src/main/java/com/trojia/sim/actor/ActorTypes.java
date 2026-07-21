@@ -1,9 +1,11 @@
 package com.trojia.sim.actor;
 
 import com.trojia.sim.actor.type.AnimalActor;
+import com.trojia.sim.actor.type.CatActor;
 import com.trojia.sim.actor.type.DiscipleOfTheFlame;
 import com.trojia.sim.actor.type.FeralActor;
 import com.trojia.sim.actor.type.MilitiaWatch;
+import com.trojia.sim.actor.type.MouseActor;
 import com.trojia.sim.actor.type.PriestOfTheFlame;
 import com.trojia.sim.actor.type.Serf;
 import com.trojia.sim.actor.type.Shopkeeper;
@@ -42,7 +44,9 @@ public final class ActorTypes {
             new Registration(Shopkeeper.TYPE, Shopkeeper::new),
             new Registration(AnimalKeeper.TYPE, AnimalKeeper::new),
             new Registration(AnimalActor.TYPE, AnimalActor::new),
-            new Registration(FeralActor.TYPE, FeralActor::new)));
+            new Registration(FeralActor.TYPE, FeralActor::new),
+            new Registration(CatActor.TYPE, CatActor::new),
+            new Registration(MouseActor.TYPE, MouseActor::new)));
 
     private ActorTypes() {
     }

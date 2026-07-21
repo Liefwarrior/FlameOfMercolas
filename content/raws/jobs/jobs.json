@@ -211,6 +211,32 @@
       "assign": { "feral": 100 },
       "defaultFor": ["feral"],
       "secret": false
+    },
+    {
+      "id": "beast.prey",
+      "goalKind": "SCURRY_DEN",
+      "priority": 250,
+      "rhythmWindow": [0, 24000],
+      "rhythmBonus": 40,
+      "workTicksPerUnit": 15,
+      "unitsToComplete": 3,
+      "renew": { "mode": "IMMEDIATE", "cooldownTicks": 0 },
+      "assign": { "mouse": 100 },
+      "defaultFor": ["mouse"],
+      "secret": false
+    },
+    {
+      "id": "beast.prowl",
+      "goalKind": "PROWL_GROUNDS",
+      "priority": 250,
+      "rhythmWindow": [0, 24000],
+      "rhythmBonus": 40,
+      "workTicksPerUnit": 30,
+      "unitsToComplete": 3,
+      "renew": { "mode": "IMMEDIATE", "cooldownTicks": 0 },
+      "assign": { "cat": 100 },
+      "defaultFor": ["cat"],
+      "secret": false
     }
   ]
 }

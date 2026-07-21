@@ -18,6 +18,8 @@ public final class Policies {
     public static final BehaviorPolicy EXECUTED = new ExecutedPolicy();
     public static final BehaviorPolicy PLAYER_CONTROL = new PlayerControlPolicy();
     public static final BehaviorPolicy APPREHEND = new ApprehendPolicy();
+    public static final BehaviorPolicy BEAST_HUNT = new BeastHuntPolicy();
+    public static final BehaviorPolicy DOWNED_INERT = new DownedInertPolicy();
 
     private Policies() {
     }
