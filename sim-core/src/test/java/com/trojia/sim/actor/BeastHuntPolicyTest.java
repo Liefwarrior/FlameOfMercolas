@@ -90,6 +90,8 @@ final class BeastHuntPolicyTest {
         assertTrue(mouse.hasStatus(StatusBit.DOWNED), "the mouse was caught");
         assertEquals(BeastHuntPolicy.PREY_REVIVE_TICKS, mouse.downedTimer());
         assertEquals(ReasonCode.PREY_CAUGHT, mouse.lastReasonCode());
+        assertEquals(BeastHuntPolicy.PREY_RESPAWN_HUNGER, mouse.need(Need.HUNGER),
+                "the catch refills the prey's hunger — the revive is a fresh mouse from the den");
         assertEquals(10000, cat.need(Need.HUNGER), "2500 + EAT_RESTORE(8000) clamps at MAX");
         assertEquals(TargetKind.NONE, cat.targetKind(), "the lock clears at the catch");
         assertEquals(ReasonCode.ATE_PREY, cat.lastReasonCode());
@@ -189,9 +191,11 @@ final class BeastHuntPolicyTest {
     @Test
     void aChokepointFrozenChaseIsAbandonedAtTheBudgetAndTheWanderGetsAFreshDraw() {
         // The docks-soak starvation mode: the A* route to the prey EXISTS (occupancy-blind)
-        // but its first hop is a cell parked at the 2/cell cap, so the chase makes zero
+        // but its first hop is a cell parked at the occupancy cap, so the chase makes zero
         // progress while outranking the self-healing wander forever. The chase budget must
-        // abandon it and clear the wander goal target so the job redraws a fresh leg.
+        // abandon it, clear the wander goal target so the job redraws a fresh leg, AND back
+        // off acquisition (gull#408: without the backoff the next sense cadence re-locked the
+        // same hop-blocked prey, giving the wander <= 10 ticks per 100-tick doomed chase).
         ActorRegistry registry = new ActorRegistry();
         Actor cat = spawnCat(registry, 50, 50);
         Actor mouse = spawnMouse(registry, 60, 50);
@@ -216,10 +220,12 @@ final class BeastHuntPolicyTest {
         ctx.setTick(SENSE_TICK);
 
         int before = cat.cell();
+        long abandonedAt = -1;
         for (int t = 0; t <= BeastHuntPolicy.CHASE_BUDGET_TICKS
                 && cat.targetKind() == TargetKind.ACTOR; t++) {
             ctx.setTick(SENSE_TICK + t);
             Policies.BEAST_HUNT.act(cat, ctx);
+            abandonedAt = SENSE_TICK + t;
         }
         assertEquals(before, cat.cell(), "every hop was occupancy-blocked");
         assertEquals(TargetKind.NONE, cat.targetKind(), "the frozen chase was abandoned");
@@ -228,6 +234,22 @@ final class BeastHuntPolicyTest {
                 "the wander goal was cleared for a fresh draw away from the blocked corner");
         assertEquals(0, cat.policyTimer());
         assertFalse(mouse.hasStatus(StatusBit.DOWNED));
+
+        // The acquisition backoff: with prey still sensable and hunger still LOW, the policy
+        // must stand aside until the deadline so the wander can walk the beast out.
+        assertEquals(abandonedAt + BeastHuntPolicy.HUNT_BACKOFF_TICKS,
+                cat.huntBackoffUntilTick(), "the hop-blocked abandon stamps the backoff");
+        long cadence = ((abandonedAt / BeastHuntPolicy.SENSE_PERIOD_TICKS) + 1)
+                * BeastHuntPolicy.SENSE_PERIOD_TICKS;
+        ctx.setTick(cadence);
+        assertEquals(0, Policies.BEAST_HUNT.score(cat, ctx),
+                "backing off: no re-lock at the very next sense cadence");
+        long pastBackoff = cat.huntBackoffUntilTick()
+                + BeastHuntPolicy.SENSE_PERIOD_TICKS
+                - cat.huntBackoffUntilTick() % BeastHuntPolicy.SENSE_PERIOD_TICKS;
+        ctx.setTick(pastBackoff);
+        assertEquals(655, Policies.BEAST_HUNT.score(cat, ctx),
+                "backoff expired: the hunt re-arms at the next cadence");
     }
 
     @Test

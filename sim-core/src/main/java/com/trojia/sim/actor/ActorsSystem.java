@@ -442,6 +442,7 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeLong(actor.moveAlongUntilTick()); // law & order pass: warn-grace absolute deadline
         out.writeLong(actor.lastPushTick()); // density revisit: shove cooldown clock
         out.writeLong(actor.houseArrestUntilTick()); // density revisit: house-arrest deadline
+        out.writeLong(actor.huntBackoffUntilTick()); // density revisit: hop-blocked-chase backoff
         // lastReasonCode is load-bearing in ApprehendPolicy's buying-customer exemption, so a
         // loaded run must see the same value a continuous run would (-1 = never set).
         out.writeByte(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
@@ -528,6 +529,7 @@ public final class ActorsSystem implements SimulationSystem {
         long moveAlongUntilTick = in.readLong(); // law & order pass
         long lastPushTick = in.readLong(); // density revisit
         long houseArrestUntilTick = in.readLong(); // density revisit
+        long huntBackoffUntilTick = in.readLong(); // density revisit: hop-blocked-chase backoff
         byte lastReasonOrdinal = in.readByte(); // law & order pass: -1 = never set
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
@@ -563,6 +565,7 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setMoveAlongUntilTick(moveAlongUntilTick);
         actor.setLastPushTick(lastPushTick);
         actor.setHouseArrestUntilTick(houseArrestUntilTick);
+        actor.setHuntBackoffUntilTick(huntBackoffUntilTick);
         actor.setLastReasonCode(
                 lastReasonOrdinal < 0 ? null : ReasonCode.values()[lastReasonOrdinal]);
     }
@@ -606,6 +609,7 @@ public final class ActorsSystem implements SimulationSystem {
             // the twin-run hash, not slip past it.
             sink.putLong(actor.lastPushTick());
             sink.putLong(actor.houseArrestUntilTick());
+            sink.putLong(actor.huntBackoffUntilTick());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {

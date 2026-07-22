@@ -88,6 +88,41 @@ final class HouseArrestPolicyTest {
     }
 
     @Test
+    void aCriticallyStarvingArresteeYieldsTheTickToFoodSeekingUntilFed() {
+        // The starvation-machine fix: a ration-less arrestee (no carried FOOD, no home larder)
+        // decays to CRITICAL under confinement — while the sentence is live and HUNGER is
+        // CRITICAL this policy stands aside (score 0) so SEEK_FOOD's critical band walks the
+        // actor out to scavenge; one meal later the march home resumes. The bit and the
+        // absolute deadline never change, so the release math stays deterministic.
+        ActorRegistry registry = new ActorRegistry();
+        Actor actor = serfAt(registry, 10, 10);
+        NoOpActorContext ctx = new NoOpActorContext(registry);
+        actor.setHomeId(ctx.homes().addHome(cell(10, 10)));
+        actor.setStatus(StatusBit.HOUSE_ARREST, true);
+        actor.setHouseArrestUntilTick(24_100L);
+        ctx.setTick(100L);
+
+        actor.applyNeedDelta(Need.HUNGER, NeedThresholds.CRITICAL - 1 - actor.need(Need.HUNGER));
+        assertEquals(0, Policies.HOUSE_ARREST.score(actor, ctx),
+                "a starving man ignores the order: the need ladder takes the tick");
+        assertTrue(actor.hasStatus(StatusBit.HOUSE_ARREST), "the sentence itself never pauses");
+        assertEquals(24_100L, actor.houseArrestUntilTick(), "the deadline never moves");
+
+        actor.applyNeedDelta(Need.HUNGER, FoodEconomy.EAT_RESTORE); // one scavenged meal
+        assertTrue(Policies.HOUSE_ARREST.score(actor, ctx) > 2000,
+                "fed past CRITICAL: the march home resumes at full score");
+
+        // At/after the deadline the exemption is void: even a critical arrestee scores, so
+        // act() runs and performs the prompt HeldPolicy-shaped release.
+        actor.applyNeedDelta(Need.HUNGER, NeedThresholds.CRITICAL - 1 - actor.need(Need.HUNGER));
+        ctx.setTick(24_100L);
+        assertTrue(Policies.HOUSE_ARREST.score(actor, ctx) > 2000,
+                "sentence over: score so act() can release, hungry or not");
+        Policies.HOUSE_ARREST.act(actor, ctx);
+        assertFalse(actor.hasStatus(StatusBit.HOUSE_ARREST), "released at the deadline");
+    }
+
+    @Test
     void releasesWithTheGoalResetAtExactlyTheDeadline() {
         ActorRegistry registry = new ActorRegistry();
         Actor actor = serfAt(registry, 10, 10);

@@ -45,18 +45,16 @@ class DocksBeastSoakTest {
     private static final int MIN_GULL_DISTINCT_CELLS = 100;
     private static final int MIN_GULL_BBOX_SPAN = 16;
     /**
-     * PASS 9 (density revisit) recalibration, 1500 -> 15000: the >=2-wide door standard opens
-     * every condo interior to wandering beasts, and a beast that pauses beside an idle
-     * household gets boxed by occupancy-parked residents (cap 2/cell) until the cluster
-     * shifts — soak-measured at 3-10k ticks in the Gullet's C4 condos even after their
-     * partitions were collapsed into open rooms and the lure den was moved to the doorstep
-     * (there is no geometry left to fix; the box is the parked household itself). The
-     * anti-oscillation DoD is still carried by the DISTINCT_CELLS and BBOX floors (a pinned
-     * or oscillating gull fails those outright), and 15000 still fails any half-day-plus
-     * freeze. The push mechanic (next pass) lets a blocked actor shove through parked
-     * neighbours — re-tighten this toward 1500 when it lands.
+     * PASS 9 (density revisit) set this to 15000 while beasts could still be boxed by
+     * occupancy-parked households; the fix pass RE-TIGHTENS it to 8000 as promised, now that
+     * the push mechanic's squeeze-past swap + short pushee stagger let a crowd-locked beast
+     * fight its way out and the hearth-gated wander keeps it out of bedrooms in the first
+     * place (soak-observed gull maxima run ~600 under the fixed regime; the historical
+     * failure signatures — an 8225-tick alcove pin, 3-10k condo boxes — all fail an 8000
+     * cap, while a full night's roost sleep still passes). The anti-oscillation DoD is still
+     * carried by the DISTINCT_CELLS and BBOX floors.
      */
-    private static final int MAX_CONSECUTIVE_TICKS_ON_ONE_CELL = 15_000;
+    private static final int MAX_CONSECUTIVE_TICKS_ON_ONE_CELL = 8_000;
     private static final int MIN_STRAND_DISTINCT_CELLS = 10;
     private static final int MIN_TOTAL_CATCHES = 40;
     private static final int REVIVE_TICKS = 3_000; // BeastHuntPolicy.PREY_REVIVE_TICKS

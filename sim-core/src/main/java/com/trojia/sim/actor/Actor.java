@@ -197,6 +197,18 @@ public abstract class Actor {
      * persisted scalar (serialize/load/hash — the {@code heldUntilTick} triad).
      */
     private long houseArrestUntilTick;
+    /**
+     * The absolute tick until which {@link BeastHuntPolicy} must NOT acquire a new hunt lock
+     * (the futile-chase backoff, the gull#408/#410 starvation fix): a chase that exhausted its
+     * whole tick budget without a catch — plug-frozen against parked actors, or orbiting an
+     * enclosed-pocket prey it can route toward but never touch — is abandoned AND acquisition
+     * is suppressed until this deadline, so GOAL_PURSUE's wander (with its drift/push escape
+     * tooling and anchor-biased legs) actually gets a window long enough to change the
+     * situation instead of being re-preempted at the very next sense cadence. Absolute tick,
+     * never a countdown. A persisted scalar (serialize/load/hash — the {@code heldUntilTick}
+     * triad).
+     */
+    private long huntBackoffUntilTick;
 
     // ---- Play mode (PLAY-MODE-SPEC.md §5.2/§6): plain scalar, the same goalProgress/
     // heldUntilTick precedent — per-frame input intent, not simulation state, so it is
@@ -452,8 +464,9 @@ public abstract class Actor {
         if (occ.occupantsAt(stepped) >= MAX_OCCUPANTS_PER_CELL) {
             // Blocked ONLY by occupancy (walkable + leash-legal, someone is standing there):
             // try the shove (density revisit — PushMechanics via the query's tryPush hook,
-            // cooldown-gated). Displaces the occupant to an adjacent free cell and vacates
-            // the square; a failed shove leaves the cell a hard occupancy wall as before.
+            // cooldown-gated). Displaces the occupant to an adjacent free cell — or swaps
+            // with it when none exists (the squeeze-past, PushMechanics' class doc) — and
+            // vacates the square; a cooldown-failed shove leaves the cell a hard wall.
             if (!occ.tryPush(this, stepped)) {
                 return false;
             }
@@ -856,6 +869,16 @@ public abstract class Actor {
     /** Stamps the house-arrest sentence's absolute end tick (shove-riot correction). */
     public final void setHouseArrestUntilTick(long tick) {
         this.houseArrestUntilTick = tick;
+    }
+
+    /** The absolute tick until which {@link BeastHuntPolicy} acquisition is suppressed. */
+    public final long huntBackoffUntilTick() {
+        return huntBackoffUntilTick;
+    }
+
+    /** Stamps the futile-chase backoff's absolute end tick ({@link BeastHuntPolicy}). */
+    public final void setHuntBackoffUntilTick(long tick) {
+        this.huntBackoffUntilTick = tick;
     }
 
     /** The pending Play-mode step target, or {@link #NONE} (PLAY-MODE-SPEC.md §5.2). */

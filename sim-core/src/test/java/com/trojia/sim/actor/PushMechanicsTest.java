@@ -75,7 +75,8 @@ final class PushMechanicsTest {
         // E=(12,10) is the first free cell in the fixed order.
         assertEquals(cell(12, 10), occupant.cell(), "occupant displaced to the first free cell");
         assertEquals(100, pusher.lastPushTick(), "cooldown clock stamped on the pusher");
-        assertEquals(100, occupant.lastPushTick(), "stagger stamped on the pushee");
+        assertEquals(100 - (PushMechanics.PUSH_COOLDOWN_TICKS - PushMechanics.PUSHEE_STAGGER_TICKS),
+                occupant.lastPushTick(), "back-dated stagger stamped on the pushee");
         assertEquals(1, occ.log.size(), "the shove was recorded");
         assertEquals(cell(11, 10), occ.log.cellAt(0), "recorded at the contested cell");
         assertEquals(pusher.id(), occ.log.pusherIdAt(0));
@@ -118,10 +119,22 @@ final class PushMechanicsTest {
         middle.stepToward(cell(10, 12), false, c -> true, occ);
         assertEquals(cell(11, 11), bystander.cell(), "no push chain: the bystander stands firm");
         assertFalse(occ.log.size() > 1, "exactly one shove logged this tick");
+
+        // The crowd-lock guarantee: the stagger is SHORT — once it elapses the shoved actor
+        // can fight its own way through (a saturated room must not perpetually disarm one
+        // trapped victim by bouncing it around, resetting a full cooldown every bounce).
+        occ.tick = 100 + PushMechanics.PUSHEE_STAGGER_TICKS - 1;
+        assertFalse(occ.tryPush(middle, bystander.cell()), "still staggered one tick early");
+        occ.tick = 100 + PushMechanics.PUSHEE_STAGGER_TICKS;
+        assertTrue(occ.tryPush(middle, bystander.cell()),
+                "stagger elapsed: the shoved actor can shove its own way out");
     }
 
     @Test
-    void pushFailsWhenTheOccupantHasNowhereFreeToGo() {
+    void squeezePastSwapsTheTwoWhenTheOccupantHasNowhereFreeToGo() {
+        // The corridor-gridlock liveness fix: no free displacement cell anywhere adjacent
+        // means the pusher and the occupant exchange cells — the squeeze-past. The cap holds
+        // (both cells stay at one) and the swap is a full, logged, cooldown-burning shove.
         ActorRegistry registry = new ActorRegistry();
         Actor pusher = wastrelAt(registry, 10, 10);
         Actor occupant = wastrelAt(registry, 11, 10);
@@ -132,11 +145,47 @@ final class PushMechanicsTest {
 
         pusher.stepToward(cell(11, 10), false, occ.walk, occ);
 
-        assertEquals(cell(10, 10), pusher.cell(), "blocked: the full cell stays a wall");
-        assertEquals(cell(11, 10), occupant.cell(), "occupant untouched");
-        assertEquals(0, occ.log.size(), "a failed shove is not logged");
-        assertEquals(-PushMechanics.PUSH_COOLDOWN_TICKS, pusher.lastPushTick(),
-                "a failed shove burns no cooldown");
+        assertEquals(cell(11, 10), pusher.cell(), "pusher squeezed onto the contested cell");
+        assertEquals(cell(10, 10), occupant.cell(), "occupant swapped into the vacated cell");
+        assertEquals(1, occ.occupantsAt(cell(10, 10)), "cap intact after the swap");
+        assertEquals(1, occ.occupantsAt(cell(11, 10)));
+        assertEquals(1, occ.log.size(), "the squeeze-past is a real shove: logged");
+        assertEquals(100, pusher.lastPushTick(), "cooldown burned");
+        assertEquals(100 - (PushMechanics.PUSH_COOLDOWN_TICKS - PushMechanics.PUSHEE_STAGGER_TICKS),
+                occupant.lastPushTick(), "back-dated stagger stamped");
+    }
+
+    @Test
+    void headOnMeetingInASaturatedOneWideCorridorResolvesInsteadOfGridlocking() {
+        // Two travelers meeting head-on in a fully saturated 1-wide corridor (walls both
+        // sides, a parked actor plugging each end): under displacement-only pushing every
+        // adjacent cell of each is a wall or another body, both replan the identical only
+        // route every tick, and the pair stands gridlocked forever (the soak's serf x
+        // shopkeeper deadlock that sealed gull#410's alcove). The squeeze-past dissolves it:
+        // the pair swaps, then each swaps past the parked plug at its own end.
+        ActorRegistry registry = new ActorRegistry();
+        Actor eastbound = wastrelAt(registry, 10, 10);
+        Actor westbound = wastrelAt(registry, 11, 10);
+        Actor parkedWest = wastrelAt(registry, 9, 10);
+        Actor parkedEast = wastrelAt(registry, 12, 10);
+        LiveOccupancy occ = new LiveOccupancy(registry);
+        // The corridor: x in [9..12], y == 10, walls everywhere else.
+        occ.walk = c -> PackedPos.y(c) == 10 && PackedPos.z(c) == Z
+                && PackedPos.x(c) >= 9 && PackedPos.x(c) <= 12;
+
+        occ.tick = 100;
+        eastbound.stepToward(cell(12, 10), false, occ.walk, occ);
+        assertEquals(cell(11, 10), eastbound.cell(), "no free cell anywhere: swapped past");
+        assertEquals(cell(10, 10), westbound.cell());
+
+        occ.tick = 110; // cooldowns elapsed: each traveler squeezes past the parked plug
+        eastbound.stepToward(cell(12, 10), false, occ.walk, occ);
+        westbound.stepToward(cell(9, 10), false, occ.walk, occ);
+        assertEquals(cell(12, 10), eastbound.cell(), "eastbound reached its goal");
+        assertEquals(cell(9, 10), westbound.cell(), "westbound reached its goal");
+        assertEquals(cell(11, 10), parkedEast.cell(), "the east plug swapped one cell inward");
+        assertEquals(cell(10, 10), parkedWest.cell(), "the west plug swapped one cell inward");
+        assertEquals(3, occ.log.size(), "three squeezes, all logged for riot detection");
     }
 
     @Test

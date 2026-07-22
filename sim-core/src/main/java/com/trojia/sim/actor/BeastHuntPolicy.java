@@ -33,8 +33,9 @@ import com.trojia.sim.world.PackedPos;
  * release condition moves the reserve 5000 beyond the trigger in one act, so the
  * SEEK_FOOD/RETURN_HOME flip-flop class cannot occur. Draw-free end to end (pure ascending-index
  * scans + integer deltas); the hunt lock rides the already-persisted
- * {@code targetKind}/{@code targetKey} pair and the revive rides {@code statusBits}/
- * {@code downedTimer} — zero new persisted scalars.
+ * {@code targetKind}/{@code targetKey} pair, the revive rides {@code statusBits}/
+ * {@code downedTimer}, and the futile-chase backoff (density revisit, the gull#408/#410 fix —
+ * see {@link #HUNT_BACKOFF_TICKS}) rides the persisted {@code huntBackoffUntilTick} scalar.
  */
 public final class BeastHuntPolicy implements BehaviorPolicy {
 
@@ -57,18 +58,49 @@ public final class BeastHuntPolicy implements BehaviorPolicy {
     /** A locked prey that got this far away is lost (defensive bound on a stale lock). */
     static final int LOSE_RADIUS = 2 * SENSE_RADIUS;
     /**
-     * Chase ticks before a hunt is declared frozen and abandoned. A real chase closes in
-     * &le; ~50 ticks (sense radius 24, speed 1); a chase that has run {@value} ticks is the
-     * chokepoint-frozen kind the docks soak surfaced — the A* route to the prey EXISTS
-     * (pathfinding is occupancy-blind) but its first hop is a cell parked at the 2/cell cap
-     * for a whole shift, so the predator "chases" in place while this policy outranks the
-     * wander forever and starves it. The budget rides the persisted {@code policyTimer}
-     * scratch field (reserved for exactly this — no other policy writes it today); on
-     * exhaustion the lock drops AND the wander goal target is cleared (the HeldPolicy
-     * release precedent), so the very next job tick draws a fresh wander leg that walks the
-     * beast OUT of the blocked corner instead of resuming the same doomed approach.
+     * Chase ticks before a hunt is declared FUTILE and abandoned. A real chase closes in
+     * &le; ~50 ticks (sense radius 24, speed 1); a chase that has run {@value} ticks is one
+     * of the two soak-surfaced futility classes: (a) the chokepoint freeze — the A* route to
+     * the prey EXISTS (pathfinding is occupancy-blind) but its first hop is plugged by parked
+     * actors that cannot be displaced, so the predator "chases" in place (gull#408, pinned
+     * 8000+ ticks at a plugged condo alcove); or (b) the untouchable-prey orbit — the prey
+     * lives inside an enclosed pocket (the mission-garden den, the 1-wide K17|K29 seam lane)
+     * where the route keeps updating, steps keep committing, and chebyshev-1 contact never
+     * lands (gull#410, 5,000 unbroken HUNTING ticks orbiting one garden mouse at distance
+     * 4-10). The budget counts TOTAL ticks under one lock — deliberately NOT just blocked
+     * ticks, or class (b) never trips it. It rides the persisted {@code policyTimer} scratch
+     * field (reserved for exactly this — no other policy writes it today); on exhaustion the
+     * lock drops, the wander goal target is cleared (the HeldPolicy release precedent), AND
+     * acquisition is suppressed for {@link #HUNT_BACKOFF_TICKS} (below) — without the backoff
+     * the very next sense cadence (&le; 10 ticks) re-locked the same doomed prey, giving the
+     * wander a &le; 10-tick window per 100-tick futile chase and starving the beast through
+     * a policy that could never feed it (the SEEK_FOOD-trap class, recreated).
      */
     static final int CHASE_BUDGET_TICKS = 100;
+    /**
+     * Acquisition backoff after a futile (budget-exhausted) chase: no new hunt lock for
+     * {@value} ticks, so GOAL_PURSUE's wander — whose drift/push escape tooling extracts a
+     * crowd-boxed beast, and whose anchor-biased legs carry an orbiting one back toward its
+     * roost-side catchable prey — gets a window long enough to actually change the situation
+     * instead of being re-preempted at the very next sense cadence. Mirrors {@code
+     * Actor#ROUTE_RETRY_COOLDOWN_TICKS} (500), the same bounded-backoff precedent. Rides the
+     * persisted absolute-tick scalar {@code huntBackoffUntilTick} (the heldUntilTick triad).
+     */
+    static final int HUNT_BACKOFF_TICKS = 500;
+    /**
+     * HUNGER stamped on the caught prey at the catch (clamps at the type max). The revive is
+     * a population-refresh abstraction — the mouse that stands up {@link #PREY_REVIVE_TICKS}
+     * later is "a fresh mouse from the den", not the eaten individual — so the den ecosystem,
+     * not the individual, carries the prey-side hunger identity. Without this a den mouse
+     * living beside its dedicated predator (the orbit-coverage pairing puts one den inside
+     * every predator's envelope) spends its whole life fleeing or downed, completes almost no
+     * calm dwells, and nibbles less than it decays — soak-measured: 3 nibbles in 30k ticks,
+     * HUNGER 10000 → 2805 by tick 29k, a slow starvation the mouse hunger floor exists to
+     * catch. Deterministic integer delta; no FOOD item is touched, so the conservation
+     * identity is untouched (need reserves were never conserved quantities — the den nibble
+     * already mints hunger from nothing).
+     */
+    static final int PREY_RESPAWN_HUNGER = 10_000;
 
     private static final ActorTypeId PREY_TYPE = ActorTypeId.of("mouse");
 
@@ -84,6 +116,9 @@ public final class BeastHuntPolicy implements BehaviorPolicy {
         }
         if (!NeedThresholds.isLow(self.need(Need.HUNGER))) {
             return 0;
+        }
+        if (ctx.tick() < self.huntBackoffUntilTick()) {
+            return 0; // futile-chase backoff: give the wander a real window first
         }
         if (ctx.tick() % SENSE_PERIOD_TICKS != 0) {
             return 0; // between sense boundaries: no acquisition (the throttle)
@@ -129,6 +164,8 @@ public final class BeastHuntPolicy implements BehaviorPolicy {
             prey.setStatus(StatusBit.DOWNED, true);
             prey.setDownedTimer(PREY_REVIVE_TICKS);
             prey.setLastReasonCode(ReasonCode.PREY_CAUGHT);
+            prey.applyNeedDelta(Need.HUNGER,
+                    PREY_RESPAWN_HUNGER - prey.need(Need.HUNGER)); // the fresh-mouse refill
             self.applyNeedDelta(Need.HUNGER, FoodEconomy.EAT_RESTORE);
             self.setTarget(TargetKind.NONE, Actor.NONE);
             self.setPolicyTimer((short) 0);
@@ -137,9 +174,11 @@ public final class BeastHuntPolicy implements BehaviorPolicy {
         }
         int chaseTicks = self.policyTimer() + 1;
         if (chaseTicks > CHASE_BUDGET_TICKS) {
-            // Frozen chase (see CHASE_BUDGET_TICKS): abandon AND clear the wander goal target
-            // so the job's next tick draws a fresh leg away from the blocked corner.
+            // Futile chase (see CHASE_BUDGET_TICKS): abandon, clear the wander goal target so
+            // the job's next tick draws a fresh leg away from the doomed approach, and back
+            // off acquisition so that fresh leg actually gets walked (HUNT_BACKOFF_TICKS).
             self.setGoalTarget(TargetKind.NONE, Actor.NONE);
+            self.setHuntBackoffUntilTick(ctx.tick() + HUNT_BACKOFF_TICKS);
             dropLock(self);
             return;
         }

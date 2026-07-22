@@ -83,9 +83,10 @@ final class ActorsSystemEconomyRoundTripTest {
         bank.credit(0, 500);
         bank.credit(1, 250);
 
-        // Density revisit: the two new persisted per-actor scalars + a populated shove ring
+        // Density revisit: the three new persisted per-actor scalars + a populated shove ring
         // buffer (behavior-carrying — riot detection reads it — so it must round-trip).
         a0.setLastPushTick(4_990L);
+        a0.setHuntBackoffUntilTick(5_400L); // the hop-blocked-chase backoff deadline
         a1.setStatus(StatusBit.HOUSE_ARREST, true);
         a1.setHouseArrestUntilTick(70_000L);
 

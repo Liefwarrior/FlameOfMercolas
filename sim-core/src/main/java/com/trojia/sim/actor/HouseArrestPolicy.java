@@ -18,6 +18,19 @@ package com.trojia.sim.actor;
  * provisioning ({@code ActorsSystem.runFoodProvision}) keeps a solvent arrestee's pantry
  * stocked regardless of which policy wins its ticks.
  *
+ * <p><b>Critical-hunger exemption (a starving man ignores the order):</b> an arrestee with no
+ * hearth food — the ration-less roof-slum wastrel — decays toward starvation under
+ * confinement, so while the sentence is live AND HUNGER is CRITICAL this policy scores 0: the
+ * ordinary need ladder takes the tick and SEEK_FOOD's critical band walks the actor out to
+ * scavenge. One meal restores hunger far past CRITICAL (+{@link FoodEconomy#EAT_RESTORE}), the
+ * score snaps back to {@value #HOUSE_ARREST_SCORE} and the march home resumes — the bit and
+ * the absolute deadline never change, so the release math is untouched and deterministic. A
+ * provisioned citizen never reaches CRITICAL under arrest ({@code eatAtHearth} feeds it every
+ * held tick), so Eli's "send them home to sleep 24h" is preserved in full for the fed; only
+ * the starving step out, and only for as long as starving. The exemption deliberately does
+ * NOT apply at/after the deadline, so an actor critical at sentence end still gets its prompt
+ * {@code act()} release next win.
+ *
  * <p>At {@code houseArrestUntilTick} the sentence ends: the bit clears and the goal state
  * resets exactly like {@link HeldPolicy}'s release, so the actor's job re-derives a fresh
  * target next tick. Guards are never house-arrested ({@link ApprehendPolicy}'s riot branch
@@ -38,7 +51,14 @@ public final class HouseArrestPolicy implements BehaviorPolicy {
 
     @Override
     public int score(Actor self, ActorContext ctx) {
-        return self.hasStatus(StatusBit.HOUSE_ARREST) ? HOUSE_ARREST_SCORE : 0;
+        if (!self.hasStatus(StatusBit.HOUSE_ARREST)) {
+            return 0;
+        }
+        if (ctx.tick() < self.houseArrestUntilTick()
+                && NeedThresholds.isCritical(self.need(Need.HUNGER))) {
+            return 0; // a starving man ignores the order: SEEK_FOOD's critical band takes over
+        }
+        return HOUSE_ARREST_SCORE;
     }
 
     @Override

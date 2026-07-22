@@ -13,10 +13,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Shove-riot detection and the house-arrest correction (density revisit, {@link
- * ApprehendPolicy}'s riot branch): {@code >= RIOT_SHOVES} in-window shoves clustered within
- * {@code RIOT_RADIUS} of one anchor bring the Watch — every clustered shover is sent home
- * under a fixed 24,000-tick house arrest; guards are never arrested; the response is
- * idempotent (a second guard the same cadence tick finds nothing left to arrest).
+ * ApprehendPolicy}'s riot branch, retuned to a BRAWL signal): {@code >= RIOT_AGGRESSORS}
+ * DISTINCT pushers, each with {@code >= RIOT_REPEAT_SHOVES} in-window shoves clustered within
+ * {@code RIOT_RADIUS} of one anchor, bring the Watch — every clustered AGGRESSOR is sent home
+ * under a fixed 24,000-tick house arrest; a one-shove passer-by is not touched; a busy door
+ * (many distinct single shovers) is traffic, not a riot; guards are never arrested; the
+ * response is idempotent (a second guard the same cadence tick finds nothing left to arrest).
  */
 final class ShoveRiotHouseArrestTest {
 
@@ -54,40 +56,78 @@ final class ShoveRiotHouseArrestTest {
         return serf;
     }
 
+    /** Records {@code n} shoves by {@code pusher} inside the chebyshev-6 cluster around (50,50). */
+    private static void brawl(RiotContext ctx, Actor pusher, int n, long firstTick) {
+        for (int i = 0; i < n; i++) {
+            ctx.log.record(firstTick + 5L * i, cell(50 + i % 3, 50 + i % 2), pusher.id());
+        }
+    }
+
     @Test
-    void riotSendsEveryClusteredShoverHomeForADayButNeverAGuard() {
+    void riotSendsEveryClusteredAggressorHomeForADayButNeverAGuardNorAPasserBy() {
         ActorRegistry registry = new ActorRegistry();
         RiotContext ctx = new RiotContext(registry);
         Actor watchman = guard(registry, ctx, 40, 40);
-        Actor brawlerA = serf(registry, ctx, 50, 50);
-        Actor brawlerB = serf(registry, ctx, 51, 50);
-        Actor bystander = serf(registry, ctx, 90, 90); // shoved far away, outside the cluster
+        Actor[] brawlers = new Actor[ApprehendPolicy.RIOT_AGGRESSORS];
+        for (int i = 0; i < brawlers.length; i++) {
+            brawlers[i] = serf(registry, ctx, 50 + i, 50);
+        }
+        Actor passerBy = serf(registry, ctx, 52, 52);  // one squeeze-past inside the cluster
+        Actor bystander = serf(registry, ctx, 90, 90); // repeat shover far away, outside it
         ctx.setTick(NOW);
 
-        // Six in-window shoves inside a chebyshev-6 cluster around (50,50), split between the
-        // two brawlers AND one by the guard itself (guards shove too — but are never arrested).
-        ctx.log.record(NOW - 50, cell(50, 50), brawlerA.id());
-        ctx.log.record(NOW - 40, cell(51, 50), brawlerB.id());
-        ctx.log.record(NOW - 30, cell(52, 51), brawlerA.id());
-        ctx.log.record(NOW - 20, cell(49, 49), brawlerB.id());
-        ctx.log.record(NOW - 10, cell(50, 52), watchman.id());
-        ctx.log.record(NOW - 5, cell(51, 51), brawlerA.id());
-        // A distant shove (same window, far cell): part of no cluster, never arrested.
-        ctx.log.record(NOW - 5, cell(90, 90), bystander.id());
+        // RIOT_AGGRESSORS distinct aggressors, RIOT_REPEAT_SHOVES in-window shoves each, all
+        // within chebyshev 6 of (50,50) — plus repeat shoves by the guard itself (guards
+        // brawl too, never arrested), ONE shove by the passer-by (in the crowd, not of the
+        // brawl), and a distant repeat shover (its own patch, no full cluster there).
+        for (int i = 0; i < brawlers.length; i++) {
+            brawl(ctx, brawlers[i], ApprehendPolicy.RIOT_REPEAT_SHOVES, NOW - 100 + 10L * i);
+        }
+        brawl(ctx, watchman, ApprehendPolicy.RIOT_REPEAT_SHOVES, NOW - 60);
+        ctx.log.record(NOW - 20, cell(52, 51), passerBy.id());
+        ctx.log.record(NOW - 20, cell(90, 90), bystander.id());
+        ctx.log.record(NOW - 15, cell(90, 91), bystander.id());
 
         assertEquals(1500, Policies.APPREHEND.score(watchman, ctx),
                 "the riot is sensed at the cadence boundary");
 
         Policies.APPREHEND.act(watchman, ctx);
 
-        assertTrue(brawlerA.hasStatus(StatusBit.HOUSE_ARREST), "clustered shover A sent home");
-        assertTrue(brawlerB.hasStatus(StatusBit.HOUSE_ARREST), "clustered shover B sent home");
-        assertEquals(NOW + 24_000L, brawlerA.houseArrestUntilTick(), "exactly one day");
-        assertEquals(NOW + 24_000L, brawlerB.houseArrestUntilTick());
-        assertEquals(ReasonCode.HOUSE_ARRESTED, brawlerA.lastReasonCode());
+        for (Actor brawler : brawlers) {
+            assertTrue(brawler.hasStatus(StatusBit.HOUSE_ARREST),
+                    "clustered aggressor #" + brawler.id() + " sent home");
+            assertEquals(NOW + 24_000L, brawler.houseArrestUntilTick(), "exactly one day");
+            assertEquals(ReasonCode.HOUSE_ARRESTED, brawler.lastReasonCode());
+        }
         assertFalse(watchman.hasStatus(StatusBit.HOUSE_ARREST), "the Watch never arrests itself");
+        assertFalse(passerBy.hasStatus(StatusBit.HOUSE_ARREST),
+                "one squeeze-past inside the cluster is not brawling");
         assertFalse(bystander.hasStatus(StatusBit.HOUSE_ARREST),
-                "a lone shover outside the cluster is not part of the riot");
+                "a repeat shover outside the cluster is not part of this riot");
+    }
+
+    @Test
+    void aBusyDoorOfDistinctSingleShoversIsTrafficNotARiot() {
+        // The cap-1 lesson: every doorway crossing shoves once, so a crowded door produces
+        // MANY in-window clustered shoves — all by DIFFERENT one-shove pushers. Twelve such
+        // shoves (double the old raw-count threshold) must not read as a riot.
+        ActorRegistry registry = new ActorRegistry();
+        RiotContext ctx = new RiotContext(registry);
+        Actor watchman = guard(registry, ctx, 40, 40);
+        Actor[] crowd = new Actor[12];
+        for (int i = 0; i < crowd.length; i++) {
+            crowd[i] = serf(registry, ctx, 50 + i % 4, 50 + i % 3);
+        }
+        ctx.setTick(NOW);
+        for (int i = 0; i < crowd.length; i++) {
+            ctx.log.record(NOW - 120 + 10L * i, cell(50 + i % 2, 50), crowd[i].id());
+        }
+
+        assertEquals(0, Policies.APPREHEND.score(watchman, ctx),
+                "twelve distinct single shovers are a queue, not a brawl");
+        for (Actor serf : crowd) {
+            assertFalse(serf.hasStatus(StatusBit.HOUSE_ARREST));
+        }
     }
 
     @Test
@@ -96,17 +136,22 @@ final class ShoveRiotHouseArrestTest {
         RiotContext ctx = new RiotContext(registry);
         Actor first = guard(registry, ctx, 40, 40);
         Actor second = guard(registry, ctx, 60, 60);
-        Actor brawler = serf(registry, ctx, 50, 50);
+        Actor[] brawlers = new Actor[ApprehendPolicy.RIOT_AGGRESSORS];
+        for (int i = 0; i < brawlers.length; i++) {
+            brawlers[i] = serf(registry, ctx, 50 + i, 50);
+        }
         ctx.setTick(NOW);
-        for (int i = 0; i < 6; i++) {
-            ctx.log.record(NOW - 30 + i, cell(50 + i % 2, 50), brawler.id());
+        for (int i = 0; i < brawlers.length; i++) {
+            brawl(ctx, brawlers[i], ApprehendPolicy.RIOT_REPEAT_SHOVES, NOW - 100 + 10L * i);
         }
 
         Policies.APPREHEND.act(first, ctx);
-        assertTrue(brawler.hasStatus(StatusBit.HOUSE_ARREST));
+        for (Actor brawler : brawlers) {
+            assertTrue(brawler.hasStatus(StatusBit.HOUSE_ARREST));
+        }
 
         // The second guard's score runs AFTER the first guard's act (ascending-id tick order):
-        // every clustered shover is already corrected, so the riot is no longer actionable.
+        // every clustered aggressor is already corrected, so the riot is no longer actionable.
         assertEquals(0, Policies.APPREHEND.score(second, ctx),
                 "nothing left to arrest -> no riot branch, no score");
     }
@@ -116,18 +161,28 @@ final class ShoveRiotHouseArrestTest {
         ActorRegistry registry = new ActorRegistry();
         RiotContext ctx = new RiotContext(registry);
         Actor watchman = guard(registry, ctx, 40, 40);
-        Actor brawler = serf(registry, ctx, 50, 50);
+        Actor[] brawlers = new Actor[ApprehendPolicy.RIOT_AGGRESSORS];
+        for (int i = 0; i < brawlers.length; i++) {
+            brawlers[i] = serf(registry, ctx, 50 + i, 50);
+        }
         ctx.setTick(NOW + 1000); // make room for stale entries below
 
-        // Five recent clustered shoves: one short of RIOT_SHOVES.
-        for (int i = 0; i < 5; i++) {
-            ctx.log.record(NOW + 1000 - 10 - i, cell(50, 50 + i % 3), brawler.id());
+        // Full aggressors, one short of RIOT_AGGRESSORS...
+        int oneShort = ApprehendPolicy.RIOT_AGGRESSORS - 1;
+        for (int i = 0; i < oneShort; i++) {
+            brawl(ctx, brawlers[i], ApprehendPolicy.RIOT_REPEAT_SHOVES, NOW + 1000 - 100 + 10L * i);
         }
-        // A sixth shove in the same cluster but OUTSIDE the 600-tick window: must not count.
-        ctx.log.record(NOW + 1000 - 700, cell(50, 51), brawler.id());
+        // ...and a last pusher whose earlier shoves are all OUTSIDE the window: one fresh
+        // shove makes it a passer-by, not an aggressor — the stale rows must not count.
+        for (int i = 0; i < ApprehendPolicy.RIOT_REPEAT_SHOVES - 1; i++) {
+            ctx.log.record(NOW + 1000 - 400 - 5L * i, cell(50, 51), brawlers[oneShort].id());
+        }
+        ctx.log.record(NOW + 1000 - 20, cell(50, 51), brawlers[oneShort].id());
 
         assertEquals(0, Policies.APPREHEND.score(watchman, ctx),
-                "five in-window shoves are not excessive; the stale sixth does not count");
-        assertFalse(brawler.hasStatus(StatusBit.HOUSE_ARREST));
+                "one-short aggressors plus a stale-history passer-by are not a riot");
+        for (Actor brawler : brawlers) {
+            assertFalse(brawler.hasStatus(StatusBit.HOUSE_ARREST));
+        }
     }
 }

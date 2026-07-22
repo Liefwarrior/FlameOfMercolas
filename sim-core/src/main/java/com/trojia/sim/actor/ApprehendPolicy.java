@@ -68,18 +68,26 @@ public final class ApprehendPolicy implements BehaviorPolicy {
 
     // ---- Shove-riot detection (density revisit): "excessive shoving in an area should bring
     // guards who send everyone shoving home to house arrest". At the same sense cadence a
-    // guard scans the shared ShoveLog for a CLUSTER — >= RIOT_SHOVES shoves within
-    // RIOT_RADIUS cells of one anchor shove and within RIOT_WINDOW ticks — with at least one
-    // arrestable shover left. Detection is district-wide ("brings guards": the Watch hears of
-    // a brawl anywhere in the ward), so a Band-B/C riot is corrected even though the Watch
-    // garrisons Band A; the CORRECTION is issued in place (status + deadline) and the
-    // offender's own HouseArrestPolicy marches it home. Draw-free, ascending scans only. ----
-    /** Shoves within radius+window of one anchor shove that constitute a riot. */
-    static final int RIOT_SHOVES = 6;
+    // guard scans the shared ShoveLog for a BRAWL — >= RIOT_AGGRESSORS DISTINCT pushers, each
+    // with >= RIOT_REPEAT_SHOVES shoves, all within RIOT_RADIUS cells of one anchor shove and
+    // within RIOT_WINDOW ticks — with at least one arrestable aggressor left. Under the
+    // 1-per-square cap pushing is NORMAL TRAFFIC (every doorway crossing shoves once), so a
+    // raw shove count reads a busy door as a riot (measured: 274/691 actors house-arrested in
+    // 0.83 days, starving the ration-less poor). The brawl signal instead requires PEOPLE, not
+    // shoves — several distinct actors — and AGGRESSION, not passage: the same pusher shoving
+    // repeatedly in one small patch within minutes marks a fight, where a squeeze-past is one
+    // shove and gone. Detection is district-wide ("brings guards": the Watch hears of a brawl
+    // anywhere in the ward), so a Band-B/C riot is corrected even though the Watch garrisons
+    // Band A; the CORRECTION is issued in place (status + deadline) and the offender's own
+    // HouseArrestPolicy marches it home. Draw-free, ascending scans only. ----
+    /** Distinct repeat-shovers ("aggressors") within radius+window that constitute a riot. */
+    static final int RIOT_AGGRESSORS = 8;
+    /** In-cluster in-window shoves by ONE pusher that mark it an aggressor, not a passer-by. */
+    static final int RIOT_REPEAT_SHOVES = 3;
     /** Chebyshev radius of the riot cluster around the anchor shove's cell. */
     static final int RIOT_RADIUS = 6;
-    /** Only shoves this recent count toward a riot (600 ticks = 10 minutes). */
-    static final long RIOT_WINDOW_TICKS = 600;
+    /** Only shoves this recent count toward a riot (150 ticks — a brawl is FAST). */
+    static final long RIOT_WINDOW_TICKS = 150;
 
     @Override
     public PolicyId id() {
@@ -191,53 +199,39 @@ public final class ApprehendPolicy implements BehaviorPolicy {
 
     /**
      * The riot probe: scans the shove log oldest-first for an ANCHOR shove {@code E} in the
-     * window such that at least {@link #RIOT_SHOVES} in-window shoves (E included) lie within
-     * {@link #RIOT_RADIUS} of {@code E}'s cell AND at least one clustered shover is still
-     * arrestable — returns that anchor's cell, or {@link Actor#NONE}. Pure, draw-free,
-     * deterministic (the log's oldest-first order is insertion order). Package-visible for the
-     * riot unit test.
+     * window such that at least {@link #RIOT_AGGRESSORS} DISTINCT pushers each have {@link
+     * #RIOT_REPEAT_SHOVES}+ in-window shoves within {@link #RIOT_RADIUS} of {@code E}'s cell
+     * AND at least one such aggressor is still arrestable — returns that anchor's cell, or
+     * {@link Actor#NONE}. Pure, draw-free, deterministic (the log's oldest-first order is
+     * insertion order; the per-pusher tally is insertion-ordered too). Package-visible for
+     * the riot unit test.
      */
     static int senseRiotAnchor(ActorContext ctx) {
         ShoveLog log = ctx.shoveLog();
         long now = ctx.tick();
+        int[] pushers = new int[log.size()];
+        int[] counts = new int[log.size()];
         for (int i = 0; i < log.size(); i++) {
             if (now - log.tickAt(i) > RIOT_WINDOW_TICKS) {
-                continue; // too old to count
+                continue; // too old to anchor
             }
             int anchorCell = log.cellAt(i);
-            if (clusterSize(log, now, anchorCell) >= RIOT_SHOVES
-                    && anyArrestableShover(ctx, log, now, anchorCell)) {
+            if (duplicateAnchor(log, now, i, anchorCell)) {
+                continue; // an earlier in-window row already probed this identical cluster
+            }
+            int distinct = tallyClusterPushers(log, now, anchorCell, pushers, counts);
+            if (countAggressors(counts, distinct) >= RIOT_AGGRESSORS
+                    && anyArrestableAggressor(ctx, pushers, counts, distinct)) {
                 return anchorCell;
             }
         }
         return Actor.NONE;
     }
 
-    /** In-window shoves within {@link #RIOT_RADIUS} of {@code anchorCell} (same z implied by radius math). */
-    private static int clusterSize(ShoveLog log, long now, int anchorCell) {
-        int count = 0;
-        int anchorZ = PackedPos.z(anchorCell);
-        for (int i = 0; i < log.size(); i++) {
-            if (now - log.tickAt(i) <= RIOT_WINDOW_TICKS
-                    && PackedPos.z(log.cellAt(i)) == anchorZ
-                    && ActorGeometry.chebyshev(log.cellAt(i), anchorCell) <= RIOT_RADIUS) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    /** Whether at least one clustered in-window shover is still arrestable (gates re-detection). */
-    private static boolean anyArrestableShover(ActorContext ctx, ShoveLog log, long now,
-            int anchorCell) {
-        int anchorZ = PackedPos.z(anchorCell);
-        for (int i = 0; i < log.size(); i++) {
-            if (now - log.tickAt(i) > RIOT_WINDOW_TICKS
-                    || PackedPos.z(log.cellAt(i)) != anchorZ
-                    || ActorGeometry.chebyshev(log.cellAt(i), anchorCell) > RIOT_RADIUS) {
-                continue;
-            }
-            if (isHouseArrestable(ctx.registry().get(log.pusherIdAt(i)), ctx)) {
+    /** Whether an earlier in-window row shares {@code anchorCell} (identical cluster: skip). */
+    private static boolean duplicateAnchor(ShoveLog log, long now, int index, int anchorCell) {
+        for (int i = 0; i < index; i++) {
+            if (now - log.tickAt(i) <= RIOT_WINDOW_TICKS && log.cellAt(i) == anchorCell) {
                 return true;
             }
         }
@@ -245,25 +239,85 @@ public final class ApprehendPolicy implements BehaviorPolicy {
     }
 
     /**
-     * The correction: every arrestable actor with an in-window shove inside the riot cluster is
-     * sent home under a fixed {@link HouseArrestPolicy#HOUSE_ARREST_TICKS} (1-day) house arrest
-     * — status bit + absolute deadline; the offender's own {@code HouseArrestPolicy} does the
-     * marching. Returns the number of arrests issued (0 on a re-scan where every shover is
-     * already corrected — which is exactly what makes the detection idempotent across guards
-     * within one cadence tick). Package-visible for the riot unit test.
+     * Tallies the in-window shoves within {@link #RIOT_RADIUS} of {@code anchorCell} PER
+     * DISTINCT PUSHER into the caller's scratch arrays ({@code pushers[k]} = pusher id,
+     * {@code counts[k]} = its clustered shove count; k in first-appearance order — insertion
+     * order, so deterministic). Returns the number of distinct pushers tallied.
      */
-    static int issueHouseArrests(ActorContext ctx, int anchorCell) {
-        ShoveLog log = ctx.shoveLog();
-        long now = ctx.tick();
+    private static int tallyClusterPushers(ShoveLog log, long now, int anchorCell,
+            int[] pushers, int[] counts) {
         int anchorZ = PackedPos.z(anchorCell);
-        int issued = 0;
+        int distinct = 0;
         for (int i = 0; i < log.size(); i++) {
             if (now - log.tickAt(i) > RIOT_WINDOW_TICKS
                     || PackedPos.z(log.cellAt(i)) != anchorZ
                     || ActorGeometry.chebyshev(log.cellAt(i), anchorCell) > RIOT_RADIUS) {
                 continue;
             }
-            Actor shover = ctx.registry().get(log.pusherIdAt(i));
+            int pusher = log.pusherIdAt(i);
+            int slot = -1;
+            for (int k = 0; k < distinct; k++) {
+                if (pushers[k] == pusher) {
+                    slot = k;
+                    break;
+                }
+            }
+            if (slot < 0) {
+                pushers[distinct] = pusher;
+                counts[distinct] = 1;
+                distinct++;
+            } else {
+                counts[slot]++;
+            }
+        }
+        return distinct;
+    }
+
+    /** Pushers whose clustered shove count marks aggression ({@link #RIOT_REPEAT_SHOVES}+). */
+    private static int countAggressors(int[] counts, int distinct) {
+        int aggressors = 0;
+        for (int k = 0; k < distinct; k++) {
+            if (counts[k] >= RIOT_REPEAT_SHOVES) {
+                aggressors++;
+            }
+        }
+        return aggressors;
+    }
+
+    /** Whether at least one clustered aggressor is still arrestable (gates re-detection). */
+    private static boolean anyArrestableAggressor(ActorContext ctx, int[] pushers, int[] counts,
+            int distinct) {
+        for (int k = 0; k < distinct; k++) {
+            if (counts[k] >= RIOT_REPEAT_SHOVES
+                    && isHouseArrestable(ctx.registry().get(pushers[k]), ctx)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The correction: every arrestable AGGRESSOR ({@link #RIOT_REPEAT_SHOVES}+ in-window
+     * shoves inside the riot cluster) is sent home under a fixed {@link
+     * HouseArrestPolicy#HOUSE_ARREST_TICKS} (1-day) house arrest — status bit + absolute
+     * deadline; the offender's own {@code HouseArrestPolicy} does the marching. A one-shove
+     * passer-by caught in the cluster is NOT arrested (a squeeze-past is not brawling — the
+     * busy-door lesson). Returns the number of arrests issued (0 on a re-scan where every
+     * aggressor is already corrected — which is exactly what makes the detection idempotent
+     * across guards within one cadence tick). Package-visible for the riot unit test.
+     */
+    static int issueHouseArrests(ActorContext ctx, int anchorCell) {
+        ShoveLog log = ctx.shoveLog();
+        long now = ctx.tick();
+        int[] pushers = new int[log.size()];
+        int[] counts = new int[log.size()];
+        int distinct = tallyClusterPushers(log, now, anchorCell, pushers, counts);
+        int issued = 0;
+        for (int k = 0; k < distinct; k++) {
+            if (counts[k] < RIOT_REPEAT_SHOVES) {
+                continue; // one squeeze-past: in the crowd, not of the brawl
+            }
+            Actor shover = ctx.registry().get(pushers[k]);
             if (!isHouseArrestable(shover, ctx)) {
                 continue; // the Watch/Wielder/beasts are exempt; custody supersedes; no doubles
             }

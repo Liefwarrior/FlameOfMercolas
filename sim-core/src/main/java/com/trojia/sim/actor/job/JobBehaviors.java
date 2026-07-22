@@ -391,13 +391,27 @@ public final class JobBehaviors {
 
     /**
      * Draws a fresh nearby cell within the wander radius; if the draw lands on an
-     * unwalkable cell (water, a wall), redraws with the next {@code JOB_TARGET_PICK}
-     * index (the same named-RNG stream, never unnamed/unseeded randomness) up to
-     * {@link #WANDER_RETRY_BUDGET} attempts, then falls back to
-     * {@code self.anchorCell()} (guaranteed walkable by spawn/bake) — bounded, can
+     * unwalkable cell (water, a wall) — or, for a BEAST, inside a citizen's hearth (below) —
+     * redraws with the next {@code JOB_TARGET_PICK} index (the same named-RNG stream, never
+     * unnamed/unseeded randomness) up to {@link #WANDER_RETRY_BUDGET} attempts, then falls
+     * back to {@code self.anchorCell()} (guaranteed walkable by spawn/bake) — bounded, can
      * never infinite-loop.
+     *
+     * <p><b>Beasts never wander into somebody's bedroom (density revisit fix pass):</b> a
+     * beast's idle sweep rejects draw cells within {@link #HEARTH_RADIUS} of any citizen's
+     * home cell. A walkable condo/bunkroom interior is a death trap for a beast under the
+     * 1-per-square cap — the resident household parks the room to saturation for whole
+     * shifts, and a beast that drifts in is crowd-locked while its prey lives outside
+     * (soak-measured: gull#410 spent 15,000 ticks starving between a bunkroom's dead-end
+     * alcove and its neck; the map pass had already flagged "wide envelopes reach into
+     * crewed/walled interiors where an occupancy wedge can outlast the hunger buffer" and
+     * could only shrink leashes around it). Behaviorally honest, not just defensive: gulls
+     * sweep quays and streets, cats prowl yards and lanes — neither forages in an occupied
+     * bedroom. Citizens' own wanders (Wastrel beg circuits) are exempt — people may call on
+     * houses. Draw-free (a pure ascending-id registry/home scan per candidate).
      */
     private static void retargetWander(Actor self, ActorContext ctx) {
+        boolean beast = ctx.presentedJob(self) instanceof Job.Beast;
         int radius = wanderRadius(self);
         int ax = PackedPos.x(self.anchorCell());
         int ay = PackedPos.y(self.anchorCell());
@@ -410,7 +424,7 @@ public final class JobBehaviors {
             int dy = (int) Long.remainderUnsigned(draw >>> 20, span) - radius;
             int candidate = PackedPos.pack(clamp(ax + dx, PackedPos.X_MASK),
                     clamp(ay + dy, PackedPos.Y_MASK), z);
-            if (ctx.isWalkable(candidate)) {
+            if (ctx.isWalkable(candidate) && !(beast && isCitizenHearthArea(ctx, candidate))) {
                 self.setGoalTarget(TargetKind.CELL, candidate);
                 self.setGoalWorkTicks(0);
                 return;
@@ -418,6 +432,31 @@ public final class JobBehaviors {
         }
         self.setGoalTarget(TargetKind.CELL, self.anchorCell());
         self.setGoalWorkTicks(0);
+    }
+
+    /** Chebyshev radius around a citizen's home cell that a beast's wander never targets. */
+    private static final int HEARTH_RADIUS = 2;
+
+    /**
+     * Whether {@code cell} lies within {@link #HEARTH_RADIUS} of the home cell of any CITIZEN
+     * (any actor whose presented job is not {@link Job.Beast} — a mouse den or a gull roost is
+     * itself a beast home and must never block its own species' sweep). Ascending-id registry
+     * scan, same z, draw-free.
+     */
+    private static boolean isCitizenHearthArea(ActorContext ctx, int cell) {
+        ActorRegistry registry = ctx.registry();
+        int z = PackedPos.z(cell);
+        for (int i = 0; i < registry.size(); i++) {
+            Actor other = registry.get(i);
+            if (other.homeId() == Actor.NONE || ctx.presentedJob(other) instanceof Job.Beast) {
+                continue;
+            }
+            int home = ctx.homes().get(other.homeId()).homeCell();
+            if (PackedPos.z(home) == z && ActorGeometry.chebyshev(cell, home) <= HEARTH_RADIUS) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Half the leash (min 4): a sweep that visibly ranges without leaving the leashed range. */
