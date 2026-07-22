@@ -613,30 +613,26 @@ public final class DocksPopulation implements ScenarioPopulation {
         return cells;
     }
 
-    // ---- Law & order pass: the POLICED shop zones + the bank vault room. PASS 9 (density
-    // revisit, lockstep with the >=2-wide door standard): the original rects were each shop's
-    // WHOLE shell footprint. Under the widened doors, ordinary leashed wander drifts inside,
-    // pauses, and draws the fixed 1-day loiter sentence -- and custody does not feed, so any
-    // WALKABLE policed cell is a starvation lottery ticket (the 30k soak starved animal
-    // keepers in K34 custody three different ways: one arrested a cell inside K23's door, one
-    // deep in K23's rear workshop, one pausing in the bank hall). A back-of-house shrink was
-    // soak-tested and still lost. So each zone is now its shop's SOLID STOCK FIXTURE cluster
-    // only -- structurally present in the table (stations, order and count unchanged), but
-    // with no standable cell, it cannot arrest a wanderer. The trader-anchor zone (index 3)
-    // still guards the real special-inventory counters; shop policing re-arms when the push /
-    // house-arrest pass makes custody survivable (house arrest sends offenders HOME, fed).
+    // ---- Law & order pass: the POLICED shop zones + the bank vault room. RE-ARMED (density
+    // revisit, sim pass): the map pass had shrunk each zone to its solid stock-fixture core
+    // because the 1-day loiter sentence was UNFED — any walkable policed cell was a starvation
+    // lottery (three animal-keeper deaths traced in the 30k soak) — with the explicit note to
+    // re-arm once custody became survivable. Custody now FEEDS from the prisoner's own carried
+    // ration ({@code HeldPolicy.eatCarriedRation}, the same provisioning that stocks every
+    // citizen's pantry), so the full shell footprints are restored: the Watch polices whole
+    // shop interiors again, and a dawdler draws a survivable day in the K34 cells.
     private static final int[][] POLICED_SHOP_RECTS = {   // {x0, y0, x1, y1}, all z:+11
-            {27, 73, 27, 73},     // K08 Brann's Chandlery -- stockroom rope-coil pile
-            {172, 36, 172, 36},   // K14 Wrackhouse -- the diving bell
-            {127, 57, 127, 57},   // K15 Fenner's Pawn -- the strongbox
-            {41, 73, 42, 74},     // K23 Cooper & Blockmaker -- barrel stack
-            {9, 74, 10, 75},      // K26 Sailmaker's Loft -- canvas-cutting table
-            {33, 75, 34, 75},     // K27 The Hardtack Oven -- the bake oven
-            {132, 61, 134, 61},   // K28 The Slop-Chest -- the counter run
+            {24, 66, 31, 74},     // K08 Brann's Chandlery
+            {164, 34, 173, 42},   // K14 Wrackhouse
+            {122, 52, 128, 58},   // K15 Fenner's Pawn
+            {40, 66, 53, 76},     // K23 Cooper & Blockmaker
+            {8, 70, 15, 77},      // K26 Sailmaker's Loft
+            {32, 70, 38, 78},     // K27 The Hardtack Oven
+            {130, 58, 135, 64},   // K28 The Slop-Chest
     };
-    // The vault room only (ring walls + the one chest cell), NOT the public banking hall:
-    // customers and queue-jumpers pausing in the hall must not draw a lethal custody term.
-    private static final int[] BANK_HALL_RECT = {151, 57, 153, 58};   // K36 vault room, z:+11
+    // The whole K36 shell again (queue slots stay carved out below) — a hall dawdle is once
+    // more the Watch's business now that the sentence it draws is fed.
+    private static final int[] BANK_HALL_RECT = {150, 48, 159, 59};   // K36 shell, z:+11
 
     /** A generator shell rect as world-packed cells, minus {@code excluded} cells. */
     private static int[] rectCells(int[] rect, int z, int... excludedWorldCells) {
@@ -842,7 +838,8 @@ public final class DocksPopulation implements ScenarioPopulation {
          * Running spawn-time occupancy (packedCell -&gt; count) over the WHOLE bake, so every spawn
          * — via {@link #spawnAt} — lands on a cell holding fewer than
          * {@link Actor#MAX_OCCUPANTS_PER_CELL} actors. This is what guarantees no cell begins the
-         * sim with more than two occupants, across every site and any overlap between sites (a
+         * sim over the occupancy cap (ONE per square since the density revisit), across every
+         * site and any overlap between sites (a
          * proprietor already on an anchor, two nearby dwellings, etc.). Never iterated for output,
          * so its hash-map iteration order is irrelevant to determinism.
          */

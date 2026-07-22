@@ -42,5 +42,11 @@ public enum ReasonCode {
     /** This mouse was just caught: DOWNED with a revive countdown on {@code downedTimer}. */
     PREY_CAUGHT,
     /** A mouse nibbled crumbs/spilled grain around its den at a wander-dwell boundary. */
-    NIBBLED_DEN
+    NIBBLED_DEN,
+    /** The Watch sensed a shove riot and sent this shover home under a 1-day house arrest. */
+    HOUSE_ARRESTED,
+    /** Serving house arrest: walking home / held at home sleeping until the deadline. */
+    UNDER_HOUSE_ARREST,
+    /** The house-arrest deadline passed — released back to ordinary life. */
+    RELEASED_FROM_HOUSE_ARREST
 }

@@ -70,6 +70,33 @@ public final class ActorsSystem implements SimulationSystem {
     private long foodMinted;
     private long foodEaten;
 
+    /** Ring capacity of the shove log — bounds riot detection's O(K^2) cluster scan. */
+    private static final int SHOVE_LOG_CAPACITY = 256;
+
+    /**
+     * The bounded shove ring buffer (density revisit): one {@code (tick, cell, pusherId)} row per
+     * successful push, overwriting oldest. Read by guards' riot detection, so it is
+     * behavior-carrying state — serialized, loaded and hashed (see {@link ShoveLog}'s Javadoc for
+     * why "serialize it" is the correct determinism choice, not "document it as transient").
+     */
+    private final ShoveLog shoveLog = new ShoveLog(SHOVE_LOG_CAPACITY);
+
+    /** The live shove log (package-visible: the round-trip test seeds rows through it). */
+    ShoveLog shoveLog() {
+        return shoveLog;
+    }
+
+    /** The tick being simulated right now — the shove cooldown clock inside the occupancy view. */
+    private long currentTick;
+
+    /**
+     * Density-report accounting (read by no behavior; ride no save, like {@code foodMinted}):
+     * total successful pushes, riot responses fired, and house arrests issued.
+     */
+    private long pushCount;
+    private long riotCount;
+    private long houseArrestsIssued;
+
     /** World-less constructor (test/headless convenience) — {@code isWalkable} always true. */
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
@@ -151,6 +178,21 @@ public final class ActorsSystem implements SimulationSystem {
         return fixtures.zones();
     }
 
+    /** Total successful shoves over the run (density report; pure accounting). */
+    public long pushCount() {
+        return pushCount;
+    }
+
+    /** Riot responses fired by guards over the run (density report; pure accounting). */
+    public long riotCount() {
+        return riotCount;
+    }
+
+    /** House arrests issued across all riot responses (density report; pure accounting). */
+    public long houseArrestsIssued() {
+        return houseArrestsIssued;
+    }
+
     /** Total FOOD ever minted (larder seed + farm yield + imports) — conservation-proof numerator. */
     public long foodMinted() {
         return foodMinted;
@@ -182,6 +224,7 @@ public final class ActorsSystem implements SimulationSystem {
 
     @Override
     public void tick(TickContext context) {
+        currentTick = context.tick();
         if (drawCounters.length < registry.size()) {
             drawCounters = new int[registry.size()];
         } else {
@@ -361,6 +404,9 @@ public final class ActorsSystem implements SimulationSystem {
         for (int i = 0; i < bank.accountCount(); i++) {
             out.writeLong(bank.balanceOf(i));
         }
+        // The shove log (density revisit), canonical order after the ledger: behavior-carrying
+        // (riot detection reads it), so a load mid-riot-window must reproduce the continuous run.
+        shoveLog.serialize(out);
     }
 
     private void writeActor(DataOutput out, Actor actor) throws IOException {
@@ -394,6 +440,8 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeInt(actor.assignedHoldCell()); // Phase-2 STEP C: per-prisoner cell (heldUntilTick triad)
         out.writeInt(actor.apprehendTargetId()); // law & order pass: the guard's locked offender
         out.writeLong(actor.moveAlongUntilTick()); // law & order pass: warn-grace absolute deadline
+        out.writeLong(actor.lastPushTick()); // density revisit: shove cooldown clock
+        out.writeLong(actor.houseArrestUntilTick()); // density revisit: house-arrest deadline
         // lastReasonCode is load-bearing in ApprehendPolicy's buying-customer exemption, so a
         // loaded run must see the same value a continuous run would (-1 = never set).
         out.writeByte(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
@@ -443,6 +491,7 @@ public final class ActorsSystem implements SimulationSystem {
             int accountId = bank.openAccount();
             bank.credit(accountId, balance);
         }
+        shoveLog.load(in); // density revisit: the behavior-carrying shove ring buffer
     }
 
     private void readActor(DataInput in) throws IOException {
@@ -477,6 +526,8 @@ public final class ActorsSystem implements SimulationSystem {
         int assignedHoldCell = in.readInt(); // Phase-2 STEP C: per-prisoner cell
         int apprehendTargetId = in.readInt(); // law & order pass
         long moveAlongUntilTick = in.readLong(); // law & order pass
+        long lastPushTick = in.readLong(); // density revisit
+        long houseArrestUntilTick = in.readLong(); // density revisit
         byte lastReasonOrdinal = in.readByte(); // law & order pass: -1 = never set
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
@@ -510,6 +561,8 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setAssignedHoldCell(assignedHoldCell);
         actor.setApprehendTargetId(apprehendTargetId);
         actor.setMoveAlongUntilTick(moveAlongUntilTick);
+        actor.setLastPushTick(lastPushTick);
+        actor.setHouseArrestUntilTick(houseArrestUntilTick);
         actor.setLastReasonCode(
                 lastReasonOrdinal < 0 ? null : ReasonCode.values()[lastReasonOrdinal]);
     }
@@ -548,6 +601,11 @@ public final class ActorsSystem implements SimulationSystem {
             sink.putByte(actor.targetKind().ordinal());
             sink.putInt(actor.targetKey());
             sink.putShort(actor.policyTimer());
+            // Density revisit (landmine F): the shove cooldown clock and the house-arrest
+            // deadline are behavior-carrying — a push-only or arrest-only desync must fail
+            // the twin-run hash, not slip past it.
+            sink.putLong(actor.lastPushTick());
+            sink.putLong(actor.houseArrestUntilTick());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {
@@ -567,6 +625,9 @@ public final class ActorsSystem implements SimulationSystem {
         for (int i = 0; i < bank.accountCount(); i++) {
             sink.putLong(bank.balanceOf(i));
         }
+        // The shove log (density revisit): riot detection reads it, so a log-only divergence
+        // must fail the twin-run hash (landmine F).
+        shoveLog.hashInto(sink);
     }
 
     /** The per-tick {@link ActorContext}, bound to this system's registries and named draws. */
@@ -713,6 +774,17 @@ public final class ActorsSystem implements SimulationSystem {
         public void recordFoodEaten(int n) {
             foodEaten += n;
         }
+
+        @Override
+        public ShoveLog shoveLog() {
+            return shoveLog;
+        }
+
+        @Override
+        public void recordRiotResponse(int houseArrests) {
+            riotCount++;
+            houseArrestsIssued += houseArrests;
+        }
     }
 
     /**
@@ -731,5 +803,39 @@ public final class ActorsSystem implements SimulationSystem {
             occupancy.remove(fromCell);
             occupancy.add(toCell);
         }
+
+        @Override
+        public boolean tryPush(Actor pusher, int cell) {
+            // DOMESTIC shoves — jostling within 2 tiles of the pusher's own hearth or its own
+            // work anchor — are legal pushes but are NOT riot material: a household contesting
+            // its shared home cell for sleep, or a bunk crew milling at its site, shoves
+            // constantly by construction under the 1-per-square cap, and logging that had the
+            // Watch house-arresting most of the district (measured: 473/691 at a 20k soak end).
+            // Eli's riot clause targets PUBLIC disorder ("excessive shoving in an area"), so
+            // only away-from-home, away-from-work shoves feed the log. Deterministic: a pure
+            // predicate over baked cells.
+            ShoveLog target = isDomesticShove(pusher, cell) ? ShoveLog.EMPTY : shoveLog;
+            boolean pushed = PushMechanics.tryPush(pusher, cell, registry, currentTick,
+                    c -> cursor == null || Walkability.isWalkable(cursor.moveTo(c)),
+                    this, target);
+            if (pushed) {
+                pushCount++;
+            }
+            return pushed;
+        }
     };
+
+    /** Radius around the pusher's own home/anchor within which a shove is domestic, not riot material. */
+    private static final int DOMESTIC_SHOVE_RADIUS = 2;
+
+    /** Whether {@code pusher} contesting {@code cell} is domestic jostling (own hearth/worksite). */
+    private boolean isDomesticShove(Actor pusher, int cell) {
+        if (ActorGeometry.chebyshev(cell, pusher.anchorCell()) <= DOMESTIC_SHOVE_RADIUS) {
+            return true;
+        }
+        int homeId = pusher.homeId();
+        return homeId != Actor.NONE
+                && ActorGeometry.chebyshev(cell, homes.get(homeId).homeCell())
+                        <= DOMESTIC_SHOVE_RADIUS;
+    }
 }

@@ -49,6 +49,18 @@ public final class PathFinder {
     private static final int ORTHOGONAL_COST = 10;
     private static final int DIAGONAL_COST = 14; // integer 10*sqrt(2) approximation
 
+    /**
+     * Per-actor route-variety jitter (density revisit, "unique paths per person"): entering a
+     * cell costs an extra {@code hash(actorSalt, cell) & JITTER_MASK} (0..3) — small against the
+     * 10/14 octile base, so routes stay near-optimal, but the tie-breaking landscape differs per
+     * actor and two actors sharing a start/target no longer walk the same ruler line. A PURE
+     * integer hash (the cosmetic-variant murmur-fmix shape) of {@code (actorSalt, cell)} — no RNG
+     * stream, no state — so one actor's route is a pure function of
+     * {@code (actorSalt, startCell, targetCell, walk)}: twin runs reproduce it exactly.
+     * Salt {@code 0} is the legacy no-jitter path (kept for salt-less callers/tests).
+     */
+    private static final int JITTER_MASK = 3;
+
     private static final byte UNVISITED = 0;
     private static final byte OPEN = 1;
     private static final byte CLOSED = 2;
@@ -79,6 +91,19 @@ public final class PathFinder {
      *         expansions without reaching the target
      */
     public static int[] findRoute(int startCell, int targetCell, Actor.WalkabilityQuery walk, int maxNodes) {
+        return findRoute(startCell, targetCell, walk, maxNodes, 0);
+    }
+
+    /**
+     * Salted variant of {@link #findRoute(int, int, Actor.WalkabilityQuery, int)}: {@code
+     * actorSalt} (an actor id) perturbs every cell-entry cost by a tiny pure-hash jitter
+     * ({@link #JITTER_MASK}), so different actors get visibly different, slightly wiggly —
+     * still near-optimal — routes between the same endpoints, while the same actor always
+     * gets the same route. Salt {@code 0} disables the jitter entirely (byte-identical to
+     * the unsalted overload).
+     */
+    public static int[] findRoute(int startCell, int targetCell, Actor.WalkabilityQuery walk,
+            int maxNodes, int actorSalt) {
         if (startCell == targetCell) {
             return new int[0];
         }
@@ -156,7 +181,11 @@ public final class PathFinder {
                         continue; // never cut a solid diagonal wall corner
                     }
                 }
-                int tentativeG = currentG + NEIGHBOR_COST[n];
+                // Entry cost = octile base + the per-(actor, cell) jitter. Non-negative, so the
+                // unjittered octile heuristic stays admissible/consistent (it only underestimates
+                // more) — A* correctness and the lazy-deletion heap discipline are untouched.
+                int tentativeG = currentG + NEIGHBOR_COST[n]
+                        + (actorSalt == 0 ? 0 : jitter(actorSalt, neighborCell));
                 if (state[neighborLocalIdx] == UNVISITED || tentativeG < gScore[neighborLocalIdx]) {
                     gScore[neighborLocalIdx] = tentativeG;
                     parentLocalIdx[neighborLocalIdx] = currentLocalIdx;
@@ -183,6 +212,23 @@ public final class PathFinder {
             i = parentLocalIdx[i];
         }
         return route;
+    }
+
+    /**
+     * The per-(actor, cell) entry-cost jitter in {@code [0, JITTER_MASK]}: a murmur3-fmix32
+     * avalanche over the two ints (the cosmetic-variant hash precedent) — pure, stateless,
+     * draw-free.
+     */
+    private static int jitter(int actorSalt, int cell) {
+        int h = actorSalt * 0xCC9E2D51;
+        h = Integer.rotateLeft(h, 15) * 0x1B873593;
+        h ^= cell * 0xCC9E2D51;
+        h ^= (h >>> 16);
+        h *= 0x85EBCA6B;
+        h ^= (h >>> 13);
+        h *= 0xC2B2AE35;
+        h ^= (h >>> 16);
+        return h & JITTER_MASK;
     }
 
     /** Octile-distance admissible+consistent heuristic, integer units matching {@link #NEIGHBOR_COST}. */

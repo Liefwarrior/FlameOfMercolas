@@ -42,7 +42,29 @@ public final class HeldPolicy implements BehaviorPolicy {
         if (holdCell != Actor.NONE) {
             self.stepAlongRoute(holdCell, true, ctx::isWalkable, ctx.occupancy());
         }
+        eatCarriedRation(self, ctx);
         self.setLastReasonCode(ReasonCode.HELD_IN_CUSTODY);
+    }
+
+    /**
+     * Custody now FEEDS from the prisoner's own ration bag (density revisit — the
+     * custody-does-not-feed landmine the map pass traced to three animal-keeper starvation
+     * deaths, and the reason the policed shop zones had to be disarmed): while HUNGER is below
+     * RECOVERED, one carried FOOD is eaten per held tick — the same {@code SeekFoodPolicy}
+     * step-1 source with identical sink accounting, so FOOD conservation stays exact. The
+     * system-side provisioning ({@code ActorsSystem.runFoodProvision}) keeps a solvent
+     * prisoner's carry stocked regardless of which policy wins its ticks; the broke serve
+     * hungry — the intended margin, no longer a middle-class death lottery.
+     */
+    private static void eatCarriedRation(Actor self, ActorContext ctx) {
+        if (NeedThresholds.isRecovered(self.need(Need.HUNGER))) {
+            return;
+        }
+        if (ctx.items().countCarriedOfKind(self.id(), ItemKinds.FOOD) > 0) {
+            ctx.items().takeCarried(self.id(), ItemKinds.FOOD, 1);
+            ctx.recordFoodEaten(1);
+            self.applyNeedDelta(Need.HUNGER, FoodEconomy.EAT_RESTORE);
+        }
     }
 
     private void release(Actor self) {

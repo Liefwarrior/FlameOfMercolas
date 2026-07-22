@@ -19,6 +19,9 @@ public final class PriestOfTheFlame extends Actor {
             // the villain-hosting Wastrel), so custody must dominate this stack too or a HELD
             // offender of this type would never be escorted or released.
             Policies.HELD,
+            // Density revisit: shove-riot house arrest (score 4500, just under HELD 5000) --
+            // any citizen type can shove, so any can be sent home to sleep for a day.
+            Policies.HOUSE_ARREST,
             Policies.PLAYER_CONTROL,
             Policies.DEFER_WIELDER,
             Policies.FLEE,

@@ -201,6 +201,24 @@ public interface ActorContext {
     boolean isWalkable(int cell);
 
     /**
+     * The bounded shove ring buffer (density revisit): every successful push records
+     * {@code (tick, cell, pusherId)} here; guards' riot detection ({@link ApprehendPolicy})
+     * reads it at their sense cadence. {@link ShoveLog#EMPTY} where no live system is wired
+     * (world-less bootstrap, test doubles) — no shove is ever recorded and no riot ever sensed.
+     */
+    default ShoveLog shoveLog() {
+        return ShoveLog.EMPTY;
+    }
+
+    /**
+     * Records one riot response (density revisit): a guard sensed a shove riot and issued
+     * {@code houseArrests} house arrests. Pure accounting for the density report — read by no
+     * behavior, so it changes no determinism property; a no-op where unwired.
+     */
+    default void recordRiotResponse(int houseArrests) {
+    }
+
+    /**
      * The live actor-actor occupancy view for this tick (the "only 2 to a cell" cap, {@link
      * Actor#MAX_OCCUPANTS_PER_CELL}). {@link ActorsSystem} rebuilds a shared {@link
      * OccupancyIndex} from every actor's cell before ticking and returns a view whose {@code

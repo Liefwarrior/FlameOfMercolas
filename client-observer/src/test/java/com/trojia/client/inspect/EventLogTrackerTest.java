@@ -21,7 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class EventLogTrackerTest {
 
-    private static final int TICKS = 600;
+    // 600 -> 800 (density revisit): the per-actor route jitter + the 1-per-square cap cost the
+    // displaced movers a handful of extra hops, landing the last home arrival at exactly tick
+    // 600 — the window widens so "arrives MID-run" stays a strict interior assertion.
+    private static final int TICKS = 800;
 
     @Test
     void logsRealTransitionsOncePerTick() {

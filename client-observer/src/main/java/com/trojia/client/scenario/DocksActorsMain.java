@@ -17,6 +17,7 @@ import com.trojia.sim.engine.SimulationSystem;
 import com.trojia.sim.world.PackedPos;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,6 +99,18 @@ public final class DocksActorsMain {
         }
         int[] huntCounters = new int[2]; // [0] catches, [1] revives
 
+        // ---- density revisit (one per square + push + riot house arrest): the max observed
+        // co-occupancy over the whole soak (MUST be 1) and per-actor visited-cell sets for the
+        // route-diversity proof (5 same-anchor serf commuter pairs). HashSet membership is only
+        // ever COUNTED (never iterated), so it is report-deterministic. ----
+        List<int[]> routePairs = pickSameAnchorSerfPairs(registry, homes, 5);
+        Map<Integer, java.util.HashSet<Integer>> routeCells = new LinkedHashMap<>();
+        for (int[] pair : routePairs) {
+            routeCells.put(pair[0], new java.util.HashSet<>());
+            routeCells.put(pair[1], new java.util.HashSet<>());
+        }
+        int maxCoOccupancy = 0;
+
         // Sample at a work-window tick (tod 5000) and a deep-night tick (tod 20000) of each day.
         List<Long> sampleTicks = new ArrayList<>();
         for (long d = 0; d * DailyRhythm.DAY + 20_000 <= ticks; d++) {
@@ -136,6 +149,15 @@ public final class DocksActorsMain {
                 }
                 mouseDowned.put(id, downed);
             }
+            // Density observation: the worst per-cell stack this tick + the tracked pairs' trails.
+            Map<Integer, Integer> perCell = new HashMap<>();
+            for (int a = 0; a < registry.size(); a++) {
+                int count = perCell.merge(registry.get(a).cell(), 1, Integer::sum);
+                maxCoOccupancy = Math.max(maxCoOccupancy, count);
+            }
+            for (Map.Entry<Integer, java.util.HashSet<Integer>> e : routeCells.entrySet()) {
+                e.getValue().add(registry.get(e.getKey()).cell());
+            }
         }
 
         printRoster(registry, homes, jobs);
@@ -149,6 +171,7 @@ public final class DocksActorsMain {
         printSerfStarvationByBand(registry, jobs);
         printMoneyGateProof(population, jobs);
         printJusticeReport(population, jobs);
+        printDensityReport(population, maxCoOccupancy, routePairs, routeCells);
         printBeastReport(population, gullIds, catIds, mouseIds, gullRoam, huntCounters);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
@@ -407,6 +430,92 @@ public final class DocksActorsMain {
                     + " Royals=" + balance + " (post-fine) lastReason=" + policyName(a));
         }
         System.out.println("============================================================================");
+    }
+
+    /**
+     * Density report (density revisit): the one-per-square proof — the maximum co-occupancy any
+     * cell ever reached during the soak (MUST be 1) and the shared-cell count at soak end (MUST
+     * be 0) — plus the push/riot/house-arrest counters and the route-diversity proof: for each
+     * of 5 same-anchor serf commuter pairs, the distinct cells each partner visited and their
+     * overlap percentage (well under 100 = the pair genuinely walks different routes to the
+     * same workplace, the per-actor path jitter working).
+     */
+    private static void printDensityReport(DocksPopulation population, int maxCoOccupancy,
+            List<int[]> routePairs, Map<Integer, java.util.HashSet<Integer>> routeCells) {
+        ActorRegistry registry = population.registry();
+        Map<Integer, Integer> perCell = new HashMap<>();
+        int sharedCellsNow = 0;
+        int maxNow = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            int count = perCell.merge(registry.get(i).cell(), 1, Integer::sum);
+            maxNow = Math.max(maxNow, count);
+            if (count == 2) {
+                sharedCellsNow++; // counted once, the moment a cell reaches 2
+            }
+        }
+        int underHouseArrest = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            if (registry.get(i).hasStatus(com.trojia.sim.actor.StatusBit.HOUSE_ARREST)) {
+                underHouseArrest++;
+            }
+        }
+        var system = population.system();
+        System.out.println();
+        System.out.println("================ DENSITY (one per square + push + riot house arrest) ========");
+        System.out.println("  max observed co-occupancy over the soak: " + maxCoOccupancy
+                + "  (bar: 1)  -> " + (maxCoOccupancy <= 1 ? "PASS" : "FAIL"));
+        System.out.println("  shared cells at soak end (>=2 actors): " + sharedCellsNow
+                + " (worst stack now: " + maxNow + ")  (bar: 0)  -> "
+                + (sharedCellsNow == 0 ? "PASS" : "FAIL"));
+        System.out.println("  pushes: " + system.pushCount()
+                + ";  riot responses: " + system.riotCount()
+                + ";  house arrests issued: " + system.houseArrestsIssued()
+                + ";  under house arrest now: " + underHouseArrest);
+        System.out.println("  route diversity (same-anchor serf commuter pairs, distinct cells visited):");
+        for (int[] pair : routePairs) {
+            java.util.HashSet<Integer> a = routeCells.get(pair[0]);
+            java.util.HashSet<Integer> b = routeCells.get(pair[1]);
+            int shared = 0;
+            for (int cell : a) {
+                if (b.contains(cell)) {
+                    shared++;
+                }
+            }
+            int overlapPct = 100 * shared / Math.min(a.size(), b.size());
+            System.out.println("    pair actor#" + pair[0] + "/actor#" + pair[1]
+                    + " anchor=" + xyz(registry.get(pair[0]).anchorCell())
+                    + "  cellsA=" + a.size() + " cellsB=" + b.size()
+                    + " shared=" + shared + " overlap=" + overlapPct + "%");
+        }
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * The route-diversity subjects: the first {@code maxPairs} pairs of serf COMMUTERS (home
+     * differs from work anchor, so they genuinely travel) sharing one work anchor, ascending
+     * actor id — deterministic, so twin runs pick identical pairs.
+     */
+    private static List<int[]> pickSameAnchorSerfPairs(ActorRegistry registry, HomeRegistry homes,
+            int maxPairs) {
+        Map<Integer, Integer> firstByAnchor = new LinkedHashMap<>();
+        List<int[]> pairs = new ArrayList<>();
+        for (int i = 0; i < registry.size() && pairs.size() < maxPairs; i++) {
+            Actor a = registry.get(i);
+            if (!a.typeId().key().equals("serf") || a.homeId() == Actor.NONE) {
+                continue;
+            }
+            if (a.anchorCell() == homes.get(a.homeId()).homeCell()) {
+                continue; // bunk crews never commute; only real travelers prove route variety
+            }
+            Integer first = firstByAnchor.get(a.anchorCell());
+            if (first == null) {
+                firstByAnchor.put(a.anchorCell(), i);
+            } else if (first >= 0) {
+                pairs.add(new int[] {first, i});
+                firstByAnchor.put(a.anchorCell(), -1); // one pair per anchor
+            }
+        }
+        return pairs;
     }
 
     /**

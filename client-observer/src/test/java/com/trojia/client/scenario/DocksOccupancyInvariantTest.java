@@ -17,12 +17,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The occupancy-cap invariant over the real Docks-ward scenario (Eli's "at most 2 people to a
- * space" directive): spawns the deterministic {@link DocksPopulation} onto the baked
- * {@code docks_surface} world and asserts that <em>no cell ever holds more than</em>
- * {@link Actor#MAX_OCCUPANTS_PER_CELL} <em>actors</em> — at spawn (t=0) and after each of several
- * hundred ticks of the real {@code ACTORS} phase. Also pins the population size so the spread
- * refactor cannot silently drop or duplicate actors.
+ * The occupancy-cap invariant over the real Docks-ward scenario (density revisit, Eli's "only
+ * one per square from now on" directive — the cap dropped 2 → 1): spawns the deterministic
+ * {@link DocksPopulation} onto the baked {@code docks_surface} world and asserts that <em>no
+ * cell ever holds more than</em> {@link Actor#MAX_OCCUPANTS_PER_CELL} <em>actors</em> — at
+ * spawn (t=0) and after each of several hundred ticks of the real {@code ACTORS} phase (which
+ * now includes live shoves: a push must displace into a FREE cell only, so the cap survives
+ * every displacement too). Also pins the population size so the spread refactor cannot
+ * silently drop or duplicate actors.
  */
 class DocksOccupancyInvariantTest {
 
@@ -39,7 +41,7 @@ class DocksOccupancyInvariantTest {
     private static final int TICKS = 600;
 
     @Test
-    void noCellEverHoldsMoreThanTwoActors() {
+    void noCellEverHoldsMoreThanTheOccupancyCap() {
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadDocksSurface();
         DocksPopulation population = DocksPopulation.build(loaded.worldSeed(), loaded.world());
         ActorRegistry registry = population.registry();

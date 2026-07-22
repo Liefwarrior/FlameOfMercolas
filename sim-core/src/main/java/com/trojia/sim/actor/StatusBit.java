@@ -34,6 +34,13 @@ public final class StatusBit {
      * serializer change.
      */
     public static final short MOVE_ALONG = 1 << 10;
+    /**
+     * Under shove-riot house arrest (density revisit): the Watch sensed excessive shoving and
+     * sent this actor home for a full day — {@code HouseArrestPolicy} routes it to its home
+     * cell and holds it there sleeping until {@code houseArrestUntilTick}. Rides
+     * {@code statusBits}, so it needs no serializer change.
+     */
+    public static final short HOUSE_ARREST = 1 << 11;
 
     private StatusBit() {
     }

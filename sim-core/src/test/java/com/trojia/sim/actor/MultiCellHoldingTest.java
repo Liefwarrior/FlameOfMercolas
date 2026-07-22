@@ -114,12 +114,15 @@ final class MultiCellHoldingTest {
         for (Actor v : villains) {
             JobBehaviors.checkArrestExposure(v, ctx, job);
         }
-        // First six fan out to distinct cells; the 7th and 8th double up on the two lowest cells.
-        assertEquals(cells(6).cellAt(0), villains[6].assignedHoldCell(),
-                "the 7th doubles up on the lowest cell (now at the 2-occupant cap)");
-        assertEquals(cells(6).cellAt(1), villains[7].assignedHoldCell(),
-                "the 8th takes the next cell below the cap, never overfilling cell 0");
-        // Cell 0 must hold exactly MAX_OCCUPANTS_PER_CELL prisoners, no more.
+        // First six fan out to distinct cells. Density revisit (cap 2 -> 1): no cell ever
+        // doubles up any more — the 7th and 8th find every cell at the 1-occupant cap and get
+        // NO cell (HeldPolicy falls back to the scalar hold cell / hold-in-place). This is why
+        // the map pass grew K34 from 6 to 9 cells: capacity is now exactly the cell count.
+        assertEquals(Actor.NONE, villains[6].assignedHoldCell(),
+                "the 7th finds every cell at the 1-occupant cap -> no cell assigned");
+        assertEquals(Actor.NONE, villains[7].assignedHoldCell(),
+                "the 8th likewise -- a cell is never overfilled");
+        // Cell 0 must hold exactly MAX_OCCUPANTS_PER_CELL (= 1) prisoners, no more.
         int inCell0 = 0;
         for (Actor v : villains) {
             if (v.assignedHoldCell() == cells(6).cellAt(0)) {
@@ -132,9 +135,9 @@ final class MultiCellHoldingTest {
     @Test
     void releaseFreesTheSlotForTheNextArrest() {
         ActorRegistry registry = new ActorRegistry();
-        // A single-cell prison (capacity 2). Two arrests fill it; a third finds no free cell.
-        // All actors (incl. the later-arrested v3) are spawned before the context so its per-actor
-        // draw-counter array is sized to the full registry.
+        // A single-cell prison (capacity 1 since the density revisit). One arrest fills it; the
+        // next finds no free cell. All actors (incl. the later-arrested v3) are spawned before
+        // the context so its per-actor draw-counter array is sized to the full registry.
         Actor v0 = villain(registry, 48);
         Actor v1 = villain(registry, 49);
         Actor v2 = villain(registry, 51);
@@ -146,11 +149,12 @@ final class MultiCellHoldingTest {
         JobBehaviors.checkArrestExposure(v0, ctx, job);
         JobBehaviors.checkArrestExposure(v1, ctx, job);
         assertEquals(cells(1).cellAt(0), v0.assignedHoldCell());
-        assertEquals(cells(1).cellAt(0), v1.assignedHoldCell());
+        assertEquals(Actor.NONE, v1.assignedHoldCell(),
+                "the only cell is at the 1-occupant cap -> no cell assigned (falls back to hold-in-place)");
 
         JobBehaviors.checkArrestExposure(v2, ctx, job);
         assertEquals(Actor.NONE, v2.assignedHoldCell(),
-                "the only cell is at the 2-occupant cap -> no cell assigned (falls back to hold-in-place)");
+                "likewise for every later arrest while the cell is taken");
 
         // Release v0 (sentence elapsed): HeldPolicy clears HELD and frees the assigned cell.
         v0.setHeldUntilTick(100L);
@@ -159,7 +163,7 @@ final class MultiCellHoldingTest {
         assertFalse(v0.hasStatus(StatusBit.HELD));
         assertEquals(Actor.NONE, v0.assignedHoldCell(), "release frees the slot");
 
-        // A fresh arrest now finds the freed slot again (the cell has one occupant, under the cap).
+        // A fresh arrest now finds the freed slot again (the cell is empty, under the cap).
         JobBehaviors.checkArrestExposure(v3, ctx, job);
         assertEquals(cells(1).cellAt(0), v3.assignedHoldCell(), "the freed slot is reused");
     }

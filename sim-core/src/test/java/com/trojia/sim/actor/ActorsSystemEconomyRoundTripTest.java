@@ -83,8 +83,17 @@ final class ActorsSystemEconomyRoundTripTest {
         bank.credit(0, 500);
         bank.credit(1, 250);
 
-        return new ActorsSystem(1L, typeStats, jobs, registry, homes, relationships, items, bank,
-                null, Actor.NONE, RestrictedZoneTable.EMPTY);
+        // Density revisit: the two new persisted per-actor scalars + a populated shove ring
+        // buffer (behavior-carrying — riot detection reads it — so it must round-trip).
+        a0.setLastPushTick(4_990L);
+        a1.setStatus(StatusBit.HOUSE_ARREST, true);
+        a1.setHouseArrestUntilTick(70_000L);
+
+        ActorsSystem system = new ActorsSystem(1L, typeStats, jobs, registry, homes,
+                relationships, items, bank, null, Actor.NONE, RestrictedZoneTable.EMPTY);
+        system.shoveLog().record(4_990L, PackedPos.pack(6, 5, 1), a0.id());
+        system.shoveLog().record(4_995L, PackedPos.pack(7, 5, 1), a1.id());
+        return system;
     }
 
     private static ActorsSystem freshLoadTarget(ActorTypeStatsTable typeStats, JobRegistry jobs) {

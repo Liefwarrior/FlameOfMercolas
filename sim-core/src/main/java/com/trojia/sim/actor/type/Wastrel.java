@@ -17,6 +17,9 @@ public final class Wastrel extends Actor {
     private static final PolicyStack STACK = PolicyStack.of(
             Policies.EXECUTED,
             Policies.HELD,
+            // Density revisit: shove-riot house arrest (score 4500, just under HELD 5000) --
+            // any citizen type can shove, so any can be sent home to sleep for a day.
+            Policies.HOUSE_ARREST,
             Policies.PLAYER_CONTROL,
             Policies.DEFER_WIELDER,
             Policies.FLEE,

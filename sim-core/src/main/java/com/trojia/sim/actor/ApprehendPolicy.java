@@ -66,6 +66,21 @@ public final class ApprehendPolicy implements BehaviorPolicy {
     /** The fixed loiter sentence: exactly one day (DailyRhythm.DAY = 24,000 ticks). */
     static final long LOITER_SENTENCE_TICKS = 24_000L;
 
+    // ---- Shove-riot detection (density revisit): "excessive shoving in an area should bring
+    // guards who send everyone shoving home to house arrest". At the same sense cadence a
+    // guard scans the shared ShoveLog for a CLUSTER — >= RIOT_SHOVES shoves within
+    // RIOT_RADIUS cells of one anchor shove and within RIOT_WINDOW ticks — with at least one
+    // arrestable shover left. Detection is district-wide ("brings guards": the Watch hears of
+    // a brawl anywhere in the ward), so a Band-B/C riot is corrected even though the Watch
+    // garrisons Band A; the CORRECTION is issued in place (status + deadline) and the
+    // offender's own HouseArrestPolicy marches it home. Draw-free, ascending scans only. ----
+    /** Shoves within radius+window of one anchor shove that constitute a riot. */
+    static final int RIOT_SHOVES = 6;
+    /** Chebyshev radius of the riot cluster around the anchor shove's cell. */
+    static final int RIOT_RADIUS = 6;
+    /** Only shoves this recent count toward a riot (600 ticks = 10 minutes). */
+    static final long RIOT_WINDOW_TICKS = 600;
+
     @Override
     public PolicyId id() {
         return PolicyId.APPREHEND;
@@ -79,7 +94,12 @@ public final class ApprehendPolicy implements BehaviorPolicy {
         if (ctx.tick() % SENSE_PERIOD_TICKS != 0) {
             return 0; // between sense boundaries: no acquisition (the throttle)
         }
-        // Read-only acquisition probe; act() re-runs the identical deterministic scan to lock.
+        // Read-only acquisition probes; act() re-runs the identical deterministic scans. The
+        // riot check comes first in BOTH (a brawl outranks one loiterer, and score/act must
+        // agree on which branch fires).
+        if (senseRiotAnchor(ctx) != Actor.NONE) {
+            return APPREHEND_SCORE;
+        }
         return senseLowestEligible(self, ctx) != Actor.NONE ? APPREHEND_SCORE : 0;
     }
 
@@ -87,6 +107,16 @@ public final class ApprehendPolicy implements BehaviorPolicy {
     public void act(Actor self, ActorContext ctx) {
         int targetId = self.apprehendTargetId();
         if (targetId == Actor.NONE) {
+            // Riot first (mirrors score()'s branch order): issue the house arrests and be done
+            // this tick — no chase, the correction is stamped and each offender's own
+            // HouseArrestPolicy marches it home.
+            int riotAnchor = senseRiotAnchor(ctx);
+            if (riotAnchor != Actor.NONE) {
+                int issued = issueHouseArrests(ctx, riotAnchor);
+                ctx.recordRiotResponse(issued);
+                self.setLastReasonCode(ReasonCode.APPREHENDING);
+                return;
+            }
             targetId = senseLowestEligible(self, ctx); // byte-identical to score()'s probe
             self.setApprehendTargetId(targetId);
         }
@@ -153,6 +183,107 @@ public final class ApprehendPolicy implements BehaviorPolicy {
         if (seized > 0) {
             bank.transfer(offender.id(), pool, seized); // accountId == actorId (bake convention)
         }
+    }
+
+    // ======================================================================
+    // Shove-riot sensing + the house-arrest correction (density revisit)
+    // ======================================================================
+
+    /**
+     * The riot probe: scans the shove log oldest-first for an ANCHOR shove {@code E} in the
+     * window such that at least {@link #RIOT_SHOVES} in-window shoves (E included) lie within
+     * {@link #RIOT_RADIUS} of {@code E}'s cell AND at least one clustered shover is still
+     * arrestable — returns that anchor's cell, or {@link Actor#NONE}. Pure, draw-free,
+     * deterministic (the log's oldest-first order is insertion order). Package-visible for the
+     * riot unit test.
+     */
+    static int senseRiotAnchor(ActorContext ctx) {
+        ShoveLog log = ctx.shoveLog();
+        long now = ctx.tick();
+        for (int i = 0; i < log.size(); i++) {
+            if (now - log.tickAt(i) > RIOT_WINDOW_TICKS) {
+                continue; // too old to count
+            }
+            int anchorCell = log.cellAt(i);
+            if (clusterSize(log, now, anchorCell) >= RIOT_SHOVES
+                    && anyArrestableShover(ctx, log, now, anchorCell)) {
+                return anchorCell;
+            }
+        }
+        return Actor.NONE;
+    }
+
+    /** In-window shoves within {@link #RIOT_RADIUS} of {@code anchorCell} (same z implied by radius math). */
+    private static int clusterSize(ShoveLog log, long now, int anchorCell) {
+        int count = 0;
+        int anchorZ = PackedPos.z(anchorCell);
+        for (int i = 0; i < log.size(); i++) {
+            if (now - log.tickAt(i) <= RIOT_WINDOW_TICKS
+                    && PackedPos.z(log.cellAt(i)) == anchorZ
+                    && ActorGeometry.chebyshev(log.cellAt(i), anchorCell) <= RIOT_RADIUS) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** Whether at least one clustered in-window shover is still arrestable (gates re-detection). */
+    private static boolean anyArrestableShover(ActorContext ctx, ShoveLog log, long now,
+            int anchorCell) {
+        int anchorZ = PackedPos.z(anchorCell);
+        for (int i = 0; i < log.size(); i++) {
+            if (now - log.tickAt(i) > RIOT_WINDOW_TICKS
+                    || PackedPos.z(log.cellAt(i)) != anchorZ
+                    || ActorGeometry.chebyshev(log.cellAt(i), anchorCell) > RIOT_RADIUS) {
+                continue;
+            }
+            if (isHouseArrestable(ctx.registry().get(log.pusherIdAt(i)), ctx)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The correction: every arrestable actor with an in-window shove inside the riot cluster is
+     * sent home under a fixed {@link HouseArrestPolicy#HOUSE_ARREST_TICKS} (1-day) house arrest
+     * — status bit + absolute deadline; the offender's own {@code HouseArrestPolicy} does the
+     * marching. Returns the number of arrests issued (0 on a re-scan where every shover is
+     * already corrected — which is exactly what makes the detection idempotent across guards
+     * within one cadence tick). Package-visible for the riot unit test.
+     */
+    static int issueHouseArrests(ActorContext ctx, int anchorCell) {
+        ShoveLog log = ctx.shoveLog();
+        long now = ctx.tick();
+        int anchorZ = PackedPos.z(anchorCell);
+        int issued = 0;
+        for (int i = 0; i < log.size(); i++) {
+            if (now - log.tickAt(i) > RIOT_WINDOW_TICKS
+                    || PackedPos.z(log.cellAt(i)) != anchorZ
+                    || ActorGeometry.chebyshev(log.cellAt(i), anchorCell) > RIOT_RADIUS) {
+                continue;
+            }
+            Actor shover = ctx.registry().get(log.pusherIdAt(i));
+            if (!isHouseArrestable(shover, ctx)) {
+                continue; // the Watch/Wielder/beasts are exempt; custody supersedes; no doubles
+            }
+            shover.setStatus(StatusBit.HOUSE_ARREST, true);
+            shover.setHouseArrestUntilTick(now + HouseArrestPolicy.HOUSE_ARREST_TICKS);
+            shover.setLastReasonCode(ReasonCode.HOUSE_ARRESTED);
+            issued++;
+        }
+        return issued;
+    }
+
+    /** Guards themselves are never house-arrested; neither are the held/hanged or the already-sent. */
+    private static boolean isHouseArrestable(Actor actor, ActorContext ctx) {
+        if (actor.hasStatus(StatusBit.HOUSE_ARREST) || actor.hasStatus(StatusBit.HELD)
+                || actor.hasStatus(StatusBit.EXECUTED)) {
+            return false;
+        }
+        Job presented = ctx.presentedJob(actor);
+        return !(presented instanceof Job.Watch || presented instanceof Job.FlameOfMerc
+                || presented instanceof Job.Beast);
     }
 
     // ======================================================================

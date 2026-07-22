@@ -53,5 +53,11 @@ public enum PolicyId {
      * {@code downedTimer} machinery revives it, whereupon its ordinary stack resumes
      * and the leash walks it back to its den.
      */
-    DOWNED_INERT
+    DOWNED_INERT,
+    /**
+     * Shove-riot house arrest (density revisit): the offender is sent HOME for a full day
+     * (24,000 ticks) and held there sleeping. Scores 4500 — just under HELD 5000 (real
+     * custody supersedes), above PLAYER_CONTROL 2000.
+     */
+    HOUSE_ARREST
 }

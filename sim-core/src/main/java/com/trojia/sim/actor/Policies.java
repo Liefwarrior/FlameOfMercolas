@@ -20,6 +20,7 @@ public final class Policies {
     public static final BehaviorPolicy APPREHEND = new ApprehendPolicy();
     public static final BehaviorPolicy BEAST_HUNT = new BeastHuntPolicy();
     public static final BehaviorPolicy DOWNED_INERT = new DownedInertPolicy();
+    public static final BehaviorPolicy HOUSE_ARREST = new HouseArrestPolicy();
 
     private Policies() {
     }

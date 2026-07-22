@@ -43,8 +43,13 @@ public abstract class Actor {
      * enforced at movement commit ({@link #tryStep}) exactly like a wall — a full cell reads as
      * blocked, so wall-slide tries alternatives and, failing those, the tick is a deterministic
      * no-op. Spawn-time crowding is prevented separately by the scenario spawner.
+     *
+     * <p>Density revisit (Eli): ONE per square — "no more stacking actors, only one per square
+     * from now on". Was 2. A cell blocked only by its single occupant can now be contested via
+     * the shove verb ({@link PushMechanics}, {@link OccupancyQuery#tryPush}) instead of reading
+     * as a permanent wall.
      */
-    public static final int MAX_OCCUPANTS_PER_CELL = 2;
+    public static final int MAX_OCCUPANTS_PER_CELL = 1;
 
     /**
      * A narrow occupancy probe threaded alongside {@link WalkabilityQuery} into the world-aware
@@ -75,6 +80,17 @@ public abstract class Actor {
 
         /** Commit hook: the moving actor just left {@code fromCell} for {@code toCell}. */
         void onEnter(int fromCell, int toCell);
+
+        /**
+         * The shove hook (density revisit): {@code pusher}'s step onto {@code cell} is blocked
+         * ONLY by occupancy — attempt to displace the occupant ({@link PushMechanics}). Returns
+         * {@code true} iff the cell was vacated (the caller then commits the step). The default —
+         * and {@link #UNLIMITED}, which never reports a full cell anyway — never pushes, so
+         * world-less/test movers are byte-identical to before.
+         */
+        default boolean tryPush(Actor pusher, int cell) {
+            return false;
+        }
     }
 
     /**
@@ -166,6 +182,21 @@ public abstract class Actor {
      * tick, never a countdown (determinism rule). Persisted (serialize/load/hash).
      */
     private long moveAlongUntilTick;
+    /**
+     * The absolute tick of this actor's last shove — as pusher OR pushee (being shoved staggers
+     * you, the push-chain guard; see {@link PushMechanics}). Gate: a new shove needs
+     * {@code tick - lastPushTick >= PUSH_COOLDOWN_TICKS}. Initialized one whole cooldown in the
+     * past so a fresh actor can shove immediately at tick 0. A persisted scalar
+     * (serialize/load/hash — the {@code heldUntilTick} triad).
+     */
+    private long lastPushTick = -PushMechanics.PUSH_COOLDOWN_TICKS;
+    /**
+     * The absolute tick this actor's shove-riot house arrest ends (only meaningful while
+     * {@link StatusBit#HOUSE_ARREST} is set): {@link HouseArrestPolicy} routes the offender HOME
+     * and holds it there sleeping until this deadline. Absolute tick, never a countdown. A
+     * persisted scalar (serialize/load/hash — the {@code heldUntilTick} triad).
+     */
+    private long houseArrestUntilTick;
 
     // ---- Play mode (PLAY-MODE-SPEC.md §5.2/§6): plain scalar, the same goalProgress/
     // heldUntilTick precedent — per-frame input intent, not simulation state, so it is
@@ -419,7 +450,13 @@ public abstract class Actor {
             }
         }
         if (occ.occupantsAt(stepped) >= MAX_OCCUPANTS_PER_CELL) {
-            return false; // cell full: a hard occupancy wall (§2.5, the "only 2 to a cell" cap)
+            // Blocked ONLY by occupancy (walkable + leash-legal, someone is standing there):
+            // try the shove (density revisit — PushMechanics via the query's tryPush hook,
+            // cooldown-gated). Displaces the occupant to an adjacent free cell and vacates
+            // the square; a failed shove leaves the cell a hard occupancy wall as before.
+            if (!occ.tryPush(this, stepped)) {
+                return false;
+            }
         }
         int from = cell;
         cell = stepped;
@@ -509,13 +546,32 @@ public abstract class Actor {
     private void replan(int targetCell, WalkabilityQuery walk) {
         cachedRouteTargetCell = targetCell;
         cachedRouteIndex = 0;
-        int[] route = PathFinder.findRoute(cell, targetCell, walk, PathFinder.DEFAULT_MAX_NODES);
+        // Salted with this actor's id (density revisit, "unique paths per person"): each actor
+        // gets its own slightly-wiggly near-optimal route between shared endpoints, ending the
+        // single-file convoys — while staying a pure function of (id, start, target, walk).
+        // id + 1 because salt 0 is the "no jitter" sentinel and actor id 0 is real.
+        int[] route = PathFinder.findRoute(cell, targetCell, walk, PathFinder.DEFAULT_MAX_NODES,
+                id + 1);
         if (route == null) {
             cachedRoute = EMPTY_ROUTE;
             cachedRouteRetryCooldown = (short) ROUTE_RETRY_COOLDOWN_TICKS;
         } else {
             cachedRoute = route;
         }
+    }
+
+    /**
+     * Drops the cached route wholesale (the shove verb's replan hook, {@link PushMechanics}): a
+     * displaced actor's cached waypoints no longer line up with where it now stands, so the next
+     * {@link #stepAlongRoute} call re-searches from the new cell instead of trusting a stale
+     * plan. Also clears any retry-cooldown so the replan happens immediately. A pure cache
+     * reset — the cache is already documented non-persisted/derived, so this adds no state.
+     */
+    public final void invalidateRoute() {
+        cachedRoute = EMPTY_ROUTE;
+        cachedRouteIndex = 0;
+        cachedRouteTargetCell = NONE;
+        cachedRouteRetryCooldown = 0;
     }
 
     /**
@@ -780,6 +836,26 @@ public abstract class Actor {
     /** Stamps the move-along warning's absolute expiry tick (law &amp; order pass). */
     public final void setMoveAlongUntilTick(long tick) {
         this.moveAlongUntilTick = tick;
+    }
+
+    /** The absolute tick of this actor's last shove, as pusher or pushee (density revisit). */
+    public final long lastPushTick() {
+        return lastPushTick;
+    }
+
+    /** Stamps the shove-cooldown clock ({@link PushMechanics} commit, and serializer load). */
+    public final void setLastPushTick(long tick) {
+        this.lastPushTick = tick;
+    }
+
+    /** The absolute end tick of this actor's house arrest (meaningful while HOUSE_ARREST). */
+    public final long houseArrestUntilTick() {
+        return houseArrestUntilTick;
+    }
+
+    /** Stamps the house-arrest sentence's absolute end tick (shove-riot correction). */
+    public final void setHouseArrestUntilTick(long tick) {
+        this.houseArrestUntilTick = tick;
     }
 
     /** The pending Play-mode step target, or {@link #NONE} (PLAY-MODE-SPEC.md §5.2). */
