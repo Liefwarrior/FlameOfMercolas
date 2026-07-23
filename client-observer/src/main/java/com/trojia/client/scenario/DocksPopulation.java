@@ -411,12 +411,15 @@ public final class DocksPopulation implements ScenarioPopulation {
     private IdentityRegistry identity;
     /** The S2 authored micro-histories, realized at bake (edges live in {@link #relationships}). */
     private final List<MicroHistoryBake.Bound> authoredHistories;
+    /** The S4 per-actor ask-topic lists (the rumor verb) — see {@link #askTopicsOf}. */
+    private final Map<Integer, AskTopicsBake.Topics> askTopics;
 
     private DocksPopulation(ActorsSystem system, ActorTypeStatsTable typeStats,
             JobRegistry jobs, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, ActorRegistry registry, long worldSeed,
             int trackedGroundMoverId, List<Integer> moverIds,
-            List<MicroHistoryBake.Bound> authoredHistories) {
+            List<MicroHistoryBake.Bound> authoredHistories,
+            Map<Integer, AskTopicsBake.Topics> askTopics) {
         this.system = system;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -428,6 +431,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         this.trackedGroundMoverId = trackedGroundMoverId;
         this.moverIds = List.copyOf(moverIds);
         this.authoredHistories = authoredHistories;
+        this.askTopics = askTopics;
     }
 
     @Override
@@ -488,6 +492,18 @@ public final class DocksPopulation implements ScenarioPopulation {
      */
     List<MicroHistoryBake.Bound> authoredHistories() {
         return authoredHistories;
+    }
+
+    /**
+     * The soul's speakable ask-topics (S4 "the rumor verb"), or {@code null} for a forged
+     * non-notable — THE read the observer's talk surface makes before calling
+     * {@code BarkSelector.selectAsk(worldSeed, tick, speaker, topics.notableId(),
+     * topics.historyIds())}: the sim stays ignorant of notables/histories vocabularies by
+     * design, and a null/empty hand-off keeps the selector silent (fall back to greet).
+     * Baked, immutable, presentation-lane only — reading it can never move the tick hash.
+     */
+    public AskTopicsBake.Topics askTopicsOf(int actorId) {
+        return askTopics.get(actorId);
     }
 
     @Override
@@ -612,6 +628,15 @@ public final class DocksPopulation implements ScenarioPopulation {
                 LeaningRaws.load(rawsRoot.resolve("factions").resolve("leanings.json")),
                 notableActors, factionStandings);
 
+        // S4 WORLD "the rumor verb": compile each bound notable's speakable ask-topics
+        // (its personal monologue + the micro-histories it is party to + the rumor
+        // knowledge-domains rumors.json grants it) — the symbol lists the talk surface
+        // passes to BarkSelector.selectAsk. Client-side bake data only: no sim state,
+        // no save bytes, no hash — asking can never perturb a running simulation.
+        Map<Integer, AskTopicsBake.Topics> askTopics = AskTopicsBake.bake(authoredHistories,
+                RumorRaws.load(rawsRoot.resolve("rumors").resolve("rumors.json")),
+                notableActors);
+
         // S3 "The Vanished Clerk": bind the authored quest raws against this bake's own
         // notable map / item kinds / zone table / desk cell, and stage the quest's physical
         // props (the leaf in the desk, the key and a payable pocket on Gilt) — all inside
@@ -625,7 +650,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         system.recordFoodMintedAtBake(foodSeeded);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers,
-                authoredHistories);
+                authoredHistories, askTopics);
     }
 
     /** Royals Gilt's pocket is topped to at bake — funds end_gilt's seize-what-exists pay. */
