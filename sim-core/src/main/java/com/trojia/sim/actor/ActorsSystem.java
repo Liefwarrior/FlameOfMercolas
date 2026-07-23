@@ -84,8 +84,11 @@ public final class ActorsSystem implements SimulationSystem {
      */
     private final ShoveLog shoveLog = new ShoveLog(SHOVE_LOG_CAPACITY);
 
-    /** The live shove log (package-visible: the round-trip test seeds rows through it). */
-    ShoveLog shoveLog() {
+    /**
+     * The live shove log (public since S4: the docks soak's stairwell-funnel watch reads
+     * rows off it, the {@link #crimeLog()} precedent; the round-trip test seeds through it).
+     */
+    public ShoveLog shoveLog() {
         return shoveLog;
     }
 

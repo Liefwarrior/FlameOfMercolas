@@ -11,6 +11,9 @@ import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.ItemKinds;
 import com.trojia.sim.actor.RelationshipEdge;
 import com.trojia.sim.actor.RelationshipRegistry;
+import com.trojia.sim.actor.PatrolRouteTable;
+import com.trojia.sim.actor.ZLinkTable;
+import com.trojia.sim.actor.ZReachability;
 import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobRegistry;
 import com.trojia.sim.engine.SimulationSystem;
@@ -112,6 +115,35 @@ public final class DocksActorsMain {
         }
         int maxCoOccupancy = 0;
 
+        // ---- S4 THE CLIMB: the cross-z observation rig. The extracted connector table
+        // (re-extracted here — a pure function of the baked world, identical to the one
+        // inside the fixtures), the spawn-time 3D reachability audit, the Saltgate-bound
+        // patrollers' band trail, and the stairwell shove-funnel watch (the lead's soak
+        // order: "soak the riot detector at the stairwells and report"). ----
+        ZLinkTable zLinks = ZLinkTable.extract(loaded.world());
+        ZReachability spawnAudit = ZReachability.flood(loaded.world(), zLinks,
+                DocksPopulation.patrolRoutes().get(0).get(3)); // the Tarwalk (96,33) hub
+        PatrolRouteTable allRoutes = PatrolRouteTable.of(DocksPopulation.patrolRoutes());
+        List<Integer> riseWalkers = new ArrayList<>();
+        for (int i = 0; i < registry.size(); i++) {
+            if (allRoutes.routeContaining(registry.get(i).anchorCell())
+                    == DocksPopulation.SALTGATE_ROUTE_INDEX) {
+                riseWalkers.add(i);
+            }
+        }
+        Map<Integer, java.util.TreeMap<Integer, Integer>> riseZTicks = new LinkedHashMap<>();
+        for (int id : riseWalkers) {
+            riseZTicks.put(id, new java.util.TreeMap<>());
+        }
+        int riseHead = DocksPopulation.patrolRoutes()
+                .get(DocksPopulation.SALTGATE_ROUTE_INDEX).get(0);
+        int riseFoot = DocksPopulation.patrolRoutes()
+                .get(DocksPopulation.SALTGATE_ROUTE_INDEX).get(2);
+        int headArrivals = 0;
+        int footArrivals = 0;
+        long stairwellShoves = 0;
+        long seenShoves = 0;
+
         // Sample at a work-window tick (tod 5000) and a deep-night tick (tod 20000) of each day.
         List<Long> sampleTicks = new ArrayList<>();
         for (long d = 0; d * DailyRhythm.DAY + 20_000 <= ticks; d++) {
@@ -150,6 +182,27 @@ public final class DocksActorsMain {
                 }
                 mouseDowned.put(id, downed);
             }
+            // S4 climb observation: the Rise walkers' band trail + waypoint arrivals, and
+            // the stairwell shove funnel (fresh shove rows within chebyshev 2 of a
+            // connector endpoint on either band).
+            for (int id : riseWalkers) {
+                int cell = registry.get(id).cell();
+                riseZTicks.get(id).merge(PackedPos.z(cell), 1, Integer::sum);
+                if (cell == riseHead) {
+                    headArrivals++;
+                } else if (cell == riseFoot) {
+                    footArrivals++;
+                }
+            }
+            var shoves = population.system().shoveLog();
+            long totalShoves = shoves.totalRecorded();
+            int freshShoves = (int) Math.min(totalShoves - seenShoves, shoves.size());
+            for (int r = shoves.size() - freshShoves; r < shoves.size(); r++) {
+                if (nearAConnector(shoves.cellAt(r), zLinks)) {
+                    stairwellShoves++;
+                }
+            }
+            seenShoves = totalShoves;
             // Density observation: the worst per-cell stack this tick + the tracked pairs' trails.
             Map<Integer, Integer> perCell = new HashMap<>();
             for (int a = 0; a < registry.size(); a++) {
@@ -175,6 +228,8 @@ public final class DocksActorsMain {
         printMoneyGateProof(population, jobs);
         printJusticeReport(population, jobs);
         printDensityReport(population, maxCoOccupancy, routePairs, routeCells);
+        printClimbReport(population, zLinks, spawnAudit, riseWalkers, riseZTicks,
+                headArrivals, footArrivals, stairwellShoves);
         printProgressionReport(population);
         printTheftReport(population, identity);
         printBarkProof(population, identity, driver.currentTick());
@@ -656,6 +711,81 @@ public final class DocksActorsMain {
                     + "  cellsA=" + a.size() + " cellsB=" + b.size()
                     + " shared=" + shared + " overlap=" + overlapPct + "%");
         }
+        System.out.println("============================================================================");
+    }
+
+    /** Whether {@code cell} lies within chebyshev 2 of a connector endpoint on its own z. */
+    private static boolean nearAConnector(int cell, ZLinkTable links) {
+        int z = PackedPos.z(cell);
+        for (int i = 0; i < links.linkCount(); i++) {
+            int low = links.low(i);
+            int high = links.high(i);
+            if ((PackedPos.z(low) == z && chebyshev(cell, low) <= 2)
+                    || (PackedPos.z(high) == z && chebyshev(cell, high) <= 2)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * S4 climb report: the baked connector census, the spawn-time 3D reachability audit
+     * (per inhabited band + the actors standing on unreachable cells at spawn — the
+     * folklore number, now tracked), the Saltgate Rise walkers' band trail with the
+     * z11+z13 waypoint proof, and the stairwell shove-funnel + riot watch. Deterministic
+     * ascending scans only, so twin runs stay byte-identical.
+     */
+    private static void printClimbReport(DocksPopulation population, ZLinkTable zLinks,
+            ZReachability spawnAudit, List<Integer> riseWalkers,
+            Map<Integer, java.util.TreeMap<Integer, Integer>> riseZTicks,
+            int headArrivals, int footArrivals, long stairwellShoves) {
+        ActorRegistry registry = population.registry();
+        System.out.println();
+        System.out.println("================ THE CLIMB (S4: cross-z movement live) ======================");
+        System.out.println("  connectors baked (stair pairs + ramp exits): " + zLinks.linkCount());
+        System.out.println("  reachability audit (flood from the Tarwalk hub, connectors included):");
+        System.out.printf("  %-10s %10s %11s %13s%n", "z(world)", "walkable", "reachable", "unreachable");
+        for (int z = 17; z <= 22; z++) { // map z:+9 .. z:+14 — strand to roof slums
+            int walkable = spawnAudit.walkableAtZ(z);
+            if (walkable == 0) {
+                continue;
+            }
+            System.out.printf("  z=%-8d %10d %11d %13d%n", z, walkable,
+                    spawnAudit.reachableAtZ(z), walkable - spawnAudit.reachableAtZ(z));
+        }
+        int strandedActors = 0;
+        StringBuilder stranded = new StringBuilder();
+        for (int i = 0; i < registry.size(); i++) {
+            if (!spawnAudit.reachable(registry.get(i).cell())) {
+                strandedActors++;
+                if (strandedActors <= 8) {
+                    stranded.append(strandedActors == 1 ? "" : ", ").append("#").append(i)
+                            .append(xyz(registry.get(i).cell()));
+                }
+            }
+        }
+        System.out.println("  actors at soak end on hub-unreachable cells: " + strandedActors
+                + " / " + registry.size()
+                + (strandedActors > 0 ? "  (" + stranded + (strandedActors > 8 ? ", ..." : "") + ")" : "")
+                + "  <- the ex-folklore metric, now tracked");
+        System.out.println("  Saltgate Rise beat (route " + DocksPopulation.SALTGATE_ROUTE_INDEX
+                + ", z11<->z13): walkers " + riseWalkers);
+        for (int id : riseWalkers) {
+            System.out.println("    actor#" + id + " ticks-per-band " + riseZTicks.get(id));
+        }
+        boolean visitedBothBands = false;
+        for (int id : riseWalkers) {
+            var byZ = riseZTicks.get(id);
+            visitedBothBands |= byZ.containsKey(19) && byZ.containsKey(20)
+                    && byZ.containsKey(21); // world z 19/20/21 = map z:+11/+12/+13
+        }
+        System.out.println("    head(z13) arrivals: " + headArrivals + ";  foot(z11) arrivals: "
+                + footArrivals + ";  a walker visited z11+z12+z13: " + visitedBothBands
+                + "  -> " + (visitedBothBands && headArrivals > 0 && footArrivals > 0
+                        ? "PASS" : "FAIL"));
+        System.out.println("  stairwell funnel: pushes within cheb<=2 of a connector: "
+                + stairwellShoves + " of " + population.system().pushCount()
+                + " total;  riot responses (district-wide): " + population.system().riotCount());
         System.out.println("============================================================================");
     }
 

@@ -31,6 +31,7 @@ import com.trojia.sim.actor.RelationshipKind;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.RooftopTable;
 import com.trojia.sim.actor.SkillTrackRegistry;
+import com.trojia.sim.actor.ZLinkTable;
 import com.trojia.sim.actor.faction.FactionDefinition;
 import com.trojia.sim.actor.faction.FactionRawsLoader;
 import com.trojia.sim.actor.faction.FactionRegistry;
@@ -220,6 +221,15 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[][] PATROL_QUAY = {{14, 30}, {28, 30}, {42, 30}, {56, 30}, {68, 30}};
     private static final int[][] PATROL_ROPEWYND =
             {{10, 65}, {35, 65}, {55, 65}, {78, 65}, {100, 65}, {122, 65}, {145, 65}};
+    // S4 "the climb": the Saltgate Rise beat — the gazetteer's z11<->z13 climb, finally
+    // walkable (the FIRST cross-z patrol route; legs between bands ride the baked brick
+    // ramp rows at y96/y116, x72-79, via ZRouter). Waypoint 0 is the K21 watch sergeant's
+    // existing PATROL_RISE_TOP anchor, which binds him (and the RISE_TOP-anchored beat
+    // watch) to this route via routeContaining — no new actor, roster unchanged. APPENDED
+    // as route index 3 so the three single-z routes keep their bindings.
+    private static final int[] PATROL_SALTGATE_HEAD = {75, 118};   // z:+13 — == PATROL_RISE_TOP
+    private static final int[] PATROL_SALTGATE_MID = {74, 104};    // z:+12 Saltgate roadbed
+    private static final int[] PATROL_SALTGATE_FOOT = {75, 36};    // z:+11 east of the Weighhouse
 
     // Garbage bins (law & order pass, Eli's garbage-can request): one walkable OAK_FLOOR bin
     // cell on the exterior street beside each FOOD business, mirroring gen_docks_surface.py's
@@ -569,9 +579,14 @@ public final class DocksPopulation implements ScenarioPopulation {
         // sailor, guardhouse -> guard, bank vault -> guard, shop special-inventory -> trader).
         // Data + accessors only this pass -- no live enforcement reads it yet (the law&order pass
         // does); the gate itself (canAccess) is unit-tested against these zones.
+        // S4 "the climb": extract every authored vertical passage (stair pairs + ramp
+        // exits) from the baked world's FORM lane — the connector table the opt-in cross-z
+        // movers (player, ReturnHome, Held escort, the Saltgate route patrol) plan over.
+        // World-less builds get EMPTY: the pre-S4 z-rule no-op, byte-identical.
+        ZLinkTable zLinks = world == null ? ZLinkTable.EMPTY : ZLinkTable.extract(world);
         CivicFixtures fixtures = new CivicFixtures(arrestHoldCell, restrictedZoneTable(),
                 vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll,
-                foodMarket, PatrolRouteTable.of(patrolRoutes()), rooftopTable());
+                foodMarket, PatrolRouteTable.of(patrolRoutes()), rooftopTable(), zLinks);
         // Sprint-1 progression + faction wiring: the boot-built skill universe (the committed
         // 16-skill raws) behind the dense per-actor track table, and the 5-faction registry
         // behind the standing ledger. Both are raws-pure boot config (identical every run);
@@ -740,11 +755,21 @@ public final class DocksPopulation implements ScenarioPopulation {
         return out;
     }
 
-    /** The three ordered single-z guard patrol routes (Tarwalk / quay / Ropewynd), world-packed. */
+    /**
+     * The four ordered guard patrol routes, world-packed: the three single-z beats
+     * (Tarwalk / quay / Ropewynd, z:+11) plus — S4 "the climb" — the cross-z Saltgate
+     * Rise beat (head z:+13 → roadbed z:+12 → foot z:+11, wrapping back up), appended
+     * LAST so the existing anchors keep their route bindings.
+     */
     public static List<List<Integer>> patrolRoutes() {
         return List.of(worldCells(PATROL_TARWALK, ZA), worldCells(PATROL_QUAY, ZA),
-                worldCells(PATROL_ROPEWYND, ZA));
+                worldCells(PATROL_ROPEWYND, ZA),
+                List.of(worldCell(PATROL_SALTGATE_HEAD, ZC), worldCell(PATROL_SALTGATE_MID, ZB),
+                        worldCell(PATROL_SALTGATE_FOOT, ZA)));
     }
+
+    /** The Saltgate Rise route's index in {@link #patrolRoutes()} (S4 — the cross-z beat). */
+    public static final int SALTGATE_ROUTE_INDEX = 3;
 
     /**
      * The authored rooftop planes (Sprint-1 progression wiring: the played actor's
