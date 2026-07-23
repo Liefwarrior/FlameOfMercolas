@@ -76,6 +76,17 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
         if (markId != Actor.NONE && markId >= 0 && markId < ctx.registry().size()) {
             TheftMechanics.pickpocket(self, ctx.registry().get(markId), ctx);
         }
+        // Eat intent (Sprint 4 — the played actor can finally feed itself): resolves one
+        // pass of SeekFoodPolicy's eat-in-reach chain (carried ration, buyable counter at
+        // the player's OWN quote, larder, commons, the broke's scavenge) with all its
+        // ordinary side effects and reason stamps (ATE_FOOD / BOUGHT_FOOD /
+        // SCAVENGED_FOOD). Consumed unconditionally (the §5.2 stale-intent rule); a miss
+        // stamps NO_MEAL_IN_REACH so the client can toast the refusal.
+        boolean eatIntent = self.playerEatIntent();
+        self.setPlayerEatIntent(false);
+        if (eatIntent && !SeekFoodPolicy.tryEatInReach(self, ctx)) {
+            self.setLastReasonCode(ReasonCode.NO_MEAL_IN_REACH);
+        }
         int target = self.playerMoveTargetCell();
         if (target != Actor.NONE) {
             int before = self.cell();

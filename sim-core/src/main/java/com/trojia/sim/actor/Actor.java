@@ -231,6 +231,17 @@ public abstract class Actor {
      * The presentation greet itself stays observer-side and sim-silent.
      */
     private int playerTalkTargetId = NONE;
+    /**
+     * Whether this played actor intends to EAT/BUY A MEAL this tick (Sprint 4 — the
+     * played-actor eat verb; a played soul could previously starve, its SEEK_FOOD AI
+     * permanently outscored by PLAYER_CONTROL). Same contract as
+     * {@link #playerMoveTargetCell}: per-frame input intent set by the observer's input
+     * layer, consumed (and reset) by {@code PlayerControlPolicy.act}, which resolves it
+     * through {@code SeekFoodPolicy}'s existing eat-in-reach chain (carried ration, a
+     * buyable counter at the player's OWN barter quote, the own larder, a commons, the
+     * broke's scavenge). Never persisted.
+     */
+    private boolean playerEatIntent;
 
     // ---- cached A* route (§2.5 pathfinding addendum): a derived/recomputable cache, not
     // ground-truth state — the same "per-actor bookkeeping vs. registry" distinction the
@@ -1035,6 +1046,21 @@ public abstract class Actor {
      */
     public final void setPlayerTalkTarget(int actorId) {
         this.playerTalkTargetId = actorId;
+    }
+
+    /** Whether a Play-mode eat/buy-a-meal intent is pending this tick (Sprint 4). */
+    public final boolean playerEatIntent() {
+        return playerEatIntent;
+    }
+
+    /**
+     * Arms (or clears) the pending Play-mode eat intent: the observer's input layer sets
+     * it on the eat keypress, and the next {@code PlayerControlPolicy.act} resolves it
+     * through {@code SeekFoodPolicy}'s eat-in-reach chain and consumes it — the
+     * {@link #setPlayerMoveTarget} contract.
+     */
+    public final void setPlayerEatIntent(boolean intent) {
+        this.playerEatIntent = intent;
     }
 
     public final ReasonCode lastReasonCode() {

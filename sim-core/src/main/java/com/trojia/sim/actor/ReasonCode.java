@@ -58,5 +58,11 @@ public enum ReasonCode {
     /** Play mode: this tick the played actor TALKED to an adjacent actor (Sprint 3 quests). */
     TALKED,
     /** A quest stage advanced for this actor this tick ({@code QuestEngine}, Sprint 3). */
-    QUEST_ADVANCED
+    QUEST_ADVANCED,
+    /**
+     * Play mode: the eat intent resolved to NOTHING — no carried ration, no affordable
+     * willing counter, larder, commons or (if broke) stocked bin within reach (Sprint 4's
+     * played-actor eat verb; the client's "nothing to eat here" toast reads this).
+     */
+    NO_MEAL_IN_REACH
 }

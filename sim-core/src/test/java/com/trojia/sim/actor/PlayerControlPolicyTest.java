@@ -99,6 +99,38 @@ final class PlayerControlPolicyTest {
     }
 
     @Test
+    void actResolvesTheEatIntentThroughTheSeekFoodChainAndConsumesIt() {
+        // Sprint 4: the played-actor eat verb. A hungry played soul with a carried ration
+        // eats it (step 1 of SeekFoodPolicy's in-reach chain) with the ordinary stamp.
+        ActorRegistry registry = new ActorRegistry();
+        Actor actor = serfAt(registry, 10, 10);
+        actor.setHomeId(0); // quoteFor/eatInReach read the home cell
+        actor.setStatus(StatusBit.PLAYER_CONTROLLED, true);
+        NoOpActorContext ctx = new NoOpActorContext(registry);
+        ctx.homes().addHome(PackedPos.pack(10, 10, Z));
+        ctx.items().addCarried(actor.id(), ItemKinds.FOOD, 1);
+        actor.applyNeedDelta(Need.HUNGER, -8000);
+        int hungerBefore = actor.need(Need.HUNGER);
+
+        actor.setPlayerEatIntent(true);
+        Policies.PLAYER_CONTROL.act(actor, ctx);
+
+        assertFalse(actor.playerEatIntent(), "the intent must be consumed, not re-fired");
+        assertTrue(actor.need(Need.HUNGER) > hungerBefore, "the meal restored HUNGER");
+        assertEquals(0, ctx.items().countCarriedOfKind(actor.id(), ItemKinds.FOOD),
+                "the ration was sunk");
+        assertEquals(ReasonCode.ATE_FOOD, actor.lastReasonCode(),
+                "the ordinary eat stamp survives the tick");
+
+        // Nothing in reach: the intent is consumed and the miss is stamped legibly.
+        actor.setPlayerEatIntent(true);
+        Policies.PLAYER_CONTROL.act(actor, ctx);
+        assertFalse(actor.playerEatIntent());
+        assertEquals(ReasonCode.NO_MEAL_IN_REACH, actor.lastReasonCode(),
+                "an empty-handed eat press reads as the refusal toast");
+    }
+
+    @Test
     void actWithNoPendingTargetIsAHarmlessNoOpThatStillSetsTheReason() {
         ActorRegistry registry = new ActorRegistry();
         Actor actor = serfAt(registry, 10, 10);

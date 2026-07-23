@@ -34,6 +34,14 @@ public final class BarkSelector {
      */
     public static final int PRESENTATION_DRAW_INDEX = 1 << 20;
 
+    /**
+     * The reserved drawIndex lane for the ask-verb's TOPIC choice (Sprint 4's topic seam)
+     * — pinned one above {@link #PRESENTATION_DRAW_INDEX}, same presentation-side
+     * contract: never touches the sim's per-actor counter, so asking can never perturb a
+     * running simulation.
+     */
+    public static final int ASK_TOPIC_DRAW_INDEX = PRESENTATION_DRAW_INDEX + 1;
+
     // ---- attitude thresholds on the listener's standing with the speaker's faction ----
     /** At/below: the speaker's faction actively hates this identity. */
     public static final int HOSTILE_STANDING = -60;
@@ -108,6 +116,55 @@ public final class BarkSelector {
                 standings, relationships);
         String time = timeBucketOf(DailyRhythm.tickOfDay(tick));
         return new BarkChoice("greet." + family + "." + attitude + "." + time, rowDraw);
+    }
+
+    /**
+     * The ask verb's topic selection (Sprint 4's topic seam): the player asks {@code
+     * speaker} for its story, and the selector serves one of the speaker's SPEAKABLE
+     * topics — its own {@code personal.<notableId>} table (the S2-authored notable
+     * monologues, dead content until now) or a {@code gossip.<historyId>} table for a
+     * micro-history the speaker is party to. The caller (the observer's talk surface)
+     * supplies both symbol lists from its bake-side knowledge — the sim core stays
+     * ignorant of notables.json/histories.json vocabularies by design; this is the SCHEMA
+     * seam World's topic tables land on.
+     *
+     * <p><b>Draw-free, presentation-lane preserved.</b> Topic choice folds a pinned
+     * {@link #ASK_TOPIC_DRAW_INDEX} lane value over the topic list (so repeated asks
+     * across ticks rotate through a soul's stories); the row draw rides the ordinary
+     * {@link #PRESENTATION_DRAW_INDEX} lane. Neither touches the sim's per-actor draw
+     * counter — asking can never perturb a running simulation, and the same
+     * {@code (seed, tick, speaker, topics)} always serves the same line.
+     *
+     * <p>A mood override (downed/held/panicked...) wins exactly as in {@link #select} —
+     * the gibbet does not gossip. A speaker with NO speakable topic returns {@code null}:
+     * the consumer stays silent (or falls back to its greet surface).
+     *
+     * @param speakerNotableId  the speaker's authored notable id, or {@code null}/blank
+     *                          for a forged (non-notable) soul
+     * @param speakerHistoryIds the ids of the authored micro-histories this speaker is a
+     *                          party to, in bake order (empty for an un-storied soul)
+     */
+    public static BarkChoice selectAsk(long worldSeed, long tick, Actor speaker,
+            String speakerNotableId, java.util.List<String> speakerHistoryIds) {
+        long rowDraw = NamedDraws.draw(ActorRngStream.ACTOR_BARK, worldSeed, tick,
+                speaker.id(), PRESENTATION_DRAW_INDEX);
+        String mood = moodOf(speaker.statusBits());
+        if (mood != null) {
+            return new BarkChoice("mood." + mood, rowDraw);
+        }
+        boolean notable = speakerNotableId != null && !speakerNotableId.isBlank();
+        int topicCount = (notable ? 1 : 0) + speakerHistoryIds.size();
+        if (topicCount == 0) {
+            return null; // nothing speakable: the consumer stays silent
+        }
+        long topicDraw = NamedDraws.draw(ActorRngStream.ACTOR_BARK, worldSeed, tick,
+                speaker.id(), ASK_TOPIC_DRAW_INDEX);
+        int topic = (int) Long.remainderUnsigned(topicDraw, topicCount);
+        if (notable && topic == 0) {
+            return new BarkChoice("personal." + speakerNotableId, rowDraw);
+        }
+        String historyId = speakerHistoryIds.get(topic - (notable ? 1 : 0));
+        return new BarkChoice("gossip." + historyId, rowDraw);
     }
 
     /** The mood override, in fixed priority order; {@code null} = no override (greet). */

@@ -98,6 +98,18 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
     // ======================================================================
 
     /**
+     * The played actor's eat verb (Sprint 4): resolves ONE eat-in-reach attempt for
+     * {@code self} — the exact same-priority chain the AI runs (carried ration, buyable
+     * counter at the actor's own barter quote, own larder, commons, the broke's scavenge),
+     * with identical sink accounting, reason codes, XP and faction side effects. Returns
+     * whether a meal was eaten. Called by {@code PlayerControlPolicy.act} on the consumed
+     * {@link Actor#playerEatIntent()}; package-visible, stateless, draw-free.
+     */
+    static boolean tryEatInReach(Actor self, ActorContext ctx) {
+        return eatInReach(self, ctx, Barter.quoteFor(self, ctx));
+    }
+
+    /**
      * Eats one FOOD from whatever source is already within {@link FoodEconomy#EAT_REACH} this tick,
      * in priority order (carried stock, a buyable counter, the own subsistence larder, a farm-fed
      * commons); returns whether it ate. No walking — this is the "eat where you stand" fast path

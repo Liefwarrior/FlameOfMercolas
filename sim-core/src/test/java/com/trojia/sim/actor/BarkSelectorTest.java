@@ -75,6 +75,59 @@ final class BarkSelectorTest {
         }
     }
 
+    // ---- the ask verb's topic seam (Sprint 4) ------------------------------------------
+
+    @Test
+    void selectAskServesPersonalAndGossipKeysAndRotatesAcrossTicks() {
+        Fixture f = new Fixture();
+        List<String> histories = List.of("netter-fenner-debt", "cobb-cull-feud");
+        boolean sawPersonal = false;
+        boolean sawGossipA = false;
+        boolean sawGossipB = false;
+        for (long tick = 1; tick <= 200; tick++) {
+            BarkSelector.BarkChoice choice = BarkSelector.selectAsk(SEED, tick, f.guard,
+                    "withy", histories);
+            switch (choice.tableKey()) {
+                case "personal.withy" -> sawPersonal = true;
+                case "gossip.netter-fenner-debt" -> sawGossipA = true;
+                case "gossip.cobb-cull-feud" -> sawGossipB = true;
+                default -> throw new AssertionError("unexpected key " + choice.tableKey());
+            }
+        }
+        assertTrue(sawPersonal && sawGossipA && sawGossipB,
+                "repeated asks rotate through every speakable topic");
+        // Pure function: the same inputs always serve the same topic and row.
+        BarkSelector.BarkChoice first = BarkSelector.selectAsk(SEED, 77L, f.guard, "withy",
+                histories);
+        BarkSelector.BarkChoice second = BarkSelector.selectAsk(SEED, 77L, f.guard, "withy",
+                histories);
+        assertEquals(first.tableKey(), second.tableKey());
+        assertEquals(first.rowDraw(), second.rowDraw());
+    }
+
+    @Test
+    void selectAskOnAForgedSoulServesOnlyGossipAndSilenceWhenUnstoried() {
+        Fixture f = new Fixture();
+        for (long tick = 1; tick <= 50; tick++) {
+            BarkSelector.BarkChoice choice = BarkSelector.selectAsk(SEED, tick, f.listener,
+                    null, List.of("netter-fenner-debt"));
+            assertEquals("gossip.netter-fenner-debt", choice.tableKey(),
+                    "a forged soul has no personal table");
+        }
+        assertNull(BarkSelector.selectAsk(SEED, 9L, f.listener, "", List.of()),
+                "no topic at all: the consumer stays silent");
+    }
+
+    @Test
+    void selectAskKeepsTheMoodOverride() {
+        Fixture f = new Fixture();
+        f.guard.setStatus(StatusBit.HELD, true);
+        BarkSelector.BarkChoice choice = BarkSelector.selectAsk(SEED, 5L, f.guard, "withy",
+                List.of("netter-fenner-debt"));
+        assertEquals("mood.held", choice.tableKey(), "a held soul does not gossip");
+        f.guard.setStatus(StatusBit.HELD, false);
+    }
+
     @Test
     void theStandingByTimeMatrixSelectsTheDocumentedKeys() {
         Fixture f = new Fixture();

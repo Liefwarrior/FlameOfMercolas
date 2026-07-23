@@ -463,6 +463,116 @@ final class QuestEngineTest {
                 "no duplicate edges");
     }
 
+    // ============================================== standing/after_ticks triggers (S3 debt)
+
+    /** A quest exercising the three trigger kinds the S3 suite left untested. */
+    private static QuestRaws timedStandingQuest() {
+        return QuestRawsLoader.parse("""
+                {
+                  "id": "quests",
+                  "quests": [
+                    { "id": "timed-standing", "title": "Timed", "binding": "first_talker",
+                      "parties": ["alice"], "items": [], "zones": [], "cells": [],
+                      "stages": [
+                        { "key": "start", "objective": "o", "log": "l",
+                          "advance": [ {"kind": "talk", "party": "alice", "to": "wait"} ] },
+                        { "key": "wait", "objective": "o", "log": "l",
+                          "advance": [ {"kind": "after_ticks", "ticks": 100,
+                                        "to": "favored"} ] },
+                        { "key": "favored", "objective": "o", "log": "l",
+                          "advance": [
+                            {"kind": "standing_at_least", "faction": "watch", "value": 20,
+                             "to": "good_end"},
+                            {"kind": "standing_at_most", "faction": "watch", "value": -20,
+                             "to": "bad_end"} ] },
+                        { "key": "good_end", "objective": "o", "log": "l", "terminal": true },
+                        { "key": "bad_end", "objective": "o", "log": "l", "terminal": true }
+                      ] }
+                  ]
+                }
+                """.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Binds the timed-standing quest over a fresh fixture and talks it to `wait` at tick 10. */
+    private static QuestLog reachWait(Fixture f, QuestRegistry[] registryOut) {
+        QuestRegistry registry = QuestRegistry.bind(timedStandingQuest(),
+                QuestTestFixtures.bindings(f.alice.id(), f.bob.id(), 0, CHEST_CELL, 0,
+                        f.ctx.standings.factions().rawId("watch")));
+        QuestLog log = new QuestLog(registry);
+        f.ctx.setTick(10L);
+        log.noteTalk(f.player.id(), f.alice.id(), 10L);
+        QuestEngine.tick(registry, log, f.ctx);
+        assertEquals(1, log.stageOf(0), "talk alice -> wait");
+        registryOut[0] = registry;
+        return log;
+    }
+
+    @Test
+    void afterTicksFiresAgainstTheStageEntryTickNotTheBindTick() {
+        Fixture f = new Fixture();
+        QuestRegistry[] r = new QuestRegistry[1];
+        QuestLog log = reachWait(f, r); // entered `wait` at tick 10
+        f.ctx.setTick(109L); // 99 elapsed: one short of the authored 100
+        QuestEngine.tick(r[0], log, f.ctx);
+        assertEquals(1, log.stageOf(0), "99 elapsed ticks must not fire a 100-tick timer");
+        f.ctx.setTick(110L); // exactly 100 elapsed
+        QuestEngine.tick(r[0], log, f.ctx);
+        assertEquals(2, log.stageOf(0), "the timer fires the tick the elapsed count lands");
+    }
+
+    @Test
+    void standingAtLeastFiresOnlyAtOrAboveTheThresholdOnThePresentedId() {
+        Fixture f = new Fixture();
+        QuestRegistry[] r = new QuestRegistry[1];
+        QuestLog log = reachWait(f, r);
+        f.ctx.setTick(110L);
+        QuestEngine.tick(r[0], log, f.ctx); // -> favored
+        assertEquals(2, log.stageOf(0));
+
+        int watch = f.ctx.standings.factions().rawId("watch");
+        f.ctx.setTick(111L);
+        QuestEngine.tick(r[0], log, f.ctx);
+        assertEquals(2, log.stageOf(0), "a neutral standing (0) fires neither threshold");
+
+        f.ctx.standings.adjust(f.player.id(), watch, 19);
+        f.ctx.setTick(112L);
+        QuestEngine.tick(r[0], log, f.ctx);
+        assertEquals(2, log.stageOf(0), "19 is below the authored at-least 20");
+
+        f.ctx.standings.adjust(f.player.id(), watch, 1);
+        f.ctx.setTick(113L);
+        QuestEngine.tick(r[0], log, f.ctx);
+        assertEquals(3, log.stageOf(0), "standing 20 fires standing_at_least(20)");
+        assertTrue(r[0].terminal(0, 3));
+    }
+
+    @Test
+    void standingAtMostFiresAtOrBelowTheThresholdAndReadsTheWornFace() {
+        Fixture f = new Fixture();
+        QuestRegistry[] r = new QuestRegistry[1];
+        QuestLog log = reachWait(f, r);
+        f.ctx.setTick(110L);
+        QuestEngine.tick(r[0], log, f.ctx); // -> favored
+        assertEquals(2, log.stageOf(0));
+
+        // The Persona rule: the trigger reads the face the OWNER presents. The owner's own
+        // watch standing plunges, but it WEARS bob's clean face — nothing fires.
+        int watch = f.ctx.standings.factions().rawId("watch");
+        f.ctx.standings.adjust(f.player.id(), watch, -60);
+        f.player.setActAs(f.bob.id());
+        f.ctx.setTick(111L);
+        QuestEngine.tick(r[0], log, f.ctx);
+        assertEquals(2, log.stageOf(0), "a clean borrowed face shields the threshold");
+
+        // Dropping the disguise exposes the true face's -60: standing_at_most(-20) fires
+        // (and authored order holds — the at-least trigger scanned first without firing).
+        f.player.setActAs(f.player.id());
+        f.ctx.setTick(112L);
+        QuestEngine.tick(r[0], log, f.ctx);
+        assertEquals(4, log.stageOf(0), "standing -60 fires standing_at_most(-20)");
+        assertTrue(r[0].terminal(0, 4));
+    }
+
     // ================================================================== key-lift watcher
 
     @Test
