@@ -31,6 +31,7 @@ import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.ClimbInput;
+import com.trojia.client.input.EatInput;
 import com.trojia.client.input.InspectorInput;
 import com.trojia.client.input.ObserverScript;
 import com.trojia.client.input.PlayModeInput;
@@ -38,6 +39,7 @@ import com.trojia.client.input.TalkInput;
 import com.trojia.client.input.TheftInput;
 import com.trojia.client.input.TimeControlInput;
 import com.trojia.client.inspect.CrimeFeedTracker;
+import com.trojia.client.inspect.EatFeedbackTracker;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.InspectorState;
@@ -167,6 +169,7 @@ public final class ObserverApp extends ApplicationAdapter {
     private NameplateRenderer nameplateRenderer;
     private ToastQueue toasts;
     private SkillUpTracker skillUpTracker;
+    private EatFeedbackTracker eatFeedbackTracker;
     private ToastRenderer toastRenderer;
     // Sprint 2 "walk up and talk": the speech panel + the theft feedback loop.
     private TalkState talk;
@@ -382,6 +385,10 @@ public final class ObserverApp extends ApplicationAdapter {
                     population.system().questLog(), population.system().skillTracks(),
                     eventLog, toasts, () -> playMode.playedActorId());
             this.journalRenderer = new JournalRenderer();
+            // Eat-outcome narration (S4 item 3): the played actor's E press resolves
+            // sim-side next tick; this tracker toasts the outcome reason. Zero sim writes.
+            this.eatFeedbackTracker = new EatFeedbackTracker(population.registry(), toasts,
+                    () -> playMode.playedActorId());
             // The per-tick seam (not per-frame): fires once per executed tick, so no
             // tracker misses a FAST-skipped tick nor double-logs a re-rendered one.
             this.driver.setAfterTick(tick -> {
@@ -389,6 +396,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 skillUpTracker.afterTick(tick);
                 crimeFeedTracker.afterTick(tick);
                 questFeedTracker.afterTick(tick);
+                eatFeedbackTracker.afterTick(tick);
             });
             // FaceGen portraits (unified art spec §4) draw their parts from the SAME
             // unified index + sheet as the actor sprites (face-part pools are just
@@ -488,6 +496,9 @@ public final class ObserverApp extends ApplicationAdapter {
             // under its feet. Polled after movement so a held climb key wins the frame's
             // move intent (one intent slot; the climb is the deliberate act).
             ClimbInput.poll(playMode, population.registry(), population.zLinks(), toasts);
+            // The EAT verb (S4 item 3): E feeds the played soul through the sim's own
+            // eat-in-reach chain; the outcome toast lands via EatFeedbackTracker.
+            EatInput.poll(playMode, population.registry(), toasts, eatFeedbackTracker);
             // The JOURNAL toggle (S3): J opens/closes the quest pane (J was unbound; the
             // design's verify-free-then-bind rule).
             if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
@@ -673,8 +684,10 @@ public final class ObserverApp extends ApplicationAdapter {
                             "down".equalsIgnoreCase(parts[0].trim()) ? -1 : +1,
                             parts.length < 2 || !"quiet".equalsIgnoreCase(parts[1].trim()));
                 }
-                case TOPIC, EAT -> throw new UnsupportedOperationException(
-                        "script verb " + action.verb() + " lands with its Sprint-4 slice");
+                case EAT -> EatInput.applyEat(playMode, population.registry(), toasts,
+                        eatFeedbackTracker);
+                case TOPIC -> throw new UnsupportedOperationException(
+                        "script verb TOPIC lands with the talk-topics slice");
             }
         }
     }
