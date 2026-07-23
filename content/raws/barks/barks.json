@@ -940,6 +940,14 @@
         "Vess polishes Saltgate. Someone has to garrison the REAL wall.",
         "K34's cells are full or filling. Efficiency, that."
       ] },
+    { "key": "personal.sedge", "canonAnchor": "notables.json:sedge",
+      "rows": [
+        "Room at the top of the stair's not to let. It's PAID, and it stays paid.",
+        "Lodgers come asking after the quiet room. I tell them the quiet room has a tenant.",
+        "He'd read me the day's figures over supper. I don't eat late anymore.",
+        "The Watch wrote his name once and never again. I write it every rent-day.",
+        "Sweep, trim the lamp, turn the key. A room forgets a man faster than a grave does."
+      ] },
 
     { "key": "gossip",
       "rows": [

@@ -364,6 +364,15 @@
       "site": "K34_GUARDHOUSE",
       "match": "home",
       "bio": "Sergeant of the guardhouse at the quay end of Saltgate Rise, the foot garrison that pairs with Vess's post at the head. Nine steel cells stand behind his watch-room, and lately they see more traffic than his predecessors ever logged. He runs escorts by the book because the book is all that separates his cells from the Gullet."
+    },
+    {
+      "id": "sedge",
+      "name": "Widow Maren Sedge",
+      "epithet": "the clerk's landlady",
+      "type": "serf",
+      "site": "CLERKS_ROOMING_HOUSE",
+      "match": "home",
+      "bio": "Keeper of the lodging house on the counting-row, four doors west of the Counting-House, a widow who works Harl's yard by day and lets her upstairs rooms to counter-men and copy-clerks. The vanished clerk was her brother's son, Tam Sedge, lodged under her roof since he first took the ink. She keeps his room paid and swept and his lamp filled, and she has stopped asking the Watch, because the Watch stopped writing it down."
     }
   ]
 }

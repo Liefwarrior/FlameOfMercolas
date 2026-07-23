@@ -358,13 +358,20 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[][] BAND_B_WORK = {TERRACE_WALK_STAND, SALTGATE_PORTERS};
     private static final int[][] BAND_C_WORK = {WELL_PLAZA, NOTICE_BOARD, ABBEY_LANE};
 
+    // S3 "The Vanished Clerk": the staff-lodging dwelling four doors west of the K36
+    // Counting-House — the rooming house where the vanished clerk kept his rented room, and
+    // the spawn-site key that binds the Widow Sedge notable (his landlady and aunt) onto the
+    // existing serf who homes there. An EXISTING lodging cell, promoted to a named site: no
+    // map regen, no new actor, roster unchanged.
+    private static final int[] CLERKS_ROOMING_HOUSE = {146, 53};      // z:+11, STAFF_LODGINGS[19]
+
     // Where hired shop staff lodge (all Band A, z:+11): the compounds' ground condos, the
     // Band-A hovels, and the Rows flophouse — a rotating cursor so staff spread across the
     // district and every morning fills the streets with commuters.
     private static final int[][] STAFF_LODGINGS = {{131, 70}, {147, 70}, {137, 89}, {157, 70},
             {157, 80}, {157, 89}, {168, 72}, {168, 86}, {173, 70}, {185, 70}, {187, 84},
             {84, 55}, {89, 54}, {95, 56}, {10, 93}, {22, 93}, {184, 63}, {189, 62}, {136, 52},
-            {146, 53}, {110, 55}};
+            CLERKS_ROOMING_HOUSE, {110, 55}};
 
     // Household size rotation (mean 2.4 — household.json register) applied per dwelling.
     private static final int[] HOUSEHOLD_SIZES = {2, 3, 2, 1, 4};
@@ -841,6 +848,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         sites.put("CARTER_STAND", worldCell(CARTER_STAND, ZA));
         sites.put("LAIR_SKYRUNNER", worldCell(LAIR_SKYRUNNER, ZC));
         sites.put("STRAND_JEK", worldCell(STRAND_JEK, 10));
+        sites.put("CLERKS_ROOMING_HOUSE", worldCell(CLERKS_ROOMING_HOUSE, ZA));
         return sites;
     }
 
@@ -977,6 +985,9 @@ public final class DocksPopulation implements ScenarioPopulation {
         names.put(worldCell(HITCH_BILGE, ZA), "the Bilge's hitching post");
         names.put(worldCell(HITCH_ROWS, ZA), "the Rows' hitching post");
         names.put(worldCell(STRAND_JEK, 10), "the Beaching Strand");
+        // S3 append (the append-only rule): the quest's rooming house gets its register name,
+        // so its lodgers' template bios read "lodges at Sedge's rooming house".
+        names.put(worldCell(CLERKS_ROOMING_HOUSE, ZA), "Sedge's rooming house");
         return names;
     }
 
