@@ -89,7 +89,21 @@ public final class PlayModeInput {
 
     private static void pollToggle(PlayModeState playMode, InspectorState inspector,
             ActorRegistry registry) {
-        if (!Gdx.input.isKeyJustPressed(Input.Keys.P) || !inspector.hasSelection()) {
+        if (!Gdx.input.isKeyJustPressed(Input.Keys.P)) {
+            return;
+        }
+        applyPlayToggle(playMode, inspector, registry);
+    }
+
+    /**
+     * The deterministic {@code P}-toggle application (split from the live key read above,
+     * the {@link #applyMovement} convention, so the scripted-playtest tape can drive the
+     * exact same code path): toggles direct control of the current selection on/off — a
+     * no-op with no selection.
+     */
+    public static void applyPlayToggle(PlayModeState playMode, InspectorState inspector,
+            ActorRegistry registry) {
+        if (!inspector.hasSelection()) {
             return;
         }
         if (playMode.active()) {

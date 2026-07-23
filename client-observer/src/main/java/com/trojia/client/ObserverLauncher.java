@@ -2,6 +2,7 @@ package com.trojia.client;
 
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
+import com.trojia.client.input.ObserverScript;
 
 /**
  * Desktop entry point for the god-view observer.
@@ -35,8 +36,25 @@ public final class ObserverLauncher {
                 new ObserverApp(parseFixture(args), parseSmokeFrames(args), parseScreenshotPath(args),
                         parseDebugSelect(args), parseArtDir(args), parseStartZ(args),
                         parseCenter(args), parseZoom(args), hasFlag(args, "--debug-play-mode"),
-                        parseDebugMove(args)[0], parseDebugMove(args)[1], parseDebugActAs(args)),
+                        parseDebugMove(args)[0], parseDebugMove(args)[1], parseDebugActAs(args),
+                        parseScript(args)),
                 configuration);
+    }
+
+    /**
+     * {@code --script=path}: the scripted-playtest tape ({@link ObserverScript}) — replays a
+     * whole session (selection, Play mode, movement, verbs, {@code shot=} screenshots)
+     * deterministically during a {@code --smoke} run. Parsed eagerly so a malformed script
+     * fails before a window ever opens.
+     */
+    private static ObserverScript parseScript(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--script=")) {
+                return ObserverScript.load(java.nio.file.Path.of(
+                        arg.substring("--script=".length()).trim()));
+            }
+        }
+        return null;
     }
 
     private static boolean hasFlag(String[] args, String flag) {

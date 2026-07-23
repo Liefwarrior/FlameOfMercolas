@@ -30,6 +30,7 @@ import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.InspectorInput;
+import com.trojia.client.input.ObserverScript;
 import com.trojia.client.input.PlayModeInput;
 import com.trojia.client.input.TalkInput;
 import com.trojia.client.input.TheftInput;
@@ -124,6 +125,15 @@ public final class ObserverApp extends ApplicationAdapter {
     private final int debugMoveDx;
     private final int debugMoveDy;
     private final int debugActAsActorId;
+    /** The scripted-playtest tape ({@code --script=}), or {@code null} (live input only). */
+    private final ObserverScript script;
+    /** Scripted held-movement state (the {@code hold=dx,dy} verb), applied every frame. */
+    private int scriptMoveDx;
+    private int scriptMoveDy;
+    /** Scripted hold-N nameplates toggle (the {@code plates} verb). */
+    private boolean scriptPlatesHeld;
+    /** A {@code shot=path} scheduled for the current frame; captured after the batch ends. */
+    private String pendingShotPath;
     private int framesRendered;
     private float voidR;
     private float voidG;
@@ -232,6 +242,22 @@ public final class ObserverApp extends ApplicationAdapter {
             int debugSelectActorId, String artDir, int debugStartZ, int[] debugCenterTile,
             int debugZoom, boolean debugPlayMode, int debugMoveDx, int debugMoveDy,
             int debugActAsActorId) {
+        this(fixture, smokeFrames, screenshotPath, debugSelectActorId, artDir, debugStartZ,
+                debugCenterTile, debugZoom, debugPlayMode, debugMoveDx, debugMoveDy,
+                debugActAsActorId, null);
+    }
+
+    /**
+     * The scripted-playtest constructor (Sprint 4 CLIENT): {@code script} replays a whole
+     * session — selection, Play mode, movement, verbs, screenshots — through the same
+     * deterministic {@code apply*} seams the live keyboard wrappers call, one action list
+     * per rendered frame (see {@link ObserverScript}). Meaningful only with
+     * {@code smokeFrames > 0} (the one-tick-per-frame determinism rule).
+     */
+    public ObserverApp(Fixture fixture, int smokeFrames, String screenshotPath,
+            int debugSelectActorId, String artDir, int debugStartZ, int[] debugCenterTile,
+            int debugZoom, boolean debugPlayMode, int debugMoveDx, int debugMoveDy,
+            int debugActAsActorId, ObserverScript script) {
         this.fixture = fixture;
         this.smokeFrames = smokeFrames;
         this.screenshotPath = screenshotPath;
@@ -244,6 +270,7 @@ public final class ObserverApp extends ApplicationAdapter {
         this.debugMoveDx = debugMoveDx;
         this.debugMoveDy = debugMoveDy;
         this.debugActAsActorId = debugActAsActorId;
+        this.script = script;
     }
 
     @Override
@@ -462,6 +489,15 @@ public final class ObserverApp extends ApplicationAdapter {
             if (debugPlayMode && (debugMoveDx != 0 || debugMoveDy != 0)) {
                 PlayModeInput.applyMovement(playMode, population.registry(), debugMoveDx, debugMoveDy);
             }
+            // Scripted playtest tape (--script=): this frame's actions, then any held
+            // scripted movement — both through the exact apply* seams the live keys use.
+            if (script != null) {
+                applyScriptFrame(framesRendered);
+                if (scriptMoveDx != 0 || scriptMoveDy != 0) {
+                    PlayModeInput.applyMovement(playMode, population.registry(),
+                            scriptMoveDx, scriptMoveDy);
+                }
+            }
         }
         if (smokeFrames > 0 && population != null) {
             // Smoke/verification runs advance exactly ONE tick per rendered frame instead
@@ -509,9 +545,11 @@ public final class ObserverApp extends ApplicationAdapter {
             inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());
         }
         if (nameplateRenderer != null) {
-            // Hover nameplate at the live cursor; hold N to plate every on-screen actor.
+            // Hover nameplate at the live cursor; hold N to plate every on-screen actor
+            // (or the script's `plates` toggle — the tape has no keys to hold).
             nameplateRenderer.draw(batch, font, icons, camera, zLevel.z(),
-                    Gdx.input.getX(), Gdx.input.getY(), Gdx.input.isKeyPressed(Input.Keys.N));
+                    Gdx.input.getX(), Gdx.input.getY(),
+                    Gdx.input.isKeyPressed(Input.Keys.N) || scriptPlatesHeld);
         }
         if (talkPanelRenderer != null) {
             // The speech exchange (a no-op while closed) — over the plates, under toasts.
@@ -532,6 +570,13 @@ public final class ObserverApp extends ApplicationAdapter {
         }
         batch.end();
 
+        // A scripted `shot=` scheduled for this frame: the batch is flushed, so the
+        // framebuffer now holds exactly what this frame drew.
+        if (pendingShotPath != null) {
+            writeScreenshot(pendingShotPath);
+            pendingShotPath = null;
+        }
+
         framesRendered++;
         if (population != null && smokeFrames > 0
                 && (framesRendered == 1 || framesRendered % 60 == 0 || framesRendered == smokeFrames)) {
@@ -542,23 +587,62 @@ public final class ObserverApp extends ApplicationAdapter {
             if (smokeDone) {
                 System.out.println("observer smoke test: rendered " + framesRendered + " frames OK");
                 if (screenshotPath != null) {
-                    writeScreenshot();
+                    writeScreenshot(screenshotPath);
                 }
             }
             Gdx.app.exit();
         }
     }
 
-    /** Debug/verification aid only: dumps the final smoke frame's framebuffer to a PNG. */
-    private void writeScreenshot() {
+    /**
+     * Dispatches one frame's scripted actions ({@link ObserverScript}) through the same
+     * deterministic seams the live input wrappers call. Populated fixtures only (the
+     * tavern has no inspector to script against); camera verbs work everywhere.
+     */
+    private void applyScriptFrame(int frame) {
+        for (ObserverScript.Action action : script.at(frame)) {
+            switch (action.verb()) {
+                case SELECT -> inspector.select(action.intArgs()[0]);
+                case FOLLOW -> inspector.toggleFollow();
+                case PLAY -> PlayModeInput.applyPlayToggle(playMode, inspector,
+                        population.registry());
+                case HOLD -> {
+                    int[] d = action.intArgs();
+                    scriptMoveDx = d[0];
+                    scriptMoveDy = d[1];
+                }
+                case TALK -> TalkInput.applyTalk(talk, playMode, population.registry(),
+                        population.jobs(), population.identity(),
+                        population.system().factionStandings(), population.relationships(),
+                        barkTables, toasts, population.questRegistry(),
+                        population.system().questLog(), bootWorldSeed, driver.currentTick());
+                case PICKPOCKET -> TheftInput.applyPickpocket(playMode,
+                        population.registry(), population.identity(), toasts);
+                case JOURNAL -> journalOpen = !journalOpen;
+                case PLATES -> scriptPlatesHeld = !scriptPlatesHeld;
+                case ZOOM -> camera.setZoom(action.intArgs()[0]);
+                case CENTER -> {
+                    int[] c = action.intArgs();
+                    camera.centerOnTile(c[0], c[1]);
+                }
+                case Z -> zLevel.to(action.intArgs()[0]);
+                case SHOT -> pendingShotPath = action.args();
+                case TOPIC, EAT, CLIMB -> throw new UnsupportedOperationException(
+                        "script verb " + action.verb() + " lands with its Sprint-4 slice");
+            }
+        }
+    }
+
+    /** Debug/verification aid only: dumps the current framebuffer to a PNG at {@code path}. */
+    private void writeScreenshot(String path) {
         int w = camera.viewportWidthPx();
         int h = camera.viewportHeightPx();
         Pixmap pixmap = Pixmap.createFromFrameBuffer(0, 0, w, h);
         flipVertically(pixmap);
-        FileHandle handle = Gdx.files.absolute(screenshotPath);
+        FileHandle handle = Gdx.files.absolute(path);
         PixmapIO.writePNG(handle, pixmap);
         pixmap.dispose();
-        System.out.println("observer: wrote screenshot to " + screenshotPath);
+        System.out.println("observer: wrote screenshot to " + path);
     }
 
     /** glReadPixels (behind getFrameBufferPixmap) is bottom-up; PNGs are top-down. */
