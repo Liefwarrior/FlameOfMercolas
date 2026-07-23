@@ -52,6 +52,20 @@ public final class SkillChecks {
     /** Success ceiling: mastery never buys certainty. */
     public static final int PICKPOCKET_CEIL_PERMILLE = 950;
 
+    // ---- the search family (Sprint 3 quests): searcher skill+WIT vs an authored lock
+    // resist — the quest engine's cooldown-gated pry at a declared search cell (the
+    // clerk's locked drawer). The base sits low: a locked drawer is a real obstacle
+    // (a streetwise ~15-20 body pries near the 550-650 permille band; a novice sweats
+    // near the floor) — the honest routes around it are the quest's OTHER advance
+    // triggers (carry the key: draw-free success), so the clamp is a pacing knob,
+    // not a liveness guard. ----
+    /** Baseline success permille when searcher score equals the lock's resist. */
+    public static final int SEARCH_BASE_PERMILLE = 350;
+    /** Success floor: even a hopeless pry occasionally gives. */
+    public static final int SEARCH_FLOOR_PERMILLE = 50;
+    /** Success ceiling: mastery never buys certainty. */
+    public static final int SEARCH_CEIL_PERMILLE = 950;
+
     private SkillChecks() {
     }
 
@@ -101,5 +115,20 @@ public final class SkillChecks {
                 + tracks.attribute(victimId, AttributeId.WIT);
         return successPermille(thiefScore, victimScore, PICKPOCKET_BASE_PERMILLE,
                 PICKPOCKET_FLOOR_PERMILLE, PICKPOCKET_CEIL_PERMILLE);
+    }
+
+    /**
+     * The search family threshold (Sprint 3 quests): searcher {@code skill + WIT} (a pry
+     * is a perception-and-cunning read of a lock, whatever skill the raws name) against
+     * the authored lock {@code resist}, on the search base/floor/ceiling. Reads the TRUE
+     * actor id — a pry is a physical act of the body at the drawer, not a social read
+     * (the push/pickpocket precedent).
+     */
+    public static int searchPermille(SkillTrackRegistry tracks, int searcherId, int skillRaw,
+            int resist) {
+        int score = tracks.level(searcherId, skillRaw)
+                + tracks.attribute(searcherId, AttributeId.WIT);
+        return successPermille(score, resist, SEARCH_BASE_PERMILLE,
+                SEARCH_FLOOR_PERMILLE, SEARCH_CEIL_PERMILLE);
     }
 }

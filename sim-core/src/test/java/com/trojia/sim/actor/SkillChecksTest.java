@@ -124,6 +124,47 @@ final class SkillChecksTest {
                 "streams are salted apart");
     }
 
+    /** The search family (Sprint 3 quests): base at parity, clamps hold, skill+WIT feeds it. */
+    @Test
+    void searchFamilyBoundsAndSkillFeedTheThreshold() {
+        // The pure-threshold shape at the search family's own constants.
+        assertEquals(SkillChecks.SEARCH_BASE_PERMILLE,
+                SkillChecks.successPermille(12, 12, SkillChecks.SEARCH_BASE_PERMILLE,
+                        SkillChecks.SEARCH_FLOOR_PERMILLE, SkillChecks.SEARCH_CEIL_PERMILLE));
+        assertEquals(SkillChecks.SEARCH_FLOOR_PERMILLE,
+                SkillChecks.successPermille(0, 90, SkillChecks.SEARCH_BASE_PERMILLE,
+                        SkillChecks.SEARCH_FLOOR_PERMILLE, SkillChecks.SEARCH_CEIL_PERMILLE),
+                "a hopeless pry still gives occasionally (floor clamp)");
+        assertEquals(SkillChecks.SEARCH_CEIL_PERMILLE,
+                SkillChecks.successPermille(90, 0, SkillChecks.SEARCH_BASE_PERMILLE,
+                        SkillChecks.SEARCH_FLOOR_PERMILLE, SkillChecks.SEARCH_CEIL_PERMILLE),
+                "mastery never buys certainty (ceiling clamp)");
+
+        // The wired read: an untrained body (level 0, WIT base 10) vs the quest's lock 12
+        // sits just under base; training streetwise raises it measurably.
+        SkillTrackRegistry tracks = new SkillTrackRegistry(SKILLS);
+        int novice = 0;
+        int sneak = 1;
+        int lockResist = 12;
+        int noviceThreshold = SkillChecks.searchPermille(tracks, novice, tracks.streetwiseRaw(),
+                lockResist);
+        assertEquals(SkillChecks.SEARCH_BASE_PERMILLE
+                        + SkillChecks.POINTS_TO_PERMILLE * (10 - lockResist),
+                noviceThreshold, "untrained: level 0 + WIT 10 against lock 12");
+        // Streetwise is FAVORED (aptNum 15): cumulative 0->20 cost is sum k*100*15 grains.
+        long grains = 0;
+        for (int k = 1; k <= 20; k++) {
+            grains += k * 100L * 15L;
+        }
+        tracks.award(sneak, tracks.streetwiseRaw(), (int) (grains / 20), 999L, 0L);
+        assertEquals(20, tracks.level(sneak, tracks.streetwiseRaw()));
+        int sneakThreshold = SkillChecks.searchPermille(tracks, sneak, tracks.streetwiseRaw(),
+                lockResist);
+        assertTrue(sneakThreshold > noviceThreshold,
+                "20 levels of streetwise must raise the pry threshold: novice="
+                        + noviceThreshold + " sneak=" + sneakThreshold);
+    }
+
     /** The wired contest reads live attributes: training skyrunning raises AGI raises the odds. */
     @Test
     void attributesFeedTheContestLive() {

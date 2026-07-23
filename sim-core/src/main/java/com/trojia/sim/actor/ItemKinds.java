@@ -38,6 +38,21 @@ public final class ItemKinds {
      */
     public static final short ID_CARD = 9;
 
+    /**
+     * Master Gilt's vault key (Sprint 3 "The Vanished Clerk"): the quest token that opens
+     * the clerk's locked desk draw-free. Minted once at bake into Gilt's carry; moved only
+     * by the quest engine's key-lift watcher (a successful pickpocket of its declared
+     * holder) — ambient theft moves COIN only, so no AI thief can ever strand it.
+     */
+    public static final short VAULT_KEY = 10;
+
+    /**
+     * The torn ledger leaf (Sprint 3 "The Vanished Clerk"): the proof the vanished clerk
+     * locked in his desk. Placed once at bake on the clerk's-desk cell; moved only by quest
+     * effects (search success → owner's carry; an ending → the chosen party).
+     */
+    public static final short LEDGER_LEAF = 11;
+
     private ItemKinds() {
     }
 }

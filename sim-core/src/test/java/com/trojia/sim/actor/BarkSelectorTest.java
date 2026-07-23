@@ -143,6 +143,31 @@ final class BarkSelectorTest {
                 "the greeting follows the FACE presented (the Persona rule)");
     }
 
+    /** Sprint 3: HOUSEHOLD &gt; GRUDGE &gt; FRIEND, and only the HOLDER's greeting turns. */
+    @Test
+    void aDirectedGrudgeOutranksFriendshipButNeverKinAndOnlyBitesOneWay() {
+        Fixture f = new Fixture();
+        long day = 8_000;
+        // Friend first, then the quest-minted grudge (holder = the guard): hostile wins.
+        f.relationships.addSymmetric(f.guard.id(), f.listener.id(), RelationshipKind.FRIEND);
+        assertEquals("greet.watch.friend.day", f.greet(day).tableKey());
+        f.relationships.addDirected(f.guard.id(), f.listener.id(), RelationshipKind.GRUDGE);
+        assertEquals("greet.watch.hostile.day", f.greet(day).tableKey(),
+                "a grudge outweighs old friendship (Sprint 3 quest endings)");
+
+        // Directedness: the OBJECT of the grudge greets normally (its friend edge still reads).
+        Job listenerJob = f.jobs().get(f.listener.jobOrdinal());
+        BarkSelector.BarkChoice reverse = BarkSelector.select(SEED, day, f.listener, listenerJob,
+                f.guard.identity().presentedId(), f.standings, f.relationships);
+        assertEquals("greet.serf.friend.day", reverse.tableKey(),
+                "only speaker→listener grudges bite — the object holds no grudge");
+
+        // Kin forgive: a HOUSEHOLD tie outranks even the grudge.
+        f.relationships.addSymmetric(f.guard.id(), f.listener.id(), RelationshipKind.HOUSEHOLD);
+        assertEquals("greet.watch.kin.day", f.greet(day).tableKey(),
+                "HOUSEHOLD > GRUDGE (kin forgive)");
+    }
+
     @Test
     void aDisguisedVillainSpeaksAsItsCoverFamily() {
         Fixture f = new Fixture();

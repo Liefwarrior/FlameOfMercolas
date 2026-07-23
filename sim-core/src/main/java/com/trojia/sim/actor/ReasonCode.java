@@ -54,5 +54,9 @@ public enum ReasonCode {
     /** A pickpocket attempt failed — the mark caught the hand (a witnessed crime row). */
     CAUGHT_STEALING,
     /** A guard corrected a witnessed theft: fine seized + custody (Sprint 2 justice). */
-    ARRESTED_FOR_THEFT
+    ARRESTED_FOR_THEFT,
+    /** Play mode: this tick the played actor TALKED to an adjacent actor (Sprint 3 quests). */
+    TALKED,
+    /** A quest stage advanced for this actor this tick ({@code QuestEngine}, Sprint 3). */
+    QUEST_ADVANCED
 }

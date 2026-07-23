@@ -72,7 +72,17 @@ public enum ActorRngStream {
      * ambient theft volume under the starvation bars. Appended stream; spatialKey = the
      * THIEF's actor id.
      */
-    THEFT_IMPULSE("theft.impulse");
+    THEFT_IMPULSE("theft.impulse"),
+    /**
+     * The quest search check family (Sprint 3 "The Vanished Clerk", {@code QuestEngine}):
+     * one draw per cooldown-gated pry at a quest-declared search cell (the locked drawer),
+     * resolved searcher {@code skill + WIT} vs the authored lock resist through
+     * {@link SkillChecks}' search family. The ONE new stream this sprint — the quest's
+     * critical-path skill check. Appended stream (name-derived salt — no existing draws
+     * shift); drawn through the shared per-actor per-tick counter, spatialKey = the quest
+     * OWNER's actor id.
+     */
+    CHECK_SEARCH("check.search");
 
     private final String streamName;
     private final long salt;

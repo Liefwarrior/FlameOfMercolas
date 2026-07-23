@@ -151,16 +151,23 @@ public final class BarkSelector {
     }
 
     /**
-     * Attitude toward the listener: personal ties first (the speaker KNOWS its own kin and
-     * friends — checked between the speaker's TRUE id and the face the listener presents),
-     * then the listener's standing with the speaker's faction, bucketed. Unaffiliated
-     * speakers (wastrels, covers, beasts) read standing 0 — neutral.
+     * Attitude toward the listener: personal ties first (the speaker KNOWS its own kin,
+     * grudges and friends — checked between the speaker's TRUE id and the face the
+     * listener presents), then the listener's standing with the speaker's faction,
+     * bucketed. Tie priority (Sprint 3): HOUSEHOLD &gt; GRUDGE &gt; FRIEND — kin forgive,
+     * but a quest-minted grudge outweighs old friendship; the grudge is DIRECTED, so only
+     * the holder's own greeting turns hostile (speaker TRUE id → listener PRESENTED id),
+     * never the reverse. Unaffiliated speakers (wastrels, covers, beasts) read standing 0
+     * — neutral.
      */
     static String attitudeOf(Actor speaker, Job presentedJob, int listenerPresentedId,
             FactionStandings standings, RelationshipRegistry relationships) {
         RelationshipKind tie = tieBetween(relationships, speaker.id(), listenerPresentedId);
         if (tie == RelationshipKind.HOUSEHOLD) {
             return "kin";
+        }
+        if (holdsGrudge(relationships, speaker.id(), listenerPresentedId)) {
+            return "hostile"; // the quest ending stays audible forever, at zero content cost
         }
         if (tie == RelationshipKind.FRIEND) {
             return "friend";
@@ -185,6 +192,24 @@ public final class BarkSelector {
             return "warm";
         }
         return "neutral";
+    }
+
+    /**
+     * Whether {@code holderTrueId} holds a DIRECTED {@link RelationshipKind#GRUDGE} against
+     * {@code objectPresentedId} (Sprint 3 quest outcomes). Direction matters: only
+     * {@code fromId == holder && toId == object} edges bite — a grudge is personal, not
+     * mutual, so the object of it greets normally.
+     */
+    private static boolean holdsGrudge(RelationshipRegistry relationships, int holderTrueId,
+            int objectPresentedId) {
+        for (int i = 0; i < relationships.size(); i++) {
+            RelationshipEdge edge = relationships.get(i);
+            if (edge.kind() == RelationshipKind.GRUDGE
+                    && edge.fromId() == holderTrueId && edge.toId() == objectPresentedId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The strongest HOUSEHOLD/FRIEND edge between two ids, or {@code null}. */

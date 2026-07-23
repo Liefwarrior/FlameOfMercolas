@@ -222,6 +222,15 @@ public abstract class Actor {
      * {@code PlayerControlPolicy.act}, never persisted.
      */
     private int playerPickpocketTargetId = NONE;
+    /**
+     * The actor this played actor intends to TALK to this tick (Sprint 3 quests — the
+     * existing talk verb made sim-visible), or {@link #NONE}. Same contract as
+     * {@link #playerMoveTargetCell}: per-frame input intent set by the observer's input
+     * layer, consumed (and reset) by {@code PlayerControlPolicy.act} (which validates
+     * adjacency and notes the fact of talking into the quest log), never persisted.
+     * The presentation greet itself stays observer-side and sim-silent.
+     */
+    private int playerTalkTargetId = NONE;
 
     // ---- cached A* route (§2.5 pathfinding addendum): a derived/recomputable cache, not
     // ground-truth state — the same "per-actor bookkeeping vs. registry" distinction the
@@ -911,6 +920,21 @@ public abstract class Actor {
      */
     public final void setPlayerPickpocketTarget(int actorId) {
         this.playerPickpocketTargetId = actorId;
+    }
+
+    /** The pending Play-mode talk target actor id, or {@link #NONE} (Sprint 3 quests). */
+    public final int playerTalkTargetId() {
+        return playerTalkTargetId;
+    }
+
+    /**
+     * Sets (or clears, with {@link #NONE}) the pending Play-mode talk intent: the
+     * observer's input layer names an ADJACENT actor being talked to, and the next
+     * {@code PlayerControlPolicy.act} validates reach, notes the talk into the quest
+     * log and consumes the intent — the {@link #setPlayerMoveTarget} contract.
+     */
+    public final void setPlayerTalkTarget(int actorId) {
+        this.playerTalkTargetId = actorId;
     }
 
     public final ReasonCode lastReasonCode() {

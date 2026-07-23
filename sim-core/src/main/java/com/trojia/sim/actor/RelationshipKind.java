@@ -17,5 +17,13 @@ public enum RelationshipKind {
     /** Symmetric — social bond, no household/work tie required (flavor). */
     FRIEND,
     /** Directed — fromId trains/oversees toId (invention, canon-INFERRED, §11.3). */
-    MENTOR
+    MENTOR,
+    /**
+     * Directed — fromId permanently resents toId (Sprint 3 quest outcomes: holder → object).
+     * Never an authored-history kind ({@code HistoryRaws.ALLOWED_EDGES} does not admit it) —
+     * only quest effects mint it. {@code BarkSelector} reads it speaker→listener: a grudge
+     * outweighs old friendship (HOUSEHOLD &gt; GRUDGE &gt; FRIEND), so an ending stays
+     * audible through the existing hostile greet tables forever.
+     */
+    GRUDGE
 }
