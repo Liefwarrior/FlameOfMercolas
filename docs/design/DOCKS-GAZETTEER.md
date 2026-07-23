@@ -409,6 +409,54 @@ families × six attitudes with time-band refinements, the six mood-override tabl
 Forty Notables, and one gossip table per micro-history — validated against BarkSelector's key vocabulary
 by `DocksBarkContentTest`.
 
+### 4.6 THE VANISHED CLERK — the first authored quest (CANON as of the S3 world pass, 2026-07-23)
+
+The game's first authored quest, grown out of the `gilt-crell-erasure` micro-history (§4.5): a
+counting-house clerk vanished the night one line was scraped from the Weighhouse ledger. Data:
+`content/raws/quests/quests.json` (stages/triggers/effects), `barks.json` `quest.vanished-clerk.*`
+(the talk-surface beats), bake gates in `DocksQuestBakeTest`, played end-to-end in
+`DocksQuestWalkthroughTest`.
+
+**The clerk (canon; text, not an actor).** **Tam Sedge**, junior copy-clerk of the Royal
+Counting-House (K36), in Master Gilt's pay, lodged in his aunt's rooming house on the counting-row
+four doors west of the hall. Nephew of Widow Maren Sedge (his father's sister). Habit — taught to
+him by Harbormaster Crell, whose tariff papers he sometimes copied fair: he kept a private
+fair-copy of everything he inked. The night the erased line was scraped he left after supper with
+his coat and pen-case, was last seen on the quay wall walking toward the Weighhouse, and was never
+seen again. He **never spawns** (roster stays 692): he is his locked desk in the hall, the torn
+ledger leaf inside it, his paid-up room, and the people who remember him. **Deliberately open:**
+the quest recovers the *line*, never the *man* — what happened to Tam Sedge is unanswered canon,
+reserved for a future pass.
+
+**The 41st notable.** `sedge` — **Widow Maren Sedge, the clerk's landlady** — joins the Forty
+(the roster is now forty-one; `DocksIdentityTest` pins her). She binds an EXISTING lodger body:
+the staff-lodging dwelling at map `{146,53}` (z:+11) is promoted to the named site
+`CLERKS_ROOMING_HOUSE` / register name "Sedge's rooming house" — no map regen, no new actor. She
+works Harl's yard by day, keeps lodgers by night, and keeps Tam's room paid, swept and lit. This
+folds the S2-cut kinship/house depth in at quest scale; the wider worried-household cast stays cut.
+
+**Who knows what (the rumor stage's knowledge domains, `quest.vanished-clerk.rumor.*`):**
+
+| Notable | Domain | The fragment they hold |
+|---|---|---|
+| Onna | the Mission night-pot | Tam ate there Firstdays; the last night he kept looking toward the Weighhouse |
+| Tarry Jek | the Beaching Strand | a brass cuff-button a week later; the last sighting — quay wall, papers, fast |
+| Dagny | the Wrackhouse ledger | no body ever logged; a salvage chit in his hand for a crate never claimed |
+| Widow Sedge | the rooming house | his name; the pen-case he took and the lamp he didn't; Crell asked twice, the Watch once |
+
+**Structure (all existing verbs):** rumor (talk any of the four) → Crell at the Weighhouse →
+into the Watch-gated hall (present a Watch face / dash the 12-tick grace / pickpocket Gilt's key)
+→ the drawer (keyed = draw-free; else streetwise+WIT pry vs lock 12) → the choice. Three endings,
+each a permanent world-read: **Crell** (Watch +25 / Merchants +15, FRIEND Crell, Gilt holds a
+directed GRUDGE — his greeting goes hostile forever), **Gilt** (40 Royals seized-what-exists,
+Watch −20 / Temple −15, FRIEND the King's banker), **Finch** (Skyrunners +30 / Watch −10, FRIEND
+the quiet tenant — the only thing that can warm his greeting).
+
+**S3 world-pass cuts (declared):** no new micro-history edges and no faction leaning for sedge
+(both would touch bake sim-state and move the tick hash; her ties live in bio/barks/this section);
+no notable for the clerk himself (he is text); `personal.*` tables stay runtime-unselected ambient
+content; the rooming house names one cell, not a new fixture (the room itself is prose).
+
 ---
 
 ## 5. THE OPENING INVESTIGATION (scene-level)
