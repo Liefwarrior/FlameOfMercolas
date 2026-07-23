@@ -1,0 +1,21 @@
+{
+  "id": "leanings",
+  "leanings": [
+    { "notable": "onna",   "faction": "temple",    "standing": 40,  "why": "Devout past her orders; the night-soup is her liturgy." },
+    { "notable": "tolley", "faction": "temple",    "standing": 30,  "why": "The Mission's most faithful madman; the pot never turns him away." },
+    { "notable": "withy",  "faction": "temple",    "standing": 25,  "why": "Grandmother of the Arcade tithes every season and expects heaven notarized." },
+    { "notable": "wake",   "faction": "temple",    "standing": 15,  "why": "A captain who tithes after every crossing - storms respect bookkeeping." },
+    { "notable": "mag",    "faction": "merchants", "standing": -40, "why": "The Row's counters turned the Gullet away in the bad year; Mag returned the favor permanently." },
+    { "notable": "jek",    "faction": "merchants", "standing": -25, "why": "Chased from the stalls once too often; sells to Fenner because the Row will not have him." },
+    { "notable": "vane",   "faction": "merchants", "standing": -15, "why": "The Deep Keel undercuts the Row's rates and both sides know it." },
+    { "notable": "bregga", "faction": "merchants", "standing": 20,  "why": "The Promise carries the Row's cargo on a handshake manifest." },
+    { "notable": "grieve", "faction": "watch",     "standing": 20,  "why": "The King's Bond works hand-in-glove with the law it stores forfeits for." },
+    { "notable": "gilt",   "faction": "watch",     "standing": 15,  "why": "The bank pays for its own guard and the Watch appreciates a paying citizen." },
+    { "notable": "cull",   "faction": "watch",     "standing": 25,  "why": "The impound keeper is the Watch's own man in everything but the wage line." },
+    { "notable": "redda",  "faction": "watch",     "standing": -15, "why": "The Bilge serves whoever the Watch seeks, below the waterline where names stop." },
+    { "notable": "venn",   "faction": "watch",     "standing": -10, "why": "The Gull's back room has spoiled too many of the Watch's clean cases." },
+    { "notable": "finch",  "faction": "dockhands", "standing": 20,  "why": "The quiet tenant is well liked along the quays - covers hold best when the crowd vouches for them." },
+    { "notable": "herdis", "faction": "dockhands", "standing": 15,  "why": "Pen-side folk and quay folk share feed sacks, weather and grudges." }
+  ],
+  "notes": "Sprint-2 WORLD faction-roster refinement (S1-3 follow-through): per-actor leanings where the job->faction mapping is too coarse - a Temple-devout serf captain, Merchant-hostile wastrels, Watch-adjacent keepers. Baked deterministically as seeded FactionStandings deltas on the notable's actor id (spawn-site-bound via notables.json). Values are authored constants in [-100,100]; tuning guard: negative WATCH seeds stay above -20 (below the Barter surcharge band and far above the -60 refusal line) so no authored leaning can perturb food access or the starvation bars; negative MERCHANTS seeds are mechanically inert in Barter (only positive standing discounts) and exist for BarkSelector attitude texture (-25 and below greets 'cold'). Faction keys validate against the wired FactionRegistry at bake."
+}

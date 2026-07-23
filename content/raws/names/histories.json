@@ -1,0 +1,95 @@
+{
+  "id": "histories",
+  "histories": [
+    { "id": "brann-dagny-grayledger", "kind": "feud",
+      "a": "brann", "b": "dagny", "edge": "NEIGHBOR",
+      "bioA": "Feuds openly with Dagny of the Wrackhouse, whose salvage he calls theft with paperwork.",
+      "bioB": "Keeps a running war with Brann the chandler, who sees his own labels under her sander.",
+      "gossip": "gossip.brann-dagny-grayledger" },
+
+    { "id": "fenner-jek-hook", "kind": "debt",
+      "a": "fenner", "b": "jek", "edge": "MENTOR",
+      "bioA": "Holds paper on Tarry Jek's tide-finds - the mudlark's treasures reach the pawn window before they reach the light.",
+      "bioB": "Owes Fenner against every find the strand yields; the hook is old and deep.",
+      "gossip": "gossip.fenner-jek-hook" },
+
+    { "id": "fenner-neddry-paper", "kind": "debt",
+      "a": "fenner", "b": "neddry", "edge": "MENTOR",
+      "bioA": "Quietly owns the Slop-Chest's stock past the third hook - Neddry signed in a bad winter.",
+      "bioB": "Signed Fenner's paper one bad winter; the slops on his own shelves are half the pawnbroker's now.",
+      "gossip": "gossip.fenner-neddry-paper" },
+
+    { "id": "netter-fenner-debt", "kind": "debt",
+      "a": "fenner", "b": "netter", "edge": "MENTOR",
+      "bioA": "Keeps one paper he never displays: the Widow Netter's, signed against the house itself.",
+      "bioB": "Signed quiet paper at Fenner's window after the boats were lost; the house stands on his patience.",
+      "gossip": "gossip.netter-fenner-debt" },
+
+    { "id": "vess-venn-grudge", "kind": "feud",
+      "a": "vess", "b": "venn", "edge": "NEIGHBOR",
+      "bioA": "Nurses a sergeant's grudge against Master Venn - the Gull's back room has cost the Watch too many clean cases.",
+      "bioB": "Keeps Sergeant Vess's grudge on the ledger beside the breakage: the back room's games are worth both.",
+      "gossip": "gossip.vess-venn-grudge" },
+
+    { "id": "gilt-crell-erasure", "kind": "secret",
+      "a": "gilt", "b": "crell", "edge": "FRIEND",
+      "bioA": "Balances one Weighhouse number that never happened; Crell's erased line ends in his blotter.",
+      "bioB": "Shares with Master Gilt the one erased line in an otherwise honest ledger.",
+      "gossip": "gossip.gilt-crell-erasure" },
+
+    { "id": "harl-quayward-silence", "kind": "pact",
+      "a": "harl", "b": "quayward", "edge": "FRIEND",
+      "bioA": "Is paid handsomely by House Quayward to whistle while certain night cargo crosses his yard.",
+      "bioB": "Pays Harl's yard a whistling-wage for lighters that land after the Weighhouse sleeps.",
+      "gossip": "gossip.harl-quayward-silence" },
+
+    { "id": "netter-saltgate-wall", "kind": "feud",
+      "a": "netter", "b": "saltgate", "edge": "NEIGHBOR",
+      "bioA": "Feuds with Goodman Saltgate over the party wall - two spans of masonry, twenty years of lawyers.",
+      "bioB": "Contests two spans of party wall with the Netters' house; stubbornness is the family mortar.",
+      "gossip": "gossip.netter-saltgate-wall" },
+
+    { "id": "finch-mag-loyalty", "kind": "secret",
+      "a": "finch", "b": "mag", "edge": "FRIEND",
+      "bioA": "Counts Gullet Mag his one true friend in the ward - she asks no questions he would have to answer with lies.",
+      "bioB": "Keeps a soft spot for the quiet tenant Finch, and keeps whatever she has guessed about him grayer than her voice.",
+      "gossip": "gossip.finch-mag-loyalty" },
+
+    { "id": "vess-brakk-rivalry", "kind": "feud",
+      "a": "vess", "b": "brakk", "edge": "NEIGHBOR",
+      "bioA": "Circles Sergeant Brakk for the captaincy both want; Saltgate reports against guardhouse cells.",
+      "bioB": "Fills K34's cells partly to spite Sergeant Vess's tidy Saltgate reports; one captaincy is coming.",
+      "gossip": "gossip.vess-brakk-rivalry" },
+
+    { "id": "cobb-cull-line", "kind": "feud",
+      "a": "cobb", "b": "cull", "edge": "NEIGHBOR",
+      "bioA": "Has not forgiven Watchman Cull a mis-kenneled pup twenty years gone; the feud outlived the dog.",
+      "bioB": "Feuds with Old Cobb over a pup mis-kenneled twenty years back; neither man will bury it.",
+      "gossip": "gossip.cobb-cull-line" },
+
+    { "id": "sethra-maell-ember", "kind": "romance",
+      "a": "sethra", "b": "maell", "edge": "FRIEND",
+      "bioA": "Was promised to Maell once, before the Flame claimed them both for different vigils.",
+      "bioB": "Set aside an old promise to Sethra of the Lantern Room when the Flame called; the grief is shared and unspoken.",
+      "gossip": "gossip.sethra-maell-ember" },
+
+    { "id": "onna-jek-tideglass", "kind": "romance",
+      "a": "onna", "b": "jek", "edge": "FRIEND",
+      "bioA": "Thickens the soup on the days Tarry Jek leaves tide-glass at the Mission step.",
+      "bioB": "Leaves his best tide-glass at the Mission step for Onna, and eats better for it than he admits.",
+      "gossip": "gossip.onna-jek-tideglass" },
+
+    { "id": "salla-stave-barrels", "kind": "romance",
+      "a": "salla", "b": "stave", "edge": "FRIEND",
+      "bioA": "Orders more barrels than the catch requires; the cooper delivers each one himself.",
+      "bioB": "Delivers his best oak to Salla of Salt Row personally, and takes payment mostly in the walk back.",
+      "gossip": "gossip.salla-stave-barrels" },
+
+    { "id": "luff-redda-lamp", "kind": "romance",
+      "a": "luff", "b": "redda", "edge": "FRIEND",
+      "bioA": "Cuts canvas late whenever the Bilge's lamp burns; a tankard waits on his bench.",
+      "bioB": "Keeps a sailmaker's needle behind the bar and the Loft's lamp in the corner of her eye.",
+      "gossip": "gossip.luff-redda-lamp" }
+  ],
+  "notes": "Sprint-2 WORLD micro-histories (S2-1 'the stories between them'): authored feuds/debts/romances/pacts among the Forty Notables, realized at bake as real RelationshipRegistry edges plus one bio-addendum sentence per side (appended by NameForge after the notable's authored bio). Parties are notables.json ids - spawn-site-bound, never raw ActorIds. Edge vocabulary is the CURRENT append-only RelationshipKind enum (sim-owned): feud -> NEIGHBOR (a known-adversary adjacency tie; hostility carried by bios+gossip), debt -> MENTOR directed a(creditor) -> b(debtor) (the 'oversees' sense; no tick-path consumer), romance/pact/secret -> FRIEND (symmetric; BarkSelector greets these pairs as friends and Barter grants the kitchen-price Royal off, deliberately). RIVAL/DEBTOR/ROMANCE proper kinds are flagged to SIM-CORE for a future append; this file then migrates edge values without reshaping. Each history's gossip key must exist in barks/barks.json (asserted by DocksMicroHistoryTest)."
+}

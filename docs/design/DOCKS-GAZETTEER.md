@@ -370,6 +370,45 @@ freely" was exercised — the original ten stand unrenamed.
 | **Gullet Mag** | Wastrel (C4 ruin) | Rent is not paid in the Gullet, but respects are — to Mag |
 | **"Finch"** | Wastrel (Gullet roof decks) | A quiet tenant the Watch has never had reason to write down — no one has *(cover identity; see K35)* |
 
+### 4.5 The Stories Between Them — authored micro-histories (CANON as of the S2 world pass, 2026-07-23)
+
+Fifteen hand-authored feuds, debts, romances and pacts among the Forty Notables, shipped as data
+(`content/raws/names/histories.json`) and realized at bake as **real RelationshipRegistry edges plus a
+bio-addendum sentence on each side** — so the character sheet reads the story, the bark selector greets
+the pair by it, and the gossip tables (`content/raws/barks/barks.json`, `gossip.<historyId>`) tell it on
+the street. Parties are bound by notables.json id (spawn-site keyed, never raw ActorId). Edge realization
+uses the current append-only RelationshipKind vocabulary: feud → NEIGHBOR, debt → MENTOR (creditor →
+debtor), romance/pact/secret → FRIEND; RIVAL/DEBTOR/ROMANCE proper are flagged to sim-core for a future
+append, at which point the file migrates values without reshaping.
+
+| History id | Kind | The story in one line |
+|---|---|---|
+| `brann-dagny-grayledger` | feud | Brann's manifests keep surfacing in Dagny's Wrackhouse with the labels sanded off |
+| `fenner-jek-hook` | debt | Fenner holds paper on every treasure Tarry Jek pulls from the strand |
+| `fenner-neddry-paper` | debt | The Slop-Chest's stock past the third hook is quietly Fenner's — Neddry signed in a bad winter |
+| `netter-fenner-debt` | debt | The Widow Netter signed quiet paper against the house itself after the boats were lost |
+| `vess-venn-grudge` | feud | Sergeant Vess's clean cases keep dying in the Gilded Gull's back room |
+| `gilt-crell-erasure` | secret | One Weighhouse number never happened; Crell's erased line ends in Gilt's blotter |
+| `harl-quayward-silence` | pact | House Quayward pays Harl's yard a whistling-wage for midnight lighters |
+| `netter-saltgate-wall` | feud | Two spans of party wall, twenty years of lawyers, two proud houses |
+| `finch-mag-loyalty` | secret | Gullet Mag asks the quiet tenant no questions he'd have to answer with lies |
+| `vess-brakk-rivalry` | feud | Two sergeants, one captaincy coming; Saltgate reports against guardhouse cells |
+| `cobb-cull-line` | feud | A pup mis-kenneled twenty years ago; the feud outlived the dog |
+| `sethra-maell-ember` | romance | Promised once, before the Flame claimed them for different vigils |
+| `onna-jek-tideglass` | romance | Tide-glass on the Mission step; the soup runs thicker those days |
+| `salla-stave-barrels` | romance | Salt Row orders more barrels than fish; the cooper delivers each one himself |
+| `luff-redda-lamp` | romance | The Loft's lamp burns late whenever the Bilge's does |
+
+The same pass ships **faction leanings** (`content/raws/factions/leanings.json`): fifteen per-actor
+standing seeds where job→faction membership is too coarse — Temple-devout Captain Wake, Merchant-hostile
+Mag and Jek, Watch-adjacent Grieve/Gilt/Cull, the Bilge and the Gull leaning away from the law. Bars
+guard: negative Watch seeds stay above −20 (below Barter's surcharge band, far above refusal), so no
+authored leaning can move food access or the starvation bars. And the **bark text tables** land
+(`content/raws/barks/barks.json`, 170 tables / 500 rows): full greet coverage over the nine presented job
+families × six attitudes with time-band refinements, the six mood-override tables, personal lines for all
+Forty Notables, and one gossip table per micro-history — validated against BarkSelector's key vocabulary
+by `DocksBarkContentTest`.
+
 ---
 
 ## 5. THE OPENING INVESTIGATION (scene-level)

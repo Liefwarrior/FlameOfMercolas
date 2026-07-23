@@ -388,11 +388,14 @@ public final class DocksPopulation implements ScenarioPopulation {
     private final List<Integer> moverIds;
     /** Lazily forged identity table (S1) — a memoized pure function of the finished bake. */
     private IdentityRegistry identity;
+    /** The S2 authored micro-histories, realized at bake (edges live in {@link #relationships}). */
+    private final List<MicroHistoryBake.Bound> authoredHistories;
 
     private DocksPopulation(ActorsSystem system, ActorTypeStatsTable typeStats,
             JobRegistry jobs, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, ActorRegistry registry, long worldSeed,
-            int trackedGroundMoverId, List<Integer> moverIds) {
+            int trackedGroundMoverId, List<Integer> moverIds,
+            List<MicroHistoryBake.Bound> authoredHistories) {
         this.system = system;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -403,6 +406,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         this.worldSeed = worldSeed;
         this.trackedGroundMoverId = trackedGroundMoverId;
         this.moverIds = List.copyOf(moverIds);
+        this.authoredHistories = authoredHistories;
     }
 
     @Override
@@ -450,9 +454,19 @@ public final class DocksPopulation implements ScenarioPopulation {
             identity = NameForge.forge(worldSeed, registry, homes, relationships, jobs,
                     NameRaws.load(namesRoot.resolve("names.json")),
                     NotableRaws.load(namesRoot.resolve("notables.json")),
-                    notableSpawnSites(), siteDisplayNames());
+                    notableSpawnSites(), siteDisplayNames(),
+                    MicroHistoryBake.bioAddenda(authoredHistories));
         }
         return identity;
+    }
+
+    /**
+     * The S2 authored micro-histories (feuds/debts/romances among the notables), realized at
+     * bake as relationship edges + bio addenda — bound (historyId, actorA, actorB) rows for
+     * tests and headless proofs. Package-private like the bake types it exposes.
+     */
+    List<MicroHistoryBake.Bound> authoredHistories() {
+        return authoredHistories;
     }
 
     @Override
@@ -556,11 +570,28 @@ public final class DocksPopulation implements ScenarioPopulation {
         FactionRegistry factionDefs = FactionRawsLoader.load(rawsRoot);
         validateFactionMembership(factionDefs, jobs);
         FactionStandings factionStandings = new FactionStandings(factionDefs);
+
+        // S2 WORLD "the stories between them": the authored micro-histories (real
+        // RelationshipRegistry edges + bio addenda) and per-actor faction leanings, both
+        // keyed by notables.json ids and bound by spawn site over the finished bake — pure
+        // committed-raws content, draw-free, applied BEFORE the first tick so it is ordinary
+        // bake-immutable state inside the persisted triad and the twin-run identity gates.
+        Path namesRoot = rawsRoot.resolve("names");
+        Map<String, Integer> notableActors = NameForge.bindNotableActors(registry, homes,
+                NotableRaws.load(namesRoot.resolve("notables.json")), notableSpawnSites());
+        List<MicroHistoryBake.Bound> authoredHistories = MicroHistoryBake.bake(
+                HistoryRaws.load(namesRoot.resolve("histories.json")), notableActors,
+                relationships);
+        FactionLeaningsBake.apply(
+                LeaningRaws.load(rawsRoot.resolve("factions").resolve("leanings.json")),
+                notableActors, factionStandings);
+
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
                 relationships, items, bank, world, fixtures, skillTracks, factionStandings);
         system.recordFoodMintedAtBake(foodSeeded);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
-                registry, worldSeed, builder.trackedGroundMoverId, builder.movers);
+                registry, worldSeed, builder.trackedGroundMoverId, builder.movers,
+                authoredHistories);
     }
 
     /** Packs an authored map cell {@code (mapX, mapY)} on z-level {@code mapZ} to its world tile. */

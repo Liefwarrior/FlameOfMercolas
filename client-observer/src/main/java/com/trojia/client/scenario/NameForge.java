@@ -63,13 +63,34 @@ final class NameForge {
     }
 
     /**
+     * The notable-id → bound-ActorId map, resolved by the same spawn-site matching
+     * {@link #forge} uses — the shared binding surface the Sprint-2 bakes (micro-history
+     * edges, faction leanings) key their authored content on, so an identity and its
+     * stories can never bind different souls.
+     */
+    static Map<String, Integer> bindNotableActors(ActorRegistry registry, HomeRegistry homes,
+            List<NotableRaws.Notable> notables, Map<String, Integer> spawnSites) {
+        NotableRaws.Notable[] bound = bindNotables(registry, homes, notables, spawnSites);
+        Map<String, Integer> byId = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < bound.length; i++) {
+            if (bound[i] != null) {
+                byId.put(bound[i].id(), i);
+            }
+        }
+        return byId;
+    }
+
+    /**
      * Forges the full identity table for {@code registry}. See the class Javadoc for the
      * determinism contract; every input is bake-immutable, so the result is too.
+     *
+     * @param bioAddenda per-ActorId sentences appended after the base bio (the Sprint-2
+     *                   micro-history addenda; empty map = the S1 behavior, byte-identical)
      */
     static IdentityRegistry forge(long worldSeed, ActorRegistry registry, HomeRegistry homes,
             RelationshipRegistry relationships, JobRegistry jobs, NameRaws raws,
             List<NotableRaws.Notable> notables, Map<String, Integer> spawnSites,
-            Map<Integer, String> siteNames) {
+            Map<Integer, String> siteNames, Map<Integer, String> bioAddenda) {
         int n = registry.size();
 
         // ---- 1. Bind the notables by spawn site (never by raw id) -----------------------
@@ -156,6 +177,10 @@ final class NameForge {
                 bio = ownedBeastBio(actor, registry, homes, full, spawnSites, siteNames);
             } else {
                 bio = "";
+            }
+            String addendum = bioAddenda.get(i);
+            if (addendum != null) {
+                bio = bio.isBlank() ? addendum : bio + " " + addendum;
             }
             rows.add(new IdentityRegistry.Identity(i, given[i], surname[i], full[i],
                     epithet[i], bio, named[i], notable == null ? null : notable.id()));

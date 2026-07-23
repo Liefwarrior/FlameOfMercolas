@@ -1,0 +1,1028 @@
+{
+  "id": "barks",
+  "tables": [
+
+    { "key": "mood.dead",
+      "rows": [
+        "(the crows have this one now)",
+        "(the gibbet creaks; nothing answers)",
+        "(dead men keep the best secrets on these docks)"
+      ] },
+    { "key": "mood.downed",
+      "rows": [
+        "Uhh... the stones... so cold...",
+        "Help a body up... or step over, like the rest...",
+        "(a wet cough) Not... done yet...",
+        "The tide... tell them the tide took my boots..."
+      ] },
+    { "key": "mood.held",
+      "rows": [
+        "A day in the cage for nothing at all.",
+        "Tell the turnkey my wage is owed. He laughed. You laugh too, go on.",
+        "When I'm out, the Watch buys the first round. With my coin, likely.",
+        "The bars are King's iron. Finest thing I ever held."
+      ] },
+    { "key": "mood.confined",
+      "rows": [
+        "Can't step past my own sill. Watch's orders.",
+        "House arrest, they call it. Starving under a roof, I call it.",
+        "Come to gawk at the door-bound? Bring bread next time.",
+        "Me and this wall are old friends now."
+      ] },
+    { "key": "mood.panicked",
+      "rows": [
+        "Out of my way! Out of it!",
+        "They're coming - d'you hear? They're COMING!",
+        "Run, fool! Why are you standing there?",
+        "Flame keep me, Flame keep me, Flame keep me..."
+      ] },
+    { "key": "mood.harried",
+      "rows": [
+        "Moving on, moving on. Boots don't stop in this ward.",
+        "The spear said walk, so I walk.",
+        "No rest for the warned.",
+        "Ask the Watch where a body's allowed to stand. Go on, ask."
+      ] },
+
+    { "key": "greet.serf",
+      "rows": [
+        "Rope and tide, friend.",
+        "Another haul, another day.",
+        "Mind the lines there.",
+        "Work's work."
+      ] },
+    { "key": "greet.serf.kin",
+      "rows": [
+        "Supper's thin, but there's a bowl for you.",
+        "Home before dark, you hear?",
+        "Blood minds blood. Watch yourself on the quay."
+      ] },
+    { "key": "greet.serf.friend",
+      "rows": [
+        "There's my favorite face on this mudheap.",
+        "Still owe you that drink at the Gull.",
+        "Good to see you upright and unfined."
+      ] },
+    { "key": "greet.serf.hostile",
+      "rows": [
+        "You've got sand, showing that face at the ropes.",
+        "Foreman says work beside you. Didn't say speak.",
+        "Get gone before the lads notice you."
+      ] },
+    { "key": "greet.serf.cold",
+      "rows": [
+        "Heard things about you. Keep to your side of the line.",
+        "My rope, my crate, my business. Yours is elsewhere.",
+        "(a grunt, and a turned shoulder)"
+      ] },
+    { "key": "greet.serf.warm",
+      "rows": [
+        "Make way, make way - a friend of the quays.",
+        "You stood by us. The ropes remember.",
+        "First pull's yours if you want work, friend."
+      ] },
+    { "key": "greet.serf.neutral",
+      "rows": [
+        "Mind the crates.",
+        "You lost, or just idle?",
+        "Tide's in, hands are short. Talk fast."
+      ] },
+    { "key": "greet.serf.neutral.morning",
+      "rows": [
+        "Dawn bell rang. Muster's forming on the quay.",
+        "Cold start. The rope's stiff and so am I.",
+        "Morning. Mind the gull mess on the planks."
+      ] },
+    { "key": "greet.serf.neutral.day",
+      "rows": [
+        "Full press at the berths today.",
+        "No idling - the crane line's moving.",
+        "Day's half spent and the hold's still full."
+      ] },
+    { "key": "greet.serf.neutral.evening",
+      "rows": [
+        "Last haul, then the Gull for me.",
+        "Shoulders are done. Tongue's next, over ale.",
+        "Evening. The wage table can't come soon enough."
+      ] },
+    { "key": "greet.serf.neutral.night",
+      "rows": [
+        "Hsst - you'll wake the bunkhouse.",
+        "Night shift's for the young and the indebted.",
+        "Late to be on the planks. Fall in and no one fishes you out."
+      ] },
+
+    { "key": "greet.wastrel",
+      "rows": [
+        "Spare a Royal for a dry throat?",
+        "The strand gives, the strand takes.",
+        "You look flush. I look hungry. Fate's a jest.",
+        "Keep your purse deep and your questions shallow."
+      ] },
+    { "key": "greet.wastrel.kin",
+      "rows": [
+        "We share blood, so share a warning: the strand's picked clean today.",
+        "Cousin. The Mission pot's on at dusk - go early.",
+        "Family price on my advice: it's free, and it's 'run'."
+      ] },
+    { "key": "greet.wastrel.friend",
+      "rows": [
+        "There's a friendly face. Got any bread on you?",
+        "Sit. The step's free, which is the best price in the ward.",
+        "You I'd share a found Royal with. Maybe."
+      ] },
+    { "key": "greet.wastrel.hostile",
+      "rows": [
+        "You. The gulls speak better of carrion.",
+        "Come closer and I'll scream thief. Who'd they believe, eh?",
+        "Strand law: what you did doesn't wash off."
+      ] },
+    { "key": "greet.wastrel.cold",
+      "rows": [
+        "Word crawls the gutters faster than you'd think. I heard it.",
+        "Keep your shadow off my patch.",
+        "(spits toward the gutter)"
+      ] },
+    { "key": "greet.wastrel.warm",
+      "rows": [
+        "Friend of the street! Sit, sit - the stones are warmest here.",
+        "Feed the gutter and the gutter feeds you back. What d'you need?",
+        "For you? I saw nothing and I heard everything. Ask."
+      ] },
+    { "key": "greet.wastrel.neutral",
+      "rows": [
+        "Got a Royal? Half a Royal? A crust?",
+        "The strand's free to walk. Walking's about all that is.",
+        "New face. Old story, I'd wager."
+      ] },
+    { "key": "greet.wastrel.neutral.morning",
+      "rows": [
+        "Tide left treasure somewhere. Just never here.",
+        "First light's for mudlarks and regrets.",
+        "Morning. The bakers dump the burnt loaves soon - don't crowd me."
+      ] },
+    { "key": "greet.wastrel.neutral.day",
+      "rows": [
+        "Watch moves us along at noon. Keep shuffling.",
+        "Day crowd's stingy. Evening crowd drinks first and gives better.",
+        "You're standing in my sun."
+      ] },
+    { "key": "greet.wastrel.neutral.evening",
+      "rows": [
+        "Mission pot's on. You can smell hope from here.",
+        "Dusk, and the ward goes soft-hearted. Best hour to ask.",
+        "Evening. Spare what the day spared you?"
+      ] },
+    { "key": "greet.wastrel.neutral.night",
+      "rows": [
+        "Off the strand at night - the tide takes sleepers.",
+        "Night's for the Runners. I hold walls up, me.",
+        "You didn't see me. I'm a heap of nets, understand?"
+      ] },
+
+    { "key": "greet.watch",
+      "rows": [
+        "Business?",
+        "Keep it orderly.",
+        "The Watch sees you.",
+        "Walk on, citizen."
+      ] },
+    { "key": "greet.watch.kin",
+      "rows": [
+        "Shouldn't stop long - the sergeant watches me watch you.",
+        "Tell mother the wage lands on Kingsday.",
+        "Stay off the quay after dark. I mean it, blood or no."
+      ] },
+    { "key": "greet.watch.friend",
+      "rows": [
+        "If it isn't my favorite trouble.",
+        "Between us: patrols double at the warehouses tonight.",
+        "Keep your nose clean and my rounds boring, eh?"
+      ] },
+    { "key": "greet.watch.hostile",
+      "rows": [
+        "Give me a reason. Any reason.",
+        "The gibbet's had thinner necks than yours.",
+        "Every step you take in my ward, I count it."
+      ] },
+    { "key": "greet.watch.cold",
+      "rows": [
+        "You're on the list, you know.",
+        "The Watch sees you, gutter-blood.",
+        "One report says your name twice. Care to make it thrice?"
+      ] },
+    { "key": "greet.watch.cold.morning",
+      "rows": [
+        "Up early? Planning something, or fleeing it?",
+        "Dawn doesn't wash a name clean.",
+        "You again, and the day barely lit."
+      ] },
+    { "key": "greet.watch.cold.day",
+      "rows": [
+        "I'm watching you in broad daylight. Imagine the dark.",
+        "The sergeant knows your face. Keep it moving.",
+        "Noon post, and here's trouble already."
+      ] },
+    { "key": "greet.watch.cold.evening",
+      "rows": [
+        "Dusk's when your sort goes to work, isn't it?",
+        "Lamps are lit. Stay under them where I can see you.",
+        "Evening. Your name came up at the post again."
+      ] },
+    { "key": "greet.watch.cold.night",
+      "rows": [
+        "Move along, you.",
+        "The Watch sees you, gutter-blood.",
+        "Wrong hour for a listed name to wander.",
+        "One shout from me and you sleep in K34. Walk."
+      ] },
+    { "key": "greet.watch.warm",
+      "rows": [
+        "Good day to you. Rare, saying that and meaning it.",
+        "The ward could use more of your sort.",
+        "Any trouble finds you, it answers to the post."
+      ] },
+    { "key": "greet.watch.neutral",
+      "rows": [
+        "State your business.",
+        "Keep the lane clear.",
+        "Papers, cargo, or trouble - which are you?"
+      ] },
+    { "key": "greet.watch.neutral.morning",
+      "rows": [
+        "Morning muster's done. Streets are mine till dusk.",
+        "Early. Honest folk and thieves both love this hour.",
+        "Move along - the dawn cart's coming through."
+      ] },
+    { "key": "greet.watch.neutral.day",
+      "rows": [
+        "Busy hour. Keep your purse forward, citizen.",
+        "Midday post. All quiet, and I intend it stays so.",
+        "Mind the crane line - one flattened fool a season is plenty."
+      ] },
+    { "key": "greet.watch.neutral.evening",
+      "rows": [
+        "Dusk. The honest go home now, so what's keeping you?",
+        "Lamps are lit. So are the cutpurses' eyes.",
+        "Evening rounds. Walk with purpose or walk home."
+      ] },
+    { "key": "greet.watch.neutral.night",
+      "rows": [
+        "Curfew's not law here yet. Don't make me wish it were.",
+        "Late walker. The gibbet started as a late walker too, I'd wager.",
+        "Name and business, and quick about it."
+      ] },
+
+    { "key": "greet.clergy",
+      "rows": [
+        "The Flame keep you.",
+        "Warmth of the Flame on you, child.",
+        "The Mission feeds at dusk. Tell the hungry.",
+        "Every soul a wick, every wick a light."
+      ] },
+    { "key": "greet.clergy.kin",
+      "rows": [
+        "The Flame lights kin twice over. Come to the Mission after.",
+        "Blood of my blood. Have you eaten today - truly?",
+        "Mother asks for you at prayers. Don't make me lie again."
+      ] },
+    { "key": "greet.clergy.friend",
+      "rows": [
+        "Friend. The pot's on early tonight - come hungry.",
+        "The Flame's warmer with you near it.",
+        "Sit with me at dusk-song. The bench misses you."
+      ] },
+    { "key": "greet.clergy.hostile",
+      "rows": [
+        "Even you the Flame would take back. But not through my door tonight.",
+        "I pray for you. From a distance.",
+        "The Flame sees what you did. It burns things clean - remember that."
+      ] },
+    { "key": "greet.clergy.cold",
+      "rows": [
+        "The Flame forgives. I am still working on it.",
+        "Alms are for the hungry, not the grasping.",
+        "(a blessing, made quickly and without warmth)"
+      ] },
+    { "key": "greet.clergy.warm",
+      "rows": [
+        "The Flame's own friend! The Mission owes you a seat by the fire.",
+        "Blessings, child. Your kindness is spoken of at prayers.",
+        "Warm hands, warm heart, warm Flame. Come in, come in."
+      ] },
+    { "key": "greet.clergy.neutral",
+      "rows": [
+        "The Flame keep you.",
+        "Peace of the Flame on you, child.",
+        "Hungry? The Mission pot takes all comers at dusk."
+      ] },
+    { "key": "greet.clergy.neutral.morning",
+      "rows": [
+        "Dawn-song's just done. The Flame is lit fresh.",
+        "Morning, child. The Flame rose before us all.",
+        "First light. Best light - the Flame's light."
+      ] },
+    { "key": "greet.clergy.neutral.day",
+      "rows": [
+        "The Flame keep your working hours.",
+        "Midday. Even the Flame rests low - eat something, child.",
+        "The Mission door stands open, as ever."
+      ] },
+    { "key": "greet.clergy.neutral.evening",
+      "rows": [
+        "Dusk-song soon. Come, even just to warm your hands.",
+        "The pot's on. Bring your hunger and any news of the sick.",
+        "Evening, child. The Flame gutters but never goes."
+      ] },
+    { "key": "greet.clergy.neutral.night",
+      "rows": [
+        "The night is the Flame's oldest argument. Walk in its light.",
+        "Late, child. The Mission bunks are full, but the floor is dry.",
+        "The Flame keeps watch when the Watch sleeps."
+      ] },
+
+    { "key": "greet.trade",
+      "rows": [
+        "Buying, or blocking my counter?",
+        "Stock's fresh as the tide brings.",
+        "A Royal spent here is a Royal well kept."
+      ] },
+    { "key": "greet.trade.kin",
+      "rows": [
+        "Take it off the shelf, but the family price is still a price.",
+        "Kin at the counter! Mind the till while I fetch the good stock.",
+        "Tell the house I'll close early for supper. Maybe."
+      ] },
+    { "key": "greet.trade.friend",
+      "rows": [
+        "For you, the scale reads honest.",
+        "My friend! Buy something, so the Watch thinks you're a customer.",
+        "The back shelf's got better. Friends know to ask."
+      ] },
+    { "key": "greet.trade.hostile",
+      "rows": [
+        "Out. My counter serves the ward, not its rot.",
+        "Your coin's no good here. Nor your face.",
+        "I've a bell for the Watch and a bar for the door. Pick."
+      ] },
+    { "key": "greet.trade.cold",
+      "rows": [
+        "Coin first. Handle nothing.",
+        "I count my stock when your sort visits. Twice.",
+        "The Row talks, you know. About you."
+      ] },
+    { "key": "greet.trade.warm",
+      "rows": [
+        "Ah, good custom! The scale tips your way today.",
+        "For a friend of the Row, the fresh stock - not the front stock.",
+        "Your Royals ring honest. Rare music, that."
+      ] },
+    { "key": "greet.trade.warm.morning",
+      "rows": [
+        "First customer of the day, and a welcome one at that.",
+        "Morning, friend of the Row. The bread's still warm somewhere under here.",
+        "For you I'd open early any day."
+      ] },
+    { "key": "greet.trade.warm.day",
+      "rows": [
+        "The good stock's yours to pick over, friend.",
+        "Busy day, but never too busy for good custom.",
+        "Your name stands well on the Row's books. Buy what you like."
+      ] },
+    { "key": "greet.trade.warm.evening",
+      "rows": [
+        "Stay past the shutter - your coin's always welcome.",
+        "Evening, friend. The last of the fresh is yours before it turns.",
+        "For you, the counter stays open a breath longer."
+      ] },
+    { "key": "greet.trade.warm.night",
+      "rows": [
+        "For you? The shutter opens. Quietly, mind.",
+        "It's late, but a friend's knock is never trouble.",
+        "Quick now - what does a friend of the Row need at this hour?"
+      ] },
+    { "key": "greet.trade.neutral",
+      "rows": [
+        "Buying?",
+        "Stock's what you see. Price is what I say.",
+        "Mind the display. Broken is bought."
+      ] },
+    { "key": "greet.trade.neutral.morning",
+      "rows": [
+        "Fresh off the morning tide. Well - fresh enough.",
+        "Early custom's best custom. What'll it be?",
+        "Just opened. Scale's clean, till's empty, hopes are up."
+      ] },
+    { "key": "greet.trade.neutral.day",
+      "rows": [
+        "Midday press - queue like decent folk.",
+        "Stock moves fast today. Decide faster.",
+        "Day rate's the fair rate. Ask anyone on the Row."
+      ] },
+    { "key": "greet.trade.neutral.evening",
+      "rows": [
+        "Closing soon. Last measures going cheap-ish.",
+        "Evening trade's thin. Make my day - buy twice.",
+        "The counter shuts at dark. The tab shuts never."
+      ] },
+    { "key": "greet.trade.neutral.night",
+      "rows": [
+        "We're shut. The sign, the shutter and the bar all say so.",
+        "Night custom's trouble custom. What do you want?",
+        "Come back with the sun. Or knock the Watch's way, not mine."
+      ] },
+
+    { "key": "greet.maritime",
+      "rows": [
+        "Fair wind to you.",
+        "Tide waits on no one, so talk quick.",
+        "Salt in the air and no ship under me. A waste.",
+        "Watch the mooring lines, landsman."
+      ] },
+    { "key": "greet.maritime.kin",
+      "rows": [
+        "Blood aboard! Mind the lines and stay off the rail.",
+        "Tell the house I sail on the next tide. And that I'm sorry.",
+        "Kin or no, the captain's word is weather aboard."
+      ] },
+    { "key": "greet.maritime.friend",
+      "rows": [
+        "Ha! Thought the tide took you years back.",
+        "My old shipmate's shadow! Come drink the harbor dry.",
+        "For you I'd even haul rope sober."
+      ] },
+    { "key": "greet.maritime.hostile",
+      "rows": [
+        "We keel-haul your sort where I'm from.",
+        "The sea refuses some cargo. You're some cargo.",
+        "Step aboard and learn to swim the hard way."
+      ] },
+    { "key": "greet.maritime.cold",
+      "rows": [
+        "I've heard what the harbor says about you.",
+        "Stand clear of the gangplank. And of me.",
+        "(makes the old sign against foul wind)"
+      ] },
+    { "key": "greet.maritime.warm",
+      "rows": [
+        "A friend of the crews! The Gull's first round is yours tonight.",
+        "You're good luck on a quay, they say. Stand closer.",
+        "Fair wind follows you, friend. Share it."
+      ] },
+    { "key": "greet.maritime.neutral",
+      "rows": [
+        "Fair wind.",
+        "Mind the lines, landsman.",
+        "Cargo or questions? I've patience for one."
+      ] },
+    { "key": "greet.maritime.neutral.morning",
+      "rows": [
+        "Morning tide's the honest tide.",
+        "Dawn watch done. Deck's scrubbed, throat's dry.",
+        "Early bird gets the best berth."
+      ] },
+    { "key": "greet.maritime.neutral.day",
+      "rows": [
+        "Loading till dusk. Talk while I haul.",
+        "Midday sun and a full hold - a good day, that.",
+        "The crane waits for no conversation."
+      ] },
+    { "key": "greet.maritime.neutral.evening",
+      "rows": [
+        "Evening tide's a smuggler's tide. Not that I'd know.",
+        "Last light. The Gull's lamps look warmer than my bunk.",
+        "Dusk. Wind's turning - feel it?"
+      ] },
+    { "key": "greet.maritime.neutral.night",
+      "rows": [
+        "Night watch. Just me, the rats, and whatever you are.",
+        "Quiet hours on the quay. Keep them quiet.",
+        "The sea's loudest when the ward sleeps. Listen."
+      ] },
+
+    { "key": "greet.husbandry",
+      "rows": [
+        "Mind the beasts.",
+        "Fed and watered, same as I wish I was.",
+        "A good dog's worth three men. Cheaper, too."
+      ] },
+    { "key": "greet.husbandry.kin",
+      "rows": [
+        "Wash your hands before supper if you've touched the pens. Mother's rule, my rule.",
+        "Kin visit! The goats eat before we talk - oldest law in the ward.",
+        "Blood helps muck stalls free. That's what blood's for."
+      ] },
+    { "key": "greet.husbandry.friend",
+      "rows": [
+        "The dogs like you. That's references enough for me.",
+        "Friend! Hold this feed sack and earn your gossip.",
+        "You're good with beasts. Rarer than good with people."
+      ] },
+    { "key": "greet.husbandry.hostile",
+      "rows": [
+        "The dogs remember you. So do I.",
+        "Touch a beast of mine and lose the hand.",
+        "Even the goats won't take feed from your side of the fence."
+      ] },
+    { "key": "greet.husbandry.cold",
+      "rows": [
+        "Beasts judge quicker than the Watch. Mine judged you already.",
+        "Stand back from the pens. Things go missing when you're about, I hear.",
+        "(the dog at their heel growls low)"
+      ] },
+    { "key": "greet.husbandry.warm",
+      "rows": [
+        "The pens are calmer when you're by. Come round any time.",
+        "Friend of the yards! The pups are weaned - come pick the bold one.",
+        "You've an honest smell about you. The beasts agree."
+      ] },
+    { "key": "greet.husbandry.neutral",
+      "rows": [
+        "Mind the beasts.",
+        "Pens are private. Path's public. Know which is which.",
+        "Feed's paid for, beast by beast. No charity in a trough."
+      ] },
+    { "key": "greet.husbandry.neutral.morning",
+      "rows": [
+        "Feeding hour. Stand clear of the rush.",
+        "Morning. The beasts woke me before the bell, as ever.",
+        "Milking's done. The rest of the day's downhill."
+      ] },
+    { "key": "greet.husbandry.neutral.day",
+      "rows": [
+        "Exercise rounds. The horse leads, we follow.",
+        "Midday's for mucking. Stand upwind, friend.",
+        "The kennels nap at noon. I envy them daily."
+      ] },
+    { "key": "greet.husbandry.neutral.evening",
+      "rows": [
+        "Last feed at dusk. Then the ward's on its own.",
+        "Penning up. Help, or step back.",
+        "Evening. The beasts hear the night coming before we do."
+      ] },
+    { "key": "greet.husbandry.neutral.night",
+      "rows": [
+        "The dogs bark at nothing all night. Or not nothing - who knows.",
+        "Beasts are down. Keep your voice low.",
+        "Night check. A restless pen means a prowler about."
+      ] },
+
+    { "key": "greet.beast",
+      "rows": [
+        "(it watches you sidelong)",
+        "(a low sound, neither welcome nor warning)",
+        "(it goes still as you pass)"
+      ] },
+    { "key": "greet.beast.kin",
+      "rows": [
+        "(it noses at you, tail low but easy - it knows the household smell)",
+        "(a soft chuff of recognition)"
+      ] },
+    { "key": "greet.beast.friend",
+      "rows": [
+        "(its tail beats once, twice - it remembers you kindly)",
+        "(it leans its warm weight against your leg)"
+      ] },
+    { "key": "greet.beast.hostile",
+      "rows": [
+        "(hackles rise; a long, low growl)",
+        "(it bares teeth - it has not forgotten)"
+      ] },
+    { "key": "greet.beast.cold",
+      "rows": [
+        "(it backs off a pace, watching your hands)",
+        "(a wary circle, keeping the distance even)"
+      ] },
+    { "key": "greet.beast.warm",
+      "rows": [
+        "(it trots over, hopeful of scraps)",
+        "(an easy, open-mouthed pant - you rank among the feeders)"
+      ] },
+    { "key": "greet.beast.neutral",
+      "rows": [
+        "(it watches you sidelong)",
+        "(a sniff; you are catalogued and dismissed)",
+        "(it goes still as you pass)"
+      ] },
+    { "key": "greet.beast.neutral.morning",
+      "rows": [
+        "(it stretches long, jaws wide in a dawn yawn)",
+        "(it stirs from a scrap-pile nest, blinking at the light)"
+      ] },
+    { "key": "greet.beast.neutral.day",
+      "rows": [
+        "(it dozes in a strip of sun, one eye on the traffic)",
+        "(it noses along the gutter line, working)"
+      ] },
+    { "key": "greet.beast.neutral.evening",
+      "rows": [
+        "(it grows restless as the lamps take)",
+        "(it patrols its patch with the dusk shift)"
+      ] },
+    { "key": "greet.beast.neutral.night",
+      "rows": [
+        "(eyes catch the lamplight, twin coins in the dark)",
+        "(a shape detaches from deeper shadow, considers you, returns)"
+      ] },
+
+    { "key": "greet.flame_of_merc",
+      "rows": [
+        "Speak, if you must.",
+        "The ward burns slow. I am watching it.",
+        "Few stop me to talk. Fewer twice."
+      ] },
+    { "key": "greet.flame_of_merc.kin",
+      "rows": [
+        "You I keep close. Stay close.",
+        "Blood is a small fire that must not go out."
+      ] },
+    { "key": "greet.flame_of_merc.friend",
+      "rows": [
+        "Walk with me a while. The ward talks less when I have company.",
+        "Few names sit easy with me. Yours does."
+      ] },
+    { "key": "greet.flame_of_merc.hostile",
+      "rows": [
+        "Do not test what I carry.",
+        "You mistake patience for mercy. Correct that."
+      ] },
+    { "key": "greet.flame_of_merc.cold",
+      "rows": [
+        "I know what is said of you. Convince me it is wrong.",
+        "Stand where I can see your hands."
+      ] },
+    { "key": "greet.flame_of_merc.warm",
+      "rows": [
+        "The ward speaks well of you. That is rarer than gold here.",
+        "You have been useful. Remain so, and prosper."
+      ] },
+    { "key": "greet.flame_of_merc.neutral",
+      "rows": [
+        "Speak, if you must.",
+        "Make it brief. The ward does not watch itself.",
+        "Yes?"
+      ] },
+    { "key": "greet.flame_of_merc.neutral.morning",
+      "rows": [
+        "The day is young and already owed.",
+        "Dawn. What the night hid, the morning sells."
+      ] },
+    { "key": "greet.flame_of_merc.neutral.day",
+      "rows": [
+        "The ward works. Working wards keep their secrets shallow.",
+        "Speak while I walk."
+      ] },
+    { "key": "greet.flame_of_merc.neutral.evening",
+      "rows": [
+        "Dusk gathers the honest home and turns the rest loose.",
+        "The lamps take. So do the lampless. Speak."
+      ] },
+    { "key": "greet.flame_of_merc.neutral.night",
+      "rows": [
+        "The night is mine to walk. State your reason for sharing it.",
+        "Softly. The dark has ears it did not buy."
+      ] },
+
+    { "key": "personal",
+      "rows": [
+        "(they size you up in silence)",
+        "(a nod, no more - you are known here, or soon will be)"
+      ] },
+    { "key": "personal.crell", "canonAnchor": "notables.json:crell",
+      "rows": [
+        "The Weighhouse scale is the only honest tongue on this harbor.",
+        "Ask your question as you'd load a hold: heaviest first.",
+        "Every crate that crosses my quay has a number. Most have the true one.",
+        "The King taxes what I weigh. What I don't weigh, the King doesn't miss.",
+        "You read ledgers? Then you know a clean page can lie."
+      ] },
+    { "key": "personal.vess", "canonAnchor": "notables.json:vess",
+      "rows": [
+        "Saltgate stays quiet because I am not.",
+        "I've buried three quiet weeks this year. Each one ended loud.",
+        "The magistrate prices a broken head at two Royals. I price it differently.",
+        "Some doors in this ward I watch on my own time.",
+        "The Gull pours and I remember. That's the whole arrangement."
+      ] },
+    { "key": "personal.sethra", "canonAnchor": "notables.json:sethra",
+      "rows": [
+        "The Lantern Room hears every tide's worth of grief. It keeps all of it.",
+        "Sit. The kettle's always near the fire.",
+        "What the harbor takes, we name in the smoke."
+      ] },
+    { "key": "personal.maell", "canonAnchor": "notables.json:maell",
+      "rows": [
+        "The Flame does not ask where you slept. Neither do I.",
+        "The pot is shallow tonight, but it has never once been empty.",
+        "I came to these docks carrying worse debts than any wastrel here.",
+        "Grief is a wet log. It smokes long before it warms. Sit anyway.",
+        "The Lantern Room and I keep different vigils for the same souls."
+      ] },
+    { "key": "personal.onna", "canonAnchor": "notables.json:onna",
+      "rows": [
+        "The pot won't stir itself. Talk while I work.",
+        "Everyone's hungry for something. Soup's just the honest one.",
+        "Father Maell prays for the ward. I salt the broth. Same work."
+      ] },
+    { "key": "personal.cobb", "canonAnchor": "notables.json:cobb",
+      "rows": [
+        "A dog's growl tells you more truth than a week of tavern talk.",
+        "I've kenneled for this ward since before the Terrace had walls.",
+        "Rat-dogs earn their keep in the King's own coin. Can't say that of every man here.",
+        "The impound keeps beasts FROM men. I keep beasts FOR them. Cull forgets the difference.",
+        "Feed a dog, keep a friend. Cheapest loyalty on the docks."
+      ] },
+    { "key": "personal.jek", "canonAnchor": "notables.json:jek",
+      "rows": [
+        "The strand gives up a treasure a tide, if you know the mud.",
+        "Fenner's hook is in every find I pull. One day the tide pays HIM back.",
+        "I saw what the water did last spring. I don't say it after dark."
+      ] },
+    { "key": "personal.dagny", "canonAnchor": "notables.json:dagny",
+      "rows": [
+        "The Wrackhouse buys what the sea's done chewing. No questions - that's the trade.",
+        "Salvage law's the oldest law on this coast. Older than the King's.",
+        "Brann calls my stock stolen. The sea doesn't issue receipts."
+      ] },
+    { "key": "personal.harl", "canonAnchor": "notables.json:harl",
+      "rows": [
+        "The yard builds true. What it builds after dark is the yard's business.",
+        "Timber, tar and silence - my three trades.",
+        "Some cargoes never touch the Weighhouse books. I whistle while they pass."
+      ] },
+    { "key": "personal.brann", "canonAnchor": "notables.json:brann",
+      "rows": [
+        "Chandlery's honest work: rope, tallow, tar, and no surprises.",
+        "Half the Wrackhouse stock floated off MY manifests, I'd swear to it.",
+        "A ship provisions here, or it provisions poorly."
+      ] },
+    { "key": "personal.venn", "canonAnchor": "notables.json:venn",
+      "rows": [
+        "The Gilded Gull waters no ale before the third round.",
+        "Everything said in my taproom stays in my taproom. Priced by the keg.",
+        "Sergeants drink free. Cheaper than fines, dearer than friends."
+      ] },
+    { "key": "personal.fenner", "canonAnchor": "notables.json:fenner",
+      "rows": [
+        "Pawn's a mercy trade. Ask anyone holding my paper.",
+        "Everything in this window has a story. The interest is for the ending.",
+        "Wages advance, debts remain. It's the remaining I'm good at."
+      ] },
+    { "key": "personal.merle", "canonAnchor": "notables.json:merle",
+      "rows": [
+        "The ferry runs when I say the water's kind.",
+        "Every soul this waterman's carried is a fare. Some are also a secret.",
+        "The channel's moods pay my bread. I've learned all nine of them."
+      ] },
+    { "key": "personal.squall", "canonAnchor": "notables.json:squall",
+      "rows": [
+        "Hot water's the one luxury the whole docks agrees on.",
+        "What's said in the steam stays in the steam. Mostly.",
+        "Even the Watch unbuckles here. You'd be amazed what floats out of a soaked man."
+      ] },
+    { "key": "personal.wake", "canonAnchor": "notables.json:wake",
+      "rows": [
+        "The Kestrel's fast because I keep her hungry.",
+        "A captain's word is cargo too. Mine's dear.",
+        "The Flame gets a tithe each crossing. Storms respect bookkeeping."
+      ] },
+    { "key": "personal.bregga", "canonAnchor": "notables.json:bregga",
+      "rows": [
+        "Bregga's Promise keeps hers. Full holds, fair weights.",
+        "The Row trusts my manifest over the Weighhouse scale. Draw your own conclusions.",
+        "Twenty years of crossings and the sea still hasn't collected."
+      ] },
+    { "key": "personal.vane", "canonAnchor": "notables.json:vane",
+      "rows": [
+        "The Deep Keel takes the cargo others won't. Price of being last to the quay.",
+        "The Row's rates would beach an honest ship. So I'm not always honest.",
+        "Deep water forgives nothing. Neither do I."
+      ] },
+    { "key": "personal.quayward", "canonAnchor": "notables.json:quayward",
+      "rows": [
+        "House Quayward laid the first stone of this quay. Remember that when the rents come due.",
+        "Old money isn't quiet money. It's patient money.",
+        "The harbor works for the houses. It only thinks otherwise."
+      ] },
+    { "key": "personal.netter", "canonAnchor": "notables.json:netter",
+      "rows": [
+        "The Netters' nets fed this ward before it had a name.",
+        "A widow learns exactly what a promise weighs.",
+        "The house stands. Whatever you've heard, the house stands."
+      ] },
+    { "key": "personal.saltgate", "canonAnchor": "notables.json:saltgate",
+      "rows": [
+        "Saltgate Terrace was built on salt and stubbornness. We've plenty of both left.",
+        "Good fences, they say. My neighbors test the saying.",
+        "A goodman's word, once given, is stone. Think before you ask for it."
+      ] },
+    { "key": "personal.gilt", "canonAnchor": "notables.json:gilt",
+      "rows": [
+        "The Counting-House holds no secrets. It holds collateral.",
+        "A Royal is a promise the King makes. I merely keep his word for him.",
+        "Interest is patience, priced.",
+        "Men lie. Ledgers lie better, but they need help to do it.",
+        "The vault door is honest iron. Everything before it is negotiation."
+      ] },
+    { "key": "personal.finch", "canonAnchor": "notables.json:finch",
+      "rows": [
+        "Me? I keep to my room, mostly.",
+        "The roofs? Loud with gulls. I sleep through it.",
+        "Folk pay me no mind, which suits.",
+        "I hear things through the floor. Most of it's not worth the hearing.",
+        "Quiet tenants make good neighbors. That's all I am."
+      ] },
+    { "key": "personal.redda", "canonAnchor": "notables.json:redda",
+      "rows": [
+        "The Bilge serves whoever the night washes in.",
+        "No names below the waterline - house rule.",
+        "The Watch drinks upstairs. Everyone else drinks honest."
+      ] },
+    { "key": "personal.hemp", "canonAnchor": "notables.json:hemp",
+      "rows": [
+        "The Ropewalk turns hemp to rigging for half the coast.",
+        "A rope's a thousand small twists holding one big weight. So's a crew.",
+        "Walk the full walk if you like - three hundred paces of honest work."
+      ] },
+    { "key": "personal.ulwer", "canonAnchor": "notables.json:ulwer",
+      "rows": [
+        "Pitchfield smokes because ships must not leak. Simple as that.",
+        "You smell it? That's the smell of nobody drowning.",
+        "Fire and tar are old partners. I just keep them civil."
+      ] },
+    { "key": "personal.salla", "canonAnchor": "notables.json:salla",
+      "rows": [
+        "Salt Row cures what the boats bring, or the ward eats it rotten.",
+        "Salt's the only wage that never spoils.",
+        "My barrels outlast governments. Ask my grandmother's."
+      ] },
+    { "key": "personal.grieve", "canonAnchor": "notables.json:grieve",
+      "rows": [
+        "The King's Bond holds what the law says it holds.",
+        "Surety is a cold trade with warm margins.",
+        "Bonded, seized or forfeit - everything in here is one of the three."
+      ] },
+    { "key": "personal.vetch", "canonAnchor": "notables.json:vetch",
+      "rows": [
+        "The Rows shelter more souls than the Terrace ever will.",
+        "Rent's due on the ebb. Every ebb.",
+        "Keeper of the Rows means keeper of a hundred quarrels. I charge for neither."
+      ] },
+    { "key": "personal.withy", "canonAnchor": "notables.json:withy",
+      "rows": [
+        "The Arcade's nets pass through these hands twice a season, every season.",
+        "Grandmother, they call me. I've outlived three harbormasters and two piers.",
+        "The Netmenders see every hull that limps in. We mend more than nets, dear."
+      ] },
+    { "key": "personal.stave", "canonAnchor": "notables.json:stave",
+      "rows": [
+        "A true barrel is a small ship. Mind who you say otherwise to.",
+        "The cooperage banded this ward's trade before the Bank counted it.",
+        "Oak remembers. So do I."
+      ] },
+    { "key": "personal.luff", "canonAnchor": "notables.json:luff",
+      "rows": [
+        "The Loft cuts canvas for three fleets and mends for a fourth.",
+        "Wind's free. Catching it is what costs.",
+        "A sail's just a wall the sky agrees to push."
+      ] },
+    { "key": "personal.crumb", "canonAnchor": "notables.json:crumb",
+      "rows": [
+        "Hardtack outlasts weevils, weather and kings.",
+        "The oven's older than the Terrace. Bakes truer, too.",
+        "Soft bread's for the hill. Down here we bake for the sea."
+      ] },
+    { "key": "personal.neddry", "canonAnchor": "notables.json:neddry",
+      "rows": [
+        "Slops for every back and boots for most feet - dead men's sizes run cheap.",
+        "The chest takes trade-ins. Don't ask whose.",
+        "Warm and dry is the whole of dockside fashion."
+      ] },
+    { "key": "personal.dray", "canonAnchor": "notables.json:dray",
+      "rows": [
+        "The Long Store swallows cargo whole and gives it back by the chit.",
+        "Every aisle numbered, every number mine.",
+        "Lose your chit and your goods learn new owners. Store law."
+      ] },
+    { "key": "personal.cull", "canonAnchor": "notables.json:cull",
+      "rows": [
+        "The impound holds strays, seized stock and the odd evidence-beast.",
+        "Watchman first, keeper second. The beasts prefer it that way, oddly.",
+        "Cobb coddles his kennels. Mine EARN the feed."
+      ] },
+    { "key": "personal.herdis", "canonAnchor": "notables.json:herdis",
+      "rows": [
+        "The goats know this ward better than the Watch does.",
+        "Milk, cheese and gossip - the pen trades in all three.",
+        "My nannies have eaten three eviction notices. Good girls."
+      ] },
+    { "key": "personal.weyland", "canonAnchor": "notables.json:weyland",
+      "rows": [
+        "The dray goes where the crane can't. That's most places, truth told.",
+        "A carter hears every quarrel on his route twice - once going, once coming.",
+        "Feed the horse before you flatter the man."
+      ] },
+    { "key": "personal.tolley", "canonAnchor": "notables.json:tolley",
+      "rows": [
+        "The Hold whispers on the ebb. I'm the only one polite enough to listen.",
+        "Drowned men keep excellent ledgers. I've seen them balance.",
+        "Mad, they say. The water says otherwise. The water says PLENTY."
+      ] },
+    { "key": "personal.mag", "canonAnchor": "notables.json:mag",
+      "rows": [
+        "The Gullet keeps its own. The ward forgot us; we returned the favor.",
+        "Gray voice, they call me. Gray sees what color misses.",
+        "Every ruin was somebody's fortune. Sit on that a while."
+      ] },
+    { "key": "personal.brakk", "canonAnchor": "notables.json:brakk",
+      "rows": [
+        "The guardhouse holds the line the Terrace pretends isn't there.",
+        "Vess polishes Saltgate. Someone has to garrison the REAL wall.",
+        "K34's cells are full or filling. Efficiency, that."
+      ] },
+
+    { "key": "gossip",
+      "rows": [
+        "The ward talks. Mostly true, always late.",
+        "You hear things on a quay. Wind, mostly. Mostly.",
+        "Ask the bathhouse or the Bilge - all news steams loose eventually."
+      ] },
+    { "key": "gossip.brann-dagny-grayledger", "canonAnchor": "histories.json:brann-dagny-grayledger",
+      "rows": [
+        "Brann swears the Wrackhouse sells his own stock back to him. Dagny swears the sea's a fair merchant.",
+        "Chandler and wracker, at it again. The quay bets on Dagny.",
+        "They say half Brann's manifests wash up in Dagny's yard with the labels sanded off."
+      ] },
+    { "key": "gossip.fenner-jek-hook", "canonAnchor": "histories.json:fenner-jek-hook",
+      "rows": [
+        "Fenner's got his hook in the mudlark - every tide-find goes through the pawn first.",
+        "Poor Jek. Finds treasure weekly, owns none of it by supper."
+      ] },
+    { "key": "gossip.fenner-neddry-paper", "canonAnchor": "histories.json:fenner-neddry-paper",
+      "rows": [
+        "Neddry's slop-chest runs on Fenner's paper now, they say. Stock and all.",
+        "The Slop-Chest's shelves are Fenner's shelves, past the third hook anyway."
+      ] },
+    { "key": "gossip.netter-fenner-debt", "canonAnchor": "histories.json:netter-fenner-debt",
+      "rows": [
+        "They whisper the Widow Netter signed paper at Fenner's window. The HOUSE, some say.",
+        "The Netters' nets are older than the ward, and mortgaged newer than the paint."
+      ] },
+    { "key": "gossip.vess-venn-grudge", "canonAnchor": "histories.json:vess-venn-grudge",
+      "rows": [
+        "Vess and the Gull's landlord scrape like hull and quay. Something about the back room.",
+        "The sergeant drinks anywhere but the Gilded Gull. Ask Venn why, then watch him smile wrong."
+      ] },
+    { "key": "gossip.gilt-crell-erasure", "canonAnchor": "histories.json:gilt-crell-erasure",
+      "rows": [
+        "One line in the Weighhouse book got scraped clean, and the banker's blotter knows which.",
+        "Crell weighs, Gilt counts, and between them one number never happened."
+      ] },
+    { "key": "gossip.harl-quayward-silence", "canonAnchor": "histories.json:harl-quayward-silence",
+      "rows": [
+        "Harl's yard unloads Quayward lighters by night, and his whistling is PAID whistling.",
+        "Ask Harl what came off the midnight lighter. Ask him twice - the silence is the answer."
+      ] },
+    { "key": "gossip.netter-saltgate-wall", "canonAnchor": "histories.json:netter-saltgate-wall",
+      "rows": [
+        "The Netters and Saltgate Terrace feud over a wall two spans wide. Lawyers fatten on it yearly.",
+        "That party wall's cost both houses more than a new mansion. Pride's dear masonry."
+      ] },
+    { "key": "gossip.finch-mag-loyalty", "canonAnchor": "histories.json:finch-mag-loyalty",
+      "rows": [
+        "Gullet Mag keeps an odd friend - that quiet tenant from up the terraces. Odd pair.",
+        "Mag's gray voice goes soft for exactly one lodger. Wonder what she knows."
+      ] },
+    { "key": "gossip.vess-brakk-rivalry", "canonAnchor": "histories.json:vess-brakk-rivalry",
+      "rows": [
+        "Two sergeants, one captaincy coming. Saltgate and the guardhouse don't share a table.",
+        "Vess writes reports. Brakk fills cells. The magistrate reads only one of them."
+      ] },
+    { "key": "gossip.cobb-cull-line", "canonAnchor": "histories.json:cobb-cull-line",
+      "rows": [
+        "Cobb and Cull have feuded since a pup went to the wrong kennel twenty years back.",
+        "Kennel Row and the Impound agree on nothing. Not even the feed merchant."
+      ] },
+    { "key": "gossip.sethra-maell-ember", "canonAnchor": "histories.json:sethra-maell-ember",
+      "rows": [
+        "Mother Sethra and Father Maell were promised once, before the Flame took both. Ask no one.",
+        "Two vigils, one grief, forty years. The Lantern Room and the Mission never quite face each other."
+      ] },
+    { "key": "gossip.onna-jek-tideglass", "canonAnchor": "histories.json:onna-jek-tideglass",
+      "rows": [
+        "The mudlark leaves tide-glass at the Mission step. The soup's thicker when he does.",
+        "Onna saves the marrow bone for one bowl in particular. The ward pretends not to see."
+      ] },
+    { "key": "gossip.salla-stave-barrels", "canonAnchor": "histories.json:salla-stave-barrels",
+      "rows": [
+        "Salt Row orders more barrels than fish lately. The cooper delivers each one himself.",
+        "Stave's best oak goes to Salla's row. Priced in smiles, the apprentices say."
+      ] },
+    { "key": "gossip.luff-redda-lamp", "canonAnchor": "histories.json:luff-redda-lamp",
+      "rows": [
+        "The Loft's lamp burns late whenever the Bilge's does. Coincidence, twice a week, for a year.",
+        "Redda keeps a sailmaker's needle behind the bar. Luff keeps a tankard on his cutting bench."
+      ] }
+  ],
+  "notes": "Sprint-2 WORLD bark text tables (Trojian voice, docks register). Key vocabulary is BarkSelector's contract: mood.<state> and greet.<family>.<attitude>.<time> with the documented sparse fallback (a.b.c.d -> a.b.c -> a.b). Every family x attitude pair is authored; time-band refinements cover every family's neutral lane plus watch.cold and trade.warm. personal.<notableId> (all forty notables; client-selected when the speaker is a notable) and gossip.<historyId> (one per authored micro-history in names/histories.json, base 'gossip' as the fallback floor) are World key families layered on the same registry. Plain ASCII only (Glyph8x8Font); beast rows are observer stage directions in parentheses."
+}
