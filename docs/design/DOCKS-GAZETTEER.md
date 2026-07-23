@@ -77,6 +77,34 @@ Trojian residential space is organized into walled **Compounds**, not detached s
 
 **Population density (lore-derived, `CompoundBlockPopulation`).** Canon fixes no Docks-ward population, so it is extrapolated from canon troop numbers (novel): a single harbour ward is garrisoned at internal-security scale — ~1 platoon (canon platoon ≈ 100 men, L2074; cf. the capital's palace household-guard ≈ 60, L2074), **not** the field army deployed to the fifteen-year six-front war (30–40k at one front, L2146; legions in the thousands, L1226). Applying the ruled **1 enlisted : 10 not-enlisted heads-of-household** ratio to ~100 enlisted heads gives 1,100 households; the canonical household-size distribution (`household.json` weights {1:20,2:35,3:25,4:15,5:5}, mean 2.5) yields a ward target of **~2,750 people (~1,100 households)** — sensitivity range ~1,650 (palace-guard anchor) to ~2,750 (platoon anchor). One fully-occupied Compound holds ~64, so the ward implies **~40 Compounds**; the `docks_surface.tmx` MVP fixture (post-2026-07-14 fishbone-pier/topology redesign, §8.1) realizes **four Compounds (C1 Quayward, C2 Netters', C3 Saltgate Terrace, C4 Gullet) plus 45 hovels** — a whole-district roster of ~350+ actors, the surface geometry's densest sustainable slice, **~13% of the ward** (see `DocksPopulation`'s own Javadoc) — the rest being off-map narrative context. Every figure above the platoon anchor is **(placeholder)** — the derivation, not the number, is the canon-grounded part.
 
+### 2.6 The climb made real — S4 vertical-integrity pass (2026-07-23)
+
+Sprint 4 made the z-profile WALKABLE (sim: baked `ZLinkTable` connectors + `ZRouter`, opt-in
+movers — the player, homeward commutes, custody escorts, and the **Saltgate Rise patrol beat**:
+the K21 sergeant and the RISE_TOP watch now genuinely walk head z13 → roadbed z12 → foot z11 and
+back, patrol route index 3). Sensing/economy/hunts stay same-z BY DESIGN this sprint — the
+roof-slums remain outside the law (§2.5's social rule, kept deliberately).
+
+With climbing real, sealed connectors stopped being invisible. The `StairRampPass` validator
+(stair pairing + ramp head-room/exit rules) now gates every map regen, and its first run over the
+committed district caught — and the S4 world pass FIXED — three authored defects:
+
+- **K01 Weighhouse:** the z12 strongroom lockbox was painted directly on the archive stair's
+  head, sealing the customs archive off the ward. Lockbox moved one cell; **the archive above the
+  Weighhouse is now reachable canon** (racking, clerks' rest nook, strongroom).
+- **C4 Gullet:** the K35 Roost's south wall had sealed the c05/c06 tower's roof access; the stair
+  moved one cell clear — the Gullet's roof decks connect to their own condo again (the Roost keeps
+  its no-new-door law, §3.1).
+- **C2 Netters':** condo c04's door opened INTO its neighbor's east wall — the whole unit (and
+  its stair-only upper story) was a sealed pocket, the dominant finding of the S4 3D reachability
+  audit (91 actors on hub-unreachable cells at spawn). Its door now opens east onto the Gullet G3
+  back-lane (the C4 outer-ring-door precedent): **the Netters' east wing tenants rejoin the ward**.
+
+Remaining unreachable pockets are dominated by DESIGN, not defect: decorative single-story roof
+decks (no stair up, intentionally), the fluid-gated dungeon seams, and roof-slum planes whose
+same-z isolation is the point until the law/economy layers learn to climb (S5+). The audit rides
+`runDocksActors` (`ZReachability`, per-band tables) — regressions are visible on every soak.
+
 ---
 
 ## 3. Establishments (keyed locations)
@@ -455,7 +483,65 @@ the quiet tenant — the only thing that can warm his greeting).
 **S3 world-pass cuts (declared):** no new micro-history edges and no faction leaning for sedge
 (both would touch bake sim-state and move the tick hash; her ties live in bio/barks/this section);
 no notable for the clerk himself (he is text); `personal.*` tables stay runtime-unselected ambient
-content; the rooming house names one cell, not a new fixture (the room itself is prose).
+content *(cut RESOLVED by the S4 rumor verb, §4.8)*; the rooming house names one cell, not a new
+fixture (the room itself is prose).
+
+### 4.7 THE WIDOW'S PAPER — the second authored quest (CANON as of the S4 world pass, 2026-07-23)
+
+The second authored quest, grown out of the `netter-fenner-debt` micro-history (§4.5) — and the
+proof the S3 quest engine is a general machine: **zero engine edits** (the whole quest is
+`quests.json` data, one append-only `ItemKinds.DEBT_PAPER` constant, and bake bindings). Where the
+Clerk is an investigation, this is a **judgment/leverage quest** — the player decides what a debt
+is worth and to whom. Data: `content/raws/quests/quests.json` (`widows-paper`), `barks.json`
+`quest.widows-paper.*`, bake gates in `DocksQuestBakeTest`, played to all three endings in
+`DocksWidowsPaperWalkthroughTest`.
+
+**The paper (canon; an item, not a person).** After the Netter boats were lost, **Widow Annis
+Netter** signed quiet paper at Fenner's window **against the house itself**. Fenner has never once
+demanded payment — the holding, not the collecting, is the profit: half the east quay watches how
+the Netters are handled before signing anything themselves. The paper lives in the strongbox
+behind his cage (K15's back room, the authored strongbox furniture at map `{127,57}`).
+
+**Structure (all existing verbs).** Hook: talk to the widow herself, Grandmother Withy, or Herdis
+(the ward's two wide ears, §4.8). Then three acquisition routes into one `holding` stage:
+**crack** the strongbox (cracksmanship+WIT pry vs lock 13, cooldown-gated — the pawn shop is a
+policed Trader zone, so the box answers to a Trader face or quick nerves), **buy** it (talk to
+Fenner carrying Royals; his price is thirty, counted seize-what-exists per coin), or **let him
+fold** (`standing_at_least` Merchants 20 on the PRESENTED face — Bregga's authored leaning is the
+proof face; Fenner wants no quarrel with the Guild). Three endings: **the widow** (Dockhands +25 /
+Merchants −15, FRIEND Annis, Fenner's directed GRUDGE), **Fenner's buy-back** (25 Royals
+seize-what-exists, Merchants +15 / Dockhands −20, FRIEND the pawnbroker, the widow's directed
+GRUDGE), or **keep it** (`after_ticks` 1500 — *sitting on the paper IS the choice*, and the
+journal objective says so out loud: Skyrunners +15 / Merchants −10, Fenner's GRUDGE, no friends —
+leverage held is leverage earning).
+
+**S4 world-pass declarations:** the bought stage's thirty repeated `give_item royals` effects ARE
+the purchase price (the engine has no pay-a-party effect; declared in the raws' own notes —
+collapse to one effect if sim-core ever grows it). Fenner's pocket is topped to 40 Royals at bake
+(the Gilt precedent) to fund the buy-back. The paper cannot be destroyed (no such verb): the keep
+ending leaves it physically in the keeper's coat, which is the fiction.
+
+### 4.8 THE RUMOR VERB — ask-topics and knowledge domains (CANON as of the S4 world pass, 2026-07-23)
+
+S2 authored the ward's stories; S4 makes the ward able to TELL them. Sim's S4 topic seam
+(`BarkSelector.selectAsk`) serves a speaker's own `personal.<notableId>` monologue or a
+`gossip.<historyId>` story, rotating deterministically on a pinned presentation lane — sim-silent,
+draw-free, twin-identical. The WORLD side is **`content/raws/rumors/rumors.json`**: per-history
+**knowledge domains** — who can gossip what beyond the two parties (who always know their own
+story). Compiled at bake by `AskTopicsBake` into per-actor topic lists
+(`DocksPopulation.askTopicsOf`), which is the exact read the client's ask surface makes.
+
+Domain logic (authored from §4.4/§4.5 canon): **Herdis** ("gossip moves through her pen") and
+**Grandmother Withy** ("decides what seeing is worth") are the ward's two wide ears, on most
+public stories; **secrets stay tight** (`gilt-crell-erasure` is speakable only by Widow Sedge and
+Finch — the landlady who lost her lodger and the roofs that bank what bankers bury);
+**romances travel through the counterpart trades** (Salla and Luff can each tell the other's);
+watch-internal feuds circulate through the watch-adjacent keepers (Cull, Grieve, Redda's taproom).
+The reachability gate is `DocksAskTopicsTest`: **zero dead topic tables** — every authored
+`personal.*`/`gossip.*` table is provably served by some (speaker, tick), both directions.
+The un-storied notables (Ulwer, Hemp, Vetch, Weyland, Dray...) keep personal monologues but no
+gossip; growing the history pile 15→~30 INTO this now-live channel is the declared next authoring
+pass, not this one (channel first, then breadth — the S2 dead-table lesson).
 
 ---
 
