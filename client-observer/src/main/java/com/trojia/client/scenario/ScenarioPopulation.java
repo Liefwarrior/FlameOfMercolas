@@ -41,6 +41,16 @@ public interface ScenarioPopulation {
         return IdentityRegistry.EMPTY;
     }
 
+    /**
+     * The bake-bound quest table (S3 "The Vanished Clerk") — the client journal and the
+     * talk surface's quest keys read titles/objectives/party symbols here. Every system
+     * carries one ({@code QuestRegistry.EMPTY} where no quests are baked), so the default
+     * simply reads it off {@link #system()}.
+     */
+    default com.trojia.sim.actor.quest.QuestRegistry questRegistry() {
+        return system().questRegistry();
+    }
+
     /** Adapts the compound-block population (kept untouched) to this surface. */
     static ScenarioPopulation of(CompoundBlockPopulation population) {
         return new ScenarioPopulation() {

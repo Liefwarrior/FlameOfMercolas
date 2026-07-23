@@ -38,6 +38,10 @@ import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobBinder;
 import com.trojia.sim.actor.job.JobId;
 import com.trojia.sim.actor.job.JobRegistry;
+import com.trojia.sim.actor.quest.QuestBindings;
+import com.trojia.sim.actor.quest.QuestRaws;
+import com.trojia.sim.actor.quest.QuestRawsLoader;
+import com.trojia.sim.actor.quest.QuestRegistry;
 import com.trojia.sim.actor.type.AnimalActor;
 import com.trojia.sim.actor.type.AnimalKeeper;
 import com.trojia.sim.actor.type.CatActor;
@@ -586,12 +590,93 @@ public final class DocksPopulation implements ScenarioPopulation {
                 LeaningRaws.load(rawsRoot.resolve("factions").resolve("leanings.json")),
                 notableActors, factionStandings);
 
+        // S3 "The Vanished Clerk": bind the authored quest raws against this bake's own
+        // notable map / item kinds / zone table / desk cell, and stage the quest's physical
+        // props (the leaf in the desk, the key and a payable pocket on Gilt) — all inside
+        // the bake's closed-supply baseline, before the first tick.
+        QuestRegistry questRegistry = bakeQuests(rawsRoot, notableActors, skillTracks,
+                factionDefs, items);
+
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
-                relationships, items, bank, world, fixtures, skillTracks, factionStandings);
+                relationships, items, bank, world, fixtures, skillTracks, factionStandings,
+                questRegistry);
         system.recordFoodMintedAtBake(foodSeeded);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers,
                 authoredHistories);
+    }
+
+    /** Royals Gilt's pocket is topped to at bake — funds end_gilt's seize-what-exists pay. */
+    static final int VANISHED_CLERK_GILT_POCKET = 40;
+
+    /**
+     * S3 quest bake: loads {@code content/raws/quests/quests.json}, binds every quest
+     * symbol against THIS bake (parties via the notable map, items via {@link ItemKinds},
+     * {@code bank_hall} via {@link #bankHallZoneIndex()}, {@code clerks_desk} via
+     * {@link #clerksDeskCell()}, skills/factions via their raws registries), and stages
+     * The Vanished Clerk's props: 1 LEDGER_LEAF on the desk, 1 VAULT_KEY carried by Gilt,
+     * and Gilt's loose pocket topped to {@link #VANISHED_CLERK_GILT_POCKET} COIN (a bake
+     * mint inside the live-COIN baseline — conservation-neutral thereafter; every later
+     * quest movement is a MOVE). Returns {@link QuestRegistry#EMPTY} when no quests are
+     * authored (pre-quest checkouts stay byte-identical).
+     */
+    private static QuestRegistry bakeQuests(Path rawsRoot, Map<String, Integer> notableActors,
+            SkillTrackRegistry skillTracks, FactionRegistry factionDefs,
+            ItemsLiteRegistry items) {
+        QuestRaws questRaws = QuestRawsLoader.load(rawsRoot);
+        if (questRaws.quests().isEmpty()) {
+            return QuestRegistry.EMPTY;
+        }
+        QuestRegistry bound = QuestRegistry.bind(questRaws, new QuestBindings() {
+            @Override
+            public int partyActorId(String questId, String partySymbol) {
+                Integer id = notableActors.get(partySymbol);
+                return id == null ? -1 : id;
+            }
+
+            @Override
+            public short itemKind(String questId, String itemSymbol) {
+                return switch (itemSymbol) {
+                    case "vault_key" -> ItemKinds.VAULT_KEY;
+                    case "ledger_leaf" -> ItemKinds.LEDGER_LEAF;
+                    default -> -1;
+                };
+            }
+
+            @Override
+            public int zoneId(String questId, String zoneSymbol) {
+                return zoneSymbol.equals("bank_hall") ? bankHallZoneIndex() : -1;
+            }
+
+            @Override
+            public int cell(String questId, String cellSymbol) {
+                return cellSymbol.equals("clerks_desk") ? clerksDeskCell() : -1;
+            }
+
+            @Override
+            public int skillRaw(String skillKey) {
+                return skillTracks.skills().contains(skillKey)
+                        ? skillTracks.skills().id(skillKey).raw() : -1;
+            }
+
+            @Override
+            public int factionId(String factionKey) {
+                return factionDefs.contains(factionKey) ? factionDefs.rawId(factionKey) : -1;
+            }
+        });
+        for (QuestRaws.Quest quest : questRaws.quests()) {
+            if (quest.id().equals("vanished-clerk")) {
+                int gilt = notableActors.get("gilt"); // bind() above proved it resolves
+                items.addOnCell(clerksDeskCell(), ItemKinds.LEDGER_LEAF, 1);
+                items.addCarried(gilt, ItemKinds.VAULT_KEY, 1);
+                int pocket = items.countCarriedOfKind(gilt, ItemKinds.COIN);
+                if (pocket < VANISHED_CLERK_GILT_POCKET) {
+                    items.addCarried(gilt, ItemKinds.COIN,
+                            VANISHED_CLERK_GILT_POCKET - pocket);
+                }
+            }
+        }
+        return bound;
     }
 
     /** Packs an authored map cell {@code (mapX, mapY)} on z-level {@code mapZ} to its world tile. */
@@ -794,6 +879,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         names.put(worldCell(K29_LONGSTORE, ZA), "the Long Store");
         names.put(worldCell(K34_GUARDHOUSE, ZA), "the guardhouse");
         names.put(worldCell(BANK_COUNTER, ZA), "the Counting-House");
+        names.put(worldCell(CLERKS_DESK, ZA), "the clerk's desk");
         names.put(worldCell(GUARD_POST_BANK_WEST, ZA), "the Counting-House door");
         names.put(worldCell(GUARD_POST_BANK_EAST, ZA), "the Counting-House door");
         names.put(worldCell(SHIP_K30_KESTREL, ZA), "the Kestrel");
@@ -950,6 +1036,11 @@ public final class DocksPopulation implements ScenarioPopulation {
     // more the Watch's business now that the sentence it draws is fed.
     private static final int[] BANK_HALL_RECT = {150, 48, 159, 59};   // K36 shell, z:+11
 
+    // S3 "The Vanished Clerk": the clerk's locked desk, inside the hall shell, clear of the
+    // queue slots ({154,49..51}), the counter (154,53), the vault chest (152,57) and both
+    // guard posts (152/156,53). Bake-seeds one LEDGER_LEAF; the quest's search cell.
+    private static final int[] CLERKS_DESK = {151, 50};               // K36 hall, z:+11
+
     /** A generator shell rect as world-packed cells, minus {@code excluded} cells. */
     private static int[] rectCells(int[] rect, int z, int... excludedWorldCells) {
         List<Integer> cells = new ArrayList<>();
@@ -984,6 +1075,28 @@ public final class DocksPopulation implements ScenarioPopulation {
      * order is append-only: the four Pass-4 zones keep their indices, and {@code zoneAt}'s
      * lowest-index-wins rule means the original single-cell gates still win their own cells.
      */
+    /** The clerk's locked desk cell (S3 "The Vanished Clerk"), world-packed. */
+    public static int clerksDeskCell() {
+        return worldCell(CLERKS_DESK, ZA);
+    }
+
+    /**
+     * The restricted-zone INDEX of the K36 bank hall — resolved off the very list
+     * {@link #restrictedZoneTable()} builds (no duplicated magic index): the first zone
+     * whose cells contain the clerk's desk. The quest bake binds {@code bank_hall} here.
+     */
+    public static int bankHallZoneIndex() {
+        RestrictedZoneTable table = restrictedZoneTable();
+        int desk = clerksDeskCell();
+        for (int i = 0; i < table.size(); i++) {
+            if (table.get(i).contains(desk)) {
+                return i;
+            }
+        }
+        throw new IllegalStateException(
+                "no restricted zone contains the clerk's desk — the hall shell moved?");
+    }
+
     public static RestrictedZoneTable restrictedZoneTable() {
         List<RestrictedZone> zones = new ArrayList<>();
         zones.add(new RestrictedZone(Job.Maritime.Sailor.ID, Actor.NONE, maritimeTradeAnchors()));

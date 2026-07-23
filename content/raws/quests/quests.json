@@ -1,0 +1,115 @@
+{
+  "id": "quests",
+  "quests": [
+    {
+      "id": "vanished-clerk",
+      "title": "The Vanished Clerk",
+      "binding": "first_talker",
+      "parties": ["crell", "gilt", "finch", "onna", "jek", "dagny"],
+      "items": ["vault_key", "ledger_leaf"],
+      "zones": ["bank_hall"],
+      "cells": ["clerks_desk"],
+      "stages": [
+        {
+          "key": "rumor",
+          "objective": "Someone on the docks remembers the clerk who stopped coming to work. Ask around — the Mission pot, the Beaching Strand, the Wrackhouse counter.",
+          "log": "Dock talk named the counting-house clerk who vanished the night a ledger line was erased.",
+          "advance": [
+            { "kind": "talk", "party": "onna", "to": "harbormaster" },
+            { "kind": "talk", "party": "jek", "to": "harbormaster" },
+            { "kind": "talk", "party": "dagny", "to": "harbormaster" }
+          ]
+        },
+        {
+          "key": "harbormaster",
+          "objective": "Ottavan Crell knows which line was erased. Ask him at the Weighhouse.",
+          "log": "Crell said it plain enough: one line gone from the King's ledger, and the clerk who copied it gone the same night.",
+          "advance": [
+            { "kind": "talk", "party": "crell", "to": "counting_house" }
+          ]
+        },
+        {
+          "key": "counting_house",
+          "objective": "Reach the clerk's desk inside the Counting-House. Its door answers to the Watch's colors — wear a face it respects, dash the Watch's grace, or lift Master Gilt's vault key.",
+          "log": "Got past the Counting-House door, to the desk the clerk left behind.",
+          "liftItems": [
+            { "item": "vault_key", "fromParty": "gilt" }
+          ],
+          "advance": [
+            { "kind": "enter_zone", "zone": "bank_hall", "to": "drawer" },
+            { "kind": "item", "item": "vault_key", "to": "drawer" }
+          ]
+        },
+        {
+          "key": "drawer",
+          "objective": "The clerk's desk is still his. Open it.",
+          "log": "The locked drawer gave up a torn ledger leaf — the copied line, in the clerk's own hand.",
+          "liftItems": [
+            { "item": "vault_key", "fromParty": "gilt" }
+          ],
+          "advance": [
+            { "kind": "search", "cell": "clerks_desk", "item": "ledger_leaf",
+              "skill": "streetwise", "resist": 12, "keyItem": "vault_key",
+              "retryTicks": 25, "to": "choice" }
+          ]
+        },
+        {
+          "key": "choice",
+          "objective": "The torn leaf names the night. Crell would raise it. Gilt would bury it. The rooftops would trade on it.",
+          "log": "The torn leaf found its keeper.",
+          "effects": [
+            { "kind": "award_xp", "skill": "streetwise", "cp": 150,
+              "contextCell": "clerks_desk" }
+          ],
+          "advance": [
+            { "kind": "talk", "party": "crell", "requireItem": "ledger_leaf",
+              "to": "end_crell" },
+            { "kind": "talk", "party": "gilt", "requireItem": "ledger_leaf",
+              "to": "end_gilt" },
+            { "kind": "talk", "party": "finch", "requireItem": "ledger_leaf",
+              "to": "end_finch" }
+          ]
+        },
+        {
+          "key": "end_crell",
+          "objective": "Done. The Harbormaster holds the proof, and the Watch knows who brought it. Master Gilt will not forget the face that raised it.",
+          "log": "Crell took the leaf to the Weighhouse scales. The erased line stands raised, and the King's banker remembers who raised it.",
+          "terminal": true,
+          "effects": [
+            { "kind": "give_item", "item": "ledger_leaf", "toParty": "crell" },
+            { "kind": "standing", "faction": "watch", "delta": 25 },
+            { "kind": "standing", "faction": "merchants", "delta": 15 },
+            { "kind": "edge", "edge": "FRIEND", "party": "crell", "direction": "mutual" },
+            { "kind": "edge", "edge": "GRUDGE", "party": "gilt", "direction": "from_party" }
+          ]
+        },
+        {
+          "key": "end_gilt",
+          "objective": "Done. The banker paid Royals for a buried truth, and the Watch and the Temple both mark the smell of it.",
+          "log": "Gilt fed the leaf to a candle and counted out forty Royals. The line stays erased; the clerk stays a rumor.",
+          "terminal": true,
+          "effects": [
+            { "kind": "give_item", "item": "ledger_leaf", "toParty": "gilt" },
+            { "kind": "pay", "fromParty": "gilt", "coins": 40 },
+            { "kind": "standing", "faction": "watch", "delta": -20 },
+            { "kind": "standing", "faction": "temple", "delta": -15 },
+            { "kind": "edge", "edge": "FRIEND", "party": "gilt", "direction": "mutual" }
+          ]
+        },
+        {
+          "key": "end_finch",
+          "objective": "Done. The rooftops keep the receipt now, and the brotherhood remembers who brought it up the wall.",
+          "log": "Finch folded the leaf away without reading it twice. The rooftops keep receipts, and this one is banked.",
+          "terminal": true,
+          "effects": [
+            { "kind": "give_item", "item": "ledger_leaf", "toParty": "finch" },
+            { "kind": "standing", "faction": "skyrunners", "delta": 30 },
+            { "kind": "standing", "faction": "watch", "delta": -10 },
+            { "kind": "edge", "edge": "FRIEND", "party": "finch", "direction": "mutual" }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": "S3 'The Vanished Clerk' — the game's first authored quest. Fiction seed: the gilt-crell-erasure micro-history (histories.json). The clerk never spawns (roster stays 692): he is the locked desk, the torn leaf, and the people who remember him. DECLARED CUT (Sim phase): the 'sedge' rooming-house landlady party and her rumor trigger are World's to append (parties list and rumor advance list are append-only); objective/log prose is World's to polish. The pay effect seizes-what-exists; the bake tops Gilt's pocket to cover it."
+}
