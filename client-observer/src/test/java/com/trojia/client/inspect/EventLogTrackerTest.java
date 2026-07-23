@@ -75,5 +75,11 @@ class EventLogTrackerTest {
                 "expected at least one reason-code transition");
         assertTrue(all.stream().anyMatch(e -> e.text().contains("goal")),
                 "expected at least one goal-state transition");
+
+        // Humanized feed (Sprint 2, the rolled-over minor): every line names its PERSON —
+        // the un-forged fixture degrades to the "Serf #2" style, never the old "#id type"
+        // debug tag.
+        assertTrue(all.stream().noneMatch(e -> e.text().startsWith("#")),
+                "feed lines must lead with a person, not a #id tag");
     }
 }

@@ -16,6 +16,7 @@ import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.scenario.IdentityRegistry;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
+import com.trojia.sim.actor.FactionStandings;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.Need;
@@ -94,6 +95,8 @@ public final class InspectorRenderer {
     private final IdentityRegistry identity;
     /** The Sim team's per-actor skill table; {@code UNWIRED} renders "(unschooled)". */
     private final SkillTrackRegistry skillTracks;
+    /** The Sim team's standing ledger; {@code UNWIRED} renders the "(no ledgers)" line. */
+    private final FactionStandings standings;
     private final GlyphLayout layout = new GlyphLayout();
 
     /**
@@ -103,7 +106,7 @@ public final class InspectorRenderer {
     public InspectorRenderer(ActorRegistry registry, HomeRegistry homes,
             RelationshipRegistry relationships, JobRegistry jobs, ItemsLiteRegistry items,
             EventLog eventLog, InspectorFaces faces, IdentityRegistry identity,
-            SkillTrackRegistry skillTracks) {
+            SkillTrackRegistry skillTracks, FactionStandings standings) {
         this.registry = registry;
         this.homes = homes;
         this.relationships = relationships;
@@ -113,6 +116,7 @@ public final class InspectorRenderer {
         this.faces = faces;
         this.identity = identity;
         this.skillTracks = skillTracks;
+        this.standings = standings;
     }
 
     /**
@@ -169,6 +173,8 @@ public final class InspectorRenderer {
                 CharacterSheetText.identitySection(selectedId, registry, homes, jobs, items);
         CharacterSheetText.Section skillsSection =
                 CharacterSheetText.skillsSection(selectedId, skillTracks);
+        CharacterSheetText.Section standingsSection =
+                CharacterSheetText.standingsSection(selectedId, registry, standings);
         CharacterSheetText.Section tiesSection = CharacterSheetText.tiesSection(selectedId,
                 registry, relationships, jobs, identity);
 
@@ -200,10 +206,11 @@ public final class InspectorRenderer {
         }
         float nextTop = nextBlockTop(topY, headerContent);
 
-        // ---- the four sheet sections, each its own DF block -----------------------------
+        // ---- the five sheet sections, each its own DF block -----------------------------
         nextTop = drawSection(batch, font, icons, x, nextTop, identitySection);
         nextTop = drawNeedsSection(batch, font, icons, x, nextTop, selectedActor);
         nextTop = drawSection(batch, font, icons, x, nextTop, skillsSection);
+        nextTop = drawSection(batch, font, icons, x, nextTop, standingsSection);
         drawSection(batch, font, icons, x, nextTop, tiesSection);
     }
 

@@ -38,7 +38,7 @@ class CharacterSheetTextTest {
     private static String describe(CompoundBlockPopulation p, int selectedId) {
         return join(CharacterSheetText.describe(selectedId, p.registry(), p.homes(),
                 p.relationships(), p.jobs(), p.items(), IdentityRegistry.EMPTY,
-                p.system().skillTracks()));
+                p.system().skillTracks(), p.system().factionStandings()));
     }
 
     @Test
@@ -58,6 +58,7 @@ class CharacterSheetTextTest {
         assertTrue(text.contains("-- IDENTITY --"), text);
         assertTrue(text.contains("-- NEEDS --"), text);
         assertTrue(text.contains("-- SKILLS --"), text);
+        assertTrue(text.contains("-- STANDINGS --"), text);
         assertTrue(text.contains("-- TIES --"), text);
         assertTrue(text.contains("id:     #2  serf"), text);
         assertTrue(text.contains("serf.laborer"), text);
@@ -126,6 +127,17 @@ class CharacterSheetTextTest {
         assertEquals("SKILLS", skills.title());
         assertEquals(List.of("(unschooled)"), skills.lines());
         assertFalse(SkillTrackRegistry.UNWIRED.isWired(), "compound ships unwired");
+    }
+
+    @Test
+    void unwiredStandingsRenderTheNoLedgersPlaceholder() {
+        // The compound fixture wires no faction universe — the S2 reputation pane must
+        // degrade to a single explanatory line behind the same interface, never fail.
+        CompoundBlockPopulation p = build();
+        CharacterSheetText.Section standings = CharacterSheetText.standingsSection(2,
+                p.registry(), p.system().factionStandings());
+        assertEquals("STANDINGS", standings.title());
+        assertEquals(List.of("(the ward keeps no ledgers here)"), standings.lines());
     }
 
     @Test

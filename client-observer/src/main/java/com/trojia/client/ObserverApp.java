@@ -31,18 +31,23 @@ import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.InspectorInput;
 import com.trojia.client.input.PlayModeInput;
+import com.trojia.client.input.TalkInput;
+import com.trojia.client.input.TheftInput;
 import com.trojia.client.input.TimeControlInput;
+import com.trojia.client.inspect.CrimeFeedTracker;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.PlayModeState;
 import com.trojia.client.inspect.SkillUpTracker;
+import com.trojia.client.inspect.TalkState;
 import com.trojia.client.inspect.ToastQueue;
 import com.trojia.client.render.ActorRenderer;
 import com.trojia.client.render.AmbientLight;
 import com.trojia.client.render.InspectorRenderer;
 import com.trojia.client.render.LampGlowMap;
 import com.trojia.client.render.NameplateRenderer;
+import com.trojia.client.render.TalkPanelRenderer;
 import com.trojia.client.render.ToastRenderer;
 import com.trojia.client.render.WorldRenderer;
 import com.trojia.client.scenario.CompoundBlockPopulation;
@@ -55,6 +60,8 @@ import com.trojia.client.time.SpeedSetting;
 import com.trojia.client.world.ZLevelCursor;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.StatusBit;
+import com.trojia.sim.bark.BarkRawsLoader;
+import com.trojia.sim.bark.BarkTableRegistry;
 import com.trojia.sim.engine.SimulationSystem;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
@@ -143,6 +150,12 @@ public final class ObserverApp extends ApplicationAdapter {
     private ToastQueue toasts;
     private SkillUpTracker skillUpTracker;
     private ToastRenderer toastRenderer;
+    // Sprint 2 "walk up and talk": the speech panel + the theft feedback loop.
+    private TalkState talk;
+    private TalkPanelRenderer talkPanelRenderer;
+    private CrimeFeedTracker crimeFeedTracker;
+    private BarkTableRegistry barkTables;
+    private long bootWorldSeed;
 
     public ObserverApp(int smokeFrames) {
         this(Fixture.TAVERN, smokeFrames);
@@ -304,7 +317,7 @@ public final class ObserverApp extends ApplicationAdapter {
             this.playMode = new PlayModeState();
             this.eventLog = new EventLog(30);
             this.eventLogTracker = new EventLogTracker(population.registry(), population.homes(),
-                    eventLog);
+                    eventLog, population.identity());
             // Skill-up narration (S1 item 3): the played actor's level-ups toast
             // bottom-center; everyone else's land in the event feed as people. Reads the
             // Sim team's SkillLevelLog seam — zero sim writes.
@@ -312,11 +325,24 @@ public final class ObserverApp extends ApplicationAdapter {
             this.skillUpTracker = new SkillUpTracker(population.system().skillTracks(),
                     population.registry(), population.identity(), eventLog, toasts,
                     () -> playMode.playedActorId());
-            // The per-tick seam (not per-frame): fires once per executed tick, so neither
+            // The TALK surface (S2 item 1): World's bark tables behind the sim's selector;
+            // a missing barks.json degrades to EMPTY (the panel says nothing, never fails).
+            this.talk = new TalkState();
+            this.barkTables = BarkRawsLoader.load(RepoPaths.locate("content", "raws"));
+            this.bootWorldSeed = loaded.worldSeed();
+            // Theft narration (S2 items 1+4): every crime row lands in the feed as named
+            // people; the played actor's own attempts additionally toast with the
+            // CRPG check line (and land it on the open talk panel). Zero sim writes.
+            this.crimeFeedTracker = new CrimeFeedTracker(population.system().crimeLog(),
+                    population.system().skillTracks(), population.registry(),
+                    population.identity(), eventLog, toasts,
+                    () -> playMode.playedActorId(), talk);
+            // The per-tick seam (not per-frame): fires once per executed tick, so no
             // tracker misses a FAST-skipped tick nor double-logs a re-rendered one.
             this.driver.setAfterTick(tick -> {
                 eventLogTracker.afterTick(tick);
                 skillUpTracker.afterTick(tick);
+                crimeFeedTracker.afterTick(tick);
             });
             // FaceGen portraits (unified art spec §4) draw their parts from the SAME
             // unified index + sheet as the actor sprites (face-part pools are just
@@ -330,12 +356,17 @@ public final class ObserverApp extends ApplicationAdapter {
                     spriteSheet, loaded.worldSeed());
             this.inspectorRenderer = new InspectorRenderer(population.registry(), population.homes(),
                     population.relationships(), population.jobs(), population.items(), eventLog,
-                    inspectorFaces, population.identity(), population.system().skillTracks());
+                    inspectorFaces, population.identity(), population.system().skillTracks(),
+                    population.system().factionStandings());
             // Hover nameplates (S1 item 2): PRESENTED identity always; hold N to plate
-            // every on-screen actor.
+            // every on-screen actor. While an actor is played, plates tint by how each
+            // soul regards the played actor's presented face (S2 item 2).
             this.nameplateRenderer = new NameplateRenderer(population.registry(),
-                    population.jobs(), population.identity());
+                    population.jobs(), population.identity(),
+                    population.system().factionStandings(), population.relationships(),
+                    () -> playMode.playedActorId());
             this.toastRenderer = new ToastRenderer();
+            this.talkPanelRenderer = new TalkPanelRenderer(population.registry(), inspectorFaces);
             if (debugSelectActorId >= 0 && debugSelectActorId < population.registry().size()) {
                 inspector.select(debugSelectActorId);
                 inspector.toggleFollow(); // exercise the follow path in the headless proof
@@ -390,12 +421,20 @@ public final class ObserverApp extends ApplicationAdapter {
         // camera panning is suppressed while it is active; zoom/z-scrub still work either way.
         CameraInput.poll(camera, zLevel, deltaSeconds, !playModeActive);
         TimeControlInput.poll(driver);
+        boolean escConsumedByTalk = false;
         if (inspector != null) {
             boolean clickConsumedByPlayMode = PlayModeInput.poll(playMode, inspector, camera,
                     population.registry(), zLevel.z());
             if (!clickConsumedByPlayMode) {
                 InspectorInput.poll(inspector, camera, population.registry(), zLevel.z());
             }
+            // The Sprint-2 adjacency verbs (T talk / G pickpocket). Talk owns ESC while its
+            // panel is up — closing a conversation must not also close the observer.
+            escConsumedByTalk = TalkInput.poll(talk, playMode, population.registry(),
+                    population.jobs(), population.identity(),
+                    population.system().factionStandings(), population.relationships(),
+                    barkTables, toasts, bootWorldSeed, driver.currentTick());
+            TheftInput.poll(playMode, population.registry(), population.identity(), toasts);
             // Screenshot/verification aid only (bypasses WASD, mirrors debugSelectActorId's
             // "bypass the input device" convention): re-applies the same movement-application
             // code PlayModeInput's real WASD poll uses, every rendered frame, so a held key can
@@ -454,6 +493,10 @@ public final class ObserverApp extends ApplicationAdapter {
             nameplateRenderer.draw(batch, font, icons, camera, zLevel.z(),
                     Gdx.input.getX(), Gdx.input.getY(), Gdx.input.isKeyPressed(Input.Keys.N));
         }
+        if (talkPanelRenderer != null) {
+            // The speech exchange (a no-op while closed) — over the plates, under toasts.
+            talkPanelRenderer.draw(batch, font, icons, camera, talk);
+        }
         if (toastRenderer != null) {
             // Toasts age by rendered wall-clock seconds (readable at any sim speed).
             toasts.update(deltaSeconds);
@@ -467,7 +510,7 @@ public final class ObserverApp extends ApplicationAdapter {
             reportTrackedMover();
         }
         boolean smokeDone = smokeFrames > 0 && framesRendered >= smokeFrames;
-        if (smokeDone || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+        if (smokeDone || (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) && !escConsumedByTalk)) {
             if (smokeDone) {
                 System.out.println("observer smoke test: rendered " + framesRendered + " frames OK");
                 if (screenshotPath != null) {

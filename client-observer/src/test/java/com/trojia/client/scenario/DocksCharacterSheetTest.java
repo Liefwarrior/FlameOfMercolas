@@ -41,7 +41,7 @@ class DocksCharacterSheetTest {
         return String.join("\n", CharacterSheetText.describe(selectedId,
                 population.registry(), population.homes(), population.relationships(),
                 population.jobs(), population.items(), identity,
-                population.system().skillTracks()));
+                population.system().skillTracks(), population.system().factionStandings()));
     }
 
     private static int actorNamed(String fullName) {
@@ -66,7 +66,8 @@ class DocksCharacterSheetTest {
         String sheet = describe(crell);
         assertTrue(sheet.startsWith(nameLine), sheet);
         assertTrue(sheet.contains("-- IDENTITY --") && sheet.contains("-- NEEDS --")
-                && sheet.contains("-- SKILLS --") && sheet.contains("-- TIES --"), sheet);
+                && sheet.contains("-- SKILLS --") && sheet.contains("-- STANDINGS --")
+                && sheet.contains("-- TIES --"), sheet);
         // The demo mock for the sprint report (and a human eyeball surface in test stdout).
         System.out.println("==== CHARACTER SHEET: Ottavan Crell ====");
         System.out.println(sheet);
@@ -182,6 +183,63 @@ class DocksCharacterSheetTest {
         assertEquals(1, feed.size());
         assertEquals("Ottavan Crell is now Grit 1", feed.recentNewestFirst(1).get(0).text());
         assertTrue(toasts.visible().isEmpty());
+    }
+
+    @Test
+    void standingsSectionListsEveryFactionAndReadsTheBakedLeanings() {
+        // The S2 reputation pane over the REAL bake: five ledger rows (one per raws
+        // faction), and the World team's authored leanings visible as lived-in numbers —
+        // Tarry Jek chased from the stalls (merchants -25, greeted cold), Onna devout
+        // past her orders (temple +40, greeted warm).
+        var standings = population.system().factionStandings();
+        List<String> jek = CharacterSheetText.standingsSection(actorNamed("Tarry Jek"),
+                population.registry(), standings).lines();
+        assertEquals(standings.factions().size(), jek.size(),
+                "one ledger row per faction, no context lines for a clean watch record: " + jek);
+        assertTrue(jek.stream().anyMatch(l -> l.startsWith("The Merchant Row")
+                        && l.contains("-25") && l.contains("[cold]")),
+                "Jek's authored merchant grudge must read on the pane: " + jek);
+        assertTrue(jek.stream().anyMatch(l -> l.startsWith("The Watch") && l.contains("+0")
+                        && l.contains("[neutral]")),
+                "an untouched ledger row reads neutral: " + jek);
+
+        List<String> onna = CharacterSheetText.standingsSection(actorNamed("Onna"),
+                population.registry(), standings).lines();
+        assertTrue(onna.stream().anyMatch(l -> l.startsWith("The Temple of the Flame")
+                        && l.contains("+40") && l.contains("[warm]")),
+                "Onna's devotion must read warm: " + onna);
+    }
+
+    @Test
+    void standingsFollowThePresentedFaceAndExplainTheCounters() {
+        // The Persona rule on the reputation pane: a disguised actor's sheet shows the
+        // standings of the face it WEARS — and the Barter context lines explain what those
+        // numbers cost at the ward's counters (surcharge band, then outright refusal).
+        var standings = population.system().factionStandings();
+        int watchFaction = standings.factions().rawId("watch");
+        int crell = actorNamed("Ottavan Crell");
+        Actor serf = firstOfType("serf");
+        try {
+            standings.adjust(crell, watchFaction, -30);
+            serf.setActAs(crell);
+            List<String> lines = CharacterSheetText.standingsSection(serf.id(),
+                    population.registry(), standings).lines();
+            assertTrue(lines.stream().anyMatch(l -> l.startsWith("The Watch")
+                            && l.contains("-30") && l.contains("[cold]")),
+                    "the sheet must show the PRESENTED face's ledger: " + lines);
+            assertTrue(lines.contains("counters surcharge this face +1"),
+                    "the surcharge band is disposition context: " + lines);
+
+            standings.adjust(crell, watchFaction, -40); // -70: past the refusal line
+            lines = CharacterSheetText.standingsSection(serf.id(), population.registry(),
+                    standings).lines();
+            assertTrue(lines.stream().anyMatch(l -> l.contains("[hostile]")), lines.toString());
+            assertTrue(lines.contains("every counter refuses this face"),
+                    "refusal is the pane's loudest context line: " + lines);
+        } finally {
+            serf.setActAs(serf.id());
+            standings.adjust(crell, watchFaction, 70); // restore the shared bake exactly
+        }
     }
 
     private static Actor firstOfType(String typeKey) {

@@ -5,12 +5,16 @@ import com.trojia.client.hud.icons.IconKey;
 import com.trojia.client.scenario.IdentityRegistry;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
+import com.trojia.sim.actor.BarkSelector;
+import com.trojia.sim.actor.Barter;
+import com.trojia.sim.actor.FactionStandings;
 import com.trojia.sim.actor.Home;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.ItemsLiteEntry;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.SkillTrackRegistry;
+import com.trojia.sim.actor.faction.FactionRegistry;
 import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobRegistry;
 import com.trojia.sim.progression.SkillRegistry;
@@ -172,6 +176,69 @@ public final class CharacterSheetText {
     }
 
     /**
+     * The STANDINGS section (Sprint 2 item 2, the reputation pane): the sheet-owner's
+     * standing with every faction the raws know, one row each —
+     * {@code The Watch        -32  [cold]} — followed by the disposition CONTEXT those
+     * numbers buy at the ward's counters (the {@link Barter} surcharge/refusal bands, so
+     * the sheet explains the prices the actor is about to be quoted).
+     *
+     * <p>Standings key on the PRESENTED id (every ledger read does — the Persona rule):
+     * a disguised actor's sheet shows the standings of the face it wears, matching the
+     * header above it. The attitude words are {@link BarkSelector}'s own published
+     * thresholds, so sheet, barks and barter all speak one vocabulary. Renders a single
+     * "(no ledgers)" line when the fixture wires no faction universe.
+     */
+    public static Section standingsSection(int selectedId, ActorRegistry registry,
+            FactionStandings standings) {
+        List<String> lines = new ArrayList<>();
+        if (!standings.isWired()) {
+            lines.add("(the ward keeps no ledgers here)");
+            return new Section("STANDINGS", lines);
+        }
+        int presentedId = registry.get(selectedId).identity().presentedId();
+        FactionRegistry factions = standings.factions();
+        for (int f = 0; f < factions.size(); f++) {
+            int value = standings.standingOf(presentedId, f);
+            lines.add(padded(factions.get(f).displayName()) + signed(value)
+                    + "  [" + attitudeWord(value) + "]");
+        }
+        int watch = standings.watchStanding(presentedId);
+        if (watch <= Barter.REFUSAL_WATCH_STANDING) {
+            lines.add("every counter refuses this face");
+        } else if (watch < 0 && -watch / Barter.WATCH_PER_SURCHARGE > 0) {
+            lines.add("counters surcharge this face +"
+                    + (-watch / Barter.WATCH_PER_SURCHARGE));
+        }
+        return new Section("STANDINGS", lines);
+    }
+
+    /** {@link BarkSelector}'s attitude buckets, as the sheet's standing words. */
+    static String attitudeWord(int standing) {
+        if (standing <= BarkSelector.HOSTILE_STANDING) {
+            return "hostile";
+        }
+        if (standing <= BarkSelector.COLD_STANDING) {
+            return "cold";
+        }
+        if (standing >= BarkSelector.WARM_STANDING) {
+            return "warm";
+        }
+        return "neutral";
+    }
+
+    private static String padded(String name) {
+        StringBuilder out = new StringBuilder(name);
+        while (out.length() < 18) {
+            out.append(' ');
+        }
+        return out.toString();
+    }
+
+    private static String signed(int value) {
+        return value >= 0 ? "+" + value : Integer.toString(value);
+    }
+
+    /**
      * The TIES section — relationships as PEOPLE (the sprint's "Wife — Maera (shopkeeper)"
      * ask): {@code Household -- Ceffa Quayward (shopkeeper.chandlery)} when the other soul
      * has a forged name, with the pre-names {@code "HOUSEHOLD -> #12 (serf)"} debug style as
@@ -210,7 +277,8 @@ public final class CharacterSheetText {
      */
     public static List<String> describe(int selectedId, ActorRegistry registry,
             HomeRegistry homes, RelationshipRegistry relationships, JobRegistry jobs,
-            ItemsLiteRegistry items, IdentityRegistry identity, SkillTrackRegistry tracks) {
+            ItemsLiteRegistry items, IdentityRegistry identity, SkillTrackRegistry tracks,
+            FactionStandings standings) {
         List<String> lines = new ArrayList<>();
         if (selectedId == Actor.NONE) {
             lines.add("(click an actor to inspect  ·  C follows selection)");
@@ -225,6 +293,7 @@ public final class CharacterSheetText {
         lines.add(marker("NEEDS"));
         lines.add(needsLine(registry.get(selectedId)));
         append(lines, skillsSection(selectedId, tracks));
+        append(lines, standingsSection(selectedId, registry, standings));
         append(lines, tiesSection(selectedId, registry, relationships, jobs, identity));
         return lines;
     }
