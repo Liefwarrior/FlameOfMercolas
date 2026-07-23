@@ -783,7 +783,11 @@ for x in range(57, 61):                             # strongroom, SW corner (K15
     T[12][46][x] = STEEL_WALL
 for y in range(46, 50):
     T[12][y][60] = STEEL_WALL
-cells(12, [(58, 48)], STEEL_WALL)                    # lockbox
+# S4 sealed-stair fix (StairRampPass ledger, WORLD punch list): the lockbox used to be
+# painted at (58,48) -- directly ON the stair head T[12][48][58]=OAK_STAIR_DOWN authored
+# above, sealing the customs archive's only stair. Moved to the strongroom's SW corner,
+# clear of the stair and of the door->stair walking line (58,46)->(58,47)->(58,48).
+cells(12, [(57, 49)], STEEL_WALL)                    # lockbox
 T[12][46][68] = 0                                    # nook door
 F[12][46][68] = GRANITE_FLOOR
 T[12][46][69] = 0                                    # PASS 9: door standard (>=2 wide)
@@ -1470,7 +1474,14 @@ C2_GROUND = [  # (x0,y0,x1,y1,door)
     (128, 66, 135, 75, (131, 75)),                  # c01 north-A
     (144, 66, 151, 75, (147, 75)),                  # c02 north-B
     (128, 86, 147, 93, (137, 86)),                  # c03 south
-    (152, 66, 163, 75, (152, 70)),                  # c04 east
+    # S4 unreachable-pocket fix (ZReachability audit, WORLD punch list): c04's authored
+    # west door (152,70) opened directly INTO c02's east wall (c02 spans x144-151, y66-75
+    # -- back-to-back walls for c04's whole west run), sealing the unit AND its stair-only
+    # upper story c07: the audit's dominant actor-bearing pocket ("condo interiors at
+    # (157,70)-ish"). No west/south/north cell of c04 touches open ground, so the door
+    # moves to the EAST ring wall onto the Gullet G3 back-lane (x164-165, walkable dirt)
+    # -- the C4 precedent of outer-ring doors on the poor-quarter side.
+    (152, 66, 163, 75, (163, 70)),                  # c04 east
     (152, 76, 163, 84, (152, 80)),                  # c05 east
     (152, 85, 163, 93, (152, 89)),                  # c06 east
 ]
@@ -1730,8 +1741,13 @@ mk(11, "script_anchor", "cmp4_courtyard_anchor", 177, 80)
 frect(13, 184, 76, 190, 93, BRICK_FLOOR)
 border(13, 184, 76, 190, 93, BRICK_WALL)
 T[13][84][190] = 0                                  # broken parapet
-T[12][90][188] = OAK_STAIR_UP
-T[13][90][188] = OAK_STAIR_DOWN
+# S4 sealed-stair fix (StairRampPass ledger, WORLD punch list): the roof-access stair
+# stood at (188,90) until the K35 Roost's south border (188-190,90) was painted over its
+# z13 head, sealing the condo's roof access. Relocated one cell SW to (187,91): open deck
+# at z13 (hut 09 ends y90, hut 10 starts x188, the Roost starts x188) and open floor in
+# c06's south room at z12 (table at 185-186,91; beds at 188-189,92).
+T[12][91][187] = OAK_STAIR_UP
+T[13][91][187] = OAK_STAIR_DOWN
 C4_HUTS = [
     (184, 77, 187, 81, CLOTH_WALL, (185, 81)),      # roofhut_07
     (187, 82, 190, 85, LEATHER_WALL, (187, 83)),    # roofhut_08

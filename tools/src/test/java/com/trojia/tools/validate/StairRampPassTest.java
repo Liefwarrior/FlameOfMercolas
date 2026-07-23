@@ -104,7 +104,7 @@ class StairRampPassTest {
     @Test
     void everyCommittedFixtureMapPassesTheStairRampRules() {
         for (String mapFile : List.of("tavern_fixture.tmx", "ubend_fixture.tmx",
-                "compound_block.tmx")) {
+                "compound_block.tmx", "docks_surface.tmx")) {
             MapCheckContext context = TiledValidator.loadContext(
                     TestRepo.mapsDir().resolve(mapFile), raws);
             ValidationReport report = new TiledValidator(List.of(new StairRampPass()))
@@ -115,39 +115,24 @@ class StairRampPassTest {
     }
 
     /**
-     * The docks known-defect LEDGER (Sprint 4): the pass's first run over the committed
-     * district surfaced two REAL sealed stairs — later interior-detail painting overwrote
-     * the stair HEAD in both, so the passage exists on one floor and is a wall on the
-     * other (invisible until now because nothing could climb):
-     * <ol>
-     *   <li>{@code z:+11 (58,48)} — K01 Weighhouse: the z12 strongroom LOCKBOX
-     *       ({@code cells(12,[(58,48)],STEEL_WALL)} in gen_docks_surface.py) is painted on
-     *       the stair head of {@code T[12][48][58]=OAK_STAIR_DOWN}, sealing the customs
-     *       archive's only stair;</li>
-     *   <li>{@code z:+12 (188,90)} — C4 Gullet: a roof-hut wall overwrote the z13 head of
-     *       {@code T[13][90][188]=OAK_STAIR_DOWN}, sealing that condo's roof access.</li>
-     * </ol>
-     * WORLD-team punch list: fix the generator ordering (paint interiors BEFORE the stair
-     * cells, or re-punch the heads), regenerate + rebake, then shrink this pinned list to
-     * zero and fold the docks into {@link #everyCommittedFixtureMapPassesTheStairRampRules}.
-     * Any NEW defect fails this test immediately — the pass gates all future regens.
+     * The docks known-defect LEDGER (Sprint 4) — now EMPTY. The pass's first run surfaced
+     * two real sealed stairs (interior-detail painting had overwritten the stair HEAD):
+     * K01 Weighhouse {@code z:+11 (58,48)} (the z12 strongroom lockbox painted on the stair
+     * head — lockbox moved to (57,49)) and C4 Gullet {@code z:+12 (188,90)} (the K35
+     * Roost's south border painted over the roof-access head — stair relocated to
+     * (187,91)). Both fixed in gen_docks_surface.py + regenerated; the docks now rides
+     * {@link #everyCommittedFixtureMapPassesTheStairRampRules} with every other committed
+     * map, and this ledger stays pinned at ZERO — any future regen that seals a connector
+     * fails the clean loop immediately.
      */
     @Test
-    void theDocksKnownSealedStairsArePinnedAndNothingElseIsBroken() {
+    void theDocksSealedStairLedgerIsShrunkToZero() {
         MapCheckContext context = TiledValidator.loadContext(
                 TestRepo.mapsDir().resolve("docks_surface.tmx"), raws);
         ValidationReport report = new TiledValidator(List.of(new StairRampPass()))
                 .validate(context);
-        assertEquals(2, report.errors().size(),
-                () -> "the docks known-defect ledger changed:\n" + report.render());
-        ValidationIssue weighhouse = report.errors().get(0);
-        assertEquals("z:+11/terrain", weighhouse.layerPath(), weighhouse::format);
-        assertEquals(58, weighhouse.x(), weighhouse::format);
-        assertEquals(48, weighhouse.y(), weighhouse::format);
-        ValidationIssue gulletRoof = report.errors().get(1);
-        assertEquals("z:+12/terrain", gulletRoof.layerPath(), gulletRoof::format);
-        assertEquals(188, gulletRoof.x(), gulletRoof::format);
-        assertEquals(90, gulletRoof.y(), gulletRoof::format);
+        assertEquals(0, report.errors().size(),
+                () -> "the docks sealed-stair ledger must stay empty:\n" + report.render());
     }
 
     // ----------------------------------------------------------------- scaffolding
