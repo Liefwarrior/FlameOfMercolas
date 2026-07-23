@@ -74,8 +74,10 @@ class DocksQuestWalkthroughTest {
 
         Run() {
             assertEquals(692, registry.size(), "the roster stays 692 — the clerk never spawns");
-            assertEquals(1, quests.questCount(), "The Vanished Clerk is baked");
-            assertEquals("vanished-clerk", quests.questId(0));
+            assertEquals(2, quests.questCount(),
+                    "The Vanished Clerk + The Widow's Paper are baked (S4)");
+            assertEquals("vanished-clerk", quests.questId(0),
+                    "the clerk keeps entry 0 (widows-paper is appended after it)");
             notables = NameForge.bindNotableActors(registry, population.homes(),
                     NotableRaws.load(RepoPaths.locate("content", "raws")
                             .resolve("names").resolve("notables.json")),

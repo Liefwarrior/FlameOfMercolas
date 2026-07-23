@@ -632,6 +632,13 @@ public final class DocksPopulation implements ScenarioPopulation {
     static final int VANISHED_CLERK_GILT_POCKET = 40;
 
     /**
+     * Royals Fenner's pocket is topped to at bake (S4 "The Widow's Paper", the Gilt
+     * precedent) — funds end_fenner's 25-Royal seize-what-exists pay with slack for
+     * ambient dips along the way.
+     */
+    static final int WIDOWS_PAPER_FENNER_POCKET = 40;
+
+    /**
      * S3 quest bake: loads {@code content/raws/quests/quests.json}, binds every quest
      * symbol against THIS bake (parties via the notable map, items via {@link ItemKinds},
      * {@code bank_hall} via {@link #bankHallZoneIndex()}, {@code clerks_desk} via
@@ -661,6 +668,11 @@ public final class DocksPopulation implements ScenarioPopulation {
                 return switch (itemSymbol) {
                     case "vault_key" -> ItemKinds.VAULT_KEY;
                     case "ledger_leaf" -> ItemKinds.LEDGER_LEAF;
+                    case "debt_paper" -> ItemKinds.DEBT_PAPER;
+                    // S4: "royals" is the quests' name for plain specie — the buy route's
+                    // requireItem gate and the bought stage's give_item price both move
+                    // the ordinary COIN kind (conservation-neutral, always a MOVE).
+                    case "royals" -> ItemKinds.COIN;
                     default -> -1;
                 };
             }
@@ -672,7 +684,11 @@ public final class DocksPopulation implements ScenarioPopulation {
 
             @Override
             public int cell(String questId, String cellSymbol) {
-                return cellSymbol.equals("clerks_desk") ? clerksDeskCell() : -1;
+                return switch (cellSymbol) {
+                    case "clerks_desk" -> clerksDeskCell();
+                    case "fenner_strongbox" -> fennerStrongboxCell();
+                    default -> -1;
+                };
             }
 
             @Override
@@ -695,6 +711,18 @@ public final class DocksPopulation implements ScenarioPopulation {
                 if (pocket < VANISHED_CLERK_GILT_POCKET) {
                     items.addCarried(gilt, ItemKinds.COIN,
                             VANISHED_CLERK_GILT_POCKET - pocket);
+                }
+            }
+            if (quest.id().equals("widows-paper")) {
+                // S4: the widow's paper waits in Fenner's strongbox; Fenner's pocket is
+                // topped (the Gilt precedent — a bake mint inside the live-COIN
+                // baseline, conservation-neutral thereafter) to fund end_fenner's pay.
+                int fenner = notableActors.get("fenner"); // bind() proved it resolves
+                items.addOnCell(fennerStrongboxCell(), ItemKinds.DEBT_PAPER, 1);
+                int pocket = items.countCarriedOfKind(fenner, ItemKinds.COIN);
+                if (pocket < WIDOWS_PAPER_FENNER_POCKET) {
+                    items.addCarried(fenner, ItemKinds.COIN,
+                            WIDOWS_PAPER_FENNER_POCKET - pocket);
                 }
             }
         }
@@ -1077,6 +1105,12 @@ public final class DocksPopulation implements ScenarioPopulation {
     // guard posts (152/156,53). Bake-seeds one LEDGER_LEAF; the quest's search cell.
     private static final int[] CLERKS_DESK = {151, 50};               // K36 hall, z:+11
 
+    // S4 "The Widow's Paper": Fenner's strongbox (the authored OAK_WALL furniture cell in
+    // K15's back room, behind the cage partition — gen_docks_surface.py paints it at
+    // (127,57)). The quest's search cell; the search verb stands BESIDE it (SEARCH_REACH
+    // is chebyshev 1) on the back room's open floor. Bake-seeds one DEBT_PAPER.
+    private static final int[] FENNER_STRONGBOX = {127, 57};          // K15 back room, z:+11
+
     /** A generator shell rect as world-packed cells, minus {@code excluded} cells. */
     private static int[] rectCells(int[] rect, int z, int... excludedWorldCells) {
         List<Integer> cells = new ArrayList<>();
@@ -1114,6 +1148,11 @@ public final class DocksPopulation implements ScenarioPopulation {
     /** The clerk's locked desk cell (S3 "The Vanished Clerk"), world-packed. */
     public static int clerksDeskCell() {
         return worldCell(CLERKS_DESK, ZA);
+    }
+
+    /** Fenner's strongbox cell (S4 "The Widow's Paper"), world-packed. */
+    public static int fennerStrongboxCell() {
+        return worldCell(FENNER_STRONGBOX, ZA);
     }
 
     /**

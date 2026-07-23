@@ -43,7 +43,8 @@ class DocksQuestTwinRunGateTest {
         SimulationDriver driverB = new SimulationDriver(loadedB.world(), loadedB.worldSeed(),
                 List.<SimulationSystem>of(b.system()));
 
-        assertEquals(1, a.questRegistry().questCount(), "The Vanished Clerk is baked");
+        assertEquals(2, a.questRegistry().questCount(),
+                "The Vanished Clerk + The Widow's Paper are baked (S4)");
 
         for (int t = 1; t <= TICKS; t++) {
             driverA.requestStep();
@@ -57,10 +58,20 @@ class DocksQuestTwinRunGateTest {
         // The inputless guarantee, at soak scale (both twins — they hashed identical).
         assertEquals(0, a.system().questLog().stageOf(0), "the engine idled at rumor");
         assertEquals(Actor.NONE, a.system().questLog().ownerOf(0), "no owner ever bound");
+        assertEquals(0, a.system().questLog().stageOf(1), "the paper quest idled at trouble");
+        assertEquals(Actor.NONE, a.system().questLog().ownerOf(1),
+                "no owner ever bound the paper quest");
         assertEquals(0L, a.system().questLog().totalAdvances());
         assertEquals(0L, a.system().questLog().searchAttemptsOf(0), "zero draws burned");
+        assertEquals(0L, a.system().questLog().searchAttemptsOf(1),
+                "zero draws burned on the paper quest");
         assertEquals(1, a.items().countOnCellOfKind(DocksPopulation.clerksDeskCell(),
                 ItemKinds.LEDGER_LEAF), "the leaf never left the desk");
+        assertEquals(1, a.items().countOnCellOfKind(DocksPopulation.fennerStrongboxCell(),
+                ItemKinds.DEBT_PAPER),
+                "the widow's paper never left the strongbox (S4 — ambient lifts move COIN only)");
+        assertEquals(1, a.items().liveOfKind(ItemKinds.DEBT_PAPER),
+                "the strongbox paper is the only debt paper in the world");
         Map<String, Integer> notables = NameForge.bindNotableActors(a.registry(), a.homes(),
                 NotableRaws.load(com.trojia.client.boot.RepoPaths.locate("content", "raws")
                         .resolve("names").resolve("notables.json")),

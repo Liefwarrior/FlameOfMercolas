@@ -110,7 +110,140 @@
           ]
         }
       ]
+    },
+    {
+      "id": "widows-paper",
+      "title": "The Widow's Paper",
+      "binding": "first_talker",
+      "parties": ["netter", "fenner", "withy", "herdis"],
+      "items": ["debt_paper", "royals"],
+      "cells": ["fenner_strongbox"],
+      "stages": [
+        {
+          "key": "trouble",
+          "objective": "The Netter house stands on a pawnbroker's patience. The widow will say it plain if asked - or the ward will: Grandmother Withy sees everything worth a price on the Arcade, and Herdis hears whatever the pens hear.",
+          "log": "The whisper is real. After the boats were lost, Widow Annis Netter signed paper at Fenner's window against the house itself - and Fenner keeps that paper in the strongbox behind his cage.",
+          "advance": [
+            { "kind": "talk", "party": "netter", "to": "paper" },
+            { "kind": "talk", "party": "withy", "to": "paper" },
+            { "kind": "talk", "party": "herdis", "to": "paper" }
+          ]
+        },
+        {
+          "key": "paper",
+          "objective": "Get the widow's paper out of Fenner's strongbox: crack the box behind the cage, put Royals on Fenner's counter until he sells his patience, or wear a face the Merchants' Guild vouches for and watch him fold.",
+          "log": "The way to the widow's paper opened - Fenner's box, Fenner's price, or Fenner's fear of the Guild.",
+          "advance": [
+            { "kind": "search", "cell": "fenner_strongbox", "item": "debt_paper",
+              "skill": "cracksmanship", "resist": 13, "retryTicks": 25, "to": "holding" },
+            { "kind": "talk", "party": "fenner", "requireItem": "royals", "to": "bought" },
+            { "kind": "standing_at_least", "faction": "merchants", "value": 20,
+              "to": "yielded" }
+          ]
+        },
+        {
+          "key": "bought",
+          "objective": "The deal is struck and the Royals are counted. Fenner has unlocked the back room - take the paper from the strongbox and be gone before he re-counts his reasons.",
+          "log": "Fenner took the Royals and turned the strongbox key himself. What a pawnbroker sells, he sells.",
+          "effects": [
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" },
+            { "kind": "give_item", "item": "royals", "toParty": "fenner" }
+          ],
+          "advance": [
+            { "kind": "search", "cell": "fenner_strongbox", "item": "debt_paper",
+              "skill": "streetwise", "resist": 0, "retryTicks": 1, "to": "holding" }
+          ],
+          "notes": "The thirty repeated give_item effects ARE the purchase price: the engine has no pay-a-party effect (pay moves coins party->owner only), and each give_item moves one Royal owner->fenner, seize-what-exists per coin (the fine/pay precedent - a short pocket pays what it carries). Declared in the S4 WORLD phase report; collapse to a single paid-count effect if sim-core ever grows one."
+        },
+        {
+          "key": "yielded",
+          "objective": "Fenner wants no quarrel with the Guild face at his window. The cage stands open - take the paper from the strongbox yourself; he will watch, and say nothing worth repeating.",
+          "log": "Fenner weighed the Guild's regard against the widow's paper and turned the strongbox key without a word.",
+          "advance": [
+            { "kind": "search", "cell": "fenner_strongbox", "item": "debt_paper",
+              "skill": "streetwise", "resist": 0, "retryTicks": 1, "to": "holding" }
+          ]
+        },
+        {
+          "key": "holding",
+          "objective": "The Netter house is folded in a coat pocket now. Bring the paper to Widow Annis Netter and end the debt - or back to Fenner's window for his price - or keep it, and let the ward stop asking. Sit on it long enough and that choice makes itself.",
+          "log": "The widow's paper found its keeping.",
+          "advance": [
+            { "kind": "talk", "party": "netter", "requireItem": "debt_paper",
+              "to": "end_netter" },
+            { "kind": "talk", "party": "fenner", "requireItem": "debt_paper",
+              "to": "end_fenner" },
+            { "kind": "after_ticks", "ticks": 1500, "to": "end_kept" }
+          ]
+        },
+        {
+          "key": "end_netter",
+          "objective": "Done. The widow holds her own paper and calls it kindling for her own hearth. The fisher-families of the quay know whose hand brought it home - and Fenner will not forget the face that emptied his box.",
+          "log": "Annis Netter took the paper in both hands and named it kindling. The quay knows whose hand brought it home; the pawnbroker knows it too.",
+          "terminal": true,
+          "effects": [
+            { "kind": "give_item", "item": "debt_paper", "toParty": "netter" },
+            { "kind": "standing", "faction": "dockhands", "delta": 25 },
+            { "kind": "standing", "faction": "merchants", "delta": -15 },
+            { "kind": "edge", "edge": "FRIEND", "party": "netter", "direction": "mutual" },
+            { "kind": "edge", "edge": "GRUDGE", "party": "fenner", "direction": "from_party" }
+          ]
+        },
+        {
+          "key": "end_fenner",
+          "objective": "Done. The paper went back behind Fenner's cage and his Royals crossed the counter the other way. The Guild counts you reliable; the quay counts what you sold.",
+          "log": "Fenner counted out twenty-five Royals without haggling once - the only respect he pays. The widow's house stands on his patience again, and the quay knows who resold it.",
+          "terminal": true,
+          "effects": [
+            { "kind": "give_item", "item": "debt_paper", "toParty": "fenner" },
+            { "kind": "pay", "fromParty": "fenner", "coins": 25 },
+            { "kind": "standing", "faction": "merchants", "delta": 15 },
+            { "kind": "standing", "faction": "dockhands", "delta": -20 },
+            { "kind": "edge", "edge": "FRIEND", "party": "fenner", "direction": "mutual" },
+            { "kind": "edge", "edge": "GRUDGE", "party": "netter", "direction": "from_party" }
+          ]
+        },
+        {
+          "key": "end_kept",
+          "objective": "Done. The paper sleeps in a coat pocket. The Netter house stands on YOUR patience now, and Fenner's window waits on a price that never comes. The rooftops call that banking.",
+          "log": "Nobody got the widow's paper. The ward stopped asking; the coat pocket did not. Leverage held is leverage earning - the roofline's own arithmetic.",
+          "terminal": true,
+          "effects": [
+            { "kind": "standing", "faction": "skyrunners", "delta": 15 },
+            { "kind": "standing", "faction": "merchants", "delta": -10 },
+            { "kind": "edge", "edge": "GRUDGE", "party": "fenner", "direction": "from_party" }
+          ]
+        }
+      ]
     }
   ],
-  "notes": "S3 'The Vanished Clerk' - the game's first authored quest. Fiction seed: the gilt-crell-erasure micro-history (histories.json). The clerk never spawns (roster stays 692): he is the locked desk, the torn leaf, and the people who remember him - canon name Tam Sedge (DOCKS-GAZETTEER 4.6). World S3 pass folded in the Sim phase's declared cut: the 'sedge' landlady party + her rumor trigger (both lists append-only) and the prose polish. Quest talk tables live in barks.json under quest.vanished-clerk.* (key vocabulary linted by DocksBarkContentTest against THIS file's stages x parties). The pay effect seizes-what-exists; the bake tops Gilt's pocket to cover it."
+  "notes": "S3 'The Vanished Clerk' - the game's first authored quest. Fiction seed: the gilt-crell-erasure micro-history (histories.json). The clerk never spawns (roster stays 692): he is the locked desk, the torn leaf, and the people who remember him - canon name Tam Sedge (DOCKS-GAZETTEER 4.6). World S3 pass folded in the Sim phase's declared cut: the 'sedge' landlady party + her rumor trigger (both lists append-only) and the prose polish. Quest talk tables live in barks.json under quest.vanished-clerk.* (key vocabulary linted by DocksBarkContentTest against THIS file's stages x parties). The pay effect seizes-what-exists; the bake tops Gilt's pocket to cover it. --- S4 adds 'The Widow's Paper' (quest #2, appended so the vanished-clerk keeps entry 0): fiction seed netter-fenner-debt (histories.json), a judgment/leverage quest proving the engine is a general machine - ZERO engine edits (one append-only ItemKinds.DEBT_PAPER constant plus bake bindings; 'royals' binds to the COIN kind). Three acquisition routes (crack the strongbox / pay Fenner / merchants-standing yield) into three endings (widow / Fenner / keep). The keep ending is after_ticks BY DESIGN: sitting on the paper IS the choice, and the journal objective says so out loud. Props staged at bake: 1 DEBT_PAPER on the K15 strongbox cell, Fenner's pocket topped to fund end_fenner's seize-what-exists pay (Gilt precedent)."
 }

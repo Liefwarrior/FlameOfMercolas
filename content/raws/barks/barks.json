@@ -1094,6 +1094,54 @@
       "rows": [
         "A number a banker paid to bury? That's not paper, friend. That's rent. The roofs collect on it forever.",
         "Give it up the wall and the brotherhood banks it. Nobody raises it, nobody burns it. It just... earns."
+      ] },
+
+    { "key": "quest.widows-paper", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "The Netter house? Still standing. Ask the pawnbroker why, and watch his face not answer.",
+        "Old nets, old name, new paper. That's the whole story of this quay in one house.",
+        "Fenner never squeezes loud. He just holds, and lets the winter do the squeezing."
+      ] },
+    { "key": "quest.widows-paper.trouble.netter", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "You've heard, then. Yes - after the boats were lost I signed at Fenner's window. Against the HOUSE. My husband's name is on nothing; the shame is all my own signing.",
+        "He has never once asked for payment. That is the worst of it. He holds the paper and waits, and every season the waiting is worth more to him.",
+        "It sits in the strongbox behind his cage. I have seen him touch the lid when I pass the window. He wants me to see."
+      ] },
+    { "key": "quest.widows-paper.trouble.withy", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "The widow's paper? Everything on this quay is written down somewhere, dear. That one is written in Fenner's strongbox, and the seeing of it cost me nothing at all - which should worry him.",
+        "Annis Netter signed the house away the winter the boats went down. Fenner keeps the paper close and the widow closer. Now - what is it worth to you that I said so?"
+      ] },
+    { "key": "quest.widows-paper.trouble.herdis", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "The pens hear everything - feed sacks loosen tongues better than ale. The Netter widow signed her HOUSE to Fenner, the bad winter. It's in the box behind his cage.",
+        "Quay folk won't say it where she can hear. Her boats fed half the row once. Now the pawnbroker holds her roof and lets it rain."
+      ] },
+    { "key": "quest.widows-paper.paper.fenner", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "The Netter paper. Word does travel. It is not stock, friend - it is PATIENCE, and patience appreciates. Thirty Royals, since you carry coin and I am in a mood to count.",
+        "Everything in this shop has a price, and you're asking after the one thing I priced for keeping. Thirty Royals on the counter, or admire the cage from the street side."
+      ] },
+    { "key": "quest.widows-paper.bought.fenner", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "Counted twice. The box is open - take it and mind you tell no one my patience was for sale.",
+        "A pleasure. Everything's stock in the end, even patience. The back room, behind the cage - and don't linger."
+      ] },
+    { "key": "quest.widows-paper.yielded.fenner", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "No need for unpleasantness between people of STANDING. The box is open. Take the paper, and remember the Guild that I was reasonable.",
+        "The Guild's regard buys what Royals sometimes can't - my cooperation. Behind the cage. Touch nothing else."
+      ] },
+    { "key": "quest.widows-paper.holding.netter", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "That's my hand. That's my SIGNING. Give it to me and the Netter house stands on its own stone again - and the quay will know whose hand brought it home.",
+        "I have carried that paper's weight four winters. Put it in my hands and watch me stop carrying it."
+      ] },
+    { "key": "quest.widows-paper.holding.fenner", "canonAnchor": "quests.json:widows-paper",
+      "rows": [
+        "My paper walks back to my window. Twenty-five Royals for its safe return, no questions kept - a pawnbroker buys back his own patience at a discount.",
+        "You hold it, I want it, and neither of us wants the Watch's opinion. Twenty-five Royals, counted where you can watch."
       ] }
   ],
   "notes": "Sprint-2 WORLD bark text tables (Trojian voice, docks register). Key vocabulary is BarkSelector's contract: mood.<state> and greet.<family>.<attitude>.<time> with the documented sparse fallback (a.b.c.d -> a.b.c -> a.b). Every family x attitude pair is authored; time-band refinements cover every family's neutral lane plus watch.cold and trade.warm. personal.<notableId> (all notables; client-selected when the speaker is a notable) and gossip.<historyId> (one per authored micro-history in names/histories.json, base 'gossip' as the fallback floor) are World key families layered on the same registry. S3 adds quest.<questId>[.<stageKey>[.<partySymbol>]] (quests/quests.json vocabulary; the talk surface's quest-beat lane, base quest.<questId> as the fallback floor) - linted stage-by-party by DocksBarkContentTest. Plain ASCII only (Glyph8x8Font); beast rows are observer stage directions in parentheses."

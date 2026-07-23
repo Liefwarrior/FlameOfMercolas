@@ -32,6 +32,7 @@ class DocksQuestBakeTest {
     private static FixtureWorldLoader.Loaded loaded;
     private static DocksPopulation population;
     private static QuestRaws.Quest quest;
+    private static QuestRaws.Quest paperQuest; // S4 "The Widow's Paper"
     private static Map<String, Integer> notables;
 
     @BeforeAll
@@ -39,6 +40,7 @@ class DocksQuestBakeTest {
         loaded = FixtureWorldLoader.loadDocksSurface();
         population = DocksPopulation.build(loaded.worldSeed(), loaded.world());
         quest = QuestRawsLoader.load(RepoPaths.locate("content", "raws")).quests().get(0);
+        paperQuest = QuestRawsLoader.load(RepoPaths.locate("content", "raws")).quests().get(1);
         notables = NameForge.bindNotableActors(population.registry(), population.homes(),
                 NotableRaws.load(RepoPaths.locate("content", "raws")
                         .resolve("names").resolve("notables.json")),
@@ -78,7 +80,7 @@ class DocksQuestBakeTest {
     @Test
     void everyDeclaredPartyBindsALiveNotableBody() {
         QuestRegistry quests = population.questRegistry();
-        assertEquals(1, quests.questCount());
+        assertEquals(2, quests.questCount(), "S4: the clerk + the widow's paper");
         assertEquals("vanished-clerk", quests.questId(0));
         assertTrue(quest.parties().contains("sedge"),
                 "the landlady is a declared party (the folded S2 cut)");
@@ -101,6 +103,75 @@ class DocksQuestBakeTest {
         assertEquals("Widow Maren Sedge", population.identity().get(sedge).fullName());
     }
 
+    // ---------------------------------------------------------- S4 "The Widow's Paper"
+
+    @Test
+    void theStrongboxIsALegalSearchTargetInsideThePolicedPawnShop() {
+        int box = DocksPopulation.fennerStrongboxCell();
+        assertNotEquals(DocksPopulation.clerksDeskCell(), box,
+                "the two quests search different furniture");
+        // The strongbox itself is authored FURNITURE (an OAK_WALL cell): the search verb
+        // stands BESIDE it (SEARCH_REACH = chebyshev 1, same z), so what must be walkable
+        // is at least one same-z neighbor inside the back room — not the box cell.
+        boolean anyApproach = false;
+        for (int dx = -1; dx <= 1 && !anyApproach; dx++) {
+            for (int dy = -1; dy <= 1 && !anyApproach; dy++) {
+                if (dx == 0 && dy == 0) {
+                    continue;
+                }
+                int neighbor = com.trojia.sim.world.PackedPos.pack(
+                        com.trojia.sim.world.PackedPos.x(box) + dx,
+                        com.trojia.sim.world.PackedPos.y(box) + dy,
+                        com.trojia.sim.world.PackedPos.z(box));
+                anyApproach = Walkability.isWalkable(loaded.world().cursor().moveTo(neighbor));
+            }
+        }
+        assertTrue(anyApproach, "the strongbox needs a walkable approach cell beside it");
+        // The whole pawn shop is a policed Trader zone — the theft route is priced.
+        boolean policed = false;
+        for (int i = 0; i < DocksPopulation.restrictedZoneTable().size(); i++) {
+            RestrictedZone zone = DocksPopulation.restrictedZoneTable().get(i);
+            if (zone.contains(box)) {
+                policed = true;
+                break;
+            }
+        }
+        assertTrue(policed, "the strongbox sits inside the policed K15 zone");
+    }
+
+    @Test
+    void thePaperPropsAreStagedExactlyOnce() {
+        int fenner = notables.get("fenner");
+        assertEquals(1, population.items().countOnCellOfKind(
+                DocksPopulation.fennerStrongboxCell(), ItemKinds.DEBT_PAPER),
+                "one debt paper waits in the strongbox");
+        assertEquals(1, population.items().liveOfKind(ItemKinds.DEBT_PAPER),
+                "the strongbox paper is the only debt paper in the world");
+        assertTrue(population.items().countCarriedOfKind(fenner, ItemKinds.COIN)
+                        >= DocksPopulation.WIDOWS_PAPER_FENNER_POCKET,
+                "Fenner's pocket funds end_fenner's twenty-five-Royal pay");
+    }
+
+    @Test
+    void everyPaperPartyBindsALiveNotableBodyAndTheStandingRouteIsHonest() {
+        assertEquals("widows-paper", population.questRegistry().questId(1));
+        for (String party : paperQuest.parties()) {
+            Integer actorId = notables.get(party);
+            assertNotNull(actorId, "party \"" + party + "\" is not a bound notable");
+            assertEquals(party, population.questRegistry().partySymbol(1, actorId),
+                    "the registry bound party \"" + party + "\" to a different body "
+                            + "than the notable map's");
+        }
+        // The standing_at_least merchants 20 route must be walkable at bake: at least one
+        // authored face (Bregga's handshake-manifest leaning) satisfies the threshold, so
+        // a played soul can borrow it. If leanings.json retunes below 20, this quest's
+        // third acquisition route dies silently — fail loudly here instead.
+        int bregga = notables.get("bregga");
+        int merchants = population.system().factionStandings().factions().rawId("merchants");
+        assertTrue(population.system().factionStandings().standingOf(bregga, merchants) >= 20,
+                "no authored face reaches merchants standing 20 — the yield route is dead");
+    }
+
     @Test
     void twinBakesBindByteIdentically() {
         FixtureWorldLoader.Loaded twinLoaded = FixtureWorldLoader.loadDocksSurface();
@@ -113,6 +184,10 @@ class DocksQuestBakeTest {
         for (String party : quest.parties()) {
             assertEquals(party, twin.questRegistry().partySymbol(0, twinNotables.get(party)),
                     "twin quest binding differs for party \"" + party + "\"");
+        }
+        for (String party : paperQuest.parties()) {
+            assertEquals(party, twin.questRegistry().partySymbol(1, twinNotables.get(party)),
+                    "twin paper-quest binding differs for party \"" + party + "\"");
         }
         assertEquals(population.identity().canonicalTable(), twin.identity().canonicalTable(),
                 "twin bakes forge byte-identical identity tables");

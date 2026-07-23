@@ -53,6 +53,15 @@ public final class ItemKinds {
      */
     public static final short LEDGER_LEAF = 11;
 
+    /**
+     * The Widow Netter's debt paper (Sprint 4 "The Widow's Paper"): the note her late
+     * husband signed against the Netter house itself, kept in the strongbox behind
+     * Fenner's cage (K15). Placed once at bake on the strongbox cell; moved only by quest
+     * verbs (search success → owner's carry; an ending → the chosen party) — ambient
+     * theft moves COIN only, so no AI thief can ever strand it.
+     */
+    public static final short DEBT_PAPER = 12;
+
     private ItemKinds() {
     }
 }
