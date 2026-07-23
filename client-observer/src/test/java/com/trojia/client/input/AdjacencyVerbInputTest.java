@@ -110,24 +110,33 @@ class AdjacencyVerbInputTest {
     }
 
     @Test
-    void applyTalkOpensAFrozenExchangeAgainstTheAdjacentSoul() {
+    void applyTalkOpensAFrozenExchangeAndArmsTheSimTalkIntent() {
         ActorRegistry registry = population.registry();
         int played = actorWithNeighbour();
         int expected = AdjacentTargets.lowestIdAdjacent(registry, played, true);
         PlayModeState playMode = new PlayModeState();
         playMode.enable(played);
         TalkState talk = new TalkState();
+        try {
+            TalkInput.applyTalk(talk, playMode, registry, population.jobs(),
+                    population.identity(), population.system().factionStandings(),
+                    population.relationships(), barks, new ToastQueue(),
+                    population.questRegistry(), population.system().questLog(),
+                    worldSeed, 3_000L);
 
-        TalkInput.applyTalk(talk, playMode, registry, population.jobs(),
-                population.identity(), population.system().factionStandings(),
-                population.relationships(), barks, new ToastQueue(), worldSeed, 3_000L);
-
-        assertTrue(talk.open());
-        assertEquals(expected, talk.exchange().speakerId());
-        assertEquals(3_000L, talk.exchange().tick(), "the exchange freezes at its tick");
-        assertFalse(talk.exchange().barkLine().isBlank());
-        talk.close();
-        assertFalse(talk.open());
+            assertTrue(talk.open());
+            assertEquals(expected, talk.exchange().speakerId());
+            assertEquals(3_000L, talk.exchange().tick(), "the exchange freezes at its tick");
+            assertFalse(talk.exchange().barkLine().isBlank());
+            // S3 §1.1: the FACT of talking enters the sim — the intent lands on the sim's
+            // own play-mode seam for PlayerControlPolicy to validate and consume.
+            assertEquals(expected, registry.get(played).playerTalkTargetId(),
+                    "the talk intent must land on the sim's own play-mode seam");
+            talk.close();
+            assertFalse(talk.open());
+        } finally {
+            registry.get(played).setPlayerTalkTarget(Actor.NONE);
+        }
     }
 
     @Test
@@ -137,7 +146,8 @@ class AdjacencyVerbInputTest {
         TalkInput.applyTalk(talk, new PlayModeState(), population.registry(),
                 population.jobs(), population.identity(),
                 population.system().factionStandings(), population.relationships(), barks,
-                toasts, worldSeed, 1L);
+                toasts, population.questRegistry(), population.system().questLog(),
+                worldSeed, 1L);
         assertFalse(talk.open());
         assertTrue(toasts.visible().isEmpty());
     }

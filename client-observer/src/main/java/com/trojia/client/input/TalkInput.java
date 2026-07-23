@@ -13,6 +13,8 @@ import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.FactionStandings;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.job.JobRegistry;
+import com.trojia.sim.actor.quest.QuestLog;
+import com.trojia.sim.actor.quest.QuestRegistry;
 import com.trojia.sim.bark.BarkTableRegistry;
 
 /**
@@ -38,7 +40,7 @@ public final class TalkInput {
     public static boolean poll(TalkState talk, PlayModeState playMode, ActorRegistry registry,
             JobRegistry jobs, IdentityRegistry identity, FactionStandings standings,
             RelationshipRegistry relationships, BarkTableRegistry barks, ToastQueue toasts,
-            long worldSeed, long tick) {
+            QuestRegistry quests, QuestLog questLog, long worldSeed, long tick) {
         // Leaving Play mode always drops the conversation (no floating panel over free-cam).
         if (talk.open() && !playMode.active()) {
             talk.close();
@@ -49,21 +51,24 @@ public final class TalkInput {
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.T)) {
             applyTalk(talk, playMode, registry, jobs, identity, standings, relationships,
-                    barks, toasts, worldSeed, tick);
+                    barks, toasts, quests, questLog, worldSeed, tick);
         }
         return false;
     }
 
     /**
      * The deterministic talk application (split from the live {@code Gdx.input} read above,
-     * the {@code PlayModeInput.applyMovement} convention): resolves the adjacent target and
-     * opens the panel on a fresh {@link TalkText#greet} exchange; toasts when nobody is in
-     * reach. A no-op while Play mode is inactive.
+     * the {@code PlayModeInput.applyMovement} convention): resolves the adjacent target,
+     * arms the sim's play-mode talk intent on the played body ({@code Actor
+     * .setPlayerTalkTarget} — Sprint 3's §1.1 seam promotion: the FACT of talking enters
+     * the sim so quest TALK triggers can fire; the greet itself stays sim-silent), and
+     * opens the panel on a fresh quest-aware {@link TalkText#greet} exchange; toasts when
+     * nobody is in reach. A no-op while Play mode is inactive.
      */
     public static void applyTalk(TalkState talk, PlayModeState playMode, ActorRegistry registry,
             JobRegistry jobs, IdentityRegistry identity, FactionStandings standings,
             RelationshipRegistry relationships, BarkTableRegistry barks, ToastQueue toasts,
-            long worldSeed, long tick) {
+            QuestRegistry quests, QuestLog questLog, long worldSeed, long tick) {
         if (!playMode.active()) {
             return;
         }
@@ -73,7 +78,8 @@ public final class TalkInput {
             toasts.add("No one within reach to talk to.");
             return;
         }
+        registry.get(played).setPlayerTalkTarget(target);
         talk.open(TalkText.greet(worldSeed, tick, target, played, registry, jobs, identity,
-                standings, relationships, barks));
+                standings, relationships, barks, quests, questLog));
     }
 }

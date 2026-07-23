@@ -142,6 +142,7 @@ public final class EventLogTracker {
         }
         return switch (to) {
             case PICKPOCKETED, CAUGHT_STEALING -> null; // CrimeFeedTracker's richer line
+            case TALKED, QUEST_ADVANCED -> null; // QuestFeedTracker owns quest narration
             case ARRESTED_FOR_THEFT -> tag(actor) + " was arrested for theft";
             case HOUSE_ARRESTED -> tag(actor) + " was confined under house arrest";
             case WARNED_MOVE_ALONG -> tag(actor) + " was warned to move along";

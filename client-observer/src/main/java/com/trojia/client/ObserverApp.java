@@ -433,7 +433,8 @@ public final class ObserverApp extends ApplicationAdapter {
             escConsumedByTalk = TalkInput.poll(talk, playMode, population.registry(),
                     population.jobs(), population.identity(),
                     population.system().factionStandings(), population.relationships(),
-                    barkTables, toasts, bootWorldSeed, driver.currentTick());
+                    barkTables, toasts, population.questRegistry(),
+                    population.system().questLog(), bootWorldSeed, driver.currentTick());
             TheftInput.poll(playMode, population.registry(), population.identity(), toasts);
             // Screenshot/verification aid only (bypasses WASD, mirrors debugSelectActorId's
             // "bypass the input device" convention): re-applies the same movement-application

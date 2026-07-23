@@ -6,8 +6,11 @@ import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.BarkSelector;
 import com.trojia.sim.actor.FactionStandings;
 import com.trojia.sim.actor.RelationshipRegistry;
+import com.trojia.sim.actor.StatusBit;
 import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobRegistry;
+import com.trojia.sim.actor.quest.QuestLog;
+import com.trojia.sim.actor.quest.QuestRegistry;
 import com.trojia.sim.bark.BarkTableRegistry;
 
 import java.util.ArrayList;
@@ -33,6 +36,16 @@ public final class TalkText {
 
     /** Shown when the fallback chain finds no authored table at all (degraded fixtures). */
     public static final String SAYS_NOTHING = "(says nothing)";
+
+    /**
+     * The quest-beat marker on the name line (Sprint 3, the design's {@code ◆} rendered
+     * ASCII — the in-game glyph set covers printable ASCII only, the quests.json
+     * normalization ruling).
+     */
+    public static final String QUEST_MARK = "*";
+
+    /** The quest-beat context tag (in place of the disposition tag while a beat is served). */
+    public static final String QUEST_TAG = "[*]";
 
     private TalkText() {
     }
@@ -73,11 +86,39 @@ public final class TalkText {
      * else presented-family x attitude x time), the World-authored registry resolves the row
      * through the documented fallback chain, and the disposition tag is parsed straight off
      * the selected key — the one derivation, never re-derived client-side.
+     *
+     * <p>The quest-less overload (pre-quest fixtures and callers): delegates with the empty
+     * quest surface, so the stock greet path is byte-identical to Sprint 2.
      */
     public static Exchange greet(long worldSeed, long tick, int speakerId, int listenerId,
             ActorRegistry registry, JobRegistry jobs, IdentityRegistry identity,
             FactionStandings standings, RelationshipRegistry relationships,
             BarkTableRegistry barks) {
+        return greet(worldSeed, tick, speakerId, listenerId, registry, jobs, identity,
+                standings, relationships, barks, QuestRegistry.EMPTY, QuestLog.UNWIRED);
+    }
+
+    /**
+     * The quest-aware greet (Sprint 3 "The Vanished Clerk", §3.2): when the speaker's TRUE
+     * id is a declared party of a live quest entry the listener could advance (unbound, or
+     * bound to the listener's TRUE body; current stage non-terminal), the table key becomes
+     * {@code quest.<questId>.<stageKey>.<partySymbol>} — resolved through the same stock
+     * fallback chain on the SAME presentation-lane row draw (no extra draw, sim-silent as
+     * ever) — the name line gains the {@link #QUEST_MARK} and the context tag renders
+     * {@link #QUEST_TAG}. Otherwise the stock greet path, unchanged.
+     *
+     * <p>Beat vs engine alignment: an {@code EXECUTED} speaker never serves a beat (the
+     * engine's own talk-trigger skip), and a {@code mood.dead} exchange keeps the mood
+     * (the gibbet/grave outranks the errand); every other mood — downed, held, confined —
+     * still serves the beat, because a held party can still mutter the truth (the S3 edge
+     * ruling). Quest matching is on TRUE ids for both sides (bodies talk to bodies, the
+     * engine's own rule), so a disguised listener still sees — and can still advance — its
+     * own quest.
+     */
+    public static Exchange greet(long worldSeed, long tick, int speakerId, int listenerId,
+            ActorRegistry registry, JobRegistry jobs, IdentityRegistry identity,
+            FactionStandings standings, RelationshipRegistry relationships,
+            BarkTableRegistry barks, QuestRegistry quests, QuestLog questLog) {
         Actor speaker = registry.get(speakerId);
         int speakerPresentedId = speaker.identity().presentedId();
         Actor presented = registry.get(speakerPresentedId);
@@ -86,13 +127,54 @@ public final class TalkText {
 
         BarkSelector.BarkChoice choice = BarkSelector.select(worldSeed, tick, speaker,
                 presentedJob, listenerPresentedId, standings, relationships);
-        String bark = choice.resolve(barks);
 
         String name = PersonNames.nameWithEpithet(speakerPresentedId, registry, identity);
         String jobId = JobDisplay.presentedJobId(presentedJob);
         String jobLine = JobDisplay.NONE_LABEL.equals(jobId) ? "" : jobId;
+
+        int entry = questBeatEntry(quests, questLog, speaker, listenerId);
+        if (entry >= 0 && !"mood.dead".equals(choice.tableKey())) {
+            int q = questLog.questOrdinalOf(entry);
+            String key = "quest." + quests.questId(q) + "."
+                    + quests.stageKey(q, questLog.stageOf(entry)) + "."
+                    + quests.partySymbol(q, speakerId);
+            String bark = new BarkSelector.BarkChoice(key, choice.rowDraw()).resolve(barks);
+            return new Exchange(speakerId, speakerPresentedId, tick,
+                    QUEST_MARK + " " + name, jobLine, QUEST_TAG,
+                    bark == null ? SAYS_NOTHING : bark);
+        }
+
+        String bark = choice.resolve(barks);
         return new Exchange(speakerId, speakerPresentedId, tick, name, jobLine,
                 dispositionTag(choice.tableKey()), bark == null ? SAYS_NOTHING : bark);
+    }
+
+    /**
+     * The quest entry {@code speaker} serves a beat for toward {@code listenerTrueId}, or
+     * {@code -1}: ascending entry order, first live entry wins — current stage non-terminal,
+     * owner unbound or the listener's TRUE body, the speaker's TRUE id a declared party
+     * (the {@link QuestRegistry#partySymbol} vocabulary — exactly the key set the World
+     * bark lint calls selectable), and the speaker not {@code EXECUTED}.
+     */
+    static int questBeatEntry(QuestRegistry quests, QuestLog questLog, Actor speaker,
+            int listenerTrueId) {
+        if (speaker.hasStatus(StatusBit.EXECUTED)) {
+            return -1;
+        }
+        for (int e = 0; e < questLog.entryCount(); e++) {
+            int q = questLog.questOrdinalOf(e);
+            if (quests.terminal(q, questLog.stageOf(e))) {
+                continue;
+            }
+            int owner = questLog.ownerOf(e);
+            if (owner != Actor.NONE && owner != listenerTrueId) {
+                continue;
+            }
+            if (quests.partySymbol(q, speaker.id()) != null) {
+                return e;
+            }
+        }
+        return -1;
     }
 
     /**
