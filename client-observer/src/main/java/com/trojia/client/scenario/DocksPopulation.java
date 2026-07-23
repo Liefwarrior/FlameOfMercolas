@@ -521,6 +521,12 @@ public final class DocksPopulation implements ScenarioPopulation {
         return zLinks;
     }
 
+    /** The story caption catalog (S4 "talk topics") — built from the same bound histories. */
+    @Override
+    public TopicCatalog topicCatalog() {
+        return TopicCatalog.of(authoredHistories);
+    }
+
     @Override
     public JobRegistry jobs() {
         return jobs;

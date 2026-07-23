@@ -178,10 +178,55 @@ public final class TalkText {
     }
 
     /**
+     * The asked exchange (Sprint 4 item 2, the topic rows): recomputes the panel content
+     * for a PLAYER-CHOSEN topic against the same speaker, at the asking tick.
+     *
+     * <ul>
+     *   <li>{@link TalkTopics.Kind#QUEST} — delegates to the quest-aware {@link #greet}
+     *       verbatim (the beat exchange, marker and all): choosing the marked row re-serves
+     *       the beat line the S3 convention already renders.</li>
+     *   <li>{@link TalkTopics.Kind#PERSONAL} / {@link TalkTopics.Kind#GOSSIP} — the sim's
+     *       own {@link BarkSelector#selectAsk} with the topic list NARROWED to the chosen
+     *       symbol (the frozen S4 seam, exactly): the mood override still wins — a held
+     *       soul mutters its mood instead of gossiping — and the resolved row rides the
+     *       pinned presentation lane, sim-silent as ever.</li>
+     * </ul>
+     */
+    public static Exchange ask(long worldSeed, long tick, int speakerId, int listenerId,
+            ActorRegistry registry, JobRegistry jobs, IdentityRegistry identity,
+            FactionStandings standings, RelationshipRegistry relationships,
+            BarkTableRegistry barks, QuestRegistry quests, QuestLog questLog,
+            TalkTopics.Topic topic) {
+        if (topic.kind() == TalkTopics.Kind.QUEST) {
+            return greet(worldSeed, tick, speakerId, listenerId, registry, jobs, identity,
+                    standings, relationships, barks, quests, questLog);
+        }
+        Actor speaker = registry.get(speakerId);
+        int speakerPresentedId = speaker.identity().presentedId();
+        Actor presented = registry.get(speakerPresentedId);
+        Job presentedJob = presented.jobOrdinal() >= 0 ? jobs.get(presented.jobOrdinal()) : null;
+
+        BarkSelector.BarkChoice choice = topic.kind() == TalkTopics.Kind.PERSONAL
+                ? BarkSelector.selectAsk(worldSeed, tick, speaker, topic.symbol(), List.of())
+                : BarkSelector.selectAsk(worldSeed, tick, speaker, null,
+                        List.of(topic.symbol()));
+
+        String name = PersonNames.nameWithEpithet(speakerPresentedId, registry, identity);
+        String jobId = JobDisplay.presentedJobId(presentedJob);
+        String jobLine = JobDisplay.NONE_LABEL.equals(jobId) ? "" : jobId;
+        String bark = choice == null ? null : choice.resolve(barks);
+        String tag = choice == null ? "[?]" : dispositionTag(choice.tableKey());
+        return new Exchange(speakerId, speakerPresentedId, tick, name, jobLine, tag,
+                bark == null ? SAYS_NOTHING : bark);
+    }
+
+    /**
      * The disposition tag a bark table key encodes, rendered {@code [word]}:
      * {@code mood.held} &rarr; {@code [held]}; {@code greet.watch.cold.night} &rarr;
-     * {@code [cold]}. The attitude/mood segment is the SELECTOR's own computation — parsing
-     * the key it produced is reuse, not re-derivation (no thresholds duplicated here).
+     * {@code [cold]}; the S4 ask families read {@code personal.*} &rarr; {@code [personal]}
+     * and {@code gossip.*} &rarr; {@code [rumor]}. The attitude/mood segment is the
+     * SELECTOR's own computation — parsing the key it produced is reuse, not re-derivation
+     * (no thresholds duplicated here).
      */
     public static String dispositionTag(String tableKey) {
         String[] parts = tableKey.split("\\.");
@@ -190,6 +235,12 @@ public final class TalkText {
         }
         if (parts.length >= 3 && "greet".equals(parts[0])) {
             return "[" + parts[2] + "]";
+        }
+        if (parts.length >= 2 && "personal".equals(parts[0])) {
+            return "[personal]";
+        }
+        if (parts.length >= 2 && "gossip".equals(parts[0])) {
+            return "[rumor]";
         }
         return "[?]"; // defensive: an unrecognized key shape still renders something
     }

@@ -73,6 +73,15 @@ public interface ScenarioPopulation {
         return null;
     }
 
+    /**
+     * The story caption catalog (S4 "talk topics"): kind + party bodies per authored
+     * micro-history, for the topic rows' human labels. Default: {@link TopicCatalog#EMPTY}
+     * (fixtures without a histories bake).
+     */
+    default TopicCatalog topicCatalog() {
+        return TopicCatalog.EMPTY;
+    }
+
     /** Adapts the compound-block population (kept untouched) to this surface. */
     static ScenarioPopulation of(CompoundBlockPopulation population) {
         return new ScenarioPopulation() {

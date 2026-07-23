@@ -490,7 +490,8 @@ public final class ObserverApp extends ApplicationAdapter {
                     population.jobs(), population.identity(),
                     population.system().factionStandings(), population.relationships(),
                     barkTables, toasts, population.questRegistry(),
-                    population.system().questLog(), bootWorldSeed, driver.currentTick());
+                    population.system().questLog(), bootWorldSeed, driver.currentTick(),
+                    population::askTopicsOf, population.topicCatalog());
             TheftInput.poll(playMode, population.registry(), population.identity(), toasts);
             // The CLIMB verb (S4): Up/Down while driving a soul takes the baked stair/ramp
             // under its feet. Polled after movement so a held climb key wins the frame's
@@ -663,7 +664,15 @@ public final class ObserverApp extends ApplicationAdapter {
                         population.jobs(), population.identity(),
                         population.system().factionStandings(), population.relationships(),
                         barkTables, toasts, population.questRegistry(),
-                        population.system().questLog(), bootWorldSeed, driver.currentTick());
+                        population.system().questLog(), bootWorldSeed, driver.currentTick(),
+                        population::askTopicsOf, population.topicCatalog());
+                case TOPIC -> TalkInput.applyAsk(talk, playMode, population.registry(),
+                        population.jobs(), population.identity(),
+                        population.system().factionStandings(), population.relationships(),
+                        barkTables, population.questRegistry(),
+                        population.system().questLog(), bootWorldSeed, driver.currentTick(),
+                        com.trojia.client.inspect.TalkTopics.indexOfKeyNumber(
+                                action.intArgs()[0]));
                 case PICKPOCKET -> TheftInput.applyPickpocket(playMode,
                         population.registry(), population.identity(), toasts);
                 case JOURNAL -> journalOpen = !journalOpen;
@@ -686,8 +695,6 @@ public final class ObserverApp extends ApplicationAdapter {
                 }
                 case EAT -> EatInput.applyEat(playMode, population.registry(), toasts,
                         eatFeedbackTracker);
-                case TOPIC -> throw new UnsupportedOperationException(
-                        "script verb TOPIC lands with the talk-topics slice");
             }
         }
     }

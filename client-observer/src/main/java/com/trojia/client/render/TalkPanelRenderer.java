@@ -11,8 +11,11 @@ import com.trojia.client.hud.HudPanel;
 import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.inspect.TalkState;
 import com.trojia.client.inspect.TalkText;
+import com.trojia.client.inspect.TalkTopics;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
+
+import java.util.List;
 
 /**
  * Draws the TALK surface (Sprint 2 item 1): one DF-black speech panel, centered low on the
@@ -39,6 +42,12 @@ public final class TalkPanelRenderer {
     private static final Color HINT_COLOR = new Color(0.55f, 0.55f, 0.58f, 1f);
 
     private static final String HINTS = "(T greet again  ·  G pickpocket  ·  ESC close)";
+    /** The hint line while topic rows are offered (S4 item 2 — the number keys ask). */
+    private static final String HINTS_WITH_TOPICS =
+            "(1-9/0 ask  ·  T greet again  ·  G pickpocket  ·  ESC close)";
+    /** Topic rows and the quest row's marker color (the S3 gold convention). */
+    private static final Color TOPIC_COLOR = new Color(0.62f, 0.70f, 0.62f, 1f);
+    private static final Color TOPIC_QUEST_COLOR = new Color(1f, 0.86f, 0.20f, 1f);
 
     private final ActorRegistry registry;
     /** The FaceGen portrait panel, or {@code null} for text-only (headless-ish callers). */
@@ -70,11 +79,14 @@ public final class TalkPanelRenderer {
         layout.setText(font, bark, BARK_COLOR, PANEL_WIDTH, Align.left, true);
         float barkHeight = layout.height;
         String check = talk.checkLine();
+        List<TalkTopics.Topic> topics = talk.topics();
 
         float contentHeight = lineHeight                                 // name header
                 + (showFace ? InspectorFaces.PANEL_SHIFT_PX : 0f)        // portrait
                 + lineHeight + LINE_GAP_PX                               // job + disposition
                 + barkHeight + LINE_GAP_PX                               // the bark, wrapped
+                + topics.size() * lineHeight                             // topic rows (S4)
+                + (topics.isEmpty() ? 0f : LINE_GAP_PX)
                 + (check != null ? lineHeight + LINE_GAP_PX : 0f)        // check result
                 + lineHeight;                                            // hints
 
@@ -99,13 +111,24 @@ public final class TalkPanelRenderer {
         font.setColor(BARK_COLOR);
         font.draw(batch, bark, x, y, PANEL_WIDTH, Align.left, true);
         y -= barkHeight + LINE_GAP_PX;
+        // The numbered topic rows (S4 item 2): quest-marked rows in the S3 gold.
+        for (int i = 0; i < topics.size(); i++) {
+            TalkTopics.Topic topic = topics.get(i);
+            font.setColor(topic.questMarked() ? TOPIC_QUEST_COLOR : TOPIC_COLOR);
+            String mark = topic.questMarked() ? TalkText.QUEST_MARK + " " : "";
+            font.draw(batch, TalkTopics.keyNumberOf(i) + ". " + mark + topic.label(), x, y);
+            y -= lineHeight;
+        }
+        if (!topics.isEmpty()) {
+            y -= LINE_GAP_PX;
+        }
         if (check != null) {
             font.setColor(CHECK_COLOR);
             font.draw(batch, check, x, y);
             y -= lineHeight + LINE_GAP_PX;
         }
         font.setColor(HINT_COLOR);
-        font.draw(batch, HINTS, x, y);
+        font.draw(batch, topics.isEmpty() ? HINTS : HINTS_WITH_TOPICS, x, y);
         font.setColor(Color.WHITE);
     }
 

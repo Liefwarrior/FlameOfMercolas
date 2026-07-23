@@ -14,6 +14,8 @@ public final class TalkState {
 
     private TalkText.Exchange exchange;
     private String checkLine;
+    /** The numbered topic rows offered with the open exchange (S4 item 2); never null. */
+    private java.util.List<TalkTopics.Topic> topics = java.util.List.of();
 
     /** Whether the speech panel is up. */
     public boolean open() {
@@ -25,15 +27,40 @@ public final class TalkState {
         return exchange;
     }
 
-    /** Opens (or re-greets) the panel on a fresh exchange; clears any stale check line. */
+    /** The topic rows the open panel offers (empty for un-storied souls / closed panel). */
+    public java.util.List<TalkTopics.Topic> topics() {
+        return topics;
+    }
+
+    /** Opens (or re-greets) the panel on a fresh exchange; clears any stale check line.
+     * The pre-topics overload — offers no topic rows (test doubles, degraded callers). */
     public void open(TalkText.Exchange exchange) {
+        open(exchange, java.util.List.of());
+    }
+
+    /** Opens (or re-greets) the panel with its topic rows (S4); clears the check line. */
+    public void open(TalkText.Exchange exchange, java.util.List<TalkTopics.Topic> topics) {
         this.exchange = exchange;
+        this.topics = java.util.List.copyOf(topics);
         this.checkLine = null;
+    }
+
+    /**
+     * Replaces the shown exchange with an asked topic's line (S4 item 2), keeping the
+     * topic rows so the player can keep asking; clears the check line. A no-op while
+     * closed (a stale scripted ask cannot resurrect a dropped panel).
+     */
+    public void setExchange(TalkText.Exchange exchange) {
+        if (open()) {
+            this.exchange = exchange;
+            this.checkLine = null;
+        }
     }
 
     /** Closes the panel. */
     public void close() {
         this.exchange = null;
+        this.topics = java.util.List.of();
         this.checkLine = null;
     }
 

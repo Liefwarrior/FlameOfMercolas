@@ -140,6 +140,65 @@ class AdjacencyVerbInputTest {
     }
 
     @Test
+    void applyAskReplacesTheExchangeWithTheChosenTopicLineAndKeepsTheRows() {
+        // Open the panel manually against a storied notable speaker (bypassing adjacency —
+        // the rows and the ask are presentation-only), then pick topics by number.
+        ActorRegistry registry = population.registry();
+        int withy = -1;
+        for (int i = 0; i < registry.size(); i++) {
+            var topics = population.askTopicsOf(i);
+            if (topics != null && "withy".equals(topics.notableId())) {
+                withy = i;
+                break;
+            }
+        }
+        assertTrue(withy >= 0, "Grandmother Withy is bound");
+        int played = 0;
+        PlayModeState playMode = new PlayModeState();
+        playMode.enable(played);
+        TalkState talk = new TalkState();
+        java.util.List<com.trojia.client.inspect.TalkTopics.Topic> topics =
+                com.trojia.client.inspect.TalkTopics.topicsFor(registry.get(withy), played,
+                        population.askTopicsOf(withy), population.topicCatalog(),
+                        population.questRegistry(), population.system().questLog(),
+                        registry, population.identity());
+        talk.open(com.trojia.client.inspect.TalkText.greet(worldSeed, 3_000L, withy, played,
+                registry, population.jobs(), population.identity(),
+                population.system().factionStandings(), population.relationships(), barks,
+                population.questRegistry(), population.system().questLog()), topics);
+
+        // Row 2 is "their own story" (row 1 is the marked Widow's Paper beat).
+        TalkInput.applyAsk(talk, playMode, registry, population.jobs(),
+                population.identity(), population.system().factionStandings(),
+                population.relationships(), barks, population.questRegistry(),
+                population.system().questLog(), worldSeed, 3_000L, 1);
+        assertEquals("[personal]", talk.exchange().contextLine());
+        assertFalse(talk.exchange().barkLine().isBlank());
+        assertEquals(topics, talk.topics(), "asking keeps the rows for further asks");
+
+        // A gossip row serves the [rumor] family.
+        TalkInput.applyAsk(talk, playMode, registry, population.jobs(),
+                population.identity(), population.system().factionStandings(),
+                population.relationships(), barks, population.questRegistry(),
+                population.system().questLog(), worldSeed, 3_000L, 2);
+        assertEquals("[rumor]", talk.exchange().contextLine());
+
+        // Out-of-range numbers and a closed panel are silent no-ops.
+        var before = talk.exchange();
+        TalkInput.applyAsk(talk, playMode, registry, population.jobs(),
+                population.identity(), population.system().factionStandings(),
+                population.relationships(), barks, population.questRegistry(),
+                population.system().questLog(), worldSeed, 3_000L, 99);
+        assertEquals(before, talk.exchange());
+        talk.close();
+        TalkInput.applyAsk(talk, playMode, registry, population.jobs(),
+                population.identity(), population.system().factionStandings(),
+                population.relationships(), barks, population.questRegistry(),
+                population.system().questLog(), worldSeed, 3_000L, 0);
+        assertFalse(talk.open());
+    }
+
+    @Test
     void applyTalkIsANoOpOutsidePlayMode() {
         TalkState talk = new TalkState();
         ToastQueue toasts = new ToastQueue();
