@@ -2014,6 +2014,15 @@ All numbers **(placeholder)**.
     type-mix); and the `content/raws/actors/household.json` file split call (§11.5) itself,
     if Eli would rather fold these knobs into each type's existing raws file instead.
 
+### 11.10 §2.2 RNG streams — S1 identity addendum (2026-07-22)
+
+- **§2.2 RNG streams:** + `identity.names` (append-only). Bake-time only, spatialKey =
+  actorId (or the HOUSEHOLD component's lowest actorId for the surname draw), consumed
+  exclusively by the observer-side NameForge (`client-observer/.../scenario/NameForge.java`)
+  — names/epithets/bios are SCENARIO data: never read on the tick path, never serialized,
+  never hashed. The lead's S1 ruling ("identity data must not move the sim tick hash") is
+  enforced by `DocksIdentityDeterminismTest`.
+
 ---
 
 *Spec produced 2026-07-12 for the F2.5 actors milestone; §10 Goals & Jobs addendum added

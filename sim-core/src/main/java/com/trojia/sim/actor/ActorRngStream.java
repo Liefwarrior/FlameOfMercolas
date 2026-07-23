@@ -35,7 +35,14 @@ public enum ActorRngStream {
     /** Per-exposure arrest-chance draw when a Villain is caught near the Watch (ARREST-SPEC). */
     WATCH_ARREST_CHECK("watch.arrestCheck"),
     /** One-time custody-length draw at arrest, uniform 1-3 days (ARREST-SPEC). */
-    WATCH_SENTENCE_LENGTH("watch.sentenceLength");
+    WATCH_SENTENCE_LENGTH("watch.sentenceLength"),
+    /**
+     * Bake-side identity forging (NameForge, Sprint 1 "Every Soul Has a Name"): given-name /
+     * surname / epithet / kennel-name draws, all at {@code BAKE_TICK}. Appended stream —
+     * its salt is derived purely from its own name, so no existing stream's draws shift; the
+     * tick path never reads it (identity is scenario-bake data, never sim-core state).
+     */
+    IDENTITY_NAMES("identity.names");
 
     private final String streamName;
     private final long salt;

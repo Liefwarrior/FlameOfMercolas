@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * anti-oscillation DoD), the hunt loop actually turns (catches land, every caught mouse
  * revives on schedule and stands near its den), no beast starves, the citizen economy bars
  * hold (serf &le; 5% starved, middle class 0%, money + FOOD conservation), the roster stays
- * fixed at 691 and the occupancy cap holds throughout.
+ * fixed at 692 (Tarry Jek included, S1-2) and the occupancy cap holds throughout.
  */
 class DocksBeastSoakTest {
 
@@ -93,7 +93,8 @@ class DocksBeastSoakTest {
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadDocksSurface();
         DocksPopulation population = DocksPopulation.build(loaded.worldSeed(), loaded.world());
         ActorRegistry registry = population.registry();
-        assertEquals(691, registry.size(), "the beast-pass roster: 653 + 30 mice + 8 cats");
+        assertEquals(692, registry.size(),
+                "the roster: 653 + 30 mice + 8 cats + Tarry Jek (S1-2)");
 
         List<Integer> gulls = new ArrayList<>();
         List<Integer> cats = new ArrayList<>();
@@ -253,7 +254,7 @@ class DocksBeastSoakTest {
         assertEquals(minted, items.liveOfKind(ItemKinds.FOOD) + eaten,
                 "FOOD minted == live + eaten (predation must not touch the item counts)");
 
-        assertEquals(691, registry.size(), "the roster never shrinks (no removal path)");
+        assertEquals(692, registry.size(), "the roster never shrinks (no removal path)");
     }
 
     private static void assertOccupancyCapHolds(ActorRegistry registry, String when) {

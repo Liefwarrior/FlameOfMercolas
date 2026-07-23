@@ -31,6 +31,16 @@ public interface ScenarioPopulation {
     /** See {@link CompoundBlockPopulation#trackedGroundMoverId()} — the smoke proof's mover. */
     int trackedGroundMoverId();
 
+    /**
+     * The bake-side identity table (S1 NameForge): names/epithets/bios per ActorId for the
+     * inspector's nameplate and the headless roster listing. Default is the empty table —
+     * only fixtures that run a NameForge pass (the docks) override it; identity is scenario
+     * data, so exposing it here adds nothing to the sim surface.
+     */
+    default IdentityRegistry identity() {
+        return IdentityRegistry.EMPTY;
+    }
+
     /** Adapts the compound-block population (kept untouched) to this surface. */
     static ScenarioPopulation of(CompoundBlockPopulation population) {
         return new ScenarioPopulation() {

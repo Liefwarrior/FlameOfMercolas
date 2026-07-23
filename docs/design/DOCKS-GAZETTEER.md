@@ -81,7 +81,7 @@ Trojian residential space is organized into walled **Compounds**, not detached s
 
 ## 3. Establishments (keyed locations)
 
-All names and proprietors **(placeholder)** unless cited. "Runs it" gives the §4 actor group; K# keys are the Tiled marker ids (§8). Investigation-relevant sites flagged ◆.
+"Runs it" gives the §4 actor group; K# keys are the Tiled marker ids (§8). Investigation-relevant sites flagged ◆. **Proprietor names are CANON as of the S1 identity pass (2026-07-22)** — every named proprietor below (and one authored head per remaining staffed site) is bound to its real spawned actor in `content/raws/names/notables.json` (§4.4, the Forty Notables); the in-table "(placeholder)" tags are retained only as the original authorship record.
 
 | K# | Name | One line | Runs it | Sim/investigation relevance |
 |---|---|---|---|---|
@@ -306,7 +306,21 @@ Sim-pressure seeds, not scripts — each is a state overlap the ACTORS-SPEC beha
 | Watch × Priest | 1. The Watch wants a culprit for the bodies (any culprit); Maell shelters the accused Wastrel in the Mission; standoff at the door only the Wielder can walk through. |
 | Shopkeeper × Shopkeeper | 1. Chandlery vs Wrackhouse: salvage undercuts new stores; the gray ledgers compete; one of them tips the Watch about the other's night boats. |
 
-### 4.4 Named NPCs (all placeholder; drawn from the groups)
+### 4.4 Named NPCs — THE FORTY NOTABLES (CANON as of the S1 identity pass, 2026-07-22)
+
+**Status change:** this list is no longer placeholder. The S1 "Every Soul Has a Name" pass
+shipped the Trojian NameForge (every one of the ward's 692 souls carries a deterministic
+name/epithet/bio — `content/raws/names/names.json`) and canonized this section's blessed
+names as **the Forty Notables** (`content/raws/names/notables.json`): forty hand-authored
+identities bound onto the real spawned actors **by spawn site** (anchor key + group + rank,
+never raw ActorId — a map regen re-resolves every binding instead of orphaning it). Each
+notable carries a 2–3 sentence bio tied to its true sim job/home/relationships; a villain
+notable's authored name is its **cover** name (presented-identity convention). Tarry Jek,
+blessed here since the first draft but never spawned, now lives on the Beaching Strand
+(roster 691 → 692). Binding tests: `DocksIdentityTest`; §9 resolution 8's "bless or rename
+freely" was exercised — the original ten stand unrenamed.
+
+**The original ten (unchanged, now canon):**
 
 | Name | Group | Hook |
 |---|---|---|
@@ -320,6 +334,41 @@ Sim-pressure seeds, not scripts — each is a state overlap the ACTORS-SPEC beha
 | **Dagny** | Shopkeeper (Wrackhouse) | Bought Jek's find, no questions; her stock room holds clue-adjacent salvage and her silence has a Wielder-sized exception |
 | **Harl** | Shopkeeper (shipwright) | Repairing the hull of the ship that came in that night; found scratch-marks inside the hold he's been paid not to mention |
 | **Brann** | Shopkeeper (chandler) | Two ledgers; the gray one shows night-oil sold to nobody he'll name — except to the Flame |
+
+**The other thirty (authored this pass; full bios in `notables.json`):**
+
+| Name | Group / site | Hook |
+|---|---|---|
+| **Master Venn** | Shopkeeper (K03 Gilded Gull) | Careful civilities with Mother Sethra, each certain the other hears more |
+| **Fenner** | Shopkeeper (K15 pawn) | Knows who is desperate in this ward — a kind of ledger too |
+| **Merle** | Shopkeeper (K20 boats) | Rows for honest coin by day; does not discuss the other hours |
+| **Squall** | Shopkeeper (K18 bathhouse) | Hears rank confess to no-rank daily; remembers none of it aloud |
+| **Redda** | Shopkeeper (K04 Bilge) | Reads pay-night like a tide |
+| **Foreman Cathal Hemp** | Shopkeeper (K07 Ropewalk) | The ward's biggest gang; nothing moves on the west quay unseen |
+| **Pitch-Master Ulwer** | Shopkeeper (K09 Pitchfield) | The one man everyone agrees should fear fire |
+| **Salla** | Shopkeeper (K11 Salt Row) | Herring pays her in silver and smell |
+| **Bondsman Grieve** | Shopkeeper (K12 King's Bond) | The erased line troubles him more than he lets on |
+| **Keeper Vetch** | Shopkeeper (K19 Rows) | Remembers every face — and the night any face stopped coming back |
+| **Grandmother Withy** | Shopkeeper (K22 Arcade) | The district's memory; decides what seeing is worth |
+| **Cooper Aldous Stave** | Shopkeeper (K23 cooperage) | Recognizes his own hoop-marks in the smuggler cellars; keeps that quiet |
+| **Sailmaker Luff** | Shopkeeper (K26 Loft) | Can date any canvas in the harbor by its patch-work |
+| **Baker Hobb Crumb** | Shopkeeper (K27 Hardtack Oven) | Knows sailing dates better than the Weighhouse posts them |
+| **Slops Neddry** | Shopkeeper (K28 Slop-Chest) | Tells a man's ship by his oilskin and a liar by his boots |
+| **Foreman Dray** | Shopkeeper (K29 Long Store) | Reported the missing night-watchman twice, then stopped reporting |
+| **Captain Ivo Wake** | Serf (K30 *Kestrel*) | At sea the night of the killings and can prove it — which interests him |
+| **Captain Wull Bregga** | Serf (K31 *Bregga's Promise*) | His mother's name on the bow and her debt in the hold |
+| **Captain Sorrel Vane** | Serf (K32 *Deep Keel*) | A manifest the Weighhouse reads twice; rumor of an erased line reached him |
+| **Ceffa Quayward** | Shopkeeper (C1 mansion) | Head of House Quayward; grooming an heir at her elbow |
+| **Widow Annis Netter** | Shopkeeper (C2 mansion) | Widowed twice by the sea; sells at the Dawnstalls herself |
+| **Goodman Tarl Saltgate** | Shopkeeper (C3 mansion) | Counts harvest baskets the way the banker counts Royals |
+| **Master Ondrey Gilt** | Shopkeeper (K36 Counting-House) | Never once robbed — a fact he attributes to arithmetic |
+| **Sergeant Brakk** | Militia Watch (K34 guardhouse) | Nine steel cells and a by-the-book escort ledger |
+| **Watchman Cull** | Animal Keeper (K02 impound) | Has learned to watch the dog |
+| **Herdis the Goatwife** | Animal Keeper (goat pen) | Vess climbs down to talk goats; gossip moves through her pen |
+| **Carter Weyland** | Animal Keeper (Tarwalk day-loop) | Knows the weight of every crate — including the ones he was paid not to weigh |
+| **Mad Tolley** | Wastrel (K13 Drowned Hold) | Saw the lamplight; stopped telling people because of how they looked at him |
+| **Gullet Mag** | Wastrel (C4 ruin) | Rent is not paid in the Gullet, but respects are — to Mag |
+| **"Finch"** | Wastrel (Gullet roof decks) | A quiet tenant the Watch has never had reason to write down — no one has *(cover identity; see K35)* |
 
 ---
 

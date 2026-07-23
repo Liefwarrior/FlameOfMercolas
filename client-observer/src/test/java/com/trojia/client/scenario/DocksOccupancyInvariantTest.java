@@ -32,10 +32,10 @@ class DocksOccupancyInvariantTest {
      * The whole-district roster size. 630 baseline + 10 Phase-1 living-docks stationed actors
      * (the K36 banker, its 2 flanking bank guards, and 7 shop guards) + 13 money-gated-market
      * victuallers (3 on-hull + 4 Band-B + 6 Band-C FOOD vendors) + 38 beast-food-channel
-     * beasts (30 quay mice at their dens + 8 wharf cats). Grows with any further stationed
-     * spawns.
+     * beasts (30 quay mice at their dens + 8 wharf cats) + Tarry Jek the strand mudlark
+     * (S1-2, the Forty Notables). Grows with any further stationed spawns.
      */
-    private static final int EXPECTED_ACTOR_COUNT = 691;
+    private static final int EXPECTED_ACTOR_COUNT = 692;
 
     /** Enough ticks to exercise commuting, return-home crowding, patrols, and wander. */
     private static final int TICKS = 600;

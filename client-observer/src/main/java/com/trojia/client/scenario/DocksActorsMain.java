@@ -47,6 +47,7 @@ public final class DocksActorsMain {
 
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadDocksSurface();
         DocksPopulation population = DocksPopulation.build(loaded.worldSeed(), loaded.world());
+        IdentityRegistry identity = population.identity();   // S1 NameForge (bake-side, pure)
 
         ActorRegistry registry = population.registry();
         HomeRegistry homes = population.homes();
@@ -160,7 +161,9 @@ public final class DocksActorsMain {
             }
         }
 
-        printRoster(registry, homes, jobs);
+        printRoster(registry, homes, jobs, identity);
+        printBioSamples(registry, identity);
+        printNotables(registry, homes, jobs, identity);
         printMoversAfter(population, driver.currentTick(), movers);
         printGraphSample(homes, relationships);
         System.out.println("items minted (placeholder ids + quantities, §11.2): "
@@ -850,25 +853,86 @@ public final class DocksActorsMain {
     // Roster / mover / graph listings
     // ==================================================================================
 
-    private static void printRoster(ActorRegistry registry, HomeRegistry homes, JobRegistry jobs) {
+    private static void printRoster(ActorRegistry registry, HomeRegistry homes, JobRegistry jobs,
+            IdentityRegistry identity) {
         System.out.println();
-        System.out.printf("%-3s %-22s %-18s %-18s %-5s %-13s %-13s %-13s %-10s %s%n",
-                "id", "type", "job(true)", "presents", "home", "homeCell", "anchorCell", "position",
-                "goalState", "needs(H/R/C/S/D)");
+        System.out.printf("%-3s %-24s %-18s %-22s %-18s %-18s %-5s %-13s %-13s %-13s %-10s %s%n",
+                "id", "name", "epithet", "type", "job(true)", "presents", "home", "homeCell",
+                "anchorCell", "position", "goalState", "needs(H/R/C/S/D)");
         for (int i = 0; i < registry.size(); i++) {
             Actor actor = registry.get(i);
             Job job = actor.jobOrdinal() >= 0 ? jobs.get(actor.jobOrdinal()) : null;
             String trueJob = JobDisplay.trueJobId(job);
             String presented = JobDisplay.presentedJobId(job);
             String cover = JobDisplay.isSecret(job) ? "  <-- secret" : "";
+            IdentityRegistry.Identity who = identity.get(i);
             Home home = homes.get(actor.homeId());
             short[] needs = actor.needsSnapshot();
-            System.out.printf("%-3d %-22s %-18s %-18s %-5d %-13s %-13s %-13s %-10s %d/%d/%d/%d/%d%s%n",
-                    actor.id(), actor.typeId().key(), trueJob, presented, actor.homeId(),
-                    xyz(home.homeCell()), xyz(actor.anchorCell()), xyz(actor.cell()), actor.goalState(),
+            System.out.printf(
+                    "%-3d %-24s %-18s %-22s %-18s %-18s %-5d %-13s %-13s %-13s %-10s %d/%d/%d/%d/%d%s%n",
+                    actor.id(), who.fullName(), who.epithet(), actor.typeId().key(), trueJob,
+                    presented, actor.homeId(), xyz(home.homeCell()), xyz(actor.anchorCell()),
+                    xyz(actor.cell()), actor.goalState(),
                     needs[0], needs[1], needs[2], needs[3], needs[4], cover);
         }
         System.out.println("homes baked: " + homes.size());
+        int namedCount = 0;
+        int notableCount = 0;
+        for (int i = 0; i < identity.size(); i++) {
+            if (identity.get(i).named()) {
+                namedCount++;
+            }
+            if (identity.get(i).notableId() != null) {
+                notableCount++;
+            }
+        }
+        System.out.println("identity table (NameForge): " + namedCount + " named of "
+                + identity.size() + " souls (" + notableCount
+                + " authored notables; ferals/mice/cats deliberately nameless)");
+    }
+
+    /**
+     * Template-bio legibility sample: the first FORGED (non-notable) soul of each actor type,
+     * ascending id — deterministic, so twin runs stay byte-identical.
+     */
+    private static void printBioSamples(ActorRegistry registry, IdentityRegistry identity) {
+        System.out.println();
+        System.out.println("identity bio samples (first forged soul of each type):");
+        java.util.Set<String> seenTypes = new java.util.HashSet<>();
+        for (int i = 0; i < registry.size(); i++) {
+            IdentityRegistry.Identity who = identity.get(i);
+            if (who.notableId() != null || who.bio().isBlank()) {
+                continue;
+            }
+            if (!seenTypes.add(registry.get(i).typeId().key())) {
+                continue;
+            }
+            System.out.println("  actor#" + i + " " + who.fullName()
+                    + (who.epithet().isBlank() ? "" : " \"" + who.epithet() + "\"")
+                    + " [" + registry.get(i).typeId().key() + "]: " + who.bio());
+        }
+    }
+
+    /** The Forty Notables listing: authored identity, binding, and the full bio. */
+    private static void printNotables(ActorRegistry registry, HomeRegistry homes,
+            JobRegistry jobs, IdentityRegistry identity) {
+        System.out.println();
+        System.out.println("================ THE FORTY NOTABLES (authored, bound by spawn site) =========");
+        for (int i = 0; i < registry.size(); i++) {
+            IdentityRegistry.Identity who = identity.get(i);
+            if (who.notableId() == null) {
+                continue;
+            }
+            Actor actor = registry.get(i);
+            Job job = actor.jobOrdinal() >= 0 ? jobs.get(actor.jobOrdinal()) : null;
+            int homeCell = actor.homeId() == Actor.NONE ? actor.cell()
+                    : homes.get(actor.homeId()).homeCell();
+            System.out.println("  [" + who.notableId() + "] " + who.fullName() + ", "
+                    + who.epithet() + "  -- actor#" + i + " [" + actor.typeId().key() + " / "
+                    + JobDisplay.presentedJobId(job) + "] home=" + xyz(homeCell));
+            System.out.println("      " + who.bio());
+        }
+        System.out.println("============================================================================");
     }
 
     private static void printMoversAfter(DocksPopulation population, long tick,

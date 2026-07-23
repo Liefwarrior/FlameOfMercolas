@@ -320,6 +320,13 @@ public final class DocksPopulation implements ScenarioPopulation {
             {42, 124}, {52, 124}, {86, 124}, {94, 124}, {108, 124}, {118, 124}, {128, 124},
             {138, 124}, {148, 124}, {158, 124}, {168, 124}, {178, 124}};
 
+    // Tarry Jek's strand berth (S1-2, the Forty Notables): open Beaching Strand shingle
+    // (z:+10 DIRT_FLOOR by the generator's band rule, x130-163 y8-28), 18 tiles east of the
+    // strand gull's roost/dens at {132,18} so the beast channel's hunt and roam envelopes
+    // stay clear of the new body. Same "known street/floor cells" convention as the stands
+    // below; the timber pond's water stops at y9, so y22 is dry shingle.
+    private static final int[] STRAND_JEK = {150, 22};           // z:+10
+
     // ---- derived work stands (no marker; known street/floor cells, precedent convention) --
     private static final int[] TERRACE_WALK_STAND = {100, 98};   // z:+12 brick Terrace Walk
     private static final int[] SALTGATE_PORTERS = {75, 105};     // z:+12 Saltgate roadbed
@@ -372,6 +379,8 @@ public final class DocksPopulation implements ScenarioPopulation {
     private final long worldSeed;
     private final int trackedGroundMoverId;
     private final List<Integer> moverIds;
+    /** Lazily forged identity table (S1) — a memoized pure function of the finished bake. */
+    private IdentityRegistry identity;
 
     private DocksPopulation(ActorsSystem system, ActorTypeStatsTable typeStats,
             JobRegistry jobs, HomeRegistry homes, RelationshipRegistry relationships,
@@ -417,6 +426,26 @@ public final class DocksPopulation implements ScenarioPopulation {
     /** The Royals ledger (Phase-2 economy) — for the money-conservation proof in the run harness. */
     public BankLedger bankAccounts() {
         return system.bankAccounts();
+    }
+
+    /**
+     * The forged identity table (S1 "Every Soul Has a Name"): every actor's name, epithet
+     * and bio, with the Forty Notables' authored identities bound by spawn site. Forged
+     * lazily and memoized; because {@link NameForge} reads only bake-immutable state through
+     * its own appended {@code identity.names} stream, forging at bake or after any number of
+     * ticks yields byte-identical tables and never moves the sim tick hash (both proven by
+     * {@code DocksIdentityDeterminismTest}).
+     */
+    @Override
+    public IdentityRegistry identity() {
+        if (identity == null) {
+            Path namesRoot = RepoPaths.locate("content", "raws").resolve("names");
+            identity = NameForge.forge(worldSeed, registry, homes, relationships, jobs,
+                    NameRaws.load(namesRoot.resolve("names.json")),
+                    NotableRaws.load(namesRoot.resolve("notables.json")),
+                    notableSpawnSites(), siteDisplayNames());
+        }
+        return identity;
     }
 
     @Override
@@ -576,6 +605,195 @@ public final class DocksPopulation implements ScenarioPopulation {
     public static List<List<Integer>> patrolRoutes() {
         return List.of(worldCells(PATROL_TARWALK, ZA), worldCells(PATROL_QUAY, ZA),
                 worldCells(PATROL_ROPEWYND, ZA));
+    }
+
+    // ---- S1 identity pass (NameForge + the Forty Notables): the spawn-site key table and
+    // the site display names. Both live HERE, beside the anchor constants they mirror (the
+    // lockstep rule): notables.json binds identities by these KEYS — never by raw ActorId —
+    // so a map regeneration or roster edit re-resolves every binding instead of orphaning it.
+
+    /**
+     * The notable spawn-site key table: {@code notables.json}'s {@code site} keys resolved to
+     * world-packed cells. Append-only; a key removal would orphan an authored identity (the
+     * binding test fails loudly if it ever happens).
+     */
+    public static Map<String, Integer> notableSpawnSites() {
+        Map<String, Integer> sites = new java.util.LinkedHashMap<>();
+        sites.put("K01_WEIGHHOUSE", worldCell(K01_WEIGHHOUSE, ZA));
+        sites.put("K02_IMPOUND", worldCell(K02_IMPOUND, ZA));
+        sites.put("K03_GILDED_GULL", worldCell(K03_GILDED_GULL, ZA));
+        sites.put("K04_BILGE", worldCell(K04_BILGE, ZA));
+        sites.put("K05_LANTERN_ROOM", worldCell(K05_LANTERN_ROOM, ZA));
+        sites.put("K06_HARLS_YARD", worldCell(K06_HARLS_YARD, ZA));
+        sites.put("K07_ROPEWALK", worldCell(K07_ROPEWALK, ZA));
+        sites.put("K08_BRANNS", worldCell(K08_BRANNS, ZA));
+        sites.put("K09_PITCHFIELD", worldCell(K09_PITCHFIELD, ZA));
+        sites.put("K11_SALT_ROW", worldCell(K11_SALT_ROW, ZA));
+        sites.put("K12_KINGS_BOND", worldCell(K12_KINGS_BOND, ZA));
+        sites.put("K13_DROWNED_HOLD", worldCell(K13_DROWNED_HOLD, ZA));
+        sites.put("K14_WRACKHOUSE", worldCell(K14_WRACKHOUSE, ZA));
+        sites.put("K15_FENNERS", worldCell(K15_FENNERS, ZA));
+        sites.put("K18_BATHHOUSE", worldCell(K18_BATHHOUSE, ZA));
+        sites.put("K19_ROWS", worldCell(K19_ROWS, ZA));
+        sites.put("K20_MERLES", worldCell(K20_MERLES, ZA));
+        sites.put("K22_NETMENDERS", worldCell(K22_NETMENDERS, ZA));
+        sites.put("K23_COOPERS", worldCell(K23_COOPERS, ZA));
+        sites.put("K25_KENNEL_ROW", worldCell(K25_KENNEL_ROW, ZA));
+        sites.put("K26_SAILMAKER", worldCell(SAILMAKER, ZA));
+        sites.put("K27_HARDTACK", worldCell(K27_HARDTACK, ZA));
+        sites.put("K28_SLOPCHEST", worldCell(K28_SLOPCHEST, ZA));
+        sites.put("K29_LONGSTORE", worldCell(K29_LONGSTORE, ZA));
+        sites.put("K34_GUARDHOUSE", worldCell(K34_GUARDHOUSE, ZA));
+        sites.put("K36_BANK_COUNTER", worldCell(BANK_COUNTER, ZA));
+        sites.put("SHIP_K30_KESTREL", worldCell(SHIP_K30_KESTREL, ZA));
+        sites.put("SHIP_K31_BREGGAS_PROMISE", worldCell(SHIP_K31_BREGGAS_PROMISE, ZA));
+        sites.put("SHIP_K32_DEEPKEEL", worldCell(SHIP_K32_DEEPKEEL, ZA));
+        sites.put("MISSION_BUNKS", worldCell(MISSION_BUNKS, ZA));
+        sites.put("WATCHPOST_K21", worldCell(WATCHPOST_K21, ZC));
+        sites.put("C1_MANSION", worldCell(C1_MANSION, ZB));
+        sites.put("C2_MANSION", worldCell(C2_MANSION, ZA));
+        sites.put("C3_MANSION", worldCell(C3_MANSION, ZB));
+        sites.put("C4_RUIN", worldCell(C4_RUIN, ZA));
+        sites.put("PEN_GOATS", worldCell(PEN_GOATS, ZB));
+        sites.put("CARTER_STAND", worldCell(CARTER_STAND, ZA));
+        sites.put("LAIR_SKYRUNNER", worldCell(LAIR_SKYRUNNER, ZC));
+        sites.put("STRAND_JEK", worldCell(STRAND_JEK, 10));
+        return sites;
+    }
+
+    /**
+     * Site display names for the NameForge's template bios: world-packed cell -&gt; the
+     * gazetteer's own register. Insertion order is the deterministic tie-breaker for the
+     * forge's nearest-site lookup, so this map is append-only too.
+     */
+    public static Map<Integer, String> siteDisplayNames() {
+        Map<Integer, String> names = new java.util.LinkedHashMap<>();
+        names.put(worldCell(K01_WEIGHHOUSE, ZA), "the Weighhouse");
+        names.put(worldCell(K02_IMPOUND, ZA), "the Impound Yard");
+        names.put(worldCell(K03_GILDED_GULL, ZA), "the Gilded Gull");
+        names.put(worldCell(K04_BILGE, ZA), "the Bilge");
+        names.put(worldCell(K05_LANTERN_ROOM, ZA), "the Lantern Room");
+        names.put(worldCell(K06_HARLS_YARD, ZA), "Harl's Yard");
+        names.put(worldCell(K07_ROPEWALK, ZA), "the Ropewalk");
+        names.put(worldCell(K08_BRANNS, ZA), "Brann's Chandlery");
+        names.put(worldCell(K09_PITCHFIELD, ZA), "Pitchfield");
+        names.put(worldCell(K10_DAWNSTALLS, ZA), "the Dawnstalls");
+        names.put(worldCell(K11_SALT_ROW, ZA), "Salt Row");
+        names.put(worldCell(K12_KINGS_BOND, ZA), "the King's Bond");
+        names.put(worldCell(K13_DROWNED_HOLD, ZA), "the Drowned Hold");
+        names.put(worldCell(K14_WRACKHOUSE, ZA), "the Wrackhouse");
+        names.put(worldCell(K15_FENNERS, ZA), "Fenner's Pawn");
+        names.put(worldCell(K17_MISSION, ZA), "the Mission");
+        names.put(worldCell(K18_BATHHOUSE, ZA), "the bathhouse");
+        names.put(worldCell(K19_ROWS, ZA), "the Rows");
+        names.put(worldCell(K20_MERLES, ZA), "Merle's Boats");
+        names.put(worldCell(K22_NETMENDERS, ZA), "the Netmenders' Arcade");
+        names.put(worldCell(K23_COOPERS, ZA), "the cooperage");
+        names.put(worldCell(K25_KENNEL_ROW, ZA), "Kennel Row");
+        names.put(worldCell(SAILMAKER, ZA), "the Sailmaker's Loft");
+        names.put(worldCell(K27_HARDTACK, ZA), "the Hardtack Oven");
+        names.put(worldCell(K28_SLOPCHEST, ZA), "the Slop-Chest");
+        names.put(worldCell(K29_LONGSTORE, ZA), "the Long Store");
+        names.put(worldCell(K34_GUARDHOUSE, ZA), "the guardhouse");
+        names.put(worldCell(BANK_COUNTER, ZA), "the Counting-House");
+        names.put(worldCell(GUARD_POST_BANK_WEST, ZA), "the Counting-House door");
+        names.put(worldCell(GUARD_POST_BANK_EAST, ZA), "the Counting-House door");
+        names.put(worldCell(SHIP_K30_KESTREL, ZA), "the Kestrel");
+        names.put(worldCell(SHIP_K31_BREGGAS_PROMISE, ZA), "Bregga's Promise");
+        names.put(worldCell(SHIP_K32_DEEPKEEL, ZA), "the Deep Keel");
+        names.put(worldCell(BERTH_01, ZA), "Berth One");
+        names.put(worldCell(BERTH_02, ZA), "Berth Two");
+        names.put(worldCell(BERTH_03, ZA), "Berth Three");
+        names.put(worldCell(CRANE, ZA), "the quay crane");
+        names.put(worldCell(MUSTER_QUAY, ZA), "the muster quay");
+        names.put(worldCell(PIER_01, ZA), "the finger piers");
+        names.put(worldCell(PIER_02, ZA), "the finger piers");
+        names.put(worldCell(PIER_03, ZA), "the finger piers");
+        names.put(worldCell(PIER_04, ZA), "Pier Row");
+        names.put(worldCell(TIMBER_YARD_STAND, ZA), "the timber yard");
+        names.put(worldCell(MISSION_BUNKS, ZA), "the Mission bunkroom");
+        names.put(worldCell(MISSION_GARDEN, ZA), "the Mission garden");
+        names.put(worldCell(TERRACE_WALK_STAND, ZB), "Terrace Walk");
+        names.put(worldCell(SALTGATE_PORTERS, ZB), "the Saltgate porters' stand");
+        names.put(worldCell(WELL_PLAZA, ZC), "the well plaza");
+        names.put(worldCell(NOTICE_BOARD, ZC), "the notice board");
+        names.put(worldCell(ABBEY_LANE, ZC), "Abbey Lane");
+        for (int[] stall : EELPOT_STALLS) {
+            names.put(worldCell(stall, ZA), "the Eel-Pots");
+        }
+        names.put(worldCell(WATCHPOST_K21, ZC), "the Saltgate watch-post");
+        names.put(worldCell(PATROL_RISE_TOP, ZC), "the Rise head");
+        names.put(worldCell(PATROL_RISE_FOOT, ZA), "the Rise foot");
+        names.put(worldCell(PATROL_TARWALK_WEST, ZA), "the west Tarwalk");
+        names.put(worldCell(PATROL_TARWALK_MID, ZA), "the mid Tarwalk");
+        names.put(worldCell(WATCH_BOND_POST, ZA), "the Bond post");
+        names.put(worldCell(C2_ROOF_WATCHPOST, ZC), "the Netters' roof post");
+        names.put(worldCell(PATROL_TARWALK[2], ZA), "the Tarwalk beat");
+        names.put(worldCell(PATROL_TARWALK[3], ZA), "the Tarwalk beat");
+        names.put(worldCell(PATROL_QUAY[1], ZA), "the quay beat");
+        names.put(worldCell(PATROL_ROPEWYND[4], ZA), "the Ropewynd beat");
+        // The seven shop guard posts, in SHOP_GUARD_POSTS order (K08/K14/K15/K23/K26/K27/K28).
+        String[] shopDoors = {"Brann's door", "the Wrackhouse door", "Fenner's door",
+                "the cooperage door", "the Loft door", "the Oven door", "the Slop-Chest door"};
+        for (int i = 0; i < SHOP_GUARD_POSTS.length; i++) {
+            names.put(worldCell(SHOP_GUARD_POSTS[i], ZA), shopDoors[i]);
+        }
+        names.put(worldCell(C1_MANSION, ZB), "the Quayward mansion");
+        names.put(worldCell(C1_COURTYARD, ZB), "the Quayward courtyard");
+        for (int[] condo : C1_CONDOS_GROUND) {
+            names.put(worldCell(condo, ZB), "the Quayward Compound");
+        }
+        for (int[] condo : C1_CONDOS_UPPER) {
+            names.put(worldCell(condo, ZC), "the Quayward Compound");
+        }
+        names.put(worldCell(C2_MANSION, ZA), "the Netters' mansion");
+        for (int[] condo : C2_CONDOS_GROUND) {
+            names.put(worldCell(condo, ZA), "the Netters' Compound");
+        }
+        for (int[] condo : C2_CONDOS_UPPER) {
+            names.put(worldCell(condo, ZB), "the Netters' Compound");
+        }
+        for (int[] hut : C2_ROOFHUTS) {
+            names.put(worldCell(hut, ZC), "the Netters' roof decks");
+        }
+        names.put(worldCell(C3_MANSION, ZB), "the Saltgate mansion");
+        names.put(worldCell(C3_COURTYARD, ZB), "the Saltgate courtyard");
+        for (int[] condo : C3_CONDOS_GROUND) {
+            names.put(worldCell(condo, ZB), "Saltgate Terrace");
+        }
+        for (int[] condo : C3_CONDOS_UPPER) {
+            names.put(worldCell(condo, ZC), "Saltgate Terrace");
+        }
+        for (int[] hut : C3_ROOFHUTS) {
+            names.put(worldCell(hut, 14), "the Terrace roofs");
+        }
+        for (int[] condo : C4_CONDOS_GROUND) {
+            names.put(worldCell(condo, ZA), "the Gullet");
+        }
+        names.put(worldCell(C4_CONDO_UPPER, ZB), "the Gullet");
+        for (int[] hut : C4_ROOFHUTS) {
+            names.put(worldCell(hut, ZC), "the Gullet roof decks");
+        }
+        names.put(worldCell(C4_RUIN, ZA), "the Gullet ruin");
+        // The Skyrunner's Roost stays COVER-SAFE (K35 is unmarked by design): its anchor
+        // resolves to the same register any roof-deck tenant would show.
+        names.put(worldCell(LAIR_SKYRUNNER, ZC), "the Gullet roof decks");
+        for (int[] hovel : HOVELS_A) {
+            names.put(worldCell(hovel, ZA), "a quayside hovel row");
+        }
+        for (int[] hovel : HOVELS_B) {
+            names.put(worldCell(hovel, ZB), "the mid-slope hovel row");
+        }
+        for (int[] hovel : HOVELS_C) {
+            names.put(worldCell(hovel, ZC), "the upper hovel row");
+        }
+        names.put(worldCell(PEN_GOATS, ZB), "the goat pen");
+        names.put(worldCell(CARTER_STAND, ZA), "the carter's stand");
+        names.put(worldCell(HITCH_GULL, ZA), "the Gull's hitching post");
+        names.put(worldCell(HITCH_BILGE, ZA), "the Bilge's hitching post");
+        names.put(worldCell(HITCH_ROWS, ZA), "the Rows' hitching post");
+        names.put(worldCell(STRAND_JEK, 10), "the Beaching Strand");
+        return names;
     }
 
     // ---- Living-docks Pass 4: the two new dock trades + the restricted-zone access data. The
@@ -1390,7 +1608,8 @@ public final class DocksPopulation implements ScenarioPopulation {
             // DOWNED to keep its own nibble cycle above the hungry bar (the soak measured it
             // at 2999). Reallocated: one from the ZB Saltgate ambience bin (fed no predator),
             // one from the open-strand trio (3 mice for one beach gull; the strand is open
-            // ground with no wedge risk) -- the roster stays exactly 691.
+            // ground with no wedge risk) -- the roster stayed exactly 691 (692 since the
+            // S1-2 identity pass landed Tarry Jek on the strand, below).
             for (int[] den : new int[][] {MUSTER_QUAY, EELPOT_STALLS[0], EELPOT_STALLS[3],
                     WATCH_BOND_POST, SHOP_GUARD_POSTS[1], MISSION_GARDEN,
                     PATROL_TARWALK_MID, K10_DAWNSTALLS, HITCH_GULL, new int[] {30, 31},
@@ -1417,6 +1636,16 @@ public final class DocksPopulation implements ScenarioPopulation {
             }
             soloHome(spawn(CatActor.TYPE, TERRACE_WALK_STAND, ZB));
             soloHome(spawn(CatActor.TYPE, WELL_PLAZA, ZC));
+
+            // ===================== TARRY JEK — the strand mudlark (S1-2, Forty Notables) ======
+            // Gazetteer §4.4's blessed Wastrel, in the cast since the first draft but never
+            // spawned: one mudlark homed on the open strand shingle (home == anchor == the
+            // spot, the soloHome pattern — he works the tide-line where he sleeps). Appended
+            // LAST among the spawn sections so every pre-existing ActorId (0..690) is
+            // untouched; Jek is id 691 by construction and the roster grows 691 -> 692. The
+            // civic passes below still cover him (default wastrel.streetlife job, scrap
+            // inventory, a seeded account) because they scan the whole registry.
+            soloHome(spawn(Wastrel.TYPE, STRAND_JEK, 10));
 
             // ===================== Civic default jobs + presented-job covers (§10.4) ===========
             for (int i = 0; i < registry.size(); i++) {

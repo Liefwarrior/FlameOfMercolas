@@ -1,0 +1,369 @@
+{
+  "id": "the_forty_notables",
+  "notables": [
+    {
+      "id": "crell",
+      "name": "Ottavan Crell",
+      "epithet": "the Harbormaster",
+      "type": "shopkeeper",
+      "site": "K01_WEIGHHOUSE",
+      "match": "home",
+      "bio": "Harbormaster of the Docks: the berth ledger, the tariff scales and the impound yard all answer to him, and he sleeps in the room above them. Four hired clerks carry his ink up and down the quay. His ledger has one erased line, and he will show the Wielder even that — while making him ask for it item by item."
+    },
+    {
+      "id": "vess",
+      "name": "Sergeant Vess",
+      "epithet": "of the Saltgate Watch",
+      "type": "militia_watch",
+      "site": "WATCHPOST_K21",
+      "match": "home",
+      "bio": "Sergeant of the ward's one watch-post at the head of Saltgate Rise, where he quarters with two spears and walks the Rise-head beat past the notice board. Relieved, not resentful: he dumped the whole bodies matter on the monastery with both hands and a salute. Climbs down to the goat pen to talk husbandry with Herdis when the ward is quiet, which is his favorite kind of ward."
+    },
+    {
+      "id": "sethra",
+      "name": "Mother Sethra",
+      "epithet": "of the Lantern Room",
+      "type": "shopkeeper",
+      "site": "K05_LANTERN_ROOM",
+      "match": "home",
+      "bio": "Landlady of the Lantern Room, the neutral-ground house where crews and cliques do not fight, by law older than the seawall. Four hired hands pour for her while she listens. She trades in everyone's secrets and gives the Wielder's to no one — and tells him so to his face."
+    },
+    {
+      "id": "maell",
+      "name": "Father Maell",
+      "epithet": "of the Mission",
+      "type": "priest_of_the_flame",
+      "site": "MISSION_BUNKS",
+      "match": "home",
+      "bio": "The ward's one priest of the Divine Light, bunked at the Mission with his three disciples and the destitute they feed. He wrote three unanswered letters to the monastery about something wrong on the water before the first body came up. Onna answers to him, and he has not let her out of his sight since the night she stopped sleeping."
+    },
+    {
+      "id": "onna",
+      "name": "Onna",
+      "epithet": "the night-soup disciple",
+      "type": "disciple_of_the_flame",
+      "site": "MISSION_BUNKS",
+      "match": "home",
+      "rank": 0,
+      "bio": "The disciple who keeps the Mission's night soup and the night door, bunked in the same room as Father Maell and the other two. She found the first body on her rounds and has not slept since. She knows one detail she does not know matters."
+    },
+    {
+      "id": "cobb",
+      "name": "Old Cobb",
+      "epithet": "the kennelmaster",
+      "type": "animal_keeper",
+      "site": "K25_KENNEL_ROW",
+      "match": "home",
+      "bio": "Rat-catcher of Kennel Row, with three rat-dogs caged along the yard and a cot among them. The city calls him when things gnaw; lately his dogs refuse the Drowned Hold's door, and he has been drinking about it. The descent's Virgil, if anyone thinks to ask."
+    },
+    {
+      "id": "jek",
+      "name": "Tarry Jek",
+      "epithet": "the strand mudlark",
+      "type": "wastrel",
+      "site": "STRAND_JEK",
+      "match": "home",
+      "bio": "A mudlark of the Beaching Strand, sleeping in the lee of the careening slipway and working the tide-line at low water. He sold something off a corpse to Dagny at the Wrackhouse, no questions either way. The ward's cheapest and best pair of eyes, if the Wielder thinks to hire what everyone else kicks."
+    },
+    {
+      "id": "dagny",
+      "name": "Dagny",
+      "epithet": "of the Wrackhouse",
+      "type": "shopkeeper",
+      "site": "K14_WRACKHOUSE",
+      "match": "home",
+      "bio": "Salvage broker of the Wrackhouse: buys what the sea spits up, no questions, with four hired hands at the counter and six haulers bunking rough among the flotsam. She bought Tarry Jek's find off a corpse and asked nothing. Her stock room holds clue-adjacent salvage, and her silence has exactly one Wielder-sized exception."
+    },
+    {
+      "id": "harl",
+      "name": "Harl",
+      "epithet": "master of the yard",
+      "type": "shopkeeper",
+      "site": "K06_HARLS_YARD",
+      "match": "home",
+      "bio": "Master shipwright of Harl's Yard — slipway, saw pit, timber pond, and more men in his pay than any site but the Ropewalk. He drinks with Harbormaster Crell and mentors a Netters' lad besides. He is repairing the hull of the ship that came in that night, and he found scratch-marks inside the hold that he has been paid not to mention."
+    },
+    {
+      "id": "brann",
+      "name": "Brann",
+      "epithet": "the chandler",
+      "type": "shopkeeper",
+      "site": "K08_BRANNS",
+      "match": "home",
+      "bio": "Chandler of Ropewynd: lamp oil, biscuit, cordage, and two sets of books. The gray ledger shows night-oil sold to nobody he will name — except to the Flame. His two counter-hands know better than to touch the second drawer."
+    },
+    {
+      "id": "venn",
+      "name": "Master Venn",
+      "epithet": "landlord of the Gilded Gull",
+      "type": "shopkeeper",
+      "site": "K03_GILDED_GULL",
+      "match": "home",
+      "bio": "Landlord of the Gilded Gull, the captains' tavern — charts on the walls, factors doing deals, six hired staff and the good wine. He exchanges careful civilities with Mother Sethra across the ward, each certain the other hears more. If a ship came in the night of the killings, it was toasted or cursed under his roof."
+    },
+    {
+      "id": "fenner",
+      "name": "Fenner",
+      "epithet": "the pawnbroker",
+      "type": "shopkeeper",
+      "site": "K15_FENNERS",
+      "match": "home",
+      "bio": "Keeper of the three brass balls and the wage-advance usury in the back room, with one clerk in the cage beside him. Half the serf wage-packets on the east quay pass through his book before they are ever earned. He knows who is desperate in this ward, which is a kind of ledger too."
+    },
+    {
+      "id": "merle",
+      "name": "Merle",
+      "epithet": "the waterman",
+      "type": "shopkeeper",
+      "site": "K20_MERLES",
+      "match": "home",
+      "bio": "Boathouse-keeper and waterman's hire at the pier root, with two hands to bail and caulk. The floor over the water has a section that lifts, and the night tide has seen it lifted. He rows out for honest coin by day and does not discuss the other hours."
+    },
+    {
+      "id": "squall",
+      "name": "Squall",
+      "epithet": "the bathhouse-keeper",
+      "type": "shopkeeper",
+      "site": "K18_BATHHOUSE",
+      "match": "home",
+      "bio": "Keeper of the copper boilers and the only warm floor in the ward, with four attendants and six stokers who bunk by the fires that cannot be left overnight. Everyone is unarmed and equal in his steam. He hears rank confess to no-rank daily and has learned to remember none of it aloud."
+    },
+    {
+      "id": "wake",
+      "name": "Captain Ivo Wake",
+      "epithet": "of the Kestrel",
+      "type": "serf",
+      "site": "SHIP_K30_KESTREL",
+      "match": "anchor",
+      "bio": "Master of the Kestrel, the smallest hull on the fishbone pier, with a crew of ten bunked aboard. He runs short coastal legs and pays his victualler's bill on the nail. He was at sea the night of the killings and can prove it, which interests him more than it should."
+    },
+    {
+      "id": "bregga",
+      "name": "Captain Wull Bregga",
+      "epithet": "of Bregga's Promise",
+      "type": "serf",
+      "site": "SHIP_K31_BREGGAS_PROMISE",
+      "match": "anchor",
+      "bio": "Master of Bregga's Promise, the mid hull on the fishbone, sixteen crew bunked below her rails. The Promise carries his mother's name on the bow and her debt in the hold. He watches the Deep Keel's berth the way poor captains watch rich ones."
+    },
+    {
+      "id": "vane",
+      "name": "Captain Sorrel Vane",
+      "epithet": "of the Deep Keel",
+      "type": "serf",
+      "site": "SHIP_K32_DEEPKEEL",
+      "match": "anchor",
+      "bio": "Master of the Deep Keel, the largest hull in the harbor, twenty-two crew and a manifest the Weighhouse reads twice. Deep-water trade made him careful and the tariff scales made him exact. What his hold carried on any given tide is a matter between him, Crell's ledger, and one erased line he has heard rumor of."
+    },
+    {
+      "id": "quayward",
+      "name": "Ceffa Quayward",
+      "epithet": "head of House Quayward",
+      "type": "shopkeeper",
+      "site": "C1_MANSION",
+      "match": "home",
+      "householdSurname": "Quayward",
+      "bio": "Head of House Quayward, the grand compound on the mid-slope, where she keeps the mansion with four of her kin and runs the courtyard market her farming tenants stock. She is grooming an heir at her elbow and lets the whole terrace know it. Oldest money in the ward, which on the Docks means three generations."
+    },
+    {
+      "id": "netter",
+      "name": "Widow Annis Netter",
+      "epithet": "head of the Netters'",
+      "type": "shopkeeper",
+      "site": "C2_MANSION",
+      "match": "home",
+      "householdSurname": "Netter",
+      "bio": "Head of the Netters' compound, the dockworker houses whose ground floors empty onto the berths every dawn. Widowed twice by the sea, she sells at the Dawnstalls herself rather than send a tenant. She knows every gang-boss on the quay by their first wage and their first lie."
+    },
+    {
+      "id": "saltgate",
+      "name": "Goodman Tarl Saltgate",
+      "epithet": "head of Saltgate Terrace",
+      "type": "shopkeeper",
+      "site": "C3_MANSION",
+      "match": "home",
+      "householdSurname": "Saltgate",
+      "bio": "Head of the cramped Saltgate Terrace compound, mansion-poor and tenant-rich, where four of his households farm the courtyard plot to keep the commons fed. He counts harvest baskets the way the banker counts Royals. The terrace roofs above him house people he prefers not to think about."
+    },
+    {
+      "id": "gilt",
+      "name": "Master Ondrey Gilt",
+      "epithet": "the King's banker",
+      "type": "shopkeeper",
+      "site": "K36_BANK_COUNTER",
+      "match": "home",
+      "bio": "Teller of the Royal Counting-House, sleeping behind the counter he keeps, with a Watch spear posted at each shoulder and the vault chest behind him. Every soul in the ward holds a line in his book, from Crell down to the roof-deck poor. He has never once been robbed, a fact he attributes to arithmetic."
+    },
+    {
+      "id": "finch",
+      "name": "Finch",
+      "epithet": "the quiet tenant",
+      "type": "wastrel",
+      "site": "LAIR_SKYRUNNER",
+      "match": "anchor",
+      "bio": "A quiet tenant of the Gullet's roof decks who keeps to himself and pays no one any mind, sharing a hut against the old wall with one other lodger. He is out at odd hours, which on the roofs describes everyone. The Watch has never had a reason to write his name down — no one has."
+    },
+    {
+      "id": "redda",
+      "name": "Redda",
+      "epithet": "of the Bilge",
+      "type": "shopkeeper",
+      "site": "K04_BILGE",
+      "match": "home",
+      "bio": "Keeper of the Bilge, the sailors' dive on the Tarwalk — hammocks upstairs, knives checked at the door, mostly. Four hands haul her barrels and break up what the door policy misses. Pay-night runs through her taproom like a tide, and she reads it like one."
+    },
+    {
+      "id": "hemp",
+      "name": "Foreman Cathal Hemp",
+      "epithet": "of the Ropewalk",
+      "type": "shopkeeper",
+      "site": "K07_ROPEWALK",
+      "match": "home",
+      "bio": "Foreman of the Ropewalk, the longest shed in the district, where the biggest labor gang in the ward lays cable — hired hands walking in each shift and thirty-odd more bunked down the shed itself. Dry hemp is his fortune and his nightmare in the same breath. Nothing moves on the west quay that a rope-gang hand did not see."
+    },
+    {
+      "id": "ulwer",
+      "name": "Pitch-Master Ulwer",
+      "epithet": "of Pitchfield",
+      "type": "shopkeeper",
+      "site": "K09_PITCHFIELD",
+      "match": "home",
+      "bio": "Master of the tar and pitch yard, cauldrons and barrels and a permanent reek, kept deliberately lean-staffed because every extra pair of boots is an extra spark. He is the one man in the ward everyone agrees should fear fire, and he obliges. Ships cannot sail without him, which he mentions."
+    },
+    {
+      "id": "salla",
+      "name": "Salla",
+      "epithet": "of Salt Row",
+      "type": "shopkeeper",
+      "site": "K11_SALT_ROW",
+      "match": "home",
+      "bio": "Mistress of the gutting sheds and smokehouses of Salt Row, six knife-hands at the tubs and eight seasonal curers bunked in the lofts for the dawn starts. The offal gutter to the sea is hers and so are the gulls that follow it. Herring pays her in silver and smell."
+    },
+    {
+      "id": "grieve",
+      "name": "Bondsman Grieve",
+      "epithet": "of the King's Bond",
+      "type": "shopkeeper",
+      "site": "K12_KINGS_BOND",
+      "match": "home",
+      "bio": "Keeper of the bonded warehouse, sealed pending tariff under royal padlocks — even the Harbormaster knocks. A double handful of porters answer to him by day and a bunked night-watch holds the sealed floor after dark. What is in the Bond is exactly what the ledger says, which is why the erased line troubles him more than he lets on."
+    },
+    {
+      "id": "vetch",
+      "name": "Keeper Vetch",
+      "epithet": "of the Rows",
+      "type": "shopkeeper",
+      "site": "K19_ROWS",
+      "match": "home",
+      "bio": "Landlord of the Rows flophouse, hammock-space by the night, eighteen waterfront lodgers slung under his beams at any dusk. He remembers every face that has ever paid him and the exact night any face stopped coming back. He does not volunteer this; he waits to be asked properly."
+    },
+    {
+      "id": "withy",
+      "name": "Grandmother Withy",
+      "epithet": "of the Arcade",
+      "type": "shopkeeper",
+      "site": "K22_NETMENDERS",
+      "match": "home",
+      "bio": "Eldest needle of the Netmenders' Arcade, under the leaky colonnade with four menders working her twine. The Arcade is the district's collective memory, and she is its index. They saw the ship come in; they always see everything; she decides what seeing is worth."
+    },
+    {
+      "id": "stave",
+      "name": "Cooper Aldous Stave",
+      "epithet": "the barrel-wright",
+      "type": "shopkeeper",
+      "site": "K23_COOPERS",
+      "match": "home",
+      "bio": "Cooper and blockmaker in the sawdust-deep shed off Ropewynd, four journeymen at the benches and six apprentices bunked in the loft, the trade's old arrangement. Every barrel in the smuggler cellars was somebody's honest work once, likely his. He recognizes his own hoop-marks and keeps that talent quiet."
+    },
+    {
+      "id": "luff",
+      "name": "Sailmaker Luff",
+      "epithet": "of the Loft",
+      "type": "shopkeeper",
+      "site": "K26_SAILMAKER",
+      "match": "home",
+      "bio": "Master of the Sailmaker's Loft by the west garden court, canvas laid floor-to-wall on slack days, four stitchers in her pay. Sails come to her torn by weather and sometimes by things she does not name over the needle. She can date any canvas in the harbor by its patch-work."
+    },
+    {
+      "id": "crumb",
+      "name": "Baker Hobb Crumb",
+      "epithet": "of the Hardtack Oven",
+      "type": "shopkeeper",
+      "site": "K27_HARDTACK",
+      "match": "home",
+      "bio": "Ship's-biscuit baker of the Hardtack Oven, one bake-oven, one counter, two floury hands, and the only daily fire on Ropewynd anyone trusts. Every outbound hull provisions at his hatch, so he knows sailing dates better than the Weighhouse posts them. Flour dust settles on his ledgers and on everything he hears."
+    },
+    {
+      "id": "neddry",
+      "name": "Slops Neddry",
+      "epithet": "of the Slop-Chest",
+      "type": "shopkeeper",
+      "site": "K28_SLOPCHEST",
+      "match": "home",
+      "bio": "Keeper of the Slop-Chest, sailors' clothing and dry-goods, a counter and a few racks and nothing more — the plainest shop in the ward, sited so crews outfit near where they bunk. Two hands fold and refold. He can tell a man's ship by his oilskin and a liar by his boots."
+    },
+    {
+      "id": "dray",
+      "name": "Foreman Dray",
+      "epithet": "of the Long Store",
+      "type": "shopkeeper",
+      "site": "K29_LONGSTORE",
+      "match": "anchor",
+      "bio": "Foreman of the Long Store, the open-floor dry-goods warehouse with a desk nook and no bed — he lodges across the ward and walks in with his eleven hands each dawn. No night-watchman is posted, a fact he reported upward twice and then stopped reporting. What the racking held last month is not always what the chalk says."
+    },
+    {
+      "id": "cull",
+      "name": "Watchman Cull",
+      "epithet": "the impound keeper",
+      "type": "animal_keeper",
+      "site": "K02_IMPOUND",
+      "match": "home",
+      "bio": "The bored watchman of the Impound Yard, seized cargo behind a spike fence, with one yard dog he pretends is the King's. He feeds the dog off his own plate and logs seizures nobody ever reclaims. The dog notices things people don't, and Cull has learned to watch the dog."
+    },
+    {
+      "id": "herdis",
+      "name": "Herdis the Goatwife",
+      "epithet": "of the pen",
+      "type": "animal_keeper",
+      "site": "PEN_GOATS",
+      "match": "home",
+      "bio": "Keeper of the goat pen east of the compounds on the mid-slope, four goats and a lean-to she calls a house. Sergeant Vess climbs down from the Rise to talk goats with her when the ward is quiet. Milk, kids and gossip move through her pen in roughly equal measure."
+    },
+    {
+      "id": "weyland",
+      "name": "Carter Weyland",
+      "epithet": "the drayman",
+      "type": "animal_keeper",
+      "site": "CARTER_STAND",
+      "match": "home",
+      "bio": "The ward's carter, working the Tarwalk day-loop from his stand by the muster quay with three dray horses hitched outside the Gull, the Bilge and the Rows. Everything too heavy for a barrow and too honest for a night-boat rides his cart. He knows the weight of every crate he has ever hauled, including the ones he was paid not to weigh."
+    },
+    {
+      "id": "tolley",
+      "name": "Mad Tolley",
+      "epithet": "of the Drowned Hold",
+      "type": "wastrel",
+      "site": "K13_DROWNED_HOLD",
+      "match": "home",
+      "bio": "Squatter of the condemned Drowned Hold's dry corner, sharing the sag-floored dark with one other soul the ward has forgotten. He has seen the lamplight under the inner doors and stopped telling people, because of the way they looked at him. Only Gullet Mag will still sit with him, and she believes him."
+    },
+    {
+      "id": "mag",
+      "name": "Gullet Mag",
+      "epithet": "the ruin's gray voice",
+      "type": "wastrel",
+      "site": "C4_RUIN",
+      "match": "home",
+      "bio": "Eldest of the three squatters in the Gullet compound's roofless ruin, the decayed quarter's unofficial memory and judge. Rent is not paid in the Gullet, but respects are, and they are paid to Mag. She sits with Mad Tolley when the lamplight talk gets bad, and she has started believing him."
+    },
+    {
+      "id": "brakk",
+      "name": "Sergeant Brakk",
+      "epithet": "of the guardhouse",
+      "type": "militia_watch",
+      "site": "K34_GUARDHOUSE",
+      "match": "home",
+      "bio": "Sergeant of the guardhouse at the quay end of Saltgate Rise, the foot garrison that pairs with Vess's post at the head. Nine steel cells stand behind his watch-room, and lately they see more traffic than his predecessors ever logged. He runs escorts by the book because the book is all that separates his cells from the Gullet."
+    }
+  ]
+}
