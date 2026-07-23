@@ -36,10 +36,14 @@ import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.PlayModeState;
+import com.trojia.client.inspect.SkillUpTracker;
+import com.trojia.client.inspect.ToastQueue;
 import com.trojia.client.render.ActorRenderer;
 import com.trojia.client.render.AmbientLight;
 import com.trojia.client.render.InspectorRenderer;
 import com.trojia.client.render.LampGlowMap;
+import com.trojia.client.render.NameplateRenderer;
+import com.trojia.client.render.ToastRenderer;
 import com.trojia.client.render.WorldRenderer;
 import com.trojia.client.scenario.CompoundBlockPopulation;
 import com.trojia.client.scenario.DocksPopulation;
@@ -135,6 +139,10 @@ public final class ObserverApp extends ApplicationAdapter {
     private EventLog eventLog;
     private EventLogTracker eventLogTracker;
     private InspectorRenderer inspectorRenderer;
+    private NameplateRenderer nameplateRenderer;
+    private ToastQueue toasts;
+    private SkillUpTracker skillUpTracker;
+    private ToastRenderer toastRenderer;
 
     public ObserverApp(int smokeFrames) {
         this(Fixture.TAVERN, smokeFrames);
@@ -297,9 +305,19 @@ public final class ObserverApp extends ApplicationAdapter {
             this.eventLog = new EventLog(30);
             this.eventLogTracker = new EventLogTracker(population.registry(), population.homes(),
                     eventLog);
-            // The per-tick seam (not per-frame): fires once per executed tick, so the feed
-            // never misses a FAST-skipped tick nor double-logs a re-rendered one.
-            this.driver.setAfterTick(eventLogTracker::afterTick);
+            // Skill-up narration (S1 item 3): the played actor's level-ups toast
+            // bottom-center; everyone else's land in the event feed as people. Reads the
+            // Sim team's SkillLevelLog seam — zero sim writes.
+            this.toasts = new ToastQueue();
+            this.skillUpTracker = new SkillUpTracker(population.system().skillTracks(),
+                    population.registry(), population.identity(), eventLog, toasts,
+                    () -> playMode.playedActorId());
+            // The per-tick seam (not per-frame): fires once per executed tick, so neither
+            // tracker misses a FAST-skipped tick nor double-logs a re-rendered one.
+            this.driver.setAfterTick(tick -> {
+                eventLogTracker.afterTick(tick);
+                skillUpTracker.afterTick(tick);
+            });
             // FaceGen portraits (unified art spec §4) draw their parts from the SAME
             // unified index + sheet as the actor sprites (face-part pools are just
             // face_* tag queries over it). Archetypes validate at load, and
@@ -312,7 +330,12 @@ public final class ObserverApp extends ApplicationAdapter {
                     spriteSheet, loaded.worldSeed());
             this.inspectorRenderer = new InspectorRenderer(population.registry(), population.homes(),
                     population.relationships(), population.jobs(), population.items(), eventLog,
-                    inspectorFaces);
+                    inspectorFaces, population.identity(), population.system().skillTracks());
+            // Hover nameplates (S1 item 2): PRESENTED identity always; hold N to plate
+            // every on-screen actor.
+            this.nameplateRenderer = new NameplateRenderer(population.registry(),
+                    population.jobs(), population.identity());
+            this.toastRenderer = new ToastRenderer();
             if (debugSelectActorId >= 0 && debugSelectActorId < population.registry().size()) {
                 inspector.select(debugSelectActorId);
                 inspector.toggleFollow(); // exercise the follow path in the headless proof
@@ -425,6 +448,16 @@ public final class ObserverApp extends ApplicationAdapter {
                 HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX - lineHeight, timeTokens);
         if (inspectorRenderer != null) {
             inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());
+        }
+        if (nameplateRenderer != null) {
+            // Hover nameplate at the live cursor; hold N to plate every on-screen actor.
+            nameplateRenderer.draw(batch, font, icons, camera, zLevel.z(),
+                    Gdx.input.getX(), Gdx.input.getY(), Gdx.input.isKeyPressed(Input.Keys.N));
+        }
+        if (toastRenderer != null) {
+            // Toasts age by rendered wall-clock seconds (readable at any sim speed).
+            toasts.update(deltaSeconds);
+            toastRenderer.draw(batch, font, icons, camera, toasts);
         }
         batch.end();
 

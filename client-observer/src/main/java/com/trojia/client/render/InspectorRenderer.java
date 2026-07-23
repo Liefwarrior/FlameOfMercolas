@@ -4,33 +4,38 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.utils.Align;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.face.InspectorFaces;
 import com.trojia.client.hud.HudPanel;
 import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.hud.icons.IconTextLine;
+import com.trojia.client.inspect.CharacterSheetText;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.InspectorState;
-import com.trojia.client.inspect.InspectorText;
+import com.trojia.client.scenario.IdentityRegistry;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.Need;
 import com.trojia.sim.actor.RelationshipRegistry;
+import com.trojia.sim.actor.SkillTrackRegistry;
 import com.trojia.sim.actor.job.JobRegistry;
 import com.trojia.sim.world.PackedPos;
 
 import java.util.List;
 
 /**
- * Draws the observer's inspector overlays over the world (M-inspector Behaviors 2 &amp; 3):
- * the selection panel (top-right), the population event feed (bottom-left), and a highlight
- * frame around the selected actor's tile. Text content comes from the GL-free
- * {@link InspectorText}/{@link EventLog}; this class only lays the strings out and draws
- * them (the {@code HudText} split, applied to the inspector).
+ * Draws the observer's inspector overlays over the world: the CHARACTER SHEET (top-right —
+ * Sprint 1 "Click a person, meet a person": name + epithet header over the FaceGen
+ * portrait, the bio line, then IDENTITY / NEEDS / SKILLS / TIES as separate DF panel
+ * blocks), the population event feed (bottom-left), and a highlight frame around the
+ * selected actor's tile. Text content comes from the GL-free
+ * {@link CharacterSheetText}/{@link EventLog}; this class only lays the strings out and
+ * draws them (the {@code HudText} split, applied to the sheet).
  *
- * <p><b>No staleness.</b> Panel content is regenerated from live registry/side-table reads
+ * <p><b>No staleness.</b> Sheet content is regenerated from live registry/side-table reads
  * every frame from the current selected {@code ActorId}; only the event feed retains
  * history (its whole purpose). Drawn above tiles/actors, below nothing — it is the topmost
  * UI. The caller owns {@code batch}'s begin/end and the y-up, bottom-left viewport
@@ -44,6 +49,11 @@ public final class InspectorRenderer {
     private static final Color PANEL_COLOR = new Color(0.86f, 0.90f, 0.98f, 1f);
     private static final Color LOG_COLOR = new Color(0.72f, 0.80f, 0.72f, 1f);
     private static final Color HIGHLIGHT_COLOR = new Color(1f, 0.86f, 0.20f, 1f);
+
+    /** Vertical breathing room between two of the sheet's DF panel blocks, px. */
+    private static final float SECTION_GAP_PX = 6f;
+    /** Gap between the wrapped bio's last line and the header block's bottom edge, px. */
+    private static final float BIO_GAP_PX = 4f;
 
     // Zelda-II-style segmented need bars (2026-07-15 stat-box redesign, design doc §3): 10
     // discrete square segments per need, each worth a fixed 1000 of the 0..10000 range —
@@ -79,6 +89,11 @@ public final class InspectorRenderer {
     private final ItemsLiteRegistry items;
     private final EventLog eventLog;
     private final InspectorFaces faces;
+    /** The bake-side name table (S1 NameForge); {@link IdentityRegistry#EMPTY} degrades the
+     *  sheet to the pre-names "#id" style, never fails. */
+    private final IdentityRegistry identity;
+    /** The Sim team's per-actor skill table; {@code UNWIRED} renders "(unschooled)". */
+    private final SkillTrackRegistry skillTracks;
     private final GlyphLayout layout = new GlyphLayout();
 
     /**
@@ -87,7 +102,8 @@ public final class InspectorRenderer {
      */
     public InspectorRenderer(ActorRegistry registry, HomeRegistry homes,
             RelationshipRegistry relationships, JobRegistry jobs, ItemsLiteRegistry items,
-            EventLog eventLog, InspectorFaces faces) {
+            EventLog eventLog, InspectorFaces faces, IdentityRegistry identity,
+            SkillTrackRegistry skillTracks) {
         this.registry = registry;
         this.homes = homes;
         this.relationships = relationships;
@@ -95,107 +111,174 @@ public final class InspectorRenderer {
         this.items = items;
         this.eventLog = eventLog;
         this.faces = faces;
+        this.identity = identity;
+        this.skillTracks = skillTracks;
     }
 
     /**
-     * Draws the selection highlight, side panel and event feed for the current
+     * Draws the selection highlight, character sheet and event feed for the current
      * {@code state} and viewed z-level {@code z}. {@code font} is left at scale 1 / white
      * afterward so the caller's other font uses are unaffected.
      */
     public void draw(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
             InspectorState state, int z) {
         drawSelectionHighlight(batch, font, camera, state, z);
-        drawPanel(batch, font, icons, camera, state);
+        drawSheet(batch, font, icons, camera, state);
         drawEventLog(batch, font, icons, camera);
         font.getData().setScale(1f);
         font.setColor(Color.WHITE);
     }
 
-    private void drawPanel(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
-            InspectorState state) {
+    private void drawSheet(SpriteBatch batch, BitmapFont font, IconAtlas icons,
+            MapCamera camera, InspectorState state) {
         font.getData().setScale(1f);
-        font.setColor(PANEL_COLOR);
         float lineHeight = font.getLineHeight();
         float x = camera.viewportWidthPx() - PANEL_WIDTH;
         float topY = camera.viewportHeightPx() - MARGIN;
 
-        // Tally content height before drawing anything, so the DF-style black backing block
-        // can be sized to the actual content (follow badge + face portrait shift + text lines,
-        // or just the no-selection hint) rather than a fixed guess.
         boolean showFollowBadge = state.followActive();
-        boolean hasSelection = state.hasSelection();
-        // Play mode (PLAY-MODE-SPEC.md §5.3): resolve the portrait/type from the PRESENTED
-        // actor when disguised, so the panel visibly becomes the impersonated actor's face —
-        // the same Bledhreft/Senator-Harris canon example, made observable end to end.
-        Actor selectedActor = hasSelection ? registry.get(state.selectedActorId()) : null;
-        Actor presentedActor = hasSelection && selectedActor.identity().isDisguised()
-                ? registry.get(selectedActor.identity().presentedId())
-                : selectedActor;
-        String typeKey = hasSelection ? presentedActor.typeId().key() : null;
-        boolean showFace = hasSelection && faces != null && faces.hasFaceFor(typeKey);
-        List<String> lines = hasSelection
-                ? InspectorText.describe(state.selectedActorId(), registry, homes, relationships,
-                        jobs, items)
-                : null;
-
-        float contentHeight = 0f;
-        if (showFollowBadge) {
-            contentHeight += lineHeight;
-        }
-        if (!hasSelection) {
-            contentHeight += lineHeight; // the selection-hint line
-        } else {
-            if (showFace) {
-                contentHeight += InspectorFaces.PANEL_SHIFT_PX;
+        if (!state.hasSelection()) {
+            float contentHeight = lineHeight + (showFollowBadge ? lineHeight : 0f);
+            drawBlockBackground(batch, icons, x, topY, contentHeight);
+            float y = topY;
+            if (showFollowBadge) {
+                IconTextLine.draw(batch, font, icons, x, y,
+                        CharacterSheetText.followBadgeTokens());
+                y -= lineHeight;
             }
-            contentHeight += needsGridHeight(font);
-            contentHeight += lines.size() * lineHeight;
-        }
-
-        float panelWidth = PANEL_WIDTH + 2 * HudPanel.PADDING;
-        float panelHeight = contentHeight + 2 * HudPanel.PADDING;
-        float panelX = x - HudPanel.PADDING;
-        float panelBottomY = topY - contentHeight - HudPanel.PADDING;
-        HudPanel.draw(batch, icons.whitePixel(), panelX, panelBottomY, panelWidth, panelHeight);
-
-        float y = topY;
-        if (showFollowBadge) {
-            IconTextLine.draw(batch, font, icons, x, y, InspectorText.followBadgeTokens());
-            y -= lineHeight;
-        }
-        if (!hasSelection) {
-            IconTextLine.draw(batch, font, icons, x, y, InspectorText.selectionHintTokens());
+            IconTextLine.draw(batch, font, icons, x, y,
+                    CharacterSheetText.selectionHintTokens());
             return;
         }
-        // FaceGen portrait at the top of the panel (unified art spec §4.8): 48x48 at x4,
-        // ringed with a gold Zelda-II-style border frame, centered above the name line; the
-        // text block shifts down under it. Beast types have no archetype mapping and keep
-        // the text-only panel.
+
+        int selectedId = state.selectedActorId();
+        Actor selectedActor = registry.get(selectedId);
+        // Play mode (PLAY-MODE-SPEC.md §5.3): the header band — portrait, name, bio — is
+        // the PRESENTED identity, so the sheet visibly becomes the impersonated soul (the
+        // same Bledhreft/Senator-Harris canon example, made observable end to end). The
+        // IDENTITY section below stays the omniscient truth.
+        Actor presentedActor = selectedActor.identity().isDisguised()
+                ? registry.get(selectedActor.identity().presentedId())
+                : selectedActor;
+        String typeKey = presentedActor.typeId().key();
+        boolean showFace = faces != null && faces.hasFaceFor(typeKey);
+
+        String name = CharacterSheetText.nameLine(selectedId, registry, identity);
+        String bio = CharacterSheetText.bioLine(selectedId, registry, identity);
+        CharacterSheetText.Section identitySection =
+                CharacterSheetText.identitySection(selectedId, registry, homes, jobs, items);
+        CharacterSheetText.Section skillsSection =
+                CharacterSheetText.skillsSection(selectedId, skillTracks);
+        CharacterSheetText.Section tiesSection = CharacterSheetText.tiesSection(selectedId,
+                registry, relationships, jobs, identity);
+
+        // ---- header block: [follow badge] + name + portrait + wrapped bio --------------
+        float bioHeight = 0f;
+        if (!bio.isBlank()) {
+            layout.setText(font, bio, PANEL_COLOR, PANEL_WIDTH, Align.left, true);
+            bioHeight = layout.height + BIO_GAP_PX;
+        }
+        float headerContent = (showFollowBadge ? lineHeight : 0f) + lineHeight
+                + (showFace ? InspectorFaces.PANEL_SHIFT_PX : 0f) + bioHeight;
+        drawBlockBackground(batch, icons, x, topY, headerContent);
+        float y = topY;
+        if (showFollowBadge) {
+            IconTextLine.draw(batch, font, icons, x, y, CharacterSheetText.followBadgeTokens());
+            y -= lineHeight;
+        }
+        font.setColor(HIGHLIGHT_COLOR);
+        font.draw(batch, name, x, y);
+        y -= lineHeight;
         if (showFace) {
-            float centerX = x + PANEL_WIDTH / 2f;
-            float borderSize = InspectorFaces.FACE_SIZE_PX + 2 * InspectorFaces.PORTRAIT_BORDER_PX;
-            float borderX = centerX - InspectorFaces.FACE_SIZE_PX / 2f - InspectorFaces.PORTRAIT_BORDER_PX;
-            float borderY = y - InspectorFaces.FACE_SIZE_PX - InspectorFaces.PORTRAIT_BORDER_PX;
-            HudPanel.draw(batch, icons.whitePixel(), borderX, borderY, borderSize, borderSize,
-                    HIGHLIGHT_COLOR);
-            // Dark interior inset by the border width, so the gold reads as a ring around the
-            // portrait rather than a solid backdrop the transparent face parts sit on top of.
-            float interiorX = centerX - InspectorFaces.FACE_SIZE_PX / 2f;
-            float interiorY = y - InspectorFaces.FACE_SIZE_PX;
-            HudPanel.draw(batch, icons.whitePixel(), interiorX, interiorY,
-                    InspectorFaces.FACE_SIZE_PX, InspectorFaces.FACE_SIZE_PX, PORTRAIT_INTERIOR_COLOR);
-            faces.draw(batch, presentedActor.id(), typeKey, centerX, y);
+            drawPortrait(batch, icons, presentedActor, typeKey, x, y);
             y -= InspectorFaces.PANEL_SHIFT_PX;
         }
-        // Zelda-II-style segmented need bars (design doc §3), rendered from the true selected
-        // actor's live needs — same actor the rest of the text lines below describe.
-        drawNeedsBarGrid(batch, font, icons, x, y, selectedActor);
-        y -= needsGridHeight(font);
+        if (!bio.isBlank()) {
+            font.setColor(PANEL_COLOR);
+            font.draw(batch, bio, x, y, PANEL_WIDTH, Align.left, true);
+            y -= bioHeight;
+        }
+        float nextTop = nextBlockTop(topY, headerContent);
+
+        // ---- the four sheet sections, each its own DF block -----------------------------
+        nextTop = drawSection(batch, font, icons, x, nextTop, identitySection);
+        nextTop = drawNeedsSection(batch, font, icons, x, nextTop, selectedActor);
+        nextTop = drawSection(batch, font, icons, x, nextTop, skillsSection);
+        drawSection(batch, font, icons, x, nextTop, tiesSection);
+    }
+
+    /**
+     * FaceGen portrait (unified art spec §4.8): 48x48 at x4, ringed with a gold
+     * Zelda-II-style border frame, centered in the panel column; {@code contentTopY} is the
+     * y the portrait's top edge hangs from. Beast types have no archetype mapping and the
+     * caller skips this entirely (text-only sheet).
+     */
+    private void drawPortrait(SpriteBatch batch, IconAtlas icons, Actor presentedActor,
+            String typeKey, float x, float contentTopY) {
+        float centerX = x + PANEL_WIDTH / 2f;
+        float borderSize = InspectorFaces.FACE_SIZE_PX + 2 * InspectorFaces.PORTRAIT_BORDER_PX;
+        float borderX = centerX - InspectorFaces.FACE_SIZE_PX / 2f
+                - InspectorFaces.PORTRAIT_BORDER_PX;
+        float borderY = contentTopY - InspectorFaces.FACE_SIZE_PX
+                - InspectorFaces.PORTRAIT_BORDER_PX;
+        HudPanel.draw(batch, icons.whitePixel(), borderX, borderY, borderSize, borderSize,
+                HIGHLIGHT_COLOR);
+        // Dark interior inset by the border width, so the gold reads as a ring around the
+        // portrait rather than a solid backdrop the transparent face parts sit on top of.
+        float interiorX = centerX - InspectorFaces.FACE_SIZE_PX / 2f;
+        float interiorY = contentTopY - InspectorFaces.FACE_SIZE_PX;
+        HudPanel.draw(batch, icons.whitePixel(), interiorX, interiorY,
+                InspectorFaces.FACE_SIZE_PX, InspectorFaces.FACE_SIZE_PX,
+                PORTRAIT_INTERIOR_COLOR);
+        faces.draw(batch, presentedActor.id(), typeKey, centerX, contentTopY);
+    }
+
+    /**
+     * One titled sheet section as its own DF block: gold title line, then the section's
+     * lines. Returns the content-top y for the block below it.
+     */
+    private float drawSection(SpriteBatch batch, BitmapFont font, IconAtlas icons, float x,
+            float contentTopY, CharacterSheetText.Section section) {
+        float lineHeight = font.getLineHeight();
+        float contentHeight = (1 + section.lines().size()) * lineHeight;
+        drawBlockBackground(batch, icons, x, contentTopY, contentHeight);
+        float y = contentTopY;
+        font.setColor(HIGHLIGHT_COLOR);
+        font.draw(batch, section.title(), x, y);
+        y -= lineHeight;
         font.setColor(PANEL_COLOR);
-        for (String line : lines) {
+        for (String line : section.lines()) {
             font.draw(batch, line, x, y);
             y -= lineHeight;
         }
+        return nextBlockTop(contentTopY, contentHeight);
+    }
+
+    /** The NEEDS section block: gold title, then the Zelda-II segmented bar grid. */
+    private float drawNeedsSection(SpriteBatch batch, BitmapFont font, IconAtlas icons,
+            float x, float contentTopY, Actor selectedActor) {
+        float lineHeight = font.getLineHeight();
+        float contentHeight = lineHeight + needsGridHeight(font);
+        drawBlockBackground(batch, icons, x, contentTopY, contentHeight);
+        font.setColor(HIGHLIGHT_COLOR);
+        font.draw(batch, "NEEDS", x, contentTopY);
+        // Bars read from the true selected actor's live needs — same actor the IDENTITY
+        // section describes (a disguise changes the header, never the body's needs).
+        drawNeedsBarGrid(batch, font, icons, x, contentTopY - lineHeight, selectedActor);
+        return nextBlockTop(contentTopY, contentHeight);
+    }
+
+    /** The near-black DF backing block for one sheet section's content. */
+    private void drawBlockBackground(SpriteBatch batch, IconAtlas icons, float x,
+            float contentTopY, float contentHeight) {
+        HudPanel.draw(batch, icons.whitePixel(), x - HudPanel.PADDING,
+                contentTopY - contentHeight - HudPanel.PADDING,
+                PANEL_WIDTH + 2 * HudPanel.PADDING, contentHeight + 2 * HudPanel.PADDING);
+    }
+
+    /** Where the next block's CONTENT starts, below a block of {@code contentHeight}. */
+    private static float nextBlockTop(float contentTopY, float contentHeight) {
+        return contentTopY - contentHeight - 2 * HudPanel.PADDING - SECTION_GAP_PX;
     }
 
     /** Row height for one need's bar: tall enough for both the 14px segments and the font. */
@@ -203,7 +286,7 @@ public final class InspectorRenderer {
         return Math.max(font.getLineHeight(), NEED_SEGMENT_SIZE_PX) + NEED_ROW_GAP_PX;
     }
 
-    /** Total height of the five-row need bar grid, for the panel's content-height tally. */
+    /** Total height of the five-row need bar grid, for the section's content-height tally. */
     private static float needsGridHeight(BitmapFont font) {
         return Need.COUNT * needRowHeight(font);
     }
@@ -226,7 +309,7 @@ public final class InspectorRenderer {
             float segBottomY = y - NEED_SEGMENT_SIZE_PX;
 
             font.setColor(PANEL_COLOR);
-            font.draw(batch, InspectorText.NEED_LABELS[i], x, y);
+            font.draw(batch, CharacterSheetText.NEED_LABELS[i], x, y);
 
             for (int s = 0; s < NEED_SEGMENTS; s++) {
                 float segX = barLeft + s * (NEED_SEGMENT_SIZE_PX + NEED_SEGMENT_GAP_PX);
@@ -271,6 +354,7 @@ public final class InspectorRenderer {
         float panelBottomY = MARGIN - HudPanel.PADDING;
         HudPanel.draw(batch, icons.whitePixel(), panelX, panelBottomY, panelWidth, panelHeight);
 
+        font.setColor(LOG_COLOR);
         font.draw(batch, header, MARGIN, topY);
         float y = topY - lineHeight;
         for (EventLog.Entry entry : entries) {
