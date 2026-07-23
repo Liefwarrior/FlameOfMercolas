@@ -48,6 +48,25 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
         // that trail stamp survives the tick — while a no-attempt (empty or invalid
         // intent) leaves the ordinary PLAYER_CONTROLLED reading.
         self.setLastReasonCode(ReasonCode.PLAYER_CONTROLLED);
+        // Talk intent (Sprint 3 quests — the existing talk verb made sim-visible) resolves
+        // FIRST: the fact of talking enters the quest log this tick so the QuestEngine's
+        // TALK triggers can match it after tickAll; the presentation greet stays observer-
+        // side and sim-silent. Consumed unconditionally (the §5.2 stale-intent rule);
+        // reach is validated here (same z, chebyshev <= PICKPOCKET_REACH — the talk verb
+        // and the lift share one adjacency shape).
+        int talkId = self.playerTalkTargetId();
+        self.setPlayerTalkTarget(Actor.NONE);
+        if (talkId != Actor.NONE && talkId >= 0 && talkId < ctx.registry().size()
+                && talkId != self.id()) {
+            Actor listener = ctx.registry().get(talkId);
+            if (com.trojia.sim.world.PackedPos.z(listener.cell())
+                    == com.trojia.sim.world.PackedPos.z(self.cell())
+                    && ActorGeometry.chebyshev(self.cell(), listener.cell())
+                            <= TheftMechanics.PICKPOCKET_REACH) {
+                ctx.questLog().noteTalk(self.id(), talkId, ctx.tick());
+                self.setLastReasonCode(ReasonCode.TALKED);
+            }
+        }
         // Pickpocket intent (Sprint 2's play-mode verb) resolves before movement — a lift
         // is a deliberate act, not a side effect of a movement key. Consumed
         // unconditionally (the §5.2 stale-intent rule); TheftMechanics validates

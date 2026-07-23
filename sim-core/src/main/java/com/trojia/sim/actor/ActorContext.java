@@ -285,4 +285,16 @@ public interface ActorContext {
      */
     default void recordTheftCorrection(boolean skyrunnerEscalated) {
     }
+
+    /**
+     * The persisted quest state (Sprint 3 "The Vanished Clerk"): {@code PlayerControlPolicy}
+     * notes validated play-mode talks into it, and the {@code QuestEngine} evaluates
+     * advancement over it after every {@code tickAll}. {@link
+     * com.trojia.sim.actor.quest.QuestLog#UNWIRED} where no quest universe is wired
+     * (world-less bootstrap, test doubles, pre-quest constructors) — talks note nothing and
+     * the engine idles.
+     */
+    default com.trojia.sim.actor.quest.QuestLog questLog() {
+        return com.trojia.sim.actor.quest.QuestLog.UNWIRED;
+    }
 }
