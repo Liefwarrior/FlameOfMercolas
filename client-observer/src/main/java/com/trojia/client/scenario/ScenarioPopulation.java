@@ -51,6 +51,28 @@ public interface ScenarioPopulation {
         return system().questRegistry();
     }
 
+    /**
+     * The baked cross-z connector table (S4 "the climb") — the observer's climb keys read
+     * it to resolve which stair/ramp destination the played actor's Up/Down press arms
+     * ({@code Actor.setPlayerMoveTarget} with a cross-z cell; the sim's own
+     * {@code tryStepVertical} guard re-validates the pair). Immutable baked config, no sim
+     * state — reading it can never move the tick hash. Default is {@code EMPTY} (single-z
+     * fixtures: the climb keys toast their refusal).
+     */
+    default com.trojia.sim.actor.ZLinkTable zLinks() {
+        return com.trojia.sim.actor.ZLinkTable.EMPTY;
+    }
+
+    /**
+     * The soul's speakable ask-topics (S4 "the rumor verb"), or {@code null} for a forged
+     * non-notable — the read the observer's talk-topics surface makes before calling
+     * {@code BarkSelector.selectAsk}. Default: no topics anywhere (fixtures without a
+     * notables bake; the talk panel simply offers no ask rows).
+     */
+    default AskTopicsBake.Topics askTopicsOf(int actorId) {
+        return null;
+    }
+
     /** Adapts the compound-block population (kept untouched) to this surface. */
     static ScenarioPopulation of(CompoundBlockPopulation population) {
         return new ScenarioPopulation() {

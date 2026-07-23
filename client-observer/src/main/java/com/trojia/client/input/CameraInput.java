@@ -32,12 +32,24 @@ public final class CameraInput {
     }
 
     /**
-     * Reads the current keyboard state and applies one frame's worth of navigation.
-     * {@code panEnabled} gates only the {@code WASD}/arrow pan (zoom and z-scrub are
-     * unaffected) — {@code false} while Play mode owns {@code WASD} (PLAY-MODE-SPEC.md §5.1).
+     * The pre-Sprint-4 overload (pan gate only): z-scrub always on. Kept so pre-climb call
+     * sites and tests compile unchanged; delegates below.
      */
     public static void poll(MapCamera camera, ZLevelCursor zLevel, float deltaSeconds,
             boolean panEnabled) {
+        poll(camera, zLevel, deltaSeconds, panEnabled, true);
+    }
+
+    /**
+     * Reads the current keyboard state and applies one frame's worth of navigation.
+     * {@code panEnabled} gates the {@code WASD}/arrow pan — {@code false} while Play mode
+     * owns {@code WASD} (PLAY-MODE-SPEC.md §5.1). {@code zScrubEnabled} gates the
+     * {@code Up}/{@code Down} z-level scrub — {@code false} while Play mode owns the
+     * arrows as CLIMB keys (Sprint 4: while driving a soul, your z-control is the stair
+     * under your feet, and the follow-camera owns the viewed floor). Zoom always works.
+     */
+    public static void poll(MapCamera camera, ZLevelCursor zLevel, float deltaSeconds,
+            boolean panEnabled, boolean zScrubEnabled) {
         if (panEnabled) {
             boolean left = Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT);
             boolean right = Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT);
@@ -59,11 +71,13 @@ public final class CameraInput {
 
         // Dwarf-Fortress-style level scrub: Up/Down are step (justPressed) events, never
         // held-repeat panning — z should move exactly one level per key press.
-        if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
-            zLevel.up();
-        }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
-            zLevel.down();
+        if (zScrubEnabled) {
+            if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
+                zLevel.up();
+            }
+            if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
+                zLevel.down();
+            }
         }
     }
 

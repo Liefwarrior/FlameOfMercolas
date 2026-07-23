@@ -29,6 +29,7 @@ import com.trojia.client.hud.icons.HudToken;
 import com.trojia.client.hud.icons.IconAtlas;
 import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
+import com.trojia.client.input.ClimbInput;
 import com.trojia.client.input.InspectorInput;
 import com.trojia.client.input.ObserverScript;
 import com.trojia.client.input.PlayModeInput;
@@ -458,9 +459,11 @@ public final class ObserverApp extends ApplicationAdapter {
 
         float deltaSeconds = Gdx.graphics.getDeltaTime();
         boolean playModeActive = playMode != null && playMode.active();
-        // Play mode repurposes WASD to drive the played actor (PLAY-MODE-SPEC.md §5.1) —
-        // camera panning is suppressed while it is active; zoom/z-scrub still work either way.
-        CameraInput.poll(camera, zLevel, deltaSeconds, !playModeActive);
+        // Play mode repurposes WASD to drive the played actor (PLAY-MODE-SPEC.md §5.1) and —
+        // Sprint 4 "the climb" — Up/Down to climb stairs, so camera panning AND z-scrub are
+        // suppressed while it is active (the follow-camera owns the viewed floor); zoom
+        // still works either way.
+        CameraInput.poll(camera, zLevel, deltaSeconds, !playModeActive, !playModeActive);
         TimeControlInput.poll(driver);
         boolean escConsumedByTalk = false;
         if (inspector != null) {
@@ -477,6 +480,10 @@ public final class ObserverApp extends ApplicationAdapter {
                     barkTables, toasts, population.questRegistry(),
                     population.system().questLog(), bootWorldSeed, driver.currentTick());
             TheftInput.poll(playMode, population.registry(), population.identity(), toasts);
+            // The CLIMB verb (S4): Up/Down while driving a soul takes the baked stair/ramp
+            // under its feet. Polled after movement so a held climb key wins the frame's
+            // move intent (one intent slot; the climb is the deliberate act).
+            ClimbInput.poll(playMode, population.registry(), population.zLinks(), toasts);
             // The JOURNAL toggle (S3): J opens/closes the quest pane (J was unbound; the
             // design's verify-free-then-bind rule).
             if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
@@ -489,14 +496,16 @@ public final class ObserverApp extends ApplicationAdapter {
             if (debugPlayMode && (debugMoveDx != 0 || debugMoveDy != 0)) {
                 PlayModeInput.applyMovement(playMode, population.registry(), debugMoveDx, debugMoveDy);
             }
-            // Scripted playtest tape (--script=): this frame's actions, then any held
-            // scripted movement — both through the exact apply* seams the live keys use.
+            // Scripted playtest tape (--script=): any held scripted movement first, then
+            // this frame's actions (so a frame's deliberate verb — a climb, a talk — wins
+            // the frame's one intent slot) — both through the exact apply* seams the live
+            // keys use.
             if (script != null) {
-                applyScriptFrame(framesRendered);
                 if (scriptMoveDx != 0 || scriptMoveDy != 0) {
                     PlayModeInput.applyMovement(playMode, population.registry(),
                             scriptMoveDx, scriptMoveDy);
                 }
+                applyScriptFrame(framesRendered);
             }
         }
         if (smokeFrames > 0 && population != null) {
@@ -627,7 +636,10 @@ public final class ObserverApp extends ApplicationAdapter {
                 }
                 case Z -> zLevel.to(action.intArgs()[0]);
                 case SHOT -> pendingShotPath = action.args();
-                case TOPIC, EAT, CLIMB -> throw new UnsupportedOperationException(
+                case CLIMB -> ClimbInput.applyClimb(playMode, population.registry(),
+                        population.zLinks(), toasts,
+                        "down".equalsIgnoreCase(action.args()) ? -1 : +1, true);
+                case TOPIC, EAT -> throw new UnsupportedOperationException(
                         "script verb " + action.verb() + " lands with its Sprint-4 slice");
             }
         }

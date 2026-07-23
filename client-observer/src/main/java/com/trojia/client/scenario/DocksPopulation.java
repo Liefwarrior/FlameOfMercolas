@@ -413,13 +413,15 @@ public final class DocksPopulation implements ScenarioPopulation {
     private final List<MicroHistoryBake.Bound> authoredHistories;
     /** The S4 per-actor ask-topic lists (the rumor verb) — see {@link #askTopicsOf}. */
     private final Map<Integer, AskTopicsBake.Topics> askTopics;
+    /** The S4 baked cross-z connector table (the climb) — see {@link #zLinks}. */
+    private final ZLinkTable zLinks;
 
     private DocksPopulation(ActorsSystem system, ActorTypeStatsTable typeStats,
             JobRegistry jobs, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, ActorRegistry registry, long worldSeed,
             int trackedGroundMoverId, List<Integer> moverIds,
             List<MicroHistoryBake.Bound> authoredHistories,
-            Map<Integer, AskTopicsBake.Topics> askTopics) {
+            Map<Integer, AskTopicsBake.Topics> askTopics, ZLinkTable zLinks) {
         this.system = system;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -432,6 +434,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         this.moverIds = List.copyOf(moverIds);
         this.authoredHistories = authoredHistories;
         this.askTopics = askTopics;
+        this.zLinks = zLinks;
     }
 
     @Override
@@ -502,8 +505,20 @@ public final class DocksPopulation implements ScenarioPopulation {
      * design, and a null/empty hand-off keeps the selector silent (fall back to greet).
      * Baked, immutable, presentation-lane only — reading it can never move the tick hash.
      */
+    @Override
     public AskTopicsBake.Topics askTopicsOf(int actorId) {
         return askTopics.get(actorId);
+    }
+
+    /**
+     * The baked cross-z connector table (S4 "the climb"), extracted once at bake — the
+     * same instance the sim's {@link CivicFixtures} carries. World-less builds expose
+     * {@link ZLinkTable#EMPTY} (the climb keys refuse everywhere, exactly as the sim's
+     * cross-z movers degrade).
+     */
+    @Override
+    public ZLinkTable zLinks() {
+        return zLinks;
     }
 
     @Override
@@ -650,7 +665,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         system.recordFoodMintedAtBake(foodSeeded);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers,
-                authoredHistories, askTopics);
+                authoredHistories, askTopics, zLinks);
     }
 
     /** Royals Gilt's pocket is topped to at bake — funds end_gilt's seize-what-exists pay. */
