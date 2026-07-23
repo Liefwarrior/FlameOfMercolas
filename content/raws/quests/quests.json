@@ -12,7 +12,7 @@
       "stages": [
         {
           "key": "rumor",
-          "objective": "Someone on the docks remembers the clerk who stopped coming to work. Ask around — the Mission pot, the Beaching Strand, the Wrackhouse counter, or the rooming house that still keeps his bed.",
+          "objective": "Someone on the docks remembers the clerk who stopped coming to work. Ask around - the Mission pot, the Beaching Strand, the Wrackhouse counter, or the rooming house that still keeps his bed.",
           "log": "Dock talk named the counting-house clerk who vanished the night a ledger line was erased: Tam Sedge, lodged four doors from the desk he never came back to.",
           "advance": [
             { "kind": "talk", "party": "onna", "to": "harbormaster" },
@@ -31,7 +31,7 @@
         },
         {
           "key": "counting_house",
-          "objective": "Reach the clerk's desk inside the Counting-House. Its door answers to the Watch's colors — wear a face it respects, dash the Watch's grace, or lift Master Gilt's vault key.",
+          "objective": "Reach the clerk's desk inside the Counting-House. Its door answers to the Watch's colors - wear a face it respects, dash the Watch's grace, or lift Master Gilt's vault key.",
           "log": "Got past the Counting-House door, to the desk the clerk left behind.",
           "liftItems": [
             { "item": "vault_key", "fromParty": "gilt" }
@@ -44,7 +44,7 @@
         {
           "key": "drawer",
           "objective": "The clerk's desk is still his. Open it.",
-          "log": "The locked drawer gave up a torn ledger leaf — the copied line, in the clerk's own hand.",
+          "log": "The locked drawer gave up a torn ledger leaf - the copied line, in the clerk's own hand.",
           "liftItems": [
             { "item": "vault_key", "fromParty": "gilt" }
           ],
@@ -112,5 +112,5 @@
       ]
     }
   ],
-  "notes": "S3 'The Vanished Clerk' — the game's first authored quest. Fiction seed: the gilt-crell-erasure micro-history (histories.json). The clerk never spawns (roster stays 692): he is the locked desk, the torn leaf, and the people who remember him — canon name Tam Sedge (DOCKS-GAZETTEER §4.6). World S3 pass folded in the Sim phase's declared cut: the 'sedge' landlady party + her rumor trigger (both lists append-only) and the prose polish. Quest talk tables live in barks.json under quest.vanished-clerk.* (key vocabulary linted by DocksBarkContentTest against THIS file's stages × parties). The pay effect seizes-what-exists; the bake tops Gilt's pocket to cover it."
+  "notes": "S3 'The Vanished Clerk' - the game's first authored quest. Fiction seed: the gilt-crell-erasure micro-history (histories.json). The clerk never spawns (roster stays 692): he is the locked desk, the torn leaf, and the people who remember him - canon name Tam Sedge (DOCKS-GAZETTEER 4.6). World S3 pass folded in the Sim phase's declared cut: the 'sedge' landlady party + her rumor trigger (both lists append-only) and the prose polish. Quest talk tables live in barks.json under quest.vanished-clerk.* (key vocabulary linted by DocksBarkContentTest against THIS file's stages x parties). The pay effect seizes-what-exists; the bake tops Gilt's pocket to cover it."
 }
