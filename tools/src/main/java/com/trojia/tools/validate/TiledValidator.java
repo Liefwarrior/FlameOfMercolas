@@ -39,8 +39,8 @@ public final class TiledValidator {
     }
 
     /**
-     * @return a validator with the standard six passes in the canonical order:
-     *         z-groups, sublayers, materials, gid-bounds, markers, chunk-align
+     * @return a validator with the standard seven passes in the canonical order:
+     *         z-groups, sublayers, materials, gid-bounds, markers, chunk-align, stairs
      */
     public static TiledValidator standard() {
         return new TiledValidator(List.of(
@@ -49,7 +49,8 @@ public final class TiledValidator {
                 new MaterialResolutionPass(),
                 new GidBoundsPass(),
                 new MarkerContractPass(),
-                new ChunkAlignmentPass()));
+                new ChunkAlignmentPass(),
+                new StairRampPass()));
     }
 
     /**
