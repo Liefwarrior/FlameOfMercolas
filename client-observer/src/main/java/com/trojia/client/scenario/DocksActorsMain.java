@@ -176,6 +176,8 @@ public final class DocksActorsMain {
         printJusticeReport(population, jobs);
         printDensityReport(population, maxCoOccupancy, routePairs, routeCells);
         printProgressionReport(population);
+        printTheftReport(population, identity);
+        printBarkProof(population, identity, driver.currentTick());
         printBeastReport(population, gullIds, catIds, mouseIds, gullRoam, huntCounters);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
@@ -248,6 +250,107 @@ public final class DocksActorsMain {
             System.out.println("most wanted: actor#" + mostWantedId + " watch standing "
                     + mostWantedStanding);
         }
+    }
+
+    /**
+     * Theft &amp; justice report (Sprint 2 "reactive streets"): pickpocketing is LIVE — the
+     * ambient underworld lifts pocket coin (moves, never mints), the marks catch hands,
+     * and the Watch corrects witnessed thefts through the existing justice pipeline with a
+     * reconstructable ReasonCode + CrimeLog trail. Deterministic ascending scans only.
+     */
+    private static void printTheftReport(DocksPopulation population, IdentityRegistry identity) {
+        var system = population.system();
+        var log = system.crimeLog();
+        var registry = population.registry();
+        System.out.println();
+        System.out.println("================ THEFT & JUSTICE (Sprint 2: reactive streets) ==============");
+        System.out.println("  pickpocket attempts: " + system.theftCount()
+                + "  (caught in the act: " + system.theftCaughtCount()
+                + ");  Royals lifted: " + system.coinsStolen() + " (moved, never minted)");
+        System.out.println("  corrections: arrests-for-theft " + system.theftArrests()
+                + ";  Skyrunner escalations (maim/hang) " + system.skyrunnerTheftEscalations());
+        int shown = 0;
+        for (int i = log.size() - 1; i >= 0 && shown < 5; i--, shown++) {
+            String thief = identity.get(log.thiefIdAt(i)).fullName();
+            String victim = log.victimIdAt(i) >= 0 && log.victimIdAt(i) < registry.size()
+                    ? identity.get(log.victimIdAt(i)).fullName() : "#" + log.victimIdAt(i);
+            System.out.println("    tick=" + log.tickAt(i) + "  " + thief
+                    + (log.witnessedAt(i) ? " was CAUGHT dipping " : " lifted the purse of ")
+                    + victim + " at " + xyz(log.cellAt(i))
+                    + (log.servedAt(i) ? "  [answered for]" : ""));
+        }
+        if (log.size() == 0) {
+            System.out.println("    (no thefts recorded)");
+        }
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * Bark selection proof (Sprint 2 rank 3, the debug-log consumer): the pure selector
+     * runs against live end-of-run state for a fixed cast — a Watch guard greeting the
+     * district's most-wanted vs a clean citizen (the standing dimension), across the four
+     * time buckets (the time dimension) — and resolves text where World's tables exist
+     * (degrading to the bare key: the schema seam ships before the words). Deterministic.
+     */
+    private static void printBarkProof(DocksPopulation population, IdentityRegistry identity,
+            long endTick) {
+        var registry = population.registry();
+        var jobs = population.jobs();
+        var standings = population.system().factionStandings();
+        var relationships = population.relationships();
+        var tables = com.trojia.sim.bark.BarkRawsLoader.load(
+                com.trojia.client.boot.RepoPaths.locate("content", "raws"));
+        int guardId = firstOfType(registry, "militia_watch");
+        int mostWanted = -1;
+        int worst = 0;
+        int clean = -1;
+        for (int i = 0; i < registry.size(); i++) {
+            int watch = standings.watchStanding(i);
+            if (watch < worst) {
+                worst = watch;
+                mostWanted = i;
+            }
+            if (clean == -1 && watch >= 0 && i != guardId
+                    && !registry.get(i).typeId().key().equals("militia_watch")) {
+                clean = i;
+            }
+        }
+        System.out.println();
+        System.out.println("================ BARK SELECTION (deterministic; text tables = World's) ======");
+        System.out.println("  authored bark tables: " + tables.size()
+                + (tables.size() == 0 ? " (schema seam live; text lands with the World phase)" : ""));
+        if (guardId == Actor.NONE) {
+            System.out.println("  (no Watch speaker found)");
+            System.out.println("============================================================================");
+            return;
+        }
+        Actor guard = registry.get(guardId);
+        com.trojia.sim.actor.job.Job guardJob =
+                guard.jobOrdinal() >= 0 ? jobs.get(guard.jobOrdinal()) : null;
+        long dayBase = (endTick / DailyRhythm.DAY) * DailyRhythm.DAY;
+        long[] times = {dayBase + 3_000, dayBase + 8_000, dayBase + 14_000, dayBase + 20_000};
+        int[] listeners = mostWanted >= 0 ? new int[] {clean, mostWanted} : new int[] {clean};
+        for (int listener : listeners) {
+            if (listener < 0) {
+                continue;
+            }
+            System.out.println("  " + identity.get(guardId).fullName() + " [watch] greets "
+                    + identity.get(listener).fullName() + " (watch standing "
+                    + standings.watchStanding(registry.get(listener).identity().presentedId())
+                    + "):");
+            for (long t : times) {
+                var choice = com.trojia.sim.actor.BarkSelector.select(
+                        population.worldSeed(), t, guard, guardJob,
+                        registry.get(listener).identity().presentedId(), standings,
+                        relationships);
+                String text = choice.resolve(tables);
+                System.out.println("    tod=" + DailyRhythm.tickOfDay(t) + "  -> "
+                        + choice.tableKey() + " row=" + choice.rowIn(Math.max(1,
+                                tables.rowCount(choice.tableKey())))
+                        + (text == null ? "  (unauthored)" : "  \"" + text + "\""));
+            }
+        }
+        System.out.println("============================================================================");
     }
 
     /**

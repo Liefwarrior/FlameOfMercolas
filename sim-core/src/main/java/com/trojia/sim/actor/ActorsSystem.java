@@ -86,6 +86,21 @@ public final class ActorsSystem implements SimulationSystem {
         return shoveLog;
     }
 
+    /** Ring capacity of the crime log — bounds every guard's theft-sense scan. */
+    private static final int CRIME_LOG_CAPACITY = 256;
+
+    /**
+     * The bounded theft ring buffer (Sprint 2): one row per pickpocket attempt
+     * ({@link TheftMechanics}), read by guards' theft sensing ({@link ApprehendPolicy}) —
+     * behavior-carrying state, serialized, loaded and hashed like {@link ShoveLog}.
+     */
+    private final CrimeLog crimeLog = new CrimeLog(CRIME_LOG_CAPACITY);
+
+    /** The live crime log (public: the observer's feed and the reports read rows here). */
+    public CrimeLog crimeLog() {
+        return crimeLog;
+    }
+
     /** The tick being simulated right now — the shove cooldown clock inside the occupancy view. */
     private long currentTick;
 
@@ -112,6 +127,17 @@ public final class ActorsSystem implements SimulationSystem {
     private long pushCount;
     private long riotCount;
     private long houseArrestsIssued;
+
+    /**
+     * Theft-report accounting (Sprint 2; pure accounting, rides no save): pickpocket
+     * attempts split by outcome, the COIN units that moved thief-ward, and the guard-side
+     * corrections (arrests-for-theft and Skyrunner maim/hang escalations).
+     */
+    private long theftCount;
+    private long theftCaughtCount;
+    private long coinsStolen;
+    private long theftArrests;
+    private long skyrunnerTheftEscalations;
 
     /** World-less constructor (test/headless convenience) — {@code isWalkable} always true. */
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
@@ -234,6 +260,31 @@ public final class ActorsSystem implements SimulationSystem {
     /** House arrests issued across all riot responses (density report; pure accounting). */
     public long houseArrestsIssued() {
         return houseArrestsIssued;
+    }
+
+    /** Total pickpocket attempts over the run (theft report; pure accounting). */
+    public long theftCount() {
+        return theftCount;
+    }
+
+    /** Pickpocket attempts that FAILED (the mark caught the hand — witnessed crime rows). */
+    public long theftCaughtCount() {
+        return theftCaughtCount;
+    }
+
+    /** Total COIN units moved thief-ward by successful lifts (moves, never mints). */
+    public long coinsStolen() {
+        return coinsStolen;
+    }
+
+    /** Guard-side theft corrections that landed an ARRESTED_FOR_THEFT custody. */
+    public long theftArrests() {
+        return theftArrests;
+    }
+
+    /** Guard-side theft corrections that escalated a Skyrunner (maim/hang). */
+    public long skyrunnerTheftEscalations() {
+        return skyrunnerTheftEscalations;
     }
 
     /** Total FOOD ever minted (larder seed + farm yield + imports) — conservation-proof numerator. */
@@ -460,6 +511,10 @@ public final class ActorsSystem implements SimulationSystem {
         // mid-progression must reproduce the continuous run exactly.
         skillTracks.serialize(out);
         factionStandings.serialize(out);
+        // Sprint 2, canonical order after the standings: the crime log — guards' theft
+        // sensing reads it, so a load mid-crime-window must correct exactly what the
+        // continuous run would.
+        crimeLog.serialize(out);
     }
 
     private void writeActor(DataOutput out, Actor actor) throws IOException {
@@ -548,6 +603,7 @@ public final class ActorsSystem implements SimulationSystem {
         shoveLog.load(in); // density revisit: the behavior-carrying shove ring buffer
         skillTracks.load(in); // Sprint 1: dense per-actor tracks + level-log ring
         factionStandings.load(in); // Sprint 1: the per-actor per-faction standing ledger
+        crimeLog.load(in); // Sprint 2: the behavior-carrying theft ring buffer
     }
 
     private void readActor(DataInput in) throws IOException {
@@ -692,6 +748,9 @@ public final class ActorsSystem implements SimulationSystem {
         // hash, not slip past it.
         skillTracks.hashInto(sink);
         factionStandings.hashInto(sink);
+        // Sprint 2 (landmine F): guards' theft sensing reads the crime log — a theft-only
+        // desync must fail the twin-run hash, not slip past it.
+        crimeLog.hashInto(sink);
     }
 
     /** The per-tick {@link ActorContext}, bound to this system's registries and named draws. */
@@ -863,6 +922,30 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public RooftopTable rooftops() {
             return fixtures.rooftops();
+        }
+
+        @Override
+        public CrimeLog crimeLog() {
+            return crimeLog;
+        }
+
+        @Override
+        public void recordTheft(boolean success, int coinsMoved) {
+            theftCount++;
+            if (success) {
+                coinsStolen += coinsMoved;
+            } else {
+                theftCaughtCount++;
+            }
+        }
+
+        @Override
+        public void recordTheftCorrection(boolean skyrunnerEscalated) {
+            if (skyrunnerEscalated) {
+                skyrunnerTheftEscalations++;
+            } else {
+                theftArrests++;
+            }
         }
     }
 

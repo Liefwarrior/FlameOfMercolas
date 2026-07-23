@@ -742,8 +742,12 @@ public final class JobBehaviors {
         return count;
     }
 
-    /** Skyrunner escalation: 1st offense maims (cosmetic), 2nd offense hangs (permanent). */
-    private static boolean escalateSkyrunner(Actor self) {
+    /**
+     * Skyrunner escalation: 1st offense maims (cosmetic), 2nd offense hangs (permanent).
+     * Public since Sprint 2: the guard-side theft correction ({@code ApprehendPolicy})
+     * applies the same discipline to a Skyrunner caught red-handed lifting purses.
+     */
+    public static boolean escalateSkyrunner(Actor self) {
         int offense = self.offenseCount() + 1;
         self.setOffenseCount((byte) offense);
         if (offense <= 1) {

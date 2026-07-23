@@ -57,7 +57,22 @@ public enum ActorRngStream {
      * shifts with the offender's PRESENTED Watch standing. Appended stream; spatialKey =
      * the GUARD's actor id (the guard is deciding).
      */
-    WATCH_LENIENCE("watch.lenience");
+    WATCH_LENIENCE("watch.lenience"),
+    /**
+     * The pickpocket check family (Sprint 2 theft, {@link SkillChecks}): one draw per
+     * attempted lift, resolved thief skyrunning+AGI vs mark streetwise+WIT. Appended
+     * stream (name-derived salt — no existing draws shift); drawn through the shared
+     * per-actor per-tick counter, spatialKey = the THIEF's actor id.
+     */
+    CHECK_PICKPOCKET("check.pickpocket"),
+    /**
+     * The ambient-theft impulse draw (Sprint 2 theft, {@code TheftMechanics}): at a wander
+     * dwell boundary a would-be thief (villain always; a wastrel only when it cannot afford
+     * a meal) draws whether it works the adjacent crowd at all — THE tuning knob that keeps
+     * ambient theft volume under the starvation bars. Appended stream; spatialKey = the
+     * THIEF's actor id.
+     */
+    THEFT_IMPULSE("theft.impulse");
 
     private final String streamName;
     private final long salt;

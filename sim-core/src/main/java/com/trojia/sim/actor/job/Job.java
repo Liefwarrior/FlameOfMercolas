@@ -3,6 +3,7 @@ package com.trojia.sim.actor.job;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorContext;
 import com.trojia.sim.actor.StatusBit;
+import com.trojia.sim.actor.TheftMechanics;
 
 /**
  * The Job taxonomy — DECISIONS.md "Goals & Jobs" ruling, ACTORS-SPEC.md §10.
@@ -141,6 +142,11 @@ public sealed abstract class Job {
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
+                // Desperation theft (Sprint 2): a wastrel that can no longer afford a meal
+                // works the adjacent crowd — a fed beggar begs, a starving one steals.
+                // Throttled + desperation-gated + impulse-drawn inside (the nested-hook
+                // precedent: the mouse's vigilance scan).
+                TheftMechanics.desperateAmbientTheft(self, ctx);
                 JobBehaviors.pursueWander(self, ctx, params());
             }
 
@@ -191,6 +197,10 @@ public sealed abstract class Job {
                         && JobBehaviors.checkArrestExposure(self, ctx, this)) {
                     return; // arrested this tick (ARREST-SPEC addendum)
                 }
+                // Ambient theft (Sprint 2): working the crowd IS the job — a throttled,
+                // impulse-gated adjacency lift as the drift brushes through the streets.
+                TheftMechanics.ambientTheft(self, ctx,
+                        TheftMechanics.VILLAIN_THEFT_IMPULSE_PERMILLE);
                 JobBehaviors.pursueWander(self, ctx, params());
             }
 
@@ -222,12 +232,16 @@ public sealed abstract class Job {
                         && JobBehaviors.checkArrestExposure(self, ctx, this)) {
                     return; // arrested this tick (ARREST-SPEC addendum)
                 }
+                // Sprint 2: the lift is no longer "a later extension" — the Cutpurse dips
+                // the crowd its drift brushes through (throttled + impulse-gated).
+                TheftMechanics.ambientTheft(self, ctx,
+                        TheftMechanics.VILLAIN_THEFT_IMPULSE_PERMILLE);
                 JobBehaviors.pursueWander(self, ctx, params());
             }
 
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
-                return false; // drifts under its Wastrel cover (§10.4); lift is a later extension
+                return false; // drifts under its Wastrel cover (§10.4)
             }
         }
 
@@ -262,6 +276,11 @@ public sealed abstract class Job {
                         && JobBehaviors.checkArrestExposure(self, ctx, this)) {
                     return; // maimed/hanged this tick (ARREST-SPEC addendum's escalation)
                 }
+                // Sprint 2: the roost's trade — rooftop lifts as the drift brushes the
+                // roof-slum crowd. A Skyrunner CAUGHT (witnessed row) rides the same
+                // maim/hang discipline via the guard-side theft correction.
+                TheftMechanics.ambientTheft(self, ctx,
+                        TheftMechanics.VILLAIN_THEFT_IMPULSE_PERMILLE);
                 JobBehaviors.pursueWander(self, ctx, params());
             }
 

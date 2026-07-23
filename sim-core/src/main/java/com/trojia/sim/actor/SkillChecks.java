@@ -38,6 +38,20 @@ public final class SkillChecks {
     /** The permille modulus every check draws against. */
     public static final int PERMILLE = 1000;
 
+    // ---- the pickpocket family (Sprint 2 theft): thief skyrunning+AGI vs mark
+    // streetwise+WIT. The base sits WELL below the push family's: a lift is a real gamble
+    // (~30% base failure feeds the justice pipeline — failure IS the feature: without
+    // witnessed crimes there are no consequences to react to). The wide floor/ceiling
+    // spread is the level-gap payoff: a trained skyrunner robs novices nearly at will,
+    // a novice robbing a streetwise mark is mostly caught — and NOBODY lifts with
+    // certainty (the genre contract). ----
+    /** Baseline success permille when thief and mark scores are equal. */
+    public static final int PICKPOCKET_BASE_PERMILLE = 700;
+    /** Success floor: even a hopeless thief occasionally gets lucky. */
+    public static final int PICKPOCKET_FLOOR_PERMILLE = 50;
+    /** Success ceiling: mastery never buys certainty. */
+    public static final int PICKPOCKET_CEIL_PERMILLE = 950;
+
     private SkillChecks() {
     }
 
@@ -70,5 +84,22 @@ public final class SkillChecks {
                 + tracks.attribute(shoveeId, AttributeId.VIG);
         return successPermille(pusherScore, shoveeScore, PUSH_BASE_PERMILLE,
                 PUSH_FLOOR_PERMILLE, PUSH_CEIL_PERMILLE);
+    }
+
+    /**
+     * The pickpocket family threshold (Sprint 2 theft): thief {@code skyrunning + AGI}
+     * (the raws list "pickpocket" among skyrunning's own covers) vs mark
+     * {@code streetwise + WIT} (a street-wise mark knows the dip's tricks), on the
+     * pickpocket base/floor/ceiling. Reads TRUE actor ids — the lift is a physical
+     * contest of the bodies involved, not a social read (the push-contest precedent).
+     */
+    public static int pickpocketContestPermille(SkillTrackRegistry tracks, int thiefId,
+            int victimId) {
+        int thiefScore = tracks.level(thiefId, tracks.skyrunningRaw())
+                + tracks.attribute(thiefId, AttributeId.AGI);
+        int victimScore = tracks.level(victimId, tracks.streetwiseRaw())
+                + tracks.attribute(victimId, AttributeId.WIT);
+        return successPermille(thiefScore, victimScore, PICKPOCKET_BASE_PERMILLE,
+                PICKPOCKET_FLOOR_PERMILLE, PICKPOCKET_CEIL_PERMILLE);
     }
 }

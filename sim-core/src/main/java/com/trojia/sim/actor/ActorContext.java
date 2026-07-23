@@ -258,4 +258,31 @@ public interface ActorContext {
     default RooftopTable rooftops() {
         return RooftopTable.EMPTY;
     }
+
+    /**
+     * The bounded theft ring buffer (Sprint 2): every pickpocket attempt records a row here
+     * ({@link TheftMechanics}); guards' theft sensing ({@link ApprehendPolicy}) reads the
+     * WITNESSED rows at their sense cadence. {@link CrimeLog#EMPTY} where no live system is
+     * wired (world-less bootstrap, test doubles) — no theft is ever logged and no crime ever
+     * sensed.
+     */
+    default CrimeLog crimeLog() {
+        return CrimeLog.EMPTY;
+    }
+
+    /**
+     * Records one pickpocket attempt (Sprint 2): {@code success} and the COIN units that
+     * moved. Pure accounting for the theft report — read by no behavior, so it changes no
+     * determinism property; a no-op where unwired.
+     */
+    default void recordTheft(boolean success, int coinsMoved) {
+    }
+
+    /**
+     * Records one guard-side theft correction (Sprint 2): an arrest for theft, or —
+     * {@code skyrunnerEscalated} — a Skyrunner maim/hang. Pure accounting; a no-op where
+     * unwired.
+     */
+    default void recordTheftCorrection(boolean skyrunnerEscalated) {
+    }
 }

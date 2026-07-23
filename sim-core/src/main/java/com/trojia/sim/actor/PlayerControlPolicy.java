@@ -43,6 +43,20 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
 
     @Override
     public void act(Actor self, ActorContext ctx) {
+        // The tick's default legibility stamp lands FIRST, so a real pickpocket attempt
+        // below overwrites it with its own outcome (PICKPOCKETED / CAUGHT_STEALING) and
+        // that trail stamp survives the tick — while a no-attempt (empty or invalid
+        // intent) leaves the ordinary PLAYER_CONTROLLED reading.
+        self.setLastReasonCode(ReasonCode.PLAYER_CONTROLLED);
+        // Pickpocket intent (Sprint 2's play-mode verb) resolves before movement — a lift
+        // is a deliberate act, not a side effect of a movement key. Consumed
+        // unconditionally (the §5.2 stale-intent rule); TheftMechanics validates
+        // adjacency/eligibility itself.
+        int markId = self.playerPickpocketTargetId();
+        self.setPlayerPickpocketTarget(Actor.NONE);
+        if (markId != Actor.NONE && markId >= 0 && markId < ctx.registry().size()) {
+            TheftMechanics.pickpocket(self, ctx.registry().get(markId), ctx);
+        }
         int target = self.playerMoveTargetCell();
         if (target != Actor.NONE) {
             int before = self.cell();
@@ -57,7 +71,6 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
                         SKYRUNNING_ROOF_STEP_CP, roofRegionKey(self.cell()), ctx.tick());
             }
         }
-        self.setLastReasonCode(ReasonCode.PLAYER_CONTROLLED);
     }
 
     /** The §3.3 satiation context for a roof cell: its {@code (x>>4, y>>4, z)} region id. */

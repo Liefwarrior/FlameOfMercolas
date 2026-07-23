@@ -48,5 +48,11 @@ public enum ReasonCode {
     /** Serving house arrest: walking home / held at home sleeping until the deadline. */
     UNDER_HOUSE_ARREST,
     /** The house-arrest deadline passed — released back to ordinary life. */
-    RELEASED_FROM_HOUSE_ARREST
+    RELEASED_FROM_HOUSE_ARREST,
+    /** Lifted a mark's pocket coin clean (Sprint 2 theft: a won pickpocket contest). */
+    PICKPOCKETED,
+    /** A pickpocket attempt failed — the mark caught the hand (a witnessed crime row). */
+    CAUGHT_STEALING,
+    /** A guard corrected a witnessed theft: fine seized + custody (Sprint 2 justice). */
+    ARRESTED_FOR_THEFT
 }

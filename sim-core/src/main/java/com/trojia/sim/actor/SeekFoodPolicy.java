@@ -69,15 +69,19 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
 
     @Override
     public void act(Actor self, ActorContext ctx) {
+        // The buyer's barter quote (Sprint 2 disposition-gated pricing): presented-identity
+        // standings + true-body haggling, computed ONCE per act and threaded through every
+        // counter scan below — prices now know who is buying (and who they PRESENT as).
+        Barter.Quote quote = Barter.quoteFor(self, ctx);
         // A cached walk target must NEVER suppress a meal already within reach: always try to eat
         // in place THIS tick before honoring any walk (the step-1 lock fix).
-        if (eatInReach(self, ctx)) {
+        if (eatInReach(self, ctx, quote)) {
             clearTarget(self);
             return;
         }
         // Nothing in reach: walk to the nearest reachable stocked same-z source. An unroutable
         // candidate is skipped (routeFailedTo) so the actor re-scans instead of freezing.
-        int target = planWalkTarget(self, ctx);
+        int target = planWalkTarget(self, ctx, quote);
         if (target != Actor.NONE) {
             self.setTarget(TargetKind.CELL, target);
             walkTo(self, ctx, target);
@@ -99,7 +103,7 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
      * commons); returns whether it ate. No walking — this is the "eat where you stand" fast path
      * that makes the safety net robust against pathing failures and occupancy crowding.
      */
-    private static boolean eatInReach(Actor self, ActorContext ctx) {
+    private static boolean eatInReach(Actor self, ActorContext ctx, Barter.Quote quote) {
         ItemsLiteRegistry items = ctx.items();
         // 1. Eat what we already carry (a shopkeeper's shelf stock, a farmer's fresh yield, a
         //    FOOD just bought). No pathing, no cost.
@@ -111,10 +115,12 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         int selfCell = self.cell();
         int selfZ = PackedPos.z(selfCell);
         // 2. Buy from a same-z, stocked, affordable counter within reach (the money lever). The
-        //    scan already rejects an unaffordable/bare shop, so a returned shop always sells here.
-        int shopId = nearestAffordableVendor(self, ctx, selfCell, selfZ, FoodEconomy.EAT_REACH);
+        //    scan already rejects an unaffordable/refusing/bare shop, so a returned shop always
+        //    sells here — at the buyer's OWN priceAt (Sprint 2 barter).
+        int shopId = nearestAffordableVendor(self, ctx, quote, selfCell, selfZ,
+                FoodEconomy.EAT_REACH);
         if (shopId != Actor.NONE) {
-            buyAndEat(self, ctx, shopId);
+            buyAndEat(self, ctx, shopId, quote);
             return true;
         }
         // 3. Eat free from the own home/anchor subsistence larder within reach (farm/seed stocked).
@@ -135,7 +141,7 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         //    shut — no carried FOOD (step 1), no affordable counter (step 2), no larder/commons
         //    (steps 3-4) AND genuinely broke — eat a scrap off a same-z garbage bin in reach.
         //    Strictly last in the ordering, so a solvent citizen always buys instead.
-        if (isBroke(self, ctx)) {
+        if (isBroke(self, ctx, quote)) {
             int bin = nearestStockedBin(self, ctx, selfCell, selfZ, FoodEconomy.EAT_REACH, false);
             if (bin != Actor.NONE) {
                 items.takeOnCell(bin, ItemKinds.FOOD, 1);
@@ -168,7 +174,7 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
      * skipped so the actor tries the next one instead of pinning itself to an unreachable source.
      * {@link Actor#NONE} when this actor has no reachable stocked same-z source at all (the margin).
      */
-    private static int planWalkTarget(Actor self, ActorContext ctx) {
+    private static int planWalkTarget(Actor self, ActorContext ctx, Barter.Quote quote) {
         int selfCell = self.cell();
         int selfZ = PackedPos.z(selfCell);
         // Prefer a free source the actor owns / can share, if it is routable.
@@ -181,7 +187,7 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
             return commons;
         }
         // Else buy: walk to the nearest affordable stocked counter that is not known-unroutable.
-        int shopCell = nearestAffordableVendorCell(self, ctx, selfCell, selfZ);
+        int shopCell = nearestAffordableVendorCell(self, ctx, quote, selfCell, selfZ);
         if (shopCell != Actor.NONE) {
             return shopCell;
         }
@@ -189,7 +195,7 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         // walk to the nearest same-z garbage bin holding scraps (skipping A*-unroutable bins,
         // so an isolated roof deck still starves: the intended margin). Strictly after every
         // legitimate branch above, so it never outcompetes a purchase.
-        if (isBroke(self, ctx)) {
+        if (isBroke(self, ctx, quote)) {
             int bin = nearestStockedBin(self, ctx, selfCell, selfZ, Integer.MAX_VALUE, true);
             if (bin != Actor.NONE) {
                 return bin;
@@ -200,10 +206,15 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         return larder;
     }
 
-    /** Broke = the money gate is shut: no carried ID at all, or a balance under one meal. */
-    private static boolean isBroke(Actor self, ActorContext ctx) {
+    /**
+     * Broke = the money gate is shut: no carried ID at all, refused at every counter (the
+     * Sprint-2 hostile-standing refusal falls through to this scavenge chain by design), or
+     * a balance under the buyer's own {@link Barter#floorPriceFor cheapest possible price}.
+     */
+    private static boolean isBroke(Actor self, ActorContext ctx, Barter.Quote quote) {
         int account = BankLedger.purchaseAuth(idCardOf(self, ctx));
-        return account == Actor.NONE || ctx.bankAccounts().balanceOf(account) < FoodEconomy.FOOD_PRICE;
+        return account == Actor.NONE
+                || ctx.bankAccounts().balanceOf(account) < Barter.floorPriceFor(quote);
     }
 
     /**
@@ -312,18 +323,22 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
     }
 
     /**
-     * The nearest same-z vendor shop within {@code maxDist} tiles that is STOCKED and that this
-     * actor can AFFORD, by ascending chebyshev (ascending vendor index breaks ties) — {@link
-     * Actor#NONE} if none, or if the actor has no ID card / cannot cover {@link
-     * FoodEconomy#FOOD_PRICE} (the money lever). Skips self so a hungry shopkeeper does not "buy"
-     * from its own counter (it eats its carry in step 1 first).
+     * The nearest same-z vendor shop within {@code maxDist} tiles that is STOCKED, WILLING
+     * (a hostile presented standing is refused everywhere — Sprint 2 barter) and that this
+     * actor can AFFORD at that counter's own {@link Barter#priceAt} quote, by ascending
+     * chebyshev (ascending vendor index breaks ties) — {@link Actor#NONE} if none. Skips
+     * self so a hungry shopkeeper does not "buy" from its own counter (it eats its carry in
+     * step 1 first). The per-counter price check runs LAST so its relationship scan only
+     * prices the near, stocked candidates.
      */
-    private static int nearestAffordableVendor(Actor self, ActorContext ctx, int selfCell,
-            int selfZ, int maxDist) {
+    private static int nearestAffordableVendor(Actor self, ActorContext ctx, Barter.Quote quote,
+            int selfCell, int selfZ, int maxDist) {
         int account = BankLedger.purchaseAuth(idCardOf(self, ctx));
-        if (account == Actor.NONE || ctx.bankAccounts().balanceOf(account) < FoodEconomy.FOOD_PRICE) {
+        if (account == Actor.NONE || quote.refusedEverywhere()
+                || ctx.bankAccounts().balanceOf(account) < Barter.floorPriceFor(quote)) {
             return Actor.NONE;
         }
+        long balance = ctx.bankAccounts().balanceOf(account);
         FoodMarket market = ctx.foodMarket();
         ItemsLiteRegistry items = ctx.items();
         ActorRegistry registry = ctx.registry();
@@ -341,7 +356,8 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
                 continue;
             }
             int d = ActorGeometry.chebyshev(selfCell, shopCell);
-            if (d < bestDist && items.countCarriedOfKind(shopId, ItemKinds.FOOD) > 0) {
+            if (d < bestDist && items.countCarriedOfKind(shopId, ItemKinds.FOOD) > 0
+                    && balance >= Barter.priceAt(quote, shopId, ctx.relationships())) {
                 bestDist = d;
                 best = shopId;
             }
@@ -355,12 +371,14 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
      * last A* could not route to, so the actor walks to a routable market instead of re-pinning an
      * unreachable one. {@link Actor#NONE} if the actor cannot afford any / none is stocked/routable.
      */
-    private static int nearestAffordableVendorCell(Actor self, ActorContext ctx, int selfCell,
-            int selfZ) {
+    private static int nearestAffordableVendorCell(Actor self, ActorContext ctx,
+            Barter.Quote quote, int selfCell, int selfZ) {
         int account = BankLedger.purchaseAuth(idCardOf(self, ctx));
-        if (account == Actor.NONE || ctx.bankAccounts().balanceOf(account) < FoodEconomy.FOOD_PRICE) {
+        if (account == Actor.NONE || quote.refusedEverywhere()
+                || ctx.bankAccounts().balanceOf(account) < Barter.floorPriceFor(quote)) {
             return Actor.NONE;
         }
+        long balance = ctx.bankAccounts().balanceOf(account);
         FoodMarket market = ctx.foodMarket();
         ItemsLiteRegistry items = ctx.items();
         ActorRegistry registry = ctx.registry();
@@ -377,7 +395,8 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
             }
             int d = ActorGeometry.chebyshev(selfCell, shopCell);
             if (d < bestDist && items.countCarriedOfKind(shopId, ItemKinds.FOOD) > 0
-                    && !self.routeFailedTo(shopCell)) {
+                    && !self.routeFailedTo(shopCell)
+                    && balance >= Barter.priceAt(quote, shopId, ctx.relationships())) {
                 bestDist = d;
                 best = shopCell;
             }
@@ -390,15 +409,23 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
     // ======================================================================
 
     /**
-     * Buys one FOOD (ID-authorized Royal transfer) then immediately eats it. {@link
-     * BankVerbs#buyFood} transfers the Royals before moving the FOOD, so we only eat / count a meal
-     * once the FOOD actually landed in carry (defensive — callers pre-check stock+affordability, so
-     * this never fails in practice — but it keeps the conservation count exact if that ever slipped).
+     * Buys one FOOD (ID-authorized Royal transfer) then immediately eats it — at the
+     * buyer's own {@link Barter#priceAt} quote for THIS counter (Sprint 2 disposition
+     * pricing; the scan above already proved willingness + affordability at this price).
+     * {@link BankVerbs#buyFood} transfers the Royals before moving the FOOD, so we only eat
+     * / count a meal once the FOOD actually landed in carry (defensive — callers pre-check
+     * stock+affordability, so this never fails in practice — but it keeps the conservation
+     * count exact if that ever slipped).
      */
-    private static void buyAndEat(Actor self, ActorContext ctx, int shopId) {
+    private static void buyAndEat(Actor self, ActorContext ctx, int shopId, Barter.Quote quote) {
         ItemsLiteEntry card = idCardOf(self, ctx);
+        long price = Barter.priceAt(quote, shopId, ctx.relationships());
+        if (price == Barter.REFUSED) {
+            self.setLastReasonCode(ReasonCode.NEED_HUNGER_LOW);
+            return; // defensive: the scan never returns a refusing counter
+        }
         boolean bought = BankVerbs.buyFood(ctx.bankAccounts(), ctx.items(), self.id(), shopId, card,
-                FoodEconomy.FOOD_PRICE, 1);
+                price, 1);
         if (bought && ctx.items().takeCarried(self.id(), ItemKinds.FOOD, 1) > 0) {
             clearTarget(self);
             eat(self, ctx, ReasonCode.BOUGHT_FOOD);

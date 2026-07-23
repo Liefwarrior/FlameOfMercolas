@@ -89,6 +89,21 @@ public final class ApprehendPolicy implements BehaviorPolicy {
     /** Only shoves this recent count toward a riot (150 ticks — a brawl is FAST). */
     static final long RIOT_WINDOW_TICKS = 150;
 
+    // ---- Witnessed-theft correction (Sprint 2 "reactive streets"): a failed pickpocket
+    // lands a WITNESSED row in the shared CrimeLog (TheftMechanics), and word of a caught
+    // thief reaches the Watch district-wide at the same sense cadence — the riot-detection
+    // precedent ("the Watch hears of a brawl anywhere in the ward") — but boots stay on
+    // their own walk plane: a guard only takes the case of a SAME-Z culprit, so street
+    // guards work the streets and the roof posts work the rooftop slums (and no chase ever
+    // needs a cross-z route the pathfinder cannot produce). One guard per culprit (the
+    // ascending-id claim rule below); a witnessed theft earns NO move-along courtesy —
+    // contact goes straight to fine + custody, and a Skyrunner caught red-handed rides the
+    // existing ARREST-SPEC maim/hang escalation. Draw-free sensing, ascending scans only. ----
+    /** Ticks the word of a witnessed theft stays warm enough for a guard to take the case. */
+    static final long CRIME_WINDOW_TICKS = 2_400;
+    /** The fixed theft sentence: one day (the loiter-sentence scale — theft is petty here). */
+    static final long THEFT_SENTENCE_TICKS = 24_000L;
+
     @Override
     public PolicyId id() {
         return PolicyId.APPREHEND;
@@ -103,9 +118,12 @@ public final class ApprehendPolicy implements BehaviorPolicy {
             return 0; // between sense boundaries: no acquisition (the throttle)
         }
         // Read-only acquisition probes; act() re-runs the identical deterministic scans. The
-        // riot check comes first in BOTH (a brawl outranks one loiterer, and score/act must
-        // agree on which branch fires).
+        // priority order is fixed in BOTH (score/act must agree on which branch fires):
+        // a brawl outranks a caught thief outranks one loiterer.
         if (senseRiotAnchor(ctx) != Actor.NONE) {
+            return APPREHEND_SCORE;
+        }
+        if (senseCrimeCulprit(self, ctx) != Actor.NONE) {
             return APPREHEND_SCORE;
         }
         return senseLowestEligible(self, ctx) != Actor.NONE ? APPREHEND_SCORE : 0;
@@ -125,7 +143,10 @@ public final class ApprehendPolicy implements BehaviorPolicy {
                 self.setLastReasonCode(ReasonCode.APPREHENDING);
                 return;
             }
-            targetId = senseLowestEligible(self, ctx); // byte-identical to score()'s probe
+            targetId = senseCrimeCulprit(self, ctx); // byte-identical to score()'s probes,
+            if (targetId == Actor.NONE) {            // in score()'s exact priority order
+                targetId = senseLowestEligible(self, ctx);
+            }
             self.setApprehendTargetId(targetId);
         }
         self.setLastReasonCode(ReasonCode.APPREHENDING);
@@ -135,6 +156,12 @@ public final class ApprehendPolicy implements BehaviorPolicy {
         Actor offender = ctx.registry().get(targetId);
         if (offender.hasStatus(StatusBit.HELD) || offender.hasStatus(StatusBit.EXECUTED)) {
             closeCase(self); // another guard (or the exposure path) already took them in
+            return;
+        }
+        if (hasOpenCrime(ctx, targetId)) {
+            // A witnessed theft outranks (and never mixes with) the loiter machinery: the
+            // whole warn/grace apparatus below is the courtesy a caught thief already spent.
+            correctTheft(self, offender, ctx);
             return;
         }
         if (!inViolation(offender, ctx)) {
@@ -224,6 +251,111 @@ public final class ApprehendPolicy implements BehaviorPolicy {
         if (seized > 0) {
             bank.transfer(offender.id(), pool, seized); // accountId == actorId (bake convention)
         }
+    }
+
+    // ======================================================================
+    // Witnessed-theft sensing + correction (Sprint 2 "reactive streets")
+    // ======================================================================
+
+    /**
+     * The theft probe: the oldest in-window WITNESSED, unserved {@link CrimeLog} row whose
+     * culprit this guard can actually take — same z (boots stay on their plane), still at
+     * large, correctable (never the law/Wielder/beasts, all read PRESENTED), and not
+     * already claimed by another guard's open case (one guard per culprit — no district
+     * dog-pile). Returns the culprit's actor id, or {@link Actor#NONE}. Pure, draw-free;
+     * oldest-first log order is insertion order, so twin runs pick identical cases.
+     * Package-visible for the theft-correction tests.
+     */
+    static int senseCrimeCulprit(Actor self, ActorContext ctx) {
+        CrimeLog log = ctx.crimeLog();
+        long now = ctx.tick();
+        ActorRegistry registry = ctx.registry();
+        int selfZ = PackedPos.z(self.cell());
+        for (int i = 0; i < log.size(); i++) {
+            if (!log.witnessedAt(i) || log.servedAt(i)
+                    || now - log.tickAt(i) > CRIME_WINDOW_TICKS) {
+                continue;
+            }
+            int culpritId = log.thiefIdAt(i);
+            if (culpritId == self.id() || culpritId < 0 || culpritId >= registry.size()) {
+                continue;
+            }
+            Actor culprit = registry.get(culpritId);
+            if (culprit.hasStatus(StatusBit.HELD) || culprit.hasStatus(StatusBit.EXECUTED)
+                    || PackedPos.z(culprit.cell()) != selfZ) {
+                continue;
+            }
+            Job presented = ctx.presentedJob(culprit);
+            if (presented instanceof Job.Watch || presented instanceof Job.FlameOfMerc
+                    || presented instanceof Job.Beast) {
+                continue;
+            }
+            if (claimedByAnotherGuard(ctx, culpritId, self.id())) {
+                continue;
+            }
+            return culpritId;
+        }
+        return Actor.NONE;
+    }
+
+    /** Whether any other actor already holds an open case on {@code culpritId}. */
+    private static boolean claimedByAnotherGuard(ActorContext ctx, int culpritId, int selfId) {
+        ActorRegistry registry = ctx.registry();
+        for (int i = 0; i < registry.size(); i++) {
+            if (i != selfId && registry.get(i).apprehendTargetId() == culpritId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether {@code thiefId} has an in-window WITNESSED, unserved crime row outstanding. */
+    static boolean hasOpenCrime(ActorContext ctx, int thiefId) {
+        CrimeLog log = ctx.crimeLog();
+        long now = ctx.tick();
+        for (int i = 0; i < log.size(); i++) {
+            if (log.witnessedAt(i) && !log.servedAt(i) && log.thiefIdAt(i) == thiefId
+                    && now - log.tickAt(i) <= CRIME_WINDOW_TICKS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The theft correction: chase to contact (route-following; an unreachable culprit
+     * closes the case — the word stays warm for another guard or a better moment), then at
+     * {@link #CONTACT_RADIUS} the correction lands with NO warning: the fine is seized
+     * ({@link #fine}) and the culprit goes into custody — an ordinary thief under the fixed
+     * {@link #THEFT_SENTENCE_TICKS 1-day} sentence via the shared {@code arrestAndHold}; a
+     * TRUE-job Skyrunner rides {@link JobBehaviors#escalateSkyrunner} instead (caught
+     * red-handed: maimed on the 1st offense, hanged on the 2nd — the ARREST-SPEC
+     * escalation, now reachable purely from theft). Every outstanding row of the culprit is
+     * then marked served — one correction answers the spree.
+     */
+    private static void correctTheft(Actor self, Actor offender, ActorContext ctx) {
+        if (ActorGeometry.chebyshev(self.cell(), offender.cell()) > CONTACT_RADIUS) {
+            self.stepAlongRoute(offender.cell(), true, ctx::isWalkable, ctx.occupancy());
+            if (self.routeFailedTo(offender.cell())) {
+                closeCase(self); // bounded abandon (the patrol route-failure discipline)
+            }
+            return;
+        }
+        fine(offender, ctx);
+        ctx.factionStandings().onFine(offender.identity().presentedId());
+        Job trueJob = offender.jobOrdinal() >= 0 ? ctx.jobs().get(offender.jobOrdinal()) : null;
+        if (trueJob instanceof Job.Villain.Skyrunner) {
+            JobBehaviors.escalateSkyrunner(offender);
+            ctx.recordTheftCorrection(true);
+        } else {
+            JobBehaviors.arrestAndHold(offender, ctx, THEFT_SENTENCE_TICKS);
+            // The trail stamp: distinguish the theft correction from a loiter arrest so the
+            // WHY reconstructs from the reason code + the served CrimeLog rows alone.
+            offender.setLastReasonCode(ReasonCode.ARRESTED_FOR_THEFT);
+            ctx.recordTheftCorrection(false);
+        }
+        ctx.crimeLog().markServed(offender.id());
+        closeCase(self);
     }
 
     // ======================================================================

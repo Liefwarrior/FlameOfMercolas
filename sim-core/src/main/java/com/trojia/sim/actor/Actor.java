@@ -215,6 +215,13 @@ public abstract class Actor {
     // deliberately NOT part of the ACTR persisted record (§6). ----
     /** Next cell to step toward under direct player control, or {@link #NONE} if none pending. */
     private int playerMoveTargetCell = NONE;
+    /**
+     * The actor this played actor intends to PICKPOCKET this tick (Sprint 2's play-mode
+     * verb), or {@link #NONE}. Same contract as {@link #playerMoveTargetCell}: per-frame
+     * input intent set by the observer's input layer, consumed (and reset) by
+     * {@code PlayerControlPolicy.act}, never persisted.
+     */
+    private int playerPickpocketTargetId = NONE;
 
     // ---- cached A* route (§2.5 pathfinding addendum): a derived/recomputable cache, not
     // ground-truth state — the same "per-actor bookkeeping vs. registry" distinction the
@@ -889,6 +896,21 @@ public abstract class Actor {
     /** Sets (or clears, with {@link #NONE}) the pending Play-mode step target. */
     public final void setPlayerMoveTarget(int cell) {
         this.playerMoveTargetCell = cell;
+    }
+
+    /** The pending Play-mode pickpocket target actor id, or {@link #NONE} (Sprint 2). */
+    public final int playerPickpocketTargetId() {
+        return playerPickpocketTargetId;
+    }
+
+    /**
+     * Sets (or clears, with {@link #NONE}) the pending Play-mode pickpocket intent: the
+     * observer's input layer names an ADJACENT actor to lift from, and the next
+     * {@code PlayerControlPolicy.act} resolves the {@link TheftMechanics#pickpocket}
+     * contest and consumes the intent — the {@link #setPlayerMoveTarget} contract.
+     */
+    public final void setPlayerPickpocketTarget(int actorId) {
+        this.playerPickpocketTargetId = actorId;
     }
 
     public final ReasonCode lastReasonCode() {

@@ -115,6 +115,11 @@ public final class FactionStandings {
         return standingOf(presentedId, watch);
     }
 
+    /** {@link #standingOf} with the Merchants column — the Sprint-2 barter pricing read. */
+    public int merchantsStanding(int presentedId) {
+        return standingOf(presentedId, merchants);
+    }
+
     /**
      * Applies one clamped delta. No-op when unwired or the faction is absent from the raws
      * — event sites never need to guard.

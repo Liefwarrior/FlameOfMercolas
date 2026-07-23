@@ -63,6 +63,42 @@ final class PlayerControlPolicyTest {
     }
 
     @Test
+    void actResolvesThePickpocketIntentAndConsumesIt() {
+        ActorRegistry registry = new ActorRegistry();
+        Actor actor = serfAt(registry, 10, 10);
+        Actor mark = serfAt(registry, 11, 10);
+        actor.setStatus(StatusBit.PLAYER_CONTROLLED, true);
+        NoOpActorContext ctx = new NoOpActorContext(registry) {
+            private final CrimeLog log = new CrimeLog(8);
+
+            @Override
+            public CrimeLog crimeLog() {
+                return log;
+            }
+        };
+        ctx.items().addCarried(mark.id(), ItemKinds.COIN, 2);
+
+        actor.setPlayerPickpocketTarget(mark.id());
+        Policies.PLAYER_CONTROL.act(actor, ctx);
+
+        assertEquals(Actor.NONE, actor.playerPickpocketTargetId(),
+                "the intent must be consumed, not re-fired");
+        assertTrue(actor.lastReasonCode() == ReasonCode.PICKPOCKETED
+                        || actor.lastReasonCode() == ReasonCode.CAUGHT_STEALING,
+                "an adjacent attempt resolves and keeps its outcome stamp: "
+                        + actor.lastReasonCode());
+        assertEquals(1, ctx.crimeLog().totalRecorded(), "the attempt is logged");
+
+        // An out-of-reach intent is consumed but resolves to no attempt at all.
+        Actor far = serfAt(registry, 30, 30);
+        actor.setPlayerPickpocketTarget(far.id());
+        Policies.PLAYER_CONTROL.act(actor, ctx);
+        assertEquals(ReasonCode.PLAYER_CONTROLLED, actor.lastReasonCode(),
+                "no reach -> no attempt -> the ordinary play-mode stamp");
+        assertEquals(1, ctx.crimeLog().totalRecorded(), "nothing new logged");
+    }
+
+    @Test
     void actWithNoPendingTargetIsAHarmlessNoOpThatStillSetsTheReason() {
         ActorRegistry registry = new ActorRegistry();
         Actor actor = serfAt(registry, 10, 10);
