@@ -572,6 +572,106 @@ public abstract class Actor {
         }
     }
 
+    /**
+     * Cross-z-capable route follower (Sprint 4 "the climb") — the OPT-IN overload: identical
+     * to the four-arg {@link #stepAlongRoute(int, boolean, WalkabilityQuery, OccupancyQuery)}
+     * for every same-z target (and byte-identical when {@code links} is
+     * {@link ZLinkTable#EMPTY}), but a target on a DIFFERENT z is no longer a no-op: the
+     * pure {@link ZRouter} resolves the next hop of the band-by-band climb — a same-z walk
+     * to the chosen connector's near endpoint (the ordinary cached-A* leg machinery,
+     * verbatim), or, standing on that endpoint, the vertical commit via
+     * {@link #tryStepVertical}.
+     *
+     * <p><b>Opt-in only</b> (the Sprint-4 scope fence): the consumers passing a live table
+     * are player movement, {@code ReturnHomePolicy}, {@code HeldPolicy}'s escort, and the
+     * waypoint route patrol. Every other mover keeps the four-arg overload and the z-rule.
+     *
+     * <p><b>No new state.</b> The hop is recomputed per call as a pure function of
+     * {@code (cell, targetCell, links)} — nothing persisted, so a save/load mid-climb
+     * resumes byte-identically for free. An UNROUTABLE climb (a band crossing with no
+     * baked connector) lands in the existing route-failure cache with the same bounded
+     * {@link #ROUTE_RETRY_COOLDOWN_TICKS} cooldown, so {@link #routeFailedTo} reads true
+     * and consumers' failed-leg handling (the patrol skip) works unchanged.
+     */
+    public final void stepAlongRoute(int targetCell, boolean ignoresLeash, WalkabilityQuery walk,
+            OccupancyQuery occ, ZLinkTable links) {
+        if (PackedPos.z(cell) == PackedPos.z(targetCell) || links.isEmpty()) {
+            stepAlongRoute(targetCell, ignoresLeash, walk, occ);
+            return;
+        }
+        if (targetCell == cachedRouteTargetCell && cachedRoute.length == 0
+                && cachedRouteRetryCooldown > 0) {
+            cachedRouteRetryCooldown--;
+            return; // cooling down after an unroutable-climb verdict
+        }
+        int hop = ZRouter.nextHop(cell, targetCell, links);
+        if (hop == NONE) {
+            // Mirror the bounded-search failure shape so routeFailedTo(targetCell) reads
+            // true and the cooldown throttles re-verdicts (both are derived cache state).
+            cachedRouteTargetCell = targetCell;
+            cachedRoute = EMPTY_ROUTE;
+            cachedRouteIndex = 0;
+            cachedRouteRetryCooldown = (short) ROUTE_RETRY_COOLDOWN_TICKS;
+            return;
+        }
+        if (PackedPos.z(hop) != PackedPos.z(cell)) {
+            tryStepVertical(hop, ignoresLeash, walk, occ, links);
+        } else {
+            stepAlongRoute(hop, ignoresLeash, walk, occ); // the ordinary same-z leg
+        }
+    }
+
+    /**
+     * Commits ONE vertical step across a baked connector (Sprint 4 "the climb"): from a
+     * stair cell straight up/down its column, or across a ramp's diagonal exit. The one
+     * new movement verb — everything else about the step matches {@link #tryStep}'s
+     * discipline: gated by the type's speed accumulator, walkability-checked, leash-checked
+     * unless {@code ignoresLeash} (x/y chebyshev, as everywhere), occupancy-capped with the
+     * same shove escape hatch, facing updated from the x/y delta (a pure stair step keeps
+     * facing), {@code occ.onEnter} notified. Only a {@code links}-baked pair may carry the
+     * step — an arbitrary cross-z destination (a stale player intent, a mis-aimed call)
+     * is a deterministic no-op. A committed step drops the cached same-z route wholesale
+     * ({@link #invalidateRoute}): the old band's waypoints are meaningless on the new one.
+     *
+     * @return whether the step was committed
+     */
+    public final boolean tryStepVertical(int dest, boolean ignoresLeash, WalkabilityQuery walk,
+            OccupancyQuery occ, ZLinkTable links) {
+        if (!links.linked(cell, dest)) {
+            return false; // only a baked connector carries a vertical step
+        }
+        moveAccumTicks++;
+        if (moveAccumTicks < stats.speedTicksPerStep()) {
+            return false;
+        }
+        moveAccumTicks = 0;
+        if (!walk.isWalkable(dest)) {
+            return false;
+        }
+        if (!ignoresLeash) {
+            int newDist = ActorGeometry.chebyshev(dest, anchorCell);
+            int curDist = ActorGeometry.chebyshev(cell, anchorCell);
+            if (newDist > stats.leashRadius() && newDist >= curDist) {
+                return false; // the leash holds across bands too (x/y geometry, as everywhere)
+            }
+        }
+        if (occ.occupantsAt(dest) >= MAX_OCCUPANTS_PER_CELL && !occ.tryPush(this, dest)) {
+            return false; // the stair head is a 1-per-square funnel like any other cell
+        }
+        int from = cell;
+        cell = dest;
+        int dx = Integer.compare(PackedPos.x(dest), PackedPos.x(from));
+        int dy = Integer.compare(PackedPos.y(dest), PackedPos.y(from));
+        if (dx != 0) {
+            facing = (byte) (dx < 0 ? Dir.WEST.ordinal() : Dir.EAST.ordinal());
+        } else if (dy != 0) {
+            facing = (byte) (dy < 0 ? Dir.NORTH.ordinal() : Dir.SOUTH.ordinal());
+        }
+        occ.onEnter(from, dest);
+        invalidateRoute(); // the same-z leg cache is meaningless on the new band
+        return true;
+    }
+
     private void replan(int targetCell, WalkabilityQuery walk) {
         cachedRouteTargetCell = targetCell;
         cachedRouteIndex = 0;

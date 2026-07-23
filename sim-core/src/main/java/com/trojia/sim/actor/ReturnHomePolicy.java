@@ -70,7 +70,11 @@ public final class ReturnHomePolicy implements BehaviorPolicy {
         // RETURN_HOME must ignore it too whenever home != anchor (a Serf's tenement
         // is routinely outside the work anchor's leash) or the walk home could never
         // complete — a resolved-here consistency gap, not a spec contradiction.
-        self.stepAlongRoute(home.homeCell(), true, ctx::isWalkable, ctx.occupancy());
+        // Sprint 4 (the climb): an OPT-IN cross-z consumer — a commuter stranded off its
+        // home band (a played climb, a cross-z escort's release) walks the baked stairs
+        // home instead of no-opping forever. Same-z commutes are byte-identical.
+        self.stepAlongRoute(home.homeCell(), true, ctx::isWalkable, ctx.occupancy(),
+                ctx.zLinks());
         // !isRecovered rather than isLow for legibility consistency with the score()
         // hysteresis gate above (cosmetic — doesn't change which reason fires, since
         // score() already guarantees this act() only runs while the REST branch applies).

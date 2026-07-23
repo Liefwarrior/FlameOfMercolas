@@ -301,7 +301,10 @@ public final class JobBehaviors {
             self.setGoalProgress((short) ((index + 1) % count)); // arrived: next leg next tick
             return;
         }
-        self.stepAlongRoute(waypoint, true, ctx::isWalkable, ctx.occupancy());
+        // Sprint 4 (the climb): an OPT-IN cross-z consumer — a route may now carry
+        // waypoints on different bands (the Saltgate Rise beat, z11<->z13); legs between
+        // same-z waypoints are byte-identical to the pre-climb walker.
+        self.stepAlongRoute(waypoint, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
         if (self.routeFailedTo(waypoint)) {
             // Route-failure cache says this waypoint is unreachable right now: skip it rather
             // than freeze the whole beat on one blocked leg (Pass-13 DoD).

@@ -79,7 +79,17 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
         int target = self.playerMoveTargetCell();
         if (target != Actor.NONE) {
             int before = self.cell();
-            self.stepToward(target, true, ctx::isWalkable, ctx.occupancy());
+            if (com.trojia.sim.world.PackedPos.z(target)
+                    != com.trojia.sim.world.PackedPos.z(before)) {
+                // Sprint 4 (the climb): a cross-z move intent is the player taking a baked
+                // stair/ramp connector — committed only across a ZLinkTable pair (an
+                // arbitrary cross-z cell is a deterministic no-op), same speed gate,
+                // occupancy cap and shove escape as any step.
+                self.tryStepVertical(target, true, ctx::isWalkable, ctx.occupancy(),
+                        ctx.zLinks());
+            } else {
+                self.stepToward(target, true, ctx::isWalkable, ctx.occupancy());
+            }
             // Consume the intent so a stale target never re-fires after the driver pauses
             // (the observer re-arms it every frame a movement key is held, §5.2).
             self.setPlayerMoveTarget(Actor.NONE);

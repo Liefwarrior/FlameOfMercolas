@@ -983,6 +983,11 @@ public final class ActorsSystem implements SimulationSystem {
         }
 
         @Override
+        public ZLinkTable zLinks() {
+            return fixtures.zLinks();
+        }
+
+        @Override
         public CrimeLog crimeLog() {
             return crimeLog;
         }

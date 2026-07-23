@@ -40,7 +40,11 @@ public final class HeldPolicy implements BehaviorPolicy {
                 ? self.assignedHoldCell()
                 : ctx.arrestHoldCell();
         if (holdCell != Actor.NONE) {
-            self.stepAlongRoute(holdCell, true, ctx::isWalkable, ctx.occupancy());
+            // Sprint 4 (the climb): an OPT-IN cross-z consumer — a body arrested on a roof
+            // or terrace band now walks the baked stairs down to its assigned K34 cell
+            // instead of serving custody frozen in place. Same-z escorts are byte-identical.
+            self.stepAlongRoute(holdCell, true, ctx::isWalkable, ctx.occupancy(),
+                    ctx.zLinks());
         }
         eatCarriedRation(self, ctx);
         self.setLastReasonCode(ReasonCode.HELD_IN_CUSTODY);

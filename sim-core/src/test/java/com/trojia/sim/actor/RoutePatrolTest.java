@@ -25,9 +25,10 @@ final class RoutePatrolTest {
         return PackedPos.pack(x, y, Z);
     }
 
-    /** Ctx double with a synthetic route table (and an optional wall set). */
+    /** Ctx double with a synthetic route table (and an optional wall set / connector table). */
     private static final class RouteContext extends NoOpActorContext {
         private PatrolRouteTable routes = PatrolRouteTable.EMPTY;
+        private ZLinkTable links = ZLinkTable.EMPTY;
         private final List<Integer> walls = new ArrayList<>();
 
         RouteContext(ActorRegistry registry) {
@@ -37,6 +38,11 @@ final class RoutePatrolTest {
         @Override
         public PatrolRouteTable patrolRoutes() {
             return routes;
+        }
+
+        @Override
+        public ZLinkTable zLinks() {
+            return links;
         }
 
         @Override
@@ -107,6 +113,32 @@ final class RoutePatrolTest {
             patrol.pursue(watch, ctx);
         }
         assertEquals(w3, watch.cell(), "the loop continues past the dead leg");
+    }
+
+    @Test
+    void aCrossZRouteWalksBothBandsThroughTheBakedConnector() {
+        // Sprint 4 (the climb): a route with waypoints on TWO bands — the Saltgate Rise
+        // shape (z11 foot, z13 head compressed to one crossing here) — loops through the
+        // baked stair in both directions.
+        ActorRegistry registry = new ActorRegistry();
+        RouteContext ctx = new RouteContext(registry);
+        int foot = cell(10, 10);                       // z11
+        int head = PackedPos.pack(16, 10, Z + 1);      // z12
+        ctx.routes = new PatrolRouteTable(new int[][] {{foot, head}});
+        ctx.links = new ZLinkTable(new int[] {cell(13, 10)},
+                new int[] {PackedPos.pack(13, 10, Z + 1)});
+        Actor watch = spawnBoundWatch(registry, ctx, foot);
+        Job patrol = patrolJob(ctx);
+
+        boolean sawFoot = false;
+        boolean sawHead = false;
+        for (int i = 0; i < 120; i++) {
+            patrol.pursue(watch, ctx);
+            sawFoot |= watch.cell() == foot;
+            sawHead |= watch.cell() == head;
+        }
+        assertTrue(sawHead, "the beat climbs the connector to the upper waypoint");
+        assertTrue(sawFoot, "…and comes back down to the foot (the loop closes)");
     }
 
     @Test

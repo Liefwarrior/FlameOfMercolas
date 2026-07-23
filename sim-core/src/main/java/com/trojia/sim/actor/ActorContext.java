@@ -260,6 +260,17 @@ public interface ActorContext {
     }
 
     /**
+     * The baked cross-z connector table (Sprint 4 "the climb"): the stair pairs and ramp
+     * exits {@link ZRouter} plans over and {@link Actor#tryStepVertical} commits across.
+     * {@link ZLinkTable#EMPTY} where no connectors are wired (world-less bootstrap, tests,
+     * pre-climb scenarios) — every opt-in cross-z mover then degrades to the old z-rule
+     * no-op.
+     */
+    default ZLinkTable zLinks() {
+        return ZLinkTable.EMPTY;
+    }
+
+    /**
      * The bounded theft ring buffer (Sprint 2): every pickpocket attempt records a row here
      * ({@link TheftMechanics}); guards' theft sensing ({@link ApprehendPolicy}) reads the
      * WITNESSED rows at their sense cadence. {@link CrimeLog#EMPTY} where no live system is
