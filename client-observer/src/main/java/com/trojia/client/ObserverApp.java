@@ -19,6 +19,7 @@ import com.trojia.client.atlas.TileAtlas;
 import com.trojia.client.boot.FixtureWorldLoader;
 import com.trojia.client.boot.LampMarkersLoader;
 import com.trojia.client.boot.RepoPaths;
+import com.trojia.client.camera.FollowZSnap;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.face.FaceArchetypes;
 import com.trojia.client.face.FaceGen;
@@ -43,6 +44,7 @@ import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.JournalText;
 import com.trojia.client.inspect.PlayModeState;
 import com.trojia.client.inspect.QuestFeedTracker;
+import com.trojia.client.inspect.QuitGuard;
 import com.trojia.client.inspect.SkillUpTracker;
 import com.trojia.client.inspect.TalkState;
 import com.trojia.client.inspect.ToastQueue;
@@ -142,6 +144,8 @@ public final class ObserverApp extends ApplicationAdapter {
 
     private MapCamera camera;
     private ZLevelCursor zLevel;
+    private final FollowZSnap followZSnap = new FollowZSnap();
+    private final QuitGuard quitGuard = new QuitGuard();
     private TileAtlas atlas;
     private WorldRenderer renderer;
     private SimulationDriver driver;
@@ -532,24 +536,37 @@ public final class ObserverApp extends ApplicationAdapter {
         }
 
         // DF-style HUD block (Behavior 2 of this pass): a solid black panel behind the nav +
-        // clock lines, sized to their actual content so it never clips or over-extends.
+        // clock lines — plus, on populated fixtures, the VERB legend third line (Sprint 4
+        // playtest fix: the social-verb surface was undiscoverable) — sized to their actual
+        // content so it never clips or over-extends.
         List<HudToken> navTokens = HudText.describeTokens(zLevel.z(), camera.zoom());
         List<HudToken> timeTokens =
                 HudText.describeTimeTokens(driver.currentTick(), driver.speed().name());
+        List<HudToken> verbTokens = population == null ? List.of()
+                : (playModeActive ? HudText.playModeKeybindingTokens()
+                        : HudText.observerVerbKeybindingTokens());
+        int hudLines = verbTokens.isEmpty() ? 2 : 3;
         float lineHeight = font.getLineHeight();
         float navWidth = IconTextLine.measure(font, navTokens);
         float timeWidth = IconTextLine.measure(font, timeTokens);
-        float statusPanelWidth = Math.max(navWidth, timeWidth) + 2 * HudPanel.PADDING;
-        float statusPanelHeight = 2 * lineHeight + 2 * HudPanel.PADDING;
+        float verbWidth = verbTokens.isEmpty() ? 0f : IconTextLine.measure(font, verbTokens);
+        float statusPanelWidth = Math.max(Math.max(navWidth, timeWidth), verbWidth)
+                + 2 * HudPanel.PADDING;
+        float statusPanelHeight = hudLines * lineHeight + 2 * HudPanel.PADDING;
         float statusPanelX = HUD_MARGIN_PX - HudPanel.PADDING;
-        float statusPanelBottomY = camera.viewportHeightPx() - HUD_MARGIN_PX - 2 * lineHeight
-                - HudPanel.PADDING;
+        float statusPanelBottomY = camera.viewportHeightPx() - HUD_MARGIN_PX
+                - hudLines * lineHeight - HudPanel.PADDING;
         HudPanel.draw(batch, icons.whitePixel(), statusPanelX, statusPanelBottomY,
                 statusPanelWidth, statusPanelHeight);
         IconTextLine.draw(batch, font, icons, HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX,
                 navTokens);
         IconTextLine.draw(batch, font, icons,
                 HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX - lineHeight, timeTokens);
+        if (!verbTokens.isEmpty()) {
+            IconTextLine.draw(batch, font, icons,
+                    HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX - 2 * lineHeight,
+                    verbTokens);
+        }
         if (inspectorRenderer != null) {
             inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());
         }
@@ -592,14 +609,25 @@ public final class ObserverApp extends ApplicationAdapter {
             reportTrackedMover();
         }
         boolean smokeDone = smokeFrames > 0 && framesRendered >= smokeFrames;
-        if (smokeDone || (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) && !escConsumedByTalk)) {
-            if (smokeDone) {
-                System.out.println("observer smoke test: rendered " + framesRendered + " frames OK");
-                if (screenshotPath != null) {
-                    writeScreenshot(screenshotPath);
-                }
+        if (smokeDone) {
+            System.out.println("observer smoke test: rendered " + framesRendered + " frames OK");
+            if (screenshotPath != null) {
+                writeScreenshot(screenshotPath);
             }
             Gdx.app.exit();
+            return;
+        }
+        // ESC quits behind a two-press confirmation on populated fixtures (Sprint 4
+        // playtest fix: one keystroke used to end a session, and no save verb exists).
+        // The tavern walkthrough keeps the old instant exit — it is a dev fixture with
+        // nothing to lose and no toast surface to confirm on.
+        quitGuard.update(deltaSeconds);
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) && !escConsumedByTalk) {
+            if (population == null || quitGuard.press()) {
+                Gdx.app.exit();
+            } else {
+                toasts.add(QuitGuard.CONFIRM_TOAST);
+            }
         }
     }
 
@@ -636,9 +664,15 @@ public final class ObserverApp extends ApplicationAdapter {
                 }
                 case Z -> zLevel.to(action.intArgs()[0]);
                 case SHOT -> pendingShotPath = action.args();
-                case CLIMB -> ClimbInput.applyClimb(playMode, population.registry(),
-                        population.zLinks(), toasts,
-                        "down".equalsIgnoreCase(action.args()) ? -1 : +1, true);
+                case CLIMB -> {
+                    // args: "up"/"down", optionally ",quiet" (probe mode: no refusal toast
+                    // — a tape sweeping a street for the connector under its feet).
+                    String[] parts = action.args().split(",");
+                    ClimbInput.applyClimb(playMode, population.registry(),
+                            population.zLinks(), toasts,
+                            "down".equalsIgnoreCase(parts[0].trim()) ? -1 : +1,
+                            parts.length < 2 || !"quiet".equalsIgnoreCase(parts[1].trim()));
+                }
                 case TOPIC, EAT -> throw new UnsupportedOperationException(
                         "script verb " + action.verb() + " lands with its Sprint-4 slice");
             }
@@ -673,16 +707,22 @@ public final class ObserverApp extends ApplicationAdapter {
 
     /**
      * While follow is active, re-center the camera on the selected actor's live tile every
-     * frame (read fresh from the registry — no cached position), and snap the viewed z-level
-     * to the actor's floor so an actor changing levels stays in view. A no-op with no
-     * selection or follow off — free camera then.
+     * frame (read fresh from the registry — no cached position). The viewed z-level snaps
+     * to the actor's floor only on an EDGE — target change or the actor changing bands
+     * ({@link FollowZSnap}, the Sprint-4 playtest fix) — so a manual z-scrub peek survives
+     * until the followed soul actually takes a stair. A no-op with no selection or follow
+     * off — free camera then.
      */
     private void applyFollowCamera() {
         if (inspector == null || !inspector.followActive()) {
+            followZSnap.reset();
             return;
         }
-        int cell = population.registry().get(inspector.selectedActorId()).cell();
-        zLevel.to(PackedPos.z(cell));
+        int actorId = inspector.selectedActorId();
+        int cell = population.registry().get(actorId).cell();
+        if (followZSnap.shouldSnap(actorId, PackedPos.z(cell))) {
+            zLevel.to(PackedPos.z(cell));
+        }
         camera.centerOnTile(PackedPos.x(cell), PackedPos.y(cell));
     }
 

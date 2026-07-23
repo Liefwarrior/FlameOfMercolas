@@ -118,6 +118,38 @@ public final class HudText {
                 HudToken.text(" step (while paused)"));
     }
 
+    /**
+     * The PLAY-MODE verb legend (Sprint 4, the playtest's top defect: the entire social
+     * verb surface was undiscoverable — no key appeared on any screen): shown as the HUD's
+     * third line while an actor is being driven. Movement is deliberately absent
+     * ({@code WASD} already reads as movement from the nav line's pan group being
+     * suppressed); this line carries the VERBS.
+     */
+    public static List<HudToken> playModeKeybindingTokens() {
+        return List.of(
+                HudToken.icon(IconKey.T), HudToken.text(" talk   "),
+                HudToken.icon(IconKey.G), HudToken.text(" pickpocket   "),
+                HudToken.icon(IconKey.E), HudToken.text(" eat   "),
+                HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
+                HudToken.text(" climb   "),
+                HudToken.icon(IconKey.I), HudToken.text(" disguise   "),
+                HudToken.icon(IconKey.J), HudToken.text(" journal   "),
+                HudToken.icon(IconKey.P), HudToken.text(" release"));
+    }
+
+    /**
+     * The OBSERVER verb legend (the same third HUD line while no actor is driven, on a
+     * populated fixture): selection, follow, play, nameplates, journal.
+     */
+    public static List<HudToken> observerVerbKeybindingTokens() {
+        return List.of(
+                HudToken.icon(IconKey.MOUSE_LEFT_CLICK), HudToken.text(" select   "),
+                HudToken.icon(IconKey.C), HudToken.text(" follow   "),
+                HudToken.icon(IconKey.P), HudToken.text(" play as   "),
+                HudToken.icon(IconKey.N), HudToken.text(" names (hold)   "),
+                HudToken.icon(IconKey.J), HudToken.text(" journal"));
+    }
+
     /** {@link #describe}'s status text followed by {@link #navKeybindingTokens} — the full
      * navigation HUD line, ready to hand to {@code IconTextLine.draw}. */
     public static List<HudToken> describeTokens(int z, int zoom) {

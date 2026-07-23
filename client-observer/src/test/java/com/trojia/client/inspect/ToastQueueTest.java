@@ -52,6 +52,30 @@ class ToastQueueTest {
     }
 
     @Test
+    void longTextLivesProportionallyLongerCapped() {
+        // Short text keeps the base lifetime (the pre-Sprint-4 contract, byte-for-byte).
+        assertEquals(ToastQueue.LIFETIME_SECONDS, ToastQueue.lifetimeFor("Grit increased to 5"),
+                1e-6);
+        // A 100-char check line gets base + 60 chars over the threshold * per-char extra.
+        String checkLine = "x".repeat(100);
+        assertEquals(ToastQueue.LIFETIME_SECONDS + 60 * ToastQueue.EXTRA_SECONDS_PER_CHAR,
+                ToastQueue.lifetimeFor(checkLine), 1e-6);
+        // The ceiling holds for a novel.
+        assertEquals(ToastQueue.MAX_LIFETIME_SECONDS, ToastQueue.lifetimeFor("y".repeat(500)),
+                1e-6);
+
+        // And the queue actually keeps the long toast alive past the short lifetime.
+        ToastQueue q = new ToastQueue();
+        q.add(checkLine);
+        q.update(ToastQueue.LIFETIME_SECONDS + 0.5f);
+        assertEquals(1, q.visible().size(), "a long check line outlives the base lifetime");
+        assertEquals(ToastQueue.lifetimeFor(checkLine), q.visible().get(0).lifetimeSeconds(),
+                1e-6);
+        q.update(ToastQueue.MAX_LIFETIME_SECONDS);
+        assertTrue(q.visible().isEmpty());
+    }
+
+    @Test
     void aBurstEvictsTheOldestBeyondTheVisibleCap() {
         ToastQueue q = new ToastQueue();
         for (int i = 0; i < ToastQueue.MAX_VISIBLE + 2; i++) {

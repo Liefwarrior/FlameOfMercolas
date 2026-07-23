@@ -29,6 +29,14 @@ public enum IconKey {
     F("keyboard_f.png"),
     PERIOD("keyboard_period.png"),
     C("keyboard_c.png"),
+    // Sprint 4 (the play-mode verb legend): every social/play verb key gets a glyph.
+    P("keyboard_p.png"),
+    I("keyboard_i.png"),
+    T("keyboard_t.png"),
+    G("keyboard_g.png"),
+    E("keyboard_e.png"),
+    N("keyboard_n.png"),
+    J("keyboard_j.png"),
     MOUSE_LEFT_CLICK("mouse_left.png");
 
     private final String fileName;

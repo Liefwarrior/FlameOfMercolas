@@ -7,6 +7,8 @@ import com.trojia.client.inspect.ToastQueue;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ZLinkTable;
+import com.trojia.sim.world.Dir;
+import com.trojia.sim.world.PackedPos;
 
 /**
  * Polls the CLIMB verb (Sprint 4 "the climb", the play-mode half of the sim's cross-z
@@ -70,7 +72,8 @@ public final class ClimbInput {
             return;
         }
         Actor played = registry.get(playMode.playedActorId());
-        int dest = connectorFrom(links, played.cell(), direction);
+        Dir facing = Dir.values()[played.facing()];
+        int dest = connectorFrom(links, played.cell(), direction, facing.dx(), facing.dy());
         if (dest == Actor.NONE) {
             if (toastOnMiss) {
                 toasts.add(direction > 0 ? NO_WAY_UP : NO_WAY_DOWN);
@@ -80,19 +83,51 @@ public final class ClimbInput {
         played.setPlayerMoveTarget(dest);
     }
 
-    /**
-     * The first baked connector destination from {@code cell} in {@code direction}
-     * (ascending baked link order), or {@link Actor#NONE}. Package-private for the test.
-     */
+    /** {@link #connectorFrom(ZLinkTable, int, int, int, int)} with no facing preference. */
     static int connectorFrom(ZLinkTable links, int cell, int direction) {
+        return connectorFrom(links, cell, direction, 0, 0);
+    }
+
+    /**
+     * The baked connector destination from {@code cell} in {@code direction}, or
+     * {@link Actor#NONE}. Deterministic preference order (the playtest's stall fix — the
+     * first-baked link was often a ramp's WEST exit, dumping the climber one column off
+     * the road it was walking): <b>same-column</b> destination first (a stair climbs
+     * straight, always unambiguous), then the destination continuing the climber's
+     * {@code (facingDx, facingDy)} travel direction (walk south onto a ramp, come out
+     * its south exit), then the first baked link (the fixed-order fallback). Pure over
+     * its inputs; package-private for the test.
+     */
+    static int connectorFrom(ZLinkTable links, int cell, int direction, int facingDx,
+            int facingDy) {
+        int straight = Actor.NONE;
+        int facingMatch = Actor.NONE;
+        int first = Actor.NONE;
         for (int i = 0; i < links.linkCount(); i++) {
+            int dest;
             if (direction > 0 && links.low(i) == cell) {
-                return links.high(i);
+                dest = links.high(i);
+            } else if (direction < 0 && links.high(i) == cell) {
+                dest = links.low(i);
+            } else {
+                continue;
             }
-            if (direction < 0 && links.high(i) == cell) {
-                return links.low(i);
+            if (first == Actor.NONE) {
+                first = dest;
+            }
+            int dx = PackedPos.x(dest) - PackedPos.x(cell);
+            int dy = PackedPos.y(dest) - PackedPos.y(cell);
+            if (dx == 0 && dy == 0 && straight == Actor.NONE) {
+                straight = dest;
+            }
+            if ((facingDx != 0 || facingDy != 0) && dx == facingDx && dy == facingDy
+                    && facingMatch == Actor.NONE) {
+                facingMatch = dest;
             }
         }
-        return Actor.NONE;
+        if (straight != Actor.NONE) {
+            return straight;
+        }
+        return facingMatch != Actor.NONE ? facingMatch : first;
     }
 }

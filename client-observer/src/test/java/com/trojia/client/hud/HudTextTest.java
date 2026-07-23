@@ -90,6 +90,30 @@ class HudTextTest {
     }
 
     @Test
+    void playModeLegendCarriesEverySocialVerbKey() {
+        // Sprint 4 playtest fix: the whole verb surface must be on screen while driving.
+        List<HudToken> tokens = HudText.playModeKeybindingTokens();
+        assertTrue(tokens.contains(HudToken.icon(IconKey.T)), "talk");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.G)), "pickpocket");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.E)), "eat");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.ARROW_UP)), "climb up");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.ARROW_DOWN)), "climb down");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.I)), "disguise");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.J)), "journal");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.P)), "release");
+    }
+
+    @Test
+    void observerVerbLegendCarriesTheSelectionSurface() {
+        List<HudToken> tokens = HudText.observerVerbKeybindingTokens();
+        assertTrue(tokens.contains(HudToken.icon(IconKey.MOUSE_LEFT_CLICK)), "select");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.C)), "follow");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.P)), "play as");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.N)), "names");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.J)), "journal");
+    }
+
+    @Test
     void describeTokensStartsWithTheStatusTextThenTheKeybindingLegend() {
         List<HudToken> tokens = HudText.describeTokens(9, 3);
         assertEquals(HudToken.text(HudText.describe(9, 3)), tokens.get(0));

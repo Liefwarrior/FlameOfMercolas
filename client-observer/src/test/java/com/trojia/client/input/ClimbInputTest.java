@@ -96,6 +96,35 @@ class ClimbInputTest {
         assertTrue(toasts.visible().isEmpty());
     }
 
+    /**
+     * The Sprint-4 stall fix: a ramp with several exits used to hand back the first baked
+     * link (usually the WEST exit), dumping the climber a column off its road. The choice
+     * now prefers the same-column stair, then the exit continuing the climber's facing,
+     * then the baked order — all deterministic.
+     */
+    @Test
+    void connectorChoicePrefersStraightThenFacingThenBakedOrder() {
+        int ramp = PackedPos.pack(100, 100, 5);
+        int westExit = PackedPos.pack(99, 100, 6);
+        int southExit = PackedPos.pack(100, 101, 6);
+        ZLinkTable twoExits = new ZLinkTable(new int[] {ramp, ramp},
+                new int[] {westExit, southExit});
+        // Facing south: the south exit wins over the earlier-baked west exit.
+        assertEquals(southExit, ClimbInput.connectorFrom(twoExits, ramp, +1, 0, 1));
+        // Facing east (no matching exit): fixed baked order falls through to west.
+        assertEquals(westExit, ClimbInput.connectorFrom(twoExits, ramp, +1, 1, 0));
+        // No facing preference: baked order.
+        assertEquals(westExit, ClimbInput.connectorFrom(twoExits, ramp, +1));
+
+        // A same-column stair beats everything, wherever it sits in the baked list.
+        int stairTop = PackedPos.pack(100, 100, 6);
+        ZLinkTable withStair = new ZLinkTable(new int[] {ramp, ramp, ramp},
+                new int[] {westExit, southExit, stairTop});
+        assertEquals(stairTop, ClimbInput.connectorFrom(withStair, ramp, +1, 0, 1));
+        // And downward from an upper endpoint, facing preference works the same way.
+        assertEquals(ramp, ClimbInput.connectorFrom(twoExits, southExit, -1, 0, -1));
+    }
+
     /** The wiring proof: the docks bake exposes its extracted connector table. */
     @Test
     void docksPopulationExposesTheBakedConnectorTable() {
