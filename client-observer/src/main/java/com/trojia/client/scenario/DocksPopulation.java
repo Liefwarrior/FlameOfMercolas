@@ -12,6 +12,7 @@ import com.trojia.sim.actor.ActorsSystem;
 import com.trojia.sim.actor.BankLedger;
 import com.trojia.sim.actor.BankQueue;
 import com.trojia.sim.actor.CivicFixtures;
+import com.trojia.sim.actor.FactionStandings;
 import com.trojia.sim.actor.FoodEconomy;
 import com.trojia.sim.actor.FoodMarket;
 import com.trojia.sim.actor.HomeRegistry;
@@ -28,6 +29,11 @@ import com.trojia.sim.actor.RestrictedZone;
 import com.trojia.sim.actor.RestrictedZoneTable;
 import com.trojia.sim.actor.RelationshipKind;
 import com.trojia.sim.actor.RelationshipRegistry;
+import com.trojia.sim.actor.RooftopTable;
+import com.trojia.sim.actor.SkillTrackRegistry;
+import com.trojia.sim.actor.faction.FactionDefinition;
+import com.trojia.sim.actor.faction.FactionRawsLoader;
+import com.trojia.sim.actor.faction.FactionRegistry;
 import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobBinder;
 import com.trojia.sim.actor.job.JobId;
@@ -43,6 +49,7 @@ import com.trojia.sim.actor.type.PriestOfTheFlame;
 import com.trojia.sim.actor.type.Serf;
 import com.trojia.sim.actor.type.Shopkeeper;
 import com.trojia.sim.actor.type.Wastrel;
+import com.trojia.sim.progression.SkillRawsLoader;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
 import com.trojia.sim.world.TileCursor;
@@ -539,9 +546,18 @@ public final class DocksPopulation implements ScenarioPopulation {
         // does); the gate itself (canAccess) is unit-tested against these zones.
         CivicFixtures fixtures = new CivicFixtures(arrestHoldCell, restrictedZoneTable(),
                 vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll,
-                foodMarket, PatrolRouteTable.of(patrolRoutes()));
+                foodMarket, PatrolRouteTable.of(patrolRoutes()), rooftopTable());
+        // Sprint-1 progression + faction wiring: the boot-built skill universe (the committed
+        // 16-skill raws) behind the dense per-actor track table, and the 5-faction registry
+        // behind the standing ledger. Both are raws-pure boot config (identical every run);
+        // membership keys are validated against the bound jobs so a jobs.json rename fails
+        // the bake loudly instead of silently orphaning a faction.
+        SkillTrackRegistry skillTracks = new SkillTrackRegistry(SkillRawsLoader.load(rawsRoot));
+        FactionRegistry factionDefs = FactionRawsLoader.load(rawsRoot);
+        validateFactionMembership(factionDefs, jobs);
+        FactionStandings factionStandings = new FactionStandings(factionDefs);
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
-                relationships, items, bank, world, fixtures);
+                relationships, items, bank, world, fixtures, skillTracks, factionStandings);
         system.recordFoodMintedAtBake(foodSeeded);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers);
@@ -605,6 +621,57 @@ public final class DocksPopulation implements ScenarioPopulation {
     public static List<List<Integer>> patrolRoutes() {
         return List.of(worldCells(PATROL_TARWALK, ZA), worldCells(PATROL_QUAY, ZA),
                 worldCells(PATROL_ROPEWYND, ZA));
+    }
+
+    /**
+     * The authored rooftop planes (Sprint-1 progression wiring: the played actor's
+     * skyrunning hook), as world-coordinate boxes. Two boxes, mirroring the map's own roof
+     * geometry: the EASTERN ROOFLINE — the C2 Netters' / C4 Gullet roof decks plus the K35
+     * Skyrunner's Roost planes at z:+13/+14, x136+ (the exact region the arrest-spec
+     * comment above pins every rooftop villain to; y-bounded to 60..99 so Band C's ground
+     * streets at y117+ never read as roof) — and the C3 SALTGATE TERRACE roof plane at
+     * z:+14 (roofhuts x102-128, y104-116). Baked config, no live state.
+     */
+    public static RooftopTable rooftopTable() {
+        return new RooftopTable(new int[] {
+                // eastern roofline: x136..199, y60..99, z 13..14 (world-packed below)
+                Coords.CHUNK_SIZE_X + 136, Coords.CHUNK_SIZE_Y + 60, Coords.CHUNK_SIZE_Z + 13,
+                Coords.CHUNK_SIZE_X + 199, Coords.CHUNK_SIZE_Y + 99, Coords.CHUNK_SIZE_Z + 14,
+                // C3 Saltgate Terrace roof plane: x96..140, y104..116, z:+14 only
+                Coords.CHUNK_SIZE_X + 96, Coords.CHUNK_SIZE_Y + 104, Coords.CHUNK_SIZE_Z + 14,
+                Coords.CHUNK_SIZE_X + 140, Coords.CHUNK_SIZE_Y + 116, Coords.CHUNK_SIZE_Z + 14,
+        });
+    }
+
+    /**
+     * A fresh wired skill-track table from the committed raws — the exact wiring
+     * {@link #build} gives the live system. Load-side reconstruction (a save's loading
+     * system must be constructed with the same raws-derived wiring, the typeStats/jobs
+     * contract) and tests use this.
+     */
+    public static SkillTrackRegistry freshSkillTracks() {
+        return new SkillTrackRegistry(SkillRawsLoader.load(RepoPaths.locate("content", "raws")));
+    }
+
+    /** A fresh wired faction-standing ledger from the committed raws ({@link #freshSkillTracks}'s twin). */
+    public static FactionStandings freshFactionStandings() {
+        return new FactionStandings(FactionRawsLoader.load(RepoPaths.locate("content", "raws")));
+    }
+
+    /**
+     * Fail-fast membership audit (Sprint-1 factions): every {@code memberJobs} key in the
+     * factions raws must resolve against the bound {@link JobRegistry} — a jobs.json id
+     * rename would otherwise silently orphan a faction's whole membership.
+     */
+    private static void validateFactionMembership(FactionRegistry factions, JobRegistry jobs) {
+        for (FactionDefinition def : factions.all()) {
+            for (String jobKey : def.memberJobs()) {
+                if (jobs.ordinalOf(JobId.of(jobKey)) < 0) {
+                    throw new IllegalStateException("factions.json: faction '" + def.key()
+                            + "' lists unknown job '" + jobKey + "' (not in jobs.json)");
+                }
+            }
+        }
     }
 
     // ---- S1 identity pass (NameForge + the Forty Notables): the spawn-site key table and

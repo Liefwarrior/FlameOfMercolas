@@ -27,6 +27,8 @@ package com.trojia.sim.actor;
  *                         commons, guaranteed larders), or {@link FoodMarket#EMPTY}
  * @param patrolRoutes     the ordered single-z guard patrol routes (law &amp; order pass, Pass 13),
  *                         or {@link PatrolRouteTable#EMPTY}
+ * @param rooftops         the baked rooftop-region table (Sprint 1 progression wiring: the
+ *                         played actor's skyrunning hook), or {@link RooftopTable#EMPTY}
  */
 public record CivicFixtures(
         int arrestHoldCell,
@@ -37,18 +39,31 @@ public record CivicFixtures(
         PrisonCellRegistry prisonCells,
         Payroll payroll,
         FoodMarket foodMarket,
-        PatrolRouteTable patrolRoutes) {
+        PatrolRouteTable patrolRoutes,
+        RooftopTable rooftops) {
 
     /** The fully-unwired bundle (world-less bootstrap, economy-free tests). */
     public static final CivicFixtures NONE = new CivicFixtures(
             Actor.NONE, RestrictedZoneTable.EMPTY, Actor.NONE, Actor.NONE,
             BankQueue.EMPTY, PrisonCellRegistry.EMPTY, Payroll.NONE, FoodMarket.EMPTY,
-            PatrolRouteTable.EMPTY);
+            PatrolRouteTable.EMPTY, RooftopTable.EMPTY);
+
+    /**
+     * The pre-rooftop 9-component shape (Sprint-1 compatibility): existing call sites keep
+     * compiling with {@link RooftopTable#EMPTY} wired; the live docks bake uses the
+     * canonical constructor with its authored roof planes.
+     */
+    public CivicFixtures(int arrestHoldCell, RestrictedZoneTable zones, int vaultChestCell,
+            int bankerCell, BankQueue bankQueue, PrisonCellRegistry prisonCells,
+            Payroll payroll, FoodMarket foodMarket, PatrolRouteTable patrolRoutes) {
+        this(arrestHoldCell, zones, vaultChestCell, bankerCell, bankQueue, prisonCells,
+                payroll, foodMarket, patrolRoutes, RooftopTable.EMPTY);
+    }
 
     /** A bundle wiring only the Phase-0 seams ({@code arrestHoldCell} + {@code zones}); bank/prison unwired. */
     public static CivicFixtures ofJustice(int arrestHoldCell, RestrictedZoneTable zones) {
         return new CivicFixtures(arrestHoldCell, zones, Actor.NONE, Actor.NONE,
                 BankQueue.EMPTY, PrisonCellRegistry.EMPTY, Payroll.NONE, FoodMarket.EMPTY,
-                PatrolRouteTable.EMPTY);
+                PatrolRouteTable.EMPTY, RooftopTable.EMPTY);
     }
 }

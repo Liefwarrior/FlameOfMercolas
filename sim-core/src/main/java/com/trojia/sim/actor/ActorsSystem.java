@@ -90,6 +90,22 @@ public final class ActorsSystem implements SimulationSystem {
     private long currentTick;
 
     /**
+     * The per-actor skill-track side table (Sprint 1 "the character sheet comes alive"):
+     * dense (index == ActorId), award-routed from live outcomes, serialized/loaded/hashed
+     * as part of this chunk. {@link SkillTrackRegistry#UNWIRED} on every pre-progression
+     * constructor — awards no-op and the serialized frame is empty.
+     */
+    private final SkillTrackRegistry skillTracks;
+
+    /**
+     * The per-actor per-faction standing ledger (Sprint 1): deterministic deltas from
+     * arrests/fines/house-arrests/purchases, read by {@code ApprehendPolicy}'s lenience
+     * draw. Serialized/loaded/hashed as part of this chunk; {@link FactionStandings#UNWIRED}
+     * on every pre-faction constructor.
+     */
+    private final FactionStandings factionStandings;
+
+    /**
      * Density-report accounting (read by no behavior; ride no save, like {@code foodMinted}):
      * total successful pushes, riot responses fired, and house arrests issued.
      */
@@ -141,6 +157,21 @@ public final class ActorsSystem implements SimulationSystem {
     public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, BankLedger bank, World world, CivicFixtures fixtures) {
+        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, bank, world,
+                fixtures, SkillTrackRegistry.UNWIRED, FactionStandings.UNWIRED);
+    }
+
+    /**
+     * Full constructor with the Sprint-1 progression + faction wiring: {@code skillTracks}
+     * (built against the boot-loaded skills raws) and {@code factionStandings} (built
+     * against the boot-loaded factions raws). Both side tables ride THIS chunk's persisted
+     * triad, so the loading system must be constructed with the same raws-derived wiring —
+     * exactly the {@code typeStats}/{@code jobs} contract.
+     */
+    public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
+            ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
+            ItemsLiteRegistry items, BankLedger bank, World world, CivicFixtures fixtures,
+            SkillTrackRegistry skillTracks, FactionStandings factionStandings) {
         this.worldSeed = worldSeed;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -152,6 +183,8 @@ public final class ActorsSystem implements SimulationSystem {
         this.fixtures = fixtures;
         this.world = world;
         this.cursor = world == null ? null : world.cursor();
+        this.skillTracks = skillTracks;
+        this.factionStandings = factionStandings;
     }
 
     public ActorRegistry registry() {
@@ -176,6 +209,16 @@ public final class ActorsSystem implements SimulationSystem {
 
     public RestrictedZoneTable restrictedZones() {
         return fixtures.zones();
+    }
+
+    /** The per-actor skill-track side table (Sprint 1) — the client reads levels/log here. */
+    public SkillTrackRegistry skillTracks() {
+        return skillTracks;
+    }
+
+    /** The per-actor per-faction standing ledger (Sprint 1) — the client reads standings here. */
+    public FactionStandings factionStandings() {
+        return factionStandings;
     }
 
     /** Total successful shoves over the run (density report; pure accounting). */
@@ -299,6 +342,10 @@ public final class ActorsSystem implements SimulationSystem {
             }
             if (bank.transfer(id, pool, units * FoodEconomy.FOOD_PRICE)) {
                 foodMinted += items.addCarried(id, ItemKinds.FOOD, units);
+                // Faction ledger (Sprint 1): a real Royal-paid purchase — the Merchants
+                // remember honest coin. Keyed on the PRESENTED id (the Persona rule);
+                // deterministic (+1 clamped), a no-op when unwired.
+                factionStandings.onPurchase(registry.get(id).identity().presentedId());
             }
         }
     }
@@ -407,6 +454,12 @@ public final class ActorsSystem implements SimulationSystem {
         // The shove log (density revisit), canonical order after the ledger: behavior-carrying
         // (riot detection reads it), so a load mid-riot-window must reproduce the continuous run.
         shoveLog.serialize(out);
+        // Sprint 1, canonical order after the shove log: the skill-track side table (levels,
+        // grains, satiation, level-log ring) then the faction-standing ledger. Both carry
+        // behavior (push contests read levels; the Watch lenience reads standings), so a load
+        // mid-progression must reproduce the continuous run exactly.
+        skillTracks.serialize(out);
+        factionStandings.serialize(out);
     }
 
     private void writeActor(DataOutput out, Actor actor) throws IOException {
@@ -493,6 +546,8 @@ public final class ActorsSystem implements SimulationSystem {
             bank.credit(accountId, balance);
         }
         shoveLog.load(in); // density revisit: the behavior-carrying shove ring buffer
+        skillTracks.load(in); // Sprint 1: dense per-actor tracks + level-log ring
+        factionStandings.load(in); // Sprint 1: the per-actor per-faction standing ledger
     }
 
     private void readActor(DataInput in) throws IOException {
@@ -632,6 +687,11 @@ public final class ActorsSystem implements SimulationSystem {
         // The shove log (density revisit): riot detection reads it, so a log-only divergence
         // must fail the twin-run hash (landmine F).
         shoveLog.hashInto(sink);
+        // Sprint 1 (landmine F): skill levels feed push contests and standings feed the Watch
+        // lenience draw — a progression-only or standing-only desync must fail the twin-run
+        // hash, not slip past it.
+        skillTracks.hashInto(sink);
+        factionStandings.hashInto(sink);
     }
 
     /** The per-tick {@link ActorContext}, bound to this system's registries and named draws. */
@@ -789,6 +849,21 @@ public final class ActorsSystem implements SimulationSystem {
             riotCount++;
             houseArrestsIssued += houseArrests;
         }
+
+        @Override
+        public SkillTrackRegistry skillTracks() {
+            return skillTracks;
+        }
+
+        @Override
+        public FactionStandings factionStandings() {
+            return factionStandings;
+        }
+
+        @Override
+        public RooftopTable rooftops() {
+            return fixtures.rooftops();
+        }
     }
 
     /**
@@ -819,9 +894,14 @@ public final class ActorsSystem implements SimulationSystem {
             // only away-from-home, away-from-work shoves feed the log. Deterministic: a pure
             // predicate over baked cells.
             ShoveLog target = isDomesticShove(pusher, cell) ? ShoveLog.EMPTY : shoveLog;
+            // The wired contest (Sprint 1): the check.push named draw rides the SHARED
+            // per-actor per-tick counter (§2.2 pinned attribution), consumed lazily — only
+            // when the contest actually runs, never on a cooldown-blocked attempt.
             boolean pushed = PushMechanics.tryPush(pusher, cell, registry, currentTick,
                     c -> cursor == null || Walkability.isWalkable(cursor.moveTo(c)),
-                    this, target);
+                    this, target, skillTracks,
+                    pusherId -> NamedDraws.draw(ActorRngStream.CHECK_PUSH, worldSeed,
+                            currentTick, pusherId, drawCounters[pusherId]++));
             if (pushed) {
                 pushCount++;
             }

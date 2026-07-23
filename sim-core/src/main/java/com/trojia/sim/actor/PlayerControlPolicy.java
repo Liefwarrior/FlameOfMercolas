@@ -26,15 +26,45 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
         return self.hasStatus(StatusBit.PLAYER_CONTROLLED) ? PLAYER_CONTROL_SCORE : 0;
     }
 
+    /**
+     * Skyrunning base award per committed ROOFTOP step (Sprint 1 progression wiring):
+     * priced at PROGRESSION-SPEC §3.1's smallest Skyrunning row (the 25-cp "proximity
+     * check" scale) — "rooftop runs" are the skill's own raws-listed covers. This is the
+     * lead-ruled exception to §3.2's no-locomotion-XP rule, deliberately confined to the
+     * PLAYED actor on baked {@link RooftopTable} cells and satiation-keyed per coarse roof
+     * region ({@link #ROOF_REGION_SHIFT}), so circling one roofline decays to the 25%
+     * floor (§3.3) while genuinely new rooftop territory pays full rate — a discoverable,
+     * priced seam, exactly the north star's kind of exploitable.
+     */
+    static final int SKYRUNNING_ROOF_STEP_CP = 25;
+
+    /** Roof satiation regions are {@code 16x16} tiles per z ({@code x>>4, y>>4, z}). */
+    static final int ROOF_REGION_SHIFT = 4;
+
     @Override
     public void act(Actor self, ActorContext ctx) {
         int target = self.playerMoveTargetCell();
         if (target != Actor.NONE) {
+            int before = self.cell();
             self.stepToward(target, true, ctx::isWalkable, ctx.occupancy());
             // Consume the intent so a stale target never re-fires after the driver pauses
             // (the observer re-arms it every frame a movement key is held, §5.2).
             self.setPlayerMoveTarget(Actor.NONE);
+            if (self.cell() != before && ctx.rooftops().contains(self.cell())) {
+                // A committed step onto an authored roof plane: skyrunning use-XP for the
+                // played actor (class constant doc). Context = the coarse roof region.
+                ctx.skillTracks().award(self.id(), ctx.skillTracks().skyrunningRaw(),
+                        SKYRUNNING_ROOF_STEP_CP, roofRegionKey(self.cell()), ctx.tick());
+            }
         }
         self.setLastReasonCode(ReasonCode.PLAYER_CONTROLLED);
+    }
+
+    /** The §3.3 satiation context for a roof cell: its {@code (x>>4, y>>4, z)} region id. */
+    static long roofRegionKey(int cell) {
+        long rx = com.trojia.sim.world.PackedPos.x(cell) >> ROOF_REGION_SHIFT;
+        long ry = com.trojia.sim.world.PackedPos.y(cell) >> ROOF_REGION_SHIFT;
+        long rz = com.trojia.sim.world.PackedPos.z(cell);
+        return (rz << 40) | (ry << 20) | rx;
     }
 }

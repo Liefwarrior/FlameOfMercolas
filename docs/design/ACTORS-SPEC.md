@@ -2023,6 +2023,28 @@ All numbers **(placeholder)**.
   never hashed. The lead's S1 ruling ("identity data must not move the sim tick hash") is
   enforced by `DocksIdentityDeterminismTest`.
 
+### 11.11 §2.2 RNG streams — S1 progression/faction addendum (2026-07-23, sim team)
+
+- **§2.2 RNG streams:** + `check.push` (append-only): the push-contest skill check
+  (`SkillChecks`/`PushMechanics`) — one draw per contested shove, spatialKey = the PUSHER's
+  actorId, consumed lazily through the shared per-actor per-tick counter (never on a
+  cooldown-blocked attempt). + `watch.lenience` (append-only): `ApprehendPolicy`'s
+  first-contact warn-vs-fine decision, spatialKey = the GUARD's actorId, thresholded by the
+  offender's PRESENTED Watch standing (`FactionStandings.watchStanding`; permille
+  `clamp(1000 + 10*standing, 250, 1000)` — a clean citizen always draws the warning, the
+  pre-faction baseline in outcome).
+- **§2.8 chunk addendum:** the `ActorsSystem` chunk now appends, after the shove log and in
+  this canonical order: the dense per-actor `SkillTrackRegistry` frame (skillCount guard,
+  per-track levels/grains/satiation rows, the `SkillLevelLog` ring) and the
+  `FactionStandings` frame (factionCount guard, dense clamped rows). Both are
+  behavior-carrying (push contests read levels; the lenience draw reads standings) —
+  serialized, loaded and hashed (landmine F). A loading system must be constructed with the
+  same raws-derived skill/faction wiring (the typeStats/jobs contract; frame guards fail a
+  mismatch loudly).
+- **New raws:** `content/raws/factions/factions.json` — five factions (watch, skyrunners,
+  temple, merchants, dockhands), job→faction membership (one faction per job,
+  loader-validated), deterministic sorted-key ids pinned by `FactionRawsLoaderTest`.
+
 ---
 
 *Spec produced 2026-07-12 for the F2.5 actors milestone; §10 Goals & Jobs addendum added

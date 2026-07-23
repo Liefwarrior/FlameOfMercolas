@@ -544,3 +544,31 @@ milestone.
 7. Streetwise scope fence (information only) — confirm it reads as intended in play.
 8. Evasion shape `evasion = max(0, AGI − Σ armorBulk)` and the per-material armorBulk
    table (§8) — invented to make COMBAT-SPEC's DEF inputs derivable; placeholder.
+
+---
+
+## 12. Sprint-1 wiring addendum (2026-07-23, sim team — the engine went LIVE)
+
+The §1/§3 machinery now runs on the live district ("the character sheet comes alive"):
+
+- **Side table:** `com.trojia.sim.actor.SkillTrackRegistry` — dense per-actor `SkillTrack`s
+  (index == ActorId, lazy event-ordered materialization), riding the `ActorsSystem` TROJSAV
+  chunk as a persisted triad (serialize/load/hashInto) with a skillCount frame guard.
+  `SkillTrack`'s satiation store was flattened from a `TreeMap` to sorted parallel
+  primitive arrays (the ShoveLog pattern) — semantics unchanged, pinned by `SkillTrackTest`.
+- **Live award routes (outcomes that already resolve):** push contests — open_hand 90 cp to
+  the pusher (context = shovee), grit 150 cp to the shovee (context = pusher); scavenged
+  meals — streetwise 100 cp (context = the bin cell); the PLAYED actor's rooftop steps —
+  skyrunning 25 cp per committed step on a baked `RooftopTable` cell (context = the 16×16
+  roof region). Combat skills remain honestly at 0 — no fake sources.
+- **§3.2 rule-4 exception (lead-ruled):** the played actor's rooftop running earns
+  skyrunning use-XP per step. Deviation is deliberate and bounded: smallest §3.1 base
+  award, played actor only, authored roof cells only, satiation-priced per region — a
+  discoverable seam in the north star's sense, not an AFK accrual (no input, no steps).
+- **§3.4 checks:** `SkillChecks` — one pure permille-threshold function (`clamp(base +
+  10·(score − resist), floor, ceil)`, score = level + governing attribute) decided by named
+  draws. First consumer: the push contest (`check.push` stream, base 950‰, clamp
+  [600, 990]‰ — liveness-safe by construction; a lost contest burns no cooldown).
+- **§5:** attributes stay stateless — `SkillTrackRegistry.attribute` recomputes via
+  `AttributeCalculator.compute` at read time, so every `SkillLevelledEvent` is "recomputed"
+  by definition. Level-ups additionally land in the `SkillLevelLog` ring (client seam).

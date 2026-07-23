@@ -1,0 +1,36 @@
+{
+  "id": "factions",
+  "factions": [
+    {
+      "id": "watch",
+      "displayName": "The Watch",
+      "memberJobs": ["watch.patrol"],
+      "notes": "The K34 garrison and its patrols. Standing falls on arrests/fines/house-arrests; the ONE behavior read this sprint shifts ApprehendPolicy's warn-vs-fine lenience."
+    },
+    {
+      "id": "skyrunners",
+      "displayName": "The Skyrunners",
+      "memberJobs": ["villain.skyrunner", "villain.cutpurse", "villain.robber"],
+      "notes": "The rooftop brotherhood and its street affiliates. Warms to whoever the Watch corrects — the mirror ledger of every justice event."
+    },
+    {
+      "id": "temple",
+      "displayName": "The Temple of the Flame",
+      "memberJobs": ["clergy.shepherd", "clergy.acolyte"],
+      "notes": "The mission clergy. Membership only this sprint: no event moves Temple standing yet (alms/witness deltas are future work)."
+    },
+    {
+      "id": "merchants",
+      "displayName": "The Merchant Row",
+      "memberJobs": ["trade.stallkeep", "trade.trader"],
+      "notes": "Counter-keepers and traders. Standing rises with honest purchases (counter buys + household provisioning)."
+    },
+    {
+      "id": "dockhands",
+      "displayName": "The Dockhands",
+      "memberJobs": ["serf.laborer", "serf.farmer", "maritime.sailor", "husbandry.keeper"],
+      "notes": "The laboring mass of the quays, farms, ships and pens. Membership only this sprint. Unlisted jobs (wastrel.streetlife, flame_of_merc, beast.*) are deliberately unaffiliated."
+    }
+  ],
+  "notes": "Sprint-1 faction registry (sim team). Schema mirrors skills.json: top-level id + rows of {id, displayName, memberJobs}; notes are documentation-only. memberJobs reference jobs.json ids; a job may belong to at most one faction (loader-validated). Deterministic numeric ids are assigned by sorted key order: dockhands=0, merchants=1, skyrunners=2, temple=3, watch=4."
+}

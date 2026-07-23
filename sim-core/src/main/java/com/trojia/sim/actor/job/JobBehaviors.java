@@ -691,6 +691,12 @@ public final class JobBehaviors {
         offender.setHeldUntilTick(ctx.tick() + sentenceTicks);
         offender.setAssignedHoldCell(assignPrisonCell(offender, ctx));
         offender.setLastReasonCode(ReasonCode.ARRESTED);
+        // Faction ledger (Sprint 1): every arrest — exposure-drawn or APPREHEND-fixed —
+        // stains the PRESENTED identity's Watch standing and warms the Skyrunner
+        // brotherhood to it (the Persona rule: the Watch booked who it BELIEVES it booked;
+        // Sprint 2's unmasking moves the stain to the true id). Deterministic clamped
+        // deltas; a no-op when unwired.
+        ctx.factionStandings().onArrest(offender.identity().presentedId());
     }
 
     /**

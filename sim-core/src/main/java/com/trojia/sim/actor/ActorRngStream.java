@@ -42,7 +42,22 @@ public enum ActorRngStream {
      * its salt is derived purely from its own name, so no existing stream's draws shift; the
      * tick path never reads it (identity is scenario-bake data, never sim-core state).
      */
-    IDENTITY_NAMES("identity.names");
+    IDENTITY_NAMES("identity.names"),
+    /**
+     * The push-contest check family (Sprint 1 skill-check core, {@link SkillChecks}): one
+     * draw per contested shove, resolved pusher open_hand+AGI vs shovee grit+VIG. Appended
+     * stream (name-derived salt — no existing draws shift); drawn through the shared
+     * per-actor per-tick counter, spatialKey = the PUSHER's actor id.
+     */
+    CHECK_PUSH("check.push"),
+    /**
+     * The Watch's warn-vs-fine lenience draw (Sprint 1 faction standing's ONE behavior
+     * read, {@code ApprehendPolicy}): at first contact the guard draws whether the offender
+     * gets the customary move-along warning or an immediate fine + arrest — the threshold
+     * shifts with the offender's PRESENTED Watch standing. Appended stream; spatialKey =
+     * the GUARD's actor id (the guard is deciding).
+     */
+    WATCH_LENIENCE("watch.lenience");
 
     private final String streamName;
     private final long salt;

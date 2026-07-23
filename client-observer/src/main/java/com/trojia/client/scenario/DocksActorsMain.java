@@ -175,6 +175,7 @@ public final class DocksActorsMain {
         printMoneyGateProof(population, jobs);
         printJusticeReport(population, jobs);
         printDensityReport(population, maxCoOccupancy, routePairs, routeCells);
+        printProgressionReport(population);
         printBeastReport(population, gullIds, catIds, mouseIds, gullRoam, huntCounters);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
@@ -184,6 +185,68 @@ public final class DocksActorsMain {
             System.out.printf("PERF: %d ticks in %.1f ms wall-clock (engine tick only) -> "
                             + "avg %.4f ms/tick at %d actors (observer FAST budget: 25 ms/tick)%n",
                     ticks, tickNanos / 1e6, avgMillis, registry.size());
+        }
+    }
+
+    /**
+     * Progression + faction proof (Sprint 1 "the character sheet comes alive"): the district
+     * trains itself by living — push contests teach open_hand/grit, scavenging teaches
+     * streetwise — and the standing ledger remembers who the Watch corrected and who paid
+     * the counters. Deterministic ascending-id scans over the persisted side tables.
+     */
+    private static void printProgressionReport(DocksPopulation population) {
+        var tracks = population.system().skillTracks();
+        var standings = population.system().factionStandings();
+        var registry = population.registry();
+        int openHand = 0;
+        int grit = 0;
+        int streetwise = 0;
+        int skyrunning = 0;
+        int bestId = -1;
+        int bestLevelSum = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            int oh = tracks.level(i, tracks.openHandRaw());
+            int gr = tracks.level(i, tracks.gritRaw());
+            int sw = tracks.level(i, tracks.streetwiseRaw());
+            int sk = tracks.level(i, tracks.skyrunningRaw());
+            openHand += oh > 0 ? 1 : 0;
+            grit += gr > 0 ? 1 : 0;
+            streetwise += sw > 0 ? 1 : 0;
+            skyrunning += sk > 0 ? 1 : 0;
+            if (oh + gr + sw + sk > bestLevelSum) {
+                bestLevelSum = oh + gr + sw + sk;
+                bestId = i;
+            }
+        }
+        int watchMoved = 0;
+        int merchantsMoved = 0;
+        int mostWantedId = -1;
+        int mostWantedStanding = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            int watch = standings.watchStanding(i);
+            watchMoved += watch != 0 ? 1 : 0;
+            merchantsMoved += standings.standingOf(i,
+                    standings.isWired() ? standings.factions().rawId("merchants") : 0) != 0 ? 1 : 0;
+            if (watch < mostWantedStanding) {
+                mostWantedStanding = watch;
+                mostWantedId = i;
+            }
+        }
+        System.out.println();
+        System.out.println("================ PROGRESSION PROOF (the character sheet is alive) ===========");
+        System.out.println("level-ups recorded (monotonic): " + tracks.levelLog().totalRecorded());
+        System.out.println("souls holding a nonzero skill: open_hand=" + openHand + " grit=" + grit
+                + " streetwise=" + streetwise + " skyrunning=" + skyrunning);
+        if (bestId >= 0) {
+            System.out.println("most-trained soul: actor#" + bestId
+                    + " open_hand=" + tracks.level(bestId, tracks.openHandRaw())
+                    + " grit=" + tracks.level(bestId, tracks.gritRaw())
+                    + " streetwise=" + tracks.level(bestId, tracks.streetwiseRaw()));
+        }
+        System.out.println("standings moved: watch=" + watchMoved + " merchants=" + merchantsMoved);
+        if (mostWantedId >= 0) {
+            System.out.println("most wanted: actor#" + mostWantedId + " watch standing "
+                    + mostWantedStanding);
         }
     }
 

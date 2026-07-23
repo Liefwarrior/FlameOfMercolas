@@ -32,11 +32,41 @@ import com.trojia.sim.world.PackedPos;
  * displaced actor's own later-in-tick move starts a conga line, WITHOUT handing a saturated
  * crowd the power to perpetually disarm one trapped victim (the constant's own doc).
  *
+ * <p><b>The push CONTEST (Sprint 1 skill-check core, first consumer).</b> Where a wired
+ * {@link SkillTrackRegistry} is in play, the shove is no longer automatic: the pusher's
+ * open_hand+AGI is checked against the occupant's grit+VIG on the {@code check.push} named
+ * stream ({@link SkillChecks#pushContestPermille} — floor/ceiling-clamped so the contest
+ * stays a liveness-safe perturbation). A LOST contest burns no cooldown (the blocked step
+ * simply retries next tick, so deadlock dissolution is delayed a tick or two at worst,
+ * never defeated). A WON contest awards use-XP at the outcome that just resolved: the
+ * pusher's open_hand (&sect;3.1 "strike landed", context = the shovee) and the shovee's
+ * grit (&sect;3.1 "blunt", pain teaches — context = the pusher). Unwired contexts (the
+ * world-less bootstrap, every pre-existing test) skip the contest and the awards entirely:
+ * byte-identical to the pre-progression shove.
+ *
  * <p><b>Determinism.</b> Ascending fixed-order direction scan for the displacement target
  * (W, E, N, S, then the four diagonals — {@link PathFinder}'s neighbor order), ascending-id
- * registry scan for the occupant, absolute-tick cooldown arithmetic, no draws.
+ * registry scan for the occupant, absolute-tick cooldown arithmetic; the only draw is the
+ * wired contest's single named {@code check.push} draw, attributed to the pusher through
+ * the shared per-actor per-tick counter.
  */
 public final class PushMechanics {
+
+    /**
+     * The contest's draw source: invoked AT MOST ONCE per {@link #tryPush} call, only after
+     * the cooldown and occupant gates pass and only when tracks are wired — so a
+     * cooldown-blocked attempt consumes no draw index. The caller binds it to the
+     * {@code check.push} stream with the pusher's own next draw index.
+     */
+    @FunctionalInterface
+    public interface ContestDraw {
+        long draw(int pusherId);
+    }
+
+    /** Pusher's open_hand base award for a won push contest (§3.1 "strike landed" row). */
+    public static final int OPEN_HAND_SHOVE_CP = 90;
+    /** Shovee's grit base award for being displaced (§3.1 "blunt damage" row — pain teaches). */
+    public static final int GRIT_SHOVED_CP = 150;
 
     /** Cooldown between self-initiated shoves by one actor: 10 ticks = 10 seconds. */
     public static final long PUSH_COOLDOWN_TICKS = 10;
@@ -87,12 +117,34 @@ public final class PushMechanics {
      */
     public static boolean tryPush(Actor pusher, int contestedCell, ActorRegistry registry,
             long tick, Actor.WalkabilityQuery walk, Actor.OccupancyQuery occ, ShoveLog log) {
+        // Contest-free overload (world-less bootstrap + pre-progression tests): unwired
+        // tracks skip the check and the awards — byte-identical to the original shove.
+        return tryPush(pusher, contestedCell, registry, tick, walk, occ, log,
+                SkillTrackRegistry.UNWIRED, id -> 0L);
+    }
+
+    /**
+     * The wired overload (Sprint 1): same shove, but resolved as an open_hand-vs-grit
+     * contest and awarding use-XP on success (class doc). {@code contestDraw} is consumed
+     * at most once, only when the contest actually runs.
+     */
+    public static boolean tryPush(Actor pusher, int contestedCell, ActorRegistry registry,
+            long tick, Actor.WalkabilityQuery walk, Actor.OccupancyQuery occ, ShoveLog log,
+            SkillTrackRegistry tracks, ContestDraw contestDraw) {
         if (tick - pusher.lastPushTick() < PUSH_COOLDOWN_TICKS) {
             return false; // still winded from the last shove (or from being shoved)
         }
         Actor pushee = occupantOf(contestedCell, pusher, registry);
         if (pushee == null) {
             return false; // defensive: the index said full but no actor stands there
+        }
+        if (tracks.isWired()) {
+            int permille = SkillChecks.pushContestPermille(tracks, pusher.id(), pushee.id());
+            if (!SkillChecks.passes(contestDraw.draw(pusher.id()), permille)) {
+                // Contest lost: the occupant holds its ground. No cooldown burn (the
+                // liveness guard — the blocked step retries next tick), no XP, no log row.
+                return false;
+            }
         }
         int dest = displacementCell(contestedCell, walk, occ);
         if (dest == Actor.NONE) {
@@ -114,6 +166,12 @@ public final class PushMechanics {
                 tick - (PUSH_COOLDOWN_TICKS - PUSHEE_STAGGER_TICKS)));
         pusher.setLastPushTick(tick);
         log.record(tick, contestedCell, pusher.id());
+        // The contest resolved (Sprint 1): use-XP lands at the outcome, both parties, TRUE
+        // ids (a physical contest, not a social read). Satiation context = the other party,
+        // so the same pair jostling at one doorway decays to the 25% floor (§3.3) while
+        // fresh opponents pay full rate. No-ops when unwired.
+        tracks.award(pusher.id(), tracks.openHandRaw(), OPEN_HAND_SHOVE_CP, pushee.id(), tick);
+        tracks.award(pushee.id(), tracks.gritRaw(), GRIT_SHOVED_CP, pusher.id(), tick);
         return true;
     }
 

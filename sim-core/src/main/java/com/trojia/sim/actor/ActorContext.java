@@ -227,4 +227,35 @@ public interface ActorContext {
      * call sites pass this into {@code stepToward}/{@code stepAlongRoute}.
      */
     Actor.OccupancyQuery occupancy();
+
+    /**
+     * The per-actor skill-track side table (Sprint 1 progression wiring): XP award sites
+     * ({@code SeekFoodPolicy} scavenging, {@code PlayerControlPolicy} rooftop running) and
+     * level/attribute readers ({@code SkillChecks} consumers) go through this.
+     * {@link SkillTrackRegistry#UNWIRED} where no skill universe is wired (world-less
+     * bootstrap, test doubles) — awards no-op, levels read 0, attributes read the base 10.
+     */
+    default SkillTrackRegistry skillTracks() {
+        return SkillTrackRegistry.UNWIRED;
+    }
+
+    /**
+     * The per-actor per-faction standing ledger (Sprint 1): justice/purchase events push
+     * deterministic deltas through it, and {@code ApprehendPolicy} reads the Watch column
+     * for its warn-vs-fine lenience (keyed on PRESENTED ids, both directions).
+     * {@link FactionStandings#UNWIRED} where no faction universe is wired — deltas no-op
+     * and every standing reads the neutral 0.
+     */
+    default FactionStandings factionStandings() {
+        return FactionStandings.UNWIRED;
+    }
+
+    /**
+     * The baked rooftop-region table (Sprint 1): the authored roof planes the played
+     * actor's skyrunning hook checks committed steps against. {@link RooftopTable#EMPTY}
+     * where no roofs are wired — the hook never fires.
+     */
+    default RooftopTable rooftops() {
+        return RooftopTable.EMPTY;
+    }
 }

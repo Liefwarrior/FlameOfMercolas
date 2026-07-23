@@ -6,6 +6,7 @@ import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorsSystem;
 import com.trojia.sim.actor.BankLedger;
+import com.trojia.sim.actor.CivicFixtures;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.RelationshipRegistry;
@@ -69,10 +70,14 @@ class DocksJekTest {
         }
 
         byte[] first = serialize(population.system());
+        // The loading system is reconstructed with the SAME raws-derived wiring the save-side
+        // had (typeStats/jobs — and, since Sprint 1, the skill + faction universes: the
+        // chunk's progression/standing frames are guarded against a wiring mismatch).
         ActorsSystem reloaded = new ActorsSystem(loaded.worldSeed(), population.typeStats(),
                 population.jobs(), new ActorRegistry(), new HomeRegistry(),
                 new RelationshipRegistry(), new ItemsLiteRegistry(), new BankLedger(), null,
-                Actor.NONE, RestrictedZoneTable.EMPTY);
+                CivicFixtures.ofJustice(Actor.NONE, RestrictedZoneTable.EMPTY),
+                DocksPopulation.freshSkillTracks(), DocksPopulation.freshFactionStandings());
         reloaded.load(new DataInputStream(new ByteArrayInputStream(first)));
         byte[] second = serialize(reloaded);
 

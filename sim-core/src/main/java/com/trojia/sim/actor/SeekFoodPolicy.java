@@ -140,11 +140,22 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
             if (bin != Actor.NONE) {
                 items.takeOnCell(bin, ItemKinds.FOOD, 1);
                 eat(self, ctx, ReasonCode.SCAVENGED_FOOD);
+                // Progression (Sprint 1): scavenging a meal off the streets IS streetwise —
+                // knowing which bins feed you, and when. Use-XP at the outcome that just
+                // resolved; satiation context = the bin cell, so working one bin daily
+                // decays to the §3.3 floor while learning new bins pays full rate. The
+                // ReasonCode trail (SCAVENGED_FOOD above) + the SkillLevelLog row make the
+                // level-up fully reconstructable. No-op when unwired.
+                ctx.skillTracks().award(self.id(), ctx.skillTracks().streetwiseRaw(),
+                        STREETWISE_SCAVENGE_CP, bin, ctx.tick());
                 return true;
             }
         }
         return false;
     }
+
+    /** Streetwise base award for a scavenged meal (§3.1's "route learned" scale). */
+    static final int STREETWISE_SCAVENGE_CP = 100;
 
     // ======================================================================
     // Plan a walk to the nearest reachable stocked source (route-fail aware)
@@ -391,6 +402,9 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         if (bought && ctx.items().takeCarried(self.id(), ItemKinds.FOOD, 1) > 0) {
             clearTarget(self);
             eat(self, ctx, ReasonCode.BOUGHT_FOOD);
+            // Faction ledger (Sprint 1): an honest counter purchase — the Merchants
+            // remember, keyed on the PRESENTED id (the Persona rule). No-op when unwired.
+            ctx.factionStandings().onPurchase(self.identity().presentedId());
         } else {
             // Card gone / can't afford (the broke starve), or the counter was bare: no recovery.
             self.setLastReasonCode(ReasonCode.NEED_HUNGER_LOW);

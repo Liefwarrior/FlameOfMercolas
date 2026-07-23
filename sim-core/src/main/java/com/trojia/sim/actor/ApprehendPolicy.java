@@ -155,20 +155,53 @@ public final class ApprehendPolicy implements BehaviorPolicy {
             return;
         }
         if (!offender.hasStatus(StatusBit.MOVE_ALONG)) {
-            // First contact: WARN — set the short move-along status + absolute grace deadline.
-            offender.setStatus(StatusBit.MOVE_ALONG, true);
-            offender.setMoveAlongUntilTick(ctx.tick() + WARN_GRACE_TICKS);
-            offender.setLastReasonCode(ReasonCode.WARNED_MOVE_ALONG);
-            return;
-        }
-        if (ctx.tick() < offender.moveAlongUntilTick()) {
+            // First contact (Sprint 1 — the faction ledger's ONE behavior read): whether the
+            // guard extends the customary move-along warning is now a LENIENCE DRAW on the
+            // watch.lenience named stream, thresholded by the offender's PRESENTED Watch
+            // standing. A clean citizen (standing >= 0) is ALWAYS warned — permille 1000,
+            // the pre-faction baseline byte-for-byte in outcome — while a known offender's
+            // negative standing erodes the courtesy toward the floor: a staged crime spree
+            // measurably hardens subsequent Watch treatment (the DoD probe). The draw is
+            // attributed to the GUARD (it is the guard deciding), on the shared counter.
+            int lenience = warnLeniencePermille(
+                    ctx.factionStandings().watchStanding(offender.identity().presentedId()));
+            long draw = ctx.draw(ActorRngStream.WATCH_LENIENCE, self.id(),
+                    ctx.nextDrawIndex(self.id()));
+            if (SkillChecks.passes(draw, lenience)) {
+                offender.setStatus(StatusBit.MOVE_ALONG, true);
+                offender.setMoveAlongUntilTick(ctx.tick() + WARN_GRACE_TICKS);
+                offender.setLastReasonCode(ReasonCode.WARNED_MOVE_ALONG);
+                return;
+            }
+            // Lenience denied: no warning for this one — straight to the correction below.
+        } else if (ctx.tick() < offender.moveAlongUntilTick()) {
             return; // grace running: hold at contact, give them the chance to leave
         }
-        // Grace expired, still in violation: FINE (seize what exists) then ARREST (fixed 1 day).
+        // Grace expired (or lenience denied), still in violation: FINE (seize what exists)
+        // then ARREST (fixed 1 day). The fine's own standing delta lands here; the arrest's
+        // lands inside the shared arrestAndHold transition.
         fine(offender, ctx);
+        ctx.factionStandings().onFine(offender.identity().presentedId());
         JobBehaviors.arrestAndHold(offender, ctx, LOITER_SENTENCE_TICKS);
         offender.setStatus(StatusBit.MOVE_ALONG, false);
         closeCase(self);
+    }
+
+    /** Base lenience: a clean/positive standing ALWAYS earns the warning (the old baseline). */
+    static final int LENIENCE_BASE_PERMILLE = 1000;
+    /** Lenience floor: even the Watch's most-hated still draws a 1-in-4 warning chance. */
+    static final int LENIENCE_FLOOR_PERMILLE = 250;
+    /** Permille of lenience lost per point of NEGATIVE Watch standing. */
+    static final int LENIENCE_STANDING_TO_PERMILLE = 10;
+
+    /**
+     * The warn-vs-fine lenience threshold (permille) for an offender's Watch standing:
+     * {@code clamp(1000 + 10 * standing, 250, 1000)}. Pure, integer-only; package-visible
+     * for the crime-spree treatment test.
+     */
+    static int warnLeniencePermille(int watchStanding) {
+        int raw = LENIENCE_BASE_PERMILLE + LENIENCE_STANDING_TO_PERMILLE * watchStanding;
+        return Math.max(LENIENCE_FLOOR_PERMILLE, Math.min(LENIENCE_BASE_PERMILLE, raw));
     }
 
     private static void closeCase(Actor self) {
@@ -324,6 +357,8 @@ public final class ApprehendPolicy implements BehaviorPolicy {
             shover.setStatus(StatusBit.HOUSE_ARREST, true);
             shover.setHouseArrestUntilTick(now + HouseArrestPolicy.HOUSE_ARREST_TICKS);
             shover.setLastReasonCode(ReasonCode.HOUSE_ARRESTED);
+            // Faction ledger (Sprint 1): a riot correction on the PRESENTED identity.
+            ctx.factionStandings().onHouseArrest(shover.identity().presentedId());
             issued++;
         }
         return issued;
