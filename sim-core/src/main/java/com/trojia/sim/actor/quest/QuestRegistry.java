@@ -371,4 +371,29 @@ public final class QuestRegistry {
         }
         return false;
     }
+
+    /**
+     * The SEARCH trigger's skill raw on stage {@code stage} of quest {@code q}, or
+     * {@code -1} when the stage declares no search — the client's failure-toast check line
+     * (S3 CLIENT-declared read, the {@link #partySymbol} convention: read-only, bake-bound).
+     */
+    public int searchSkillRaw(int q, int stage) {
+        CompiledTrigger t = searchTrigger(q, stage);
+        return t == null ? -1 : t.skillRaw;
+    }
+
+    /** The SEARCH trigger's authored lock resist on {@code (q, stage)}, or {@code -1}. */
+    public int searchResist(int q, int stage) {
+        CompiledTrigger t = searchTrigger(q, stage);
+        return t == null ? -1 : t.resist;
+    }
+
+    private CompiledTrigger searchTrigger(int q, int stage) {
+        for (CompiledTrigger t : quests[q].stages[stage].advance) {
+            if (t.kind == QuestRaws.TriggerKind.SEARCH) {
+                return t;
+            }
+        }
+        return null;
+    }
 }

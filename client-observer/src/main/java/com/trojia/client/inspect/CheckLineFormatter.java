@@ -36,4 +36,21 @@ public final class CheckLineFormatter {
                 + tracks.level(victimId, tracks.streetwiseRaw())
                 + ": " + (permille / 10) + "% -- " + outcome + "]";
     }
+
+    /**
+     * The quest search-check FAILURE line (S3, the drawer pry): the searcher's live skill
+     * level against the authored lock resist — {@code [Streetwise 3 vs lock 12 - the
+     * drawer holds]}. Failure-only by design: a successful search advances the stage and
+     * gets the quest feed's own narration. Degrades to a numberless tag when the skill
+     * table is unwired or the stage declares no search ({@code skillRaw < 0}).
+     */
+    public static String searchLine(SkillTrackRegistry tracks, int searcherId, int skillRaw,
+            int resist) {
+        if (!tracks.isWired() || skillRaw < 0) {
+            return "[search - the drawer holds]";
+        }
+        return "[" + tracks.skills().get(skillRaw).displayName() + " "
+                + tracks.level(searcherId, skillRaw) + " vs lock " + resist
+                + " - the drawer holds]";
+    }
 }

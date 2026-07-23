@@ -38,13 +38,16 @@ import com.trojia.client.inspect.CrimeFeedTracker;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.InspectorState;
+import com.trojia.client.inspect.JournalText;
 import com.trojia.client.inspect.PlayModeState;
+import com.trojia.client.inspect.QuestFeedTracker;
 import com.trojia.client.inspect.SkillUpTracker;
 import com.trojia.client.inspect.TalkState;
 import com.trojia.client.inspect.ToastQueue;
 import com.trojia.client.render.ActorRenderer;
 import com.trojia.client.render.AmbientLight;
 import com.trojia.client.render.InspectorRenderer;
+import com.trojia.client.render.JournalRenderer;
 import com.trojia.client.render.LampGlowMap;
 import com.trojia.client.render.NameplateRenderer;
 import com.trojia.client.render.TalkPanelRenderer;
@@ -156,6 +159,10 @@ public final class ObserverApp extends ApplicationAdapter {
     private CrimeFeedTracker crimeFeedTracker;
     private BarkTableRegistry barkTables;
     private long bootWorldSeed;
+    // Sprint 3 "The Vanished Clerk": the journal pane + the quest feed.
+    private QuestFeedTracker questFeedTracker;
+    private JournalRenderer journalRenderer;
+    private boolean journalOpen;
 
     public ObserverApp(int smokeFrames) {
         this(Fixture.TAVERN, smokeFrames);
@@ -337,12 +344,19 @@ public final class ObserverApp extends ApplicationAdapter {
                     population.system().skillTracks(), population.registry(),
                     population.identity(), eventLog, toasts,
                     () -> playMode.playedActorId(), talk);
+            // Quest narration (S3): stage advances land in the feed as the journal's own
+            // prose; the owner's advances toast; failed drawer pries toast the check line.
+            this.questFeedTracker = new QuestFeedTracker(population.questRegistry(),
+                    population.system().questLog(), population.system().skillTracks(),
+                    eventLog, toasts, () -> playMode.playedActorId());
+            this.journalRenderer = new JournalRenderer();
             // The per-tick seam (not per-frame): fires once per executed tick, so no
             // tracker misses a FAST-skipped tick nor double-logs a re-rendered one.
             this.driver.setAfterTick(tick -> {
                 eventLogTracker.afterTick(tick);
                 skillUpTracker.afterTick(tick);
                 crimeFeedTracker.afterTick(tick);
+                questFeedTracker.afterTick(tick);
             });
             // FaceGen portraits (unified art spec §4) draw their parts from the SAME
             // unified index + sheet as the actor sprites (face-part pools are just
@@ -436,6 +450,11 @@ public final class ObserverApp extends ApplicationAdapter {
                     barkTables, toasts, population.questRegistry(),
                     population.system().questLog(), bootWorldSeed, driver.currentTick());
             TheftInput.poll(playMode, population.registry(), population.identity(), toasts);
+            // The JOURNAL toggle (S3): J opens/closes the quest pane (J was unbound; the
+            // design's verify-free-then-bind rule).
+            if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
+                journalOpen = !journalOpen;
+            }
             // Screenshot/verification aid only (bypasses WASD, mirrors debugSelectActorId's
             // "bypass the input device" convention): re-applies the same movement-application
             // code PlayModeInput's real WASD poll uses, every rendered frame, so a held key can
@@ -497,6 +516,14 @@ public final class ObserverApp extends ApplicationAdapter {
         if (talkPanelRenderer != null) {
             // The speech exchange (a no-op while closed) — over the plates, under toasts.
             talkPanelRenderer.draw(batch, font, icons, camera, talk);
+        }
+        if (journalRenderer != null) {
+            // The quest journal (a no-op while closed): content recomputed live each frame
+            // off the GL-free JournalText (the no-staleness contract), drawn under toasts.
+            journalRenderer.draw(batch, font, icons, camera, journalOpen,
+                    journalOpen ? JournalText.lines(population.questRegistry(),
+                            population.system().questLog(), population.registry(),
+                            population.identity()) : List.of());
         }
         if (toastRenderer != null) {
             // Toasts age by rendered wall-clock seconds (readable at any sim speed).
