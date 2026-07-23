@@ -2,6 +2,9 @@ package com.trojia.sim.actor;
 
 import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobRegistry;
+import com.trojia.sim.actor.quest.QuestEngine;
+import com.trojia.sim.actor.quest.QuestLog;
+import com.trojia.sim.actor.quest.QuestRegistry;
 import com.trojia.sim.engine.SimulationSystem;
 import com.trojia.sim.engine.SystemId;
 import com.trojia.sim.engine.TickContext;
@@ -121,6 +124,30 @@ public final class ActorsSystem implements SimulationSystem {
     private final FactionStandings factionStandings;
 
     /**
+     * The bake-bound quest table (Sprint 3 "The Vanished Clerk"): immutable compiled
+     * quests the {@link QuestEngine} evaluates after every {@code tickAll}.
+     * {@link QuestRegistry#EMPTY} on every pre-quest constructor — the engine no-ops.
+     */
+    private final QuestRegistry quests;
+
+    /**
+     * The persisted quest state (Sprint 3): one entry per baked quest, the talk latch and
+     * the advance/crime cursors. Serialized/loaded/hashed as the LAST section of this
+     * chunk; built against {@link #quests} so the frame guards bind save to raws.
+     */
+    private final QuestLog questLog;
+
+    /** The live quest log (public: play-mode talk notes land here; the client journal reads it). */
+    public QuestLog questLog() {
+        return questLog;
+    }
+
+    /** The bake-bound quest table (public: the client journal/talk surface reads titles/keys). */
+    public QuestRegistry questRegistry() {
+        return quests;
+    }
+
+    /**
      * Density-report accounting (read by no behavior; ride no save, like {@code foodMinted}):
      * total successful pushes, riot responses fired, and house arrests issued.
      */
@@ -198,6 +225,22 @@ public final class ActorsSystem implements SimulationSystem {
             ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
             ItemsLiteRegistry items, BankLedger bank, World world, CivicFixtures fixtures,
             SkillTrackRegistry skillTracks, FactionStandings factionStandings) {
+        this(worldSeed, typeStats, jobs, registry, homes, relationships, items, bank, world,
+                fixtures, skillTracks, factionStandings, QuestRegistry.EMPTY);
+    }
+
+    /**
+     * Full constructor with the Sprint-3 quest wiring: {@code quests} is the bake-compiled
+     * {@link QuestRegistry} (authored quest raws bound against the scenario's notables/
+     * items/zones/cells). The {@link QuestLog} built against it rides THIS chunk's
+     * persisted triad as its LAST section, so the loading system must be constructed with
+     * the same quest raws — the {@code skillTracks}/{@code factionStandings} contract.
+     */
+    public ActorsSystem(long worldSeed, ActorTypeStatsTable typeStats, JobRegistry jobs,
+            ActorRegistry registry, HomeRegistry homes, RelationshipRegistry relationships,
+            ItemsLiteRegistry items, BankLedger bank, World world, CivicFixtures fixtures,
+            SkillTrackRegistry skillTracks, FactionStandings factionStandings,
+            QuestRegistry quests) {
         this.worldSeed = worldSeed;
         this.typeStats = typeStats;
         this.jobs = jobs;
@@ -211,6 +254,8 @@ public final class ActorsSystem implements SimulationSystem {
         this.cursor = world == null ? null : world.cursor();
         this.skillTracks = skillTracks;
         this.factionStandings = factionStandings;
+        this.quests = quests;
+        this.questLog = new QuestLog(quests);
     }
 
     public ActorRegistry registry() {
@@ -329,7 +374,12 @@ public final class ActorsSystem implements SimulationSystem {
         runFoodImports(context.tick());
         runFoodProvision(context.tick());
         runGarbageDrops(context.tick());
-        registry.tickAll(new ActorContextImpl(context));
+        ActorContextImpl ctx = new ActorContextImpl(context);
+        registry.tickAll(ctx);
+        // Sprint 3: quest advancement evaluates AFTER every actor acted, on the SAME
+        // per-tick context — the per-actor draw counters are still live, so the one
+        // search draw keeps the pinned §2.2 attribution. No-ops on a zero-quest bake.
+        QuestEngine.tick(quests, questLog, ctx);
     }
 
     /**
@@ -515,6 +565,10 @@ public final class ActorsSystem implements SimulationSystem {
         // sensing reads it, so a load mid-crime-window must correct exactly what the
         // continuous run would.
         crimeLog.serialize(out);
+        // Sprint 3, canonical order LAST: the quest log (stages, owner, latch, cursors) —
+        // the engine reads it every tick, so a load mid-quest must resume exactly where
+        // the continuous run stood.
+        questLog.serialize(out);
     }
 
     private void writeActor(DataOutput out, Actor actor) throws IOException {
@@ -604,6 +658,7 @@ public final class ActorsSystem implements SimulationSystem {
         skillTracks.load(in); // Sprint 1: dense per-actor tracks + level-log ring
         factionStandings.load(in); // Sprint 1: the per-actor per-faction standing ledger
         crimeLog.load(in); // Sprint 2: the behavior-carrying theft ring buffer
+        questLog.load(in); // Sprint 3: the quest state (frame-guarded against the wired raws)
     }
 
     private void readActor(DataInput in) throws IOException {
@@ -751,6 +806,9 @@ public final class ActorsSystem implements SimulationSystem {
         // Sprint 2 (landmine F): guards' theft sensing reads the crime log — a theft-only
         // desync must fail the twin-run hash, not slip past it.
         crimeLog.hashInto(sink);
+        // Sprint 3 (landmine F): the quest engine reads the quest log every tick — a
+        // quest-only desync (stage, owner, latch or cursor) must fail the twin run.
+        questLog.hashInto(sink);
     }
 
     /** The per-tick {@link ActorContext}, bound to this system's registries and named draws. */
@@ -927,6 +985,11 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public CrimeLog crimeLog() {
             return crimeLog;
+        }
+
+        @Override
+        public QuestLog questLog() {
+            return questLog;
         }
 
         @Override

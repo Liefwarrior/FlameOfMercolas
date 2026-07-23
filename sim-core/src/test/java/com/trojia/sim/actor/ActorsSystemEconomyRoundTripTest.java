@@ -157,4 +157,87 @@ final class ActorsSystemEconomyRoundTripTest {
         int reused = loaded.items().mintCarried(ItemKinds.COIN, 1);
         assertEquals(4, reused, "the recycled slot (itemId 4, the sunk scrap) is reused before appending");
     }
+
+    // ================================================================== Sprint 3: quests
+
+    private static com.trojia.sim.actor.quest.QuestRegistry questRegistry() {
+        com.trojia.sim.actor.quest.QuestRaws raws =
+                com.trojia.sim.actor.quest.QuestRawsLoader.parse("""
+                {
+                  "id": "quests",
+                  "quests": [
+                    { "id": "roundtrip-quest", "title": "Round Trip",
+                      "binding": "first_talker",
+                      "parties": ["alice"], "items": [], "zones": [], "cells": [],
+                      "stages": [
+                        { "key": "start", "objective": "o0", "log": "l0",
+                          "advance": [ {"kind": "talk", "party": "alice", "to": "end"} ] },
+                        { "key": "end", "objective": "o1", "log": "l1", "terminal": true }
+                      ] }
+                  ]
+                }
+                """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return com.trojia.sim.actor.quest.QuestRegistry.bind(raws,
+                new com.trojia.sim.actor.quest.QuestBindings() {
+                    @Override
+                    public int partyActorId(String questId, String partySymbol) {
+                        return 1; // alice = actor 1
+                    }
+
+                    @Override
+                    public short itemKind(String questId, String itemSymbol) {
+                        return -1;
+                    }
+
+                    @Override
+                    public int zoneId(String questId, String zoneSymbol) {
+                        return -1;
+                    }
+
+                    @Override
+                    public int cell(String questId, String cellSymbol) {
+                        return -1;
+                    }
+
+                    @Override
+                    public int skillRaw(String skillKey) {
+                        return -1;
+                    }
+
+                    @Override
+                    public int factionId(String factionKey) {
+                        return -1;
+                    }
+                });
+    }
+
+    /** The Sprint-3 QuestLog frame rides the chunk: round-trips byte-identically + hashes. */
+    @Test
+    void questWiredChunkRoundTripsTheQuestLogFrame() throws IOException {
+        ActorsSystem source = new ActorsSystem(1L, typeStats, jobs, new ActorRegistry(),
+                new HomeRegistry(), new RelationshipRegistry(), new ItemsLiteRegistry(),
+                new BankLedger(), null, CivicFixtures.NONE, SkillTrackRegistry.UNWIRED,
+                FactionStandings.UNWIRED, questRegistry());
+        source.registry().spawn(Serf.TYPE, typeStats.get(Serf.TYPE), PackedPos.pack(5, 5, 1));
+        source.registry().spawn(Serf.TYPE, typeStats.get(Serf.TYPE), PackedPos.pack(6, 5, 1));
+        source.questLog().bindOwnerAtBake(0, 0);
+        source.questLog().noteTalk(0, 1, 7L); // an occupied latch must round-trip
+        byte[] first = serialize(source);
+
+        ActorsSystem loaded = new ActorsSystem(1L, typeStats, jobs, new ActorRegistry(),
+                new HomeRegistry(), new RelationshipRegistry(), new ItemsLiteRegistry(),
+                new BankLedger(), null, CivicFixtures.NONE, SkillTrackRegistry.UNWIRED,
+                FactionStandings.UNWIRED, questRegistry());
+        loaded.load(new DataInputStream(new ByteArrayInputStream(first)));
+        assertArrayEquals(first, serialize(loaded), "the quest frame round-trips byte-identically");
+        assertEquals(hash(source), hash(loaded), "hashInto covers the quest frame (landmine F)");
+        assertEquals(0, loaded.questLog().ownerOf(0));
+
+        // The frame guard: a load against DIFFERENT quest raws (none) fails loudly.
+        ActorsSystem mismatched = freshLoadTarget(typeStats, jobs);
+        IOException e = org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
+                () -> mismatched.load(new DataInputStream(new ByteArrayInputStream(first))));
+        org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("questCount"),
+                e.getMessage());
+    }
 }
