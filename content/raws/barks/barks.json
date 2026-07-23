@@ -1030,7 +1030,71 @@
       "rows": [
         "The Loft's lamp burns late whenever the Bilge's does. Coincidence, twice a week, for a year.",
         "Redda keeps a sailmaker's needle behind the bar. Luff keeps a tankard on his cutting bench."
+      ] },
+
+    { "key": "quest.vanished-clerk", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "The clerk? Aye, everyone's heard. No one's LOOKED.",
+        "A man vanished the same night as a number. On these docks that's called arithmetic.",
+        "Ask at the Weighhouse. Crell never stopped asking."
+      ] },
+    { "key": "quest.vanished-clerk.rumor.onna", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "The counting-house clerk? He came to the night-pot Firstdays. Paid in coin, stayed for the warmth. Then he didn't.",
+        "He'd sit by the door with his soup, doing sums in the steam on the window. The last night he was here he kept looking toward the Weighhouse. Ask Harbormaster Crell.",
+        "I kept his bowl by a week. Father says hope's not a sin. Mine went cold with the soup."
+      ] },
+    { "key": "quest.vanished-clerk.rumor.jek", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "Tide brought me a clerk's cuff-button, brass, the week after he went. The strand keeps better records than the Watch.",
+        "Saw him his last evening, up on the quay wall - walking Weighhouse-way, fast, papers under his arm. Crell's door. Start there.",
+        "Men go in the water loose or carried. The strand never gave me HIM back, so draw your own line."
+      ] },
+    { "key": "quest.vanished-clerk.rumor.dagny", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "The Wrackhouse logs what the sea returns. A whole clerk never came through. His WRITING did - a salvage chit in his neat hand, for a crate nobody ever claimed.",
+        "He copied tariff papers for me once. Fair hand, honest count. The Weighhouse knew his worth - ask Crell what the boy was worth to HIM.",
+        "No body through my door, and I see most of them. Whatever happened, the sea didn't do it."
+      ] },
+    { "key": "quest.vanished-clerk.rumor.sedge", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "Tam. His name is Tam Sedge, my brother's son, and you're the first to ask it in a season.",
+        "He went out after supper with his good coat and his pen-case and not his lamp. You don't take a pen-case to the water.",
+        "The Watch wrote him down once and never came back. Harbormaster Crell came TWICE. Go to the Weighhouse; start there.",
+        "His room is paid. It stays paid till I know."
+      ] },
+    { "key": "quest.vanished-clerk.harbormaster.crell", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "So someone finally asks. One line was scraped out of my ledger, and the clerk who copied it stopped existing the same night. I want the copy. I want the LINE.",
+        "The boy kept a fair-copy of everything he inked - a habit I taught him. If it's anywhere, it's in his desk at the Counting-House. Gilt has let no one near it.",
+        "I can't pass Gilt's spears without making it a war of offices. You, though - you're nobody's office. His desk. The west wall of the hall."
+      ] },
+    { "key": "quest.vanished-clerk.counting_house.crell", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "The hall answers to the Watch's colors, not mine. Wear a face the door respects, or be quick between the spears' patience.",
+        "Gilt keeps every key on his own belt. Every key. One belt. I say no more."
+      ] },
+    { "key": "quest.vanished-clerk.counting_house.gilt", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "The hall is for custom, not for standing about. State your business or the spears will state it for you.",
+        "The desk by the west wall? Estate property, pending audit. Its late owner's affairs are the Counting-House's affairs. Good day.",
+        "You are the third person this season to glance at that desk. The other two worked here. Neither does now."
+      ] },
+    { "key": "quest.vanished-clerk.choice.crell", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "That's his hand. That's the LINE. Give it to me and the scale weighs it where the whole quay can watch.",
+        "Raise it with me and the Watch stands with you after. Bury it and you're Gilt's - priced, shelved and owned."
+      ] },
+    { "key": "quest.vanished-clerk.choice.gilt", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "Ah. The fair-copy. I did wonder where the boy kept it. Forty Royals says the number stays never-happened, and the Counting-House remembers a friend.",
+        "Crell would make it a trial. Trials weigh everyone they touch. Forty Royals weighs nothing at all."
+      ] },
+    { "key": "quest.vanished-clerk.choice.finch", "canonAnchor": "quests.json:vanished-clerk",
+      "rows": [
+        "A number a banker paid to bury? That's not paper, friend. That's rent. The roofs collect on it forever.",
+        "Give it up the wall and the brotherhood banks it. Nobody raises it, nobody burns it. It just... earns."
       ] }
   ],
-  "notes": "Sprint-2 WORLD bark text tables (Trojian voice, docks register). Key vocabulary is BarkSelector's contract: mood.<state> and greet.<family>.<attitude>.<time> with the documented sparse fallback (a.b.c.d -> a.b.c -> a.b). Every family x attitude pair is authored; time-band refinements cover every family's neutral lane plus watch.cold and trade.warm. personal.<notableId> (all forty notables; client-selected when the speaker is a notable) and gossip.<historyId> (one per authored micro-history in names/histories.json, base 'gossip' as the fallback floor) are World key families layered on the same registry. Plain ASCII only (Glyph8x8Font); beast rows are observer stage directions in parentheses."
+  "notes": "Sprint-2 WORLD bark text tables (Trojian voice, docks register). Key vocabulary is BarkSelector's contract: mood.<state> and greet.<family>.<attitude>.<time> with the documented sparse fallback (a.b.c.d -> a.b.c -> a.b). Every family x attitude pair is authored; time-band refinements cover every family's neutral lane plus watch.cold and trade.warm. personal.<notableId> (all notables; client-selected when the speaker is a notable) and gossip.<historyId> (one per authored micro-history in names/histories.json, base 'gossip' as the fallback floor) are World key families layered on the same registry. S3 adds quest.<questId>[.<stageKey>[.<partySymbol>]] (quests/quests.json vocabulary; the talk surface's quest-beat lane, base quest.<questId> as the fallback floor) - linted stage-by-party by DocksBarkContentTest. Plain ASCII only (Glyph8x8Font); beast rows are observer stage directions in parentheses."
 }

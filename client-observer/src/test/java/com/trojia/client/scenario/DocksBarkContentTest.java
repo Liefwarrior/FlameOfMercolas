@@ -2,6 +2,8 @@ package com.trojia.client.scenario;
 
 import com.trojia.client.boot.RepoPaths;
 import com.trojia.sim.actor.BarkSelector;
+import com.trojia.sim.actor.quest.QuestRaws;
+import com.trojia.sim.actor.quest.QuestRawsLoader;
 import com.trojia.sim.bark.BarkRawsLoader;
 import com.trojia.sim.bark.BarkTableRegistry;
 
@@ -41,6 +43,10 @@ class DocksBarkContentTest {
     private static BarkTableRegistry tables;
     private static List<String> notableIds;
     private static Set<String> gossipKeys;
+    /** S3: every LEGAL quest table key — quest.<id>[.<stageKey>[.<declaredParty>]]. */
+    private static Set<String> legalQuestKeys;
+    /** S3: the quest floors (quest.<id>) plus every stage x party key the talk surface can build. */
+    private static List<String> selectableQuestKeys;
 
     @BeforeAll
     static void load() {
@@ -52,6 +58,25 @@ class DocksBarkContentTest {
         for (HistoryRaws.History history
                 : HistoryRaws.load(rawsRoot.resolve("names").resolve("histories.json"))) {
             gossipKeys.add(history.gossip());
+        }
+        // S3 quest lane: the legal key vocabulary is derived from the COMMITTED quest raws
+        // (the gossip-claim pattern — a quest.* table can only exist if quests.json declares
+        // the quest, the stage and the party it names), and the selectable set is every key
+        // the client's quest-beat key builder (quest.<questId>.<stageKey>.<partySymbol>)
+        // could ever emit, which the fallback floor quest.<questId> must catch.
+        legalQuestKeys = new HashSet<>();
+        selectableQuestKeys = new java.util.ArrayList<>();
+        for (QuestRaws.Quest quest : QuestRawsLoader.load(rawsRoot).quests()) {
+            legalQuestKeys.add("quest." + quest.id());
+            selectableQuestKeys.add("quest." + quest.id());
+            for (QuestRaws.Stage stage : quest.stages()) {
+                legalQuestKeys.add("quest." + quest.id() + "." + stage.key());
+                for (String party : quest.parties()) {
+                    String key = "quest." + quest.id() + "." + stage.key() + "." + party;
+                    legalQuestKeys.add(key);
+                    selectableQuestKeys.add(key);
+                }
+            }
         }
     }
 
@@ -102,6 +127,39 @@ class DocksBarkContentTest {
                     "spotlight notable \"" + id + "\" needs a handful of lines, saw "
                             + tables.rowCount("personal." + id));
         }
+        // S3 quest cast: the clerk's landlady carries a spotlight-grade handful too.
+        assertTrue(tables.rowCount("personal.sedge") >= 4,
+                "quest-cast notable \"sedge\" needs a handful of lines, saw "
+                        + tables.rowCount("personal.sedge"));
+    }
+
+    /**
+     * S3 quest lane: every key the talk surface's quest-beat builder can emit
+     * ({@code quest.<questId>.<stageKey>.<partySymbol>} over EVERY stage x declared party)
+     * resolves to authored text through the stock fallback chain — the floor
+     * {@code quest.<questId>} catches whatever has no specific table — and every stage that
+     * advances by TALK serves a SPECIFIC table for each of its talk parties (the authored
+     * quest beats are never the generic floor).
+     */
+    @Test
+    void everySelectableQuestKeyResolvesAndTalkBeatsAreSpecific() {
+        for (String key : selectableQuestKeys) {
+            assertResolves(key);
+        }
+        for (QuestRaws.Quest quest : QuestRawsLoader.load(rawsRoot).quests()) {
+            assertTrue(tables.contains("quest." + quest.id()),
+                    "quest \"" + quest.id() + "\" has no fallback-floor table");
+            for (QuestRaws.Stage stage : quest.stages()) {
+                for (QuestRaws.Trigger trigger : stage.advance()) {
+                    if (trigger.kind() == QuestRaws.TriggerKind.TALK) {
+                        String key = "quest." + quest.id() + "." + stage.key() + "."
+                                + trigger.party();
+                        assertTrue(tables.contains(key),
+                                "talk-advance beat " + key + " deserves authored lines");
+                    }
+                }
+            }
+        }
     }
 
     /** Every authored key is reachable vocabulary — no typo'd table can hide in the file. */
@@ -131,6 +189,11 @@ class DocksBarkContentTest {
         }
         if (key.startsWith("gossip.")) {
             return true; // orphan check above pins these to histories.json
+        }
+        if (key.startsWith("quest.")) {
+            // S3: claimed by the committed quest raws — quest id, stage key and party symbol
+            // must all be declared in quests.json, or the table is unreachable.
+            return legalQuestKeys.contains(key);
         }
         if (!key.startsWith("greet.")) {
             return false;
