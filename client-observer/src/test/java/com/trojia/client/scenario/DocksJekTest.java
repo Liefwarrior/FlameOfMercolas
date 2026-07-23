@@ -73,11 +73,14 @@ class DocksJekTest {
         // The loading system is reconstructed with the SAME raws-derived wiring the save-side
         // had (typeStats/jobs — and, since Sprint 1, the skill + faction universes: the
         // chunk's progression/standing frames are guarded against a wiring mismatch).
+        // Since Sprint 3 the QuestLog frame rides this chunk too, so the loading system must
+        // be built against the SAME bake-compiled quest raws (the skillTracks contract).
         ActorsSystem reloaded = new ActorsSystem(loaded.worldSeed(), population.typeStats(),
                 population.jobs(), new ActorRegistry(), new HomeRegistry(),
                 new RelationshipRegistry(), new ItemsLiteRegistry(), new BankLedger(), null,
                 CivicFixtures.ofJustice(Actor.NONE, RestrictedZoneTable.EMPTY),
-                DocksPopulation.freshSkillTracks(), DocksPopulation.freshFactionStandings());
+                DocksPopulation.freshSkillTracks(), DocksPopulation.freshFactionStandings(),
+                population.system().questRegistry());
         reloaded.load(new DataInputStream(new ByteArrayInputStream(first)));
         byte[] second = serialize(reloaded);
 
