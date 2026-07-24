@@ -121,11 +121,12 @@ public final class WorldRenderer {
     /** Floor on the depth-dim brightness so the deepest look-down never goes murky-dark. */
     private static final float DIM_FLOOR = 0.55f;
 
-    /** Faint cool (blue-ward) haze added per depth level, capped by {@link #COOL_MAX}. */
-    private static final float COOL_PER_DEPTH = 0.012f;
+    /** Faint cool (blue-ward) haze added per depth level, capped by {@link #COOL_MAX}
+     * (package-private so {@link DepthVision#shade} shares the one curve). */
+    static final float COOL_PER_DEPTH = 0.012f;
 
     /** Cap on the cumulative cool haze, so the tint stays a hint of depth, never a blue cast. */
-    private static final float COOL_MAX = 0.10f;
+    static final float COOL_MAX = 0.10f;
 
     /**
      * The {@code formOrdinal} argument {@link #cosmeticVariant} receives for fluid-overlay
@@ -276,12 +277,13 @@ public final class WorldRenderer {
                 }
                 int depth = z - foundZ;
                 int blurLevel = blurLevelFor(depth);
-                float dim = depthDim(depth);
-                float cool = Math.min(COOL_MAX, COOL_PER_DEPTH * depth);
-                // A faint blue-ward haze: pull red down most, green half as much, leave blue.
-                float shadeR = dim * (1f - cool);
-                float shadeG = dim * (1f - 0.5f * cool);
-                float shadeB = dim;
+                // Depth dim + faint blue-ward haze, via the ONE shared curve the actor
+                // depth pass also applies ({@link DepthVision#shade} — extracted verbatim,
+                // same expressions in the same order, so this stays pixel-identical).
+                DepthVision.Shade shade = DepthVision.shade(depth);
+                float shadeR = shade.r();
+                float shadeG = shade.g();
+                float shadeB = shade.b();
 
                 cursor.moveTo(PackedPos.pack(tx, ty, foundZ));
                 TileForm lowForm = cursor.form();

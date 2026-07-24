@@ -1,5 +1,6 @@
 package com.trojia.client.inspect;
 
+import com.trojia.client.render.DepthSight;
 import com.trojia.client.scenario.CompoundBlockPopulation;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
@@ -53,6 +54,71 @@ class ActorPickerTest {
         int above = ActorPicker.pickAt(registry, PackedPos.x(cell), PackedPos.y(cell),
                 PackedPos.z(cell) + 1);
         assertEquals(Actor.NONE, above, "same x/y on a different z must not match");
+    }
+
+    // ------------------------------------------------- pickThroughDepth (S4 EPIC)
+
+    @Test
+    void depthFallbackFindsTheActorTheLookdownShows() {
+        ActorRegistry registry = population();
+        Actor keeper = firstOfType(registry, "animal_keeper");
+        int cell = keeper.cell();
+        int keeperZ = PackedPos.z(cell);
+        int viewZ = keeperZ + 2;
+        // A synthetic open column: from viewZ the look-down resolves to the keeper's z.
+        DepthSight sight = (vz, x, y) -> keeperZ;
+        int picked = ActorPicker.pickThroughDepth(registry,
+                PackedPos.x(cell), PackedPos.y(cell), viewZ, sight);
+        assertEquals(keeper.id(), picked,
+                "the below-z actor the depth pass renders must be clickable");
+    }
+
+    @Test
+    void samePlaneActorAlwaysWinsOverTheDepthFallback() {
+        ActorRegistry registry = population();
+        Actor keeper = firstOfType(registry, "animal_keeper");
+        int cell = keeper.cell();
+        // A sight that would resolve somewhere else entirely: it must never be consulted,
+        // because an actor stands on the asked tile at the viewed z itself.
+        DepthSight neverThis = (vz, x, y) -> {
+            throw new AssertionError("depth fallback consulted despite a same-z actor");
+        };
+        int picked = ActorPicker.pickThroughDepth(registry,
+                PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell), neverThis);
+        assertEquals(keeper.id(), picked);
+    }
+
+    @Test
+    void occludedOrBottomlessColumnPicksNothing() {
+        ActorRegistry registry = population();
+        Actor keeper = firstOfType(registry, "animal_keeper");
+        int cell = keeper.cell();
+        DepthSight occluded = (vz, x, y) -> DepthSight.NONE;
+        assertEquals(Actor.NONE, ActorPicker.pickThroughDepth(registry,
+                PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell) + 2, occluded));
+    }
+
+    @Test
+    void lookdownStoppingShortOfTheActorPicksNothing() {
+        ActorRegistry registry = population();
+        Actor keeper = firstOfType(registry, "animal_keeper");
+        int cell = keeper.cell();
+        // The column resolves to a floor ABOVE the keeper (an intervening storey): the
+        // keeper is hidden under it and must not be pickable through it.
+        DepthSight floorAbove = (vz, x, y) -> PackedPos.z(cell) + 1;
+        assertEquals(Actor.NONE, ActorPicker.pickThroughDepth(registry,
+                PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell) + 2, floorAbove));
+    }
+
+    @Test
+    void nullSightDegradesToThePlainSameZPick() {
+        ActorRegistry registry = population();
+        Actor keeper = firstOfType(registry, "animal_keeper");
+        int cell = keeper.cell();
+        assertEquals(Actor.NONE, ActorPicker.pickThroughDepth(registry,
+                PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell) + 1, null));
+        assertEquals(keeper.id(), ActorPicker.pickThroughDepth(registry,
+                PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell), null));
     }
 
     private static Actor firstOfType(ActorRegistry registry, String typeKey) {

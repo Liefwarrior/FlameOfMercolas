@@ -52,6 +52,7 @@ import com.trojia.client.inspect.TalkState;
 import com.trojia.client.inspect.ToastQueue;
 import com.trojia.client.render.ActorRenderer;
 import com.trojia.client.render.AmbientLight;
+import com.trojia.client.render.DepthVision;
 import com.trojia.client.render.InspectorRenderer;
 import com.trojia.client.render.JournalRenderer;
 import com.trojia.client.render.LampGlowMap;
@@ -157,6 +158,7 @@ public final class ObserverApp extends ApplicationAdapter {
     private final Matrix4 projection = new Matrix4();
 
     // Populated fixtures only (null for the tavern):
+    private DepthVision depthVision;
     private ActorRenderer actorRenderer;
     private SpriteSheet spriteSheet;
     private InspectorFaces inspectorFaces;
@@ -351,8 +353,12 @@ public final class ObserverApp extends ApplicationAdapter {
             Path spriteSheetFile = RepoPaths.locate("content").resolve(spriteIndex.sheetPath());
             this.spriteSheet = SpriteSheet.create(spriteIndex,
                     Gdx.files.absolute(spriteSheetFile.toAbsolutePath().toString()));
+            // Depth vision (S4 EPIC): the look-down column resolver that lets the actor
+            // pass, the hover plates and click-to-inspect see through empty air to the
+            // bands below. Presentation-only — reads tiles, never feeds the hasher.
+            this.depthVision = new DepthVision(world);
             this.actorRenderer = new ActorRenderer(population.registry(), spriteIndex,
-                    spriteSheet, lampGlow);
+                    spriteSheet, lampGlow, depthVision);
 
             // Inspector: click-to-select panel, all-population event feed, follow-camera.
             this.inspector = new InspectorState();
@@ -418,7 +424,7 @@ public final class ObserverApp extends ApplicationAdapter {
             this.nameplateRenderer = new NameplateRenderer(population.registry(),
                     population.jobs(), population.identity(),
                     population.system().factionStandings(), population.relationships(),
-                    () -> playMode.playedActorId());
+                    () -> playMode.playedActorId(), depthVision);
             this.toastRenderer = new ToastRenderer();
             this.talkPanelRenderer = new TalkPanelRenderer(population.registry(), inspectorFaces);
             if (debugSelectActorId >= 0 && debugSelectActorId < population.registry().size()) {
@@ -482,7 +488,11 @@ public final class ObserverApp extends ApplicationAdapter {
             boolean clickConsumedByPlayMode = PlayModeInput.poll(playMode, inspector, camera,
                     population.registry(), zLevel.z());
             if (!clickConsumedByPlayMode) {
-                InspectorInput.poll(inspector, camera, population.registry(), zLevel.z());
+                // Depth-aware click-to-inspect (S4 EPIC): same-z actor wins; an empty tile
+                // falls through to the visible below-z actor. Play-mode verb picks above
+                // stay same-z (reach realism — the lead's ruling).
+                InspectorInput.poll(inspector, camera, population.registry(), zLevel.z(),
+                        depthVision);
             }
             // The Sprint-2 adjacency verbs (T talk / G pickpocket). Talk owns ESC while its
             // panel is up — closing a conversation must not also close the observer.

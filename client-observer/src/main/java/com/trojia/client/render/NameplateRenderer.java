@@ -38,6 +38,13 @@ import java.util.function.IntSupplier;
  * <p>Hover-only by default keeps crowds legible (the sprint plan's clutter mitigation);
  * show-all is deliberately a held key, not a toggle, so it can never be left on by
  * accident.
+ *
+ * <p><b>Hover through depth</b> (Sprint 4 EPIC, lead's ruling: nameplates YES): when the
+ * hovered tile is empty on the viewed z and a {@link DepthSight} is wired, the plate falls
+ * through to the actors the air-depth look-down shows there — same PRESENTED-identity
+ * labels, text dimmed by the column's {@link WorldRenderer#depthDim} factor so the plate
+ * reads as far away as the figure it names. Hover only: the held-{@code N} show-all pass
+ * stays same-z (a whole district of below-plates would be clutter, not information).
  */
 public final class NameplateRenderer {
 
@@ -59,6 +66,8 @@ public final class NameplateRenderer {
     private final RelationshipRegistry relationships;
     /** Live "who is played" read for the standing tint; {@code Actor.NONE} = no tint. */
     private final IntSupplier playedActorId;
+    /** The hover-through-depth column resolver, or {@code null}: same-z hover only. */
+    private final DepthSight depthSight;
     private final GlyphLayout layout = new GlyphLayout();
     /** Show-all per-frame cell suppression (cleared each draw; a stacked cell renders ONE
      *  cascading plate) — reused across frames so steady-state allocates nothing. */
@@ -67,12 +76,20 @@ public final class NameplateRenderer {
     public NameplateRenderer(ActorRegistry registry, JobRegistry jobs,
             IdentityRegistry identity, FactionStandings standings,
             RelationshipRegistry relationships, IntSupplier playedActorId) {
+        this(registry, jobs, identity, standings, relationships, playedActorId, null);
+    }
+
+    public NameplateRenderer(ActorRegistry registry, JobRegistry jobs,
+            IdentityRegistry identity, FactionStandings standings,
+            RelationshipRegistry relationships, IntSupplier playedActorId,
+            DepthSight depthSight) {
         this.registry = registry;
         this.jobs = jobs;
         this.identity = identity;
         this.standings = standings;
         this.relationships = relationships;
         this.playedActorId = playedActorId;
+        this.depthSight = depthSight;
     }
 
     /**
@@ -100,8 +117,18 @@ public final class NameplateRenderer {
             return;
         }
         List<NameplateText.Plate> plates = platesAt(tileX, tileY, z);
+        float depthDim = 1f;
+        if (plates.isEmpty() && depthSight != null) {
+            // Hover through depth: an empty same-z tile falls through to the actors the
+            // air-depth look-down renders there, their labels dimmed by the same curve.
+            int belowZ = depthSight.visibleBelowZ(z, tileX, tileY);
+            if (belowZ != DepthSight.NONE) {
+                plates = platesAt(tileX, tileY, belowZ);
+                depthDim = WorldRenderer.depthDim(z - belowZ);
+            }
+        }
         if (!plates.isEmpty()) {
-            drawPlate(batch, font, icons, camera, tileX, tileY, plates);
+            drawPlate(batch, font, icons, camera, tileX, tileY, plates, depthDim);
         }
     }
 
@@ -122,7 +149,7 @@ public final class NameplateRenderer {
             if (!platedCells.add(cell)) {
                 continue; // this cell's whole stack already rendered on its first actor
             }
-            drawPlate(batch, font, icons, camera, tx, ty, platesAt(tx, ty, z));
+            drawPlate(batch, font, icons, camera, tx, ty, platesAt(tx, ty, z), 1f);
         }
     }
 
@@ -131,9 +158,11 @@ public final class NameplateRenderer {
                 relationships, playedActorId.getAsInt());
     }
 
-    /** One DF-black plate whose bottom edge floats just above the tile's top edge. */
+    /** One DF-black plate whose bottom edge floats just above the tile's top edge;
+     * {@code depthDim} scales the label colour (1 = the plain same-z plate). */
     private void drawPlate(SpriteBatch batch, BitmapFont font, IconAtlas icons,
-            MapCamera camera, int tileX, int tileY, List<NameplateText.Plate> plates) {
+            MapCamera camera, int tileX, int tileY, List<NameplateText.Plate> plates,
+            float depthDim) {
         float lineHeight = font.getLineHeight();
         float contentWidth = 0f;
         for (NameplateText.Plate plate : plates) {
@@ -151,10 +180,21 @@ public final class NameplateRenderer {
 
         float y = panelBottomY + panelHeight - HudPanel.PADDING;
         for (NameplateText.Plate plate : plates) {
-            font.setColor(tintFor(plate.attitude()));
+            font.setColor(dimmed(tintFor(plate.attitude()), depthDim));
             font.draw(batch, plate.label(), screenXLeft, y);
             y -= lineHeight;
         }
+    }
+
+    /**
+     * The label colour scaled by the hover-through-depth dim factor; {@code dim == 1}
+     * returns the tint object untouched (the same-z path allocates nothing new).
+     */
+    static Color dimmed(Color tint, float dim) {
+        if (dim >= 1f) {
+            return tint;
+        }
+        return new Color(tint.r * dim, tint.g * dim, tint.b * dim, tint.a);
     }
 
     /** The subtle standing tint per attitude token; parchment when untinted/neutral. */

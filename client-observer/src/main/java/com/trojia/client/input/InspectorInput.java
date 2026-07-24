@@ -5,6 +5,7 @@ import com.badlogic.gdx.Input;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.inspect.ActorPicker;
 import com.trojia.client.inspect.InspectorState;
+import com.trojia.client.render.DepthSight;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 
@@ -36,14 +37,25 @@ public final class InspectorInput {
     /**
      * Applies one frame's inspector input to {@code state}: a click resolves the cursor to
      * a tile on z-level {@code z} and selects the actor there (via {@link ActorPicker}), and
-     * {@code C} toggles follow.
+     * {@code C} toggles follow. The no-depth overload — clicks pick on the viewed z only.
      */
     public static void poll(InspectorState state, MapCamera camera, ActorRegistry registry, int z) {
+        poll(state, camera, registry, z, null);
+    }
+
+    /**
+     * The depth-aware poll (Sprint 4 EPIC): a click on an empty same-z tile falls through
+     * to the actor the air-depth look-down renders there ({@link ActorPicker#pickThroughDepth}
+     * — the same-z actor always wins), so click-to-inspect reaches the souls you can SEE a
+     * band below. {@code sight} may be null: plain same-z picking.
+     */
+    public static void poll(InspectorState state, MapCamera camera, ActorRegistry registry, int z,
+            DepthSight sight) {
         if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
             int tileX = camera.screenToTileX(Gdx.input.getX());
             int tileY = camera.screenToTileY(Gdx.input.getY());
             int picked = camera.isInWorld(tileX, tileY)
-                    ? ActorPicker.pickAt(registry, tileX, tileY, z)
+                    ? ActorPicker.pickThroughDepth(registry, tileX, tileY, z, sight)
                     : Actor.NONE;
             state.select(picked);
         }
