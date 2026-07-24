@@ -30,8 +30,9 @@ final class MicroHistoryBake {
     }
 
     /**
-     * Realizes {@code histories} as relationship edges (symmetric for NEIGHBOR/FRIEND,
-     * directed a→b for MENTOR) and returns the bound list for bio addenda and tests.
+     * Realizes {@code histories} as relationship edges (symmetric for
+     * NEIGHBOR/FRIEND/RIVAL/ROMANCE, directed a→b for MENTOR/DEBTOR — creditor holds the
+     * paper) and returns the bound list for bio addenda and tests.
      *
      * @throws IllegalStateException when a party names an unbound notable id
      */
@@ -41,14 +42,19 @@ final class MicroHistoryBake {
         for (HistoryRaws.History history : histories) {
             int actorA = resolve(history, history.a(), notableActors);
             int actorB = resolve(history, history.b(), notableActors);
-            if (history.edge() == RelationshipKind.MENTOR) {
-                relationships.addDirected(actorA, actorB, RelationshipKind.MENTOR);
+            if (isDirected(history.edge())) {
+                relationships.addDirected(actorA, actorB, history.edge());
             } else {
                 relationships.addSymmetric(actorA, actorB, history.edge());
             }
             bound.add(new Bound(history, actorA, actorB));
         }
         return List.copyOf(bound);
+    }
+
+    /** Whether an authored edge kind realizes directed (a=senior/creditor → b). */
+    static boolean isDirected(RelationshipKind kind) {
+        return kind == RelationshipKind.MENTOR || kind == RelationshipKind.DEBTOR;
     }
 
     /**

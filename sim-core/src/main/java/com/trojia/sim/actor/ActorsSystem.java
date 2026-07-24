@@ -631,7 +631,8 @@ public final class ActorsSystem implements SimulationSystem {
             int toId = in.readInt();
             RelationshipKind kind = RelationshipKind.values()[in.readByte()];
             if (kind == RelationshipKind.HOUSEHOLD || kind == RelationshipKind.NEIGHBOR
-                    || kind == RelationshipKind.FRIEND) {
+                    || kind == RelationshipKind.FRIEND || kind == RelationshipKind.RIVAL
+                    || kind == RelationshipKind.ROMANCE || kind == RelationshipKind.KIN) {
                 relationships.addSymmetric(fromId, toId, kind);
             } else {
                 relationships.addDirected(fromId, toId, kind);

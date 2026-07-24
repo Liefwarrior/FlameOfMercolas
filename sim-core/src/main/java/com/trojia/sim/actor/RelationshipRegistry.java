@@ -24,9 +24,9 @@ public final class RelationshipRegistry {
     private final List<RelationshipEdge> edges = new ArrayList<>();
 
     /**
-     * Adds a HOUSEHOLD/NEIGHBOR/FRIEND edge with automatic canonical
-     * (min,max) ordering — symmetric kinds never care which id the caller
-     * passes first.
+     * Adds a HOUSEHOLD/NEIGHBOR/FRIEND/RIVAL/ROMANCE/KIN edge with automatic
+     * canonical (min,max) ordering — symmetric kinds never care which id the
+     * caller passes first.
      */
     public void addSymmetric(int actorA, int actorB, RelationshipKind kind) {
         int from = Math.min(actorA, actorB);
@@ -35,8 +35,9 @@ public final class RelationshipRegistry {
     }
 
     /**
-     * Adds a directed EMPLOYER/MENTOR edge: {@code seniorId} is the employer/
-     * mentor, {@code juniorId} the employee/mentee.
+     * Adds a directed EMPLOYER/MENTOR/GRUDGE/DEBTOR edge: {@code seniorId} is
+     * the employer/mentor/holder/creditor, {@code juniorId} the employee/
+     * mentee/object/debtor.
      */
     public void addDirected(int seniorId, int juniorId, RelationshipKind kind) {
         add(new RelationshipEdge(seniorId, juniorId, kind));

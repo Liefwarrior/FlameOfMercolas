@@ -63,7 +63,7 @@ class DocksMicroHistoryTest {
     void everyHistoryRealizesExactlyItsDeclaredEdge() {
         RelationshipRegistry relationships = population.relationships();
         for (MicroHistoryBake.Bound b : bound) {
-            boolean directed = b.history().edge() == RelationshipKind.MENTOR;
+            boolean directed = MicroHistoryBake.isDirected(b.history().edge());
             int from = directed ? b.actorA() : Math.min(b.actorA(), b.actorB());
             int to = directed ? b.actorB() : Math.max(b.actorA(), b.actorB());
             boolean found = false;
@@ -113,9 +113,9 @@ class DocksMicroHistoryTest {
                 "the Watch sergeant's grudge must exist as an authored feud");
         MicroHistoryBake.Bound debt = byId.get("netter-fenner-debt");
         assertTrue(debt != null && debt.history().kind().equals("debt")
-                        && debt.history().edge() == RelationshipKind.MENTOR
+                        && debt.history().edge() == RelationshipKind.DEBTOR
                         && debt.history().b().equals("netter"),
-                "the widow must be a debtor (directed creditor->debtor edge)");
+                "the widow must be a debtor (directed creditor->debtor DEBTOR edge)");
         MicroHistoryBake.Bound secret = byId.get("gilt-crell-erasure");
         assertTrue(secret != null && secret.history().kind().equals("secret")
                         && secret.history().a().equals("gilt"),

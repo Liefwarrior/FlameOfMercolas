@@ -211,22 +211,27 @@ public final class BarkSelector {
      * Attitude toward the listener: personal ties first (the speaker KNOWS its own kin,
      * grudges and friends — checked between the speaker's TRUE id and the face the
      * listener presents), then the listener's standing with the speaker's faction,
-     * bucketed. Tie priority (Sprint 3): HOUSEHOLD &gt; GRUDGE &gt; FRIEND — kin forgive,
-     * but a quest-minted grudge outweighs old friendship; the grudge is DIRECTED, so only
-     * the holder's own greeting turns hostile (speaker TRUE id → listener PRESENTED id),
-     * never the reverse. Unaffiliated speakers (wastrels, covers, beasts) read standing 0
-     * — neutral.
+     * bucketed. Tie priority (Sprint 3, extended by the Sprint-5 vocabulary completion):
+     * HOUSEHOLD/KIN &gt; GRUDGE &gt; RIVAL &gt; FRIEND/ROMANCE — kin forgive, a
+     * quest-minted grudge outweighs old friendship, an open rivalry greets hostile, and a
+     * romance greets exactly as warmly as the FRIEND placeholder it migrated off. The
+     * grudge is DIRECTED, so only the holder's own greeting turns hostile (speaker TRUE
+     * id → listener PRESENTED id), never the reverse. Unaffiliated speakers (wastrels,
+     * covers, beasts) read standing 0 — neutral.
      */
     static String attitudeOf(Actor speaker, Job presentedJob, int listenerPresentedId,
             FactionStandings standings, RelationshipRegistry relationships) {
         RelationshipKind tie = tieBetween(relationships, speaker.id(), listenerPresentedId);
-        if (tie == RelationshipKind.HOUSEHOLD) {
+        if (tie == RelationshipKind.HOUSEHOLD || tie == RelationshipKind.KIN) {
             return "kin";
         }
         if (holdsGrudge(relationships, speaker.id(), listenerPresentedId)) {
             return "hostile"; // the quest ending stays audible forever, at zero content cost
         }
-        if (tie == RelationshipKind.FRIEND) {
+        if (tie == RelationshipKind.RIVAL) {
+            return "hostile"; // the authored feuds finally greet like feuds
+        }
+        if (tie == RelationshipKind.FRIEND || tie == RelationshipKind.ROMANCE) {
             return "friend";
         }
         int standing = 0;
@@ -269,7 +274,11 @@ public final class BarkSelector {
         return false;
     }
 
-    /** The strongest HOUSEHOLD/FRIEND edge between two ids, or {@code null}. */
+    /**
+     * The strongest personal tie between two ids, or {@code null}: HOUSEHOLD/KIN win
+     * outright, then RIVAL, then FRIEND/ROMANCE (the Sprint-5 vocabulary — a feud
+     * outweighs an old friendship, blood outweighs both).
+     */
     private static RelationshipKind tieBetween(RelationshipRegistry relationships, int a, int b) {
         RelationshipKind found = null;
         for (int i = 0; i < relationships.size(); i++) {
@@ -278,11 +287,15 @@ public final class BarkSelector {
                     || (edge.fromId() == b && edge.toId() == a))) {
                 continue;
             }
-            if (edge.kind() == RelationshipKind.HOUSEHOLD) {
-                return RelationshipKind.HOUSEHOLD; // the strongest tie wins outright
+            RelationshipKind kind = edge.kind();
+            if (kind == RelationshipKind.HOUSEHOLD || kind == RelationshipKind.KIN) {
+                return kind; // the strongest tie wins outright
             }
-            if (edge.kind() == RelationshipKind.FRIEND) {
-                found = RelationshipKind.FRIEND;
+            if (kind == RelationshipKind.RIVAL) {
+                found = RelationshipKind.RIVAL;
+            } else if ((kind == RelationshipKind.FRIEND || kind == RelationshipKind.ROMANCE)
+                    && found != RelationshipKind.RIVAL) {
+                found = kind;
             }
         }
         return found;

@@ -124,12 +124,18 @@ public final class Barter {
         return quote.personalPrice();
     }
 
-    /** Whether a HOUSEHOLD or FRIEND edge joins the two ids (allocation-free edge walk). */
+    /**
+     * Whether a HOUSEHOLD/KIN/FRIEND/ROMANCE edge joins the two ids (allocation-free edge
+     * walk). ROMANCE keeps the exact kitchen-price discount its FRIEND placeholder bought
+     * (the Sprint-5 migration is legibility, not a price change); KIN pairs are in practice
+     * also HOUSEHOLD (the family compounds), so the discount set is behavior-identical.
+     */
     static boolean isKinOrFriend(RelationshipRegistry relationships, int a, int b) {
         for (int i = 0; i < relationships.size(); i++) {
             RelationshipEdge edge = relationships.get(i);
             RelationshipKind kind = edge.kind();
-            if (kind != RelationshipKind.HOUSEHOLD && kind != RelationshipKind.FRIEND) {
+            if (kind != RelationshipKind.HOUSEHOLD && kind != RelationshipKind.FRIEND
+                    && kind != RelationshipKind.KIN && kind != RelationshipKind.ROMANCE) {
                 continue;
             }
             if ((edge.fromId() == a && edge.toId() == b)

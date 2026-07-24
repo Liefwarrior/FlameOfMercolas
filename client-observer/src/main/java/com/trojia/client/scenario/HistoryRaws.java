@@ -24,20 +24,23 @@ import java.util.Set;
  * pacts among the Forty Notables, realized at bake as real {@code RelationshipRegistry}
  * edges plus a one-sentence bio addendum per side (appended by {@link NameForge}).
  *
- * <p><b>Edge vocabulary</b> (the CURRENT append-only {@code RelationshipKind} enum — the
- * file may only name kinds the sim already serializes): {@code NEIGHBOR} (feuds: a
- * known-adversary adjacency tie; the hostility itself is carried by bios and gossip),
- * {@code MENTOR} (debts: directed {@code a}=creditor → {@code b}=debtor, the "oversees"
- * sense), {@code FRIEND} (romances/pacts/secrets: symmetric — BarkSelector greets these
- * pairs as friends and Barter grants its kitchen-price discount, deliberately).
- * {@code HOUSEHOLD} and {@code EMPLOYER} are forbidden here: the first would merge surname
- * components, the second would rewrite forged "in X's pay" bios.
+ * <p><b>Edge vocabulary</b> (the append-only {@code RelationshipKind} enum — the file may
+ * only name kinds the sim already serializes). Since the Sprint-5 vocabulary completion the
+ * proper kinds exist and the file uses them: {@code RIVAL} (feuds), {@code DEBTOR} (debts:
+ * directed {@code a}=creditor → {@code b}=debtor), {@code ROMANCE} (romances),
+ * {@code FRIEND} (pacts/secrets — a quiet alignment reads as friendship). The S2
+ * placeholders {@code NEIGHBOR}/{@code MENTOR} stay legal vocabulary for genuinely
+ * neighborly/mentoring stories. {@code HOUSEHOLD}, {@code EMPLOYER}, {@code GRUDGE} and
+ * {@code KIN} are forbidden here: the first would merge surname components, the second
+ * would rewrite forged "in X's pay" bios, the third is quest-minted only, and blood is
+ * authored by the kinship pass ({@code DocksPopulation}), never by a story.
  */
 final class HistoryRaws {
 
     /** The edge kinds an authored history may realize (see class Javadoc). */
     private static final Set<RelationshipKind> ALLOWED_EDGES = Set.of(
-            RelationshipKind.NEIGHBOR, RelationshipKind.FRIEND, RelationshipKind.MENTOR);
+            RelationshipKind.NEIGHBOR, RelationshipKind.FRIEND, RelationshipKind.MENTOR,
+            RelationshipKind.RIVAL, RelationshipKind.DEBTOR, RelationshipKind.ROMANCE);
 
     private static final Set<String> ALLOWED_KINDS = Set.of(
             "feud", "debt", "romance", "pact", "secret");

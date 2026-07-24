@@ -1789,7 +1789,7 @@ public final class DocksPopulation implements ScenarioPopulation {
             Actor c1Owner = spawn(Shopkeeper.TYPE, C1_MANSION, ZB);
             Actor c1Heir = spawn(Serf.TYPE, C1_MANSION, ZB);
             Actor c1MoverKin = spawn(Serf.TYPE, C1_MANSION, ZB);
-            household(List.of(c1Owner, c1Heir, c1MoverKin,
+            familyHousehold(List.of(c1Owner, c1Heir, c1MoverKin,
                     spawn(Serf.TYPE, C1_MANSION, ZB), spawn(Serf.TYPE, C1_MANSION, ZB)));
             c1Owner.setAnchorCell(worldCell(C1_COURTYARD, ZB));
             relationships.addDirected(c1Owner.id(), c1Heir.id(), RelationshipKind.MENTOR);
@@ -1814,7 +1814,7 @@ public final class DocksPopulation implements ScenarioPopulation {
             // The dockworker compound: ground households man the berths and piers by day.
             Actor c2Owner = spawn(Shopkeeper.TYPE, C2_MANSION, ZA);
             Actor c2Mover = spawn(Serf.TYPE, C2_MANSION, ZA);   // the tracked Band-A mover
-            household(List.of(c2Owner, c2Mover, spawn(Serf.TYPE, C2_MANSION, ZA),
+            familyHousehold(List.of(c2Owner, c2Mover, spawn(Serf.TYPE, C2_MANSION, ZA),
                     spawn(Serf.TYPE, C2_MANSION, ZA)));
             c2Owner.setAnchorCell(worldCell(K10_DAWNSTALLS, ZA));
             Actor c2FirstHead = null;
@@ -1849,7 +1849,7 @@ public final class DocksPopulation implements ScenarioPopulation {
 
             // ===================== COMPOUND C3 — Saltgate Terrace (cramped, Band B) ===========
             Actor c3Owner = spawn(Shopkeeper.TYPE, C3_MANSION, ZB);
-            household(List.of(c3Owner, spawn(Serf.TYPE, C3_MANSION, ZB),
+            familyHousehold(List.of(c3Owner, spawn(Serf.TYPE, C3_MANSION, ZB),
                     spawn(Serf.TYPE, C3_MANSION, ZB), spawn(Serf.TYPE, C3_MANSION, ZB)));
             c3Owner.setAnchorCell(worldCell(C3_COURTYARD, ZB));
             for (int i = 0; i < C3_CONDOS_GROUND.length; i++) {
@@ -2250,6 +2250,24 @@ public final class DocksPopulation implements ScenarioPopulation {
         private void household(List<Actor> group) {
             HouseholdFormer.formHouseholds(group, homes, relationships, seed,
                     cohesive(group.size()));
+        }
+
+        /**
+         * A FAMILY household (S5 kinship pass): the shared Home + HOUSEHOLD clique, plus a
+         * {@link RelationshipKind#KIN} clique — blood, over and above co-residence. Used
+         * for the named compound families (Quayward/Netter/Saltgate mansions); bunked
+         * crews, shop staff and flophouse lodgers stay HOUSEHOLD-only by construction.
+         * KIN deliberately stays OUT of NameForge's surname union-find (HOUSEHOLD edges
+         * only), so the kinship pass cannot merge naming components.
+         */
+        private void familyHousehold(List<Actor> group) {
+            household(group);
+            for (int i = 0; i < group.size(); i++) {
+                for (int j = i + 1; j < group.size(); j++) {
+                    relationships.addSymmetric(group.get(i).id(), group.get(j).id(),
+                            RelationshipKind.KIN);
+                }
+            }
         }
 
         /** A single-occupant home at the actor's spawn cell — a Home, no household edges. */
