@@ -543,6 +543,38 @@ The un-storied notables (Ulwer, Hemp, Vetch, Weyland, Dray...) keep personal mon
 gossip; growing the history pile 15→~30 INTO this now-live channel is the declared next authoring
 pass, not this one (channel first, then breadth — the S2 dead-table lesson).
 
+### 4.9 THE WARD'S MASTERS — authored starting mastery (CANON as of the S5 world pass, 2026-07-24)
+
+The Sprint-5 directive ("skills affect everything, everyone levels") gave every civic job a
+trainable trade (§`PROGRESSION-SPEC.md` §2 rows 17–18 + the job training map). This section is
+the other half: **the ward's veterans START as what their bios claim** — 37 of the 41 notables
+carry authored starting skills (`notables.json` `"skills"` maps, seeded onto the live
+`SkillTrackRegistry` at bake by `NotableSkillsBake`; masters ~30–50, journeymen ~10–25, levels
+placeholder pending Eli's blessing pass). Ordinary souls start 0 and earn it through work —
+in a long soak the ward grows its own next generation of these names.
+
+Bands (the frozen bark vocabulary, `mastery.<skillId>.<band>`): **novice** 1–9, **adept**
+10–29, **master** 30+.
+
+**The masters (level 30+), by craft:**
+
+| Craft (skill) | The ward's best | The rest of the bench |
+|---|---|---|
+| **Kit-Keeping** | Grandmother Withy **50** — no hand on the quay splices like the Eldest needle's | Harl 45, Cooper Stave 45, Foreman Hemp 40, Sailmaker Luff 40 |
+| **Seacraft** | Captain Sorrel Vane **50** — deep water made him careful, the tariff scales made him exact | Captain Bregga 40, Merle the waterman 40, Captain Wake 35, Harl 30 |
+| **Streetwise** | Mother Sethra **45** — trades in everyone's secrets, gives nobody's away | Crell 40, Fenner 40, Sergeant Vess 35, Widow Netter 35, Venn 30, Redda 30, Jek 30, Dagny 30, Sergeant Brakk 30 |
+| **Fieldcraft** | Old Cobb **40** — the city calls him when things gnaw | Herdis 35, Goodman Saltgate 30, Carter Weyland 30 |
+| **Channeling** | Father Maell **40** — the Mission's flame has never once gone out on his watch | Onna 12 (journeyman, rising) |
+| **Mixtures** | Pitch-Master Ulwer **35** — cauldrons, cures and a permanent reek | Salla 20 (brines and smoke) |
+| **Skyrunning** | *"Finch" **50*** — the ward does not know it has a master; his sheet is on the TRUE body, behind the cover *(see K35)* |
+
+**Authoring rules (binding for future grants):** a grant needs a bio that already claims the
+craft — the number agrees with the fiction or the grant does not ship. Deliberately unseeded:
+**Squall** (hears everything, *remembers none of it aloud* — his mastery is the not-keeping),
+Crumb and Neddry (their crafts have no skill row yet — no fake grants), Mad Tolley. Rivalry
+color for the masters' bench (Withy/Luff needle-feud, Stave's apprentice pipeline) is queued
+for the histories 15→~30 authoring pass (§4.8), not minted here.
+
 ---
 
 ## 5. THE OPENING INVESTIGATION (scene-level)

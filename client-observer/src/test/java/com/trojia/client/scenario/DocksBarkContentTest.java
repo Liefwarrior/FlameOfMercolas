@@ -35,6 +35,11 @@ class DocksBarkContentTest {
     private static final List<String> TIMES = List.of("morning", "day", "evening", "night");
     private static final List<String> MOODS = List.of("dead", "downed", "held", "confined",
             "panicked", "harried");
+    /** S5: the mastery-band vocabulary (FROZEN for the client's skill-band selector). */
+    private static final List<String> MASTERY_BANDS = List.of("novice", "adept", "master");
+    /** S5: the five job-trained skills whose mastery tables ship the full band triple. */
+    private static final List<String> TRAINED_SKILLS = List.of(
+            "fieldcraft", "seacraft", "kit_keeping", "streetwise", "channeling");
     /** The six spotlight notables the sprint ruling calls out for a HANDFUL of lines each. */
     private static final List<String> SPOTLIGHT = List.of("crell", "vess", "maell", "cobb",
             "gilt", "finch");
@@ -43,6 +48,8 @@ class DocksBarkContentTest {
     private static BarkTableRegistry tables;
     private static List<String> notableIds;
     private static Set<String> gossipKeys;
+    /** S5: the committed skills.json ids — the mastery.* key family's claim vocabulary. */
+    private static Set<String> skillIds;
     /** S3: every LEGAL quest table key — quest.<id>[.<stageKey>[.<declaredParty>]]. */
     private static Set<String> legalQuestKeys;
     /** S3: the quest floors (quest.<id>) plus every stage x party key the talk surface can build. */
@@ -58,6 +65,11 @@ class DocksBarkContentTest {
         for (HistoryRaws.History history
                 : HistoryRaws.load(rawsRoot.resolve("names").resolve("histories.json"))) {
             gossipKeys.add(history.gossip());
+        }
+        skillIds = new HashSet<>();
+        var skillRegistry = com.trojia.sim.progression.SkillRawsLoader.load(rawsRoot);
+        for (int i = 0; i < skillRegistry.size(); i++) {
+            skillIds.add(skillRegistry.get(i).key());
         }
         // S3 quest lane: the legal key vocabulary is derived from the COMMITTED quest raws
         // (the gossip-claim pattern — a quest.* table can only exist if quests.json declares
@@ -195,6 +207,13 @@ class DocksBarkContentTest {
             // must all be declared in quests.json, or the table is unreachable.
             return legalQuestKeys.contains(key);
         }
+        if (key.startsWith("mastery.")) {
+            // S5: claimed by the committed skill raws — mastery.<skillId>.<band>, skillId
+            // from skills.json and band from the frozen novice/adept/master vocabulary.
+            String[] parts = key.split("\\.", -1);
+            return parts.length == 3 && skillIds.contains(parts[1])
+                    && MASTERY_BANDS.contains(parts[2]);
+        }
         if (!key.startsWith("greet.")) {
             return false;
         }
@@ -238,6 +257,23 @@ class DocksBarkContentTest {
             String text = new BarkSelector.BarkChoice(key, draw).resolve(tables);
             assertTrue(text != null && !text.isBlank(),
                     "key " + key + " (draw " + draw + ") resolved to silence");
+        }
+    }
+
+    /**
+     * S5: every job-trained skill ships its FULL mastery band triple — the frozen contract
+     * the client's skill-band bark selector authors against (a missing band would silently
+     * fall through the selector's chain).
+     */
+    @Test
+    void everyTrainedSkillShipsItsFullMasteryBandTriple() {
+        for (String skill : TRAINED_SKILLS) {
+            for (String band : MASTERY_BANDS) {
+                String key = "mastery." + skill + "." + band;
+                assertTrue(tables.contains(key), "missing " + key);
+                assertTrue(tables.rowCount(key) >= 2,
+                        key + " needs at least 2 rows (anti-repeat variety)");
+            }
         }
     }
 

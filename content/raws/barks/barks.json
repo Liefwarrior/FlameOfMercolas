@@ -1142,7 +1142,90 @@
       "rows": [
         "My paper walks back to my window. Twenty-five Royals for its safe return, no questions kept - a pawnbroker buys back his own patience at a discount.",
         "You hold it, I want it, and neither of us wants the Watch's opinion. Twenty-five Royals, counted where you can watch."
+      ] },
+
+    { "key": "mastery.fieldcraft.novice",
+      "rows": [
+        "Rows first, then water. Or water first? The rows drink either way.",
+        "These beans came up crooked. Beans know a green hand.",
+        "The goat ate my tally-sticks again."
+      ] },
+    { "key": "mastery.fieldcraft.adept",
+      "rows": [
+        "Turn the earth before the rain, not after. Cheap lesson; took me years.",
+        "You can smell a sick beast two pens off, once you know the smell."
+      ] },
+    { "key": "mastery.fieldcraft.master",
+      "rows": [
+        "Any fool can sow. Knowing what the courtyard will actually carry - that's the craft.",
+        "The beasts tell me tomorrow's weather a day before the sky does.",
+        "I've buried more harvests than you've eaten. The dirt and I have an understanding."
+      ] },
+    { "key": "mastery.seacraft.novice",
+      "rows": [
+        "Which line? They're ALL lines.",
+        "The tide was supposed to turn at noon. Nobody told the tide.",
+        "I tied it like they showed me. The knot had other plans."
+      ] },
+    { "key": "mastery.seacraft.adept",
+      "rows": [
+        "Coil with the lay, not against it. The rope remembers.",
+        "Reef early. The sea doesn't reward brave canvas."
+      ] },
+    { "key": "mastery.seacraft.master",
+      "rows": [
+        "I read this harbor's chop the way the Weighhouse reads a manifest.",
+        "Forty years afloat and the sea still cheats. But I know most of her tricks now.",
+        "Give me six honest hands and I'll take any hull on this pier through a gale."
+      ] },
+    { "key": "mastery.kit_keeping.novice",
+      "rows": [
+        "Hammered it straight. Mostly straight. Straighter.",
+        "There's a trick to the whetstone and I don't have it yet."
+      ] },
+    { "key": "mastery.kit_keeping.adept",
+      "rows": [
+        "A tool cleaned tonight is an hour saved tomorrow.",
+        "You mend the net where it WILL tear, not where it did."
+      ] },
+    { "key": "mastery.kit_keeping.master",
+      "rows": [
+        "I can date any splice on this quay by whose hand taught it.",
+        "Bring me the wreck of a thing. The wreck tells you how it wants mending.",
+        "My needle's older than your boat and has outlasted better."
+      ] },
+    { "key": "mastery.streetwise.novice",
+      "rows": [
+        "Everyone knows the stall prices but me.",
+        "I paid list price. Apparently that's funny."
+      ] },
+    { "key": "mastery.streetwise.adept",
+      "rows": [
+        "Buy at the dawn bell, sell at the dusk one. The quay runs on it.",
+        "You learn which alleys have ears and which have elbows."
+      ] },
+    { "key": "mastery.streetwise.master",
+      "rows": [
+        "I know what it costs before the seller does.",
+        "Nothing moves on this quay but somebody owes somebody for the moving.",
+        "Ask me the price of anything. Then ask me what it's WORTH."
+      ] },
+    { "key": "mastery.channeling.novice",
+      "rows": [
+        "The stone won't take the light for me. It takes its time instead.",
+        "Filled one lamp-stone today. The Flame is patient. The lamps are not."
+      ] },
+    { "key": "mastery.channeling.adept",
+      "rows": [
+        "The fill goes easier at a clean wick. Nobody teaches that; the stone does.",
+        "Slow hands, steady light."
+      ] },
+    { "key": "mastery.channeling.master",
+      "rows": [
+        "Stones fill to my hand the way the tide answers the moon.",
+        "I have poured more light into this ward than the sun owes it.",
+        "The Flame gives freely. The craft is in the not-spilling."
       ] }
   ],
-  "notes": "Sprint-2 WORLD bark text tables (Trojian voice, docks register). Key vocabulary is BarkSelector's contract: mood.<state> and greet.<family>.<attitude>.<time> with the documented sparse fallback (a.b.c.d -> a.b.c -> a.b). Every family x attitude pair is authored; time-band refinements cover every family's neutral lane plus watch.cold and trade.warm. personal.<notableId> (all notables; client-selected when the speaker is a notable) and gossip.<historyId> (one per authored micro-history in names/histories.json, base 'gossip' as the fallback floor) are World key families layered on the same registry. S3 adds quest.<questId>[.<stageKey>[.<partySymbol>]] (quests/quests.json vocabulary; the talk surface's quest-beat lane, base quest.<questId> as the fallback floor) - linted stage-by-party by DocksBarkContentTest. Plain ASCII only (Glyph8x8Font); beast rows are observer stage directions in parentheses."
+  "notes": "Sprint-2 WORLD bark text tables (Trojian voice, docks register). Key vocabulary is BarkSelector's contract: mood.<state> and greet.<family>.<attitude>.<time> with the documented sparse fallback (a.b.c.d -> a.b.c -> a.b). Every family x attitude pair is authored; time-band refinements cover every family's neutral lane plus watch.cold and trade.warm. personal.<notableId> (all notables; client-selected when the speaker is a notable) and gossip.<historyId> (one per authored micro-history in names/histories.json, base 'gossip' as the fallback floor) are World key families layered on the same registry. S3 adds quest.<questId>[.<stageKey>[.<partySymbol>]] (quests/quests.json vocabulary; the talk surface's quest-beat lane, base quest.<questId> as the fallback floor) - linted stage-by-party by DocksBarkContentTest. S5 adds mastery.<skillId>.<band> (skills.json vocabulary x novice/adept/master, full band triple per authored skill - the FROZEN keys for the client's skill-band bark selector; bands by level: novice 1-9, adept 10-29, master 30+; authored for the five job-trained skills, dormant until the client wires the band read). Plain ASCII only (Glyph8x8Font); beast rows are observer stage directions in parentheses."
 }
