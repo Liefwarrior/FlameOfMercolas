@@ -52,4 +52,49 @@ class EventLogTest {
         assertEquals(42, only.tick());
         assertTrue(only.text().contains("something"));
     }
+
+    @Test
+    void untaggedEntriesRideTheGeneralChannel() {
+        EventLog log = new EventLog(5);
+        log.add(1, "plain");
+        assertEquals(EventLog.Channel.GENERAL, log.recentNewestFirst(1).get(0).channel());
+    }
+
+    @Test
+    void channelFilterShowsOnlyItsLaneNewestFirst() {
+        EventLog log = new EventLog(10);
+        log.add(1, EventLog.Channel.CRIME, "a theft");
+        log.add(2, EventLog.Channel.GROWTH, "a level");
+        log.add(3, EventLog.Channel.QUEST, "a stage");
+        log.add(4, EventLog.Channel.GROWTH, "another level");
+
+        assertEquals(List.of("another level", "a level"),
+                log.recentNewestFirst(10, EventLog.Channel.GROWTH).stream()
+                        .map(EventLog.Entry::text).toList());
+        assertEquals(List.of("a theft"),
+                log.recentNewestFirst(10, EventLog.Channel.CRIME).stream()
+                        .map(EventLog.Entry::text).toList());
+        assertEquals(4, log.recentNewestFirst(10, null).size(),
+                "null filter = every channel");
+    }
+
+    @Test
+    void evictionIsCapacityGlobalAcrossChannels() {
+        EventLog log = new EventLog(2);
+        log.add(1, EventLog.Channel.CRIME, "old theft");
+        log.add(2, EventLog.Channel.GROWTH, "level a");
+        log.add(3, EventLog.Channel.GROWTH, "level b"); // evicts the crime line
+        assertTrue(log.recentNewestFirst(10, EventLog.Channel.CRIME).isEmpty(),
+                "a filtered view sees only what the rolling buffer still holds");
+    }
+
+    @Test
+    void feedFilterCyclesAllLanesAndWraps() {
+        assertEquals(FeedFilter.GROWTH, FeedFilter.ALL.next());
+        assertEquals(FeedFilter.CRIME, FeedFilter.GROWTH.next());
+        assertEquals(FeedFilter.QUESTS, FeedFilter.CRIME.next());
+        assertEquals(FeedFilter.ALL, FeedFilter.QUESTS.next());
+        assertEquals(EventLog.Channel.QUEST, FeedFilter.QUESTS.only());
+        assertEquals(null, FeedFilter.ALL.only());
+    }
 }

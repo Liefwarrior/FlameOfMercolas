@@ -169,7 +169,7 @@ class DocksCharacterSheetTest {
     }
 
     @Test
-    void populationLevelUpsNarrateNamedPeopleIntoTheFeed() {
+    void populationGrowthNarratesNamedMilestonesAndDigestsTheRest() {
         SkillTrackRegistry tracks = population.system().skillTracks();
         int crell = actorNamed("Ottavan Crell");
         EventLog feed = new EventLog(30);
@@ -179,9 +179,27 @@ class DocksCharacterSheetTest {
 
         tracks.award(crell, tracks.gritRaw(), 100, 3L, 20L); // TRAINED: 2000 grains = level 1
         tracker.afterTick(20L);
+        assertEquals(0, feed.size(),
+                "an ordinary level-up banks into the digest (Sprint 5 torrent rule)");
 
+        // The phase turn flushes the census as one line, naming no one but counting Crell.
+        tracker.afterTick(com.trojia.client.hud.DayPhase.DAY_START);
         assertEquals(1, feed.size());
-        assertEquals("Ottavan Crell is now Grit 1", feed.recentNewestFirst(1).get(0).text());
+        EventLog.Entry digest = feed.recentNewestFirst(1).get(0);
+        assertEquals(EventLog.Channel.GROWTH, digest.channel());
+        assertTrue(digest.text().startsWith("Growth, Day 1 Dawn: ")
+                        && digest.text().contains("1 soul trained Grit"),
+                "the phase census counts the levelled soul: " + digest.text());
+
+        // A MILESTONE passes the digest as an immediate line naming the PERSON — the
+        // named-people payoff now reserved for headlines. One big tier-0 award: 200,000 cp
+        // x 20 grains = 4,000,000 grains; Grit TRAINED cumulative = 1000*L(L+1) -> level 62,
+        // crossing milestones 25 and 50.
+        tracks.award(crell, tracks.gritRaw(), 200_000, 4L, 21L);
+        tracker.afterTick(21L);
+        List<EventLog.Entry> newest = feed.recentNewestFirst(2);
+        assertEquals("Ottavan Crell reached Grit 50", newest.get(0).text());
+        assertEquals("Ottavan Crell reached Grit 25", newest.get(1).text());
         assertTrue(toasts.visible().isEmpty());
     }
 

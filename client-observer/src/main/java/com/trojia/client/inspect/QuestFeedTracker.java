@@ -77,10 +77,10 @@ public final class QuestFeedTracker {
                 // One advance (the engine's one-per-entry-per-tick rule): the feed tells
                 // what just happened — the COMPLETED stage's authored line, and, on an
                 // ending, the terminal stage's own closing line.
-                eventLog.add(tick, MARK + quests.logLine(q, prevStage[e]));
+                eventLog.add(tick, EventLog.Channel.QUEST, MARK + quests.logLine(q, prevStage[e]));
                 boolean done = quests.terminal(q, stage);
                 if (done) {
-                    eventLog.add(tick, MARK + quests.logLine(q, stage));
+                    eventLog.add(tick, EventLog.Channel.QUEST, MARK + quests.logLine(q, stage));
                 }
                 if (owned) {
                     toasts.add(MARK + (done ? "Quest complete - " : "Journal updated - ")

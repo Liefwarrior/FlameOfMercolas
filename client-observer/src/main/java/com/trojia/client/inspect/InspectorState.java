@@ -23,6 +23,8 @@ public final class InspectorState {
 
     private int selectedActorId = Actor.NONE;
     private boolean follow;
+    /** The population feed's current view filter (Sprint 5 "the torrent"; L cycles). */
+    private FeedFilter feedFilter = FeedFilter.ALL;
 
     /** The selected {@code ActorId}, or {@link Actor#NONE} when nothing is selected. */
     public int selectedActorId() {
@@ -60,5 +62,15 @@ public final class InspectorState {
         if (selectedActorId != Actor.NONE) {
             this.follow = !this.follow;
         }
+    }
+
+    /** The population feed's current view filter. */
+    public FeedFilter feedFilter() {
+        return feedFilter;
+    }
+
+    /** Advances the feed filter one step in its cycle (the L key). */
+    public void cycleFeedFilter() {
+        feedFilter = feedFilter.next();
     }
 }

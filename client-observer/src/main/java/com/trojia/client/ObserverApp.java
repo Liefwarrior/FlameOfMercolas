@@ -363,7 +363,10 @@ public final class ObserverApp extends ApplicationAdapter {
             // Inspector: click-to-select panel, all-population event feed, follow-camera.
             this.inspector = new InspectorState();
             this.playMode = new PlayModeState();
-            this.eventLog = new EventLog(30);
+            // 120 entries (Sprint 5 "the torrent": 30 was sized for a trickle — with the
+            // growth digest live the mixed feed still needs room for a filtered lane to
+            // reach back a meaningful stretch).
+            this.eventLog = new EventLog(120);
             this.eventLogTracker = new EventLogTracker(population.registry(), population.homes(),
                     eventLog, population.identity());
             // Skill-up narration (S1 item 3): the played actor's level-ups toast
@@ -514,6 +517,11 @@ public final class ObserverApp extends ApplicationAdapter {
             // design's verify-free-then-bind rule).
             if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
                 journalOpen = !journalOpen;
+            }
+            // The FEED FILTER cycle (S5 "the torrent"): L walks ALL/GROWTH/CRIME/QUESTS
+            // (L was unbound; the same verify-free-then-bind rule).
+            if (Gdx.input.isKeyJustPressed(Input.Keys.L)) {
+                inspector.cycleFeedFilter();
             }
             // Screenshot/verification aid only (bypasses WASD, mirrors debugSelectActorId's
             // "bypass the input device" convention): re-applies the same movement-application

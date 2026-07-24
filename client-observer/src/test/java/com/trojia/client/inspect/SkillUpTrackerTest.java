@@ -13,10 +13,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link SkillUpTracker} contract (Sprint 1 item 3): the played actor's level-ups toast;
- * everyone else's land in the event feed; pre-existing log rows are history, not news; and
- * one multi-threshold award narrates every level it crossed (the multi-level single-tick
- * carry). Uses a REAL wired {@link SkillTrackRegistry} off the committed skills raws
+ * {@link SkillUpTracker} contract (Sprint 1 item 3, Sprint 5 the torrent's flood control):
+ * the played actor's level-ups toast verbatim; the population's ordinary level-ups BANK
+ * into the growth digest and surface as one line at the day-phase turn; milestone levels
+ * pass through as immediate named lines; every feed line rides the GROWTH channel;
+ * pre-existing log rows are history, not news. Uses a REAL wired
+ * {@link SkillTrackRegistry} off the committed skills raws
  * ({@link DocksPopulation#freshSkillTracks()}) over the compound registry — headless, no
  * GL, zero sim writes (awards go straight into the standalone side table).
  */
@@ -52,16 +54,37 @@ class SkillUpTrackerTest {
     }
 
     @Test
-    void populationLevelUpLandsInTheEventFeedAsAPerson() {
+    void populationLevelUpBanksIntoTheDigestAndFlushesAtThePhaseTurn() {
         Rig r = rig(PLAYED_ID);
         levelOnce(r.tracks(), BYSTANDER_ID, 9L);
         r.tracker().afterTick(9L);
+        assertEquals(0, r.feed().size(),
+                "an ordinary level-up is banked, not narrated per-line (the torrent rule)");
 
+        r.tracker().afterTick(com.trojia.client.hud.DayPhase.DAY_START); // Dawn -> Day
         assertEquals(1, r.feed().size());
         EventLog.Entry entry = r.feed().recentNewestFirst(1).get(0);
-        assertEquals(9L, entry.tick());
-        assertEquals("Serf #3 is now Streetwise 1", entry.text());
+        assertEquals(com.trojia.client.hud.DayPhase.DAY_START, entry.tick());
+        assertEquals(EventLog.Channel.GROWTH, entry.channel());
+        assertEquals("Growth, Day 1 Dawn: 1 soul trained Streetwise", entry.text());
         assertTrue(r.toasts().visible().isEmpty(), "a bystander's growth never toasts");
+    }
+
+    @Test
+    void milestoneLevelsPassTheDigestAsImmediateNamedLines() {
+        Rig r = rig(PLAYED_ID);
+        int raw = r.tracks().streetwiseRaw();
+        // One tier-0 award big enough to cross level 25 (FAVORED: cumulative grains to L
+        // = 1500 * L(L+1)/2; 20 grains/cp at a fresh context). 40,000 cp = 800,000 grains
+        // -> L(L+1) <= 1066 -> level 32: milestone 25 crossed once.
+        r.tracks().award(BYSTANDER_ID, raw, 40_000, 77L, 9L);
+        assertTrue(r.tracks().level(BYSTANDER_ID, raw) >= 25, "calibration: crossed 25");
+
+        r.tracker().afterTick(9L);
+        assertEquals(1, r.feed().size(), "exactly the milestone line is immediate");
+        EventLog.Entry entry = r.feed().recentNewestFirst(1).get(0);
+        assertEquals("Serf #3 reached Streetwise 25", entry.text());
+        assertEquals(EventLog.Channel.GROWTH, entry.channel());
     }
 
     @Test
@@ -81,23 +104,46 @@ class SkillUpTrackerTest {
     }
 
     @Test
-    void oneMultiThresholdAwardNarratesEveryLevelInOrder() {
-        Rig r = rig(Actor.NONE); // nobody played: everything lands in the feed
+    void oneMultiThresholdAwardNamesEachMilestoneAndBanksTheSoulOnce() {
+        Rig r = rig(Actor.NONE); // nobody played: everything is population growth
         int raw = r.tracks().streetwiseRaw();
-        // One enormous award crosses several thresholds in a single tick
-        // (SkillTrack#awardXp loops) — each level must get its own feed line, in order.
+        // One enormous award crosses many thresholds in a single tick (SkillTrack#awardXp
+        // loops) — under the torrent rule only the MILESTONES surface immediately, each
+        // named in crossing order; the ordinary levels bank into the digest as one soul.
         r.tracks().award(BYSTANDER_ID, raw, 5_000_000, 42L, 11L);
         int levelled = r.tracks().level(BYSTANDER_ID, raw);
-        assertTrue(levelled >= 2, "calibration: expected a multi-level award, got " + levelled);
+        assertTrue(levelled >= 50, "calibration: expected a multi-milestone award, got "
+                + levelled);
 
         r.tracker().afterTick(11L);
-
+        int milestones = levelled / SkillUpTracker.MILESTONE_STEP;
         List<EventLog.Entry> newestFirst = r.feed().recentNewestFirst(r.feed().size());
-        assertEquals(Math.min(levelled, r.feed().capacity()), newestFirst.size());
-        assertEquals("Serf #3 is now Streetwise " + levelled, newestFirst.get(0).text(),
-                "the newest line is the highest level reached");
-        assertEquals("Serf #3 is now Streetwise " + (levelled - 1), newestFirst.get(1).text(),
-                "levels narrate in crossing order");
+        assertEquals(milestones, newestFirst.size(),
+                "exactly the milestone levels are immediate lines");
+        assertEquals("Serf #3 reached Streetwise " + milestones * SkillUpTracker.MILESTONE_STEP,
+                newestFirst.get(0).text(), "the newest line is the highest milestone");
+
+        r.tracker().afterTick(com.trojia.client.hud.DayPhase.DAY_START);
+        assertEquals("Growth, Day 1 Dawn: 1 soul trained Streetwise",
+                r.feed().recentNewestFirst(1).get(0).text(),
+                "the multi-level carry still counts as ONE soul in the phase census");
+    }
+
+    @Test
+    void thePlayedActorsMultiLevelCarryToastsEveryLevel() {
+        Rig r = rig(PLAYED_ID);
+        int raw = r.tracks().streetwiseRaw();
+        r.tracks().award(PLAYED_ID, raw, 5_000_000, 43L, 12L);
+        int levelled = r.tracks().level(PLAYED_ID, raw);
+        r.tracker().afterTick(12L);
+
+        List<ToastQueue.Toast> toasts = r.toasts().visible();
+        assertEquals(ToastQueue.MAX_VISIBLE, toasts.size(),
+                "every level toasts; the queue keeps the newest " + ToastQueue.MAX_VISIBLE);
+        assertEquals("Streetwise increased to " + levelled,
+                toasts.get(toasts.size() - 1).text(),
+                "the played soul's growth stays verbatim — the Morrowind moment");
+        assertEquals(0, r.feed().size(), "the played actor's growth never spams the feed");
     }
 
     @Test

@@ -75,7 +75,7 @@ public final class CrimeFeedTracker {
         String thief = PersonNames.fullNameOf(presentedId, registry, identity);
         String victim = PersonNames.fullNameOf(
                 registry.get(victimId).identity().presentedId(), registry, identity);
-        eventLog.add(tick, witnessed
+        eventLog.add(tick, EventLog.Channel.CRIME, witnessed
                 ? thief + " was caught with a hand in " + victim + "'s pocket"
                 : thief + " picked " + victim + "'s pocket");
         if (thiefId == playedActorId.getAsInt()) {

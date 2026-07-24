@@ -9,9 +9,13 @@ import java.util.function.IntSupplier;
 
 /**
  * Consumes the Sim team's {@link SkillLevelLog} seam once per executed tick (Sprint 1
- * item 3): the PLAYED actor's level-ups become bottom-center toasts ("Skyrunning increased
- * to 32"); everyone else's land in the population event feed as people ("Ditta Pilchard is
- * now Streetwise 3"). GL-free; wired as an after-tick callback beside
+ * item 3, grown Sprint 5 into the torrent's flood control): the PLAYED actor's level-ups
+ * become bottom-center toasts ("Skyrunning increased to 32") — always verbatim, every
+ * level; MILESTONE levels (multiples of {@link #MILESTONE_STEP}) land in the feed as
+ * immediate named lines ("Withy reached Kit-Keeping 75"); every other population level-up
+ * banks into the {@link GrowthDigest}, which emits one digest line per day-phase turn.
+ * All feed lines ride the {@link EventLog.Channel#GROWTH} channel so the feed filter can
+ * pull the lane in or out. GL-free; wired as an after-tick callback beside
  * {@link EventLogTracker} on the same {@code SimulationDriver} seam, so no tick's
  * level-ups are missed on a FAST frame nor double-seen on a re-rendered one.
  *
@@ -23,10 +27,14 @@ import java.util.function.IntSupplier;
  * narration (the ring keeps the newest — presentation-only, so nothing else can care).
  *
  * <p><b>Multi-level carry.</b> One award can cross several thresholds in a single tick
- * ({@code SkillTrack#awardXp} loops); each emits its own log row, so each gets its own
- * toast/feed line, in level order.
+ * ({@code SkillTrack#awardXp} loops); each emits its own log row — the played actor
+ * toasts each, the population's cross into the digest (milestones excepted, which each
+ * get their named line).
  */
 public final class SkillUpTracker {
+
+    /** Levels at multiples of this always pass the digest as immediate named lines. */
+    public static final int MILESTONE_STEP = 25;
 
     private final SkillTrackRegistry tracks;
     private final ActorRegistry registry;
@@ -35,6 +43,8 @@ public final class SkillUpTracker {
     private final ToastQueue toasts;
     /** Live "who is played this tick" read — {@code Actor.NONE} when nobody is. */
     private final IntSupplier playedActorId;
+    /** The per-phase aggregation of ordinary population growth (Sprint 5 flood control). */
+    private final GrowthDigest digest;
 
     private long consumedRows;
 
@@ -47,16 +57,22 @@ public final class SkillUpTracker {
         this.eventLog = eventLog;
         this.toasts = toasts;
         this.playedActorId = playedActorId;
+        this.digest = new GrowthDigest(tracks);
         // Baseline: whatever the log already holds is history, not this session's news.
         this.consumedRows = tracks.levelLog().totalRecorded();
     }
 
     /**
-     * Narrates every level-up recorded since the last call. Call exactly once per executed
-     * tick (the {@code SimulationDriver.setAfterTick} seam); a no-op when nothing levelled
-     * or the registry is unwired.
+     * Narrates every level-up recorded since the last call, and turns the growth digest's
+     * bucket over on a day-phase boundary. Call exactly once per executed tick (the
+     * {@code SimulationDriver.setAfterTick} seam); cheap when nothing levelled.
      */
     public void afterTick(long tick) {
+        // Phase turn first, so a boundary tick's own rows land in the NEW bucket.
+        String digestLine = digest.maybeFlush(tick);
+        if (digestLine != null) {
+            eventLog.add(tick, EventLog.Channel.GROWTH, digestLine);
+        }
         SkillLevelLog log = tracks.levelLog();
         long total = log.totalRecorded();
         if (total == consumedRows) {
@@ -75,10 +91,17 @@ public final class SkillUpTracker {
     private void narrate(long tick, int actorId, int skillRaw, int newLevel) {
         String skill = tracks.skills().get(skillRaw).displayName();
         if (actorId == playedActorId.getAsInt()) {
+            // The played soul's growth is always verbatim — the Morrowind moment.
             toasts.add(skill + " increased to " + newLevel);
+        } else if (newLevel % MILESTONE_STEP == 0) {
+            // A milestone is a headline: it passes the digest as an immediate named line
+            // (and still counts in the phase census below — the census is a census).
+            eventLog.add(tick, EventLog.Channel.GROWTH,
+                    PersonNames.fullNameOf(actorId, registry, identity)
+                            + " reached " + skill + " " + newLevel);
+            digest.observe(actorId, skillRaw);
         } else {
-            eventLog.add(tick, PersonNames.fullNameOf(actorId, registry, identity)
-                    + " is now " + skill + " " + newLevel);
+            digest.observe(actorId, skillRaw);
         }
     }
 }

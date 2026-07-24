@@ -18,8 +18,16 @@ import java.util.List;
  */
 public final class EventLog {
 
+    /**
+     * The feed lane an entry belongs to (Sprint 5 "the torrent": 692 levelling souls
+     * would otherwise evict every crime/quest line within a day — the filter key cycles
+     * lanes so each stays findable). Presentation-only vocabulary; the trackers tag
+     * their own lines and untagged callers stay {@link #GENERAL}.
+     */
+    public enum Channel { GENERAL, GROWTH, CRIME, QUEST }
+
     /** One logged transition. */
-    public record Entry(long tick, String text) {
+    public record Entry(long tick, Channel channel, String text) {
     }
 
     private final int capacity;
@@ -41,9 +49,14 @@ public final class EventLog {
         return entries.size();
     }
 
-    /** Appends a transition tagged with {@code tick}, evicting the oldest if at capacity. */
+    /** Appends a {@link Channel#GENERAL} transition — the pre-Sprint-5 callers unchanged. */
     public void add(long tick, String text) {
-        entries.addLast(new Entry(tick, text));
+        add(tick, Channel.GENERAL, text);
+    }
+
+    /** Appends a transition tagged with {@code tick}, evicting the oldest if at capacity. */
+    public void add(long tick, Channel channel, String text) {
+        entries.addLast(new Entry(tick, channel, text));
         while (entries.size() > capacity) {
             entries.removeFirst();
         }
@@ -54,10 +67,22 @@ public final class EventLog {
      * bottom-anchored feed. Never more than are held.
      */
     public List<Entry> recentNewestFirst(int limit) {
+        return recentNewestFirst(limit, null);
+    }
+
+    /**
+     * Up to {@code limit} most-recent entries OF ONE CHANNEL, newest first ({@code null} =
+     * every channel). Eviction is capacity-global — a filtered view sees only what the
+     * rolling buffer still holds, exactly like the unfiltered one.
+     */
+    public List<Entry> recentNewestFirst(int limit, Channel only) {
         List<Entry> out = new ArrayList<>(Math.min(limit, entries.size()));
         var it = entries.descendingIterator();
         while (it.hasNext() && out.size() < limit) {
-            out.add(it.next());
+            Entry entry = it.next();
+            if (only == null || entry.channel() == only) {
+                out.add(entry);
+            }
         }
         return out;
     }

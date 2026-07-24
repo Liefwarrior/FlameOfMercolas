@@ -147,7 +147,8 @@ public final class HudText {
                 HudToken.icon(IconKey.C), HudToken.text(" follow   "),
                 HudToken.icon(IconKey.P), HudToken.text(" play as   "),
                 HudToken.icon(IconKey.N), HudToken.text(" names (hold)   "),
-                HudToken.icon(IconKey.J), HudToken.text(" journal"));
+                HudToken.icon(IconKey.J), HudToken.text(" journal   "),
+                HudToken.icon(IconKey.L), HudToken.text(" feed"));
     }
 
     /** {@link #describe}'s status text followed by {@link #navKeybindingTokens} — the full

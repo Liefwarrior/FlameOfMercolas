@@ -37,6 +37,9 @@ public enum IconKey {
     E("keyboard_e.png"),
     N("keyboard_n.png"),
     J("keyboard_j.png"),
+    // Sprint 5 (the torrent + the masters board): the feed-filter and board toggles.
+    L("keyboard_l.png"),
+    M("keyboard_m.png"),
     MOUSE_LEFT_CLICK("mouse_left.png");
 
     private final String fileName;

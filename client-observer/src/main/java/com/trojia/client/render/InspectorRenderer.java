@@ -128,7 +128,7 @@ public final class InspectorRenderer {
             InspectorState state, int z) {
         drawSelectionHighlight(batch, font, camera, state, z);
         drawSheet(batch, font, icons, camera, state);
-        drawEventLog(batch, font, icons, camera);
+        drawEventLog(batch, font, icons, camera, state);
         font.getData().setScale(1f);
         font.setColor(Color.WHITE);
     }
@@ -340,14 +340,19 @@ public final class InspectorRenderer {
         }
     }
 
-    private void drawEventLog(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera) {
-        List<EventLog.Entry> entries = eventLog.recentNewestFirst(LOG_VISIBLE_LINES);
+    private void drawEventLog(SpriteBatch batch, BitmapFont font, IconAtlas icons,
+            MapCamera camera, InspectorState state) {
+        // The feed filter (Sprint 5 "the torrent"): L cycles ALL/GROWTH/CRIME/QUESTS; the
+        // buffer keeps every lane — the filter only changes which one this frame shows.
+        List<EventLog.Entry> entries =
+                eventLog.recentNewestFirst(LOG_VISIBLE_LINES, state.feedFilter().only());
         font.getData().setScale(1f);
         font.setColor(LOG_COLOR);
         float lineHeight = font.getLineHeight();
         float topY = MARGIN + (entries.size() + 1) * lineHeight;
 
-        String header = "EVENTS (newest first)  ·  " + eventLog.size() + " held";
+        String header = "EVENTS [" + state.feedFilter().name() + "]  ·  "
+                + eventLog.size() + " held  ·  L filters";
         layout.setText(font, header);
         float contentWidth = layout.width;
         for (EventLog.Entry entry : entries) {
