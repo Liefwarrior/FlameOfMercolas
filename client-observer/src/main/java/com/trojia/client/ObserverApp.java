@@ -743,6 +743,7 @@ public final class ObserverApp extends ApplicationAdapter {
                         journalOpen = false;
                     }
                 }
+                case FILTER -> inspector.cycleFeedFilter();
                 case PLATES -> scriptPlatesHeld = !scriptPlatesHeld;
                 case ZOOM -> camera.setZoom(action.intArgs()[0]);
                 case CENTER -> {
