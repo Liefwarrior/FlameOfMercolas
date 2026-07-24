@@ -3,6 +3,7 @@ package com.trojia.client.inspect;
 import com.trojia.client.hud.icons.HudToken;
 import com.trojia.client.hud.icons.IconKey;
 import com.trojia.client.scenario.CompoundBlockPopulation;
+import com.trojia.client.scenario.DocksPopulation;
 import com.trojia.client.scenario.IdentityRegistry;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.SkillTrackRegistry;
@@ -127,6 +128,96 @@ class CharacterSheetTextTest {
         assertEquals("SKILLS", skills.title());
         assertEquals(List.of("(unschooled)"), skills.lines());
         assertFalse(SkillTrackRegistry.UNWIRED.isWired(), "compound ships unwired");
+    }
+
+    // ==================================================================
+    // Sprint 5 — sheet skill depth (bars, attributes, the played roster)
+    // ==================================================================
+
+    @Test
+    void progressBarFillsPerSegmentFloored() {
+        assertEquals("--------", CharacterSheetText.progressBar(0, 3000));
+        assertEquals("#-------", CharacterSheetText.progressBar(375, 3000));
+        assertEquals("####----", CharacterSheetText.progressBar(1500, 3000));
+        assertEquals("#######-", CharacterSheetText.progressBar(2999, 3000));
+        assertEquals("--------", CharacterSheetText.progressBar(374, 3000),
+                "floored per segment: a hair under 1/8 shows nothing");
+        assertEquals("--------", CharacterSheetText.progressBar(0, 0),
+                "threshold 0 (unwired/absent) renders empty rather than dividing");
+    }
+
+    @Test
+    void skillRowsCarryLevelProgressBarAndGoverningAttribute() {
+        SkillTrackRegistry tracks = DocksPopulation.freshSkillTracks();
+        // Streetwise (FAVORED, WIT): 75 cp tier-0 = 1500 grains = exactly level 1; then a
+        // FRESH context banks 740 of the 3000-grain next threshold -> one bar segment.
+        tracks.award(9, tracks.streetwiseRaw(), 75, 1L, 1L);
+        tracks.award(9, tracks.streetwiseRaw(), 37, 2L, 2L);
+        assertEquals(List.of("Streetwise      1 [#-------] WIT"),
+                CharacterSheetText.skillsSection(9, tracks).lines());
+    }
+
+    @Test
+    void nonPlayedSheetCapsRowsAndFoldsTheRest() {
+        SkillTrackRegistry tracks = DocksPopulation.freshSkillTracks();
+        // Nine skills levelled: the non-played view shows the best 8 rows + "+1 more".
+        for (int raw = 0; raw < 9; raw++) {
+            tracks.award(4, raw, 50_000, 100L + raw, 1L);
+        }
+        List<String> lines = CharacterSheetText.skillsSection(4, tracks).lines();
+        assertEquals(CharacterSheetText.SKILL_ROWS_CAP + 1, lines.size());
+        assertEquals("+1 more", lines.get(lines.size() - 1));
+    }
+
+    @Test
+    void playedRosterListsEverySkillWithAptitudeTier() {
+        SkillTrackRegistry tracks = DocksPopulation.freshSkillTracks();
+        tracks.award(6, tracks.streetwiseRaw(), 75, 1L, 1L);
+        List<String> lines = CharacterSheetText.skillsSection(6, tracks, true).lines();
+        assertEquals(tracks.skills().size(), lines.size(),
+                "the played soul sees the FULL roster, level 0 included");
+        assertEquals("Streetwise      1 [--------] WIT (favored)", lines.get(0),
+                "best first, aptitude tier marked");
+        assertTrue(lines.contains("Bladework       0 [--------] AGI (neglected)"),
+                "a level-0 row still shows its lane: " + lines);
+        assertTrue(lines.stream().anyMatch(l -> l.startsWith("The Flame") && l.contains("---")),
+                "The Flame's NONE governing renders as dashes: " + lines);
+    }
+
+    @Test
+    void attributesSectionComputesLiveFromTheTracks() {
+        SkillTrackRegistry tracks = DocksPopulation.freshSkillTracks();
+        CharacterSheetText.Section fresh = CharacterSheetText.attributesSection(3, tracks);
+        assertEquals("ATTRIBUTES", fresh.title());
+        assertEquals(List.of("MGT 10   AGI 10   VIG 10   WIT 10"), fresh.lines(),
+                "the skill-less base: every derived attribute reads 10");
+
+        // Level a WIT-governed skill hard; the line must move on the very next read.
+        tracks.award(3, tracks.streetwiseRaw(), 500_000, 1L, 1L);
+        int wit = tracks.attribute(3, com.trojia.sim.progression.AttributeId.WIT);
+        assertTrue(wit > 10, "calibration: streetwise feeds WIT");
+        assertEquals(List.of("MGT 10   AGI 10   VIG 10   WIT " + wit),
+                CharacterSheetText.attributesSection(3, tracks).lines());
+    }
+
+    @Test
+    void unwiredAttributesReadTheHonestBaseTen() {
+        CompoundBlockPopulation p = build();
+        assertEquals(List.of("MGT 10   AGI 10   VIG 10   WIT 10"),
+                CharacterSheetText.attributesSection(2, p.system().skillTracks()).lines());
+    }
+
+    @Test
+    void describeMarksThePlayedSheetWithTheFullRoster() {
+        CompoundBlockPopulation p = build();
+        String observed = describe(p, 2);
+        assertTrue(observed.contains("-- ATTRIBUTES --"), observed);
+        // The compound is UNWIRED so both views degrade identically; the played variant
+        // must still route (no crash, same sections) — the wired split is pinned above.
+        String played = join(CharacterSheetText.describe(2, p.registry(), p.homes(),
+                p.relationships(), p.jobs(), p.items(), IdentityRegistry.EMPTY,
+                p.system().skillTracks(), p.system().factionStandings(), 2));
+        assertTrue(played.contains("-- SKILLS --"), played);
     }
 
     @Test

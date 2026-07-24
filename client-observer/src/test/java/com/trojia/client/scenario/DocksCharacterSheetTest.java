@@ -66,8 +66,8 @@ class DocksCharacterSheetTest {
         String sheet = describe(crell);
         assertTrue(sheet.startsWith(nameLine), sheet);
         assertTrue(sheet.contains("-- IDENTITY --") && sheet.contains("-- NEEDS --")
-                && sheet.contains("-- SKILLS --") && sheet.contains("-- STANDINGS --")
-                && sheet.contains("-- TIES --"), sheet);
+                && sheet.contains("-- ATTRIBUTES --") && sheet.contains("-- SKILLS --")
+                && sheet.contains("-- STANDINGS --") && sheet.contains("-- TIES --"), sheet);
         // The demo mock for the sprint report (and a human eyeball surface in test stdout).
         System.out.println("==== CHARACTER SHEET: Ottavan Crell ====");
         System.out.println(sheet);
@@ -161,11 +161,18 @@ class DocksCharacterSheetTest {
                 CharacterSheetText.skillsSection(wastrel.id(), tracks).lines(),
                 "no ticks have run: every soul is unschooled");
 
-        // One tier-0 FAVORED level's worth of streetwise (75 cp = 1500 grains = threshold 0).
+        // One tier-0 FAVORED level's worth of streetwise (75 cp = 1500 grains = threshold 0):
+        // level 1, zero banked toward the 3000-grain next level — empty bar, WIT governing.
         tracks.award(wastrel.id(), tracks.streetwiseRaw(), 75, 7L, 1L);
-        assertEquals(List.of("Streetwise 1"),
+        assertEquals(List.of("Streetwise      1 [--------] WIT"),
                 CharacterSheetText.skillsSection(wastrel.id(), tracks).lines(),
-                "the sheet reads levels live off the Sim team's table");
+                "the sheet reads level + progress-to-next live off the Sim team's table");
+
+        // A second award on a FRESH context (tier-0 pricing again): 37 cp = 740 grains
+        // banked of 3000 -> the first bar segment fills, live, no staleness.
+        tracks.award(wastrel.id(), tracks.streetwiseRaw(), 37, 8L, 2L);
+        assertEquals(List.of("Streetwise      1 [#-------] WIT"),
+                CharacterSheetText.skillsSection(wastrel.id(), tracks).lines());
     }
 
     @Test

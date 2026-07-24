@@ -97,6 +97,9 @@ public final class InspectorRenderer {
     private final SkillTrackRegistry skillTracks;
     /** The Sim team's standing ledger; {@code UNWIRED} renders the "(no ledgers)" line. */
     private final FactionStandings standings;
+    /** Live "who is played this tick" read (Sprint 5: the played soul's sheet shows the
+     *  full skill roster); {@code Actor.NONE} when nobody is. */
+    private final java.util.function.IntSupplier playedActorId;
     private final GlyphLayout layout = new GlyphLayout();
 
     /**
@@ -106,7 +109,8 @@ public final class InspectorRenderer {
     public InspectorRenderer(ActorRegistry registry, HomeRegistry homes,
             RelationshipRegistry relationships, JobRegistry jobs, ItemsLiteRegistry items,
             EventLog eventLog, InspectorFaces faces, IdentityRegistry identity,
-            SkillTrackRegistry skillTracks, FactionStandings standings) {
+            SkillTrackRegistry skillTracks, FactionStandings standings,
+            java.util.function.IntSupplier playedActorId) {
         this.registry = registry;
         this.homes = homes;
         this.relationships = relationships;
@@ -117,6 +121,7 @@ public final class InspectorRenderer {
         this.identity = identity;
         this.skillTracks = skillTracks;
         this.standings = standings;
+        this.playedActorId = playedActorId;
     }
 
     /**
@@ -171,8 +176,12 @@ public final class InspectorRenderer {
         String bio = CharacterSheetText.bioLine(selectedId, registry, identity);
         CharacterSheetText.Section identitySection =
                 CharacterSheetText.identitySection(selectedId, registry, homes, jobs, items);
-        CharacterSheetText.Section skillsSection =
-                CharacterSheetText.skillsSection(selectedId, skillTracks);
+        CharacterSheetText.Section attributesSection =
+                CharacterSheetText.attributesSection(selectedId, skillTracks);
+        // The played soul's own sheet lists the FULL roster (all skills, aptitude tiers)
+        // — the player owns that sheet's future; everyone else's stays nonzero-only.
+        CharacterSheetText.Section skillsSection = CharacterSheetText.skillsSection(
+                selectedId, skillTracks, selectedId == playedActorId.getAsInt());
         CharacterSheetText.Section standingsSection =
                 CharacterSheetText.standingsSection(selectedId, registry, standings);
         CharacterSheetText.Section tiesSection = CharacterSheetText.tiesSection(selectedId,
@@ -206,9 +215,10 @@ public final class InspectorRenderer {
         }
         float nextTop = nextBlockTop(topY, headerContent);
 
-        // ---- the five sheet sections, each its own DF block -----------------------------
+        // ---- the six sheet sections, each its own DF block ------------------------------
         nextTop = drawSection(batch, font, icons, x, nextTop, identitySection);
         nextTop = drawNeedsSection(batch, font, icons, x, nextTop, selectedActor);
+        nextTop = drawSection(batch, font, icons, x, nextTop, attributesSection);
         nextTop = drawSection(batch, font, icons, x, nextTop, skillsSection);
         nextTop = drawSection(batch, font, icons, x, nextTop, standingsSection);
         drawSection(batch, font, icons, x, nextTop, tiesSection);

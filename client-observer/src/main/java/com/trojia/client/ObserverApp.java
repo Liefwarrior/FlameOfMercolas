@@ -420,7 +420,7 @@ public final class ObserverApp extends ApplicationAdapter {
             this.inspectorRenderer = new InspectorRenderer(population.registry(), population.homes(),
                     population.relationships(), population.jobs(), population.items(), eventLog,
                     inspectorFaces, population.identity(), population.system().skillTracks(),
-                    population.system().factionStandings());
+                    population.system().factionStandings(), () -> playMode.playedActorId());
             // Hover nameplates (S1 item 2): PRESENTED identity always; hold N to plate
             // every on-screen actor. While an actor is played, plates tint by how each
             // soul regards the played actor's presented face (S2 item 2).

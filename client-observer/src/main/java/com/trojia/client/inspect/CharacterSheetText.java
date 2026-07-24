@@ -17,6 +17,7 @@ import com.trojia.sim.actor.SkillTrackRegistry;
 import com.trojia.sim.actor.faction.FactionRegistry;
 import com.trojia.sim.actor.job.Job;
 import com.trojia.sim.actor.job.JobRegistry;
+import com.trojia.sim.progression.AttributeId;
 import com.trojia.sim.progression.SkillRegistry;
 import com.trojia.sim.world.Dir;
 import com.trojia.sim.world.PackedPos;
@@ -142,37 +143,123 @@ public final class CharacterSheetText {
         return new Section("IDENTITY", lines);
     }
 
+    /** Segments in a skill row's ASCII progress bar ({@code [##------]}). */
+    public static final int SKILL_BAR_SEGMENTS = 8;
+    /** Display-name column width; World keeps new skill names &le; 14 chars (the layout ask). */
+    static final int SKILL_NAME_COLUMN = 14;
+    /** A non-played sheet shows at most this many skill rows, then {@code "+N more"}. */
+    public static final int SKILL_ROWS_CAP = 8;
+
+    /** The nonzero-only, capped view — every pre-Sprint-5 caller unchanged. */
+    public static Section skillsSection(int selectedId, SkillTrackRegistry tracks) {
+        return skillsSection(selectedId, tracks, false);
+    }
+
     /**
      * The SKILLS section, read live off the Sim team's {@link SkillTrackRegistry} (Sprint 1
-     * "the character sheet comes alive"): every nonzero skill as {@code "DisplayName level"},
-     * best first (ties by raw id — deterministic); {@code "(unschooled)"} when the actor has
-     * levelled nothing or the registry is unwired (the degraded placeholder behind the same
-     * interface, per the sprint plan).
+     * "the character sheet comes alive"; Sprint 5 depth): every skill row reads
+     * {@code "Skyrunning      32 [##------] AGI"} — level, an
+     * {@link #SKILL_BAR_SEGMENTS}-segment progress-to-next bar off the live
+     * {@code progressGrains/thresholdGrains} reads, and the governing attribute. Best
+     * first (ties by raw id — deterministic); {@code "(unschooled)"} when the actor has
+     * levelled nothing or the registry is unwired (the degraded placeholder behind the
+     * same interface, per the sprint plan).
+     *
+     * <p>{@code fullRoster} (the PLAYED soul's view) lists ALL skills — level 0 included —
+     * with the registry-global aptitude tier appended ({@code (favored)}); the non-played
+     * view keeps nonzero-only, capped at {@link #SKILL_ROWS_CAP} rows plus {@code "+N
+     * more"} for panel height.
      *
      * <p>Skills are keyed on the SELECTED (true) body, never the presented id — XP lands on
      * the body that did the deed; only SOCIAL reads follow the disguise.
      */
-    public static Section skillsSection(int selectedId, SkillTrackRegistry tracks) {
+    public static Section skillsSection(int selectedId, SkillTrackRegistry tracks,
+            boolean fullRoster) {
         List<String> lines = new ArrayList<>();
         if (tracks.isWired()) {
             SkillRegistry skills = tracks.skills();
             List<int[]> rows = new ArrayList<>();
             for (int raw = 0; raw < skills.size(); raw++) {
                 int level = tracks.level(selectedId, raw);
-                if (level > 0) {
+                if (level > 0 || fullRoster) {
                     rows.add(new int[] {raw, level});
                 }
             }
             rows.sort((a, b) -> a[1] != b[1]
                     ? Integer.compare(b[1], a[1]) : Integer.compare(a[0], b[0]));
-            for (int[] row : rows) {
-                lines.add(skills.get(row[0]).displayName() + " " + row[1]);
+            int shown = fullRoster ? rows.size() : Math.min(rows.size(), SKILL_ROWS_CAP);
+            for (int i = 0; i < shown; i++) {
+                lines.add(skillLine(selectedId, rows.get(i)[0], rows.get(i)[1], tracks,
+                        fullRoster));
+            }
+            if (shown < rows.size()) {
+                lines.add("+" + (rows.size() - shown) + " more");
             }
         }
         if (lines.isEmpty()) {
             lines.add("(unschooled)");
         }
         return new Section("SKILLS", lines);
+    }
+
+    /** One skill row: padded name, level, live progress bar, governing attribute[, tier]. */
+    private static String skillLine(int actorId, int raw, int level, SkillTrackRegistry tracks,
+            boolean fullRoster) {
+        var skill = tracks.skills().get(raw);
+        StringBuilder out = new StringBuilder();
+        out.append(skill.displayName());
+        while (out.length() < SKILL_NAME_COLUMN) {
+            out.append(' ');
+        }
+        out.append(String.format("%3d", level));
+        out.append(" [").append(progressBar(
+                tracks.progressGrains(actorId, raw), tracks.thresholdGrains(actorId, raw)));
+        out.append("] ").append(governingLabel(skill.governingAttribute().name()));
+        if (fullRoster) {
+            out.append(" (").append(skill.aptitudeTier().name().toLowerCase(Locale.ROOT))
+                    .append(')');
+        }
+        return out.toString();
+    }
+
+    /** {@code NONE} (The Flame) renders as a dash column, not a fifth attribute word. */
+    private static String governingLabel(String attributeName) {
+        return "NONE".equals(attributeName) ? "---" : attributeName;
+    }
+
+    /**
+     * The {@link #SKILL_BAR_SEGMENTS}-char progress-to-next bar: {@code #} filled,
+     * {@code -} empty; {@code progress/threshold} floored per segment (a threshold of 0 —
+     * unwired/absent — renders all-empty rather than dividing).
+     */
+    static String progressBar(int progress, int threshold) {
+        int filled = threshold <= 0 ? 0
+                : (int) Math.min(SKILL_BAR_SEGMENTS,
+                        (long) progress * SKILL_BAR_SEGMENTS / threshold);
+        StringBuilder bar = new StringBuilder(SKILL_BAR_SEGMENTS);
+        for (int i = 0; i < SKILL_BAR_SEGMENTS; i++) {
+            bar.append(i < filled ? '#' : '-');
+        }
+        return bar.toString();
+    }
+
+    /**
+     * The ATTRIBUTES section (Sprint 5 — attributes rendered for the first time): the four
+     * derived attributes as one line, computed LIVE via
+     * {@link SkillTrackRegistry#attribute} (PROGRESSION-SPEC &sect;5 "recomputed live", so
+     * a level-up moves this line the very next frame). Unwired reads the skill-less base
+     * 10s — honest, never fails. Keyed on the TRUE body, like SKILLS.
+     */
+    public static Section attributesSection(int selectedId, SkillTrackRegistry tracks) {
+        StringBuilder line = new StringBuilder();
+        for (AttributeId attribute : AttributeId.values()) {
+            if (line.length() > 0) {
+                line.append("   ");
+            }
+            line.append(attribute.name()).append(' ')
+                    .append(tracks.attribute(selectedId, attribute));
+        }
+        return new Section("ATTRIBUTES", List.of(line.toString()));
     }
 
     /**
@@ -279,6 +366,19 @@ public final class CharacterSheetText {
             HomeRegistry homes, RelationshipRegistry relationships, JobRegistry jobs,
             ItemsLiteRegistry items, IdentityRegistry identity, SkillTrackRegistry tracks,
             FactionStandings standings) {
+        return describe(selectedId, registry, homes, relationships, jobs, items, identity,
+                tracks, standings, Actor.NONE);
+    }
+
+    /**
+     * {@link #describe} with the live played-actor id (Sprint 5): when the selected soul
+     * IS the played soul, the SKILLS section switches to the full-roster view — all
+     * skills, aptitude tiers marked — because the player owns that sheet's future.
+     */
+    public static List<String> describe(int selectedId, ActorRegistry registry,
+            HomeRegistry homes, RelationshipRegistry relationships, JobRegistry jobs,
+            ItemsLiteRegistry items, IdentityRegistry identity, SkillTrackRegistry tracks,
+            FactionStandings standings, int playedActorId) {
         List<String> lines = new ArrayList<>();
         if (selectedId == Actor.NONE) {
             lines.add("(click an actor to inspect  ·  C follows selection)");
@@ -292,7 +392,9 @@ public final class CharacterSheetText {
         append(lines, identitySection(selectedId, registry, homes, jobs, items));
         lines.add(marker("NEEDS"));
         lines.add(needsLine(registry.get(selectedId)));
-        append(lines, skillsSection(selectedId, tracks));
+        append(lines, attributesSection(selectedId, tracks));
+        append(lines, skillsSection(selectedId, tracks,
+                selectedId != Actor.NONE && selectedId == playedActorId));
         append(lines, standingsSection(selectedId, registry, standings));
         append(lines, tiesSection(selectedId, registry, relationships, jobs, identity));
         return lines;
