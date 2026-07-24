@@ -16,12 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 final class SkillRawsLoaderCommittedTest {
 
-    /** All 16 skill ids in id order: sorted string keys, first key = 0. */
+    /** All 18 skill ids in id order: sorted string keys, first key = 0. */
     private static final List<String> EXPECTED_IDS = List.of(
-            "bladework", "channeling", "cracksmanship", "dire_bows", "grit",
-            "harness", "heavy_arms", "kit_keeping", "lancework", "mixtures",
-            "open_hand", "shieldwall", "sidearms", "skyrunning", "streetwise",
-            "the_flame");
+            "bladework", "channeling", "cracksmanship", "dire_bows", "fieldcraft",
+            "grit", "harness", "heavy_arms", "kit_keeping", "lancework", "mixtures",
+            "open_hand", "seacraft", "shieldwall", "sidearms", "skyrunning",
+            "streetwise", "the_flame");
 
     private static SkillRegistry registry;
 
@@ -31,8 +31,8 @@ final class SkillRawsLoaderCommittedTest {
     }
 
     @Test
-    void loadsSixteenSkills() {
-        assertEquals(16, registry.size());
+    void loadsEighteenSkills() {
+        assertEquals(18, registry.size());
     }
 
     @Test
@@ -54,6 +54,8 @@ final class SkillRawsLoaderCommittedTest {
         assertSkill("bladework", GoverningAttribute.AGI, AptitudeTier.NEGLECTED);
         assertSkill("lancework", GoverningAttribute.MGT, AptitudeTier.NEGLECTED);
         assertSkill("dire_bows", GoverningAttribute.WIT, AptitudeTier.NEGLECTED);
+        assertSkill("fieldcraft", GoverningAttribute.MGT, AptitudeTier.NEGLECTED);
+        assertSkill("seacraft", GoverningAttribute.AGI, AptitudeTier.NEGLECTED);
         assertSkill("the_flame", GoverningAttribute.NONE, AptitudeTier.FLAME);
     }
 

@@ -28,7 +28,8 @@ public final class JobRawsLoader {
     private static final List<String> ROOT_FIELDS = List.of("version", "jobs");
     private static final List<String> JOB_FIELDS = List.of(
             "id", "goalKind", "priority", "rhythmWindow", "rhythmBonus", "workTicksPerUnit",
-            "unitsToComplete", "renew", "assign", "defaultFor", "secret", "cover");
+            "unitsToComplete", "renew", "assign", "defaultFor", "secret", "cover",
+            "trainsSkill", "trainCp");
     private static final List<String> RENEW_FIELDS = List.of("mode", "cooldownTicks");
     private static final List<String> COVER_FIELDS = List.of("actorType", "presentedJob");
 
@@ -106,9 +107,20 @@ public final class JobRawsLoader {
         boolean secret = requireBool(file, "secret", raw, "secret");
         CoverSpec cover = parseCover(file, raw, secret);
 
+        // Sprint-5 training pair: both-or-neither, trainCp strictly positive when present.
+        String trainsSkill = null;
+        int trainCp = 0;
+        if (raw.has("trainsSkill")) {
+            trainsSkill = requireString(file, "trainsSkill", raw, "trainsSkill");
+            trainCp = requireInt(file, "trainCp", raw, "trainCp", 1, Integer.MAX_VALUE);
+        } else if (raw.has("trainCp")) {
+            throw new ActorRawsValidationException(file, "trainCp",
+                    "trainCp without trainsSkill (the pair is both-or-neither)");
+        }
+
         return new JobRaw(file, id, goalKind, priority, rhythmStart, rhythmEnd, rhythmBonus,
                 workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, assign, defaultFor,
-                secret, cover);
+                secret, cover, trainsSkill, trainCp);
     }
 
     private static List<JobRaw.AssignWeight> parseAssign(String file, JsonObject raw) {

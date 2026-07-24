@@ -102,7 +102,7 @@ final class JobBinderTest {
                 original.priority(), original.rhythmStart(), original.rhythmEnd(),
                 original.rhythmBonus(), original.workTicksPerUnit(), original.unitsToComplete(),
                 original.renewMode(), original.cooldownTicks(), original.assign(),
-                original.defaultFor(), true, null));
+                original.defaultFor(), true, null, original.trainsSkill(), original.trainCp()));
         ActorRawsValidationException e = assertThrows(ActorRawsValidationException.class,
                 () -> JobBinder.bind(raws, KNOWN_TYPES));
         assertTrue(e.getMessage().contains("must declare a cover block"),
@@ -124,6 +124,7 @@ final class JobBinderTest {
 
     private static JobRaw unknownLeafRaw() {
         return new JobRaw("test", JobId.of("nonexistent.job"), GoalKind.HAUL_WORK, 150,
-                0, 1000, 0, 10, 1, RenewMode.IMMEDIATE, 0, List.of(), List.of(), false, null);
+                0, 1000, 0, 10, 1, RenewMode.IMMEDIATE, 0, List.of(), List.of(), false, null,
+                null, 0);
     }
 }

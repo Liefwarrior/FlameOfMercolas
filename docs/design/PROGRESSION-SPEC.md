@@ -58,7 +58,7 @@ Total 0→100 cost at Trained: `Σ_{L=0}^{99}(L+1)×100×20 grains = 10,100,000 
 
 ---
 
-## 2. Skill list (16 skills)
+## 2. Skill list (18 skills)
 
 Naming: canon terms cited; everything else **(placeholder)**. "Gov" = governing attribute
 (§5); "Apt" = Gabri's aptitude (aptitudes placeholder / needs-blessing except where a
@@ -87,6 +87,23 @@ assassins — see DECISIONS.md); **The Draw → Dire Bows** and **Gutter-Ken →
 | 14 | **Channeling** (canon term — fill-only tier, L1257, L1399) | filling/recharging chromatis & lightstone | WIT | **Favored** | channelers fill the Reman key (L1399) |
 | 15 | **Streetwise** (Eli-named 2026-07-12; was "Gutter-Ken") | rumors, routes, black-market **pricing & timing** | WIT | **Favored** | slums cloak-up texture (L2410) |
 | 16 | **The Flame** | Gabri-unique Source track | — (see §7) | **×4** | Flame of Mercolas feats (L2341, L2710, L2980) |
+| 17 | **Fieldcraft** (placeholder, Sprint 5 civic-labor pass) | plot-tending, sowing, harvest, beast-keeping | MGT | Neglected | courtyard-farm compound canon (compounds farm their own courts; Saltgate harvest baskets); Herdis's pen, Cobb's kennels |
+| 18 | **Seacraft** (placeholder, Sprint 5 civic-labor pass) | sail-handling, oars, lines, tides, deck work | AGI | Neglected | the fishbone pier's three crewed hulls (Kestrel, Bregga's Promise, Deep Keel) |
+
+**Sprint-5 containment rules on #17/#18 (binding this sprint):** neither skill appears in
+any §5 AttributeWeights row — they train without moving any attribute, so no existing
+contest odds (push/pickpocket/search) shift from the new raws alone. Folding them into §5
+is its own future sprint with its own blessing. **Save-frame contract:** the skill count
+moved 16 → 18; `SkillTrackRegistry`'s load-time frame guard makes every 16-skill-era save
+refuse to load (loudly, by design) — regenerate saves/goldens from these raws.
+
+**Job training map (Sprint 5, raws-authored in `jobs.json` via `trainsSkill`/`trainCp`):**
+every civic job declares the skill its daily work trains; awards fire only at discrete
+work events (unit completion, waypoint arrival, dwell completion — §3.2 rule 4 binding).
+farmer/keeper → fieldcraft, sailor → seacraft, laborer → kit_keeping, stallkeep/trader/
+watch → streetwise, clergy → channeling; villains (their crimes already train), beasts and
+the PC seam train nothing. `trainCp` values (anchor jobs 25, patrol 10) are placeholders
+for the Sim lane's soak-tuning loop.
 
 **North-star guard on #15 (binding, LOOSENED 2026-07-12 per Eli):** Streetwise never modifies
 disposition, deference, or any social outcome — social power is STATIC and maxed; no
@@ -531,11 +548,13 @@ milestone.
 
 ## 11. Open blessing items (queue candidates)
 
-1. Remaining skill names and aptitude assignments (§2) — 16 skills after the 2026-07-12
+1. Remaining skill names and aptitude assignments (§2) — 18 skills after the 2026-07-12
    rulings (Saxework+Repeaterwork merged; Shadow-Wait+Skylining merged as Deftness, renamed
-   Skyrunning 2026-07-13; The Draw → Dire Bows; Gutter-Ken → Streetwise). Two follow-ups
-   outstanding: **"Sidearms" is a placeholder name awaiting Eli**, and **Skyrunning's Favored
-   aptitude (kept from Skylining) needs-confirmation**; unruled names/aptitudes remain placeholder.
+   Skyrunning 2026-07-13; The Draw → Dire Bows; Gutter-Ken → Streetwise) plus the Sprint-5
+   civic-labor pair. Follow-ups outstanding: **"Sidearms" is a placeholder name awaiting
+   Eli**, **Skyrunning's Favored aptitude (kept from Skylining) needs-confirmation**, and
+   **"Fieldcraft"/"Seacraft" (Sprint-5) are placeholder names + aptitudes awaiting Eli**;
+   unruled names/aptitudes remain placeholder.
 2. Weak-start Gabri numbers (skills ~0–5, Flame locked) — north-star invention, zero canon.
 3. Seam E1 "Wielder's Bruise" — is goading thugs to strike the Wielder tonally acceptable?
 4. Flame unlock rite shape (Grit gate + vigils) and ability ladder names (§7).

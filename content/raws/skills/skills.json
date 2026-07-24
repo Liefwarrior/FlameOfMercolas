@@ -144,7 +144,25 @@
       "aptitudeTier": "FLAME",
       "canonAnchor": "Flame of Mercolas feats (L2341, L2710, L2980)",
       "provenance": "PROGRESSION-SPEC.md section 2 row 16 (aptitude x4; weak-start Gabri numbers are pure invention, needs-blessing per section 11)"
+    },
+    {
+      "id": "fieldcraft",
+      "displayName": "Fieldcraft",
+      "covers": "plot-tending, sowing, harvest, beast-keeping",
+      "governingAttribute": "MGT",
+      "aptitudeTier": "NEGLECTED",
+      "canonAnchor": "courtyard-farm compound canon (walled compounds farm their own courts; Saltgate Terrace harvest baskets); Herdis's goat pen, Old Cobb's kennels",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 17 (placeholder name, Sprint 5 civic-labor pass; deliberately absent from every section-5 AttributeWeights row this sprint - zero attribute drift by construction)"
+    },
+    {
+      "id": "seacraft",
+      "displayName": "Seacraft",
+      "covers": "sail-handling, oars, lines, tides, deck work",
+      "governingAttribute": "AGI",
+      "aptitudeTier": "NEGLECTED",
+      "canonAnchor": "the fishbone pier's three crewed hulls (Kestrel, Bregga's Promise, Deep Keel); Merle the waterman's honest oar",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 18 (placeholder name, Sprint 5 civic-labor pass; deliberately absent from every section-5 AttributeWeights row this sprint - zero attribute drift by construction)"
     }
   ],
-  "notes": "Schema mirrors content/raws/materials conventions (ARCHITECTURE.md section 10 style): id, displayName, covers, governingAttribute (MGT|AGI|VIG|WIT|NONE), aptitudeTier (FAVORED|TRAINED|NEGLECTED|FLAME). canonAnchor/provenance/notes are documentation-only and ignored by the loader. Encodes PROGRESSION-SPEC.md section 2's 16-skill table verbatim as of the 2026-07-13 Skyrunning rename."
+  "notes": "Schema mirrors content/raws/materials conventions (ARCHITECTURE.md section 10 style): id, displayName, covers, governingAttribute (MGT|AGI|VIG|WIT|NONE), aptitudeTier (FAVORED|TRAINED|NEGLECTED|FLAME). canonAnchor/provenance/notes are documentation-only and ignored by the loader. Encodes PROGRESSION-SPEC.md section 2's 18-skill table (16 as of the 2026-07-13 Skyrunning rename + the Sprint-5 fieldcraft/seacraft civic-labor pair). Count contract: the SkillTrackRegistry save-frame guard means 16-skill-era saves refuse to load against these raws - documented loud-fail, see PROGRESSION-SPEC section 2."
 }
