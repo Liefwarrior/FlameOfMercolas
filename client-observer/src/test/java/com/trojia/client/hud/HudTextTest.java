@@ -111,6 +111,8 @@ class HudTextTest {
         assertTrue(tokens.contains(HudToken.icon(IconKey.P)), "play as");
         assertTrue(tokens.contains(HudToken.icon(IconKey.N)), "names");
         assertTrue(tokens.contains(HudToken.icon(IconKey.J)), "journal");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.M)), "masters board (S5)");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.L)), "feed filter (S5)");
     }
 
     @Test

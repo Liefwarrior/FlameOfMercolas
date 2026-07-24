@@ -35,9 +35,19 @@ public final class JournalRenderer {
 
     private final GlyphLayout layout = new GlyphLayout();
 
-    /** Draws {@code lines} as the open journal; a no-op while {@code open} is false. */
+    /** The journal pane proper — {@code "(J close)"} hint (the pre-Sprint-5 callers). */
     public void draw(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
             boolean open, List<String> lines) {
+        draw(batch, font, icons, camera, open, lines, HINT);
+    }
+
+    /**
+     * Draws {@code lines} as an open DF text pane; a no-op while {@code open} is false.
+     * {@code closeHint} is the foot line — the pane is shared with the Sprint-5 Masters
+     * Board ({@code "(M close)"}), same panel, same coloring rules.
+     */
+    public void draw(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
+            boolean open, List<String> lines, String closeHint) {
         if (!open) {
             return;
         }
@@ -69,7 +79,7 @@ public final class JournalRenderer {
             y -= wrappedHeight(font, line, lineHeight) + LINE_GAP_PX;
         }
         font.setColor(HINT_COLOR);
-        font.draw(batch, HINT, x, y);
+        font.draw(batch, closeHint, x, y);
         font.setColor(Color.WHITE);
     }
 

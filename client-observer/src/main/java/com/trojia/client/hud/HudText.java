@@ -148,6 +148,7 @@ public final class HudText {
                 HudToken.icon(IconKey.P), HudToken.text(" play as   "),
                 HudToken.icon(IconKey.N), HudToken.text(" names (hold)   "),
                 HudToken.icon(IconKey.J), HudToken.text(" journal   "),
+                HudToken.icon(IconKey.M), HudToken.text(" masters   "),
                 HudToken.icon(IconKey.L), HudToken.text(" feed"));
     }
 

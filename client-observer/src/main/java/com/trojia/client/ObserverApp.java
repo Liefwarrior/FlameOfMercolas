@@ -44,6 +44,8 @@ import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.JournalText;
+import com.trojia.client.inspect.MastersBoardSnapshot;
+import com.trojia.client.inspect.MastersBoardText;
 import com.trojia.client.inspect.PlayModeState;
 import com.trojia.client.inspect.QuestFeedTracker;
 import com.trojia.client.inspect.QuitGuard;
@@ -183,6 +185,9 @@ public final class ObserverApp extends ApplicationAdapter {
     private QuestFeedTracker questFeedTracker;
     private JournalRenderer journalRenderer;
     private boolean journalOpen;
+    // Sprint 5 "the masters board": the ward's best per craft + climbers since dawn.
+    private MastersBoardSnapshot mastersSnapshot;
+    private boolean mastersOpen;
 
     public ObserverApp(int smokeFrames) {
         this(Fixture.TAVERN, smokeFrames);
@@ -398,6 +403,10 @@ public final class ObserverApp extends ApplicationAdapter {
             // sim-side next tick; this tracker toasts the outcome reason. Zero sim writes.
             this.eatFeedbackTracker = new EatFeedbackTracker(population.registry(), toasts,
                     () -> playMode.playedActorId());
+            // The masters board's dawn baseline (S5 item 3): construction snapshots the
+            // bake's seeded masters; each day boundary re-baselines the climbers.
+            this.mastersSnapshot = new MastersBoardSnapshot(
+                    population.system().skillTracks(), population.registry().size());
             // The per-tick seam (not per-frame): fires once per executed tick, so no
             // tracker misses a FAST-skipped tick nor double-logs a re-rendered one.
             this.driver.setAfterTick(tick -> {
@@ -406,6 +415,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 crimeFeedTracker.afterTick(tick);
                 questFeedTracker.afterTick(tick);
                 eatFeedbackTracker.afterTick(tick);
+                mastersSnapshot.afterTick(tick);
             });
             // FaceGen portraits (unified art spec §4) draw their parts from the SAME
             // unified index + sheet as the actor sprites (face-part pools are just
@@ -514,14 +524,26 @@ public final class ObserverApp extends ApplicationAdapter {
             // eat-in-reach chain; the outcome toast lands via EatFeedbackTracker.
             EatInput.poll(playMode, population.registry(), toasts, eatFeedbackTracker);
             // The JOURNAL toggle (S3): J opens/closes the quest pane (J was unbound; the
-            // design's verify-free-then-bind rule).
+            // design's verify-free-then-bind rule). Shares the pane with the masters board.
             if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
                 journalOpen = !journalOpen;
+                if (journalOpen) {
+                    mastersOpen = false;
+                }
             }
             // The FEED FILTER cycle (S5 "the torrent"): L walks ALL/GROWTH/CRIME/QUESTS
             // (L was unbound; the same verify-free-then-bind rule).
             if (Gdx.input.isKeyJustPressed(Input.Keys.L)) {
                 inspector.cycleFeedFilter();
+            }
+            // The MASTERS BOARD toggle (S5 item 3): M opens/closes the ward's craft rolls
+            // (M was unbound). The board and the journal share the centered pane, so
+            // opening one closes the other.
+            if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
+                mastersOpen = !mastersOpen;
+                if (mastersOpen) {
+                    journalOpen = false;
+                }
             }
             // Screenshot/verification aid only (bypasses WASD, mirrors debugSelectActorId's
             // "bypass the input device" convention): re-applies the same movement-application
@@ -618,6 +640,12 @@ public final class ObserverApp extends ApplicationAdapter {
                     journalOpen ? JournalText.lines(population.questRegistry(),
                             population.system().questLog(), population.registry(),
                             population.identity()) : List.of());
+            // The WARD MASTERS board (S5 item 3) shares the same pane: the ward's best
+            // per craft + climbers since dawn, recomputed live off the skill table.
+            journalRenderer.draw(batch, font, icons, camera, mastersOpen,
+                    mastersOpen ? MastersBoardText.lines(population.system().skillTracks(),
+                            population.registry(), population.identity(), mastersSnapshot)
+                            : List.of(), "(M close)");
         }
         if (toastRenderer != null) {
             // Toasts age by rendered wall-clock seconds (readable at any sim speed).
@@ -693,7 +721,18 @@ public final class ObserverApp extends ApplicationAdapter {
                                 action.intArgs()[0]));
                 case PICKPOCKET -> TheftInput.applyPickpocket(playMode,
                         population.registry(), population.identity(), toasts);
-                case JOURNAL -> journalOpen = !journalOpen;
+                case JOURNAL -> {
+                    journalOpen = !journalOpen;
+                    if (journalOpen) {
+                        mastersOpen = false;
+                    }
+                }
+                case MASTERS -> {
+                    mastersOpen = !mastersOpen;
+                    if (mastersOpen) {
+                        journalOpen = false;
+                    }
+                }
                 case PLATES -> scriptPlatesHeld = !scriptPlatesHeld;
                 case ZOOM -> camera.setZoom(action.intArgs()[0]);
                 case CENTER -> {

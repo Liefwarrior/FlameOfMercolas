@@ -49,8 +49,8 @@ public final class ObserverScript {
 
     /** The verb vocabulary. Unknown verbs fail the parse loudly (never silently skipped). */
     public enum Verb {
-        SELECT, FOLLOW, PLAY, HOLD, TALK, TOPIC, PICKPOCKET, EAT, CLIMB, JOURNAL, PLATES,
-        ZOOM, CENTER, Z, SHOT
+        SELECT, FOLLOW, PLAY, HOLD, TALK, TOPIC, PICKPOCKET, EAT, CLIMB, JOURNAL, MASTERS,
+        PLATES, ZOOM, CENTER, Z, SHOT
     }
 
     /** One scripted action: the frame it fires on, its verb, and the raw argument text. */
