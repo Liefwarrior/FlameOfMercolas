@@ -47,15 +47,15 @@ final class JobBinderTrainingTest {
 
     @Test
     void civicJobsBindWithTheirTrainingPairResolvedToRawIndices() {
-        assertTraining(Job.Serf.Farmer.ID, "fieldcraft", 25);
-        assertTraining(Job.Serf.Laborer.ID, "kit_keeping", 25);
-        assertTraining(Job.Maritime.Sailor.ID, "seacraft", 25);
-        assertTraining(Job.Trade.Stallkeep.ID, "streetwise", 25);
-        assertTraining(Job.Trade.Trader.ID, "streetwise", 25);
-        assertTraining(Job.Husbandry.Keeper.ID, "fieldcraft", 25);
-        assertTraining(Job.Clergy.Shepherd.ID, "channeling", 25);
-        assertTraining(Job.Clergy.Acolyte.ID, "channeling", 25);
-        assertTraining(Job.Watch.Patrol.ID, "streetwise", 10);
+        assertTraining(Job.Serf.Farmer.ID, "fieldcraft", 60);
+        assertTraining(Job.Serf.Laborer.ID, "kit_keeping", 60);
+        assertTraining(Job.Maritime.Sailor.ID, "seacraft", 60);
+        assertTraining(Job.Trade.Stallkeep.ID, "streetwise", 60);
+        assertTraining(Job.Trade.Trader.ID, "streetwise", 60);
+        assertTraining(Job.Husbandry.Keeper.ID, "fieldcraft", 60);
+        assertTraining(Job.Clergy.Shepherd.ID, "channeling", 60);
+        assertTraining(Job.Clergy.Acolyte.ID, "channeling", 60);
+        assertTraining(Job.Watch.Patrol.ID, "streetwise", 24);
     }
 
     @Test
