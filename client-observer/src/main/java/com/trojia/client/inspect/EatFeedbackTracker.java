@@ -2,7 +2,9 @@ package com.trojia.client.inspect;
 
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
+import com.trojia.sim.actor.FactionStandings;
 import com.trojia.sim.actor.ReasonCode;
+import com.trojia.sim.actor.SkillTrackRegistry;
 
 import java.util.function.IntSupplier;
 
@@ -12,6 +14,11 @@ import java.util.function.IntSupplier;
  * four eat reasons — this tracker (wired into the driver's after-tick seam like the other
  * trackers) reads the stamp off the played body and toasts the human sentence. Zero sim
  * writes; GL-free.
+ *
+ * <p><b>The haggle made visible (Sprint 5).</b> When the outcome is a COUNTER BUY and the
+ * skill/standing tables are wired, a second toast carries
+ * {@link CheckLineFormatter#barterQuoteLine} — the personal quote decomposed into its
+ * haggle/standing/surcharge components, read live at narration time.
  *
  * <p><b>Bounded wait.</b> The intent normally resolves on the very next tick; when
  * something outranks player control (custody, the gibbet), the pending window expires
@@ -30,14 +37,26 @@ public final class EatFeedbackTracker {
     private final ActorRegistry registry;
     private final ToastQueue toasts;
     private final IntSupplier playedActorId;
+    /** The Sprint-5 barter-decomposition reads; UNWIRED = no second toast, ever. */
+    private final SkillTrackRegistry tracks;
+    private final FactionStandings standings;
 
     private int pendingTicks;
 
+    /** The pre-Sprint-5 wiring: outcome sentences only, no barter line. */
     public EatFeedbackTracker(ActorRegistry registry, ToastQueue toasts,
             IntSupplier playedActorId) {
+        this(registry, toasts, playedActorId, SkillTrackRegistry.UNWIRED,
+                FactionStandings.UNWIRED);
+    }
+
+    public EatFeedbackTracker(ActorRegistry registry, ToastQueue toasts,
+            IntSupplier playedActorId, SkillTrackRegistry tracks, FactionStandings standings) {
         this.registry = registry;
         this.toasts = toasts;
         this.playedActorId = playedActorId;
+        this.tracks = tracks;
+        this.standings = standings;
     }
 
     /** Arms the outcome watch (called by {@code EatInput.applyEat} alongside the intent). */
@@ -55,9 +74,18 @@ public final class EatFeedbackTracker {
             pendingTicks = 0; // play mode ended before the outcome landed
             return;
         }
-        String line = outcomeLine(registry.get(played).lastReasonCode());
+        Actor actor = registry.get(played);
+        String line = outcomeLine(actor.lastReasonCode());
         if (line != null) {
             toasts.add(line);
+            if (actor.lastReasonCode() == ReasonCode.BOUGHT_FOOD) {
+                // Sprint 5: the counter buy decomposes its quote — the haggle read visible.
+                String quote = CheckLineFormatter.barterQuoteLine(tracks, standings,
+                        played, actor.identity().presentedId());
+                if (!quote.isEmpty()) {
+                    toasts.add(quote);
+                }
+            }
             pendingTicks = 0;
             return;
         }

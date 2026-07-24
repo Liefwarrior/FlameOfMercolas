@@ -44,6 +44,7 @@ import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.JournalText;
+import com.trojia.client.inspect.LenienceFeedbackTracker;
 import com.trojia.client.inspect.MastersBoardSnapshot;
 import com.trojia.client.inspect.MastersBoardText;
 import com.trojia.client.inspect.PlayModeState;
@@ -399,9 +400,17 @@ public final class ObserverApp extends ApplicationAdapter {
                     population.system().questLog(), population.system().skillTracks(),
                     eventLog, toasts, () -> playMode.playedActorId());
             this.journalRenderer = new JournalRenderer();
-            // Eat-outcome narration (S4 item 3): the played actor's E press resolves
-            // sim-side next tick; this tracker toasts the outcome reason. Zero sim writes.
+            // Eat-outcome narration (S4 item 3, S5 barter decomposition): the played
+            // actor's E press resolves sim-side next tick; this tracker toasts the outcome
+            // reason — and, on a counter buy, the haggle-decomposed personal quote.
             this.eatFeedbackTracker = new EatFeedbackTracker(population.registry(), toasts,
+                    () -> playMode.playedActorId(), population.system().skillTracks(),
+                    population.system().factionStandings());
+            // Watch-lenience narration (S5 check lines): the played soul's warn/fine
+            // transitions toast the exact inputs the lenience draw read. Zero sim writes.
+            LenienceFeedbackTracker lenienceFeedbackTracker = new LenienceFeedbackTracker(
+                    population.registry(), population.system().skillTracks(),
+                    population.system().factionStandings(), toasts,
                     () -> playMode.playedActorId());
             // The masters board's dawn baseline (S5 item 3): construction snapshots the
             // bake's seeded masters; each day boundary re-baselines the climbers.
@@ -415,6 +424,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 crimeFeedTracker.afterTick(tick);
                 questFeedTracker.afterTick(tick);
                 eatFeedbackTracker.afterTick(tick);
+                lenienceFeedbackTracker.afterTick(tick);
                 mastersSnapshot.afterTick(tick);
             });
             // FaceGen portraits (unified art spec §4) draw their parts from the SAME
