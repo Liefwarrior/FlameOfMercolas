@@ -182,6 +182,25 @@ public final class SkillTrackRegistry {
         }
     }
 
+    /**
+     * Seeds an authored starting level at bake time (Sprint 5 "the masters of the ward"):
+     * materializes the actor's track and sets the level directly — no grains, no satiation,
+     * no level-log row ({@link SkillTrack#seedLevel}). No-op when unwired or the skill is
+     * absent, mirroring {@link #award}'s degraded contract. Bake-time only by the same
+     * bake-immutability discipline the authored relationship edges ride: call between
+     * population spawn and the first tick, never after.
+     *
+     * @param actorId  the actor whose sheet the authored mastery lands on (TRUE id)
+     * @param skillRaw the skill's raw registry index
+     * @param level    the authored starting level, {@code 0..100}
+     */
+    public void seedLevel(int actorId, int skillRaw, int level) {
+        if (skills == null || skillRaw == Actor.NONE || actorId < 0) {
+            return;
+        }
+        trackOf(actorId).seedLevel(SkillId.of(skillRaw), level);
+    }
+
     /** The actor's track, materializing (and padding the dense list) on demand. */
     private SkillTrack trackOf(int actorId) {
         while (tracks.size() <= actorId) {

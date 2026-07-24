@@ -44,9 +44,18 @@ final class NotableRaws {
      * @param householdSurname when set, the notable's HOUSEHOLD component takes this surname
      *                         (the compound family houses); {@code null} otherwise
      * @param bio              the authored 2-3 sentence bio
+     * @param skills           authored starting-skill grants (Sprint 5 "the masters of the
+     *                         ward"), in file order — skills.json keys to levels, seeded
+     *                         onto the bound actor's track at bake; empty for the ordinary
+     *                         souls who start 0 and earn it
      */
     record Notable(String id, String name, String epithet, String type, String site,
-            String match, int radius, int rank, String householdSurname, String bio) {
+            String match, int radius, int rank, String householdSurname, String bio,
+            List<SkillGrant> skills) {
+    }
+
+    /** One authored starting-skill grant: a skills.json key and a level {@code 1..100}. */
+    record SkillGrant(String skillKey, int level) {
     }
 
     private NotableRaws() {
@@ -104,7 +113,34 @@ final class NotableRaws {
                 optionalInt(file, entry, "rank", 0),
                 entry.has("householdSurname") ? requireString(file, entry, "householdSurname")
                         : null,
-                requireString(file, entry, "bio"));
+                requireString(file, entry, "bio"),
+                parseSkills(file, id, entry));
+    }
+
+    /** The optional {@code "skills": {"key": level}} map, kept in authored file order. */
+    private static List<SkillGrant> parseSkills(Path file, String id, JsonObject entry) {
+        if (!entry.has("skills")) {
+            return List.of();
+        }
+        if (!(entry.get("skills") instanceof JsonObject skills)) {
+            throw new IllegalStateException(
+                    file + ": notable \"" + id + "\" skills must be an object of key -> level");
+        }
+        List<SkillGrant> grants = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (JsonObject.Member member : skills.members()) {
+            if (!seen.add(member.name())) {
+                throw new IllegalStateException(file + ": notable \"" + id
+                        + "\" repeats skill \"" + member.name() + "\"");
+            }
+            if (!(member.value() instanceof JsonNumber number)
+                    || number.asInt() < 1 || number.asInt() > 100) {
+                throw new IllegalStateException(file + ": notable \"" + id + "\" skill \""
+                        + member.name() + "\" level must be an integer 1..100");
+            }
+            grants.add(new SkillGrant(member.name(), number.asInt()));
+        }
+        return List.copyOf(grants);
     }
 
     private static String requireString(Path file, JsonObject entry, String field) {

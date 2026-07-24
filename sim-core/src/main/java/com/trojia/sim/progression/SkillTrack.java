@@ -133,6 +133,31 @@ public final class SkillTrack {
     }
 
     /**
+     * Seeds a starting level at bake time (Sprint 5 "the masters of the ward"):
+     * sets the level directly with zero banked grains, no satiation row and no
+     * {@link SkillLevelledEvent} — byte-identical to a track that levelled
+     * before the save began, so the persisted-triad shape is untouched.
+     *
+     * <p><b>Bake-time only, by contract:</b> callers seed between population
+     * spawn and the first tick (authored notable mastery). Seeding after ticks
+     * have run would rewrite lived history — nothing stops it mechanically,
+     * the discipline is the same bake-immutability rule the authored
+     * relationship edges ride.</p>
+     *
+     * @param skill the skill to seed
+     * @param newLevel the authored starting level, {@code 0..100}
+     * @throws IllegalArgumentException if {@code newLevel} is out of range
+     */
+    public void seedLevel(SkillId skill, int newLevel) {
+        if (newLevel < 0 || newLevel > ProgressionMath.MAX_LEVEL) {
+            throw new IllegalArgumentException("seed level out of range 0.."
+                    + ProgressionMath.MAX_LEVEL + ": " + newLevel);
+        }
+        level[skill.raw()] = newLevel;
+        progressGrains[skill.raw()] = 0;
+    }
+
+    /**
      * Awards XP for one qualifying use (PROGRESSION-SPEC.md &sect;3): prices
      * the award by the context's current satiation tier, adds the resulting
      * grains (saturating), advances the satiation tier for next time, and

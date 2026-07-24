@@ -625,7 +625,7 @@ public final class DocksPopulation implements ScenarioPopulation {
                 vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll,
                 foodMarket, PatrolRouteTable.of(patrolRoutes()), rooftopTable(), zLinks);
         // Sprint-1 progression + faction wiring: the boot-built skill universe (the committed
-        // 16-skill raws) behind the dense per-actor track table, and the 5-faction registry
+        // 18-skill raws) behind the dense per-actor track table, and the 5-faction registry
         // behind the standing ledger. Both are raws-pure boot config (identical every run);
         // membership keys are validated against the bound jobs so a jobs.json rename fails
         // the bake loudly instead of silently orphaning a faction.
@@ -640,8 +640,14 @@ public final class DocksPopulation implements ScenarioPopulation {
         // committed-raws content, draw-free, applied BEFORE the first tick so it is ordinary
         // bake-immutable state inside the persisted triad and the twin-run identity gates.
         Path namesRoot = rawsRoot.resolve("names");
+        List<NotableRaws.Notable> notables =
+                NotableRaws.load(namesRoot.resolve("notables.json"));
         Map<String, Integer> notableActors = NameForge.bindNotableActors(registry, homes,
-                NotableRaws.load(namesRoot.resolve("notables.json")), notableSpawnSites());
+                notables, notableSpawnSites());
+        // S5 WORLD "the masters of the ward": authored starting skills seeded onto the
+        // bound notables' tracks — same bake-immutable, draw-free discipline as the
+        // micro-history edges; ordinary souls stay level 0 and earn it.
+        NotableSkillsBake.apply(notables, notableActors, skillTracks);
         List<MicroHistoryBake.Bound> authoredHistories = MicroHistoryBake.bake(
                 HistoryRaws.load(namesRoot.resolve("histories.json")), notableActors,
                 relationships);
