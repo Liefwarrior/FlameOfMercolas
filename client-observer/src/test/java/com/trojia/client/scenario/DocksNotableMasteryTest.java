@@ -111,10 +111,20 @@ class DocksNotableMasteryTest {
     }
 
     private static void assertSheetShows(String notableId, String line) {
+        // Pin the mastery FACT (skill name at the authored level leads a row), not the row's
+        // full formatting — Sprint 5's sheet depth appended a progress bar + governing
+        // attribute ("Kit-Keeping     50 [--------] MGT"), and the bar/attribute suffix is
+        // the client lane's to evolve.
+        int split = line.lastIndexOf(' ');
+        String skill = line.substring(0, split);
+        String level = line.substring(split + 1);
         List<String> lines = CharacterSheetText.skillsSection(notableActor.get(notableId),
                 population.system().skillTracks()).lines();
-        assertTrue(lines.contains(line),
-                notableId + " sheet must show \"" + line + "\", saw " + lines);
+        boolean shown = lines.stream().anyMatch(
+                row -> row.startsWith(skill) && row.trim().matches(
+                        java.util.regex.Pattern.quote(skill) + "\\s+" + level + "\\b.*"));
+        assertTrue(shown, notableId + " sheet must show " + skill + " at level " + level
+                + ", saw " + lines);
     }
 
     private static int firstNonNotableActor() {
