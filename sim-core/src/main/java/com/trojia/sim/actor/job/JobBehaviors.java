@@ -50,6 +50,38 @@ public final class JobBehaviors {
     }
 
     // ======================================================================
+    // Job training (Sprint 5 "the awards wave", PROGRESSION-SPEC.md §2 map)
+    // ======================================================================
+
+    /**
+     * Awards one discrete work event's use-XP to the TRUE doer (Sprint 5 "every job trains
+     * its trade"): the job's bind-resolved {@code trainSkillRaw}/{@code trainCp} pair, at
+     * exactly the three seams that mark a completed unit of real work — anchor/farm
+     * work-unit completion, patrol corner/waypoint ARRIVAL, wander dwell completion — and
+     * NEVER per tick (§3.2 rule 4, the Morrowind Athletics lesson). The satiation context is
+     * the event's cell (§3.3): an anchor worker grinds one context toward the 25% floor
+     * while a patrol's waypoints each stay fresh — which is why the raws price patrol cp
+     * under the anchor scale (the multi-context inflation guard,
+     * {@code JobTrainingCommittedTest}).
+     *
+     * <p>Draw-free and shape-free by construction: no RNG stream is touched and no new
+     * persisted state exists — awards flow through the same {@link
+     * com.trojia.sim.actor.SkillTrackRegistry#award} path every existing site uses. XP lands
+     * on {@code self.id()} — the body doing the work, disguised or not (only SOCIAL reads
+     * key on presentedId). Beasts award nothing because no beast job declares training
+     * (raws-pinned); non-training params ({@link JobParams#TRAINS_NOTHING}) and unwired
+     * registries no-op here.</p>
+     */
+    private static void awardTraining(Actor self, ActorContext ctx, JobParams params,
+            int eventCell) {
+        if (!params.trains()) {
+            return;
+        }
+        ctx.skillTracks().award(self.id(), params.trainSkillRaw(), params.trainCp(),
+                eventCell, ctx.tick());
+    }
+
+    // ======================================================================
     // Anchor cycle (commute-aware) — the civic default for placed workers
     // ======================================================================
 
@@ -86,7 +118,7 @@ public final class JobBehaviors {
             return;
         }
         if (self.cell() == workplace) {
-            accrueWork(self, params);
+            accrueWork(self, ctx, params);
         }
     }
 
@@ -95,11 +127,14 @@ public final class JobBehaviors {
         return self.goalProgress() >= params.unitsToComplete();
     }
 
-    private static void accrueWork(Actor self, JobParams params) {
+    private static void accrueWork(Actor self, ActorContext ctx, JobParams params) {
         int workTicks = self.goalWorkTicks() + 1;
         if (workTicks >= params.workTicksPerUnit()) {
             self.setGoalProgress((short) (self.goalProgress() + 1));
             self.setGoalWorkTicks(0);
+            // Sprint 5: a completed work-unit is the anchor cycle's discrete work event —
+            // the job's trade skill trains here (context = the workplace cell being worked).
+            awardTraining(self, ctx, params, self.cell());
         } else {
             self.setGoalWorkTicks(workTicks);
         }
@@ -144,6 +179,9 @@ public final class JobBehaviors {
         }
         self.setGoalWorkTicks(0);
         self.setGoalProgress((short) (self.goalProgress() + 1));
+        // Sprint 5: the farm's completed unit is the same discrete work event as the anchor
+        // cycle's — fieldcraft trains at the plot (context = the plot cell).
+        awardTraining(self, ctx, params, self.cell());
         produceFood(self, ctx, homeCell);
     }
 
@@ -232,7 +270,7 @@ public final class JobBehaviors {
      * in this file, rather than recomputing (and re-walkability-checking) every
      * tick.
      */
-    public static void pursuePatrol(Actor self, ActorContext ctx, int radius) {
+    public static void pursuePatrol(Actor self, ActorContext ctx, int radius, JobParams params) {
         if (self.goalTargetKind() != TargetKind.CELL) {
             retargetPatrolCorner(self, ctx, radius);
         }
@@ -241,6 +279,10 @@ public final class JobBehaviors {
             self.stepAlongRoute(target, false, ctx::isWalkable, ctx.occupancy());
             return;
         }
+        // Sprint 5: reaching a beat corner is the square patrol's discrete work event —
+        // the beat's trade skill trains here (context = the corner cell; each corner is its
+        // own §3.3 context, which is why patrol cp is priced under the anchor scale).
+        awardTraining(self, ctx, params, target);
         self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
         self.setGoalTarget(TargetKind.NONE, Actor.NONE); // force next leg's corner to be revalidated
     }
@@ -289,7 +331,8 @@ public final class JobBehaviors {
      * Actor#routeFailedTo}) — is skipped by advancing to the next waypoint instead of
      * freezing on the failed leg. Draw-free, never completes.
      */
-    public static void pursueRoutePatrol(Actor self, ActorContext ctx, int routeIndex) {
+    public static void pursueRoutePatrol(Actor self, ActorContext ctx, int routeIndex,
+            JobParams params) {
         var routes = ctx.patrolRoutes();
         int count = routes.waypointCount(routeIndex);
         if (count == 0) {
@@ -298,6 +341,10 @@ public final class JobBehaviors {
         int index = Math.floorMod(self.goalProgress(), count);
         int waypoint = routes.waypoint(routeIndex, index);
         if (self.cell() == waypoint) {
+            // Sprint 5: waypoint ARRIVAL is the route patrol's discrete work event — the
+            // beat's trade skill trains here (context = the waypoint cell). The failed-leg
+            // skip below deliberately awards nothing: skipping is not arriving.
+            awardTraining(self, ctx, params, waypoint);
             self.setGoalProgress((short) ((index + 1) % count)); // arrived: next leg next tick
             return;
         }
@@ -383,6 +430,12 @@ public final class JobBehaviors {
         }
         int dwell = self.goalWorkTicks() + 1;
         if (dwell >= params.workTicksPerUnit()) {
+            // Sprint 5: a completed dwell is the wander sweep's discrete work event — the
+            // job's trade skill trains here (context = the dwell cell; the Keeper tending
+            // among the pens). Travel-budget/stall retargets above award nothing: only a
+            // dwell WORKED to completion is a qualifying use. Beast/villain wander params
+            // carry no training, so this line is a no-op for them by raws construction.
+            awardTraining(self, ctx, params, self.cell());
             retargetWander(self, ctx);
         } else {
             self.setGoalWorkTicks(dwell);

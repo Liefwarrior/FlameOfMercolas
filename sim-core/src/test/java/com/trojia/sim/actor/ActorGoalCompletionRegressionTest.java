@@ -112,7 +112,9 @@ final class ActorGoalCompletionRegressionTest {
         JobBehaviors.selectRouteStart(watch, ctx);
         boolean[] visited = new boolean[4];
         for (int tick = 0; tick < 3000 && !(visited[0] && visited[1] && visited[2] && visited[3]); tick++) {
-            JobBehaviors.pursuePatrol(watch, ctx, 15);
+            JobBehaviors.pursuePatrol(watch, ctx, 15,
+                    new JobParams(GoalKind.PATROL_ROUTE, 150, 0, 24_000, 0, 5, 1,
+                            RenewMode.IMMEDIATE, 0));
             visited[Math.floorMod(watch.goalProgress(), 4)] = true;
         }
         assertTrue(visited[0] && visited[1] && visited[2] && visited[3],

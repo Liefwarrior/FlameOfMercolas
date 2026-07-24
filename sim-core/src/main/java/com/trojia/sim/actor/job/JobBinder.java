@@ -2,6 +2,7 @@ package com.trojia.sim.actor.job;
 
 import com.trojia.sim.actor.ActorRawsValidationException;
 import com.trojia.sim.actor.ActorTypeId;
+import com.trojia.sim.progression.SkillRegistry;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -23,16 +24,41 @@ public final class JobBinder {
     /**
      * Binds {@code jobsJsonFile} against {@link Jobs#ALL}, cross-checked
      * against {@code knownActorTypes} (every civic actor type the caller has
-     * registered).
+     * registered) — the legacy skill-less overload: every {@code trainsSkill}
+     * key stays UNRESOLVED ({@link JobParams#TRAINS_NOTHING}, training
+     * dormant), matching the callers that also leave
+     * {@code SkillTrackRegistry.UNWIRED} in place (world-less bootstraps, the
+     * compound demo) where awards would no-op anyway.
      *
      * @throws ActorRawsValidationException on any 1:1, shape or coverage violation
      */
     public static JobRegistry bind(Path jobsJsonFile, List<ActorTypeId> knownActorTypes) {
+        return bind(jobsJsonFile, knownActorTypes, null);
+    }
+
+    /**
+     * Binds {@code jobsJsonFile} with the Sprint-5 training pair RESOLVED against the
+     * boot-built skill universe: each {@code trainsSkill} key becomes a raw registry index on
+     * the bound {@link JobParams}, and an unknown key is a LOUD bind failure (the frame-guard
+     * discipline — a jobs.json/skills.json drift never ships as a silent no-train).
+     *
+     * @param skills the boot-built skill universe; {@code null} degrades to the legacy
+     *               skill-less bind (training dormant)
+     * @throws ActorRawsValidationException on any 1:1/shape/coverage violation or an
+     *                                      unresolvable {@code trainsSkill} key
+     */
+    public static JobRegistry bind(Path jobsJsonFile, List<ActorTypeId> knownActorTypes,
+            SkillRegistry skills) {
         List<JobRaw> raws = JobRawsLoader.load(jobsJsonFile);
-        return bind(raws, knownActorTypes);
+        return bind(raws, knownActorTypes, skills);
     }
 
     static JobRegistry bind(List<JobRaw> raws, List<ActorTypeId> knownActorTypes) {
+        return bind(raws, knownActorTypes, null);
+    }
+
+    static JobRegistry bind(List<JobRaw> raws, List<ActorTypeId> knownActorTypes,
+            SkillRegistry skills) {
         String file = raws.isEmpty() ? "jobs.json" : raws.get(0).file();
 
         // Direction 1: no duplicate ids.
@@ -136,13 +162,26 @@ public final class JobBinder {
             }
         }
 
-        // Build: instantiate every leaf from its matched raw.
+        // Build: instantiate every leaf from its matched raw, resolving the training pair
+        // against the skill universe where one is wired (unknown key = loud bind failure).
         List<Job> jobs = new ArrayList<>(raws.size());
         for (JobRaw raw : raws) {
             Jobs.Registration reg = findRegistration(raw.id());
+            int trainSkillRaw = JobParams.TRAINS_NOTHING;
+            int trainCp = 0;
+            if (raw.trainsSkill() != null && skills != null) {
+                if (!skills.contains(raw.trainsSkill())) {
+                    throw new ActorRawsValidationException(raw.file(), "trainsSkill",
+                            "job \"" + raw.id() + "\" trains unknown skill \""
+                                    + raw.trainsSkill() + "\" (no such id in skills.json)");
+                }
+                trainSkillRaw = skills.id(raw.trainsSkill()).raw();
+                trainCp = raw.trainCp();
+            }
             JobParams params = new JobParams(raw.goalKind(), raw.priority(), raw.rhythmStart(),
                     raw.rhythmEnd(), raw.rhythmBonus(), raw.workTicksPerUnit(),
-                    raw.unitsToComplete(), raw.renewMode(), raw.cooldownTicks());
+                    raw.unitsToComplete(), raw.renewMode(), raw.cooldownTicks(),
+                    trainSkillRaw, trainCp);
             jobs.add(reg.factory().create(params, raw.cover()));
         }
         JobRegistry unresolved = JobRegistry.of(jobs, List.of());

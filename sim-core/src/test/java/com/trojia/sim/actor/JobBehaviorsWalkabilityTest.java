@@ -84,7 +84,7 @@ final class JobBehaviorsWalkabilityTest {
         JobBehaviors.selectRouteStart(watch, ctx);
         TileCursor probe = world.cursor();
         for (int tick = 0; tick < 400; tick++) {
-            JobBehaviors.pursuePatrol(watch, ctx, radius);
+            JobBehaviors.pursuePatrol(watch, ctx, radius, PATROL_PARAMS);
             assertTrue(Walkability.isWalkable(probe.moveTo(watch.cell())),
                     "actor must never stand on an unwalkable cell, tick " + tick);
             assertFalse(watch.cell() == blockedCorner || watch.cell() == blockedShrink,
@@ -105,6 +105,10 @@ final class JobBehaviorsWalkabilityTest {
 
     private static final JobParams WANDER_PARAMS = new JobParams(
             GoalKind.SCAVENGE_CIRCUIT, 150, 0, 1000, 0, 5, 1, RenewMode.IMMEDIATE, 0);
+
+    /** Training-less patrol params for the corner-walkability probe above. */
+    private static final JobParams PATROL_PARAMS = new JobParams(
+            GoalKind.PATROL_ROUTE, 150, 0, 24_000, 0, 5, 1, RenewMode.IMMEDIATE, 0);
 
     @Test
     void wanderTargetNeverLandsOnWaterAcrossManyRedraws() {

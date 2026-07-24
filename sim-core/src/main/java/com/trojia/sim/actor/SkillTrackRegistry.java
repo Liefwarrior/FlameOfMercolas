@@ -143,6 +143,37 @@ public final class SkillTrackRegistry {
     }
 
     /**
+     * An actor's currently banked progress toward its next level in a skill, in grains
+     * (Sprint 5, the Client sheet's progress-bar read): always {@code <
+     * thresholdGrains(actorId, skillRaw)} while under the level cap. Reads 0 when unwired,
+     * when the skill is absent, or when no track has materialized — the same degraded
+     * contract as {@link #level}.
+     */
+    public int progressGrains(int actorId, int skillRaw) {
+        if (skills == null || skillRaw == Actor.NONE
+                || actorId < 0 || actorId >= tracks.size()) {
+            return 0;
+        }
+        SkillTrack track = tracks.get(actorId);
+        return track == null ? 0 : track.progressGrains(SkillId.of(skillRaw));
+    }
+
+    /**
+     * The grains an actor needs to advance a skill from its CURRENT level to the next
+     * (PROGRESSION-SPEC &sect;1: {@code (level + 1) * 100 * aptNum} — the aptitude tier is
+     * the registry-global raws rational), the denominator of the Client sheet's
+     * {@code progressGrains/thresholdGrains} bar. Reads 0 when unwired or the skill is
+     * absent — clients guard the division exactly as they guard {@link #level}'s 0.
+     */
+    public int thresholdGrains(int actorId, int skillRaw) {
+        if (skills == null || skillRaw == Actor.NONE) {
+            return 0;
+        }
+        return com.trojia.sim.progression.ProgressionMath.thresholdGrains(
+                level(actorId, skillRaw), skills.get(skillRaw).aptitudeTier());
+    }
+
+    /**
      * An actor's derived attribute (PROGRESSION-SPEC &sect;5), computed LIVE from its
      * current levels via {@link AttributeCalculator#compute} — never banked, so every
      * {@link SkillLevelledEvent} is "recomputed" by construction. The skill-less base 10

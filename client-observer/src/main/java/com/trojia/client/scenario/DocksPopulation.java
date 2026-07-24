@@ -55,6 +55,7 @@ import com.trojia.sim.actor.type.Serf;
 import com.trojia.sim.actor.type.Shopkeeper;
 import com.trojia.sim.actor.type.Wastrel;
 import com.trojia.sim.progression.SkillRawsLoader;
+import com.trojia.sim.progression.SkillRegistry;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
 import com.trojia.sim.world.TileCursor;
@@ -579,8 +580,12 @@ public final class DocksPopulation implements ScenarioPopulation {
         ActorTypeStatsTable typeStats = ActorRawsLoader.load(rawsRoot.resolve("actors"));
         HouseholdRaws householdRaws = HouseholdRawsLoader.load(
                 rawsRoot.resolve("actors").resolve("household.json"));
+        // Sprint 5 (the awards wave): the skill universe loads FIRST so the job bind can
+        // resolve each jobs.json trainsSkill key to its raw index (unknown key = loud bind
+        // failure); the same boot-built registry then backs the live track table below.
+        SkillRegistry skills = SkillRawsLoader.load(rawsRoot);
         JobRegistry jobs = JobBinder.bind(rawsRoot.resolve("jobs").resolve("jobs.json"),
-                ActorTypes.allTypeIds());
+                ActorTypes.allTypeIds(), skills);
 
         ActorRegistry registry = new ActorRegistry();
         HomeRegistry homes = new HomeRegistry();
@@ -629,7 +634,7 @@ public final class DocksPopulation implements ScenarioPopulation {
         // behind the standing ledger. Both are raws-pure boot config (identical every run);
         // membership keys are validated against the bound jobs so a jobs.json rename fails
         // the bake loudly instead of silently orphaning a faction.
-        SkillTrackRegistry skillTracks = new SkillTrackRegistry(SkillRawsLoader.load(rawsRoot));
+        SkillTrackRegistry skillTracks = new SkillTrackRegistry(skills);
         FactionRegistry factionDefs = FactionRawsLoader.load(rawsRoot);
         validateFactionMembership(factionDefs, jobs);
         FactionStandings factionStandings = new FactionStandings(factionDefs);

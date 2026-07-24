@@ -12,6 +12,14 @@ package com.trojia.sim.actor.job;
  * ({@code liftChanceQ16}, {@code marksPerDay}, …) are a later extension that
  * would add fields here without changing the binder's 1:1 contract.
  *
+ * <p><b>Sprint-5 training pair</b> (PROGRESSION-SPEC.md §2's job training map): {@code
+ * trainSkillRaw} is the skill this job's completed work trains, RESOLVED at bind time to its
+ * raw registry index by {@link JobBinder} (or {@link #TRAINS_NOTHING} for the non-training
+ * set — villains, beasts, the PC seam — and for legacy skill-less binds, where training lies
+ * dormant); {@code trainCp} is the §3.1 base award in cp per discrete work event. Award
+ * seams live in {@link JobBehaviors} (unit completion / waypoint arrival / dwell completion
+ * — §3.2 rule 4: never per-tick).
+ *
  * @param goalKind         legibility/validation tag (§10.3 item 5)
  * @param priority         base JOB-band score, {@code [100, 299]} (§10.3 item 6)
  * @param rhythmWindowStart tick-of-day window start, {@code [0, DAY)}
@@ -21,6 +29,8 @@ package com.trojia.sim.actor.job;
  * @param unitsToComplete  progress units to reach {@code isComplete()}
  * @param renewMode        what happens after completion
  * @param cooldownTicks    cooldown length when {@code renewMode == COOLDOWN}
+ * @param trainSkillRaw    resolved skill raw this job trains, or {@link #TRAINS_NOTHING}
+ * @param trainCp          §3.1 base cp per discrete work event ({@code 0} when untrained)
  */
 public record JobParams(
         GoalKind goalKind,
@@ -31,11 +41,28 @@ public record JobParams(
         int workTicksPerUnit,
         int unitsToComplete,
         RenewMode renewMode,
-        int cooldownTicks) {
+        int cooldownTicks,
+        int trainSkillRaw,
+        int trainCp) {
 
     /** The JOB behavior score band (ACTORS-SPEC.md §1.2). */
     public static final int JOB_BAND_MIN = 100;
     public static final int JOB_BAND_MAX = 299;
+
+    /** {@code trainSkillRaw} sentinel: this job's work trains no skill. */
+    public static final int TRAINS_NOTHING = -1;
+
+    /**
+     * Training-less convenience constructor (the pre-Sprint-5 shape): every field as before,
+     * {@code trainSkillRaw = }{@link #TRAINS_NOTHING}{@code , trainCp = 0}. Kept so goal-only
+     * tests and synthetic params never mention training.
+     */
+    public JobParams(GoalKind goalKind, int priority, int rhythmWindowStart, int rhythmWindowEnd,
+            int rhythmBonus, int workTicksPerUnit, int unitsToComplete, RenewMode renewMode,
+            int cooldownTicks) {
+        this(goalKind, priority, rhythmWindowStart, rhythmWindowEnd, rhythmBonus,
+                workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, TRAINS_NOTHING, 0);
+    }
 
     public JobParams {
         if (priority < JOB_BAND_MIN || priority > JOB_BAND_MAX) {
@@ -70,6 +97,23 @@ public record JobParams(
         if (cooldownTicks < 0) {
             throw new IllegalArgumentException("cooldownTicks must be >= 0: " + cooldownTicks);
         }
+        if (trainSkillRaw < 0 && trainSkillRaw != TRAINS_NOTHING) {
+            throw new IllegalArgumentException(
+                    "trainSkillRaw must be a raw index or TRAINS_NOTHING: " + trainSkillRaw);
+        }
+        if (trainSkillRaw == TRAINS_NOTHING && trainCp != 0) {
+            throw new IllegalArgumentException(
+                    "trainCp without a trained skill (the pair is both-or-neither): " + trainCp);
+        }
+        if (trainSkillRaw != TRAINS_NOTHING && trainCp < 1) {
+            throw new IllegalArgumentException(
+                    "a trained skill needs trainCp >= 1, got " + trainCp);
+        }
+    }
+
+    /** Whether this job's completed work trains a skill (resolved at bind time). */
+    public boolean trains() {
+        return trainSkillRaw != TRAINS_NOTHING;
     }
 
     /** Whether {@code tickOfDay} falls inside {@code [rhythmWindowStart, rhythmWindowEnd)}. */

@@ -182,6 +182,13 @@ observer entity id (sneak uses) · Cracksmanship → lock/trap instance id (each
 awards only once per re-lock) · Kit-Keeping → item id · Mixtures → recipe id · Channeling →
 item id · Streetwise → informant id · The Flame → constant key.
 
+**Civic job training (Sprint 5, the awards wave):** contextKey = the discrete work event's
+CELL — the anchor/plot cell for a completed work-unit, the corner/waypoint cell for a patrol
+arrival, the dwell cell for a completed wander dwell. An anchor worker therefore grinds one
+context toward the 25% floor (self-regulating), while a patrol's several waypoints each stay
+fresh — which is why the raws price patrol cp under the anchor scale (`watch.patrol` 10 vs
+anchor 25, the multi-context inflation guard pinned by `JobTrainingCommittedTest`).
+
 ### 3.4 Determinism & RNG streams
 
 XP awards are pure functions of the triggering event — **zero RNG draws**. Success checks

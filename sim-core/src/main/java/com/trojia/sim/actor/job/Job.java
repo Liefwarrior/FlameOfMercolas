@@ -351,9 +351,9 @@ public sealed abstract class Job {
                 // legacy square beat unchanged.
                 int route = ctx.patrolRoutes().routeContaining(self.anchorCell());
                 if (route >= 0) {
-                    JobBehaviors.pursueRoutePatrol(self, ctx, route);
+                    JobBehaviors.pursueRoutePatrol(self, ctx, route, params());
                 } else {
-                    JobBehaviors.pursuePatrol(self, ctx, BEAT_RADIUS);
+                    JobBehaviors.pursuePatrol(self, ctx, BEAT_RADIUS, params());
                 }
             }
 
