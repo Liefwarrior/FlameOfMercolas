@@ -183,6 +183,40 @@ public final class JobBehaviors {
         // cycle's — fieldcraft trains at the plot (context = the plot cell).
         awardTraining(self, ctx, params, self.cell());
         produceFood(self, ctx, homeCell);
+        // Sprint 5 "mastery pays": a veteran's hands yield more. Each completed unit accrues
+        // fieldcraftLevel toward a 100-point bonus threshold; every crossing mints ONE bonus
+        // FOOD through the SAME demand-capped cascade (LARDER_CAP -> atrium -> SHOP_STOCK_CAP
+        // + shop funds — the caps are the blast-radius bound; recordFoodMinted keeps the
+        // conservation identity by construction). The accumulator is realized STATELESSLY off
+        // the already-persisted goalProgress — bonus = crossings of (level * units)/100 within
+        // the cycle — so a resumed save yields byte-identically to a continuous run and no new
+        // persisted scalar exists; the sub-100 residual at cycle end deliberately drops.
+        int bonus = yieldBonusUnits(masteryLevel(self, ctx, params), self.goalProgress());
+        for (int i = 0; i < bonus; i++) {
+            produceFood(self, ctx, homeCell);
+        }
+    }
+
+    /** The doer's live level in the job's own trained skill (0 untrained/unwired). */
+    private static int masteryLevel(Actor self, ActorContext ctx, JobParams params) {
+        if (!params.trains()) {
+            return 0;
+        }
+        return ctx.skillTracks().level(self.id(), params.trainSkillRaw());
+    }
+
+    /**
+     * Bonus FOOD earned by the {@code completedUnits}-th work-unit of the current cycle at
+     * mastery {@code level}: the number of 100-point boundaries {@code level * units} crosses
+     * at this unit — a pure integer accumulator reconstructed from persisted state (level ~
+     * +1% yield per level: 0 at level 0, ~1 per 3 units at 40, capped by construction at
+     * {@code level/100 + 1} per unit). Public for the mastery-yield unit test (pure math).
+     */
+    public static int yieldBonusUnits(int level, int completedUnits) {
+        if (level <= 0 || completedUnits <= 0) {
+            return 0;
+        }
+        return (level * completedUnits) / 100 - (level * (completedUnits - 1)) / 100;
     }
 
     /**
@@ -648,6 +682,24 @@ public final class JobBehaviors {
 
     /** Chebyshev radius (same z only) within which a working Villain can be spotted. */
     private static final int ARREST_DETECT_RADIUS = 8;
+    /** Hard cap on the streetwise-deepened detect/sense radius (Sprint 5 "mastery pays"). */
+    public static final int SENSE_RADIUS_CAP = 11;
+    /** Streetwise levels per +1 tile of a guard's detect/sense radius. */
+    public static final int SENSE_LEVELS_PER_TILE = 25;
+
+    /**
+     * A guard's streetwise-deepened sense radius (Sprint 5 "mastery pays"): {@code base +
+     * streetwise/25}, HARD-CAPPED at {@link #SENSE_RADIUS_CAP} — a veteran of the ward
+     * senses further, bounded so the justice pipeline's equilibrium can only shift inside a
+     * 3-tile band (the 274/691 house-arrest incident is the cautionary tale). Reads the
+     * guard's TRUE body (skill reads never key on presentedId). Degrades to {@code base}
+     * exactly for every guard under streetwise 25 and wherever tracks are unwired.
+     */
+    public static int guardSenseRadius(int base, ActorContext ctx, int guardId) {
+        var tracks = ctx.skillTracks();
+        int radius = base + tracks.level(guardId, tracks.streetwiseRaw()) / SENSE_LEVELS_PER_TILE;
+        return Math.min(SENSE_RADIUS_CAP, radius);
+    }
     /** Per-exposure arrest chance, Q16 (~10%: 6554/65536) — placeholder pending Eli's numbers. */
     private static final int ARREST_CHANCE_Q16 = 6554;
     private static final int Q16_SCALE = 65536;
@@ -707,7 +759,10 @@ public final class JobBehaviors {
     /**
      * Index-based scan (bounded: ~14 active Villains x one ~350-actor scan every ~30-40 ticks
      * each — cheaper than {@code ActorsSystem.wielderId()}'s precedent, which scans every
-     * tick per deferring actor) for any same-z {@link Job.Watch} within detection radius.
+     * tick per deferring actor) for any same-z {@link Job.Watch} within detection radius —
+     * since Sprint 5 EACH watch's own streetwise deepens its radius ({@link
+     * #guardSenseRadius}, capped): a rookie spots at 8, Sergeant Vess at 9, a level-75
+     * veteran would top out at 11.
      */
     private static boolean watchIsNearby(Actor self, ActorContext ctx) {
         ActorRegistry registry = ctx.registry();
@@ -719,7 +774,8 @@ public final class JobBehaviors {
                 continue;
             }
             if (ctx.jobs().get(other.jobOrdinal()) instanceof Job.Watch
-                    && ActorGeometry.chebyshev(selfCell, other.cell()) <= ARREST_DETECT_RADIUS) {
+                    && ActorGeometry.chebyshev(selfCell, other.cell())
+                            <= guardSenseRadius(ARREST_DETECT_RADIUS, ctx, other.id())) {
                 return true;
             }
         }

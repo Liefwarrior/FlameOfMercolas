@@ -47,14 +47,29 @@ final class ApprehendLenienceTest {
 
     @Test
     void leniencePermilleIsCleanAtNonNegativeStandingAndErodesToTheFloor() {
-        assertEquals(1000, ApprehendPolicy.warnLeniencePermille(0),
+        assertEquals(1000, ApprehendPolicy.warnLeniencePermille(0, 0),
                 "a clean citizen is always warned — the pre-faction baseline");
-        assertEquals(1000, ApprehendPolicy.warnLeniencePermille(75),
+        assertEquals(1000, ApprehendPolicy.warnLeniencePermille(75, 0),
                 "positive standing never exceeds the customary courtesy");
-        assertEquals(800, ApprehendPolicy.warnLeniencePermille(-20), "one arrest: 20% harder");
-        assertEquals(400, ApprehendPolicy.warnLeniencePermille(-60));
-        assertEquals(250, ApprehendPolicy.warnLeniencePermille(-100),
+        assertEquals(800, ApprehendPolicy.warnLeniencePermille(-20, 0), "one arrest: 20% harder");
+        assertEquals(400, ApprehendPolicy.warnLeniencePermille(-60, 0));
+        assertEquals(250, ApprehendPolicy.warnLeniencePermille(-100, 0),
                 "even the most-hated draws the 1-in-4 floor");
+    }
+
+    @Test
+    void streetwiseTalksAStainedRecordBackTowardTheWarningInsideTheClamp() {
+        // Sprint 5 "mastery pays": +level/2 permille — monotonic in level, ceiling-capped.
+        assertEquals(820, ApprehendPolicy.warnLeniencePermille(-20, 40),
+                "a level-40 tongue eases one arrest's erosion by 2%");
+        assertEquals(425, ApprehendPolicy.warnLeniencePermille(-60, 50));
+        assertEquals(1000, ApprehendPolicy.warnLeniencePermille(0, 100),
+                "a clean citizen was already at the ceiling — mastery never beats clean");
+        assertEquals(250, ApprehendPolicy.warnLeniencePermille(-200, 100),
+                "the floor still floors: deep hatred outweighs the sharpest tongue");
+        assertTrue(ApprehendPolicy.warnLeniencePermille(-40, 45)
+                        > ApprehendPolicy.warnLeniencePermille(-40, 0),
+                "at equal stain the street-smart offender is warned more often");
     }
 
     // ======================================================================

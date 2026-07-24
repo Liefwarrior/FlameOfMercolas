@@ -190,8 +190,14 @@ public final class ApprehendPolicy implements BehaviorPolicy {
             // negative standing erodes the courtesy toward the floor: a staged crime spree
             // measurably hardens subsequent Watch treatment (the DoD probe). The draw is
             // attributed to the GUARD (it is the guard deciding), on the shared counter.
+            // Sprint 5 "mastery pays": the offender's TRUE streetwise talks (+level/2
+            // permille, inside the same clamp) — the justice pipeline's first true skill
+            // read. A street-smart body eases a stained record back toward the warning;
+            // a clean citizen was already at the 1000 ceiling, so nothing moves for them.
             int lenience = warnLeniencePermille(
-                    ctx.factionStandings().watchStanding(offender.identity().presentedId()));
+                    ctx.factionStandings().watchStanding(offender.identity().presentedId()),
+                    ctx.skillTracks().level(offender.id(),
+                            ctx.skillTracks().streetwiseRaw()));
             long draw = ctx.draw(ActorRngStream.WATCH_LENIENCE, self.id(),
                     ctx.nextDrawIndex(self.id()));
             if (SkillChecks.passes(draw, lenience)) {
@@ -220,14 +226,19 @@ public final class ApprehendPolicy implements BehaviorPolicy {
     static final int LENIENCE_FLOOR_PERMILLE = 250;
     /** Permille of lenience lost per point of NEGATIVE Watch standing. */
     static final int LENIENCE_STANDING_TO_PERMILLE = 10;
+    /** Streetwise levels per +1 permille of talked-back lenience (Sprint 5 "mastery pays"). */
+    static final int LENIENCE_STREETWISE_DIVISOR = 2;
 
     /**
-     * The warn-vs-fine lenience threshold (permille) for an offender's Watch standing:
-     * {@code clamp(1000 + 10 * standing, 250, 1000)}. Pure, integer-only; package-visible
-     * for the crime-spree treatment test.
+     * The warn-vs-fine lenience threshold (permille) for an offender's Watch standing and
+     * TRUE streetwise: {@code clamp(1000 + 10 * standing + streetwise / 2, 250, 1000)} — the
+     * skill term is capped at +50 permille by the level cap itself and the whole sum by the
+     * 1000 ceiling, so mastery eases a stained record without ever beating a clean one.
+     * Pure, integer-only; package-visible for the crime-spree treatment test.
      */
-    static int warnLeniencePermille(int watchStanding) {
-        int raw = LENIENCE_BASE_PERMILLE + LENIENCE_STANDING_TO_PERMILLE * watchStanding;
+    static int warnLeniencePermille(int watchStanding, int offenderStreetwise) {
+        int raw = LENIENCE_BASE_PERMILLE + LENIENCE_STANDING_TO_PERMILLE * watchStanding
+                + offenderStreetwise / LENIENCE_STREETWISE_DIVISOR;
         return Math.max(LENIENCE_FLOOR_PERMILLE, Math.min(LENIENCE_BASE_PERMILLE, raw));
     }
 
@@ -520,12 +531,17 @@ public final class ApprehendPolicy implements BehaviorPolicy {
         ActorRegistry registry = ctx.registry();
         int selfCell = self.cell();
         int selfZ = PackedPos.z(selfCell);
+        // Sprint 5 "mastery pays": THIS guard's streetwise deepens its own loiter-sense
+        // radius (base 8 + level/25, hard-capped at 11 — JobBehaviors.guardSenseRadius).
+        // Identical in score() and act() by construction (same pure read), so the
+        // acquisition contract holds.
+        int senseRadius = JobBehaviors.guardSenseRadius(SENSE_RADIUS, ctx, self.id());
         for (int i = 0; i < registry.size(); i++) {
             Actor other = registry.get(i);
             if (other.id() == self.id() || PackedPos.z(other.cell()) != selfZ) {
                 continue;
             }
-            if (ActorGeometry.chebyshev(selfCell, other.cell()) > SENSE_RADIUS) {
+            if (ActorGeometry.chebyshev(selfCell, other.cell()) > senseRadius) {
                 continue;
             }
             if (other.hasStatus(StatusBit.HELD) || other.hasStatus(StatusBit.EXECUTED)) {

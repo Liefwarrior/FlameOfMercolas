@@ -58,9 +58,17 @@ class DocksProgressionTest {
 
         // The trail observers: who was seen scavenging (the ReasonCode stamps), and every
         // streetwise level-up row harvested from the client-seam ring BEFORE it can be
-        // overwritten (rows are read tick-by-tick off the monotonic counter).
+        // overwritten (rows are read tick-by-tick off the monotonic counter). Sprint 5:
+        // the same harvest also collects every CIVIC-ONLY job-skill row (fieldcraft/
+        // seacraft/kit_keeping — skills with NO award site outside the job seams), the
+        // awards wave's own reconstructable trail.
+        int fieldcraft = tracks.skills().id("fieldcraft").raw();
+        int seacraft = tracks.skills().id("seacraft").raw();
+        int kitKeeping = tracks.skills().id("kit_keeping").raw();
+        int channeling = tracks.skills().id("channeling").raw();
         HashSet<Integer> seenScavenging = new HashSet<>();
         List<long[]> streetwiseLevelUps = new ArrayList<>(); // {tick, actorId, newLevel}
+        List<long[]> jobSkillLevelUps = new ArrayList<>();   // {tick, actorId, skillRaw}
         SkillLevelLog log = tracks.levelLog();
         long harvested = 0;
 
@@ -77,6 +85,10 @@ class DocksProgressionTest {
                 if (log.skillRawAt(r) == tracks.streetwiseRaw()) {
                     streetwiseLevelUps.add(new long[] {log.tickAt(r), log.actorIdAt(r),
                             log.newLevelAt(r)});
+                }
+                int raw = log.skillRawAt(r);
+                if (raw == fieldcraft || raw == seacraft || raw == kitKeeping) {
+                    jobSkillLevelUps.add(new long[] {log.tickAt(r), log.actorIdAt(r), raw});
                 }
             }
             harvested = total;
@@ -127,6 +139,83 @@ class DocksProgressionTest {
                 "three days of docks justice must stain someone's Watch standing");
         assertTrue(merchantsWarmed > 0,
                 "three days of provisioning must warm the Merchants to the paying mass");
+
+        // ================================================================
+        // Sprint 5 — the awards wave DoD (every job trains its trade)
+        // ================================================================
+        var jobs = population.jobs();
+
+        // (a) Coverage: >= 60% of employed citizens (bound to a TRAINING job) hold their
+        // job's skill at >= 1 after three days of ordinary work.
+        int employed = 0;
+        int holdingTheirTrade = 0;
+        List<Integer> anchorWorkerLevels = new ArrayList<>();
+        for (int i = 0; i < registry.size(); i++) {
+            int ordinal = registry.get(i).jobOrdinal();
+            if (ordinal < 0) {
+                continue;
+            }
+            var params = jobs.get(ordinal).params();
+            if (!params.trains()) {
+                continue;
+            }
+            employed++;
+            int level = tracks.level(i, params.trainSkillRaw());
+            if (level >= 1) {
+                holdingTheirTrade++;
+            }
+            // The full-time anchor-cycle trades (no-cooldown workplace quotas): the rate
+            // math's reference population. TEND_PLOT (farm cooldown), TEND_BEASTS (wander)
+            // and PATROL_ROUTE (waypoint cadence, cp 10) are deliberately outside the band.
+            switch (params.goalKind()) {
+                case HAUL_WORK, CREW_SHIP, STALL_CYCLE, VEND_WARES, ALMS_CYCLE, CARRY_RUN ->
+                        anchorWorkerLevels.add(level);
+                default -> { }
+            }
+        }
+        assertTrue(employed > 100, "sanity: the docks employ a real training workforce");
+        assertTrue(holdingTheirTrade * 100 >= employed * 60,
+                "three days must teach >= 60% of the employed their trade (>= level 1): "
+                        + holdingTheirTrade + "/" + employed);
+
+        // (b) The visible-but-not-inflationary band: median full-time anchor-worker level
+        // in 5..10 at day 3 (the cp-tuning loop's signed-off bar).
+        anchorWorkerLevels.sort(null);
+        int median = anchorWorkerLevels.get(anchorWorkerLevels.size() / 2);
+        assertTrue(median >= 5 && median <= 10,
+                "median anchor-worker job-skill must sit in the visible 5..10 band at day 3, "
+                        + "got " + median + " over " + anchorWorkerLevels.size() + " workers");
+
+        // (c) Zero beast awards: no beast body ever banks a grain of the civic trades
+        // (fieldcraft/seacraft/kit_keeping/channeling have NO award site outside the job
+        // seams and quest raws touch none of them; streetwise is excluded from this probe —
+        // its scavenge/quest sites are citizen paths, not wave seams).
+        for (int i = 0; i < registry.size(); i++) {
+            String type = registry.get(i).typeId().key();
+            if (!(type.equals("feral") || type.equals("cat") || type.equals("mouse")
+                    || type.equals("animal"))) {
+                continue;
+            }
+            for (int raw : new int[] {fieldcraft, seacraft, kitKeeping, channeling}) {
+                assertEquals(0, tracks.level(i, raw),
+                        type + "#" + i + " must never level a civic trade");
+                assertEquals(0, tracks.progressGrains(i, raw),
+                        type + "#" + i + " must never bank a civic-trade grain");
+            }
+        }
+
+        // (d) The wave's trail reconstructs: every harvested civic-only job-skill row names
+        // an actor whose BOUND job trains exactly that skill — the WHY of every level-up is
+        // the job that taught it.
+        assertTrue(!jobSkillLevelUps.isEmpty(),
+                "three days of work must produce fieldcraft/seacraft/kit_keeping level-ups");
+        for (long[] row : jobSkillLevelUps) {
+            int actorId = (int) row[1];
+            int ordinal = registry.get(actorId).jobOrdinal();
+            assertTrue(ordinal >= 0, "a job-skill leveller must hold a job, actor#" + actorId);
+            assertEquals((int) row[2], jobs.get(ordinal).params().trainSkillRaw(),
+                    "actor#" + actorId + "'s level-up must reconstruct to its own bound job");
+        }
     }
 
     @Test

@@ -255,23 +255,23 @@ public final class DocksActorsMain {
         var tracks = population.system().skillTracks();
         var standings = population.system().factionStandings();
         var registry = population.registry();
-        int openHand = 0;
-        int grit = 0;
-        int streetwise = 0;
-        int skyrunning = 0;
+        var skills = tracks.skills();
+        // Sprint 5 (the awards wave): the report goes DYNAMIC over the whole skill
+        // universe — with every job training its trade, the old 4-skill census would
+        // miss the point of the sprint. Ascending raw-id order, so twin runs stay
+        // byte-identical; skills nobody holds print nothing (the empty rows are noise).
+        int[] holders = new int[skills.size()];
         int bestId = -1;
         int bestLevelSum = 0;
         for (int i = 0; i < registry.size(); i++) {
-            int oh = tracks.level(i, tracks.openHandRaw());
-            int gr = tracks.level(i, tracks.gritRaw());
-            int sw = tracks.level(i, tracks.streetwiseRaw());
-            int sk = tracks.level(i, tracks.skyrunningRaw());
-            openHand += oh > 0 ? 1 : 0;
-            grit += gr > 0 ? 1 : 0;
-            streetwise += sw > 0 ? 1 : 0;
-            skyrunning += sk > 0 ? 1 : 0;
-            if (oh + gr + sw + sk > bestLevelSum) {
-                bestLevelSum = oh + gr + sw + sk;
+            int sum = 0;
+            for (int s = 0; s < skills.size(); s++) {
+                int level = tracks.level(i, s);
+                holders[s] += level > 0 ? 1 : 0;
+                sum += level;
+            }
+            if (sum > bestLevelSum) {
+                bestLevelSum = sum;
                 bestId = i;
             }
         }
@@ -292,13 +292,22 @@ public final class DocksActorsMain {
         System.out.println();
         System.out.println("================ PROGRESSION PROOF (the character sheet is alive) ===========");
         System.out.println("level-ups recorded (monotonic): " + tracks.levelLog().totalRecorded());
-        System.out.println("souls holding a nonzero skill: open_hand=" + openHand + " grit=" + grit
-                + " streetwise=" + streetwise + " skyrunning=" + skyrunning);
+        StringBuilder census = new StringBuilder("souls holding a nonzero skill:");
+        for (int s = 0; s < skills.size(); s++) {
+            if (holders[s] > 0) {
+                census.append(' ').append(skills.get(s).key()).append('=').append(holders[s]);
+            }
+        }
+        System.out.println(census);
         if (bestId >= 0) {
-            System.out.println("most-trained soul: actor#" + bestId
-                    + " open_hand=" + tracks.level(bestId, tracks.openHandRaw())
-                    + " grit=" + tracks.level(bestId, tracks.gritRaw())
-                    + " streetwise=" + tracks.level(bestId, tracks.streetwiseRaw()));
+            StringBuilder best = new StringBuilder("most-trained soul: actor#" + bestId);
+            for (int s = 0; s < skills.size(); s++) {
+                int level = tracks.level(bestId, s);
+                if (level > 0) {
+                    best.append(' ').append(skills.get(s).key()).append('=').append(level);
+                }
+            }
+            System.out.println(best);
         }
         System.out.println("standings moved: watch=" + watchMoved + " merchants=" + merchantsMoved);
         if (mostWantedId >= 0) {

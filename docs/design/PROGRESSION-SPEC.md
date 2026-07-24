@@ -105,6 +105,19 @@ watch → streetwise, clergy → channeling; villains (their crimes already trai
 the PC seam train nothing. `trainCp` values (anchor jobs 25, patrol 10) are placeholders
 for the Sim lane's soak-tuning loop.
 
+**Mastery pays (Sprint 5 feedback reads, each blast-radius-bounded by construction):**
+(a) *farm bonus yield* — each completed farm unit accrues `fieldcraftLevel` toward a
+100-point bonus threshold; every crossing mints ONE bonus FOOD through the same
+demand-capped cascade (LARDER_CAP → atrium → SHOP_STOCK_CAP + shop funds), realized
+statelessly off persisted `goalProgress` (~+1% yield per level, sub-100 residual drops at
+cycle end); (b) *veteran guard sense* — a guard's detect/sense radius is
+`8 + streetwise/25`, HARD-CAPPED at 11 (`JobBehaviors.guardSenseRadius`, both the
+villain-exposure and the APPREHEND loiter scans); (c) *skill-priced lenience* — the
+warn-vs-fine draw threshold gains `+ offenderStreetwise/2` permille inside the existing
+[250, 1000] clamp (mastery eases a stained record, never beats a clean one); (d) *veteran
+haggling* — no formula change: the existing clamped `streetwise/25` Barter discount deepens
+on its own as the awards wave raises levels (pinned by test so the drift is measured).
+
 **North-star guard on #15 (binding, LOOSENED 2026-07-12 per Eli):** Streetwise never modifies
 disposition, deference, or any social outcome — social power is STATIC and maxed; no
 Streetwise number ever changes how an NPC feels about the Wielder or affects a combat draw.
