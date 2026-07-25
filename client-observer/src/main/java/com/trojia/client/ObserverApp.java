@@ -56,6 +56,7 @@ import com.trojia.client.inspect.ToastQueue;
 import com.trojia.client.render.ActorRenderer;
 import com.trojia.client.render.AmbientLight;
 import com.trojia.client.render.DepthVision;
+import com.trojia.client.render.FishingSpotRenderer;
 import com.trojia.client.render.InspectorRenderer;
 import com.trojia.client.render.JournalRenderer;
 import com.trojia.client.render.LampGlowMap;
@@ -163,6 +164,7 @@ public final class ObserverApp extends ApplicationAdapter {
     // Populated fixtures only (null for the tavern):
     private DepthVision depthVision;
     private ActorRenderer actorRenderer;
+    private FishingSpotRenderer fishingSpotRenderer;
     private SpriteSheet spriteSheet;
     private InspectorFaces inspectorFaces;
     private ScenarioPopulation population;
@@ -365,6 +367,13 @@ public final class ObserverApp extends ApplicationAdapter {
             this.depthVision = new DepthVision(world);
             this.actorRenderer = new ActorRenderer(population.registry(), spriteIndex,
                     spriteSheet, lampGlow, depthVision);
+            // Fishing-spot overlay (S6): the sim-side registry drawn in world space,
+            // z-order terrain -> water -> SPOTS -> actors. Omniscient while observing;
+            // in Play mode only the played soul's sim-confirmed-perceived spots draw.
+            this.fishingSpotRenderer = new FishingSpotRenderer(
+                    population.system().fishingSpots(), depthVision,
+                    population.system().skillTracks(), loaded.worldSeed(),
+                    () -> playMode.active() ? playMode.playedActorId() : Actor.NONE);
 
             // Inspector: click-to-select panel, all-population event feed, follow-camera.
             this.inspector = new InspectorState();
@@ -593,6 +602,10 @@ public final class ObserverApp extends ApplicationAdapter {
         // below stays untinted (both renderers restore the batch to white).
         AmbientLight ambient = AmbientLight.at(driver.currentTick());
         renderer.draw(batch, camera, zLevel.z(), ambient);
+        if (fishingSpotRenderer != null) {
+            // Between water and actors (spec z-order): a fisher stands IN the ripple.
+            fishingSpotRenderer.draw(batch, camera, zLevel.z(), icons.whitePixel());
+        }
         if (actorRenderer != null) {
             actorRenderer.draw(batch, camera, zLevel.z(), ambient);
         }
