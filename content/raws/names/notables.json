@@ -129,7 +129,7 @@
       "type": "shopkeeper",
       "site": "K20_MERLES",
       "match": "home",
-      "skills": { "seacraft": 40 },
+      "skills": { "seacraft": 40, "fishing": 30 },
       "bio": "Boathouse-keeper and waterman's hire at the pier root, with two hands to bail and caulk. The floor over the water has a section that lifts, and the night tide has seen it lifted. He rows out for honest coin by day and does not discuss the other hours."
     },
     {
@@ -410,6 +410,16 @@
       "match": "home",
       "skills": { "kit_keeping": 12 },
       "bio": "Keeper of the lodging house on the counting-row, four doors west of the Counting-House, a widow who works Harl's yard by day and lets her upstairs rooms to counter-men and copy-clerks. The vanished clerk was her brother's son, Tam Sedge, lodged under her roof since he first took the ink. She keeps his room paid and swept and his lamp filled, and she has stopped asking the Watch, because the Watch stopped writing it down."
+    },
+    {
+      "id": "haddie",
+      "name": "Haddie Longline",
+      "epithet": "the line-fisher",
+      "type": "serf",
+      "site": "FISHBONE_FINGER_03",
+      "match": "anchor",
+      "skills": { "fishing": 40, "seacraft": 15 },
+      "bio": "The ward's master line-fisher, first onto the fishbone pier every morning and last off it, working the finger_03 stand over the deep south gap. She reads the harbor the way Crell reads a ledger: which water is working, which is quiet, and which is wrong. Lodges at the Mission since the winter her boat went across Fenner's counter, and has out-fished every man with a hull ever since - Merle rows better, and knows it, and buys her catch anyway."
     }
   ],
   "notes": "S5 'the masters of the ward': the optional skills map ({\"key\": level}, skills.json vocabulary, levels 1..100) seeds the bound actor's SkillTrackRegistry track at bake - masters ~30-50, journeymen ~10-25, authored ONLY where the bio already claims the craft; ordinary souls (and Squall, who deliberately remembers nothing aloud; Crumb/Neddry/Tolley) stay 0 and earn it. Levels are placeholder pending Eli's blessing pass."

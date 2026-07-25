@@ -81,6 +81,9 @@ class DocksIdentityTest {
         // S3 "The Vanished Clerk" quest cast: the 41st notable — the clerk's landlady,
         // bound onto an existing lodger-serf at the rooming house by the Counting-House.
         pins.put("sedge", new String[] {"Widow Maren Sedge", "serf"});
+        // S6 fishing pass: the 42nd notable — the ward's master line-fisher, bound by
+        // anchor onto the first fisher crewing the fishbone finger_03 stand.
+        pins.put("haddie", new String[] {"Haddie Longline", "serf"});
         return pins;
     }
 
@@ -200,8 +203,9 @@ class DocksIdentityTest {
                         "notable \"" + notableId + "\" bound twice");
             }
         }
-        assertEquals(41, actorByNotable.size(),
-                "the Forty Notables plus the S3 quest cast (sedge) are exactly forty-one");
+        assertEquals(42, actorByNotable.size(),
+                "the Forty Notables + the S3 quest cast (sedge) + the S6 master fisher"
+                        + " (haddie) are exactly forty-two");
         for (Map.Entry<String, String[]> pin : FORTY.entrySet()) {
             Integer actorId = actorByNotable.get(pin.getKey());
             assertTrue(actorId != null, "notable \"" + pin.getKey() + "\" is unbound");

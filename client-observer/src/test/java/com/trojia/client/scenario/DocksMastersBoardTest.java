@@ -23,9 +23,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DocksMastersBoardTest {
 
-    /** The five crafts jobs.json declares as trained (the awards wave's working set). */
+    /**
+     * The crafts jobs.json declares as trained (the awards wave's working set; S6 adds
+     * fishing — the fishbone crew's trade, its adept floor seeded by the master fisher).
+     */
     private static final String[] JOB_TRAINED =
-            {"channeling", "fieldcraft", "kit_keeping", "seacraft", "streetwise"};
+            {"channeling", "fieldcraft", "fishing", "kit_keeping", "seacraft", "streetwise"};
 
     private static final int HALF_DAY = 12_000;
 

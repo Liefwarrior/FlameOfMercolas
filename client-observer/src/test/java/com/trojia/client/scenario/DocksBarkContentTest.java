@@ -37,9 +37,12 @@ class DocksBarkContentTest {
             "panicked", "harried");
     /** S5: the mastery-band vocabulary (FROZEN for the client's skill-band selector). */
     private static final List<String> MASTERY_BANDS = List.of("novice", "adept", "master");
-    /** S5: the five job-trained skills whose mastery tables ship the full band triple. */
+    /**
+     * The job-trained skills whose mastery tables ship the full band triple (S5's five
+     * plus S6's fishing — the fisher crew's trade barks).
+     */
     private static final List<String> TRAINED_SKILLS = List.of(
-            "fieldcraft", "seacraft", "kit_keeping", "streetwise", "channeling");
+            "fieldcraft", "seacraft", "kit_keeping", "streetwise", "channeling", "fishing");
     /** The six spotlight notables the sprint ruling calls out for a HANDFUL of lines each. */
     private static final List<String> SPOTLIGHT = List.of("crell", "vess", "maell", "cobb",
             "gilt", "finch");

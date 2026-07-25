@@ -948,6 +948,13 @@
         "The Watch wrote his name once and never again. I write it every rent-day.",
         "Sweep, trim the lamp, turn the key. A room forgets a man faster than a grave does."
       ] },
+    { "key": "personal.haddie", "canonAnchor": "notables.json:haddie",
+      "rows": [
+        "First on the pier, last off it. The fish keep clerk's hours; I don't.",
+        "Sold the morning's catch across a counter. Coin for fish, fish for coin - simplest honest trade in the ward.",
+        "You want the big ones, you cast off the pier head and you keep your mouth shut.",
+        "The water past the spine was wrong this spring. It's wrong again now. Nobody pays a fisher to say so."
+      ] },
 
     { "key": "gossip",
       "rows": [
@@ -1225,7 +1232,26 @@
         "Stones fill to my hand the way the tide answers the moon.",
         "I have poured more light into this ward than the sun owes it.",
         "The Flame gives freely. The craft is in the not-spilling."
+      ] },
+
+    { "key": "mastery.fishing.novice",
+      "rows": [
+        "Line's wet. That's the whole of my learning so far.",
+        "They say you read the water. All I read is cold.",
+        "Lost two hooks to the pilings today. The pilings are winning."
+      ] },
+    { "key": "mastery.fishing.adept",
+      "rows": [
+        "See that ripple past the piling? That's supper telling on itself.",
+        "Cast where the gulls argue. They don't argue over nothing.",
+        "The harbor's got working water and quiet water. You learn which is which."
+      ] },
+    { "key": "mastery.fishing.master",
+      "rows": [
+        "The harbor talks. Most men never shut up long enough to hear it.",
+        "I could tell you where they bite. You could also learn to see.",
+        "Deep water off the pier head runs heavy. It also runs honest."
       ] }
   ],
-  "notes": "Sprint-2 WORLD bark text tables (Trojian voice, docks register). Key vocabulary is BarkSelector's contract: mood.<state> and greet.<family>.<attitude>.<time> with the documented sparse fallback (a.b.c.d -> a.b.c -> a.b). Every family x attitude pair is authored; time-band refinements cover every family's neutral lane plus watch.cold and trade.warm. personal.<notableId> (all notables; client-selected when the speaker is a notable) and gossip.<historyId> (one per authored micro-history in names/histories.json, base 'gossip' as the fallback floor) are World key families layered on the same registry. S3 adds quest.<questId>[.<stageKey>[.<partySymbol>]] (quests/quests.json vocabulary; the talk surface's quest-beat lane, base quest.<questId> as the fallback floor) - linted stage-by-party by DocksBarkContentTest. S5 adds mastery.<skillId>.<band> (skills.json vocabulary x novice/adept/master, full band triple per authored skill - the FROZEN keys for the client's skill-band bark selector; bands by level: novice 1-9, adept 10-29, master 30+; authored for the five job-trained skills, dormant until the client wires the band read). Plain ASCII only (Glyph8x8Font); beast rows are observer stage directions in parentheses."
+  "notes": "Sprint-2 WORLD bark text tables (Trojian voice, docks register). Key vocabulary is BarkSelector's contract: mood.<state> and greet.<family>.<attitude>.<time> with the documented sparse fallback (a.b.c.d -> a.b.c -> a.b). Every family x attitude pair is authored; time-band refinements cover every family's neutral lane plus watch.cold and trade.warm. personal.<notableId> (all notables; client-selected when the speaker is a notable) and gossip.<historyId> (one per authored micro-history in names/histories.json, base 'gossip' as the fallback floor) are World key families layered on the same registry. S3 adds quest.<questId>[.<stageKey>[.<partySymbol>]] (quests/quests.json vocabulary; the talk surface's quest-beat lane, base quest.<questId> as the fallback floor) - linted stage-by-party by DocksBarkContentTest. S5 adds mastery.<skillId>.<band> (skills.json vocabulary x novice/adept/master, full band triple per authored skill - the FROZEN keys for the client's skill-band bark selector; bands by level: novice 1-9, adept 10-29, master 30+; authored for the six job-trained skills - S6 adds fishing - dormant until the client wires the band read). Plain ASCII only (Glyph8x8Font); beast rows are observer stage directions in parentheses."
 }

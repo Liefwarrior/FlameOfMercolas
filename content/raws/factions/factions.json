@@ -28,8 +28,8 @@
     {
       "id": "dockhands",
       "displayName": "The Dockhands",
-      "memberJobs": ["serf.laborer", "serf.farmer", "maritime.sailor", "husbandry.keeper"],
-      "notes": "The laboring mass of the quays, farms, ships and pens. Membership only this sprint. Unlisted jobs (wastrel.streetlife, flame_of_merc, beast.*) are deliberately unaffiliated."
+      "memberJobs": ["serf.laborer", "serf.farmer", "serf.carter", "maritime.sailor", "maritime.fisher", "husbandry.keeper"],
+      "notes": "The laboring mass of the quays, farms, ships and pens - and, since S6, the carter rounds and the fishbone line-fishers. Membership only this sprint. Unlisted jobs (wastrel.streetlife, flame_of_merc, beast.*) are deliberately unaffiliated."
     }
   ],
   "notes": "Sprint-1 faction registry (sim team). Schema mirrors skills.json: top-level id + rows of {id, displayName, memberJobs}; notes are documentation-only. memberJobs reference jobs.json ids; a job may belong to at most one faction (loader-validated). Deterministic numeric ids are assigned by sorted key order: dockhands=0, merchants=1, skyrunners=2, temple=3, watch=4."
