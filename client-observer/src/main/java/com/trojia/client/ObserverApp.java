@@ -32,6 +32,7 @@ import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.ClimbInput;
 import com.trojia.client.input.EatInput;
+import com.trojia.client.input.FishInput;
 import com.trojia.client.input.InspectorInput;
 import com.trojia.client.input.ObserverScript;
 import com.trojia.client.input.PlayModeInput;
@@ -42,6 +43,7 @@ import com.trojia.client.inspect.CrimeFeedTracker;
 import com.trojia.client.inspect.EatFeedbackTracker;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
+import com.trojia.client.inspect.FishFeedbackTracker;
 import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.JournalText;
 import com.trojia.client.inspect.LenienceFeedbackTracker;
@@ -177,6 +179,7 @@ public final class ObserverApp extends ApplicationAdapter {
     private ToastQueue toasts;
     private SkillUpTracker skillUpTracker;
     private EatFeedbackTracker eatFeedbackTracker;
+    private FishFeedbackTracker fishFeedbackTracker;
     private ToastRenderer toastRenderer;
     // Sprint 2 "walk up and talk": the speech panel + the theft feedback loop.
     private TalkState talk;
@@ -415,6 +418,11 @@ public final class ObserverApp extends ApplicationAdapter {
             this.eatFeedbackTracker = new EatFeedbackTracker(population.registry(), toasts,
                     () -> playMode.playedActorId(), population.system().skillTracks(),
                     population.system().factionStandings());
+            // Fish-outcome narration (S6): the played soul's R cast resolves sim-side
+            // next tick; this tracker toasts the outcome reason + the catch-check line.
+            this.fishFeedbackTracker = new FishFeedbackTracker(population.registry(), toasts,
+                    () -> playMode.playedActorId(), population.system().skillTracks(),
+                    population.system().fishingSpots());
             // Watch-lenience narration (S5 check lines): the played soul's warn/fine
             // transitions toast the exact inputs the lenience draw read. Zero sim writes.
             LenienceFeedbackTracker lenienceFeedbackTracker = new LenienceFeedbackTracker(
@@ -433,6 +441,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 crimeFeedTracker.afterTick(tick);
                 questFeedTracker.afterTick(tick);
                 eatFeedbackTracker.afterTick(tick);
+                fishFeedbackTracker.afterTick(tick);
                 lenienceFeedbackTracker.afterTick(tick);
                 mastersSnapshot.afterTick(tick);
             });
@@ -542,6 +551,9 @@ public final class ObserverApp extends ApplicationAdapter {
             // The EAT verb (S4 item 3): E feeds the played soul through the sim's own
             // eat-in-reach chain; the outcome toast lands via EatFeedbackTracker.
             EatInput.poll(playMode, population.registry(), toasts, eatFeedbackTracker);
+            // The FISH verb (S6): R casts at a perceived spot within reach through the
+            // sim's shared cast attempt; outcome + check line via FishFeedbackTracker.
+            FishInput.poll(playMode, population.registry(), toasts, fishFeedbackTracker);
             // The JOURNAL toggle (S3): J opens/closes the quest pane (J was unbound; the
             // design's verify-free-then-bind rule). Shares the pane with the masters board.
             if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
@@ -776,6 +788,8 @@ public final class ObserverApp extends ApplicationAdapter {
                 }
                 case EAT -> EatInput.applyEat(playMode, population.registry(), toasts,
                         eatFeedbackTracker);
+                case FISH -> FishInput.applyFish(playMode, population.registry(), toasts,
+                        fishFeedbackTracker);
             }
         }
     }

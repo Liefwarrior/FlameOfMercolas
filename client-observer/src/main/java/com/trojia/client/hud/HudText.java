@@ -130,6 +130,7 @@ public final class HudText {
                 HudToken.icon(IconKey.T), HudToken.text(" talk   "),
                 HudToken.icon(IconKey.G), HudToken.text(" pickpocket   "),
                 HudToken.icon(IconKey.E), HudToken.text(" eat   "),
+                HudToken.icon(IconKey.R), HudToken.text(" fish   "),
                 HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
                 HudToken.text(" climb   "),
                 HudToken.icon(IconKey.I), HudToken.text(" disguise   "),

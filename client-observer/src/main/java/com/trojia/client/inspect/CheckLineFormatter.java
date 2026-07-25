@@ -1,5 +1,6 @@
 package com.trojia.client.inspect;
 
+import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.Barter;
 import com.trojia.sim.actor.FactionStandings;
 import com.trojia.sim.actor.FoodEconomy;
@@ -109,6 +110,32 @@ public final class CheckLineFormatter {
                 FoodEconomy.FOOD_PRICE - standing - haggle + surcharge));
         return "[Streetwise " + level + ": -" + haggle + " haggle, -" + standing
                 + " standing, +" + surcharge + " surcharge -- " + price + "R]";
+    }
+
+    /** Human words for the three {@code FishingZoneTable} size classes, by ordinal. */
+    static final String[] WATER_WORDS = {"inshore water", "pier-side water", "deep water"};
+
+    /**
+     * The fishing catch-check line (Sprint 6 — the cast's visible dice):
+     * {@code [Fishing 3 vs deep water 40: 34% -- CAUGHT]} through the shared
+     * {@link #contestLine} shape, odds from the sim's own
+     * {@link SkillChecks#fishCatchPermille} at narration time (the honesty note — the
+     * attempt's own XP may already have nudged the level the line shows). Degrades to a
+     * numberless tag when the skill table is unwired.
+     *
+     * @param sizeClass the spot's {@code FishingZoneTable} size-class ordinal
+     * @param resist    the spot's catch resist ({@code FishingSpots.catchResistAt})
+     */
+    public static String fishingLine(SkillTrackRegistry tracks, int fisherId, int sizeClass,
+            int resist, boolean success) {
+        String outcome = success ? "CAUGHT" : "GOT AWAY";
+        if (!tracks.isWired() || tracks.fishingRaw() == Actor.NONE) {
+            return "[fishing -- " + outcome + "]";
+        }
+        return contestLine(tracks.skills().get(tracks.fishingRaw()).displayName(),
+                tracks.level(fisherId, tracks.fishingRaw()),
+                WATER_WORDS[sizeClass] + " " + resist,
+                SkillChecks.fishCatchPermille(tracks, fisherId, resist), outcome);
     }
 
     /**

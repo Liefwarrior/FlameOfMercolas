@@ -91,6 +91,20 @@ class CheckLineFormatterTest {
     }
 
     @Test
+    void fishingLineReadsTheLiveCatchOdds() {
+        // Untrained: Fishing 0 + AGI 10 vs deep-water 40 -> 350 + 10*(10-40) = 50,
+        // clamped to the 100 floor.
+        assertEquals("[Fishing 0 vs deep water 40: 10% -- GOT AWAY]",
+                CheckLineFormatter.fishingLine(tracks, 3, 2, 40, false));
+        // A trained fisher against inshore water: level moves the line live.
+        tracks.seedLevel(3, tracks.fishingRaw(), 20);
+        assertEquals("[Fishing 20 vs inshore water 0: 65% -- CAUGHT]",
+                CheckLineFormatter.fishingLine(tracks, 3, 0, 0, true));
+        assertEquals("[fishing -- CAUGHT]",
+                CheckLineFormatter.fishingLine(SkillTrackRegistry.UNWIRED, 3, 1, 20, true));
+    }
+
+    @Test
     void lenienceLineShowsTheInputsTheDrawRead() {
         tracks.seedLevel(6, tracks.streetwiseRaw(), 12);
         standings.adjust(6, watchFaction(), -20);

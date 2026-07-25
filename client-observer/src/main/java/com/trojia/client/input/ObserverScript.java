@@ -36,6 +36,7 @@ import java.util.Locale;
  *   96 topic=2           # the 1-9/0 ask keys (Sprint 4 talk topics)
  *   97 pickpocket        # the G verb
  *   98 eat               # the E verb (Sprint 4 played-actor eat)
+ *   99 fish              # the R verb (Sprint 6 played-actor cast)
  *   99 climb=up          # the Up/Down climb keys (Sprint 4 the climb); up|down
  *  100 journal           # toggle the J journal pane
  *  101 plates            # toggle hold-N nameplates
@@ -50,7 +51,7 @@ public final class ObserverScript {
     /** The verb vocabulary. Unknown verbs fail the parse loudly (never silently skipped). */
     public enum Verb {
         SELECT, FOLLOW, PLAY, HOLD, TALK, TOPIC, PICKPOCKET, EAT, CLIMB, JOURNAL, MASTERS,
-        FILTER, PLATES, ZOOM, CENTER, Z, SHOT
+        FILTER, PLATES, ZOOM, CENTER, Z, SHOT, FISH
     }
 
     /** One scripted action: the frame it fires on, its verb, and the raw argument text. */

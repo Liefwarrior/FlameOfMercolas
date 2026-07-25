@@ -96,6 +96,7 @@ class HudTextTest {
         assertTrue(tokens.contains(HudToken.icon(IconKey.T)), "talk");
         assertTrue(tokens.contains(HudToken.icon(IconKey.G)), "pickpocket");
         assertTrue(tokens.contains(HudToken.icon(IconKey.E)), "eat");
+        assertTrue(tokens.contains(HudToken.icon(IconKey.R)), "fish");
         assertTrue(tokens.contains(HudToken.icon(IconKey.ARROW_UP)), "climb up");
         assertTrue(tokens.contains(HudToken.icon(IconKey.ARROW_DOWN)), "climb down");
         assertTrue(tokens.contains(HudToken.icon(IconKey.I)), "disguise");

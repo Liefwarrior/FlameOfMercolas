@@ -40,6 +40,8 @@ public enum IconKey {
     // Sprint 5 (the torrent + the masters board): the feed-filter and board toggles.
     L("keyboard_l.png"),
     M("keyboard_m.png"),
+    // Sprint 6 (fishing): the played soul's cast verb.
+    R("keyboard_r.png"),
     MOUSE_LEFT_CLICK("mouse_left.png");
 
     private final String fileName;

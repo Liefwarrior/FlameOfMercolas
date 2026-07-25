@@ -83,10 +83,13 @@ class ObserverScriptTest {
                 5 journal
                 6 plates
                 7 pickpocket
+                8 fish
                 """);
         assertEquals(ObserverScript.Verb.TOPIC, script.at(1).get(0).verb());
         assertEquals(ObserverScript.Verb.EAT, script.at(2).get(0).verb());
         assertEquals("up", script.at(3).get(0).args());
         assertEquals("down", script.at(4).get(0).args());
+        // Sprint 6: the played cast rides the tape like every other verb.
+        assertEquals(ObserverScript.Verb.FISH, script.at(8).get(0).verb());
     }
 }
