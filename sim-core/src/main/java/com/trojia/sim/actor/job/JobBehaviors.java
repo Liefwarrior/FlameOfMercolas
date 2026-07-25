@@ -103,22 +103,49 @@ public final class JobBehaviors {
     }
 
     /**
+     * Chebyshev radius around the work anchor within which work COUNTS (Sprint 6, the
+     * crowded-anchor fix): under ONE-per-square, a crew of 10-50 sharing a single-cell
+     * anchor could only ever have ONE member standing on it — everyone else ringed it for
+     * the whole shift, completing no units, earning no training and (since slice 1) no
+     * DUTY, and churning hundreds of thousands of hover-shoves trying to claim the cell
+     * (measured: 177/692 souls DUTY-bottomed and ~580k pushes in a 15k-tick soak). Working
+     * anywhere within this reach of the anchor counts as working the site — the whole
+     * ring works in parallel, visibly spread by the occupancy cap — and an in-reach worker
+     * STOPS walking (no more churn against the held cell).
+     */
+    public static final int WORK_REACH = 2;
+
+    /** Whether {@code self} stands close enough to {@code workplace} for work to count. */
+    private static boolean withinWorkReach(Actor self, int workplace) {
+        return PackedPos.z(self.cell()) == PackedPos.z(workplace)
+                && ActorGeometry.chebyshev(self.cell(), workplace) <= WORK_REACH;
+    }
+
+    /**
      * PURSUE (commute-aware anchor cycle): during the job's rhythm window the
-     * actor heads for its work anchor and accrues work once standing on it;
-     * outside the window it heads for its home cell. For the common case where
-     * {@code anchorCell == home} (a household worker with no distinct second
-     * location) both legs resolve to the same cell — a pure in-place work
-     * accrual, byte-identical to the pre-commute behavior, no movement. For an
-     * actor whose anchor is a real workplace distinct from home (a commuter),
-     * the two legs become a genuine daily round trip driven by the ONE clock the
-     * job already owns — its rhythm window — so "off shift" is the shift ending,
-     * not the actor type's generic night window (which stays RETURN_HOME's
-     * separate concern: exhaustion / deep-night sleep).
+     * actor heads for its work anchor and accrues work once within
+     * {@link #WORK_REACH} of it (the crowded-anchor fix — an exact-cell
+     * requirement starved every crew bigger than one under the 1-per-square
+     * cap); outside the window it heads for its home cell. For the common case
+     * where {@code anchorCell == home} (a household worker with no distinct
+     * second location) both legs resolve to the same cell — an in-place work
+     * accrual with no movement. For an actor whose anchor is a real workplace
+     * distinct from home (a commuter), the two legs become a genuine daily
+     * round trip driven by the ONE clock the job already owns — its rhythm
+     * window — so "off shift" is the shift ending, not the actor type's generic
+     * night window (which stays RETURN_HOME's separate concern).
      */
     public static void pursueAtAnchor(Actor self, ActorContext ctx, JobParams params) {
         int workplace = self.anchorCell();
         int home = homeCellOr(self, ctx, workplace);
         boolean onShift = params.inWindow(DailyRhythm.tickOfDay(ctx.tick()));
+        if (onShift && withinWorkReach(self, workplace)) {
+            // Close enough to work the site: accrue in place — no step, no hover-churn
+            // against whoever holds the exact anchor cell.
+            self.setGoalTarget(TargetKind.CELL, workplace);
+            accrueWork(self, ctx, params);
+            return;
+        }
         int target = onShift ? workplace : home;
         self.setGoalTarget(TargetKind.CELL, target);
         if (self.cell() != target) {
@@ -126,10 +153,6 @@ public final class JobBehaviors {
             // routinely sits outside the workplace anchor's leash), exactly as
             // RETURN_HOME's walk home does — so this leg ignores the leash too.
             self.stepAlongRoute(target, true, ctx::isWalkable, ctx.occupancy());
-            return;
-        }
-        if (self.cell() == workplace) {
-            accrueWork(self, ctx, params);
         }
     }
 
@@ -144,8 +167,11 @@ public final class JobBehaviors {
             self.setGoalProgress((short) (self.goalProgress() + 1));
             self.setGoalWorkTicks(0);
             // Sprint 5: a completed work-unit is the anchor cycle's discrete work event —
-            // the job's trade skill trains here (context = the workplace cell being worked).
-            awardWorkEvent(self, ctx, params, self.cell());
+            // the job's trade skill trains here. Context = the ANCHOR (the site being
+            // worked), not the worker's own ring cell: with WORK_REACH a crew spans up to
+            // 25 cells, and per-cell contexts would let one site evade the §3.3 satiation
+            // floor 25 times over.
+            awardWorkEvent(self, ctx, params, self.anchorCell());
         } else {
             self.setGoalWorkTicks(workTicks);
         }
@@ -171,14 +197,17 @@ public final class JobBehaviors {
         int workplace = self.anchorCell();
         int home = homeCellOr(self, ctx, workplace);
         boolean onShift = params.inWindow(DailyRhythm.tickOfDay(ctx.tick()));
+        if (onShift && withinWorkReach(self, workplace)) {
+            // The crowded-anchor fix (see pursueAtAnchor): the whole plot crew tends the
+            // rows within WORK_REACH of the plot marker, in parallel, without hover-churn.
+            self.setGoalTarget(TargetKind.CELL, workplace);
+            accrueFarmWork(self, ctx, params, home);
+            return;
+        }
         int target = onShift ? workplace : home;
         self.setGoalTarget(TargetKind.CELL, target);
         if (self.cell() != target) {
             self.stepAlongRoute(target, true, ctx::isWalkable, ctx.occupancy());
-            return;
-        }
-        if (self.cell() == workplace) {
-            accrueFarmWork(self, ctx, params, home);
         }
     }
 
@@ -191,8 +220,9 @@ public final class JobBehaviors {
         self.setGoalWorkTicks(0);
         self.setGoalProgress((short) (self.goalProgress() + 1));
         // Sprint 5: the farm's completed unit is the same discrete work event as the anchor
-        // cycle's — fieldcraft trains at the plot (context = the plot cell).
-        awardWorkEvent(self, ctx, params, self.cell());
+        // cycle's — fieldcraft trains at the plot (context = the plot ANCHOR, the
+        // accrueWork satiation reasoning).
+        awardWorkEvent(self, ctx, params, self.anchorCell());
         produceFood(self, ctx, homeCell);
         // Sprint 5 "mastery pays": a veteran's hands yield more. Each completed unit accrues
         // fieldcraftLevel toward a 100-point bonus threshold; every crossing mints ONE bonus
@@ -515,7 +545,9 @@ public final class JobBehaviors {
         }
         int castCell = spots.castCellAt(slot);
         self.setGoalTarget(TargetKind.CELL, castCell);
-        if (self.cell() != castCell) {
+        if (!withinWorkReach(self, castCell)) {
+            // WORK_REACH here too: two fishers may share one authored stand's stretch of
+            // deck without hover-churning over the exact cell (the crowded-anchor fix).
             self.setGoalWorkTicks(0);
             self.stepAlongRoute(castCell, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
             return;
@@ -703,7 +735,7 @@ public final class JobBehaviors {
         int index = Math.floorMod(self.goalProgress(), count);
         int stop = rounds.waypoint(route, index);
         self.setGoalTarget(TargetKind.CELL, stop);
-        if (self.cell() != stop) {
+        if (!withinWorkReach(self, stop)) {
             int before = self.cell();
             self.stepAlongRoute(stop, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
             if (self.routeFailedTo(stop)) {

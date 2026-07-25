@@ -178,10 +178,22 @@ final class ActorGoalCompletionRegressionTest {
         serf.setHomeId(homeId);
         JobParams params = new JobParams(GoalKind.SCAVENGE_CIRCUIT, 150, 0, 24_000, 0, 5, 1, RenewMode.IMMEDIATE, 0);
 
-        for (int tick = 0; tick < 3000 && serf.cell() != anchor; tick++) {
+        for (int tick = 0; tick < 3000
+                && ActorGeometry.chebyshev(serf.cell(), anchor) > JobBehaviors.WORK_REACH;
+                tick++) {
             JobBehaviors.pursueAtAnchor(serf, ctx, params);
         }
-        assertEquals(anchor, serf.cell(), "the fixed commute must route through the side detour and arrive");
+        // Sprint 6 WORK_REACH: arrival means "within working reach of the site" — the
+        // commute completed and work accrues from there (the crowded-anchor rule).
+        assertTrue(ActorGeometry.chebyshev(serf.cell(), anchor) <= JobBehaviors.WORK_REACH,
+                "the fixed commute must route through the side detour and arrive in working "
+                        + "reach (halted at " + describe(serf.cell()) + ")");
+        int progressBefore = serf.goalProgress();
+        for (int i = 0; i < 10; i++) {
+            JobBehaviors.pursueAtAnchor(serf, ctx, params);
+        }
+        assertTrue(serf.goalProgress() > progressBefore,
+                "…and the goal genuinely completes work units from within reach");
     }
 
     private static String describe(int cell) {

@@ -77,11 +77,15 @@ final class CarterRoundsTest {
         List<Integer> workedStops = new ArrayList<>();
         int lastProgress = Math.floorMod(carter.goalProgress(), 3);
         for (int i = 0; i < 6 * (dwell + 20); i++) {
+            int stopBefore = ctx.rounds.waypoint(0, Math.floorMod(carter.goalProgress(), 3));
             job.pursue(carter, ctx);
             int progress = Math.floorMod(carter.goalProgress(), 3);
             if (progress != lastProgress) {
-                // The stop only advances when its dwell WORKED to completion.
-                workedStops.add(carter.cell());
+                // The stop only advances when its dwell WORKED to completion — within
+                // WORK_REACH of the stop (the crowded-anchor rule).
+                assertTrue(ActorGeometry.chebyshev(carter.cell(), stopBefore)
+                        <= JobBehaviors.WORK_REACH, "worked within reach of the stop");
+                workedStops.add(stopBefore);
                 lastProgress = progress;
             }
         }
