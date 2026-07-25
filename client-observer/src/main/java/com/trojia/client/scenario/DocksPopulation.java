@@ -220,8 +220,18 @@ public final class DocksPopulation implements ScenarioPopulation {
     // continuous south kerb.
     private static final int[][] PATROL_TARWALK = {{20, 33}, {45, 33}, {70, 33}, {96, 33}, {122, 33}};
     private static final int[][] PATROL_QUAY = {{14, 30}, {28, 30}, {42, 30}, {56, 30}, {68, 30}};
+    // S6 reroute (route audit 2026-07-24, Eli's bug 2): the old (122,65)->(145,65) leg —
+    // and the wrap back west — threaded the 1-wide y65 x130-135 gut (K28's south wall vs
+    // the C2 outwork) twice per loop; the route patroller and the K28 shop guard's beat
+    // wedged there for whole shifts (2,653 pair-ticks in the 48k soak). The route now jogs
+    // up through the Fenner|Slop-Chest plaza (129,58), rounds the K28 block on the wide
+    // mid-street to (144,58), touches the east kerb (145,65), and returns the same way, so
+    // neither the outbound leg nor the wrap ever enters the gut. Mirrors the generator's
+    // patrol_ropewynd_wp_* markers EXACTLY (lockstep rule). The old binding waypoint
+    // (100,65) keeps its index-4 place, so the Ropewynd watch's anchor binding is unmoved.
     private static final int[][] PATROL_ROPEWYND =
-            {{10, 65}, {35, 65}, {55, 65}, {78, 65}, {100, 65}, {122, 65}, {145, 65}};
+            {{10, 65}, {35, 65}, {55, 65}, {78, 65}, {100, 65}, {122, 65}, {129, 58},
+             {144, 58}, {145, 65}, {144, 58}, {129, 58}};
     // S4 "the climb": the Saltgate Rise beat — the gazetteer's z11<->z13 climb, finally
     // walkable (the FIRST cross-z patrol route; legs between bands ride the baked brick
     // ramp rows at y96/y116, x72-79, via ZRouter). Waypoint 0 is the K21 watch sergeant's
@@ -243,7 +253,12 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[][] GARBAGE_BINS_ZC = {{21, 121}, {75, 120}, {99, 122}, {134, 125}};
     private static final int[] LAIR_SKYRUNNER = {189, 88};     // K35, z:+13, unmarked
     private static final int[] MISSION_BUNKS = {85, 78};
-    private static final int[] MISSION_GARDEN = {90, 88};
+    // S6 fix (route audit 2026-07-24): the old (90,88) garden cell predated K29's
+    // relocation onto that lot — it sat INSIDE the Long Store on a rack wall (not
+    // walkable, not reachable), stranding both garden hands, the commons larder, a
+    // mouse den and a cat anchor. The garden is the dirt strip the Mission's own west
+    // garden door (82,73)/(82,74) opens onto; mirrors mission_garden_anchor (lockstep).
+    private static final int[] MISSION_GARDEN = {81, 73};
     private static final int[] IMPOUND_DOG = {60, 57};
     private static final int[][] KENNEL_DOGS = {{165, 54}, {171, 50}, {171, 53}};
     private static final int[] PEN_GOATS = {152, 111};         // z:+12
@@ -346,8 +361,11 @@ public final class DocksPopulation implements ScenarioPopulation {
     // (z:+10 DIRT_FLOOR by the generator's band rule, x130-163 y8-28), 18 tiles east of the
     // strand gull's roost/dens at {132,18} so the beast channel's hunt and roam envelopes
     // stay clear of the new body. Same "known street/floor cells" convention as the stands
-    // below; the timber pond's water stops at y9, so y22 is dry shingle.
-    private static final int[] STRAND_JEK = {150, 22};           // z:+10
+    // below; the timber pond's water stops at y9, so this row is dry shingle.
+    // S6 fix (route audit 2026-07-24): {150,22} sat ON the careened hull's south planking
+    // (an OAK_WALL cell — the spawn funnel had been quietly spilling him off it); moved one
+    // row south onto the genuinely open shingle so berth == spawn == home == anchor again.
+    private static final int[] STRAND_JEK = {150, 23};           // z:+10
 
     // ---- derived work stands (no marker; known street/floor cells, precedent convention) --
     private static final int[] TERRACE_WALK_STAND = {100, 98};   // z:+12 brick Terrace Walk

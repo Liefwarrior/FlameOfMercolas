@@ -702,12 +702,21 @@ T[10][40][137] = OAK_STAIR_UP
 T[11][40][137] = OAK_STAIR_DOWN
 mk(10, "script_anchor", "sawpit_anchor", 137, 41)
 frect(12, 136, 36, 147, 46, TRUDGEON_FLOOR)   # workshop roof
-# Timber store yard: fence, gate, log-stack rows
+# Timber store yard: fence, gates, log-stack rows.
+# S6 fix (World route audit 2026-07-24, Eli's bug 4): the three full-width stack
+# rows (x151-158, fence at x150/x159) sealed every aisle south of y38 -- the y40-41
+# and y43-44 aisles (and the timber-yard work stand at 155,40) were walkable but
+# UNREACHABLE, so the K06 log-stack crew could never arrive at its own anchor. The
+# rows now STAGGER (y39 leaves the x158 end open, y42 the x151 end; y45 stays full
+# against the south fence) so the aisles chain into one working circuit, and the
+# west fence gains a cart gate at (150,40)/(150,41) -- the timber rounds' entrance,
+# >=2-wide per the door standard.
 border(11, 150, 36, 159, 46, TRUDGEON_WALL)
-for g in ((153, 36), (154, 36)):
+for g in ((153, 36), (154, 36), (150, 40), (150, 41)):
     T[11][g[1]][g[0]] = 0
-for ly in (39, 42, 45):
-    trect(11, 151, ly, 158, ly, OAK_WALL)
+trect(11, 151, 39, 157, 39, OAK_WALL)
+trect(11, 152, 42, 158, 42, OAK_WALL)
+trect(11, 151, 45, 158, 45, OAK_WALL)
 mk(11, "script_anchor", "business_k06_harlsyard_anchor", 141, 41)
 
 # The Outfall (sealed L2 seam stub) + Tarwalk storm drains
@@ -1085,7 +1094,13 @@ mk(11, "script_anchor", "business_k17_mission_anchor", 88, 71)
 mk(11, "script_anchor", "mission_bunks_anchor", 85, 78)
 mk(11, "script_anchor", "clue_c1_mission_backroom", 94, 78)
 mk(11, "light_source", "lamp_mission_night", 88, 65, luminance=22)
-mk(11, "script_anchor", "mission_garden_anchor", 90, 88)
+# S6 fix (World route audit 2026-07-24): the garden marker's old cell (90,88)
+# predates K29's relocation onto that lot -- it had come to sit INSIDE the Long
+# Store on a rack wall (not walkable, not reachable), stranding the Mission's two
+# garden hands, the commons larder, a mouse den and a cat anchor. The garden is
+# the strip the Mission's own west garden door (82,73)/(82,74) opens onto; the
+# strip stays bare dirt via GRIT_KEEP (a planted allotment, never paved).
+mk(11, "script_anchor", "mission_garden_anchor", 81, 73)
 
 # K18 Squall's Bathhouse (real pooled water) -- 11x13
 shell(11, 102, 66, 112, 78, GRANITE_WALL, GRANITE_FLOOR, doors=[(107, 66), (108, 66)])
@@ -1293,6 +1308,12 @@ mk(11, "light_source", "lamp_bank_door", 154, 47, luminance=18)
 shell(11, 16, 66, 23, 69, OAK_WALL, DIRT_FLOOR, doors=[(19, 69), (20, 69)])
 frect(11, 16, 70, 23, 73, DIRT_FLOOR)               # open courtyard blob, unwalled
 shell(11, 16, 74, 23, 77, OAK_WALL, DIRT_FLOOR, doors=[(19, 74), (20, 74)])
+# S6 fix (World route audit 2026-07-24, Eli's bug 4): both plots' doors faced only
+# the inner court, and the court itself was boxed by the K26/K08 party walls -- the
+# whole allotment was walkable but UNREACHABLE from any street. A south garden gate
+# onto the Walkback path (y78) opens it to the ward (>=2-wide door standard).
+for g in ((19, 77), (20, 77)):
+    T[11][g[1]][g[0]] = 0
 mk(11, "script_anchor", "west_garden_court_anchor", 19, 71)
 mk(11, "script_anchor", "west_garden_plot_01_anchor", 19, 67)
 mk(11, "script_anchor", "west_garden_plot_02_anchor", 19, 75)
@@ -1950,6 +1971,7 @@ GRIT_KEEP = [  # (z, x0, y0, x1, y1) -- dirt that STAYS dirt (deliberate grit; n
     (11, 164, 48, 174, 55),   # K25 Kennel Row yard (rat-catchers' fenced dog yard)
     (11, 150, 36, 159, 46),   # K06 Harl's timber store (fenced log-stack yard)
     (11,  16, 66,  23, 77),   # West Garden Court (garden allotment -- dirt is the feature)
+    (11,  80, 67,  81, 79),   # Mission garden strip (S6: the west-door allotment, never paved)
     (11, 172, 76, 183, 93),   # C4 Gullet courtyard/ruin (decayed compound gone to trash)
     (11, 160, 30, 191, 75),   # Gullet/Wrackhouse NE condemned/decayed quarter
     (11, 162, 57, 191, 59),   # Gullet bottom link (poor-quarter back-lane)
@@ -2050,6 +2072,35 @@ for i, sy in enumerate((45, 72, 90)):
 # ship anchors; these mark the shore-side muster/loading points beside them).
 mk(11, "script_anchor", "dock_load_west_anchor", 25, 30)
 mk(11, "script_anchor", "dock_load_east_anchor", 100, 32)
+# ======================================================================
+# S6 work-point expansion (Eli's bug 4 "get those extra laborers working and
+# moving"; World survey 2026-07-24): interior work stations splitting the
+# single-cell crew anchors (the Ropewalk's 50-on-one-cell, the King's Bond's 28,
+# the Long Store's 11), the Bilgewater stall stands beside the authored awning
+# posts, pitchfield yard stands, the timber-yard aisle stations the new gates
+# unlock, and the fishbone-pier fisher stands (Eli's bug 6 -- the fishing pass's
+# work stops, which finally put daily traffic on the zero-visit showpiece pier).
+# MARKERS ONLY on already-walkable floor; DocksPopulation binds crews in lockstep
+# and its bake test A*-verifies every station.
+# ======================================================================
+for i, (sx, sy) in enumerate(((10, 85), (20, 85), (30, 85),
+                              (45, 85), (55, 85), (64, 85))):
+    mk(11, "script_anchor", "ropewalk_station_%02d" % (i + 1), sx, sy)
+for i, (sx, sy) in enumerate(((81, 85), (85, 86), (91, 86), (95, 86),
+                              (83, 89), (86, 90), (92, 89))):
+    mk(11, "script_anchor", "k29_station_%02d" % (i + 1), sx, sy)
+for i, (sx, sy) in enumerate(((85, 37), (84, 41), (96, 41), (86, 44), (96, 44))):
+    mk(11, "script_anchor", "k12_station_%02d" % (i + 1), sx, sy)
+for i, (sx, sy) in enumerate(((89, 50), (91, 50), (104, 50),
+                              (106, 50), (119, 50), (121, 50))):
+    mk(11, "script_anchor", "market_stall_stand_%02d" % (i + 1), sx, sy)
+for i, (sx, sy) in enumerate(((8, 52), (14, 54))):
+    mk(11, "script_anchor", "pitchfield_stand_%02d" % (i + 1), sx, sy)
+for i, (sx, sy) in enumerate(((153, 37), (153, 41), (156, 43))):
+    mk(11, "script_anchor", "timberyard_station_%02d" % (i + 1), sx, sy)
+for i, (sx, sy) in enumerate(((75, 9), (75, 17), (75, 23), (75, 12), (77, 20))):
+    mk(11, "script_anchor", "fisher_stand_%02d" % (i + 1), sx, sy)
+
 # Guard beats gain braziers (light markers only) at the two Tarwalk posts (K21/K34
 # already have their brazier lamps; the open Tarwalk beats had none).
 mk(11, "light_source", "brazier_tarwalk_west", 30, 30, luminance=16)
@@ -2074,8 +2125,18 @@ for i, (px, py) in enumerate(((20, 33), (45, 33), (70, 33), (96, 33), (122, 33))
     mk(11, "script_anchor", "patrol_tarwalk_wp_%02d" % (i + 1), px, py)
 for i, (px, py) in enumerate(((14, 30), (28, 30), (42, 30), (56, 30), (68, 30))):
     mk(11, "script_anchor", "patrol_quay_wp_%02d" % (i + 1), px, py)
+# S6 reroute (World route audit 2026-07-24, Eli's bug 2): the old wp6 leg
+# (122,65)->(145,65) -- and the wrap back west -- threaded the 6-cell 1-wide gut
+# at y65 x130-135 (K28's south wall vs the C2 outwork wall) twice per loop, where
+# the route patroller and the K28 shop guard's beat wedged for whole shifts. The
+# route now jogs up through the Fenner|Slop-Chest plaza (129,58), rounds the K28
+# block on the wide mid-street to (144,58), touches the east kerb at (145,65),
+# and RETURNS the same way, so neither the outbound leg nor the wrap ever enters
+# the gut. (The gut itself stays authored -- citizens may still use it; the S6
+# sim-side shove etiquette handles incidental guard meetings there.)
 for i, (px, py) in enumerate(((10, 65), (35, 65), (55, 65), (78, 65),
-                              (100, 65), (122, 65), (145, 65))):
+                              (100, 65), (122, 65), (129, 58), (144, 58),
+                              (145, 65), (144, 58), (129, 58))):
     mk(11, "script_anchor", "patrol_ropewynd_wp_%02d" % (i + 1), px, py)
 
 # 6.7 Shop guard posts (PASS 8, Phase-1 living-docks; Feature-2 "one guard per shop"): one
