@@ -105,6 +105,60 @@ decks (no stair up, intentionally), the fluid-gated dungeon seams, and roof-slum
 same-z isolation is the point until the law/economy layers learn to climb (S5+). The audit rides
 `runDocksActors` (`ZReachability`, per-band tables) — regressions are visible on every soak.
 
+### 2.7 The working city + the water gives — S6 live-ops pass (2026-07-24)
+
+Eli's live-ops soak found the ward standing still: 378 laborers shared 151 anchors and the top
+9 — every one a SINGLE CELL — bound 177 of them; ~121 more had no work point at all (min
+mobility: 1 distinct cell in 2 sim days). The S6 world pass, changelog register:
+
+**Sealed ground unsealed (walkable-but-unreachable, the §2.6 defect class):**
+- **K06 timber yard:** the three full-width log-stack rows sealed every aisle south of y38 — the
+  yard's own work stand could never be reached. Stack rows now stagger into one aisle circuit; the
+  west fence gained a cart gate (150,40–41). Three aisle stations authored.
+- **West Garden Court:** sealed since authoring (every door faced the inner court; the shells
+  back onto K26/K08 party walls). South garden gate (19,77–78) onto the Walkback path; three
+  garden-hand stands bound.
+- **Mission garden:** the old (90,88) marker predated K29's relocation onto that lot and sat on a
+  Long Store rack wall. The garden is now the strip the Mission's own west garden door opens onto
+  (81,73) — commons larder, both garden hands, the mouse den and the cat anchor moved with it.
+- **Tarry Jek's berth** was ON the careened hull's planking; moved one row south (150,23,z10).
+
+**The work-point expansion (fix for the monoculture):** the Ropewalk's 50-hand gang now works six
+rope-laying stations down the full shed; the King's Bond 28 spread over five aisle/bay stations;
+the Long Store — the warehouse where "nothing ever happens" — runs seven rack/dispatch stations;
+the Bilgewater Gap market row, quay crate stands, sweep stands (Tarwalk + Saltgate), the
+Dawnstalls muster, Pitchfield, the timber-yard aisles and the west garden absorb every previously
+work-pointless laborer on its own band (Band B/C surplus joins the terrace/plaza/farm-plot
+stands). ZERO laborers still anchor the three old single cells; ZERO still idle at the Mission
+bunkroom (the almshouse pool is the ward's casual-labor pool now, as K17's canon always said).
+
+**Carter rounds (16 carters, 3 circuits):** EAST (Long Store dispatch → dock-load east → Bond →
+market), WEST (dock-load west → crane → Dawnstalls muster → Salt Row → cooperage → Ropewalk),
+TIMBER (yard aisle → Harl's workshop → fishbone spine → Merle's). Multi-stop `serf.carter`
+rounds with id-staggered starts (sim S6) — the de-synchronized "own thing" traffic Eli asked for.
+
+**Fishing (S6, "it's the ocean and a port"):** 26 authored spawn zones — 10 small (inshore
+shingle, cast from the strand), 10 medium (Pier Row flanks, Merle's channel, the condemned
+Wormwood side — hazard flavor), 6 large (the fishbone's deep east channel, finger_03's south gap,
+the pier-head open sea). Each zone = 2–3 contiguous open-water cells + one walkable cast stand;
+live spots cap at 3/2/1 by size (sim registry). Ten `maritime.fisher` crew two-man the five
+fishbone stands — the redesigned showpiece pier, ZERO visits in the S6 48k soak, is now the
+fishers' home water. FISH sells at any counter (the S6 buy-side coin faucet) and eats as a meal.
+The **42nd notable** joins the roll: **Haddie Longline, the line-fisher** (`haddie`, authored
+FISHING 40 — the ward's master of the new craft, the mastery-board floor), bound by anchor onto
+the first fisher crewing the finger_03 stand; Merle the waterman gains authored FISHING 30 (the
+adept who taught half the pier without meaning to). Both carry `personal.*` bark tables;
+`mastery.fishing.*` bands ship with the S5 triple contract.
+
+**Patrol de-conflict (world side):** Ropewynd's route no longer threads the 1-wide y65 gut in
+either direction (it rounds the K28 block via the Fenner plaza); the K34 garrison pair beats from
+separated anchors. The Tarwalk arcade pinch (48,34)/(52,34) is ACCEPTED as flavor — the S6
+sim-side shove etiquette + yield handles incidental meetings in colonnade slots.
+
+All station/stand/circuit/zone cells are walk- and flood-verified on every test run
+(`DocksWorkPointsBakeTest`, `DocksFishingZoneBakeTest`) — the §2.6 discipline, extended to work
+points and water.
+
 ---
 
 ## 3. Establishments (keyed locations)
@@ -636,7 +690,7 @@ Three z-levels under the east end, each ~one 32×32 chunk footprint expanding do
 
 ### 7.1 Economy sites (macro layer)
 
-- **Produces:** fish (Dawnstalls → Salt Row preserved), salt goods, cordage (Ropewalk), barrels/blocks (K23), tar/pitch (Pitchfield), repairs (Harl's), salvage (Wrackhouse).
+- **Produces:** fish (Dawnstalls → Salt Row preserved; S6 adds live line-fishing — FISH minted at the harbor's spawn-zone spots, sold at any counter via the buy-side, the citizen coin faucet), salt goods, cordage (Ropewalk), barrels/blocks (K23), tar/pitch (Pitchfield), repairs (Harl's), salvage (Wrackhouse).
 - **Consumes:** timber (into Harl's, from off-map by sea), hemp (Ropewalk), grain/oil (Brann's, Eel-Pots), coin (the daily wage loop: quay → pay-out → taverns/Rows/Fenner's, a closed circulator the macro layer can run whole).
 - **Interface flows (off-map):** imports up Saltgate Rise to the Inner City; tariff skim at the Weighhouse; smuggler leakage bypassing it (Merle's, the gray ledgers) priced ~10% under official (dossier pattern, placeholder rate).
 - Chunk summaries carry these as the ECON section's site list **(mapping to ARCHITECTURE §9 ECON placeholder)**.

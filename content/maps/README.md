@@ -219,17 +219,22 @@ bible: §2.1 fixes the 192×128×16 footprint, §2.2 the waterfront, §2.3 the s
   everywhere" alongside the footprint resizing.
 - **Ambient features (no K-site, napkin-sketch redesign, gazetteer §3.2):** the **West Garden
   Court** — two fenced garden plots flanking an open, unwalled courtyard blob, between K26
-  Sailmaker's Loft and K08 Brann's Chandlery — and **Cache Row** — 3 unlicensed off-grid dirt
-  sheds in Band B (x165–190, y112–115), no lamps, no door onto any street layer.
+  Sailmaker's Loft and K08 Brann's Chandlery, opened to the Walkback path by the S6 south
+  garden gate (it had been sealed since authoring) — and **Cache Row** — 3 unlicensed
+  off-grid dirt sheds in Band B (x165–190, y112–115), no lamps, no door onto any street
+  layer (deliberate; unlike the garden, Cache Row stays sealed).
 - **Housing.** Four Compounds on the §2.5 typology at four wealth registers: C1 Quayward
   (grand, all-reman, private roof terrace instead of a slum), C2 Netters' (precedent-scale,
   3-hut roof slum), C3 Saltgate Terrace (cramped shallow variant), C4 Gullet (decayed
   brick, rot gaps, no mansion, 4 crammed roof huts, no lamps) — 12–13 dwelling units each —
   plus 45 hovels (oak/trudgeon/mud/tent shells rotating) across all three bands.
-- **Markers.** 212: `business_k01…k29_*`/`k34_*` + unit/hovel/courtyard anchors, berth/pier/
+- **Markers.** 351: `business_k01…k29_*`/`k34_*` + unit/hovel/courtyard anchors, berth/pier/
   ship/wreck/finger/muster/patrol/exit anchors, `west_garden_court_anchor` +
   `west_garden_plot_01/02_anchor`, `cache_shed_01/02/03_anchor`, `lair_skyrunner_anchor` (K35
-  — deliberately not a `business_*` name, no light source), 3 sealed **dungeon seams**
+  — deliberately not a `business_*` name, no light source), the S6 work-point families
+  (`ropewalk_station_*`, `k29_station_*`, `k12_station_*`, `market_stall_stand_*`,
+  `pitchfield_stand_*`, `timberyard_station_*`, `fisher_stand_*` — gazetteer §2.7, bound in
+  lockstep by `DocksPopulation`), 3 sealed **dungeon seams**
   (`dungeon_seam_outfall` z:+9, `dungeon_seam_drowned_hold` z:+10, `dungeon_seam_merles_floor`
   z:+11 — the starter dungeon is a separate later authoring effort; only these access stubs
   exist), and light sources graded per §7.2 (mast lamp 26 down to shrine candles 8; zero
