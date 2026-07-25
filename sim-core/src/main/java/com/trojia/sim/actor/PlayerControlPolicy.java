@@ -41,6 +41,9 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
     /** Roof satiation regions are {@code 16x16} tiles per z ({@code x>>4, y>>4, z}). */
     static final int ROOF_REGION_SHIFT = 4;
 
+    /** Chebyshev reach of the played soul's cast (spot water beside the stand, z±1 legal). */
+    static final int PLAYER_CAST_REACH = 2;
+
     @Override
     public void act(Actor self, ActorContext ctx) {
         // The tick's default legibility stamp lands FIRST, so a real pickpocket attempt
@@ -86,6 +89,23 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
         self.setPlayerEatIntent(false);
         if (eatIntent && !SeekFoodPolicy.tryEatInReach(self, ctx)) {
             self.setLastReasonCode(ReasonCode.NO_MEAL_IN_REACH);
+        }
+        // Fish intent (Sprint 6 — the played soul can work the water too): one cast against
+        // a live spot within reach that this soul actually PERCEIVES (the same per-actor
+        // sight gate the AI fishers obey — an unseen spot is uncastable). Resolves through
+        // the shared cast attempt: FISHING XP on the attempt, the check.fishing draw, FISH
+        // minted on success (CAUGHT_FISH / FISH_GOT_AWAY). Consumed unconditionally (the
+        // §5.2 stale-intent rule); a miss stamps NO_SPOT_IN_REACH for the client's toast.
+        boolean fishIntent = self.playerFishIntent();
+        self.setPlayerFishIntent(false);
+        if (fishIntent) {
+            int slot = ctx.fishingSpots().slotNear(self.cell(), PLAYER_CAST_REACH);
+            if (slot != Actor.NONE && ctx.fishingSpots().visibleTo(slot, ctx.worldSeed(),
+                    self.id(), ctx.skillTracks())) {
+                com.trojia.sim.actor.job.JobBehaviors.resolveCastAttempt(self, ctx, slot, true);
+            } else {
+                self.setLastReasonCode(ReasonCode.NO_SPOT_IN_REACH);
+            }
         }
         int target = self.playerMoveTargetCell();
         if (target != Actor.NONE) {

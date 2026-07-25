@@ -66,6 +66,25 @@ public final class SkillChecks {
     /** Success ceiling: mastery never buys certainty. */
     public static final int SEARCH_CEIL_PERMILLE = 950;
 
+    // ---- the fishing families (Sprint 6): PERCEPTION — the stable per-(spot, soul)
+    // sight check that gates whether a spot is targetable at all — and SUCCESS — the
+    // per-cast catch check against the spot size's resist. An untrained eye misses most
+    // water (base sight well under half); a trained fisher reads the harbor almost at
+    // will but never with certainty, and even a master's line comes up empty sometimes
+    // (the genre contract). ----
+    /** Baseline permille that an untrained soul SEES a given live spot. */
+    public static final int FISH_SIGHT_BASE_PERMILLE = 300;
+    /** Sight permille gained per FISHING level (perception deepens with the trade). */
+    public static final int FISH_SIGHT_PER_LEVEL_PERMILLE = 13;
+    /** Sight ceiling: even a master's eye misses the odd ripple. */
+    public static final int FISH_SIGHT_CEIL_PERMILLE = 950;
+    /** Baseline catch permille at score parity with the spot's resist. */
+    public static final int FISH_CATCH_BASE_PERMILLE = 350;
+    /** Catch floor: even a hopeless cast occasionally lands one. */
+    public static final int FISH_CATCH_FLOOR_PERMILLE = 100;
+    /** Catch ceiling: mastery never buys certainty. */
+    public static final int FISH_CATCH_CEIL_PERMILLE = 900;
+
     private SkillChecks() {
     }
 
@@ -130,5 +149,30 @@ public final class SkillChecks {
                 + tracks.attribute(searcherId, AttributeId.WIT);
         return successPermille(score, resist, SEARCH_BASE_PERMILLE,
                 SEARCH_FLOOR_PERMILLE, SEARCH_CEIL_PERMILLE);
+    }
+
+    /**
+     * The fishing PERCEPTION threshold (Sprint 6): the permille chance {@code actorId}'s
+     * eye picks a given live spot out of the water at all — {@code base + perLevel *
+     * fishing}, ceiling-clamped. Pure level read (no attribute: reading water is learned
+     * craft, not raw stats); reads the TRUE id. Degrades to the base for the untrained and
+     * wherever tracks are unwired.
+     */
+    public static int fishSightPermille(SkillTrackRegistry tracks, int actorId) {
+        int raw = FISH_SIGHT_BASE_PERMILLE
+                + FISH_SIGHT_PER_LEVEL_PERMILLE * tracks.level(actorId, tracks.fishingRaw());
+        return Math.min(FISH_SIGHT_CEIL_PERMILLE, raw);
+    }
+
+    /**
+     * The fishing SUCCESS threshold (Sprint 6): fisher {@code fishing + AGI} against the
+     * spot size's authored {@code resist}, on the fishing family's base/floor/ceiling.
+     * Reads the TRUE id — a cast is the body's own work (the push/pickpocket precedent).
+     */
+    public static int fishCatchPermille(SkillTrackRegistry tracks, int fisherId, int resist) {
+        int score = tracks.level(fisherId, tracks.fishingRaw())
+                + tracks.attribute(fisherId, AttributeId.AGI);
+        return successPermille(score, resist, FISH_CATCH_BASE_PERMILLE,
+                FISH_CATCH_FLOOR_PERMILLE, FISH_CATCH_CEIL_PERMILLE);
     }
 }

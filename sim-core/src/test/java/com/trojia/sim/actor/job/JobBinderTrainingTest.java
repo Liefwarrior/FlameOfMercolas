@@ -82,7 +82,7 @@ final class JobBinderTrainingTest {
                 original.rhythmBonus(), original.workTicksPerUnit(), original.unitsToComplete(),
                 original.renewMode(), original.cooldownTicks(), original.assign(),
                 original.defaultFor(), original.secret(), original.cover(),
-                "nonesuchcraft", original.trainCp()));
+                "nonesuchcraft", original.trainCp(), original.dutyPerUnit()));
         ActorRawsValidationException e = assertThrows(ActorRawsValidationException.class,
                 () -> JobBinder.bind(raws, KNOWN_TYPES, skills));
         assertTrue(e.getMessage().contains("unknown skill"),

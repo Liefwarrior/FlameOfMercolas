@@ -162,7 +162,16 @@
       "aptitudeTier": "NEGLECTED",
       "canonAnchor": "the fishbone pier's three crewed hulls (Kestrel, Bregga's Promise, Deep Keel); Merle the waterman's honest oar",
       "provenance": "PROGRESSION-SPEC.md section 2 row 18 (placeholder name, Sprint 5 civic-labor pass; deliberately absent from every section-5 AttributeWeights row this sprint - zero attribute drift by construction)"
+    },
+    {
+      "id": "fishing",
+      "displayName": "Fishing",
+      "covers": "reading water for spots, casting, landing the catch",
+      "governingAttribute": "AGI",
+      "aptitudeTier": "NEGLECTED",
+      "canonAnchor": "port-city invention; canon [SILENT] - it's the ocean and a port (Eli's S6 fishing directive, 2026-07-24)",
+      "provenance": "PROGRESSION-SPEC.md section 2 row 19 (placeholder name, Sprint 6 fishing pass; gates BOTH spot perception (%chance-to-see) and catch success per Eli's brief; deliberately absent from every section-5 AttributeWeights row - zero attribute drift by construction)"
     }
   ],
-  "notes": "Schema mirrors content/raws/materials conventions (ARCHITECTURE.md section 10 style): id, displayName, covers, governingAttribute (MGT|AGI|VIG|WIT|NONE), aptitudeTier (FAVORED|TRAINED|NEGLECTED|FLAME). canonAnchor/provenance/notes are documentation-only and ignored by the loader. Encodes PROGRESSION-SPEC.md section 2's 18-skill table (16 as of the 2026-07-13 Skyrunning rename + the Sprint-5 fieldcraft/seacraft civic-labor pair). Count contract: the SkillTrackRegistry save-frame guard means 16-skill-era saves refuse to load against these raws - documented loud-fail, see PROGRESSION-SPEC section 2."
+  "notes": "Schema mirrors content/raws/materials conventions (ARCHITECTURE.md section 10 style): id, displayName, covers, governingAttribute (MGT|AGI|VIG|WIT|NONE), aptitudeTier (FAVORED|TRAINED|NEGLECTED|FLAME). canonAnchor/provenance/notes are documentation-only and ignored by the loader. Encodes PROGRESSION-SPEC.md section 2's 19-skill table (16 as of the 2026-07-13 Skyrunning rename + the Sprint-5 fieldcraft/seacraft civic-labor pair + Sprint-6 fishing). Count contract: the SkillTrackRegistry save-frame guard means earlier-era saves (16- or 18-skill) refuse to load against these raws - documented loud-fail, see PROGRESSION-SPEC section 2."
 }

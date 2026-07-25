@@ -27,10 +27,20 @@ package com.trojia.sim.actor.job;
  * @param rhythmBonus      score bonus while inside the window
  * @param workTicksPerUnit ticks of {@code pursue()} per progress unit
  * @param unitsToComplete  progress units to reach {@code isComplete()}
+ * <p><b>Sprint-6 DUTY pair</b> (Eli's live-ops bug 1 — "no one has a way to gain DUTY"):
+ * {@code dutyPerUnit} is the DUTY reserve restored by one discrete work event, applied at
+ * exactly the same three seams the training pair rides (unit completion / waypoint arrival /
+ * dwell completion) — honest work at one's station IS how duty refills. Data-driven per job
+ * (the {@code trainsSkill} pattern); {@code 0} for the non-civic set (beasts, villains, the
+ * PC seam) and for every type whose DUTY never decays. The committed raws are pinned by
+ * {@code JobDutyCommittedTest}: any actor type whose DUTY decays has a default job with a
+ * positive {@code dutyPerUnit} — no employed type can bottom out.
+ *
  * @param renewMode        what happens after completion
  * @param cooldownTicks    cooldown length when {@code renewMode == COOLDOWN}
  * @param trainSkillRaw    resolved skill raw this job trains, or {@link #TRAINS_NOTHING}
  * @param trainCp          §3.1 base cp per discrete work event ({@code 0} when untrained)
+ * @param dutyPerUnit      DUTY reserve restored per discrete work event ({@code >= 0})
  */
 public record JobParams(
         GoalKind goalKind,
@@ -43,7 +53,8 @@ public record JobParams(
         RenewMode renewMode,
         int cooldownTicks,
         int trainSkillRaw,
-        int trainCp) {
+        int trainCp,
+        int dutyPerUnit) {
 
     /** The JOB behavior score band (ACTORS-SPEC.md §1.2). */
     public static final int JOB_BAND_MIN = 100;
@@ -61,7 +72,20 @@ public record JobParams(
             int rhythmBonus, int workTicksPerUnit, int unitsToComplete, RenewMode renewMode,
             int cooldownTicks) {
         this(goalKind, priority, rhythmWindowStart, rhythmWindowEnd, rhythmBonus,
-                workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, TRAINS_NOTHING, 0);
+                workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, TRAINS_NOTHING, 0, 0);
+    }
+
+    /**
+     * Duty-less convenience constructor (the pre-Sprint-6 canonical shape): every field as
+     * before, {@code dutyPerUnit = 0}. Kept so the Sprint-5 training tests and synthetic
+     * params never mention the DUTY pair.
+     */
+    public JobParams(GoalKind goalKind, int priority, int rhythmWindowStart, int rhythmWindowEnd,
+            int rhythmBonus, int workTicksPerUnit, int unitsToComplete, RenewMode renewMode,
+            int cooldownTicks, int trainSkillRaw, int trainCp) {
+        this(goalKind, priority, rhythmWindowStart, rhythmWindowEnd, rhythmBonus,
+                workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, trainSkillRaw,
+                trainCp, 0);
     }
 
     public JobParams {
@@ -108,6 +132,9 @@ public record JobParams(
         if (trainSkillRaw != TRAINS_NOTHING && trainCp < 1) {
             throw new IllegalArgumentException(
                     "a trained skill needs trainCp >= 1, got " + trainCp);
+        }
+        if (dutyPerUnit < 0) {
+            throw new IllegalArgumentException("dutyPerUnit must be >= 0: " + dutyPerUnit);
         }
     }
 

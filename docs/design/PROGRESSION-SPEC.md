@@ -89,6 +89,7 @@ assassins — see DECISIONS.md); **The Draw → Dire Bows** and **Gutter-Ken →
 | 16 | **The Flame** | Gabri-unique Source track | — (see §7) | **×4** | Flame of Mercolas feats (L2341, L2710, L2980) |
 | 17 | **Fieldcraft** (placeholder, Sprint 5 civic-labor pass) | plot-tending, sowing, harvest, beast-keeping | MGT | Neglected | courtyard-farm compound canon (compounds farm their own courts; Saltgate harvest baskets); Herdis's pen, Cobb's kennels |
 | 18 | **Seacraft** (placeholder, Sprint 5 civic-labor pass) | sail-handling, oars, lines, tides, deck work | AGI | Neglected | the fishbone pier's three crewed hulls (Kestrel, Bregga's Promise, Deep Keel) |
+| 19 | **Fishing** (placeholder, Sprint 6 fishing pass — Eli's directive 2026-07-24) | reading water for spots (%chance-to-see), casting, landing the catch | AGI | Neglected | port-city invention; canon [SILENT] — "it's the ocean and a port" |
 
 **Sprint-5 containment rules on #17/#18 (binding this sprint):** neither skill appears in
 any §5 AttributeWeights row — they train without moving any attribute, so no existing

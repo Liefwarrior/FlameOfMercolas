@@ -29,7 +29,7 @@ public final class JobRawsLoader {
     private static final List<String> JOB_FIELDS = List.of(
             "id", "goalKind", "priority", "rhythmWindow", "rhythmBonus", "workTicksPerUnit",
             "unitsToComplete", "renew", "assign", "defaultFor", "secret", "cover",
-            "trainsSkill", "trainCp");
+            "trainsSkill", "trainCp", "dutyPerUnit");
     private static final List<String> RENEW_FIELDS = List.of("mode", "cooldownTicks");
     private static final List<String> COVER_FIELDS = List.of("actorType", "presentedJob");
 
@@ -118,9 +118,14 @@ public final class JobRawsLoader {
                     "trainCp without trainsSkill (the pair is both-or-neither)");
         }
 
+        // Sprint-6 DUTY gain: optional, defaulting to 0 (the non-civic set omits it).
+        int dutyPerUnit = raw.has("dutyPerUnit")
+                ? requireInt(file, "dutyPerUnit", raw, "dutyPerUnit", 0, Integer.MAX_VALUE)
+                : 0;
+
         return new JobRaw(file, id, goalKind, priority, rhythmStart, rhythmEnd, rhythmBonus,
                 workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, assign, defaultFor,
-                secret, cover, trainsSkill, trainCp);
+                secret, cover, trainsSkill, trainCp, dutyPerUnit);
     }
 
     private static List<JobRaw.AssignWeight> parseAssign(String file, JsonObject raw) {

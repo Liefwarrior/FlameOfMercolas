@@ -64,5 +64,18 @@ public enum ReasonCode {
      * willing counter, larder, commons or (if broke) stocked bin within reach (Sprint 4's
      * played-actor eat verb; the client's "nothing to eat here" toast reads this).
      */
-    NO_MEAL_IN_REACH
+    NO_MEAL_IN_REACH,
+    /** A completed cast landed a fish (Sprint 6 fishing — FISH minted into the carry). */
+    CAUGHT_FISH,
+    /** A completed cast came up empty (the catch check failed; XP still earned). */
+    FISH_GOT_AWAY,
+    /** A fisher sold its catch at a shop's buy-side counter (the coin faucet firing). */
+    SOLD_CATCH,
+    /** Play mode: the fish intent found no live, perceived spot within casting reach. */
+    NO_SPOT_IN_REACH,
+    /**
+     * Terminal starvation (Sprint 6 death): HUNGER sat at 0 for the whole long grace
+     * window and this soul died of it — {@code DEAD} set, inert forever, by name in the feed.
+     */
+    STARVED_TO_DEATH
 }

@@ -15,6 +15,9 @@ import java.util.List;
  * ({@code 0} when {@code trainsSkill} is {@code null}). The raws pair is
  * parsed and carried here; resolving the key against the skill registry and
  * wiring the award seams is the Sim lane's binder/behavior work.</p>
+ *
+ * <p>Sprint-6 DUTY field: {@code dutyPerUnit} is the DUTY reserve one discrete
+ * work event restores ({@code 0} when the entry omits it — the non-civic set).</p>
  */
 record JobRaw(
         String file,
@@ -33,7 +36,8 @@ record JobRaw(
         boolean secret,
         CoverSpec cover,
         String trainsSkill,
-        int trainCp) {
+        int trainCp,
+        int dutyPerUnit) {
 
     record AssignWeight(ActorTypeId actorType, int weight) {
     }

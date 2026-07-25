@@ -62,6 +62,15 @@ public final class ItemKinds {
      */
     public static final short DEBT_PAPER = 12;
 
+    /**
+     * A fresh-caught fish (Sprint 6 fishing): minted by a successful catch at a live
+     * fishing spot (accounted like farm FOOD in the closed-supply proof), sellable to any
+     * shopkeeper through the buy-side counter ({@link BankVerbs#sellToShop} — the citizen
+     * coin faucet), vendible back out as a meal ({@link BankVerbs#buyMeal}), and edible
+     * exactly like FOOD ({@link SeekFoodPolicy}'s carried-meal fast path).
+     */
+    public static final short FISH = 13;
+
     private ItemKinds() {
     }
 }

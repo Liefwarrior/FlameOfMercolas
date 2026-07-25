@@ -73,6 +73,15 @@ public final class ActorsSystem implements SimulationSystem {
     private long foodMinted;
     private long foodEaten;
 
+    /**
+     * Closed-supply FISH accounting (Sprint 6 fishing): totals ever minted (successful
+     * catches) and ever eaten — the {@code foodMinted}/{@code foodEaten} twin for the fish
+     * conservation identity {@code fishMinted == liveOfKind(FISH) + fishEaten} (a sold fish
+     * only MOVES). Pure accounting, rides no save.
+     */
+    private long fishMinted;
+    private long fishEaten;
+
     /** Ring capacity of the shove log — bounds riot detection's O(K^2) cluster scan. */
     private static final int SHOVE_LOG_CAPACITY = 256;
 
@@ -105,6 +114,21 @@ public final class ActorsSystem implements SimulationSystem {
     /** The live crime log (public: the observer's feed and the reports read rows here). */
     public CrimeLog crimeLog() {
         return crimeLog;
+    }
+
+    /** Ring capacity of the death log — a district's whole soak of deaths fits easily. */
+    private static final int DEATH_LOG_CAPACITY = 256;
+
+    /**
+     * The bounded death ring (Sprint 6): one row per death (execution / terminal
+     * starvation), announced by name in the client feed. Serialized, loaded and hashed
+     * like {@link ShoveLog}.
+     */
+    private final DeathLog deathLog = new DeathLog(DEATH_LOG_CAPACITY);
+
+    /** The live death log (public: the observer's feed announces rows by name). */
+    public DeathLog deathLog() {
+        return deathLog;
     }
 
     /** The tick being simulated right now — the shove cooldown clock inside the occupancy view. */
@@ -143,6 +167,19 @@ public final class ActorsSystem implements SimulationSystem {
     /** The live quest log (public: play-mode talk notes land here; the client journal reads it). */
     public QuestLog questLog() {
         return questLog;
+    }
+
+    /**
+     * The live fishing-spot registry (Sprint 6, Eli's bug 6): built against the baked zone
+     * table, ticked on its own cadence before any actor acts, persisted as part of THIS
+     * chunk (the {@link QuestLog} discipline). {@code FishingSpots.EMPTY}-equivalent (a
+     * zone-less registry) on every pre-fishing bake — no spot ever spawns.
+     */
+    private final FishingSpots fishingSpots;
+
+    /** The live fishing-spot registry (public: the client renders perceived spots off it). */
+    public FishingSpots fishingSpots() {
+        return fishingSpots;
     }
 
     /** The bake-bound quest table (public: the client journal/talk surface reads titles/keys). */
@@ -259,6 +296,7 @@ public final class ActorsSystem implements SimulationSystem {
         this.factionStandings = factionStandings;
         this.quests = quests;
         this.questLog = new QuestLog(quests);
+        this.fishingSpots = new FishingSpots(fixtures.fishingZones());
     }
 
     public ActorRegistry registry() {
@@ -345,6 +383,16 @@ public final class ActorsSystem implements SimulationSystem {
         return foodEaten;
     }
 
+    /** Total FISH ever minted (successful catches) — the fish conservation numerator. */
+    public long fishMinted() {
+        return fishMinted;
+    }
+
+    /** Total FISH ever eaten/sunk — the fish conservation sink count. */
+    public long fishEaten() {
+        return fishEaten;
+    }
+
     /**
      * Records FOOD minted OUTSIDE the tick loop (the bake-time larder seed), so the harness's
      * conservation identity {@code minted == liveOfKind(FOOD) + eaten} accounts for every unit that
@@ -373,6 +421,9 @@ public final class ActorsSystem implements SimulationSystem {
             java.util.Arrays.fill(drawCounters, 0, registry.size(), 0);
         }
         rebuildOccupancy();
+        // Sprint 6: the fishing water rolls its cadence BEFORE any actor acts (spawn/expire
+        // on named non-actor draws), so every fisher this tick sees one coherent spot set.
+        fishingSpots.tick(worldSeed, context.tick());
         runPayroll(context.tick());
         runFoodImports(context.tick());
         runFoodProvision(context.tick());
@@ -403,8 +454,15 @@ public final class ActorsSystem implements SimulationSystem {
         }
         for (int i = 0; i < market.vendorCount(); i++) {
             int shopId = market.vendorAt(i);
+            if (registry.get(shopId).isDead()) {
+                continue; // Sprint 6: no quay provisions land on a dead vendor's counter
+            }
+            // Sprint 6: the cap covers the counter's whole MEAL stock (FOOD + the FISH it
+            // bought off citizens), so a fish-heavy counter imports less — live meal supply
+            // stays bounded by the same cap either way.
             int deficit = FoodEconomy.SHOP_STOCK_CAP
-                    - items.countCarriedOfKind(shopId, ItemKinds.FOOD);
+                    - items.countCarriedOfKind(shopId, ItemKinds.FOOD)
+                    - items.countCarriedOfKind(shopId, ItemKinds.FISH);
             if (deficit > 0) {
                 foodMinted += items.addCarried(shopId, ItemKinds.FOOD, deficit);
             }
@@ -435,6 +493,9 @@ public final class ActorsSystem implements SimulationSystem {
         int pool = payroll.employerAccountId();
         for (int i = 0; i < market.provisionedCount(); i++) {
             int id = market.provisionedAt(i);
+            if (registry.get(id).isDead()) {
+                continue; // Sprint 6: a dead household shops no more (estate frozen)
+            }
             int deficit = FoodEconomy.CARRY_RATION - items.countCarriedOfKind(id, ItemKinds.FOOD);
             if (deficit <= 0) {
                 continue; // pantry already stocked
@@ -495,7 +556,9 @@ public final class ActorsSystem implements SimulationSystem {
         int employer = payroll.employerAccountId();
         for (int id = 0; id < registry.size(); id++) {
             long wage = payroll.wageForActor(id);
-            if (wage > 0) {
+            // Sprint 6 death: the dead draw no wages — their estate sits frozen-conserved,
+            // and the employer pool keeps paying the living instead of a corpse's account.
+            if (wage > 0 && !registry.get(id).isDead()) {
                 bank.transfer(employer, id, wage); // skipped (no-op) if the pool can't cover it
             }
         }
@@ -514,7 +577,12 @@ public final class ActorsSystem implements SimulationSystem {
             occupancy.clear();
         }
         for (int i = 0; i < registry.size(); i++) {
-            occupancy.add(registry.get(i).cell());
+            // Sprint 6 death: a corpse VACATES its tile for the living — the occupancy
+            // index simply never counts the DEAD, so the living walk over/through the
+            // cell a soul died on (the clean mechanism: no teleport, no removal).
+            if (!registry.get(i).isDead()) {
+                occupancy.add(registry.get(i).cell());
+            }
         }
     }
 
@@ -568,10 +636,15 @@ public final class ActorsSystem implements SimulationSystem {
         // sensing reads it, so a load mid-crime-window must correct exactly what the
         // continuous run would.
         crimeLog.serialize(out);
-        // Sprint 3, canonical order LAST: the quest log (stages, owner, latch, cursors) —
-        // the engine reads it every tick, so a load mid-quest must resume exactly where
-        // the continuous run stood.
+        // Sprint 3, canonical order after the crime log: the quest log (stages, owner,
+        // latch, cursors) — the engine reads it every tick, so a load mid-quest must
+        // resume exactly where the continuous run stood.
         questLog.serialize(out);
+        // Sprint 6, canonical order after the quest log: the fishing-spot registry —
+        // fishers target live spots, so a load mid-spot must reproduce the continuous
+        // run's water exactly — then, LAST, the death log (the feed's by-name toll).
+        fishingSpots.serialize(out);
+        deathLog.serialize(out);
     }
 
     private void writeActor(DataOutput out, Actor actor) throws IOException {
@@ -608,6 +681,7 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeLong(actor.lastPushTick()); // density revisit: shove cooldown clock
         out.writeLong(actor.houseArrestUntilTick()); // density revisit: house-arrest deadline
         out.writeLong(actor.huntBackoffUntilTick()); // density revisit: hop-blocked-chase backoff
+        out.writeLong(actor.starvingSinceTick()); // Sprint 6 death: the starvation-spell clock
         // lastReasonCode is load-bearing in ApprehendPolicy's buying-customer exemption, so a
         // loaded run must see the same value a continuous run would (-1 = never set).
         out.writeByte(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
@@ -663,6 +737,8 @@ public final class ActorsSystem implements SimulationSystem {
         factionStandings.load(in); // Sprint 1: the per-actor per-faction standing ledger
         crimeLog.load(in); // Sprint 2: the behavior-carrying theft ring buffer
         questLog.load(in); // Sprint 3: the quest state (frame-guarded against the wired raws)
+        fishingSpots.load(in); // Sprint 6: the live spot slots (frame-guarded on zone count)
+        deathLog.load(in); // Sprint 6: the by-name death toll
     }
 
     private void readActor(DataInput in) throws IOException {
@@ -700,6 +776,7 @@ public final class ActorsSystem implements SimulationSystem {
         long lastPushTick = in.readLong(); // density revisit
         long houseArrestUntilTick = in.readLong(); // density revisit
         long huntBackoffUntilTick = in.readLong(); // density revisit: hop-blocked-chase backoff
+        long starvingSinceTick = in.readLong(); // Sprint 6 death: the starvation-spell clock
         byte lastReasonOrdinal = in.readByte(); // law & order pass: -1 = never set
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
@@ -736,6 +813,7 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setLastPushTick(lastPushTick);
         actor.setHouseArrestUntilTick(houseArrestUntilTick);
         actor.setHuntBackoffUntilTick(huntBackoffUntilTick);
+        actor.setStarvingSinceTick(starvingSinceTick);
         actor.setLastReasonCode(
                 lastReasonOrdinal < 0 ? null : ReasonCode.values()[lastReasonOrdinal]);
     }
@@ -780,6 +858,10 @@ public final class ActorsSystem implements SimulationSystem {
             sink.putLong(actor.lastPushTick());
             sink.putLong(actor.houseArrestUntilTick());
             sink.putLong(actor.huntBackoffUntilTick());
+            // Sprint 6 death (landmine F): the starvation clock is behavior-carrying — a
+            // spell-only desync must fail the twin-run hash before it becomes a death-day
+            // divergence.
+            sink.putLong(actor.starvingSinceTick());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {
@@ -813,6 +895,10 @@ public final class ActorsSystem implements SimulationSystem {
         // Sprint 3 (landmine F): the quest engine reads the quest log every tick — a
         // quest-only desync (stage, owner, latch or cursor) must fail the twin run.
         questLog.hashInto(sink);
+        // Sprint 6 (landmine F): fishers target live spots — a spot-only desync must fail
+        // the twin-run hash, not slip past it. The death log rides along.
+        fishingSpots.hashInto(sink);
+        deathLog.hashInto(sink);
     }
 
     /** The per-tick {@link ActorContext}, bound to this system's registries and named draws. */
@@ -945,6 +1031,11 @@ public final class ActorsSystem implements SimulationSystem {
         }
 
         @Override
+        public PatrolRouteTable workRounds() {
+            return fixtures.workRounds();
+        }
+
+        @Override
         public int civicPoolAccount() {
             Payroll payroll = fixtures.payroll();
             return payroll.isWired() ? payroll.employerAccountId() : Actor.NONE;
@@ -958,6 +1049,16 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public void recordFoodEaten(int n) {
             foodEaten += n;
+        }
+
+        @Override
+        public void recordFishMinted(int n) {
+            fishMinted += n;
+        }
+
+        @Override
+        public void recordFishEaten(int n) {
+            fishEaten += n;
         }
 
         @Override
@@ -999,6 +1100,16 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public QuestLog questLog() {
             return questLog;
+        }
+
+        @Override
+        public FishingSpots fishingSpots() {
+            return fishingSpots;
+        }
+
+        @Override
+        public void recordDeath(int actorId, ReasonCode cause) {
+            deathLog.record(ctx.tick(), actorId, cause);
         }
 
         @Override
@@ -1052,17 +1163,29 @@ public final class ActorsSystem implements SimulationSystem {
             // The wired contest (Sprint 1): the check.push named draw rides the SHARED
             // per-actor per-tick counter (§2.2 pinned attribution), consumed lazily — only
             // when the contest actually runs, never on a cooldown-blocked attempt.
+            // GUARD ETIQUETTE (Sprint 6, Eli's bug 2): a guard does not shove a guard on
+            // duty — the Watch-vs-Watch pairing is refused inside the shove (no draw
+            // consumed, no cooldown burned), so the blocked patrol WAITS and, after the
+            // bounded JobBehaviors yield budget, gives up the leg and walks away.
+            // Deterministic: a pure jobs-registry read of both parties.
             boolean pushed = PushMechanics.tryPush(pusher, cell, registry, currentTick,
                     c -> cursor == null || Walkability.isWalkable(cursor.moveTo(c)),
                     this, target, skillTracks,
                     pusherId -> NamedDraws.draw(ActorRngStream.CHECK_PUSH, worldSeed,
-                            currentTick, pusherId, drawCounters[pusherId]++));
+                            currentTick, pusherId, drawCounters[pusherId]++),
+                    (p, q) -> !(isOnDutyWatch(p) && isOnDutyWatch(q)));
             if (pushed) {
                 pushCount++;
             }
             return pushed;
         }
     };
+
+    /** Whether {@code actor} holds a bound {@link Job.Watch} — the on-duty-guard read. */
+    private boolean isOnDutyWatch(Actor actor) {
+        return actor != null && actor.jobOrdinal() >= 0
+                && jobs.get(actor.jobOrdinal()) instanceof Job.Watch;
+    }
 
     /** Radius around the pusher's own home/anchor within which a shove is domestic, not riot material. */
     private static final int DOMESTIC_SHOVE_RADIUS = 2;

@@ -159,6 +159,29 @@ public interface ActorContext {
     }
 
     /**
+     * The baked carter-rounds circuit table (Sprint 6, Eli's bug 4): the ordered multi-stop
+     * work circuits (warehouse -&gt; quay -&gt; stores...) a {@code serf.carter} walks through
+     * the day, bound by anchor exactly like {@link #patrolRoutes()} (the same immutable
+     * {@link PatrolRouteTable} shape — an ordered waypoint-list table, never a runtime lane).
+     * {@link PatrolRouteTable#EMPTY} where no circuits are wired — every carter then works
+     * the plain laborer anchor cycle.
+     */
+    default PatrolRouteTable workRounds() {
+        return PatrolRouteTable.EMPTY;
+    }
+
+    /**
+     * The live fishing-spot registry (Sprint 6, Eli's bug 6): which authored zones hold a
+     * surfaced spot right now — the fisher job targets these (perception-gated per soul)
+     * and the play-mode cast resolves against them. {@link FishingSpots#EMPTY} where no
+     * zone table is wired — no spot ever exists and fishing behaviors take their spotless
+     * fallback.
+     */
+    default FishingSpots fishingSpots() {
+        return FishingSpots.EMPTY;
+    }
+
+    /**
      * The civic/market pool account loiter fines are paid into (law &amp; order pass, Pass 11) —
      * the same finite employer/market pool payroll draws from, so fines recirculate as wages.
      * {@link Actor#NONE} where no payroll is wired: the fine step is then skipped entirely
@@ -189,6 +212,26 @@ public interface ActorContext {
 
     /** Records {@code n} units of FOOD eaten (sunk) for the conservation proof; pure accounting. */
     default void recordFoodEaten(int n) {
+    }
+
+    /**
+     * Records {@code n} FISH minted at runtime (a successful catch at a live spot, Sprint 6)
+     * for the fish conservation proof {@code fishMinted == live(FISH) + fishEaten}. Pure
+     * accounting — read by no behavior; a no-op where unwired.
+     */
+    default void recordFishMinted(int n) {
+    }
+
+    /** Records {@code n} FISH eaten (sunk) for the fish conservation proof; pure accounting. */
+    default void recordFishEaten(int n) {
+    }
+
+    /**
+     * Records one death (Sprint 6): {@code actorId} died of {@code cause} (execution or
+     * terminal starvation) this tick. Lands in the {@link DeathLog} ring the client feed
+     * announces by name. A no-op where unwired.
+     */
+    default void recordDeath(int actorId, ReasonCode cause) {
     }
 
     /**

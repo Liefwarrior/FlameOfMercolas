@@ -56,6 +56,7 @@ public final class SkillTrackRegistry {
     static final String KEY_GRIT = "grit";
     static final String KEY_STREETWISE = "streetwise";
     static final String KEY_SKYRUNNING = "skyrunning";
+    static final String KEY_FISHING = "fishing";
 
     /** The boot-built skill universe, or {@code null} when unwired. */
     private final SkillRegistry skills;
@@ -67,6 +68,7 @@ public final class SkillTrackRegistry {
     private final int grit;
     private final int streetwise;
     private final int skyrunning;
+    private final int fishing;
 
     private SkillTrackRegistry() {
         this.skills = null;
@@ -75,6 +77,7 @@ public final class SkillTrackRegistry {
         this.grit = Actor.NONE;
         this.streetwise = Actor.NONE;
         this.skyrunning = Actor.NONE;
+        this.fishing = Actor.NONE;
     }
 
     /**
@@ -89,6 +92,7 @@ public final class SkillTrackRegistry {
         this.grit = rawOf(skills, KEY_GRIT);
         this.streetwise = rawOf(skills, KEY_STREETWISE);
         this.skyrunning = rawOf(skills, KEY_SKYRUNNING);
+        this.fishing = rawOf(skills, KEY_FISHING);
     }
 
     private static int rawOf(SkillRegistry skills, String key) {
@@ -126,6 +130,11 @@ public final class SkillTrackRegistry {
 
     public int skyrunningRaw() {
         return skyrunning;
+    }
+
+    /** Sprint 6: the FISHING raw ({@link Actor#NONE} pre-fishing-raws — checks degrade). */
+    public int fishingRaw() {
+        return fishing;
     }
 
     /**

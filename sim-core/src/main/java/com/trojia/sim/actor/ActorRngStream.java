@@ -82,7 +82,32 @@ public enum ActorRngStream {
      * shift); drawn through the shared per-actor per-tick counter, spatialKey = the quest
      * OWNER's actor id.
      */
-    CHECK_SEARCH("check.search");
+    CHECK_SEARCH("check.search"),
+    /**
+     * The fishing-spot spawn draw (Sprint 6 fishing, {@link FishingSpots}): on the fixed
+     * spawn cadence, one draw per size class decides whether (and in which authored zone) a
+     * fresh spot surfaces. Appended stream (name-derived salt — no existing draws shift);
+     * NOT an actor draw: spatialKey = the SIZE-CLASS ordinal, drawIndex = 0 — the registry
+     * ticks before any actor and owns its own addressing, exactly like the payroll/import
+     * cadences own theirs.
+     */
+    FISHING_SPOT_SPAWN("fishing.spotSpawn"),
+    /**
+     * The per-actor spot-perception draw (Sprint 6 fishing): whether THIS soul can see a
+     * given live spot at all — a pure function of {@code (worldSeed, spot spawnTick,
+     * actorId, zoneIndex)}, so a spot's visibility per actor is STABLE for the spot's whole
+     * life (no flicker), consumes no per-tick draw counter, and the client can evaluate it
+     * for the played soul's rendering without touching sim state. The FISHING skill shifts
+     * the pass threshold ({@code SkillChecks}). Appended stream.
+     */
+    FISHING_PERCEIVE("fishing.perceive"),
+    /**
+     * The catch check (Sprint 6 fishing, {@code JobBehaviors}/{@code PlayerControlPolicy}):
+     * one draw per completed cast, resolved fisher {@code fishing + AGI} against the spot
+     * size's authored resist through {@link SkillChecks}' fishing family. Appended stream;
+     * drawn through the shared per-actor per-tick counter, spatialKey = the FISHER's id.
+     */
+    CHECK_FISHING("check.fishing");
 
     private final String streamName;
     private final long salt;

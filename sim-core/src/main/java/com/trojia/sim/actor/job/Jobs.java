@@ -29,6 +29,7 @@ public final class Jobs {
     public static final List<Registration> ALL = sorted(List.of(
             new Registration(Job.Serf.Farmer.ID, (p, c) -> new Job.Serf.Farmer(p)),
             new Registration(Job.Serf.Laborer.ID, (p, c) -> new Job.Serf.Laborer(p)),
+            new Registration(Job.Serf.Carter.ID, (p, c) -> new Job.Serf.Carter(p)),
             new Registration(Job.Wastrel.Streetlife.ID, (p, c) -> new Job.Wastrel.Streetlife(p)),
             new Registration(Job.Villain.Robber.ID, Job.Villain.Robber::new),
             new Registration(Job.Villain.Cutpurse.ID, Job.Villain.Cutpurse::new),
@@ -38,6 +39,7 @@ public final class Jobs {
             new Registration(Job.Clergy.Shepherd.ID, (p, c) -> new Job.Clergy.Shepherd(p)),
             new Registration(Job.Clergy.Acolyte.ID, (p, c) -> new Job.Clergy.Acolyte(p)),
             new Registration(Job.Maritime.Sailor.ID, (p, c) -> new Job.Maritime.Sailor(p)),
+            new Registration(Job.Maritime.Fisher.ID, (p, c) -> new Job.Maritime.Fisher(p)),
             new Registration(Job.Trade.Stallkeep.ID, (p, c) -> new Job.Trade.Stallkeep(p)),
             new Registration(Job.Trade.Trader.ID, (p, c) -> new Job.Trade.Trader(p)),
             new Registration(Job.Husbandry.Keeper.ID, (p, c) -> new Job.Husbandry.Keeper(p)),

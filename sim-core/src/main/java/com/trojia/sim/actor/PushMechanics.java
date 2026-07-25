@@ -63,6 +63,22 @@ public final class PushMechanics {
         long draw(int pusherId);
     }
 
+    /**
+     * The shove-etiquette gate (Sprint 6, Eli's bug 2): consulted once per {@link #tryPush}
+     * after the occupant is found and BEFORE the contest draw — a refused pairing consumes
+     * no draw index and burns no cooldown, so the blocked step simply retries (and the
+     * patrol behaviors' bounded yield eventually walks the pusher away). The production
+     * gate is "a guard does not shove a guard on duty" ({@code ActorsSystem}); {@link
+     * #ALLOW_ALL} is the pre-S6 behavior and the default of every legacy overload.
+     */
+    @FunctionalInterface
+    public interface ShoveEtiquette {
+        /** Everyone may shove everyone — byte-identical to the pre-etiquette shove. */
+        ShoveEtiquette ALLOW_ALL = (pusher, pushee) -> true;
+
+        boolean mayShove(Actor pusher, Actor pushee);
+    }
+
     /** Pusher's open_hand base award for a won push contest (§3.1 "strike landed" row). */
     public static final int OPEN_HAND_SHOVE_CP = 90;
     /** Shovee's grit base award for being displaced (§3.1 "blunt damage" row — pain teaches). */
@@ -131,12 +147,27 @@ public final class PushMechanics {
     public static boolean tryPush(Actor pusher, int contestedCell, ActorRegistry registry,
             long tick, Actor.WalkabilityQuery walk, Actor.OccupancyQuery occ, ShoveLog log,
             SkillTrackRegistry tracks, ContestDraw contestDraw) {
+        return tryPush(pusher, contestedCell, registry, tick, walk, occ, log, tracks,
+                contestDraw, ShoveEtiquette.ALLOW_ALL);
+    }
+
+    /**
+     * The etiquette-gated overload (Sprint 6): same shove, but {@code etiquette} may refuse
+     * a pairing outright — checked after the occupant is found, before any draw, so a
+     * refusal is draw-free and cooldown-free (the blocked step retries next tick).
+     */
+    public static boolean tryPush(Actor pusher, int contestedCell, ActorRegistry registry,
+            long tick, Actor.WalkabilityQuery walk, Actor.OccupancyQuery occ, ShoveLog log,
+            SkillTrackRegistry tracks, ContestDraw contestDraw, ShoveEtiquette etiquette) {
         if (tick - pusher.lastPushTick() < PUSH_COOLDOWN_TICKS) {
             return false; // still winded from the last shove (or from being shoved)
         }
         Actor pushee = occupantOf(contestedCell, pusher, registry);
         if (pushee == null) {
             return false; // defensive: the index said full but no actor stands there
+        }
+        if (!etiquette.mayShove(pusher, pushee)) {
+            return false; // refused pairing (guard-vs-guard): no draw, no cooldown, no log row
         }
         if (tracks.isWired()) {
             int permille = SkillChecks.pushContestPermille(tracks, pusher.id(), pushee.id());
@@ -175,11 +206,15 @@ public final class PushMechanics {
         return true;
     }
 
-    /** The lowest-id actor (never {@code pusher}) standing on {@code cell}, or {@code null}. */
+    /**
+     * The lowest-id LIVING actor (never {@code pusher}) standing on {@code cell}, or
+     * {@code null}. The DEAD are skipped (Sprint 6): a corpse no longer occupies its tile
+     * — the occupancy index never counts it — so it can neither be shoved nor block.
+     */
     private static Actor occupantOf(int cell, Actor pusher, ActorRegistry registry) {
         for (int i = 0; i < registry.size(); i++) {
             Actor actor = registry.get(i);
-            if (actor.id() != pusher.id() && actor.cell() == cell) {
+            if (actor.id() != pusher.id() && actor.cell() == cell && !actor.isDead()) {
                 return actor;
             }
         }

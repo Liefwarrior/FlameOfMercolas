@@ -7,6 +7,7 @@ import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorRngStream;
 import com.trojia.sim.actor.ActorTypeId;
 import com.trojia.sim.actor.DailyRhythm;
+import com.trojia.sim.actor.FishingSpots;
 import com.trojia.sim.actor.Need;
 import com.trojia.sim.actor.FoodEconomy;
 import com.trojia.sim.actor.FoodMarket;
@@ -14,6 +15,7 @@ import com.trojia.sim.actor.ItemKinds;
 import com.trojia.sim.actor.ItemsLiteRegistry;
 import com.trojia.sim.actor.PrisonCellRegistry;
 import com.trojia.sim.actor.ReasonCode;
+import com.trojia.sim.actor.SkillChecks;
 import com.trojia.sim.actor.StatusBit;
 import com.trojia.sim.actor.TargetKind;
 import com.trojia.sim.world.PackedPos;
@@ -72,8 +74,17 @@ public final class JobBehaviors {
      * (raws-pinned); non-training params ({@link JobParams#TRAINS_NOTHING}) and unwired
      * registries no-op here.</p>
      */
-    private static void awardTraining(Actor self, ActorContext ctx, JobParams params,
+    private static void awardWorkEvent(Actor self, ActorContext ctx, JobParams params,
             int eventCell) {
+        // Sprint 6 (Eli's bug 1 — "no one has a way to gain DUTY"): honest work at one's
+        // station refills DUTY. Applied at exactly the training pair's three seams — unit
+        // completion / waypoint-or-corner arrival / dwell completion — never per tick, so
+        // the gain is priced per discrete work event exactly like cp. Data-driven per job
+        // (jobs.json dutyPerUnit, the trainsSkill pattern); a 0 is a no-op delta and the
+        // saturating clamp bounds a busy day at NeedThresholds.MAX. Draw-free.
+        if (params.dutyPerUnit() > 0) {
+            self.applyNeedDelta(Need.DUTY, params.dutyPerUnit());
+        }
         if (!params.trains()) {
             return;
         }
@@ -134,7 +145,7 @@ public final class JobBehaviors {
             self.setGoalWorkTicks(0);
             // Sprint 5: a completed work-unit is the anchor cycle's discrete work event —
             // the job's trade skill trains here (context = the workplace cell being worked).
-            awardTraining(self, ctx, params, self.cell());
+            awardWorkEvent(self, ctx, params, self.cell());
         } else {
             self.setGoalWorkTicks(workTicks);
         }
@@ -181,7 +192,7 @@ public final class JobBehaviors {
         self.setGoalProgress((short) (self.goalProgress() + 1));
         // Sprint 5: the farm's completed unit is the same discrete work event as the anchor
         // cycle's — fieldcraft trains at the plot (context = the plot cell).
-        awardTraining(self, ctx, params, self.cell());
+        awardWorkEvent(self, ctx, params, self.cell());
         produceFood(self, ctx, homeCell);
         // Sprint 5 "mastery pays": a veteran's hands yield more. Each completed unit accrues
         // fieldcraftLevel toward a 100-point bonus threshold; every crossing mints ONE bonus
@@ -259,8 +270,8 @@ public final class JobBehaviors {
         for (int i = 0; i < market.vendorCount(); i++) {
             int shopId = market.vendorAt(i);
             int shopCell = registry.get(shopId).cell();
-            if (PackedPos.z(shopCell) != selfZ) {
-                continue;
+            if (PackedPos.z(shopCell) != selfZ || registry.get(shopId).isDead()) {
+                continue; // Sprint 6: a dead vendor's counter is shut (estate frozen)
             }
             int d = ActorGeometry.chebyshev(selfCell, shopCell);
             if (d < bestDist) {
@@ -279,11 +290,38 @@ public final class JobBehaviors {
     private static final int[] PATROL_DX = {1, 1, -1, -1};
     private static final int[] PATROL_DY = {1, -1, -1, 1};
 
-    /** SELECT for a looping route: (re)start the beat at its first corner. */
+    /**
+     * SELECT for a looping route — with the Sprint-6 phase stagger (Eli's bug 2, the
+     * pile-up fix's scheduling half): instead of every beat starting at index 0 in
+     * lockstep, the starting waypoint/corner is offset deterministically by the actor's
+     * own id, so two Watch bound to the SAME route (or two identical square beats on
+     * adjacent anchors — the guardhouse garrison pair) walk out of phase and never
+     * co-occupy a narrow segment for a whole shift. A pure function of
+     * {@code (id, route shape)} — no draw, no new state; the offset rides the
+     * already-persisted {@code goalProgress} exactly as the waypoint index does.
+     */
     public static void selectRouteStart(Actor self, ActorContext ctx) {
-        self.setGoalProgress((short) 0);
+        int route = ctx.patrolRoutes().routeContaining(self.anchorCell());
+        int offset;
+        if (route >= 0 && ctx.patrolRoutes().waypointCount(route) > 0) {
+            offset = Math.floorMod(self.id(), ctx.patrolRoutes().waypointCount(route));
+        } else {
+            offset = Math.floorMod(self.id(), 4); // square beat: stagger the starting corner
+        }
+        self.setGoalProgress((short) offset);
         self.setGoalWorkTicks(0);
     }
+
+    /**
+     * Ticks a patrol leg may stand completely still (blocked by a full cell it may not
+     * shove through — since Sprint 6 a guard never shoves an on-duty guard) before the
+     * beat YIELDS: it gives up the contested leg and advances to the next waypoint/corner,
+     * dissolving guard-vs-guard head-on jams by walking away instead of wrestling
+     * (Eli's bug 2 — "guards pushing each other... shouldn't last this long"). Sized
+     * well above the speed accumulator's every-other-tick no-move rhythm, so only a
+     * genuinely wedged guard yields.
+     */
+    public static final int PATROL_BLOCKED_YIELD_TICKS = 40;
 
     /** Bounded retry budget for {@link #retargetPatrolCorner} — draw-free, fixed geometry. */
     private static final int PATROL_RETRY_BUDGET = 8;
@@ -310,13 +348,29 @@ public final class JobBehaviors {
         }
         int target = self.goalTargetKey();
         if (self.cell() != target) {
+            int before = self.cell();
             self.stepAlongRoute(target, false, ctx::isWalkable, ctx.occupancy());
+            if (self.cell() != before) {
+                self.setGoalWorkTicks(0); // moving: the blocked-leg clock stays clean
+                return;
+            }
+            // Sprint 6 yield (Eli's bug 2): a leg standing dead still — a full cell it may
+            // not shove through (a fellow guard) — is abandoned after a bounded wait; the
+            // beat advances to its next corner and walks away instead of wrestling.
+            int blocked = self.goalWorkTicks() + 1;
+            if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
+                self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
+                self.setGoalTarget(TargetKind.NONE, Actor.NONE);
+                self.setGoalWorkTicks(0);
+            } else {
+                self.setGoalWorkTicks(blocked);
+            }
             return;
         }
         // Sprint 5: reaching a beat corner is the square patrol's discrete work event —
         // the beat's trade skill trains here (context = the corner cell; each corner is its
         // own §3.3 context, which is why patrol cp is priced under the anchor scale).
-        awardTraining(self, ctx, params, target);
+        awardWorkEvent(self, ctx, params, target);
         self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
         self.setGoalTarget(TargetKind.NONE, Actor.NONE); // force next leg's corner to be revalidated
     }
@@ -378,18 +432,304 @@ public final class JobBehaviors {
             // Sprint 5: waypoint ARRIVAL is the route patrol's discrete work event — the
             // beat's trade skill trains here (context = the waypoint cell). The failed-leg
             // skip below deliberately awards nothing: skipping is not arriving.
-            awardTraining(self, ctx, params, waypoint);
+            awardWorkEvent(self, ctx, params, waypoint);
             self.setGoalProgress((short) ((index + 1) % count)); // arrived: next leg next tick
+            self.setGoalWorkTicks(0);
             return;
         }
         // Sprint 4 (the climb): an OPT-IN cross-z consumer — a route may now carry
         // waypoints on different bands (the Saltgate Rise beat, z11<->z13); legs between
         // same-z waypoints are byte-identical to the pre-climb walker.
+        int before = self.cell();
         self.stepAlongRoute(waypoint, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
         if (self.routeFailedTo(waypoint)) {
             // Route-failure cache says this waypoint is unreachable right now: skip it rather
             // than freeze the whole beat on one blocked leg (Pass-13 DoD).
             self.setGoalProgress((short) ((index + 1) % count));
+            self.setGoalWorkTicks(0);
+            return;
+        }
+        if (self.cell() != before) {
+            self.setGoalWorkTicks(0); // moving: the blocked-leg clock stays clean
+            return;
+        }
+        // Sprint 6 yield (Eli's bug 2): a route leg standing dead still — a full cell it
+        // may not shove through (a fellow guard in a 1-wide gut) — is abandoned after a
+        // bounded wait; the patrol advances to the next waypoint and walks away instead
+        // of wrestling. Rides the (otherwise unused here) persisted goalWorkTicks.
+        int blocked = self.goalWorkTicks() + 1;
+        if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
+            self.setGoalProgress((short) ((index + 1) % count));
+            self.setGoalWorkTicks(0);
+        } else {
+            self.setGoalWorkTicks(blocked);
+        }
+    }
+
+    // ======================================================================
+    // Fishing (Sprint 6, Eli's bug 6) — spots, perception, casts, the catch
+    // ======================================================================
+
+    /** Carried FISH that triggers a sell trip to the nearest counter with room and coin. */
+    public static final int FISHER_SELL_TRIP_CATCH = 3;
+    /** FISH a fisher keeps back from every sale (its own supper — fish is food). */
+    public static final int FISHER_KEEP_RATION = 1;
+    /** Chebyshev reach of the counter exchange (the pickpocket/talk adjacency shape). */
+    public static final int FISHER_SELL_REACH = 2;
+    /** Carried FISH beyond which a marketless fisher stops casting (the carry bound). */
+    public static final int FISHER_CARRY_CAP = 8;
+    /** FISHING base cp per completed cast — XP on ATTEMPTS, caught or not (Eli's spec). */
+    public static final int FISHING_CAST_CP = 60;
+
+    /**
+     * PURSUE (fisher): during the shift — work the water. Carrying a sell-trip's worth of
+     * catch, walk to the nearest counter with room and coin and SELL through the buy-side
+     * verb (the coin faucet); otherwise target the nearest live spot this soul can SEE
+     * (perception-gated per actor — an invisible spot is not targetable), walk to its cast
+     * cell (cross-z legal: pier decks stand one band over the water) and cast:
+     * {@code workTicksPerUnit} ticks per cast, one discrete work event per completed cast
+     * (FISHING XP on the attempt + DUTY), then the {@code check.fishing} catch draw —
+     * success mints the spot's yield into the carry (accounted). No visible spot (or an
+     * unroutable stand): wander the anchored waterfront — the fisher visibly waits the
+     * water, which alone puts daily traffic on the dead piers. Off shift: home.
+     */
+    public static void pursueFishing(Actor self, ActorContext ctx, JobParams params) {
+        boolean onShift = params.inWindow(DailyRhythm.tickOfDay(ctx.tick()));
+        if (!onShift) {
+            int home = homeCellOr(self, ctx, self.anchorCell());
+            self.setGoalTarget(TargetKind.CELL, home);
+            if (self.cell() != home) {
+                self.stepAlongRoute(home, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
+            }
+            return;
+        }
+        int catchCount = ctx.items().countCarriedOfKind(self.id(), ItemKinds.FISH);
+        if (catchCount >= FISHER_SELL_TRIP_CATCH && trySellCatch(self, ctx, catchCount)) {
+            return;
+        }
+        FishingSpots spots = ctx.fishingSpots();
+        int slot = nearestTargetableSpot(self, ctx, spots);
+        if (slot == Actor.NONE || catchCount >= FISHER_CARRY_CAP) {
+            pursueWander(self, ctx, params); // wait the water near the anchored pier
+            return;
+        }
+        int castCell = spots.castCellAt(slot);
+        self.setGoalTarget(TargetKind.CELL, castCell);
+        if (self.cell() != castCell) {
+            self.setGoalWorkTicks(0);
+            self.stepAlongRoute(castCell, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
+            return;
+        }
+        int castTicks = self.goalWorkTicks() + 1;
+        if (castTicks < params.workTicksPerUnit()) {
+            self.setGoalWorkTicks(castTicks);
+            return;
+        }
+        self.setGoalWorkTicks(0);
+        // One completed cast = one discrete work event: the training pair (FISHING cp — XP
+        // on the ATTEMPT, caught or not) + DUTY, then the catch draw itself.
+        awardWorkEvent(self, ctx, params, castCell);
+        resolveCastAttempt(self, ctx, slot, false);
+    }
+
+    /**
+     * Resolves ONE cast at live spot {@code slot} (shared by the fisher job and the
+     * play-mode fish verb): the {@code check.fishing} named draw against the fisher's
+     * {@code fishing + AGI} vs the spot size's resist; success mints the spot's yield into
+     * the carry (conservation-accounted). When {@code awardCastXp}, the FISHING attempt-XP
+     * is awarded here too (the play-mode path — the job path already awarded through its
+     * own params pair). Reason-coded CAUGHT_FISH / FISH_GOT_AWAY.
+     */
+    public static void resolveCastAttempt(Actor self, ActorContext ctx, int slot,
+            boolean awardCastXp) {
+        FishingSpots spots = ctx.fishingSpots();
+        if (awardCastXp) {
+            var tracks = ctx.skillTracks();
+            tracks.award(self.id(), tracks.fishingRaw(), FISHING_CAST_CP,
+                    spots.castCellAt(slot), ctx.tick());
+        }
+        long draw = ctx.draw(ActorRngStream.CHECK_FISHING, self.id(),
+                ctx.nextDrawIndex(self.id()));
+        int permille = SkillChecks.fishCatchPermille(ctx.skillTracks(), self.id(),
+                spots.catchResistAt(slot));
+        if (SkillChecks.passes(draw, permille)) {
+            int minted = ctx.items().addCarried(self.id(), ItemKinds.FISH, spots.yieldAt(slot));
+            ctx.recordFishMinted(minted);
+            self.setLastReasonCode(ReasonCode.CAUGHT_FISH);
+        } else {
+            self.setLastReasonCode(ReasonCode.FISH_GOT_AWAY);
+        }
+    }
+
+    /**
+     * The nearest live spot this soul can SEE whose cast cell is not known-unroutable —
+     * chebyshev to the cast cell, ascending slot breaking ties. {@link Actor#NONE} when the
+     * water shows this soul nothing (low FISHING = most spots stay invisible).
+     */
+    private static int nearestTargetableSpot(Actor self, ActorContext ctx, FishingSpots spots) {
+        int best = Actor.NONE;
+        int bestDist = Integer.MAX_VALUE;
+        for (int s = 0; s < spots.slotCapacity(); s++) {
+            if (!spots.isLive(s)
+                    || !spots.visibleTo(s, ctx.worldSeed(), self.id(), ctx.skillTracks())
+                    || self.routeFailedTo(spots.castCellAt(s))) {
+                continue;
+            }
+            int d = ActorGeometry.chebyshev(self.cell(), spots.castCellAt(s));
+            if (d < bestDist) {
+                bestDist = d;
+                best = s;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * The sell trip: walk to the nearest vendor whose counter has meal room and whose
+     * pocket holds coin, and sell everything above {@link #FISHER_KEEP_RATION} through
+     * {@link com.trojia.sim.actor.BankVerbs#sellToShop} once within {@link
+     * #FISHER_SELL_REACH}. Returns {@code false} when no such counter exists right now —
+     * the caller keeps fishing (bounded by {@link #FISHER_CARRY_CAP}).
+     */
+    private static boolean trySellCatch(Actor self, ActorContext ctx, int catchCount) {
+        int shopId = nearestVendorWithRoom(self, ctx);
+        if (shopId == Actor.NONE) {
+            return false;
+        }
+        int shopCell = ctx.registry().get(shopId).cell();
+        if (PackedPos.z(shopCell) == PackedPos.z(self.cell())
+                && ActorGeometry.chebyshev(self.cell(), shopCell) <= FISHER_SELL_REACH) {
+            int itemId = ctx.items().firstCarriedOfKind(self.id(), ItemKinds.ID_CARD);
+            var card = itemId == Actor.NONE ? null : ctx.items().get(itemId);
+            int sold = com.trojia.sim.actor.BankVerbs.sellToShop(ctx.bankAccounts(),
+                    ctx.items(), self.id(), shopId, card, FoodEconomy.FISH_BUY_PRICE,
+                    ItemKinds.FISH, catchCount - FISHER_KEEP_RATION);
+            if (sold > 0) {
+                self.setLastReasonCode(ReasonCode.SOLD_CATCH);
+            }
+            return sold > 0;
+        }
+        self.setGoalTarget(TargetKind.CELL, shopCell);
+        self.setGoalWorkTicks(0);
+        self.stepAlongRoute(shopCell, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
+        return true;
+    }
+
+    /**
+     * The nearest same-z vendor with meal room under the counter cap, coin in its pocket
+     * for at least one fish, a carried ID on the seller's side to settle against, and no
+     * cached route failure — ascending chebyshev, ascending index tiebreak.
+     */
+    private static int nearestVendorWithRoom(Actor self, ActorContext ctx) {
+        FoodMarket market = ctx.foodMarket();
+        ItemsLiteRegistry items = ctx.items();
+        ActorRegistry registry = ctx.registry();
+        int selfZ = PackedPos.z(self.cell());
+        int best = Actor.NONE;
+        int bestDist = Integer.MAX_VALUE;
+        for (int i = 0; i < market.vendorCount(); i++) {
+            int shopId = market.vendorAt(i);
+            if (shopId == self.id() || registry.get(shopId).isDead()) {
+                continue; // Sprint 6: a dead vendor buys nothing (estate frozen)
+            }
+            int shopCell = registry.get(shopId).cell();
+            int stock = items.countCarriedOfKind(shopId, ItemKinds.FOOD)
+                    + items.countCarriedOfKind(shopId, ItemKinds.FISH);
+            if (PackedPos.z(shopCell) != selfZ || stock >= FoodEconomy.SHOP_STOCK_CAP
+                    || ctx.bankAccounts().balanceOf(shopId) < FoodEconomy.FISH_BUY_PRICE
+                    || self.routeFailedTo(shopCell)) {
+                continue;
+            }
+            int d = ActorGeometry.chebyshev(self.cell(), shopCell);
+            if (d < bestDist) {
+                bestDist = d;
+                best = shopId;
+            }
+        }
+        return best;
+    }
+
+    // ======================================================================
+    // Carter rounds (Sprint 6, Eli's bug 4) — the multi-stop work circuit
+    // ======================================================================
+
+    /**
+     * SELECT (rounds): stagger the starting stop by actor id (the {@link #selectRouteStart}
+     * discipline) so a whole crew bound to one circuit fans out across its stops instead of
+     * marching in lockstep. Draw-free; the offset rides the persisted {@code goalProgress}.
+     */
+    public static void selectRoundsStart(Actor self, ActorContext ctx) {
+        var rounds = ctx.workRounds();
+        int route = rounds.routeContaining(self.anchorCell());
+        int offset = route >= 0 && rounds.waypointCount(route) > 0
+                ? Math.floorMod(self.id(), rounds.waypointCount(route))
+                : 0;
+        self.setGoalProgress((short) offset);
+        self.setGoalWorkTicks(0);
+        self.setGoalTarget(TargetKind.CELL, self.anchorCell());
+    }
+
+    /**
+     * PURSUE (carter rounds): during the rhythm window, walk the bound circuit's ordered
+     * stops — one {@code workTicksPerUnit} dwell of honest work per stop, then on to the
+     * next, wrapping forever — so the warehouse, the quay markers and the stores all see
+     * real traffic through the day (Eli's bug 4). Outside the window, walk home. The
+     * current stop index rides {@code goalProgress}; the dwell/blocked clock rides
+     * {@code goalWorkTicks} (dwelling at the stop, or waiting out a human wall while
+     * traveling — the {@link #PATROL_BLOCKED_YIELD_TICKS} yield, then skip the stop). An
+     * A*-unreachable stop is skipped via the route-failure cache like a patrol's dead leg.
+     * A carter whose anchor matches no baked circuit — or an unwired table — degrades to
+     * the plain {@link #pursueAtAnchor} laborer cycle, byte-identical to pre-rounds bakes.
+     * Cross-z stops are legal (the climb's opt-in table). Draw-free.
+     */
+    public static void pursueRounds(Actor self, ActorContext ctx, JobParams params) {
+        var rounds = ctx.workRounds();
+        int route = rounds.routeContaining(self.anchorCell());
+        if (route < 0 || rounds.waypointCount(route) == 0) {
+            pursueAtAnchor(self, ctx, params); // unwired/unbound: the plain laborer cycle
+            return;
+        }
+        boolean onShift = params.inWindow(DailyRhythm.tickOfDay(ctx.tick()));
+        if (!onShift) {
+            int home = homeCellOr(self, ctx, self.anchorCell());
+            self.setGoalTarget(TargetKind.CELL, home);
+            if (self.cell() != home) {
+                self.stepAlongRoute(home, true, ctx::isWalkable, ctx.occupancy(),
+                        ctx.zLinks());
+            }
+            return;
+        }
+        int count = rounds.waypointCount(route);
+        int index = Math.floorMod(self.goalProgress(), count);
+        int stop = rounds.waypoint(route, index);
+        self.setGoalTarget(TargetKind.CELL, stop);
+        if (self.cell() != stop) {
+            int before = self.cell();
+            self.stepAlongRoute(stop, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
+            if (self.routeFailedTo(stop)) {
+                self.setGoalProgress((short) ((index + 1) % count)); // dead stop: skip it
+                self.setGoalWorkTicks(0);
+            } else if (self.cell() != before) {
+                self.setGoalWorkTicks(0); // moving: the blocked clock stays clean
+            } else {
+                int blocked = self.goalWorkTicks() + 1;
+                if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
+                    self.setGoalProgress((short) ((index + 1) % count)); // walled: walk away
+                    self.setGoalWorkTicks(0);
+                } else {
+                    self.setGoalWorkTicks(blocked);
+                }
+            }
+            return;
+        }
+        int worked = self.goalWorkTicks() + 1;
+        if (worked >= params.workTicksPerUnit()) {
+            // One stop worked to completion = one discrete work event (training + DUTY).
+            awardWorkEvent(self, ctx, params, stop);
+            self.setGoalProgress((short) ((index + 1) % count));
+            self.setGoalWorkTicks(0);
+        } else {
+            self.setGoalWorkTicks(worked);
         }
     }
 
@@ -469,7 +809,7 @@ public final class JobBehaviors {
             // among the pens). Travel-budget/stall retargets above award nothing: only a
             // dwell WORKED to completion is a qualifying use. Beast/villain wander params
             // carry no training, so this line is a no-op for them by raws construction.
-            awardTraining(self, ctx, params, self.cell());
+            awardWorkEvent(self, ctx, params, self.cell());
             retargetWander(self, ctx);
         } else {
             self.setGoalWorkTicks(dwell);
@@ -629,8 +969,9 @@ public final class JobBehaviors {
         for (int i = 0; i < registry.size(); i++) {
             Actor other = registry.get(i);
             ActorTypeId type = other.typeId();
-            if (!type.equals(PREDATOR_FERAL) && !type.equals(PREDATOR_CAT)) {
-                continue;
+            if ((!type.equals(PREDATOR_FERAL) && !type.equals(PREDATOR_CAT))
+                    || other.isDead()) {
+                continue; // Sprint 6: a dead predator scares no mouse
             }
             int cell = other.cell();
             if (PackedPos.z(cell) == selfZ
@@ -750,7 +1091,7 @@ public final class JobBehaviors {
             return false; // exposed to a nearby Watch but not caught this time
         }
         if (job instanceof Job.Villain.Skyrunner) {
-            return escalateSkyrunner(self);
+            return escalateSkyrunner(self, ctx);
         }
         arrestAndHold(self, ctx);
         return true;
@@ -770,8 +1111,9 @@ public final class JobBehaviors {
         int selfZ = PackedPos.z(selfCell);
         for (int i = 0; i < registry.size(); i++) {
             Actor other = registry.get(i);
-            if (other.jobOrdinal() < 0 || PackedPos.z(other.cell()) != selfZ) {
-                continue;
+            if (other.jobOrdinal() < 0 || PackedPos.z(other.cell()) != selfZ
+                    || other.isDead()) {
+                continue; // Sprint 6: a dead guard deters no one
             }
             if (ctx.jobs().get(other.jobOrdinal()) instanceof Job.Watch
                     && ActorGeometry.chebyshev(selfCell, other.cell())
@@ -855,11 +1197,14 @@ public final class JobBehaviors {
     }
 
     /**
-     * Skyrunner escalation: 1st offense maims (cosmetic), 2nd offense hangs (permanent).
+     * Skyrunner escalation: 1st offense maims (cosmetic), 2nd offense hangs — and since
+     * Sprint 6 a hanging actually KILLS: {@link StatusBit#DEAD} lands alongside
+     * DOWNED + EXECUTED, the death is announced by name ({@link ActorContext#recordDeath}),
+     * and from the next tick the corpse is skipped by {@code tickAll} and vacates its tile.
      * Public since Sprint 2: the guard-side theft correction ({@code ApprehendPolicy})
      * applies the same discipline to a Skyrunner caught red-handed lifting purses.
      */
-    public static boolean escalateSkyrunner(Actor self) {
+    public static boolean escalateSkyrunner(Actor self, ActorContext ctx) {
         int offense = self.offenseCount() + 1;
         self.setOffenseCount((byte) offense);
         if (offense <= 1) {
@@ -869,7 +1214,9 @@ public final class JobBehaviors {
         }
         self.setStatus(StatusBit.DOWNED, true);
         self.setStatus(StatusBit.EXECUTED, true);
+        self.setStatus(StatusBit.DEAD, true); // Sprint 6: the noose is real
         self.setLastReasonCode(ReasonCode.EXECUTED_SECOND_OFFENSE);
+        ctx.recordDeath(self.id(), ReasonCode.EXECUTED_SECOND_OFFENSE);
         return true;
     }
 

@@ -124,6 +124,15 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
             eat(self, ctx, ReasonCode.ATE_FOOD);
             return true;
         }
+        // 1b. Sprint 6: a carried FISH is a meal too (a fisher eats its own catch; a buyer
+        //     eats the fish the counter vended). Sunk on the FISH conservation ledger.
+        if (items.countCarriedOfKind(self.id(), ItemKinds.FISH) > 0) {
+            items.takeCarried(self.id(), ItemKinds.FISH, 1);
+            ctx.recordFishEaten(1);
+            self.applyNeedDelta(Need.HUNGER, FoodEconomy.EAT_RESTORE);
+            self.setLastReasonCode(ReasonCode.ATE_FOOD);
+            return true;
+        }
         int selfCell = self.cell();
         int selfZ = PackedPos.z(selfCell);
         // 2. Buy from a same-z, stocked, affordable counter within reach (the money lever). The
@@ -360,21 +369,27 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         int bestDist = maxDist == Integer.MAX_VALUE ? Integer.MAX_VALUE : maxDist + 1;
         for (int i = 0; i < market.vendorCount(); i++) {
             int shopId = market.vendorAt(i);
-            if (shopId == self.id()) {
-                continue;
+            if (shopId == self.id() || registry.get(shopId).isDead()) {
+                continue; // Sprint 6: a dead vendor's counter is shut (estate frozen)
             }
             int shopCell = registry.get(shopId).cell();
             if (PackedPos.z(shopCell) != selfZ) {
                 continue;
             }
             int d = ActorGeometry.chebyshev(selfCell, shopCell);
-            if (d < bestDist && items.countCarriedOfKind(shopId, ItemKinds.FOOD) > 0
+            if (d < bestDist && mealStock(items, shopId) > 0
                     && balance >= Barter.priceAt(quote, shopId, ctx.relationships())) {
                 bestDist = d;
                 best = shopId;
             }
         }
         return best;
+    }
+
+    /** The counter's vendible meal stock (Sprint 6): FOOD plus the FISH it bought citizens'. */
+    private static int mealStock(ItemsLiteRegistry items, int shopId) {
+        return items.countCarriedOfKind(shopId, ItemKinds.FOOD)
+                + items.countCarriedOfKind(shopId, ItemKinds.FISH);
     }
 
     /**
@@ -398,15 +413,15 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
         int bestDist = Integer.MAX_VALUE;
         for (int i = 0; i < market.vendorCount(); i++) {
             int shopId = market.vendorAt(i);
-            if (shopId == self.id()) {
-                continue;
+            if (shopId == self.id() || registry.get(shopId).isDead()) {
+                continue; // Sprint 6: a dead vendor's counter is shut (estate frozen)
             }
             int shopCell = registry.get(shopId).cell();
             if (PackedPos.z(shopCell) != selfZ) {
                 continue;
             }
             int d = ActorGeometry.chebyshev(selfCell, shopCell);
-            if (d < bestDist && items.countCarriedOfKind(shopId, ItemKinds.FOOD) > 0
+            if (d < bestDist && mealStock(items, shopId) > 0
                     && !self.routeFailedTo(shopCell)
                     && balance >= Barter.priceAt(quote, shopId, ctx.relationships())) {
                 bestDist = d;
@@ -436,11 +451,19 @@ public final class SeekFoodPolicy implements BehaviorPolicy {
             self.setLastReasonCode(ReasonCode.NEED_HUNGER_LOW);
             return; // defensive: the scan never returns a refusing counter
         }
-        boolean bought = BankVerbs.buyFood(ctx.bankAccounts(), ctx.items(), self.id(), shopId, card,
-                price, 1);
-        if (bought && ctx.items().takeCarried(self.id(), ItemKinds.FOOD, 1) > 0) {
+        // Sprint 6: the counter vends whichever meal it holds — FOOD first, else a FISH it
+        // bought off a citizen (the fish loop's demand side). Same price, same transfer.
+        short kind = BankVerbs.buyMeal(ctx.bankAccounts(), ctx.items(), self.id(), shopId, card,
+                price);
+        if (kind != 0 && ctx.items().takeCarried(self.id(), kind, 1) > 0) {
+            if (kind == ItemKinds.FISH) {
+                ctx.recordFishEaten(1);
+            } else {
+                ctx.recordFoodEaten(1);
+            }
             clearTarget(self);
-            eat(self, ctx, ReasonCode.BOUGHT_FOOD);
+            self.applyNeedDelta(Need.HUNGER, FoodEconomy.EAT_RESTORE);
+            self.setLastReasonCode(ReasonCode.BOUGHT_FOOD);
             // Faction ledger (Sprint 1): an honest counter purchase — the Merchants
             // remember, keyed on the PRESENTED id (the Persona rule). No-op when unwired.
             ctx.factionStandings().onPurchase(self.identity().presentedId());

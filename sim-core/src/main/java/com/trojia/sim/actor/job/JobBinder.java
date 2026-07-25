@@ -181,7 +181,7 @@ public final class JobBinder {
             JobParams params = new JobParams(raw.goalKind(), raw.priority(), raw.rhythmStart(),
                     raw.rhythmEnd(), raw.rhythmBonus(), raw.workTicksPerUnit(),
                     raw.unitsToComplete(), raw.renewMode(), raw.cooldownTicks(),
-                    trainSkillRaw, trainCp);
+                    trainSkillRaw, trainCp, raw.dutyPerUnit());
             jobs.add(reg.factory().create(params, raw.cover()));
         }
         JobRegistry unresolved = JobRegistry.of(jobs, List.of());

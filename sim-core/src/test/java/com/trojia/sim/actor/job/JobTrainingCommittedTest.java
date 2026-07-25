@@ -23,17 +23,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 final class JobTrainingCommittedTest {
 
-    /** The agreed Sprint-5 job → (skill, cp) training map, in jobs.json order. */
-    private static final Map<String, String> EXPECTED_SKILL = Map.of(
-            "serf.farmer", "fieldcraft",
-            "serf.laborer", "kit_keeping",
-            "watch.patrol", "streetwise",
-            "clergy.shepherd", "channeling",
-            "clergy.acolyte", "channeling",
-            "maritime.sailor", "seacraft",
-            "trade.stallkeep", "streetwise",
-            "trade.trader", "streetwise",
-            "husbandry.keeper", "fieldcraft");
+    /** The agreed Sprint-5 (+S6 carter/fisher) job → skill training map, in jobs.json order. */
+    private static final Map<String, String> EXPECTED_SKILL = Map.ofEntries(
+            Map.entry("serf.farmer", "fieldcraft"),
+            Map.entry("serf.laborer", "kit_keeping"),
+            Map.entry("serf.carter", "kit_keeping"),
+            Map.entry("watch.patrol", "streetwise"),
+            Map.entry("clergy.shepherd", "channeling"),
+            Map.entry("clergy.acolyte", "channeling"),
+            Map.entry("maritime.sailor", "seacraft"),
+            Map.entry("maritime.fisher", "fishing"),
+            Map.entry("trade.stallkeep", "streetwise"),
+            Map.entry("trade.trader", "streetwise"),
+            Map.entry("husbandry.keeper", "fieldcraft"));
 
     private static final List<String> UNTRAINED = List.of(
             "wastrel.streetlife", "villain.robber", "villain.cutpurse", "villain.skyrunner",

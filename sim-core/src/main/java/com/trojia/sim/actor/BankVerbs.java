@@ -79,4 +79,62 @@ public final class BankVerbs {
         items.moveCarried(shopId, buyerId, ItemKinds.FOOD, foodQty);
         return true;
     }
+
+    /**
+     * Buy ONE meal at a shop counter (Sprint 6): the {@link #buyFood} exchange generalized
+     * over the counter's meal stock — the shop vends a {@link ItemKinds#FOOD} if it has one,
+     * else a {@link ItemKinds#FISH} it bought off a citizen ({@link #sellToShop}), closing
+     * the fish loop: fisher → shop → hungry buyer. Same discipline: ID-authorized Royal
+     * transfer BEFORE the item moves, loose Coins refused. Returns the kind vended, or
+     * {@code 0} (no state change) when the buyer has no card / cannot pay / the counter
+     * holds no meal.
+     */
+    public static short buyMeal(BankLedger bank, ItemsLiteRegistry items, int buyerId, int shopId,
+            ItemsLiteEntry buyerIdCard, long price) {
+        int buyerAccount = BankLedger.purchaseAuth(buyerIdCard);
+        if (buyerAccount == Actor.NONE) {
+            return 0;
+        }
+        short kind = items.countCarriedOfKind(shopId, ItemKinds.FOOD) > 0 ? ItemKinds.FOOD
+                : items.countCarriedOfKind(shopId, ItemKinds.FISH) > 0 ? ItemKinds.FISH
+                : 0;
+        if (kind == 0 || !bank.transfer(buyerAccount, shopId, price)) {
+            return 0;
+        }
+        items.moveCarried(shopId, buyerId, kind, 1);
+        return kind;
+    }
+
+    /**
+     * The buy-side counter (Sprint 6, Eli's bug 5 — "shopkeepers to both sell AND buy...
+     * keep it a simple exchange"): a citizen SELLS carried goods to a shopkeeper — item
+     * for coin — paid from the shopkeeper's OWN ledger account ({@code shopId}, the bake
+     * convention {@code accountId == actorId}). The citizen coin FAUCET: the only
+     * legitimate way street labor (a caught fish, a surplus good) turns back into Royals.
+     * Conservation-exact by construction: the Royals TRANSFER (never mint — an
+     * insufficient shop pocket clamps the lot to what it can afford) settles BEFORE the
+     * items move, and the items MOVE seller → shop (never mint/sink). Returns the units
+     * actually sold ({@code 0} when the seller has no card, carries none of the kind, or
+     * the shop is broke).
+     */
+    public static int sellToShop(BankLedger bank, ItemsLiteRegistry items, int sellerId,
+            int shopId, ItemsLiteEntry sellerIdCard, long unitPrice, short kind, int qty) {
+        int sellerAccount = BankLedger.purchaseAuth(sellerIdCard);
+        if (sellerAccount == Actor.NONE || qty <= 0 || unitPrice < 0) {
+            return 0;
+        }
+        int units = Math.min(qty, items.countCarriedOfKind(sellerId, kind));
+        if (units <= 0) {
+            return 0;
+        }
+        if (unitPrice > 0) {
+            // Clamp the lot to what the shop's own pocket can afford — a partial sale is a
+            // smaller honest exchange, never an IOU (the transfer would refuse overdraft).
+            units = (int) Math.min(units, bank.balanceOf(shopId) / unitPrice);
+            if (units <= 0 || !bank.transfer(shopId, sellerAccount, unitPrice * units)) {
+                return 0;
+            }
+        }
+        return items.moveCarried(sellerId, shopId, kind, units);
+    }
 }

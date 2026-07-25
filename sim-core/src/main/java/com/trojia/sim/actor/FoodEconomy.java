@@ -67,6 +67,15 @@ public final class FoodEconomy {
     /** Royals a shopkeeper pays a farmer for one surplus FOOD (recirculates Royals to the land). */
     public static final long FARM_SELL_PRICE = 4;
 
+    /**
+     * Royals a shopkeeper pays a citizen for one FISH at the buy-side counter (Sprint 6,
+     * Eli's bug 5 — the citizen coin FAUCET). Priced under {@link #FOOD_PRICE} so the
+     * counter re-vends the fish as a meal at a margin: the shop's pocket recirculates,
+     * never drains one-way. Paid from the shopkeeper's own ledger account — a transfer,
+     * never a mint — and clamped by the shop's balance and by {@link #SHOP_STOCK_CAP}.
+     */
+    public static final long FISH_BUY_PRICE = 3;
+
     /** FOOD minted per completed farm work-unit ({@code workTicksPerUnit} = 40 ticks). */
     public static final int FARM_FOOD_PER_UNIT = 1;
 

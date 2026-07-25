@@ -41,10 +41,17 @@ public final class ActorRegistry {
         return actors.get(actorId);
     }
 
-    /** Ticks every actor in ascending ActorId order (ACTORS-SPEC.md §2.2, test A2). */
+    /**
+     * Ticks every actor in ascending ActorId order (ACTORS-SPEC.md §2.2, test A2) — except
+     * the DEAD (Sprint 6): a dead soul runs NO ticking policies ever again — no needs
+     * decay, no selection, no movement. It stays resident (this registry never removes an
+     * actor; the roster count is stable forever), inert at whatever cell it died on.
+     */
     public void tickAll(ActorContext ctx) {
         for (Actor actor : actors) {
-            actor.tick(ctx);
+            if (!actor.isDead()) {
+                actor.tick(ctx);
+            }
         }
     }
 

@@ -41,6 +41,17 @@ public final class StatusBit {
      * {@code statusBits}, so it needs no serializer change.
      */
     public static final short HOUSE_ARREST = 1 << 11;
+    /**
+     * DEAD (Sprint 6, Eli's bug 7 — "we need people to die"): this soul is gone. Set by an
+     * execution (hangings now actually kill) or by terminal starvation (a LONG grace at
+     * HUNGER 0 — days, not hours — so only the truly destitute margin dies). Permanent and
+     * absolute: a DEAD actor is skipped by {@code ActorRegistry.tickAll} (no needs decay,
+     * no policies — inert forever), its tile is vacated for the living (the occupancy
+     * index skips corpses), payroll/provisioning pass it over, and its coins/ledger sit
+     * frozen-conserved (the estate). The registry never removes it — the roster count
+     * stays, the dead stay resident. Rides {@code statusBits} (persisted + hashed).
+     */
+    public static final short DEAD = 1 << 12;
 
     private StatusBit() {
     }

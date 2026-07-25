@@ -25,6 +25,18 @@ public abstract class Actor {
     /** Sentinel for "no cell / no target / no owner / no home / no job". */
     public static final int NONE = -1;
 
+    /** {@link #starvingSinceTick} sentinel: not currently in a starvation spell. */
+    public static final long NEVER_STARVING = -1L;
+
+    /**
+     * Ticks of unbroken HUNGER 0 before terminal starvation kills (Sprint 6 death): three
+     * full days ({@code 3 * DailyRhythm.DAY}) — a LONG grace, so a citizen who merely
+     * misses meals between paydays never dies, while the truly destitute margin (no wage,
+     * no reachable bin, no larder, for days on end) finally does. One meal — one scrap off
+     * a bin — resets the whole clock.
+     */
+    public static final long STARVATION_GRACE_TICKS = 72_000L;
+
     /**
      * A narrow, decoupled walkability probe (§2.5 addendum): kept in this
      * package rather than depending on the full {@link ActorContext} surface,
@@ -209,6 +221,16 @@ public abstract class Actor {
      * triad).
      */
     private long huntBackoffUntilTick;
+    /**
+     * The absolute tick this actor's HUNGER first hit 0 in the CURRENT starvation spell, or
+     * {@link #NEVER_STARVING} while fed (any recovery above 0 resets it). When a spell has
+     * lasted {@link #STARVATION_GRACE_TICKS} — a LONG grace, days not hours, so only the
+     * truly destitute margin dies (Sprint 6 death) — the actor dies of terminal starvation:
+     * {@link StatusBit#DEAD} + {@link StatusBit#DOWNED}, inert forever. Absolute tick,
+     * never a countdown (determinism rule). A persisted scalar (serialize/load/hash — the
+     * {@code heldUntilTick} triad).
+     */
+    private long starvingSinceTick = NEVER_STARVING;
 
     // ---- Play mode (PLAY-MODE-SPEC.md §5.2/§6): plain scalar, the same goalProgress/
     // heldUntilTick precedent — per-frame input intent, not simulation state, so it is
@@ -242,6 +264,15 @@ public abstract class Actor {
      * broke's scavenge). Never persisted.
      */
     private boolean playerEatIntent;
+    /**
+     * Whether this played actor intends to CAST A LINE this tick (Sprint 6 — the played
+     * soul's fish verb). Same contract as {@link #playerMoveTargetCell}: per-frame input
+     * intent set by the observer's input layer, consumed (and reset) by
+     * {@code PlayerControlPolicy.act}, which resolves one cast against a live, PERCEIVED
+     * spot within reach ({@code JobBehaviors.resolveCastAttempt} — FISHING XP on the
+     * attempt, catch draw, FISH minted on success). Never persisted.
+     */
+    private boolean playerFishIntent;
 
     // ---- cached A* route (§2.5 pathfinding addendum): a derived/recomputable cache, not
     // ground-truth state — the same "per-actor bookkeeping vs. registry" distinction the
@@ -283,6 +314,9 @@ public abstract class Actor {
     public final void tick(ActorContext ctx) {
         decayNeeds();
         recoverRestAtHome(ctx);
+        if (auditStarvation(ctx)) {
+            return; // died of terminal starvation this tick: no policy ever runs again
+        }
         tickGoalCooldown();
         int winningIndex = policies().selectIndex(this, ctx);
         if (winningIndex < 0) {
@@ -291,6 +325,34 @@ public abstract class Actor {
         policyOrdinal = (byte) winningIndex;
         policies().get(winningIndex).act(this, ctx);
         auditStatus();
+    }
+
+    /**
+     * The terminal-starvation audit (Sprint 6 death): stamps {@link #starvingSinceTick} the
+     * tick HUNGER first reads 0, resets it the moment anything restores HUNGER above 0, and
+     * — once a spell has run the whole {@link #STARVATION_GRACE_TICKS} grace — kills:
+     * {@link StatusBit#DEAD} + {@link StatusBit#DOWNED} (the ExecutedPolicy render
+     * consistency), the death recorded by name via {@link ActorContext#recordDeath}, the
+     * corpse left where it starved. From the next tick {@code ActorRegistry.tickAll} skips
+     * this actor entirely — inert forever. Returns whether the actor died this tick.
+     */
+    private boolean auditStarvation(ActorContext ctx) {
+        if (need(Need.HUNGER) > 0) {
+            starvingSinceTick = NEVER_STARVING;
+            return false;
+        }
+        if (starvingSinceTick == NEVER_STARVING) {
+            starvingSinceTick = ctx.tick();
+            return false;
+        }
+        if (ctx.tick() - starvingSinceTick < STARVATION_GRACE_TICKS) {
+            return false;
+        }
+        setStatus(StatusBit.DEAD, true);
+        setStatus(StatusBit.DOWNED, true);
+        lastReasonCode = ReasonCode.STARVED_TO_DEATH;
+        ctx.recordDeath(id, ReasonCode.STARVED_TO_DEATH);
+        return true;
     }
 
     private void decayNeeds() {
@@ -1008,6 +1070,21 @@ public abstract class Actor {
         this.huntBackoffUntilTick = tick;
     }
 
+    /** The tick the current starvation spell began, or {@link #NEVER_STARVING} (Sprint 6). */
+    public final long starvingSinceTick() {
+        return starvingSinceTick;
+    }
+
+    /** Stamps the starvation-spell clock (serializer load; the audit maintains it live). */
+    public final void setStarvingSinceTick(long tick) {
+        this.starvingSinceTick = tick;
+    }
+
+    /** Whether this soul is DEAD (Sprint 6): permanently inert, skipped by every tick. */
+    public final boolean isDead() {
+        return hasStatus(StatusBit.DEAD);
+    }
+
     /** The pending Play-mode step target, or {@link #NONE} (PLAY-MODE-SPEC.md §5.2). */
     public final int playerMoveTargetCell() {
         return playerMoveTargetCell;
@@ -1061,6 +1138,21 @@ public abstract class Actor {
      */
     public final void setPlayerEatIntent(boolean intent) {
         this.playerEatIntent = intent;
+    }
+
+    /** Whether a Play-mode fish/cast intent is pending this tick (Sprint 6 fishing). */
+    public final boolean playerFishIntent() {
+        return playerFishIntent;
+    }
+
+    /**
+     * Arms (or clears) the pending Play-mode fish intent: the observer's input layer sets
+     * it on the cast keypress, and the next {@code PlayerControlPolicy.act} resolves ONE
+     * cast against a live perceived spot in reach and consumes it — the
+     * {@link #setPlayerMoveTarget} contract.
+     */
+    public final void setPlayerFishIntent(boolean intent) {
+        this.playerFishIntent = intent;
     }
 
     public final ReasonCode lastReasonCode() {

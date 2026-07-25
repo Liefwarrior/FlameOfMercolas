@@ -32,6 +32,12 @@ package com.trojia.sim.actor;
  * @param zLinks           the baked cross-z connector table (Sprint 4 "the climb": stair pairs +
  *                         ramp exits extracted from the world at bake), or {@link ZLinkTable#EMPTY}
  *                         — with it empty, every opt-in cross-z mover degrades to the old no-op
+ * @param workRounds       the baked carter-rounds circuit table (Sprint 6, Eli's bug 4: the
+ *                         multi-stop work circuits {@code serf.carter} walks), or
+ *                         {@link PatrolRouteTable#EMPTY} — carters then work the plain anchor cycle
+ * @param fishingZones     the baked fishing-zone table (Sprint 6, Eli's bug 6: everywhere a spot
+ *                         may surface, with cast cells), or {@link FishingZoneTable#EMPTY} — no
+ *                         spot ever spawns and every fishing behavior takes its spotless fallback
  */
 public record CivicFixtures(
         int arrestHoldCell,
@@ -44,13 +50,43 @@ public record CivicFixtures(
         FoodMarket foodMarket,
         PatrolRouteTable patrolRoutes,
         RooftopTable rooftops,
-        ZLinkTable zLinks) {
+        ZLinkTable zLinks,
+        PatrolRouteTable workRounds,
+        FishingZoneTable fishingZones) {
 
     /** The fully-unwired bundle (world-less bootstrap, economy-free tests). */
     public static final CivicFixtures NONE = new CivicFixtures(
             Actor.NONE, RestrictedZoneTable.EMPTY, Actor.NONE, Actor.NONE,
             BankQueue.EMPTY, PrisonCellRegistry.EMPTY, Payroll.NONE, FoodMarket.EMPTY,
-            PatrolRouteTable.EMPTY, RooftopTable.EMPTY, ZLinkTable.EMPTY);
+            PatrolRouteTable.EMPTY, RooftopTable.EMPTY, ZLinkTable.EMPTY,
+            PatrolRouteTable.EMPTY, FishingZoneTable.EMPTY);
+
+    /**
+     * The rounds-only 12-component shape (Sprint-6 slice-3 compatibility): no fishing
+     * zones wired.
+     */
+    public CivicFixtures(int arrestHoldCell, RestrictedZoneTable zones, int vaultChestCell,
+            int bankerCell, BankQueue bankQueue, PrisonCellRegistry prisonCells,
+            Payroll payroll, FoodMarket foodMarket, PatrolRouteTable patrolRoutes,
+            RooftopTable rooftops, ZLinkTable zLinks, PatrolRouteTable workRounds) {
+        this(arrestHoldCell, zones, vaultChestCell, bankerCell, bankQueue, prisonCells,
+                payroll, foodMarket, patrolRoutes, rooftops, zLinks, workRounds,
+                FishingZoneTable.EMPTY);
+    }
+
+    /**
+     * The pre-rounds 11-component shape (Sprint-4/5 compatibility): existing call sites —
+     * including the current docks bake — keep compiling with no carter circuits and no
+     * fishing zones wired; the S6 World pass switches to the canonical constructor.
+     */
+    public CivicFixtures(int arrestHoldCell, RestrictedZoneTable zones, int vaultChestCell,
+            int bankerCell, BankQueue bankQueue, PrisonCellRegistry prisonCells,
+            Payroll payroll, FoodMarket foodMarket, PatrolRouteTable patrolRoutes,
+            RooftopTable rooftops, ZLinkTable zLinks) {
+        this(arrestHoldCell, zones, vaultChestCell, bankerCell, bankQueue, prisonCells,
+                payroll, foodMarket, patrolRoutes, rooftops, zLinks, PatrolRouteTable.EMPTY,
+                FishingZoneTable.EMPTY);
+    }
 
     /**
      * The pre-climb 10-component shape (Sprint-3 compatibility): existing call sites keep

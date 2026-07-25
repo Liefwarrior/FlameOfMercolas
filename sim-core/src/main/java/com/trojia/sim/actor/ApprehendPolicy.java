@@ -293,8 +293,8 @@ public final class ApprehendPolicy implements BehaviorPolicy {
             }
             Actor culprit = registry.get(culpritId);
             if (culprit.hasStatus(StatusBit.HELD) || culprit.hasStatus(StatusBit.EXECUTED)
-                    || PackedPos.z(culprit.cell()) != selfZ) {
-                continue;
+                    || culprit.isDead() || PackedPos.z(culprit.cell()) != selfZ) {
+                continue; // Sprint 6: the dead answer to a higher court
             }
             Job presented = ctx.presentedJob(culprit);
             if (presented instanceof Job.Watch || presented instanceof Job.FlameOfMerc
@@ -356,7 +356,7 @@ public final class ApprehendPolicy implements BehaviorPolicy {
         ctx.factionStandings().onFine(offender.identity().presentedId());
         Job trueJob = offender.jobOrdinal() >= 0 ? ctx.jobs().get(offender.jobOrdinal()) : null;
         if (trueJob instanceof Job.Villain.Skyrunner) {
-            JobBehaviors.escalateSkyrunner(offender);
+            JobBehaviors.escalateSkyrunner(offender, ctx);
             ctx.recordTheftCorrection(true);
         } else {
             JobBehaviors.arrestAndHold(offender, ctx, THEFT_SENTENCE_TICKS);
@@ -544,8 +544,9 @@ public final class ApprehendPolicy implements BehaviorPolicy {
             if (ActorGeometry.chebyshev(selfCell, other.cell()) > senseRadius) {
                 continue;
             }
-            if (other.hasStatus(StatusBit.HELD) || other.hasStatus(StatusBit.EXECUTED)) {
-                continue;
+            if (other.hasStatus(StatusBit.HELD) || other.hasStatus(StatusBit.EXECUTED)
+                    || other.isDead()) {
+                continue; // Sprint 6: a corpse cannot loiter
             }
             if (inViolation(other, ctx)) {
                 return i;

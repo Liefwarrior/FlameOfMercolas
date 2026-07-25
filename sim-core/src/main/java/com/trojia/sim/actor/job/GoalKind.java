@@ -26,5 +26,9 @@ public enum GoalKind {
     CREW_SHIP,
     VEND_WARES,
     SCURRY_DEN,
-    PROWL_GROUNDS
+    PROWL_GROUNDS,
+    /** Sprint 6: the carter/porter multi-stop rounds circuit ({@code serf.carter}). */
+    CARTER_ROUNDS,
+    /** Sprint 6: work the live fishing spots and sell the catch ({@code maritime.fisher}). */
+    FISH_SPOTS
 }

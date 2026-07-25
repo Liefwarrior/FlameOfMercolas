@@ -95,6 +95,39 @@ public sealed abstract class Job {
             }
         }
 
+        /**
+         * The carter/porter rounds (Sprint 6, Eli's bug 4 — "get those extra laborers working
+         * and moving around the city"): a multi-stop circuit of baked work points (warehouse
+         * -&gt; quay -&gt; stores...) visited in order through the working day, one dwell of
+         * honest work per stop, with per-actor id-staggered start offsets so the city
+         * de-synchronizes. Binds by anchor against the baked
+         * {@link com.trojia.sim.actor.ActorContext#workRounds()} circuit table; an unwired
+         * or unmatched anchor degrades to the plain {@link Laborer} anchor cycle, so a
+         * carter on a pre-rounds bake is byte-identical to a laborer.
+         */
+        public static final class Carter extends Serf {
+            public static final JobId ID = JobId.of("serf.carter");
+
+            public Carter(JobParams params) {
+                super(ID, params);
+            }
+
+            @Override
+            public void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectRoundsStart(self, ctx);
+            }
+
+            @Override
+            public void pursue(Actor self, ActorContext ctx) {
+                JobBehaviors.pursueRounds(self, ctx, params());
+            }
+
+            @Override
+            public boolean isComplete(Actor self, ActorContext ctx) {
+                return false; // the rounds loop all day; the rhythm window sends it home
+            }
+        }
+
         /** Haul/gut/porter quota at the work anchor — the civic default for Serf. */
         public static final class Laborer extends Serf {
             public static final JobId ID = JobId.of("serf.laborer");
@@ -431,6 +464,36 @@ public sealed abstract class Job {
 
         Maritime(JobId id, JobParams params) {
             super(id, params);
+        }
+
+        /**
+         * The dock fisher (Sprint 6, Eli's bug 6 — economy + ecology): works the live
+         * fishing spots the water surfaces — perception-gated targeting, walk to the cast
+         * stand, cast-and-check ({@code check.fishing}), FISH minted on success — and
+         * sells the catch at shopkeepers' buy-side counters (the coin faucet). No visible
+         * spot: waits the water on its anchored pier. See {@link JobBehaviors#pursueFishing}.
+         */
+        public static final class Fisher extends Maritime {
+            public static final JobId ID = JobId.of("maritime.fisher");
+
+            public Fisher(JobParams params) {
+                super(ID, params);
+            }
+
+            @Override
+            public void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectAnchorTarget(self, ctx);
+            }
+
+            @Override
+            public void pursue(Actor self, ActorContext ctx) {
+                JobBehaviors.pursueFishing(self, ctx, params());
+            }
+
+            @Override
+            public boolean isComplete(Actor self, ActorContext ctx) {
+                return false; // the water never finishes; the rhythm window ends the day
+            }
         }
 
         /** Crew a ship or work the shipyard — the new maritime dock trade (anchor-cycle). */
