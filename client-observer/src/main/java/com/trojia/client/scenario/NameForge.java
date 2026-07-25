@@ -356,8 +356,10 @@ final class NameForge {
     private static String jobPhrase(String presentedJobId) {
         return switch (presentedJobId) {
             case "serf.laborer" -> "A dock laborer";
+            case "serf.carter" -> "A carter on the rounds";
             case "serf.farmer" -> "A courtyard farmer";
             case "maritime.sailor" -> "A sailor";
+            case "maritime.fisher" -> "A line-fisher";
             case "trade.trader" -> "A counter-clerk";
             case "trade.stallkeep" -> "A shopkeeper";
             case "watch.patrol" -> "A Watch spear";

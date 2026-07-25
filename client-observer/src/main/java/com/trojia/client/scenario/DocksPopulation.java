@@ -378,6 +378,132 @@ public final class DocksPopulation implements ScenarioPopulation {
     // convention as the rest of this section (2026-07-14 warehouse-crew pass).
     private static final int[] TIMBER_YARD_STAND = {155, 40};    // z:+11
 
+    // ==== S6 work-point expansion (Eli's bug 4 "get those extra laborers working and
+    // moving around the city"; World survey + route audit 2026-07-24). Every array below
+    // mirrors the generator's *_station_* / market_stall_stand_* / fisher_stand_* markers
+    // EXACTLY (lockstep rule), except the quay/sweep/muster/garden stands, which reuse
+    // already-authored markers or the established "known street/floor cells" convention.
+    // All z:+11 unless noted; DocksWorkPointsBakeTest walk- and flood-verifies every cell.
+
+    // The Ropewalk's six rope-laying stations: the 48-hand gang spreads down the full
+    // 576-tile shed instead of ringing the one anchor cell (50 souls on one cell, S6 soak).
+    private static final int[][] ROPEWALK_STATIONS =
+            {{10, 85}, {20, 85}, {30, 85}, {45, 85}, {55, 85}, {64, 85}};
+    // The Long Store's rack aisles + dispatch bay — the warehouse where "nothing ever
+    // happens" gets its loading stations (door aisle x87-88 stays clear).
+    private static final int[][] LONGSTORE_STATIONS =
+            {{81, 85}, {85, 86}, {91, 86}, {95, 86}, {83, 89}, {86, 90}, {92, 89}};
+    // The King's Bond's aisle/bay stations for its 28 porters.
+    private static final int[][] KINGS_BOND_STATIONS =
+            {{85, 37}, {84, 41}, {96, 41}, {86, 44}, {96, 44}};
+    // Bilgewater Gap stall stands flanking the three authored awning posts — the dead
+    // market lane (0.4 actors/band in the 48k soak) gets a manned row.
+    private static final int[][] MARKET_STALL_STANDS =
+            {{89, 50}, {91, 50}, {104, 50}, {106, 50}, {119, 50}, {121, 50}};
+    // Pitchfield tar-yard stands (K09's fenced ground, previously proprietor-only).
+    private static final int[][] PITCHFIELD_STANDS = {{8, 52}, {14, 54}};
+    // Timber-yard aisle stations the S6 yard gates unlock; station 2 (153,41) doubles as
+    // the timber rounds' anchor stop, so the aisle hosts both hands and passing carters.
+    private static final int[][] TIMBERYARD_STATIONS = {{153, 37}, {153, 41}, {156, 43}};
+    // Fishbone-pier fisher stands (bug 6): spine + finger deck stands — the zero-visit
+    // showpiece pier becomes the fishers' home water. (75,23) FIRST: the first fisher
+    // bound there is the master-fisher notable's spawn-site match.
+    private static final int[][] FISHER_STANDS =
+            {{75, 23}, {75, 9}, {75, 17}, {75, 12}, {77, 20}};
+    // Quay crate-stack stands (beside the authored crate fixtures) + street-sweep stands
+    // (the authored sweep_tarwalk/sweep_saltgate markers, minus (50,30) — the carter
+    // keeper's own stand — and minus (120,30), the east storm-grate gull's ROOST + den
+    // cell: a laborer parked there starved the gull off its own hunt ground in the 30k
+    // beast soak; the Weighhouse frontage plaza (60,30) stands in, the derived-stand
+    // convention) + the Dawnstalls muster marker.
+    private static final int[][] QUAY_CRATE_STANDS =
+            {{17, 32}, {23, 33}, {31, 32}, {47, 33}, {51, 33}};
+    private static final int[][] SWEEP_STANDS =
+            {{20, 30}, {95, 30}, {60, 30}, {75, 45}, {75, 72}, {75, 90}};
+    private static final int[] MUSTER_DAWNSTALLS = {46, 37};
+    // The two authored-but-never-bound dock loading markers — now the east/west carter
+    // rounds' anchor stops.
+    private static final int[] DOCK_LOAD_WEST = {25, 30};
+    private static final int[] DOCK_LOAD_EAST = {100, 32};
+    // West Garden Court hands (the S6 south gate unlocks the sealed allotment).
+    private static final int[][] WEST_GARDEN_STANDS = {{19, 67}, {19, 75}, {19, 71}};
+
+    // ---- S6 carter rounds (Eli's bug 4; CivicFixtures.workRounds). Three ordered z:+11
+    // circuits; a serf.carter binds to the circuit CONTAINING its anchor cell and walks the
+    // stops in order with one dwell of honest work each, id-staggered (JobBehaviors). Stops
+    // reuse authored anchors so the rounds visibly thread real sites: warehouses, the quay,
+    // the market, the yards, the fishbone pier, Merle's boathouse.
+    private static final int[][] ROUNDS_EAST = {{92, 89}, {100, 32}, {96, 41}, {104, 50}};
+    private static final int[][] ROUNDS_WEST =
+            {{25, 30}, {41, 29}, {46, 37}, {45, 51}, {47, 70}, {10, 85}};
+    private static final int[][] ROUNDS_TIMBER = {{153, 41}, {141, 41}, {77, 20}, {88, 18}};
+    /** Carters per circuit (east/west/timber) — 16 total, drawn from the surplus pool. */
+    private static final int CARTERS_EAST = 6;
+    private static final int CARTERS_WEST = 6;
+    private static final int CARTERS_TIMBER = 4;
+    /** Fishers drawn from the surplus pool: two per fishbone stand. */
+    private static final int FISHER_COUNT = 2 * 5;
+
+    // ---- S6 guardhouse beat de-overlap (route audit: the garrison pair's ADJACENT
+    // anchors gave two near-identical beat squares — 20,306 pair-ticks inside their own
+    // guardhouse). The second garrison watch beats from the watch room's west end instead,
+    // offsetting the two squares; the sim-side corner stagger + shove etiquette do the rest.
+    private static final int[] GUARDHOUSE_WEST_BEAT = {102, 83};
+
+    // ---- S6 fishing spawn zones (Eli's bug 6; CivicFixtures.fishingZones -> the sim's
+    // FishingSpots registry). Each zone = 2-3 contiguous open-water cells on the water
+    // surface z:+10 plus ONE walkable cast cell (same-z strand shingle for the inshore
+    // SMALL zones; the pier/boathouse deck one z above for MEDIUM/LARGE — a fisher casts
+    // off the deck edge). Authored from the World fishing survey (58 castable segments,
+    // fish.txt 2026-07-24); DocksFishingZoneBakeTest re-verifies water/cast/contiguity/
+    // reachability against the baked world on every run. Never a ton at once: the LIVE
+    // caps are the sim's 3 small / 2 medium / 1 large — these are only the candidate
+    // waters a spot may surface in.
+    private static final int[][][] FISH_WATER_SMALL = {
+            {{3, 9}, {4, 9}, {5, 9}},        // West Strand inshore row
+            {{8, 9}, {9, 9}, {10, 9}},
+            {{12, 14}, {12, 15}, {12, 16}},  // West Strand east column
+            {{12, 20}, {12, 21}, {12, 22}},
+            {{133, 7}, {134, 7}, {135, 7}},  // Beaching Strand row
+            {{140, 7}, {141, 7}, {142, 7}},
+            {{146, 7}, {147, 7}, {148, 7}},
+            {{164, 11}, {164, 12}, {164, 13}},  // East Strand column
+            {{164, 19}, {164, 20}, {164, 21}},
+            {{129, 20}, {129, 21}, {129, 22}},  // east mudflat pocket
+    };
+    private static final int[][] FISH_CAST_SMALL = {   // z:+10 strand shingle stands
+            {4, 10}, {9, 10}, {11, 15}, {11, 21}, {134, 8},
+            {141, 8}, {147, 8}, {163, 12}, {163, 20}, {130, 21}};
+    private static final int[][][] FISH_WATER_MEDIUM = {
+            {{97, 10}, {97, 11}, {97, 12}},     // Pier Row flank columns
+            {{101, 8}, {101, 9}, {101, 10}},
+            {{105, 14}, {105, 15}, {105, 16}},
+            {{109, 10}, {109, 11}, {109, 12}},
+            {{113, 16}, {113, 17}, {113, 18}},
+            {{117, 9}, {117, 10}, {117, 11}},
+            {{85, 14}, {86, 14}, {87, 14}},     // Merle's boathouse channel
+            {{93, 15}, {93, 16}, {93, 17}},
+            {{121, 16}, {121, 17}, {121, 18}},  // Wormwood condemned pier (hazard flavor)
+            {{125, 20}, {125, 21}, {125, 22}},
+    };
+    private static final int[][] FISH_CAST_MEDIUM = {  // z:+11 pier/boathouse decks
+            {98, 11}, {100, 9}, {106, 15}, {108, 11}, {114, 17},
+            {116, 10}, {86, 15}, {92, 16}, {122, 17}, {124, 21}};
+    private static final int[][][] FISH_WATER_LARGE = {
+            {{80, 3}, {80, 4}, {80, 5}},     // fishbone east channel
+            {{80, 12}, {80, 13}, {80, 14}},
+            {{80, 19}, {80, 20}, {80, 21}},
+            {{64, 24}, {65, 24}, {66, 24}},  // finger_03 south gap
+            {{68, 24}, {69, 24}, {70, 24}},
+            {{74, 0}, {75, 0}, {76, 0}},     // pier-head open sea
+    };
+    private static final int[][] FISH_CAST_LARGE = {   // z:+11 fishbone spine/finger decks
+            {79, 4}, {79, 13}, {79, 20}, {65, 23}, {69, 23}, {75, 1}};
+    /** The authored water-surface plane every zone's water cells sit on. */
+    private static final int Z_WATER = 10;
+    /** The strand walk plane the SMALL casts stand on (same z as their water). */
+    private static final int Z_STRAND = 10;
+
     // The waterfront job cycle: where Band-A dockworker households commute (all z:+11).
     private static final int[][] DOCK_WORK = {BERTH_01, PIER_02, BERTH_02, PIER_01, BERTH_03,
             PIER_03, CRANE, PIER_04, MUSTER_QUAY, K06_HARLS_YARD};
@@ -644,9 +770,12 @@ public final class DocksPopulation implements ScenarioPopulation {
         // movers (player, ReturnHome, Held escort, the Saltgate route patrol) plan over.
         // World-less builds get EMPTY: the pre-S4 z-rule no-op, byte-identical.
         ZLinkTable zLinks = world == null ? ZLinkTable.EMPTY : ZLinkTable.extract(world);
+        // S6: the canonical 13-component bundle — the carter-rounds circuits (bug 4) and
+        // the fishing-zone table (bug 6) join the fixture seams.
         CivicFixtures fixtures = new CivicFixtures(arrestHoldCell, restrictedZoneTable(),
                 vaultChestCell, worldCell(BANK_COUNTER, ZA), bankQueue, prisonCells, payroll,
-                foodMarket, PatrolRouteTable.of(patrolRoutes()), rooftopTable(), zLinks);
+                foodMarket, PatrolRouteTable.of(patrolRoutes()), rooftopTable(), zLinks,
+                PatrolRouteTable.of(workRounds()), fishingZoneTable());
         // Sprint-1 progression + faction wiring: the boot-built skill universe (the committed
         // 18-skill raws) behind the dense per-actor track table, and the 5-faction registry
         // behind the standing ledger. Both are raws-pure boot config (identical every run);
@@ -875,6 +1004,70 @@ public final class DocksPopulation implements ScenarioPopulation {
     public static final int SALTGATE_ROUTE_INDEX = 3;
 
     /**
+     * The three ordered S6 carter-rounds circuits (east / west / timber), world-packed —
+     * the {@code CivicFixtures.workRounds} table. A {@code serf.carter} binds to the
+     * circuit containing its anchor cell ({@code PatrolRouteTable.routeContaining}) and
+     * walks the stops in order with one dwell of honest work per stop.
+     */
+    public static List<List<Integer>> workRounds() {
+        return List.of(worldCells(ROUNDS_EAST, ZA), worldCells(ROUNDS_WEST, ZA),
+                worldCells(ROUNDS_TIMBER, ZA));
+    }
+
+    /**
+     * The baked S6 fishing-zone table (Eli's bug 6): every candidate water a spot may
+     * surface in, world-packed — small zones cast from the same-z strand shingle, medium/
+     * large from the pier decks one z above the water. Order is small, then medium, then
+     * large (append-only; the zone count is the {@code FishingSpots} save frame guard).
+     */
+    public static com.trojia.sim.actor.FishingZoneTable fishingZoneTable() {
+        int count = FISH_WATER_SMALL.length + FISH_WATER_MEDIUM.length + FISH_WATER_LARGE.length;
+        int[] sizeClasses = new int[count];
+        int[] castCells = new int[count];
+        int[][] waterCells = new int[count][];
+        int i = 0;
+        for (int s = 0; s < FISH_WATER_SMALL.length; s++, i++) {
+            sizeClasses[i] = com.trojia.sim.actor.FishingZoneTable.SMALL;
+            castCells[i] = worldCell(FISH_CAST_SMALL[s], Z_STRAND);
+            waterCells[i] = packWater(FISH_WATER_SMALL[s]);
+        }
+        for (int m = 0; m < FISH_WATER_MEDIUM.length; m++, i++) {
+            sizeClasses[i] = com.trojia.sim.actor.FishingZoneTable.MEDIUM;
+            castCells[i] = worldCell(FISH_CAST_MEDIUM[m], ZA);
+            waterCells[i] = packWater(FISH_WATER_MEDIUM[m]);
+        }
+        for (int l = 0; l < FISH_WATER_LARGE.length; l++, i++) {
+            sizeClasses[i] = com.trojia.sim.actor.FishingZoneTable.LARGE;
+            castCells[i] = worldCell(FISH_CAST_LARGE[l], ZA);
+            waterCells[i] = packWater(FISH_WATER_LARGE[l]);
+        }
+        return new com.trojia.sim.actor.FishingZoneTable(sizeClasses, castCells, waterCells);
+    }
+
+    /**
+     * The minimal load-side fixture bundle (the serializer-triad tests' wiring): every
+     * seam unwired EXCEPT the frame-guarded fishing-zone table — a save written by this
+     * bake must be loaded against the SAME zone table ({@code FishingSpots}' zoneCount
+     * guard, the S6 twin of the skill-count contract), while every other fixture is
+     * bake config that rides no save.
+     */
+    public static CivicFixtures loadSideFixtures() {
+        return new CivicFixtures(Actor.NONE, RestrictedZoneTable.EMPTY, Actor.NONE,
+                Actor.NONE, BankQueue.EMPTY, PrisonCellRegistry.EMPTY, Payroll.NONE,
+                FoodMarket.EMPTY, PatrolRouteTable.EMPTY, RooftopTable.EMPTY,
+                ZLinkTable.EMPTY, PatrolRouteTable.EMPTY, fishingZoneTable());
+    }
+
+    /** Packs one zone's authored water cells (all on the z:+10 water surface). */
+    private static int[] packWater(int[][] mapXYs) {
+        int[] out = new int[mapXYs.length];
+        for (int j = 0; j < mapXYs.length; j++) {
+            out[j] = worldCell(mapXYs[j], Z_WATER);
+        }
+        return out;
+    }
+
+    /**
      * The authored rooftop planes (Sprint-1 progression wiring: the played actor's
      * skyrunning hook), as world-coordinate boxes. Two boxes, mirroring the map's own roof
      * geometry: the EASTERN ROOFLINE — the C2 Netters' / C4 Gullet roof decks plus the K35
@@ -977,6 +1170,9 @@ public final class DocksPopulation implements ScenarioPopulation {
         sites.put("LAIR_SKYRUNNER", worldCell(LAIR_SKYRUNNER, ZC));
         sites.put("STRAND_JEK", worldCell(STRAND_JEK, 10));
         sites.put("CLERKS_ROOMING_HOUSE", worldCell(CLERKS_ROOMING_HOUSE, ZA));
+        // S6 fishing pass (appended — the append-only rule): the fishbone finger_03 stand,
+        // where the master-fisher notable binds by anchor onto the first fisher crewing it.
+        sites.put("FISHBONE_FINGER_03", worldCell(FISHER_STANDS[0], ZA));
         return sites;
     }
 
@@ -1098,6 +1294,12 @@ public final class DocksPopulation implements ScenarioPopulation {
         // The Skyrunner's Roost stays COVER-SAFE (K35 is unmarked by design): its anchor
         // resolves to the same register any roof-deck tenant would show.
         names.put(worldCell(LAIR_SKYRUNNER, ZC), "the Gullet roof decks");
+        // S6 (appended — the append-only rule): the fishbone pier's fisher stands, so the
+        // fisher crew's forged bios name their water; the S6 work stations inherit their
+        // sites' existing names via the forge's nearest-site fallback.
+        for (int[] stand : FISHER_STANDS) {
+            names.put(worldCell(stand, ZA), "the fishbone pier");
+        }
         for (int[] hovel : HOVELS_A) {
             names.put(worldCell(hovel, ZA), "a quayside hovel row");
         }
@@ -1718,7 +1920,14 @@ public final class DocksPopulation implements ScenarioPopulation {
             // gazetteer 2.4's own stated intent): two Watch quartered at the new post.
             Actor guardhouseSergeant = spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA);
             guardhouseSergeant.setHomeId(homes.addHome(guardhouseSergeant.cell()));
-            soloHome(spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA));
+            // S6 beat de-overlap (route audit, Eli's bug 2): the pair's spawn-adjacent
+            // anchors gave two near-identical beat squares — 20,306 pair-ticks wedged in
+            // their own guardhouse/prison corridor in the 48k soak. The second watch beats
+            // from the watch room's west end; sim-side corner stagger + etiquette de-phase
+            // whatever overlap remains.
+            Actor garrisonSecond = spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA);
+            soloHome(garrisonSecond);
+            garrisonSecond.setAnchorCell(worldCell(GUARDHOUSE_WEST_BEAT, ZA));
             // C2 roof deck post (ARREST-SPEC addendum, see the constant's own comment above):
             // the one Watch actually positioned to exercise the new arrest/hold/escalation
             // mechanic against a real Cutpurse and Skyrunner in this fixture.
@@ -2022,6 +2231,16 @@ public final class DocksPopulation implements ScenarioPopulation {
             // AFTER the default-job loop (so every idle Serf already reads serf.laborer).
             assignDockTrades();
 
+            // ===================== S6: the working city (Eli's bugs 3/4/6) =====================
+            // 1) The three warehouse crews spread off their single anchor cells onto real
+            //    stations (the Ropewalk's 50-on-one-cell was the ward's worst monoculture).
+            // 2) Every remaining work-pointless serf.laborer — the ~121 souls whose anchor
+            //    was just their own dwelling, min mobility 1 cell in 2 days — gets honest
+            //    work on its own band: carter rounds, fishing stands, or a spread of the
+            //    new stations. Runs AFTER assignDockTrades so sailors/traders are settled.
+            redistributeCrewAnchors();
+            assignSurplusLabor();
+
             // ===================== Starting inventory (placeholder ids, §11.2) =================
             for (int i = 0; i < registry.size(); i++) {
                 giveStartingInventory(registry.get(i));
@@ -2177,6 +2396,194 @@ public final class DocksPopulation implements ScenarioPopulation {
                 }
             }
             return false;
+        }
+
+        // ------------------------------------------------------------ S6: the working city
+
+        /**
+         * S6 crew spread (Eli's bug 4): every {@code serf.laborer} still anchored on one of
+         * the three warehouse crews' single anchor cells is re-anchored round-robin across
+         * that site's authored stations. Pure anchor rewrite — spawn cell, home, job and
+         * every EMPLOYER edge stay exactly as authored, so no new commute band and no new
+         * spawn-occupancy pressure. Deterministic ascending-id scans.
+         */
+        private void redistributeCrewAnchors() {
+            respreadAnchor(K07_ROPEWALK, ROPEWALK_STATIONS);
+            respreadAnchor(K12_KINGS_BOND, KINGS_BOND_STATIONS);
+            respreadAnchor(K29_LONGSTORE, LONGSTORE_STATIONS);
+        }
+
+        private void respreadAnchor(int[] site, int[][] stations) {
+            int laborer = jobs.ordinalOf(Job.Serf.Laborer.ID);
+            int siteCell = worldCell(site, ZA);
+            int cursor = 0;
+            for (int i = 0; i < registry.size(); i++) {
+                Actor actor = registry.get(i);
+                if (actor.jobOrdinal() == laborer && actor.anchorCell() == siteCell) {
+                    actor.setAnchorCell(worldCell(stations[cursor++ % stations.length], ZA));
+                }
+            }
+        }
+
+        /**
+         * S6 surplus labor (Eli's bugs 3/4/6): every {@code serf.laborer} with no authored
+         * work point — its anchor is just wherever it spawned (a dwelling cell, the Mission
+         * bunkroom, a hovel) — is put to work on its own band, in ascending-id order:
+         * <ul>
+         *   <li>Band A, first {@link #CARTERS_EAST}+{@link #CARTERS_WEST}+{@link #CARTERS_TIMBER}:
+         *       {@code serf.carter}, anchored on its circuit's rounds stop (the anchor is
+         *       what binds a carter to a {@code workRounds} circuit);</li>
+         *   <li>Band A, next {@link #FISHER_COUNT}: {@code maritime.fisher}, two per
+         *       fishbone stand — {@code FISHER_STANDS[0]} first, where the master-fisher
+         *       notable binds by anchor;</li>
+         *   <li>every other Band-A soul: round-robin across the S6 station spread (market
+         *       stalls, quay crates, sweeps, muster, pitchfield, timber aisles, the west
+         *       garden);</li>
+         *   <li>Band B / Band C souls: round-robin across their bands' stands (the z rule —
+         *       a plain laborer commute never crosses z).</li>
+         * </ul>
+         * Deliberately untouched: the always-seated tavern patrons (authored texture) and
+         * the three mansion keep-house families — see {@link #hasAuthoredWorkPoint}.
+         */
+        private void assignSurplusLabor() {
+            int laborer = jobs.ordinalOf(Job.Serf.Laborer.ID);
+            int[] carterStops = {worldCell(DOCK_LOAD_EAST, ZA), worldCell(DOCK_LOAD_WEST, ZA),
+                    worldCell(TIMBERYARD_STATIONS[1], ZA)};
+            int[] carterQuota = {CARTERS_EAST, CARTERS_WEST, CARTERS_TIMBER};
+            int[][] bandACycle = concat(MARKET_STALL_STANDS, QUAY_CRATE_STANDS, SWEEP_STANDS,
+                    new int[][] {MUSTER_DAWNSTALLS}, PITCHFIELD_STANDS,
+                    new int[][] {TIMBERYARD_STATIONS[0], TIMBERYARD_STATIONS[2]},
+                    WEST_GARDEN_STANDS);
+            // Band B adds the two courtyard farm plots the farm pass authored but never
+            // bound — garden hands, not farmers: no food-economy coupling, just real work.
+            int[][] bandBCycle = {TERRACE_WALK_STAND, SALTGATE_PORTERS,
+                    FARM_TILES_C1[0], FARM_TILES_C3[0]};
+            int carters = 0;
+            int fishers = 0;
+            int cursorA = 0;
+            int cursorB = 0;
+            int cursorC = 0;
+            for (int i = 0; i < registry.size(); i++) {
+                Actor actor = registry.get(i);
+                if (actor.jobOrdinal() != laborer || hasAuthoredWorkPoint(actor)) {
+                    continue;
+                }
+                int band = PackedPos.z(actor.anchorCell()) - Coords.CHUNK_SIZE_Z;
+                if (band == ZA) {
+                    if (carters < CARTERS_EAST + CARTERS_WEST + CARTERS_TIMBER) {
+                        int circuit = carters < carterQuota[0] ? 0
+                                : carters < carterQuota[0] + carterQuota[1] ? 1 : 2;
+                        assignJob(actor, Job.Serf.Carter.ID);
+                        actor.setAnchorCell(carterStops[circuit]);
+                        carters++;
+                    } else if (fishers < FISHER_COUNT) {
+                        assignJob(actor, Job.Maritime.Fisher.ID);
+                        actor.setAnchorCell(
+                                worldCell(FISHER_STANDS[fishers % FISHER_STANDS.length], ZA));
+                        fishers++;
+                    } else {
+                        actor.setAnchorCell(
+                                worldCell(bandACycle[cursorA++ % bandACycle.length], ZA));
+                    }
+                } else if (band == ZB) {
+                    actor.setAnchorCell(worldCell(bandBCycle[cursorB++ % bandBCycle.length], ZB));
+                } else if (band == ZC) {
+                    actor.setAnchorCell(worldCell(BAND_C_WORK[cursorC++ % BAND_C_WORK.length], ZC));
+                }
+                // any other plane (z:+10 strand, z:+14 roofs): no serf.laborer lives there;
+                // leave untouched if one ever does — a loud soak signal, not a silent move.
+            }
+        }
+
+        /**
+         * Whether this laborer already has an authored work point (or is deliberately
+         * work-free): its anchor is one of the authored work/business/station cells, or it
+         * is an always-seated tavern patron (anchor within chebyshev 2 of a patron seat —
+         * seats bind by spawn funnel, so exact-cell matching would be brittle), or one of
+         * the three mansion keep-house families (within chebyshev 4 of its mansion).
+         */
+        private boolean hasAuthoredWorkPoint(Actor actor) {
+            int anchor = actor.anchorCell();
+            if (authoredWorkCells().contains(anchor)) {
+                return true;
+            }
+            int[][][] seatGroups = {PATRON_SEATS_GULL, PATRON_SEATS_BILGE, PATRON_SEATS_LANTERN};
+            for (int[][] seats : seatGroups) {
+                for (int[] seat : seats) {
+                    if (near(anchor, worldCell(seat, ZA), 2)) {
+                        return true;
+                    }
+                }
+            }
+            return near(anchor, worldCell(C1_MANSION, ZB), 4)
+                    || near(anchor, worldCell(C2_MANSION, ZA), 4)
+                    || near(anchor, worldCell(C3_MANSION, ZB), 4);
+        }
+
+        /** Same-z chebyshev proximity between two world cells. */
+        private static boolean near(int cell, int site, int radius) {
+            return PackedPos.z(cell) == PackedPos.z(site)
+                    && Math.max(Math.abs(PackedPos.x(cell) - PackedPos.x(site)),
+                            Math.abs(PackedPos.y(cell) - PackedPos.y(site))) <= radius;
+        }
+
+        /** Memoized set of every authored work-anchor cell (world-packed). */
+        private HashSet<Integer> authoredWorkCells;
+
+        private HashSet<Integer> authoredWorkCells() {
+            if (authoredWorkCells != null) {
+                return authoredWorkCells;
+            }
+            HashSet<Integer> cells = new HashSet<>();
+            int[][][] za = {DOCK_WORK, BAND_A_WORK, EELPOT_STALLS, VICTUALLERS_ZA,
+                    SHOP_GUARD_POSTS, ROPEWALK_STATIONS, LONGSTORE_STATIONS,
+                    KINGS_BOND_STATIONS, MARKET_STALL_STANDS, PITCHFIELD_STANDS,
+                    TIMBERYARD_STATIONS, FISHER_STANDS, QUAY_CRATE_STANDS, SWEEP_STANDS,
+                    WEST_GARDEN_STANDS, FARM_TILES_C2,
+                    {K01_WEIGHHOUSE, K02_IMPOUND, K03_GILDED_GULL, K04_BILGE, K05_LANTERN_ROOM,
+                     K06_HARLS_YARD, K07_ROPEWALK, K08_BRANNS, K09_PITCHFIELD, K10_DAWNSTALLS,
+                     K11_SALT_ROW, K12_KINGS_BOND, K13_DROWNED_HOLD, K14_WRACKHOUSE, K15_FENNERS,
+                     K17_MISSION, K18_BATHHOUSE, K19_ROWS, K20_MERLES, K22_NETMENDERS,
+                     K23_COOPERS, K25_KENNEL_ROW, SAILMAKER, K27_HARDTACK, K28_SLOPCHEST,
+                     K29_LONGSTORE, K34_GUARDHOUSE, BANK_COUNTER, TIMBER_YARD_STAND,
+                     MISSION_GARDEN, MISSION_BUNKS, MUSTER_DAWNSTALLS, DOCK_LOAD_WEST,
+                     DOCK_LOAD_EAST, CARTER_STAND}};
+            for (int[][] group : za) {
+                for (int[] cell : group) {
+                    cells.add(worldCell(cell, ZA));
+                }
+            }
+            int[][][] zb = {VICTUALLERS_ZB, FARM_TILES_C1, FARM_TILES_C3,
+                    {TERRACE_WALK_STAND, SALTGATE_PORTERS, PEN_GOATS, C1_COURTYARD, C3_COURTYARD}};
+            for (int[][] group : zb) {
+                for (int[] cell : group) {
+                    cells.add(worldCell(cell, ZB));
+                }
+            }
+            int[][][] zc = {VICTUALLERS_ZC, BAND_C_WORK};
+            for (int[][] group : zc) {
+                for (int[] cell : group) {
+                    cells.add(worldCell(cell, ZC));
+                }
+            }
+            authoredWorkCells = cells;
+            return cells;
+        }
+
+        /** Concatenates station groups into one ordered cycle (authoring convenience). */
+        private static int[][] concat(int[][]... groups) {
+            int n = 0;
+            for (int[][] group : groups) {
+                n += group.length;
+            }
+            int[][] out = new int[n][];
+            int i = 0;
+            for (int[][] group : groups) {
+                for (int[] cell : group) {
+                    out[i++] = cell;
+                }
+            }
+            return out;
         }
 
         /** serf.farmer working a plot: a commuter when the plot differs from home. */

@@ -179,11 +179,17 @@ class DocksProgressionTest {
                         + holdingTheirTrade + "/" + employed);
 
         // (b) The visible-but-not-inflationary band: median full-time anchor-worker level
-        // in 5..10 at day 3 (the cp-tuning loop's signed-off bar).
+        // at day 3. S5's cp-tuning loop signed off 5..10 under the exact-anchor-cell work
+        // model, where a crowded crew had ONE working member and everyone else ringed the
+        // cell earning nothing. S6's WORK_REACH (whole crews work in parallel) + the
+        // working-city station spread turned those ring-idlers into workers, and the
+        // deterministic day-3 median moved 8 -> 13 — the same souls, actually working.
+        // Band re-baselined 5..15 (measured 13, slack both ways); the deliberate-rebaseline
+        // note rides the S6 WORLD report for sign-off.
         anchorWorkerLevels.sort(null);
         int median = anchorWorkerLevels.get(anchorWorkerLevels.size() / 2);
-        assertTrue(median >= 5 && median <= 10,
-                "median anchor-worker job-skill must sit in the visible 5..10 band at day 3, "
+        assertTrue(median >= 5 && median <= 15,
+                "median anchor-worker job-skill must sit in the visible 5..15 band at day 3, "
                         + "got " + median + " over " + anchorWorkerLevels.size() + " workers");
 
         // (c) Zero beast awards: no beast body ever banks a grain of the civic trades
@@ -235,10 +241,12 @@ class DocksProgressionTest {
         byte[] first = serialize(population.system());
         // Since Sprint 3 the QuestLog frame rides this chunk too, so the loading system must
         // be built against the SAME bake-compiled quest raws (the skillTracks contract).
+        // S6: the fishing-spot registry frame-guards its zone count, so the load side
+        // wires the same baked zone table (DocksPopulation.loadSideFixtures).
         ActorsSystem reloaded = new ActorsSystem(loaded.worldSeed(), population.typeStats(),
                 population.jobs(), new ActorRegistry(), new HomeRegistry(),
                 new RelationshipRegistry(), new ItemsLiteRegistry(), new BankLedger(), null,
-                CivicFixtures.ofJustice(Actor.NONE, RestrictedZoneTable.EMPTY),
+                DocksPopulation.loadSideFixtures(),
                 DocksPopulation.freshSkillTracks(), DocksPopulation.freshFactionStandings(),
                 population.system().questRegistry());
         reloaded.load(new DataInputStream(new ByteArrayInputStream(first)));

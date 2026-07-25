@@ -75,10 +75,12 @@ class DocksJekTest {
         // chunk's progression/standing frames are guarded against a wiring mismatch).
         // Since Sprint 3 the QuestLog frame rides this chunk too, so the loading system must
         // be built against the SAME bake-compiled quest raws (the skillTracks contract).
+        // S6: the fishing-spot registry frame-guards its zone count, so the load side
+        // wires the same baked zone table (DocksPopulation.loadSideFixtures).
         ActorsSystem reloaded = new ActorsSystem(loaded.worldSeed(), population.typeStats(),
                 population.jobs(), new ActorRegistry(), new HomeRegistry(),
                 new RelationshipRegistry(), new ItemsLiteRegistry(), new BankLedger(), null,
-                CivicFixtures.ofJustice(Actor.NONE, RestrictedZoneTable.EMPTY),
+                DocksPopulation.loadSideFixtures(),
                 DocksPopulation.freshSkillTracks(), DocksPopulation.freshFactionStandings(),
                 population.system().questRegistry());
         reloaded.load(new DataInputStream(new ByteArrayInputStream(first)));
