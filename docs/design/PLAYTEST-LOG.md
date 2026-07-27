@@ -13,6 +13,60 @@ plus the S5 re-verification pass. Anything the lost ranking held beyond these is
 unrecoverable and is declared as such — this file is the durable record going forward:
 new playtest defects get filed HERE, in the same shape, in the sprint they are found.
 
+## S6 pass (the live-ops fix sprint: fishing, death, motivation legibility)
+
+Source: the S6 observer diagnosis (60k-tick instrumented soak of the shipped seed —
+DUTY district-collapse by day 1, 2.28M pushes, 32.8% guard-jam ticks, two commute
+spikes, statue laborers, zero deaths) + the S6 CLIENT fix phase. Sim/World causes
+landed in their own phases; entries here are the CLIENT surfaces.
+
+- **fixed: fishing spots had no renderer.** was: nothing drew sim-side registries in
+  world space — a surfaced spot was invisible from every z. now: FishingSpotOverlay
+  (GL-free plan) + FishingSpotRenderer, z-order terrain -> water -> SPOTS -> actors,
+  depth-vision-aware (the harbor surface is 1-2 z below the quayside view plane);
+  size classes read apart (foam ring / teal ring / heavy gold ring + glint).
+- **fixed: perception had no visibility split.** was: n/a (no spot rendering). now:
+  observer god-view draws ALL live spots; Play mode draws only spots the played soul
+  perceives, read from the sim's own `FishingSpots.visibleTo` — the client never
+  rolls visibility itself.
+- **fixed: no fish verb.** was: the played soul could not cast. now: R arms
+  `setPlayerFishIntent` (EatInput pattern); outcome toasts + the catch check's
+  visible dice (`[Fishing 0 vs deep water 40: 10% -- CAUGHT]`); tape verb `fish`;
+  R on the play-mode HUD legend. Skill-up toasts ride the existing SkillUpTracker.
+- **fixed: death was invisible on every surface.** was: an EXECUTED/DEAD soul drew as
+  a living standing sprite; feed printed the debug shape
+  `reason X -> EXECUTED_SECOND_OFFENSE`; the sheet showed live-looking needs/goal and
+  raw hex status; nameplates identical to the living. now: corpse treatment (squash +
+  blood-gray dim, both render passes, no fade — the ward keeps its dead in view);
+  DeathFeedTracker names every DeathLog row ("<name> has died -- starvation",
+  hangings on the CRIME lane); the sheet reads `*** DECEASED ***` with goal/reason/
+  needs suppressed; nameplates carry `(dead)`; a starved corpse is no verb target
+  while the gibbet keeps its authored `mood.dead` talk surface.
+- **fixed: status printed as hex.** was: `status: 0x100`. now: words
+  (`status: EXECUTED, DEAD`), for the living too; MAIMED transitions get an authored
+  sentence instead of the enum line.
+- **fixed: motivation collapse was illegible.** was: a bottomed DUTY bar looked like
+  any low bar; the promised clergy FAITH relabel was unimplemented; a district-wide
+  collapse required clicking 638 souls. now: depleted bars read alarm-red with " !";
+  clergy DUTY reads FAITH; the HUD carries the district pulse line
+  (`pulse: 692 souls  working N  duty-out N  starving N  held N  confined N  dead N`).
+- **fixed: the twin-run report missed the S6 pathologies.** was: DocksActorsMain
+  printed no DUTY/movement-wave/jam/statue numbers — the diagnosis needed a throwaway
+  instrument. now: S6 MOTIVATION / MOVEMENT WAVES / GUARD JAMS / STATUE CENSUS /
+  FISHING / DEATH sections in the twin-compared report, deterministic ascending scans,
+  with the diagnosis baselines printed beside each metric.
+- **open: ground items still don't render.** A landed fish on a quay, dropped goods —
+  items exist only as the sheet's `carries:` line. Declared cut this sprint (again).
+- **open: the sheet's DECEASED banner names no cause.** The feed line carries the
+  cause off the DeathLog; the sheet just says deceased — wiring the log into the
+  sheet is a small follow-up.
+- **open: spot markers are procedural rings, not pack art.** The overlay draws from
+  the shared white pixel; a TileArtResolver-style seam could hand the look to the art
+  pack when one ships spot ripples.
+- **open (carried from S5):** no save/load verb; skill-count frame guard invalidates
+  old saves (now 18->19 too — the S6 fishing raw); journal/masters pane has no
+  scroll; feed-filter state invisible outside the feed header.
+
 ## S5 pass (tapes 9/9b/10, this sprint)
 
 Tape 10 (tape10-s5-surfaces.txt) exercises the sprint's new surfaces live: the masters

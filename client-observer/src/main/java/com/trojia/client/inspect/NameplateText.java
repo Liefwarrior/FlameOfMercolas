@@ -29,10 +29,14 @@ public final class NameplateText {
     private NameplateText() {
     }
 
+    /** The corpse marker a dead soul's plate carries (Sprint 6 death). */
+    public static final String DEAD_MARKER = " (dead)";
+
     /**
      * The nameplate label for one actor: the PRESENTED identity's name + epithet, then its
      * presented job id when it has one ({@code "name -- job"}); just the name for the
-     * jobless (beasts).
+     * jobless (beasts). A dead body's plate carries {@link #DEAD_MARKER} — death is a
+     * BODY fact (the TRUE actor's status), so even a disguised corpse reads dead.
      */
     public static String labelFor(int actorId, ActorRegistry registry, JobRegistry jobs,
             IdentityRegistry identity) {
@@ -41,7 +45,8 @@ public final class NameplateText {
         String name = PersonNames.nameWithEpithet(presentedId, registry, identity);
         Job job = presented.jobOrdinal() >= 0 ? jobs.get(presented.jobOrdinal()) : null;
         String jobId = JobDisplay.presentedJobId(job);
-        return JobDisplay.NONE_LABEL.equals(jobId) ? name : name + " -- " + jobId;
+        String label = JobDisplay.NONE_LABEL.equals(jobId) ? name : name + " -- " + jobId;
+        return DeathPresentation.isDead(registry.get(actorId)) ? label + DEAD_MARKER : label;
     }
 
     /**

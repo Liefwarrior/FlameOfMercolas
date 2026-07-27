@@ -70,6 +70,9 @@ public final class InspectorRenderer {
     private static final float NEED_ROW_GAP_PX = 4f;
     private static final float NEED_EMPTY_OUTLINE_PX = 1f;
     private static final Color NEED_EMPTY_OUTLINE_COLOR = new Color(0.35f, 0.35f, 0.38f, 1f);
+    /** The depleted-need warning treatment (Sprint 6): a bottomed bar's label + value read
+     * alarm-red with the {@code " !"} mark — a flat bar no longer looks like any low bar. */
+    private static final Color NEED_DEPLETED_COLOR = new Color(0.95f, 0.32f, 0.26f, 1f);
     /** The dark interior the portrait sits on, so the gold border reads as a ring, not a fill
      * (FaceGen parts draw on transparency and have no background of their own). */
     private static final Color PORTRAIT_INTERIOR_COLOR = new Color(0.02f, 0.02f, 0.03f, 1f);
@@ -217,7 +220,12 @@ public final class InspectorRenderer {
 
         // ---- the six sheet sections, each its own DF block ------------------------------
         nextTop = drawSection(batch, font, icons, x, nextTop, identitySection);
-        nextTop = drawNeedsSection(batch, font, icons, x, nextTop, selectedActor);
+        // Sprint 6: a corpse's sheet says dead, not busy — the live bar grid is replaced
+        // by the frozen one-liner (the identity block above carries the DECEASED banner).
+        nextTop = com.trojia.client.inspect.DeathPresentation.isDead(selectedActor)
+                ? drawSection(batch, font, icons, x, nextTop, new CharacterSheetText.Section(
+                        "NEEDS", List.of(CharacterSheetText.DEAD_NEEDS_LINE)))
+                : drawNeedsSection(batch, font, icons, x, nextTop, selectedActor);
         nextTop = drawSection(batch, font, icons, x, nextTop, attributesSection);
         nextTop = drawSection(batch, font, icons, x, nextTop, skillsSection);
         nextTop = drawSection(batch, font, icons, x, nextTop, standingsSection);
@@ -320,13 +328,15 @@ public final class InspectorRenderer {
         float rowHeight = needRowHeight(font);
         float barLeft = x + NEED_LABEL_WIDTH_PX;
         float y = topY;
+        String typeKey = actor.typeId().key();
         for (int i = 0; i < Need.COUNT; i++) {
             short value = needs[i];
             int filled = Math.max(0, Math.min(NEED_SEGMENTS, value / NEED_SEGMENT_VALUE));
             float segBottomY = y - NEED_SEGMENT_SIZE_PX;
 
-            font.setColor(PANEL_COLOR);
-            font.draw(batch, CharacterSheetText.NEED_LABELS[i], x, y);
+            // S6 legibility: clergy DUTY reads FAITH; a bottomed bar reads alarm-red + " !".
+            font.setColor(value == 0 ? NEED_DEPLETED_COLOR : PANEL_COLOR);
+            font.draw(batch, CharacterSheetText.needRowLabel(i, typeKey, value), x, y);
 
             for (int s = 0; s < NEED_SEGMENTS; s++) {
                 float segX = barLeft + s * (NEED_SEGMENT_SIZE_PX + NEED_SEGMENT_GAP_PX);
@@ -343,7 +353,7 @@ public final class InspectorRenderer {
                 }
             }
 
-            font.setColor(PANEL_COLOR);
+            font.setColor(value == 0 ? NEED_DEPLETED_COLOR : PANEL_COLOR);
             font.draw(batch, String.format("%5d", value), barLeft + NEED_BAR_WIDTH_PX + NEED_VALUE_GAP_PX, y);
 
             y -= rowHeight;

@@ -158,8 +158,8 @@ public final class TalkText {
      */
     static int questBeatEntry(QuestRegistry quests, QuestLog questLog, Actor speaker,
             int listenerTrueId) {
-        if (speaker.hasStatus(StatusBit.EXECUTED)) {
-            return -1;
+        if (speaker.hasStatus(StatusBit.EXECUTED) || speaker.hasStatus(StatusBit.DEAD)) {
+            return -1; // Sprint 6: the dead serve no beats, gibbeted or starved
         }
         for (int e = 0; e < questLog.entryCount(); e++) {
             int q = questLog.questOrdinalOf(e);

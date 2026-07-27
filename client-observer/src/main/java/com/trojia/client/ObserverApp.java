@@ -40,6 +40,7 @@ import com.trojia.client.input.TalkInput;
 import com.trojia.client.input.TheftInput;
 import com.trojia.client.input.TimeControlInput;
 import com.trojia.client.inspect.CrimeFeedTracker;
+import com.trojia.client.inspect.DeathFeedTracker;
 import com.trojia.client.inspect.EatFeedbackTracker;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
@@ -406,6 +407,13 @@ public final class ObserverApp extends ApplicationAdapter {
                     population.system().skillTracks(), population.registry(),
                     population.identity(), eventLog, toasts,
                     () -> playMode.playedActorId(), talk);
+            // Death narration (S6, Eli's bug 7): every DeathLog row lands in the feed BY
+            // NAME ("Tatter Deepnet has died -- starvation"); the played soul's own death
+            // toasts. Zero sim writes.
+            DeathFeedTracker deathFeedTracker = new DeathFeedTracker(
+                    population.system().deathLog(), population.registry(),
+                    population.identity(), eventLog, toasts,
+                    () -> playMode.playedActorId());
             // Quest narration (S3): stage advances land in the feed as the journal's own
             // prose; the owner's advances toast; failed drawer pries toast the check line.
             this.questFeedTracker = new QuestFeedTracker(population.questRegistry(),
@@ -439,6 +447,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 eventLogTracker.afterTick(tick);
                 skillUpTracker.afterTick(tick);
                 crimeFeedTracker.afterTick(tick);
+                deathFeedTracker.afterTick(tick);
                 questFeedTracker.afterTick(tick);
                 eatFeedbackTracker.afterTick(tick);
                 fishFeedbackTracker.afterTick(tick);
@@ -632,13 +641,19 @@ public final class ObserverApp extends ApplicationAdapter {
         List<HudToken> verbTokens = population == null ? List.of()
                 : (playModeActive ? HudText.playModeKeybindingTokens()
                         : HudText.observerVerbKeybindingTokens());
-        int hudLines = verbTokens.isEmpty() ? 2 : 3;
+        // S6 motivation legibility: the district pulse — a one-line living census
+        // (working / duty-out / starving / held / confined / dead), recomputed live.
+        List<HudToken> pulseTokens = population == null ? List.of()
+                : List.of(HudToken.dimText(
+                        com.trojia.client.inspect.DistrictPulse.line(population.registry())));
+        int hudLines = 2 + (verbTokens.isEmpty() ? 0 : 1) + (pulseTokens.isEmpty() ? 0 : 1);
         float lineHeight = font.getLineHeight();
         float navWidth = IconTextLine.measure(font, navTokens);
         float timeWidth = IconTextLine.measure(font, timeTokens);
         float verbWidth = verbTokens.isEmpty() ? 0f : IconTextLine.measure(font, verbTokens);
-        float statusPanelWidth = Math.max(Math.max(navWidth, timeWidth), verbWidth)
-                + 2 * HudPanel.PADDING;
+        float pulseWidth = pulseTokens.isEmpty() ? 0f : IconTextLine.measure(font, pulseTokens);
+        float statusPanelWidth = Math.max(Math.max(Math.max(navWidth, timeWidth), verbWidth),
+                pulseWidth) + 2 * HudPanel.PADDING;
         float statusPanelHeight = hudLines * lineHeight + 2 * HudPanel.PADDING;
         float statusPanelX = HUD_MARGIN_PX - HudPanel.PADDING;
         float statusPanelBottomY = camera.viewportHeightPx() - HUD_MARGIN_PX
@@ -653,6 +668,12 @@ public final class ObserverApp extends ApplicationAdapter {
             IconTextLine.draw(batch, font, icons,
                     HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX - 2 * lineHeight,
                     verbTokens);
+        }
+        if (!pulseTokens.isEmpty()) {
+            IconTextLine.draw(batch, font, icons, HUD_MARGIN_PX,
+                    camera.viewportHeightPx() - HUD_MARGIN_PX
+                            - (verbTokens.isEmpty() ? 2 : 3) * lineHeight,
+                    pulseTokens);
         }
         if (inspectorRenderer != null) {
             inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());

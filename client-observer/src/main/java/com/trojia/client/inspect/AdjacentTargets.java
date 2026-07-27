@@ -28,6 +28,10 @@ public final class AdjacentTargets {
      * gibbet does not greet, but it is very much part of the ward's conversation); the
      * PICKPOCKET verb excludes them ({@code TheftMechanics} refuses executed victims, so
      * offering one would be a dead-end intent).
+     *
+     * <p>Sprint 6 death: a DEAD body that is NOT gibbeted (terminal starvation) is never a
+     * verb target — dead flesh doesn't speak and has no pocket worth the intent; only the
+     * EXECUTED corpse keeps its authored {@code mood.dead} talk surface.
      */
     public static int lowestIdAdjacent(ActorRegistry registry, int selfId,
             boolean includeExecuted) {
@@ -38,7 +42,11 @@ public final class AdjacentTargets {
                 continue;
             }
             Actor other = registry.get(i);
-            if (!includeExecuted && other.hasStatus(StatusBit.EXECUTED)) {
+            boolean executed = other.hasStatus(StatusBit.EXECUTED);
+            if (other.hasStatus(StatusBit.DEAD) && !executed) {
+                continue; // a starved corpse: no verb reaches it
+            }
+            if (!includeExecuted && executed) {
                 continue;
             }
             if (PackedPos.z(other.cell()) != selfZ

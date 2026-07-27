@@ -58,6 +58,12 @@ import java.util.Map;
  * untouched — byte-for-byte the historical draws, and every no-depth constructor keeps the
  * exact historical output.
  *
+ * <p><b>The dead</b> (Sprint 6, Eli's bug 7): a {@code DEAD}/{@code EXECUTED} body draws
+ * as a corpse in BOTH passes — squashed to the tile floor and dimmed blood-gray (the
+ * class constants) — instead of a living standing sprite; no pose art exists at 16px, and
+ * the squash+dim reads unambiguously. Deliberately no fade: the ward keeps its dead in
+ * view (the sim already vacates their tile for the living).
+ *
  * <p>Draws above tiles (and above the water overlay — spec §3.3 z-order), below UI. The
  * caller owns {@code batch}'s begin/end and the y-up, bottom-left projection sized to the
  * viewport (the libGDX default) — the same contract {@link WorldRenderer#draw} assumes.
@@ -95,6 +101,15 @@ public final class ActorRenderer {
      * vanish under it; capped so a handful of stacked actors stays inside the tile. */
     private static final int STACK_OFFSET_PX = 3;
     private static final int STACK_OFFSET_MAX = 3;
+
+    // Corpse treatment (Sprint 6 death, Eli's bug 7): a DEAD/EXECUTED body draws squashed
+    // to the tile floor (a slumped form, not a standing sprite) under a dim, blood-gray
+    // multiply — legible as "that soul is gone" at 16px without any new art. No fade:
+    // the ward keeps its dead on the ground (declared; occupancy-vacating is sim-side).
+    private static final float CORPSE_SQUASH = 0.45f;
+    private static final float CORPSE_DIM_R = 0.52f;
+    private static final float CORPSE_DIM_G = 0.44f;
+    private static final float CORPSE_DIM_B = 0.44f;
 
     /**
      * Draws every visible actor at {@link AmbientLight#NEUTRAL} — the exact historical
@@ -148,6 +163,7 @@ public final class ActorRenderer {
             }
             SpriteRef ref = index.forActor(actor.typeId().key(), actor.id());
             TextureRegion region = sheet.region(ref);
+            boolean corpse = com.trojia.client.inspect.DeathPresentation.isDead(actor);
 
             if (!neutral) {
                 // Same lit-ambient lerp as WorldRenderer's tiles: ambient lifted toward
@@ -164,7 +180,14 @@ public final class ActorRenderer {
                         b += ((glow & 0xFF) / 255f - b) * s;
                     }
                 }
+                if (corpse) {
+                    r *= CORPSE_DIM_R;
+                    g *= CORPSE_DIM_G;
+                    b *= CORPSE_DIM_B;
+                }
                 batch.setColor(r, g, b, 1f);
+            } else if (corpse) {
+                batch.setColor(CORPSE_DIM_R, CORPSE_DIM_G, CORPSE_DIM_B, 1f);
             }
 
             int stackIndex = Math.min(stackCountByCell.merge(cell, 1, Integer::sum) - 1,
@@ -173,9 +196,12 @@ public final class ActorRenderer {
             int screenYTopDown = camera.tileToScreenY(ty) - stackIndex * STACK_OFFSET_PX;
             float tileBottomYUp = viewportHeight - screenYTopDown - span;
             // Actor sprites are 1x1 cells today; a future multi-cell entry keeps its cell
-            // aspect, anchored to the actor's tile.
-            batch.draw(region, screenXLeft, tileBottomYUp,
-                    span * ref.cellsW(), span * ref.cellsH());
+            // aspect, anchored to the actor's tile. A corpse squashes to the tile floor.
+            batch.draw(region, screenXLeft, tileBottomYUp, span * ref.cellsW(),
+                    span * ref.cellsH() * (corpse ? CORPSE_SQUASH : 1f));
+            if (neutral && corpse) {
+                batch.setColor(Color.WHITE); // the living around it stay untinted
+            }
         }
         // Restore so downstream draws in the same batch (HUD, inspector) are untinted.
         batch.setColor(Color.WHITE);
@@ -213,6 +239,7 @@ public final class ActorRenderer {
             }
             SpriteRef ref = index.forActor(actor.typeId().key(), actor.id());
             TextureRegion region = sheet.region(ref);
+            boolean corpse = com.trojia.client.inspect.DeathPresentation.isDead(actor);
 
             // The SOURCE cell's lit ambient (same lerp as the same-z branch, at z') ...
             float r = ambient.r();
@@ -227,6 +254,12 @@ public final class ActorRenderer {
                     b += ((glow & 0xFF) / 255f - b) * s;
                 }
             }
+            if (corpse) {
+                // The corpse dim under the depth shade: a body two bands down reads gone.
+                r *= CORPSE_DIM_R;
+                g *= CORPSE_DIM_G;
+                b *= CORPSE_DIM_B;
+            }
             // ... times the shared depth treatment (dim + cool haze).
             DepthVision.Shade shade = DepthVision.shade(depth);
             batch.setColor(r * shade.r(), g * shade.g(), b * shade.b(), 1f);
@@ -236,8 +269,8 @@ public final class ActorRenderer {
             int screenXLeft = camera.tileToScreenX(tx) + stackIndex * STACK_OFFSET_PX;
             int screenYTopDown = camera.tileToScreenY(ty) - stackIndex * STACK_OFFSET_PX;
             float tileBottomYUp = viewportHeight - screenYTopDown - span;
-            batch.draw(region, screenXLeft, tileBottomYUp,
-                    span * ref.cellsW(), span * ref.cellsH());
+            batch.draw(region, screenXLeft, tileBottomYUp, span * ref.cellsW(),
+                    span * ref.cellsH() * (corpse ? CORPSE_SQUASH : 1f));
         }
         batch.setColor(Color.WHITE);
     }

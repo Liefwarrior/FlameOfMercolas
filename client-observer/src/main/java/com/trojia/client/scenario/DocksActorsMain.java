@@ -44,6 +44,9 @@ public final class DocksActorsMain {
     private DocksActorsMain() {
     }
 
+    /** S6 movement-wave profile: bucket width in ticks-of-day (48 buckets over the day). */
+    private static final long WAVE_BUCKET_TICKS = 500;
+
     public static void main(String[] args) {
         int ticks = parseTicks(args, 50_000);
         boolean perf = hasFlag(args, "--perf");
@@ -151,6 +154,37 @@ public final class DocksActorsMain {
             sampleTicks.add(d * DailyRhythm.DAY + 20_000);
         }
 
+        // ---- S6 acceptance instruments (the observer-diagnosis metrics folded into the
+        // twin-run report): the tod-bucketed movement-wave profile (the "same places at
+        // the same time" spikes at tod 1000/11000), the guard-jam tick share, the
+        // final-day laborer statue census, and the work-window motivation samples
+        // (DUTY-out / working / confined at tod 5000 of each day). Deterministic:
+        // ascending scans, insertion-ordered maps, integer stats. ----
+        int[] prevCell = new int[registry.size()];
+        for (int i = 0; i < registry.size(); i++) {
+            prevCell[i] = registry.get(i).cell();
+        }
+        int waveBuckets = (int) (DailyRhythm.DAY / WAVE_BUCKET_TICKS);
+        long[] waveMoved = new long[waveBuckets];
+        long[] waveTicks = new long[waveBuckets];
+        List<Integer> watchIds = idsOfType(registry, "militia_watch");
+        long jamTicks = 0;
+        long jamPairTicks = 0;
+        List<Integer> laborerIds = new ArrayList<>();
+        for (int i = 0; i < registry.size(); i++) {
+            Job job = registry.get(i).jobOrdinal() >= 0
+                    ? jobs.get(registry.get(i).jobOrdinal()) : null;
+            if ("serf.laborer".equals(JobDisplay.trueJobId(job))) {
+                laborerIds.add(i);
+            }
+        }
+        Map<Integer, java.util.HashSet<Integer>> laborerCells = new LinkedHashMap<>();
+        for (int id : laborerIds) {
+            laborerCells.put(id, new java.util.HashSet<>());
+        }
+        long statueWindowStart = Math.max(0, ticks - DailyRhythm.DAY);
+        List<long[]> motivationSamples = new ArrayList<>(); // {tick, working, dutyOut, arrest, held}
+
         // ---- run, observing every tick and snapshotting at the sample ticks ----------------
         SimulationDriver driver = new SimulationDriver(loaded.world(), loaded.worldSeed(),
                 List.<SimulationSystem>of(population.system()));
@@ -212,6 +246,64 @@ public final class DocksActorsMain {
             for (Map.Entry<Integer, java.util.HashSet<Integer>> e : routeCells.entrySet()) {
                 e.getValue().add(registry.get(e.getKey()).cell());
             }
+            // ---- S6 instruments (see the setup block above) ----
+            long tod = DailyRhythm.tickOfDay(tick);
+            int moved = 0;
+            for (int a = 0; a < registry.size(); a++) {
+                int cell = registry.get(a).cell();
+                if (cell != prevCell[a]) {
+                    moved++;
+                    prevCell[a] = cell;
+                }
+            }
+            int bucket = (int) (tod / WAVE_BUCKET_TICKS);
+            waveMoved[bucket] += moved;
+            waveTicks[bucket]++;
+            int watchPairs = 0;
+            for (int wi = 0; wi < watchIds.size(); wi++) {
+                int cellA = registry.get(watchIds.get(wi)).cell();
+                for (int wj = wi + 1; wj < watchIds.size(); wj++) {
+                    int cellB = registry.get(watchIds.get(wj)).cell();
+                    if (PackedPos.z(cellA) == PackedPos.z(cellB)
+                            && chebyshev(cellA, cellB) <= 1) {
+                        watchPairs++;
+                    }
+                }
+            }
+            if (watchPairs > 0) {
+                jamTicks++;
+            }
+            jamPairTicks += watchPairs;
+            if (tick > statueWindowStart) {
+                for (int id : laborerIds) {
+                    laborerCells.get(id).add(registry.get(id).cell());
+                }
+            }
+            if (tod == 5_000) {
+                long working = 0;
+                long dutyOut = 0;
+                long arrest = 0;
+                long held = 0;
+                for (int a = 0; a < registry.size(); a++) {
+                    Actor actor = registry.get(a);
+                    if (actor.hasStatus(com.trojia.sim.actor.StatusBit.DEAD)) {
+                        continue;
+                    }
+                    if (actor.lastReasonCode() == com.trojia.sim.actor.ReasonCode.JOB_GOAL) {
+                        working++;
+                    }
+                    if (actor.need(com.trojia.sim.actor.Need.DUTY) == 0) {
+                        dutyOut++;
+                    }
+                    if (actor.hasStatus(com.trojia.sim.actor.StatusBit.HOUSE_ARREST)) {
+                        arrest++;
+                    }
+                    if (actor.hasStatus(com.trojia.sim.actor.StatusBit.HELD)) {
+                        held++;
+                    }
+                }
+                motivationSamples.add(new long[] {tick, working, dutyOut, arrest, held});
+            }
         }
 
         printRoster(registry, homes, jobs, identity);
@@ -234,6 +326,12 @@ public final class DocksActorsMain {
         printTheftReport(population, identity);
         printBarkProof(population, identity, driver.currentTick());
         printBeastReport(population, gullIds, catIds, mouseIds, gullRoam, huntCounters);
+        printMotivationReport(registry, motivationSamples);
+        printMovementWaveReport(waveMoved, waveTicks);
+        printGuardJamReport(watchIds.size(), jamTicks, jamPairTicks, ticks);
+        printStatueReport(laborerCells, ticks);
+        printFishingReport(population);
+        printDeathReport(population, identity);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         if (perf) {
             // Wall-clock timing — printed only under --perf so plain runs stay byte-identical.
@@ -872,6 +970,211 @@ public final class DocksActorsMain {
                 + (mouseIds.size() - downNow));
         System.out.println("  hunger floor at soak end: minGull=" + minGullHunger
                 + " minCat=" + minCatHunger + " (starving would read 0)");
+        System.out.println("============================================================================");
+    }
+
+    // ==================================================================================
+    // S6 acceptance reports (the observer-diagnosis metrics, now twin-run evidence)
+    // ==================================================================================
+
+    /**
+     * S6 motivation report (Eli's bugs 1+3): the end-of-soak DUTY census by type (the
+     * diagnosis found 100%-bottomed watch/serfs/shopkeepers/clergy by day 1 with the
+     * wastrel the only type holding 10000) and the per-day work-window samples (tod 5000:
+     * working / DUTY-out / house-arrest / held among the living). Ascending TreeMap scan.
+     */
+    private static void printMotivationReport(ActorRegistry registry,
+            List<long[]> motivationSamples) {
+        Map<String, long[]> byType = new java.util.TreeMap<>(); // type -> {total, dutyZero, dutySum}
+        for (int i = 0; i < registry.size(); i++) {
+            Actor a = registry.get(i);
+            if (a.hasStatus(com.trojia.sim.actor.StatusBit.DEAD)) {
+                continue; // the dead hold no motivations
+            }
+            long[] row = byType.computeIfAbsent(a.typeId().key(), k -> new long[3]);
+            int duty = a.need(com.trojia.sim.actor.Need.DUTY);
+            row[0]++;
+            row[1] += duty == 0 ? 1 : 0;
+            row[2] += duty;
+        }
+        System.out.println();
+        System.out.println("================ S6 MOTIVATION (DUTY census + work-window idleness) =========");
+        System.out.printf("  %-22s %6s %10s %9s%n", "type (living)", "total", "DUTY==0", "avgDUTY");
+        for (Map.Entry<String, long[]> e : byType.entrySet()) {
+            long[] row = e.getValue();
+            System.out.printf("  %-22s %6d %10d %9d%n", e.getKey(), row[0], row[1],
+                    row[0] == 0 ? 0 : row[2] / row[0]);
+        }
+        System.out.println("  work-window samples (tod=5000 of each day, living souls):");
+        for (long[] s : motivationSamples) {
+            System.out.println("    tick=" + s[0] + "  working(JOB_GOAL)=" + s[1]
+                    + "  DUTY-out=" + s[2] + "  houseArrest=" + s[3] + "  held=" + s[4]);
+        }
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * S6 movement-wave profile (Eli's bug 4, "same places at the same time"): average
+     * district movement per tick, bucketed by time-of-day ({@link #WAVE_BUCKET_TICKS}-tick
+     * buckets). The diagnosis measured a flat ~78 with commute spikes at tod 1000 and
+     * 11000; staggered rounds/shifts should flatten those two buckets. Average is printed
+     * x100 in integer math (no float formatting on the twin-compared path).
+     */
+    private static void printMovementWaveReport(long[] waveMoved, long[] waveTicks) {
+        System.out.println();
+        System.out.println("================ S6 MOVEMENT WAVES (avg moves/tick x100, by tod bucket) =====");
+        long peak = 0;
+        int peakBucket = -1;
+        StringBuilder line = new StringBuilder();
+        for (int b = 0; b < waveMoved.length; b++) {
+            if (waveTicks[b] == 0) {
+                continue;
+            }
+            long avgX100 = waveMoved[b] * 100 / waveTicks[b];
+            if (avgX100 > peak) {
+                peak = avgX100;
+                peakBucket = b;
+            }
+            line.append(String.format("  tod=%5d %6d", b * WAVE_BUCKET_TICKS, avgX100));
+            if ((b + 1) % 4 == 0) {
+                System.out.println(line);
+                line.setLength(0);
+            }
+        }
+        if (line.length() > 0) {
+            System.out.println(line);
+        }
+        System.out.println("  peak bucket: tod=" + (peakBucket * WAVE_BUCKET_TICKS)
+                + " avg x100 = " + peak
+                + "  (diagnosis baseline: spikes ~9700 at tod 1000 and ~9650 at 11000 over ~7800 flat)");
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * S6 guard-jam watch (Eli's bug 2): the share of ticks with at least one watch-x-watch
+     * adjacency (same z, chebyshev &le; 1 — the wrestling-pair signature) plus the total
+     * pair-ticks. The diagnosis measured 32.8% of ticks jammed with a 4-hour worst case;
+     * the route audit + shove etiquette should collapse this.
+     */
+    private static void printGuardJamReport(int watchCount, long jamTicks, long jamPairTicks,
+            int ticks) {
+        System.out.println();
+        System.out.println("================ S6 GUARD JAMS (watch-x-watch adjacency) ====================");
+        System.out.println("  watch souls: " + watchCount
+                + ";  ticks with >=1 adjacent watch pair: " + jamTicks + " / " + ticks
+                + " (" + (ticks == 0 ? 0 : jamTicks * 1000 / ticks) + " permille)");
+        System.out.println("  total adjacent watch pair-ticks: " + jamPairTicks
+                + "  (diagnosis baseline: 19,676/60,000 ticks = 328 permille)");
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * S6 statue census (Eli's bug 4): distinct cells each serf.laborer visited over the
+     * final day (or the whole run when shorter) — the diagnosis found 76 of 378 (20%)
+     * touching &le;3 cells ALL DAY. Prints the &le;3-cell statue count and the median.
+     * Only set SIZES are read (HashSet membership is counted, never iterated).
+     */
+    private static void printStatueReport(Map<Integer, java.util.HashSet<Integer>> laborerCells,
+            int ticks) {
+        List<Integer> sizes = new ArrayList<>();
+        int statues = 0;
+        for (Map.Entry<Integer, java.util.HashSet<Integer>> e : laborerCells.entrySet()) {
+            int size = e.getValue().size();
+            sizes.add(size);
+            if (size <= 3) {
+                statues++;
+            }
+        }
+        sizes.sort(Integer::compare);
+        int median = sizes.isEmpty() ? 0 : sizes.get(sizes.size() / 2);
+        System.out.println();
+        System.out.println("================ S6 STATUE CENSUS (serf.laborer distinct cells, final day) ==");
+        System.out.println("  window: last " + Math.min(ticks, DailyRhythm.DAY) + " ticks;  laborers: "
+                + sizes.size() + ";  statues (<=3 distinct cells): " + statues
+                + ";  median distinct cells: " + median);
+        System.out.println("  (diagnosis baseline: 76/378 statues, median 33)");
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * S6 fishing report (Eli's bug 6): the baked zone census, the live spots right now
+     * (slot / size / zone / cast stand), the closed-supply FISH conservation identity
+     * ({@code minted == live + eaten} — a sold fish MOVES, only eating sinks it), and the
+     * FISHING skill census. Ascending scans only.
+     */
+    private static void printFishingReport(DocksPopulation population) {
+        var system = population.system();
+        var spots = system.fishingSpots();
+        var tracks = system.skillTracks();
+        var registry = population.registry();
+        long minted = system.fishMinted();
+        long eaten = system.fishEaten();
+        int live = population.items().liveOfKind(ItemKinds.FISH);
+        System.out.println();
+        System.out.println("================ S6 FISHING (the water gives) ===============================");
+        System.out.println("  zones baked: " + spots.zones().zoneCount()
+                + ";  live spots now: " + spots.liveCount()
+                + " (caps small/med/large = " + com.trojia.sim.actor.FishingSpots.CAP_SMALL
+                + "/" + com.trojia.sim.actor.FishingSpots.CAP_MEDIUM
+                + "/" + com.trojia.sim.actor.FishingSpots.CAP_LARGE + ")");
+        String[] sizes = {"small", "medium", "large"};
+        for (int s = 0; s < spots.slotCapacity(); s++) {
+            if (spots.isLive(s)) {
+                System.out.println("    slot " + s + ": " + sizes[spots.sizeClassAt(s)]
+                        + " zone " + spots.zoneAt(s) + " cast=" + xyz(spots.castCellAt(s))
+                        + " surfaced t=" + spots.spawnTickAt(s)
+                        + " sinks t=" + spots.expiryTickAt(s));
+            }
+        }
+        System.out.println("  FISH minted=" + minted + " (catches);  live(held)=" + live
+                + "  eaten(sunk)=" + eaten + ";  invariant minted == live + eaten: "
+                + (minted == live + eaten));
+        int holders = 0;
+        StringBuilder census = new StringBuilder();
+        for (int i = 0; i < registry.size(); i++) {
+            int level = tracks.level(i, tracks.fishingRaw());
+            if (level > 0) {
+                holders++;
+                if (holders <= 12) {
+                    census.append(holders == 1 ? "" : ", ").append('#').append(i)
+                            .append("=L").append(level);
+                }
+            }
+        }
+        System.out.println("  FISHING skill holders: " + holders
+                + (holders > 0 ? "  (" + census + (holders > 12 ? ", ..." : "") + ")" : ""));
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * S6 death report (Eli's bug 7): the DeathLog toll BY NAME (the client feed's own
+     * source), the resident-dead census, and the roster invariant — the registry never
+     * removes a soul, so the count stays 692 however many die.
+     */
+    private static void printDeathReport(DocksPopulation population, IdentityRegistry identity) {
+        var log = population.system().deathLog();
+        var registry = population.registry();
+        int deadNow = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            if (registry.get(i).hasStatus(com.trojia.sim.actor.StatusBit.DEAD)) {
+                deadNow++;
+            }
+        }
+        System.out.println();
+        System.out.println("================ S6 DEATH (rare, real, announced by name) ===================");
+        System.out.println("  deaths recorded (monotonic toll): " + log.totalRecorded()
+                + ";  resident dead in the roster: " + deadNow
+                + ";  roster size (never shrinks): " + registry.size());
+        for (int i = 0; i < log.size(); i++) {
+            int id = log.actorIdAt(i);
+            String name = id >= 0 && id < identity.size() && identity.get(id).named()
+                    ? identity.get(id).fullName() : "#" + id;
+            System.out.println("    tick=" + log.tickAt(i) + "  " + name
+                    + " [" + registry.get(id).typeId().key() + "] -- " + log.causeAt(i));
+        }
+        if (log.size() == 0) {
+            System.out.println("    (nobody died this soak -- death stays rare)");
+        }
         System.out.println("============================================================================");
     }
 

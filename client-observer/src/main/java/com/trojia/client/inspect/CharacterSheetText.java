@@ -56,6 +56,31 @@ public final class CharacterSheetText {
      */
     public static final String[] NEED_LABELS = {"HUNGER", "REST", "COIN", "SAFETY", "DUTY"};
 
+    /** The two clergy types whose DUTY slot reads as FAITH (Need §3.1 — UI-only, same
+     * mechanism, same slot; promised since the needs vector shipped, honored Sprint 6). */
+    private static final java.util.Set<String> CLERGY_TYPES =
+            java.util.Set.of("priest_of_the_flame", "disciple_of_the_flame");
+
+    /** The depleted-need warning suffix (Sprint 6 motivation legibility): a bottomed-out
+     * bar used to look like any low bar — the S6 diagnosis found DUTY at 0 district-wide
+     * for two sim-days with nothing on screen saying so. */
+    public static final String DEPLETED_MARK = " !";
+
+    /** The need label for one slot of {@code typeKey}'s vector: clergy DUTY reads FAITH. */
+    public static String needLabel(int ordinal, String typeKey) {
+        if (ordinal == com.trojia.sim.actor.Need.DUTY.ordinal()
+                && CLERGY_TYPES.contains(typeKey)) {
+            return "FAITH";
+        }
+        return NEED_LABELS[ordinal];
+    }
+
+    /** {@link #needLabel} plus {@link #DEPLETED_MARK} when the reserve sits at 0. */
+    public static String needRowLabel(int ordinal, String typeKey, short value) {
+        String label = needLabel(ordinal, typeKey);
+        return value == 0 ? label + DEPLETED_MARK : label;
+    }
+
     /** One titled sheet section — the renderer draws each in its own DF panel block. */
     public record Section(String title, List<String> lines) {
     }
@@ -118,12 +143,19 @@ public final class CharacterSheetText {
      * reason (the WHY, ACTORS-SPEC.md §7.2's legibility mandate), vitals, position, home,
      * and a compact carried-items line.
      */
+    /** The dead soul's banner line (Sprint 6): the sheet says dead, not busy. */
+    public static final String DECEASED_BANNER = "*** DECEASED ***";
+
     public static Section identitySection(int selectedId, ActorRegistry registry,
             HomeRegistry homes, JobRegistry jobs, ItemsLiteRegistry items) {
         Actor actor = registry.get(selectedId);
+        boolean dead = DeathPresentation.isDead(actor);
         List<String> lines = new ArrayList<>();
         lines.add("id:     #" + actor.id() + "  " + actor.typeId().key()
                 + "  '" + actor.stats().glyph() + "'");
+        if (dead) {
+            lines.add(DECEASED_BANNER);
+        }
         lines.add("presents: " + presentedTypeLine(actor, registry));
 
         Job job = actor.jobOrdinal() >= 0 ? jobs.get(actor.jobOrdinal()) : null;
@@ -132,10 +164,13 @@ public final class CharacterSheetText {
         String secret = JobDisplay.isSecret(job) ? "   (secret)" : "";
         lines.add("job:    " + trueJob + "   presents: " + presented + secret);
 
-        lines.add("goal:   " + actor.goalState() + "   progress: " + actor.goalProgress());
-        lines.add("reason: " + reason(actor));
-        lines.add("hp: " + actor.hp() + "   status: 0x"
-                + Integer.toHexString(actor.statusBits() & 0xFFFF)
+        if (!dead) {
+            // A corpse keeps no purposes: goal/reason are the living's lines (Sprint 6).
+            lines.add("goal:   " + actor.goalState() + "   progress: " + actor.goalProgress());
+            lines.add("reason: " + reason(actor));
+        }
+        lines.add("hp: " + actor.hp() + "   status: "
+                + DeathPresentation.statusWords(actor.statusBits())
                 + "   facing: " + facing(actor.facing()));
         lines.add("pos:    " + xyz(actor.cell()));
         lines.add(homeLine(actor, homes, registry));
@@ -391,7 +426,8 @@ public final class CharacterSheetText {
         }
         append(lines, identitySection(selectedId, registry, homes, jobs, items));
         lines.add(marker("NEEDS"));
-        lines.add(needsLine(registry.get(selectedId)));
+        lines.add(DeathPresentation.isDead(registry.get(selectedId))
+                ? DEAD_NEEDS_LINE : needsLine(registry.get(selectedId)));
         append(lines, attributesSection(selectedId, tracks));
         append(lines, skillsSection(selectedId, tracks,
                 selectedId != Actor.NONE && selectedId == playedActorId));
@@ -408,6 +444,9 @@ public final class CharacterSheetText {
     private static String marker(String title) {
         return "-- " + title + " --";
     }
+
+    /** What the NEEDS section reads for a corpse (Sprint 6): frozen, not busy. */
+    public static final String DEAD_NEEDS_LINE = "(the dead have no needs)";
 
     /** The five needs as one compact line, for {@link #describe}'s headless surface. */
     private static String needsLine(Actor actor) {

@@ -143,6 +143,11 @@ public final class EventLogTracker {
         return switch (to) {
             case PICKPOCKETED, CAUGHT_STEALING -> null; // CrimeFeedTracker's richer line
             case TALKED, QUEST_ADVANCED -> null; // QuestFeedTracker owns quest narration
+            // Sprint 6: DeathFeedTracker names the dead off the DeathLog ring — one death,
+            // one feed line, never also the raw "reason A -> B" debug shape.
+            case EXECUTED_SECOND_OFFENSE, STARVED_TO_DEATH -> null;
+            case MAIMED_FIRST_OFFENSE -> tag(actor)
+                    + " lost a hand to the ward's justice";
             case ARRESTED_FOR_THEFT -> tag(actor) + " was arrested for theft";
             case HOUSE_ARRESTED -> tag(actor) + " was confined under house arrest";
             case WARNED_MOVE_ALONG -> tag(actor) + " was warned to move along";
