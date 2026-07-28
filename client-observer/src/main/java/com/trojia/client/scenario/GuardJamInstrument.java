@@ -83,6 +83,9 @@ final class GuardJamInstrument {
     private final long[] pairRunLongest;
     private final long[] pairDayFrozenRunCurrent;
     private final long[] pairDayFrozenRunLongest;
+    private final long[] pairPinch;
+    private final long[] pairDutyRunCurrent;
+    private final long[] pairDutyRunLongest;
 
     // ---- per-guard accumulators -------------------------------------------------------
     private final int[] prevCell;
@@ -124,6 +127,9 @@ final class GuardJamInstrument {
         this.pairRunLongest = new long[n * n];
         this.pairDayFrozenRunCurrent = new long[n * n];
         this.pairDayFrozenRunLongest = new long[n * n];
+        this.pairPinch = new long[n * n];
+        this.pairDutyRunCurrent = new long[n * n];
+        this.pairDutyRunLongest = new long[n * n];
         this.prevCell = new int[n];
         this.prevActing = new byte[n];
         this.guardTicks = new long[n];
@@ -164,11 +170,19 @@ final class GuardJamInstrument {
         int[] cell = new int[n];
         boolean[] frozen = new boolean[n];
         boolean[] onPatrolJob = new boolean[n];
+        boolean[] onDuty = new boolean[n];
         for (int i = 0; i < n; i++) {
             Actor a = registry.get(watchIds.get(i));
             cell[i] = a.cell();
             frozen[i] = cell[i] == prevCell[i];
             onPatrolJob[i] = a.jobOrdinal() == patrolJobOrdinal;
+            // ON DUTY = the shift window is open AND the soul is not standing on its own
+            // home cell. Adjacency between two souls off duty is the bake's own doing --
+            // #371/#372/#373 share a bunkroom, #378/#379 share a guardhouse -- and counting
+            // a night of sleep as a "wedge" would make the wedge metric unpassable by
+            // construction and would reward a build whose guards stopped going home.
+            onDuty[i] = day && !(a.homeId() != Actor.NONE
+                    && cell[i] == homes.get(a.homeId()).homeCell());
             guardTicks[i]++;
             if (a.goalWorkTicks() >= BLOCKED_THRESHOLD) {
                 blockedTicks[i]++;
@@ -198,10 +212,20 @@ final class GuardJamInstrument {
                 int idx = i * n + j;
                 boolean adjacent = PackedPos.z(cell[i]) == PackedPos.z(cell[j])
                         && chebyshev(cell[i], cell[j]) <= 1;
+                boolean bothOnDuty = onDuty[i] && onDuty[j];
                 if (!adjacent) {
                     pairRunCurrent[idx] = 0;
                     pairDayFrozenRunCurrent[idx] = 0;
+                    pairDutyRunCurrent[idx] = 0;
                     continue;
+                }
+                if (bothOnDuty) {
+                    pairDutyRunCurrent[idx]++;
+                    if (pairDutyRunCurrent[idx] > pairDutyRunLongest[idx]) {
+                        pairDutyRunLongest[idx] = pairDutyRunCurrent[idx];
+                    }
+                } else {
+                    pairDutyRunCurrent[idx] = 0;
                 }
                 broadPairs++;
                 pairAdjacent[idx]++;
@@ -231,6 +255,7 @@ final class GuardJamInstrument {
                 if (CorridorPinch.isPinched(cell[i], walk)
                         || CorridorPinch.isPinched(cell[j], walk)) {
                     pinchPairs++;
+                    pairPinch[idx]++;
                 }
             }
         }
@@ -294,6 +319,35 @@ final class GuardJamInstrument {
         return over > 0 ? over : 0;
     }
 
+    /**
+     * The AUTHORED half of the primary metric: a patrol-route waypoint standing on pinched
+     * ground is a beat parked in a 1-wide gut by content, not by behaviour, and no sim-side
+     * fix can move it. Printed every run so the next reader inherits the list instead of
+     * re-instrumenting for it. Deterministic: the route table is an ordered dense table,
+     * walked by index.
+     */
+    static void printRouteWaypointPinchAudit(List<List<Integer>> routes,
+            Actor.WalkabilityQuery walk) {
+        System.out.println("  AUTHORED PATROL WAYPOINTS ON PINCHED GROUND (content defects --"
+                + " no sim fix can move these; each needs a marker + gen-script edit)");
+        int found = 0;
+        for (int r = 0; r < routes.size(); r++) {
+            List<Integer> route = routes.get(r);
+            for (int w = 0; w < route.size(); w++) {
+                int c = route.get(w);
+                if (CorridorPinch.isPinched(c, walk)) {
+                    found++;
+                    System.out.println("    route " + r + " waypoint " + w + " ("
+                            + PackedPos.x(c) + "," + PackedPos.y(c) + "," + PackedPos.z(c)
+                            + ") is 1 cell wide on its narrower axis");
+                }
+            }
+        }
+        if (found == 0) {
+            System.out.println("    (none)");
+        }
+    }
+
     void print(long ticks) {
         long pinchPairTicks = pinchPairTicksDay + pinchPairTicksNight;
         long pinchTicks = pinchTicksDay + pinchTicksNight;
@@ -331,6 +385,8 @@ final class GuardJamInstrument {
                 + "  [predicate: any-adjacency + day + on-job, horizon: this run]%n",
                 dayPatrolPairTicks);
         printPairTable();
+        printPinchTable();
+        printRouteWaypointPinchAudit(DocksPopulation.patrolRoutes(), walk);
         printCoverage(ticks);
         printOscillation();
         printBlocked();
@@ -360,18 +416,23 @@ final class GuardJamInstrument {
         });
         System.out.println("  WORST-OFFENDING PAIRS (top 5 by adjacent ticks; distinct pairs ever"
                 + " adjacent: " + order.size() + ")");
-        System.out.printf("    %-8s %-8s %10s %10s %10s %10s %10s%n",
-                "pairA", "pairB", "adjTicks", "frozenRaw", "frozenExc", "longestRun", "dayFrzRun");
+        System.out.printf("    %-8s %-8s %10s %10s %10s %10s %10s %10s %10s%n",
+                "pairA", "pairB", "adjTicks", "pinchTick", "frozenRaw", "frozenExc",
+                "rawRun", "dutyRun", "dayFrzRun");
         int rows = Math.min(5, order.size());
         for (int r = 0; r < rows; r++) {
             int i = order.get(r)[0];
             int j = order.get(r)[1];
             int idx = i * n + j;
-            System.out.printf("    #%-7d #%-7d %10d %10d %10d %10d %10d%n",
-                    watchIds.get(i), watchIds.get(j), pairAdjacent[idx], pairFrozen[idx],
-                    excess(pairFrozen[idx], pairAdjacent[idx]), pairRunLongest[idx],
+            System.out.printf("    #%-7d #%-7d %10d %10d %10d %10d %10d %10d %10d%n",
+                    watchIds.get(i), watchIds.get(j), pairAdjacent[idx], pairPinch[idx],
+                    pairFrozen[idx], excess(pairFrozen[idx], pairAdjacent[idx]),
+                    pairRunLongest[idx], pairDutyRunLongest[idx],
                     pairDayFrozenRunLongest[idx]);
         }
+        long worstDutyRun = 0;
+        int worstDutyI = -1;
+        int worstDutyJ = -1;
         long worstRun = 0;
         int worstRunI = -1;
         int worstRunJ = -1;
@@ -381,6 +442,11 @@ final class GuardJamInstrument {
         for (int i = 0; i < n; i++) {
             for (int j = i + 1; j < n; j++) {
                 int idx = i * n + j;
+                if (pairDutyRunLongest[idx] > worstDutyRun) {
+                    worstDutyRun = pairDutyRunLongest[idx];
+                    worstDutyI = i;
+                    worstDutyJ = j;
+                }
                 if (pairRunLongest[idx] > worstRun) {
                     worstRun = pairRunLongest[idx];
                     worstRunI = i;
@@ -396,12 +462,52 @@ final class GuardJamInstrument {
         System.out.println("    frozenExc = frozenRaw - adjTicks/" + WATCH_SPEED_TICKS_PER_STEP
                 + " (the speedTicksPerStep=" + WATCH_SPEED_TICKS_PER_STEP + " cadence floor);"
                 + " raw frozen is never a percentage here.");
-        System.out.println("    longest unbroken adjacency run: " + worstRun
+        System.out.println("    longest ON-DUTY unbroken adjacency run -- THE WEDGE METRIC"
+                + " (both on shift, neither on its own home cell): " + worstDutyRun
+                + (worstDutyI < 0 ? "" : " (#" + watchIds.get(worstDutyI) + " x #"
+                        + watchIds.get(worstDutyJ) + ")") + "   target <=3000 @60k");
+        System.out.println("    longest RAW adjacency run, shared bunks included: " + worstRun
                 + (worstRunI < 0 ? "" : " (#" + watchIds.get(worstRunI) + " x #"
-                        + watchIds.get(worstRunJ) + ")") + "   target <=3000 @60k");
+                        + watchIds.get(worstRunJ) + ")")
+                + "   (no target: bunkmates are adjacent all night by bake)");
         System.out.println("    longest DAY adjacent-and-both-frozen run: " + worstDayFrozenRun
                 + (worstDayI < 0 ? "" : " (#" + watchIds.get(worstDayI) + " x #"
                         + watchIds.get(worstDayJ) + ")") + "   target <=300");
+    }
+
+    /**
+     * The same dense table re-emitted ordered by the PRIMARY metric, so the corridor-pinch
+     * number names its own offenders instead of leaving the next reader to re-instrument.
+     */
+    private void printPinchTable() {
+        List<int[]> order = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            for (int j = i + 1; j < n; j++) {
+                if (pairPinch[i * n + j] > 0) {
+                    order.add(new int[] {i, j});
+                }
+            }
+        }
+        order.sort((a, b) -> {
+            long ta = pairPinch[a[0] * n + a[1]];
+            long tb = pairPinch[b[0] * n + b[1]];
+            if (ta != tb) {
+                return Long.compare(tb, ta);
+            }
+            if (a[0] != b[0]) {
+                return Integer.compare(a[0], b[0]);
+            }
+            return Integer.compare(a[1], b[1]);
+        });
+        System.out.println("  WORST PINCH PAIRS (top 5 by pinch pair-ticks: the PRIMARY metric's"
+                + " own offenders; pairs ever pinched: " + order.size() + ")");
+        for (int r = 0; r < Math.min(5, order.size()); r++) {
+            int i = order.get(r)[0];
+            int j = order.get(r)[1];
+            System.out.printf("    #%-7d #%-7d pinchTicks=%-8d of adjTicks=%d%n",
+                    watchIds.get(i), watchIds.get(j), pairPinch[i * n + j],
+                    pairAdjacent[i * n + j]);
+        }
     }
 
     private void printCoverage(long ticks) {

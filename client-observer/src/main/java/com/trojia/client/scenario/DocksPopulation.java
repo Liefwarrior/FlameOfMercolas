@@ -451,10 +451,17 @@ public final class DocksPopulation implements ScenarioPopulation {
     // sharing one beat. Every cell below is authored walkable floor, is NOT a patrol-route
     // waypoint (so routeContaining still returns -1 and the square beat is kept), and was
     // verified against the baked world to leave all four beat corners on un-pinched ground.
-    /** K34 north frontage — the garrison sergeant's street beat. Corners y102..114, x131..143. */
-    private static final int[] GUARDHOUSE_NORTH_BEAT = {105, 76};
-    /** K34 south lane — the second garrison watch. Corners y120..128, x130..142. Disjoint. */
-    private static final int[] GUARDHOUSE_SOUTH_BEAT = {104, 94};
+    // The K34 pair are split INSIDE/OUTSIDE rather than both outside, because the
+    // guardhouse's only door opens into a 1-TALL east-west lane at y111 (x134-137 and
+    // x140-144 are pinched: wall at y110, the guardhouse's own north wall at y112). Putting
+    // both beats on the street therefore funnelled BOTH garrison watch through that gut in
+    // opposite directions all day — 3,683 of the 5,417 corridor-pinch pair-ticks at 60,000
+    // ticks came from exactly this, measured. One guard now works the cell block and the
+    // watch room (the jailer's beat) and only the other uses the lane.
+    /** K34 interior/west — the jailer's beat. Corners (141,121)(139,113)(131,111)(130,122). */
+    private static final int[] GUARDHOUSE_JAILER_BEAT = {104, 84};
+    /** K34 north street block. Corners (145,109)(145,97)(133,97)(133,109) — 13 in y, disjoint. */
+    private static final int[] GUARDHOUSE_NORTH_BEAT = {107, 71};
     /** K36 Counting-House frontage on Ropewynd — the bank's outside man. */
     private static final int[] BANK_FRONTAGE_BEAT = {154, 61};
     /** The Rise-head street's east end — the second K21 watch, off the sergeant's route. */
@@ -1945,15 +1952,17 @@ public final class DocksPopulation implements ScenarioPopulation {
             // the worst pair in the ward. Worse, the sergeant's anchor sat on the guardhouse
             // business marker in the middle of the watch room, so three of its four beat
             // corners resolved onto PRISON_CELLS_K34 — 1x1 STEEL_WALL cages with a single
-            // mouth. Both garrison watch now beat the STREET the guardhouse fronts, on
-            // opposite sides: the sergeant walks the north frontage (toward the Bathhouse/
-            // quay cluster it was posted to garrison), the second walks the south lane.
-            // Their two radius-6 squares no longer intersect at all, and neither has a
-            // corner in a cage. Homes are unchanged — both still sleep at the post.
-            guardhouseSergeant.setAnchorCell(worldCell(GUARDHOUSE_NORTH_BEAT, ZA));
+            // mouth. The pair are now split INSIDE/OUTSIDE, 13 cells apart in y so their
+            // radius-6 squares cannot intersect on both axes: the sergeant keeps the cell
+            // block and the watch room (the jailer's beat, corners clear of every cage), the
+            // second walks the street block north of the door. Homes are unchanged — both
+            // still sleep at the post. Sending BOTH outside was tried and MEASURED WORSE:
+            // the guardhouse's one door opens into a 1-tall lane, so two street beats funnel
+            // the whole garrison through the same gut (see GUARDHOUSE_JAILER_BEAT's comment).
+            guardhouseSergeant.setAnchorCell(worldCell(GUARDHOUSE_JAILER_BEAT, ZA));
             Actor garrisonSecond = spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA);
             soloHome(garrisonSecond);
-            garrisonSecond.setAnchorCell(worldCell(GUARDHOUSE_SOUTH_BEAT, ZA));
+            garrisonSecond.setAnchorCell(worldCell(GUARDHOUSE_NORTH_BEAT, ZA));
             // C2 roof deck post (ARREST-SPEC addendum, see the constant's own comment above):
             // the one Watch actually positioned to exercise the new arrest/hold/escalation
             // mechanic against a real Cutpurse and Skyrunner in this fixture.
