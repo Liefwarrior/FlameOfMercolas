@@ -168,8 +168,15 @@ public final class DocksActorsMain {
         long[] waveMoved = new long[waveBuckets];
         long[] waveTicks = new long[waveBuckets];
         List<Integer> watchIds = idsOfType(registry, "militia_watch");
-        long jamTicks = 0;
-        long jamPairTicks = 0;
+        // S7: the honest guard-jam readout. The S6 counter (every watch-x-watch adjacency
+        // anywhere, printed against a DIFFERENT predicate's baseline at a DIFFERENT horizon)
+        // is replaced wholesale by GuardJamInstrument -- see that class for why. Walkability
+        // is read the same way ActorsSystem reads it: one borrowed flyweight cursor.
+        var jamCursor = loaded.world().cursor();
+        com.trojia.sim.actor.Actor.WalkabilityQuery jamWalk =
+                c -> com.trojia.sim.world.Walkability.isWalkable(jamCursor.moveTo(c));
+        GuardJamInstrument guardJam = new GuardJamInstrument(registry, watchIds, jamWalk,
+                jobs.ordinalOf(Job.Watch.Patrol.ID), Math.max(0, ticks - DailyRhythm.DAY));
         List<Integer> laborerIds = new ArrayList<>();
         for (int i = 0; i < registry.size(); i++) {
             Job job = registry.get(i).jobOrdinal() >= 0
@@ -259,21 +266,7 @@ public final class DocksActorsMain {
             int bucket = (int) (tod / WAVE_BUCKET_TICKS);
             waveMoved[bucket] += moved;
             waveTicks[bucket]++;
-            int watchPairs = 0;
-            for (int wi = 0; wi < watchIds.size(); wi++) {
-                int cellA = registry.get(watchIds.get(wi)).cell();
-                for (int wj = wi + 1; wj < watchIds.size(); wj++) {
-                    int cellB = registry.get(watchIds.get(wj)).cell();
-                    if (PackedPos.z(cellA) == PackedPos.z(cellB)
-                            && chebyshev(cellA, cellB) <= 1) {
-                        watchPairs++;
-                    }
-                }
-            }
-            if (watchPairs > 0) {
-                jamTicks++;
-            }
-            jamPairTicks += watchPairs;
+            guardJam.observe(registry, homes, tick);
             if (tick > statueWindowStart) {
                 for (int id : laborerIds) {
                     laborerCells.get(id).add(registry.get(id).cell());
@@ -328,7 +321,7 @@ public final class DocksActorsMain {
         printBeastReport(population, gullIds, catIds, mouseIds, gullRoam, huntCounters);
         printMotivationReport(registry, motivationSamples);
         printMovementWaveReport(waveMoved, waveTicks);
-        printGuardJamReport(watchIds.size(), jamTicks, jamPairTicks, ticks);
+        guardJam.print(ticks);
         printStatueReport(laborerCells, ticks);
         printFishingReport(population);
         printDeathReport(population, identity);
@@ -1047,24 +1040,6 @@ public final class DocksActorsMain {
         System.out.println("  peak bucket: tod=" + (peakBucket * WAVE_BUCKET_TICKS)
                 + " avg x100 = " + peak
                 + "  (diagnosis baseline: spikes ~9700 at tod 1000 and ~9650 at 11000 over ~7800 flat)");
-        System.out.println("============================================================================");
-    }
-
-    /**
-     * S6 guard-jam watch (Eli's bug 2): the share of ticks with at least one watch-x-watch
-     * adjacency (same z, chebyshev &le; 1 — the wrestling-pair signature) plus the total
-     * pair-ticks. The diagnosis measured 32.8% of ticks jammed with a 4-hour worst case;
-     * the route audit + shove etiquette should collapse this.
-     */
-    private static void printGuardJamReport(int watchCount, long jamTicks, long jamPairTicks,
-            int ticks) {
-        System.out.println();
-        System.out.println("================ S6 GUARD JAMS (watch-x-watch adjacency) ====================");
-        System.out.println("  watch souls: " + watchCount
-                + ";  ticks with >=1 adjacent watch pair: " + jamTicks + " / " + ticks
-                + " (" + (ticks == 0 ? 0 : jamTicks * 1000 / ticks) + " permille)");
-        System.out.println("  total adjacent watch pair-ticks: " + jamPairTicks
-                + "  (diagnosis baseline: 19,676/60,000 ticks = 328 permille)");
         System.out.println("============================================================================");
     }
 
