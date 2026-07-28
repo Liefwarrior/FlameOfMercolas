@@ -433,6 +433,32 @@ public final class JobBehaviors {
         self.setGoalTarget(TargetKind.CELL, self.anchorCell());
     }
 
+    /**
+     * PURSUE (off shift): head for the home cell and stop working — the branch every
+     * other job's pursue already has (see {@link #pursueAtAnchor}, {@link #pursueFarm},
+     * {@link #pursueFishing}, {@link #pursueRounds}, each gated on
+     * {@code params.inWindow(tickOfDay)}) and the one {@code watch.patrol} was missing.
+     * Leash-ignoring like every commute (a home routinely sits outside the work anchor's
+     * leash) and cross-z capable, exactly as {@code RETURN_HOME}'s own walk home is.
+     *
+     * <p>The patrol's blocked-leg clock ({@code goalWorkTicks}) keeps its honest meaning
+     * across the shift boundary: zeroed when the actor is home or made ground this tick,
+     * incremented when a step attempt genuinely failed. It is not zeroed unconditionally —
+     * that would launder a guard stuck all night out of the blocked-spell metric.
+     * No new state: reads {@code params} and {@code homeCellOr}, both already present.
+     */
+    public static void pursueOffShiftHome(Actor self, ActorContext ctx) {
+        int home = homeCellOr(self, ctx, self.anchorCell());
+        self.setGoalTarget(TargetKind.CELL, home);
+        if (self.cell() == home) {
+            self.setGoalWorkTicks(0);
+            return;
+        }
+        int before = self.cell();
+        self.stepAlongRoute(home, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
+        self.setGoalWorkTicks(self.cell() != before ? 0 : self.goalWorkTicks() + 1);
+    }
+
     // ======================================================================
     // Waypoint route patrol (law & order pass, Pass 13) — the REAL beat
     // ======================================================================

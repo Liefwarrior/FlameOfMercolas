@@ -2,6 +2,7 @@ package com.trojia.sim.actor.job;
 
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorContext;
+import com.trojia.sim.actor.DailyRhythm;
 import com.trojia.sim.actor.StatusBit;
 import com.trojia.sim.actor.TheftMechanics;
 
@@ -378,6 +379,20 @@ public sealed abstract class Job {
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
+                // S7 (the Watch goes off shift like every other trade): watch.patrol was the
+                // ONE job with no off-shift branch — every other pursue in JobBehaviors gates
+                // on params().inWindow (pursueAtAnchor, pursueFarm, pursueFishing,
+                // pursueCarterRounds) and heads home outside it. Its absence here left
+                // ReturnHomePolicy's night-at-home gate resting on a comment that was FALSE
+                // for the Watch ("pursueAtAnchor's own off-shift target already keeps the
+                // actor there through the night"), so a guard at home at night scored
+                // RETURN_HOME 0, lost to GOAL_PURSUE at 220, got dragged one cell out toward
+                // its beat, and was then dragged straight back by RETURN_HOME's night
+                // branch — forever. Closing the branch makes that stated assumption true.
+                if (!params().inWindow(DailyRhythm.tickOfDay(ctx.tick()))) {
+                    JobBehaviors.pursueOffShiftHome(self, ctx);
+                    return;
+                }
                 // Law & order pass (Pass 13): a Watch whose anchor sits on a baked patrol
                 // route walks that route's ordered waypoints (Tarwalk/quay/Ropewynd);
                 // everyone else (stationed shop/bank/roof guards, unwired bakes) keeps the
