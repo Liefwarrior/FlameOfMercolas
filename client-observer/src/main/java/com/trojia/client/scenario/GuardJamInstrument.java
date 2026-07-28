@@ -4,7 +4,7 @@ import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.CorridorPinch;
 import com.trojia.sim.actor.DailyRhythm;
-import com.trojia.sim.actor.PolicyId;
+import com.trojia.sim.actor.ReasonCode;
 import com.trojia.sim.world.PackedPos;
 
 import java.util.ArrayList;
@@ -86,7 +86,7 @@ final class GuardJamInstrument {
 
     // ---- per-guard accumulators -------------------------------------------------------
     private final int[] prevCell;
-    private final byte[] prevPolicy;
+    private final byte[] prevActing;
     private final long[] guardTicks;
     private final long[] blockedTicks;
     private final long[] nightTicks;
@@ -125,7 +125,7 @@ final class GuardJamInstrument {
         this.pairDayFrozenRunCurrent = new long[n * n];
         this.pairDayFrozenRunLongest = new long[n * n];
         this.prevCell = new int[n];
-        this.prevPolicy = new byte[n];
+        this.prevActing = new byte[n];
         this.guardTicks = new long[n];
         this.blockedTicks = new long[n];
         this.nightTicks = new long[n];
@@ -136,7 +136,7 @@ final class GuardJamInstrument {
         for (int i = 0; i < n; i++) {
             Actor a = registry.get(watchIds.get(i));
             prevCell[i] = a.cell();
-            prevPolicy[i] = a.policyOrdinal();
+            prevActing[i] = acting(a);
             coverageCells.add(new java.util.HashSet<>());
         }
     }
@@ -173,19 +173,19 @@ final class GuardJamInstrument {
             if (a.goalWorkTicks() >= BLOCKED_THRESHOLD) {
                 blockedTicks[i]++;
             }
-            byte policy = a.policyOrdinal();
+            byte acting = acting(a);
             if (!day) {
                 nightTicks[i]++;
                 if (a.homeId() != Actor.NONE
                         && cell[i] == homes.get(a.homeId()).homeCell()) {
                     nightAtHomeTicks[i]++;
                 }
-                if (isPursueOrHome(policy) && isPursueOrHome(prevPolicy[i])
-                        && policy != prevPolicy[i]) {
+                if (acting != ACTING_OTHER && prevActing[i] != ACTING_OTHER
+                        && acting != prevActing[i]) {
                     flipsThisWindow[i]++;
                 }
             }
-            prevPolicy[i] = policy;
+            prevActing[i] = acting;
             if (tick > coverageWindowStart) {
                 coverageCells.get(i).add(cell[i]);
             }
@@ -256,10 +256,28 @@ final class GuardJamInstrument {
         System.arraycopy(cell, 0, prevCell, 0, n);
     }
 
-    /** RETURN_HOME &lt;-&gt; GOAL_PURSUE is the oscillation slice 3 exists to kill. */
-    private static boolean isPursueOrHome(byte ordinal) {
-        return ordinal == (byte) PolicyId.GOAL_PURSUE.ordinal()
-                || ordinal == (byte) PolicyId.RETURN_HOME.ordinal();
+    private static final byte ACTING_OTHER = 0;
+    private static final byte ACTING_GOAL_PURSUE = 1;
+    private static final byte ACTING_RETURN_HOME = 2;
+
+    /**
+     * Which of the two oscillating policies acted this tick. {@code Actor.policyOrdinal()} is
+     * an index into the TYPE's policy stack, not a {@link com.trojia.sim.actor.PolicyId}, and
+     * the stack is not reachable from outside sim-core -- so the acting policy is read off the
+     * reason code each policy's own {@code act()} stamps: {@code JOB_GOAL} is GOAL_PURSUE,
+     * {@code NEED_REST_LOW}/{@code RHYTHM_NIGHT_HOME} are RETURN_HOME's two branches. Anything
+     * else (APPREHEND, FLEE, SEEK_FOOD, ...) is neither, and a transition through it is not
+     * counted as a flip -- only a direct RETURN_HOME&lt;-&gt;GOAL_PURSUE swap is.
+     */
+    private static byte acting(Actor a) {
+        ReasonCode reason = a.lastReasonCode();
+        if (reason == ReasonCode.JOB_GOAL) {
+            return ACTING_GOAL_PURSUE;
+        }
+        if (reason == ReasonCode.NEED_REST_LOW || reason == ReasonCode.RHYTHM_NIGHT_HOME) {
+            return ACTING_RETURN_HOME;
+        }
+        return ACTING_OTHER;
     }
 
     private static int chebyshev(int cellA, int cellB) {
