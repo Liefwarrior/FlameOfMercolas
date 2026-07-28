@@ -6,6 +6,7 @@ import com.trojia.sim.actor.ActorGeometry;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorRngStream;
 import com.trojia.sim.actor.ActorTypeId;
+import com.trojia.sim.actor.CorridorPinch;
 import com.trojia.sim.actor.DailyRhythm;
 import com.trojia.sim.actor.FishingSpots;
 import com.trojia.sim.actor.Need;
@@ -409,10 +410,20 @@ public final class JobBehaviors {
      * Deterministically shrinks the radius along the current leg's fixed corner
      * direction — {@code radius, radius-1, ...} for up to
      * {@link #PATROL_RETRY_BUDGET} attempts (capped at {@code radius} itself) —
-     * and caches the first walkable candidate as the leg's target. Falls back to
+     * and caches the first ACCEPTABLE candidate as the leg's target. Falls back to
      * {@code anchorCell()} (guaranteed walkable by spawn/bake) if nothing in
-     * budget is walkable. Draw-free (fixed geometry, not randomness), bounded,
+     * budget qualifies. Draw-free (fixed geometry, not randomness), bounded,
      * deterministic.
+     *
+     * <p>S7 (the beat stops walking into cages): "acceptable" used to mean merely
+     * WALKABLE, which is why blind radius-6 corners settled inside 1x1 prison cages
+     * and 1-wide alley stubs — a corner two guards cannot share, and cannot pass each
+     * other on, is a pile-up generator by construction. A candidate must now also be
+     * un-{@link CorridorPinch#isPinched pinched}: its narrower walkable axis must be
+     * wider than one cell. The shrink walks the whole budget looking for open ground
+     * first and only then, rather than give up the leg, accepts the best merely-walkable
+     * candidate it saw — so a guard genuinely quartered in a tight pocket keeps a target
+     * instead of collapsing onto its anchor every leg.
      */
     private static void retargetPatrolCorner(Actor self, ActorContext ctx, int radius) {
         int leg = Math.floorMod(self.goalProgress(), 4);
@@ -420,17 +431,25 @@ public final class JobBehaviors {
         int ay = PackedPos.y(self.anchorCell());
         int z = PackedPos.z(self.anchorCell());
         int attempts = Math.min(radius, PATROL_RETRY_BUDGET);
+        int walkableFallback = Actor.NONE;
         for (int attempt = 0; attempt < attempts; attempt++) {
             int r = radius - attempt;
             int tx = clamp(ax + PATROL_DX[leg] * r, PackedPos.X_MASK);
             int ty = clamp(ay + PATROL_DY[leg] * r, PackedPos.Y_MASK);
             int candidate = PackedPos.pack(tx, ty, z);
-            if (ctx.isWalkable(candidate)) {
+            if (!ctx.isWalkable(candidate)) {
+                continue;
+            }
+            if (!CorridorPinch.isPinched(candidate, ctx::isWalkable)) {
                 self.setGoalTarget(TargetKind.CELL, candidate);
                 return;
             }
+            if (walkableFallback == Actor.NONE) {
+                walkableFallback = candidate; // widest pinched corner seen — keep it in reserve
+            }
         }
-        self.setGoalTarget(TargetKind.CELL, self.anchorCell());
+        self.setGoalTarget(TargetKind.CELL,
+                walkableFallback == Actor.NONE ? self.anchorCell() : walkableFallback);
     }
 
     /**

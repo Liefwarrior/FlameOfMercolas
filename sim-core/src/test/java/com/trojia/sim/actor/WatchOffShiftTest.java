@@ -9,17 +9,24 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * S7 slice 3 — the Watch goes off shift like every other trade.
+ * S7 slices 3 and 4 — the two sim-side guard-routing fixes.
  *
- * <p>{@code watch.patrol} was the ONE job whose pursue had no {@code params.inWindow} branch. Every other one heads home
+ * <p>SLICE 3 (the Watch goes off shift like every other trade): {@code watch.patrol} was the
+ * ONE job whose pursue had no {@code params.inWindow} branch. Every other one heads home
  * outside its rhythm window; without it, {@link ReturnHomePolicy}'s night-at-home gate —
  * which returns 0 explicitly BECAUSE "pursueAtAnchor's own off-shift target already keeps
  * the actor there through the night" — rested on an assumption that was false for the Watch,
  * and the guard oscillated one cell in and out of its own doorway all night.
+ *
+ * <p>SLICE 4 (the beat stops walking into cages): the square beat's corner retarget accepted
+ * any WALKABLE corner, so radius-6 corners settled inside 1x1 prison cages and 1-wide alley
+ * stubs. It now rejects {@link CorridorPinch}-pinched candidates, with the merely-walkable
+ * best kept in reserve so a guard in a tight pocket never loses its target.
  */
 final class WatchOffShiftTest {
 
@@ -150,5 +157,84 @@ final class WatchOffShiftTest {
         patrol.pursue(watch, ctx);
         assertEquals(TargetKind.CELL, watch.goalTargetKind());
         assertEquals(post, watch.goalTargetKey(), "no home baked: the anchor is the fallback");
+    }
+
+    // ================== slice 4: corners off pinched ground ==================
+
+    @Test
+    void aBeatCornerInAOneWideCageIsRejectedForOpenGround() {
+        // The K34 shape, minimally: the radius-6 corner lands in a 1x1 cage with a single
+        // mouth. The old rule accepted it (it IS walkable); the new rule shrinks past it.
+        ActorRegistry registry = new ActorRegistry();
+        WalledContext ctx = new WalledContext(registry);
+        int anchor = cell(40, 40);
+        int cage = cell(46, 46); // leg 0 is (+1,+1) -> radius 6 lands exactly here
+        // Cage it: everything around (46,46) except its single north mouth is wall.
+        ctx.walls.add(cell(45, 46));
+        ctx.walls.add(cell(47, 46));
+        ctx.walls.add(cell(46, 47));
+        Actor watch = spawnWatch(registry, ctx, anchor);
+        watch.setAnchorCell(anchor);
+        watch.setHomeId(ctx.homes().addHome(anchor));
+        watch.setGoalProgress((short) 0); // leg 0
+        watch.setGoalTarget(TargetKind.NONE, Actor.NONE);
+        Job patrol = patrolJob(ctx);
+
+        ctx.setTick(ON_SHIFT_TICK);
+        patrol.pursue(watch, ctx);
+
+        assertTrue(CorridorPinch.isPinched(cage, ctx::isWalkable),
+                "the fixture really is a pinch (east-west extent 1)");
+        assertNotEquals(cage, watch.goalTargetKey(),
+                "the beat no longer parks its corner inside the cage");
+        assertFalse(CorridorPinch.isPinched(watch.goalTargetKey(), ctx::isWalkable),
+                "the chosen corner is on ground two guards can pass on: "
+                        + watch.goalTargetKey());
+    }
+
+    @Test
+    void openGroundAtFullRadiusIsStillTakenUnchanged() {
+        // The no-walls case must be byte-identical to the pre-S7 behaviour: full radius.
+        ActorRegistry registry = new ActorRegistry();
+        WalledContext ctx = new WalledContext(registry);
+        int anchor = cell(40, 40);
+        Actor watch = spawnWatch(registry, ctx, anchor);
+        watch.setAnchorCell(anchor);
+        watch.setHomeId(ctx.homes().addHome(anchor));
+        watch.setGoalProgress((short) 0);
+        watch.setGoalTarget(TargetKind.NONE, Actor.NONE);
+        Job patrol = patrolJob(ctx);
+
+        ctx.setTick(ON_SHIFT_TICK);
+        patrol.pursue(watch, ctx);
+        assertEquals(cell(46, 46), watch.goalTargetKey(),
+                "open ground: the corner is still anchor + radius on the leg diagonal");
+    }
+
+    @Test
+    void aWatchInATightPocketKeepsAWalkableTargetRatherThanLosingItsLeg() {
+        // The preserved fallback: when EVERY candidate in budget is pinched, the beat takes
+        // the best merely-walkable one instead of collapsing onto its anchor every leg.
+        ActorRegistry registry = new ActorRegistry();
+        WalledContext ctx = new WalledContext(registry);
+        int anchor = cell(40, 40);
+        // A 1-wide diagonal stair of open cells along leg 0: every candidate is pinched.
+        for (int r = 1; r <= 6; r++) {
+            ctx.walls.add(cell(40 + r - 1, 40 + r));
+            ctx.walls.add(cell(40 + r + 1, 40 + r));
+        }
+        Actor watch = spawnWatch(registry, ctx, anchor);
+        watch.setAnchorCell(anchor);
+        watch.setHomeId(ctx.homes().addHome(anchor));
+        watch.setGoalProgress((short) 0);
+        watch.setGoalTarget(TargetKind.NONE, Actor.NONE);
+        Job patrol = patrolJob(ctx);
+
+        ctx.setTick(ON_SHIFT_TICK);
+        patrol.pursue(watch, ctx);
+        int target = watch.goalTargetKey();
+        assertTrue(ctx.isWalkable(target), "the fallback target is at least walkable");
+        assertEquals(cell(46, 46), target,
+                "with nothing un-pinched in budget the widest-radius walkable corner is kept");
     }
 }
