@@ -237,17 +237,16 @@ final class GuardJamInstrument {
                 if (bothFrozen) {
                     pairFrozen[idx]++;
                 }
-                if (day) {
-                    if (onPatrolJob[i] && onPatrolJob[j]) {
-                        pairAdjacentDay[idx]++;
-                    }
-                    if (bothFrozen) {
-                        pairDayFrozenRunCurrent[idx]++;
-                        if (pairDayFrozenRunCurrent[idx] > pairDayFrozenRunLongest[idx]) {
-                            pairDayFrozenRunLongest[idx] = pairDayFrozenRunCurrent[idx];
-                        }
-                    } else {
-                        pairDayFrozenRunCurrent[idx] = 0;
+                if (day && onPatrolJob[i] && onPatrolJob[j]) {
+                    pairAdjacentDay[idx]++;
+                }
+                // Gated on DUTY, not merely on day: two bunkmates napping off a REST need in
+                // their own quarters at noon are adjacent and both frozen, and counting that
+                // as a wedge is the same confound that made the S6 metric unreadable.
+                if (bothOnDuty && bothFrozen) {
+                    pairDayFrozenRunCurrent[idx]++;
+                    if (pairDayFrozenRunCurrent[idx] > pairDayFrozenRunLongest[idx]) {
+                        pairDayFrozenRunLongest[idx] = pairDayFrozenRunCurrent[idx];
                     }
                 } else {
                     pairDayFrozenRunCurrent[idx] = 0;
@@ -418,7 +417,7 @@ final class GuardJamInstrument {
                 + " adjacent: " + order.size() + ")");
         System.out.printf("    %-8s %-8s %10s %10s %10s %10s %10s %10s %10s%n",
                 "pairA", "pairB", "adjTicks", "pinchTick", "frozenRaw", "frozenExc",
-                "rawRun", "dutyRun", "dayFrzRun");
+                "rawRun", "dutyRun", "dutyFrzRun");
         int rows = Math.min(5, order.size());
         for (int r = 0; r < rows; r++) {
             int i = order.get(r)[0];
@@ -470,7 +469,7 @@ final class GuardJamInstrument {
                 + (worstRunI < 0 ? "" : " (#" + watchIds.get(worstRunI) + " x #"
                         + watchIds.get(worstRunJ) + ")")
                 + "   (no target: bunkmates are adjacent all night by bake)");
-        System.out.println("    longest DAY adjacent-and-both-frozen run: " + worstDayFrozenRun
+        System.out.println("    longest ON-DUTY adjacent-and-both-frozen run: " + worstDayFrozenRun
                 + (worstDayI < 0 ? "" : " (#" + watchIds.get(worstDayI) + " x #"
                         + watchIds.get(worstDayJ) + ")") + "   target <=300");
     }

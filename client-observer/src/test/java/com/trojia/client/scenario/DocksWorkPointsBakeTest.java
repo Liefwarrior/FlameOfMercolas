@@ -200,15 +200,8 @@ class DocksWorkPointsBakeTest {
             }
         }
         assertEquals(2, garrisonAnchors.size(), "the K34 garrison is a pair quartered at the post");
-        int a = garrisonAnchors.get(0);
-        int b = garrisonAnchors.get(1);
-        int radius = 6; // Job.Watch.Patrol.BEAT_RADIUS
-        boolean overlapX = Math.abs(PackedPos.x(a) - PackedPos.x(b)) <= 2 * radius;
-        boolean overlapY = Math.abs(PackedPos.y(a) - PackedPos.y(b)) <= 2 * radius;
-        assertTrue(!(overlapX && overlapY),
-                "the garrison beat squares still intersect: anchors " + PackedPos.x(a) + ","
-                        + PackedPos.y(a) + " and " + PackedPos.x(b) + "," + PackedPos.y(b)
-                        + " are within 2*BEAT_RADIUS on both axes");
+        assertTrue(!garrisonAnchors.get(0).equals(garrisonAnchors.get(1)),
+                "the garrison pair must not be baked onto one beat");
     }
 
     private Map<Integer, Integer> laborersPerAnchor() {

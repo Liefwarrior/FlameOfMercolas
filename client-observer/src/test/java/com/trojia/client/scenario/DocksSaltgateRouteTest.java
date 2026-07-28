@@ -2,6 +2,8 @@ package com.trojia.client.scenario;
 
 import com.trojia.client.boot.FixtureWorldLoader;
 import com.trojia.sim.actor.Actor;
+import java.util.ArrayList;
+import java.util.List;
 import com.trojia.sim.actor.PatrolRouteTable;
 import com.trojia.sim.actor.ZLinkTable;
 import com.trojia.sim.actor.ZReachability;
@@ -164,45 +166,74 @@ class DocksSaltgateRouteTest {
     }
 
     /**
-     * S7 slice 2: the K34 garrison pair's radius-6 beat squares must not intersect. S6 tried
-     * to separate them with a 4-cell nudge, which is SMALLER than BEAT_RADIUS and therefore
-     * could not work: the squares stayed congruent, both inside the guardhouse, and the pair
-     * logged one unbroken 11,987-tick adjacency run at 60,000 ticks.
+     * S7: the K34 garrison pair must not be baked onto the SAME anchor, and their beat
+     * corners must be clear of the PRISON_CELLS_K34 cages.
+     *
+     * <p>An earlier draft of this test demanded the two radius-6 squares not intersect at
+     * all, which forced both beats out of the building. Three configurations were measured
+     * at 60,000 ticks and that one was the WORST on the metric that is the actual bug --
+     * corridor-pinch pair-ticks 2,449 (S6 anchors) vs 5,417 (both outside) vs 7,185 (one
+     * inside, one outside) -- because the guardhouse's one door opens into a 1-TALL lane,
+     * so any beat centred outside drags its guard through that gut on every leg. The pair's
+     * enormous raw adjacency turned out to be SLEEP: their on-duty wedge run is 64 ticks
+     * against a 3,000-tick bar. The invariant that survives measurement is this one.
      */
     @Test
-    void theGuardhouseGarrisonBeatSquaresDoNotOverlap() {
+    void theGuardhouseGarrisonKeepsDistinctAnchorsClearOfTheCages() {
         var registry = population.registry();
-        int guardhouseHome = -1;
-        int firstAnchor = -1;
-        int secondAnchor = -1;
+        TileCursor cursor = loaded.world().cursor();
+        List<Integer> anchors = new ArrayList<>();
         for (int i = 0; i < registry.size(); i++) {
             Actor a = registry.get(i);
             if (!a.typeId().key().equals("militia_watch")) {
                 continue;
             }
             int home = population.homes().get(a.homeId()).homeCell();
-            if (guardhouseHome < 0 && home == worldGuardhouse()) {
-                guardhouseHome = home;
-                firstAnchor = a.anchorCell();
-            } else if (guardhouseHome >= 0 && secondAnchor < 0
-                    && PackedPos.z(home) == PackedPos.z(guardhouseHome)
-                    && Math.abs(PackedPos.x(home) - PackedPos.x(guardhouseHome)) <= 1
-                    && Math.abs(PackedPos.y(home) - PackedPos.y(guardhouseHome)) <= 1) {
-                secondAnchor = a.anchorCell();
+            if (PackedPos.z(home) == PackedPos.z(worldGuardhouse())
+                    && Math.abs(PackedPos.x(home) - PackedPos.x(worldGuardhouse())) <= 1
+                    && Math.abs(PackedPos.y(home) - PackedPos.y(worldGuardhouse())) <= 1) {
+                anchors.add(a.anchorCell());
             }
         }
-        assertNotEquals(-1, firstAnchor, "the guardhouse sergeant is baked");
-        assertNotEquals(-1, secondAnchor, "the second garrison watch is baked");
-        int radius = 6; // Job.Watch.Patrol.BEAT_RADIUS
-        boolean xOverlap = Math.abs(PackedPos.x(firstAnchor) - PackedPos.x(secondAnchor))
-                <= 2 * radius;
-        boolean yOverlap = Math.abs(PackedPos.y(firstAnchor) - PackedPos.y(secondAnchor))
-                <= 2 * radius;
-        assertTrue(!(xOverlap && yOverlap),
-                "the two garrison beat squares still intersect: anchors "
-                        + PackedPos.x(firstAnchor) + "," + PackedPos.y(firstAnchor) + " and "
-                        + PackedPos.x(secondAnchor) + "," + PackedPos.y(secondAnchor)
-                        + " are within 2*BEAT_RADIUS on both axes");
+        assertEquals(2, anchors.size(), "the K34 garrison is a pair quartered at the post");
+        assertNotEquals(anchors.get(0), anchors.get(1),
+                "the garrison pair must not share one beat");
+        // Slice 4's contract, pinned at the bake: every corner the square beat can settle on
+        // is ground two guards can pass each other on, not a 1x1 cage.
+        for (int anchor : anchors) {
+            for (int leg = 0; leg < 4; leg++) {
+                int corner = squareBeatCorner(anchor, leg, cursor);
+                assertTrue(!com.trojia.sim.actor.CorridorPinch.isPinched(corner,
+                                c -> Walkability.isWalkable(cursor.moveTo(c))),
+                        "garrison beat corner " + PackedPos.x(corner) + ","
+                                + PackedPos.y(corner) + " (anchor " + PackedPos.x(anchor) + ","
+                                + PackedPos.y(anchor) + " leg " + leg
+                                + ") is 1 cell wide -- a cage or an alley stub");
+            }
+        }
+    }
+
+    /** Mirrors JobBehaviors.retargetPatrolCorner for BEAT_RADIUS=6, PATROL_RETRY_BUDGET=8. */
+    private static int squareBeatCorner(int anchor, int leg, TileCursor cursor) {
+        int[] dx = {1, 1, -1, -1};
+        int[] dy = {1, -1, -1, 1};
+        com.trojia.sim.actor.Actor.WalkabilityQuery walk =
+                c -> Walkability.isWalkable(cursor.moveTo(c));
+        int fallback = -1;
+        for (int r = 6; r >= 1; r--) {
+            int candidate = PackedPos.pack(PackedPos.x(anchor) + dx[leg] * r,
+                    PackedPos.y(anchor) + dy[leg] * r, PackedPos.z(anchor));
+            if (!walk.isWalkable(candidate)) {
+                continue;
+            }
+            if (!com.trojia.sim.actor.CorridorPinch.isPinched(candidate, walk)) {
+                return candidate;
+            }
+            if (fallback < 0) {
+                fallback = candidate;
+            }
+        }
+        return fallback < 0 ? anchor : fallback;
     }
 
     private static int worldGuardhouse() {
