@@ -834,6 +834,18 @@ public final class ActorsSystem implements SimulationSystem {
             sink.putShort(actor.jobOrdinal());
             sink.putByte(actor.goalState().ordinal());
             sink.putShort(actor.goalProgress());
+            // S7 round 4: the goal TARGET and the goal WORK CLOCK join the hash. They have been
+            // in serialize()/load() since the goal frame landed but never here, which was
+            // already the house rule's "matching canonical order" clause half-kept — and S7's
+            // progress-yield widened the blast radius: the patrol's high-water mark and its
+            // de-phased stall clock are now the state that decides whether a beat keeps walking
+            // a leg or gives it up. A divergence isolated to either one — one twin's guard
+            // yielding a tick earlier than the other's — has to fail the twin-run hash, not
+            // slip past it and surface a hundred thousand ticks later as a coverage number.
+            // Not a save-format change: serialize() already wrote all three, in this order.
+            sink.putByte(actor.goalTargetKind().ordinal());
+            sink.putInt(actor.goalTargetKey());
+            sink.putInt(actor.goalWorkTicks());
             // Phase-2 STEP C: the per-prisoner assigned cell (landmine F — otherwise a divergence
             // isolated to cell assignment, e.g. two prisoners colliding on one cell, slips the
             // twin-run check). heldUntilTick/offenseCount remain out; the cell is the state the

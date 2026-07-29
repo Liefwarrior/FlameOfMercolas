@@ -351,6 +351,11 @@ public final class JobBehaviors {
      * (Eli's bug 2 — "guards pushing each other... shouldn't last this long"). Sized
      * well above the speed accumulator's every-other-tick no-move rhythm, so only a
      * genuinely wedged guard yields.
+     *
+     * <p>Since round 3 this is the MEAN of the de-phased budget, not a per-soul constant:
+     * {@link #patrolStallBudget} spreads the real wait over 22..58 motionless ticks so that
+     * two guards wedged against each other cannot yield on the same tick. It stays the
+     * calibration point every other patrol budget is derived from.
      */
     public static final int PATROL_BLOCKED_YIELD_TICKS = 40;
 
@@ -370,32 +375,78 @@ public final class JobBehaviors {
      *
      * <p>Sized for real detours, not for the pathological case. A route leg legitimately walks
      * AWAY from its waypoint whenever the only door faces the wrong way or the only stair up
-     * stands behind the walker; at {@code speedTicksPerStep=2} this budget is about a hundred
-     * cells of such walking, far more than any leg on the authored routes needs and far less
-     * than a live-lock, which never ends at all.
+     * stands behind the walker; at {@code speedTicksPerStep=2} the un-de-phased budget is 100
+     * cells of such walking (200 fruitless ticks, one step every other tick), far more than any
+     * leg on the authored routes needs and far less than a live-lock, which never ends at all.
+     * The per-soul de-phase ({@link #PATROL_STALL_DEPHASE}) spreads the real budget over
+     * {@code 110..290} ticks, i.e. 55..145 cells.
      */
     public static final int PATROL_NO_PROGRESS_YIELD_TICKS = 200;
 
     /**
      * Stall weight of a DEAD-STILL tick, so one counter carries both budgets: a still tick is
      * worth {@code PATROL_NO_PROGRESS_YIELD_TICKS / PATROL_BLOCKED_YIELD_TICKS} units and a
-     * stepping-but-not-closing tick is worth one. A wedged guard therefore still yields on its
-     * 40th motionless tick, bit-for-bit S6's number, while a live-locked one yields on its
-     * 200th fruitless step — two budgets, one already-persisted scalar, no new state.
+     * stepping-but-not-closing tick is worth one, so the SAME scalar expresses S6's dead-still
+     * budget and the live-lock budget at once — no new persisted state.
+     *
+     * <p><b>S7 round 4 — the arithmetic, stated correctly.</b> The round-3 javadoc here claimed
+     * a wedged guard "still yields on its 40th motionless tick, bit-for-bit S6's number". That
+     * was never true of the shipped code: {@link #patrolStallBudget} de-phases the budget by
+     * soul id, so 40 is the MEAN, not the number. The honest statement is
+     * {@link #patrolStallBudget}'s: a wedged guard yields between its 22nd and its 58th
+     * motionless tick, its own id fixing which, averaging S6's 40; a live-locked one yields
+     * after 110..290 fruitless ticks. {@code GuardEtiquetteTest} now pins those exact bounds
+     * against the code that computes them, which the old divisibility assertion could not see.
      */
-    private static final int PATROL_STILL_STALL_WEIGHT =
+    static final int PATROL_STILL_STALL_WEIGHT =
             PATROL_NO_PROGRESS_YIELD_TICKS / PATROL_BLOCKED_YIELD_TICKS;
 
     /**
-     * Deterministic de-phase of the stall budget by soul id. Two guards wedged against each
-     * other start their stall clocks on the same tick, so a shared budget would fire for both
-     * on the same tick — both would yield, both would turn around, and the pair would meet
+     * Deterministic de-phase band of the stall budget by soul id. Two guards wedged against
+     * each other start their stall clocks on the same tick, so a shared budget would fire for
+     * both on the same tick — both would yield, both would turn around, and the pair would meet
      * again in lockstep: a polite deadlock instead of a rude one. Spreading the budget over a
      * band of ids means whoever is going to give way gives way first, and the other walks
      * through the freed connector. Same discipline as {@link #selectRouteStart}'s corner
      * stagger: fixed arithmetic on the id, never a draw.
+     *
+     * <p>37 is wider than the whole Watch roster (19 souls on consecutive ids), so no two
+     * guards in the ward share a phase at all — see {@link #patrolStallBudget} for why the
+     * band alone was not enough.
      */
     private static final int PATROL_STALL_DEPHASE = 37;
+
+    /**
+     * The de-phased stall budget, in stall UNITS, for one soul — the shared clock both beats
+     * yield on.
+     *
+     * <p><b>S7 round 4 — the de-phase used to be quantized away in the exact case it was
+     * written for.</b> Round 3 added the raw {@code floorMod(id, 37)} straight onto a budget
+     * whose dead-still ticks are worth {@link #PATROL_STILL_STALL_WEIGHT} = 5 units each, so
+     * ids one apart got budgets one UNIT apart — a fifth of a motionless tick, which rounds to
+     * nothing. Two consecutively-spawned guards wedged against each other (the garrison pair,
+     * the two Saltgate walkers: precisely the pairs that wedge) still yielded on the very same
+     * tick, both turned, and met again in lockstep. The de-phase is now denominated in the
+     * still-tick weight, so ids one apart are exactly ONE motionless tick apart and the
+     * lockstep cannot re-form.
+     *
+     * <p>It is CENTRED on the band ({@code -DEPHASE/2 .. +DEPHASE/2}) rather than added on top,
+     * so the mean wait is still S6's 40 motionless ticks instead of drifting up to 58 — the
+     * regression {@code GuardEtiquetteTest} exists to stop. Range: 110..290 units = 22..58
+     * motionless ticks, or 110..290 fruitless stepping ticks. Pure integer arithmetic on the
+     * id; no draw, no state.
+     */
+    public static int patrolStallBudget(int actorId) {
+        return PATROL_NO_PROGRESS_YIELD_TICKS
+                + PATROL_STILL_STALL_WEIGHT
+                        * (Math.floorMod(actorId, PATROL_STALL_DEPHASE) - PATROL_STALL_DEPHASE / 2);
+    }
+
+    /** Motionless ticks {@code actorId} waits before yielding a wedged leg (22..58). */
+    public static int patrolMotionlessTicksToYield(int actorId) {
+        return (patrolStallBudget(actorId) + PATROL_STILL_STALL_WEIGHT - 1)
+                / PATROL_STILL_STALL_WEIGHT;
+    }
 
     /** Bounded retry budget for {@link #retargetPatrolCorner} — draw-free, fixed geometry. */
     private static final int PATROL_RETRY_BUDGET = 8;
@@ -415,29 +466,54 @@ public final class JobBehaviors {
      * #retargetPatrolCorner}), mirroring the wander/anchor-cycle pattern already
      * in this file, rather than recomputing (and re-walkability-checking) every
      * tick.
+     *
+     * <p><b>S7 round 4 — the blind beat yields on PROGRESS too.</b> Round 3 re-aimed the stall
+     * clock from stillness to progress in {@link #pursueRoutePatrol} ONLY, and 13 of the 19
+     * Watch walk THIS beat, so the general fix was half a fix: at the round-3 tip Sergeant #378
+     * was live-locked for the whole of the final day's shift (24 distinct cells over a
+     * 24,000-tick day against a roster median of 108) and the stillness counter — which zeroes
+     * on any movement, and a live-locked pair moves every tick — read him as healthy. The leg
+     * now keeps the same HIGH-WATER MARK the route beat keeps: the closest this leg has come to
+     * its corner. A step that beats the mark is progress (clock zeroed, mark advanced);
+     * anything else, moving or not, is stall, and the leg is given up on the shared de-phased
+     * budget ({@link #patrolStallBudget}).
+     *
+     * <p>The route beat parks its mark in {@code goalTarget}; this beat cannot, because
+     * {@code goalTarget} already holds the validated corner. So the mark rides the free HIGH
+     * BITS of {@code goalProgress}, whose low two bits are the only ones the square beat has
+     * ever used (every reader in this file takes {@code floorMod(goalProgress, 4)}): distance
+     * plus one, {@code 0} meaning "no mark yet". Persisted, hashed and serialized already —
+     * again no new state, and {@link #selectRouteStart}'s {@code floorMod(id, 4)} start lands
+     * with an empty mark by construction.
      */
     public static void pursuePatrol(Actor self, ActorContext ctx, int radius, JobParams params) {
         if (self.goalTargetKind() != TargetKind.CELL) {
             retargetPatrolCorner(self, ctx, radius);
+            setPatrolMarkDistance(self, NO_PATROL_MARK); // fresh leg: mark from where we stand
         }
         int target = self.goalTargetKey();
         if (self.cell() != target) {
             int before = self.cell();
             self.stepAlongRoute(target, false, ctx::isWalkable, ctx.occupancy());
-            if (self.cell() != before) {
-                self.setGoalWorkTicks(0); // moving: the blocked-leg clock stays clean
+            int mark = patrolMarkDistance(self);
+            int distance = legDistance(self.cell(), target);
+            if (mark == NO_PATROL_MARK || distance < mark) {
+                // Genuine ground gained (or the first tick of the leg): re-mark and start clean.
+                setPatrolMarkDistance(self, distance);
+                self.setGoalWorkTicks(0);
                 return;
             }
-            // Sprint 6 yield (Eli's bug 2): a leg standing dead still — a full cell it may
-            // not shove through (a fellow guard) — is abandoned after a bounded wait; the
-            // beat advances to its next corner and walks away instead of wrestling.
-            int blocked = self.goalWorkTicks() + 1;
-            if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
-                self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
-                self.setGoalTarget(TargetKind.NONE, Actor.NONE);
-                self.setGoalWorkTicks(0);
+            // Sprint 6 yield (Eli's bug 2), re-aimed exactly as the route beat's was: a leg
+            // that is not closing on its corner — wedged dead still against a full cell it may
+            // not shove through, or shuffling back and forth against a fellow guard in a
+            // 1-wide gut — is abandoned after a bounded wait; the beat advances to its next
+            // corner and walks away instead of wrestling.
+            int stall = self.goalWorkTicks()
+                    + (self.cell() == before ? PATROL_STILL_STALL_WEIGHT : 1);
+            if (stall >= patrolStallBudget(self.id())) {
+                advancePatrolLeg(self);
             } else {
-                self.setGoalWorkTicks(blocked);
+                self.setGoalWorkTicks(stall);
             }
             return;
         }
@@ -445,8 +521,46 @@ public final class JobBehaviors {
         // the beat's trade skill trains here (context = the corner cell; each corner is its
         // own §3.3 context, which is why patrol cp is priced under the anchor scale).
         awardWorkEvent(self, ctx, params, target);
-        self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
-        self.setGoalTarget(TargetKind.NONE, Actor.NONE); // force next leg's corner to be revalidated
+        advancePatrolLeg(self);
+    }
+
+    /** Low bits of {@code goalProgress} the square beat's corner index lives in. */
+    private static final int PATROL_LEG_BITS = 2;
+
+    /** Widest mark distance the high bits can carry — {@code (4095+1)<<2} still fits a short. */
+    private static final int PATROL_MARK_MAX = 4095;
+
+    /** "This leg has not marked a best cell yet" — the empty high-bit sentinel. */
+    private static final int NO_PATROL_MARK = -1;
+
+    /** The square beat's current corner index, 0..3. */
+    private static int patrolLeg(Actor self) {
+        return Math.floorMod(self.goalProgress(), 4);
+    }
+
+    /** The leg's high-water distance, or {@link #NO_PATROL_MARK} if the leg has not marked. */
+    private static int patrolMarkDistance(Actor self) {
+        int packed = self.goalProgress();
+        int stored = packed < 0 ? 0 : packed >>> PATROL_LEG_BITS;
+        return stored == 0 ? NO_PATROL_MARK : stored - 1;
+    }
+
+    /** Writes the high-water distance beside the leg index, leaving the leg untouched. */
+    private static void setPatrolMarkDistance(Actor self, int distance) {
+        int stored = distance < 0 ? 0 : Math.min(distance, PATROL_MARK_MAX) + 1;
+        self.setGoalProgress((short) ((stored << PATROL_LEG_BITS) | patrolLeg(self)));
+    }
+
+    /**
+     * Leave this corner for the next one: advance the leg, DROP the high-water mark (the new
+     * leg re-marks from wherever the actor stands), clear the cached corner so the next tick
+     * re-validates it, and zero the stall clock. The route beat's {@link #advanceRouteLeg}
+     * twin.
+     */
+    private static void advancePatrolLeg(Actor self) {
+        self.setGoalProgress((short) ((patrolLeg(self) + 1) % 4)); // mark bits cleared with it
+        self.setGoalTarget(TargetKind.NONE, Actor.NONE);
+        self.setGoalWorkTicks(0);
     }
 
     /**
@@ -604,8 +718,7 @@ public final class JobBehaviors {
         // goalWorkTicks this method already owned.
         int stall = self.goalWorkTicks()
                 + (self.cell() == before ? PATROL_STILL_STALL_WEIGHT : 1);
-        if (stall >= PATROL_NO_PROGRESS_YIELD_TICKS
-                + Math.floorMod(self.id(), PATROL_STALL_DEPHASE)) {
+        if (stall >= patrolStallBudget(self.id())) {
             advanceRouteLeg(self, index, count);
         } else {
             self.setGoalWorkTicks(stall);
