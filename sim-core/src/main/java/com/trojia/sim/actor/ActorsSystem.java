@@ -211,6 +211,42 @@ public final class ActorsSystem implements SimulationSystem {
         return fishingSpots;
     }
 
+    /**
+     * The bake-bound spell universe (Simple Magic): every crafting the public shelf teaches.
+     * {@code SpellRegistry.EMPTY} until {@link #bindSpells} wires the raws — nothing is castable
+     * and no cast intent can reach the effect table.
+     */
+    private com.trojia.sim.actor.spell.SpellRegistry spells =
+            com.trojia.sim.actor.spell.SpellRegistry.EMPTY;
+
+    /**
+     * Every lingering crafted effect in the ward (Simple Magic), ticked on its own cadence
+     * before any actor acts and persisted as the LAST section of this chunk (the
+     * {@link FishingSpots} discipline).
+     */
+    private final com.trojia.sim.actor.spell.ActiveEffects activeEffects =
+            new com.trojia.sim.actor.spell.ActiveEffects();
+
+    /** The spell universe (public: the client's spell bar reads names and gates off it). */
+    public com.trojia.sim.actor.spell.SpellRegistry spells() {
+        return spells;
+    }
+
+    /** The live effect table (public: the sheet shows a body's held warmth and nudges). */
+    public com.trojia.sim.actor.spell.ActiveEffects activeEffects() {
+        return activeEffects;
+    }
+
+    /**
+     * Binds the boot-loaded spell raws. BAKE-TIME ONLY, the {@code SkillTrackRegistry.seedLevel}
+     * discipline: call between construction and the first tick, never after. The registry is
+     * immutable and never serialized — a spell's raw index comes from the raws bytes, so a save
+     * carries effects, never spells.
+     */
+    public void bindSpells(com.trojia.sim.actor.spell.SpellRegistry spells) {
+        this.spells = java.util.Objects.requireNonNull(spells, "spells");
+    }
+
     /** The bake-bound quest table (public: the client journal/talk surface reads titles/keys). */
     public QuestRegistry questRegistry() {
         return quests;
@@ -326,6 +362,13 @@ public final class ActorsSystem implements SimulationSystem {
         this.quests = quests;
         this.questLog = new QuestLog(quests);
         this.fishingSpots = new FishingSpots(fixtures.fishingZones());
+        // Simple Magic: the skill table folds this system's live crafted attribute nudges into
+        // its one attribute() read, so a timed +1 AGI is felt by every check in the game.
+        // Only a WIRED table is bound — SkillTrackRegistry.UNWIRED is a shared singleton and
+        // must never end up pointing at one particular system's effects.
+        if (skillTracks.isWired()) {
+            skillTracks.bindActiveEffects(activeEffects);
+        }
     }
 
     public ActorRegistry registry() {
@@ -506,6 +549,10 @@ public final class ActorsSystem implements SimulationSystem {
         // Sprint 6: the fishing water rolls its cadence BEFORE any actor acts (spawn/expire
         // on named non-actor draws), so every fisher this tick sees one coherent spot set.
         fishingSpots.tick(worldSeed, context.tick());
+        // Simple Magic: lingering craftings expire and land their due doses BEFORE any actor
+        // acts, so every read this tick — a check that folds in a held +1 AGI, a sheet that
+        // shows a body's warmth — sees one coherent set. Draw-free; no cadence of its own.
+        activeEffects.tick(registry, context.tick());
         runPayroll(context.tick());
         runFoodImports(context.tick());
         runFoodProvision(context.tick());
@@ -727,6 +774,10 @@ public final class ActorsSystem implements SimulationSystem {
         // run's water exactly — then, LAST, the death log (the feed's by-name toll).
         fishingSpots.serialize(out);
         deathLog.serialize(out);
+        // Simple Magic, appended LAST: every lingering crafted effect. Behaviour-carrying
+        // without question — a live ATTRIBUTE row shifts every skill check its target makes —
+        // so a load mid-effect must reproduce the continuous run exactly, warmth, timer and all.
+        activeEffects.serialize(out);
     }
 
     private void writeActor(DataOutput out, Actor actor) throws IOException {
@@ -772,6 +823,7 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeLong(actor.huntBackoffUntilTick()); // density revisit: hop-blocked-chase backoff
         out.writeLong(actor.starvingSinceTick()); // Sprint 6 death: the starvation-spell clock
         out.writeLong(actor.culledUntilTick()); // S8: the cull latch (one scalp per cooldown)
+        out.writeLong(actor.castUntilTick()); // Simple Magic: the crafting latch
         // lastReasonCode is load-bearing in ApprehendPolicy's buying-customer exemption, so a
         // loaded run must see the same value a continuous run would (-1 = never set).
         out.writeByte(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
@@ -829,6 +881,7 @@ public final class ActorsSystem implements SimulationSystem {
         questLog.load(in); // Sprint 3: the quest state (frame-guarded against the wired raws)
         fishingSpots.load(in); // Sprint 6: the live spot slots (frame-guarded on zone count)
         deathLog.load(in); // Sprint 6: the by-name death toll
+        activeEffects.load(in); // Simple Magic: every lingering crafting (capacity-guarded)
     }
 
     private void readActor(DataInput in) throws IOException {
@@ -869,6 +922,7 @@ public final class ActorsSystem implements SimulationSystem {
         long huntBackoffUntilTick = in.readLong(); // density revisit: hop-blocked-chase backoff
         long starvingSinceTick = in.readLong(); // Sprint 6 death: the starvation-spell clock
         long culledUntilTick = in.readLong(); // S8: the cull latch
+        long castUntilTick = in.readLong(); // Simple Magic: the crafting latch
         byte lastReasonOrdinal = in.readByte(); // law & order pass: -1 = never set
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
@@ -908,6 +962,7 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setHuntBackoffUntilTick(huntBackoffUntilTick);
         actor.setStarvingSinceTick(starvingSinceTick);
         actor.setCulledUntilTick(culledUntilTick);
+        actor.setCastUntilTick(castUntilTick);
         actor.setLastReasonCode(
                 lastReasonOrdinal < 0 ? null : ReasonCode.values()[lastReasonOrdinal]);
     }
@@ -973,6 +1028,11 @@ public final class ActorsSystem implements SimulationSystem {
             // take a scalp this tick decides whether an item gets minted, so a latch-only
             // desync must fail the twin-run hash rather than surface later as a supply gap.
             sink.putLong(actor.culledUntilTick());
+            // Simple Magic (landmine F once more): the crafting latch decides whether a cast
+            // resolves this tick, and a cast writes hit points and attribute modifiers — so a
+            // latch-only desync must fail the twin-run hash rather than surface later as a
+            // check that went the other way.
+            sink.putLong(actor.castUntilTick());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {
@@ -1010,6 +1070,9 @@ public final class ActorsSystem implements SimulationSystem {
         // the twin-run hash, not slip past it. The death log rides along.
         fishingSpots.hashInto(sink);
         deathLog.hashInto(sink);
+        // Simple Magic (landmine F): a held warmth or a timed attribute nudge changes what the
+        // ward's checks return, so an effect-only desync must fail the twin run.
+        activeEffects.hashInto(sink);
     }
 
     /** The per-tick {@link ActorContext}, bound to this system's registries and named draws. */
@@ -1245,6 +1308,16 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public FishingSpots fishingSpots() {
             return fishingSpots;
+        }
+
+        @Override
+        public com.trojia.sim.actor.spell.SpellRegistry spells() {
+            return spells;
+        }
+
+        @Override
+        public com.trojia.sim.actor.spell.ActiveEffects activeEffects() {
+            return activeEffects;
         }
 
         @Override

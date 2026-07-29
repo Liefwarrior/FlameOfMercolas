@@ -90,5 +90,14 @@ public enum ReasonCode {
     /** S8 counter sale: carried MATERIALS changed hands for Royals ({@code SellVerb}). */
     SOLD_GOODS,
     /** Play mode: the sell intent found no willing, coin-carrying counter within reach. */
-    NO_BUYER_IN_REACH
+    NO_BUYER_IN_REACH,
+    /**
+     * Simple Magic: a crafting took — the link opened and every one of the spell's components
+     * landed on its target ({@code SpellVerb}). What actually changed is the spell's own data.
+     */
+    SPELL_WORKED,
+    /** Simple Magic: the link would not open. The check failed; the use-XP was earned anyway. */
+    SPELL_FIZZLED,
+    /** Play mode: the cast intent found nothing this crafting could reach (the bridge rule). */
+    NO_LINK_TO_TARGET
 }

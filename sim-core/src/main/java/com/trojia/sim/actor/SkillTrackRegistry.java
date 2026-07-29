@@ -58,6 +58,7 @@ public final class SkillTrackRegistry {
     static final String KEY_SKYRUNNING = "skyrunning";
     static final String KEY_FISHING = "fishing";
     static final String KEY_FIELDCRAFT = "fieldcraft";
+    static final String KEY_LINKCRAFT = "linkcraft";
 
     /** The boot-built skill universe, or {@code null} when unwired. */
     private final SkillRegistry skills;
@@ -71,6 +72,19 @@ public final class SkillTrackRegistry {
     private final int skyrunning;
     private final int fishing;
     private final int fieldcraft;
+    private final int linkcraft;
+
+    /**
+     * The live source of TIMED attribute modifiers (Simple Magic): {@link #attribute} adds
+     * whatever this reports on top of the §5 recompute, so a crafting that steadies a hand is
+     * felt by every check in the game at once — the shove contest, the lift, the cast, the cull
+     * — through the one function they all already read.
+     *
+     * <p>Wired once by {@code ActorsSystem} after it builds its {@code ActiveEffects} table; a
+     * table with no live rows (and the unwired default) contributes 0, so every pre-magic
+     * caller reads exactly what it always did.
+     */
+    private com.trojia.sim.actor.spell.ActiveEffects effects;
 
     private SkillTrackRegistry() {
         this.skills = null;
@@ -81,6 +95,7 @@ public final class SkillTrackRegistry {
         this.skyrunning = Actor.NONE;
         this.fishing = Actor.NONE;
         this.fieldcraft = Actor.NONE;
+        this.linkcraft = Actor.NONE;
     }
 
     /**
@@ -97,6 +112,16 @@ public final class SkillTrackRegistry {
         this.skyrunning = rawOf(skills, KEY_SKYRUNNING);
         this.fishing = rawOf(skills, KEY_FISHING);
         this.fieldcraft = rawOf(skills, KEY_FIELDCRAFT);
+        this.linkcraft = rawOf(skills, KEY_LINKCRAFT);
+    }
+
+    /**
+     * Binds the live {@link com.trojia.sim.actor.spell.ActiveEffects} table whose timed
+     * ATTRIBUTE rows {@link #attribute} folds in. Construction-time wiring, called once by
+     * {@code ActorsSystem}; never state, never serialized.
+     */
+    public void bindActiveEffects(com.trojia.sim.actor.spell.ActiveEffects effects) {
+        this.effects = effects;
     }
 
     private static int rawOf(SkillRegistry skills, String key) {
@@ -152,6 +177,15 @@ public final class SkillTrackRegistry {
     }
 
     /**
+     * Simple Magic: the LINKCRAFT raw — the skill the crafting check reads and every cast
+     * attempt grows. {@link Actor#NONE} where unwired or where the raws predate the skill, so
+     * the check degrades to its base rather than throwing.
+     */
+    public int linkcraftRaw() {
+        return linkcraft;
+    }
+
+    /**
      * An actor's current level in a skill (by raw registry index), {@code 0..100}. Reads 0
      * when unwired, when the skill is absent ({@link Actor#NONE}), or when the actor has
      * never earned any XP (no track materialized).
@@ -203,11 +237,22 @@ public final class SkillTrackRegistry {
      * when unwired or trackless.
      */
     public int attribute(int actorId, AttributeId attributeId) {
-        if (skills == null || actorId < 0 || actorId >= tracks.size()
-                || tracks.get(actorId) == null) {
-            return 10; // the §5 base: 10 + (weightedSum >> 8) with all levels 0
+        int base = 10; // the §5 base: 10 + (weightedSum >> 8) with all levels 0
+        if (skills != null && actorId >= 0 && actorId < tracks.size()
+                && tracks.get(actorId) != null) {
+            base = AttributeCalculator.compute(attributeId, skills, tracks.get(actorId));
         }
-        return AttributeCalculator.compute(attributeId, skills, tracks.get(actorId));
+        return base + effectModifier(actorId, attributeId);
+    }
+
+    /**
+     * The live crafted modifier on one attribute (Simple Magic), or 0 when no effect table is
+     * bound. Folded into {@link #attribute} rather than exposed separately on purpose: a timed
+     * +1 AGI that only SOME call sites remembered to add would be a bug factory, and the
+     * standing steer is that skills and their modifiers affect everything.
+     */
+    public int effectModifier(int actorId, AttributeId attributeId) {
+        return effects == null ? 0 : effects.attributeModifier(actorId, attributeId.ordinal());
     }
 
     /**

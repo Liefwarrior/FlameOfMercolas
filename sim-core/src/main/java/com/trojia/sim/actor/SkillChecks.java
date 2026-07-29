@@ -99,6 +99,22 @@ public final class SkillChecks {
     /** Cull ceiling: mastery never buys certainty (and never a guaranteed faucet). */
     public static final int CULL_CEIL_PERMILLE = 940;
 
+    // ---- the linkcraft family (Simple Magic): caster LINKCRAFT + WIT against the
+    // difficulty SpellCost computes from what the crafting moves and how far it moves it.
+    // The base sits below the cull's and near the search family's: the public shelf is
+    // "overly general and skimmed over most of the details" (L2472), so an untrained reader
+    // works a crafting about as reliably as a novice pries a locked drawer. The floor is low
+    // on purpose — a hopeless attempt SHOULD mostly fizzle, and the fizzle still pays its
+    // use-XP, which is how a laborer becomes a crafter. The ceiling stays under 1000 like
+    // every other family here: mastery never buys certainty (the genre contract), and a
+    // certain crafting would make a warm body a switch rather than a skill. ----
+    /** Baseline crafting permille when the caster's score equals the crafting's difficulty. */
+    public static final int LINKCRAFT_BASE_PERMILLE = 500;
+    /** Crafting floor: even a hopeless reader gets a link open now and then. */
+    public static final int LINKCRAFT_FLOOR_PERMILLE = 50;
+    /** Crafting ceiling: mastery never buys certainty. */
+    public static final int LINKCRAFT_CEIL_PERMILLE = 900;
+
     private SkillChecks() {
     }
 
@@ -202,5 +218,25 @@ public final class SkillChecks {
                 + tracks.attribute(cullerId, AttributeId.AGI);
         return successPermille(score, resist, CULL_BASE_PERMILLE,
                 CULL_FLOOR_PERMILLE, CULL_CEIL_PERMILLE);
+    }
+
+    /**
+     * The CRAFTING threshold (Simple Magic): caster {@code linkcraft + WIT} against the
+     * {@code resist} {@code SpellCost} computed for this crafting at this distance, on the
+     * linkcraft family's base/floor/ceiling — through this file's ONE
+     * {@link #successPermille} function, like every other family. WIT governs because the
+     * libraries gate on READING, not on the arm.
+     *
+     * <p>Reads the TRUE id: a link is the body's own work, not a social read (the
+     * push/pickpocket/cast/cull precedent). Note that the WIT it reads is the LIVE attribute,
+     * so a crafting that steadies the head makes the next crafting likelier — the one loop
+     * where magic feeds itself, and it is bounded by the same cost model as everything else.
+     * Degrades to the base where the skill table is unwired.
+     */
+    public static int linkcraftPermille(SkillTrackRegistry tracks, int casterId, int resist) {
+        int score = tracks.level(casterId, tracks.linkcraftRaw())
+                + tracks.attribute(casterId, AttributeId.WIT);
+        return successPermille(score, resist, LINKCRAFT_BASE_PERMILLE,
+                LINKCRAFT_FLOOR_PERMILLE, LINKCRAFT_CEIL_PERMILLE);
     }
 }
