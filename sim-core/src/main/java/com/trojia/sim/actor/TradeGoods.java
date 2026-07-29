@@ -49,10 +49,15 @@ public final class TradeGoods {
      *
      * @param kind     the {@link ItemKinds} id
      * @param symbol   the raws-facing snake_case name (the ONE content-string spelling)
-     * @param weight   per-unit carry weight in drams (integer — no float anywhere in sim-core)
-     * @param category the trade category this kind sells under
+     * @param weight    per-unit carry weight in drams (integer — no float anywhere in sim-core)
+     * @param category  the trade category this kind sells under
+     * @param basePrice the standing counter price in Royals per unit, {@code 0} for kinds no
+     *                  counter buys (quest tokens, identity papers). S8 ships this as a FIXED
+     *                  number on purpose: the daily price tick is S9's, and it will move off
+     *                  this base rather than replace it.
      */
-    public record Entry(short kind, String symbol, int weight, Category category) {
+    public record Entry(short kind, String symbol, int weight, Category category,
+            int basePrice) {
     }
 
     /**
@@ -61,20 +66,20 @@ public final class TradeGoods {
      * text).
      */
     private static final Entry[] ROWS = {
-        new Entry(ItemKinds.COIN, "coin", 1, Category.COMMODITIES),
-        new Entry(ItemKinds.FOOD, "food", 10, Category.FOOD),
-        new Entry(ItemKinds.ID_CARD, "id_card", 1, Category.COMMODITIES),
-        new Entry(ItemKinds.VAULT_KEY, "vault_key", 2, Category.COMMODITIES),
-        new Entry(ItemKinds.LEDGER_LEAF, "ledger_leaf", 1, Category.COMMODITIES),
-        new Entry(ItemKinds.DEBT_PAPER, "debt_paper", 1, Category.COMMODITIES),
-        new Entry(ItemKinds.FISH, "fish", 12, Category.FOOD),
-        new Entry(ItemKinds.CORDAGE, "cordage", 20, Category.MATERIALS),
-        new Entry(ItemKinds.PITCH, "pitch", 30, Category.MATERIALS),
-        new Entry(ItemKinds.BARREL_STOCK, "barrel_stock", 40, Category.MATERIALS),
-        new Entry(ItemKinds.SALT, "salt", 15, Category.MATERIALS),
-        new Entry(ItemKinds.RAT_SCALP, "rat_scalp", 2, Category.MATERIALS),
-        new Entry(ItemKinds.GULL_SCALP, "gull_scalp", 2, Category.MATERIALS),
-        new Entry(ItemKinds.CAT_SCALP, "cat_scalp", 3, Category.MATERIALS),
+        new Entry(ItemKinds.COIN, "coin", 1, Category.COMMODITIES, 1),
+        new Entry(ItemKinds.FOOD, "food", 10, Category.FOOD, 5),
+        new Entry(ItemKinds.ID_CARD, "id_card", 1, Category.COMMODITIES, 0),
+        new Entry(ItemKinds.VAULT_KEY, "vault_key", 2, Category.COMMODITIES, 0),
+        new Entry(ItemKinds.LEDGER_LEAF, "ledger_leaf", 1, Category.COMMODITIES, 0),
+        new Entry(ItemKinds.DEBT_PAPER, "debt_paper", 1, Category.COMMODITIES, 0),
+        new Entry(ItemKinds.FISH, "fish", 12, Category.FOOD, 3),
+        new Entry(ItemKinds.CORDAGE, "cordage", 20, Category.MATERIALS, 2),
+        new Entry(ItemKinds.PITCH, "pitch", 30, Category.MATERIALS, 2),
+        new Entry(ItemKinds.BARREL_STOCK, "barrel_stock", 40, Category.MATERIALS, 3),
+        new Entry(ItemKinds.SALT, "salt", 15, Category.MATERIALS, 2),
+        new Entry(ItemKinds.RAT_SCALP, "rat_scalp", 2, Category.MATERIALS, 2),
+        new Entry(ItemKinds.GULL_SCALP, "gull_scalp", 2, Category.MATERIALS, 3),
+        new Entry(ItemKinds.CAT_SCALP, "cat_scalp", 3, Category.MATERIALS, 4),
     };
 
     /**
@@ -107,6 +112,17 @@ public final class TradeGoods {
             }
         }
         return null;
+    }
+
+    /**
+     * The standing counter price in Royals for one unit of {@code kind}; {@code 0} where no
+     * counter buys it (and {@code 0} for a kind the table does not describe). Callers MUST
+     * treat 0 as "not for sale" rather than "free", or a sell verb would move stock for
+     * nothing.
+     */
+    public static int basePriceOf(short kind) {
+        Entry row = entryOf(kind);
+        return row == null ? 0 : row.basePrice();
     }
 
     /** Per-unit carry weight in drams; {@code 0} for a kind the table does not describe. */

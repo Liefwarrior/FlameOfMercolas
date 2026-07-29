@@ -107,7 +107,15 @@ public enum ActorRngStream {
      * size's authored resist through {@link SkillChecks}' fishing family. Appended stream;
      * drawn through the shared per-actor per-tick counter, spatialKey = the FISHER's id.
      */
-    CHECK_FISHING("check.fishing");
+    CHECK_FISHING("check.fishing"),
+    /**
+     * The cull check (S8, {@code CullVerb}): one draw per cull attempt, resolved culler
+     * {@code fieldcraft + AGI} against the quarry type's authored {@code scalpResist} through
+     * {@link SkillChecks}' cull family. Appended stream; drawn through the shared per-actor
+     * per-tick counter, spatialKey = the CULLER's id (the body is inert — the work is the
+     * knife-hand's, exactly like the fishing cast's).
+     */
+    CHECK_CULL("check.cull");
 
     private final String streamName;
     private final long salt;

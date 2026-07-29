@@ -98,6 +98,14 @@ public final class JobBehaviors {
                     params.yieldPerUnit());
             ctx.recordGoodsMinted(params.yieldKind(), minted);
         }
+        // S8 THE CULL VERB: a soul that finishes a unit of work standing beside a downed
+        // scalpable body takes the scalp. Deliberately at this seam and NOT as its own policy
+        // — a CULL policy would send people walking to carcasses, which moves the population,
+        // which is exactly the sort of quiet perturbation that could eat the predators' supply
+        // margin. Here the ward's routes do not change at all: the hands that cull are the
+        // hands that were already working there. No-op for every beast, for anyone latched,
+        // and everywhere there is no quarry in reach; NEVER touches the body's revive timer.
+        com.trojia.sim.actor.CullVerb.tryCullInReach(self, ctx);
         if (!params.trains()) {
             return;
         }

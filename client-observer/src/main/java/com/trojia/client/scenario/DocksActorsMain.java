@@ -1253,6 +1253,43 @@ public final class DocksActorsMain {
                     + ";  fattest holding: " + top);
         }
         System.out.println("============================================================================");
+
+        // The vermin bounty, read as a DISTRIBUTION. The scalp totals above are a supply
+        // number and one soul beside one den could produce all of them; what says the bounty
+        // is a ward PRACTICE is how many different hands took one. Ascending-id scan.
+        var system2 = population.system();
+        int cullers = system2.distinctCullers();
+        long scalps = 0;
+        for (short kind : new short[] {ItemKinds.RAT_SCALP, ItemKinds.GULL_SCALP,
+                ItemKinds.CAT_SCALP}) {
+            scalps += system2.goodsMinted(kind);
+        }
+        StringBuilder busiest = new StringBuilder();
+        int shown = 0;
+        int bestTally = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            bestTally = Math.max(bestTally, system2.scalpsTakenBy(i));
+        }
+        for (int i = 0; i < registry.size() && shown < 10; i++) {
+            if (system2.scalpsTakenBy(i) > 0) {
+                String who = i < identity.size() && identity.get(i).named()
+                        ? identity.get(i).fullName() : "#" + i;
+                busiest.append(shown == 0 ? "" : ", ").append(who)
+                        .append(" x").append(system2.scalpsTakenBy(i));
+                shown++;
+            }
+        }
+        System.out.println();
+        System.out.println("================ S8 THE VERMIN BOUNTY (who actually culls) =================");
+        System.out.println("  scalps harvested: " + scalps
+                + ";  DISTINCT cullers: " + cullers
+                + ";  busiest single hand: " + bestTally
+                + "  (latch: one attempt per " + com.trojia.sim.actor.CullVerb.CULL_COOLDOWN_TICKS
+                + " ticks per soul)");
+        System.out.println("  first cullers by id: "
+                + (busiest.length() == 0 ? "(nobody)" : busiest
+                        + (cullers > shown ? ", ..." : "")));
+        System.out.println("============================================================================");
     }
 
     /** Right-pads {@code s} to {@code width} with spaces (Locale-free, report-text stable). */

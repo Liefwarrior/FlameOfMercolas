@@ -103,6 +103,14 @@ public final class ActorsSystem implements SimulationSystem {
     private final long[] goodsMinted = new long[TradeGoods.count()];
     private final long[] goodsSunk = new long[TradeGoods.count()];
 
+    /**
+     * Per-culler scalp tallies (S8), dense by actor id — pure accounting, read by no
+     * behavior, riding no save, exactly like {@code foodMinted}. The scalp COUNT alone can be
+     * one soul standing beside one den all month; the DISTINCT-culler count is what says the
+     * vermin bounty is something the ward does. Grown lazily to the registry size.
+     */
+    private int[] scalpsTakenBy = new int[0];
+
     /** Ring capacity of the shove log — bounds riot detection's O(K^2) cluster scan. */
     private static final int SHOVE_LOG_CAPACITY = 256;
 
@@ -434,6 +442,22 @@ public final class ActorsSystem implements SimulationSystem {
         return slot < 0 ? 0 : goodsMinted[slot];
     }
 
+    /** How many scalps {@code actorId} has taken across the run (pure accounting). */
+    public int scalpsTakenBy(int actorId) {
+        return actorId >= 0 && actorId < scalpsTakenBy.length ? scalpsTakenBy[actorId] : 0;
+    }
+
+    /** How many DIFFERENT souls have ever taken a scalp — the distribution, not the total. */
+    public int distinctCullers() {
+        int n = 0;
+        for (int taken : scalpsTakenBy) {
+            if (taken > 0) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     /** Total units of trade-good {@code kind} genuinely destroyed — that kind's sink count. */
     public long goodsSunk(short kind) {
         int slot = goodsSlot(kind);
@@ -740,6 +764,7 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeLong(actor.houseArrestUntilTick()); // density revisit: house-arrest deadline
         out.writeLong(actor.huntBackoffUntilTick()); // density revisit: hop-blocked-chase backoff
         out.writeLong(actor.starvingSinceTick()); // Sprint 6 death: the starvation-spell clock
+        out.writeLong(actor.culledUntilTick()); // S8: the cull latch (one scalp per cooldown)
         // lastReasonCode is load-bearing in ApprehendPolicy's buying-customer exemption, so a
         // loaded run must see the same value a continuous run would (-1 = never set).
         out.writeByte(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
@@ -835,6 +860,7 @@ public final class ActorsSystem implements SimulationSystem {
         long houseArrestUntilTick = in.readLong(); // density revisit
         long huntBackoffUntilTick = in.readLong(); // density revisit: hop-blocked-chase backoff
         long starvingSinceTick = in.readLong(); // Sprint 6 death: the starvation-spell clock
+        long culledUntilTick = in.readLong(); // S8: the cull latch
         byte lastReasonOrdinal = in.readByte(); // law & order pass: -1 = never set
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
@@ -872,6 +898,7 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setHouseArrestUntilTick(houseArrestUntilTick);
         actor.setHuntBackoffUntilTick(huntBackoffUntilTick);
         actor.setStarvingSinceTick(starvingSinceTick);
+        actor.setCulledUntilTick(culledUntilTick);
         actor.setLastReasonCode(
                 lastReasonOrdinal < 0 ? null : ReasonCode.values()[lastReasonOrdinal]);
     }
@@ -920,6 +947,10 @@ public final class ActorsSystem implements SimulationSystem {
             // spell-only desync must fail the twin-run hash before it becomes a death-day
             // divergence.
             sink.putLong(actor.starvingSinceTick());
+            // S8 (landmine F again): the cull latch is behavior-carrying — whether a soul may
+            // take a scalp this tick decides whether an item gets minted, so a latch-only
+            // desync must fail the twin-run hash rather than surface later as a supply gap.
+            sink.putLong(actor.culledUntilTick());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {
@@ -1125,6 +1156,19 @@ public final class ActorsSystem implements SimulationSystem {
             if (slot >= 0) {
                 goodsMinted[slot] += n;
             }
+        }
+
+        @Override
+        public void recordScalpTaken(int cullerId, short kind) {
+            if (cullerId < 0) {
+                return;
+            }
+            if (cullerId >= scalpsTakenBy.length) {
+                int[] grown = new int[Math.max(cullerId + 1, registry.size())];
+                System.arraycopy(scalpsTakenBy, 0, grown, 0, scalpsTakenBy.length);
+                scalpsTakenBy = grown;
+            }
+            scalpsTakenBy[cullerId]++;
         }
 
         @Override

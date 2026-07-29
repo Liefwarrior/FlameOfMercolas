@@ -31,6 +31,7 @@ import com.trojia.sim.actor.RelationshipKind;
 import com.trojia.sim.actor.RelationshipRegistry;
 import com.trojia.sim.actor.RooftopTable;
 import com.trojia.sim.actor.SkillTrackRegistry;
+import com.trojia.sim.actor.TradeGoods;
 import com.trojia.sim.actor.ZLinkTable;
 import com.trojia.sim.actor.faction.FactionDefinition;
 import com.trojia.sim.actor.faction.FactionRawsLoader;
@@ -869,16 +870,13 @@ public final class DocksPopulation implements ScenarioPopulation {
 
             @Override
             public short itemKind(String questId, String itemSymbol) {
-                return switch (itemSymbol) {
-                    case "vault_key" -> ItemKinds.VAULT_KEY;
-                    case "ledger_leaf" -> ItemKinds.LEDGER_LEAF;
-                    case "debt_paper" -> ItemKinds.DEBT_PAPER;
-                    // S4: "royals" is the quests' name for plain specie — the buy route's
-                    // requireItem gate and the bought stage's give_item price both move
-                    // the ordinary COIN kind (conservation-neutral, always a MOVE).
-                    case "royals" -> ItemKinds.COIN;
-                    default -> -1;
-                };
+                // S8: was a hardcoded 5-case switch that had to grow a line per kind, in the
+                // observer, for a vocabulary that lives in sim-core. It now resolves through
+                // the ONE TradeGoods symbol table — the same lookup the actor raws' scalpItem
+                // field uses — so a new kind is nameable from content the moment it has a row,
+                // and "royals" stays an alias of plain COIN there rather than here.
+                // TradeGoods.NO_KIND is -1, which is exactly the sentinel this binding wants.
+                return TradeGoods.kindForSymbol(itemSymbol);
             }
 
             @Override
@@ -2241,6 +2239,13 @@ public final class DocksPopulation implements ScenarioPopulation {
             redistributeCrewAnchors();
             assignSurplusLabor();
 
+            // ===================== S8: the yards start producing ==============================
+            // Every laborer whose anchor is one of the four craft yards is promoted to that
+            // yard's trade, so its completed work units mint the yard's material. Runs LAST of
+            // the job passes, after every anchor is final — you are a ropewalker because you
+            // work the Ropewalk, the same rule that already makes a carter a carter.
+            assignCraftYards();
+
             // ===================== Starting inventory (placeholder ids, §11.2) =================
             for (int i = 0; i < registry.size(); i++) {
                 giveStartingInventory(registry.get(i));
@@ -2411,6 +2416,64 @@ public final class DocksPopulation implements ScenarioPopulation {
             respreadAnchor(K07_ROPEWALK, ROPEWALK_STATIONS);
             respreadAnchor(K12_KINGS_BOND, KINGS_BOND_STATIONS);
             respreadAnchor(K29_LONGSTORE, LONGSTORE_STATIONS);
+        }
+
+        /**
+         * S8 ("The Ward Prices Itself"): the four craft yards start producing. Every
+         * {@code serf.laborer} standing at one of a yard's cells — its main site cell or any
+         * of its authored stations — is promoted to that yard's own trade, whose bound
+         * {@code JobParams} carry the YIELD pair. The work itself does not change (identical
+         * anchor cycle, same window, same cp, same duty); what changes is that a completed
+         * work unit now leaves a rope, a measure of tar, a stave bundle or a peck of salt in
+         * the worker's hands.
+         *
+         * <p>Binding by ANCHOR rather than by assign-weight is deliberate: a trade is where
+         * you stand, not a die roll. It also means the gang sizes are whatever the ward
+         * actually authored, so the goods distribution in the report is a census, not a quota.
+         * Deterministic ascending-id scan.
+         */
+        private void assignCraftYards() {
+            promoteYard(Job.Serf.CraftYard.Ropewalker.ID, K07_ROPEWALK, ROPEWALK_STATIONS);
+            promoteYard(Job.Serf.CraftYard.Tarhand.ID, K09_PITCHFIELD, PITCHFIELD_STANDS);
+            promoteYard(Job.Serf.CraftYard.Cooper.ID, K23_COOPERS, null);
+            promoteYard(Job.Serf.CraftYard.Salter.ID, K11_SALT_ROW, null);
+        }
+
+        /**
+         * Promotes every Serf anchored on {@code site} (or one of {@code stations}) into
+         * {@code trade}.
+         *
+         * <p>The eligible set is {@code serf.laborer} plus {@code trade.trader}, and the second
+         * half of that is not sloppiness: the cooperage is on the retail-counter list, so the
+         * S6 dock-trades pass swept its six live-in apprentices into {@code trade.trader} and
+         * the yard's own bench was left with nobody on it. A Serf bunking in the workshop loft
+         * is an apprentice, not a shop clerk. The type guard keeps the actual shopkeepers
+         * (Cooper Aldous Stave and his counter) exactly where they are.
+         */
+        private void promoteYard(JobId trade, int[] site, int[][] stations) {
+            int laborer = jobs.ordinalOf(Job.Serf.Laborer.ID);
+            int trader = jobs.ordinalOf(Job.Trade.Trader.ID);
+            for (int i = 0; i < registry.size(); i++) {
+                Actor actor = registry.get(i);
+                boolean eligible = actor.jobOrdinal() == laborer
+                        || (actor.jobOrdinal() == trader && actor.typeId().equals(Serf.TYPE));
+                if (!eligible) {
+                    continue;
+                }
+                int anchor = actor.anchorCell();
+                boolean atYard = anchor == worldCell(site, ZA);
+                if (!atYard && stations != null) {
+                    for (int[] station : stations) {
+                        if (anchor == worldCell(station, ZA)) {
+                            atYard = true;
+                            break;
+                        }
+                    }
+                }
+                if (atYard) {
+                    assignJob(actor, trade);
+                }
+            }
         }
 
         private void respreadAnchor(int[] site, int[][] stations) {

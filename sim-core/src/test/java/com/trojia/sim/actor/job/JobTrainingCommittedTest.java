@@ -28,6 +28,11 @@ final class JobTrainingCommittedTest {
             Map.entry("serf.farmer", "fieldcraft"),
             Map.entry("serf.laborer", "kit_keeping"),
             Map.entry("serf.carter", "kit_keeping"),
+            // S8 craft yards: the same haul work with a YIELD bound to it, so the same trade.
+            Map.entry("serf.ropewalker", "kit_keeping"),
+            Map.entry("serf.tarhand", "kit_keeping"),
+            Map.entry("serf.cooper", "kit_keeping"),
+            Map.entry("serf.salter", "kit_keeping"),
             Map.entry("watch.patrol", "streetwise"),
             Map.entry("clergy.shepherd", "channeling"),
             Map.entry("clergy.acolyte", "channeling"),

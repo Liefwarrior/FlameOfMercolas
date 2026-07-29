@@ -248,6 +248,16 @@ public interface ActorContext {
     }
 
     /**
+     * Records that {@code cullerId} took one scalp (S8). Separate from
+     * {@link #recordGoodsMinted} on purpose: the goods counter answers "how many scalps
+     * exist", which a single soul beside a den could satisfy alone, while this answers "how
+     * many DIFFERENT hands took one" — the number that says whether the bounty is a ward
+     * practice or one lucky worker. Pure accounting — read by no behavior, rides no save.
+     */
+    default void recordScalpTaken(int cullerId, short kind) {
+    }
+
+    /**
      * Records one death (Sprint 6): {@code actorId} died of {@code cause} (execution or
      * terminal starvation) this tick. Lands in the {@link DeathLog} ring the client feed
      * announces by name. A no-op where unwired.

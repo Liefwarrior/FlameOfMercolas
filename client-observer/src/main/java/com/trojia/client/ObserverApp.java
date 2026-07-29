@@ -32,6 +32,8 @@ import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.ClimbInput;
 import com.trojia.client.input.EatInput;
+import com.trojia.client.input.CullInput;
+import com.trojia.client.input.SellInput;
 import com.trojia.client.input.FishInput;
 import com.trojia.client.input.InspectorInput;
 import com.trojia.client.input.ObserverScript;
@@ -44,6 +46,8 @@ import com.trojia.client.inspect.DeathFeedTracker;
 import com.trojia.client.inspect.EatFeedbackTracker;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
+import com.trojia.client.inspect.CullFeedbackTracker;
+import com.trojia.client.inspect.SellFeedbackTracker;
 import com.trojia.client.inspect.FishFeedbackTracker;
 import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.inspect.JournalText;
@@ -181,6 +185,8 @@ public final class ObserverApp extends ApplicationAdapter {
     private SkillUpTracker skillUpTracker;
     private EatFeedbackTracker eatFeedbackTracker;
     private FishFeedbackTracker fishFeedbackTracker;
+    private CullFeedbackTracker cullFeedbackTracker;
+    private SellFeedbackTracker sellFeedbackTracker;
     private ToastRenderer toastRenderer;
     // Sprint 2 "walk up and talk": the speech panel + the theft feedback loop.
     private TalkState talk;
@@ -431,6 +437,14 @@ public final class ObserverApp extends ApplicationAdapter {
             this.fishFeedbackTracker = new FishFeedbackTracker(population.registry(), toasts,
                     () -> playMode.playedActorId(), population.system().skillTracks(),
                     population.system().fishingSpots());
+            // Cull-outcome narration (S8): the played soul's K cull resolves sim-side next
+            // tick; this tracker toasts the outcome reason + the cull-check line.
+            this.cullFeedbackTracker = new CullFeedbackTracker(population.registry(), toasts,
+                    () -> playMode.playedActorId(), population.system().skillTracks());
+            // Counter-sale narration (S8): the played soul's B sale resolves sim-side next
+            // tick; this tracker toasts sold / nobody-buying.
+            this.sellFeedbackTracker = new SellFeedbackTracker(population.registry(), toasts,
+                    () -> playMode.playedActorId());
             // Watch-lenience narration (S5 check lines): the played soul's warn/fine
             // transitions toast the exact inputs the lenience draw read. Zero sim writes.
             LenienceFeedbackTracker lenienceFeedbackTracker = new LenienceFeedbackTracker(
@@ -451,6 +465,8 @@ public final class ObserverApp extends ApplicationAdapter {
                 questFeedTracker.afterTick(tick);
                 eatFeedbackTracker.afterTick(tick);
                 fishFeedbackTracker.afterTick(tick);
+                cullFeedbackTracker.afterTick(tick);
+                sellFeedbackTracker.afterTick(tick);
                 lenienceFeedbackTracker.afterTick(tick);
                 mastersSnapshot.afterTick(tick);
             });
@@ -563,6 +579,12 @@ public final class ObserverApp extends ApplicationAdapter {
             // The FISH verb (S6): R casts at a perceived spot within reach through the
             // sim's shared cast attempt; outcome + check line via FishFeedbackTracker.
             FishInput.poll(playMode, population.registry(), toasts, fishFeedbackTracker);
+            // The CULL verb (S8): K takes a scalp off a downed vermin body within knife reach
+            // through the sim's shared cull verb; outcome + check line via CullFeedbackTracker.
+            CullInput.poll(playMode, population.registry(), toasts, cullFeedbackTracker);
+            // The SELL verb (S8): B turns carried materials into Royals at a counter in reach
+            // through the sim's shared exchange; outcome toast via SellFeedbackTracker.
+            SellInput.poll(playMode, population.registry(), toasts, sellFeedbackTracker);
             // The JOURNAL toggle (S3): J opens/closes the quest pane (J was unbound; the
             // design's verify-free-then-bind rule). Shares the pane with the masters board.
             if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
@@ -811,6 +833,10 @@ public final class ObserverApp extends ApplicationAdapter {
                         eatFeedbackTracker);
                 case FISH -> FishInput.applyFish(playMode, population.registry(), toasts,
                         fishFeedbackTracker);
+                case CULL -> CullInput.applyCull(playMode, population.registry(), toasts,
+                        cullFeedbackTracker);
+                case SELL -> SellInput.applySell(playMode, population.registry(), toasts,
+                        sellFeedbackTracker);
             }
         }
     }
