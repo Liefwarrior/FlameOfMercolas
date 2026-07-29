@@ -52,3 +52,38 @@ exists to catch.
 Do not edit the number to make something go green. Re-record it only when the arc deliberately
 moves the world forward, and when you do, replace the whole block above — run, tick count,
 commit, and all three hashes — so the next reader can reproduce it.
+
+---
+
+## The S8 drift, on the record
+
+S8 ("goods and scalps") drifted the ward on purpose. This section says exactly where, so a
+later reader can tell a deliberate step from a regression.
+
+### What was proved INERT (the number held)
+
+At commit `ec85f32`, with the whole YIELD pair wired — `JobParams.yieldKind`/`yieldPerUnit`,
+the mint at `JobBehaviors.awardWorkEvent`, the per-kind conservation counters, the seven-line
+trade-goods report — and **every yield set to 0**, the 15,000-tick soak returned
+`COMBINED WORLD HASH: 0x3685019bfa04c4c3`: byte-identical to the baseline above. The only
+change in the whole report was the new, all-zero goods block.
+
+The cull verb got its own inertness measurement, holding everything else constant. With no
+actor type declaring a `scalpItem`, `CullVerb.tryCullInReach` makes no draw and writes no
+state, so a 15,000-tick run with the verb wired is **byte-identical** to the same run with the
+call commented out — reports compared in full, not just the hash.
+
+### What drifted, and why it had to
+
+Two changes moved the number by construction, not by behavior:
+
+1. **Four new job ids** (`serf.ropewalker`, `serf.tarhand`, `serf.cooper`, `serf.salter`).
+   `Jobs.ALL` is sorted by id, so appending shifts every later job's ordinal, and
+   `jobOrdinal` is persisted and hashed. A yield is `JobParams` data, so four different yields
+   need four bound param sets; there is no version of this that leaves ordinals alone.
+2. **One new persisted scalar per actor** (`Actor.culledUntilTick`, the cull latch). The house
+   rule is that any new persisted state appears in `serialize()`, `load()` AND `hashInto()` in
+   matching order, appended last. Growing the hash stream necessarily changes the hash.
+
+Neither can be measured away, and neither is a behavior change hiding in a number. The honest
+inert proofs are the two above, which bracket them.
