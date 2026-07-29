@@ -5,10 +5,20 @@ import com.trojia.client.hud.icons.IconKey;
 import com.trojia.sim.actor.DailyRhythm;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** {@link HudText} formatting — pure, headless. */
@@ -90,18 +100,100 @@ class HudTextTest {
     }
 
     @Test
-    void playModeLegendCarriesEverySocialVerbKey() {
-        // Sprint 4 playtest fix: the whole verb surface must be on screen while driving.
-        List<HudToken> tokens = HudText.playModeKeybindingTokens();
-        assertTrue(tokens.contains(HudToken.icon(IconKey.T)), "talk");
-        assertTrue(tokens.contains(HudToken.icon(IconKey.G)), "pickpocket");
-        assertTrue(tokens.contains(HudToken.icon(IconKey.E)), "eat");
-        assertTrue(tokens.contains(HudToken.icon(IconKey.R)), "fish");
-        assertTrue(tokens.contains(HudToken.icon(IconKey.ARROW_UP)), "climb up");
-        assertTrue(tokens.contains(HudToken.icon(IconKey.ARROW_DOWN)), "climb down");
-        assertTrue(tokens.contains(HudToken.icon(IconKey.I)), "disguise");
-        assertTrue(tokens.contains(HudToken.icon(IconKey.J)), "journal");
-        assertTrue(tokens.contains(HudToken.icon(IconKey.P)), "release");
+    void playModeLegendCarriesEveryPlayModeVerbKeyTheInputPackageBinds() throws IOException {
+        // Sprint 4 playtest fix (#1): the whole verb surface must be on screen while driving.
+        // Sprint 8 re-opened it — K and B shipped bound to nothing on any screen, and the old
+        // version of THIS test stayed green because it enumerated a hand-written list of the
+        // pre-S8 verbs. So it no longer enumerates anything: it READS the play-mode input
+        // classes and demands the legend carry every key they bind. Add a verb, bind a key,
+        // forget the legend, and this goes red without anyone remembering to edit a list.
+        List<Path> sources = playModeInputSources();
+        assertTrue(sources.size() >= 5,
+                () -> "the input-package scan found almost nothing (" + sources
+                        + ") — the scan is broken, not the legend");
+        List<HudToken> legend = HudText.playModeKeybindingTokens();
+        SortedSet<String> bound = new TreeSet<>();
+        for (Path source : sources) {
+            Matcher m = KEY_BINDING.matcher(Files.readString(source));
+            while (m.find()) {
+                bound.add(m.group(1));
+            }
+        }
+        assertTrue(bound.size() >= 8,
+                () -> "found only " + bound + " — the key regex stopped matching");
+        for (String key : bound) {
+            if (NOT_VERB_KEYS.contains(key)) {
+                continue;
+            }
+            IconKey icon = iconFor(key);
+            assertNotNull(icon, () -> "a play-mode input class binds " + key
+                    + " and IconKey has no glyph for it — add one (the S8 K/B defect)");
+            assertTrue(legend.contains(HudToken.icon(icon)),
+                    () -> "a play-mode input class binds " + key
+                            + " and the play-mode legend does not carry it — the verb is on"
+                            + " no screen (PLAYTEST-LOG.md fix #1)");
+        }
+    }
+
+    /** {@code Input.Keys.NAME} — every key any play-mode input class binds. */
+    private static final Pattern KEY_BINDING =
+            Pattern.compile("Input\\.Keys\\.([A-Z][A-Z_0-9]*)");
+
+    /**
+     * Keys a play-mode input class binds that the VERB legend deliberately does not carry,
+     * each with the surface that does carry it. Anything not named here must appear on the
+     * legend — the default is "on screen".
+     */
+    private static final Set<String> NOT_VERB_KEYS = Set.of(
+            "W", "A", "S", "D",   // movement: the nav line's pan group reads as movement
+            "ESCAPE",             // closes the talk pane / quits: on the nav line
+            "NUM_0");             // the talk pane's own numbered topic rows, labelled in it
+
+    /** The {@link IconKey} for a libGDX key name, or {@code null} when the pack has no glyph. */
+    private static IconKey iconFor(String keyName) {
+        String enumName = switch (keyName) {
+            case "UP" -> "ARROW_UP";
+            case "DOWN" -> "ARROW_DOWN";
+            case "LEFT" -> "ARROW_LEFT";
+            case "RIGHT" -> "ARROW_RIGHT";
+            case "LEFT_BRACKET" -> "BRACKET_OPEN";
+            case "RIGHT_BRACKET" -> "BRACKET_CLOSE";
+            default -> keyName;
+        };
+        for (IconKey icon : IconKey.values()) {
+            if (icon.name().equals(enumName)) {
+                return icon;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Every {@code com.trojia.client.input} source that gates on {@link
+     * com.trojia.client.inspect.PlayModeState} — i.e. every input surface that only exists
+     * while an actor is being driven, which is exactly what the play-mode legend describes.
+     */
+    private static List<Path> playModeInputSources() throws IOException {
+        Path dir = null;
+        for (Path candidate : List.of(
+                Path.of("src/main/java/com/trojia/client/input"),
+                Path.of("client-observer/src/main/java/com/trojia/client/input"))) {
+            if (Files.isDirectory(candidate)) {
+                dir = candidate;
+                break;
+            }
+        }
+        assertNotNull(dir, "cannot find the input package sources from " + Path.of("").toAbsolutePath());
+        try (var paths = Files.list(dir)) {
+            List<Path> sources = new ArrayList<>();
+            for (Path path : paths.sorted().toList()) {
+                if (path.getFileName().toString().endsWith("Input.java")
+                        && Files.readString(path).contains("PlayModeState")) {
+                    sources.add(path);
+                }
+            }
+            return sources;
+        }
     }
 
     @Test

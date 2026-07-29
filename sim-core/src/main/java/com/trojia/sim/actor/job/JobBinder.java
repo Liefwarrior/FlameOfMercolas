@@ -178,10 +178,16 @@ public final class JobBinder {
                 trainSkillRaw = skills.id(raw.trainsSkill()).raw();
                 trainCp = raw.trainCp();
             }
+            // S8: the raws name the yielded good by SYMBOL; the kind id is resolved here, the
+            // same way the trained skill's raw index is (the loader already rejected an
+            // unknown symbol, so this cannot silently produce YIELDS_NOTHING).
+            short yieldKind = raw.yieldItem() == null
+                    ? JobParams.YIELDS_NOTHING
+                    : com.trojia.sim.actor.TradeGoods.kindForSymbol(raw.yieldItem());
             JobParams params = new JobParams(raw.goalKind(), raw.priority(), raw.rhythmStart(),
                     raw.rhythmEnd(), raw.rhythmBonus(), raw.workTicksPerUnit(),
                     raw.unitsToComplete(), raw.renewMode(), raw.cooldownTicks(),
-                    trainSkillRaw, trainCp, raw.dutyPerUnit());
+                    trainSkillRaw, trainCp, raw.dutyPerUnit(), yieldKind, raw.yieldPerUnit());
             jobs.add(reg.factory().create(params, raw.cover()));
         }
         JobRegistry unresolved = JobRegistry.of(jobs, List.of());

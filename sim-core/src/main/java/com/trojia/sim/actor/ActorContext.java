@@ -227,6 +227,37 @@ public interface ActorContext {
     }
 
     /**
+     * Records {@code n} units of trade-good {@code kind} minted at runtime (S8: a craft yard's
+     * completed work unit, a harvested scalp) for that kind's own closed-supply proof
+     * {@code minted == liveOfKind(kind) + sunk}. One counter per kind, deliberately NOT one
+     * lumped goods total: a lumped number can hide a yard minting nothing behind another
+     * yard's surplus, and each kind's line has to be able to fail on its own. Pure accounting
+     * — read by no behavior, so it changes no determinism property; a no-op where unwired.
+     */
+    default void recordGoodsMinted(short kind, int n) {
+    }
+
+    /**
+     * Records {@code n} units of trade-good {@code kind} genuinely destroyed (consumed or
+     * exported out of the ward) — NOT a move between purses, and NOT the phantom quantity
+     * {@link ItemsLiteRegistry#sink} leaves on a vacated slot. Nothing in S8 sinks a good, so
+     * every kind's sunk count is 0 today; the seam exists so the S9+ price tick and the S11
+     * docket can spend one without silently breaking the identity. Pure accounting.
+     */
+    default void recordGoodsSunk(short kind, int n) {
+    }
+
+    /**
+     * Records that {@code cullerId} took one scalp (S8). Separate from
+     * {@link #recordGoodsMinted} on purpose: the goods counter answers "how many scalps
+     * exist", which a single soul beside a den could satisfy alone, while this answers "how
+     * many DIFFERENT hands took one" — the number that says whether the bounty is a ward
+     * practice or one lucky worker. Pure accounting — read by no behavior, rides no save.
+     */
+    default void recordScalpTaken(int cullerId, short kind) {
+    }
+
+    /**
      * Records one death (Sprint 6): {@code actorId} died of {@code cause} (execution or
      * terminal starvation) this tick. Lands in the {@link DeathLog} ring the client feed
      * announces by name. A no-op where unwired.

@@ -107,6 +107,33 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
                 self.setLastReasonCode(ReasonCode.NO_SPOT_IN_REACH);
             }
         }
+        // Cull intent (S8 — the played soul can work the vermin bounty too): one attempt
+        // against a DOWNED scalpable body within knife reach, through the same shared verb the
+        // AI's work-event seam uses (FIELDCRAFT XP on the attempt, the check.cull draw, the
+        // named scalp minted on success, the per-culler latch stamped either way). The body's
+        // revive timer is never touched. Consumed unconditionally (the §5.2 stale-intent
+        // rule); a miss stamps NO_QUARRY_IN_REACH so the client can toast the refusal, and a
+        // still-latched hand reads the same way — you had your turn at that carcass.
+        boolean cullIntent = self.playerCullIntent();
+        self.setPlayerCullIntent(false);
+        if (cullIntent) {
+            int body = ctx.tick() < self.culledUntilTick() || !CullVerb.canCull(self)
+                    ? Actor.NONE : CullVerb.quarryInReach(self, ctx);
+            if (body != Actor.NONE) {
+                CullVerb.resolveCull(self, ctx, body);
+            } else {
+                self.setLastReasonCode(ReasonCode.NO_QUARRY_IN_REACH);
+            }
+        }
+        // Sell intent (S8 — the counter half of the playable loop): one pass of the shared
+        // counter sale, item for coin, through the same BankVerbs exchange the AI fishers use.
+        // Consumed unconditionally (the §5.2 stale-intent rule); the verb stamps SOLD_GOODS or
+        // NO_BUYER_IN_REACH itself.
+        boolean sellIntent = self.playerSellIntent();
+        self.setPlayerSellIntent(false);
+        if (sellIntent) {
+            SellVerb.sellMaterialsInReach(self, ctx);
+        }
         int target = self.playerMoveTargetCell();
         if (target != Actor.NONE) {
             int before = self.cell();

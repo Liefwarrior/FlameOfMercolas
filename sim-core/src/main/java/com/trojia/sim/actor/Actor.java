@@ -222,6 +222,18 @@ public abstract class Actor {
      */
     private long huntBackoffUntilTick;
     /**
+     * The absolute tick until which this actor may not take another scalp (S8's cull latch).
+     * A downed body is inert for a long revive countdown, so without a latch one soul standing
+     * beside one mouse would harvest a scalp every single work event until the mouse got up —
+     * an infinite materials faucet from a single carcass. The latch is per-CULLER and not
+     * per-body on purpose: the cull verb deliberately does NOT touch the body's revive timer
+     * (that timer is the predators' food supply and is not ours to spend), so the body itself
+     * carries no cull state at all. Absolute tick, never a countdown (determinism rule). A
+     * persisted scalar (serialize/load/hash — the {@code houseArrestUntilTick} triad).
+     */
+    private long culledUntilTick;
+    /**
+    /**
      * The absolute tick this actor's HUNGER first hit 0 in the CURRENT starvation spell, or
      * {@link #NEVER_STARVING} while fed (any recovery above 0 resets it). When a spell has
      * lasted {@link #STARVATION_GRACE_TICKS} — a LONG grace, days not hours, so only the
@@ -273,6 +285,22 @@ public abstract class Actor {
      * attempt, catch draw, FISH minted on success). Never persisted.
      */
     private boolean playerFishIntent;
+    /**
+     * Whether this played actor intends to TAKE A SCALP this tick (S8 — the played soul's
+     * cull verb). Same contract as {@link #playerMoveTargetCell}: per-frame input intent set
+     * by the observer's input layer, consumed (and reset) by {@code PlayerControlPolicy.act},
+     * which resolves ONE cull against a downed scalpable body within knife reach
+     * ({@code CullVerb.resolveCull} — FIELDCRAFT XP on the attempt, the check.cull draw, the
+     * named scalp minted on success). Never persisted.
+     */
+    private boolean playerCullIntent;
+    /**
+     * Whether this played actor intends to SELL its carried materials this tick (S8 — the
+     * counter half of the playable loop). Same contract as {@link #playerMoveTargetCell}:
+     * per-frame input intent, consumed by {@code PlayerControlPolicy.act}, which resolves one
+     * pass of {@code SellVerb.sellMaterialsInReach}. Never persisted.
+     */
+    private boolean playerSellIntent;
 
     // ---- cached A* route (§2.5 pathfinding addendum): a derived/recomputable cache, not
     // ground-truth state — the same "per-actor bookkeeping vs. registry" distinction the
@@ -1095,6 +1123,16 @@ public abstract class Actor {
         this.huntBackoffUntilTick = tick;
     }
 
+    /** The absolute tick until which this actor may not take another scalp (S8 cull latch). */
+    public final long culledUntilTick() {
+        return culledUntilTick;
+    }
+
+    /** Stamps the cull latch's absolute end tick ({@link CullVerb}, and serializer load). */
+    public final void setCulledUntilTick(long tick) {
+        this.culledUntilTick = tick;
+    }
+
     /** The tick the current starvation spell began, or {@link #NEVER_STARVING} (Sprint 6). */
     public final long starvingSinceTick() {
         return starvingSinceTick;
@@ -1178,6 +1216,31 @@ public abstract class Actor {
      */
     public final void setPlayerFishIntent(boolean intent) {
         this.playerFishIntent = intent;
+    }
+
+    /** Whether a Play-mode cull intent is pending this tick (S8 scalps). */
+    public final boolean playerCullIntent() {
+        return playerCullIntent;
+    }
+
+    /**
+     * Arms (or clears) the pending Play-mode cull intent: the observer's input layer sets it
+     * on the cull keypress, and the next {@code PlayerControlPolicy.act} resolves ONE cull
+     * against a downed scalpable body in reach and consumes it — the
+     * {@link #setPlayerMoveTarget} contract.
+     */
+    public final void setPlayerCullIntent(boolean intent) {
+        this.playerCullIntent = intent;
+    }
+
+    /** Whether a Play-mode counter-sale intent is pending this tick (S8). */
+    public final boolean playerSellIntent() {
+        return playerSellIntent;
+    }
+
+    /** Arms (or clears) the pending Play-mode sell intent — the {@link #setPlayerMoveTarget} contract. */
+    public final void setPlayerSellIntent(boolean intent) {
+        this.playerSellIntent = intent;
     }
 
     public final ReasonCode lastReasonCode() {

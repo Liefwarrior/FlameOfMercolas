@@ -86,6 +86,27 @@ public final class JobBehaviors {
         if (params.dutyPerUnit() > 0) {
             self.applyNeedDelta(Need.DUTY, params.dutyPerUnit());
         }
+        // S8 ("The Ward Prices Itself"): the crafts finally YIELD. One discrete work event =
+        // one finished thing, minted into the doer's own carry — a rope off the Ropewalk, a
+        // measure of tar out of the Pitchfield. Deliberately at this seam and nowhere else:
+        // per-tick minting would make the ward's material supply a function of standing
+        // still, which is the same mistake §3.2 rule 4 exists to forbid for XP. Data-driven
+        // per job (jobs.json yieldKind/yieldPerUnit, the trainsSkill pattern); the whole
+        // pre-S8 job roster yields nothing, so this is a no-op for every one of them.
+        // Draw-free, and accounted through ctx so the closed-supply proof can see it.
+        if (params.yields()) {
+            int minted = ctx.items().addCarried(self.id(), params.yieldKind(),
+                    params.yieldPerUnit());
+            ctx.recordGoodsMinted(params.yieldKind(), minted);
+        }
+        // S8 THE CULL VERB: a soul that finishes a unit of work standing beside a downed
+        // scalpable body takes the scalp. Deliberately at this seam and NOT as its own policy
+        // — a CULL policy would send people walking to carcasses, which moves the population,
+        // which is exactly the sort of quiet perturbation that could eat the predators' supply
+        // margin. Here the ward's routes do not change at all: the hands that cull are the
+        // hands that were already working there. No-op for every beast, for anyone latched,
+        // and everywhere there is no quarry in reach; NEVER touches the body's revive timer.
+        com.trojia.sim.actor.CullVerb.tryCullInReach(self, ctx);
         if (!params.trains()) {
             return;
         }

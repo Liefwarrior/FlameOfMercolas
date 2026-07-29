@@ -16,6 +16,7 @@ import com.trojia.client.inspect.InspectorState;
 import com.trojia.client.scenario.IdentityRegistry;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
+import com.trojia.sim.actor.BankLedger;
 import com.trojia.sim.actor.FactionStandings;
 import com.trojia.sim.actor.HomeRegistry;
 import com.trojia.sim.actor.ItemsLiteRegistry;
@@ -91,6 +92,9 @@ public final class InspectorRenderer {
     private final RelationshipRegistry relationships;
     private final JobRegistry jobs;
     private final ItemsLiteRegistry items;
+    /** The Royals ledger behind the sheet's PURSE section (S8); an account-less ledger
+     *  degrades every purse to "(no account)" rather than inventing a balance. */
+    private final BankLedger bank;
     private final EventLog eventLog;
     private final InspectorFaces faces;
     /** The bake-side name table (S1 NameForge); {@link IdentityRegistry#EMPTY} degrades the
@@ -113,12 +117,13 @@ public final class InspectorRenderer {
             RelationshipRegistry relationships, JobRegistry jobs, ItemsLiteRegistry items,
             EventLog eventLog, InspectorFaces faces, IdentityRegistry identity,
             SkillTrackRegistry skillTracks, FactionStandings standings,
-            java.util.function.IntSupplier playedActorId) {
+            java.util.function.IntSupplier playedActorId, BankLedger bank) {
         this.registry = registry;
         this.homes = homes;
         this.relationships = relationships;
         this.jobs = jobs;
         this.items = items;
+        this.bank = bank;
         this.eventLog = eventLog;
         this.faces = faces;
         this.identity = identity;
@@ -179,6 +184,8 @@ public final class InspectorRenderer {
         String bio = CharacterSheetText.bioLine(selectedId, registry, identity);
         CharacterSheetText.Section identitySection =
                 CharacterSheetText.identitySection(selectedId, registry, homes, jobs, items);
+        CharacterSheetText.Section purseSection =
+                CharacterSheetText.purseSection(selectedId, items, bank);
         CharacterSheetText.Section attributesSection =
                 CharacterSheetText.attributesSection(selectedId, skillTracks);
         // The played soul's own sheet lists the FULL roster (all skills, aptitude tiers)
@@ -220,6 +227,10 @@ public final class InspectorRenderer {
 
         // ---- the six sheet sections, each its own DF block ------------------------------
         nextTop = drawSection(batch, font, icons, x, nextTop, identitySection);
+        // S8: what this actor is worth, right under who they are — the cull-carry-sell loop
+        // pays into the Royals line, and the Coins line stays put, which is how a player
+        // reads a sale as a sale.
+        nextTop = drawSection(batch, font, icons, x, nextTop, purseSection);
         // Sprint 6: a corpse's sheet says dead, not busy — the live bar grid is replaced
         // by the frozen one-liner (the identity block above carries the DECEASED banner).
         nextTop = com.trojia.client.inspect.DeathPresentation.isDead(selectedActor)

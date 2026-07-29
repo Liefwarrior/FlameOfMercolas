@@ -5,6 +5,7 @@ import com.trojia.client.hud.icons.IconKey;
 import com.trojia.client.scenario.IdentityRegistry;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
+import com.trojia.sim.actor.BankLedger;
 import com.trojia.sim.actor.BarkSelector;
 import com.trojia.sim.actor.Barter;
 import com.trojia.sim.actor.FactionStandings;
@@ -176,6 +177,26 @@ public final class CharacterSheetText {
         lines.add(homeLine(actor, homes, registry));
         lines.add(carriesLine(actor, items));
         return new Section("IDENTITY", lines);
+    }
+
+    /**
+     * The PURSE section (S8 playtest fix — no UI in this client read the Royals ledger at all,
+     * so a player could walk the whole cull-carry-sell loop and never learn what they earned):
+     * the two kinds of money, named apart because they behave differently. Royals are the
+     * ledger balance a counter sale settles into; Coins are physical specie in the pack, and
+     * the bank counter is the only ramp between them. An actor with no ID card has no account
+     * to name — which is not the same as being broke, so it reads {@code (no account)}.
+     *
+     * <p>Keyed on the TRUE body, like SKILLS: a disguise changes what the ward calls you, not
+     * whose pocket the Royals are in.
+     */
+    public static Section purseSection(int selectedId, ItemsLiteRegistry items,
+            BankLedger bank) {
+        long royals = Purse.royalsOf(selectedId, items, bank);
+        return new Section("PURSE", List.of(
+                "royals: " + (royals == Purse.NO_ACCOUNT ? "(no account)" : royals)
+                        + "   (banked)",
+                "coins:  " + Purse.coinsOf(selectedId, items) + "   (carried specie)"));
     }
 
     /** Segments in a skill row's ASCII progress bar ({@code [##------]}). */
@@ -414,6 +435,23 @@ public final class CharacterSheetText {
             HomeRegistry homes, RelationshipRegistry relationships, JobRegistry jobs,
             ItemsLiteRegistry items, IdentityRegistry identity, SkillTrackRegistry tracks,
             FactionStandings standings, int playedActorId) {
+        return describe(selectedId, registry, homes, relationships, jobs, items, identity,
+                tracks, standings, playedActorId, NO_LEDGER);
+    }
+
+    /** The ledger a describe() call without one reads: no accounts, so every purse reads
+     * {@code (no account)} — the degraded-but-honest placeholder, never a fabricated zero. */
+    private static final BankLedger NO_LEDGER = new BankLedger();
+
+    /**
+     * {@link #describe} with the live Royals ledger (S8): the sheet carries the selected
+     * actor's PURSE — banked Royals and carried Coins — which is where a player finds out what
+     * the cull-carry-sell loop actually paid.
+     */
+    public static List<String> describe(int selectedId, ActorRegistry registry,
+            HomeRegistry homes, RelationshipRegistry relationships, JobRegistry jobs,
+            ItemsLiteRegistry items, IdentityRegistry identity, SkillTrackRegistry tracks,
+            FactionStandings standings, int playedActorId, BankLedger bank) {
         List<String> lines = new ArrayList<>();
         if (selectedId == Actor.NONE) {
             lines.add("(click an actor to inspect  ·  C follows selection)");
@@ -425,6 +463,7 @@ public final class CharacterSheetText {
             lines.add(bio);
         }
         append(lines, identitySection(selectedId, registry, homes, jobs, items));
+        append(lines, purseSection(selectedId, items, bank));
         lines.add(marker("NEEDS"));
         lines.add(DeathPresentation.isDead(registry.get(selectedId))
                 ? DEAD_NEEDS_LINE : needsLine(registry.get(selectedId)));
@@ -490,7 +529,11 @@ public final class CharacterSheetText {
                 + "   housemates: " + housemates + (atHome ? "   [home now]" : "");
     }
 
-    /** Carried items compacted to one sheet line: {@code carries: kind 5 x1, kind 2 x3}. */
+    /**
+     * Carried items compacted to one sheet line: {@code carries: rat scalp x1, coin x3}. S8
+     * names them — the line used to read {@code kind 11 x1}, which told a player holding a
+     * fresh scalp nothing at all about what was in their pack.
+     */
     private static String carriesLine(Actor actor, ItemsLiteRegistry items) {
         List<ItemsLiteEntry> carried = items.carriedBy(actor.id());
         if (carried.isEmpty()) {
@@ -501,7 +544,7 @@ public final class CharacterSheetText {
             if (i > 0) {
                 out.append(", ");
             }
-            out.append("kind ").append(carried.get(i).kindId())
+            out.append(Purse.itemName(carried.get(i).kindId()))
                     .append(" x").append(carried.get(i).quantity());
         }
         return out.toString();

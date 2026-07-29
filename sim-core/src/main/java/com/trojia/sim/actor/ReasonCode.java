@@ -77,5 +77,18 @@ public enum ReasonCode {
      * Terminal starvation (Sprint 6 death): HUNGER sat at 0 for the whole long grace
      * window and this soul died of it — {@code DEAD} set, inert forever, by name in the feed.
      */
-    STARVED_TO_DEATH
+    STARVED_TO_DEATH,
+    /**
+     * S8 cull: a clean harvest — the named scalp is minted into this soul's carry
+     * ({@code CullVerb}). Vermin only this arc; the body's revive timer is untouched.
+     */
+    TOOK_SCALP,
+    /** S8 cull: the knife slipped and the pelt was spoiled — the check failed, no scalp. */
+    SCALP_RUINED,
+    /** Play mode: the cull intent found no downed scalpable body within knife reach. */
+    NO_QUARRY_IN_REACH,
+    /** S8 counter sale: carried MATERIALS changed hands for Royals ({@code SellVerb}). */
+    SOLD_GOODS,
+    /** Play mode: the sell intent found no willing, coin-carrying counter within reach. */
+    NO_BUYER_IN_REACH
 }
