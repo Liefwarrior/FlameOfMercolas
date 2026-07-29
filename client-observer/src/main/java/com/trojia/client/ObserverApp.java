@@ -444,7 +444,8 @@ public final class ObserverApp extends ApplicationAdapter {
             // Counter-sale narration (S8): the played soul's B sale resolves sim-side next
             // tick; this tracker toasts sold / nobody-buying.
             this.sellFeedbackTracker = new SellFeedbackTracker(population.registry(), toasts,
-                    () -> playMode.playedActorId());
+                    () -> playMode.playedActorId(), population.items(),
+                    population.system().bankAccounts());
             // Watch-lenience narration (S5 check lines): the played soul's warn/fine
             // transitions toast the exact inputs the lenience draw read. Zero sim writes.
             LenienceFeedbackTracker lenienceFeedbackTracker = new LenienceFeedbackTracker(
@@ -483,7 +484,8 @@ public final class ObserverApp extends ApplicationAdapter {
             this.inspectorRenderer = new InspectorRenderer(population.registry(), population.homes(),
                     population.relationships(), population.jobs(), population.items(), eventLog,
                     inspectorFaces, population.identity(), population.system().skillTracks(),
-                    population.system().factionStandings(), () -> playMode.playedActorId());
+                    population.system().factionStandings(), () -> playMode.playedActorId(),
+                    population.system().bankAccounts());
             // Hover nameplates (S1 item 2): PRESENTED identity always; hold N to plate
             // every on-screen actor. While an actor is played, plates tint by how each
             // soul regards the played actor's presented face (S2 item 2).
@@ -655,48 +657,46 @@ public final class ObserverApp extends ApplicationAdapter {
         }
 
         // DF-style HUD block (Behavior 2 of this pass): a solid black panel behind the nav +
-        // clock lines — plus, on populated fixtures, the VERB legend third line (Sprint 4
-        // playtest fix: the social-verb surface was undiscoverable) — sized to their actual
-        // content so it never clips or over-extends.
-        List<HudToken> navTokens = HudText.describeTokens(zLevel.z(), camera.zoom());
-        List<HudToken> timeTokens =
-                HudText.describeTimeTokens(driver.currentTick(), driver.speed().name());
-        List<HudToken> verbTokens = population == null ? List.of()
-                : (playModeActive ? HudText.playModeKeybindingTokens()
-                        : HudText.observerVerbKeybindingTokens());
-        // S6 motivation legibility: the district pulse — a one-line living census
-        // (working / duty-out / starving / held / confined / dead), recomputed live.
-        List<HudToken> pulseTokens = population == null ? List.of()
-                : List.of(HudToken.dimText(
-                        com.trojia.client.inspect.DistrictPulse.line(population.registry())));
-        int hudLines = 2 + (verbTokens.isEmpty() ? 0 : 1) + (pulseTokens.isEmpty() ? 0 : 1);
+        // clock lines — plus, on populated fixtures, the VERB legend line (Sprint 4 playtest
+        // fix: the social-verb surface was undiscoverable), the district pulse, and, while an
+        // actor is driven, that actor's PURSE (S8: the money the loop pays out was on no
+        // screen at all). One list of lines, drawn top down, sized to its actual content so
+        // the panel never clips or over-extends.
+        List<List<HudToken>> hudLines = new java.util.ArrayList<>();
+        hudLines.add(HudText.describeTokens(zLevel.z(), camera.zoom()));
+        hudLines.add(HudText.describeTimeTokens(driver.currentTick(), driver.speed().name()));
+        if (population != null) {
+            hudLines.add(playModeActive ? HudText.playModeKeybindingTokens()
+                    : HudText.observerVerbKeybindingTokens());
+            // S8 payoff legibility: Royals (banked) and Coins (carried) are different money
+            // and a player has to be able to tell a sale from a pickpocketing.
+            if (playModeActive) {
+                hudLines.add(HudText.purseTokens(
+                        com.trojia.client.inspect.Purse.royalsOf(playMode.playedActorId(),
+                                population.items(), population.system().bankAccounts()),
+                        com.trojia.client.inspect.Purse.coinsOf(playMode.playedActorId(),
+                                population.items())));
+            }
+            // S6 motivation legibility: the district pulse — a one-line living census
+            // (working / duty-out / starving / held / confined / dead), recomputed live.
+            hudLines.add(List.of(HudToken.dimText(
+                    com.trojia.client.inspect.DistrictPulse.line(population.registry()))));
+        }
         float lineHeight = font.getLineHeight();
-        float navWidth = IconTextLine.measure(font, navTokens);
-        float timeWidth = IconTextLine.measure(font, timeTokens);
-        float verbWidth = verbTokens.isEmpty() ? 0f : IconTextLine.measure(font, verbTokens);
-        float pulseWidth = pulseTokens.isEmpty() ? 0f : IconTextLine.measure(font, pulseTokens);
-        float statusPanelWidth = Math.max(Math.max(Math.max(navWidth, timeWidth), verbWidth),
-                pulseWidth) + 2 * HudPanel.PADDING;
-        float statusPanelHeight = hudLines * lineHeight + 2 * HudPanel.PADDING;
+        float widestLine = 0f;
+        for (List<HudToken> line : hudLines) {
+            widestLine = Math.max(widestLine, IconTextLine.measure(font, line));
+        }
+        float statusPanelWidth = widestLine + 2 * HudPanel.PADDING;
+        float statusPanelHeight = hudLines.size() * lineHeight + 2 * HudPanel.PADDING;
         float statusPanelX = HUD_MARGIN_PX - HudPanel.PADDING;
         float statusPanelBottomY = camera.viewportHeightPx() - HUD_MARGIN_PX
-                - hudLines * lineHeight - HudPanel.PADDING;
+                - hudLines.size() * lineHeight - HudPanel.PADDING;
         HudPanel.draw(batch, icons.whitePixel(), statusPanelX, statusPanelBottomY,
                 statusPanelWidth, statusPanelHeight);
-        IconTextLine.draw(batch, font, icons, HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX,
-                navTokens);
-        IconTextLine.draw(batch, font, icons,
-                HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX - lineHeight, timeTokens);
-        if (!verbTokens.isEmpty()) {
-            IconTextLine.draw(batch, font, icons,
-                    HUD_MARGIN_PX, camera.viewportHeightPx() - HUD_MARGIN_PX - 2 * lineHeight,
-                    verbTokens);
-        }
-        if (!pulseTokens.isEmpty()) {
+        for (int i = 0; i < hudLines.size(); i++) {
             IconTextLine.draw(batch, font, icons, HUD_MARGIN_PX,
-                    camera.viewportHeightPx() - HUD_MARGIN_PX
-                            - (verbTokens.isEmpty() ? 2 : 3) * lineHeight,
-                    pulseTokens);
+                    camera.viewportHeightPx() - HUD_MARGIN_PX - i * lineHeight, hudLines.get(i));
         }
         if (inspectorRenderer != null) {
             inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());

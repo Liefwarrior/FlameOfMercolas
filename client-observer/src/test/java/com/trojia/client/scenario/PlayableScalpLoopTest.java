@@ -93,7 +93,7 @@ class PlayableScalpLoopTest {
         CullFeedbackTracker cullFeedback = new CullFeedbackTracker(registry, toasts,
                 playMode::playedActorId, pop.system().skillTracks());
         SellFeedbackTracker sellFeedback = new SellFeedbackTracker(registry, toasts,
-                playMode::playedActorId);
+                playMode::playedActorId, pop.items(), pop.bankAccounts());
 
         // ---- 3. Walk to the carcass on the ordinary move intent (the arrow keys). -------
         int walked = 0;
@@ -168,8 +168,32 @@ class PlayableScalpLoopTest {
                 "the scalp changed hands");
         assertEquals(scalps, pop.items().countCarriedOfKind(buyer, ItemKinds.RAT_SCALP),
                 "and it is now the counter's stock — a sale MOVES, it never sinks");
-        assertTrue(pop.bankAccounts().balanceOf(accountOf(pop, hero)) > purseBefore,
+        long purseAfter = pop.bankAccounts().balanceOf(accountOf(pop, hero));
+        assertTrue(purseAfter > purseBefore,
                 heroName + " sold a scalp and got no Royals for it");
+
+        // ---- 7. And the SCREEN says what that was worth (S8 playtest fix). -------------
+        // The sale toast is the only place the loop reports its payout, so it names the
+        // item, the count, the Royals earned and the purse they landed in.
+        String receipt = toasts.visible().stream().map(ToastQueue.Toast::text)
+                .filter(t -> t.startsWith("Sold ")).reduce((a, b) -> b).orElse("");
+        assertTrue(receipt.contains(scalps + " x rat scalp"),
+                () -> "the sale toast must name the item and the count: '" + receipt + "'");
+        assertTrue(receipt.contains("for " + (purseAfter - purseBefore) + " Royals"),
+                () -> "the sale toast must name what it paid: '" + receipt + "'");
+        assertTrue(receipt.contains("purse " + purseAfter + " Royals"),
+                () -> "the sale toast must name the purse it landed in: '" + receipt + "'");
+
+        // ---- 8. ...and so does the sheet, whichever way the player looks. --------------
+        String sheet = String.join("\n", com.trojia.client.inspect.CharacterSheetText.describe(
+                hero, registry, pop.homes(), pop.relationships(), pop.jobs(), pop.items(),
+                identity, pop.system().skillTracks(), pop.system().factionStandings(), hero,
+                pop.bankAccounts()));
+        assertTrue(sheet.contains("royals: " + purseAfter),
+                () -> "the character sheet must carry the banked purse:\n" + sheet);
+        assertTrue(sheet.contains("coins:"),
+                () -> "...and carried specie as its own line, since they are different money:\n"
+                        + sheet);
     }
 
     /** Whether a downed scalpable body sits within knife reach — the test's own eyes. */
