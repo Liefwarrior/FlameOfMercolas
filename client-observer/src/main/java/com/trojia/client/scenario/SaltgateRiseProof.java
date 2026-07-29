@@ -55,12 +55,28 @@ public final class SaltgateRiseProof {
     public static final int FLOOR_HORIZON_TICKS = 15_000;
 
     /**
-     * The horizon the committed proof soak ({@link DocksSaltgateThroughputTest}) runs to —
-     * twice {@link #FLOOR_HORIZON_TICKS}, so a beat that works its first 15,000 ticks and then
-     * stops has a whole late window in which to show it. A stall the test never runs long
-     * enough to reach is a stall the test cannot fail on.
+     * The horizon the committed proof soak ({@link DocksSaltgateThroughputTest}) runs to.
+     *
+     * <p><b>INVARIANT, and the reason this is 48,000 and not 30,000:</b> the late window must
+     * begin at or after the early window ends, or the two overlap and the "late" floors are
+     * partly satisfied by work the EARLY floors already counted. Formally this must hold:
+     * {@code SOAK_HORIZON_TICKS >= FLOOR_HORIZON_TICKS + LATE_WINDOW_TICKS}. It is asserted by
+     * {@link DocksSaltgateThroughputTest#theLateWindowDoesNotOverlapTheEarlyWindow()} so it
+     * cannot drift again.
+     *
+     * <p>S7 round 4 raised {@link #LATE_WINDOW_TICKS} from 10,000 to a full day (24,000) — the
+     * right fix for the horizon problem — but left this at 30,000. {@link #lateWindowStart}
+     * then returned {@code 30,000 - 24,000 = 6,000}, so the "late" window ran ticks 6,000
+     * through 30,000 and overlapped 9,000 ticks of the early window. A verifier restored the
+     * pre-round-3 stillness-only yield, three watch souls stopped working and one live-locked
+     * for 30,000 ticks — and this test still PASSED and the soak tool still exited 0. The
+     * regression proof had been disarmed by the fix to the command that ran it.
+     *
+     * <p>48,000 is two full days: the early floors are earned over ticks 0-15,000, and the late
+     * window is exactly the final day (ticks 24,000-48,000), which contains one whole duty
+     * window per roster and shares no tick with the early window.
      */
-    public static final int SOAK_HORIZON_TICKS = 30_000;
+    public static final int SOAK_HORIZON_TICKS = 48_000;
 
     /**
      * The trailing slice of a run the LATE floors are stated over: the final full DAY.

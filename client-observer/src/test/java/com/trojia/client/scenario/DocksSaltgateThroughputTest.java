@@ -43,6 +43,28 @@ class DocksSaltgateThroughputTest {
     private static final int TICKS = SaltgateRiseProof.SOAK_HORIZON_TICKS;
     private static final int EARLY = SaltgateRiseProof.FLOOR_HORIZON_TICKS;
 
+    /**
+     * The proof's own load-bearing invariant, pinned so it cannot drift again (S7 round 4
+     * follow-up): the LATE window must not overlap the EARLY window, or "late" arrivals are
+     * partly satisfied by work the early floors already counted and a mid-soak stall walks
+     * straight through. Round 4 raised LATE_WINDOW_TICKS to a full day but left the soak
+     * horizon at 30,000, which put the late window at ticks 6,000-30,000 — a 9,000-tick
+     * overlap. A restored stillness-only yield then stalled three watch souls and this suite
+     * still went green. A constant relationship nothing asserts is a constant relationship
+     * that will drift.
+     */
+    @Test
+    void theLateWindowDoesNotOverlapTheEarlyWindow() {
+        long lateStart = SaltgateRiseProof.lateWindowStart(TICKS);
+        assertTrue(lateStart >= EARLY,
+                "late window starts at " + lateStart + " but the early window runs to " + EARLY
+                        + " -- they overlap by " + (EARLY - lateStart) + " ticks, so the late"
+                        + " floors can be satisfied by early work and a mid-soak stall passes."
+                        + " Require SOAK_HORIZON_TICKS (" + TICKS + ") >= FLOOR_HORIZON_TICKS ("
+                        + EARLY + ") + LATE_WINDOW_TICKS ("
+                        + SaltgateRiseProof.LATE_WINDOW_TICKS + ").");
+    }
+
     private static int walkerCount;
     private static long earlyHeadArrivals;
     private static long earlyFootArrivals;
