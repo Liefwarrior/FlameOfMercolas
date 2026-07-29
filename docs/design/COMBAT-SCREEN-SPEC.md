@@ -1,8 +1,40 @@
-# COMBAT-SCREEN-SPEC — Decision 2b: dedicated combat screen (Skald-style)
+# COMBAT-SCREEN-SPEC — Decision 2b: dedicated combat screen (FIRST-PERSON)
+
+> ## ⚠ AMENDED 2026-07-28 — THE COMBAT SCREEN IS FIRST-PERSON
+>
+> Eli amended Decision 2b's presentation, verbatim: *"2D tiles viewed from above moving like a
+> Final Fantasy sprite, but when combat starts there can be a pause and a switch to 1st person for
+> full controls. Best of both worlds with cool exploration AND sword and sorcery spells and steel
+> combats."*
+>
+> **What this does NOT change — this spec got the flow right the first time and it stands:**
+> §1.1 trigger on encounter contact · §1.2 the sim engine pauses for the duration (and its
+> determinism justification) · `CombatEntryState` and the closed-initial-state replay contract ·
+> the combat log · flee · morale · return transition and consequences · the Wielder-immunity law
+> hook · every rule in the binding companion `COMBAT-SPEC.md` (aggregate AC, hit roll, body
+> location, mitigation, durability wear, damage — 42 specced tests). **A first-person camera
+> changes what the player sees and how they aim, not how a blow resolves.**
+>
+> **What this DOES change — the camera and the layout:** every section written for a Skald-style
+> **side-vs-side rank layout** needs re-framing to first-person, and the action economy needs to
+> be re-read as "full controls" rather than menu-driven ranks. Treat rank/positioning/layout
+> passages below as SUPERSEDED-PENDING-REWRITE; treat flow, math and transition passages as live.
+> The Skald reference below remains accurate for the screen FLOW and the log-forward feedback we
+> borrowed — it is no longer the visual reference.
+>
+> **Binding presentation architecture (DECISIONS.md, Presentation-architecture row):** the tile
+> simulation stays authoritative in both modes. The first-person screen is a CLIENT-SIDE VIEW over
+> the same deterministic sim — never a sim change — and the headless tile view remains the
+> verification source of truth. `Actor.facing()` and Play mode's played-actor tracking already
+> exist and are the natural seam for a soul's-eye camera.
+>
+> **Status of this amendment: DESIGN FOCUS, NOT SCHEDULED WORK.** Eli: *"DO NOT ACT ON THIS YET."*
+> It must not touch the S8-S12 economy arc. Rewrite happens when the combat track is picked up.
 
 **Status:** spec-first deliverable for the G-track (gameplay layer). No implementation exists yet.
-Implements Decision **2b** (DECISIONS.md): *separate dedicated combat screen entered on encounter
-contact, decoupled from the exploration screen.*
+Implements Decision **2b** (DECISIONS.md): *dedicated combat screen entered on encounter contact,
+decoupled from the exploration screen, presented FIRST-PERSON (amended 2026-07-28); exploration
+remains top-down tile movement.*
 
 **Binding companions:**
 - `COMBAT-SPEC.md` (parallel spec, this folder) — owns ALL resolution math: aggregate AC, the hit

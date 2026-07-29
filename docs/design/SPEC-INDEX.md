@@ -13,10 +13,26 @@ invention.
 |---|---|---|---:|
 | `COMBAT-SPEC.md` | 1a hybrid per-part defense | slot/coverage model, aggregate AC, hit roll (`hitQ16 = clamp(32768+(ACC−DEF)·328, 3277, 62259)`), block, location/mitigation/wear (+Harness terms), weak spots, damage, fall damage (§5.3), the full combat draw schedule (§2.4: attack-scoped subDraws 0–7, encounter-scoped init/flee/morale/aiTarget) | **42** |
 | `PROGRESSION-SPEC.md` | 3a use-based skills | 16-skill list, grains/aptitude XP model, satiation, exploit seams E1–E3, attributes (PRS static 100), evasion + armorBulk, trainers/books/meditation, Flame track, worked grind goldens | **28** |
-| `COMBAT-SCREEN-SPEC.md` | 2b dedicated combat screen | encounter transition + `CombatEntryState`, screen layout/log, ranks, action economy, aimed attacks, flee, morale, return consequences + Wielder-immunity law hook | **16** |
+| `COMBAT-SCREEN-SPEC.md` | 2b dedicated combat screen — **FIRST-PERSON, amended 2026-07-28** | encounter transition + `CombatEntryState`, screen layout/log, ~~ranks~~, action economy, aimed attacks, flee, morale, return consequences + Wielder-immunity law hook | **16** |
 | `FACES-SPEC.md` | 4c text-art faces | 15×9 frame + silhouette contract, named-face file format (Devin, Minister John), FaceGen LITE parts/archetypes/overlays, pinned SplitMix64 mixer, reference vectors | **19** |
 
 Total unit/golden tests specced: **105**. Test names are unique across all four docs.
+
+## Amendment 2026-07-28 — dual-mode presentation (design focus, NOT scheduled work)
+
+Decision 2b's presentation is amended: **exploration stays top-down tile movement; combat switches
+to a FIRST-PERSON screen after a pause.** Eli: *"Best of both worlds with cool exploration AND
+sword and sorcery spells and steel combats."* This is narrower than it sounds — 2b already locked
+the dedicated screen, the encounter-contact trigger and the sim pause on 2026-07-12, and
+COMBAT-SCREEN-SPEC §1.2 already justifies the pause on determinism grounds. **Only the combat
+screen's camera and layout change** (Skald side-vs-side ranks → first-person); every coefficient,
+draw name and cross-doc contract below is unaffected, and COMBAT-SPEC remains the single source of
+truth for all resolution math.
+
+Binding companion, DECISIONS.md "Presentation architecture": the tile sim is the model and every
+camera is a view over it. Any first-person work is a client-side screen, never a sim change; the
+headless tile view stays the verification source of truth. Eli: *"DO NOT ACT ON THIS YET"* — and it
+must not touch the S8-S12 economy arc.
 
 ## Cross-doc contracts (reconciled)
 
