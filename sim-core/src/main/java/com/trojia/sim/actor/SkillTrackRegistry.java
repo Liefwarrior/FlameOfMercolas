@@ -186,6 +186,17 @@ public final class SkillTrackRegistry {
     }
 
     /**
+     * The raw index of ANY skill by its raws key, or {@link Actor#NONE} when unwired or
+     * absent. The well-known accessors above are the hot-path shorthands; this is what a
+     * data-driven caller uses when the skill it needs is named in a raws file rather than in
+     * Java — the spell raws' own {@code "skill"} field, for one, which is why a crafting
+     * authored against a different skill tomorrow needs no code.
+     */
+    public int rawOfSkill(String key) {
+        return skills == null || !skills.contains(key) ? Actor.NONE : skills.id(key).raw();
+    }
+
+    /**
      * An actor's current level in a skill (by raw registry index), {@code 0..100}. Reads 0
      * when unwired, when the skill is absent ({@link Actor#NONE}), or when the actor has
      * never earned any XP (no track materialized).

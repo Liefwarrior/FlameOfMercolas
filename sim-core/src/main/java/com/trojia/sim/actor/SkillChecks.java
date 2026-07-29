@@ -221,7 +221,8 @@ public final class SkillChecks {
     }
 
     /**
-     * The CRAFTING threshold (Simple Magic): caster {@code linkcraft + WIT} against the
+     * The CRAFTING threshold (Simple Magic): caster {@code <the crafting's own skill> + WIT}
+     * against the
      * {@code resist} {@code SpellCost} computed for this crafting at this distance, on the
      * linkcraft family's base/floor/ceiling — through this file's ONE
      * {@link #successPermille} function, like every other family. WIT governs because the
@@ -232,11 +233,24 @@ public final class SkillChecks {
      * so a crafting that steadies the head makes the next crafting likelier — the one loop
      * where magic feeds itself, and it is bounded by the same cost model as everything else.
      * Degrades to the base where the skill table is unwired.
+     *
+     * <p><b>{@code skillRaw} comes from the SPELL, not from Java.</b> Every
+     * {@code SpellDefinition} names its governing skill in raws; a crafting authored against a
+     * different skill tomorrow is gated and grown by that skill with no code change, which is
+     * the whole promise of the vocabulary.
      */
-    public static int linkcraftPermille(SkillTrackRegistry tracks, int casterId, int resist) {
-        int score = tracks.level(casterId, tracks.linkcraftRaw())
-                + tracks.attribute(casterId, AttributeId.WIT);
+    public static int craftingPermille(SkillTrackRegistry tracks, int casterId, int skillRaw,
+            int resist) {
+        int score = tracks.level(casterId, skillRaw) + tracks.attribute(casterId, AttributeId.WIT);
         return successPermille(score, resist, LINKCRAFT_BASE_PERMILLE,
                 LINKCRAFT_FLOOR_PERMILLE, LINKCRAFT_CEIL_PERMILLE);
+    }
+
+    /**
+     * {@link #craftingPermille} against the public shelf's own skill — the convenience every
+     * caller that already knows the crafting is a LINKCRAFT one reads.
+     */
+    public static int linkcraftPermille(SkillTrackRegistry tracks, int casterId, int resist) {
+        return craftingPermille(tracks, casterId, tracks.linkcraftRaw(), resist);
     }
 }

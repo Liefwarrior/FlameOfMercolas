@@ -111,7 +111,8 @@ public final class SpellFeedbackTracker {
             return "";
         }
         SpellDefinition spell = spells.get(armedSpellRaw);
-        return CheckLineFormatter.spellLine(tracks, played, spell.displayName(),
+        return CheckLineFormatter.spellLine(tracks, played,
+                tracks.rawOfSkill(spell.skillKey()), spell.displayName(),
                 SpellCost.resistFor(spell, armedDistance), worked);
     }
 

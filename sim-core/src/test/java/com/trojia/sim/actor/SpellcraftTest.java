@@ -406,6 +406,44 @@ final class SpellcraftTest {
                 "a corpse stops being warm");
     }
 
+    /**
+     * THE SPELL NAMES ITS OWN SKILL. Every raws row carries a {@code "skill"} key, and this
+     * crafting names CHANNELING rather than linkcraft — so channeling is what gates it, what the
+     * check reads, and what the attempt grows. If any of that were hardcoded, the raws field
+     * would be a lie sitting in the content directory waiting to be believed.
+     */
+    @Test
+    void aCraftingAuthoredAgainstADifferentSkillIsGatedAndGrownByThatSkill() {
+        SpellRegistry channelled = SpellRawsLoader.parse("""
+                { "id": "spells", "spells": [
+                  { "id": "fill_the_stone", "displayName": "Fill the Stone",
+                    "skill": "channeling", "minLevel": 3, "target": "SELF",
+                    "components": [ { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE",
+                                      "magnitude": 10, "durationTicks": 100 } ] } ] }
+                """);
+        ActorRegistry registry = new ActorRegistry();
+        Actor caster = spawn(registry, HERE);
+        MagicContext ctx = new MagicContext(registry, channelled);
+        int raw = channelled.rawOf("fill_the_stone");
+        int channeling = ctx.tracks.rawOfSkill("channeling");
+        int linkcraft = ctx.tracks.linkcraftRaw();
+        assertNotEquals(channeling, linkcraft, "the two skills must actually be different");
+
+        // Deep in the WRONG skill: still not yours.
+        ctx.tracks.seedLevel(caster.id(), linkcraft, 50);
+        assertFalse(SpellVerb.canCast(caster, ctx.tracks, channelled, raw),
+                "linkcraft does not unlock a crafting the raws gate on channeling");
+
+        // Deep enough in the RIGHT one: yours.
+        ctx.tracks.seedLevel(caster.id(), channeling, 3);
+        assertTrue(SpellVerb.canCast(caster, ctx.tracks, channelled, raw));
+
+        int channelingBefore = ctx.tracks.progressGrains(caster.id(), channeling);
+        SpellVerb.resolveCast(caster, ctx, raw, caster.id());
+        assertTrue(ctx.tracks.progressGrains(caster.id(), channeling) > channelingBefore,
+                "and the attempt grows CHANNELING, because that is what the row says");
+    }
+
     @Test
     void axisUnitsKeepTheAxesComparable() {
         assertEquals(10, EffectKind.TEMPERATURE.unitsPerTransferPoint(),

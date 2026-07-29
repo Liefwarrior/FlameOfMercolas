@@ -173,19 +173,23 @@ public final class CheckLineFormatter {
      * a player who cannot see it cannot argue with it. Degrades to a numberless tag when the
      * skill table is unwired.
      *
+     * <p>The skill it names is the CRAFTING's own, resolved off the spell's raws row rather
+     * than hardcoded — so a crafting authored against a different skill narrates that skill.
+     *
+     * @param skillRaw  the crafting's governing skill ({@code tracks.rawOfSkill(spell.skillKey())})
      * @param spellName the crafting's display name
      * @param resist    the resist the sim rolled against ({@code SpellCost.resistFor})
      */
-    public static String spellLine(SkillTrackRegistry tracks, int casterId, String spellName,
-            int resist, boolean worked) {
+    public static String spellLine(SkillTrackRegistry tracks, int casterId, int skillRaw,
+            String spellName, int resist, boolean worked) {
         String outcome = worked ? "THE LINK HOLDS" : "THE LINK SLIPS";
-        if (!tracks.isWired() || tracks.linkcraftRaw() == Actor.NONE) {
+        if (!tracks.isWired() || skillRaw == Actor.NONE) {
             return "[crafting -- " + outcome + "]";
         }
-        return contestLine(tracks.skills().get(tracks.linkcraftRaw()).displayName(),
-                tracks.level(casterId, tracks.linkcraftRaw()),
+        return contestLine(tracks.skills().get(skillRaw).displayName(),
+                tracks.level(casterId, skillRaw),
                 spellName + " " + resist,
-                SkillChecks.linkcraftPermille(tracks, casterId, resist), outcome);
+                SkillChecks.craftingPermille(tracks, casterId, skillRaw, resist), outcome);
     }
 
     /**

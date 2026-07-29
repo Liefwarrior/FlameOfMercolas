@@ -23,12 +23,16 @@ import com.trojia.sim.world.PackedPos;
  * the time. Both branches set a reason code. A cast therefore reads on screen exactly like a
  * cull or a cast of a line — same check line, same toast idiom, same visible dice.
  *
- * <p><b>Two gates, both canon.</b> The skill decides whether you may work a crafting at all
- * ({@link SpellDefinition#minLevel} — the public shelf is "overly general and skimmed over most
- * of the details" and the real edition is on the top shelf, L2472) and how well it goes (the
- * {@code check.linkcraft} draw through the ONE {@link SkillChecks#successPermille} function).
- * The difficulty it is measured against is not authored per spell but computed from what the
- * crafting actually moves and how far ({@link SpellCost}), which is Gerik's lecture in integers.
+ * <p><b>Two gates, both canon, and the SPELL names the skill for both.</b> Every
+ * {@link SpellDefinition} carries its governing skill as a raws key, and that skill decides
+ * whether you may work the crafting at all ({@link SpellDefinition#minLevel} — the public shelf
+ * is "overly general and skimmed over most of the details" and the real edition is on the top
+ * shelf, L2472) AND how well it goes (the {@code check.linkcraft} draw through the ONE
+ * {@link SkillChecks#successPermille} function). Nothing in this file hardcodes LINKCRAFT: a
+ * crafting authored against a different skill tomorrow is gated by it, checked against it and
+ * grows it, with no code change. The difficulty it is measured against is likewise not authored
+ * per spell but computed from what the crafting actually moves and how far ({@link SpellCost}),
+ * which is Gerik's lecture in integers.
  *
  * <p><b>What a cast may never do.</b> Put a body on the ground. {@link ActiveEffects}'s
  * vitality floor holds every target at 1 hp or better, so no crafting can spend the ecology's
@@ -60,15 +64,16 @@ public final class SpellVerb {
     /**
      * Whether {@code self} could work {@code spellRaw} at all right now, ignoring targets and
      * the latch: it can read, it is alive, the spell exists, and it has read deeply enough
-     * ({@link SpellDefinition#minLevel} against its live linkcraft level). Pure reads.
+     * ({@link SpellDefinition#minLevel} against its live level in the spell's OWN declared
+     * skill). Pure reads.
      */
     public static boolean canCast(Actor self, SkillTrackRegistry tracks, SpellRegistry spells,
             int spellRaw) {
         if (!spells.isValidRaw(spellRaw) || self.isDead() || !isLiterate(self)) {
             return false;
         }
-        return tracks.level(self.id(), tracks.linkcraftRaw())
-                >= spells.get(spellRaw).minLevel();
+        SpellDefinition spell = spells.get(spellRaw);
+        return tracks.level(self.id(), tracks.rawOfSkill(spell.skillKey())) >= spell.minLevel();
     }
 
     /** Whether this body belongs to a faction that reads (the class doc's literacy gate). */
@@ -124,14 +129,19 @@ public final class SpellVerb {
         SpellDefinition spell = ctx.spells().get(spellRaw);
         self.setCastUntilTick(ctx.tick() + spell.cooldownTicks());
         SkillTrackRegistry tracks = ctx.skillTracks();
-        tracks.award(self.id(), tracks.linkcraftRaw(), CAST_ATTEMPT_CP, spellRaw, ctx.tick());
+        // The crafting's OWN skill, named in its raws row -- never a hardcoded one. A spell
+        // authored against a different skill tomorrow is gated by it, checked against it and
+        // grows it, with no code change here.
+        int skillRaw = tracks.rawOfSkill(spell.skillKey());
+        tracks.award(self.id(), skillRaw, CAST_ATTEMPT_CP, spellRaw, ctx.tick());
         int distance = spell.targetShape() == TargetShape.SELF
                 ? 0
                 : ActorGeometry.chebyshev(self.cell(), ctx.registry().get(targetId).cell());
         int resist = SpellCost.resistFor(spell, distance);
         long draw = ctx.draw(ActorRngStream.CHECK_LINKCRAFT, self.id(),
                 ctx.nextDrawIndex(self.id()));
-        if (!SkillChecks.passes(draw, SkillChecks.linkcraftPermille(tracks, self.id(), resist))) {
+        if (!SkillChecks.passes(draw,
+                SkillChecks.craftingPermille(tracks, self.id(), skillRaw, resist))) {
             self.setLastReasonCode(ReasonCode.SPELL_FIZZLED);
             return false;
         }

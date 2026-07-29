@@ -32,7 +32,7 @@ public final class SpellAvailability {
     public static final String ILLITERATE = "Yours are not the hands for that work.";
 
     /** The reader has not got deep enough into the shelf for this one. */
-    public static final String UNLEARNED_PREFIX = "You have not read deeply enough -- Linkcraft ";
+    public static final String UNLEARNED_PREFIX = "You have not read deeply enough -- ";
 
     /** The hand is still full of the last link. */
     public static final String COOLDOWN_PREFIX = "Your hands are still on the last link -- ready in ";
@@ -41,6 +41,16 @@ public final class SpellAvailability {
     public static final String NO_TARGET = "Nothing within reach of that link.";
 
     private SpellAvailability() {
+    }
+
+    /**
+     * The display name of the skill a crafting is gated on — read off the SPELL's raws row, so
+     * the refusal names whatever skill actually governs it. Degrades to the raws key when the
+     * skill table is unwired.
+     */
+    private static String skillName(SkillTrackRegistry tracks, SpellDefinition spell) {
+        int raw = tracks.rawOfSkill(spell.skillKey());
+        return raw == Actor.NONE ? spell.skillKey() : tracks.skills().get(raw).displayName();
     }
 
     /** Ticks left on this actor's crafting latch at {@code tick}; {@code 0} when the hand is free. */
@@ -74,7 +84,8 @@ public final class SpellAvailability {
             return ILLITERATE;
         }
         if (!SpellVerb.canCast(caster, tracks, spells, spellRaw)) {
-            return UNLEARNED_PREFIX + spell.minLevel() + " for " + spell.displayName() + ".";
+            return UNLEARNED_PREFIX + skillName(tracks, spell) + " " + spell.minLevel()
+                    + " for " + spell.displayName() + ".";
         }
         long left = cooldownTicksLeft(caster, tick);
         if (left > 0) {

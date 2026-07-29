@@ -1279,13 +1279,18 @@ public final class DocksActorsMain {
         System.out.println();
         System.out.println("================ SIMPLE MAGIC (the public shelf) ============================");
         System.out.println("  craftings bound: " + spells.size()
-                + ";  gated on LINKCRAFT (WIT);  lingering rows live: " + effects.liveCount()
+                + ";  each gated on the skill ITS OWN raws row names;  lingering rows live: "
+                + effects.liveCount()
                 + "/" + effects.slotCapacity());
         for (int raw = 0; raw < spells.size(); raw++) {
             var spell = spells.get(raw);
             int resist = com.trojia.sim.actor.spell.SpellCost.resistFor(spell, spell.reach());
-            int noviceOdds = com.trojia.sim.actor.SkillChecks.linkcraftPermille(
-                    com.trojia.sim.actor.SkillTrackRegistry.UNWIRED, 0, resist);
+            // A NOVICE's odds: level 0 in whatever skill the row names, base WIT. Reading it
+            // off the unwired table rather than off any live actor keeps the column a property
+            // of the CONTENT, so the report says the same thing on an empty ward.
+            int noviceOdds = com.trojia.sim.actor.SkillChecks.craftingPermille(
+                    com.trojia.sim.actor.SkillTrackRegistry.UNWIRED, 0,
+                    com.trojia.sim.actor.Actor.NONE, resist);
             StringBuilder parts = new StringBuilder();
             for (int c = 0; c < spell.components().size(); c++) {
                 var part = spell.components().get(c);
@@ -1296,6 +1301,7 @@ public final class DocksActorsMain {
                 }
             }
             System.out.println("    " + pad(spell.key(), 20)
+                    + pad(spell.skillKey(), 11)
                     + pad(spell.targetShape().name().toLowerCase(java.util.Locale.ROOT), 7)
                     + " Lv" + spell.minLevel()
                     + "  resist " + pad(Integer.toString(resist), 4)

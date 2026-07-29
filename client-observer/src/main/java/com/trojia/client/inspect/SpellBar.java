@@ -128,13 +128,17 @@ public final class SpellBar {
         return text;
     }
 
-    /** Whether {@code actorId} has read deeply enough for this crafting to be theirs at all. */
+    /**
+     * Whether {@code actorId} has read deeply enough for this crafting to be theirs at all —
+     * measured against the crafting's OWN declared skill, not a hardcoded one.
+     */
     public static boolean known(SpellRegistry spells, SkillTrackRegistry tracks, int actorId,
             int spellRaw) {
         if (actorId == Actor.NONE) {
             return false;
         }
-        return tracks.level(actorId, tracks.linkcraftRaw()) >= spells.get(spellRaw).minLevel();
+        SpellDefinition spell = spells.get(spellRaw);
+        return tracks.level(actorId, tracks.rawOfSkill(spell.skillKey())) >= spell.minLevel();
     }
 
     /**
