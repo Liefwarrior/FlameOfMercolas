@@ -465,10 +465,23 @@ public final class JobBehaviors {
      * incremented when a step attempt genuinely failed. It is not zeroed unconditionally —
      * that would launder a guard stuck all night out of the blocked-spell metric.
      * No new state: reads {@code params} and {@code homeCellOr}, both already present.
+     *
+     * <p><b>The walk home is a COMMUTE, not a goal, so it clears {@code goalTarget}
+     * instead of parking the bed in it.</b> The first draft cached {@code CELL(homeCell)}
+     * here, and that one line paid a guard for sleeping: at the dawn tick the window
+     * reopens, {@link #pursuePatrol} sees a {@code CELL} target already set and therefore
+     * SKIPS {@link #retargetPatrolCorner}, adopts the bed as this leg's "corner", finds
+     * itself standing on it, and fires {@code awardWorkEvent} — {@code dutyPerUnit} DUTY
+     * and a full {@code trainCp} of streetwise for having stood still all night. DUTY
+     * restoration is an EARNED seam (Sprint 6, Eli's bug 1); it must not be payable from
+     * one's own bunk. Clearing the target means the first on-shift tick ALWAYS re-derives
+     * a genuine beat corner, so the only cell that can pay a patrol work event is a cell
+     * the beat actually walked to. Route-bound patrollers were never affected —
+     * {@link #pursueRoutePatrol} reads {@code goalProgress}, never {@code goalTarget}.
      */
     public static void pursueOffShiftHome(Actor self, ActorContext ctx) {
         int home = homeCellOr(self, ctx, self.anchorCell());
-        self.setGoalTarget(TargetKind.CELL, home);
+        self.setGoalTarget(TargetKind.NONE, Actor.NONE);
         if (self.cell() == home) {
             self.setGoalWorkTicks(0);
             return;

@@ -27,6 +27,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * any WALKABLE corner, so radius-6 corners settled inside 1x1 prison cages and 1-wide alley
  * stubs. It now rejects {@link CorridorPinch}-pinched candidates, with the merely-walkable
  * best kept in reserve so a guard in a tight pocket never loses its target.
+ *
+ * <p>ROUND 2 (the dawn free-duty bug): slice 3's off-shift branch cached the home cell in
+ * {@code goalTarget}, and the reopening shift window then paid a work event for it. See
+ * {@link #atDawnAGuardOnItsOwnBedIsPaidNothing} — the only test here that crosses a day
+ * boundary, because that is the only place the fault is reachable.
  */
 final class WatchOffShiftTest {
 
@@ -145,7 +150,9 @@ final class WatchOffShiftTest {
 
     @Test
     void offShiftAWatchWithNoHomeFallsBackToItsAnchor() {
-        // Defensive: homeCellOr's fallback keeps an unbaked watch from losing its target.
+        // Defensive: homeCellOr's fallback keeps an unbaked watch from wandering off shift.
+        // Asserted as BEHAVIOUR (where it stands), not as a cached target — the off-shift
+        // walk deliberately leaves no goalTarget behind; see the dawn test below for why.
         ActorRegistry registry = new ActorRegistry();
         WalledContext ctx = new WalledContext(registry);
         int post = cell(40, 40);
@@ -154,9 +161,87 @@ final class WatchOffShiftTest {
         Job patrol = patrolJob(ctx);
 
         ctx.setTick(OFF_SHIFT_TICK);
+        for (int i = 0; i < 50; i++) {
+            patrol.pursue(watch, ctx);
+        }
+        assertEquals(post, watch.cell(), "no home baked: the anchor is the off-shift fallback");
+    }
+
+    @Test
+    void offShiftTheWalkHomeLeavesNoGoalTargetBehind() {
+        // The root condition of the dawn free-duty bug, pinned directly: a commute must not
+        // leave a CELL target parked in the goal slot for the next shift to inherit.
+        ActorRegistry registry = new ActorRegistry();
+        WalledContext ctx = new WalledContext(registry);
+        int post = cell(40, 40);
+        int home = cell(46, 44);
+        Actor watch = spawnWatch(registry, ctx, post);
+        watch.setAnchorCell(post);
+        watch.setHomeId(ctx.homes().addHome(home));
+        Job patrol = patrolJob(ctx);
+
+        ctx.setTick(OFF_SHIFT_TICK);
+        for (int i = 0; i < 60; i++) {
+            patrol.pursue(watch, ctx);
+            assertEquals(TargetKind.NONE, watch.goalTargetKind(),
+                    "off shift the beat holds no work target — it is walking home");
+        }
+    }
+
+    // ================== the dawn free-duty bug ==================
+
+    /**
+     * A guard must not be paid a work event for standing on its own bed when the shift
+     * window reopens.
+     *
+     * <p>The run has to CROSS tick 24,000 to exhibit it — the whole night is spent in the
+     * off-shift branch and the fault fires on the single tick the window flips back open —
+     * which is why neither a 15,000-tick soak nor a same-day unit test could see it. Before
+     * the fix: the off-shift walk parked {@code CELL(homeCell)} in the goal slot,
+     * {@code pursuePatrol} skipped its corner retarget because a CELL target was already
+     * set, adopted the bed as the leg's corner, found the guard standing on it and awarded
+     * {@code dutyPerUnit} DUTY (200) plus {@code trainCp} streetwise (24) for a night of
+     * sleep. Once per stationed guard per dawn, forever.
+     */
+    @Test
+    void atDawnAGuardOnItsOwnBedIsPaidNothing() {
+        ActorRegistry registry = new ActorRegistry();
+        WalledContext ctx = new WalledContext(registry);
+        int post = cell(40, 40);
+        int home = cell(46, 44);
+        Actor watch = spawnWatch(registry, ctx, post);
+        watch.setAnchorCell(post);
+        watch.setHomeId(ctx.homes().addHome(home));
+        Job patrol = patrolJob(ctx);
+
+        // Drain DUTY well clear of the saturating clamp so an award would be visible.
+        watch.applyNeedDelta(Need.DUTY, -NeedThresholds.MAX);
+        assertEquals(0, watch.need(Need.DUTY), "the fixture starts DUTY-bottomed");
+
+        // Night: walk home and settle there, exactly as the ward's stationed guards do.
+        ctx.setTick(DailyRhythm.DAY - 1_000L); // tod 23,000 — off shift
+        for (int i = 0; i < 200; i++) {
+            patrol.pursue(watch, ctx);
+        }
+        assertEquals(home, watch.cell(), "the guard is asleep on its own home cell");
+        int dutyAsleep = watch.need(Need.DUTY);
+
+        // Dawn: tick 24,000 is tod 0 — the watch.patrol window reopens on a SECOND day.
+        ctx.setTick(DailyRhythm.DAY);
         patrol.pursue(watch, ctx);
-        assertEquals(TargetKind.CELL, watch.goalTargetKind());
-        assertEquals(post, watch.goalTargetKey(), "no home baked: the anchor is the fallback");
+
+        assertEquals(dutyAsleep, watch.need(Need.DUTY),
+                "standing on its own bed at the shift boundary must pay no DUTY");
+        assertNotEquals(home, watch.goalTargetKey(),
+                "the first on-shift tick derives a real beat corner, not the bed");
+        assertEquals(TargetKind.CELL, watch.goalTargetKind(),
+                "and it is a genuine cached corner for the leg");
+        int tx = PackedPos.x(watch.goalTargetKey());
+        int ty = PackedPos.y(watch.goalTargetKey());
+        assertTrue(Math.max(Math.abs(tx - 40), Math.abs(ty - 40)) > 0
+                        && Math.abs(tx - 40) == Math.abs(ty - 40),
+                "a square-beat corner sits on the leg diagonal off the anchor, saw ("
+                        + tx + "," + ty + ")");
     }
 
     // ================== slice 4: corners off pinched ground ==================
