@@ -75,7 +75,7 @@ translate between. That is the effect-axis table, author-supplied.
 | L457 many small beats one big | `EffectMode.OVER_TIME`, dosed every `ActiveEffects.OVER_TIME_PERIOD_TICKS`; a trickle pays for every dose it will deliver, so a long effect is honestly dearer |
 | L459 a link needs a bridge; the gift is rare | `TargetShape.TOUCH` is the ordinary case; `TargetShape.RANGED` exists in the vocabulary, costs `SpellCost.RESIST_UNBRIDGED = 20` on top of distance, and **is authored on no spell in the shipped list** |
 | L567 twenty crafters make one torch flare; L516 ~1/1000 of a Luxerne | `ActiveEffects.VITALITY_FLOOR = 1` — no crafting can put a body on the ground. Structural, not a tuning value: the only code that writes a hit point enforces it |
-| L2472 public-issue vs restricted editions | `SpellDefinition.minLevel` — the literacy tier as a per-spell gate, with the deep rows visible but greyed on the bar |
+| L2472 public-issue vs restricted editions | `SpellDefinition.minLevel` — the literacy tier as a per-spell gate, with the deep rows visible but greyed on the bar. The skill the gate is measured in is `SpellDefinition.skillKey`, a raws field, not a hardcoded one: a crafting from another tradition would be gated, checked and grown by that tradition's own skill with no code change |
 | L98 "even with training it is limited" | `SkillChecks.LINKCRAFT_CEIL_PERMILLE = 900`; mastery never buys certainty, the same contract every other check family in the file carries |
 | L443 crafting is changing nature, not standing apart from it | the effects land on ordinary sim state — hit points, needs, the one attribute function — never on a parallel "magic" pool |
 
