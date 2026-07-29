@@ -3,6 +3,7 @@ package com.trojia.client.scenario;
 import com.trojia.client.boot.FixtureWorldLoader;
 import com.trojia.client.input.CullInput;
 import com.trojia.client.input.SellInput;
+import com.trojia.client.inspect.CullAvailability;
 import com.trojia.client.inspect.CullFeedbackTracker;
 import com.trojia.client.inspect.PlayModeState;
 import com.trojia.client.inspect.SellFeedbackTracker;
@@ -116,7 +117,8 @@ class PlayableScalpLoopTest {
             if (!quarryAdjacent(pop, hero)) {
                 break;
             }
-            CullInput.applyCull(playMode, registry, toasts, cullFeedback);
+            CullInput.applyCull(playMode, registry, toasts, cullFeedback,
+                    driver.currentTick());
             driver.requestStep();
             cullFeedback.afterTick(driver.currentTick());
             ReasonCode stamp = registry.get(hero).lastReasonCode();
@@ -125,8 +127,11 @@ class PlayableScalpLoopTest {
                             + stamp);
             scalps = pop.items().countCarriedOfKind(hero, ItemKinds.RAT_SCALP);
             if (scalps == 0) {
-                for (int w = 0; w < CullVerb.CULL_COOLDOWN_TICKS; w++) {
-                    driver.requestStep(); // the latch: the knife-hand waits its turn
+                // The latch: the knife hand waits its turn, and the player waits with it —
+                // ticking until the same read the refusal toast quotes says the hand is free.
+                while (CullAvailability.cooldownTicksLeft(registry.get(hero),
+                        driver.currentTick()) > 0) {
+                    driver.requestStep();
                 }
             }
         }

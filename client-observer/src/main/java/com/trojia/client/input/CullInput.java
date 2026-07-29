@@ -2,13 +2,15 @@ package com.trojia.client.input;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.trojia.client.inspect.CullAvailability;
 import com.trojia.client.inspect.CullFeedbackTracker;
 import com.trojia.client.inspect.PlayModeState;
 import com.trojia.client.inspect.ToastQueue;
+import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 
 /**
- * Polls the CULL verb (S8 scalps — the played soul works the vermin bounty): while driving an
+ * Polls the CULL verb (S8 scalps — the played actor works the vermin bounty): while driving an
  * actor, {@code K} arms the played actor's cull intent ({@code Actor.setPlayerCullIntent}) —
  * the SIM resolves it next tick inside {@code PlayerControlPolicy.act} against a DOWNED
  * scalpable body within knife reach, through the same shared {@code CullVerb.resolveCull} the
@@ -32,9 +34,9 @@ public final class CullInput {
 
     /** Applies one frame's cull input ({@code K} just pressed). */
     public static void poll(PlayModeState playMode, ActorRegistry registry,
-            ToastQueue toasts, CullFeedbackTracker feedback) {
+            ToastQueue toasts, CullFeedbackTracker feedback, long tick) {
         if (Gdx.input.isKeyJustPressed(Input.Keys.K)) {
-            applyCull(playMode, registry, toasts, feedback);
+            applyCull(playMode, registry, toasts, feedback, tick);
         }
     }
 
@@ -42,13 +44,26 @@ public final class CullInput {
      * The deterministic cull application (the {@code applyFish} convention): arms the sim-side
      * intent, toasts the attempt, and arms the feedback tracker so the outcome reason lands as
      * its own toast after the resolving tick. A no-op while Play mode is inactive.
+     *
+     * <p><b>A press that cannot work is refused HERE, with the reason that applies</b>
+     * ({@link CullAvailability}) — and nothing is armed and no kneeling is narrated for it. The
+     * sprint shipped the other way round: every press inside the 500-tick latch toasted
+     * "You kneel to the carcass, knife out..." and then "Nothing downed within knife reach."
+     * with the carcass lying in plain sight, which reads as a broken verb rather than as the
+     * pacing it is.
      */
     public static void applyCull(PlayModeState playMode, ActorRegistry registry,
-            ToastQueue toasts, CullFeedbackTracker feedback) {
+            ToastQueue toasts, CullFeedbackTracker feedback, long tick) {
         if (!playMode.active()) {
             return;
         }
-        registry.get(playMode.playedActorId()).setPlayerCullIntent(true);
+        Actor culler = registry.get(playMode.playedActorId());
+        String refusal = CullAvailability.refusal(registry, culler, tick);
+        if (refusal != null) {
+            toasts.add(refusal);
+            return;
+        }
+        culler.setPlayerCullIntent(true);
         toasts.add(ARM_TOAST);
         feedback.arm();
     }

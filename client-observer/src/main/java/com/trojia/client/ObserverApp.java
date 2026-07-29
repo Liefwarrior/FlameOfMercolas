@@ -581,7 +581,8 @@ public final class ObserverApp extends ApplicationAdapter {
             FishInput.poll(playMode, population.registry(), toasts, fishFeedbackTracker);
             // The CULL verb (S8): K takes a scalp off a downed vermin body within knife reach
             // through the sim's shared cull verb; outcome + check line via CullFeedbackTracker.
-            CullInput.poll(playMode, population.registry(), toasts, cullFeedbackTracker);
+            CullInput.poll(playMode, population.registry(), toasts, cullFeedbackTracker,
+                    driver.currentTick());
             // The SELL verb (S8): B turns carried materials into Royals at a counter in reach
             // through the sim's shared exchange; outcome toast via SellFeedbackTracker.
             SellInput.poll(playMode, population.registry(), toasts, sellFeedbackTracker);
@@ -834,7 +835,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 case FISH -> FishInput.applyFish(playMode, population.registry(), toasts,
                         fishFeedbackTracker);
                 case CULL -> CullInput.applyCull(playMode, population.registry(), toasts,
-                        cullFeedbackTracker);
+                        cullFeedbackTracker, driver.currentTick());
                 case SELL -> SellInput.applySell(playMode, population.registry(), toasts,
                         sellFeedbackTracker);
             }

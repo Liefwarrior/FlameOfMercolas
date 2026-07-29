@@ -2,14 +2,13 @@ package com.trojia.client.inspect;
 
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
-import com.trojia.sim.actor.CullVerb;
 import com.trojia.sim.actor.ReasonCode;
 import com.trojia.sim.actor.SkillTrackRegistry;
 
 import java.util.function.IntSupplier;
 
 /**
- * Narrates the played soul's CULL outcome as a toast (S8 scalps — the {@link
+ * Narrates the played actor's CULL outcome as a toast (S8 scalps — the {@link
  * FishFeedbackTracker} pattern applied to the vermin bounty): after {@code K} arms the cull
  * intent, the sim resolves it next tick through the shared verb ({@code PlayerControlPolicy}
  * &rarr; {@code CullVerb.resolveCull}) and stamps one of the three cull reasons — this tracker
@@ -23,7 +22,7 @@ import java.util.function.IntSupplier;
  * so a never-resolving intent expires silently — no stale toast minutes later.
  *
  * <p>The FIELDCRAFT skill-up itself needs no code here: {@code SkillUpTracker} already toasts
- * the played soul's every level in every skill.
+ * the played actor's every level in every skill.
  */
 public final class CullFeedbackTracker {
 
@@ -90,34 +89,13 @@ public final class CullFeedbackTracker {
             return "";
         }
         Actor culler = registry.get(played);
-        int bodyId = nearestQuarry(culler);
+        int bodyId = CullAvailability.quarryInReach(registry, culler);
         if (bodyId == Actor.NONE) {
             return ""; // the carcass got up between the cut and the telling
         }
         var stats = registry.get(bodyId).stats();
         return CheckLineFormatter.cullLine(tracks, played, stats.displayName(),
                 stats.scalpResist(), success);
-    }
-
-    /**
-     * A downed scalpable body within {@link CullVerb#CULL_REACH} — same-z, ascending index.
-     * Presentation-only mirror of the sim's own reach (the {@code AdjacentTargets#REACH}
-     * mirroring convention); reads nothing and writes nothing.
-     */
-    private int nearestQuarry(Actor culler) {
-        for (int i = 0; i < registry.size(); i++) {
-            Actor other = registry.get(i);
-            if (other.id() == culler.id() || !CullVerb.isQuarry(other)) {
-                continue;
-            }
-            if (com.trojia.sim.world.PackedPos.z(other.cell())
-                    == com.trojia.sim.world.PackedPos.z(culler.cell())
-                    && com.trojia.sim.actor.ActorGeometry.chebyshev(culler.cell(), other.cell())
-                            <= CullVerb.CULL_REACH) {
-                return i;
-            }
-        }
-        return Actor.NONE;
     }
 
     /** The toast for a cull-outcome reason stamp, or {@code null} for any other reason. */
