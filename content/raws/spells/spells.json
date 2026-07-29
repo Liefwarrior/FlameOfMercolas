@@ -8,14 +8,30 @@
       "minLevel": 0,
       "baseResist": 0,
       "cooldownTicks": 200,
+      "target": "SELF",
+      "range": 0,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE", "magnitude": 15, "durationTicks": 600 }
+      ],
+      "canonAnchor": "heat is the working currency of a crafting - Gerik knits skin shut with 'heat energy from the enemies' (L445); Eric links a campfire to refill himself (L505)",
+      "provenance": "Simple Magic seed spell, the TEMPERATURE axis. 1.5 degrees of held warmth for ten minutes of ward time - a dry coat on a wet quay, nothing more. SELF because no link needs forging to your own hands."
+    },
+    {
+      "id": "lend_the_warmth",
+      "displayName": "Lend the Warmth",
+      "skill": "linkcraft",
+      "minLevel": 1,
+      "baseResist": 4,
+      "cooldownTicks": 300,
       "target": "TOUCH",
       "range": 1,
       "areaRadius": 0,
       "components": [
         { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE", "magnitude": 15, "durationTicks": 600 }
       ],
-      "canonAnchor": "heat is the working currency of a crafting - Gerik knits skin shut with 'heat energy from the enemies' (L445); Eric links a campfire to refill himself (L505)",
-      "provenance": "Simple Magic seed spell, the TEMPERATURE axis. 1.5 degrees of held warmth for ten minutes of ward time - a dry coat on a wet quay, nothing more."
+      "canonAnchor": "the same transfer across a bridged link - 'a crafting requires a link between the two entities, normally this would be an arm or a blade' (L459)",
+      "provenance": "Simple Magic seed spell. Warm the Hands with one word changed (SELF -> TOUCH) and a little more difficulty for the link it now has to open: the target shape is data too."
     },
     {
       "id": "draw_the_chill",
@@ -72,14 +88,14 @@
       "minLevel": 2,
       "baseResist": 12,
       "cooldownTicks": 600,
-      "target": "TOUCH",
-      "range": 1,
+      "target": "SELF",
+      "range": 0,
       "areaRadius": 0,
       "components": [
         { "effect": "VITALITY", "mode": "OVER_TIME", "magnitude": 1, "durationTicks": 40 }
       ],
       "canonAnchor": "Gerik heals his own arm by 'knitting the skin back together with heat energy from the enemies' (L445) - canon's own words for this exact operation",
-      "provenance": "Simple Magic seed spell. Scald with the sign flipped, which is the whole argument for signed magnitudes: mending and harming were never two systems."
+      "provenance": "Simple Magic seed spell. Scald with the sign flipped and the target turned inward, which is the whole argument for signed magnitudes and a data-driven target shape: mending and harming were never two systems. SELF because canon's own instance of this operation is Gerik healing his OWN arm."
     },
     {
       "id": "steady_the_hand",

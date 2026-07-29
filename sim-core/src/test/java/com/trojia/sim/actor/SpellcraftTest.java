@@ -184,9 +184,9 @@ final class SpellcraftTest {
                     "an unschooled docker must be able to attempt " + key);
         }
 
-        // TEMPERATURE
-        castUntilItWorks(caster, ctx, shipped.rawOf("warm_the_hands"), neighbour.id());
-        assertEquals(15, ctx.effects.temperatureOffsetDeciK(neighbour.id()));
+        // TEMPERATURE (on your own hands -- no link to forge to yourself)
+        castUntilItWorks(caster, ctx, shipped.rawOf("warm_the_hands"), caster.id());
+        assertEquals(15, ctx.effects.temperatureOffsetDeciK(caster.id()));
 
         // VITALITY
         caster.setCastUntilTick(0L);
@@ -352,7 +352,7 @@ final class SpellcraftTest {
         int linkcraft = ctx.tracks.linkcraftRaw();
         assertEquals(0, ctx.tracks.progressGrains(caster.id(), linkcraft));
 
-        SpellVerb.resolveCast(caster, ctx, shipped.rawOf("warm_the_hands"), neighbour.id());
+        SpellVerb.resolveCast(caster, ctx, shipped.rawOf("warm_the_hands"), caster.id());
         assertTrue(ctx.tracks.progressGrains(caster.id(), linkcraft) > 0,
                 "XP on the ATTEMPT -- the fishing cast and the cull already settled this");
         assertTrue(caster.castUntilTick() > ctx.tick(),
@@ -396,7 +396,8 @@ final class SpellcraftTest {
         Actor caster = spawn(registry, HERE);
         Actor neighbour = spawn(registry, NEXT_DOOR);
         MagicContext ctx = new MagicContext(registry, shipped);
-        castUntilItWorks(caster, ctx, shipped.rawOf("warm_the_hands"), neighbour.id());
+        ctx.tracks.seedLevel(caster.id(), ctx.tracks.linkcraftRaw(), 20);
+        castUntilItWorks(caster, ctx, shipped.rawOf("lend_the_warmth"), neighbour.id());
         assertEquals(15, ctx.effects.temperatureOffsetDeciK(neighbour.id()));
 
         neighbour.setStatus(StatusBit.DEAD, true);
