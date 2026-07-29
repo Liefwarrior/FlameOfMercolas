@@ -82,6 +82,27 @@ public final class ActorsSystem implements SimulationSystem {
     private long fishMinted;
     private long fishEaten;
 
+    /**
+     * Closed-supply TRADE-GOOD accounting (S8): one minted counter and one genuinely-sunk
+     * counter PER KIND, densely indexed by {@link TradeGoods} row index (ascending kind id —
+     * the determinism rule's ordered iteration). The identity each kind holds is
+     * {@code goodsMinted(k) == items.liveOfKind(k) + goodsSunk(k)}.
+     *
+     * <p>Two deliberate choices here, both learned from the S8 coin-proof defect. First, this
+     * is a COUNTER at the mint site checked against an independent physical SCAN of ItemsLite —
+     * neither side is derived from the other, so the line can actually fail. Second, the sunk
+     * side is a counter and NOT {@code items.sunkOfKind(k)}: {@link ItemsLiteRegistry#sink}
+     * leaves a vacated slot's old quantity in place, so a stack that was fully MOVED still
+     * reads at its old size and {@code sunkOfKind} counts a phantom. ({@code liveOfKind} is
+     * safe — the phantom cancels between total and sunk.)
+     *
+     * <p>Per kind, never lumped: a single "goods minted" total could hide a yard that minted
+     * nothing behind another yard's surplus. Pure accounting — read by no behavior, rides no
+     * save, reproduced identically by two fresh runs.
+     */
+    private final long[] goodsMinted = new long[TradeGoods.count()];
+    private final long[] goodsSunk = new long[TradeGoods.count()];
+
     /** Ring capacity of the shove log — bounds riot detection's O(K^2) cluster scan. */
     private static final int SHOVE_LOG_CAPACITY = 256;
 
@@ -391,6 +412,43 @@ public final class ActorsSystem implements SimulationSystem {
     /** Total FISH ever eaten/sunk — the fish conservation sink count. */
     public long fishEaten() {
         return fishEaten;
+    }
+
+    /**
+     * The dense {@link TradeGoods} row index for {@code kind}, or {@code -1} when the kind has
+     * no row (an untabled kind is accounted nowhere rather than corrupting a neighbour's
+     * counter).
+     */
+    private static int goodsSlot(short kind) {
+        for (int i = 0; i < TradeGoods.count(); i++) {
+            if (TradeGoods.at(i).kind() == kind) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Total units of trade-good {@code kind} ever minted — that kind's conservation numerator. */
+    public long goodsMinted(short kind) {
+        int slot = goodsSlot(kind);
+        return slot < 0 ? 0 : goodsMinted[slot];
+    }
+
+    /** Total units of trade-good {@code kind} genuinely destroyed — that kind's sink count. */
+    public long goodsSunk(short kind) {
+        int slot = goodsSlot(kind);
+        return slot < 0 ? 0 : goodsSunk[slot];
+    }
+
+    /**
+     * Records trade goods minted OUTSIDE the tick loop (a bake-time seed), the
+     * {@link #recordFoodMintedAtBake} twin. Pure accounting; no effect on determinism.
+     */
+    public void recordGoodsMintedAtBake(short kind, long n) {
+        int slot = goodsSlot(kind);
+        if (slot >= 0) {
+            goodsMinted[slot] += n;
+        }
     }
 
     /**
@@ -1059,6 +1117,22 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public void recordFishEaten(int n) {
             fishEaten += n;
+        }
+
+        @Override
+        public void recordGoodsMinted(short kind, int n) {
+            int slot = goodsSlot(kind);
+            if (slot >= 0) {
+                goodsMinted[slot] += n;
+            }
+        }
+
+        @Override
+        public void recordGoodsSunk(short kind, int n) {
+            int slot = goodsSlot(kind);
+            if (slot >= 0) {
+                goodsSunk[slot] += n;
+            }
         }
 
         @Override

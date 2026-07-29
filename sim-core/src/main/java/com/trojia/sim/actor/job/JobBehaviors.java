@@ -85,6 +85,19 @@ public final class JobBehaviors {
         if (params.dutyPerUnit() > 0) {
             self.applyNeedDelta(Need.DUTY, params.dutyPerUnit());
         }
+        // S8 ("The Ward Prices Itself"): the crafts finally YIELD. One discrete work event =
+        // one finished thing, minted into the doer's own carry — a rope off the Ropewalk, a
+        // measure of tar out of the Pitchfield. Deliberately at this seam and nowhere else:
+        // per-tick minting would make the ward's material supply a function of standing
+        // still, which is the same mistake §3.2 rule 4 exists to forbid for XP. Data-driven
+        // per job (jobs.json yieldKind/yieldPerUnit, the trainsSkill pattern); the whole
+        // pre-S8 job roster yields nothing, so this is a no-op for every one of them.
+        // Draw-free, and accounted through ctx so the closed-supply proof can see it.
+        if (params.yields()) {
+            int minted = ctx.items().addCarried(self.id(), params.yieldKind(),
+                    params.yieldPerUnit());
+            ctx.recordGoodsMinted(params.yieldKind(), minted);
+        }
         if (!params.trains()) {
             return;
         }

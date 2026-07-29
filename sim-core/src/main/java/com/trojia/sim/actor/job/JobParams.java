@@ -41,6 +41,17 @@ package com.trojia.sim.actor.job;
  * @param trainSkillRaw    resolved skill raw this job trains, or {@link #TRAINS_NOTHING}
  * @param trainCp          §3.1 base cp per discrete work event ({@code 0} when untrained)
  * @param dutyPerUnit      DUTY reserve restored per discrete work event ({@code >= 0})
+ * <p><b>S8 YIELD pair</b> ("The Ward Prices Itself" — the crafts finally produce something the
+ * ward can price): {@code yieldKind} is the {@link com.trojia.sim.actor.ItemKinds} id one
+ * discrete work event mints into the worker's own carry, and {@code yieldPerUnit} is how many
+ * units. Both {@code 0} ({@link #YIELDS_NOTHING}) for every job that produces nothing you can
+ * hold — which is every job that existed before S8. Applied at exactly the seams the S5
+ * training pair and the S6 DUTY pair already ride (unit completion / waypoint arrival / dwell
+ * completion) and NEVER per tick: a rope is finished, not accrued by the second. The pair is
+ * both-or-neither, exactly like {@code trainSkillRaw}/{@code trainCp}.
+ *
+ * @param yieldKind        item kind minted per discrete work event, or {@link #YIELDS_NOTHING}
+ * @param yieldPerUnit     units minted per discrete work event ({@code >= 0})
  */
 public record JobParams(
         GoalKind goalKind,
@@ -54,7 +65,9 @@ public record JobParams(
         int cooldownTicks,
         int trainSkillRaw,
         int trainCp,
-        int dutyPerUnit) {
+        int dutyPerUnit,
+        short yieldKind,
+        int yieldPerUnit) {
 
     /** The JOB behavior score band (ACTORS-SPEC.md §1.2). */
     public static final int JOB_BAND_MIN = 100;
@@ -62,6 +75,13 @@ public record JobParams(
 
     /** {@code trainSkillRaw} sentinel: this job's work trains no skill. */
     public static final int TRAINS_NOTHING = -1;
+
+    /**
+     * {@code yieldKind} sentinel: this job's work mints nothing. {@code 0} is safe as a
+     * sentinel because {@link com.trojia.sim.actor.ItemKinds} ids start at 1 (COIN) and the
+     * vocabulary is append-only, so no real kind can ever collide with it.
+     */
+    public static final short YIELDS_NOTHING = 0;
 
     /**
      * Training-less convenience constructor (the pre-Sprint-5 shape): every field as before,
@@ -86,6 +106,21 @@ public record JobParams(
         this(goalKind, priority, rhythmWindowStart, rhythmWindowEnd, rhythmBonus,
                 workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, trainSkillRaw,
                 trainCp, 0);
+    }
+
+    /**
+     * Yield-less convenience constructor (the pre-S8 canonical shape): every field as before,
+     * {@code yieldKind = }{@link #YIELDS_NOTHING}{@code , yieldPerUnit = 0}. The exact shape of
+     * the Sprint-6 duty-less constructor above, and kept for the same reason — no existing
+     * test, and no synthetic param anywhere, has to learn about the YIELD pair to keep
+     * compiling.
+     */
+    public JobParams(GoalKind goalKind, int priority, int rhythmWindowStart, int rhythmWindowEnd,
+            int rhythmBonus, int workTicksPerUnit, int unitsToComplete, RenewMode renewMode,
+            int cooldownTicks, int trainSkillRaw, int trainCp, int dutyPerUnit) {
+        this(goalKind, priority, rhythmWindowStart, rhythmWindowEnd, rhythmBonus,
+                workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, trainSkillRaw,
+                trainCp, dutyPerUnit, YIELDS_NOTHING, 0);
     }
 
     public JobParams {
@@ -136,11 +171,27 @@ public record JobParams(
         if (dutyPerUnit < 0) {
             throw new IllegalArgumentException("dutyPerUnit must be >= 0: " + dutyPerUnit);
         }
+        if (yieldKind < 0) {
+            throw new IllegalArgumentException("yieldKind must be an ItemKinds id or "
+                    + "YIELDS_NOTHING: " + yieldKind);
+        }
+        if (yieldPerUnit < 0) {
+            throw new IllegalArgumentException("yieldPerUnit must be >= 0: " + yieldPerUnit);
+        }
+        if ((yieldKind == YIELDS_NOTHING) != (yieldPerUnit == 0)) {
+            throw new IllegalArgumentException("the yield pair is both-or-neither (kind "
+                    + yieldKind + ", perUnit " + yieldPerUnit + ")");
+        }
     }
 
     /** Whether this job's completed work trains a skill (resolved at bind time). */
     public boolean trains() {
         return trainSkillRaw != TRAINS_NOTHING;
+    }
+
+    /** Whether this job's completed work mints a trade good into the worker's carry. */
+    public boolean yields() {
+        return yieldKind != YIELDS_NOTHING && yieldPerUnit > 0;
     }
 
     /** Whether {@code tickOfDay} falls inside {@code [rhythmWindowStart, rhythmWindowEnd)}. */

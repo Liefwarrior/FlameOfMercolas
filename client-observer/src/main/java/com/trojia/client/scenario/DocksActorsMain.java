@@ -336,6 +336,7 @@ public final class DocksActorsMain {
         printGuardJamReport(watchIds.size(), jamTicks, jamPairTicks, ticks);
         printStatueReport(laborerCells, ticks);
         printFishingReport(population);
+        printGoodsConservation(population, identity);
         printDeathReport(population, identity);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
         printWorldHash(loaded.world(), population, driver.currentTick());
@@ -1207,6 +1208,60 @@ public final class DocksActorsMain {
         System.out.println("  FISHING skill holders: " + holders
                 + (holders > 0 ? "  (" + census + (holders > 12 ? ", ..." : "") + ")" : ""));
         System.out.println("============================================================================");
+    }
+
+    /**
+     * S8 TRADE-GOOD conservation (one closed-supply line per kind) plus the holder
+     * DISTRIBUTION each kind actually landed in.
+     *
+     * <p><b>Why seven lines and not one.</b> A single lumped "goods minted" total is exactly
+     * the kind of number that reads PASS while a yard mints nothing — one busy Ropewalk can
+     * carry three dead yards. Each kind gets its own identity, {@code minted == live + sunk},
+     * and each can fail alone.
+     *
+     * <p><b>Why the identity can fail at all</b> (the lesson of the coin-proof defect this
+     * sprint opened by fixing): the left side is a COUNTER incremented at the mint site
+     * ({@code ActorsSystem.goodsMinted}); the right side is an independent physical SCAN of
+     * ItemsLite. Neither is derived from the other. A mint that skipped the counter, a stack
+     * destroyed behind the economy's back, or a double-credit all break it. The sunk side is
+     * the counter and NOT {@code items.sunkOfKind} — a vacated slot keeps its old quantity, so
+     * a fully MOVED stack would read as a phantom sink (see {@code CoinCensus}).
+     *
+     * <p><b>Distributions, not totals.</b> Every line prints DISTINCT holders and the fattest
+     * single holding beside the unit count, because "200 units" is satisfied equally by 200
+     * souls holding one each and by one hoarder holding 200, and only one of those is a ward
+     * that trades. Ascending-index scans only.
+     */
+    private static void printGoodsConservation(DocksPopulation population,
+            IdentityRegistry identity) {
+        var items = population.items();
+        var system = population.system();
+        var registry = population.registry();
+        System.out.println();
+        System.out.println("================ S8 TRADE GOODS (closed supply, per kind) ==================");
+        for (short kind : GoodsCensus.KINDS) {
+            GoodsCensus c = GoodsCensus.of(system, items, registry, kind);
+            String top = c.fattestId() < 0 ? "-"
+                    : (c.fattestId() < identity.size() && identity.get(c.fattestId()).named()
+                            ? identity.get(c.fattestId()).fullName() : "#" + c.fattestId())
+                            + " x" + c.fattest();
+            System.out.println("  " + pad(c.symbol(), 13) + " [" + c.category() + "]"
+                    + "  minted=" + c.minted() + "  live=" + c.live() + "  sunk=" + c.sunk()
+                    + ";  invariant minted == live + sunk: " + c.closed()
+                    + "  (" + c.minted() + " == " + (c.live() + c.sunk()) + ")");
+            System.out.println("      distribution: " + c.holders() + " DISTINCT holders"
+                    + ";  fattest holding: " + top);
+        }
+        System.out.println("============================================================================");
+    }
+
+    /** Right-pads {@code s} to {@code width} with spaces (Locale-free, report-text stable). */
+    private static String pad(String s, int width) {
+        StringBuilder b = new StringBuilder(s == null ? "?" : s);
+        while (b.length() < width) {
+            b.append(' ');
+        }
+        return b.toString();
     }
 
     /**
