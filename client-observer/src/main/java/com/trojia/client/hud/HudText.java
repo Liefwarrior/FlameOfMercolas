@@ -137,6 +137,10 @@ public final class HudText {
                 // without a legend entry fails the build rather than shipping invisible.
                 HudToken.icon(IconKey.K), HudToken.text(" cull   "),
                 HudToken.icon(IconKey.B), HudToken.text(" sell   "),
+                // Simple Magic (the craftings bar): the bar down the right of the screen is
+                // clicked, and X repeats whatever was clicked last.
+                HudToken.icon(IconKey.MOUSE_LEFT_CLICK), HudToken.text(" craft   "),
+                HudToken.icon(IconKey.X), HudToken.text(" repeat   "),
                 HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
                 HudToken.text(" climb   "),
                 HudToken.icon(IconKey.I), HudToken.text(" disguise   "),

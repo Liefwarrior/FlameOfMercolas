@@ -589,6 +589,7 @@ public final class ObserverApp extends ApplicationAdapter {
                     camera.viewportWidthPx(), camera.viewportHeightPx(),
                     inspector.hasSelection());
             boolean clickConsumedBySpellBar = SpellInput.poll(playMode, population.registry(),
+                    population.identity(),
                     population.system().spells(), population.system().skillTracks(),
                     spellButtons, toasts, spellFeedbackTracker, driver.currentTick(),
                     camera.viewportHeightPx(), lastCast);
@@ -935,6 +936,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 case SELL -> SellInput.applySell(playMode, population.registry(), toasts,
                         sellFeedbackTracker);
                 case CAST -> SpellInput.applyCast(playMode, population.registry(),
+                        population.identity(),
                         population.system().spells(), population.system().skillTracks(),
                         population.system().spells().rawOf(action.args().trim()),
                         toasts, spellFeedbackTracker, driver.currentTick());

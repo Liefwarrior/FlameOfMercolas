@@ -132,8 +132,8 @@ class PlayableCraftingLoopTest {
         playMode.enable(beast);
         ToastQueue toasts = new ToastQueue();
         SpellRegistry spells = pop.system().spells();
-        SpellInput.applyCast(playMode, pop.registry(), spells, pop.system().skillTracks(),
-                spells.rawOf("warm_the_hands"), toasts,
+        SpellInput.applyCast(playMode, pop.registry(), pop.identity(), spells,
+                pop.system().skillTracks(), spells.rawOf("warm_the_hands"), toasts,
                 new SpellFeedbackTracker(pop.registry(), toasts, playMode::playedActorId,
                         pop.system().skillTracks(), spells),
                 0L);
@@ -159,7 +159,8 @@ class PlayableCraftingLoopTest {
         int hero = playMode.playedActorId();
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             waitOutTheLatch(driver, pop.registry(), hero);
-            SpellInput.applyCast(playMode, pop.registry(), spells, pop.system().skillTracks(),
+            SpellInput.applyCast(playMode, pop.registry(), pop.identity(), spells,
+                    pop.system().skillTracks(),
                     spellRaw, toasts, feedback, driver.currentTick());
             driver.requestStep();
             feedback.afterTick(driver.currentTick());
@@ -192,7 +193,8 @@ class PlayableCraftingLoopTest {
                 continue;
             }
             short hpBefore = pop.registry().get(target).hp();
-            SpellInput.applyCast(playMode, pop.registry(), spells, pop.system().skillTracks(),
+            SpellInput.applyCast(playMode, pop.registry(), pop.identity(), spells,
+                    pop.system().skillTracks(),
                     spellRaw, toasts, feedback, driver.currentTick());
             driver.requestStep();
             feedback.afterTick(driver.currentTick());

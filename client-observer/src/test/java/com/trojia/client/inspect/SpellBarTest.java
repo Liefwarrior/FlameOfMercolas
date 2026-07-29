@@ -107,8 +107,10 @@ class SpellBarTest {
                 "knowing what is on the top shelf is half of wanting to reach it");
         assertTrue(SpellBar.known(spells, tracks, 0, shallow));
         assertFalse(SpellBar.label(spells, tracks, 0, shallow).contains("[Lv "));
-        assertTrue(SpellBar.label(spells, tracks, 0, shallow).contains("touch"),
-                "the row says how far the link reaches");
+        assertTrue(SpellBar.label(spells, tracks, 0, shallow).contains("self"),
+                "the row says how far the link reaches -- Warm the Hands reaches your own");
+        assertTrue(SpellBar.label(spells, tracks, 0, spells.rawOf("sting")).contains("touch"),
+                "...and a bridged crafting says so too");
     }
 
     @Test

@@ -2,11 +2,13 @@ package com.trojia.client.input;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.trojia.client.inspect.PersonNames;
 import com.trojia.client.inspect.PlayModeState;
 import com.trojia.client.inspect.SpellAvailability;
 import com.trojia.client.inspect.SpellBar;
 import com.trojia.client.inspect.SpellFeedbackTracker;
 import com.trojia.client.inspect.ToastQueue;
+import com.trojia.client.scenario.IdentityRegistry;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorGeometry;
 import com.trojia.sim.actor.ActorRegistry;
@@ -40,8 +42,11 @@ import java.util.List;
  */
 public final class SpellInput {
 
-    /** The arming toast (immediate feedback even while the driver is PAUSED). */
-    public static final String ARM_PREFIX = "You reach for the link -- ";
+    /** The arming toast for a crafting worked on your own body. */
+    public static final String ARM_SELF_PREFIX = "You turn the link inward -- ";
+
+    /** The arming toast for a crafting worked on somebody else, who gets named. */
+    public static final String ARM_TOUCH_PREFIX = "You reach toward ";
 
     /** {@code X} pressed with nothing worked yet this session. */
     public static final String NOTHING_TO_REPEAT = "No crafting to repeat yet.";
@@ -57,15 +62,15 @@ public final class SpellInput {
      * @param lastCast a one-slot memory of the last crafting worked, for the {@code X} repeat
      */
     public static boolean poll(PlayModeState playMode, ActorRegistry registry,
-            SpellRegistry spells, SkillTrackRegistry tracks, List<SpellBar.Button> buttons,
-            ToastQueue toasts, SpellFeedbackTracker feedback, long tick, float viewportHeightPx,
-            LastCast lastCast) {
+            IdentityRegistry identity, SpellRegistry spells, SkillTrackRegistry tracks,
+            List<SpellBar.Button> buttons, ToastQueue toasts, SpellFeedbackTracker feedback,
+            long tick, float viewportHeightPx, LastCast lastCast) {
         if (Gdx.input.isKeyJustPressed(Input.Keys.X)) {
             if (lastCast.spellRaw == Actor.NONE) {
                 toasts.add(NOTHING_TO_REPEAT);
             } else {
-                applyCast(playMode, registry, spells, tracks, lastCast.spellRaw, toasts, feedback,
-                        tick);
+                applyCast(playMode, registry, identity, spells, tracks, lastCast.spellRaw,
+                        toasts, feedback, tick);
             }
         }
         if (!Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
@@ -77,7 +82,7 @@ public final class SpellInput {
             return false;
         }
         lastCast.spellRaw = hit;
-        applyCast(playMode, registry, spells, tracks, hit, toasts, feedback, tick);
+        applyCast(playMode, registry, identity, spells, tracks, hit, toasts, feedback, tick);
         return true;
     }
 
@@ -99,8 +104,8 @@ public final class SpellInput {
      * does not repeat that.
      */
     public static void applyCast(PlayModeState playMode, ActorRegistry registry,
-            SpellRegistry spells, SkillTrackRegistry tracks, int spellRaw, ToastQueue toasts,
-            SpellFeedbackTracker feedback, long tick) {
+            IdentityRegistry identity, SpellRegistry spells, SkillTrackRegistry tracks,
+            int spellRaw, ToastQueue toasts, SpellFeedbackTracker feedback, long tick) {
         if (!playMode.active()) {
             toasts.add(SpellAvailability.NO_BODY);
             return;
@@ -115,8 +120,23 @@ public final class SpellInput {
         SpellDefinition spell = spells.get(spellRaw);
         int target = SpellVerb.targetInReach(caster, registry, spell);
         caster.setPlayerSpellIntent(spellRaw, target);
-        toasts.add(ARM_PREFIX + spell.displayName() + "...");
+        toasts.add(armLine(spell, registry, identity, target));
         feedback.arm(spellRaw, distanceTo(caster, registry, spell, target));
+    }
+
+    /**
+     * "You reach toward Onna Tidewatcher -- Sting..." — the target NAMED, so Eli's
+     * click-an-actor-and-see-something-happen-to-them reads as exactly that. Named as the ward
+     * sees them (presented identity — the Persona rule, the {@code TheftInput} precedent).
+     */
+    private static String armLine(SpellDefinition spell, ActorRegistry registry,
+            IdentityRegistry identity, int target) {
+        if (spell.targetShape() == TargetShape.SELF) {
+            return ARM_SELF_PREFIX + spell.displayName() + "...";
+        }
+        return ARM_TOUCH_PREFIX + PersonNames.fullNameOf(
+                registry.get(target).identity().presentedId(), registry, identity)
+                + " -- " + spell.displayName() + "...";
     }
 
     /** The gap the sim will price this cast at — 0 for a SELF crafting. */

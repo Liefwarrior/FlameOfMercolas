@@ -129,7 +129,8 @@ class CraftingDeterminismTest {
     }
 
     private static void press(Run run, int spellRaw) {
-        SpellInput.applyCast(run.playMode, run.pop.registry(), run.pop.system().spells(),
+        SpellInput.applyCast(run.playMode, run.pop.registry(), run.pop.identity(),
+                run.pop.system().spells(),
                 run.pop.system().skillTracks(), spellRaw, run.toasts, run.feedback,
                 run.driver.currentTick());
     }

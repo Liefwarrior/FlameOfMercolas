@@ -84,6 +84,7 @@ class ObserverScriptTest {
                 6 plates
                 7 pickpocket
                 8 fish
+                9 cast=warm_the_hands
                 """);
         assertEquals(ObserverScript.Verb.TOPIC, script.at(1).get(0).verb());
         assertEquals(ObserverScript.Verb.EAT, script.at(2).get(0).verb());
@@ -91,5 +92,9 @@ class ObserverScriptTest {
         assertEquals("down", script.at(4).get(0).args());
         // Sprint 6: the played cast rides the tape like every other verb.
         assertEquals(ObserverScript.Verb.FISH, script.at(8).get(0).verb());
+        // Simple Magic: so does a press on the craftings bar, named by the spell's raws id —
+        // which is what lets the twin-run harness drive magic with no mouse in the room.
+        assertEquals(ObserverScript.Verb.CAST, script.at(9).get(0).verb());
+        assertEquals("warm_the_hands", script.at(9).get(0).args());
     }
 }

@@ -6,6 +6,7 @@ import com.trojia.client.inspect.SpellAvailability;
 import com.trojia.client.inspect.SpellFeedbackTracker;
 import com.trojia.client.inspect.ToastQueue;
 import com.trojia.client.scenario.CompoundBlockPopulation;
+import com.trojia.client.scenario.IdentityRegistry;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ReasonCode;
@@ -73,7 +74,7 @@ class SpellInputTest {
         ToastQueue toasts = new ToastQueue();
         SkillTrackRegistry tracks = wiredTracks();
 
-        SpellInput.applyCast(playMode, registry, SPELLS, tracks,
+        SpellInput.applyCast(playMode, registry, IdentityRegistry.EMPTY, SPELLS, tracks,
                 SPELLS.rawOf("warm_the_hands"), toasts, tracker(registry, playMode, toasts,
                         tracks), 100L);
 
@@ -90,8 +91,8 @@ class SpellInputTest {
         SkillTrackRegistry tracks = wiredTracks();
         int deep = SPELLS.rawOf("sap_the_step");
 
-        SpellInput.applyCast(playMode, registry, SPELLS, tracks, deep, toasts,
-                tracker(registry, playMode, toasts, tracks), 100L);
+        SpellInput.applyCast(playMode, registry, IdentityRegistry.EMPTY, SPELLS, tracks, deep,
+                toasts, tracker(registry, playMode, toasts, tracks), 100L);
 
         assertEquals(Actor.NONE, caster.playerSpellRaw(),
                 "an unread crafting must not arm an attempt the sim will only refuse");
@@ -112,7 +113,7 @@ class SpellInputTest {
         SkillTrackRegistry tracks = wiredTracks();
         caster.setCastUntilTick(1_600L);
 
-        SpellInput.applyCast(playMode, registry, SPELLS, tracks,
+        SpellInput.applyCast(playMode, registry, IdentityRegistry.EMPTY, SPELLS, tracks,
                 SPELLS.rawOf("steady_the_hand"), toasts,
                 tracker(registry, playMode, toasts, tracks), 1_000L);
 
@@ -135,7 +136,8 @@ class SpellInputTest {
         assertNull(SpellAvailability.refusal(registry, SPELLS, tracks, caster, steady, 100L),
                 "a self crafting a novice knows can never be refused for want of a target");
         SpellFeedbackTracker feedback = tracker(registry, playMode, toasts, tracks);
-        SpellInput.applyCast(playMode, registry, SPELLS, tracks, steady, toasts, feedback, 100L);
+        SpellInput.applyCast(playMode, registry, IdentityRegistry.EMPTY, SPELLS, tracks, steady,
+                toasts, feedback, 100L);
 
         assertEquals(steady, caster.playerSpellRaw(), "the intent is armed for the sim");
         assertEquals(caster.id(), caster.playerSpellTargetId(), "on the caster's own body");
