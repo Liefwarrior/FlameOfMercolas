@@ -162,6 +162,33 @@ public final class CheckLineFormatter {
     }
 
     /**
+     * The crafting check's visible dice (Simple Magic): {@code [Linkcraft 3 vs Warm the Hands
+     * 5: 55% -- THE LINK HOLDS]} through the shared {@link #contestLine} shape, odds from the
+     * sim's own {@link SkillChecks#linkcraftPermille} at narration time (the honesty note — the
+     * attempt's own XP may already have nudged the level the line shows).
+     *
+     * <p>The opposition clause names the crafting and the difficulty it was ACTUALLY measured
+     * against — the authored base plus what {@code SpellCost} charged for the distance, the
+     * transfer and the spread — because that computed number is the whole balance argument and
+     * a player who cannot see it cannot argue with it. Degrades to a numberless tag when the
+     * skill table is unwired.
+     *
+     * @param spellName the crafting's display name
+     * @param resist    the resist the sim rolled against ({@code SpellCost.resistFor})
+     */
+    public static String spellLine(SkillTrackRegistry tracks, int casterId, String spellName,
+            int resist, boolean worked) {
+        String outcome = worked ? "THE LINK HOLDS" : "THE LINK SLIPS";
+        if (!tracks.isWired() || tracks.linkcraftRaw() == Actor.NONE) {
+            return "[crafting -- " + outcome + "]";
+        }
+        return contestLine(tracks.skills().get(tracks.linkcraftRaw()).displayName(),
+                tracks.level(casterId, tracks.linkcraftRaw()),
+                spellName + " " + resist,
+                SkillChecks.linkcraftPermille(tracks, casterId, resist), outcome);
+    }
+
+    /**
      * The Watch-lenience line (Sprint 5 — the justice pipeline's first skill read, on the
      * played soul): {@code [the Watch weighs the face you wear: standing -20, Streetwise
      * 12 -- WARNED]}. INPUTS-ONLY by design: the warn-vs-fine threshold formula is

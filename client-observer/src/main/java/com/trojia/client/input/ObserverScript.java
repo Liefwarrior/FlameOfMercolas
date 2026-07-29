@@ -38,6 +38,7 @@ import java.util.Locale;
  *   98 eat               # the E verb (Sprint 4 played-actor eat)
  *   99 fish              # the R verb (Sprint 6 played-actor cast)
  *   99 climb=up          # the Up/Down climb keys (Sprint 4 the climb); up|down
+ *   99 cast=warm_the_hands # a click on the craftings bar; the arg is the spell's raws id
  *  100 journal           # toggle the J journal pane
  *  101 plates            # toggle hold-N nameplates
  *  110 zoom=4            # camera zoom (clamped)
@@ -51,7 +52,7 @@ public final class ObserverScript {
     /** The verb vocabulary. Unknown verbs fail the parse loudly (never silently skipped). */
     public enum Verb {
         SELECT, FOLLOW, PLAY, HOLD, TALK, TOPIC, PICKPOCKET, EAT, CLIMB, JOURNAL, MASTERS,
-        FILTER, PLATES, ZOOM, CENTER, Z, SHOT, FISH, CULL, SELL
+        FILTER, PLATES, ZOOM, CENTER, Z, SHOT, FISH, CULL, SELL, CAST
     }
 
     /** One scripted action: the frame it fires on, its verb, and the raw argument text. */

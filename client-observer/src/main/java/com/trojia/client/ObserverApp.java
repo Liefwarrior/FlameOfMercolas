@@ -35,6 +35,7 @@ import com.trojia.client.input.ClimbInput;
 import com.trojia.client.input.EatInput;
 import com.trojia.client.input.CullInput;
 import com.trojia.client.input.SellInput;
+import com.trojia.client.input.SpellInput;
 import com.trojia.client.input.FishInput;
 import com.trojia.client.input.InspectorInput;
 import com.trojia.client.input.ObserverScript;
@@ -48,6 +49,8 @@ import com.trojia.client.inspect.EatFeedbackTracker;
 import com.trojia.client.inspect.EventLog;
 import com.trojia.client.inspect.EventLogTracker;
 import com.trojia.client.inspect.CullFeedbackTracker;
+import com.trojia.client.inspect.SpellBar;
+import com.trojia.client.inspect.SpellFeedbackTracker;
 import com.trojia.client.inspect.SellFeedbackTracker;
 import com.trojia.client.inspect.FishFeedbackTracker;
 import com.trojia.client.inspect.InspectorState;
@@ -66,6 +69,7 @@ import com.trojia.client.render.AmbientLight;
 import com.trojia.client.render.DepthVision;
 import com.trojia.client.render.FishingSpotRenderer;
 import com.trojia.client.render.InspectorRenderer;
+import com.trojia.client.render.SpellBarRenderer;
 import com.trojia.client.render.JournalRenderer;
 import com.trojia.client.render.LampGlowMap;
 import com.trojia.client.render.NameplateRenderer;
@@ -191,6 +195,12 @@ public final class ObserverApp extends ApplicationAdapter {
     private EatFeedbackTracker eatFeedbackTracker;
     private FishFeedbackTracker fishFeedbackTracker;
     private CullFeedbackTracker cullFeedbackTracker;
+    /** Simple Magic: the craftings bar's outcome narration + its one-slot X memory. */
+    private SpellFeedbackTracker spellFeedbackTracker;
+    private final SpellInput.LastCast lastCast = new SpellInput.LastCast();
+    private final SpellBarRenderer spellBarRenderer = new SpellBarRenderer();
+    /** This frame's craftings-bar layout, recomputed every frame from the viewport. */
+    private java.util.List<SpellBar.Button> spellButtons = java.util.List.of();
     private SellFeedbackTracker sellFeedbackTracker;
     private ToastRenderer toastRenderer;
     // Sprint 2 "walk up and talk": the speech panel + the theft feedback loop.
@@ -453,6 +463,12 @@ public final class ObserverApp extends ApplicationAdapter {
             // tick; this tracker toasts the outcome reason + the cull-check line.
             this.cullFeedbackTracker = new CullFeedbackTracker(population.registry(), toasts,
                     () -> playMode.playedActorId(), population.system().skillTracks());
+            // Crafting narration (Simple Magic): a press on the craftings bar resolves
+            // sim-side next tick; this tracker toasts the outcome, what it did, and the
+            // linkcraft check line.
+            this.spellFeedbackTracker = new SpellFeedbackTracker(population.registry(), toasts,
+                    () -> playMode.playedActorId(), population.system().skillTracks(),
+                    population.system().spells());
             // Counter-sale narration (S8): the played soul's B sale resolves sim-side next
             // tick; this tracker toasts sold / nobody-buying.
             this.sellFeedbackTracker = new SellFeedbackTracker(population.registry(), toasts,
@@ -479,6 +495,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 eatFeedbackTracker.afterTick(tick);
                 fishFeedbackTracker.afterTick(tick);
                 cullFeedbackTracker.afterTick(tick);
+                spellFeedbackTracker.afterTick(tick);
                 sellFeedbackTracker.afterTick(tick);
                 lenienceFeedbackTracker.afterTick(tick);
                 mastersSnapshot.afterTick(tick);
@@ -565,9 +582,19 @@ public final class ObserverApp extends ApplicationAdapter {
         TimeControlInput.poll(driver);
         boolean escConsumedByTalk = false;
         if (inspector != null) {
+            // The CRAFTINGS BAR (Simple Magic) polls FIRST: a click that lands on a button
+            // must never also reselect the tile behind it. The layout is this frame's, so the
+            // hit rectangles are exactly the ones drawn.
+            spellButtons = SpellBar.layout(population.system().spells(),
+                    camera.viewportWidthPx(), camera.viewportHeightPx(),
+                    inspector.hasSelection());
+            boolean clickConsumedBySpellBar = SpellInput.poll(playMode, population.registry(),
+                    population.system().spells(), population.system().skillTracks(),
+                    spellButtons, toasts, spellFeedbackTracker, driver.currentTick(),
+                    camera.viewportHeightPx(), lastCast);
             boolean clickConsumedByPlayMode = PlayModeInput.poll(playMode, inspector, camera,
                     population.registry(), zLevel.z());
-            if (!clickConsumedByPlayMode) {
+            if (!clickConsumedByPlayMode && !clickConsumedBySpellBar) {
                 // Depth-aware click-to-inspect (S4 EPIC): same-z actor wins; an empty tile
                 // falls through to the visible below-z actor. Play-mode verb picks above
                 // stay same-z (reach realism — the lead's ruling).
@@ -741,6 +768,16 @@ public final class ObserverApp extends ApplicationAdapter {
         if (inspectorRenderer != null) {
             inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());
         }
+        if (population != null && !spellButtons.isEmpty()) {
+            // The craftings bar, drawn after the sheet so it can dock against its edge.
+            spellBarRenderer.draw(batch, font, icons, population.system().spells(),
+                    population.system().skillTracks(), population.registry(),
+                    population.system().activeEffects(),
+                    playMode != null && playMode.active() ? playMode.playedActorId()
+                            : com.trojia.sim.actor.Actor.NONE,
+                    spellButtons, camera.viewportWidthPx(), camera.viewportHeightPx(),
+                    inspector != null && inspector.hasSelection(), driver.currentTick());
+        }
         if (nameplateRenderer != null) {
             // Hover nameplate at the live cursor; hold N to plate every on-screen actor
             // (or the script's `plates` toggle — the tape has no keys to hold).
@@ -897,6 +934,10 @@ public final class ObserverApp extends ApplicationAdapter {
                         cullFeedbackTracker, driver.currentTick());
                 case SELL -> SellInput.applySell(playMode, population.registry(), toasts,
                         sellFeedbackTracker);
+                case CAST -> SpellInput.applyCast(playMode, population.registry(),
+                        population.system().spells(), population.system().skillTracks(),
+                        population.system().spells().rawOf(action.args().trim()),
+                        toasts, spellFeedbackTracker, driver.currentTick());
             }
         }
     }
