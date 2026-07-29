@@ -200,7 +200,7 @@ class PlaceSignWardProofTest {
     @Test
     void everySignedPlaceNamesItselfWhenYouPointAtItsOwnMark() {
         List<PlaceSign> signs = wardSigns();
-        assertTrue(signs.size() >= 60, "the whole ward roster: " + signs.size());
+        assertTrue(signs.size() >= 79, "the whole ward roster: " + signs.size());
         List<String> lies = new java.util.ArrayList<>();
         for (PlaceSign sign : signs) {
             for (boolean playing : new boolean[] {false, true}) {

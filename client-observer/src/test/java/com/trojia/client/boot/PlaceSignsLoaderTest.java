@@ -174,8 +174,8 @@ class PlaceSignsLoaderTest {
         long doors = signs.stream().filter(s -> s.kind() == PlaceSign.Kind.DOOR).count();
         long ways = signs.stream().filter(s -> s.kind() == PlaceSign.Kind.WAY).count();
         assertEquals(39, doors, () -> "the ward's authored buildings, from " + tmx);
-        assertEquals(26, ways, () -> "the ward's authored streets and waterfront, from " + tmx);
-        assertEquals(65, signs.size());
+        assertEquals(40, ways, () -> "the ward's authored streets and waterfront, from " + tmx);
+        assertEquals(79, signs.size());
         assertTrue(signs.stream().anyMatch(s -> "Tarwalk".equals(s.place())));
         assertTrue(signs.stream().anyMatch(s -> "The Fishbone Pier".equals(s.place())));
         assertTrue(signs.stream().anyMatch(s -> "The Weighhouse".equals(s.place())));

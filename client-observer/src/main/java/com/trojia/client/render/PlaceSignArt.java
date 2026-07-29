@@ -172,13 +172,14 @@ public final class PlaceSignArt {
      * hover nameplate every time, and on the HUD block and an open inspector sheet whenever
      * the named place was under them).
      *
-     * <p>Five placements are tried in a fixed order — above the anchor tile (the NES default,
-     * and where it stays whenever it can), then below, then right, then left, then parked at
-     * the foot of the screen — and each is clamped on screen before it is judged. The first
-     * that touches no keep-out rect wins. If the screen is so crowded that every placement
-     * overlaps something, the one that covers the LEAST is used: a box that must overlap still
-     * has to be readable, and picking deterministically beats flickering between two bad
-     * choices frame to frame.
+     * <p>Six placements are tried in a fixed order — above the anchor tile (the NES default,
+     * and where it stays whenever it can), then below, then right, then left, then the top
+     * centre (the ward's HUD block sits top-LEFT and the inspector column top-RIGHT, so the
+     * middle of the top edge is usually clear), then parked at the foot of the screen — and
+     * each is clamped on screen before it is judged. The first that touches no keep-out rect
+     * wins. If the screen is so crowded that every placement overlaps something, the one that
+     * covers the LEAST is used: a box that must overlap still has to be readable, and picking
+     * deterministically beats flickering between two bad choices frame to frame.
      *
      * @param anchorCentreX centre x of the attention tile
      * @param anchorTopY    top edge (y-up) of the attention tile
@@ -194,6 +195,7 @@ public final class PlaceSignArt {
             {anchorCentreX + LIFT_PX, anchorBottomY + (anchorTopY - anchorBottomY) / 2f - h / 2f},
             {anchorCentreX - LIFT_PX - w,
                 anchorBottomY + (anchorTopY - anchorBottomY) / 2f - h / 2f},
+            {viewportW / 2f - w / 2f, viewportH - h - SCREEN_MARGIN_PX},
             {viewportW / 2f - w / 2f, SCREEN_MARGIN_PX},
         };
         float[] best = null;
