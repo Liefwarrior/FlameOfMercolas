@@ -134,6 +134,22 @@
       "secret": false
     },
     {
+      "id": "watch.nightwatch",
+      "goalKind": "PATROL_ROUTE",
+      "priority": 220,
+      "rhythmWindow": [12000, 24000],
+      "rhythmBonus": 60,
+      "workTicksPerUnit": 40,
+      "unitsToComplete": 5,
+      "trainsSkill": "streetwise",
+      "trainCp": 24,
+      "dutyPerUnit": 200,
+      "renew": { "mode": "IMMEDIATE", "cooldownTicks": 0 },
+      "assign": { "militia_watch": 100 },
+      "defaultFor": [],
+      "secret": false
+    },
+    {
       "id": "clergy.shepherd",
       "goalKind": "ALMS_CYCLE",
       "priority": 250,

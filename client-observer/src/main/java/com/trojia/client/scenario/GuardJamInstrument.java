@@ -74,6 +74,7 @@ final class GuardJamInstrument {
     private final int n;
     private final Actor.WalkabilityQuery walk;
     private final int patrolJobOrdinal;
+    private final com.trojia.sim.actor.job.JobRegistry jobs;
 
     // ---- pair accumulators, dense over the ordered pair (i,j), i<j -------------------
     private final long[] pairAdjacent;
@@ -92,8 +93,10 @@ final class GuardJamInstrument {
     private final byte[] prevActing;
     private final long[] guardTicks;
     private final long[] blockedTicks;
-    private final long[] nightTicks;
-    private final long[] nightAtHomeTicks;
+    private final long[] offShiftTicks;
+    private final long[] offShiftAtHomeTicks;
+    private final long[] onStreetTicks;
+    private final boolean[] nightRoster;
     private final long[] flipsThisWindow;
     private final long[] flipsWorstWindow;
     private final List<java.util.HashSet<Integer>> coverageCells;
@@ -114,11 +117,13 @@ final class GuardJamInstrument {
     private final long coverageWindowStart;
 
     GuardJamInstrument(ActorRegistry registry, List<Integer> watchIds,
-            Actor.WalkabilityQuery walk, int patrolJobOrdinal, long coverageWindowStart) {
+            Actor.WalkabilityQuery walk, int patrolJobOrdinal,
+            com.trojia.sim.actor.job.JobRegistry jobs, long coverageWindowStart) {
         this.watchIds = watchIds;
         this.n = watchIds.size();
         this.walk = walk;
         this.patrolJobOrdinal = patrolJobOrdinal;
+        this.jobs = jobs;
         this.coverageWindowStart = coverageWindowStart;
         this.pairAdjacent = new long[n * n];
         this.pairFrozen = new long[n * n];
@@ -134,8 +139,10 @@ final class GuardJamInstrument {
         this.prevActing = new byte[n];
         this.guardTicks = new long[n];
         this.blockedTicks = new long[n];
-        this.nightTicks = new long[n];
-        this.nightAtHomeTicks = new long[n];
+        this.offShiftTicks = new long[n];
+        this.offShiftAtHomeTicks = new long[n];
+        this.onStreetTicks = new long[n];
+        this.nightRoster = new boolean[n];
         this.flipsThisWindow = new long[n];
         this.flipsWorstWindow = new long[n];
         this.coverageCells = new ArrayList<>(n);
@@ -143,6 +150,8 @@ final class GuardJamInstrument {
             Actor a = registry.get(watchIds.get(i));
             prevCell[i] = a.cell();
             prevActing[i] = acting(a);
+            nightRoster[i] = a.jobOrdinal() >= 0
+                    && jobs.get(a.jobOrdinal()).worksThroughTheNight();
             coverageCells.add(new java.util.HashSet<>());
         }
     }
@@ -176,23 +185,37 @@ final class GuardJamInstrument {
             cell[i] = a.cell();
             frozen[i] = cell[i] == prevCell[i];
             onPatrolJob[i] = a.jobOrdinal() == patrolJobOrdinal;
-            // ON DUTY = the shift window is open AND the soul is not standing on its own
-            // home cell. Adjacency between two souls off duty is the bake's own doing --
-            // #371/#372/#373 share a bunkroom, #378/#379 share a guardhouse -- and counting
-            // a night of sleep as a "wedge" would make the wedge metric unpassable by
-            // construction and would reward a build whose guards stopped going home.
-            onDuty[i] = day && !(a.homeId() != Actor.NONE
-                    && cell[i] == homes.get(a.homeId()).homeCell());
+            boolean atHome = a.homeId() != Actor.NONE
+                    && cell[i] == homes.get(a.homeId()).homeCell();
+            // ON DUTY = this soul's OWN shift window is open AND it is not standing on its
+            // own home cell. Read off the bound job's rhythm window rather than assumed to
+            // be daylight, because since the night roster landed the two are no longer the
+            // same thing for every soul: the three watch.nightwatch guards are on duty at
+            // exactly the hours the other sixteen are asleep. For a day guard this is
+            // bit-for-bit the old "day &&" test -- watch.patrol's window IS [0,12000).
+            // Adjacency between two souls OFF duty is the bake's own doing (#371/#372/#373
+            // share a bunkroom, #378/#379 share a guardhouse) and counting a night of sleep
+            // as a "wedge" would make the metric unpassable by construction and would reward
+            // a build whose guards stopped going home.
+            boolean onShift = onShift(a, tod);
+            onDuty[i] = onShift && !atHome;
+            if (onDuty[i]) {
+                onStreetTicks[i]++;
+            }
             guardTicks[i]++;
             if (a.goalWorkTicks() >= BLOCKED_THRESHOLD) {
                 blockedTicks[i]++;
             }
             byte acting = acting(a);
-            if (!day) {
-                nightTicks[i]++;
-                if (a.homeId() != Actor.NONE
-                        && cell[i] == homes.get(a.homeId()).homeCell()) {
-                    nightAtHomeTicks[i]++;
+            // The settle/flip metrics are stated over each soul's OWN off-shift window --
+            // the hours it is supposed to be in bed. That is where the oscillation lived and
+            // it is the only window in which "at home" is the right answer. Identical to the
+            // old night-window reading for the sixteen day guards; for a night-roster soul it
+            // correctly asks whether it settles by DAY.
+            if (!onShift) {
+                offShiftTicks[i]++;
+                if (atHome) {
+                    offShiftAtHomeTicks[i]++;
                 }
                 if (acting != ACTING_OTHER && prevActing[i] != ACTING_OTHER
                         && acting != prevActing[i]) {
@@ -304,6 +327,11 @@ final class GuardJamInstrument {
         return ACTING_OTHER;
     }
 
+    /** Whether {@code a}'s own bound job puts it on shift at this tick-of-day. */
+    private boolean onShift(Actor a, long tod) {
+        return a.jobOrdinal() >= 0 && jobs.get(a.jobOrdinal()).params().inWindow(tod);
+    }
+
     private static int chebyshev(int cellA, int cellB) {
         return com.trojia.sim.actor.ActorGeometry.chebyshev(cellA, cellB);
     }
@@ -387,6 +415,7 @@ final class GuardJamInstrument {
         printPinchTable();
         printRouteWaypointPinchAudit(DocksPopulation.patrolRoutes(), walk);
         printCoverage(ticks);
+        printNightRoster();
         printOscillation();
         printBlocked();
         System.out.println("============================================================================");
@@ -562,19 +591,49 @@ final class GuardJamInstrument {
             if (flips > FLIP_CAP) {
                 overCap++;
             }
-            long homePermille = permille(nightAtHomeTicks[i], nightTicks[i]);
+            long homePermille = permille(offShiftAtHomeTicks[i], offShiftTicks[i]);
             if (homePermille < minHomePermille) {
                 minHomePermille = homePermille;
                 minHomeId = i;
             }
         }
-        System.out.println("  NIGHT OSCILLATION (RETURN_HOME<->GOAL_PURSUE acting-policy flips)");
-        System.out.println("    worst flips in any " + FLIP_WINDOW_TICKS + "-tick night window: "
+        System.out.println("  OFF-SHIFT OSCILLATION (RETURN_HOME<->GOAL_PURSUE acting-policy"
+                + " flips, counted in each soul's OWN off-shift window -- the night for a day"
+                + " guard, the day for the night roster)");
+        System.out.println("    worst flips in any " + FLIP_WINDOW_TICKS + "-tick window: "
                 + worstFlips + (worstId < 0 ? "" : " (#" + watchIds.get(worstId) + ")")
                 + "   cap=" + FLIP_CAP + ";  souls over cap: " + overCap + "/" + n);
         System.out.println("    least-settled soul: " + (minHomeId < 0 ? "n/a"
                 : "#" + watchIds.get(minHomeId)) + " at home for " + minHomePermille
-                + " permille of the night window   target >=800");
+                + " permille of its off-shift window   target >=800");
+    }
+
+    /**
+     * The night roster's own line: who draws it, and whether the ward is actually manned
+     * after dark. A skeleton watch that never leaves its bunk is the same unpoliced night
+     * slice 3 shipped, just with a job id on it, so this prints the ON-STREET tick share
+     * rather than merely naming the roster.
+     */
+    private void printNightRoster() {
+        System.out.println("  NIGHT ROSTER (watch.nightwatch: on shift while the ward sleeps)");
+        int rostered = 0;
+        for (int i = 0; i < n; i++) {
+            if (!nightRoster[i]) {
+                continue;
+            }
+            rostered++;
+            System.out.println("    #" + watchIds.get(i) + "  on-shift ticks "
+                    + (guardTicks[i] - offShiftTicks[i]) + " of " + guardTicks[i]
+                    + ";  on-street (on shift, off its own home cell) " + onStreetTicks[i]
+                    + " = " + permille(onStreetTicks[i], guardTicks[i] - offShiftTicks[i])
+                    + " permille of its shift   target >=700");
+        }
+        if (rostered == 0) {
+            System.out.println("    (none -- the ward is unpoliced between dusk and dawn)");
+        }
+        System.out.println("    souls on the night roster: " + rostered + "/" + n
+                + "   (a SKELETON watch by design: most of the Watch stays home, which is"
+                + " the oscillation fix)");
     }
 
     private void printBlocked() {

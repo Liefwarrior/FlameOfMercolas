@@ -1427,6 +1427,11 @@ public final class DocksPopulation implements ScenarioPopulation {
         return worldCell(CLERKS_DESK, ZA);
     }
 
+    /** The C2 roof-deck watch post (ARREST-SPEC addendum), world-packed. */
+    public static int c2RoofWatchpostCell() {
+        return worldCell(C2_ROOF_WATCHPOST, ZC);
+    }
+
     /** Fenner's strongbox cell (S4 "The Widow's Paper"), world-packed. */
     public static int fennerStrongboxCell() {
         return worldCell(FENNER_STRONGBOX, ZA);
@@ -1911,10 +1916,17 @@ public final class DocksPopulation implements ScenarioPopulation {
                     PATROL_TARWALK_MID, WATCH_BOND_POST};   // original spawn order kept
             int[][] patrollerWaypoints = {PATROL_TARWALK[2], PATROL_QUAY[1],
                     PATROL_TARWALK[3], PATROL_ROPEWYND[4]};
+            Actor quayPatroller = null;
+            Actor tarwalkMidPatroller = null;
             for (int i = 0; i < patrollerPosts.length; i++) {
                 Actor patroller = spawn(MilitiaWatch.TYPE, patrollerPosts[i], ZA);
                 soloHome(patroller);
                 patroller.setAnchorCell(worldCell(patrollerWaypoints[i], ZA));
+                if (i == 1) {
+                    quayPatroller = patroller; // the Tarwalk-west post, walking the quay apron
+                } else if (i == 2) {
+                    tarwalkMidPatroller = patroller; // the Tarwalk-mid post, walking the Tarwalk
+                }
             }
             // K34 Guardhouse — the Rise's FOOT garrison (pairs with K21 at the head, per
             // gazetteer 2.4's own stated intent): two Watch quartered at the new post.
@@ -1934,6 +1946,50 @@ public final class DocksPopulation implements ScenarioPopulation {
             Actor roofWatch = spawn(MilitiaWatch.TYPE, C2_ROOF_WATCHPOST, ZC);
             soloHome(roofWatch);
             roofWatch.setAnchorCell(worldCell(C2_ROOF_WATCHPOST, ZC));
+
+            // ---- THE NIGHT ROSTER (S7 round 2). Three of the nineteen, drawn by the
+            // guardhouse and posted to the dark hours; the other sixteen keep the day shift
+            // and keep going home at dusk, which is the oscillation fix and is not negotiable.
+            //
+            // Slice 3 sent ALL of them home for the whole 12,000-tick night, and because
+            // checkArrestExposure gates on a Watch being nearby, that quietly made arrest-by-
+            // exposure a daytime-only mechanic: pickpocket attempts rose 150 -> 186, catch
+            // rate fell 31.3% -> 23.7%, Royals lifted 484 -> 359, Skyrunner escalations 1 -> 0.
+            // The ward should feel THINLY policed after dark, not unpoliced.
+            //
+            // These three are chosen, not sampled — no "every third id" arithmetic:
+            //
+            //   the ROOF WATCH is the night sergeant. It is the one Watch in the ward posted
+            //   against the Skyrunners (ARREST-SPEC addendum), and villain.skyrunner's rhythm
+            //   window is [18000,24000) -- so the single soul with a standing brief against
+            //   roof-runners was asleep through every minute of their working shift. Of all
+            //   nineteen roster lines this was the plainly wrong one.
+            //
+            //   the QUAY HAND, off the Tarwalk-west post, keeps route 1 -- the berth apron
+            //   and the water stair. The quay belongs to the sailors by day and to whoever
+            //   wants it by night; that is the beat worth walking after dark.
+            //
+            //   the TARWALK HAND, off the Tarwalk-mid post, keeps route 0 -- the ward's main
+            //   drag, and the one beat that already carries two men, so the night costs the
+            //   day only half of a doubled beat rather than all of a single one.
+            //
+            // Two other souls were tried in that third slot and BOTH were rejected on
+            // measurement, for the same reason: a night-roster soul sleeps at its post
+            // through the working day, and a K21 soul asleep in the K21 hall parks a body
+            // the day sergeant cannot shove (S6: a guard never shoves an on-duty guard) in
+            // the middle of his own route. With the notice-board hand rostered, Sergeant
+            // Vess covered 12 distinct cells in the final day; with the Rise's second man
+            // rostered, 13. Both against 367 before. The rule that came out of it: never
+            // roster a soul whose home shares a hall with a route another guard walks.
+            //
+            // They are NOT working a double: watch.nightwatch's window is [12000,24000) and
+            // its pursue takes slice 3's off-shift branch by DAY, so each sleeps through the
+            // working day exactly as a day guard sleeps through the night. And none of the
+            // three lives or beats inside a restricted zone, so moving them off watch.patrol
+            // cannot turn a guard into a trespasser in its own guardhouse or bank hall.
+            assignJob(roofWatch, Job.Watch.NightWatch.ID);
+            assignJob(quayPatroller, Job.Watch.NightWatch.ID);
+            assignJob(tarwalkMidPatroller, Job.Watch.NightWatch.ID);
 
             // ===================== K36 THE BANK + SHOP GUARDS (Phase-1 living-docks) ===========
             // The ward's bank (K36): a Shopkeeper banker living/working at the teller counter and

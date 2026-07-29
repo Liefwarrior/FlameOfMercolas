@@ -23,12 +23,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 final class JobTrainingCommittedTest {
 
-    /** The agreed Sprint-5 (+S6 carter/fisher) job → skill training map, in jobs.json order. */
+    /** The agreed Sprint-5 (+S6 carter/fisher, +S7 night roster) map, in jobs.json order. */
     private static final Map<String, String> EXPECTED_SKILL = Map.ofEntries(
             Map.entry("serf.farmer", "fieldcraft"),
             Map.entry("serf.laborer", "kit_keeping"),
             Map.entry("serf.carter", "kit_keeping"),
             Map.entry("watch.patrol", "streetwise"),
+            Map.entry("watch.nightwatch", "streetwise"),
             Map.entry("clergy.shepherd", "channeling"),
             Map.entry("clergy.acolyte", "channeling"),
             Map.entry("maritime.sailor", "seacraft"),

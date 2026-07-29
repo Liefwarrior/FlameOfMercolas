@@ -144,6 +144,12 @@ public final class DocksActorsMain {
                 .get(DocksPopulation.SALTGATE_ROUTE_INDEX).get(2);
         int headArrivals = 0;
         int footArrivals = 0;
+        // Per-walker ends, so the report can assert what the ward totals cannot: that EVERY
+        // soul bound to the route works the climb, not just that somebody does.
+        List<int[]> riseEnds = new ArrayList<>();
+        for (int ignored = 0; ignored < riseWalkers.size(); ignored++) {
+            riseEnds.add(new int[2]);
+        }
         long stairwellShoves = 0;
         long seenShoves = 0;
 
@@ -176,7 +182,8 @@ public final class DocksActorsMain {
         com.trojia.sim.actor.Actor.WalkabilityQuery jamWalk =
                 c -> com.trojia.sim.world.Walkability.isWalkable(jamCursor.moveTo(c));
         GuardJamInstrument guardJam = new GuardJamInstrument(registry, watchIds, jamWalk,
-                jobs.ordinalOf(Job.Watch.Patrol.ID), Math.max(0, ticks - DailyRhythm.DAY));
+                jobs.ordinalOf(Job.Watch.Patrol.ID), jobs,
+                Math.max(0, ticks - DailyRhythm.DAY));
         List<Integer> laborerIds = new ArrayList<>();
         for (int i = 0; i < registry.size(); i++) {
             Job job = registry.get(i).jobOrdinal() >= 0
@@ -226,13 +233,16 @@ public final class DocksActorsMain {
             // S4 climb observation: the Rise walkers' band trail + waypoint arrivals, and
             // the stairwell shove funnel (fresh shove rows within chebyshev 2 of a
             // connector endpoint on either band).
-            for (int id : riseWalkers) {
+            for (int w = 0; w < riseWalkers.size(); w++) {
+                int id = riseWalkers.get(w);
                 int cell = registry.get(id).cell();
                 riseZTicks.get(id).merge(PackedPos.z(cell), 1, Integer::sum);
                 if (cell == riseHead) {
                     headArrivals++;
+                    riseEnds.get(w)[0]++;
                 } else if (cell == riseFoot) {
                     footArrivals++;
+                    riseEnds.get(w)[1]++;
                 }
             }
             var shoves = population.system().shoveLog();
@@ -314,7 +324,7 @@ public final class DocksActorsMain {
         printJusticeReport(population, jobs);
         printDensityReport(population, maxCoOccupancy, routePairs, routeCells);
         printClimbReport(population, zLinks, spawnAudit, riseWalkers, riseZTicks,
-                headArrivals, footArrivals, stairwellShoves);
+                headArrivals, footArrivals, stairwellShoves, ticks, riseEnds);
         printProgressionReport(population);
         printTheftReport(population, identity);
         printBarkProof(population, identity, driver.currentTick());
@@ -838,7 +848,8 @@ public final class DocksActorsMain {
     private static void printClimbReport(DocksPopulation population, ZLinkTable zLinks,
             ZReachability spawnAudit, List<Integer> riseWalkers,
             Map<Integer, java.util.TreeMap<Integer, Integer>> riseZTicks,
-            int headArrivals, int footArrivals, long stairwellShoves) {
+            int headArrivals, int footArrivals, long stairwellShoves, long ticksRun,
+            List<int[]> riseEnds) {
         ActorRegistry registry = population.registry();
         System.out.println();
         System.out.println("================ THE CLIMB (S4: cross-z movement live) ======================");
@@ -879,10 +890,25 @@ public final class DocksActorsMain {
             visitedBothBands |= byZ.containsKey(19) && byZ.containsKey(20)
                     && byZ.containsKey(21); // world z 19/20/21 = map z:+11/+12/+13
         }
-        System.out.println("    head(z13) arrivals: " + headArrivals + ";  foot(z11) arrivals: "
-                + footArrivals + ";  a walker visited z11+z12+z13: " + visitedBothBands
-                + "  -> " + (visitedBothBands && headArrivals > 0 && footArrivals > 0
-                        ? "PASS" : "FAIL"));
+        // The verdict carries FLOORS now (SaltgateRiseProof): "at least one arrival" is a
+        // boolean, and a boolean printed PASS straight through a 50% throughput collapse.
+        boolean risePass = SaltgateRiseProof.passes(riseWalkers.size(), visitedBothBands,
+                riseEnds);
+        System.out.println("    head(z13) arrivals: " + headArrivals + " ("
+                + SaltgateRiseProof.per10k(headArrivals, ticksRun) + "/10k);  foot(z11): "
+                + footArrivals + " (" + SaltgateRiseProof.per10k(footArrivals, ticksRun)
+                + "/10k);  walkers " + riseWalkers.size() + " (floor "
+                + SaltgateRiseProof.WALKER_FLOOR + ")");
+        for (int w = 0; w < riseWalkers.size(); w++) {
+            System.out.println("    actor#" + riseWalkers.get(w) + " reached head "
+                    + riseEnds.get(w)[0] + " / foot " + riseEnds.get(w)[1]
+                    + "   (both must be > 0: a bound walker that never works the climb is"
+                    + " staffing on paper only)");
+        }
+        System.out.println("    a walker visited z11+z12+z13: " + visitedBothBands
+                + "  -> " + (risePass ? "PASS" : "FAIL")
+                + SaltgateRiseProof.verdictDetail(riseWalkers.size(), visitedBothBands,
+                        riseWalkers, riseEnds));
         System.out.println("  stairwell funnel: pushes within cheb<=2 of a connector: "
                 + stairwellShoves + " of " + population.system().pushCount()
                 + " total;  riot responses (district-wide): " + population.system().riotCount());

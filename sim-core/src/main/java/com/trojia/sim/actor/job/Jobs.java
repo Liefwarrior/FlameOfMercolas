@@ -36,6 +36,7 @@ public final class Jobs {
             new Registration(Job.Villain.Skyrunner.ID, Job.Villain.Skyrunner::new),
             new Registration(Job.FlameOfMerc.ID, (p, c) -> new Job.FlameOfMerc(p)),
             new Registration(Job.Watch.Patrol.ID, (p, c) -> new Job.Watch.Patrol(p)),
+            new Registration(Job.Watch.NightWatch.ID, (p, c) -> new Job.Watch.NightWatch(p)),
             new Registration(Job.Clergy.Shepherd.ID, (p, c) -> new Job.Clergy.Shepherd(p)),
             new Registration(Job.Clergy.Acolyte.ID, (p, c) -> new Job.Clergy.Acolyte(p)),
             new Registration(Job.Maritime.Sailor.ID, (p, c) -> new Job.Maritime.Sailor(p)),
