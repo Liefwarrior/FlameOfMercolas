@@ -798,6 +798,20 @@ final class GuardJamInstrument {
      * how many beat legs it actually finished. Round 2 shipped a stalled guard by reading
      * end-of-run totals; round 3 shipped a second by only checking the one it was told about.
      */
+    // VERIFICATION GAP (S7): this is the ward's SHARPEST stall detector and NOTHING CAN ASSERT IT.
+    // It computes, per 10,000-tick window, every watch actor that was on shift and arrived at zero
+    // beat legs -- the exact signature of a live-locked actor -- and then only PRINTS it. The
+    // quitter list is a local, the method is private and void, and `gradlew build` runs tests, not
+    // this soak. So CI cannot fail on an actor that has stopped working.
+    // EVIDENCE it matters: with both beats reverted to the pre-S7 stillness-only yield (the bug
+    // this sprint exists to fix, reintroduced in a throwaway worktree), this readout correctly
+    // named three quitters -- #372 #378 #379 -- and the soak exited 1, while the committed
+    // DocksSaltgateThroughputTest stayed GREEN. Round 2 shipped a stalled actor and round 3 shipped
+    // a second one precisely because end-of-run totals hide a mid-soak stall and only a
+    // human-directed adversarial pass caught either.
+    // FIX: return the quitter list (or expose it as a field) and assert it is empty from a
+    // committed test driving this instrument, so an actor that stops working fails the BUILD and
+    // not merely the report. Tracked as a follow-up task.
     private void printWorkOverTime() {
         System.out.println("  PER-SOUL BEAT WORK OVER TIME (A=legs ARRIVED at, Y=legs GIVEN UP,"
                 + " s=on-shift ticks in the window, c=distinct cells)");

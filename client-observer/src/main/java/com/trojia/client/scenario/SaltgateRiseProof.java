@@ -137,6 +137,18 @@ public final class SaltgateRiseProof {
      * a stopped-vs-working separator is unchanged, and a bar raised to sit just under whatever
      * the current branch happens to measure is how a proof starts flattering its own build.
      */
+    // VERIFICATION GAP (S7): this floor is too COARSE to catch a stall that starts inside the late
+    // window. The window is a whole DAY (LATE_WINDOW_TICKS = 24,000) and this floor asks for only 2
+    // arrivals at each end across all of it, so an actor can stop working for ~8,000 consecutive
+    // ticks and still clear the bar.
+    // EVIDENCE: with both beats reverted to the pre-S7 stillness-only yield, #372 stops in the
+    // 40k-50k window and the soak's own per-10,000-tick detector
+    // (GuardJamInstrument.printWorkOverTime) flags it -- but this proof passes, because #372's
+    // arrivals earned elsewhere in the same day carry it over a floor of 2. The horizon overlap
+    // that ALSO hid this is fixed (SOAK_HORIZON_TICKS, above); the granularity is not.
+    // FIX: evaluate the late guard over sub-windows of the day rather than the whole day, matching
+    // the instrument's 10,000-tick resolution, so an actor that goes quiet mid-window fails here.
+    // Tracked as a follow-up task alongside the GuardJamInstrument gap.
     public static final int LATE_PER_WALKER_END_FLOOR = 2;
 
     /** Arrivals per 10,000 ticks — reported for legibility, never used as a floor. */
