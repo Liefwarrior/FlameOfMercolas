@@ -653,6 +653,13 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeInt(actor.identity().presentedId());
         out.writeInt(actor.cell());
         out.writeByte(actor.facing());
+        // S7 round 4: the speed accumulator. It has gated every actor's movement since
+        // the mover landed and was never written, so a save/load silently re-phased the
+        // whole ward's stepping by up to speedTicksPerStep-1 ticks. The patrol yield now
+        // READS it (a cadence tick is not a wedge, see Actor#moveAccumTicks), which turns
+        // that re-phasing from a cosmetic drift into a behavioural one -- so it joins the
+        // persisted triad: written here, read in readActor, hashed in hashInto.
+        out.writeInt(actor.moveAccumTicks());
         for (Need need : Need.values()) {
             out.writeShort(actor.need(need));
         }
@@ -747,6 +754,7 @@ public final class ActorsSystem implements SimulationSystem {
         int presentedId = in.readInt();
         int cell = in.readInt();
         byte facing = in.readByte();
+        int moveAccumTicks = in.readInt();
         short[] needs = new short[Need.COUNT];
         for (int i = 0; i < Need.COUNT; i++) {
             needs[i] = in.readShort();
@@ -782,6 +790,7 @@ public final class ActorsSystem implements SimulationSystem {
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
         actor.setIdentity(new Persona(trueId, presentedId));
         actor.setFacing(facing);
+        actor.setMoveAccumTicks(moveAccumTicks);
         for (Need need : Need.values()) {
             actor.applyNeedDelta(need, needs[need.ordinal()] - actor.need(need));
         }
@@ -825,6 +834,7 @@ public final class ActorsSystem implements SimulationSystem {
             Actor actor = registry.get(i);
             sink.putInt(typeStats.ordinalOf(actor.typeId()));
             sink.putInt(actor.cell());
+            sink.putInt(actor.moveAccumTicks()); // step phase: behaviour-carrying since round 4
             for (Need need : Need.values()) {
                 sink.putShort(actor.need(need));
             }

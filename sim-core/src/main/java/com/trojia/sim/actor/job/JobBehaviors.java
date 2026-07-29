@@ -344,28 +344,28 @@ public final class JobBehaviors {
     }
 
     /**
-     * Ticks a patrol leg may stand completely still (blocked by a full cell it may not
-     * shove through — since Sprint 6 a guard never shoves an on-duty guard) before the
-     * beat YIELDS: it gives up the contested leg and advances to the next waypoint/corner,
-     * dissolving guard-vs-guard head-on jams by walking away instead of wrestling
-     * (Eli's bug 2 — "guards pushing each other... shouldn't last this long"). Sized
-     * well above the speed accumulator's every-other-tick no-move rhythm, so only a
-     * genuinely wedged guard yields.
+     * Failed step ATTEMPTS a patrol leg may make — standing still against a full cell it may
+     * not shove through (since Sprint 6 a guard never shoves an on-duty guard), or against a
+     * wall — before the beat YIELDS: it gives up the contested leg and advances to the next
+     * waypoint/corner, dissolving guard-vs-guard head-on jams by walking away instead of
+     * wrestling (Eli's bug 2 — "guards pushing each other... shouldn't last this long").
      *
-     * <p>Since round 3 this is the MEAN of the de-phased budget, not a per-soul constant:
-     * {@link #patrolStallBudget} spreads the real wait over 22..58 motionless ticks so that
-     * two guards wedged against each other cannot yield on the same tick. It stays the
-     * calibration point every other patrol budget is derived from.
+     * <p><b>Attempts, not ticks — S7 round 4.</b> S6 counted motionless TICKS, which at the
+     * Watch's {@code speedTicksPerStep = 2} means every second tick of the count was the speed
+     * accumulator's own no-move beat rather than anything to do with being blocked. Counting
+     * attempts is the same wait in wall-clock terms — 20 refused attempts IS S6's 40 motionless
+     * ticks for a speed-2 soul — while making the number mean what it says. See
+     * {@link #patrolStallBudget} for why the distinction is not cosmetic.
      */
-    public static final int PATROL_BLOCKED_YIELD_TICKS = 40;
+    public static final int PATROL_BLOCKED_YIELD_ATTEMPTS = 20;
 
     /**
-     * Ticks a route leg may keep STEPPING without ever getting closer to its waypoint before
-     * the beat yields — the progress-toward-goal budget, and the hole
-     * {@link #PATROL_BLOCKED_YIELD_TICKS} could not see.
+     * STEPS a leg may keep taking without ever getting closer to its target before the beat
+     * yields — the progress-toward-goal budget, and the hole {@link
+     * #PATROL_BLOCKED_YIELD_ATTEMPTS} could not see.
      *
-     * <p>S6's yield counts ticks spent standing <em>dead still</em>, and zeroes the instant the
-     * actor moves. Two souls meeting head-on in a 1-wide connector do not stand still: each
+     * <p>S6's yield counted ticks spent standing <em>dead still</em> and zeroed the instant the
+     * actor moved. Two souls meeting head-on in a 1-wide connector do not stand still: each
      * one's cached route goes through the other, the occupancy cap refuses the hop, the route
      * is dropped and replanned, and the pair shuffle back and forth stepping every tick
      * forever. Every one of those ticks reads as "moving, therefore fine" to a stillness
@@ -373,33 +373,39 @@ public final class JobBehaviors {
      * 15,000 and then spend the remaining 45,000 walking on the spot with no metric able to
      * say so. A LIVE-lock is not a dead-lock and needs its own clock.
      *
-     * <p>Sized for real detours, not for the pathological case. A route leg legitimately walks
-     * AWAY from its waypoint whenever the only door faces the wrong way or the only stair up
-     * stands behind the walker; at {@code speedTicksPerStep=2} the un-de-phased budget is 100
-     * cells of such walking (200 fruitless ticks, one step every other tick), far more than any
-     * leg on the authored routes needs and far less than a live-lock, which never ends at all.
-     * The per-soul de-phase ({@link #PATROL_STALL_DEPHASE}) spreads the real budget over
-     * {@code 110..290} ticks, i.e. 55..145 cells.
+     * <p>Sized for real detours, not for the pathological case: a leg legitimately walks AWAY
+     * from its target whenever the only door faces the wrong way or the only stair up stands
+     * behind the walker. 100 steps is 100 cells of such walking — 200 ticks at the Watch's
+     * speed — far more than any leg on the authored routes needs, and far less than a
+     * live-lock, which never ends at all. The per-soul de-phase ({@link
+     * #PATROL_STALL_DEPHASE}) spreads the real budget over 55..145 cells.
+     *
+     * <p><b>Round 3 set this budget and did not deliver it.</b> Charging the speed
+     * accumulator's no-move ticks at the dead-still weight capped the real detour tolerance at
+     * {@code budget / (weight + 1)} — about 33 cells — no matter what the constant said,
+     * because a detouring soul burned 6 units every 2 ticks where a wedged one burned 10. That
+     * is the arithmetic behind round 4's biggest behavioural change; it is measured, not
+     * argued: the median guard's daily coverage moved with it.
      */
-    public static final int PATROL_NO_PROGRESS_YIELD_TICKS = 200;
+    public static final int PATROL_NO_PROGRESS_YIELD_STEPS = 100;
 
     /**
-     * Stall weight of a DEAD-STILL tick, so one counter carries both budgets: a still tick is
-     * worth {@code PATROL_NO_PROGRESS_YIELD_TICKS / PATROL_BLOCKED_YIELD_TICKS} units and a
-     * stepping-but-not-closing tick is worth one, so the SAME scalar expresses S6's dead-still
-     * budget and the live-lock budget at once — no new persisted state.
+     * Stall weight of a REFUSED step attempt, so one counter carries both budgets: a refused
+     * attempt is worth {@code PATROL_NO_PROGRESS_YIELD_STEPS / PATROL_BLOCKED_YIELD_ATTEMPTS}
+     * units and a step that lands without closing is worth one, so the SAME scalar expresses
+     * S6's dead-still budget and the live-lock budget at once — no new persisted state.
      *
      * <p><b>S7 round 4 — the arithmetic, stated correctly.</b> The round-3 javadoc here claimed
-     * a wedged guard "still yields on its 40th motionless tick, bit-for-bit S6's number". That
-     * was never true of the shipped code: {@link #patrolStallBudget} de-phases the budget by
-     * soul id, so 40 is the MEAN, not the number. The honest statement is
-     * {@link #patrolStallBudget}'s: a wedged guard yields between its 22nd and its 58th
-     * motionless tick, its own id fixing which, averaging S6's 40; a live-locked one yields
-     * after 110..290 fruitless ticks. {@code GuardEtiquetteTest} now pins those exact bounds
-     * against the code that computes them, which the old divisibility assertion could not see.
+     * a wedged guard "still yields on its 40th motionless tick, bit-for-bit S6's number" and a
+     * live-locked one "on its 200th fruitless step". Neither was true of the shipped code. The
+     * de-phase made the first a mean rather than a number; and charging the speed accumulator's
+     * own no-move ticks at this weight made the second about 33 steps, because a detouring soul
+     * burned {@code weight + 1} units every two ticks. Both are now honest, and
+     * {@code GuardEtiquetteTest} measures the shipping functions over a band of ids rather than
+     * asserting a divisibility identity that could not see either error.
      */
     static final int PATROL_STILL_STALL_WEIGHT =
-            PATROL_NO_PROGRESS_YIELD_TICKS / PATROL_BLOCKED_YIELD_TICKS;
+            PATROL_NO_PROGRESS_YIELD_STEPS / PATROL_BLOCKED_YIELD_ATTEMPTS;
 
     /**
      * Deterministic de-phase band of the stall budget by soul id. Two guards wedged against
@@ -410,42 +416,62 @@ public final class JobBehaviors {
      * through the freed connector. Same discipline as {@link #selectRouteStart}'s corner
      * stagger: fixed arithmetic on the id, never a draw.
      *
-     * <p>37 is wider than the whole Watch roster (19 souls on consecutive ids), so no two
-     * guards in the ward share a phase at all — see {@link #patrolStallBudget} for why the
-     * band alone was not enough.
+     * <p>19 is the width of the Watch roster: every soul in the ward but one gets its own yield
+     * tick, and the single collision ({@code #371}/{@code #390}) is a pair who walk different
+     * wards and cannot wedge against each other. Wider bands buy nothing and cost spread — the
+     * budget is CENTRED on the band, so half of it is subtracted from every soul's patience.
      */
-    private static final int PATROL_STALL_DEPHASE = 37;
+    private static final int PATROL_STALL_DEPHASE = 19;
 
     /**
      * The de-phased stall budget, in stall UNITS, for one soul — the shared clock both beats
-     * yield on.
+     * yield on. 55..145 units: 11..29 refused attempts (22..58 motionless ticks at the Watch's
+     * {@code speedTicksPerStep = 2}, mean S6's 40), or 55..145 fruitless steps.
      *
      * <p><b>S7 round 4 — the de-phase used to be quantized away in the exact case it was
-     * written for.</b> Round 3 added the raw {@code floorMod(id, 37)} straight onto a budget
-     * whose dead-still ticks are worth {@link #PATROL_STILL_STALL_WEIGHT} = 5 units each, so
-     * ids one apart got budgets one UNIT apart — a fifth of a motionless tick, which rounds to
-     * nothing. Two consecutively-spawned guards wedged against each other (the garrison pair,
-     * the two Saltgate walkers: precisely the pairs that wedge) still yielded on the very same
-     * tick, both turned, and met again in lockstep. The de-phase is now denominated in the
-     * still-tick weight, so ids one apart are exactly ONE motionless tick apart and the
-     * lockstep cannot re-form.
+     * written for.</b> Round 3 added a raw {@code floorMod(id, 37)} straight onto a budget whose
+     * refused attempts are worth {@link #PATROL_STILL_STALL_WEIGHT} = 5 units each, so ids one
+     * apart got budgets one UNIT apart — a fifth of an attempt, which rounds to nothing. Two
+     * consecutively-spawned guards wedged against each other (the garrison pair, the two
+     * Saltgate walkers: precisely the pairs that wedge) still yielded on the very same tick,
+     * both turned, and met again in lockstep. The de-phase is now denominated in the attempt
+     * weight, so ids one apart are exactly ONE attempt apart and the lockstep cannot re-form.
      *
-     * <p>It is CENTRED on the band ({@code -DEPHASE/2 .. +DEPHASE/2}) rather than added on top,
-     * so the mean wait is still S6's 40 motionless ticks instead of drifting up to 58 — the
-     * regression {@code GuardEtiquetteTest} exists to stop. Range: 110..290 units = 22..58
-     * motionless ticks, or 110..290 fruitless stepping ticks. Pure integer arithmetic on the
-     * id; no draw, no state.
+     * <p>It is CENTRED on the band rather than added on top, so the mean wait stays S6's 40
+     * motionless ticks instead of drifting up — the regression {@code GuardEtiquetteTest}
+     * exists to stop. Pure integer arithmetic on the id; no draw, no state.
      */
     public static int patrolStallBudget(int actorId) {
-        return PATROL_NO_PROGRESS_YIELD_TICKS
+        return PATROL_NO_PROGRESS_YIELD_STEPS
                 + PATROL_STILL_STALL_WEIGHT
                         * (Math.floorMod(actorId, PATROL_STALL_DEPHASE) - PATROL_STALL_DEPHASE / 2);
     }
 
-    /** Motionless ticks {@code actorId} waits before yielding a wedged leg (22..58). */
-    public static int patrolMotionlessTicksToYield(int actorId) {
+    /** Refused step attempts {@code actorId} makes before yielding a wedged leg (11..29). */
+    public static int patrolRefusedAttemptsToYield(int actorId) {
         return (patrolStallBudget(actorId) + PATROL_STILL_STALL_WEIGHT - 1)
                 / PATROL_STILL_STALL_WEIGHT;
+    }
+
+    /**
+     * What this tick cost the leg's stall clock. A step that LANDED costs one (it went
+     * somewhere, just not closer); a step the world REFUSED costs
+     * {@link #PATROL_STILL_STALL_WEIGHT}; and a tick the speed accumulator swallowed before any
+     * step was attempted costs NOTHING, because standing still between steps is what walking at
+     * {@code speedTicksPerStep > 1} looks like and charging it is how round 3 turned a
+     * hundred-cell detour budget into a thirty-three-cell one.
+     *
+     * <p>The accumulator reads 0 after any tick in which a step was attempted (landed or not)
+     * and non-zero after a tick it gated, which is the whole test. A mover call that returned
+     * before reaching the accumulator at all — no cached route, or the bounded-search cooldown
+     * — leaves it wherever it was; both beats handle that case explicitly by skipping the leg
+     * on {@link Actor#routeFailedTo}, so it cannot masquerade as a free tick forever.
+     */
+    private static int stallCost(Actor self, int cellBefore) {
+        if (self.cell() != cellBefore) {
+            return 1;
+        }
+        return self.moveAccumTicks() == 0 ? PATROL_STILL_STALL_WEIGHT : 0;
     }
 
     /** Bounded retry budget for {@link #retargetPatrolCorner} — draw-free, fixed geometry. */
@@ -495,6 +521,14 @@ public final class JobBehaviors {
         if (self.cell() != target) {
             int before = self.cell();
             self.stepAlongRoute(target, false, ctx::isWalkable, ctx.occupancy());
+            if (self.routeFailedTo(target)) {
+                // The failed-leg skip the route beat has had since Pass 13, which this beat
+                // never had: a corner the bounded A* cannot reach is walked away from rather
+                // than stood in front of for the whole retry cooldown. Skipping is not
+                // arriving, so nothing is awarded.
+                advancePatrolLeg(self);
+                return;
+            }
             int mark = patrolMarkDistance(self);
             int distance = legDistance(self.cell(), target);
             if (mark == NO_PATROL_MARK || distance < mark) {
@@ -508,8 +542,7 @@ public final class JobBehaviors {
             // not shove through, or shuffling back and forth against a fellow guard in a
             // 1-wide gut — is abandoned after a bounded wait; the beat advances to its next
             // corner and walks away instead of wrestling.
-            int stall = self.goalWorkTicks()
-                    + (self.cell() == before ? PATROL_STILL_STALL_WEIGHT : 1);
+            int stall = self.goalWorkTicks() + stallCost(self, before);
             if (stall >= patrolStallBudget(self.id())) {
                 advancePatrolLeg(self);
             } else {
@@ -667,7 +700,7 @@ public final class JobBehaviors {
      * <p><b>S7 round 3 — the leg yields on PROGRESS, not on stillness.</b> The S6 yield asked
      * "did this soul move?", which is the wrong question for the jam it was written against: a
      * pair meeting head-on in a 1-wide connector both keep moving forever (see
-     * {@link #PATROL_NO_PROGRESS_YIELD_TICKS}). The leg now keeps a HIGH-WATER MARK — the
+     * {@link #PATROL_NO_PROGRESS_YIELD_STEPS}). The leg now keeps a HIGH-WATER MARK — the
      * cell from which it has come closest to this waypoint — and a step that beats the mark is
      * progress (clock zeroed, mark advanced); anything else, moving or not, is stall. The mark
      * rides {@code goalTarget}, which a route-bound patroller has always left unused ({@link
@@ -716,8 +749,7 @@ public final class JobBehaviors {
         // wait; the patrol advances to the next waypoint and walks away instead of wrestling.
         // One counter, two budgets (see PATROL_STILL_STALL_WEIGHT), on the persisted
         // goalWorkTicks this method already owned.
-        int stall = self.goalWorkTicks()
-                + (self.cell() == before ? PATROL_STILL_STALL_WEIGHT : 1);
+        int stall = self.goalWorkTicks() + stallCost(self, before);
         if (stall >= patrolStallBudget(self.id())) {
             advanceRouteLeg(self, index, count);
         } else {
@@ -960,12 +992,21 @@ public final class JobBehaviors {
      * real traffic through the day (Eli's bug 4). Outside the window, walk home. The
      * current stop index rides {@code goalProgress}; the dwell/blocked clock rides
      * {@code goalWorkTicks} (dwelling at the stop, or waiting out a human wall while
-     * traveling — the {@link #PATROL_BLOCKED_YIELD_TICKS} yield, then skip the stop). An
+     * traveling — the {@link #ROUNDS_BLOCKED_YIELD_TICKS} yield, then skip the stop). An
      * A*-unreachable stop is skipped via the route-failure cache like a patrol's dead leg.
      * A carter whose anchor matches no baked circuit — or an unwired table — degrades to
      * the plain {@link #pursueAtAnchor} laborer cycle, byte-identical to pre-rounds bakes.
      * Cross-z stops are legal (the climb's opt-in table). Draw-free.
      */
+    /**
+     * Motionless TICKS a carter's travel leg waits out a human wall before skipping the stop.
+     * The carter beat still counts plain ticks — it has no progress-toward-goal yield and this
+     * round did not give it one — so it keeps S6's 40 rather than being silently re-based on
+     * the patrol's attempt-denominated budget when that changed units. Same number as before
+     * round 4, now under its own name so the two cannot drift into each other.
+     */
+    private static final int ROUNDS_BLOCKED_YIELD_TICKS = 40;
+
     public static void pursueRounds(Actor self, ActorContext ctx, JobParams params) {
         var rounds = ctx.workRounds();
         int route = rounds.routeContaining(self.anchorCell());
@@ -997,7 +1038,7 @@ public final class JobBehaviors {
                 self.setGoalWorkTicks(0); // moving: the blocked clock stays clean
             } else {
                 int blocked = self.goalWorkTicks() + 1;
-                if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
+                if (blocked >= ROUNDS_BLOCKED_YIELD_TICKS) {
                     self.setGoalProgress((short) ((index + 1) % count)); // walled: walk away
                     self.setGoalWorkTicks(0);
                 } else {

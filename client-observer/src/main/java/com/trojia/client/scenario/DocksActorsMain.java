@@ -188,7 +188,7 @@ public final class DocksActorsMain {
                 c -> com.trojia.sim.world.Walkability.isWalkable(jamCursor.moveTo(c));
         GuardJamInstrument guardJam = new GuardJamInstrument(registry, watchIds, jamWalk,
                 jobs.ordinalOf(Job.Watch.Patrol.ID), jobs,
-                Math.max(0, ticks - DailyRhythm.DAY));
+                Math.max(0, ticks - DailyRhythm.DAY), allRoutes, ticks);
         List<Integer> laborerIds = new ArrayList<>();
         for (int i = 0; i < registry.size(); i++) {
             Job job = registry.get(i).jobOrdinal() >= 0

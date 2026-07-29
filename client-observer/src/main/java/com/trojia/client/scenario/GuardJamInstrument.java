@@ -64,19 +64,43 @@ final class GuardJamInstrument {
     static final int FLIP_CAP = 50;
 
     /**
-     * A leg that is NOT GETTING ANYWHERE. {@code goalWorkTicks} is the patrol's stall clock;
-     * {@code >= 2} is a real stall spell rather than the speed accumulator's ordinary sawtooth.
+     * A leg that has genuinely GONE NOWHERE: half the un-de-phased no-progress budget of stall
+     * units, i.e. 10 refused step attempts or 50 fruitless steps — a soul at least a third of
+     * the way to giving its leg up. This is the LIVE-LOCK readout.
      *
-     * <p>S7 round 3 widened what this reads, and the widening is the point. The clock used to
-     * zero on every tick the guard MOVED, so it could only ever see a guard standing dead
-     * still — a pair live-locked in a 1-wide connector, stepping back and forth forever without
-     * closing on anything, scored zero blocked ticks and looked healthy. The clock now zeroes
-     * on PROGRESS toward the waypoint instead, and a dead-still tick is weighted 5 to keep the
-     * S6 40-tick yield exact, so this readout counts live-locked ticks too and a still tick
-     * crosses the threshold one tick sooner. The number is therefore NOT comparable with any
-     * figure printed before that change: it is measuring a strictly larger set of failures.
+     * <p><b>S7 round 4 — the round-3 line misattributed its own number, and this constant is
+     * why.</b> The threshold was 2 units. Under S6 a motionless tick cost 1 unit, so 2 units
+     * meant "motionless twice running", which is genuinely not the speed accumulator's
+     * every-other-tick rhythm. Round 3 re-weighted a motionless tick to 5 units without
+     * touching the threshold, so 2 units came to mean "motionless ONCE" — and at
+     * {@code speedTicksPerStep = 2} every healthy guard in the ward is motionless every other
+     * tick by construction. That, not "live-locks became visible", is the whole of the
+     * 160 → 219 permille jump the round-3 report printed: ordinary walking cadence, re-priced.
+     *
+     * <p>So the readout is now two lines with two honest definitions: a WEDGED line counted
+     * observer-side off consecutive motionless ticks (weight-independent, and the same thing
+     * S6's line meant), and this one — deliberately far above the cadence, where only a leg
+     * that is really not closing can reach.
      */
-    static final int BLOCKED_THRESHOLD = 2;
+    static final int STALLED_LEG_THRESHOLD =
+            com.trojia.sim.actor.job.JobBehaviors.PATROL_NO_PROGRESS_YIELD_STEPS / 2;
+
+    /**
+     * Consecutive motionless ON-DUTY ticks that make a WEDGED spell. Read off the observed cell
+     * trail, never off the stall clock, so no re-weighting inside the sim can move this number:
+     * at {@code speedTicksPerStep = 2} a walking guard alternates move/still and never stands
+     * still twice running, so a run of two is already evidence.
+     */
+    static final int WEDGED_RUN_TICKS = 2;
+
+    /** Window the per-soul work table is broken down by. */
+    static final long WORK_WINDOW_TICKS = 10_000;
+
+    /**
+     * On-shift ticks a soul must have inside a window before a zero-work window is read as
+     * QUITTING rather than as "that window was mostly its night off".
+     */
+    static final long WORKED_WINDOW_MIN_SHIFT = 1_000;
 
     private final List<Integer> watchIds;
     private final int n;
@@ -101,6 +125,9 @@ final class GuardJamInstrument {
     private final byte[] prevActing;
     private final long[] guardTicks;
     private final long[] blockedTicks;
+    private final long[] wedgedTicks;
+    private final long[] onDutyTicks;
+    private final int[] motionlessRun;
     private final long[] offShiftTicks;
     private final long[] offShiftAtHomeTicks;
     private final long[] onStreetTicks;
@@ -109,6 +136,23 @@ final class GuardJamInstrument {
     private final long[] flipsWorstWindow;
     private final List<java.util.HashSet<Integer>> coverageCells;
     private long flipWindowIndex = -1;
+
+    // ---- per-soul BEAT WORK over time (S7 round 4: the proof the mechanism is general) ----
+    // Round 2 shipped a stalled guard because it read end-of-run totals; round 3 shipped a
+    // second one because it only checked the guard it had been told about. This table walks
+    // EVERY watch soul through EVERY window of the run and says, per window, how many beat legs
+    // it actually completed. It is pure observation of public actor state -- the leg register
+    // (goalProgress) advancing, and whether the soul was standing on the cell that leg was
+    // aimed at when it did -- so it can tell WORKING from GAVE-UP-THE-LEG from STOPPED.
+    private final com.trojia.sim.actor.PatrolRouteTable routes;
+    private final int[] soulRoute;      // route index bound to this soul's anchor, or -1
+    private final short[] prevProgress;
+    private final int[] prevGoalTarget; // last tick's CELL target, or Actor.NONE
+    private final int workWindows;
+    private final long[] winArrivals;   // [window * n + soul]
+    private final long[] winYields;
+    private final long[] winShiftTicks;
+    private final List<java.util.HashSet<Integer>> winCells;
 
     // ---- district totals ---------------------------------------------------------------
     private long pinchPairTicksDay;
@@ -126,7 +170,11 @@ final class GuardJamInstrument {
 
     GuardJamInstrument(ActorRegistry registry, List<Integer> watchIds,
             Actor.WalkabilityQuery walk, int patrolJobOrdinal,
-            com.trojia.sim.actor.job.JobRegistry jobs, long coverageWindowStart) {
+            com.trojia.sim.actor.job.JobRegistry jobs, long coverageWindowStart,
+            com.trojia.sim.actor.PatrolRouteTable routes, long totalTicks) {
+        this.routes = routes;
+        this.workWindows = (int) Math.max(1,
+                (totalTicks + WORK_WINDOW_TICKS - 1) / WORK_WINDOW_TICKS);
         this.watchIds = watchIds;
         this.n = watchIds.size();
         this.walk = walk;
@@ -147,6 +195,19 @@ final class GuardJamInstrument {
         this.prevActing = new byte[n];
         this.guardTicks = new long[n];
         this.blockedTicks = new long[n];
+        this.wedgedTicks = new long[n];
+        this.onDutyTicks = new long[n];
+        this.motionlessRun = new int[n];
+        this.soulRoute = new int[n];
+        this.prevProgress = new short[n];
+        this.prevGoalTarget = new int[n];
+        this.winArrivals = new long[workWindows * n];
+        this.winYields = new long[workWindows * n];
+        this.winShiftTicks = new long[workWindows * n];
+        this.winCells = new ArrayList<>(workWindows * n);
+        for (int w = 0; w < workWindows * n; w++) {
+            winCells.add(new java.util.HashSet<>());
+        }
         this.offShiftTicks = new long[n];
         this.offShiftAtHomeTicks = new long[n];
         this.onStreetTicks = new long[n];
@@ -161,6 +222,9 @@ final class GuardJamInstrument {
             nightRoster[i] = a.jobOrdinal() >= 0
                     && jobs.get(a.jobOrdinal()).worksThroughTheNight();
             coverageCells.add(new java.util.HashSet<>());
+            soulRoute[i] = routes.routeContaining(a.anchorCell());
+            prevProgress[i] = a.goalProgress();
+            prevGoalTarget[i] = Actor.NONE;
         }
     }
 
@@ -211,9 +275,23 @@ final class GuardJamInstrument {
                 onStreetTicks[i]++;
             }
             guardTicks[i]++;
-            if (a.goalWorkTicks() >= BLOCKED_THRESHOLD) {
+            if (a.goalWorkTicks() >= STALLED_LEG_THRESHOLD) {
                 blockedTicks[i]++;
             }
+            // WEDGED, read off the cell trail rather than the stall clock: consecutive
+            // motionless ticks while on duty. Weight-independent by construction, so no
+            // re-pricing inside the sim can ever move this number without the guards
+            // genuinely standing still more.
+            if (onDuty[i]) {
+                onDutyTicks[i]++;
+                motionlessRun[i] = frozen[i] ? motionlessRun[i] + 1 : 0;
+                if (motionlessRun[i] >= WEDGED_RUN_TICKS) {
+                    wedgedTicks[i]++;
+                }
+            } else {
+                motionlessRun[i] = 0;
+            }
+            observeBeatWork(a, i, cell[i], tick, onShift);
             byte acting = acting(a);
             // The settle/flip metrics are stated over each soul's OWN off-shift window --
             // the hours it is supposed to be in bed. That is where the oscillation lived and
@@ -309,6 +387,46 @@ final class GuardJamInstrument {
             }
         }
         System.arraycopy(cell, 0, prevCell, 0, n);
+    }
+
+    /**
+     * One soul's beat bookkeeping for one already-stepped tick.
+     *
+     * <p>Both beats keep their leg register in {@code goalProgress} — the waypoint index for a
+     * route-bound soul, the corner index (low two bits) for a square beat — and both advance it
+     * for exactly two reasons: they ARRIVED (the discrete work event the job's DUTY and skill cp
+     * are paid at), or they GAVE THE LEG UP. Telling the two apart from outside is just a
+     * question of where the soul is standing when the register moves: on the cell that leg was
+     * aimed at, or not. The aim is the route's waypoint for a route beat, and last tick's
+     * cached corner for a square beat — with one edge case, a corner derived and arrived at
+     * inside the same tick (a collapsed corner under the soul's own feet), which is an arrival
+     * with no cached target to compare against and is recognised by the soul not having moved.
+     */
+    private void observeBeatWork(Actor a, int i, int cell, long tick, boolean onShift) {
+        int window = (int) Math.min(tick / WORK_WINDOW_TICKS, workWindows - 1L);
+        int slot = window * n + i;
+        if (onShift) {
+            winShiftTicks[slot]++;
+        }
+        winCells.get(slot).add(cell);
+        int route = soulRoute[i];
+        int modulus = route >= 0 ? routes.waypointCount(route) : 4;
+        if (modulus > 0) {
+            int prevLeg = Math.floorMod(prevProgress[i], modulus);
+            int leg = Math.floorMod(a.goalProgress(), modulus);
+            if (prevLeg != leg) {
+                int aimed = route >= 0 ? routes.waypoint(route, prevLeg)
+                        : (prevGoalTarget[i] != Actor.NONE ? prevGoalTarget[i] : prevCell[i]);
+                if (cell == aimed) {
+                    winArrivals[slot]++;
+                } else {
+                    winYields[slot]++;
+                }
+            }
+        }
+        prevProgress[i] = a.goalProgress();
+        prevGoalTarget[i] = a.goalTargetKind() == com.trojia.sim.actor.TargetKind.CELL
+                ? a.goalTargetKey() : Actor.NONE;
     }
 
     private static final byte ACTING_OTHER = 0;
@@ -426,6 +544,7 @@ final class GuardJamInstrument {
         printNightRoster();
         printOscillation();
         printBlocked();
+        printWorkOverTime();
         System.out.println("============================================================================");
     }
 
@@ -645,18 +764,78 @@ final class GuardJamInstrument {
     }
 
     private void printBlocked() {
-        long blocked = 0;
+        long stalled = 0;
         long total = 0;
+        long wedged = 0;
+        long duty = 0;
         for (int i = 0; i < n; i++) {
-            blocked += blockedTicks[i];
+            stalled += blockedTicks[i];
             total += guardTicks[i];
+            wedged += wedgedTicks[i];
+            duty += onDutyTicks[i];
         }
-        System.out.println("  STALL SPELLS (goalWorkTicks>=" + BLOCKED_THRESHOLD
-                + ": a leg not closing on its waypoint -- wedged OR live-locked. Since S7"
-                + " round 3 this counts live-locks too, so it is NOT comparable with the"
-                + " pre-round-3 'blocked spells' figure)");
-        System.out.println("    " + blocked + " / " + total + " guard-ticks = "
-                + permille(blocked, total) + " permille   target <90 permille (9%)");
+        System.out.println("  WEDGED SPELLS (on duty, standing still " + WEDGED_RUN_TICKS
+                + "+ ticks running -- read off the cell trail, not the stall clock, so no"
+                + " re-pricing inside the sim can move it)");
+        System.out.println("    " + wedged + " / " + duty + " on-duty ticks = "
+                + permille(wedged, duty) + " permille   target <90 permille (9%)");
+        System.out.println("  LEGS GOING NOWHERE (goalWorkTicks>=" + STALLED_LEG_THRESHOLD
+                + " stall units = 10 refused step attempts or 50 fruitless steps: the live-lock"
+                + " readout, well clear of the speed-2 walking cadence)");
+        System.out.println("    " + stalled + " / " + total + " guard-ticks = "
+                + permille(stalled, total) + " permille   NO TARGET PINNED: this definition is"
+                + " new in round 4 and an un-measured bar is worse than none");
+        System.out.println("    (round 3 printed one line, 'goalWorkTicks>=2 ... 219 permille"
+                + " target <90', and explained the 160->219 jump as live-locks becoming"
+                + " visible. That was wrong: 2 stall units used to mean 'motionless twice"
+                + " running' and round 3's re-weighting made it mean 'motionless once', which"
+                + " at speedTicksPerStep=2 is every healthy guard on every other tick. The"
+                + " jump was ordinary walking cadence being re-priced 1->5, nothing else.)");
+    }
+
+    /**
+     * The proof that the beat mechanism is GENERAL: every watch soul, every window of the run,
+     * how many beat legs it actually finished. Round 2 shipped a stalled guard by reading
+     * end-of-run totals; round 3 shipped a second by only checking the one it was told about.
+     */
+    private void printWorkOverTime() {
+        System.out.println("  PER-SOUL BEAT WORK OVER TIME (A=legs ARRIVED at, Y=legs GIVEN UP,"
+                + " s=on-shift ticks in the window, c=distinct cells)");
+        System.out.println("    a window with a shift in it and A=0 is a soul that STOPPED"
+                + " WORKING; windows with s<" + WORKED_WINDOW_MIN_SHIFT + " are its night off"
+                + " and are not judged");
+        StringBuilder header = new StringBuilder("    soul   beat  ");
+        for (int w = 0; w < workWindows; w++) {
+            header.append(String.format("%-22s", (w * WORK_WINDOW_TICKS / 1000) + "-"
+                    + ((w + 1) * WORK_WINDOW_TICKS / 1000) + "k"));
+        }
+        System.out.println(header.toString());
+        List<Integer> quitters = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            StringBuilder row = new StringBuilder(String.format("    #%-5d %-6s",
+                    watchIds.get(i), soulRoute[i] >= 0 ? "rt" + soulRoute[i] : "square"));
+            boolean quit = false;
+            for (int w = 0; w < workWindows; w++) {
+                int slot = w * n + i;
+                boolean judged = winShiftTicks[slot] >= WORKED_WINDOW_MIN_SHIFT;
+                quit |= judged && winArrivals[slot] == 0;
+                row.append(String.format("%-22s", "A" + winArrivals[slot]
+                        + " Y" + winYields[slot]
+                        + " s" + winShiftTicks[slot]
+                        + " c" + winCells.get(slot).size()
+                        + (judged && winArrivals[slot] == 0 ? " STOP" : "")));
+            }
+            if (quit) {
+                quitters.add(watchIds.get(i));
+            }
+            System.out.println(row.toString());
+        }
+        StringBuilder verdict = new StringBuilder("    souls that STOPPED WORKING in a window"
+                + " they were on shift for: " + quitters.size() + " / " + n);
+        for (int id : quitters) {
+            verdict.append("  #").append(id);
+        }
+        System.out.println(verdict.toString());
     }
 
     private static long permille(long part, long whole) {

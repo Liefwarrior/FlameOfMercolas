@@ -839,6 +839,31 @@ public abstract class Actor {
         this.cell = cell;
     }
 
+    /**
+     * Ticks banked toward this actor's next step — the type's {@code speedTicksPerStep}
+     * accumulator. Every mover call either resets it to 0 (a step was ATTEMPTED this tick,
+     * whether or not it landed) or increments it and returns (the cadence swallowed the tick,
+     * no attempt was made), so {@code 0} after a mover call reads "this tick was an attempt".
+     *
+     * <p>S7 round 4 made that distinction load-bearing, and it is worth saying why. The patrol
+     * yield charges a stall clock for legs that are not closing on their target. Without this
+     * read there is no way to tell a guard genuinely wedged against a full cell from a guard
+     * merely between steps at {@code speedTicksPerStep = 2} — and the arithmetic does not
+     * forgive it: with a single per-tick counter, a cadence tick charged at the wedge rate caps
+     * a beat's tolerance for LEGITIMATE detours at about 33 cells no matter how large the
+     * budget is set, because a wedged soul's stall accrues only twice as fast as a detouring
+     * soul's while the two budgets differ five-fold. (Round 3 set that budget at "about a
+     * hundred cells" and shipped 33.) Ignoring the cadence tick separates them exactly.
+     */
+    public final int moveAccumTicks() {
+        return moveAccumTicks;
+    }
+
+    /** Restores the step phase on load (§ the persisted triad) — never a gameplay setter. */
+    public final void setMoveAccumTicks(int moveAccumTicks) {
+        this.moveAccumTicks = moveAccumTicks;
+    }
+
     public final byte facing() {
         return facing;
     }
