@@ -333,6 +333,7 @@ public final class DocksActorsMain {
         printFishingReport(population);
         printDeathReport(population, identity);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
+        printWorldHash(loaded.world(), population, driver.currentTick());
         if (perf) {
             // Wall-clock timing — printed only under --perf so plain runs stay byte-identical.
             double avgMillis = tickNanos / 1e6 / ticks;
@@ -514,6 +515,48 @@ public final class DocksActorsMain {
         }
         System.out.println("============================================================================");
     }
+
+    /**
+     * The canonical world-hash surface (S8 harness slice). Every twin-run comparison in this
+     * arc reads THESE three numbers out of the report: the world's own (WRLD) sub-hash, the
+     * ACTORS section sub-hash — the one that covers the whole persisted triad, actors through
+     * deathLog — and the salt-order-invariant combined hash of both.
+     *
+     * <p>Printed last so the whole report above it has already been produced from the same
+     * end-of-soak state; parsed by {@link TwinRunGateMain} via the {@link #WORLD_HASH_TAG}
+     * prefix, and by hand for the committed pre-S8 baseline
+     * ({@code docs/BASELINE-WORLD-HASH.md}). {@code Locale.ROOT} pins the digits — a locale
+     * with non-ASCII numerals would otherwise make the "byte-identical" claim
+     * machine-dependent.
+     *
+     * <p>This surface is load-bearing for the whole S8-S12 arc: without it a state divergence
+     * that never reaches a printed line (the twin-run gate's injection #2 was exactly that
+     * shape) is invisible to every other line of this report.
+     */
+    private static void printWorldHash(com.trojia.sim.world.World world,
+            DocksPopulation population, long tick) {
+        com.trojia.sim.world.io.WorldHasher hasher = new com.trojia.sim.world.io.WorldHasher();
+        hasher.hashWorld(world);
+        population.system().hashInto(hasher.sectionSink(population.system().id()));
+        long worldSection = hasher.sectionHash(
+                com.trojia.sim.world.io.WorldHasher.WORLD_SECTION);
+        long actorsSection = hasher.sectionHash(population.system().id());
+        long combined = hasher.combinedHash();
+        System.out.println();
+        System.out.println("================ WORLD HASH (the twin-run comparator) ======================");
+        System.out.println(String.format(java.util.Locale.ROOT,
+                "  at tick %d;  WRLD=%016x  ACTORS=%016x", tick, worldSection, actorsSection));
+        System.out.println(String.format(java.util.Locale.ROOT,
+                "%s%016x", WORLD_HASH_TAG, combined));
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * Line prefix {@link TwinRunGateMain} greps for the combined world hash. Load-bearing —
+     * changing it silently un-hooks the twin-run gate's hash comparator, so the gate fails
+     * hard (rather than skipping) when the tag is absent from a run's stdout.
+     */
+    static final String WORLD_HASH_TAG = "  COMBINED WORLD HASH: 0x";
 
     /**
      * Money-conservation proof (Phase-2): after the run, the hard invariant

@@ -62,3 +62,24 @@ tasks.register<JavaExec>("runDocksActors") {
     mainClass.set("com.trojia.client.scenario.DocksActorsMain")
     classpath = sourceSets["main"].runtimeClasspath
 }
+
+// THE TWIN-RUN GATE (S8). Runs the Docks soak twice from one seed in one JVM and fails the
+// build on ANY divergence — comparing the combined WorldHasher hash AND the full report text
+// byte-for-byte. Wired into `check` (so `gradlew build` cannot go green on a nondeterministic
+// ward), and runnable alone while iterating:
+//   ./gradlew.bat :client-observer:twinRunGate
+//   ./gradlew.bat :client-observer:twinRunGate -PtwinTicks=2000
+// Never `outputs.upToDateWhen { true }`-cached: the whole point is that it re-runs.
+val twinRunGate = tasks.register<JavaExec>("twinRunGate") {
+    group = "verification"
+    description = "Runs the Docks soak twice from one seed; fails on any world-hash or report-text divergence."
+    mainClass.set("com.trojia.client.scenario.TwinRunGateMain")
+    classpath = sourceSets["main"].runtimeClasspath
+    outputs.upToDateWhen { false }
+    val twinTicks = (project.findProperty("twinTicks") as String?) ?: "15000"
+    argumentProviders.add(CommandLineArgumentProvider { listOf("--ticks", twinTicks) })
+}
+
+tasks.named("check") {
+    dependsOn(twinRunGate)
+}
