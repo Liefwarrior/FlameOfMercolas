@@ -53,6 +53,11 @@ public final class DocksActorsMain {
 
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadDocksSurface();
         DocksPopulation population = DocksPopulation.build(loaded.worldSeed(), loaded.world());
+        // The closed-money-supply BEFORE measurement, taken before a single tick runs. The
+        // after-measurement alone proves nothing (see CoinCensus) — the invariant is the two
+        // scans agreeing across 15k ticks of wages, counters and pickpockets.
+        CoinCensus coinAtBake = CoinCensus.of(population.items(),
+                DocksPopulation.bankVaultChestCell());
         IdentityRegistry identity = population.identity();   // S1 NameForge (bake-side, pure)
 
         ActorRegistry registry = population.registry();
@@ -313,7 +318,7 @@ public final class DocksActorsMain {
         printGraphSample(homes, relationships);
         System.out.println("items minted (placeholder ids + quantities, §11.2): "
                 + population.items().size());
-        printEconomyProof(population);
+        printEconomyProof(population, coinAtBake);
         printFoodConservation(population);
         printStarvationByClass(registry);
         printSerfStarvationByBand(registry, jobs);
@@ -559,29 +564,44 @@ public final class DocksActorsMain {
     static final String WORLD_HASH_TAG = "  COMBINED WORLD HASH: 0x";
 
     /**
-     * Money-conservation proof (Phase-2): after the run, the hard invariant
+     * Money-conservation proof (Phase-2, repaired in S8): after the run, the hard invariant
      * {@code totalRoyals() == vault COIN count} must still hold, and the closed COIN supply
-     * (minted == vault + loose-on-persons + sunk) must be intact — wages and any counter traffic
-     * only ever MOVED Royals, never minted them.
+     * must be intact — wages, counter traffic and pickpockets only ever MOVED Royals, never
+     * minted them.
+     *
+     * <p><b>What was wrong with this proof.</b> It used to derive
+     * {@code looseCoin = minted - vault - sunk} and then assert
+     * {@code minted == vault + loose + sunk}. That is {@code minted == minted}: a tautology
+     * that printed PASS every sprint and checked nothing. Loose coin is now COUNTED by an
+     * independent walk of ItemsLite ({@link CoinCensus}), and the identity that carries the
+     * weight is a comparison against a second, independent census taken at bake before the
+     * first tick — so a stray mint or a lost stack has something to fail against.
      */
-    private static void printEconomyProof(DocksPopulation population) {
+    private static void printEconomyProof(DocksPopulation population, CoinCensus atBake) {
         var bank = population.bankAccounts();
-        var items = population.items();
         int vaultCell = DocksPopulation.bankVaultChestCell();
+        CoinCensus now = CoinCensus.of(population.items(), vaultCell);
         long totalRoyals = bank.totalRoyals();
-        int vaultCoins = items.countOnCellOfKind(vaultCell, ItemKinds.COIN);
-        int mintedCoin = items.totalOfKind(ItemKinds.COIN);
-        int sunkCoin = items.sunkOfKind(ItemKinds.COIN);
-        int looseCoin = mintedCoin - vaultCoins - sunkCoin; // coins carried on persons
+        boolean closed = CoinCensus.supplyClosed(atBake, now);
         System.out.println();
         System.out.println("================ MONEY CONSERVATION (closed supply) ========================");
         System.out.println("  accounts open: " + bank.accountCount()
                 + " (per-actor + 1 employer pool);  totalRoyals=" + totalRoyals
-                + "  vaultCOIN=" + vaultCoins
-                + "  -> invariant totalRoyals==vaultCOIN: " + (totalRoyals == vaultCoins));
-        System.out.println("  COIN supply: minted=" + mintedCoin + " == vault(" + vaultCoins
-                + ") + loose(" + looseCoin + ") + sunk(" + sunkCoin + "): "
-                + (mintedCoin == vaultCoins + looseCoin + sunkCoin));
+                + "  vaultCOIN=" + now.vault()
+                + "  -> invariant totalRoyals==vaultCOIN: " + (totalRoyals == now.vault()));
+        System.out.println("  COIN census (independent ItemsLite scan, counted not derived):"
+                + "  vault=" + now.vault()
+                + "  loose=" + now.loose()
+                + " [purses=" + now.carried() + " over " + now.purses()
+                + " souls, fattest=" + now.fattest()
+                + ";  staged-on-cells=" + now.ground() + "]"
+                + "  phantom-sunk=" + now.sunk());
+        System.out.println("  CLOSED SUPPLY  live at bake=" + atBake.live()
+                + "  ==  live now=" + now.live() + ": " + closed
+                + (closed ? "" : "  <<< " + (now.live() - atBake.live())
+                        + " Royals appeared from nowhere / vanished"));
+        System.out.println("  (bake split was vault=" + atBake.vault() + " loose=" + atBake.loose()
+                + " over " + atBake.purses() + " purses)");
         System.out.println("============================================================================");
     }
 
