@@ -185,6 +185,27 @@ final class GuardEtiquetteTest {
     }
 
     @Test
+    void theProgressYieldDidNotLengthenTheDeadStillWait() {
+        // S7 round 3 re-aimed the stall clock from stillness to PROGRESS toward the waypoint,
+        // and folded two budgets onto one already-persisted scalar by weighting a motionless
+        // tick. The arithmetic is the whole safety of that trick: if the weight and the
+        // budgets ever drift apart, the S6 dead-still yield silently gets slower -- a guard
+        // that used to give way after 40 motionless ticks would wrestle for 200, and the only
+        // symptom would be a jam metric creeping up months later. Pin it.
+        assertEquals(JobBehaviors.PATROL_NO_PROGRESS_YIELD_TICKS,
+                JobBehaviors.PATROL_BLOCKED_YIELD_TICKS
+                        * (JobBehaviors.PATROL_NO_PROGRESS_YIELD_TICKS
+                                / JobBehaviors.PATROL_BLOCKED_YIELD_TICKS),
+                "the no-progress budget must be an exact multiple of the dead-still budget:"
+                        + " the still-tick weight is their integer ratio, so a remainder means"
+                        + " a wedged guard waits longer than S6's 40 ticks");
+        assertTrue(JobBehaviors.PATROL_NO_PROGRESS_YIELD_TICKS
+                        > JobBehaviors.PATROL_BLOCKED_YIELD_TICKS,
+                "a soul that is at least MOVING gets more rope than one standing dead still --"
+                        + " route legs really do have to walk away from a waypoint sometimes");
+    }
+
+    @Test
     void sameRouteWatchStartAtIdStaggeredWaypoints() {
         ActorRegistry registry = new ActorRegistry();
         int w1 = cell(10, 10);
