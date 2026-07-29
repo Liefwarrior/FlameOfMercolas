@@ -354,6 +354,49 @@ public final class JobBehaviors {
      */
     public static final int PATROL_BLOCKED_YIELD_TICKS = 40;
 
+    /**
+     * Ticks a route leg may keep STEPPING without ever getting closer to its waypoint before
+     * the beat yields — the progress-toward-goal budget, and the hole
+     * {@link #PATROL_BLOCKED_YIELD_TICKS} could not see.
+     *
+     * <p>S6's yield counts ticks spent standing <em>dead still</em>, and zeroes the instant the
+     * actor moves. Two souls meeting head-on in a 1-wide connector do not stand still: each
+     * one's cached route goes through the other, the occupancy cap refuses the hop, the route
+     * is dropped and replanned, and the pair shuffle back and forth stepping every tick
+     * forever. Every one of those ticks reads as "moving, therefore fine" to a stillness
+     * counter, which is why Sergeant #371 could work the Saltgate Rise until roughly tick
+     * 15,000 and then spend the remaining 45,000 walking on the spot with no metric able to
+     * say so. A LIVE-lock is not a dead-lock and needs its own clock.
+     *
+     * <p>Sized for real detours, not for the pathological case. A route leg legitimately walks
+     * AWAY from its waypoint whenever the only door faces the wrong way or the only stair up
+     * stands behind the walker; at {@code speedTicksPerStep=2} this budget is about a hundred
+     * cells of such walking, far more than any leg on the authored routes needs and far less
+     * than a live-lock, which never ends at all.
+     */
+    public static final int PATROL_NO_PROGRESS_YIELD_TICKS = 200;
+
+    /**
+     * Stall weight of a DEAD-STILL tick, so one counter carries both budgets: a still tick is
+     * worth {@code PATROL_NO_PROGRESS_YIELD_TICKS / PATROL_BLOCKED_YIELD_TICKS} units and a
+     * stepping-but-not-closing tick is worth one. A wedged guard therefore still yields on its
+     * 40th motionless tick, bit-for-bit S6's number, while a live-locked one yields on its
+     * 200th fruitless step — two budgets, one already-persisted scalar, no new state.
+     */
+    private static final int PATROL_STILL_STALL_WEIGHT =
+            PATROL_NO_PROGRESS_YIELD_TICKS / PATROL_BLOCKED_YIELD_TICKS;
+
+    /**
+     * Deterministic de-phase of the stall budget by soul id. Two guards wedged against each
+     * other start their stall clocks on the same tick, so a shared budget would fire for both
+     * on the same tick — both would yield, both would turn around, and the pair would meet
+     * again in lockstep: a polite deadlock instead of a rude one. Spreading the budget over a
+     * band of ids means whoever is going to give way gives way first, and the other walks
+     * through the freed connector. Same discipline as {@link #selectRouteStart}'s corner
+     * stagger: fixed arithmetic on the id, never a draw.
+     */
+    private static final int PATROL_STALL_DEPHASE = 37;
+
     /** Bounded retry budget for {@link #retargetPatrolCorner} — draw-free, fixed geometry. */
     private static final int PATROL_RETRY_BUDGET = 8;
 
@@ -506,6 +549,16 @@ public final class JobBehaviors {
      * the route-following A* failed and that failure is still cached ({@link
      * Actor#routeFailedTo}) — is skipped by advancing to the next waypoint instead of
      * freezing on the failed leg. Draw-free, never completes.
+     *
+     * <p><b>S7 round 3 — the leg yields on PROGRESS, not on stillness.</b> The S6 yield asked
+     * "did this soul move?", which is the wrong question for the jam it was written against: a
+     * pair meeting head-on in a 1-wide connector both keep moving forever (see
+     * {@link #PATROL_NO_PROGRESS_YIELD_TICKS}). The leg now keeps a HIGH-WATER MARK — the
+     * cell from which it has come closest to this waypoint — and a step that beats the mark is
+     * progress (clock zeroed, mark advanced); anything else, moving or not, is stall. The mark
+     * rides {@code goalTarget}, which a route-bound patroller has always left unused ({@link
+     * #pursuePatrol} reads it, this method never did), so the fix adds no persisted state and
+     * the mark is always a cell this actor stood on and therefore always walkable.
      */
     public static void pursueRoutePatrol(Actor self, ActorContext ctx, int routeIndex,
             JobParams params) {
@@ -521,8 +574,7 @@ public final class JobBehaviors {
             // beat's trade skill trains here (context = the waypoint cell). The failed-leg
             // skip below deliberately awards nothing: skipping is not arriving.
             awardWorkEvent(self, ctx, params, waypoint);
-            self.setGoalProgress((short) ((index + 1) % count)); // arrived: next leg next tick
-            self.setGoalWorkTicks(0);
+            advanceRouteLeg(self, index, count); // arrived: next leg next tick
             return;
         }
         // Sprint 4 (the climb): an OPT-IN cross-z consumer — a route may now carry
@@ -533,25 +585,54 @@ public final class JobBehaviors {
         if (self.routeFailedTo(waypoint)) {
             // Route-failure cache says this waypoint is unreachable right now: skip it rather
             // than freeze the whole beat on one blocked leg (Pass-13 DoD).
-            self.setGoalProgress((short) ((index + 1) % count));
+            advanceRouteLeg(self, index, count);
+            return;
+        }
+        int mark = self.goalTargetKind() == TargetKind.CELL ? self.goalTargetKey() : Actor.NONE;
+        if (mark == Actor.NONE
+                || legDistance(self.cell(), waypoint) < legDistance(mark, waypoint)) {
+            // Genuine ground gained (or the first tick of the leg): re-mark and start clean.
+            self.setGoalTarget(TargetKind.CELL, self.cell());
             self.setGoalWorkTicks(0);
             return;
         }
-        if (self.cell() != before) {
-            self.setGoalWorkTicks(0); // moving: the blocked-leg clock stays clean
-            return;
-        }
-        // Sprint 6 yield (Eli's bug 2): a route leg standing dead still — a full cell it
-        // may not shove through (a fellow guard in a 1-wide gut) — is abandoned after a
-        // bounded wait; the patrol advances to the next waypoint and walks away instead
-        // of wrestling. Rides the (otherwise unused here) persisted goalWorkTicks.
-        int blocked = self.goalWorkTicks() + 1;
-        if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
-            self.setGoalProgress((short) ((index + 1) % count));
-            self.setGoalWorkTicks(0);
+        // Sprint 6 yield (Eli's bug 2), re-aimed: a leg that is not closing on its waypoint —
+        // whether wedged dead still against a full cell it may not shove through, or shuffling
+        // back and forth against a fellow guard in a 1-wide gut — is abandoned after a bounded
+        // wait; the patrol advances to the next waypoint and walks away instead of wrestling.
+        // One counter, two budgets (see PATROL_STILL_STALL_WEIGHT), on the persisted
+        // goalWorkTicks this method already owned.
+        int stall = self.goalWorkTicks()
+                + (self.cell() == before ? PATROL_STILL_STALL_WEIGHT : 1);
+        if (stall >= PATROL_NO_PROGRESS_YIELD_TICKS
+                + Math.floorMod(self.id(), PATROL_STALL_DEPHASE)) {
+            advanceRouteLeg(self, index, count);
         } else {
-            self.setGoalWorkTicks(blocked);
+            self.setGoalWorkTicks(stall);
         }
+    }
+
+    /**
+     * Leave the current leg for the next waypoint: advance the index, zero the stall clock and
+     * DROP the high-water mark, so the new leg re-marks from wherever the actor is standing
+     * rather than inheriting the old leg's best cell.
+     */
+    private static void advanceRouteLeg(Actor self, int index, int count) {
+        self.setGoalProgress((short) ((index + 1) % count));
+        self.setGoalWorkTicks(0);
+        self.setGoalTarget(TargetKind.NONE, Actor.NONE);
+    }
+
+    /**
+     * How far a route leg still has to go, counting bands: x/y Chebyshev plus one unit per
+     * band still to climb. The z term is what lets a cross-z leg (the Saltgate Rise) register
+     * the climb itself as progress — a soul that steps from z:+11 to z:+12 has plainly gained
+     * ground on a z:+13 waypoint even when its x/y distance did not move. Pure integer
+     * geometry; no draws, no allocation.
+     */
+    private static int legDistance(int cell, int waypoint) {
+        return ActorGeometry.chebyshev(cell, waypoint)
+                + Math.abs(PackedPos.z(cell) - PackedPos.z(waypoint));
     }
 
     // ======================================================================
