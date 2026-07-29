@@ -292,6 +292,40 @@ found to already satisfy the sketch:
 Street/waterfront names, K-site roster identity, and every un-mentioned coordinate above are
 unchanged from §3/§3.1.
 
+### 3.3 The ward names itself — the place-sign pass (Eli 2026-07-28)
+
+Eli, exploring the shipped district: *"We also need to label buildings! Let's use NES style
+black box pop ups with signs (just like in zelda 2 or in early final fantasy games)"*. Until
+this pass every name in §3/§3.1 lived only in this document — the baked world knew a
+building's walls and its work anchor, never what it was called.
+
+**Where the names live now:** a `place_sign` marker class in `docks_surface.tmx`'s existing
+`markers` object layer (authored in `gen_docks_surface.py` §7, contract in
+`content/maps/README.md`, validated by `MarkerContractPass`). One marker per named site,
+placed at the site's DOOR, carrying `place` (the sign's words), `what` (the second line), and
+the site's own FOOTPRINT rect. Every string is this document's own wording, trimmed — the
+generator refuses any line over 36 characters or outside plain ASCII, and refuses a sign that
+drifts more than 2 tiles off its own footprint.
+
+**Signed (39):** K01–K34, K36, and the four Compounds C1–C4 at their gates.
+
+**Deliberately unsigned, and it must stay that way:**
+
+- **K35 The Skyrunner's Roost** — §3.1's own ruling: "(unmarked — no sign, no door on the
+  establishments layer) … must never appear on any discoverable establishments list — that IS
+  the design." A test asserts it never gains one.
+- **Cache Row** — §3.2: unlicensed, off-grid, "no lamps, NO door onto any street layer". A
+  smuggling shed does not hang a sign.
+
+**Still unlabelled (open, §9-tier):** the named streets and lanes of §2.3 and the waterfront
+features of §2.2 (Long Quay, Pier Row, the Beaching Strand, the Outfall, the fishbone pier).
+The same marker family covers a long thin footprint fine; they were simply not authored this
+pass. Filed in `PLAYTEST-LOG.md` (S8).
+
+Presentation contract, binding: a place name is a way of LOOKING at the ward, not a fact in
+it. The signs are never baked into the TROJSAV, never enter sim-core, never feed the world
+hasher, and no actor can perceive one.
+
 ---
 
 ## 4. People — the eight actor groups (RULED BY ELI, 2026-07-12)

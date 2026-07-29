@@ -13,6 +13,51 @@ plus the S5 re-verification pass. Anything the lost ranking held beyond these is
 unrecoverable and is declared as such — this file is the durable record going forward:
 new playtest defects get filed HERE, in the same shape, in the sprint they are found.
 
+## S8 pass (building labels: the NES sign box)
+
+Source: Eli exploring the shipped ward, verbatim — *"We also need to label buildings!
+Let's use NES style black box pop ups with signs (just like in zelda 2 or in early final
+fantasy games)"*. The defect underneath it: 40+ authored buildings with real names,
+histories and notable residents, and nothing on screen said which was which.
+
+- **fixed: the ward was anonymous.** was: a building's name existed only in
+  DOCKS-GAZETTEER prose; the baked world knew its walls and its work anchor, never what
+  it was called. now: a `place_sign` marker class in the district's own `markers` object
+  layer (authored in `gen_docks_surface.py`, validated by `MarkerContractPass`, read by
+  `PlaceSignsLoader`), carrying the door cell, the two lines a reader gets, and the site's
+  FOOTPRINT rect. 39 places signed: K01–K34, K36, and the four Compounds.
+- **fixed: nothing showed a place was worth approaching.** was: every door looked like
+  every other door. now: a persistent hanging shop sign — bracket arm, hanger, plaque —
+  over every named door, culled to the camera box and depth-shaded like the terrain
+  under it. A pan across the district shows which doors are somebody's.
+- **fixed: no way to read a name.** now: one NES pop-up — hard-edged pure-black field,
+  crisp 2px bone border, square corners, opaque, no fade — snapping on over the tile the
+  viewer is attending to. Observer reads the cursor at 3 tiles' reach; Play mode reads
+  the driven actor at 1 tile (the doorway rule).
+- **fixed (pre-empted): 40 boxes would have been worse than none.** The clutter law is
+  structural, not tuned: signs are marks and never text, and the words are a strict
+  singleton. There is no zoom at which a second box can appear — proved at zoom 1 over
+  the whole district (~20 marked doors, one box).
+- **fixed (pre-empted): a label floating over the wrong roof.** A place below the view
+  plane draws only where the look-down resolves that column to its own z' — the exact
+  `FishingSpotOverlay` rule. Under a roof you are looking at, sign and box vanish together.
+- **open: streets and waterfront features carry no signs.** The Tarwalk, Saltgate Rise,
+  Ropewynd, Herring Lane, the Gullet, the Long Quay, Pier Row, the fishbone pier and the
+  Beaching Strand are all named in the gazetteer and all unlabelled. A street is a
+  long thin footprint, so the same marker family covers it — it just was not authored
+  this pass.
+- **open: the box says nothing about who is inside.** The gazetteer binds named
+  proprietors to real spawned actors (§3, the Forty Notables), and the pop-up does not
+  read them. "The Gilded Gull / captains' tavern" could be "…/ Master Venn keeps it".
+- **open: the pop-up is not a verb.** It names a place; it does not offer to enter,
+  ask about, or note it. Whether a label should become an interaction surface is a
+  design call, not a defect.
+- **open: no live-GL tape covers the labels.** The look is proved by the headless raster
+  (`PlaceSignLookTest`, `PlaceSignWardProofTest`, PNGs in
+  `client-observer/build/place-sign-proof/`), which uses the built-in 8×8 font as a
+  stand-in for the HUD's libGDX `BitmapFont`. Box geometry and ink are proved; the exact
+  glyph shapes on screen are not.
+
 ## S6 pass (the live-ops fix sprint: fishing, death, motivation legibility)
 
 Source: the S6 observer diagnosis (60k-tick instrumented soak of the shipped seed —
