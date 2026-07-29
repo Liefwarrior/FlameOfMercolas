@@ -1252,6 +1252,24 @@ public final class DocksActorsMain {
             System.out.println("      distribution: " + c.holders() + " DISTINCT holders"
                     + ";  fattest holding: " + top);
         }
+        // The combined line closes the last hole a hostile reader could pick at: summing the
+        // seven per-kind holder counts would double-count anyone holding two kinds. This
+        // counts SOULS, once each, across every non-food good.
+        long allUnits = 0;
+        int allHolders = 0;
+        for (short kind : GoodsCensus.KINDS) {
+            allUnits += items.liveOfKind(kind);
+        }
+        for (int i = 0; i < registry.size(); i++) {
+            for (short kind : GoodsCensus.KINDS) {
+                if (items.countCarriedOfKind(i, kind) > 0) {
+                    allHolders++;
+                    break;
+                }
+            }
+        }
+        System.out.println("  ANY non-food good: " + allUnits + " units live across "
+                + allHolders + " DISTINCT souls (each soul counted once)");
         System.out.println("============================================================================");
 
         // The vermin bounty, read as a DISTRIBUTION. The scalp totals above are a supply
