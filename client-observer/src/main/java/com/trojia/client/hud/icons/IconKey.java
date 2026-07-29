@@ -40,8 +40,12 @@ public enum IconKey {
     // Sprint 5 (the torrent + the masters board): the feed-filter and board toggles.
     L("keyboard_l.png"),
     M("keyboard_m.png"),
-    // Sprint 6 (fishing): the played soul's cast verb.
+    // Sprint 6 (fishing): the played actor's cast verb.
     R("keyboard_r.png"),
+    // Sprint 8 (the scalp loop): the two verbs the played actor works the bounty with —
+    // K takes the pelt off a downed body, B turns carried goods into Royals at a counter.
+    K("keyboard_k.png"),
+    B("keyboard_b.png"),
     MOUSE_LEFT_CLICK("mouse_left.png");
 
     private final String fileName;
