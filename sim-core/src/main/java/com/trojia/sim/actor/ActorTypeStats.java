@@ -34,7 +34,29 @@ public record ActorTypeStats(
         int returnHomeRhythmBonus,
         int nightWindowStart,
         int nightWindowEnd,
-        int loiterPriority) {
+        int loiterPriority,
+        short scalpItemKind,
+        int scalpResist) {
+
+    /** {@code scalpItemKind} sentinel: this type drops no scalp and cannot be culled. */
+    public static final short NO_SCALP = 0;
+
+    /**
+     * Legacy convenience constructor (the pre-S8 shape): every field as before, no scalp. Kept
+     * so no existing test or synthetic stat block has to mention the S8 scalp pair.
+     */
+    public ActorTypeStats(ActorTypeId typeId, String displayName, char glyph, int tint,
+            String factionId, short hp, int speedTicksPerStep, int leashRadius, int inventoryCap,
+            NeedConfig[] needs, boolean hasDeferWielder, int deferWielderPriority,
+            int deferWielderRadius, int fleeEmergencyPriority, int seekFoodPriority,
+            int returnHomePriority, int returnHomeRhythmBonus, int nightWindowStart,
+            int nightWindowEnd, int loiterPriority) {
+        this(typeId, displayName, glyph, tint, factionId, hp, speedTicksPerStep, leashRadius,
+                inventoryCap, needs, hasDeferWielder, deferWielderPriority, deferWielderRadius,
+                fleeEmergencyPriority, seekFoodPriority, returnHomePriority,
+                returnHomeRhythmBonus, nightWindowStart, nightWindowEnd, loiterPriority,
+                NO_SCALP, 0);
+    }
 
     public ActorTypeStats {
         Objects.requireNonNull(typeId, "typeId");
@@ -65,6 +87,20 @@ public record ActorTypeStats(
             throw new IllegalArgumentException("invalid night window ["
                     + nightWindowStart + ", " + nightWindowEnd + "]");
         }
+        // S8: the scalp pair is both-or-neither. A type that drops a scalp needs a resist for
+        // the cull check to contest against; a resist with no scalp is a dead number.
+        if ((scalpItemKind == NO_SCALP) != (scalpResist == 0)) {
+            throw new IllegalArgumentException("the scalp pair is both-or-neither (item "
+                    + scalpItemKind + ", resist " + scalpResist + ")");
+        }
+        if (scalpResist < 0) {
+            throw new IllegalArgumentException("scalpResist must be >= 0: " + scalpResist);
+        }
+    }
+
+    /** Whether a body of this type can be culled for a named scalp (S8). */
+    public boolean isScalpable() {
+        return scalpItemKind != NO_SCALP;
     }
 
     /** The raws config for one {@link Need}. */

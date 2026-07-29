@@ -213,15 +213,32 @@ class DocksProgressionTest {
         // (d) The wave's trail reconstructs: every harvested civic-only job-skill row names
         // an actor whose BOUND job trains exactly that skill — the WHY of every level-up is
         // the job that taught it.
+        //
+        // S8 narrows this claim by exactly one deliberate exception, and it is worth stating
+        // rather than papering over: FIELDCRAFT now has a SECOND legitimate award site, the
+        // cull verb (a soul who takes a scalp learns something about handling a carcass,
+        // whatever its day job). So a soul who has culled may hold fieldcraft grains its
+        // bound job never taught it. Every OTHER civic-trade level-up still has to
+        // reconstruct to the job that taught it, and a soul that has never culled has to
+        // reconstruct even in fieldcraft — which is what keeps this a real check.
         assertTrue(!jobSkillLevelUps.isEmpty(),
                 "three days of work must produce fieldcraft/seacraft/kit_keeping level-ups");
+        int cullTaughtRows = 0;
         for (long[] row : jobSkillLevelUps) {
             int actorId = (int) row[1];
             int ordinal = registry.get(actorId).jobOrdinal();
             assertTrue(ordinal >= 0, "a job-skill leveller must hold a job, actor#" + actorId);
+            if ((int) row[2] == fieldcraft
+                    && population.system().scalpsTakenBy(actorId) > 0) {
+                cullTaughtRows++;
+                continue; // the cull verb taught this one, and the report says who culled
+            }
             assertEquals((int) row[2], jobs.get(ordinal).params().trainSkillRaw(),
                     "actor#" + actorId + "'s level-up must reconstruct to its own bound job");
         }
+        assertTrue(cullTaughtRows < jobSkillLevelUps.size(),
+                "the cull exception must not swallow the whole check — every row cannot be "
+                        + "a culler's fieldcraft row");
     }
 
     @Test

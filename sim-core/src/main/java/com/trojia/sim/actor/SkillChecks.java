@@ -85,6 +85,20 @@ public final class SkillChecks {
     /** Catch ceiling: mastery never buys certainty. */
     public static final int FISH_CATCH_CEIL_PERMILLE = 900;
 
+    // ---- the cull family (S8 scalps): culler fieldcraft + AGI against the quarry type's
+    // authored scalpResist. A downed body does not fight back, so the base sits comfortably
+    // above the fishing families' — taking a scalp is a matter of a steady hand, not luck —
+    // but the ceiling stays under 1000 like every other family in this file: mastery never
+    // buys certainty (the genre contract), and a ceiling AT 1000 would turn a standing body
+    // beside a carcass into a guaranteed materials faucet with no story in it. The floor is
+    // generous enough that a novice cutting a mouse still learns the trade. ----
+    /** Baseline cull permille when culler score equals the quarry's resist. */
+    public static final int CULL_BASE_PERMILLE = 600;
+    /** Cull floor: even a clumsy hand gets the pelt off sometimes. */
+    public static final int CULL_FLOOR_PERMILLE = 150;
+    /** Cull ceiling: mastery never buys certainty (and never a guaranteed faucet). */
+    public static final int CULL_CEIL_PERMILLE = 940;
+
     private SkillChecks() {
     }
 
@@ -174,5 +188,19 @@ public final class SkillChecks {
                 + tracks.attribute(fisherId, AttributeId.AGI);
         return successPermille(score, resist, FISH_CATCH_BASE_PERMILLE,
                 FISH_CATCH_FLOOR_PERMILLE, FISH_CATCH_CEIL_PERMILLE);
+    }
+
+    /**
+     * The CULL threshold (S8 scalps): culler {@code fieldcraft + AGI} against the quarry
+     * type's authored {@code scalpResist}, on the cull family's base/floor/ceiling — through
+     * this file's ONE {@link #successPermille} function, like every other family. Reads the
+     * TRUE id: skinning is the body's own work, not a social read (the push/pickpocket/cast
+     * precedent). Degrades to the base where the skill table is unwired.
+     */
+    public static int cullPermille(SkillTrackRegistry tracks, int cullerId, int resist) {
+        int score = tracks.level(cullerId, tracks.fieldcraftRaw())
+                + tracks.attribute(cullerId, AttributeId.AGI);
+        return successPermille(score, resist, CULL_BASE_PERMILLE,
+                CULL_FLOOR_PERMILLE, CULL_CEIL_PERMILLE);
     }
 }

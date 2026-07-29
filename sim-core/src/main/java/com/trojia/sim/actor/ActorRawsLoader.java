@@ -34,7 +34,7 @@ public final class ActorRawsLoader {
     private static final List<String> ROOT_FIELDS = List.of(
             "id", "displayName", "glyph", "tint", "factionId", "hp", "speedTicksPerStep",
             "leashRadius", "inventoryCap", "needs", "deferWielder", "flee", "seekFood",
-            "returnHome", "loiter");
+            "returnHome", "loiter", "scalpItem", "scalpResist");
     private static final List<String> NEED_KEYS =
             List.of("hunger", "rest", "coin", "safety", "duty");
     private static final List<String> NEED_FIELDS =
@@ -248,10 +248,35 @@ public final class ActorRawsLoader {
         rejectUnknown(name, "loiter.", loiter, LOITER_FIELDS);
         int loiterPriority = requireInt(name, "loiter.priority", loiter, "priority", 1, 99);
 
+        // S8 scalp pair (Eli's ruling: "kills are counted as SCALPS, not counters"). WHICH type
+        // drops WHICH named item is data, not code — that is the whole point of putting it here
+        // rather than in a switch somewhere in the observer. The symbol resolves through the one
+        // TradeGoods table every content string goes through, so a typo fails at load.
+        // Both-or-neither, validated by ActorTypeStats itself.
+        short scalpItemKind = ActorTypeStats.NO_SCALP;
+        int scalpResist = 0;
+        if (root.get("scalpItem") != null) {
+            String symbol = requireString(name, "scalpItem", root, "scalpItem");
+            scalpItemKind = TradeGoods.kindForSymbol(symbol);
+            if (scalpItemKind == TradeGoods.NO_KIND) {
+                throw new ActorRawsValidationException(name, "scalpItem",
+                        "no TradeGoods kind carries the symbol \"" + symbol + "\"");
+            }
+            if (!TradeGoods.isCategory(scalpItemKind, TradeGoods.Category.MATERIALS)) {
+                throw new ActorRawsValidationException(name, "scalpItem",
+                        "a scalp is a raw harvested by-product and must be MATERIALS: " + symbol);
+            }
+            scalpResist = requireInt(name, "scalpResist", root, "scalpResist", 1, 1000);
+        } else if (root.get("scalpResist") != null) {
+            throw new ActorRawsValidationException(name, "scalpResist",
+                    "scalpResist without scalpItem (the pair is both-or-neither)");
+        }
+
         return new ActorTypeStats(typeId, displayName,
                 glyph, tint, factionId, hp, speedTicksPerStep, leashRadius, inventoryCap, needs,
                 hasDefer, deferPriority, deferRadius, fleePriority, seekFoodPriority,
-                returnHomePriority, returnHomeRhythmBonus, nightStart, nightEnd, loiterPriority);
+                returnHomePriority, returnHomeRhythmBonus, nightStart, nightEnd, loiterPriority,
+                scalpItemKind, scalpResist);
     }
 
     private static NeedConfig[] parseNeeds(String file, JsonObject root) {

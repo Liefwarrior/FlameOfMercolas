@@ -53,7 +53,7 @@ class DocksWorkPointsBakeTest {
         for (int i = 0; i < registry.size(); i++) {
             Actor actor = registry.get(i);
             String job = jobKey(actor);
-            if (!job.equals("serf.laborer") && !job.equals("serf.carter")
+            if (!isStationHand(actor) && !job.equals("serf.carter")
                     && !job.equals("maritime.fisher") && !job.equals("maritime.sailor")
                     && !job.equals("serf.farmer")) {
                 continue;
@@ -183,12 +183,26 @@ class DocksWorkPointsBakeTest {
                 + " room's west end (the S6 beat de-overlap)");
     }
 
+    /**
+     * The station-hand jobs: plain {@code serf.laborer} plus the four S8 craft-yard trades.
+     * A ropewalker is a laborer standing at a Ropewalk station — the S8 promotion changed its
+     * job LABEL and its yield, not where it stands or what this test is about (the ward's
+     * worst monoculture was 50 hands on one cell). Counting only {@code serf.laborer} here
+     * after S8 would silently stop counting the very gang these assertions exist to watch.
+     */
+    private static boolean isStationHand(Actor actor) {
+        String job = jobKey(actor);
+        return job.equals("serf.laborer") || job.equals("serf.ropewalker")
+                || job.equals("serf.tarhand") || job.equals("serf.cooper")
+                || job.equals("serf.salter");
+    }
+
     private Map<Integer, Integer> laborersPerAnchor() {
         ActorRegistry registry = population.registry();
         Map<Integer, Integer> counts = new HashMap<>();
         for (int i = 0; i < registry.size(); i++) {
             Actor actor = registry.get(i);
-            if (jobKey(actor).equals("serf.laborer")) {
+            if (isStationHand(actor)) {
                 counts.merge(actor.anchorCell(), 1, Integer::sum);
             }
         }

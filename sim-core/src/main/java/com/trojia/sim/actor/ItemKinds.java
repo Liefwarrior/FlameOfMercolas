@@ -71,6 +71,41 @@ public final class ItemKinds {
      */
     public static final short FISH = 13;
 
+    // ---- S8 "The Ward Prices Itself", trade goods (Eli's ruling: exactly four
+    // categories — materials, food, commodities, services; no fifth, no renames). These four
+    // are the Docks' own MATERIALS, minted by the craft yards' completed work units through
+    // the JobParams yield pair. They are ordinary counted stacks: nothing about them is
+    // special-cased in ItemsLite, and each carries its weight/category in {@link TradeGoods}. ----
+
+    /** Laid rope off the Ropewalk's stations (MATERIALS). */
+    public static final short CORDAGE = 14;
+
+    /** Boiled tar out of the Pitchfield (MATERIALS). */
+    public static final short PITCH = 15;
+
+    /** Cut staves and hoops off the cooperage floor (MATERIALS). */
+    public static final short BARREL_STOCK = 16;
+
+    /** Panned and raked salt off Salt Row (MATERIALS). */
+    public static final short SALT = 17;
+
+    // ---- S8 scalps (Eli's ruling: "kills are counted as SCALPS, not counters" — a scalpable
+    // type drops a NAMED ITEM on death, so kill-tracking is an item problem and items already
+    // persist). VERMIN ONLY this arc: combat is out (Decision 2b amendment, commit 57a444f),
+    // so human scalps defer past S12 and no wastrel scalp exists. A scalp is a raw harvested
+    // by-product like a hide, so it is MATERIALS, not a commodity — Brann the chandler
+    // (renders fat) and Grandmother Withy (takes gull down) are the notables who buy exactly
+    // that. Which type drops which scalp is raws data ({@code scalpItem}), not code. ----
+
+    /** The quay mouse's scalp (MATERIALS) — the vermin bounty the ward actually pays. */
+    public static final short RAT_SCALP = 18;
+
+    /** The scavenging gull's scalp (MATERIALS). */
+    public static final short GULL_SCALP = 19;
+
+    /** The prowling cat's scalp (MATERIALS). */
+    public static final short CAT_SCALP = 20;
+
     private ItemKinds() {
     }
 }

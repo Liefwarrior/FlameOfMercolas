@@ -29,7 +29,7 @@ public final class JobRawsLoader {
     private static final List<String> JOB_FIELDS = List.of(
             "id", "goalKind", "priority", "rhythmWindow", "rhythmBonus", "workTicksPerUnit",
             "unitsToComplete", "renew", "assign", "defaultFor", "secret", "cover",
-            "trainsSkill", "trainCp", "dutyPerUnit");
+            "trainsSkill", "trainCp", "dutyPerUnit", "yieldItem", "yieldPerUnit");
     private static final List<String> RENEW_FIELDS = List.of("mode", "cooldownTicks");
     private static final List<String> COVER_FIELDS = List.of("actorType", "presentedJob");
 
@@ -123,9 +123,28 @@ public final class JobRawsLoader {
                 ? requireInt(file, "dutyPerUnit", raw, "dutyPerUnit", 0, Integer.MAX_VALUE)
                 : 0;
 
+        // S8 YIELD pair: both-or-neither, exactly the training pair's shape. The symbol is
+        // validated against the TradeGoods table HERE, at load, so a typo'd good ("cordidge")
+        // fails the build instead of silently binding a job that quietly mints nothing.
+        String yieldItem = null;
+        int yieldPerUnit = 0;
+        if (raw.has("yieldItem")) {
+            yieldItem = requireString(file, "yieldItem", raw, "yieldItem");
+            if (com.trojia.sim.actor.TradeGoods.kindForSymbol(yieldItem)
+                    == com.trojia.sim.actor.TradeGoods.NO_KIND) {
+                throw new ActorRawsValidationException(file, "yieldItem",
+                        "no TradeGoods kind carries the symbol \"" + yieldItem + "\"");
+            }
+            yieldPerUnit = requireInt(file, "yieldPerUnit", raw, "yieldPerUnit", 1,
+                    Integer.MAX_VALUE);
+        } else if (raw.has("yieldPerUnit")) {
+            throw new ActorRawsValidationException(file, "yieldPerUnit",
+                    "yieldPerUnit without yieldItem (the pair is both-or-neither)");
+        }
+
         return new JobRaw(file, id, goalKind, priority, rhythmStart, rhythmEnd, rhythmBonus,
                 workTicksPerUnit, unitsToComplete, renewMode, cooldownTicks, assign, defaultFor,
-                secret, cover, trainsSkill, trainCp, dutyPerUnit);
+                secret, cover, trainsSkill, trainCp, dutyPerUnit, yieldItem, yieldPerUnit);
     }
 
     private static List<JobRaw.AssignWeight> parseAssign(String file, JsonObject raw) {

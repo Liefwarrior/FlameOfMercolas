@@ -131,11 +131,39 @@ public final class HudText {
                 HudToken.icon(IconKey.G), HudToken.text(" pickpocket   "),
                 HudToken.icon(IconKey.E), HudToken.text(" eat   "),
                 HudToken.icon(IconKey.R), HudToken.text(" fish   "),
+                // Sprint 8 (the scalp loop): the two verbs the sprint shipped. They were on no
+                // screen at all until this line carried them — the S4 playtest's #1 fix,
+                // re-opened; HudTextTest now reads the input package itself so a verb bound
+                // without a legend entry fails the build rather than shipping invisible.
+                HudToken.icon(IconKey.K), HudToken.text(" cull   "),
+                HudToken.icon(IconKey.B), HudToken.text(" sell   "),
                 HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
                 HudToken.text(" climb   "),
                 HudToken.icon(IconKey.I), HudToken.text(" disguise   "),
                 HudToken.icon(IconKey.J), HudToken.text(" journal   "),
                 HudToken.icon(IconKey.P), HudToken.text(" release"));
+    }
+
+    /** {@link #purse}'s "no bank account behind this hand" sentinel for {@code royals}. */
+    public static final long NO_ACCOUNT = -1L;
+
+    /**
+     * The played actor's PURSE readout (S8): the two kinds of money in this economy, named
+     * apart because they behave differently — {@code Royals} are a ledger balance a counter
+     * sale settles into ({@code BankLedger}), {@code Coins} are the physical specie in the
+     * pack. Selling a scalp moves the Royals number and leaves the Coins number alone, and a
+     * player has to be able to see that. {@code royals == }{@link #NO_ACCOUNT} (no ID card, so
+     * no account authorizes anything) reads as {@code "no account"} rather than as zero — an
+     * unbanked hand is not a broke one.
+     */
+    public static String purse(long royals, int coins) {
+        String banked = royals == NO_ACCOUNT ? "(no account)" : royals + " Royals (banked)";
+        return "PURSE  " + banked + "   " + coins + " Coins (carried)";
+    }
+
+    /** {@link #purse} as the HUD's own token line (its own row while an actor is driven). */
+    public static List<HudToken> purseTokens(long royals, int coins) {
+        return List.of(HudToken.text(purse(royals, coins)));
     }
 
     /**

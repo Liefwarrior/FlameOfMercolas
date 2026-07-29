@@ -82,6 +82,35 @@ public final class ActorsSystem implements SimulationSystem {
     private long fishMinted;
     private long fishEaten;
 
+    /**
+     * Closed-supply TRADE-GOOD accounting (S8): one minted counter and one genuinely-sunk
+     * counter PER KIND, densely indexed by {@link TradeGoods} row index (ascending kind id —
+     * the determinism rule's ordered iteration). The identity each kind holds is
+     * {@code goodsMinted(k) == items.liveOfKind(k) + goodsSunk(k)}.
+     *
+     * <p>Two deliberate choices here, both learned from the S8 coin-proof defect. First, this
+     * is a COUNTER at the mint site checked against an independent physical SCAN of ItemsLite —
+     * neither side is derived from the other, so the line can actually fail. Second, the sunk
+     * side is a counter and NOT {@code items.sunkOfKind(k)}: {@link ItemsLiteRegistry#sink}
+     * leaves a vacated slot's old quantity in place, so a stack that was fully MOVED still
+     * reads at its old size and {@code sunkOfKind} counts a phantom. ({@code liveOfKind} is
+     * safe — the phantom cancels between total and sunk.)
+     *
+     * <p>Per kind, never lumped: a single "goods minted" total could hide a yard that minted
+     * nothing behind another yard's surplus. Pure accounting — read by no behavior, rides no
+     * save, reproduced identically by two fresh runs.
+     */
+    private final long[] goodsMinted = new long[TradeGoods.count()];
+    private final long[] goodsSunk = new long[TradeGoods.count()];
+
+    /**
+     * Per-culler scalp tallies (S8), dense by actor id — pure accounting, read by no
+     * behavior, riding no save, exactly like {@code foodMinted}. The scalp COUNT alone can be
+     * one soul standing beside one den all month; the DISTINCT-culler count is what says the
+     * vermin bounty is something the ward does. Grown lazily to the registry size.
+     */
+    private int[] scalpsTakenBy = new int[0];
+
     /** Ring capacity of the shove log — bounds riot detection's O(K^2) cluster scan. */
     private static final int SHOVE_LOG_CAPACITY = 256;
 
@@ -394,6 +423,59 @@ public final class ActorsSystem implements SimulationSystem {
     }
 
     /**
+     * The dense {@link TradeGoods} row index for {@code kind}, or {@code -1} when the kind has
+     * no row (an untabled kind is accounted nowhere rather than corrupting a neighbour's
+     * counter).
+     */
+    private static int goodsSlot(short kind) {
+        for (int i = 0; i < TradeGoods.count(); i++) {
+            if (TradeGoods.at(i).kind() == kind) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Total units of trade-good {@code kind} ever minted — that kind's conservation numerator. */
+    public long goodsMinted(short kind) {
+        int slot = goodsSlot(kind);
+        return slot < 0 ? 0 : goodsMinted[slot];
+    }
+
+    /** How many scalps {@code actorId} has taken across the run (pure accounting). */
+    public int scalpsTakenBy(int actorId) {
+        return actorId >= 0 && actorId < scalpsTakenBy.length ? scalpsTakenBy[actorId] : 0;
+    }
+
+    /** How many DIFFERENT souls have ever taken a scalp — the distribution, not the total. */
+    public int distinctCullers() {
+        int n = 0;
+        for (int taken : scalpsTakenBy) {
+            if (taken > 0) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** Total units of trade-good {@code kind} genuinely destroyed — that kind's sink count. */
+    public long goodsSunk(short kind) {
+        int slot = goodsSlot(kind);
+        return slot < 0 ? 0 : goodsSunk[slot];
+    }
+
+    /**
+     * Records trade goods minted OUTSIDE the tick loop (a bake-time seed), the
+     * {@link #recordFoodMintedAtBake} twin. Pure accounting; no effect on determinism.
+     */
+    public void recordGoodsMintedAtBake(short kind, long n) {
+        int slot = goodsSlot(kind);
+        if (slot >= 0) {
+            goodsMinted[slot] += n;
+        }
+    }
+
+    /**
      * Records FOOD minted OUTSIDE the tick loop (the bake-time larder seed), so the harness's
      * conservation identity {@code minted == liveOfKind(FOOD) + eaten} accounts for every unit that
      * ever existed. Called once by the scenario bake; no effect on determinism (pure accounting).
@@ -689,6 +771,7 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeLong(actor.houseArrestUntilTick()); // density revisit: house-arrest deadline
         out.writeLong(actor.huntBackoffUntilTick()); // density revisit: hop-blocked-chase backoff
         out.writeLong(actor.starvingSinceTick()); // Sprint 6 death: the starvation-spell clock
+        out.writeLong(actor.culledUntilTick()); // S8: the cull latch (one scalp per cooldown)
         // lastReasonCode is load-bearing in ApprehendPolicy's buying-customer exemption, so a
         // loaded run must see the same value a continuous run would (-1 = never set).
         out.writeByte(actor.lastReasonCode() == null ? -1 : actor.lastReasonCode().ordinal());
@@ -785,6 +868,7 @@ public final class ActorsSystem implements SimulationSystem {
         long houseArrestUntilTick = in.readLong(); // density revisit
         long huntBackoffUntilTick = in.readLong(); // density revisit: hop-blocked-chase backoff
         long starvingSinceTick = in.readLong(); // Sprint 6 death: the starvation-spell clock
+        long culledUntilTick = in.readLong(); // S8: the cull latch
         byte lastReasonOrdinal = in.readByte(); // law & order pass: -1 = never set
 
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
@@ -823,6 +907,7 @@ public final class ActorsSystem implements SimulationSystem {
         actor.setHouseArrestUntilTick(houseArrestUntilTick);
         actor.setHuntBackoffUntilTick(huntBackoffUntilTick);
         actor.setStarvingSinceTick(starvingSinceTick);
+        actor.setCulledUntilTick(culledUntilTick);
         actor.setLastReasonCode(
                 lastReasonOrdinal < 0 ? null : ReasonCode.values()[lastReasonOrdinal]);
     }
@@ -884,6 +969,10 @@ public final class ActorsSystem implements SimulationSystem {
             // spell-only desync must fail the twin-run hash before it becomes a death-day
             // divergence.
             sink.putLong(actor.starvingSinceTick());
+            // S8 (landmine F again): the cull latch is behavior-carrying — whether a soul may
+            // take a scalp this tick decides whether an item gets minted, so a latch-only
+            // desync must fail the twin-run hash rather than surface later as a supply gap.
+            sink.putLong(actor.culledUntilTick());
         }
         sink.putInt(homes.size());
         for (int i = 0; i < homes.size(); i++) {
@@ -1081,6 +1170,35 @@ public final class ActorsSystem implements SimulationSystem {
         @Override
         public void recordFishEaten(int n) {
             fishEaten += n;
+        }
+
+        @Override
+        public void recordGoodsMinted(short kind, int n) {
+            int slot = goodsSlot(kind);
+            if (slot >= 0) {
+                goodsMinted[slot] += n;
+            }
+        }
+
+        @Override
+        public void recordScalpTaken(int cullerId, short kind) {
+            if (cullerId < 0) {
+                return;
+            }
+            if (cullerId >= scalpsTakenBy.length) {
+                int[] grown = new int[Math.max(cullerId + 1, registry.size())];
+                System.arraycopy(scalpsTakenBy, 0, grown, 0, scalpsTakenBy.length);
+                scalpsTakenBy = grown;
+            }
+            scalpsTakenBy[cullerId]++;
+        }
+
+        @Override
+        public void recordGoodsSunk(short kind, int n) {
+            int slot = goodsSlot(kind);
+            if (slot >= 0) {
+                goodsSunk[slot] += n;
+            }
         }
 
         @Override

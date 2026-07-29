@@ -53,6 +53,11 @@ public final class DocksActorsMain {
 
         FixtureWorldLoader.Loaded loaded = FixtureWorldLoader.loadDocksSurface();
         DocksPopulation population = DocksPopulation.build(loaded.worldSeed(), loaded.world());
+        // The closed-money-supply BEFORE measurement, taken before a single tick runs. The
+        // after-measurement alone proves nothing (see CoinCensus) — the invariant is the two
+        // scans agreeing across 15k ticks of wages, counters and pickpockets.
+        CoinCensus coinAtBake = CoinCensus.of(population.items(),
+                DocksPopulation.bankVaultChestCell());
         IdentityRegistry identity = population.identity();   // S1 NameForge (bake-side, pure)
 
         ActorRegistry registry = population.registry();
@@ -327,7 +332,7 @@ public final class DocksActorsMain {
         printGraphSample(homes, relationships);
         System.out.println("items minted (placeholder ids + quantities, §11.2): "
                 + population.items().size());
-        printEconomyProof(population);
+        printEconomyProof(population, coinAtBake);
         printFoodConservation(population);
         printStarvationByClass(registry);
         printSerfStarvationByBand(registry, jobs);
@@ -346,8 +351,10 @@ public final class DocksActorsMain {
         guardJam.print(ticks);
         printStatueReport(laborerCells, ticks);
         printFishingReport(population);
+        printGoodsConservation(population, identity);
         printDeathReport(population, identity);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
+        printWorldHash(loaded.world(), population, driver.currentTick());
         if (perf) {
             // Wall-clock timing — printed only under --perf so plain runs stay byte-identical.
             double avgMillis = tickNanos / 1e6 / ticks;
@@ -541,29 +548,86 @@ public final class DocksActorsMain {
     }
 
     /**
-     * Money-conservation proof (Phase-2): after the run, the hard invariant
-     * {@code totalRoyals() == vault COIN count} must still hold, and the closed COIN supply
-     * (minted == vault + loose-on-persons + sunk) must be intact — wages and any counter traffic
-     * only ever MOVED Royals, never minted them.
+     * The canonical world-hash surface (S8 harness slice). Every twin-run comparison in this
+     * arc reads THESE three numbers out of the report: the world's own (WRLD) sub-hash, the
+     * ACTORS section sub-hash — the one that covers the whole persisted triad, actors through
+     * deathLog — and the salt-order-invariant combined hash of both.
+     *
+     * <p>Printed last so the whole report above it has already been produced from the same
+     * end-of-soak state; parsed by {@link TwinRunGateMain} via the {@link #WORLD_HASH_TAG}
+     * prefix, and by hand for the committed pre-S8 baseline
+     * ({@code docs/BASELINE-WORLD-HASH.md}). {@code Locale.ROOT} pins the digits — a locale
+     * with non-ASCII numerals would otherwise make the "byte-identical" claim
+     * machine-dependent.
+     *
+     * <p>This surface is load-bearing for the whole S8-S12 arc: without it a state divergence
+     * that never reaches a printed line (the twin-run gate's injection #2 was exactly that
+     * shape) is invisible to every other line of this report.
      */
-    private static void printEconomyProof(DocksPopulation population) {
+    private static void printWorldHash(com.trojia.sim.world.World world,
+            DocksPopulation population, long tick) {
+        com.trojia.sim.world.io.WorldHasher hasher = new com.trojia.sim.world.io.WorldHasher();
+        hasher.hashWorld(world);
+        population.system().hashInto(hasher.sectionSink(population.system().id()));
+        long worldSection = hasher.sectionHash(
+                com.trojia.sim.world.io.WorldHasher.WORLD_SECTION);
+        long actorsSection = hasher.sectionHash(population.system().id());
+        long combined = hasher.combinedHash();
+        System.out.println();
+        System.out.println("================ WORLD HASH (the twin-run comparator) ======================");
+        System.out.println(String.format(java.util.Locale.ROOT,
+                "  at tick %d;  WRLD=%016x  ACTORS=%016x", tick, worldSection, actorsSection));
+        System.out.println(String.format(java.util.Locale.ROOT,
+                "%s%016x", WORLD_HASH_TAG, combined));
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * Line prefix {@link TwinRunGateMain} greps for the combined world hash. Load-bearing —
+     * changing it silently un-hooks the twin-run gate's hash comparator, so the gate fails
+     * hard (rather than skipping) when the tag is absent from a run's stdout.
+     */
+    static final String WORLD_HASH_TAG = "  COMBINED WORLD HASH: 0x";
+
+    /**
+     * Money-conservation proof (Phase-2, repaired in S8): after the run, the hard invariant
+     * {@code totalRoyals() == vault COIN count} must still hold, and the closed COIN supply
+     * must be intact — wages, counter traffic and pickpockets only ever MOVED Royals, never
+     * minted them.
+     *
+     * <p><b>What was wrong with this proof.</b> It used to derive
+     * {@code looseCoin = minted - vault - sunk} and then assert
+     * {@code minted == vault + loose + sunk}. That is {@code minted == minted}: a tautology
+     * that printed PASS every sprint and checked nothing. Loose coin is now COUNTED by an
+     * independent walk of ItemsLite ({@link CoinCensus}), and the identity that carries the
+     * weight is a comparison against a second, independent census taken at bake before the
+     * first tick — so a stray mint or a lost stack has something to fail against.
+     */
+    private static void printEconomyProof(DocksPopulation population, CoinCensus atBake) {
         var bank = population.bankAccounts();
-        var items = population.items();
         int vaultCell = DocksPopulation.bankVaultChestCell();
+        CoinCensus now = CoinCensus.of(population.items(), vaultCell);
         long totalRoyals = bank.totalRoyals();
-        int vaultCoins = items.countOnCellOfKind(vaultCell, ItemKinds.COIN);
-        int mintedCoin = items.totalOfKind(ItemKinds.COIN);
-        int sunkCoin = items.sunkOfKind(ItemKinds.COIN);
-        int looseCoin = mintedCoin - vaultCoins - sunkCoin; // coins carried on persons
+        boolean closed = CoinCensus.supplyClosed(atBake, now);
         System.out.println();
         System.out.println("================ MONEY CONSERVATION (closed supply) ========================");
         System.out.println("  accounts open: " + bank.accountCount()
                 + " (per-actor + 1 employer pool);  totalRoyals=" + totalRoyals
-                + "  vaultCOIN=" + vaultCoins
-                + "  -> invariant totalRoyals==vaultCOIN: " + (totalRoyals == vaultCoins));
-        System.out.println("  COIN supply: minted=" + mintedCoin + " == vault(" + vaultCoins
-                + ") + loose(" + looseCoin + ") + sunk(" + sunkCoin + "): "
-                + (mintedCoin == vaultCoins + looseCoin + sunkCoin));
+                + "  vaultCOIN=" + now.vault()
+                + "  -> invariant totalRoyals==vaultCOIN: " + (totalRoyals == now.vault()));
+        System.out.println("  COIN census (independent ItemsLite scan, counted not derived):"
+                + "  vault=" + now.vault()
+                + "  loose=" + now.loose()
+                + " [carried=" + now.carried() + " over " + now.purses()
+                + " distinct souls, fattest purse=" + now.fattest()
+                + ";  staged-on-cells=" + now.ground() + "]"
+                + "  phantom-sunk=" + now.sunk());
+        System.out.println("  CLOSED SUPPLY  live at bake=" + atBake.live()
+                + "  ==  live now=" + now.live() + ": " + closed
+                + (closed ? "" : "  <<< " + (now.live() - atBake.live())
+                        + " Royals appeared from nowhere / vanished"));
+        System.out.println("  (bake split was vault=" + atBake.vault() + " loose=" + atBake.loose()
+                + " over " + atBake.purses() + " purses)");
         System.out.println("============================================================================");
     }
 
@@ -1187,6 +1251,115 @@ public final class DocksActorsMain {
         System.out.println("  FISHING skill holders: " + holders
                 + (holders > 0 ? "  (" + census + (holders > 12 ? ", ..." : "") + ")" : ""));
         System.out.println("============================================================================");
+    }
+
+    /**
+     * S8 TRADE-GOOD conservation (one closed-supply line per kind) plus the holder
+     * DISTRIBUTION each kind actually landed in.
+     *
+     * <p><b>Why seven lines and not one.</b> A single lumped "goods minted" total is exactly
+     * the kind of number that reads PASS while a yard mints nothing — one busy Ropewalk can
+     * carry three dead yards. Each kind gets its own identity, {@code minted == live + sunk},
+     * and each can fail alone.
+     *
+     * <p><b>Why the identity can fail at all</b> (the lesson of the coin-proof defect this
+     * sprint opened by fixing): the left side is a COUNTER incremented at the mint site
+     * ({@code ActorsSystem.goodsMinted}); the right side is an independent physical SCAN of
+     * ItemsLite. Neither is derived from the other. A mint that skipped the counter, a stack
+     * destroyed behind the economy's back, or a double-credit all break it. The sunk side is
+     * the counter and NOT {@code items.sunkOfKind} — a vacated slot keeps its old quantity, so
+     * a fully MOVED stack would read as a phantom sink (see {@code CoinCensus}).
+     *
+     * <p><b>Distributions, not totals.</b> Every line prints DISTINCT holders and the fattest
+     * single holding beside the unit count, because "200 units" is satisfied equally by 200
+     * souls holding one each and by one hoarder holding 200, and only one of those is a ward
+     * that trades. Ascending-index scans only.
+     */
+    private static void printGoodsConservation(DocksPopulation population,
+            IdentityRegistry identity) {
+        var items = population.items();
+        var system = population.system();
+        var registry = population.registry();
+        System.out.println();
+        System.out.println("================ S8 TRADE GOODS (closed supply, per kind) ==================");
+        for (short kind : GoodsCensus.KINDS) {
+            GoodsCensus c = GoodsCensus.of(system, items, registry, kind);
+            String top = c.fattestId() < 0 ? "-"
+                    : (c.fattestId() < identity.size() && identity.get(c.fattestId()).named()
+                            ? identity.get(c.fattestId()).fullName() : "#" + c.fattestId())
+                            + " x" + c.fattest();
+            System.out.println("  " + pad(c.symbol(), 13) + " [" + c.category() + "]"
+                    + "  minted=" + c.minted() + "  live=" + c.live() + "  sunk=" + c.sunk()
+                    + ";  invariant minted == live + sunk: " + c.closed()
+                    + "  (" + c.minted() + " == " + (c.live() + c.sunk()) + ")");
+            System.out.println("      distribution: " + c.holders() + " DISTINCT holders"
+                    + ";  fattest holding: " + top);
+        }
+        // The combined line closes the last hole a hostile reader could pick at: summing the
+        // seven per-kind holder counts would double-count anyone holding two kinds. This
+        // counts SOULS, once each, across every non-food good.
+        long allUnits = 0;
+        int allHolders = 0;
+        for (short kind : GoodsCensus.KINDS) {
+            allUnits += items.liveOfKind(kind);
+        }
+        for (int i = 0; i < registry.size(); i++) {
+            for (short kind : GoodsCensus.KINDS) {
+                if (items.countCarriedOfKind(i, kind) > 0) {
+                    allHolders++;
+                    break;
+                }
+            }
+        }
+        System.out.println("  ANY non-food good: " + allUnits + " units live across "
+                + allHolders + " DISTINCT souls (each soul counted once)");
+        System.out.println("============================================================================");
+
+        // The vermin bounty, read as a DISTRIBUTION. The scalp totals above are a supply
+        // number and one soul beside one den could produce all of them; what says the bounty
+        // is a ward PRACTICE is how many different hands took one. Ascending-id scan.
+        var system2 = population.system();
+        int cullers = system2.distinctCullers();
+        long scalps = 0;
+        for (short kind : new short[] {ItemKinds.RAT_SCALP, ItemKinds.GULL_SCALP,
+                ItemKinds.CAT_SCALP}) {
+            scalps += system2.goodsMinted(kind);
+        }
+        StringBuilder busiest = new StringBuilder();
+        int shown = 0;
+        int bestTally = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            bestTally = Math.max(bestTally, system2.scalpsTakenBy(i));
+        }
+        for (int i = 0; i < registry.size() && shown < 10; i++) {
+            if (system2.scalpsTakenBy(i) > 0) {
+                String who = i < identity.size() && identity.get(i).named()
+                        ? identity.get(i).fullName() : "#" + i;
+                busiest.append(shown == 0 ? "" : ", ").append(who)
+                        .append(" x").append(system2.scalpsTakenBy(i));
+                shown++;
+            }
+        }
+        System.out.println();
+        System.out.println("================ S8 THE VERMIN BOUNTY (who actually culls) =================");
+        System.out.println("  scalps harvested: " + scalps
+                + ";  DISTINCT cullers: " + cullers
+                + ";  busiest single hand: " + bestTally
+                + "  (latch: one attempt per " + com.trojia.sim.actor.CullVerb.CULL_COOLDOWN_TICKS
+                + " ticks per soul)");
+        System.out.println("  first cullers by id: "
+                + (busiest.length() == 0 ? "(nobody)" : busiest
+                        + (cullers > shown ? ", ..." : "")));
+        System.out.println("============================================================================");
+    }
+
+    /** Right-pads {@code s} to {@code width} with spaces (Locale-free, report-text stable). */
+    private static String pad(String s, int width) {
+        StringBuilder b = new StringBuilder(s == null ? "?" : s);
+        while (b.length() < width) {
+            b.append(' ');
+        }
+        return b.toString();
     }
 
     /**

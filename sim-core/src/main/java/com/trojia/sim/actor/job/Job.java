@@ -170,6 +170,77 @@ public sealed abstract class Job {
                 return JobBehaviors.isCompleteAtUnits(self, params());
             }
         }
+
+        /**
+         * The four CRAFT-YARD trades (S8, "The Ward Prices Itself"). Mechanically these are the
+         * {@link Laborer} anchor cycle to the letter — same select, same pursue, same
+         * completion — and they exist as separate leaves for exactly one reason: a job's YIELD
+         * is {@link JobParams} data, so the Ropewalk laying cordage and the Pitchfield boiling
+         * tar have to be two bound param sets, not one. The gang still stands at its authored
+         * stations doing what it always did; the difference is that at the end of a work unit
+         * there is now a thing in its hands.
+         *
+         * <p>None of them is any type's {@code defaultFor} and none carries assign weight: the
+         * scenario binds them by ANCHOR (you are a ropewalker because you work the Ropewalk),
+         * which is the same rule that already makes a carter a carter.
+         */
+        public abstract static sealed class CraftYard extends Serf {
+
+            CraftYard(JobId id, JobParams params) {
+                super(id, params);
+            }
+
+            @Override
+            public final void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectAnchorTarget(self, ctx);
+            }
+
+            @Override
+            public final void pursue(Actor self, ActorContext ctx) {
+                JobBehaviors.pursueAtAnchor(self, ctx, params());
+            }
+
+            @Override
+            public final boolean isComplete(Actor self, ActorContext ctx) {
+                return JobBehaviors.isCompleteAtUnits(self, params());
+            }
+
+            /** Laying rope down the Ropewalk's stations — yields cordage. */
+            public static final class Ropewalker extends CraftYard {
+                public static final JobId ID = JobId.of("serf.ropewalker");
+
+                public Ropewalker(JobParams params) {
+                    super(ID, params);
+                }
+            }
+
+            /** Boiling and drawing tar on the Pitchfield's stands — yields pitch. */
+            public static final class Tarhand extends CraftYard {
+                public static final JobId ID = JobId.of("serf.tarhand");
+
+                public Tarhand(JobParams params) {
+                    super(ID, params);
+                }
+            }
+
+            /** Cutting staves and setting hoops on the cooperage floor — yields barrel stock. */
+            public static final class Cooper extends CraftYard {
+                public static final JobId ID = JobId.of("serf.cooper");
+
+                public Cooper(JobParams params) {
+                    super(ID, params);
+                }
+            }
+
+            /** Raking and barrowing the pans on Salt Row — yields salt. */
+            public static final class Salter extends CraftYard {
+                public static final JobId ID = JobId.of("serf.salter");
+
+                public Salter(JobParams params) {
+                    super(ID, params);
+                }
+            }
+        }
     }
 
     /** Beggars/urchins/petty-thief texture (ACTORS-SPEC.md §4.3). */

@@ -275,6 +275,80 @@ Appearance bucket = color-stop ordinal (0..3), served by `AppearanceQuery`; art 
 
 ---
 
+## 11.1 The twin-run gate (determinism, enforced)
+
+"Two identical runs must produce byte-identical reports" was a house rule with no enforcement
+behind it for five sprints — every twin-run claim in the log was a hand-run diff. It is now a
+task:
+
+```
+./gradlew.bat :client-observer:twinRunGate            # 15,000-tick Docks soak, twice, one seed
+./gradlew.bat :client-observer:twinRunGate -PtwinTicks=2000   # while iterating
+```
+
+It runs the soak twice and fails the build on ANY divergence, on two comparators that do not
+subsume one another:
+
+1. **the combined `WorldHasher` hash** — `WRLD` folded with the `ACTORS` section sub-hash, i.e.
+   the whole persisted triad. Catches state divergence that never reaches a printed line.
+2. **the full report text, byte-for-byte** — catches divergence that lives only in the reporting
+   path (unordered iteration, an identity hash leaking into an ordering, a locale-formatted
+   number), which the state hash cannot see.
+
+The gate is wired into `:client-observer:check`, so `gradlew build` cannot go green on a
+nondeterministic ward. The two runs deliberately share **one JVM**: static leakage and
+identity-hash ordering diverge between two runs in the same process, and two pristine forked
+JVMs would leak identically and pass. The trade-off is stated rather than hidden — this gate
+does not catch divergence that is stable within a JVM but varies across machines; sim-core's
+no-float rule covers that side.
+
+`DocksActorsMain` ends its report with the `WORLD HASH` section the gate greps. A report with
+no hash line is a hard failure in the gate, never a silently skipped comparator. The pre-arc
+baseline lives in `docs/BASELINE-WORLD-HASH.md`; the gate reports MATCH/DRIFT against it and
+never fails on drift.
+
+## 11.2 The trade vocabulary (S8, "The Ward Prices Itself")
+
+Four fixed trade categories, ruled by Eli and binding across the S8-S12 arc: **materials, food,
+commodities, services.** No fifth, no renames. `SERVICES` deliberately holds no item kind and
+never will — a service IS a quest (S10), a contract to perform work, not a stack you can carry.
+
+`ItemKinds` stays the append-only hardcoded vocabulary (ids ride the ItemsLite save format).
+Beside it, `TradeGoods` carries one static row per kind: raws **symbol**, per-unit **weight**,
+**category**, and a fixed **base price** (S9's daily tick moves off that base rather than
+replacing it). The table is plain Java, not a raws loader, because a loader would reintroduce
+the id-allocation problem the hardcoded vocabulary exists to avoid.
+
+The **symbol column is the one place a content string becomes a kind id.** Actor raws name a
+scalp with it (`scalpItem`), quest raws name their items with it, and both go through
+`TradeGoods.kindForSymbol`. The observer's old hardcoded 5-case `itemKind` switch is gone.
+
+**Yields.** `JobParams` carries a `yieldKind`/`yieldPerUnit` pair applied at
+`JobBehaviors.awardWorkEvent` — the same seam the S5 training pair and the S6 DUTY pair ride
+(unit completion / waypoint arrival / dwell completion), never per tick. A rope is finished,
+not accrued by the second.
+
+**Scalps are an item problem, not a counter.** A scalpable type declares `scalpItem` +
+`scalpResist` in its raws and drops that named item when culled, so kill-tracking inherits
+everything items already have: persistence, movement through counters, a conservation proof.
+Scalps are MATERIALS — a raw harvested by-product like a hide. Vermin only through S12: combat
+is out of the arc, so human scalps defer.
+
+**The cull verb rides the work-event seam, not a policy.** A CULL policy would send people
+walking across the ward to stand over carcasses, which moves the population, which is how you
+quietly starve the predators whose food supply those carcasses are. Riding the seam means the
+ward's routes do not change: the hands that cull are the hands already working there. The verb
+never writes to the body's revive timer, and a per-culler `culledUntilTick` latch stops one
+carcass being farmed. Both are covered by named tests, because both are the kind of thing that
+fails silently.
+
+**Conservation is per kind, never lumped.** `ActorsSystem` keeps a mint counter and a
+genuinely-sunk counter for each kind; `GoodsCensus` checks each against an independent physical
+scan of ItemsLite. One lumped goods total is satisfied by one busy yard while three others mint
+nothing. Every reported line prints DISTINCT holders and the fattest single holding beside the
+unit count, for the same reason: 200 units across the ward and 200 units in one hoarder's sack
+are not the same ward.
+
 ## 12. Milestone plan
 
 | M | Deliverable | Acceptance criteria |

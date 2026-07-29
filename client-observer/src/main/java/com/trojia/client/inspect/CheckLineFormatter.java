@@ -139,6 +139,29 @@ public final class CheckLineFormatter {
     }
 
     /**
+     * The cull check's visible dice (S8 scalps): {@code [Fieldcraft 3 vs Wharf Cat 18: 45% --
+     * SCALP TAKEN]} through the shared {@link #contestLine} shape, odds from the sim's own
+     * {@link SkillChecks#cullPermille} at narration time (the honesty note — the attempt's own
+     * XP may already have nudged the level the line shows). The opposition clause names the
+     * quarry the way the ward would: the beast's display name and its authored resist.
+     * Degrades to a numberless tag when the skill table is unwired.
+     *
+     * @param quarryName the quarry type's display name ({@code "Quay Mouse"})
+     * @param resist     the quarry type's authored {@code scalpResist}
+     */
+    public static String cullLine(SkillTrackRegistry tracks, int cullerId, String quarryName,
+            int resist, boolean success) {
+        String outcome = success ? "SCALP TAKEN" : "PELT RUINED";
+        if (!tracks.isWired() || tracks.fieldcraftRaw() == Actor.NONE) {
+            return "[cull -- " + outcome + "]";
+        }
+        return contestLine(tracks.skills().get(tracks.fieldcraftRaw()).displayName(),
+                tracks.level(cullerId, tracks.fieldcraftRaw()),
+                quarryName + " " + resist,
+                SkillChecks.cullPermille(tracks, cullerId, resist), outcome);
+    }
+
+    /**
      * The Watch-lenience line (Sprint 5 — the justice pipeline's first skill read, on the
      * played soul): {@code [the Watch weighs the face you wear: standing -20, Streetwise
      * 12 -- WARNED]}. INPUTS-ONLY by design: the warn-vs-fine threshold formula is
