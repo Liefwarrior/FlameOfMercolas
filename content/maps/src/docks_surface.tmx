@@ -4809,7 +4809,7 @@
     <properties>
      <property name="kind" value="door"/>
      <property name="place" value="The Royal Counting-House"/>
-     <property name="what" value="the ward's bank"/>
+     <property name="what" value="Master Gilt's; never once robbed"/>
      <property name="x0" type="int" value="150"/>
      <property name="x1" type="int" value="159"/>
      <property name="y0" type="int" value="48"/>
@@ -5193,7 +5193,7 @@
     <properties>
      <property name="kind" value="way"/>
      <property name="place" value="The Fishbone Pier"/>
-     <property name="what" value="the spine, continued over the water"/>
+     <property name="what" value="the spine's water-ward continuation"/>
      <property name="x0" type="int" value="72"/>
      <property name="x1" type="int" value="79"/>
      <property name="y0" type="int" value="1"/>
@@ -5698,7 +5698,7 @@
     <properties>
      <property name="kind" value="door"/>
      <property name="place" value="Saltgate Terrace"/>
-     <property name="what" value="a cramped compound"/>
+     <property name="what" value="multiple stories; land is scarce"/>
      <property name="x0" type="int" value="84"/>
      <property name="x1" type="int" value="125"/>
      <property name="y0" type="int" value="101"/>

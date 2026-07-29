@@ -125,6 +125,42 @@ class DocksPlaceSignsTest {
         }
     }
 
+    /**
+     * "Every string is the gazetteer's own wording, trimmed" is a claim the pass makes about
+     * itself, and round 1 shipped one sign that did not hold it (S8 round 2 finding: "one sign
+     * has no gazetteer source though the pass claims every string has one"). This checks it
+     * instead of asserting it: every word of every {@code place}/{@code what} line longer than
+     * four characters must appear somewhere in DOCKS-GAZETTEER.md, case-folded. Short words
+     * (the, and, one, of) are skipped as noise, and the two listed stems are the document's
+     * own words in another inflection.
+     */
+    @Test
+    void everySignLineIsTheGazetteersOwnWording() throws java.io.IOException {
+        String gazetteer = java.nio.file.Files.readString(
+                TestRepo.designDocsDir().resolve("DOCKS-GAZETTEER.md"))
+                .toLowerCase(java.util.Locale.ROOT);
+        // "condo-like apartments" / "condo c04" is the document's own word; the signs say
+        // "condos". Same stem, different inflection -- allowed, and named here rather than
+        // silently stemmed, so a genuinely invented word cannot hide behind a clever matcher.
+        Set<String> inflections = Set.of("condos");
+        List<String> unsourced = new java.util.ArrayList<>();
+        for (TmxObject sign : placeSigns()) {
+            for (String key : new String[] {"place", "what"}) {
+                for (String word : property(sign, key).split("[^A-Za-z'-]+")) {
+                    String lower = word.toLowerCase(java.util.Locale.ROOT);
+                    if (lower.length() <= 4 || inflections.contains(lower)) {
+                        continue;
+                    }
+                    if (!gazetteer.contains(lower)) {
+                        unsourced.add(sign.name() + " " + key + ": \"" + word + "\"");
+                    }
+                }
+            }
+        }
+        assertEquals(List.of(), unsourced,
+                "these sign words appear nowhere in the gazetteer");
+    }
+
     private static List<TmxObject> placeSigns() {
         List<TmxObject> signs = new java.util.ArrayList<>();
         for (TmxLayerGroup group : MapStructure.zGroups(docks.map())) {

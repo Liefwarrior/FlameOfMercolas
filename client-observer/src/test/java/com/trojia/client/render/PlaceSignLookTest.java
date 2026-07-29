@@ -327,6 +327,26 @@ class PlaceSignLookTest {
         assertTrue(countOf(post, BLACK) >= 1, "and still have a board field");
     }
 
+    /**
+     * "Point at its own door AND its own plaque" is ONE gesture, not two: every quad of both
+     * marks lies strictly inside its own tile box, so the cell the plaque occupies IS the cell
+     * the sign hangs on and the overlay's mark-cell rule covers both readings of the ask.
+     */
+    @Test
+    void aMarkNeverStraysOutsideItsOwnTile() {
+        for (int span : new int[] {16, 32, 48}) {
+            for (boolean way : new boolean[] {false, true}) {
+                for (PlaceSignArt.Quad quad : PlaceSignArt.mark(way, 100f, 200f, span, false,
+                        PlaceSignArt.INK_BONE)) {
+                    assertTrue(quad.x() >= 100f && quad.x() + quad.w() <= 100f + span,
+                            "quad escapes its tile horizontally at span " + span);
+                    assertTrue(quad.y() >= 200f && quad.y() + quad.h() <= 200f + span,
+                            "quad escapes its tile vertically at span " + span);
+                }
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ staying off the UI
 
     @Test

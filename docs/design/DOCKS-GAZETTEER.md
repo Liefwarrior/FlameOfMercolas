@@ -332,6 +332,12 @@ The three finger piers carry §3.2's own numbering (`finger_01/02/03`) spelled o
 name is invented here. The Outfall's sign stands at z11 on the seawall the grate is set into,
 because z11 is the plane a player walks and pans — the seam itself stays at z9.
 
+**The wording is checked, not claimed.** Round 1 asserted that every string is this document's
+own words and shipped one that was not (Saltgate Terrace's "a cramped compound"). A test now
+walks every sign line in the committed map and fails on any word over four characters that
+appears nowhere in this file; the only allowed inflection is "condos" for the "condo-like
+apartments" of 2.5, named in the test rather than hidden behind a stemmer.
+
 **Which name a reader is told, where places overlap** (a shop's door cell IS a Tarwalk cell,
 the Eel-Pots stand ON the Tarwalk, Wormwood Pier is part of Pier Row): the client resolves it
 in one written-down order — a mark cell always names its own place; else the nearest footprint;
