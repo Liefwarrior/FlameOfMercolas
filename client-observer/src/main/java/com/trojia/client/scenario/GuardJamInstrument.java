@@ -64,9 +64,17 @@ final class GuardJamInstrument {
     static final int FLIP_CAP = 50;
 
     /**
-     * A step attempt that actually FAILED. {@code goalWorkTicks} is the patrol's blocked-leg
-     * clock; it is zeroed on every tick the guard moves, so 1 is indistinguishable from the
-     * speed accumulator's ordinary sawtooth and only {@code >= 2} is a real blocked spell.
+     * A leg that is NOT GETTING ANYWHERE. {@code goalWorkTicks} is the patrol's stall clock;
+     * {@code >= 2} is a real stall spell rather than the speed accumulator's ordinary sawtooth.
+     *
+     * <p>S7 round 3 widened what this reads, and the widening is the point. The clock used to
+     * zero on every tick the guard MOVED, so it could only ever see a guard standing dead
+     * still — a pair live-locked in a 1-wide connector, stepping back and forth forever without
+     * closing on anything, scored zero blocked ticks and looked healthy. The clock now zeroes
+     * on PROGRESS toward the waypoint instead, and a dead-still tick is weighted 5 to keep the
+     * S6 40-tick yield exact, so this readout counts live-locked ticks too and a still tick
+     * crosses the threshold one tick sooner. The number is therefore NOT comparable with any
+     * figure printed before that change: it is measuring a strictly larger set of failures.
      */
     static final int BLOCKED_THRESHOLD = 2;
 
@@ -643,8 +651,10 @@ final class GuardJamInstrument {
             blocked += blockedTicks[i];
             total += guardTicks[i];
         }
-        System.out.println("  BLOCKED SPELLS (goalWorkTicks>=" + BLOCKED_THRESHOLD
-                + ": a step attempt that actually failed)");
+        System.out.println("  STALL SPELLS (goalWorkTicks>=" + BLOCKED_THRESHOLD
+                + ": a leg not closing on its waypoint -- wedged OR live-locked. Since S7"
+                + " round 3 this counts live-locks too, so it is NOT comparable with the"
+                + " pre-round-3 'blocked spells' figure)");
         System.out.println("    " + blocked + " / " + total + " guard-ticks = "
                 + permille(blocked, total) + " permille   target <90 permille (9%)");
     }
