@@ -240,4 +240,43 @@ final class ActorsSystemEconomyRoundTripTest {
         org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("questCount"),
                 e.getMessage());
     }
+
+    // ================================================================== Simple Magic
+
+    /**
+     * The lingering-effect table and the crafting latch ride the chunk: a save taken mid-warmth
+     * comes back with the same held offset, the same absolute expiry and the same latched hand
+     * — byte-identically and with a matching hash. A held +1 AGI that survived a save as a
+     * SLIGHTLY different number would show up weeks later as a check that went the other way,
+     * which is exactly the class of bug the triad exists to make impossible.
+     */
+    @Test
+    void theLingeringEffectFrameAndTheCraftingLatchRideTheChunk() throws IOException {
+        ActorsSystem source = buildSource();
+        source.activeEffects().add(0, com.trojia.sim.actor.spell.EffectKind.TEMPERATURE,
+                com.trojia.sim.actor.spell.EffectMode.WHILE_ACTIVE, 0, 15, 100L, 700L);
+        source.activeEffects().add(1, com.trojia.sim.actor.spell.EffectKind.ATTRIBUTE,
+                com.trojia.sim.actor.spell.EffectMode.WHILE_ACTIVE,
+                com.trojia.sim.progression.AttributeId.AGI.ordinal(), 1, 100L, 1_000L);
+        source.activeEffects().add(1, com.trojia.sim.actor.spell.EffectKind.VITALITY,
+                com.trojia.sim.actor.spell.EffectMode.OVER_TIME, 0, -1, 100L, 130L);
+        source.registry().get(0).setCastUntilTick(9_876L);
+        byte[] first = serialize(source);
+
+        ActorsSystem loaded = freshLoadTarget(typeStats, jobs);
+        loaded.load(new DataInputStream(new ByteArrayInputStream(first)));
+
+        assertArrayEquals(first, serialize(loaded),
+                "the effect frame round-trips byte-identically");
+        assertEquals(hash(source), hash(loaded),
+                "hashInto covers the effect frame and the latch (landmine F)");
+        assertEquals(15, loaded.activeEffects().temperatureOffsetDeciK(0),
+                "the warmth came back at exactly the same offset");
+        assertEquals(1, loaded.activeEffects().attributeModifier(1,
+                com.trojia.sim.progression.AttributeId.AGI.ordinal()),
+                "and the held nudge with it");
+        assertEquals(3, loaded.activeEffects().liveCount());
+        assertEquals(9_876L, loaded.registry().get(0).castUntilTick(),
+                "the crafting hand is still latched to the same absolute tick");
+    }
 }

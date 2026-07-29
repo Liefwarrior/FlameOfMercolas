@@ -248,22 +248,27 @@ public final class ActiveEffects {
                 slotTarget[s] = NO_TARGET; // a row whose body never existed on this load
                 continue;
             }
-            if (slotEndTick[s] <= tick || registry.get(targetId).isDead()) {
+            if (registry.get(targetId).isDead()) {
                 slotTarget[s] = NO_TARGET;
                 continue;
             }
+            // The dose lands BEFORE the row is retired, so a duration of exactly one period
+            // delivers exactly one dose (the alternative silently makes "harm 3 for 10 ticks"
+            // a no-op, which is a very quiet way for a spellcrafting screen to lie).
             long elapsed = tick - slotStartTick[s];
-            if (elapsed <= 0) {
-                continue; // filed this very tick: the first dose is one period away
+            if (elapsed > 0 && tick <= slotEndTick[s]) {
+                EffectMode mode = EffectMode.of(slotMode[s]);
+                EffectKind kind = EffectKind.of(slotKind[s]);
+                if (mode == EffectMode.OVER_TIME && elapsed % OVER_TIME_PERIOD_TICKS == 0) {
+                    applyOnce(registry.get(targetId), kind, slotParam[s], slotMagnitude[s]);
+                } else if (mode == EffectMode.WHILE_ACTIVE && kind == EffectKind.TEMPERATURE
+                        && elapsed % WARMTH_REST_PERIOD_TICKS == 0) {
+                    registry.get(targetId).applyNeedDelta(Need.REST,
+                            slotMagnitude[s] / DECIK_PER_REST_POINT);
+                }
             }
-            EffectMode mode = EffectMode.of(slotMode[s]);
-            EffectKind kind = EffectKind.of(slotKind[s]);
-            if (mode == EffectMode.OVER_TIME && elapsed % OVER_TIME_PERIOD_TICKS == 0) {
-                applyOnce(registry.get(targetId), kind, slotParam[s], slotMagnitude[s]);
-            } else if (mode == EffectMode.WHILE_ACTIVE && kind == EffectKind.TEMPERATURE
-                    && elapsed % WARMTH_REST_PERIOD_TICKS == 0) {
-                registry.get(targetId).applyNeedDelta(Need.REST,
-                        slotMagnitude[s] / DECIK_PER_REST_POINT);
+            if (slotEndTick[s] <= tick) {
+                slotTarget[s] = NO_TARGET;
             }
         }
     }
