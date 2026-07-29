@@ -18,6 +18,11 @@ final class TestRepo {
         return locate(Path.of("content", "maps", "src"), "tavern_fixture.tmx");
     }
 
+    /** @return the {@code docs/design} directory holding the ward's gazetteer */
+    static Path designDocsDir() {
+        return locate(Path.of("docs", "design"), "DOCKS-GAZETTEER.md");
+    }
+
     /** @return the {@code content/raws} directory */
     static Path rawsDir() {
         return locate(Path.of("content", "raws", "materials"), "granite.json").getParent();

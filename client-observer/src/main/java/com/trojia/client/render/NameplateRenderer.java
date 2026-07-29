@@ -72,6 +72,13 @@ public final class NameplateRenderer {
     /** Show-all per-frame cell suppression (cleared each draw; a stacked cell renders ONE
      *  cascading plate) — reused across frames so steady-state allocates nothing. */
     private final Set<Integer> platedCells = new HashSet<>();
+    /**
+     * The rectangle the HOVER plate covered this frame, or {@code null} when the cursor named
+     * nobody — the keep-out zone the place-sign pop-up honours so it can never sit on top of
+     * the nameplate it belongs to (S8 round 2, Eli: "THE BOX PAINTS OVER THE UI"). Set by the
+     * hover path only: the held-N wall of plates is not a zone anything could dodge.
+     */
+    private PlaceSignArt.Rect hoverPlateBounds;
 
     public NameplateRenderer(ActorRegistry registry, JobRegistry jobs,
             IdentityRegistry identity, FactionStandings standings,
@@ -101,6 +108,7 @@ public final class NameplateRenderer {
     public void draw(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
             int z, int mouseX, int mouseY, boolean showAll) {
         font.getData().setScale(1f);
+        hoverPlateBounds = null;
         if (showAll) {
             drawAll(batch, font, icons, camera, z);
         } else {
@@ -128,7 +136,8 @@ public final class NameplateRenderer {
             }
         }
         if (!plates.isEmpty()) {
-            drawPlate(batch, font, icons, camera, tileX, tileY, plates, depthDim);
+            hoverPlateBounds = drawPlate(batch, font, icons, camera, tileX, tileY, plates,
+                    depthDim);
         }
     }
 
@@ -158,9 +167,18 @@ public final class NameplateRenderer {
                 relationships, playedActorId.getAsInt());
     }
 
+    /**
+     * The zone this frame's hover nameplate occupies, or {@code null} when none was drawn.
+     * The place-sign pop-up reads it and moves out of the way.
+     */
+    public PlaceSignArt.Rect hoverPlateBounds() {
+        return hoverPlateBounds;
+    }
+
     /** One DF-black plate whose bottom edge floats just above the tile's top edge;
-     * {@code depthDim} scales the label colour (1 = the plain same-z plate). */
-    private void drawPlate(SpriteBatch batch, BitmapFont font, IconAtlas icons,
+     * {@code depthDim} scales the label colour (1 = the plain same-z plate). Returns the
+     * rectangle it covered. */
+    private PlaceSignArt.Rect drawPlate(SpriteBatch batch, BitmapFont font, IconAtlas icons,
             MapCamera camera, int tileX, int tileY, List<NameplateText.Plate> plates,
             float depthDim) {
         float lineHeight = font.getLineHeight();
@@ -184,6 +202,8 @@ public final class NameplateRenderer {
             font.draw(batch, plate.label(), screenXLeft, y);
             y -= lineHeight;
         }
+        return new PlaceSignArt.Rect(screenXLeft - HudPanel.PADDING, panelBottomY,
+                contentWidth + 2 * HudPanel.PADDING, panelHeight);
     }
 
     /**

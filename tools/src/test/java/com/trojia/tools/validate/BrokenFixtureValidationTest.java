@@ -178,7 +178,97 @@ class BrokenFixtureValidationTest {
         ValidationReport report = validate(map(group), tsx());
         ValidationIssue issue = singleError(report, "markers");
         assertTrue(issue.message().contains("unknown class \"spawner\""), issue::format);
-        assertTrue(issue.hint().contains("light_source or script_anchor"), issue::format);
+        assertTrue(issue.hint().contains("light_source, script_anchor or place_sign"), issue::format);
+    }
+
+    // ---- place_sign: the building-label contract (2026-07-28 "label buildings" pass) ----
+
+    /** A well-formed sign object at tile (1,1) over the footprint {@code (0,0)-(2,2)}. */
+    private static String placeSign(String name, String propsXml) {
+        return "<object id=\"1\" name=\"" + name + "\" type=\"place_sign\" x=\"24\" y=\"24\">"
+                + "<properties>" + propsXml + "</properties><point/></object>";
+    }
+
+    private static String signProp(String key, String value) {
+        return "<property name=\"" + key + "\" value=\"" + value + "\"/>";
+    }
+
+    private static String signBounds(int x0, int y0, int x1, int y1) {
+        return "<property name=\"x0\" type=\"int\" value=\"" + x0 + "\"/>"
+                + "<property name=\"y0\" type=\"int\" value=\"" + y0 + "\"/>"
+                + "<property name=\"x1\" type=\"int\" value=\"" + x1 + "\"/>"
+                + "<property name=\"y1\" type=\"int\" value=\"" + y1 + "\"/>";
+    }
+
+    @Test
+    void wellFormedPlaceSignIsAccepted() {
+        String group = goodGroupWithMarkers("z:+0", placeSign("sign_k01_weighhouse",
+                signProp("place", "The Weighhouse")
+                        + signProp("what", "harbormaster and customs house")
+                        + signBounds(0, 0, 2, 2)));
+        ValidationReport report = validate(map(group), tsx());
+        assertEquals(0, report.errors().size(), report::render);
+    }
+
+    @Test
+    void placeSignWithoutWordsIsSingleError() {
+        String group = goodGroupWithMarkers("z:+0", placeSign("sign_nameless",
+                signProp("what", "harbormaster and customs house") + signBounds(0, 0, 2, 2)));
+        ValidationReport report = validate(map(group), tsx());
+        ValidationIssue issue = singleError(report, "markers");
+        assertTrue(issue.message().contains("no place line"), issue::format);
+    }
+
+    @Test
+    void placeSignWithoutFootprintIsSingleError() {
+        String group = goodGroupWithMarkers("z:+0", placeSign("sign_footless",
+                signProp("place", "The Ropewalk") + signProp("what", "where cable is laid")));
+        ValidationReport report = validate(map(group), tsx());
+        ValidationIssue issue = singleError(report, "markers");
+        assertTrue(issue.message().contains("no int x0 property"), issue::format);
+        assertTrue(issue.hint().contains("distance to that rect"), issue::format);
+    }
+
+    @Test
+    void placeSignOffItsOwnFootprintIsSingleError() {
+        // The sign sits at tile (1,1); the footprint it claims is the far corner (3,3)-(3,3).
+        String group = goodGroupWithMarkers("z:+0", placeSign("sign_adrift",
+                signProp("place", "The Long Store") + signProp("what", "dry-goods warehouse")
+                        + signBounds(3, 3, 3, 3)));
+        ValidationReport report = validate(map(group), tsx());
+        ValidationIssue issue = singleError(report, "markers");
+        assertTrue(issue.message().contains("hangs 4 tiles off its own footprint"), issue::format);
+        assertTrue(issue.hint().contains("at the site's door"), issue::format);
+    }
+
+    @Test
+    void placeSignWithAnUnknownKindIsSingleError() {
+        String group = goodGroupWithMarkers("z:+0", placeSign("sign_confused",
+                signProp("place", "Tarwalk") + signProp("what", "the working spine")
+                        + signProp("kind", "boulevard") + signBounds(0, 0, 2, 2)));
+        ValidationReport report = validate(map(group), tsx());
+        ValidationIssue issue = singleError(report, "markers");
+        assertTrue(issue.message().contains("unknown kind \"boulevard\""), issue::format);
+        assertTrue(issue.hint().contains("kind=way"), issue::format);
+    }
+
+    @Test
+    void aWayKindPlaceSignIsAccepted() {
+        String group = goodGroupWithMarkers("z:+0", placeSign("sign_w_tarwalk",
+                signProp("place", "Tarwalk") + signProp("what", "the working spine")
+                        + signProp("kind", "way") + signBounds(0, 0, 2, 2)));
+        assertEquals(0, validate(map(group), tsx()).errors().size());
+    }
+
+    @Test
+    void placeSignSharesTheAnchorNamespace() {
+        String group = goodGroupWithMarkers("z:+0",
+                "<object id=\"1\" name=\"clash\" type=\"script_anchor\" x=\"8\" y=\"8\"><point/></object>"
+                        + placeSign("clash", signProp("place", "The Bilge")
+                        + signProp("what", "sailor dive") + signBounds(0, 0, 2, 2)));
+        ValidationReport report = validate(map(group), tsx());
+        ValidationIssue issue = singleError(report, "markers");
+        assertTrue(issue.message().contains("duplicate marker name \"clash\""), issue::format);
     }
 
     @Test

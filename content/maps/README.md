@@ -89,6 +89,7 @@ never hand-edit object ids to collide. Object `Class` (TMX `type` attribute) sel
 |---|---|---|
 | `light_source` | `luminance` int 0–31 | Static baked light (no heat — ruling §1.2 observer #9). |
 | `script_anchor` | — | Named coordinate for scenario scripts (`ScriptedAction`/`SimCommand` targets). Names must be unique per map. |
+| `place_sign` | `place` str, `what` str, `x0`/`y0`/`x1`/`y1` int, `kind` str (optional) | A named place. `place` + `what` are the two lines the observer's pop-up prints; `x0..y1` is the site's footprint rect, which is what the pop-up measures distance to (so the middle of a 64-tile shed still names the shed). `kind` is `door` (a building, marked by a hanging plaque over its doorway — the default when the property is absent) or `way` (a street, lane, quay or pier, marked by a kerb fingerpost). The marker cell is that MARK's cell — a building's door, a way's kerb post — at most 2 tiles outside its own footprint, and no two signs may share a cell (the client's rule "a mark cell always names its own place" depends on it). A long way carries SEVERAL signs, one per segment rect, all saying the same words. Names unique per map, same namespace as anchors. Presentation only: the importer does not bake these; `PlaceSignsLoader` reads them straight from the `.tmx`, exactly as `LampMarkersLoader` does for lights. |
 
 ## Fixture inventory
 

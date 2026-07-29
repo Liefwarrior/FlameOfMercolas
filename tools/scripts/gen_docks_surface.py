@@ -2193,6 +2193,291 @@ for i, (bz, bx, by) in enumerate(GARBAGE_BINS):
     mk(bz, "script_anchor", "garbage_bin_%02d_anchor" % (i + 1), bx, by)
 
 # ======================================================================
+# 7. PLACE SIGNS (Eli 2026-07-28: "We also need to label buildings!") -- the
+# authored binding from a FOOTPRINT to a NAME.
+#
+# The ward was anonymous: 40+ authored buildings with real names, histories and
+# notable residents, and nothing on screen said which was which. This table is
+# where the names live. One `place_sign` marker per named site, a new class in
+# the existing `markers` object layer (content/maps/README.md), carrying:
+#
+#   name  = sign_<key>            (unique per map, the addressing handle)
+#   cell  = the MARK cell -- for a building, the DOOR cell one step OUTSIDE the
+#           threshold, so the plaque hangs over the doorway on the street side and
+#           a player panning the ward sees a marked door before any pop-up appears;
+#           for a way (below), the kerb the fingerpost is planted in
+#   props = place  the sign's words
+#           what   the second line: what the place IS
+#           kind   "door" (a building's hanging plaque) or "way" (a street's
+#                  fingerpost) -- see WAY_SIGNS below
+#           x0/y0/x1/y1  the site's FOOTPRINT rect, map-local tiles
+#
+# The footprint is what makes the pop-up honest at ward scale: the client's box
+# triggers on distance-to-RECT, not distance-to-door, so looking at the middle
+# of the 64-tile Ropewalk names the Ropewalk (a door-radius rule never would).
+#
+# EVERY `place`/`what` string is the DOCKS-GAZETTEER's own wording (sections 3 /
+# 3.1 / 3.2 / 2.5), trimmed -- no lore is invented here. Coordinates are read off
+# the shell()/border() calls above; the self-check at the bottom of this section
+# fails the regen if a sign drifts off its own footprint.
+#
+# TWO DELIBERATE ABSENCES, both design law, not oversight:
+#   * K35 The Skyrunner's Roost -- "(unmarked -- no sign, no door on the
+#     establishments layer) ... This site must never appear on any discoverable
+#     establishments list -- that IS the design" (gazetteer 3.1). It gets no sign.
+#   * Cache Row -- "no lamps, NO door onto any street layer", an unlicensed
+#     off-grid smuggling pocket (3.2). An unlicensed shed does not hang a sign.
+# ======================================================================
+PLACE_SIGNS = [
+    # (key, z, mark x, mark y, x0, y0, x1, y1, place, what)
+    ("k01_weighhouse", 11, 63, 33, 56, 34, 71, 50,
+     "The Weighhouse", "harbormaster and customs house"),
+    ("k02_impound", 11, 62, 52, 56, 53, 68, 58,
+     "Impound Yard", "seized cargo behind a spike fence"),
+    ("k03_gilded_gull", 11, 121, 33, 114, 34, 128, 47,
+     "The Gilded Gull", "captains' tavern"),
+    ("k04_bilge", 11, 105, 33, 100, 34, 111, 43,
+     "The Bilge", "sailor dive on the Tarwalk"),
+    ("k05_lantern_room", 11, 63, 65, 58, 66, 70, 77,
+     "The Lantern Room", "the neutral-ground house"),
+    ("k06_harls_yard", 11, 139, 35, 136, 36, 159, 46,
+     "Harl's Yard", "shipwright: slipway and saw pit"),
+    ("k07_ropewalk", 11, 3, 85, 4, 82, 67, 90,
+     "The Ropewalk", "the shed where cable is laid"),
+    ("k08_branns", 11, 27, 65, 24, 66, 31, 74,
+     "Brann's Chandlery", "ship stores"),
+    ("k09_pitchfield", 11, 15, 35, 2, 36, 29, 58,
+     "Pitchfield", "the tar and pitch yard"),
+    ("k10_dawnstalls", 11, 46, 37, 37, 36, 53, 48,
+     "Dawnstalls", "the dawn fish auction"),
+    ("k11_saltrow", 11, 45, 49, 38, 50, 51, 58,
+     "Salt Row", "gutting sheds and smokehouses"),
+    ("k12_kingsbond", 11, 89, 33, 82, 34, 98, 46,
+     "The King's Bond", "bonded warehouse"),
+    # K13's second line reads "OFFICIALLY empty" on purpose: the gazetteer's own
+    # words are "officially empty for nine years, and lamplight has been seen under
+    # its doors" (3, K13). A sign that asserted the emptiness as fact would print
+    # the very fiction the site exists to disprove -- and it is the ward's own
+    # notice board talking, not the narrator.
+    ("k13_drowned_hold", 11, 177, 49, 178, 34, 189, 54,
+     "The Drowned Hold", "condemned; officially empty 9 years"),
+    ("k14_wrackhouse", 11, 168, 33, 164, 34, 173, 42,
+     "Wrackhouse", "salvage broker"),
+    ("k15_fenners", 11, 125, 51, 122, 52, 128, 58,
+     "Fenner's Pawn", "pawn, and wage-advance in the back"),
+    ("k16_drowned_name_wall", 11, 95, 27, 94, 25, 96, 27,
+     "The Drowned-Name Wall", "the sailors' shrine"),
+    ("k17_mission", 11, 88, 65, 82, 66, 98, 80,
+     "Mission of the Flame", "Divine Light almshouse"),
+    ("k18_bathhouse", 11, 107, 65, 102, 66, 112, 78,
+     "Squall's Bathhouse", "copper boilers and steam"),
+    ("k19_rows", 11, 104, 51, 100, 52, 119, 58,
+     "The Rows", "hammock-space by the night"),
+    ("k20_merles", 11, 86, 26, 82, 14, 93, 25,
+     "Merle's Boats", "boathouse and waterman's hire"),
+    ("k21_watchpost", 13, 72, 120, 62, 117, 71, 126,
+     "Saltgate Watch-Post", "the ward's one watch station"),
+    ("k22_netmenders", 11, 45, 33, 38, 34, 52, 35,
+     "Netmenders' Arcade", "needles, and the ward's memory"),
+    ("k23_coopers", 11, 46, 65, 40, 66, 53, 76,
+     "Cooper and Blockmaker", "barrels and pulley-blocks"),
+    ("k24_eelpots", 11, 97, 33, 84, 30, 111, 32,
+     "The Eel-Pots", "night food stalls"),
+    ("k25_kennelrow", 11, 167, 47, 164, 48, 174, 55,
+     "Kennel Row", "the rat-catchers' yard"),
+    ("k26_sailmaker", 11, 11, 69, 8, 70, 15, 77,
+     "Sailmaker's Loft", "net-mending and sail repair"),
+    ("k27_hardtack", 11, 35, 69, 32, 70, 38, 78,
+     "The Hardtack Oven", "ship's-biscuit bakery"),
+    ("k28_slopchest", 11, 133, 57, 130, 58, 135, 64,
+     "The Slop-Chest", "sailors' clothing and dry-goods"),
+    ("k29_longstore", 11, 87, 81, 79, 82, 97, 92,
+     "The Long Store", "general dry-goods warehouse"),
+    ("k30_kestrel", 11, 66, 20, 62, 18, 71, 22,
+     "The Kestrel", "moored at the fishbone pier"),
+    ("k31_breggas_promise", 11, 64, 13, 58, 10, 71, 16,
+     "Bregga's Promise", "moored at the fishbone pier"),
+    ("k32_deep_keel", 11, 63, 4, 56, 1, 71, 8,
+     "The Deep Keel", "moored at the fishbone pier"),
+    ("k33_widows_grief", 11, 127, 14, 125, 10, 129, 18,
+     "The Widow's Grief", "a wreck under the condemned pier"),
+    ("k34_guardhouse", 11, 106, 79, 100, 80, 112, 92,
+     "Guardhouse", "Militia Watch: nine steel cells"),
+    ("k36_counting_house", 11, 154, 47, 150, 48, 159, 59,
+     "The Royal Counting-House", "Master Gilt's; never once robbed"),
+    # The four Compounds (gazetteer 2.5): a compound's sign hangs at its GATE.
+    ("c1_quayward", 12, 72, 105, 8, 97, 71, 115,
+     "The Quayward Compound", "mansion and condos, no rooftop slum"),
+    ("c2_netters", 11, 139, 65, 116, 66, 159, 93,
+     "The Netters' Compound", "condos around a courtyard farm"),
+    ("c3_saltgate_terrace", 12, 111, 100, 84, 101, 125, 115,
+     "Saltgate Terrace", "multiple stories; land is scarce"),
+    ("c4_gullet", 11, 177, 65, 166, 66, 190, 93,
+     "The Gullet Compound", "decayed; its courtyard gone to trash"),
+]
+
+# ----------------------------------------------------------------------
+# 7b. WAY SIGNS -- the streets, lanes and waterfront features (Eli, S8 round 2:
+# "THE STREETS HAVE NO NAMES ... a player pans the ward and every road is
+# anonymous", and his own ask names "the fishbone pier").
+#
+# WHAT A STREET'S MARK IS, and why it is not a hanging plaque. A plaque hangs
+# over a DOORWAY -- a way has no door, so borrowing the building mark would say
+# something false about the geometry. A way's mark is a FINGERPOST: a post
+# planted in the kerb with a name-board across its head, the silhouette every
+# real street corner has used since Rome. Same ink, same black-and-bone pop-up,
+# different mark -- so at a glance a player can tell "that is a place you go IN"
+# from "that is a way you go ALONG" without reading a word. Drawn by
+# PlaceSignArt.wayPost(); the plaque stays PlaceSignArt.hangingSign().
+#
+# A way is LONG and THIN, so unlike a building it carries SEVERAL marks: the
+# Tarwalk runs the full 192-tile waterfront and gets six fingerposts along it,
+# every one saying "Tarwalk". Each mark owns the SEGMENT rect beside it, so
+# panning any stretch of the ward finds a post, and the box names the stretch you
+# are actually on rather than the far end of the same street.
+#
+# Ways and buildings deliberately OVERLAP (a shop's door cell IS a Tarwalk cell,
+# the Eel-Pots' stalls stand ON the Tarwalk, Wormwood Pier is part of Pier Row).
+# The client resolves that with one rule, in this order: the cell a mark stands on
+# always names its own place; else the nearest footprint; else the more SPECIFIC
+# place (the smaller rect); else authored order. See PlaceSignOverlay.
+#
+# Every `place`/`what` string is the gazetteer's own wording from 2.2 (the
+# waterfront line) and 2.3 (named streets and lanes), trimmed. The three finger
+# piers carry the gazetteer's own numbering (`finger_01/02/03`) spelled out.
+# ----------------------------------------------------------------------
+WAY_SIGNS = [
+    # (key, z, mark x, mark y, x0, y0, x1, y1, place, what)
+    # SEGMENT SPACING: a post roughly every 20-25 tiles along a way's run, because the
+    # observer's own frame at zoom 2 is ~28 tiles wide -- sparser than that and a player
+    # can sit between two posts of the same street and see neither, which is the exact
+    # complaint this table exists to answer.
+    # --- 2.3 named streets and lanes ---------------------------------------
+    ("w_tarwalk_w1", 11, 14, 30, 0, 28, 27, 33,
+     "Tarwalk", "the working spine"),
+    ("w_tarwalk_w2", 11, 42, 30, 28, 28, 55, 33,
+     "Tarwalk", "the working spine"),
+    ("w_tarwalk_quay", 11, 64, 30, 56, 28, 71, 33,
+     "Tarwalk", "quays one side, warehouses the other"),
+    ("w_tarwalk_e1", 11, 84, 28, 80, 28, 96, 33,
+     "Tarwalk", "quays one side, warehouses the other"),
+    ("w_tarwalk_e2", 11, 108, 28, 97, 28, 113, 33,
+     "Tarwalk", "the working spine"),
+    ("w_tarwalk_gull", 11, 120, 28, 114, 26, 129, 33,
+     "Tarwalk", "crowded by day, fog-blind by night"),
+    ("w_tarwalk_bend1", 11, 136, 32, 130, 30, 146, 35,
+     "Tarwalk", "crowded by day, fog-blind by night"),
+    ("w_tarwalk_bend2", 11, 156, 32, 147, 30, 163, 35,
+     "Tarwalk", "crowded by day, fog-blind by night"),
+    ("w_tarwalk_worn", 11, 178, 29, 164, 26, 191, 33,
+     "Tarwalk", "crowded by day, fog-blind by night"),
+    ("w_saltgate_rise_quay", 11, 75, 35, 72, 26, 79, 45,
+     "Saltgate Rise", "the chokepoint road"),
+    ("w_saltgate_rise_cross", 11, 75, 56, 72, 46, 79, 65,
+     "Saltgate Rise", "the chokepoint road"),
+    ("w_saltgate_rise_mid", 11, 74, 72, 72, 66, 77, 80,
+     "Saltgate Rise", "climbing to the Inner Wall gate"),
+    ("w_saltgate_rise_upper", 11, 74, 88, 72, 81, 77, 95,
+     "Saltgate Rise", "climbing to the Inner Wall gate"),
+    ("w_saltgate_rise_terrace", 12, 75, 105, 72, 97, 79, 115,
+     "Saltgate Rise", "climbing to the Inner Wall gate"),
+    ("w_saltgate_rise_head", 13, 75, 121, 72, 117, 79, 127,
+     "Saltgate Rise", "the notice board and the gibbet cage"),
+    ("w_ropewynd_w1", 11, 16, 62, 4, 60, 36, 65,
+     "Ropewynd", "the fitting trades, one block up"),
+    ("w_ropewynd_w2", 11, 52, 62, 37, 60, 69, 65,
+     "Ropewynd", "the fitting trades, one block up"),
+    ("w_ropewynd_e1", 11, 88, 62, 80, 60, 104, 65,
+     "Ropewynd", "a long straight run"),
+    ("w_ropewynd_e2", 11, 116, 62, 105, 60, 129, 65,
+     "Ropewynd", "a long straight run"),
+    ("w_ropewynd_e3", 11, 142, 62, 130, 60, 153, 65,
+     "Ropewynd", "the fitting trades, one block up"),
+    ("w_ropewynd_e4", 11, 166, 62, 154, 60, 177, 65,
+     "Ropewynd", "where the paving gives out"),
+    ("w_herring_lane_north", 11, 33, 40, 32, 34, 35, 46,
+     "Herring Lane", "fish market and salting sheds"),
+    ("w_herring_lane_south", 11, 33, 53, 32, 47, 35, 59,
+     "Herring Lane", "an offal drain down its gutter"),
+    ("w_gullet_g1n", 11, 160, 36, 160, 30, 161, 44,
+     "The Gullet", "wastrel territory: narrow, unlit"),
+    ("w_gullet_g1s", 11, 160, 52, 160, 45, 161, 59,
+     "The Gullet", "wastrel territory: narrow, unlit"),
+    ("w_gullet_g2", 11, 176, 46, 176, 34, 177, 58,
+     "The Gullet", "wastrel territory: narrow, unlit"),
+    ("w_gullet_bottom", 11, 180, 58, 162, 57, 191, 59,
+     "The Gullet", "half its doors nailed shut"),
+    ("w_gullet_g3", 11, 164, 80, 164, 66, 165, 95,
+     "The Gullet", "half its doors nailed shut"),
+    # --- 2.2 the waterfront line, west to east -----------------------------
+    ("w_long_quay_west", 11, 12, 27, 0, 26, 23, 27,
+     "The Long Quay", "stone seawall quay, 3 berths"),
+    ("w_long_quay_mid", 11, 30, 27, 24, 26, 47, 27,
+     "The Long Quay", "mooring posts and a crane gantry"),
+    ("w_long_quay_east", 11, 60, 27, 48, 26, 71, 27,
+     "The Long Quay", "stone seawall quay, 3 berths"),
+    ("w_fishbone_pier", 11, 75, 12, 72, 1, 79, 25,
+     "The Fishbone Pier", "the spine's water-ward continuation"),
+    ("w_fishbone_finger_one", 11, 66, 9, 60, 9, 91, 9,
+     "First Finger", "a finger of the fishbone pier"),
+    ("w_fishbone_finger_two", 11, 66, 17, 62, 17, 81, 17,
+     "Second Finger", "a finger of the fishbone pier"),
+    ("w_fishbone_finger_three", 11, 66, 23, 62, 23, 81, 23,
+     "Third Finger", "a finger of the fishbone pier"),
+    ("w_pier_row", 11, 99, 24, 98, 4, 124, 25,
+     "Pier Row", "four timber finger-piers"),
+    ("w_wormwood_pier", 11, 123, 24, 122, 4, 124, 25,
+     "Wormwood Pier", "condemned and rotten"),
+    ("w_beaching_strand_west", 10, 134, 20, 130, 10, 146, 28,
+     "The Beaching Strand", "shingle beach; hulls are careened"),
+    ("w_beaching_strand_east", 10, 156, 24, 147, 10, 163, 28,
+     "The Beaching Strand", "it shades into mudflats at low tide"),
+    ("w_outfall", 11, 171, 26, 170, 25, 173, 26,
+     "The Outfall", "the sewer mouth in the seawall"),
+]
+
+# Self-check: a sign must hang ON or WITHIN ONE STEP OF its own footprint (the
+# door's outside face), must be inside the map, and must carry legible strings.
+# A hand-typed coordinate that drifted to another lot fails the regen here rather
+# than shipping a sign floating over someone else's roof.
+SIGN_MAX_GAP = 2      # gate signs on the far kerb of a lane are legal at 2
+SIGN_MAX_LINE = 36    # keeps the pop-up box narrower than a hovel is wide
+
+_sign_names = set()
+_sign_cells = {}
+for (kind, table) in (("door", PLACE_SIGNS), ("way", WAY_SIGNS)):
+    for (key, sz, sx, sy, x0, y0, x1, y1, place, what) in table:
+        if key in _sign_names:
+            raise SystemExit("place sign: duplicate key %r" % key)
+        _sign_names.add(key)
+        if not (0 <= sx < W and 0 <= sy < H and 0 <= sz < ZCOUNT):
+            raise SystemExit("place sign %s: cell (%d,%d,z%d) is off the map"
+                             % (key, sx, sy, sz))
+        if not (0 <= x0 <= x1 < W and 0 <= y0 <= y1 < H):
+            raise SystemExit("place sign %s: footprint (%d,%d)-(%d,%d) is off the map"
+                             % (key, x0, y0, x1, y1))
+        # Two signs on ONE cell would make "the cell a mark stands on names its own
+        # place" ambiguous -- the whole point of that rule is that it never is.
+        if (sz, sx, sy) in _sign_cells:
+            raise SystemExit("place sign %s: shares its mark cell (%d,%d,z%d) with %s"
+                             % (key, sx, sy, sz, _sign_cells[(sz, sx, sy)]))
+        _sign_cells[(sz, sx, sy)] = key
+        gap = max(x0 - sx, sx - x1, 0) + max(y0 - sy, sy - y1, 0)
+        if gap > SIGN_MAX_GAP:
+            raise SystemExit("place sign %s: cell (%d,%d) is %d tiles off its own footprint "
+                             "(%d,%d)-(%d,%d) -- put the sign at the door"
+                             % (key, sx, sy, gap, x0, y0, x1, y1))
+        for line in (place, what):
+            if not line.strip() or len(line) > SIGN_MAX_LINE:
+                raise SystemExit("place sign %s: illegal line %r (1..%d chars)"
+                                 % (key, line, SIGN_MAX_LINE))
+            if any(ord(c) < 0x20 or ord(c) > 0x7E for c in line) or "&" in line or "<" in line:
+                raise SystemExit("place sign %s: line %r is not plain ASCII sign text"
+                                 % (key, line))
+        mk(sz, "place_sign", "sign_%s" % key, sx, sy,
+           place=place, what=what, kind=kind, x0=x0, y0=y0, x1=x1, y1=y1)
+
+# ======================================================================
 # XML emission (byte-deterministic; CSV rows carry exactly W tokens,
 # no trailing comma before </data>)
 # ======================================================================

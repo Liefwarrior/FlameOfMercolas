@@ -292,6 +292,75 @@ found to already satisfy the sketch:
 Street/waterfront names, K-site roster identity, and every un-mentioned coordinate above are
 unchanged from §3/§3.1.
 
+### 3.3 The ward names itself — the place-sign pass (Eli 2026-07-28)
+
+Eli, exploring the shipped district: *"We also need to label buildings! Let's use NES style
+black box pop ups with signs (just like in zelda 2 or in early final fantasy games)"*. Until
+this pass every name in §3/§3.1 lived only in this document — the baked world knew a
+building's walls and its work anchor, never what it was called.
+
+**Where the names live now:** a `place_sign` marker class in `docks_surface.tmx`'s existing
+`markers` object layer (authored in `gen_docks_surface.py` §7 and §7b, contract in
+`content/maps/README.md`, validated by `MarkerContractPass`). One marker per named site,
+placed at the site's own MARK cell, carrying `place` (the sign's words), `what` (the second
+line), the site's own FOOTPRINT rect, and `kind`. Every string is this document's own wording,
+trimmed — the generator refuses any line over 36 characters or outside plain ASCII, refuses a
+sign that drifts more than 2 tiles off its own footprint, and refuses two signs on one cell.
+
+**Signed (39 buildings):** K01–K34, K36, and the four Compounds C1–C4 at their gates.
+
+**Signed (26 ways) — added in round 2 (Eli: "THE STREETS HAVE NO NAMES ... a player pans the
+ward and every road is anonymous"), closing what the paragraph below used to file as open.**
+`kind=way` marks a place you travel ALONG rather than go IN; its mark is a kerb FINGERPOST, not
+a hanging plaque, because a plaque hangs over a doorway and a street has no door. A way is long
+and thin, so it carries several signs, one per segment rect, all saying the same words:
+
+| Way | Signs | Source |
+|---|---|---|
+| Tarwalk | 6, along the whole waterfront run | §2.3 |
+| Saltgate Rise | 4, one per leg (z11 quay, z11 mid, z12 terrace, z13 head) | §2.3 |
+| Ropewynd | 2 | §2.3 |
+| Herring Lane | 1 | §2.3 |
+| The Gullet | 4, through the alley-net (G1, G2, the Bottom link, G3) | §2.3 |
+| The Long Quay | 1 | §2.2 |
+| Pier Row / Wormwood Pier | 1 each | §2.2 |
+| The Beaching Strand | 1 (z10, the strand walk plane) | §2.2 |
+| The Outfall | 1, on the seawall above the grate | §2.2 |
+| The Fishbone Pier / First, Second, Third Finger | 1 each | §3.2 |
+
+The three finger piers carry §3.2's own numbering (`finger_01/02/03`) spelled out; no other way
+name is invented here. The Outfall's sign stands at z11 on the seawall the grate is set into,
+because z11 is the plane a player walks and pans — the seam itself stays at z9.
+
+**The wording is checked, not claimed.** Round 1 asserted that every string is this document's
+own words and shipped one that was not (Saltgate Terrace's "a cramped compound"). A test now
+walks every sign line in the committed map and fails on any word over four characters that
+appears nowhere in this file; the only allowed inflection is "condos" for the "condo-like
+apartments" of 2.5, named in the test rather than hidden behind a stemmer.
+
+**Which name a reader is told, where places overlap** (a shop's door cell IS a Tarwalk cell,
+the Eel-Pots stand ON the Tarwalk, Wormwood Pier is part of Pier Row): the client resolves it
+in one written-down order — a mark cell always names its own place; else the nearest footprint;
+else the more SPECIFIC place (smaller rect); else a building before a way; else authored order.
+Round 1 had none of that and six plaques named a neighbour when pointed at.
+
+**Deliberately unsigned, and it must stay that way:**
+
+- **K35 The Skyrunner's Roost** — §3.1's own ruling: "(unmarked — no sign, no door on the
+  establishments layer) … must never appear on any discoverable establishments list — that IS
+  the design." A test asserts it never gains one.
+- **Cache Row** — §3.2: unlicensed, off-grid, "no lamps, NO door onto any street layer". A
+  smuggling shed does not hang a sign.
+
+**Still unlabelled (open, §9-tier):** the ambient sites that have never had a K-key and were
+never meant to hang a sign — West Garden Court, the Bilgewater Gap market walk's stall posts,
+the hovel rows — plus every named place of the OTHER map files of §8.1, which do not exist yet.
+Every named street and waterfront feature of §2.2/§2.3 is now signed (the table above).
+
+Presentation contract, binding: a place name is a way of LOOKING at the ward, not a fact in
+it. The signs are never baked into the TROJSAV, never enter sim-core, never feed the world
+hasher, and no actor can perceive one.
+
 ---
 
 ## 4. People — the eight actor groups (RULED BY ELI, 2026-07-12)

@@ -18,6 +18,7 @@ import com.trojia.client.atlas.SheetTileAtlas;
 import com.trojia.client.atlas.TileAtlas;
 import com.trojia.client.boot.FixtureWorldLoader;
 import com.trojia.client.boot.LampMarkersLoader;
+import com.trojia.client.boot.PlaceSignsLoader;
 import com.trojia.client.boot.RepoPaths;
 import com.trojia.client.camera.FollowZSnap;
 import com.trojia.client.camera.MapCamera;
@@ -68,6 +69,9 @@ import com.trojia.client.render.InspectorRenderer;
 import com.trojia.client.render.JournalRenderer;
 import com.trojia.client.render.LampGlowMap;
 import com.trojia.client.render.NameplateRenderer;
+import com.trojia.client.render.PlaceSign;
+import com.trojia.client.render.PlaceSignArt;
+import com.trojia.client.render.PlaceSignRenderer;
 import com.trojia.client.render.TalkPanelRenderer;
 import com.trojia.client.render.ToastRenderer;
 import com.trojia.client.render.WorldRenderer;
@@ -172,6 +176,7 @@ public final class ObserverApp extends ApplicationAdapter {
     private DepthVision depthVision;
     private ActorRenderer actorRenderer;
     private FishingSpotRenderer fishingSpotRenderer;
+    private PlaceSignRenderer placeSignRenderer;
     private SpriteSheet spriteSheet;
     private InspectorFaces inspectorFaces;
     private ScenarioPopulation population;
@@ -356,6 +361,17 @@ public final class ObserverApp extends ApplicationAdapter {
         LampGlowMap lampGlow = loadLampGlow(fixture, worldWidthTiles, worldHeightTiles);
         this.renderer = new WorldRenderer(world, loaded.materials(), loaded.fluids(),
                 artResolver, atlas, lampGlow);
+        // Depth vision (S4 EPIC): the look-down column resolver that lets the actor pass,
+        // the hover plates, click-to-inspect and the place signs see through empty air to
+        // the bands below. Presentation-only — reads tiles, never feeds the hasher. Built
+        // before the populated branch: an EMPTY ward still gets labelled buildings.
+        this.depthVision = new DepthVision(world);
+        // Building labels (2026-07-28, Eli: "we also need to label buildings"): the ward's
+        // authored place_sign markers, read from the same source map the lamps come from
+        // (marker baking is still deferred — see PlaceSignsLoader's javadoc). Missing
+        // source map = an unlabelled ward, never a boot failure.
+        this.placeSignRenderer = new PlaceSignRenderer(
+                loadPlaceSigns(fixture), depthVision);
 
         if (populated) {
             this.population = fixture == Fixture.DOCKS
@@ -371,10 +387,6 @@ public final class ObserverApp extends ApplicationAdapter {
             Path spriteSheetFile = RepoPaths.locate("content").resolve(spriteIndex.sheetPath());
             this.spriteSheet = SpriteSheet.create(spriteIndex,
                     Gdx.files.absolute(spriteSheetFile.toAbsolutePath().toString()));
-            // Depth vision (S4 EPIC): the look-down column resolver that lets the actor
-            // pass, the hover plates and click-to-inspect see through empty air to the
-            // bands below. Presentation-only — reads tiles, never feeds the hasher.
-            this.depthVision = new DepthVision(world);
             this.actorRenderer = new ActorRenderer(population.registry(), spriteIndex,
                     spriteSheet, lampGlow, depthVision);
             // Fishing-spot overlay (S6): the sim-side registry drawn in world space,
@@ -655,6 +667,34 @@ public final class ObserverApp extends ApplicationAdapter {
         if (actorRenderer != null) {
             actorRenderer.draw(batch, camera, zLevel.z(), ambient);
         }
+        // Place labels: the door plaques and the street fingerposts are world furniture,
+        // drawn just after the actors (a figure in a doorway stands UNDER their shop's sign)
+        // and lit by the same day/night ambient as everything else in the scene. This call
+        // also plans the frame's single pop-up, which the HUD pass below draws.
+        //
+        // WHAT THE VIEWER IS ATTENDING TO, and why it differs by mode. Observing: the tile
+        // under the cursor — the ward's existing hover idiom (NameplateRenderer's own), so
+        // pointing at a building asks "what is that?" and a cursor off the world asks
+        // nothing. Playing: the driven actor's OWN tile, so the sign speaks when you walk up
+        // to the door instead of whenever the mouse drifts. The overlay applies the matching
+        // reach (3 tiles free-camera, 1 tile doorway).
+        if (placeSignRenderer != null && !placeSignRenderer.isEmpty()) {
+            int attentionX;
+            int attentionY;
+            boolean attentionLive;
+            if (playModeActive) {
+                int cell = population.registry().get(playMode.playedActorId()).cell();
+                attentionX = PackedPos.x(cell);
+                attentionY = PackedPos.y(cell);
+                attentionLive = true;
+            } else {
+                attentionX = camera.screenToTileX(Gdx.input.getX());
+                attentionY = camera.screenToTileY(Gdx.input.getY());
+                attentionLive = camera.isInWorld(attentionX, attentionY);
+            }
+            placeSignRenderer.drawMarks(batch, camera, zLevel.z(), icons.whitePixel(),
+                    attentionX, attentionY, attentionLive, playModeActive, ambient);
+        }
 
         // DF-style HUD block (Behavior 2 of this pass): a solid black panel behind the nav +
         // clock lines — plus, on populated fixtures, the VERB legend line (Sprint 4 playtest
@@ -707,6 +747,25 @@ public final class ObserverApp extends ApplicationAdapter {
             nameplateRenderer.draw(batch, font, icons, camera, zLevel.z(),
                     Gdx.input.getX(), Gdx.input.getY(),
                     Gdx.input.isKeyPressed(Input.Keys.N) || scriptPlatesHeld);
+        }
+        if (placeSignRenderer != null && !placeSignRenderer.isEmpty()) {
+            // The one NES pop-up: HUD, not scene — hard-edged, opaque, blocky-lettered, never
+            // dimmed and never faded. It snaps on with the plan and snaps off with it.
+            //
+            // ZONE AWARENESS (S8 round 2): drawn last, but no longer drawn ON TOP OF whatever
+            // is under it. It is handed everything the frame already committed to the screen —
+            // the status/pulse/purse block, the inspector's sheet and event feed, and the hover
+            // nameplate the box belongs to — and it MOVES rather than covering any of them.
+            List<PlaceSignArt.Rect> hudZones = new java.util.ArrayList<>();
+            hudZones.add(new PlaceSignArt.Rect(statusPanelX, statusPanelBottomY,
+                    statusPanelWidth, statusPanelHeight));
+            if (inspectorRenderer != null) {
+                hudZones.addAll(inspectorRenderer.panelBounds());
+            }
+            if (nameplateRenderer != null && nameplateRenderer.hoverPlateBounds() != null) {
+                hudZones.add(nameplateRenderer.hoverPlateBounds());
+            }
+            placeSignRenderer.drawBox(batch, camera, icons.whitePixel(), hudZones);
         }
         if (talkPanelRenderer != null) {
             // The speech exchange (a no-op while closed) — over the plates, under toasts.
@@ -941,6 +1000,28 @@ public final class ObserverApp extends ApplicationAdapter {
         System.out.println("observer: lamp light sources loaded: " + lampMarkers.size());
         return lampMarkers.isEmpty() ? LampGlowMap.EMPTY
                 : new LampGlowMap(lampMarkers, worldWidthTiles, worldHeightTiles);
+    }
+
+    /**
+     * Reads the fixture's authored {@code place_sign} markers — the ward's names — from the
+     * same source map the lamps come from (marker baking is still deferred; see
+     * {@link PlaceSignsLoader}). Degrades to an empty list when {@code content/maps/src} is
+     * not in this checkout: the ward simply goes unlabelled.
+     */
+    private static List<PlaceSign> loadPlaceSigns(Fixture fixture) {
+        String tmxName = switch (fixture) {
+            case TAVERN -> "tavern_fixture.tmx";
+            case COMPOUND -> "compound_block.tmx";
+            case DOCKS -> "docks_surface.tmx";
+        };
+        List<PlaceSign> signs;
+        try {
+            signs = PlaceSignsLoader.load(RepoPaths.locate("content", "maps", "src", tmxName));
+        } catch (IllegalStateException e) {
+            signs = List.of(); // no content/maps/src in this checkout
+        }
+        System.out.println("observer: named places loaded: " + signs.size());
+        return signs;
     }
 
     private static String readArtMapping(String artDir) {
