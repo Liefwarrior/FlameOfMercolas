@@ -275,6 +275,38 @@ Appearance bucket = color-stop ordinal (0..3), served by `AppearanceQuery`; art 
 
 ---
 
+## 11.1 The twin-run gate (determinism, enforced)
+
+"Two identical runs must produce byte-identical reports" was a house rule with no enforcement
+behind it for five sprints — every twin-run claim in the log was a hand-run diff. It is now a
+task:
+
+```
+./gradlew.bat :client-observer:twinRunGate            # 15,000-tick Docks soak, twice, one seed
+./gradlew.bat :client-observer:twinRunGate -PtwinTicks=2000   # while iterating
+```
+
+It runs the soak twice and fails the build on ANY divergence, on two comparators that do not
+subsume one another:
+
+1. **the combined `WorldHasher` hash** — `WRLD` folded with the `ACTORS` section sub-hash, i.e.
+   the whole persisted triad. Catches state divergence that never reaches a printed line.
+2. **the full report text, byte-for-byte** — catches divergence that lives only in the reporting
+   path (unordered iteration, an identity hash leaking into an ordering, a locale-formatted
+   number), which the state hash cannot see.
+
+The gate is wired into `:client-observer:check`, so `gradlew build` cannot go green on a
+nondeterministic ward. The two runs deliberately share **one JVM**: static leakage and
+identity-hash ordering diverge between two runs in the same process, and two pristine forked
+JVMs would leak identically and pass. The trade-off is stated rather than hidden — this gate
+does not catch divergence that is stable within a JVM but varies across machines; sim-core's
+no-float rule covers that side.
+
+`DocksActorsMain` ends its report with the `WORLD HASH` section the gate greps. A report with
+no hash line is a hard failure in the gate, never a silently skipped comparator. The pre-arc
+baseline lives in `docs/BASELINE-WORLD-HASH.md`; the gate reports MATCH/DRIFT against it and
+never fails on drift.
+
 ## 12. Milestone plan
 
 | M | Deliverable | Acceptance criteria |

@@ -592,8 +592,8 @@ public final class DocksActorsMain {
         System.out.println("  COIN census (independent ItemsLite scan, counted not derived):"
                 + "  vault=" + now.vault()
                 + "  loose=" + now.loose()
-                + " [purses=" + now.carried() + " over " + now.purses()
-                + " souls, fattest=" + now.fattest()
+                + " [carried=" + now.carried() + " over " + now.purses()
+                + " distinct souls, fattest purse=" + now.fattest()
                 + ";  staged-on-cells=" + now.ground() + "]"
                 + "  phantom-sunk=" + now.sunk());
         System.out.println("  CLOSED SUPPLY  live at bake=" + atBake.live()
