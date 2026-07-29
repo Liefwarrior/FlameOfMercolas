@@ -62,8 +62,26 @@ public final class SaltgateRiseProof {
      */
     public static final int SOAK_HORIZON_TICKS = 30_000;
 
-    /** The trailing slice of a run the LATE floors are stated over. */
-    public static final int LATE_WINDOW_TICKS = 10_000;
+    /**
+     * The trailing slice of a run the LATE floors are stated over: the final full DAY.
+     *
+     * <p><b>S7 round 4 — this was 10,000 ticks, and that is why the documented default command
+     * failed.</b> The beat's duty window is {@code [0, 12000)} of a 24,000-tick day, so where a
+     * fixed 10,000-tick tail lands in the day decides how much SHIFT is inside it. At the
+     * 60,000-tick soak the tail is ticks 50,000-60,000 — tick-of-day 2,000 to 12,000, a full
+     * working morning. At {@code DocksActorsMain}'s own documented default of 50,000 it is
+     * ticks 40,000-50,000 — tick-of-day 16,000 through midnight to 2,000, of which exactly
+     * 2,000 ticks are on shift and the rest is the guards asleep in their bunks. A per-walker
+     * arrival floor stated over a window that is 80% night is not a stall detector; it is a
+     * clock reading. Round 3 exited non-zero on it, which is how a correct FAIL-costs-something
+     * change turned into a soak tool that fails on its own README command.
+     *
+     * <p>A full DAY is the horizon-invariant answer: every 24,000-tick window contains exactly
+     * one complete duty window for each roster, wherever the run happens to stop. Runs shorter
+     * than a day fall back to the whole run ({@link #lateWindowStart}). The floor did not move —
+     * the window it is evaluated over did.
+     */
+    public static final int LATE_WINDOW_TICKS = (int) com.trojia.sim.actor.DailyRhythm.DAY;
 
     /**
      * Head-waypoint (z:+13) arrivals over {@link #FLOOR_HORIZON_TICKS}. Measured at 232 for
@@ -77,22 +95,31 @@ public final class SaltgateRiseProof {
     public static final int FOOT_ARRIVALS_FLOOR = 130;
 
     /**
-     * Ward-wide head arrivals in the FINAL {@link #LATE_WINDOW_TICKS} of the soak. Placed well
-     * under the healthy measurement so ordinary window-to-window variation cannot trip it —
-     * the check that matters for a stall is the per-walker one below; this is the coarse net.
+     * Ward-wide head arrivals in the FINAL {@link #LATE_WINDOW_TICKS} of the soak — the coarse
+     * net under the per-walker floor below, which is the check a stall actually trips.
+     *
+     * <p><b>S7 round 4 — these two were declared, documented as part of the late-window guard,
+     * and never read by {@link #passes}.</b> A dead constant in a proof is worse than no
+     * constant: it reads like a check and enforces nothing. They are wired now, and restated
+     * over the final DAY rather than the old 10,000-tick tail, with the same reasoning as
+     * before — set well under the healthy measurement (the branch posts 250-plus at each end
+     * over its final day) so ordinary window-to-window variation cannot trip them, while a beat
+     * that has genuinely stopped cannot clear them.
      */
-    public static final int LATE_HEAD_ARRIVALS_FLOOR = 30;
+    public static final int LATE_HEAD_ARRIVALS_FLOOR = 60;
 
     /** Ward-wide foot arrivals in the same final window. */
-    public static final int LATE_FOOT_ARRIVALS_FLOOR = 30;
+    public static final int LATE_FOOT_ARRIVALS_FLOOR = 60;
 
     /**
      * Arrivals EACH walker must post at EACH end of the climb inside the final window. This is
      * the floor a mid-soak stall cannot clear: #371's late-window score was 0 head and 0 foot
      * while his run totals (104/96 over 60,000) still read like a working beat. Deliberately
-     * small — one round trip in the last sixth of the run is a very low bar for a soul whose
-     * job is to walk that climb, and the point is to separate "working" from "stopped", not to
-     * grade the pace.
+     * small — one round trip in the last DAY of the run is a very low bar for a soul whose job
+     * is to walk that climb, and the point is to separate "working" from "stopped", not to
+     * grade the pace. It was not raised when the window grew to a day: the round-3 argument for
+     * a stopped-vs-working separator is unchanged, and a bar raised to sit just under whatever
+     * the current branch happens to measure is how a proof starts flattering its own build.
      */
     public static final int LATE_PER_WALKER_END_FLOOR = 2;
 
@@ -146,6 +173,15 @@ public final class SaltgateRiseProof {
         if (!visitedAllBands || walkerCount < WALKER_FLOOR) {
             return false;
         }
+        int lateHead = 0;
+        int lateFoot = 0;
+        for (int[] late : perWalkerLateEnds) {
+            lateHead += late[0];
+            lateFoot += late[1];
+        }
+        if (lateHead < LATE_HEAD_ARRIVALS_FLOOR || lateFoot < LATE_FOOT_ARRIVALS_FLOOR) {
+            return false;
+        }
         for (int[] ends : perWalkerHeadAndFoot) {
             if (ends[0] <= 0 || ends[1] <= 0) {
                 return false;
@@ -170,6 +206,20 @@ public final class SaltgateRiseProof {
         if (walkerCount < WALKER_FLOOR) {
             why.append("walkers ").append(walkerCount).append(" < floor ")
                     .append(WALKER_FLOOR).append("; ");
+        }
+        int lateHead = 0;
+        int lateFoot = 0;
+        for (int[] late : perWalkerLateEnds) {
+            lateHead += late[0];
+            lateFoot += late[1];
+        }
+        if (lateHead < LATE_HEAD_ARRIVALS_FLOOR) {
+            why.append("ward-wide late head ").append(lateHead).append(" < floor ")
+                    .append(LATE_HEAD_ARRIVALS_FLOOR).append("; ");
+        }
+        if (lateFoot < LATE_FOOT_ARRIVALS_FLOOR) {
+            why.append("ward-wide late foot ").append(lateFoot).append(" < floor ")
+                    .append(LATE_FOOT_ARRIVALS_FLOOR).append("; ");
         }
         for (int i = 0; i < perWalkerHeadAndFoot.size(); i++) {
             int[] ends = perWalkerHeadAndFoot.get(i);

@@ -926,6 +926,17 @@ public final class DocksActorsMain {
                 + footArrivals + " (" + SaltgateRiseProof.per10k(footArrivals, ticksRun)
                 + "/10k);  walkers " + riseWalkers.size() + " (floor "
                 + SaltgateRiseProof.WALKER_FLOOR + ")");
+        int lateHead = 0;
+        int lateFoot = 0;
+        for (int[] late : riseLateEnds) {
+            lateHead += late[0];
+            lateFoot += late[1];
+        }
+        System.out.println("    ward-wide in the LAST " + SaltgateRiseProof.LATE_WINDOW_TICKS
+                + " ticks (the final full DAY, so the window always contains a whole shift"
+                + " wherever the run stops): head " + lateHead + " (floor "
+                + SaltgateRiseProof.LATE_HEAD_ARRIVALS_FLOOR + ");  foot " + lateFoot
+                + " (floor " + SaltgateRiseProof.LATE_FOOT_ARRIVALS_FLOOR + ")");
         for (int w = 0; w < riseWalkers.size(); w++) {
             System.out.println("    actor#" + riseWalkers.get(w) + " reached head "
                     + riseEnds.get(w)[0] + " / foot " + riseEnds.get(w)[1]
