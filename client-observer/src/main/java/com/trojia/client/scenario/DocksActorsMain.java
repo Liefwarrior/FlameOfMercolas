@@ -144,6 +144,17 @@ public final class DocksActorsMain {
                 .get(DocksPopulation.SALTGATE_ROUTE_INDEX).get(2);
         int headArrivals = 0;
         int footArrivals = 0;
+        // Per-walker ends, so the report can assert what the ward totals cannot: that EVERY
+        // soul bound to the route works the climb, not just that somebody does. And the same
+        // two counts restricted to the run's LAST window, which is what a run total cannot
+        // say: a soul that quits at tick 15,000 still posts a healthy 60,000-tick figure.
+        List<int[]> riseEnds = new ArrayList<>();
+        List<int[]> riseLateEnds = new ArrayList<>();
+        for (int ignored = 0; ignored < riseWalkers.size(); ignored++) {
+            riseEnds.add(new int[2]);
+            riseLateEnds.add(new int[2]);
+        }
+        long riseLateStart = SaltgateRiseProof.lateWindowStart(ticks);
         long stairwellShoves = 0;
         long seenShoves = 0;
 
@@ -168,8 +179,16 @@ public final class DocksActorsMain {
         long[] waveMoved = new long[waveBuckets];
         long[] waveTicks = new long[waveBuckets];
         List<Integer> watchIds = idsOfType(registry, "militia_watch");
-        long jamTicks = 0;
-        long jamPairTicks = 0;
+        // S7: the honest guard-jam readout. The S6 counter (every watch-x-watch adjacency
+        // anywhere, printed against a DIFFERENT predicate's baseline at a DIFFERENT horizon)
+        // is replaced wholesale by GuardJamInstrument -- see that class for why. Walkability
+        // is read the same way ActorsSystem reads it: one borrowed flyweight cursor.
+        var jamCursor = loaded.world().cursor();
+        com.trojia.sim.actor.Actor.WalkabilityQuery jamWalk =
+                c -> com.trojia.sim.world.Walkability.isWalkable(jamCursor.moveTo(c));
+        GuardJamInstrument guardJam = new GuardJamInstrument(registry, watchIds, jamWalk,
+                jobs.ordinalOf(Job.Watch.Patrol.ID), jobs,
+                Math.max(0, ticks - DailyRhythm.DAY), allRoutes, ticks);
         List<Integer> laborerIds = new ArrayList<>();
         for (int i = 0; i < registry.size(); i++) {
             Job job = registry.get(i).jobOrdinal() >= 0
@@ -219,13 +238,22 @@ public final class DocksActorsMain {
             // S4 climb observation: the Rise walkers' band trail + waypoint arrivals, and
             // the stairwell shove funnel (fresh shove rows within chebyshev 2 of a
             // connector endpoint on either band).
-            for (int id : riseWalkers) {
+            for (int w = 0; w < riseWalkers.size(); w++) {
+                int id = riseWalkers.get(w);
                 int cell = registry.get(id).cell();
                 riseZTicks.get(id).merge(PackedPos.z(cell), 1, Integer::sum);
                 if (cell == riseHead) {
                     headArrivals++;
+                    riseEnds.get(w)[0]++;
+                    if (i >= riseLateStart) {
+                        riseLateEnds.get(w)[0]++;
+                    }
                 } else if (cell == riseFoot) {
                     footArrivals++;
+                    riseEnds.get(w)[1]++;
+                    if (i >= riseLateStart) {
+                        riseLateEnds.get(w)[1]++;
+                    }
                 }
             }
             var shoves = population.system().shoveLog();
@@ -259,21 +287,7 @@ public final class DocksActorsMain {
             int bucket = (int) (tod / WAVE_BUCKET_TICKS);
             waveMoved[bucket] += moved;
             waveTicks[bucket]++;
-            int watchPairs = 0;
-            for (int wi = 0; wi < watchIds.size(); wi++) {
-                int cellA = registry.get(watchIds.get(wi)).cell();
-                for (int wj = wi + 1; wj < watchIds.size(); wj++) {
-                    int cellB = registry.get(watchIds.get(wj)).cell();
-                    if (PackedPos.z(cellA) == PackedPos.z(cellB)
-                            && chebyshev(cellA, cellB) <= 1) {
-                        watchPairs++;
-                    }
-                }
-            }
-            if (watchPairs > 0) {
-                jamTicks++;
-            }
-            jamPairTicks += watchPairs;
+            guardJam.observe(registry, homes, tick);
             if (tick > statueWindowStart) {
                 for (int id : laborerIds) {
                     laborerCells.get(id).add(registry.get(id).cell());
@@ -320,15 +334,16 @@ public final class DocksActorsMain {
         printMoneyGateProof(population, jobs);
         printJusticeReport(population, jobs);
         printDensityReport(population, maxCoOccupancy, routePairs, routeCells);
-        printClimbReport(population, zLinks, spawnAudit, riseWalkers, riseZTicks,
-                headArrivals, footArrivals, stairwellShoves);
+        boolean risePass = printClimbReport(population, zLinks, spawnAudit, riseWalkers,
+                riseZTicks, headArrivals, footArrivals, stairwellShoves, ticks, riseEnds,
+                riseLateEnds);
         printProgressionReport(population);
         printTheftReport(population, identity);
         printBarkProof(population, identity, driver.currentTick());
         printBeastReport(population, gullIds, catIds, mouseIds, gullRoam, huntCounters);
         printMotivationReport(registry, motivationSamples);
         printMovementWaveReport(waveMoved, waveTicks);
-        printGuardJamReport(watchIds.size(), jamTicks, jamPairTicks, ticks);
+        guardJam.print(ticks);
         printStatueReport(laborerCells, ticks);
         printFishingReport(population);
         printDeathReport(population, identity);
@@ -340,6 +355,16 @@ public final class DocksActorsMain {
             System.out.printf("PERF: %d ticks in %.1f ms wall-clock (engine tick only) -> "
                             + "avg %.4f ms/tick at %d actors (observer FAST budget: 25 ms/tick)%n",
                     ticks, tickNanos / 1e6, avgMillis, registry.size());
+        }
+        if (!risePass) {
+            // The verdict has to COST something. Round 2's report printed PASS/FAIL and then
+            // exited 0 either way, so the only real enforcement lived in one committed test at
+            // one pinned horizon -- and the stall this proof exists to catch happens at that
+            // horizon. A soak that prints FAIL and reports success is a soak nobody reads.
+            System.out.println();
+            System.out.println("SALTGATE RISE VERDICT: FAIL -> exiting non-zero. See THE CLIMB"
+                    + " section above for which check missed.");
+            System.exit(1);
         }
     }
 
@@ -841,11 +866,15 @@ public final class DocksActorsMain {
      * folklore number, now tracked), the Saltgate Rise walkers' band trail with the
      * z11+z13 waypoint proof, and the stairwell shove-funnel + riot watch. Deterministic
      * ascending scans only, so twin runs stay byte-identical.
+     *
+     * @return the Saltgate Rise verdict — the caller exits non-zero on FAIL, so the printed
+     *         verdict costs something instead of scrolling past
      */
-    private static void printClimbReport(DocksPopulation population, ZLinkTable zLinks,
+    private static boolean printClimbReport(DocksPopulation population, ZLinkTable zLinks,
             ZReachability spawnAudit, List<Integer> riseWalkers,
             Map<Integer, java.util.TreeMap<Integer, Integer>> riseZTicks,
-            int headArrivals, int footArrivals, long stairwellShoves) {
+            int headArrivals, int footArrivals, long stairwellShoves, long ticksRun,
+            List<int[]> riseEnds, List<int[]> riseLateEnds) {
         ActorRegistry registry = population.registry();
         System.out.println();
         System.out.println("================ THE CLIMB (S4: cross-z movement live) ======================");
@@ -886,14 +915,46 @@ public final class DocksActorsMain {
             visitedBothBands |= byZ.containsKey(19) && byZ.containsKey(20)
                     && byZ.containsKey(21); // world z 19/20/21 = map z:+11/+12/+13
         }
-        System.out.println("    head(z13) arrivals: " + headArrivals + ";  foot(z11) arrivals: "
-                + footArrivals + ";  a walker visited z11+z12+z13: " + visitedBothBands
-                + "  -> " + (visitedBothBands && headArrivals > 0 && footArrivals > 0
-                        ? "PASS" : "FAIL"));
+        // The verdict carries FLOORS now (SaltgateRiseProof): "at least one arrival" is a
+        // boolean, and a boolean printed PASS straight through a 50% throughput collapse.
+        // And it carries a LATE window, because a run TOTAL printed PASS straight through a
+        // sergeant who worked 15,000 ticks and then stopped for 45,000.
+        boolean risePass = SaltgateRiseProof.passes(riseWalkers.size(), visitedBothBands,
+                riseEnds, riseLateEnds);
+        System.out.println("    head(z13) arrivals: " + headArrivals + " ("
+                + SaltgateRiseProof.per10k(headArrivals, ticksRun) + "/10k);  foot(z11): "
+                + footArrivals + " (" + SaltgateRiseProof.per10k(footArrivals, ticksRun)
+                + "/10k);  walkers " + riseWalkers.size() + " (floor "
+                + SaltgateRiseProof.WALKER_FLOOR + ")");
+        int lateHead = 0;
+        int lateFoot = 0;
+        for (int[] late : riseLateEnds) {
+            lateHead += late[0];
+            lateFoot += late[1];
+        }
+        System.out.println("    ward-wide in the LAST " + SaltgateRiseProof.LATE_WINDOW_TICKS
+                + " ticks (the final full DAY, so the window always contains a whole shift"
+                + " wherever the run stops): head " + lateHead + " (floor "
+                + SaltgateRiseProof.LATE_HEAD_ARRIVALS_FLOOR + ");  foot " + lateFoot
+                + " (floor " + SaltgateRiseProof.LATE_FOOT_ARRIVALS_FLOOR + ")");
+        for (int w = 0; w < riseWalkers.size(); w++) {
+            System.out.println("    actor#" + riseWalkers.get(w) + " reached head "
+                    + riseEnds.get(w)[0] + " / foot " + riseEnds.get(w)[1]
+                    + "   |  in the LAST " + SaltgateRiseProof.LATE_WINDOW_TICKS
+                    + " ticks: head " + riseLateEnds.get(w)[0] + " / foot "
+                    + riseLateEnds.get(w)[1] + " (floor "
+                    + SaltgateRiseProof.LATE_PER_WALKER_END_FLOOR + " each -- a run total is"
+                    + " earned by the past, this is the present)");
+        }
+        System.out.println("    a walker visited z11+z12+z13: " + visitedBothBands
+                + "  -> " + (risePass ? "PASS" : "FAIL")
+                + SaltgateRiseProof.verdictDetail(riseWalkers.size(), visitedBothBands,
+                        riseWalkers, riseEnds, riseLateEnds));
         System.out.println("  stairwell funnel: pushes within cheb<=2 of a connector: "
                 + stairwellShoves + " of " + population.system().pushCount()
                 + " total;  riot responses (district-wide): " + population.system().riotCount());
         System.out.println("============================================================================");
+        return risePass;
     }
 
     /**
@@ -1047,24 +1108,6 @@ public final class DocksActorsMain {
         System.out.println("  peak bucket: tod=" + (peakBucket * WAVE_BUCKET_TICKS)
                 + " avg x100 = " + peak
                 + "  (diagnosis baseline: spikes ~9700 at tod 1000 and ~9650 at 11000 over ~7800 flat)");
-        System.out.println("============================================================================");
-    }
-
-    /**
-     * S6 guard-jam watch (Eli's bug 2): the share of ticks with at least one watch-x-watch
-     * adjacency (same z, chebyshev &le; 1 — the wrestling-pair signature) plus the total
-     * pair-ticks. The diagnosis measured 32.8% of ticks jammed with a 4-hour worst case;
-     * the route audit + shove etiquette should collapse this.
-     */
-    private static void printGuardJamReport(int watchCount, long jamTicks, long jamPairTicks,
-            int ticks) {
-        System.out.println();
-        System.out.println("================ S6 GUARD JAMS (watch-x-watch adjacency) ====================");
-        System.out.println("  watch souls: " + watchCount
-                + ";  ticks with >=1 adjacent watch pair: " + jamTicks + " / " + ticks
-                + " (" + (ticks == 0 ? 0 : jamTicks * 1000 / ticks) + " permille)");
-        System.out.println("  total adjacent watch pair-ticks: " + jamPairTicks
-                + "  (diagnosis baseline: 19,676/60,000 ticks = 328 permille)");
         System.out.println("============================================================================");
     }
 

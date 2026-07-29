@@ -22,6 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 final class GuardEtiquetteTest {
 
+    /** militia_watch.speedTicksPerStep -- the cadence the tick-vs-attempt claims rest on. */
+    private static final int WATCH_SPEED_TICKS_PER_STEP = 2;
+
     private static final int Z = 11;
 
     private static int cell(int x, int y) {
@@ -176,12 +179,266 @@ final class GuardEtiquetteTest {
 
         // The w2 leg is human-walled: after the bounded yield budget the beat gives it up.
         boolean yielded = false;
-        for (int i = 0; i < JobBehaviors.PATROL_BLOCKED_YIELD_TICKS + 20 && !yielded; i++) {
+        for (int i = 0; i < JobBehaviors.PATROL_BLOCKED_YIELD_ATTEMPTS * 4 + 20 && !yielded; i++) {
             patrol.pursue(patroller, ctx);
             yielded = Math.floorMod(patroller.goalProgress(), 3) == 2;
         }
         assertTrue(yielded, "a dead-still leg is yielded, not wrestled forever");
         assertFalse(patroller.cell() == w2, "the contested leg was walked away from");
+    }
+
+    @Test
+    void theProgressYieldDidNotLengthenTheDeadStillWait() {
+        // S7 round 3 re-aimed the stall clock from stillness to PROGRESS toward the target,
+        // and folded two budgets onto one already-persisted scalar by weighting a refused step
+        // attempt. The arithmetic is the whole safety of that trick: if the weight and the
+        // budgets ever drift apart, the S6 dead-still yield silently gets slower -- a guard
+        // that used to give way after 40 motionless ticks would wrestle for 200, and the only
+        // symptom would be a jam metric creeping up months later. Pin it.
+        //
+        // S7 round 4: the round-3 version of this test asserted A == B * (A / B), which is
+        // integer-divisibility and NOTHING else -- it passed while the javadoc beside it
+        // claimed a wedged guard "yields on its 40th motionless tick", which the id de-phase
+        // had already made false. It now measures the SHIPPING function over a whole band of
+        // ids, so a wrong claim about the wait cannot pass.
+        int weight = JobBehaviors.PATROL_NO_PROGRESS_YIELD_STEPS
+                / JobBehaviors.PATROL_BLOCKED_YIELD_ATTEMPTS;
+        assertEquals(JobBehaviors.PATROL_NO_PROGRESS_YIELD_STEPS,
+                JobBehaviors.PATROL_BLOCKED_YIELD_ATTEMPTS * weight,
+                "the no-progress budget must be an exact multiple of the blocked budget:"
+                        + " the refused-attempt weight is their integer ratio, so a remainder"
+                        + " means a wedged guard waits longer than S6's 40 ticks");
+        assertTrue(JobBehaviors.PATROL_NO_PROGRESS_YIELD_STEPS
+                        > JobBehaviors.PATROL_BLOCKED_YIELD_ATTEMPTS,
+                "a soul that is at least MOVING gets more rope than one standing dead still --"
+                        + " route legs really do have to walk away from a waypoint sometimes");
+
+        // The real claim, measured: 11..29 refused attempts -- 22..58 motionless ticks at the
+        // Watch's speedTicksPerStep of 2 -- with a MEAN of exactly S6's 20 attempts / 40 ticks.
+        int min = Integer.MAX_VALUE;
+        int max = 0;
+        long sum = 0;
+        int band = 0;
+        for (int id = 0; id < 19; id++) {
+            int wait = JobBehaviors.patrolRefusedAttemptsToYield(id);
+            min = Math.min(min, wait);
+            max = Math.max(max, wait);
+            sum += wait;
+            band++;
+        }
+        assertEquals(11, min, "the earliest-yielding soul in the band");
+        assertEquals(29, max, "the latest-yielding soul in the band -- the wait stays bounded");
+        assertEquals(JobBehaviors.PATROL_BLOCKED_YIELD_ATTEMPTS, (int) (sum / band),
+                "the de-phase is CENTRED on S6's wait, not stacked on top of it");
+        assertEquals(40, JobBehaviors.PATROL_BLOCKED_YIELD_ATTEMPTS * WATCH_SPEED_TICKS_PER_STEP,
+                "20 refused attempts at the Watch's speed IS S6's 40 motionless ticks");
+    }
+
+    @Test
+    void theDePhaseSeparatesAdjacentSoulsByAWholeAttempt() {
+        // S7 round 4 (the round-3 de-phase was quantized away in exactly the case it was
+        // written for). The budget is denominated in stall UNITS and a refused attempt is
+        // worth five of them, so round 3's raw floorMod(id, 37) moved neighbouring souls by
+        // a FIFTH of an attempt -- which rounds to zero. Two consecutively-spawned guards wedged
+        // against each other (the garrison pair; the two Saltgate walkers) therefore still
+        // yielded on the very same tick, both turned, and re-met in lockstep: the polite
+        // deadlock the de-phase exists to prevent. Adjacent ids must differ by a WHOLE tick.
+        for (int id = 0; id < 18; id++) {
+            assertEquals(JobBehaviors.patrolRefusedAttemptsToYield(id) + 1,
+                    JobBehaviors.patrolRefusedAttemptsToYield(id + 1),
+                    "souls #" + id + " and #" + (id + 1) + " must not yield on the same tick");
+        }
+        // And no two of the ward's Watch but one pair share a yield tick: the de-phase band is
+        // the roster's own width, so #371..#388 are all distinct (#390 wraps onto #371, a pair
+        // who walk different wards and cannot wedge against each other).
+        java.util.HashSet<Integer> waits = new java.util.HashSet<>();
+        for (int id = 371; id <= 388; id++) {
+            assertTrue(waits.add(JobBehaviors.patrolRefusedAttemptsToYield(id)),
+                    "watch soul #" + id + " shares its yield tick with another guard");
+        }
+    }
+
+    @Test
+    void aWedgedSquareBeatGivesUpTheLegOnItsOwnDePhasedTick() {
+        // S7 round 4, defect 2: the blind square beat -- walked by 13 of the 19 Watch -- gets
+        // the same progress-yield the route beat got in round 3, on the same shared budget.
+        // This pins the WEDGED half of it against the arithmetic, on the square beat: a fellow
+        // guard the etiquette forbids shoving stands on the only cell toward the corner, so
+        // every step attempt is refused while the corner itself stays perfectly reachable.
+        ActorRegistry registry = new ActorRegistry();
+        int anchor = cell(10, 10);
+        // An L: east along y=10 then north up x=16 to leg 0's corner at (16,16). 1-wide, so
+        // the only way on is through the cell the fellow guard is standing on. (A straight
+        // diagonal corridor would not do -- the pathfinder refuses to cut a solid wall corner,
+        // so the corner would read UNREACHABLE and be skipped rather than wedged.)
+        java.util.HashSet<Integer> diagonal = new java.util.HashSet<>();
+        for (int x = 10; x <= 16; x++) {
+            diagonal.add(cell(x, 10));
+        }
+        for (int y = 10; y <= 16; y++) {
+            diagonal.add(cell(16, y));
+        }
+        NoOpActorContext ctx = new NoOpActorContext(registry) {
+            @Override
+            public boolean isWalkable(int c) {
+                return diagonal.contains(c);
+            }
+
+            @Override
+            public Actor.OccupancyQuery occupancy() {
+                ActorRegistry reg = registry();
+                return new Actor.OccupancyQuery() {
+                    @Override
+                    public int occupantsAt(int c) {
+                        int count = 0;
+                        for (int i = 0; i < reg.size(); i++) {
+                            count += reg.get(i).cell() == c ? 1 : 0;
+                        }
+                        return count;
+                    }
+
+                    @Override
+                    public void onEnter(int fromCell, int toCell) {
+                    }
+                };
+            }
+        };
+        Actor guard = watchAt(registry, ctx, anchor); // id 0
+        watchAt(registry, ctx, cell(11, 10));         // the human wall, one cell along the leg
+        JobBehaviors.selectRouteStart(guard, ctx);    // no route table: square beat, leg 0
+        assertEquals(0, Math.floorMod(guard.goalProgress(), 4));
+
+        int wait = JobBehaviors.patrolRefusedAttemptsToYield(guard.id());
+        // Tick 1 marks the leg's high-water distance; ticks 2..wait+1 are the refused attempts.
+        for (int i = 0; i < wait; i++) {
+            JobBehaviors.pursuePatrol(guard, ctx, 6, params(ctx));
+            assertEquals(0, Math.floorMod(guard.goalProgress(), 4),
+                    "the leg is still being worked at refused attempt " + i);
+        }
+        JobBehaviors.pursuePatrol(guard, ctx, 6, params(ctx));
+        assertEquals(1, Math.floorMod(guard.goalProgress(), 4),
+                "the wedged square-beat leg is given up on the soul's own de-phased attempt");
+        assertEquals(anchor, guard.cell(), "it never moved -- this is the wedged branch");
+    }
+
+    @Test
+    void anUnreachableSquareCornerIsSkippedInsteadOfStoodInFrontOf() {
+        // The failed-leg skip the route beat has had since Pass 13 and the square beat never
+        // did. Without it a corner the bounded A* cannot reach parks the guard for the whole
+        // 500-tick route-retry cooldown, during which no step is even ATTEMPTED -- and since
+        // round 4 stops charging stall for ticks with no attempt in them, "wait for the yield"
+        // stopped being an answer. The leg is dropped on the spot instead.
+        ActorRegistry registry = new ActorRegistry();
+        int anchor = cell(10, 10);
+        int corner = cell(16, 16);
+        NoOpActorContext ctx = new NoOpActorContext(registry) {
+            @Override
+            public boolean isWalkable(int c) {
+                return c == anchor || c == corner; // walkable, and no path between them
+            }
+        };
+        Actor guard = watchAt(registry, ctx, anchor);
+        JobBehaviors.selectRouteStart(guard, ctx);
+        assertEquals(0, Math.floorMod(guard.goalProgress(), 4));
+
+        JobBehaviors.pursuePatrol(guard, ctx, 6, params(ctx));
+        assertEquals(1, Math.floorMod(guard.goalProgress(), 4),
+                "an unreachable corner is walked away from the moment the route fails");
+    }
+
+    @Test
+    void aSquareBeatThatKeepsMovingWithoutClosingStillYields() {
+        // The live-lock the stillness counter could not see, on the square beat. The guard
+        // walks a 1-wide snake every single tick and never once beats its high-water distance
+        // to the corner; S6's rule zeroed the clock on every one of those steps, so it would
+        // have wrestled the leg forever. The progress rule gives it up on the budget.
+        ActorRegistry registry = new ActorRegistry();
+        int anchor = cell(10, 10);
+        int corner = cell(16, 16);
+        // A 1-wide snake that reaches the corner only the LONG way round: 171 steps of which
+        // the first 160 never beat the leg's opening distance of 6. No self-intersections, so
+        // the bounded A* has exactly one route and the walk is forced.
+        java.util.HashSet<Integer> snake = new java.util.HashSet<>();
+        for (int x = 0; x <= 10; x++) {           // west along y=10, away from the corner
+            snake.add(cell(x, 10));
+        }
+        for (int y = 10; y <= 44; y++) {          // south down x=0
+            snake.add(cell(0, y));
+        }
+        for (int x = 0; x <= 44; x++) {           // east along y=44
+            snake.add(cell(x, 44));
+        }
+        for (int y = 0; y <= 44; y++) {           // north up x=44
+            snake.add(cell(44, y));
+        }
+        for (int x = 16; x <= 44; x++) {          // west along y=0
+            snake.add(cell(x, 0));
+        }
+        for (int y = 0; y <= 16; y++) {           // and finally south down x=16 to the corner
+            snake.add(cell(16, y));
+        }
+        NoOpActorContext ctx = new NoOpActorContext(registry) {
+            @Override
+            public boolean isWalkable(int c) {
+                return snake.contains(c);
+            }
+        };
+        Actor guard = registry.spawn(MilitiaWatch.TYPE,
+                ActorTestFixtures.statsWithSpeedAndLeash(MilitiaWatch.TYPE, true, 1, 4096),
+                anchor);
+        guard.setJobOrdinal((short) ctx.jobs().ordinalOf(Job.Watch.Patrol.ID));
+        JobBehaviors.selectRouteStart(guard, ctx);
+
+        int moved = 0;
+        int ticks = 0;
+        boolean yielded = false;
+        for (int i = 0; i < 400 && !yielded; i++) {
+            int before = guard.cell();
+            JobBehaviors.pursuePatrol(guard, ctx, 6, params(ctx));
+            ticks++;
+            moved += guard.cell() != before ? 1 : 0;
+            yielded = Math.floorMod(guard.goalProgress(), 4) != 0;
+        }
+        assertTrue(yielded, "a leg that never closes is given up even while the soul is moving");
+        assertNotEquals(corner, guard.cell(), "it never reached the corner -- it walked away");
+        assertTrue(moved > ticks / 2,
+                "the soul was MOVING for most of the leg (" + moved + " of " + ticks
+                        + ") -- a stillness counter would have read zero the whole time");
+    }
+
+    @Test
+    void theSquareBeatsHighWaterMarkRidesBesideTheLegIndex() {
+        // No new persisted state: the mark lives in the free high bits of goalProgress, whose
+        // low two bits are the leg. If a future edit ever reads goalProgress raw for the
+        // square beat instead of floorMod(_, 4), this is the test that says so.
+        ActorRegistry registry = new ActorRegistry();
+        int anchor = cell(10, 10);
+        NoOpActorContext ctx = new NoOpActorContext(registry) {
+            @Override
+            public boolean isWalkable(int c) {
+                return PackedPos.z(c) == Z;
+            }
+        };
+        Actor guard = watchAt(registry, ctx, anchor);
+        JobBehaviors.selectRouteStart(guard, ctx);
+        int leg = Math.floorMod(guard.goalProgress(), 4);
+
+        JobBehaviors.pursuePatrol(guard, ctx, 6, params(ctx)); // steps once, closing
+        assertEquals(leg, Math.floorMod(guard.goalProgress(), 4),
+                "marking progress must not disturb the leg index");
+        assertTrue(guard.goalProgress() >> 2 > 0, "the leg marked its high-water distance");
+        assertEquals(0, guard.goalWorkTicks(), "closing ground zeroes the stall clock");
+
+        for (int i = 0; i < 12; i++) { // open ground: it reaches the corner and rolls the leg
+            JobBehaviors.pursuePatrol(guard, ctx, 6, params(ctx));
+        }
+        assertNotEquals(leg, Math.floorMod(guard.goalProgress(), 4), "the beat looped a corner");
+        assertTrue(guard.goalProgress() >= 0 && guard.goalProgress() < 16384,
+                "the packed progress word stays inside the short");
+    }
+
+    private static com.trojia.sim.actor.job.JobParams params(NoOpActorContext ctx) {
+        return ctx.jobs().get(ctx.jobs().ordinalOf(Job.Watch.Patrol.ID)).params();
     }
 
     @Test

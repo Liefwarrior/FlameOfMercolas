@@ -1532,7 +1532,8 @@ Job villain.cutpurse (presents: wastrel.streetlife) · GOAL LIFT_PURSE · mark: 
 
 | Actor type | Default job (`defaultFor`) | Goal texture |
 |---|---|---|
-| Militia Watch | `watch.patrol` (`Job.Watch.Patrol`) | walk the waypoint loop, respond, return; shift from rhythm window |
+| Militia Watch | `watch.patrol` (`Job.Watch.Patrol`) — the DAY shift, and the type default | walk the waypoint loop, respond, return; shift from rhythm window |
+| Militia Watch (rostered) | `watch.nightwatch` (`Job.Watch.NightWatch`) — the SKELETON NIGHT SHIFT | same beat, opposite window: route waypoints if the anchor binds a route, square beat otherwise, home through the working day |
 | Serf | `serf.laborer` (`Job.Serf.Laborer`) | haul/gut quota at the work anchor; `serf.farmer` assignable where garden-plot zones exist |
 | Wastrel | `wastrel.streetlife` (`Job.Wastrel.Streetlife`) | beg circuit + scavenge sweep; **a configured fraction instead carries `villain.cutpurse` with wastrel cover** — §4.3's petty-thief texture now has a NAMED reason for being on-screen, and §2.6 already handles the rest |
 | Priest of the Flame | `clergy.shepherd` (`Job.Clergy.Shepherd`) | alms-station cycle: stock, serve, sermon, circuit |
@@ -1541,6 +1542,22 @@ Job villain.cutpurse (presents: wastrel.streetlife) · GOAL LIFT_PURSE · mark: 
 | Animal Keeper | `husbandry.keeper` (`Job.Husbandry.Keeper`) | tend/feed/work the owned beasts |
 | Animal | `beast.chattel` (`Job.Beast.Chattel`) | degenerate goal (graze/stay-near-owner) — satisfies the every-actor invariant without pretending animals have ambitions **(invention)** |
 | Feral | `beast.feral` (`Job.Beast.Feral`) | degenerate goal (scavenge circuit between roost and spawn zones) — the every-actor invariant holds even for a rat **(invention; Q7 addendum §4.9)** |
+
+One type, two shifts (S7, the guard-routing pass). `militia_watch` is the only type in the
+table whose souls do not all hold the same job: a SMALL rostered minority carries
+`watch.nightwatch` instead of the `watch.patrol` default. The two leaves share a parent
+(`Job.Watch`), so every existing law read — `watchIsNearby`, `ApprehendPolicy`, the on-duty
+guard check, `TheftMechanics` — sees a night-watch soul as the Watch with no call-site change.
+They differ in exactly two places: the rhythm window (the night rather than the day), and
+`Job.worksThroughTheNight()`, the opt-in seam `ReturnHomePolicy` consults so the type's
+night-rhythm pull home does not drag a soul off its own shift. Rostering is a BAKE decision,
+not a runtime one, and it is constrained: a route may be thinned by the roster but never
+emptied of day-shift walkers (`DocksRouteDayCoverBakeTest`).
+
+Save note: adding `watch.nightwatch` shifts `JobRegistry` ordinals, and `ACTR` persists
+`jobOrdinal` as an index. Pre-S7 `ACTR` saves therefore read the wrong job leaf. No committed
+fixture is affected — none carries an `ACTR` block — but external saves from before this pass
+are not compatible and are not migrated.
 
 The §1.4 Ratcatcher walkthrough extends: type #9 now also needs a job —
 `trade.ratcatcher` (`Job.Trade.Ratcatcher`, vermin bounty quota) **(placeholder)**. Cost:

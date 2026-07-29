@@ -363,6 +363,7 @@ final class NameForge {
             case "trade.trader" -> "A counter-clerk";
             case "trade.stallkeep" -> "A shopkeeper";
             case "watch.patrol" -> "A Watch spear";
+            case "watch.nightwatch" -> "A Watch spear of the night roster";
             case "clergy.shepherd" -> "A priest of the Flame";
             case "clergy.acolyte" -> "A disciple of the Flame";
             case "husbandry.keeper" -> "An animal keeper";

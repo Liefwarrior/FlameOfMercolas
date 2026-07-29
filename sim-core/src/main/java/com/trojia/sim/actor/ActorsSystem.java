@@ -653,6 +653,13 @@ public final class ActorsSystem implements SimulationSystem {
         out.writeInt(actor.identity().presentedId());
         out.writeInt(actor.cell());
         out.writeByte(actor.facing());
+        // S7 round 4: the speed accumulator. It has gated every actor's movement since
+        // the mover landed and was never written, so a save/load silently re-phased the
+        // whole ward's stepping by up to speedTicksPerStep-1 ticks. The patrol yield now
+        // READS it (a cadence tick is not a wedge, see Actor#moveAccumTicks), which turns
+        // that re-phasing from a cosmetic drift into a behavioural one -- so it joins the
+        // persisted triad: written here, read in readActor, hashed in hashInto.
+        out.writeInt(actor.moveAccumTicks());
         for (Need need : Need.values()) {
             out.writeShort(actor.need(need));
         }
@@ -747,6 +754,7 @@ public final class ActorsSystem implements SimulationSystem {
         int presentedId = in.readInt();
         int cell = in.readInt();
         byte facing = in.readByte();
+        int moveAccumTicks = in.readInt();
         short[] needs = new short[Need.COUNT];
         for (int i = 0; i < Need.COUNT; i++) {
             needs[i] = in.readShort();
@@ -782,6 +790,7 @@ public final class ActorsSystem implements SimulationSystem {
         Actor actor = registry.spawn(typeId, typeStats.get(typeId), cell);
         actor.setIdentity(new Persona(trueId, presentedId));
         actor.setFacing(facing);
+        actor.setMoveAccumTicks(moveAccumTicks);
         for (Need need : Need.values()) {
             actor.applyNeedDelta(need, needs[need.ordinal()] - actor.need(need));
         }
@@ -825,6 +834,7 @@ public final class ActorsSystem implements SimulationSystem {
             Actor actor = registry.get(i);
             sink.putInt(typeStats.ordinalOf(actor.typeId()));
             sink.putInt(actor.cell());
+            sink.putInt(actor.moveAccumTicks()); // step phase: behaviour-carrying since round 4
             for (Need need : Need.values()) {
                 sink.putShort(actor.need(need));
             }
@@ -834,6 +844,18 @@ public final class ActorsSystem implements SimulationSystem {
             sink.putShort(actor.jobOrdinal());
             sink.putByte(actor.goalState().ordinal());
             sink.putShort(actor.goalProgress());
+            // S7 round 4: the goal TARGET and the goal WORK CLOCK join the hash. They have been
+            // in serialize()/load() since the goal frame landed but never here, which was
+            // already the house rule's "matching canonical order" clause half-kept — and S7's
+            // progress-yield widened the blast radius: the patrol's high-water mark and its
+            // de-phased stall clock are now the state that decides whether a beat keeps walking
+            // a leg or gives it up. A divergence isolated to either one — one twin's guard
+            // yielding a tick earlier than the other's — has to fail the twin-run hash, not
+            // slip past it and surface a hundred thousand ticks later as a coverage number.
+            // Not a save-format change: serialize() already wrote all three, in this order.
+            sink.putByte(actor.goalTargetKind().ordinal());
+            sink.putInt(actor.goalTargetKey());
+            sink.putInt(actor.goalWorkTicks());
             // Phase-2 STEP C: the per-prisoner assigned cell (landmine F — otherwise a divergence
             // isolated to cell assignment, e.g. two prisoners colliding on one cell, slips the
             // twin-run check). heldUntilTick/offenseCount remain out; the cell is the state the

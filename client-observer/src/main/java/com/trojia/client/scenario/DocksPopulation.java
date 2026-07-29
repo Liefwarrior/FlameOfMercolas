@@ -195,6 +195,13 @@ public final class DocksPopulation implements ScenarioPopulation {
     private static final int[][] SHOP_GUARD_POSTS =
             {{28, 65}, {168, 33}, {126, 51}, {47, 65}, {12, 69}, {35, 69}, {133, 57}};
 
+    /**
+     * Index of the K27 Oven-door post in {@link #SHOP_GUARD_POSTS} — the shop guard that draws
+     * the night roster (see the roster block in the bake). Named rather than inlined so the
+     * roster's third line reads as a decision instead of a magic 5.
+     */
+    private static final int SHOP_GUARD_POST_OVEN = 5;
+
     // ---- Money-gated market victuallers (economy pass): on-band FOOD vendors that make every
     // INHABITED band reachably fed. On-hull victuallers provision the crewed ships (no mainland
     // counter is A*-reachable across the water); the off-band victuallers provision the z:+12/z:+13
@@ -1427,6 +1434,11 @@ public final class DocksPopulation implements ScenarioPopulation {
         return worldCell(CLERKS_DESK, ZA);
     }
 
+    /** The C2 roof-deck watch post (ARREST-SPEC addendum), world-packed. */
+    public static int c2RoofWatchpostCell() {
+        return worldCell(C2_ROOF_WATCHPOST, ZC);
+    }
+
     /** Fenner's strongbox cell (S4 "The Widow's Paper"), world-packed. */
     public static int fennerStrongboxCell() {
         return worldCell(FENNER_STRONGBOX, ZA);
@@ -1911,10 +1923,14 @@ public final class DocksPopulation implements ScenarioPopulation {
                     PATROL_TARWALK_MID, WATCH_BOND_POST};   // original spawn order kept
             int[][] patrollerWaypoints = {PATROL_TARWALK[2], PATROL_QUAY[1],
                     PATROL_TARWALK[3], PATROL_ROPEWYND[4]};
+            Actor tarwalkMidPatroller = null;
             for (int i = 0; i < patrollerPosts.length; i++) {
                 Actor patroller = spawn(MilitiaWatch.TYPE, patrollerPosts[i], ZA);
                 soloHome(patroller);
                 patroller.setAnchorCell(worldCell(patrollerWaypoints[i], ZA));
+                if (i == 2) {
+                    tarwalkMidPatroller = patroller; // the Tarwalk-mid post, walking the Tarwalk
+                }
             }
             // K34 Guardhouse — the Rise's FOOT garrison (pairs with K21 at the head, per
             // gazetteer 2.4's own stated intent): two Watch quartered at the new post.
@@ -1947,9 +1963,71 @@ public final class DocksPopulation implements ScenarioPopulation {
             soloHome(spawn(MilitiaWatch.TYPE, GUARD_POST_BANK_EAST, ZA));
             // One militia_watch per retail shop, stationed at its exterior guard post (Eli: "each
             // shop should have one guard"). Enforcement behaviour lands in a later pass.
-            for (int[] post : SHOP_GUARD_POSTS) {
-                soloHome(spawn(MilitiaWatch.TYPE, post, ZA));
+            Actor ovenDoorGuard = null;
+            for (int i = 0; i < SHOP_GUARD_POSTS.length; i++) {
+                Actor shopGuard = spawn(MilitiaWatch.TYPE, SHOP_GUARD_POSTS[i], ZA);
+                soloHome(shopGuard);
+                if (i == SHOP_GUARD_POST_OVEN) {
+                    ovenDoorGuard = shopGuard;
+                }
             }
+
+            // ---- THE NIGHT ROSTER (S7, round 3 roster). Three of the nineteen, posted to the
+            // dark hours; the other sixteen keep the day shift and keep going home at dusk,
+            // which is the oscillation fix and is not negotiable.
+            //
+            // Slice 3 sent ALL of them home for the whole 12,000-tick night, and because
+            // checkArrestExposure gates on a Watch being nearby, that quietly made arrest-by-
+            // exposure a daytime-only mechanic: pickpocket attempts rose 150 -> 186, catch
+            // rate fell 31.3% -> 23.7%, Royals lifted 484 -> 359, Skyrunner escalations 1 -> 0.
+            // The ward should feel THINLY policed after dark, not unpoliced.
+            //
+            // The roster is drawn against ONE hard rule, learned by breaking it twice:
+            //
+            //   A ROUTE MUST NEVER LOSE ITS LAST DAY-SHIFT WALKER.  Round 2's roster took the
+            //   Tarwalk-west hand, who was route 1's ONLY walker -- so the quay/berth apron had
+            //   no daytime Watch at all, and nothing in the ward could see it. That is the same
+            //   blind spot the Saltgate proof exists to close, reopened on the day side.
+            //   DocksRouteDayCoverBakeTest now fails the build if any route is left uncovered.
+            //
+            // and one rule learned in round 2, which still holds:
+            //
+            //   NEVER ROSTER A SOUL WHOSE HOME SHARES A HALL WITH A ROUTE ANOTHER GUARD WALKS.
+            //   A night-roster soul sleeps at its post through the working day, and a K21 soul
+            //   asleep in the K21 hall parks a body the day sergeant cannot shove (S6: a guard
+            //   never shoves an on-duty guard) in the middle of his own route. Measured: with
+            //   the notice-board hand rostered, Sergeant Vess covered 12 distinct cells in the
+            //   final day; with the Rise's second man rostered, 13.
+            //
+            // The three, chosen and not sampled -- no "every third id" arithmetic:
+            //
+            //   the ROOF WATCH is the night sergeant. It is the one Watch in the ward posted
+            //   against the Skyrunners (ARREST-SPEC addendum), and villain.skyrunner's rhythm
+            //   window is [18000,24000) -- so the single soul with a standing brief against
+            //   roof-runners was asleep through every minute of their working shift. Of all
+            //   nineteen roster lines this was the plainly wrong one. Not route-bound.
+            //
+            //   the TARWALK HAND, off the Tarwalk-mid post, keeps route 0 -- the ward's main
+            //   drag, and the one beat that carries TWO men, so the night costs the day half of
+            //   a doubled beat instead of all of a single one. Route 0 keeps a day walker.
+            //
+            //   the OVEN-DOOR GUARD (K27) takes the west quarter, replacing round 2's quay
+            //   hand. A stationed shop guard is the only class of Watch in this bake that is
+            //   neither a route's last walker nor quartered in a restricted hall, so it is the
+            //   only one that can be moved without opening a hole. The day cost is real and is
+            //   stated rather than hidden: K27's door has no Watch standing at it between dawn
+            //   and dusk. It is the smallest such cost available -- K08's guard stands 7 cells
+            //   away at (28,65) all day, so the Oven's stretch of street keeps day cover from
+            //   its neighbour, which is not true of any route beat.
+            //
+            // They are NOT working a double: watch.nightwatch's window is [12000,24000) and
+            // its pursue takes slice 3's off-shift branch by DAY, so each sleeps through the
+            // working day exactly as a day guard sleeps through the night. And none of the
+            // three lives or beats inside a restricted zone, so moving them off watch.patrol
+            // cannot turn a guard into a trespasser in its own guardhouse or bank hall.
+            assignJob(roofWatch, Job.Watch.NightWatch.ID);
+            assignJob(tarwalkMidPatroller, Job.Watch.NightWatch.ID);
+            assignJob(ovenDoorGuard, Job.Watch.NightWatch.ID);
 
             // ===================== ANIMAL KEEPERS + BEASTS (§4.8 Keeper<->Animal) =============
             // K25 Kennel Row: the kennelmaster and three dogs at their authored cage anchors.

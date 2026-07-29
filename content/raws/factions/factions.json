@@ -4,7 +4,7 @@
     {
       "id": "watch",
       "displayName": "The Watch",
-      "memberJobs": ["watch.patrol"],
+      "memberJobs": ["watch.patrol", "watch.nightwatch"],
       "notes": "The K34 garrison and its patrols. Standing falls on arrests/fines/house-arrests; the ONE behavior read this sprint shifts ApprehendPolicy's warn-vs-fine lenience."
     },
     {

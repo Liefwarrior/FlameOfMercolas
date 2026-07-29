@@ -6,6 +6,7 @@ import com.trojia.sim.actor.ActorGeometry;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.ActorRngStream;
 import com.trojia.sim.actor.ActorTypeId;
+import com.trojia.sim.actor.CorridorPinch;
 import com.trojia.sim.actor.DailyRhythm;
 import com.trojia.sim.actor.FishingSpots;
 import com.trojia.sim.actor.Need;
@@ -343,15 +344,135 @@ public final class JobBehaviors {
     }
 
     /**
-     * Ticks a patrol leg may stand completely still (blocked by a full cell it may not
-     * shove through — since Sprint 6 a guard never shoves an on-duty guard) before the
-     * beat YIELDS: it gives up the contested leg and advances to the next waypoint/corner,
-     * dissolving guard-vs-guard head-on jams by walking away instead of wrestling
-     * (Eli's bug 2 — "guards pushing each other... shouldn't last this long"). Sized
-     * well above the speed accumulator's every-other-tick no-move rhythm, so only a
-     * genuinely wedged guard yields.
+     * Failed step ATTEMPTS a patrol leg may make — standing still against a full cell it may
+     * not shove through (since Sprint 6 a guard never shoves an on-duty guard), or against a
+     * wall — before the beat YIELDS: it gives up the contested leg and advances to the next
+     * waypoint/corner, dissolving guard-vs-guard head-on jams by walking away instead of
+     * wrestling (Eli's bug 2 — "guards pushing each other... shouldn't last this long").
+     *
+     * <p><b>Attempts, not ticks — S7 round 4.</b> S6 counted motionless TICKS, which at the
+     * Watch's {@code speedTicksPerStep = 2} means every second tick of the count was the speed
+     * accumulator's own no-move beat rather than anything to do with being blocked. Counting
+     * attempts is the same wait in wall-clock terms — 20 refused attempts IS S6's 40 motionless
+     * ticks for a speed-2 soul — while making the number mean what it says. See
+     * {@link #patrolStallBudget} for why the distinction is not cosmetic.
      */
-    public static final int PATROL_BLOCKED_YIELD_TICKS = 40;
+    public static final int PATROL_BLOCKED_YIELD_ATTEMPTS = 20;
+
+    /**
+     * STEPS a leg may keep taking without ever getting closer to its target before the beat
+     * yields — the progress-toward-goal budget, and the hole {@link
+     * #PATROL_BLOCKED_YIELD_ATTEMPTS} could not see.
+     *
+     * <p>S6's yield counted ticks spent standing <em>dead still</em> and zeroed the instant the
+     * actor moved. Two souls meeting head-on in a 1-wide connector do not stand still: each
+     * one's cached route goes through the other, the occupancy cap refuses the hop, the route
+     * is dropped and replanned, and the pair shuffle back and forth stepping every tick
+     * forever. Every one of those ticks reads as "moving, therefore fine" to a stillness
+     * counter, which is why Sergeant #371 could work the Saltgate Rise until roughly tick
+     * 15,000 and then spend the remaining 45,000 walking on the spot with no metric able to
+     * say so. A LIVE-lock is not a dead-lock and needs its own clock.
+     *
+     * <p>Sized for real detours, not for the pathological case: a leg legitimately walks AWAY
+     * from its target whenever the only door faces the wrong way or the only stair up stands
+     * behind the walker. 100 steps is 100 cells of such walking — 200 ticks at the Watch's
+     * speed — far more than any leg on the authored routes needs, and far less than a
+     * live-lock, which never ends at all. The per-soul de-phase ({@link
+     * #PATROL_STALL_DEPHASE}) spreads the real budget over 55..145 cells.
+     *
+     * <p><b>Round 3 set this budget and did not deliver it.</b> Charging the speed
+     * accumulator's no-move ticks at the dead-still weight capped the real detour tolerance at
+     * {@code budget / (weight + 1)} — about 33 cells — no matter what the constant said,
+     * because a detouring soul burned 6 units every 2 ticks where a wedged one burned 10. That
+     * is the arithmetic behind round 4's biggest behavioural change; it is measured, not
+     * argued: the median guard's daily coverage moved with it.
+     */
+    public static final int PATROL_NO_PROGRESS_YIELD_STEPS = 100;
+
+    /**
+     * Stall weight of a REFUSED step attempt, so one counter carries both budgets: a refused
+     * attempt is worth {@code PATROL_NO_PROGRESS_YIELD_STEPS / PATROL_BLOCKED_YIELD_ATTEMPTS}
+     * units and a step that lands without closing is worth one, so the SAME scalar expresses
+     * S6's dead-still budget and the live-lock budget at once — no new persisted state.
+     *
+     * <p><b>S7 round 4 — the arithmetic, stated correctly.</b> The round-3 javadoc here claimed
+     * a wedged guard "still yields on its 40th motionless tick, bit-for-bit S6's number" and a
+     * live-locked one "on its 200th fruitless step". Neither was true of the shipped code. The
+     * de-phase made the first a mean rather than a number; and charging the speed accumulator's
+     * own no-move ticks at this weight made the second about 33 steps, because a detouring soul
+     * burned {@code weight + 1} units every two ticks. Both are now honest, and
+     * {@code GuardEtiquetteTest} measures the shipping functions over a band of ids rather than
+     * asserting a divisibility identity that could not see either error.
+     */
+    static final int PATROL_STILL_STALL_WEIGHT =
+            PATROL_NO_PROGRESS_YIELD_STEPS / PATROL_BLOCKED_YIELD_ATTEMPTS;
+
+    /**
+     * Deterministic de-phase band of the stall budget by soul id. Two guards wedged against
+     * each other start their stall clocks on the same tick, so a shared budget would fire for
+     * both on the same tick — both would yield, both would turn around, and the pair would meet
+     * again in lockstep: a polite deadlock instead of a rude one. Spreading the budget over a
+     * band of ids means whoever is going to give way gives way first, and the other walks
+     * through the freed connector. Same discipline as {@link #selectRouteStart}'s corner
+     * stagger: fixed arithmetic on the id, never a draw.
+     *
+     * <p>19 is the width of the Watch roster: every soul in the ward but one gets its own yield
+     * tick, and the single collision ({@code #371}/{@code #390}) is a pair who walk different
+     * wards and cannot wedge against each other. Wider bands buy nothing and cost spread — the
+     * budget is CENTRED on the band, so half of it is subtracted from every soul's patience.
+     */
+    private static final int PATROL_STALL_DEPHASE = 19;
+
+    /**
+     * The de-phased stall budget, in stall UNITS, for one soul — the shared clock both beats
+     * yield on. 55..145 units: 11..29 refused attempts (22..58 motionless ticks at the Watch's
+     * {@code speedTicksPerStep = 2}, mean S6's 40), or 55..145 fruitless steps.
+     *
+     * <p><b>S7 round 4 — the de-phase used to be quantized away in the exact case it was
+     * written for.</b> Round 3 added a raw {@code floorMod(id, 37)} straight onto a budget whose
+     * refused attempts are worth {@link #PATROL_STILL_STALL_WEIGHT} = 5 units each, so ids one
+     * apart got budgets one UNIT apart — a fifth of an attempt, which rounds to nothing. Two
+     * consecutively-spawned guards wedged against each other (the garrison pair, the two
+     * Saltgate walkers: precisely the pairs that wedge) still yielded on the very same tick,
+     * both turned, and met again in lockstep. The de-phase is now denominated in the attempt
+     * weight, so ids one apart are exactly ONE attempt apart and the lockstep cannot re-form.
+     *
+     * <p>It is CENTRED on the band rather than added on top, so the mean wait stays S6's 40
+     * motionless ticks instead of drifting up — the regression {@code GuardEtiquetteTest}
+     * exists to stop. Pure integer arithmetic on the id; no draw, no state.
+     */
+    public static int patrolStallBudget(int actorId) {
+        return PATROL_NO_PROGRESS_YIELD_STEPS
+                + PATROL_STILL_STALL_WEIGHT
+                        * (Math.floorMod(actorId, PATROL_STALL_DEPHASE) - PATROL_STALL_DEPHASE / 2);
+    }
+
+    /** Refused step attempts {@code actorId} makes before yielding a wedged leg (11..29). */
+    public static int patrolRefusedAttemptsToYield(int actorId) {
+        return (patrolStallBudget(actorId) + PATROL_STILL_STALL_WEIGHT - 1)
+                / PATROL_STILL_STALL_WEIGHT;
+    }
+
+    /**
+     * What this tick cost the leg's stall clock. A step that LANDED costs one (it went
+     * somewhere, just not closer); a step the world REFUSED costs
+     * {@link #PATROL_STILL_STALL_WEIGHT}; and a tick the speed accumulator swallowed before any
+     * step was attempted costs NOTHING, because standing still between steps is what walking at
+     * {@code speedTicksPerStep > 1} looks like and charging it is how round 3 turned a
+     * hundred-cell detour budget into a thirty-three-cell one.
+     *
+     * <p>The accumulator reads 0 after any tick in which a step was attempted (landed or not)
+     * and non-zero after a tick it gated, which is the whole test. A mover call that returned
+     * before reaching the accumulator at all — no cached route, or the bounded-search cooldown
+     * — leaves it wherever it was; both beats handle that case explicitly by skipping the leg
+     * on {@link Actor#routeFailedTo}, so it cannot masquerade as a free tick forever.
+     */
+    private static int stallCost(Actor self, int cellBefore) {
+        if (self.cell() != cellBefore) {
+            return 1;
+        }
+        return self.moveAccumTicks() == 0 ? PATROL_STILL_STALL_WEIGHT : 0;
+    }
 
     /** Bounded retry budget for {@link #retargetPatrolCorner} — draw-free, fixed geometry. */
     private static final int PATROL_RETRY_BUDGET = 8;
@@ -371,29 +492,61 @@ public final class JobBehaviors {
      * #retargetPatrolCorner}), mirroring the wander/anchor-cycle pattern already
      * in this file, rather than recomputing (and re-walkability-checking) every
      * tick.
+     *
+     * <p><b>S7 round 4 — the blind beat yields on PROGRESS too.</b> Round 3 re-aimed the stall
+     * clock from stillness to progress in {@link #pursueRoutePatrol} ONLY, and 13 of the 19
+     * Watch walk THIS beat, so the general fix was half a fix: at the round-3 tip Sergeant #378
+     * was live-locked for the whole of the final day's shift (24 distinct cells over a
+     * 24,000-tick day against a roster median of 108) and the stillness counter — which zeroes
+     * on any movement, and a live-locked pair moves every tick — read him as healthy. The leg
+     * now keeps the same HIGH-WATER MARK the route beat keeps: the closest this leg has come to
+     * its corner. A step that beats the mark is progress (clock zeroed, mark advanced);
+     * anything else, moving or not, is stall, and the leg is given up on the shared de-phased
+     * budget ({@link #patrolStallBudget}).
+     *
+     * <p>The route beat parks its mark in {@code goalTarget}; this beat cannot, because
+     * {@code goalTarget} already holds the validated corner. So the mark rides the free HIGH
+     * BITS of {@code goalProgress}, whose low two bits are the only ones the square beat has
+     * ever used (every reader in this file takes {@code floorMod(goalProgress, 4)}): distance
+     * plus one, {@code 0} meaning "no mark yet". Persisted, hashed and serialized already —
+     * again no new state, and {@link #selectRouteStart}'s {@code floorMod(id, 4)} start lands
+     * with an empty mark by construction.
      */
     public static void pursuePatrol(Actor self, ActorContext ctx, int radius, JobParams params) {
         if (self.goalTargetKind() != TargetKind.CELL) {
             retargetPatrolCorner(self, ctx, radius);
+            setPatrolMarkDistance(self, NO_PATROL_MARK); // fresh leg: mark from where we stand
         }
         int target = self.goalTargetKey();
         if (self.cell() != target) {
             int before = self.cell();
             self.stepAlongRoute(target, false, ctx::isWalkable, ctx.occupancy());
-            if (self.cell() != before) {
-                self.setGoalWorkTicks(0); // moving: the blocked-leg clock stays clean
+            if (self.routeFailedTo(target)) {
+                // The failed-leg skip the route beat has had since Pass 13, which this beat
+                // never had: a corner the bounded A* cannot reach is walked away from rather
+                // than stood in front of for the whole retry cooldown. Skipping is not
+                // arriving, so nothing is awarded.
+                advancePatrolLeg(self);
                 return;
             }
-            // Sprint 6 yield (Eli's bug 2): a leg standing dead still — a full cell it may
-            // not shove through (a fellow guard) — is abandoned after a bounded wait; the
-            // beat advances to its next corner and walks away instead of wrestling.
-            int blocked = self.goalWorkTicks() + 1;
-            if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
-                self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
-                self.setGoalTarget(TargetKind.NONE, Actor.NONE);
+            int mark = patrolMarkDistance(self);
+            int distance = legDistance(self.cell(), target);
+            if (mark == NO_PATROL_MARK || distance < mark) {
+                // Genuine ground gained (or the first tick of the leg): re-mark and start clean.
+                setPatrolMarkDistance(self, distance);
                 self.setGoalWorkTicks(0);
+                return;
+            }
+            // Sprint 6 yield (Eli's bug 2), re-aimed exactly as the route beat's was: a leg
+            // that is not closing on its corner — wedged dead still against a full cell it may
+            // not shove through, or shuffling back and forth against a fellow guard in a
+            // 1-wide gut — is abandoned after a bounded wait; the beat advances to its next
+            // corner and walks away instead of wrestling.
+            int stall = self.goalWorkTicks() + stallCost(self, before);
+            if (stall >= patrolStallBudget(self.id())) {
+                advancePatrolLeg(self);
             } else {
-                self.setGoalWorkTicks(blocked);
+                self.setGoalWorkTicks(stall);
             }
             return;
         }
@@ -401,18 +554,66 @@ public final class JobBehaviors {
         // the beat's trade skill trains here (context = the corner cell; each corner is its
         // own §3.3 context, which is why patrol cp is priced under the anchor scale).
         awardWorkEvent(self, ctx, params, target);
-        self.setGoalProgress((short) ((Math.floorMod(self.goalProgress(), 4) + 1) % 4));
-        self.setGoalTarget(TargetKind.NONE, Actor.NONE); // force next leg's corner to be revalidated
+        advancePatrolLeg(self);
+    }
+
+    /** Low bits of {@code goalProgress} the square beat's corner index lives in. */
+    private static final int PATROL_LEG_BITS = 2;
+
+    /** Widest mark distance the high bits can carry — {@code (4095+1)<<2} still fits a short. */
+    private static final int PATROL_MARK_MAX = 4095;
+
+    /** "This leg has not marked a best cell yet" — the empty high-bit sentinel. */
+    private static final int NO_PATROL_MARK = -1;
+
+    /** The square beat's current corner index, 0..3. */
+    private static int patrolLeg(Actor self) {
+        return Math.floorMod(self.goalProgress(), 4);
+    }
+
+    /** The leg's high-water distance, or {@link #NO_PATROL_MARK} if the leg has not marked. */
+    private static int patrolMarkDistance(Actor self) {
+        int packed = self.goalProgress();
+        int stored = packed < 0 ? 0 : packed >>> PATROL_LEG_BITS;
+        return stored == 0 ? NO_PATROL_MARK : stored - 1;
+    }
+
+    /** Writes the high-water distance beside the leg index, leaving the leg untouched. */
+    private static void setPatrolMarkDistance(Actor self, int distance) {
+        int stored = distance < 0 ? 0 : Math.min(distance, PATROL_MARK_MAX) + 1;
+        self.setGoalProgress((short) ((stored << PATROL_LEG_BITS) | patrolLeg(self)));
+    }
+
+    /**
+     * Leave this corner for the next one: advance the leg, DROP the high-water mark (the new
+     * leg re-marks from wherever the actor stands), clear the cached corner so the next tick
+     * re-validates it, and zero the stall clock. The route beat's {@link #advanceRouteLeg}
+     * twin.
+     */
+    private static void advancePatrolLeg(Actor self) {
+        self.setGoalProgress((short) ((patrolLeg(self) + 1) % 4)); // mark bits cleared with it
+        self.setGoalTarget(TargetKind.NONE, Actor.NONE);
+        self.setGoalWorkTicks(0);
     }
 
     /**
      * Deterministically shrinks the radius along the current leg's fixed corner
      * direction — {@code radius, radius-1, ...} for up to
      * {@link #PATROL_RETRY_BUDGET} attempts (capped at {@code radius} itself) —
-     * and caches the first walkable candidate as the leg's target. Falls back to
+     * and caches the first ACCEPTABLE candidate as the leg's target. Falls back to
      * {@code anchorCell()} (guaranteed walkable by spawn/bake) if nothing in
-     * budget is walkable. Draw-free (fixed geometry, not randomness), bounded,
+     * budget qualifies. Draw-free (fixed geometry, not randomness), bounded,
      * deterministic.
+     *
+     * <p>S7 (the beat stops walking into cages): "acceptable" used to mean merely
+     * WALKABLE, which is why blind radius-6 corners settled inside 1x1 prison cages
+     * and 1-wide alley stubs — a corner two guards cannot share, and cannot pass each
+     * other on, is a pile-up generator by construction. A candidate must now also be
+     * un-{@link CorridorPinch#isPinched pinched}: its narrower walkable axis must be
+     * wider than one cell. The shrink walks the whole budget looking for open ground
+     * first and only then, rather than give up the leg, accepts the best merely-walkable
+     * candidate it saw — so a guard genuinely quartered in a tight pocket keeps a target
+     * instead of collapsing onto its anchor every leg.
      */
     private static void retargetPatrolCorner(Actor self, ActorContext ctx, int radius) {
         int leg = Math.floorMod(self.goalProgress(), 4);
@@ -420,17 +621,64 @@ public final class JobBehaviors {
         int ay = PackedPos.y(self.anchorCell());
         int z = PackedPos.z(self.anchorCell());
         int attempts = Math.min(radius, PATROL_RETRY_BUDGET);
+        int walkableFallback = Actor.NONE;
         for (int attempt = 0; attempt < attempts; attempt++) {
             int r = radius - attempt;
             int tx = clamp(ax + PATROL_DX[leg] * r, PackedPos.X_MASK);
             int ty = clamp(ay + PATROL_DY[leg] * r, PackedPos.Y_MASK);
             int candidate = PackedPos.pack(tx, ty, z);
-            if (ctx.isWalkable(candidate)) {
+            if (!ctx.isWalkable(candidate)) {
+                continue;
+            }
+            if (!CorridorPinch.isPinched(candidate, ctx::isWalkable)) {
                 self.setGoalTarget(TargetKind.CELL, candidate);
                 return;
             }
+            if (walkableFallback == Actor.NONE) {
+                walkableFallback = candidate; // widest pinched corner seen — keep it in reserve
+            }
         }
-        self.setGoalTarget(TargetKind.CELL, self.anchorCell());
+        self.setGoalTarget(TargetKind.CELL,
+                walkableFallback == Actor.NONE ? self.anchorCell() : walkableFallback);
+    }
+
+    /**
+     * PURSUE (off shift): head for the home cell and stop working — the branch every
+     * other job's pursue already has (see {@link #pursueAtAnchor}, {@link #pursueFarm},
+     * {@link #pursueFishing}, {@link #pursueRounds}, each gated on
+     * {@code params.inWindow(tickOfDay)}) and the one {@code watch.patrol} was missing.
+     * Leash-ignoring like every commute (a home routinely sits outside the work anchor's
+     * leash) and cross-z capable, exactly as {@code RETURN_HOME}'s own walk home is.
+     *
+     * <p>The patrol's blocked-leg clock ({@code goalWorkTicks}) keeps its honest meaning
+     * across the shift boundary: zeroed when the actor is home or made ground this tick,
+     * incremented when a step attempt genuinely failed. It is not zeroed unconditionally —
+     * that would launder a guard stuck all night out of the blocked-spell metric.
+     * No new state: reads {@code params} and {@code homeCellOr}, both already present.
+     *
+     * <p><b>The walk home is a COMMUTE, not a goal, so it clears {@code goalTarget}
+     * instead of parking the bed in it.</b> The first draft cached {@code CELL(homeCell)}
+     * here, and that one line paid a guard for sleeping: at the dawn tick the window
+     * reopens, {@link #pursuePatrol} sees a {@code CELL} target already set and therefore
+     * SKIPS {@link #retargetPatrolCorner}, adopts the bed as this leg's "corner", finds
+     * itself standing on it, and fires {@code awardWorkEvent} — {@code dutyPerUnit} DUTY
+     * and a full {@code trainCp} of streetwise for having stood still all night. DUTY
+     * restoration is an EARNED seam (Sprint 6, Eli's bug 1); it must not be payable from
+     * one's own bunk. Clearing the target means the first on-shift tick ALWAYS re-derives
+     * a genuine beat corner, so the only cell that can pay a patrol work event is a cell
+     * the beat actually walked to. Route-bound patrollers were never affected —
+     * {@link #pursueRoutePatrol} reads {@code goalProgress}, never {@code goalTarget}.
+     */
+    public static void pursueOffShiftHome(Actor self, ActorContext ctx) {
+        int home = homeCellOr(self, ctx, self.anchorCell());
+        self.setGoalTarget(TargetKind.NONE, Actor.NONE);
+        if (self.cell() == home) {
+            self.setGoalWorkTicks(0);
+            return;
+        }
+        int before = self.cell();
+        self.stepAlongRoute(home, true, ctx::isWalkable, ctx.occupancy(), ctx.zLinks());
+        self.setGoalWorkTicks(self.cell() != before ? 0 : self.goalWorkTicks() + 1);
     }
 
     // ======================================================================
@@ -448,6 +696,16 @@ public final class JobBehaviors {
      * the route-following A* failed and that failure is still cached ({@link
      * Actor#routeFailedTo}) — is skipped by advancing to the next waypoint instead of
      * freezing on the failed leg. Draw-free, never completes.
+     *
+     * <p><b>S7 round 3 — the leg yields on PROGRESS, not on stillness.</b> The S6 yield asked
+     * "did this soul move?", which is the wrong question for the jam it was written against: a
+     * pair meeting head-on in a 1-wide connector both keep moving forever (see
+     * {@link #PATROL_NO_PROGRESS_YIELD_STEPS}). The leg now keeps a HIGH-WATER MARK — the
+     * cell from which it has come closest to this waypoint — and a step that beats the mark is
+     * progress (clock zeroed, mark advanced); anything else, moving or not, is stall. The mark
+     * rides {@code goalTarget}, which a route-bound patroller has always left unused ({@link
+     * #pursuePatrol} reads it, this method never did), so the fix adds no persisted state and
+     * the mark is always a cell this actor stood on and therefore always walkable.
      */
     public static void pursueRoutePatrol(Actor self, ActorContext ctx, int routeIndex,
             JobParams params) {
@@ -463,8 +721,7 @@ public final class JobBehaviors {
             // beat's trade skill trains here (context = the waypoint cell). The failed-leg
             // skip below deliberately awards nothing: skipping is not arriving.
             awardWorkEvent(self, ctx, params, waypoint);
-            self.setGoalProgress((short) ((index + 1) % count)); // arrived: next leg next tick
-            self.setGoalWorkTicks(0);
+            advanceRouteLeg(self, index, count); // arrived: next leg next tick
             return;
         }
         // Sprint 4 (the climb): an OPT-IN cross-z consumer — a route may now carry
@@ -475,25 +732,52 @@ public final class JobBehaviors {
         if (self.routeFailedTo(waypoint)) {
             // Route-failure cache says this waypoint is unreachable right now: skip it rather
             // than freeze the whole beat on one blocked leg (Pass-13 DoD).
-            self.setGoalProgress((short) ((index + 1) % count));
+            advanceRouteLeg(self, index, count);
+            return;
+        }
+        int mark = self.goalTargetKind() == TargetKind.CELL ? self.goalTargetKey() : Actor.NONE;
+        if (mark == Actor.NONE
+                || legDistance(self.cell(), waypoint) < legDistance(mark, waypoint)) {
+            // Genuine ground gained (or the first tick of the leg): re-mark and start clean.
+            self.setGoalTarget(TargetKind.CELL, self.cell());
             self.setGoalWorkTicks(0);
             return;
         }
-        if (self.cell() != before) {
-            self.setGoalWorkTicks(0); // moving: the blocked-leg clock stays clean
-            return;
-        }
-        // Sprint 6 yield (Eli's bug 2): a route leg standing dead still — a full cell it
-        // may not shove through (a fellow guard in a 1-wide gut) — is abandoned after a
-        // bounded wait; the patrol advances to the next waypoint and walks away instead
-        // of wrestling. Rides the (otherwise unused here) persisted goalWorkTicks.
-        int blocked = self.goalWorkTicks() + 1;
-        if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
-            self.setGoalProgress((short) ((index + 1) % count));
-            self.setGoalWorkTicks(0);
+        // Sprint 6 yield (Eli's bug 2), re-aimed: a leg that is not closing on its waypoint —
+        // whether wedged dead still against a full cell it may not shove through, or shuffling
+        // back and forth against a fellow guard in a 1-wide gut — is abandoned after a bounded
+        // wait; the patrol advances to the next waypoint and walks away instead of wrestling.
+        // One counter, two budgets (see PATROL_STILL_STALL_WEIGHT), on the persisted
+        // goalWorkTicks this method already owned.
+        int stall = self.goalWorkTicks() + stallCost(self, before);
+        if (stall >= patrolStallBudget(self.id())) {
+            advanceRouteLeg(self, index, count);
         } else {
-            self.setGoalWorkTicks(blocked);
+            self.setGoalWorkTicks(stall);
         }
+    }
+
+    /**
+     * Leave the current leg for the next waypoint: advance the index, zero the stall clock and
+     * DROP the high-water mark, so the new leg re-marks from wherever the actor is standing
+     * rather than inheriting the old leg's best cell.
+     */
+    private static void advanceRouteLeg(Actor self, int index, int count) {
+        self.setGoalProgress((short) ((index + 1) % count));
+        self.setGoalWorkTicks(0);
+        self.setGoalTarget(TargetKind.NONE, Actor.NONE);
+    }
+
+    /**
+     * How far a route leg still has to go, counting bands: x/y Chebyshev plus one unit per
+     * band still to climb. The z term is what lets a cross-z leg (the Saltgate Rise) register
+     * the climb itself as progress — a soul that steps from z:+11 to z:+12 has plainly gained
+     * ground on a z:+13 waypoint even when its x/y distance did not move. Pure integer
+     * geometry; no draws, no allocation.
+     */
+    private static int legDistance(int cell, int waypoint) {
+        return ActorGeometry.chebyshev(cell, waypoint)
+                + Math.abs(PackedPos.z(cell) - PackedPos.z(waypoint));
     }
 
     // ======================================================================
@@ -708,12 +992,21 @@ public final class JobBehaviors {
      * real traffic through the day (Eli's bug 4). Outside the window, walk home. The
      * current stop index rides {@code goalProgress}; the dwell/blocked clock rides
      * {@code goalWorkTicks} (dwelling at the stop, or waiting out a human wall while
-     * traveling — the {@link #PATROL_BLOCKED_YIELD_TICKS} yield, then skip the stop). An
+     * traveling — the {@link #ROUNDS_BLOCKED_YIELD_TICKS} yield, then skip the stop). An
      * A*-unreachable stop is skipped via the route-failure cache like a patrol's dead leg.
      * A carter whose anchor matches no baked circuit — or an unwired table — degrades to
      * the plain {@link #pursueAtAnchor} laborer cycle, byte-identical to pre-rounds bakes.
      * Cross-z stops are legal (the climb's opt-in table). Draw-free.
      */
+    /**
+     * Motionless TICKS a carter's travel leg waits out a human wall before skipping the stop.
+     * The carter beat still counts plain ticks — it has no progress-toward-goal yield and this
+     * round did not give it one — so it keeps S6's 40 rather than being silently re-based on
+     * the patrol's attempt-denominated budget when that changed units. Same number as before
+     * round 4, now under its own name so the two cannot drift into each other.
+     */
+    private static final int ROUNDS_BLOCKED_YIELD_TICKS = 40;
+
     public static void pursueRounds(Actor self, ActorContext ctx, JobParams params) {
         var rounds = ctx.workRounds();
         int route = rounds.routeContaining(self.anchorCell());
@@ -745,7 +1038,7 @@ public final class JobBehaviors {
                 self.setGoalWorkTicks(0); // moving: the blocked clock stays clean
             } else {
                 int blocked = self.goalWorkTicks() + 1;
-                if (blocked >= PATROL_BLOCKED_YIELD_TICKS) {
+                if (blocked >= ROUNDS_BLOCKED_YIELD_TICKS) {
                     self.setGoalProgress((short) ((index + 1) % count)); // walled: walk away
                     self.setGoalWorkTicks(0);
                 } else {

@@ -74,6 +74,7 @@ final class JobDutyCommittedTest {
         assertEquals(100, dutyOf("trade.trader"));
         assertEquals(100, dutyOf("trade.stallkeep"));
         assertEquals(200, dutyOf("watch.patrol"));
+        assertEquals(200, dutyOf("watch.nightwatch")); // same beat, same wage, other shift
         assertEquals(400, dutyOf("clergy.shepherd"));
         assertEquals(150, dutyOf("clergy.acolyte"));
         assertEquals(150, dutyOf("husbandry.keeper"));

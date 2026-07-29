@@ -2,6 +2,7 @@ package com.trojia.sim.actor.job;
 
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorContext;
+import com.trojia.sim.actor.DailyRhythm;
 import com.trojia.sim.actor.StatusBit;
 import com.trojia.sim.actor.TheftMechanics;
 
@@ -56,6 +57,24 @@ public sealed abstract class Job {
 
     /** COMPLETE check (§10.1): pure. */
     public abstract boolean isComplete(Actor self, ActorContext ctx);
+
+    /**
+     * Whether this job's shift is the reason its holder is out of bed after dark — the
+     * opt-in seam {@link com.trojia.sim.actor.ReturnHomePolicy} consults before applying
+     * the TYPE's night-rhythm term.
+     *
+     * <p>{@code false} for every job but {@link Watch.NightWatch}, and deliberately so.
+     * A type's {@code nightWindow} says when that KIND of person sleeps; it is the right
+     * default for the whole ward and it must keep dragging idle souls home. A ROSTERED
+     * night shift is the one case where the type's answer is wrong for a particular soul,
+     * and it is opted into here rather than inferred from "any job whose window happens to
+     * overlap the night" — {@code villain.robber} and {@code villain.skyrunner} have night
+     * windows too, and quietly exempting them from RETURN_HOME would rewrite the ward's
+     * whole nocturnal economy under cover of a guard-routing fix.
+     */
+    public boolean worksThroughTheNight() {
+        return false;
+    }
 
     // ================== taxonomy (families abstract, leaves final) ==================
 
@@ -365,7 +384,7 @@ public sealed abstract class Job {
             public static final JobId ID = JobId.of("watch.patrol");
 
             /** The half-side of the square beat, kept well inside the Watch leash (24). */
-            private static final int BEAT_RADIUS = 6;
+            static final int BEAT_RADIUS = 6;
 
             public Patrol(JobParams params) {
                 super(ID, params);
@@ -378,6 +397,20 @@ public sealed abstract class Job {
 
             @Override
             public void pursue(Actor self, ActorContext ctx) {
+                // S7 (the Watch goes off shift like every other trade): watch.patrol was the
+                // ONE job with no off-shift branch — every other pursue in JobBehaviors gates
+                // on params().inWindow (pursueAtAnchor, pursueFarm, pursueFishing,
+                // pursueCarterRounds) and heads home outside it. Its absence here left
+                // ReturnHomePolicy's night-at-home gate resting on a comment that was FALSE
+                // for the Watch ("pursueAtAnchor's own off-shift target already keeps the
+                // actor there through the night"), so a guard at home at night scored
+                // RETURN_HOME 0, lost to GOAL_PURSUE at 220, got dragged one cell out toward
+                // its beat, and was then dragged straight back by RETURN_HOME's night
+                // branch — forever. Closing the branch makes that stated assumption true.
+                if (!params().inWindow(DailyRhythm.tickOfDay(ctx.tick()))) {
+                    JobBehaviors.pursueOffShiftHome(self, ctx);
+                    return;
+                }
                 // Law & order pass (Pass 13): a Watch whose anchor sits on a baked patrol
                 // route walks that route's ordered waypoints (Tarwalk/quay/Ropewynd);
                 // everyone else (stationed shop/bank/roof guards, unwired bakes) keeps the
@@ -393,6 +426,78 @@ public sealed abstract class Job {
             @Override
             public boolean isComplete(Actor self, ActorContext ctx) {
                 return false; // a beat never "finishes" — it loops through duty hours (§4.1)
+            }
+        }
+
+        /**
+         * The SKELETON NIGHT WATCH — the same beat, walked on the other shift.
+         *
+         * <p>Slice 3 gave {@code watch.patrol} the off-shift branch every other trade
+         * already had, which is the real cure for the night oscillation and stays. But it
+         * sent all nineteen Watch home for the whole 12,000-tick night, and since
+         * {@code checkArrestExposure} gates on a Watch being nearby, that made arrest-by-
+         * exposure structurally day-only: pickpocket attempts 150 -&gt; 186, catch rate
+         * 31.3% -&gt; 23.7%, Royals lifted 484 -&gt; 359, Skyrunner escalations 1 -&gt; 0.
+         * A ward with literally no law between dusk and dawn is not what "guards should
+         * stop piling up" was asking for.
+         *
+         * <p>So a few souls draw the night roster. They are not doing a double shift: this
+         * job's rhythm window is the night, and its {@code pursue} is
+         * {@link Patrol}'s — route waypoints for a route-bound anchor, the square beat
+         * otherwise, and slice 3's own off-shift branch for the DAY, so a night-watch soul
+         * sleeps through the working day exactly as symmetrically as a day guard sleeps
+         * through the night. Neither shift can oscillate: at every hour, exactly one of the
+         * two behaviours applies and it is the one that keeps the soul where it belongs.
+         *
+         * <p>It extends {@link Watch}, so every existing law read — {@code watchIsNearby},
+         * {@link com.trojia.sim.actor.ApprehendPolicy}, {@code ActorsSystem}'s on-duty-guard
+         * check, {@code TheftMechanics} — sees a night-watch soul as the Watch without a
+         * single call-site change. The bark family is the prefix before the first dot, so
+         * {@code greet.watch.neutral.night} ("Late walker. The gibbet started as a late
+         * walker too, I'd wager.") has a street audience again.
+         */
+        public static final class NightWatch extends Watch {
+            public static final JobId ID = JobId.of("watch.nightwatch");
+
+            public NightWatch(JobParams params) {
+                super(ID, params);
+            }
+
+            @Override
+            public void selectTarget(Actor self, ActorContext ctx) {
+                JobBehaviors.selectRouteStart(self, ctx);
+            }
+
+            @Override
+            public void pursue(Actor self, ActorContext ctx) {
+                if (!params().inWindow(DailyRhythm.tickOfDay(ctx.tick()))) {
+                    JobBehaviors.pursueOffShiftHome(self, ctx);
+                    return;
+                }
+                int route = ctx.patrolRoutes().routeContaining(self.anchorCell());
+                if (route >= 0) {
+                    JobBehaviors.pursueRoutePatrol(self, ctx, route, params());
+                } else {
+                    JobBehaviors.pursuePatrol(self, ctx, Patrol.BEAT_RADIUS, params());
+                }
+            }
+
+            @Override
+            public boolean isComplete(Actor self, ActorContext ctx) {
+                return false; // a beat never "finishes" — it loops through duty hours (§4.1)
+            }
+
+            /**
+             * The one job in the taxonomy that opts out of the type's night-rhythm pull
+             * home. Without this the roster could not work at all: {@code RETURN_HOME} is
+             * priced at 305 + an 80 rhythm bonus against a JOB band that tops out at 299,
+             * so a rostered guard away from its bunk after dark would be dragged back every
+             * tick and shoved out again the next — the exact flip-flop this sprint exists
+             * to kill, rebuilt on the other shift.
+             */
+            @Override
+            public boolean worksThroughTheNight() {
+                return true;
             }
         }
     }

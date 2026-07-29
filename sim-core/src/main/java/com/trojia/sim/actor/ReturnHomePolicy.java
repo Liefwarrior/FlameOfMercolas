@@ -35,7 +35,8 @@ public final class ReturnHomePolicy implements BehaviorPolicy {
         int rest = self.need(Need.REST);
         long tickOfDay = DailyRhythm.tickOfDay(ctx.tick());
         ActorTypeStats stats = self.stats();
-        boolean night = tickOfDay >= stats.nightWindowStart() && tickOfDay < stats.nightWindowEnd();
+        boolean night = tickOfDay >= stats.nightWindowStart() && tickOfDay < stats.nightWindowEnd()
+                && !onARosteredNightShift(self, ctx, tickOfDay);
         if (self.cell() == home.homeCell()) {
             if (night) {
                 return 0; // pursueAtAnchor's own off-shift target already keeps the actor
@@ -61,6 +62,33 @@ public final class ReturnHomePolicy implements BehaviorPolicy {
         NeedConfig cfg = stats.need(Need.REST);
         int urgencyBonus = restLow ? (NeedThresholds.isCritical(rest) ? cfg.critBonus() : cfg.lowBonus()) : 0;
         return stats.returnHomePriority() + urgencyBonus + (night ? stats.returnHomeRhythmBonus() : 0);
+    }
+
+    /**
+     * The skeleton-night-watch seam: a soul whose bound job {@link
+     * com.trojia.sim.actor.job.Job#worksThroughTheNight() opts in} AND whose shift window
+     * is open right now is not "up past its bedtime" — it is at work, and the type's
+     * night-rhythm term must not apply to it.
+     *
+     * <p>The night term is priced above the whole JOB band on purpose, so without this the
+     * roster is unimplementable: a rostered guard away from its bunk would be pulled home
+     * every tick and pushed back out the next, which is the same oscillation slice 3 fixed,
+     * rebuilt after dark. Suppressing the term restores the ORDINARY daytime shape for
+     * these souls — the REST hysteresis branch below is what sends them to bed when they
+     * genuinely tire, and it releases them only at {@code RECOVERED}, which is the gate
+     * already proven not to oscillate.
+     *
+     * <p>Deliberately opt-in per job rather than "any job in window": {@code villain.robber}
+     * and {@code villain.skyrunner} carry night windows too, and exempting them here would
+     * silently rewrite the ward's nocturnal economy. Today exactly one job returns true, so
+     * every other actor's scoring is bit-for-bit what it was.
+     */
+    private static boolean onARosteredNightShift(Actor self, ActorContext ctx, long tickOfDay) {
+        if (self.jobOrdinal() < 0) {
+            return false;
+        }
+        com.trojia.sim.actor.job.Job job = ctx.jobs().get(self.jobOrdinal());
+        return job.worksThroughTheNight() && job.params().inWindow(tickOfDay);
     }
 
     @Override
