@@ -4,7 +4,7 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.trojia.client.art.JsonTileArtResolver;
 import com.trojia.client.art.TileArtResolver;
 import com.trojia.client.atlas.TileAtlas;
-import com.trojia.client.render.WorldRenderer.FluidOverlay;
+import com.trojia.client.render.TilePlan.FluidOverlay;
 import com.trojia.sim.fluid.FluidDefinition;
 import com.trojia.sim.fluid.FluidRegistry;
 import org.junit.jupiter.api.Test;
@@ -18,13 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Headless tests for {@link WorldRenderer}'s GL-free fluid-overlay plan
- * ({@link WorldRenderer#fluidOverlay}) — the pure (fluidBits, position, registries,
- * resolver, atlas) &rarr; draw-plan function behind the water overlay pass
- * (TILE-ART-SPEC section 5.3; GRANADAD art spec section 5). The GL half of the pass is
- * one {@code batch.draw} of the returned plan and is exercised by the observer smoke run.
+ * Headless tests for the shared GL-free fluid-overlay plan ({@link TilePlan#fluid}) — the
+ * pure (fluidBits, position, registries, resolver, region catalog) &rarr; draw-plan function
+ * behind the water overlay pass (TILE-ART-SPEC section 5.3; GRANADAD art spec section 5).
+ * The GL half of the pass is one {@code batch.draw} of the returned plan, in whichever view
+ * asked — the top-down {@code WorldRenderer} or the first-person renderer, both of which go
+ * through this one chain so they cannot disagree about what the water looks like.
  */
-class WorldRendererTest {
+class TilePlanTest {
 
     /** The pinned depthAlphaQ8 curve (TILE-ART-SPEC section 5.3). */
     private static final int[] WATER_ALPHA = {0, 96, 120, 144, 168, 192, 216, 240};
@@ -127,7 +128,7 @@ class WorldRendererTest {
     private static final int WATER_ID = 1; // sorted-key order: brine 0, water 1
 
     private static FluidOverlay plan(int fluidBits) {
-        return WorldRenderer.fluidOverlay(fluidBits, 12, 34, 5, registry(), resolver(), atlas());
+        return TilePlan.fluid(fluidBits, 12, 34, 5, registry(), resolver(), atlas());
     }
 
     // ------------------------------------------------------------------ tests
@@ -178,7 +179,7 @@ class WorldRendererTest {
         // A registry whose raw id 0 is a fluid the pack maps no entry for: the resolver
         // reports alpha 0 at every depth, the pack's opt-out signal.
         FluidRegistry withOil = FluidRegistry.of(List.of(fluid("water"), fluid("oil")));
-        FluidOverlay overlay = WorldRenderer.fluidOverlay(bits(7, 0, false), 1, 2, 3,
+        FluidOverlay overlay = TilePlan.fluid(bits(7, 0, false), 1, 2, 3,
                 withOil, resolver(), atlas());
         assertNull(overlay);
     }
@@ -209,7 +210,7 @@ class WorldRendererTest {
         int distinct = 0;
         for (int ty = 0; ty < 16; ty++) {
             for (int tx = 0; tx < 16; tx++) {
-                FluidOverlay overlay = WorldRenderer.fluidOverlay(bits(7, WATER_ID, false),
+                FluidOverlay overlay = TilePlan.fluid(bits(7, WATER_ID, false),
                         tx, ty, 5, registry(), resolver(), atlas());
                 assertNotNull(overlay);
                 if (!seen[overlay.variant()]) {
@@ -231,7 +232,7 @@ class WorldRendererTest {
     @Test
     void regionAbsentFromTheAtlasFallsBackToMissing() {
         TileAtlas noWaterCell = new FakeAtlas(Map.of("granite", 1, "missing", 1, "brine", 1));
-        FluidOverlay overlay = WorldRenderer.fluidOverlay(bits(6, WATER_ID, false), 1, 2, 3,
+        FluidOverlay overlay = TilePlan.fluid(bits(6, WATER_ID, false), 1, 2, 3,
                 registry(), resolver(), noWaterCell);
         assertNotNull(overlay);
         assertEquals("missing", overlay.regionName());
@@ -242,8 +243,8 @@ class WorldRendererTest {
     void fluidFormSaltIsPinnedOutOfBandOfEveryRealForm() {
         // GRANADAD art spec section 5: one past TileForm.STAIR.ordinal() == 5, so water
         // variants never share a hash stream with any base-tile form.
-        assertEquals(6, WorldRenderer.FLUID_FORM_SALT);
-        assertTrue(WorldRenderer.FLUID_FORM_SALT
+        assertEquals(6, TilePlan.FLUID_FORM_SALT);
+        assertTrue(TilePlan.FLUID_FORM_SALT
                         > com.trojia.sim.world.TileForm.STAIR.ordinal(),
                 "salt must stay out-of-band if TileForm ever grows");
     }

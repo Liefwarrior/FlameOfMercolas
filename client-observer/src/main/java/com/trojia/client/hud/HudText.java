@@ -35,6 +35,20 @@ public final class HudText {
         return String.format("z=%d  zoom=%dx", z, zoom);
     }
 
+    /**
+     * The first-person orientation readout: which band the eye is standing on, and where it is
+     * looking. Absolute world z, never authored-relative — the docks' authored {@code z:+11}
+     * quayside is band 19 — because a readout that is eight bands out looks perfectly plausible
+     * and is completely wrong.
+     *
+     * @param band    the absolute world z the driven actor is standing on
+     * @param point   the eight-point compass label
+     * @param bearing compass degrees, 0 north
+     */
+    public static String eyeLine(int band, String point, int bearing) {
+        return String.format("eye z=%d  facing %-2s %03d", band, point, bearing);
+    }
+
     /** Displayed minutes in a day: the {@link DailyRhythm#DAY}-tick sim day reads as 24h. */
     private static final long MINUTES_PER_DAY = 24 * 60;
 

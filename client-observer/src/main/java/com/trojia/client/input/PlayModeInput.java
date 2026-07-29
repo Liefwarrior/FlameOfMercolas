@@ -49,6 +49,21 @@ public final class PlayModeInput {
      */
     public static boolean poll(PlayModeState playMode, InspectorState inspector, MapCamera camera,
             ActorRegistry registry, int z) {
+        return poll(playMode, inspector, camera, registry, z, true);
+    }
+
+    /**
+     * As {@link #poll(PlayModeState, InspectorState, MapCamera, ActorRegistry, int)}, but with
+     * the WASD step read suppressible.
+     *
+     * <p>The first-person view rebinds WASD to <em>look-relative</em> forward/strafe rather
+     * than world-axis north/east, and rotates that intent into world axes itself
+     * ({@code FirstPersonInput}). Both paths end at the same {@link #applyMovement} seam — the
+     * only route into the sim's move intent — so this flag decides which one reads the keys
+     * this frame, never whether the rules apply.
+     */
+    public static boolean poll(PlayModeState playMode, InspectorState inspector, MapCamera camera,
+            ActorRegistry registry, int z, boolean readMovementKeys) {
         followSelectionChange(playMode, inspector, registry);
         pollToggle(playMode, inspector, registry);
 
@@ -66,7 +81,9 @@ public final class PlayModeInput {
             applyImpersonatePick(playMode, camera, registry, z);
         }
 
-        pollMovement(playMode, registry);
+        if (readMovementKeys) {
+            pollMovement(playMode, registry);
+        }
         return clickConsumed;
     }
 

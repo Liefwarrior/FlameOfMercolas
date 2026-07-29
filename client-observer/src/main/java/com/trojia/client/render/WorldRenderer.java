@@ -5,6 +5,8 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.trojia.client.art.TileArtResolver;
 import com.trojia.client.atlas.TileAtlas;
 import com.trojia.client.camera.MapCamera;
+import com.trojia.client.render.TilePlan.BaseTilePlan;
+import com.trojia.client.render.TilePlan.FluidOverlay;
 import com.trojia.sim.fluid.FluidRegistry;
 import com.trojia.sim.material.MaterialRegistry;
 import com.trojia.sim.world.PackedPos;
@@ -12,7 +14,6 @@ import com.trojia.sim.world.TileCursor;
 import com.trojia.sim.world.TileForm;
 import com.trojia.sim.world.World;
 
-import java.util.Locale;
 import java.util.function.IntPredicate;
 
 /**
@@ -34,7 +35,8 @@ import java.util.function.IntPredicate;
  * {@link TileArtResolver} seam as tiles — an art-pack swap changes water's look with zero
  * renderer changes. A pack that maps no entry for the fluid reports alpha 0 at every
  * depth, which this pass treats as draw-nothing. Overlay variants reuse
- * {@link #cosmeticVariant} with the form argument pinned to {@link #FLUID_FORM_SALT}
+ * {@link TilePlan#cosmeticVariant} with the form argument pinned to
+ * {@link TilePlan#FLUID_FORM_SALT}
  * (out-of-band of every real {@link TileForm} ordinal) so the water surface's variety
  * never correlates with the floor beneath it. Z-order: terrain, then water, then actors —
  * this pass runs inside the tile loop, before {@code ActorRenderer}, so actors read as
@@ -63,7 +65,8 @@ import java.util.function.IntPredicate;
  * though it now runs against real colour instead of grayscale.
  *
  * <p><b>Cosmetic tile variants</b> (TILE-ART-SPEC section 12): when a region name backs
- * several interchangeable sheet cells, each tile picks one via {@link #cosmeticVariant} — a
+ * several interchangeable sheet cells, each tile picks one via
+ * {@link TilePlan#cosmeticVariant} — a
  * pure hash of its world position (and material/form) modulo the variant count. Same map,
  * same look, every run; presentation-only, so sim-core and the determinism machinery are
  * untouched. This axis is orthogonal to the appearance bucket (the gameplay charge-stop
@@ -102,9 +105,6 @@ import java.util.function.IntPredicate;
  */
 public final class WorldRenderer {
 
-    /** Appearance bucket used for every tile in v0 (F5 will read real charge state). */
-    private static final int APPEARANCE_BUCKET = 0;
-
     /**
      * How many z-levels below the camera the air-depth pass searches for a tile to show
      * through empty air. Capped so a deep air column costs a bounded probe and never reads a
@@ -128,29 +128,19 @@ public final class WorldRenderer {
     /** Cap on the cumulative cool haze, so the tint stays a hint of depth, never a blue cast. */
     static final float COOL_MAX = 0.10f;
 
-    /**
-     * The {@code formOrdinal} argument {@link #cosmeticVariant} receives for fluid-overlay
-     * variant picks: one past {@code TileForm.STAIR.ordinal()} (the last real form), so no
-     * real form can ever collide with it and water variants never correlate with the
-     * variant of the floor tile beneath (GRANADAD art spec section 5, pinned).
-     */
-    static final int FLUID_FORM_SALT = 6;
-
-    /** FLUID-lane unpacking (Tile.java: depth bits 0–2, fluidId bits 3–5, SETTLED bit 6). */
-    private static final int FLUID_DEPTH_MASK = 0x7;
-    private static final int FLUID_ID_SHIFT = 3;
-    private static final int FLUID_ID_MASK = 0x7;
+    /** FLUID-lane depth mask (Tile.java: depth bits 0–2) — {@link TilePlan}'s own. */
+    private static final int FLUID_DEPTH_MASK = TilePlan.FLUID_DEPTH_MASK;
 
     /** Q8 alpha denominator: {@code alphaQ8 / 256f} is the batch alpha. */
     private static final float ALPHA_Q8_ONE = 256f;
 
     /** How much the fluid overlay's ambient red is pulled down at full night (water reads
      * a touch darker + cooler than the lamplit land around it; identity by day). */
-    static final float WATER_NIGHT_COOL_R = 0.18f;
+    public static final float WATER_NIGHT_COOL_R = 0.18f;
 
     /** The paired (smaller) green pull-down — together with the red pull this cools the
      * night water blue-ward without ever brightening anything. */
-    static final float WATER_NIGHT_COOL_G = 0.10f;
+    public static final float WATER_NIGHT_COOL_G = 0.10f;
 
     private final World world;
     private final MaterialRegistry materials;
@@ -252,7 +242,7 @@ public final class WorldRenderer {
                     // Fluid overlay pass: over the base tile, or alone on a fluid-bearing OPEN
                     // cell (the harbor's water column shows a surface on every z-slice it
                     // occupies, not just where it touches a floor).
-                    FluidOverlay overlay = fluidOverlay(fluidBits, tx, ty, z, fluids, artResolver,
+                    FluidOverlay overlay = TilePlan.fluid(fluidBits, tx, ty, z, fluids, artResolver,
                             atlas);
                     if (overlay != null) {
                         lit(waterAmbR, waterAmbG, waterAmbB, lampF, tx, ty, z);
@@ -298,7 +288,7 @@ public final class WorldRenderer {
                     batch.draw(atlas.region(plan.regionName(), plan.variant(), blurLevel),
                             drawX, drawY, span, span);
                 }
-                FluidOverlay overlay = fluidOverlay(lowFluidBits, tx, ty, foundZ, fluids,
+                FluidOverlay overlay = TilePlan.fluid(lowFluidBits, tx, ty, foundZ, fluids,
                         artResolver, atlas);
                 if (overlay != null) {
                     lit(waterAmbR, waterAmbG, waterAmbB, lampF, tx, ty, foundZ);
@@ -381,92 +371,16 @@ public final class WorldRenderer {
     }
 
     /**
-     * Resolves the base tile of the cell the cursor is positioned on — material lane &rarr;
-     * raws key &rarr; region name &rarr; cosmetic variant + secondary tint — into a GL-free
-     * plan. Shared verbatim by the top layer and the air-depth look-down so a lower cell
-     * resolves identically to how it would draw at the camera's own z (only the blur level and
-     * depth shade differ at the draw). The caller guarantees a base-tile-bearing cell (a solid,
-     * non-VOID form).
-     *
-     * <p>Variant pick is the same deterministic position hash as before (TILE-ART-SPEC section
-     * 12): a single-cell region always draws variant 0, a PERIODIC region a fixed laid-paver
-     * weave, otherwise the material/form-salted position hash — all pure functions of world
-     * position, presentation-only, never read by {@code WorldHasher}.
+     * Resolves the base tile of the cell the cursor is positioned on through the shared
+     * {@link TilePlan#base} chain — material lane &rarr; raws key &rarr; region name &rarr;
+     * cosmetic variant + secondary tint. Used verbatim by the top layer, the air-depth
+     * look-down AND the first-person view, so a cell resolves identically no matter which
+     * camera is looking at it (only the blur level and depth shade differ at the draw). The
+     * caller guarantees a base-tile-bearing cell (a solid, non-VOID form).
      */
     private BaseTilePlan baseTilePlan(TileCursor cur, int tx, int ty, int z) {
-        TileForm form = cur.form();
-        int materialLane = cur.materialId();
-        String materialId = materials.get(materialLane).key();
-        String formToken = form.name().toLowerCase(Locale.ROOT);
-        String regionName = artResolver.regionName(materialId, formToken, APPEARANCE_BUCKET);
-        if (!atlas.contains(regionName)) {
-            regionName = artResolver.missingRegionName();
-        }
-        int variantCount = atlas.variantCount(regionName);
-        int variant = pickVariant(regionName, variantCount, tx, ty, z, materialLane,
-                form.ordinal());
-        return new BaseTilePlan(regionName, variant, artResolver.materialTintRgb(materialId));
-    }
-
-    /**
-     * One cell's resolved base-tile draw: which region cell to draw and the material's optional
-     * secondary tint ({@link TileArtResolver#NO_TINT} when the pre-colored cell draws as
-     * authored). The blur level and any depth shade are applied at the draw site, not here.
-     */
-    record BaseTilePlan(String regionName, int variant, int materialTintRgb) {
-    }
-
-    /**
-     * The GL-free plan for one cell's fluid overlay — what to draw and how — or
-     * {@code null} when the cell draws no overlay. Pure function of its arguments
-     * (deterministic across runs and machines); the GL side of the pass is just a
-     * {@code batch.draw} of the plan. Package-private so it unit-tests headless.
-     *
-     * <p>Draw-nothing cases: depth 0; a FLUID-lane fluid id outside the registry (lane
-     * garbage — nothing sane to resolve); an alpha of 0 at the cell's depth, which is how
-     * a pack that maps no entry for this fluid opts out (the resolver reports 0 at every
-     * depth for unmapped fluids). The SETTLED bit and any future high FLUID-lane bits are
-     * ignored — presentation only cares about what is pooled, not whether it is still
-     * flowing.
-     *
-     * @param fluidBits raw FLUID-lane bits (depth 0–2, fluidId 3–5, SETTLED 6)
-     * @return the plan, or {@code null} to draw nothing
-     */
-    static FluidOverlay fluidOverlay(int fluidBits, int tx, int ty, int z,
-            FluidRegistry fluids, TileArtResolver artResolver, TileAtlas atlas) {
-        int depth = fluidBits & FLUID_DEPTH_MASK;
-        if (depth == 0) {
-            return null;
-        }
-        int fluidId = (fluidBits >>> FLUID_ID_SHIFT) & FLUID_ID_MASK;
-        if (fluidId >= fluids.size()) {
-            return null;
-        }
-        String fluidKey = fluids.get(fluidId).key();
-        int alphaQ8 = artResolver.fluidDepthAlphaQ8(fluidKey, depth);
-        if (alphaQ8 <= 0) {
-            return null;
-        }
-        String regionName = artResolver.fluidRegion(fluidKey);
-        if (!atlas.contains(regionName)) {
-            regionName = artResolver.missingRegionName();
-        }
-        // Same deterministic position-hash variety as base tiles, but salted with the
-        // raw fluid id and the out-of-band FLUID_FORM_SALT instead of material/form, so
-        // the water surface's repeat pattern is independent of the floor's.
-        int variantCount = atlas.variantCount(regionName);
-        int variant = variantCount <= 1 ? 0
-                : Math.floorMod(cosmeticVariant(tx, ty, z, fluidId, FLUID_FORM_SALT),
-                        variantCount);
-        return new FluidOverlay(regionName, variant, artResolver.fluidTintRgb(fluidKey), alphaQ8);
-    }
-
-    /**
-     * One cell's resolved fluid-overlay draw: which region cell, at what tint and Q8
-     * alpha. {@code tintRgb} is {@link TileArtResolver#NO_TINT} when the pack's fluid
-     * region is pre-colored and draws as authored (the shipped packs' water).
-     */
-    record FluidOverlay(String regionName, int variant, int tintRgb, int alphaQ8) {
+        return TilePlan.base(cur.form(), cur.materialId(), tx, ty, z, materials, artResolver,
+                atlas);
     }
 
     /**
@@ -575,67 +489,5 @@ public final class WorldRenderer {
             b = (tintRgb & 0xFF) / 255f;
         }
         batch.setColor(r * shadeR, g * shadeG, b * shadeB, a);
-    }
-
-    /**
-     * Chooses the cosmetic-variant cell index for one base tile (TILE-ART-SPEC section 12),
-     * dispatching on the region's {@link com.trojia.client.atlas.VariantPattern}:
-     *
-     * <ul>
-     *   <li>{@code variantCount <= 1} &rarr; {@code 0}: a homogeneous single-cell region (the
-     *       smooth-surface default) always draws its one clean tile.</li>
-     *   <li>{@link com.trojia.client.atlas.VariantPattern#PERIODIC} &rarr; {@code (x ^ y) & 1}
-     *       folded into the count: a fixed 2-tone laid-paver weave (the sidewalk / civic
-     *       flagstone), a regular pattern a random hash cannot produce.</li>
-     *   <li>otherwise &rarr; the material/form-salted position hash: scattered variety, the
-     *       intended look for deliberately-rough surfaces (dirt, rubble) and moving water.</li>
-     * </ul>
-     *
-     * Every branch is a pure function of world position — presentation-only, never read by the
-     * {@code WorldHasher}, byte-identical every run.
-     */
-    private int pickVariant(String regionName, int variantCount, int tx, int ty, int z,
-            int materialLane, int formOrdinal) {
-        if (variantCount <= 1) {
-            return 0;
-        }
-        if (atlas.variantPattern(regionName) == com.trojia.client.atlas.VariantPattern.PERIODIC) {
-            return Math.floorMod((tx ^ ty) & 1, variantCount);
-        }
-        return Math.floorMod(cosmeticVariant(tx, ty, z, materialLane, formOrdinal), variantCount);
-    }
-
-    /**
-     * A well-mixed integer hash of a tile's world position and material/form salt, used to
-     * choose a cosmetic tile variant (TILE-ART-SPEC section 12). Pure and stateless — the
-     * same tile always hashes the same value on every run and machine, so variant choice is
-     * deterministic with no RNG and no stored state; it is presentation-only and never read
-     * by sim-core or the {@code WorldHasher} (the tile's simulated state is untouched). The
-     * MurmurHash3 mixing gives good avalanche between adjacent coordinates, so neighbouring
-     * tiles usually land on different variants and the repeat pattern breaks up.
-     */
-    private static int cosmeticVariant(int x, int y, int z, int materialLane, int formOrdinal) {
-        int h = 0x9E3779B9;
-        h = mix(h, x);
-        h = mix(h, y);
-        h = mix(h, z);
-        h = mix(h, materialLane);
-        h = mix(h, formOrdinal);
-        // fmix32 finalizer (MurmurHash3).
-        h ^= (h >>> 16);
-        h *= 0x85EBCA6B;
-        h ^= (h >>> 13);
-        h *= 0xC2B2AE35;
-        h ^= (h >>> 16);
-        return h;
-    }
-
-    private static int mix(int h, int value) {
-        int k = value * 0xCC9E2D51;
-        k = Integer.rotateLeft(k, 15);
-        k *= 0x1B873593;
-        h ^= k;
-        h = Integer.rotateLeft(h, 13);
-        return h * 5 + 0xE6546B64;
     }
 }
