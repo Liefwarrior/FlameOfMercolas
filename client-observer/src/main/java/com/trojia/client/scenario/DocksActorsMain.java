@@ -145,11 +145,16 @@ public final class DocksActorsMain {
         int headArrivals = 0;
         int footArrivals = 0;
         // Per-walker ends, so the report can assert what the ward totals cannot: that EVERY
-        // soul bound to the route works the climb, not just that somebody does.
+        // soul bound to the route works the climb, not just that somebody does. And the same
+        // two counts restricted to the run's LAST window, which is what a run total cannot
+        // say: a soul that quits at tick 15,000 still posts a healthy 60,000-tick figure.
         List<int[]> riseEnds = new ArrayList<>();
+        List<int[]> riseLateEnds = new ArrayList<>();
         for (int ignored = 0; ignored < riseWalkers.size(); ignored++) {
             riseEnds.add(new int[2]);
+            riseLateEnds.add(new int[2]);
         }
+        long riseLateStart = SaltgateRiseProof.lateWindowStart(ticks);
         long stairwellShoves = 0;
         long seenShoves = 0;
 
@@ -240,9 +245,15 @@ public final class DocksActorsMain {
                 if (cell == riseHead) {
                     headArrivals++;
                     riseEnds.get(w)[0]++;
+                    if (i >= riseLateStart) {
+                        riseLateEnds.get(w)[0]++;
+                    }
                 } else if (cell == riseFoot) {
                     footArrivals++;
                     riseEnds.get(w)[1]++;
+                    if (i >= riseLateStart) {
+                        riseLateEnds.get(w)[1]++;
+                    }
                 }
             }
             var shoves = population.system().shoveLog();
@@ -323,8 +334,9 @@ public final class DocksActorsMain {
         printMoneyGateProof(population, jobs);
         printJusticeReport(population, jobs);
         printDensityReport(population, maxCoOccupancy, routePairs, routeCells);
-        printClimbReport(population, zLinks, spawnAudit, riseWalkers, riseZTicks,
-                headArrivals, footArrivals, stairwellShoves, ticks, riseEnds);
+        boolean risePass = printClimbReport(population, zLinks, spawnAudit, riseWalkers,
+                riseZTicks, headArrivals, footArrivals, stairwellShoves, ticks, riseEnds,
+                riseLateEnds);
         printProgressionReport(population);
         printTheftReport(population, identity);
         printBarkProof(population, identity, driver.currentTick());
@@ -343,6 +355,16 @@ public final class DocksActorsMain {
             System.out.printf("PERF: %d ticks in %.1f ms wall-clock (engine tick only) -> "
                             + "avg %.4f ms/tick at %d actors (observer FAST budget: 25 ms/tick)%n",
                     ticks, tickNanos / 1e6, avgMillis, registry.size());
+        }
+        if (!risePass) {
+            // The verdict has to COST something. Round 2's report printed PASS/FAIL and then
+            // exited 0 either way, so the only real enforcement lived in one committed test at
+            // one pinned horizon -- and the stall this proof exists to catch happens at that
+            // horizon. A soak that prints FAIL and reports success is a soak nobody reads.
+            System.out.println();
+            System.out.println("SALTGATE RISE VERDICT: FAIL -> exiting non-zero. See THE CLIMB"
+                    + " section above for which check missed.");
+            System.exit(1);
         }
     }
 
@@ -844,12 +866,15 @@ public final class DocksActorsMain {
      * folklore number, now tracked), the Saltgate Rise walkers' band trail with the
      * z11+z13 waypoint proof, and the stairwell shove-funnel + riot watch. Deterministic
      * ascending scans only, so twin runs stay byte-identical.
+     *
+     * @return the Saltgate Rise verdict — the caller exits non-zero on FAIL, so the printed
+     *         verdict costs something instead of scrolling past
      */
-    private static void printClimbReport(DocksPopulation population, ZLinkTable zLinks,
+    private static boolean printClimbReport(DocksPopulation population, ZLinkTable zLinks,
             ZReachability spawnAudit, List<Integer> riseWalkers,
             Map<Integer, java.util.TreeMap<Integer, Integer>> riseZTicks,
             int headArrivals, int footArrivals, long stairwellShoves, long ticksRun,
-            List<int[]> riseEnds) {
+            List<int[]> riseEnds, List<int[]> riseLateEnds) {
         ActorRegistry registry = population.registry();
         System.out.println();
         System.out.println("================ THE CLIMB (S4: cross-z movement live) ======================");
@@ -892,8 +917,10 @@ public final class DocksActorsMain {
         }
         // The verdict carries FLOORS now (SaltgateRiseProof): "at least one arrival" is a
         // boolean, and a boolean printed PASS straight through a 50% throughput collapse.
+        // And it carries a LATE window, because a run TOTAL printed PASS straight through a
+        // sergeant who worked 15,000 ticks and then stopped for 45,000.
         boolean risePass = SaltgateRiseProof.passes(riseWalkers.size(), visitedBothBands,
-                riseEnds);
+                riseEnds, riseLateEnds);
         System.out.println("    head(z13) arrivals: " + headArrivals + " ("
                 + SaltgateRiseProof.per10k(headArrivals, ticksRun) + "/10k);  foot(z11): "
                 + footArrivals + " (" + SaltgateRiseProof.per10k(footArrivals, ticksRun)
@@ -902,17 +929,21 @@ public final class DocksActorsMain {
         for (int w = 0; w < riseWalkers.size(); w++) {
             System.out.println("    actor#" + riseWalkers.get(w) + " reached head "
                     + riseEnds.get(w)[0] + " / foot " + riseEnds.get(w)[1]
-                    + "   (both must be > 0: a bound walker that never works the climb is"
-                    + " staffing on paper only)");
+                    + "   |  in the LAST " + SaltgateRiseProof.LATE_WINDOW_TICKS
+                    + " ticks: head " + riseLateEnds.get(w)[0] + " / foot "
+                    + riseLateEnds.get(w)[1] + " (floor "
+                    + SaltgateRiseProof.LATE_PER_WALKER_END_FLOOR + " each -- a run total is"
+                    + " earned by the past, this is the present)");
         }
         System.out.println("    a walker visited z11+z12+z13: " + visitedBothBands
                 + "  -> " + (risePass ? "PASS" : "FAIL")
                 + SaltgateRiseProof.verdictDetail(riseWalkers.size(), visitedBothBands,
-                        riseWalkers, riseEnds));
+                        riseWalkers, riseEnds, riseLateEnds));
         System.out.println("  stairwell funnel: pushes within cheb<=2 of a connector: "
                 + stairwellShoves + " of " + population.system().pushCount()
                 + " total;  riot responses (district-wide): " + population.system().riotCount());
         System.out.println("============================================================================");
+        return risePass;
     }
 
     /**
