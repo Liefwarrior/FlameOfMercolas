@@ -89,6 +89,7 @@ never hand-edit object ids to collide. Object `Class` (TMX `type` attribute) sel
 |---|---|---|
 | `light_source` | `luminance` int 0–31 | Static baked light (no heat — ruling §1.2 observer #9). |
 | `script_anchor` | — | Named coordinate for scenario scripts (`ScriptedAction`/`SimCommand` targets). Names must be unique per map. |
+| `place_sign` | `place` str, `what` str, `x0`/`y0`/`x1`/`y1` int | A named building. `place` + `what` are the two lines the observer's pop-up prints; `x0..y1` is the site's footprint rect, which is what the pop-up measures distance to (so the middle of a 64-tile shed still names the shed). The marker cell is the DOOR — at most 2 tiles outside its own footprint. Names unique per map, same namespace as anchors. Presentation only: the importer does not bake these; `PlaceSignsLoader` reads them straight from the `.tmx`, exactly as `LampMarkersLoader` does for lights. |
 
 ## Fixture inventory
 

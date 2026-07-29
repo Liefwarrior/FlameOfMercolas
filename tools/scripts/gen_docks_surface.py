@@ -2193,6 +2193,154 @@ for i, (bz, bx, by) in enumerate(GARBAGE_BINS):
     mk(bz, "script_anchor", "garbage_bin_%02d_anchor" % (i + 1), bx, by)
 
 # ======================================================================
+# 7. PLACE SIGNS (Eli 2026-07-28: "We also need to label buildings!") -- the
+# authored binding from a FOOTPRINT to a NAME.
+#
+# The ward was anonymous: 40+ authored buildings with real names, histories and
+# notable residents, and nothing on screen said which was which. This table is
+# where the names live. One `place_sign` marker per named site, a new class in
+# the existing `markers` object layer (content/maps/README.md), carrying:
+#
+#   name  = sign_<key>            (unique per map, the addressing handle)
+#   cell  = the DOOR cell, one step OUTSIDE the threshold -- the sign hangs over
+#           the doorway on the street side, so a player panning the ward sees a
+#           marked door before any pop-up appears
+#   props = place  the sign's words
+#           what   the second line: what the place IS
+#           x0/y0/x1/y1  the site's FOOTPRINT rect, map-local tiles
+#
+# The footprint is what makes the pop-up honest at ward scale: the client's box
+# triggers on distance-to-RECT, not distance-to-door, so looking at the middle
+# of the 64-tile Ropewalk names the Ropewalk (a door-radius rule never would).
+#
+# EVERY `place`/`what` string is the DOCKS-GAZETTEER's own wording (sections 3 /
+# 3.1 / 3.2 / 2.5), trimmed -- no lore is invented here. Coordinates are read off
+# the shell()/border() calls above; the self-check at the bottom of this section
+# fails the regen if a sign drifts off its own footprint.
+#
+# TWO DELIBERATE ABSENCES, both design law, not oversight:
+#   * K35 The Skyrunner's Roost -- "(unmarked -- no sign, no door on the
+#     establishments layer) ... This site must never appear on any discoverable
+#     establishments list -- that IS the design" (gazetteer 3.1). It gets no sign.
+#   * Cache Row -- "no lamps, NO door onto any street layer", an unlicensed
+#     off-grid smuggling pocket (3.2). An unlicensed shed does not hang a sign.
+# ======================================================================
+PLACE_SIGNS = [
+    # (key, z, sign x, sign y, x0, y0, x1, y1, place, what)
+    ("k01_weighhouse", 11, 63, 33, 56, 34, 71, 50,
+     "The Weighhouse", "harbormaster and customs house"),
+    ("k02_impound", 11, 62, 52, 56, 53, 68, 58,
+     "Impound Yard", "seized cargo behind a spike fence"),
+    ("k03_gilded_gull", 11, 121, 33, 114, 34, 128, 47,
+     "The Gilded Gull", "captains' tavern"),
+    ("k04_bilge", 11, 105, 33, 100, 34, 111, 43,
+     "The Bilge", "sailor dive on the Tarwalk"),
+    ("k05_lantern_room", 11, 63, 65, 58, 66, 70, 77,
+     "The Lantern Room", "the neutral-ground house"),
+    ("k06_harls_yard", 11, 139, 35, 136, 36, 159, 46,
+     "Harl's Yard", "shipwright: slipway and saw pit"),
+    ("k07_ropewalk", 11, 3, 85, 4, 82, 67, 90,
+     "The Ropewalk", "the shed where cable is laid"),
+    ("k08_branns", 11, 27, 65, 24, 66, 31, 74,
+     "Brann's Chandlery", "ship stores"),
+    ("k09_pitchfield", 11, 15, 35, 2, 36, 29, 58,
+     "Pitchfield", "the tar and pitch yard"),
+    ("k10_dawnstalls", 11, 46, 37, 37, 36, 53, 48,
+     "Dawnstalls", "the dawn fish auction"),
+    ("k11_saltrow", 11, 45, 49, 38, 50, 51, 58,
+     "Salt Row", "gutting sheds and smokehouses"),
+    ("k12_kingsbond", 11, 89, 33, 82, 34, 98, 46,
+     "The King's Bond", "bonded warehouse"),
+    ("k13_drowned_hold", 11, 177, 49, 178, 34, 189, 54,
+     "The Drowned Hold", "condemned; empty these nine years"),
+    ("k14_wrackhouse", 11, 168, 33, 164, 34, 173, 42,
+     "Wrackhouse", "salvage broker"),
+    ("k15_fenners", 11, 125, 51, 122, 52, 128, 58,
+     "Fenner's Pawn", "pawn, and wage-advance in the back"),
+    ("k16_drowned_name_wall", 11, 95, 27, 94, 25, 96, 27,
+     "The Drowned-Name Wall", "the sailors' shrine"),
+    ("k17_mission", 11, 88, 65, 82, 66, 98, 80,
+     "Mission of the Flame", "Divine Light almshouse"),
+    ("k18_bathhouse", 11, 107, 65, 102, 66, 112, 78,
+     "Squall's Bathhouse", "copper boilers and steam"),
+    ("k19_rows", 11, 104, 51, 100, 52, 119, 58,
+     "The Rows", "hammock-space by the night"),
+    ("k20_merles", 11, 86, 26, 82, 14, 93, 25,
+     "Merle's Boats", "boathouse and waterman's hire"),
+    ("k21_watchpost", 13, 72, 120, 62, 117, 71, 126,
+     "Saltgate Watch-Post", "the ward's one watch station"),
+    ("k22_netmenders", 11, 45, 33, 38, 34, 52, 35,
+     "Netmenders' Arcade", "needles, and the ward's memory"),
+    ("k23_coopers", 11, 46, 65, 40, 66, 53, 76,
+     "Cooper and Blockmaker", "barrels and pulley-blocks"),
+    ("k24_eelpots", 11, 97, 33, 84, 30, 111, 32,
+     "The Eel-Pots", "night food stalls"),
+    ("k25_kennelrow", 11, 167, 47, 164, 48, 174, 55,
+     "Kennel Row", "the rat-catchers' yard"),
+    ("k26_sailmaker", 11, 11, 69, 8, 70, 15, 77,
+     "Sailmaker's Loft", "net-mending and sail repair"),
+    ("k27_hardtack", 11, 35, 69, 32, 70, 38, 78,
+     "The Hardtack Oven", "ship's-biscuit bakery"),
+    ("k28_slopchest", 11, 133, 57, 130, 58, 135, 64,
+     "The Slop-Chest", "sailors' clothing and dry-goods"),
+    ("k29_longstore", 11, 87, 81, 79, 82, 97, 92,
+     "The Long Store", "general dry-goods warehouse"),
+    ("k30_kestrel", 11, 66, 20, 62, 18, 71, 22,
+     "The Kestrel", "moored at the fishbone pier"),
+    ("k31_breggas_promise", 11, 64, 13, 58, 10, 71, 16,
+     "Bregga's Promise", "moored at the fishbone pier"),
+    ("k32_deep_keel", 11, 63, 4, 56, 1, 71, 8,
+     "The Deep Keel", "moored at the fishbone pier"),
+    ("k33_widows_grief", 11, 127, 14, 125, 10, 129, 18,
+     "The Widow's Grief", "a wreck under the condemned pier"),
+    ("k34_guardhouse", 11, 106, 79, 100, 80, 112, 92,
+     "Guardhouse", "Militia Watch: nine steel cells"),
+    ("k36_counting_house", 11, 154, 47, 150, 48, 159, 59,
+     "The Royal Counting-House", "the ward's bank"),
+    # The four Compounds (gazetteer 2.5): a compound's sign hangs at its GATE.
+    ("c1_quayward", 12, 72, 105, 8, 97, 71, 115,
+     "The Quayward Compound", "mansion and condos, no rooftop slum"),
+    ("c2_netters", 11, 139, 65, 116, 66, 159, 93,
+     "The Netters' Compound", "condos around a courtyard farm"),
+    ("c3_saltgate_terrace", 12, 111, 100, 84, 101, 125, 115,
+     "Saltgate Terrace", "a cramped compound"),
+    ("c4_gullet", 11, 177, 65, 166, 66, 190, 93,
+     "The Gullet Compound", "decayed; its courtyard gone to trash"),
+]
+
+# Self-check: a sign must hang ON or WITHIN ONE STEP OF its own footprint (the
+# door's outside face), must be inside the map, and must carry legible strings.
+# A hand-typed coordinate that drifted to another lot fails the regen here rather
+# than shipping a sign floating over someone else's roof.
+SIGN_MAX_GAP = 2      # gate signs on the far kerb of a lane are legal at 2
+SIGN_MAX_LINE = 36    # keeps the pop-up box narrower than a hovel is wide
+
+_sign_names = set()
+for (key, sz, sx, sy, x0, y0, x1, y1, place, what) in PLACE_SIGNS:
+    if key in _sign_names:
+        raise SystemExit("place sign: duplicate key %r" % key)
+    _sign_names.add(key)
+    if not (0 <= sx < W and 0 <= sy < H and 0 <= sz < ZCOUNT):
+        raise SystemExit("place sign %s: cell (%d,%d,z%d) is off the map" % (key, sx, sy, sz))
+    if not (0 <= x0 <= x1 < W and 0 <= y0 <= y1 < H):
+        raise SystemExit("place sign %s: footprint (%d,%d)-(%d,%d) is off the map"
+                         % (key, x0, y0, x1, y1))
+    gap = max(x0 - sx, sx - x1, 0) + max(y0 - sy, sy - y1, 0)
+    if gap > SIGN_MAX_GAP:
+        raise SystemExit("place sign %s: cell (%d,%d) is %d tiles off its own footprint "
+                         "(%d,%d)-(%d,%d) -- put the sign at the door"
+                         % (key, sx, sy, gap, x0, y0, x1, y1))
+    for line in (place, what):
+        if not line.strip() or len(line) > SIGN_MAX_LINE:
+            raise SystemExit("place sign %s: illegal line %r (1..%d chars)"
+                             % (key, line, SIGN_MAX_LINE))
+        if any(ord(c) < 0x20 or ord(c) > 0x7E for c in line) or "&" in line or "<" in line:
+            raise SystemExit("place sign %s: line %r is not plain ASCII sign text"
+                             % (key, line))
+    mk(sz, "place_sign", "sign_%s" % key, sx, sy,
+       place=place, what=what, x0=x0, y0=y0, x1=x1, y1=y1)
+
+# ======================================================================
 # XML emission (byte-deterministic; CSV rows carry exactly W tokens,
 # no trailing comma before </data>)
 # ======================================================================

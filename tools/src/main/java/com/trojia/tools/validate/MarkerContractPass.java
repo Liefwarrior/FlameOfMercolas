@@ -21,13 +21,18 @@ import com.trojia.tools.validate.ValidationIssue.Severity;
  * <p>Per marker object, in document order per z-group:</p>
  * <ul>
  *   <li>every object must be named;</li>
- *   <li>the object class must be a known marker kind ({@code light_source} or
- *       {@code script_anchor});</li>
+ *   <li>the object class must be a known marker kind ({@code light_source},
+ *       {@code script_anchor} or {@code place_sign});</li>
  *   <li>{@code light_source} needs an int {@code luminance} property in 0..31;</li>
  *   <li>{@code script_anchor} names must be unique per map;</li>
  *   <li>ignition anchors (script anchors whose name starts with {@code ignition})
  *       must sit on a cell whose collapsed material (terrain fill, else floor —
- *       ruling section 1.1 #17) is flammable, and inside the map bounds.</li>
+ *       ruling section 1.1 #17) is flammable, and inside the map bounds;</li>
+ *   <li>{@code place_sign} (the building-label family, 2026-07-28) needs a non-blank
+ *       {@code place} line, the four int footprint bounds {@code x0/y0/x1/y1} forming a
+ *       non-empty in-bounds rect, and a sign cell within {@link #SIGN_MAX_GAP} tiles of
+ *       that rect — a sign that drifts off its own lot would name the neighbour's roof.
+ *       Sign names must be unique per map, in the same namespace as anchors.</li>
  * </ul>
  *
  * <p>Cells whose material does not resolve at all are skipped here — the materials
@@ -35,8 +40,20 @@ import com.trojia.tools.validate.ValidationIssue.Severity;
  */
 public final class MarkerContractPass implements ValidationPass {
 
-    private static final Set<String> KNOWN_CLASSES = Set.of("light_source", "script_anchor");
+    private static final Set<String> KNOWN_CLASSES =
+            Set.of("light_source", "script_anchor", "place_sign");
     private static final String IGNITION_PREFIX = "ignition";
+
+    /**
+     * How far outside its own footprint a {@code place_sign} may hang, in tiles: 0 is the
+     * wall itself, 1 the street cell the door opens onto, 2 the far kerb of a gate lane.
+     */
+    static final int SIGN_MAX_GAP = 2;
+
+    /** Longest legal sign line — the pop-up box stays narrower than a hovel is wide. */
+    static final int SIGN_MAX_LINE = 36;
+
+    private static final String[] BOUNDS_KEYS = {"x0", "y0", "x1", "y1"};
 
     /** Creates the pass. */
     public MarkerContractPass() {
@@ -67,12 +84,13 @@ public final class MarkerContractPass implements ValidationPass {
                 if (!KNOWN_CLASSES.contains(object.typeName())) {
                     out.accept(error(context, path, tx, ty, "marker \"" + object.name()
                                     + "\" has unknown class \"" + object.typeName() + "\".",
-                            "set the object class to light_source or script_anchor."));
+                            "set the object class to light_source, script_anchor or place_sign."));
                     continue;
                 }
                 switch (object.typeName()) {
                     case "light_source" -> checkLightSource(context, path, tx, ty, object, out);
                     case "script_anchor" -> checkScriptAnchor(context, group, path, tx, ty, object, anchorSeenAt, out);
+                    case "place_sign" -> checkPlaceSign(context, path, tx, ty, object, anchorSeenAt, out);
                     default -> throw new AssertionError("unreachable: " + object.typeName());
                 }
             }
@@ -124,6 +142,66 @@ public final class MarkerContractPass implements ValidationPass {
             }
         });
         // Unknown material: the materials pass already reported it; stay silent here.
+    }
+
+    /**
+     * The building-label contract (2026-07-28, "we also need to label buildings"): a sign
+     * carries the words a player reads and the footprint the pop-up triggers on, so both
+     * halves must be present and both must actually describe THIS lot.
+     */
+    private void checkPlaceSign(MapCheckContext context, String path, int tx, int ty,
+                                TmxObject object, Map<String, String> anchorSeenAt,
+                                Consumer<ValidationIssue> out) {
+        String firstPath = anchorSeenAt.putIfAbsent(object.name(), path);
+        if (firstPath != null) {
+            out.accept(error(context, path, tx, ty, "duplicate marker name \"" + object.name()
+                            + "\" (first seen in " + firstPath + ").",
+                    "marker names must be unique per map; rename one of them."));
+            return;
+        }
+        for (String key : new String[] {"place", "what"}) {
+            String line = object.properties().find(key).map(TmxProperty::value).orElse("");
+            if (line.isBlank() || line.length() > SIGN_MAX_LINE) {
+                out.accept(error(context, path, tx, ty, "place_sign \"" + object.name()
+                                + "\" has " + (line.isBlank() ? "no " + key + " line."
+                                : "an over-long " + key + " line (" + line.length() + " chars)."),
+                        "give it 1.." + SIGN_MAX_LINE + " characters of the gazetteer's own words."));
+                return;
+            }
+        }
+        int[] bounds = new int[BOUNDS_KEYS.length];
+        for (int i = 0; i < BOUNDS_KEYS.length; i++) {
+            Integer value = object.properties().find(BOUNDS_KEYS[i])
+                    .map(p -> parseIntOrNull(p.value())).orElse(null);
+            if (value == null) {
+                out.accept(error(context, path, tx, ty, "place_sign \"" + object.name()
+                                + "\" has no int " + BOUNDS_KEYS[i] + " property.",
+                        "a sign carries its site's footprint rect (x0/y0/x1/y1) — the pop-up "
+                                + "triggers on distance to that rect, not to the door."));
+                return;
+            }
+            bounds[i] = value;
+        }
+        int x0 = bounds[0];
+        int y0 = bounds[1];
+        int x1 = bounds[2];
+        int y1 = bounds[3];
+        if (x0 > x1 || y0 > y1 || x0 < 0 || y0 < 0
+                || x1 >= context.map().width() || y1 >= context.map().height()) {
+            out.accept(error(context, path, tx, ty, "place_sign \"" + object.name()
+                            + "\" has an empty or out-of-bounds footprint (" + x0 + "," + y0
+                            + ")-(" + x1 + "," + y1 + ").",
+                    "give x0<=x1, y0<=y1, both corners inside the map."));
+            return;
+        }
+        int gap = Math.max(Math.max(x0 - tx, tx - x1), 0) + Math.max(Math.max(y0 - ty, ty - y1), 0);
+        if (gap > SIGN_MAX_GAP) {
+            out.accept(error(context, path, tx, ty, "place_sign \"" + object.name() + "\" hangs "
+                            + gap + " tiles off its own footprint (" + x0 + "," + y0 + ")-("
+                            + x1 + "," + y1 + ").",
+                    "put the sign at the site's door, at most " + SIGN_MAX_GAP
+                            + " tiles outside the footprint."));
+        }
     }
 
     /**
