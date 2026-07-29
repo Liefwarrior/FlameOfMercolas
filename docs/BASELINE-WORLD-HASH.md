@@ -87,3 +87,14 @@ Two changes moved the number by construction, not by behavior:
 
 Neither can be measured away, and neither is a behavior change hiding in a number. The honest
 inert proofs are the two above, which bracket them.
+
+### The post-S8 number (for S9's inert proofs)
+
+```
+at commit 8e19483, 15,000 ticks, 692 souls
+COMBINED WORLD HASH: 0xf1d9bdb6b63e9d97
+```
+
+Recorded from the twin-run gate inside the green full build. The pre-arc number above is
+deliberately NOT re-blessed to this — it is the pre-S8 reference and stays that. Use this one
+when S9 wants to prove a slice of its own was inert.
