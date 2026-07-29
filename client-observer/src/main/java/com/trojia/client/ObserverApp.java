@@ -70,6 +70,7 @@ import com.trojia.client.render.JournalRenderer;
 import com.trojia.client.render.LampGlowMap;
 import com.trojia.client.render.NameplateRenderer;
 import com.trojia.client.render.PlaceSign;
+import com.trojia.client.render.PlaceSignArt;
 import com.trojia.client.render.PlaceSignRenderer;
 import com.trojia.client.render.TalkPanelRenderer;
 import com.trojia.client.render.ToastRenderer;
@@ -666,9 +667,10 @@ public final class ObserverApp extends ApplicationAdapter {
         if (actorRenderer != null) {
             actorRenderer.draw(batch, camera, zLevel.z(), ambient);
         }
-        // Building labels: the hanging door signs are world furniture, drawn just after the
-        // actors (a figure in a doorway stands UNDER their shop's sign). This call also
-        // plans the frame's single pop-up, which the HUD pass below draws.
+        // Place labels: the door plaques and the street fingerposts are world furniture,
+        // drawn just after the actors (a figure in a doorway stands UNDER their shop's sign)
+        // and lit by the same day/night ambient as everything else in the scene. This call
+        // also plans the frame's single pop-up, which the HUD pass below draws.
         //
         // WHAT THE VIEWER IS ATTENDING TO, and why it differs by mode. Observing: the tile
         // under the cursor — the ward's existing hover idiom (NameplateRenderer's own), so
@@ -690,8 +692,8 @@ public final class ObserverApp extends ApplicationAdapter {
                 attentionY = camera.screenToTileY(Gdx.input.getY());
                 attentionLive = camera.isInWorld(attentionX, attentionY);
             }
-            placeSignRenderer.drawSigns(batch, camera, zLevel.z(), icons.whitePixel(),
-                    attentionX, attentionY, attentionLive, playModeActive);
+            placeSignRenderer.drawMarks(batch, camera, zLevel.z(), icons.whitePixel(),
+                    attentionX, attentionY, attentionLive, playModeActive, ambient);
         }
 
         // DF-style HUD block (Behavior 2 of this pass): a solid black panel behind the nav +
@@ -747,9 +749,23 @@ public final class ObserverApp extends ApplicationAdapter {
                     Gdx.input.isKeyPressed(Input.Keys.N) || scriptPlatesHeld);
         }
         if (placeSignRenderer != null && !placeSignRenderer.isEmpty()) {
-            // The one NES pop-up: HUD, not scene — hard-edged, opaque, never dimmed and
-            // never faded. It snaps on with the plan and snaps off with it.
-            placeSignRenderer.drawBox(batch, font, camera, icons.whitePixel());
+            // The one NES pop-up: HUD, not scene — hard-edged, opaque, blocky-lettered, never
+            // dimmed and never faded. It snaps on with the plan and snaps off with it.
+            //
+            // ZONE AWARENESS (S8 round 2): drawn last, but no longer drawn ON TOP OF whatever
+            // is under it. It is handed everything the frame already committed to the screen —
+            // the status/pulse/purse block, the inspector's sheet and event feed, and the hover
+            // nameplate the box belongs to — and it MOVES rather than covering any of them.
+            List<PlaceSignArt.Rect> hudZones = new java.util.ArrayList<>();
+            hudZones.add(new PlaceSignArt.Rect(statusPanelX, statusPanelBottomY,
+                    statusPanelWidth, statusPanelHeight));
+            if (inspectorRenderer != null) {
+                hudZones.addAll(inspectorRenderer.panelBounds());
+            }
+            if (nameplateRenderer != null && nameplateRenderer.hoverPlateBounds() != null) {
+                hudZones.add(nameplateRenderer.hoverPlateBounds());
+            }
+            placeSignRenderer.drawBox(batch, camera, icons.whitePixel(), hudZones);
         }
         if (talkPanelRenderer != null) {
             // The speech exchange (a no-op while closed) — over the plates, under toasts.

@@ -1,5 +1,6 @@
 package com.trojia.client.render;
 
+import com.trojia.client.atlas.Glyph8x8Font;
 import com.trojia.client.atlas.PlaceholderPngWriter;
 import org.junit.jupiter.api.Test;
 
@@ -31,23 +32,24 @@ class PlaceSignLookTest {
 
     private static final int BLACK = 0xFF000000;
     private static final int BONE = argb(PlaceSignArt.INK_BONE);
-    private static final int GOLD = argb(PlaceSignArt.INK_GOLD);
+    private static final int LIT = argb(PlaceSignArt.INK_LIT);
+    private static final float[] INK_QUIET = {0.66f, 0.64f, 0.56f};
 
     private static final String PLACE = "The Weighhouse";
     private static final String WHAT = "harbormaster and customs house";
 
-    /** Renders the pop-up as the HUD pass does, at {@code (x, y)} on a 320x140 canvas. */
+    private static final int CANVAS_W = 600;
+    private static final int CANVAS_H = 160;
+
+    /** Renders the pop-up exactly as the HUD pass does, at {@code (x, y)}. */
     private static PlaceSignRaster popUp(float x, float y) {
-        PlaceSignRaster raster = new PlaceSignRaster(320, 140);
-        float lineHeight = 10f;
-        float widest = Math.max(PlaceSignRaster.textWidth(PLACE), PlaceSignRaster.textWidth(WHAT));
-        float w = PlaceSignArt.boxWidth(widest);
-        float h = PlaceSignArt.boxHeight(lineHeight);
+        PlaceSignRaster raster = new PlaceSignRaster(CANVAS_W, CANVAS_H);
+        float w = boxW();
+        float h = boxH();
         raster.paint(PlaceSignArt.box(x, y, w, h, PlaceSignArt.INK_BONE));
         float textX = PlaceSignArt.textLeftX(x);
-        float lineTop = PlaceSignArt.firstLineTopY(y, h);
-        raster.text(PLACE, textX, lineTop, BONE);
-        raster.text(WHAT, textX, lineTop - lineHeight, 0xFFA8A490);
+        raster.text(PLACE, textX, PlaceSignArt.firstLineTopY(y, h), PlaceSignArt.INK_BONE);
+        raster.text(WHAT, textX, PlaceSignArt.secondLineTopY(y, h), INK_QUIET);
         return raster;
     }
 
@@ -57,7 +59,7 @@ class PlaceSignLookTest {
     }
 
     private static float boxH() {
-        return PlaceSignArt.boxHeight(10f);
+        return PlaceSignArt.boxHeight();
     }
 
     @Test
@@ -150,12 +152,12 @@ class PlaceSignLookTest {
         float w = boxW();
         float h = boxH();
         // A place at the far right of a 320-wide viewport wants to draw off the edge.
-        float[] at = PlaceSignArt.clampToViewport(300f, 4f, w, h, 320f, 140f);
-        assertTrue(at[0] + w <= 320f - PlaceSignArt.SCREEN_MARGIN_PX + 0.001f,
+        float[] at = PlaceSignArt.clampToViewport(CANVAS_W - 20f, 4f, w, h, CANVAS_W, CANVAS_H);
+        assertTrue(at[0] + w <= CANVAS_W - PlaceSignArt.SCREEN_MARGIN_PX + 0.001f,
                 "clamped right edge: " + (at[0] + w));
         assertTrue(at[1] >= PlaceSignArt.SCREEN_MARGIN_PX, "clamped bottom: " + at[1]);
         // A box wider than the viewport pins to the margin rather than jumping off-screen.
-        float[] tiny = PlaceSignArt.clampToViewport(-50f, -50f, 400f, 400f, 320f, 140f);
+        float[] tiny = PlaceSignArt.clampToViewport(-50f, -50f, 900f, 400f, CANVAS_W, CANVAS_H);
         assertEquals(PlaceSignArt.SCREEN_MARGIN_PX, tiny[0]);
         assertEquals(PlaceSignArt.SCREEN_MARGIN_PX, tiny[1]);
     }
@@ -198,12 +200,26 @@ class PlaceSignLookTest {
     }
 
     @Test
-    void theNamedSignLightsGoldSoTheReaderKnowsWhichDoor() throws IOException {
+    void theNamedSignLightsSoTheReaderKnowsWhichDoor() throws IOException {
         PlaceSignRaster lit = door(48, true, 0);
         write(lit, "sign-plaque-named");
-        assertTrue(countOf(lit, GOLD) > 0, "the described door's sign is gold");
+        assertTrue(countOf(lit, LIT) > 0, "the described door's sign lights");
         assertEquals(0, countOf(lit, BONE), "and nothing of it stays bone");
-        assertEquals(0, countOf(door(48, false, 0), GOLD), "an unnamed sign never lights");
+        assertEquals(0, countOf(door(48, false, 0), LIT), "an unnamed sign never lights");
+    }
+
+    /**
+     * The lit ink must not collide with the nameplate attitude tints. It used to BE the KIN
+     * tint byte for byte, so "these words belong to this door" and "this actor is your kin"
+     * were one colour in one frame (S8 round 2 finding).
+     */
+    @Test
+    void theLitInkIsNotAnyNameplateAttitudeTint() {
+        for (String attitude : new String[] {"kin", "warm", "cold", "hostile", "neutral"}) {
+            com.badlogic.gdx.graphics.Color tint = NameplateRenderer.tintFor(attitude);
+            assertNotEquals(argb(new float[] {tint.r, tint.g, tint.b}), LIT,
+                    "the lit mark must not read as the " + attitude + " nameplate tint");
+        }
     }
 
     @Test
@@ -219,6 +235,133 @@ class PlaceSignLookTest {
                 PlaceSignArt.INK_BONE[1] * shade.g(), PlaceSignArt.INK_BONE[2] * shade.b()});
         assertTrue(countOf(twoDown, expected) > 0, "the shared depth shade, applied verbatim");
         assertNotEquals(BONE, expected);
+    }
+
+    // ------------------------------------------------------------------- the blocky letters
+
+    /**
+     * Eli's ruling asked for Zelda II / early Final Fantasy text and round 1 shipped libGDX's
+     * ANTI-ALIASED default font, while every proof PNG was painted with the repo's blocky
+     * 8&times;8 — "the images that proved the look are not what the game draws". This asserts
+     * the letters ARE that font: every glyph texel is a hard
+     * {@link PlaceSignArt#TEXT_SCALE}-square block of one flat ink, and every texel the font
+     * calls blank is untouched. There is no intermediate tone anywhere, which is exactly what
+     * anti-aliasing would produce.
+     */
+    @Test
+    void theLettersAreTheBlocky8x8FontAtWholePixelScale() throws IOException {
+        PlaceSignRaster raster = new PlaceSignRaster(CANVAS_W, 40);
+        float x = 8f;
+        float topY = 32f;
+        raster.text("Tarwalk", x, topY, PlaceSignArt.INK_BONE);
+        write(raster, "box-blocky-letters");
+
+        String line = "Tarwalk";
+        int scale = PlaceSignArt.TEXT_SCALE;
+        for (int i = 0; i < line.length(); i++) {
+            for (int row = 0; row < Glyph8x8Font.HEIGHT; row++) {
+                for (int col = 0; col < Glyph8x8Font.WIDTH; col++) {
+                    boolean ink = Glyph8x8Font.isInk(line.charAt(i), col, row);
+                    for (int sy = 0; sy < scale; sy++) {
+                        for (int sx = 0; sx < scale; sx++) {
+                            int px = Math.round(x) + i * PlaceSignArt.GLYPH_W + col * scale + sx;
+                            float py = topY - row * scale - 1 - sy;
+                            assertEquals(ink ? BONE : PlaceSignRaster.BACKDROP,
+                                    raster.atBatch(px, py),
+                                    "glyph " + line.charAt(i) + " texel (" + col + "," + row
+                                            + ") sub-pixel (" + sx + "," + sy + ")");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The structural half of the same guarantee: {@link PlaceSignRenderer} cannot regress to a
+     * smooth font, because it has no font at all. It draws every letter as quads through the
+     * same {@link PlaceSignArt#textQuads} the proof above paints.
+     */
+    @Test
+    void theRendererHasNoFontToAntiAliasWith() {
+        for (java.lang.reflect.Field field : PlaceSignRenderer.class.getDeclaredFields()) {
+            assertNotEquals(com.badlogic.gdx.graphics.g2d.BitmapFont.class, field.getType(),
+                    "the pop-up renderer must hold no BitmapFont: " + field.getName());
+        }
+        for (java.lang.reflect.Method method : PlaceSignRenderer.class.getDeclaredMethods()) {
+            for (Class<?> parameter : method.getParameterTypes()) {
+                assertNotEquals(com.badlogic.gdx.graphics.g2d.BitmapFont.class, parameter,
+                        "no pop-up method takes a BitmapFont: " + method.getName());
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- the street fingerpost
+
+    @Test
+    void aWayIsMarkedByAFingerpostNotAHangingPlaque() throws IOException {
+        PlaceSignRaster post = new PlaceSignRaster(64, 64);
+        post.paint(PlaceSignArt.wayPost(8f, 8f, 48, false, PlaceSignArt.INK_BONE));
+        write(post, "sign-waypost-x3");
+        PlaceSignRaster plaque = door(48, false, 0);
+
+        assertTrue(countOf(post, BONE) > 0, "a bone post and name-board");
+        assertTrue(countOf(post, BLACK) > 0, "a black board field - the box in miniature");
+        // The silhouettes genuinely differ: the fingerpost carries ink DOWN at the tile's
+        // foot (a post is planted in the ground); the hanging plaque leaves that empty
+        // because it swings off a bracket up at the doorhead.
+        float foot = 8f + 48 * 0.12f;
+        assertEquals(BONE, post.atBatch(8 + Math.round(48 * 0.48f), foot),
+                "the post reaches the ground");
+        assertEquals(PlaceSignRaster.BACKDROP, plaque.atBatch(8 + Math.round(48 * 0.48f), foot),
+                "the plaque does not");
+    }
+
+    @Test
+    void theFingerpostStillResolvesAtTheWidestZoom() throws IOException {
+        PlaceSignRaster post = new PlaceSignRaster(32, 32);
+        post.paint(PlaceSignArt.wayPost(8f, 8f, 16, false, PlaceSignArt.INK_BONE));
+        write(post, "sign-waypost-x1");
+        assertTrue(countOf(post, BONE) >= 12,
+                "at 16px the post and board must still be drawn: " + countOf(post, BONE));
+        assertTrue(countOf(post, BLACK) >= 1, "and still have a board field");
+    }
+
+    // ------------------------------------------------------------------ staying off the UI
+
+    @Test
+    void theBoxMovesRatherThanCoveringTheHudItWouldSitOn() {
+        float w = 120f;
+        float h = 50f;
+        float viewW = 800f;
+        float viewH = 600f;
+        // A nameplate sitting exactly where the box's default placement (above the tile) goes.
+        PlaceSignArt.Rect plate = new PlaceSignArt.Rect(340f, 320f, 160f, 40f);
+        float[] free = PlaceSignArt.placeAvoiding(400f, 310f, 290f, w, h, viewW, viewH,
+                List.of());
+        assertEquals(310f + PlaceSignArt.LIFT_PX, free[1],
+                "with nothing in the way the box keeps its NES place above the tile");
+
+        float[] moved = PlaceSignArt.placeAvoiding(400f, 310f, 290f, w, h, viewW, viewH,
+                List.of(plate));
+        assertEquals(0f, plate.overlapArea(moved[0], moved[1], w, h),
+                "and moves clear of the nameplate it belongs to");
+    }
+
+    @Test
+    void aScreenWithNoFreeCornerStillPlacesTheBoxDeterministically() {
+        float w = 120f;
+        float h = 50f;
+        // Every zone at once, covering the whole viewport: there is no clean placement left.
+        PlaceSignArt.Rect everything = new PlaceSignArt.Rect(0f, 0f, 800f, 600f);
+        float[] first = PlaceSignArt.placeAvoiding(400f, 310f, 290f, w, h, 800f, 600f,
+                List.of(everything));
+        float[] second = PlaceSignArt.placeAvoiding(400f, 310f, 290f, w, h, 800f, 600f,
+                List.of(everything));
+        assertEquals(first[0], second[0]);
+        assertEquals(first[1], second[1]);
+        assertTrue(first[0] >= PlaceSignArt.SCREEN_MARGIN_PX && first[0] + w <= 800f,
+                "and it is still fully on screen");
     }
 
     // ------------------------------------------------------------------------ scaffolding

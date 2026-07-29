@@ -108,6 +108,10 @@ public final class InspectorRenderer {
      *  full skill roster); {@code Actor.NONE} when nobody is. */
     private final java.util.function.IntSupplier playedActorId;
     private final GlyphLayout layout = new GlyphLayout();
+    /** The character-sheet column this frame covered (a place-sign pop-up keep-out zone). */
+    private PlaceSignArt.Rect sheetBounds;
+    /** The event feed this frame covered (likewise). */
+    private PlaceSignArt.Rect eventLogBounds;
 
     /**
      * @param faces the FaceGen portrait panel (unified art spec §4.8), or {@code null} to
@@ -139,11 +143,42 @@ public final class InspectorRenderer {
      */
     public void draw(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
             InspectorState state, int z) {
+        sheetBounds = null;
+        eventLogBounds = null;
         drawSelectionHighlight(batch, font, camera, state, z);
         drawSheet(batch, font, icons, camera, state);
         drawEventLog(batch, font, icons, camera, state);
         font.getData().setScale(1f);
         font.setColor(Color.WHITE);
+    }
+
+    /**
+     * The two zones this frame's inspector actually covered — the character sheet column and
+     * the event feed — or an empty list before the first draw. The place-sign pop-up reads
+     * them and places itself elsewhere (S8 round 2: the box was covering an open sheet).
+     */
+    public List<PlaceSignArt.Rect> panelBounds() {
+        List<PlaceSignArt.Rect> zones = new java.util.ArrayList<>(2);
+        if (sheetBounds != null) {
+            zones.add(sheetBounds);
+        }
+        if (eventLogBounds != null) {
+            zones.add(eventLogBounds);
+        }
+        return zones;
+    }
+
+    /** Grows {@code current} to also contain the given rectangle. */
+    private static PlaceSignArt.Rect union(PlaceSignArt.Rect current, float x, float y,
+            float w, float h) {
+        if (current == null) {
+            return new PlaceSignArt.Rect(x, y, w, h);
+        }
+        float x0 = Math.min(current.x(), x);
+        float y0 = Math.min(current.y(), y);
+        float x1 = Math.max(current.x() + current.w(), x + w);
+        float y1 = Math.max(current.y() + current.h(), y + h);
+        return new PlaceSignArt.Rect(x0, y0, x1 - x0, y1 - y0);
     }
 
     private void drawSheet(SpriteBatch batch, BitmapFont font, IconAtlas icons,
@@ -307,9 +342,12 @@ public final class InspectorRenderer {
     /** The near-black DF backing block for one sheet section's content. */
     private void drawBlockBackground(SpriteBatch batch, IconAtlas icons, float x,
             float contentTopY, float contentHeight) {
-        HudPanel.draw(batch, icons.whitePixel(), x - HudPanel.PADDING,
-                contentTopY - contentHeight - HudPanel.PADDING,
-                PANEL_WIDTH + 2 * HudPanel.PADDING, contentHeight + 2 * HudPanel.PADDING);
+        float px = x - HudPanel.PADDING;
+        float py = contentTopY - contentHeight - HudPanel.PADDING;
+        float pw = PANEL_WIDTH + 2 * HudPanel.PADDING;
+        float ph = contentHeight + 2 * HudPanel.PADDING;
+        HudPanel.draw(batch, icons.whitePixel(), px, py, pw, ph);
+        sheetBounds = union(sheetBounds, px, py, pw, ph);
     }
 
     /** Where the next block's CONTENT starts, below a block of {@code contentHeight}. */
@@ -396,6 +434,7 @@ public final class InspectorRenderer {
         float panelX = MARGIN - HudPanel.PADDING;
         float panelBottomY = MARGIN - HudPanel.PADDING;
         HudPanel.draw(batch, icons.whitePixel(), panelX, panelBottomY, panelWidth, panelHeight);
+        eventLogBounds = new PlaceSignArt.Rect(panelX, panelBottomY, panelWidth, panelHeight);
 
         font.setColor(LOG_COLOR);
         font.draw(batch, header, MARGIN, topY);

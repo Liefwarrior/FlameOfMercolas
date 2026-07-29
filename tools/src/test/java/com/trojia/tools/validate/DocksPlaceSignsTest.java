@@ -57,7 +57,93 @@ class DocksPlaceSignsTest {
             assertTrue(signed.stream().anyMatch(name -> name.startsWith(compound)),
                     () -> "compound " + compound + " has no place_sign; signed: " + signed);
         }
-        assertEquals(39, signed.size(), () -> "unexpected sign roster: " + signed);
+        assertEquals(39, signed.stream().filter(n -> !n.startsWith("sign_w_")).count(),
+                () -> "unexpected building-sign roster: " + signed);
+    }
+
+    /**
+     * The streets stop being anonymous too (S8 round 2, Eli: "THE STREETS HAVE NO NAMES ... a
+     * player pans the ward and every road is anonymous", his ask naming "the fishbone pier").
+     * Every named street and lane of gazetteer 2.3 and every waterfront feature of 2.2 carries
+     * at least one {@code way} fingerpost.
+     */
+    @Test
+    void everyNamedStreetAndWaterfrontFeatureIsSigned() {
+        Set<String> ways = new TreeSet<>();
+        for (TmxObject object : placeSigns()) {
+            if ("way".equals(property(object, "kind"))) {
+                ways.add(property(object, "place"));
+            }
+        }
+        for (String named : new String[] {
+            // 2.3 named streets and lanes
+            "Tarwalk", "Saltgate Rise", "Ropewynd", "Herring Lane", "The Gullet",
+            // 2.2 the waterfront line
+            "The Long Quay", "Pier Row", "Wormwood Pier", "The Beaching Strand", "The Outfall",
+            // 3.2 the fishbone pier and its three fingers
+            "The Fishbone Pier", "First Finger", "Second Finger", "Third Finger",
+        }) {
+            assertTrue(ways.contains(named),
+                    () -> "gazetteer way \"" + named + "\" has no sign; signed ways: " + ways);
+        }
+    }
+
+    /**
+     * A way's mark is a fingerpost, a building's is a hanging plaque, and every sign says
+     * which it is — the client picks the silhouette straight off this property.
+     */
+    @Test
+    void everySignDeclaresWhichKindOfMarkItStands() {
+        for (TmxObject object : placeSigns()) {
+            String kind = property(object, "kind");
+            assertTrue("door".equals(kind) || "way".equals(kind),
+                    () -> "place_sign " + object.name() + " has illegal kind \"" + kind + "\"");
+        }
+    }
+
+    /**
+     * One mark per cell, across the whole map. The client's "the cell a mark stands on always
+     * names its own place" rule is only unambiguous while this holds.
+     */
+    @Test
+    void noTwoSignsShareAMarkCell() {
+        Set<String> cells = new TreeSet<>();
+        for (TmxLayerGroup group : MapStructure.zGroups(docks.map())) {
+            TmxObjectLayer markers = MapStructure.objectSublayer(group, MapStructure.MARKERS);
+            if (markers == null) {
+                continue;
+            }
+            for (TmxObject object : markers.objects()) {
+                if (!"place_sign".equals(object.typeName())) {
+                    continue;
+                }
+                String cell = group.name() + ":" + (int) (object.x() / 16)
+                        + "," + (int) (object.y() / 16);
+                assertTrue(cells.add(cell),
+                        () -> "two place_signs share the cell " + cell);
+            }
+        }
+    }
+
+    private static List<TmxObject> placeSigns() {
+        List<TmxObject> signs = new java.util.ArrayList<>();
+        for (TmxLayerGroup group : MapStructure.zGroups(docks.map())) {
+            TmxObjectLayer markers = MapStructure.objectSublayer(group, MapStructure.MARKERS);
+            if (markers == null) {
+                continue;
+            }
+            for (TmxObject object : markers.objects()) {
+                if ("place_sign".equals(object.typeName())) {
+                    signs.add(object);
+                }
+            }
+        }
+        return signs;
+    }
+
+    private static String property(TmxObject object, String key) {
+        return object.properties().find(key)
+                .map(com.trojia.tools.tmx.TmxProperty::value).orElse("");
     }
 
     @Test

@@ -1,20 +1,21 @@
 package com.trojia.client.render;
 
-import com.trojia.client.atlas.Glyph8x8Font;
-
 import java.util.List;
 
 /**
  * Headless GL-free compositor for the building labels (the {@code FaceRaster} pattern, applied
  * to a quad list instead of a sprite sheet): paints {@link PlaceSignArt}'s quads onto an ARGB
  * canvas in exactly the order and with exactly the colours the {@code SpriteBatch} would, and
- * stamps text with the repo's built-in {@link Glyph8x8Font}.
+ * stamps text with the repo's built-in blocky 8x8 font.
  *
  * <p>This is the seam that makes the LOOK testable, not just the logic: the GL renderer and this
  * raster consume the same {@link PlaceSignArt} output, so a pixel assertion here is an assertion
- * about the shipped box. The only deliberate divergence is the FONT — the live HUD draws with
- * libGDX's default {@code BitmapFont}, which needs a GL context; the 8&times;8 built-in stands in
- * for it here, which proves the box's geometry and ink but not the exact glyph shapes.
+ * about the shipped box. <b>There is no longer any divergence at all, including the font</b>
+ * (S8 round 2, Eli: the box shipped libGDX's anti-aliased default while every proof PNG was
+ * painted with the repo's blocky 8&times;8, so "the images that proved the look are not what the
+ * game draws"). Text is now emitted by {@link PlaceSignArt#textQuads} and painted through the
+ * same {@link #paint} path as the border rails — what this canvas shows IS what the batch draws,
+ * glyph shapes included.
  *
  * <p>Canvas origin is top-left (PNG convention); quads arrive bottom-left/y-up (batch
  * convention), so every paint flips through the canvas height — the same flip
@@ -87,31 +88,16 @@ final class PlaceSignRaster {
     }
 
     /**
-     * Stamps a line of 8&times;8 glyphs with its TOP-left at batch-space {@code (x, topY)} —
-     * the same anchoring {@code BitmapFont.draw} uses, so the raster's text sits where the
-     * renderer's would.
+     * Stamps a line of blocky glyphs with its TOP-left at batch-space {@code (x, topY)} — the
+     * renderer's own call, so the raster's letters are the renderer's letters.
      */
-    void text(String line, float x, float topY, int argb) {
-        for (int i = 0; i < line.length(); i++) {
-            char glyph = line.charAt(i);
-            for (int gy = 0; gy < Glyph8x8Font.HEIGHT; gy++) {
-                for (int gx = 0; gx < Glyph8x8Font.WIDTH; gx++) {
-                    if (!Glyph8x8Font.isInk(glyph, gx, gy)) {
-                        continue;
-                    }
-                    int cx = Math.round(x) + i * Glyph8x8Font.WIDTH + gx;
-                    int cy = height - 1 - Math.round(topY) + gy;
-                    if (cx >= 0 && cx < width && cy >= 0 && cy < height) {
-                        pixels[cy * width + cx] = argb;
-                    }
-                }
-            }
-        }
+    void text(String line, float x, float topY, float[] ink) {
+        paint(PlaceSignArt.textQuads(line, x, topY, ink));
     }
 
-    /** The pixel width a line of the built-in font occupies. */
+    /** The pixel width a line of the blocky font occupies. */
     static float textWidth(String line) {
-        return line.length() * (float) Glyph8x8Font.WIDTH;
+        return PlaceSignArt.textWidth(line);
     }
 
     private static int channel(float value) {

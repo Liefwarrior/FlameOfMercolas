@@ -242,6 +242,25 @@ class BrokenFixtureValidationTest {
     }
 
     @Test
+    void placeSignWithAnUnknownKindIsSingleError() {
+        String group = goodGroupWithMarkers("z:+0", placeSign("sign_confused",
+                signProp("place", "Tarwalk") + signProp("what", "the working spine")
+                        + signProp("kind", "boulevard") + signBounds(0, 0, 2, 2)));
+        ValidationReport report = validate(map(group), tsx());
+        ValidationIssue issue = singleError(report, "markers");
+        assertTrue(issue.message().contains("unknown kind \"boulevard\""), issue::format);
+        assertTrue(issue.hint().contains("kind=way"), issue::format);
+    }
+
+    @Test
+    void aWayKindPlaceSignIsAccepted() {
+        String group = goodGroupWithMarkers("z:+0", placeSign("sign_w_tarwalk",
+                signProp("place", "Tarwalk") + signProp("what", "the working spine")
+                        + signProp("kind", "way") + signBounds(0, 0, 2, 2)));
+        assertEquals(0, validate(map(group), tsx()).errors().size());
+    }
+
+    @Test
     void placeSignSharesTheAnchorNamespace() {
         String group = goodGroupWithMarkers("z:+0",
                 "<object id=\"1\" name=\"clash\" type=\"script_anchor\" x=\"8\" y=\"8\"><point/></object>"

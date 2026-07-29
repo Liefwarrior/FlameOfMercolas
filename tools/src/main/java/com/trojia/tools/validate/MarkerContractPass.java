@@ -28,11 +28,13 @@ import com.trojia.tools.validate.ValidationIssue.Severity;
  *   <li>ignition anchors (script anchors whose name starts with {@code ignition})
  *       must sit on a cell whose collapsed material (terrain fill, else floor —
  *       ruling section 1.1 #17) is flammable, and inside the map bounds;</li>
- *   <li>{@code place_sign} (the building-label family, 2026-07-28) needs a non-blank
+ *   <li>{@code place_sign} (the place-label family, 2026-07-28) needs a non-blank
  *       {@code place} line, the four int footprint bounds {@code x0/y0/x1/y1} forming a
  *       non-empty in-bounds rect, and a sign cell within {@link #SIGN_MAX_GAP} tiles of
  *       that rect — a sign that drifts off its own lot would name the neighbour's roof.
- *       Sign names must be unique per map, in the same namespace as anchors.</li>
+ *       Its optional {@code kind} must be {@code door} (a building's hanging plaque, the
+ *       default) or {@code way} (a street's kerb fingerpost). Sign names must be unique
+ *       per map, in the same namespace as anchors.</li>
  * </ul>
  *
  * <p>Cells whose material does not resolve at all are skipped here — the materials
@@ -168,6 +170,14 @@ public final class MarkerContractPass implements ValidationPass {
                         "give it 1.." + SIGN_MAX_LINE + " characters of the gazetteer's own words."));
                 return;
             }
+        }
+        String kind = object.properties().find("kind").map(TmxProperty::value).orElse("door");
+        if (!"door".equals(kind) && !"way".equals(kind)) {
+            out.accept(error(context, path, tx, ty, "place_sign \"" + object.name()
+                            + "\" has unknown kind \"" + kind + "\".",
+                    "use kind=door (a building's hanging plaque) or kind=way (a street's "
+                            + "fingerpost); omitting it means door."));
+            return;
         }
         int[] bounds = new int[BOUNDS_KEYS.length];
         for (int i = 0; i < BOUNDS_KEYS.length; i++) {

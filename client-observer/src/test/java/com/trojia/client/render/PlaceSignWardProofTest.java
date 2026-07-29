@@ -44,6 +44,8 @@ class PlaceSignWardProofTest {
     private static final int OY = Coords.CHUNK_SIZE_Y;
     private static final int VIEWPORT_W = 900;
     private static final int VIEWPORT_H = 560;
+    private static final float[] TEXT_PLACE = {0.96f, 0.94f, 0.84f};
+    private static final float[] TEXT_WHAT = {0.66f, 0.64f, 0.56f};
     private static final int MASONRY = 0xFF1B2026;
     private static final int MASONRY_EDGE = 0xFF39434E;
     private static final int VOID = 0xFF000000;
@@ -76,7 +78,7 @@ class PlaceSignWardProofTest {
         PlaceSignOverlay.Plan plan = PlaceSignOverlay.plan(signs, VIEW_Z,
                 camera.visibleTileMinX(), camera.visibleTileMaxX(),
                 camera.visibleTileMinY(), camera.visibleTileMaxY(), SAME_PLANE,
-                cursorX, cursorY, true, PlaceSignOverlay.OBSERVER_APPROACH_TILES);
+                cursorX, cursorY, true, false);
         planOut[0] = plan;
 
         PlaceSignRaster raster = new PlaceSignRaster(viewW, viewH);
@@ -99,26 +101,26 @@ class PlaceSignWardProofTest {
         for (PlaceSignOverlay.Marker marker : plan.markers()) {
             float left = camera.tileToScreenX(marker.tileX());
             float bottom = viewH - camera.tileToScreenY(marker.tileY()) - span;
-            raster.paint(PlaceSignArt.hangingSign(left, bottom, span, marker.named(),
+            raster.paint(PlaceSignArt.mark(marker.way(), left, bottom, span, marker.named(),
                     PlaceSignArt.INK_BONE));
         }
         // The one pop-up, exactly as the HUD pass draws it.
         PlaceSignOverlay.Box box = plan.box();
         if (box != null) {
-            float lineHeight = 10f;
             float widest = Math.max(PlaceSignRaster.textWidth(box.place()),
                     PlaceSignRaster.textWidth(box.what()));
             float w = PlaceSignArt.boxWidth(widest);
-            float h = PlaceSignArt.boxHeight(lineHeight);
+            float h = PlaceSignArt.boxHeight();
             float anchorLeft = camera.tileToScreenX(box.anchorTileX());
             float anchorBottom = viewH - camera.tileToScreenY(box.anchorTileY()) - span;
-            float[] at = PlaceSignArt.clampToViewport(anchorLeft + span / 2f - w / 2f,
-                    anchorBottom + span + PlaceSignArt.LIFT_PX, w, h, viewW, viewH);
+            // The shipped placement, keep-out zones and all: this proof stands in a HUD block
+            // top-left and an inspector column right, so what the PNG shows is a real frame.
+            float[] at = PlaceSignArt.placeAvoiding(anchorLeft + span / 2f,
+                    anchorBottom + span, anchorBottom, w, h, viewW, viewH, hudZones(viewW, viewH));
             raster.paint(PlaceSignArt.box(at[0], at[1], w, h, PlaceSignArt.INK_BONE));
             float textX = PlaceSignArt.textLeftX(at[0]);
-            float lineTop = PlaceSignArt.firstLineTopY(at[1], h);
-            raster.text(box.place(), textX, lineTop, 0xFFF5F0D6);
-            raster.text(box.what(), textX, lineTop - lineHeight, 0xFFA8A490);
+            raster.text(box.place(), textX, PlaceSignArt.firstLineTopY(at[1], h), TEXT_PLACE);
+            raster.text(box.what(), textX, PlaceSignArt.secondLineTopY(at[1], h), TEXT_WHAT);
         }
         return raster;
     }
@@ -184,7 +186,121 @@ class PlaceSignWardProofTest {
         assertEquals(null, plan[0].box(), "pointing at open water names nothing");
     }
 
+
+    // ------------------------------------------------------------ the per-place sweep
+
+    /**
+     * THE regression pin (S8 round 2, Eli): "POINTING AT A PLACE'S OWN SIGN NAMES A DIFFERENT
+     * PLACE ... the one gesture a player will certainly make - point at the sign - returns a
+     * lie." Six of round 1's thirty-nine plaques did exactly that, and round 1's ward proof
+     * sampled points that narrowly missed it. So this walks EVERY signed place in the
+     * committed map, points at its own mark cell in BOTH modes, and asserts the box names it.
+     * A single misnamed place fails the build with the neighbour it lied about.
+     */
+    @Test
+    void everySignedPlaceNamesItselfWhenYouPointAtItsOwnMark() {
+        List<PlaceSign> signs = wardSigns();
+        assertTrue(signs.size() >= 60, "the whole ward roster: " + signs.size());
+        List<String> lies = new java.util.ArrayList<>();
+        for (PlaceSign sign : signs) {
+            for (boolean playing : new boolean[] {false, true}) {
+                PlaceSignOverlay.Plan plan = PlaceSignOverlay.plan(signs, sign.z(),
+                        0, 4096, 0, 4096, SAME_PLANE,
+                        sign.doorX(), sign.doorY(), true, playing);
+                String said = plan.box() == null ? "(silence)" : plan.box().place();
+                if (!sign.place().equals(said)) {
+                    lies.add((playing ? "playing" : "observing") + " at ("
+                            + sign.doorX() + "," + sign.doorY() + ",z" + sign.z() + ") "
+                            + sign.place() + " -> " + said);
+                }
+            }
+        }
+        assertEquals(List.of(), lies, "a place's own mark must name that place");
+    }
+
+    /**
+     * The same sweep one step further out: standing ON a building's footprint (its door cell
+     * stepped inside the threshold) must never name a neighbour either. Observer mode, where
+     * the floor is what a building speaks from.
+     */
+    @Test
+    void everyBuildingNamesItselfFromInsideItsOwnFootprint() {
+        List<PlaceSign> signs = wardSigns();
+        List<String> lies = new java.util.ArrayList<>();
+        for (PlaceSign sign : signs) {
+            if (sign.kind() != PlaceSign.Kind.DOOR) {
+                continue;   // a way's run is deliberately shared with what stands on it
+            }
+            int cx = (sign.x0() + sign.x1()) / 2;
+            int cy = (sign.y0() + sign.y1()) / 2;
+            PlaceSignOverlay.Plan plan = PlaceSignOverlay.plan(signs, sign.z(),
+                    0, 4096, 0, 4096, SAME_PLANE, cx, cy, true, false);
+            String said = plan.box() == null ? "(silence)" : plan.box().place();
+            if (!sign.place().equals(said)) {
+                lies.add(sign.place() + " at its own centre (" + cx + "," + cy + ") -> " + said);
+            }
+        }
+        assertEquals(List.of(), lies, "a building must name itself from its own middle");
+    }
+
+    /**
+     * The crossing Eli asked about, walked as an ACTOR from the quay to the Mission: every
+     * step down Saltgate Rise names the road, the doorways name themselves, and nothing in
+     * between is anonymous. Play mode throughout - this is a walk, not a pan.
+     */
+    @Test
+    void walkingFromTheQuayToTheMissionTheWardNamesItselfTheWholeWay() throws IOException {
+        List<PlaceSign> signs = wardSigns();
+        record Step(int x, int y, String expected) {
+        }
+        List<Step> crossing = List.of(
+                new Step(30, 27, "The Long Quay"),
+                new Step(64, 30, "Tarwalk"),
+                new Step(75, 30, "Saltgate Rise"),
+                new Step(75, 45, "Saltgate Rise"),
+                new Step(75, 62, "Saltgate Rise"),
+                new Step(88, 65, "Mission of the Flame"));
+        List<String> said = new java.util.ArrayList<>();
+        for (Step step : crossing) {
+            PlaceSignOverlay.Plan plan = PlaceSignOverlay.plan(signs, VIEW_Z,
+                    0, 4096, 0, 4096, SAME_PLANE,
+                    OX + step.x(), OY + step.y(), true, true);
+            said.add(plan.box() == null ? "(silence)" : plan.box().place());
+        }
+        assertEquals(crossing.stream().map(Step::expected).toList(), said,
+                "the crossing from the quay to the Mission");
+
+        PlaceSignOverlay.Plan[] plan = new PlaceSignOverlay.Plan[1];
+        write(frame(signs, OX + 75, OY + 40, 2, OX + 75, OY + 45, plan), "ward-saltgate-rise");
+        assertEquals("Saltgate Rise", plan[0].box().place());
+    }
+
+    /** A pan of the waterfront: the piers say what they are, fingers included. */
+    @Test
+    void theFishbonePierAndItsFingersNameThemselves() throws IOException {
+        List<PlaceSign> signs = wardSigns();
+        PlaceSignOverlay.Plan[] plan = new PlaceSignOverlay.Plan[1];
+        PlaceSignRaster raster = frame(signs, OX + 75, OY + 14, 2, OX + 75, OY + 12, plan);
+        write(raster, "ward-fishbone");
+        assertEquals("The Fishbone Pier", plan[0].box().place());
+        assertTrue(plan[0].markers().stream().anyMatch(PlaceSignOverlay.Marker::way),
+                "the ward's fingerposts are on screen");
+
+        PlaceSignOverlay.Plan[] finger = new PlaceSignOverlay.Plan[1];
+        frame(signs, OX + 70, OY + 17, 2, OX + 66, OY + 17, finger);
+        assertEquals("Second Finger", finger[0].box().place());
+    }
+
     // ------------------------------------------------------------------------ scaffolding
+
+    /**
+     * The UI a real frame already has on screen when the pop-up lands: the status/pulse/purse
+     * block top-left and the inspector's sheet column right. The box must dodge both.
+     */
+    private static List<PlaceSignArt.Rect> hudZones(int viewW, int viewH) {
+        return List.of(new PlaceSignArt.Rect(2f, viewH - 90f, 260f, 88f),
+                new PlaceSignArt.Rect(viewW - 442f, viewH - 320f, 442f, 318f));
+    }
 
     private static void blockAt(PlaceSignRaster raster, MapCamera camera, int tileX, int tileY,
             int span, int argb) {

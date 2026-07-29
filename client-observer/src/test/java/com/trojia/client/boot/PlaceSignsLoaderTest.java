@@ -56,6 +56,7 @@ class PlaceSignsLoaderTest {
                 <properties>
                  <property name="place" value="The Gilded Gull"/>
                  <property name="what" value="captains' tavern"/>
+                 <property name="kind" value="way"/>
                  <property name="x0" type="int" value="14"/>
                  <property name="y0" type="int" value="9"/>
                  <property name="x1" type="int" value="20"/>
@@ -67,6 +68,7 @@ class PlaceSignsLoaderTest {
                 <properties>
                  <property name="place" value="The Bilge"/>
                  <property name="what" value="sailor dive on the Tarwalk"/>
+                 <property name="kind" value="door"/>
                  <property name="x0" type="int" value="2"/>
                  <property name="y0" type="int" value="2"/>
                  <property name="x1" type="int" value="6"/>
@@ -117,6 +119,7 @@ class PlaceSignsLoaderTest {
         assertEquals(Coords.CHUNK_SIZE_X + 20, gull.x1());
         assertEquals(Coords.CHUNK_SIZE_Y + 16, gull.y1());
         assertEquals("captains' tavern", gull.what());
+        assertEquals(PlaceSign.Kind.WAY, gull.kind(), "the authored kind is carried through");
     }
 
     @Test
@@ -124,6 +127,16 @@ class PlaceSignsLoaderTest {
         PlaceSign cellar = load(dir).get(0);
         assertEquals("The Undercellars", cellar.place(), "z:-1 sorts first");
         assertEquals(Coords.CHUNK_SIZE_Z, cellar.z());
+    }
+
+    /**
+     * A map authored before the ways existed carries no {@code kind} at all; it must still
+     * read as the building plaque it always was, not fail and not become a street.
+     */
+    @Test
+    void aSignWithNoAuthoredKindIsABuilding(@TempDir Path dir) throws IOException {
+        PlaceSign cellar = load(dir).get(0);
+        assertEquals(PlaceSign.Kind.DOOR, cellar.kind());
     }
 
     @Test
@@ -158,7 +171,13 @@ class PlaceSignsLoaderTest {
     void theCommittedDocksMapCarriesTheWholeSignedRoster() {
         Path tmx = RepoPaths.locate("content", "maps", "src", "docks_surface.tmx");
         List<PlaceSign> signs = PlaceSignsLoader.load(tmx);
-        assertEquals(39, signs.size(), () -> "the ward's authored places, from " + tmx);
+        long doors = signs.stream().filter(s -> s.kind() == PlaceSign.Kind.DOOR).count();
+        long ways = signs.stream().filter(s -> s.kind() == PlaceSign.Kind.WAY).count();
+        assertEquals(39, doors, () -> "the ward's authored buildings, from " + tmx);
+        assertEquals(26, ways, () -> "the ward's authored streets and waterfront, from " + tmx);
+        assertEquals(65, signs.size());
+        assertTrue(signs.stream().anyMatch(s -> "Tarwalk".equals(s.place())));
+        assertTrue(signs.stream().anyMatch(s -> "The Fishbone Pier".equals(s.place())));
         assertTrue(signs.stream().anyMatch(s -> "The Weighhouse".equals(s.place())));
         assertTrue(signs.stream().anyMatch(s -> "Mission of the Flame".equals(s.place())));
         assertTrue(signs.stream().anyMatch(s -> "The Ropewalk".equals(s.place())));
@@ -167,5 +186,9 @@ class PlaceSignsLoaderTest {
         // world coordinates after the loader's offsets).
         assertTrue(signs.stream().allMatch(s -> s.distanceTo(s.doorX(), s.doorY()) <= 2),
                 "a sign must hang at its own door");
+        // One mark per cell: the "a mark cell names its own place" rule can never be ambiguous.
+        assertEquals(signs.size(), signs.stream()
+                .map(s -> s.z() + ":" + s.doorX() + "," + s.doorY()).distinct().count(),
+                "no two places share a mark cell");
     }
 }

@@ -38,6 +38,10 @@ import java.util.regex.Pattern;
  * The authored footprint bounds ride the same x/y offsets, so a sign and its rect can never
  * disagree about which lot they describe.
  *
+ * <p>The optional {@code kind} property selects the mark: {@code "way"} for a street, lane,
+ * quay or pier (a kerb fingerpost), anything else — including a map authored before the ways
+ * existed — for a building's hanging plaque ({@link PlaceSign.Kind#of}).
+ *
  * <p><b>Order.</b> The returned list is sorted by (z, y, x, name) — a deterministic
  * ascending scan, never document order, so the overlay's tie-breaks are stable across
  * machines and across a map regen that renumbers object ids.
@@ -79,8 +83,8 @@ public final class PlaceSignsLoader {
     }
 
     /** One sign still in authored (map-local tile, authored z) coordinates. */
-    private record AuthoredSign(String name, String place, String what, int tileX, int tileY,
-            int authoredZ, int x0, int y0, int x1, int y1) {
+    private record AuthoredSign(String name, String place, String what, String kind, int tileX,
+            int tileY, int authoredZ, int x0, int y0, int x1, int y1) {
 
         boolean complete() {
             return place != null && what != null && x0 >= 0 && y0 >= 0 && x1 >= 0 && y1 >= 0;
@@ -109,6 +113,7 @@ public final class PlaceSignsLoader {
         String pendingName = "";
         String pendingPlace = null;
         String pendingWhat = null;
+        String pendingKind = "";
         int pendingTileX = 0;
         int pendingTileY = 0;
         int[] pendingBounds = {-1, -1, -1, -1};   // x0, y0, x1, y1
@@ -133,6 +138,7 @@ public final class PlaceSignsLoader {
                             pendingName = attr(reader, "name", "");
                             pendingPlace = null;
                             pendingWhat = null;
+                            pendingKind = "";
                             pendingTileX = (int) Math.floor(
                                     Double.parseDouble(attr(reader, "x", "0")) / TILE_PX);
                             pendingTileY = (int) Math.floor(
@@ -147,6 +153,7 @@ public final class PlaceSignsLoader {
                             switch (key) {
                                 case "place" -> pendingPlace = value;
                                 case "what" -> pendingWhat = value;
+                                case "kind" -> pendingKind = value;
                                 case "x0" -> pendingBounds[0] = parseTile(value);
                                 case "y0" -> pendingBounds[1] = parseTile(value);
                                 case "x1" -> pendingBounds[2] = parseTile(value);
@@ -166,7 +173,7 @@ public final class PlaceSignsLoader {
                     case "object" -> {
                         if (inSign) {
                             AuthoredSign sign = new AuthoredSign(pendingName, pendingPlace,
-                                    pendingWhat, pendingTileX, pendingTileY, currentZ,
+                                    pendingWhat, pendingKind, pendingTileX, pendingTileY, currentZ,
                                     pendingBounds[0], pendingBounds[1],
                                     pendingBounds[2], pendingBounds[3]);
                             if (sign.complete()) {
@@ -195,6 +202,7 @@ public final class PlaceSignsLoader {
         List<PlaceSign> signs = new ArrayList<>(authored.size());
         for (AuthoredSign sign : authored) {
             signs.add(new PlaceSign(sign.place(), sign.what(),
+                    PlaceSign.Kind.of(sign.kind()),
                     Coords.CHUNK_SIZE_X + sign.tileX(),
                     Coords.CHUNK_SIZE_Y + sign.tileY(),
                     Coords.CHUNK_SIZE_Z + (sign.authoredZ() - minZ),
