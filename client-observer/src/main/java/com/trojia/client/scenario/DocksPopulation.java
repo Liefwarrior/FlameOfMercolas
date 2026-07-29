@@ -444,39 +444,11 @@ public final class DocksPopulation implements ScenarioPopulation {
     /** Fishers drawn from the surplus pool: two per fishbone stand. */
     private static final int FISHER_COUNT = 2 * 5;
 
-    // ---- S7 guard-routing pass: DERIVED BEAT CENTRES (no marker, same "derived work stand"
-    // precedent as EELPOT_STALLS). A stationed Watch keeps its authored post as HOME and as
-    // its spawn cell — the markers are untouched, the lockstep rule holds — but its radius-6
-    // square beat is centred here instead, so two guards quartered in one building stop
-    // sharing one beat. Every cell below is authored walkable floor, is NOT a patrol-route
-    // waypoint (so routeContaining still returns -1 and the square beat is kept), and was
-    // verified against the baked world to leave all four beat corners on un-pinched ground.
-    // ---- K34 garrison: the S6 anchors are KEPT, on measurement. Two variants were tried
-    // at 60,000 ticks and both were worse on the metric that is the actual bug:
-    //                                   corridor-pinch   day on-job   worst night flips
-    //   S6 anchors (kept)                      2,449        15,850                  189
-    //   both beats on the street                5,417        18,943                  481
-    //   one inside (jailer) + one street        7,185        21,671                  574
-    // The guardhouse's ONLY door opens into a 1-TALL lane at y111 (wall at y110, the
-    // building's own north wall at y112), so every beat centred outside drags its guard
-    // through that gut on every leg -- manufacturing exactly Eli's bug. Keeping both beats
-    // in the building costs adjacency the honest instrument now shows is nearly all SLEEP
-    // (the pair's on-duty wedge run is 64 ticks; their raw 24,607 adjacent ticks are two
-    // men in adjacent bunks). Slice 4 is what makes this safe: their corners no longer
-    // resolve onto the PRISON_CELLS_K34 cages.
+    // ---- S6 guardhouse beat de-overlap (route audit: the garrison pair's ADJACENT
+    // anchors gave two near-identical beat squares — 20,306 pair-ticks inside their own
+    // guardhouse). The second garrison watch beats from the watch room's west end instead,
+    // offsetting the two squares; the sim-side corner stagger + shove etiquette do the rest.
     private static final int[] GUARDHOUSE_WEST_BEAT = {102, 83};
-    /**
-     * The sergeant's beat centre, one cell west of the guardhouse business marker. From the
-     * marker itself the leg-3 (west-south) direction is walled or 1-wide at EVERY radius in
-     * the retry budget, so even slice 4's shrink has nothing un-pinched to take and its
-     * preserved fallback settles on PRISON_CELLS_K34[0] at (133,122) -- a cage. One cell
-     * west, all four corners resolve to open ground: (141,121)(140,114)(131,111)(131,123).
-     */
-    private static final int[] GUARDHOUSE_SERGEANT_BEAT = {105, 85};
-    /** K36 Counting-House frontage on Ropewynd — the bank's outside man. */
-    private static final int[] BANK_FRONTAGE_BEAT = {154, 61};
-    /** The Rise-head street's east end — the second K21 watch, off the sergeant's route. */
-    private static final int[] PATROL_RISE_EAST_BEAT = {93, 121};
 
     // ---- S6 fishing spawn zones (Eli's bug 6; CivicFixtures.fishingZones -> the sim's
     // FishingSpots registry). Each zone = 2-3 contiguous open-water cells on the water
@@ -1922,16 +1894,7 @@ public final class DocksPopulation implements ScenarioPopulation {
             Actor watchSergeant = spawn(MilitiaWatch.TYPE, WATCHPOST_K21, ZC);
             watchSergeant.setHomeId(homes.addHome(watchSergeant.cell()));
             watchSergeant.setAnchorCell(worldCell(PATROL_RISE_TOP, ZC));
-            // S7 slice 2 (guards stop being posted on top of each other): the beat loop's
-            // first element USED to be PATROL_RISE_TOP again -- the sergeant's own anchor,
-            // set one line above. Both watch therefore bound to the same Saltgate route
-            // (PatrolRouteTable.routeContaining is a pure cell lookup) and worked the same
-            // 12x11 Rise-head hall: 2,476 pair-ticks in the 15k soak from one duplicated
-            // line of content. The id-stagger cannot recover it -- it is applied once at
-            // bake by selectRouteStart and never re-asserted (Watch.Patrol.isComplete() is
-            // hardcoded false), so unequal leg times free-run the two back into lockstep.
-            // The second watch now beats the Rise-head street's EAST end instead.
-            for (int[] beat : new int[][] {PATROL_RISE_EAST_BEAT, NOTICE_BOARD}) {
+            for (int[] beat : new int[][] {PATROL_RISE_TOP, NOTICE_BOARD}) {
                 Actor watch = spawn(MilitiaWatch.TYPE, WATCHPOST_K21, ZC);
                 watch.setHomeId(homes.addHome(watch.cell()));
                 watch.setAnchorCell(worldCell(beat, ZC));
@@ -1957,20 +1920,11 @@ public final class DocksPopulation implements ScenarioPopulation {
             // gazetteer 2.4's own stated intent): two Watch quartered at the new post.
             Actor guardhouseSergeant = spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA);
             guardhouseSergeant.setHomeId(homes.addHome(guardhouseSergeant.cell()));
-            guardhouseSergeant.setAnchorCell(worldCell(GUARDHOUSE_SERGEANT_BEAT, ZA));
-            // S7 slice 2: S6's 4-cell nudge could not work — it was SMALLER than BEAT_RADIUS
-            // (6), so the two squares stayed congruent and both stayed inside the building:
-            // 19,583 pair-ticks and one unbroken 11,987-tick adjacency run in the 60k soak,
-            // the worst pair in the ward. Worse, the sergeant's anchor sat on the guardhouse
-            // business marker in the middle of the watch room, so three of its four beat
-            // corners resolved onto PRISON_CELLS_K34 — 1x1 STEEL_WALL cages with a single
-            // mouth. SLICE 4 fixes the cages directly -- the corner retarget now rejects
-            // 1-wide ground -- and the S6 anchors are kept on measurement: every variant that
-            // moved a beat outside made the corridor-pinch metric WORSE, because the
-            // guardhouse's one door opens into a 1-tall gut. See GUARDHOUSE_WEST_BEAT's
-            // comment for the three measured configurations. The pair's large raw adjacency
-            // is two men asleep in adjacent bunks, which the bake authors on purpose; their
-            // ON-DUTY wedge run is 64 ticks against a 3,000-tick bar.
+            // S6 beat de-overlap (route audit, Eli's bug 2): the pair's spawn-adjacent
+            // anchors gave two near-identical beat squares — 20,306 pair-ticks wedged in
+            // their own guardhouse/prison corridor in the 48k soak. The second watch beats
+            // from the watch room's west end; sim-side corner stagger + etiquette de-phase
+            // whatever overlap remains.
             Actor garrisonSecond = spawn(MilitiaWatch.TYPE, K34_GUARDHOUSE, ZA);
             soloHome(garrisonSecond);
             garrisonSecond.setAnchorCell(worldCell(GUARDHOUSE_WEST_BEAT, ZA));
@@ -1990,17 +1944,7 @@ public final class DocksPopulation implements ScenarioPopulation {
             Actor banker = spawn(Shopkeeper.TYPE, BANK_COUNTER, ZA);
             soloHomeAtCell(banker);
             soloHome(spawn(MilitiaWatch.TYPE, GUARD_POST_BANK_WEST, ZA));
-            // S7 slice 2: the two posts are 4 cells apart on the SAME y-line, and
-            // BEAT_RADIUS is 6, so their squares were the same room — the 8x10 hall the pair
-            // both sleep in. 8,045 pair-ticks, 2,081 of them frozen beyond the cadence floor,
-            // second-worst pair in the ward. The east guard keeps its post as HOME but works
-            // the Counting-House's OUTSIDE: the Ropewynd frontage south of the hall. One
-            // guard inside the door, one on the street — which is what two "flanking guard
-            // posts" were meant to be — and by day the two no longer share the hall or its
-            // one 1-tall exit lane at all.
-            Actor bankEastGuard = spawn(MilitiaWatch.TYPE, GUARD_POST_BANK_EAST, ZA);
-            soloHome(bankEastGuard);
-            bankEastGuard.setAnchorCell(worldCell(BANK_FRONTAGE_BEAT, ZA));
+            soloHome(spawn(MilitiaWatch.TYPE, GUARD_POST_BANK_EAST, ZA));
             // One militia_watch per retail shop, stationed at its exterior guard post (Eli: "each
             // shop should have one guard"). Enforcement behaviour lands in a later pass.
             for (int[] post : SHOP_GUARD_POSTS) {

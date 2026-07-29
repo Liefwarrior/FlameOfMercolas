@@ -15,9 +15,7 @@ import com.trojia.sim.world.Walkability;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -169,39 +167,20 @@ class DocksWorkPointsBakeTest {
         }
     }
 
-    /**
-     * The guardhouse garrison pair no longer beats from adjacent anchors.
-     *
-     * <p>S7 RE-BLESS, deliberate and behavioural. This used to pin the literal cell
-     * (102,83) -- S6's GUARDHOUSE_WEST_BEAT, "the watch room's west end". That was a
-     * 4-cell nudge off the sergeant's own anchor, and BEAT_RADIUS is 6, so the two beat
-     * squares stayed congruent and both stayed inside the building: 19,583 pair-ticks and
-     * a single unbroken 11,987-tick adjacency run at 60,000 ticks, the worst pair in the
-     * ward. Pinning the cell pinned the bug. The assertion is now the INVARIANT the cell
-     * was standing in for -- the two anchors are far enough apart that their radius-6
-     * squares cannot both overlap -- which is what "separated anchors" was always meant
-     * to mean and which no future nudge can satisfy by accident.
-     */
+    /** The guardhouse garrison pair no longer beats from adjacent anchors. */
     @Test
     void theGarrisonPairBeatsFromSeparatedAnchors() {
         ActorRegistry registry = population.registry();
-        int guardhouse = worldCell(106, 85, 11);
-        List<Integer> garrisonAnchors = new ArrayList<>();
+        boolean westBeatManned = false;
         for (int i = 0; i < registry.size(); i++) {
             Actor actor = registry.get(i);
-            if (!actor.typeId().key().equals("militia_watch")) {
-                continue;
-            }
-            int home = population.homes().get(actor.homeId()).homeCell();
-            if (PackedPos.z(home) == PackedPos.z(guardhouse)
-                    && Math.abs(PackedPos.x(home) - PackedPos.x(guardhouse)) <= 1
-                    && Math.abs(PackedPos.y(home) - PackedPos.y(guardhouse)) <= 1) {
-                garrisonAnchors.add(actor.anchorCell());
+            if (actor.typeId().key().equals("militia_watch")
+                    && actor.anchorCell() == worldCell(102, 83, 11)) {
+                westBeatManned = true;
             }
         }
-        assertEquals(2, garrisonAnchors.size(), "the K34 garrison is a pair quartered at the post");
-        assertTrue(!garrisonAnchors.get(0).equals(garrisonAnchors.get(1)),
-                "the garrison pair must not be baked onto one beat");
+        assertTrue(westBeatManned, "the second garrison watch must beat from the watch"
+                + " room's west end (the S6 beat de-overlap)");
     }
 
     private Map<Integer, Integer> laborersPerAnchor() {

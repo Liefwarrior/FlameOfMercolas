@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -111,18 +112,13 @@ class DocksSaltgateRouteTest {
                         "the Rise beat binds through the z:+13 head anchor");
             }
         }
-        // S7 slice 2 re-bless (deliberate, behavioural): this was 2. The second K21 watch
-        // was bound to the Rise by being handed the sergeant's OWN anchor cell — the beat
-        // loop's first element was PATROL_RISE_TOP, set one line after the sergeant's
-        // setAnchorCell(PATROL_RISE_TOP) — so two guards walked one route and worked one
-        // 12x11 hall (17,480 pair-ticks at 60,000 ticks, the second-worst pair in the ward).
-        // Duplicating an anchor is not how you staff a route: selectRouteStart's id-stagger
-        // is applied once at bake and never re-asserted (Watch.Patrol.isComplete() is
-        // hardcoded false), so unequal leg times free-run the pair back into lockstep inside
-        // one loop. The sergeant walks the Rise; the second watch beats the Rise-head street's
-        // east end. If a second soul is ever wanted ON the Rise it needs its own route or a
-        // reversed waypoint order, not a copied cell.
-        assertEquals(1, bound, "the K21 sergeant walks the Rise");
+        // ROUND-2 UN-BLESS (back to 2). S7 slice 2 moved the second K21 watch off the Rise
+        // to break up a shared anchor, and it cost the ward HALF its cross-z patrol: the
+        // 15,000-tick head/foot arrivals fell 224/243 -> 96/99 and this file's own boolean
+        // proof still printed PASS. Staffing one route with two souls is not the bug —
+        // that is what a beat with two men looks like — so the anchor is shared again and
+        // the throughput floor is enforced for real by DocksSaltgateThroughputTest.
+        assertEquals(2, bound, "the K21 sergeant + the RISE_TOP beat watch walk the Rise");
         // The three single-z routes keep their original bindings (appended-last rule).
         int legacyBound = 0;
         for (int i = 0; i < registry.size(); i++) {
@@ -137,46 +133,60 @@ class DocksSaltgateRouteTest {
     }
 
     /**
-     * S7 slice 2, the permanent guard against the class of bug that cost 17,480 pair-ticks:
-     * no two Watch may be baked onto the SAME work anchor. Two guards sharing an anchor
-     * share a beat — the same route waypoints, or the same blind radius-6 square — and the
-     * sim has no restoring force to separate them again once their legs drift into phase.
-     * Ascending scan, no unordered iteration.
+     * No two SQUARE-BEAT Watch may be baked onto the same work anchor.
+     *
+     * <p>Re-scoped in round 2. S7 slice 2 asserted this over EVERY Watch, which is wrong for
+     * route-bound souls and is what pushed the second K21 watch off the Saltgate Rise and
+     * halved its throughput. A patrol ROUTE is a shared object by design — two men on one
+     * route is a staffed beat, they enter at staggered waypoints, and the measured cost of
+     * pairing them is small next to the coverage they buy. A blind radius-6 SQUARE is the
+     * opposite: two anchors on one cell produce two literally identical loops with no
+     * restoring force to separate them ever again. The invariant is kept exactly where it
+     * bites. Ascending scan, no unordered iteration.
      */
     @Test
-    void noTwoWatchShareAWorkAnchor() {
+    void noTwoSquareBeatWatchShareAWorkAnchor() {
+        PatrolRouteTable routes = PatrolRouteTable.of(DocksPopulation.patrolRoutes());
         var registry = population.registry();
         for (int i = 0; i < registry.size(); i++) {
             Actor a = registry.get(i);
-            if (!a.typeId().key().equals("militia_watch")) {
+            if (!a.typeId().key().equals("militia_watch")
+                    || routes.routeContaining(a.anchorCell()) >= 0) {
                 continue;
             }
             for (int j = i + 1; j < registry.size(); j++) {
                 Actor b = registry.get(j);
-                if (!b.typeId().key().equals("militia_watch")) {
+                if (!b.typeId().key().equals("militia_watch")
+                        || routes.routeContaining(b.anchorCell()) >= 0) {
                     continue;
                 }
                 assertNotEquals(a.anchorCell(), b.anchorCell(),
-                        "watch #" + i + " and watch #" + j + " share anchor "
+                        "square-beat watch #" + i + " and #" + j + " share anchor "
                                 + PackedPos.x(a.anchorCell()) + "," + PackedPos.y(a.anchorCell())
                                 + "," + PackedPos.z(a.anchorCell())
-                                + " -- they will walk the same beat forever");
+                                + " -- they will walk the same blind square forever");
             }
         }
     }
 
     /**
-     * S7: the K34 garrison pair must not be baked onto the SAME anchor, and their beat
-     * corners must be clear of the PRISON_CELLS_K34 cages.
+     * The K34 garrison pair must not be baked onto the SAME anchor, and slice 4's corner
+     * rule must actually be honoured on their real beats.
      *
-     * <p>An earlier draft of this test demanded the two radius-6 squares not intersect at
-     * all, which forced both beats out of the building. Three configurations were measured
-     * at 60,000 ticks and that one was the WORST on the metric that is the actual bug --
-     * corridor-pinch pair-ticks 2,449 (S6 anchors) vs 5,417 (both outside) vs 7,185 (one
-     * inside, one outside) -- because the guardhouse's one door opens into a 1-TALL lane,
-     * so any beat centred outside drags its guard through that gut on every leg. The pair's
-     * enormous raw adjacency turned out to be SLEEP: their on-duty wedge run is 64 ticks
-     * against a 3,000-tick bar. The invariant that survives measurement is this one.
+     * <p>Two earlier drafts of this test both pinned the BAKE instead of the RULE. The
+     * first demanded the two radius-6 squares not intersect at all, which forced both beats
+     * out of the building — measured WORST of three configurations at 60,000 ticks, because
+     * the guardhouse's one door opens into a 1-TALL lane and any beat centred outside drags
+     * its guard through that gut on every leg. The second demanded every corner be
+     * un-pinched, which is a statement about the map, not about the code, and it only held
+     * because slice 2 had moved the sergeant's anchor — content churn that measured worse
+     * on the primary metric and was reverted in round 2.
+     *
+     * <p>What is asserted here is slice 4's actual contract, which is bake-independent: the
+     * retarget PREFERS open ground and only falls back to a pinched corner when the whole
+     * shrink budget on that leg offers nothing else. A pinched corner is therefore allowed
+     * only where the guardhouse geometry leaves no alternative — and the count of such legs
+     * is pinned, so a future bake cannot quietly add more.
      */
     @Test
     void theGuardhouseGarrisonKeepsDistinctAnchorsClearOfTheCages() {
@@ -198,31 +208,40 @@ class DocksSaltgateRouteTest {
         assertEquals(2, anchors.size(), "the K34 garrison is a pair quartered at the post");
         assertNotEquals(anchors.get(0), anchors.get(1),
                 "the garrison pair must not share one beat");
-        // Slice 4's contract, pinned at the bake: every corner the square beat can settle on
-        // is ground two guards can pass each other on, not a 1x1 cage.
+        // Slice 4's contract: open ground WINS wherever the leg offers any, and a pinched
+        // corner only ever survives as the documented last-resort fallback.
+        com.trojia.sim.actor.Actor.WalkabilityQuery walk =
+                c -> Walkability.isWalkable(cursor.moveTo(c));
+        int legsWithNoOpenGround = 0;
         for (int anchor : anchors) {
             for (int leg = 0; leg < 4; leg++) {
                 int corner = squareBeatCorner(anchor, leg, cursor);
-                assertTrue(!com.trojia.sim.actor.CorridorPinch.isPinched(corner,
-                                c -> Walkability.isWalkable(cursor.moveTo(c))),
+                if (!com.trojia.sim.actor.CorridorPinch.isPinched(corner, walk)) {
+                    continue;
+                }
+                legsWithNoOpenGround++;
+                assertFalse(anyOpenGroundOnLeg(anchor, leg, cursor),
                         "garrison beat corner " + PackedPos.x(corner) + ","
                                 + PackedPos.y(corner) + " (anchor " + PackedPos.x(anchor) + ","
-                                + PackedPos.y(anchor) + " leg " + leg
-                                + ") is 1 cell wide -- a cage or an alley stub");
+                                + PackedPos.y(anchor) + " leg " + leg + ") is 1 cell wide even"
+                                + " though the shrink budget on that leg DOES offer open ground"
+                                + " -- the corner retarget is no longer preferring it");
             }
         }
+        // The K34 watch room is a walled pocket: exactly one of the pair's eight legs has
+        // nothing un-pinched anywhere in the retry budget. Pinned so a future bake cannot
+        // quietly hand the garrison more cage legs while this test still says PASS.
+        assertEquals(1, legsWithNoOpenGround,
+                "garrison legs with no un-pinched corner available anywhere in budget");
     }
 
     /** Mirrors JobBehaviors.retargetPatrolCorner for BEAT_RADIUS=6, PATROL_RETRY_BUDGET=8. */
     private static int squareBeatCorner(int anchor, int leg, TileCursor cursor) {
-        int[] dx = {1, 1, -1, -1};
-        int[] dy = {1, -1, -1, 1};
         com.trojia.sim.actor.Actor.WalkabilityQuery walk =
                 c -> Walkability.isWalkable(cursor.moveTo(c));
         int fallback = -1;
         for (int r = 6; r >= 1; r--) {
-            int candidate = PackedPos.pack(PackedPos.x(anchor) + dx[leg] * r,
-                    PackedPos.y(anchor) + dy[leg] * r, PackedPos.z(anchor));
+            int candidate = legCandidate(anchor, leg, r);
             if (!walk.isWalkable(candidate)) {
                 continue;
             }
@@ -234,6 +253,27 @@ class DocksSaltgateRouteTest {
             }
         }
         return fallback < 0 ? anchor : fallback;
+    }
+
+    /** Whether any radius in the shrink budget offers un-pinched ground on this leg. */
+    private static boolean anyOpenGroundOnLeg(int anchor, int leg, TileCursor cursor) {
+        com.trojia.sim.actor.Actor.WalkabilityQuery walk =
+                c -> Walkability.isWalkable(cursor.moveTo(c));
+        for (int r = 6; r >= 1; r--) {
+            int candidate = legCandidate(anchor, leg, r);
+            if (walk.isWalkable(candidate)
+                    && !com.trojia.sim.actor.CorridorPinch.isPinched(candidate, walk)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int legCandidate(int anchor, int leg, int radius) {
+        int[] dx = {1, 1, -1, -1};
+        int[] dy = {1, -1, -1, 1};
+        return PackedPos.pack(PackedPos.x(anchor) + dx[leg] * radius,
+                PackedPos.y(anchor) + dy[leg] * radius, PackedPos.z(anchor));
     }
 
     private static int worldGuardhouse() {
