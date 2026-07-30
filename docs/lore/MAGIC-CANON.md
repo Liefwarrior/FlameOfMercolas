@@ -338,6 +338,12 @@ start, physical power grown through exploitable systems.** Gabri already holds t
 "full lawful immunity except killing the emperor" (WB L407) on day one — that is the maxed social
 power, and it is canon's, not ours. What he does not have is a spell for it, and he should not.
 
+**The ward already has the Flame's people, and that is exactly right.** `priest_of_the_flame` and
+`disciple_of_the_flame` are shipped actor types walking the docks today. The *office* is visible —
+robes, clergy, the Mission of the Flame on the street plan — and the *power* is not. That split is
+the design in one sentence, and it happened before this pass without anyone planning it, which is
+a good sign the shape is natural.
+
 Leave the seam open. Do not fill it. In-world there is nothing to leave out at all — the ward has
 never heard of a seventh.
 
