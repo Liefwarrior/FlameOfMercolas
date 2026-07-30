@@ -268,9 +268,16 @@ class FirstPersonPlannerTest {
         }
         assertTrue(belowBandQuads > 4,
                 "expected to see the harbour through the hole, saw " + belowBandQuads);
-        // And the bed under the water is not shown, exactly as the tile view would not show it.
+        // And the bed under the water is not shown — but be precise about why, because the
+        // obvious reading of this assertion is wrong. It is NOT that the water is opaque
+        // enough to hide it: harbour water is alphaQ8 240 of 256 and you can see through it.
+        // It is that the shared descent rule stops at the first cell that draws, and pooled
+        // fluid draws, so the bed is never planned at all — exactly as the tile view's own
+        // look-down never plans it either. What the water composites against is therefore the
+        // frame's backdrop, which is why that backdrop had to stop being void black
+        // (SkyBand.groundHazeAt). Changing this would mean changing the rule in both views.
         assertTrue(quadsFor(plan, 32, 24, BAND - 4).isEmpty(),
-                "saw the harbour bed through opaque water");
+                "the shared look-down rule stops at the water; the bed must not be planned");
     }
 
     @Test

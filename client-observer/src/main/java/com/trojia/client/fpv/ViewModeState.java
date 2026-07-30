@@ -124,14 +124,6 @@ public final class ViewModeState {
         transitioning = blend > 0f;
     }
 
-    /** Forces the view back to the tile camera with no fade at all — teardown, and the tests
-     * that need a known state. {@link #releaseToTopDown} is what losing an actor uses. */
-    public void forceTopDown() {
-        mode = Mode.TOP_DOWN;
-        blend = 0f;
-        transitioning = false;
-    }
-
     /** Advances the fade. */
     public void advance(float deltaSeconds) {
         if (!transitioning) {

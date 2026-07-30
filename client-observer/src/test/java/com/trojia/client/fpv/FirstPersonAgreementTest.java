@@ -6,6 +6,9 @@ import com.trojia.client.boot.RepoPaths;
 import com.trojia.client.render.DepthSight;
 import com.trojia.client.render.DepthVision;
 import com.trojia.client.render.TilePlan;
+import com.trojia.client.scenario.DocksPopulation;
+import com.trojia.client.sprite.SpriteIndex;
+import com.trojia.sim.actor.Actor;
 import com.trojia.sim.world.Coords;
 import com.trojia.sim.world.PackedPos;
 import com.trojia.sim.world.TileCursor;
@@ -236,6 +239,14 @@ class FirstPersonAgreementTest {
      * The one place the two views could visibly diverge and each blame the other: how far down
      * a column of empty air you can see. Both run the same rule, so this compares the plan
      * against {@code DepthVision} — the tile view's own resolver, called unmodified.
+     *
+     * <p><b>Known blind spot, stated rather than papered over.</b> This can only compare
+     * columns where the first-person plan showed <em>something</em> below the eye. A bug whose
+     * signature is first person showing nothing — the VOID-stops-the-descent one, fixed in
+     * round 2 — is structurally invisible here, and widening it is not straightforward, because
+     * a column can legitimately show nothing below for being off the bottom of the frame rather
+     * than for being occluded. The descent rule itself is therefore pinned directly, on a
+     * synthetic column, in {@code FirstPersonPlannerTest}.
      */
     @Test
     void thePlanSeesExactlyAsFarDownAsTheTileViewsLookDown() {
@@ -286,6 +297,83 @@ class FirstPersonAgreementTest {
                         "the harbour should be below the quay you are standing on"));
     }
 
+    /**
+     * <b>The seam, measured on the real quay.</b> This is the black stripe, quantified: standing
+     * on the Tarwalk looking north over the harbour at a level gaze, the plan runs out of world
+     * before it runs out of frame, and the gap between the highest thing it draws and the
+     * horizon line is real, sizeable and unavoidable — a ground plane below the eye approaches
+     * the horizon asymptotically and no finite draw radius reaches it.
+     *
+     * <p>So the gap has to be painted rather than argued away, which is what the ground haze
+     * does. This test exists to keep the haze load-bearing: if a later change ever made the
+     * terrain reach the horizon by itself, the number below would go to zero and someone should
+     * be told before deleting the backdrop.
+     */
+    @Test
+    void theHarbourViewLeavesASeamBetweenTheLastTileAndTheHorizon() {
+        int[] widest = theWidestStretchOfOpenHarbour();
+        int[] stand = {widest[0], widest[1], FixtureWorldLoader.DOCKS_QUAYSIDE_LEVEL_Z};
+        EyeProjection eye = eyeOn(stand, 3 * Math.PI / 2);
+        List<ViewQuad> plan = planner().plan(eye, stand[2], new WorldCellSight(world),
+                ActorSight.empty());
+
+        float highestBelowHorizon = 0f;
+        for (ViewQuad quad : plan) {
+            float[] c = quad.corners();
+            for (int i = 1; i < 8; i += 2) {
+                if (c[i] < eye.horizonY()) {
+                    highestBelowHorizon = Math.max(highestBelowHorizon, c[i]);
+                }
+            }
+        }
+        float seamPx = eye.horizonY() - highestBelowHorizon;
+        System.out.println("fpv seam: the widest stretch of open harbour in the ward is "
+                + widest[2] + " tiles, from the quay at (" + widest[0] + "," + widest[1]
+                + "). Standing there at a level gaze the drawn world stops "
+                + String.format("%.0f", seamPx) + " px below the horizon in a " + H
+                + " px frame — that band is the ground haze's whole job.");
+        assertTrue(seamPx > 1f,
+                "the plan now reaches the horizon on its own; the ground haze may be dead code");
+    }
+
+    /**
+     * The quayside tile with the most open water between it and the far side, and how many
+     * tiles that is — the best case for "looking out over the harbour", so the seam measured
+     * from it is the smallest one the ward can produce rather than a cherry-picked worst.
+     *
+     * @return {@code {x, y, tilesOfOpenWater}}
+     */
+    private static int[] theWidestStretchOfOpenHarbour() {
+        TileCursor cursor = world.cursor();
+        int band = FixtureWorldLoader.DOCKS_QUAYSIDE_LEVEL_Z;
+        int[] best = null;
+        for (int y = 1; y < worldHeight; y++) {
+            for (int x = 0; x < worldWidth; x++) {
+                cursor.moveTo(PackedPos.pack(x, y, band));
+                if (cursor.form() != TileForm.FLOOR) {
+                    continue;
+                }
+                int run = 0;
+                for (int d = 1; d <= FirstPersonPlanner.DRAW_RADIUS_TILES && y - d >= 0; d++) {
+                    cursor.moveTo(PackedPos.pack(x, y - d, band));
+                    if (cursor.form() != TileForm.OPEN) {
+                        break;
+                    }
+                    cursor.moveTo(PackedPos.pack(x, y - d, band - 1));
+                    if ((cursor.fluidBits() & TilePlan.FLUID_DEPTH_MASK) == 0) {
+                        break;
+                    }
+                    run++;
+                }
+                if (best == null || run > best[2]) {
+                    best = new int[] {x, y, run};
+                }
+            }
+        }
+        assertTrue(best != null && best[2] > 0, "no quayside tile with open water north of it");
+        return best;
+    }
+
     // ------------------------------------------------------------------ diff 3
 
     @Test
@@ -320,32 +408,65 @@ class FirstPersonAgreementTest {
     }
 
     /**
-     * The whole reason the plan is a list of records: a frame's worth of visibility decisions
-     * has to be cheap enough to make every frame beside a 12 ms sim tick budget. This is not a
-     * benchmark — it is a tripwire for an accidental order-of-magnitude regression.
+     * <b>The whole per-frame visibility cost, with the ward's actual population standing in
+     * it.</b> The plan is a list of records so that a frame's worth of visibility decisions is
+     * cheap enough to make every frame beside a 12 ms sim tick budget. This is not a benchmark
+     * — it is a tripwire for an accidental order-of-magnitude regression.
+     *
+     * <p>The first cut of this measured an <em>empty</em> ward, which flattered it: it skipped
+     * the per-frame re-bucketing of every actor in the registry and every billboard projection,
+     * which is exactly the work that scales with how alive the place is. It now boots the real
+     * {@code DocksPopulation} and times {@code refresh() + plan()} together, because that pair
+     * is what a rendered frame actually pays.
      */
     @Test
-    void planningAFrameStaysWellInsideAFrame() {
+    void planningAPopulatedFrameStaysWellInsideAFrame() {
         int[] stand = onTheStreet();
         FirstPersonPlanner planner = planner();
         CellSight sight = new WorldCellSight(world);
+        DocksPopulation population = DocksPopulation.build(loaded.worldSeed(), world);
+        CellActorIndex actors = new CellActorIndex(population.registry(), shippedSprites());
+        int inTheWard = population.registry().size();
+        assertTrue(inTheWard > 100, "an empty ward would flatter this number: " + inTheWard);
+
         for (int i = 0; i < 20; i++) {
-            planner.plan(eyeOn(stand, i * 0.31), stand[2], sight, ActorSight.empty());
+            actors.refresh();
+            planner.plan(eyeOn(stand, i * 0.31), stand[2], sight, actors, Actor.NONE);
         }
         long start = System.nanoTime();
         int frames = 60;
         int quads = 0;
+        int billboards = 0;
         for (int i = 0; i < frames; i++) {
-            quads += planner.plan(eyeOn(stand, i * 0.1), stand[2], sight,
-                    ActorSight.empty()).size();
+            actors.refresh();
+            List<ViewQuad> plan = planner.plan(eyeOn(stand, i * 0.1), stand[2], sight, actors,
+                    Actor.NONE);
+            quads += plan.size();
+            for (ViewQuad quad : plan) {
+                if (quad instanceof ViewQuad.Billboard) {
+                    billboards++;
+                }
+            }
         }
         double msPerFrame = (System.nanoTime() - start) / 1e6 / frames;
         System.out.println("fpv planner: " + String.format("%.2f", msPerFrame)
-                + " ms/frame, " + (quads / frames) + " quads/frame (docks, band "
-                + stand[2] + ")");
+                + " ms/frame, " + (quads / frames) + " quads/frame of which "
+                + String.format("%.1f", billboards / (double) frames) + " billboards, with "
+                + inTheWard + " actors in the ward (docks, band " + stand[2] + ")");
         assertTrue(msPerFrame < 8.0,
                 "planning took " + msPerFrame + " ms/frame — it has to share the frame with a "
                         + "12 ms sim tick budget");
+    }
+
+    /** The shipped sprite index, so the billboards cost what they really cost. */
+    private static SpriteIndex shippedSprites() {
+        try (var reader = Files.newBufferedReader(
+                RepoPaths.locate("content", "art", "sprites", "sprite-index.json"),
+                StandardCharsets.UTF_8)) {
+            return SpriteIndex.load(reader);
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot read the shipped sprite index", e);
+        }
     }
 
     private static String describe(ViewQuad.Terrain t) {
