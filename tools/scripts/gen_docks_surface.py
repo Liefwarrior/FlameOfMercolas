@@ -2200,6 +2200,14 @@ STOOP_OPPOSITE = {
     DIRT_FLOOR: GRANITE_FLOOR,
 }
 
+# The register a stoop answers is read from a SNAPSHOT taken before any stoop is laid.
+# Without it the pass is order-dependent: two doors one cell apart both claim the cell
+# between them, the first turns it from earth to paver, and the second then sees paver and
+# turns it to grit -- so a single doorway ends up half laid-stone and half cinder. That is
+# deterministic but it looks like an accident, which is the exact quality this slice exists
+# to remove. Snapshot, and every door answers the ground as it found it.
+_pre_stoop = [[row[:] for row in F[z]] for z in range(ZCOUNT)]
+
 _stoop_cells = 0
 _doors_with_stoop = 0
 for (dz, dx, dy, nx, ny) in DOORS:
@@ -2214,7 +2222,7 @@ for (dz, dx, dy, nx, ny) in DOORS:
             continue
         if T[dz][sy][sx] != 0 or FL[dz][sy][sx] != 0:
             continue
-        gid = STOOP_OPPOSITE.get(F[dz][sy][sx])
+        gid = STOOP_OPPOSITE.get(_pre_stoop[dz][sy][sx])
         if gid is None:
             continue
         F[dz][sy][sx] = gid
