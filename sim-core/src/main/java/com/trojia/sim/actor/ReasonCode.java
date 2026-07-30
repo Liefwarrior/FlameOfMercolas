@@ -106,5 +106,22 @@ public enum ReasonCode {
      * evict somebody else's live effect silently, which is the same lie as a cast that lands
      * nothing ({@code ActiveEffects.freeSlots}).
      */
-    NO_ROOM_FOR_CRAFTING
+    NO_ROOM_FOR_CRAFTING,
+    /**
+     * Simple Magic: this body does not read at all, so no crafting is available to it — the
+     * literacy gate ({@code SpellVerb.isLiterate}). A gull cannot use a library.
+     */
+    CANNOT_READ_A_CRAFTING,
+    /**
+     * Simple Magic: the reader has not got deep enough into the shelf for this row — its live
+     * level in the crafting's OWN declared skill is under {@code SpellDefinition.minLevel}. The
+     * public-issue edition against the restricted one on the top shelf (L2472).
+     */
+    CRAFTING_UNREAD,
+    /**
+     * Simple Magic: the hand is still on the last link — this caster's cast latch has not run
+     * out ({@code Actor.castUntilTick}). Stamped by the shared verb rather than by whichever
+     * caller happened to remember the rule.
+     */
+    CRAFTING_HAND_LATCHED
 }

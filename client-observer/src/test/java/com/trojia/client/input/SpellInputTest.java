@@ -188,6 +188,67 @@ class SpellInputTest {
         assertTrue(said.get(1).endsWith("THE LINK SLIPS]"), said.get(1));
     }
 
+    /**
+     * THE BAR AND THE SHARED VERB REFUSE THE SAME PRESSES. The rules used to live in three
+     * places — this file's availability read, {@code PlayerControlPolicy}, and nowhere at all
+     * inside {@code SpellVerb.resolveCast}, which is the one path an AI caster will use. They
+     * live in {@code SpellVerb.refusalFor} now, and this walks every case the bar can refuse to
+     * show that the sim's own verb refuses it too, with the matching stamp.
+     */
+    @Test
+    void everyPressTheBarRefusesIsAPressTheSharedVerbRefuses() {
+        ActorRegistry registry = population();
+        Actor caster = reader(registry);
+        SkillTrackRegistry tracks = wiredTracks();
+        int deep = SPELLS.rawOf("sap_the_step");
+        int steady = SPELLS.rawOf("steady_the_hand");
+
+        // Unread: the bar says so, and so does the verb.
+        assertTrue(SpellAvailability.refusal(registry, SPELLS, tracks, caster, deep, 100L)
+                .startsWith(SpellAvailability.UNLEARNED_PREFIX));
+        assertEquals(ReasonCode.CRAFTING_UNREAD,
+                SpellVerb.refusalFor(caster, registry, tracks, SPELLS, deep,
+                        SpellVerb.targetInReach(caster, registry, SPELLS.get(deep)), 100L));
+
+        // A latched hand: same.
+        caster.setCastUntilTick(1_600L);
+        assertTrue(SpellAvailability.refusal(registry, SPELLS, tracks, caster, steady, 1_000L)
+                .startsWith(SpellAvailability.COOLDOWN_PREFIX));
+        assertEquals(ReasonCode.CRAFTING_HAND_LATCHED,
+                SpellVerb.refusalFor(caster, registry, tracks, SPELLS, steady, caster.id(),
+                        1_000L));
+        caster.setCastUntilTick(0L);
+
+        // An unknown crafting: same.
+        assertEquals(SpellAvailability.NO_TARGET,
+                SpellAvailability.refusal(registry, SPELLS, tracks, caster, 9_999, 100L));
+        assertEquals(ReasonCode.NO_LINK_TO_TARGET,
+                SpellVerb.refusalFor(caster, registry, tracks, SPELLS, 9_999, caster.id(), 100L));
+
+        // A body that cannot read at all: same.
+        Actor beast = illiterate(registry);
+        assertEquals(SpellAvailability.ILLITERATE,
+                SpellAvailability.refusal(registry, SPELLS, tracks, beast, steady, 100L));
+        assertEquals(ReasonCode.CANNOT_READ_A_CRAFTING,
+                SpellVerb.refusalFor(beast, registry, tracks, SPELLS, steady, beast.id(), 100L));
+
+        // And a press that may go through is silent on BOTH sides.
+        assertNull(SpellAvailability.refusal(registry, SPELLS, tracks, caster, steady, 100L));
+        assertNull(SpellVerb.refusalFor(caster, registry, tracks, SPELLS, steady, caster.id(),
+                100L));
+    }
+
+    /** A body from a faction that does not read — the compound bakes gulls, cats and vermin. */
+    private static Actor illiterate(ActorRegistry registry) {
+        for (int i = 0; i < registry.size(); i++) {
+            Actor actor = registry.get(i);
+            if (!SpellVerb.isLiterate(actor) && !actor.isDead()) {
+                return actor;
+            }
+        }
+        throw new AssertionError("the compound fixture bakes nobody who cannot read");
+    }
+
     @Test
     void theEffectLineReadsAnyCraftingIncludingOnesNobodyAuthored() {
         SpellRegistry invented = SpellRawsLoader.parse("""

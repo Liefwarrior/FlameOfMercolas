@@ -97,6 +97,72 @@ public final class SpellVerb {
     }
 
     /**
+     * WHY THIS CAST WOULD BE REFUSED, or {@code null} when it may go through — the ONE refusal
+     * ladder, shared by {@link #resolveCast} and by every surface that wants to grey a button or
+     * word a toast before anything is armed.
+     *
+     * <p><b>This exists because the rules used to live outside the verb.</b>
+     * {@code resolveCast} is documented as THE ONE CAST PATH, shared by the play-mode verb and by
+     * any AI caster grown later — and it enforced none of its own contract: not the level gate it
+     * documents in its own class comment, not literacy, not the latch it stamps, and not the reach
+     * that is canon's whole bridge rule. Every one of those lived in {@code PlayerControlPolicy}
+     * and in the client's availability read, which meant the button was safe and the shared verb
+     * was not: a test, a queued intent or the first AI caster could work a crafting its body had
+     * never read, from across the ward, with its hand still full of the last link. The rules live
+     * here now, and the callers ask.
+     *
+     * <p>Ordered so the reason a surface shows is the reason the sim would have hit: a crafting
+     * that exists, hands that read, a reader deep enough, a free hand, a body in reach. Pure
+     * reads — no draws, no writes, nothing that could move a tick hash.
+     *
+     * <p>The one refusal NOT in this ladder is {@link ReasonCode#NO_ROOM_FOR_CRAFTING}: it is a
+     * property of the district's effect table rather than of this caster and this target, and it
+     * is checked inside {@link #resolveCast} where the table is in hand.
+     */
+    public static ReasonCode refusalFor(Actor self, ActorRegistry registry,
+            SkillTrackRegistry tracks, SpellRegistry spells, int spellRaw, int targetId,
+            long tick) {
+        if (!spells.isValidRaw(spellRaw) || self.isDead()) {
+            return ReasonCode.NO_LINK_TO_TARGET;
+        }
+        if (!isLiterate(self)) {
+            return ReasonCode.CANNOT_READ_A_CRAFTING;
+        }
+        SpellDefinition spell = spells.get(spellRaw);
+        if (tracks.level(self.id(), tracks.rawOfSkill(spell.skillKey())) < spell.minLevel()) {
+            return ReasonCode.CRAFTING_UNREAD;
+        }
+        if (tick < self.castUntilTick()) {
+            return ReasonCode.CRAFTING_HAND_LATCHED;
+        }
+        if (!inReach(self, registry, spell, targetId)) {
+            return ReasonCode.NO_LINK_TO_TARGET;
+        }
+        return null;
+    }
+
+    /**
+     * Whether {@code targetId} sits inside this crafting's own reach — canon's bridge rule as a
+     * predicate: alive, on the same z, and no further than {@link SpellDefinition#reach}. A
+     * {@link TargetShape#SELF} crafting reaches exactly one body, its caster's, and nothing else:
+     * pointing one at a neighbour used to be accepted AND priced at distance 0, so a SELF-shaped
+     * crafting was the cheapest way to reach across a room.
+     */
+    public static boolean inReach(Actor self, ActorRegistry registry, SpellDefinition spell,
+            int targetId) {
+        if (targetId < 0 || targetId >= registry.size()) {
+            return false;
+        }
+        if (spell.targetShape() == TargetShape.SELF) {
+            return targetId == self.id();
+        }
+        Actor body = registry.get(targetId);
+        return !body.isDead()
+                && PackedPos.z(body.cell()) == PackedPos.z(self.cell())
+                && ActorGeometry.chebyshev(self.cell(), body.cell()) <= spell.reach();
+    }
+
+    /**
      * The body this spell would land on from where {@code self} is standing, or
      * {@link Actor#NONE}: itself for a {@link TargetShape#SELF} crafting, otherwise the
      * LOWEST-id living body within the spell's reach on the same z (the district's universal
@@ -132,18 +198,27 @@ public final class SpellVerb {
      * and on success every component landed on the target and on anything inside the spell's
      * area.
      *
+     * <p><b>It enforces its own rules.</b> Every refusal runs through {@link #refusalFor} — the
+     * one ladder the client's availability read now shares — so the shared verb refuses exactly
+     * what the button refuses, and a caller that forgets a rule cannot get past one. Refusals
+     * cost the caster nothing at all: no latch, no use-XP, no resist, no row.
+     *
      * @return {@code true} if the crafting took
      */
     public static boolean resolveCast(Actor self, ActorContext ctx, int spellRaw, int targetId) {
-        SpellDefinition spell = ctx.spells().get(spellRaw);
-        // LIVENESS, before anything is charged. This is the shared public verb, so it is reached
-        // by paths that have not pre-validated (a future AI caster; a test; a queued intent that
-        // outlived its target), and a corpse is not a body a link can be forged to -- the
-        // CullVerb's own precondition discipline. Costs nothing and stamps nothing on the dead.
-        if (!isLive(ctx, self.id()) || !isLive(ctx, targetId)) {
-            self.setLastReasonCode(ReasonCode.NO_LINK_TO_TARGET);
+        // EVERY RULE THIS VERB DOCUMENTS, ENFORCED BY THIS VERB, before anything is charged: the
+        // spell exists, the body reads, the reader is deep enough, the hand is free, and the
+        // target is a living body inside the link's reach. This is the shared public verb --
+        // reached by the play-mode path, by a test, by a queued intent that outlived its target,
+        // and by whatever AI caster is grown next -- so a rule that lives only in a caller is a
+        // rule that only one caller has.
+        ReasonCode refusal = refusalFor(self, ctx.registry(), ctx.skillTracks(), ctx.spells(),
+                spellRaw, targetId, ctx.tick());
+        if (refusal != null) {
+            self.setLastReasonCode(refusal);
             return false;
         }
+        SpellDefinition spell = ctx.spells().get(spellRaw);
         // ROOM, also before anything is charged. Filing an effect used to evict somebody else's
         // live row to make space, silently; now a cast that will not fit is refused out loud and
         // costs the caster nothing at all -- no latch, no XP, no resist.
@@ -158,9 +233,10 @@ public final class SpellVerb {
         // grows it, with no code change here.
         int skillRaw = tracks.rawOfSkill(spell.skillKey());
         tracks.award(self.id(), skillRaw, CAST_ATTEMPT_CP, spellRaw, ctx.tick());
-        int distance = spell.targetShape() == TargetShape.SELF
-                ? 0
-                : ActorGeometry.chebyshev(self.cell(), ctx.registry().get(targetId).cell());
+        // The REAL gap, always. A SELF crafting reaches its own caster and nothing else (the
+        // reach guard above), so this reads 0 for one without special-casing the shape -- and a
+        // SELF-shaped crafting aimed across a room can no longer be priced as if it were not.
+        int distance = ActorGeometry.chebyshev(self.cell(), ctx.registry().get(targetId).cell());
         long resist = SpellCost.resistFor(spell, distance);
         long draw = ctx.draw(ActorRngStream.CHECK_LINKCRAFT, self.id(),
                 ctx.nextDrawIndex(self.id()));
@@ -175,12 +251,6 @@ public final class SpellVerb {
         }
         self.setLastReasonCode(ReasonCode.SPELL_WORKED);
         return true;
-    }
-
-    /** Whether {@code actorId} addresses a body that is still standing in this registry. */
-    private static boolean isLive(ActorContext ctx, int actorId) {
-        return actorId >= 0 && actorId < ctx.registry().size()
-                && !ctx.registry().get(actorId).isDead();
     }
 
     /**

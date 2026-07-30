@@ -3,6 +3,7 @@ package com.trojia.client.inspect;
 import com.trojia.sim.actor.Actor;
 import com.trojia.sim.actor.ActorRegistry;
 import com.trojia.sim.actor.DailyRhythm;
+import com.trojia.sim.actor.ReasonCode;
 import com.trojia.sim.actor.SkillTrackRegistry;
 import com.trojia.sim.actor.spell.SpellDefinition;
 import com.trojia.sim.actor.spell.SpellRegistry;
@@ -79,9 +80,14 @@ public final class SpellAvailability {
 
     /**
      * The sentence to toast INSTEAD of arming a cast, or {@code null} when the press may go
-     * through. Checked in the sim's own order — can this body work a crafting at all, has it
-     * read this one, is its hand free, is anything in reach — so the reason on screen is the
-     * reason the sim would have hit.
+     * through.
+     *
+     * <p><b>This method owns the WORDING and nothing else.</b> It used to own the rules too — its
+     * own literacy read, its own level comparison, its own latch arithmetic, its own reach probe —
+     * running alongside a second copy in {@code PlayerControlPolicy} and a shared verb that
+     * enforced neither. The ladder now lives in {@link SpellVerb#refusalFor}, the sim's own, and
+     * this translates the {@link ReasonCode} it returns into the sentence a player reads. The two
+     * cannot disagree about WHETHER a press is refused, because there is only one of them.
      */
     public static String refusal(ActorRegistry registry, SpellRegistry spells,
             SkillTrackRegistry tracks, Actor caster, int spellRaw, long tick) {
@@ -89,20 +95,21 @@ public final class SpellAvailability {
             return NO_TARGET;
         }
         SpellDefinition spell = spells.get(spellRaw);
-        if (!SpellVerb.isLiterate(caster)) {
-            return ILLITERATE;
+        // The body the sim would pick for this press -- the same rule the arming path uses, so
+        // the reach clause below is asked about the body that would actually be linked to.
+        int target = SpellVerb.targetInReach(caster, registry, spell);
+        ReasonCode refusal = SpellVerb.refusalFor(caster, registry, tracks, spells, spellRaw,
+                target, tick);
+        if (refusal == null) {
+            return null;
         }
-        if (!SpellVerb.canCast(caster, tracks, spells, spellRaw)) {
-            return UNLEARNED_PREFIX + skillName(tracks, spell) + " " + spell.minLevel()
-                    + " for " + spell.displayName() + ".";
-        }
-        long left = cooldownTicksLeft(caster, tick);
-        if (left > 0) {
-            return cooldownLine(left);
-        }
-        if (SpellVerb.targetInReach(caster, registry, spell) == Actor.NONE) {
-            return NO_TARGET;
-        }
-        return null;
+        return switch (refusal) {
+            case CANNOT_READ_A_CRAFTING -> ILLITERATE;
+            case CRAFTING_UNREAD -> UNLEARNED_PREFIX + skillName(tracks, spell) + " "
+                    + spell.minLevel() + " for " + spell.displayName() + ".";
+            case CRAFTING_HAND_LATCHED -> cooldownLine(cooldownTicksLeft(caster, tick));
+            case NO_ROOM_FOR_CRAFTING -> NO_ROOM;
+            default -> NO_TARGET;
+        };
     }
 }

@@ -175,43 +175,22 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
     }
 
     /**
-     * Validates and resolves one crafting intent (Simple Magic). Every refusal the sim can see
-     * — an unknown spell, an unread one, a latched hand, a body out of the link's reach — lands
-     * as the single {@code NO_LINK_TO_TARGET} stamp; the client refuses the ones it can see
-     * BEFORE arming, with the reason that actually applies ({@code SpellAvailability}, the
-     * {@code CullAvailability} lesson).
+     * Resolves one crafting intent (Simple Magic) through the shared verb. This method used to
+     * carry its OWN copy of the level gate, the latch and the reach rule — which is exactly why
+     * {@code SpellVerb.resolveCast} carried none of them, and why the button was safe while the
+     * shared verb was not. It now does one thing the verb cannot: fills in a target the client
+     * did not name, so the keyboard path and the click path resolve identically. Every refusal
+     * and every stamp belongs to {@code SpellVerb.refusalFor}.
      */
     private static void resolveCastIntent(Actor self, ActorContext ctx, int spellRaw,
             int requestedTarget) {
         var spells = ctx.spells();
-        if (!com.trojia.sim.actor.spell.SpellVerb.canCast(self, ctx.skillTracks(), spells,
-                spellRaw) || ctx.tick() < self.castUntilTick()) {
-            self.setLastReasonCode(ReasonCode.NO_LINK_TO_TARGET);
-            return;
-        }
-        var spell = spells.get(spellRaw);
-        int target = requestedTarget == Actor.NONE
-                ? com.trojia.sim.actor.spell.SpellVerb.targetInReach(self, ctx.registry(), spell)
-                : requestedTarget;
-        if (target == Actor.NONE || target < 0 || target >= ctx.registry().size()
-                || !reachable(self, ctx, spell, target)) {
-            self.setLastReasonCode(ReasonCode.NO_LINK_TO_TARGET);
-            return;
+        int target = requestedTarget;
+        if (target == Actor.NONE && spells.isValidRaw(spellRaw)) {
+            target = com.trojia.sim.actor.spell.SpellVerb.targetInReach(self, ctx.registry(),
+                    spells.get(spellRaw));
         }
         com.trojia.sim.actor.spell.SpellVerb.resolveCast(self, ctx, spellRaw, target);
-    }
-
-    /** Whether {@code target} sits inside this crafting's own reach — the canon bridge rule. */
-    private static boolean reachable(Actor self, ActorContext ctx,
-            com.trojia.sim.actor.spell.SpellDefinition spell, int target) {
-        if (spell.targetShape() == com.trojia.sim.actor.spell.TargetShape.SELF) {
-            return target == self.id();
-        }
-        Actor body = ctx.registry().get(target);
-        return !body.isDead()
-                && com.trojia.sim.world.PackedPos.z(body.cell())
-                        == com.trojia.sim.world.PackedPos.z(self.cell())
-                && ActorGeometry.chebyshev(self.cell(), body.cell()) <= spell.reach();
     }
 
     /** The §3.3 satiation context for a roof cell: its {@code (x>>4, y>>4, z)} region id. */
