@@ -98,3 +98,67 @@ COMBINED WORLD HASH: 0xf1d9bdb6b63e9d97
 Recorded from the twin-run gate inside the green full build. The pre-arc number above is
 deliberately NOT re-blessed to this — it is the pre-S8 reference and stays that. Use this one
 when S9 wants to prove a slice of its own was inert.
+
+---
+
+## The Simple Magic drift, on the record
+
+Simple Magic ("the public shelf") drifted the ward. This section says exactly where, in this
+file's own discipline, so a later reader can tell a deliberate step from a regression. The gate
+reports `DRIFT` against the pre-S8 number and that is the expected reading.
+
+### What drifted, and why it had to
+
+Three changes moved the number **by construction**, not by behaviour:
+
+1. **`Actor.hp` is initialised for the first time.** `hp` had been declared, persisted and hashed
+   since the ACTR chunk existed and was never once written — every actor carried 0 and the sheet
+   printed `hp: 0`. The vitality axis is the first thing in the project that ever read it, so it
+   now starts at the type's authored maximum (`Actor` ctor, `this.hp = stats.hp()`). That is one
+   hashed per-actor scalar changing value for all 692 souls. Nothing behavioural moved with it —
+   *nothing read hp before* — and there is no version of the fix that leaves the hash alone.
+2. **Two new persisted frames, appended last.** `ActiveEffects` (96 rows × target/kind/mode/param/
+   magnitude/startTick/endTick) rides the `ActorsSystem` chunk's `serialize`/`load`/`hashInto`,
+   and `Actor.castUntilTick` is a new per-actor scalar in all three. The house rule is that new
+   persisted state appears in the triad in matching order, appended last; growing the hash stream
+   necessarily changes the hash.
+3. **One new skill id (`linkcraft`).** `SkillRawsLoader` keys skills into a `TreeMap`, so the
+   registry is alphabetical — inserting `linkcraft` shifts the raw index of every alphabetically
+   later skill, and skill raw indices are the array layout `skillTracks` persists and hashes (the
+   skill count is a framing guard on load). This is the `Jobs.ALL` ordinal case S8 recorded, one
+   raws file over.
+
+None of the three can be measured away, and none is a behaviour change hiding in a number.
+
+### What was proved INERT
+
+**The soak has no player in it, and no AI works a crafting.** The whole cast path is therefore
+unreached across 15,000 ticks: `SpellVerb` is never called, `ActiveEffects.tick` sweeps 96 free
+rows and writes nothing, and the spell registry is bake-immutable, never persisted and never
+hashed. The Simple Magic report block in the soak prints `lingering rows live: 0/96` for exactly
+that reason — that is the honest reading, not a hidden failure.
+
+Which is precisely why `CraftingDeterminismTest` exists beside the gate rather than relying on
+it: it drives a cast tape through two independent builds of one seed in lockstep and demands the
+hardened ACTORS hash match at every 500-tick checkpoint, then runs a third build with the tape
+removed and demands the hash **differ** — so a green soak cannot mean the magic never fired.
+
+**Round 3 (the correctness round) is inert against round 2 by construction.** Every fix in it is
+either unreachable without a caster (the shared verb's refusal ladder, the mend arithmetic) or
+provably identity-preserving on the shipped content: the cost model widened to `long` and
+saturates at a ceiling no shipped resist approaches (the whole shelf sits under 60), and the new
+unbridged tax on the area axis is charged only when `areaRadius > 0`, which no shipped crafting
+authors. The loader's new skill-key validation accepts every shipped row unchanged. This is a
+construction argument, not a second measurement — stated as such.
+
+### The post-Simple-Magic number
+
+```
+at commit 788c779 + round 3, 15,000 ticks, 692 souls
+COMBINED WORLD HASH: 0x4483dbe6d7ebd9e1
+```
+
+Recorded from the twin-run gate inside the green full build (`run A` and `run B` identical, report
+text byte-identical). The pre-S8 number at the top of this file is **not** re-blessed to it — that
+one is the pre-arc reference and stays that. Use this one when a later slice wants to prove itself
+inert against the ward as Simple Magic left it.

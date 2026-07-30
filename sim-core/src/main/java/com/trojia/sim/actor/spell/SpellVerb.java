@@ -78,11 +78,28 @@ public final class SpellVerb {
      */
     public static boolean canCast(Actor self, SkillTrackRegistry tracks, SpellRegistry spells,
             int spellRaw) {
-        if (!spells.isValidRaw(spellRaw) || self.isDead() || !isLiterate(self)) {
-            return false;
+        return bodyRefusal(self, tracks, spells, spellRaw) == null;
+    }
+
+    /**
+     * The target-free prefix of {@link #refusalFor}: the rules about this BODY and this
+     * CRAFTING, with nothing to say about where anybody is standing or how long ago the last
+     * link closed. Both the probe above and the full ladder run it, so the level gate and the
+     * literacy gate exist once rather than in two copies that can drift apart.
+     */
+    private static ReasonCode bodyRefusal(Actor self, SkillTrackRegistry tracks,
+            SpellRegistry spells, int spellRaw) {
+        if (!spells.isValidRaw(spellRaw) || self.isDead()) {
+            return ReasonCode.NO_LINK_TO_TARGET;
+        }
+        if (!isLiterate(self)) {
+            return ReasonCode.CANNOT_READ_A_CRAFTING;
         }
         SpellDefinition spell = spells.get(spellRaw);
-        return tracks.level(self.id(), tracks.rawOfSkill(spell.skillKey())) >= spell.minLevel();
+        if (tracks.level(self.id(), tracks.rawOfSkill(spell.skillKey())) < spell.minLevel()) {
+            return ReasonCode.CRAFTING_UNREAD;
+        }
+        return null;
     }
 
     /** Whether this body belongs to a faction that reads (the class doc's literacy gate). */
@@ -122,20 +139,14 @@ public final class SpellVerb {
     public static ReasonCode refusalFor(Actor self, ActorRegistry registry,
             SkillTrackRegistry tracks, SpellRegistry spells, int spellRaw, int targetId,
             long tick) {
-        if (!spells.isValidRaw(spellRaw) || self.isDead()) {
-            return ReasonCode.NO_LINK_TO_TARGET;
-        }
-        if (!isLiterate(self)) {
-            return ReasonCode.CANNOT_READ_A_CRAFTING;
-        }
-        SpellDefinition spell = spells.get(spellRaw);
-        if (tracks.level(self.id(), tracks.rawOfSkill(spell.skillKey())) < spell.minLevel()) {
-            return ReasonCode.CRAFTING_UNREAD;
+        ReasonCode body = bodyRefusal(self, tracks, spells, spellRaw);
+        if (body != null) {
+            return body;
         }
         if (tick < self.castUntilTick()) {
             return ReasonCode.CRAFTING_HAND_LATCHED;
         }
-        if (!inReach(self, registry, spell, targetId)) {
+        if (!inReach(self, registry, spells.get(spellRaw), targetId)) {
             return ReasonCode.NO_LINK_TO_TARGET;
         }
         return null;

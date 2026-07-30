@@ -66,7 +66,13 @@ import java.util.TreeMap;
  * than its own cadence ({@link EffectPairing#minimumEffectiveTicks}) is refused. Each of those
  * used to load, resolve, be charged its full difficulty and change nothing; each is now a
  * {@link SpellRawsValidationException} naming the exact {@code components[i]} that is wrong and
- * why. A crafting that gets past this loader does something.
+ * why. A crafting that gets past this loader is AUTHORED to do something: every part of it is an
+ * (axis x time-shape) some code in this sim actually reads, at a duration long enough for that
+ * code to reach it. That is a LOAD-time guarantee about the row, not a runtime promise about a
+ * cast — a fizzle is designed to change nothing, and a body already on
+ * {@link ActiveEffects#VITALITY_FLOOR} or already at
+ * {@link ActiveEffects#ATTRIBUTE_MODIFIER_LIMIT} absorbs what lands on it. What is unauthorable
+ * is a crafting that is a no-op BY CONSTRUCTION.
  *
  * <p>{@code canonAnchor}, {@code provenance} and {@code notes} are
  * documentation-only and ignored — the materials/skills raws convention, and the project's way

@@ -150,8 +150,18 @@ difficulty, toasted "the link opens; it takes" and changed nothing at all. Two m
 the same without being illegal: a trickle authored under one dose period delivered zero doses,
 and a magnitude of 0 consumed a persisted slot. All of them are now refused at construction with
 a named error naming the exact `components[i]`. The rule the system can now state honestly is:
-**a crafting that gets past the loader does something.** In a vocabulary built to be composed
-from, that is the property everything else depends on.
+**a crafting that gets past the loader is AUTHORED to do something** — every part of it is an
+(axis × time-shape) some code in this sim actually reads, at a duration long enough for that
+code to reach it. In a vocabulary built to be composed from, that is the property everything
+else depends on.
+
+That is a **load-time** guarantee, and it is worth saying what it is not. Whether a given CAST
+changes anything is the check's business: a fizzle is designed to change nothing, and it is the
+common outcome for a novice. Nor does the guarantee promise a visible delta — a body already on
+the vitality floor absorbs a wound, a body at full health absorbs a mend, and an actor already
+at `ATTRIBUTE_MODIFIER_LIMIT` absorbs another nudge. What the loader guarantees is that no
+crafting is a no-op *by construction*, which is the version of the claim the refusals actually
+support.
 
 ---
 
@@ -212,6 +222,20 @@ These are the load-bearing readings. Each is defensible; none is stated outright
   points yet, so an unmended body is a number on the character sheet rather than a bleed with
   consequences — and `VITALITY_FLOOR` guarantees it can never become one. When something does
   start reading hp, natural regeneration is its problem to design, not magic's to fake.
+
+- **No live-sum stack limit on TEMPERATURE, and that is an asymmetry worth naming.** The
+  ATTRIBUTE axis is bounded twice — the loader refuses an authored magnitude past
+  `ATTRIBUTE_MODIFIER_LIMIT`, and `attributeModifier` clamps the LIVE SUM to it, so stacking
+  rows cannot walk past the bound. `temperatureOffsetDeciK` has no equivalent clamp: it returns
+  the raw sum of every held row on a body, so N craftings of +15 read as +15N. The argument that
+  covers it is that a single big offset prices itself out through `SpellCost` — which is true,
+  and now provably true at every magnitude — but that argument prices ONE crafting, not a stack
+  of cheap ones. Today the exposure is bounded by things that are not the design: the cast latch,
+  the 96-row table, and the fact that only the played actor casts at all. Nothing reads the
+  offset except warmth's REST payment, so the worst available outcome is a fast-resting docker.
+  **Left as-is deliberately** — the limit would be an invented balance number of exactly the kind
+  §2 says needs blessing, and picking one unblessed is worse than naming the gap. If the thermal
+  system in ARCHITECTURE §3 ever lands, this is the first thing it has to answer.
 
 - **No Flame of Mercolas — anywhere.** No spell row, no shelf entry, no button on the bar. The
   absence is the design and it is the most deliberate thing in this pass; the reasoning is §5.5,

@@ -518,7 +518,9 @@ final class SpellcraftTest {
      * proves the five dead pairings can no longer be authored; this proves the four that CAN be
      * authored all reach live sim state through the real verb, at the shortest duration the
      * pairing table lets them carry. Between the two files the system can state the property it
-     * is built on: <b>a crafting that gets past the loader does something.</b>
+     * is built on: <b>a crafting that gets past the loader is authored to do something.</b> That
+     * is a LOAD-time property of the row -- a fizzle still changes nothing, and so does a wound
+     * on a body already at the vitality floor.
      *
      * <p>Each of the four is authored here as raws text at its own minimum, cast into a wired
      * sim, and then read back through the function the rest of the game reads it through — hit
