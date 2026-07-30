@@ -49,6 +49,12 @@ public enum IconKey {
     // Simple Magic (the craftings bar): X repeats the last crafting worked. The bar itself is
     // clicked, so the mouse glyph carries it on the legend beside this one.
     X("keyboard_x.png"),
+    // The first-person view (2026-07-29): V switches between the tile view and the driven
+    // actor's own eyes, PageUp/PageDown crane the horizon up and down, Shift turns fast.
+    V("keyboard_v.png"),
+    PAGE_UP("keyboard_page_up.png"),
+    PAGE_DOWN("keyboard_page_down.png"),
+    SHIFT("keyboard_shift.png"),
     MOUSE_LEFT_CLICK("mouse_left.png");
 
     private final String fileName;

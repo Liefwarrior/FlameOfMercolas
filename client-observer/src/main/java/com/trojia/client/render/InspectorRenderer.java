@@ -145,9 +145,25 @@ public final class InspectorRenderer {
      */
     public void draw(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
             InspectorState state, int z) {
+        draw(batch, font, icons, camera, state, z, true);
+    }
+
+    /**
+     * As above, with the world-space selection highlight suppressible.
+     *
+     * <p>The sheet and the feed are panels and belong on screen whichever camera is looking.
+     * The highlight is not: it is a frame drawn around a <em>tile</em>, at
+     * {@link MapCamera}'s screen position for it, and in the first-person view that position
+     * means nothing — it lands wherever the hidden tile camera happens to be pointing and
+     * reads as a reticle floating in mid-air.
+     */
+    public void draw(SpriteBatch batch, BitmapFont font, IconAtlas icons, MapCamera camera,
+            InspectorState state, int z, boolean worldHighlight) {
         sheetBounds = null;
         eventLogBounds = null;
-        drawSelectionHighlight(batch, font, camera, state, z);
+        if (worldHighlight) {
+            drawSelectionHighlight(batch, font, camera, state, z);
+        }
         drawSheet(batch, font, icons, camera, state);
         drawEventLog(batch, font, icons, camera, state);
         font.getData().setScale(1f);

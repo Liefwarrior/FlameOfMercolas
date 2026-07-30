@@ -45,14 +45,26 @@ import java.util.Locale;
  *  111 center=75,105     # center camera on tile
  *  112 z=12              # z-level scrub (clamped)
  *  120 shot=C:/tmp/a.png # capture this frame's framebuffer to a PNG
+ *  130 fpv               # the V key: toggle first person (needs a driven actor)
+ *  131 turn=90           # turn the view yaw, compass degrees, positive clockwise
+ *  132 step=1,0          # HELD look-relative walk: forward,strafe each in -1/0/1
+ *  160 step=0,0          # release it
+ *  170 look=-160         # crane the horizon: negative looks down, 0 recentres
+ *  180 face=0            # point the view at an ABSOLUTE bearing (0 north, 90 east)
  * </pre>
+ *
+ * <p>The three first-person verbs exist for the same reason every other verb here does: so the
+ * switch, the stride and the turn are reproducible with no human hands — a tape can enter first
+ * person, face a known bearing, walk a known number of tiles and {@code shot=} the frame, and
+ * two runs of it produce the same picture.
  */
 public final class ObserverScript {
 
     /** The verb vocabulary. Unknown verbs fail the parse loudly (never silently skipped). */
     public enum Verb {
         SELECT, FOLLOW, PLAY, HOLD, TALK, TOPIC, PICKPOCKET, EAT, CLIMB, JOURNAL, MASTERS,
-        FILTER, PLATES, ZOOM, CENTER, Z, SHOT, FISH, CULL, SELL, CAST
+        FILTER, PLATES, ZOOM, CENTER, Z, SHOT, FISH, CULL, SELL, CAST,
+        FPV, TURN, STEP, LOOK, FACE
     }
 
     /** One scripted action: the frame it fires on, its verb, and the raw argument text. */

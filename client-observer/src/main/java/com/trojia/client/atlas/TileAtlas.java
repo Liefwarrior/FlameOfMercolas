@@ -24,8 +24,14 @@ import com.badlogic.gdx.utils.Disposable;
  * charge-stop axis): variety is a presentation concern resolved GL-side, not a keying input.
  * A pack that ships one cell per name (the procedural placeholder) reports {@code variantCount
  * == 1} and every {@code region(name, v)} returns that single cell.
+ *
+ * <p><b>The GL-free half is {@link RegionCatalog}.</b> {@code contains}, {@code variantCount}
+ * and {@code variantPattern} answer questions about the <em>pack</em>, not about textures, and
+ * they are what a draw <em>plan</em> needs; they live on {@link RegionCatalog} so the shared
+ * tile-art resolution chain ({@link com.trojia.client.render.TilePlan}) can be exercised
+ * headlessly by every view. This interface adds the texture lookups on top.
  */
-public interface TileAtlas extends Disposable {
+public interface TileAtlas extends RegionCatalog, Disposable {
 
     /**
      * The first (variant 0) texture region for a region name — the single-cell accessor
@@ -49,24 +55,6 @@ public interface TileAtlas extends Disposable {
      * @throws IllegalArgumentException if the name has no cell
      */
     TextureRegion region(String regionName, int variantIndex);
-
-    /**
-     * How many interchangeable cells back {@code regionName}: {@code >= 1} for a known name
-     * (one for a single-cell pack), {@code 0} for an unknown name.
-     */
-    int variantCount(String regionName);
-
-    /**
-     * How the renderer picks which variant cell of {@code regionName} to draw per tile
-     * (TILE-ART-SPEC section 12). Defaults to {@link VariantPattern#HASH} — the position
-     * scatter every existing pack uses — so a single-cell placeholder pack (whose regions
-     * report {@code variantCount == 1} and always draw variant 0 regardless) needs no override.
-     * A sheet pack overrides this for regions its {@code variantPatterns} map tags
-     * {@code "periodic"} (the laid-paver sidewalk).
-     */
-    default VariantPattern variantPattern(String regionName) {
-        return VariantPattern.HASH;
-    }
 
     /**
      * A cosmetic variant of a region name drawn from a precomputed depth-blur level — the
@@ -98,7 +86,4 @@ public interface TileAtlas extends Disposable {
     default int blurLevelCount() {
         return 1;
     }
-
-    /** Whether {@code regionName} has a cell in this atlas. */
-    boolean contains(String regionName);
 }

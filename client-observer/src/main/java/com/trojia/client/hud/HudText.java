@@ -35,6 +35,20 @@ public final class HudText {
         return String.format("z=%d  zoom=%dx", z, zoom);
     }
 
+    /**
+     * The first-person orientation readout: which band the eye is standing on, and where it is
+     * looking. Absolute world z, never authored-relative — the docks' authored {@code z:+11}
+     * quayside is band 19 — because a readout that is eight bands out looks perfectly plausible
+     * and is completely wrong.
+     *
+     * @param band    the absolute world z the driven actor is standing on
+     * @param point   the eight-point compass label
+     * @param bearing compass degrees, 0 north
+     */
+    public static String eyeLine(int band, String point, int bearing) {
+        return String.format("eye z=%d  facing %-2s %03d", band, point, bearing);
+    }
+
     /** Displayed minutes in a day: the {@link DailyRhythm#DAY}-tick sim day reads as 24h. */
     private static final long MINUTES_PER_DAY = 24 * 60;
 
@@ -124,6 +138,11 @@ public final class HudText {
      * third line while an actor is being driven. Movement is deliberately absent
      * ({@code WASD} already reads as movement from the nav line's pan group being
      * suppressed); this line carries the VERBS.
+     *
+     * <p><b>This is the line the anti-stale guard checks.</b> Every key a play-mode input class
+     * binds and can actually be pressed while the tile view is up has to be here — see
+     * {@code HudTextTest}, and see {@link #firstPersonKeybindingTokens} for the one narrow
+     * category that is allowed to live on the other line instead.
      */
     public static List<HudToken> playModeKeybindingTokens() {
         return List.of(
@@ -143,9 +162,47 @@ public final class HudText {
                 HudToken.icon(IconKey.X), HudToken.text(" repeat   "),
                 HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
                 HudToken.text(" climb   "),
+                // The turn keys are LIVE ON THE MAP (FirstPersonInput.pollTurn runs from the
+                // tile view too, so the facing wedge is something you aim before you press V).
+                // They shipped in round 2 on no screen while driving, and the anti-stale guard
+                // was widened to let that through instead of the legend being corrected. They
+                // belong here, on the line that is actually in front of the player.
+                HudToken.icon(IconKey.ARROW_LEFT), HudToken.icon(IconKey.ARROW_RIGHT),
+                HudToken.text(" turn   "),
+                HudToken.icon(IconKey.SHIFT), HudToken.text(" turn fast   "),
                 HudToken.icon(IconKey.I), HudToken.text(" disguise   "),
                 HudToken.icon(IconKey.J), HudToken.text(" journal   "),
+                // The switch has to be findable from the map, or nobody ever presses it.
+                HudToken.icon(IconKey.V), HudToken.text(" first person   "),
                 HudToken.icon(IconKey.P), HudToken.text(" release"));
+    }
+
+    /**
+     * The legend shown in place of the verb line while the first-person view is up. The verbs
+     * themselves do not change — a stair is a stair from either camera — but the keys that
+     * mean something different do, and those are the ones a player needs told: WASD is now
+     * forward and strafe relative to where you are looking rather than north and east, and
+     * the left/right arrows turn instead of scrubbing floors.
+     *
+     * <p>This line is <b>not</b> a place to park a binding that the map-side legend ought to
+     * carry. It only gets to be the sole home of a key that <em>does nothing at all</em> until
+     * this frame is up — today that is exactly {@code PageUp}/{@code PageDown}, the look
+     * keys — and {@code HudTextTest} enforces both halves of that: the category is named
+     * explicitly, and every key in it is checked against the input sources to prove it really
+     * is unreachable from the tile view.
+     */
+    public static List<HudToken> firstPersonKeybindingTokens() {
+        return List.of(
+                HudToken.icon(IconKey.W), HudToken.icon(IconKey.A), HudToken.icon(IconKey.S),
+                HudToken.icon(IconKey.D), HudToken.text(" walk   "),
+                HudToken.icon(IconKey.ARROW_LEFT), HudToken.icon(IconKey.ARROW_RIGHT),
+                HudToken.text(" turn   "),
+                HudToken.icon(IconKey.SHIFT), HudToken.text(" turn fast   "),
+                HudToken.icon(IconKey.PAGE_UP), HudToken.icon(IconKey.PAGE_DOWN),
+                HudToken.text(" look   "),
+                HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
+                HudToken.text(" climb   "),
+                HudToken.icon(IconKey.V), HudToken.text(" back to the map"));
     }
 
     /** {@link #purse}'s "no bank account behind this hand" sentinel for {@code royals}. */

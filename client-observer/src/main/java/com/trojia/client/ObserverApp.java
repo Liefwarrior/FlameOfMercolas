@@ -23,6 +23,17 @@ import com.trojia.client.boot.RepoPaths;
 import com.trojia.client.camera.FollowZSnap;
 import com.trojia.client.camera.MapCamera;
 import com.trojia.client.face.FaceArchetypes;
+import com.trojia.client.fpv.CellActorIndex;
+import com.trojia.client.fpv.CompassRenderer;
+import com.trojia.client.fpv.EyeProjection;
+import com.trojia.client.fpv.FacingWedge;
+import com.trojia.client.fpv.FirstPersonCamera;
+import com.trojia.client.fpv.FirstPersonPlanner;
+import com.trojia.client.fpv.FirstPersonRenderer;
+import com.trojia.client.fpv.ViewFacing;
+import com.trojia.client.fpv.ViewModeState;
+import com.trojia.client.fpv.ViewQuad;
+import com.trojia.client.fpv.WorldCellSight;
 import com.trojia.client.face.FaceGen;
 import com.trojia.client.face.InspectorFaces;
 import com.trojia.client.hud.HudPanel;
@@ -33,6 +44,7 @@ import com.trojia.client.hud.icons.IconTextLine;
 import com.trojia.client.input.CameraInput;
 import com.trojia.client.input.ClimbInput;
 import com.trojia.client.input.EatInput;
+import com.trojia.client.input.FirstPersonInput;
 import com.trojia.client.input.CullInput;
 import com.trojia.client.input.SellInput;
 import com.trojia.client.input.SpellInput;
@@ -155,6 +167,10 @@ public final class ObserverApp extends ApplicationAdapter {
     /** Scripted held-movement state (the {@code hold=dx,dy} verb), applied every frame. */
     private int scriptMoveDx;
     private int scriptMoveDy;
+    /** Scripted held first-person walk (the {@code step=forward,strafe} verb): the same
+     * held-key semantics as {@code hold}, but look-relative, so a tape can walk a street. */
+    private int scriptForward;
+    private int scriptStrafe;
     /** Scripted hold-N nameplates toggle (the {@code plates} verb). */
     private boolean scriptPlatesHeld;
     /** A {@code shot=path} scheduled for the current frame; captured after the batch ends. */
@@ -166,6 +182,18 @@ public final class ObserverApp extends ApplicationAdapter {
 
     private MapCamera camera;
     private ZLevelCursor zLevel;
+    // THE SECOND VIEW (2026-07-29). A camera is a way of looking at the world, not a fact in
+    // it: everything below reads the same deterministic tick stream the tile view reads, and
+    // writes nothing. The tile view stays the verification source of truth and stays running
+    // underneath — the switch is a cross-fade between two readings of one world, not a mode
+    // the simulation knows about.
+    private final ViewModeState viewMode = new ViewModeState();
+    private final FirstPersonCamera eye = new FirstPersonCamera();
+    private final CompassRenderer compass = new CompassRenderer();
+    private FirstPersonPlanner fpvPlanner;
+    private FirstPersonRenderer fpvRenderer;
+    private WorldCellSight cellSight;
+    private CellActorIndex fpvActors;
     private final FollowZSnap followZSnap = new FollowZSnap();
     private final QuitGuard quitGuard = new QuitGuard();
     private TileAtlas atlas;
@@ -382,6 +410,13 @@ public final class ObserverApp extends ApplicationAdapter {
         // source map = an unlabelled ward, never a boot failure.
         this.placeSignRenderer = new PlaceSignRenderer(
                 loadPlaceSigns(fixture), depthVision);
+        // The first-person view's GL-free half: its OWN tile cursor (borrowing the renderer's
+        // or DepthVision's would move their position out from under them mid-frame) and the
+        // shared TilePlan art chain, so a cell resolves to the same region, the same cosmetic
+        // variant and the same tint whichever camera asks.
+        this.cellSight = new WorldCellSight(world);
+        this.fpvPlanner = new FirstPersonPlanner(loaded.materials(), loaded.fluids(),
+                artResolver, atlas);
 
         if (populated) {
             this.population = fixture == Fixture.DOCKS
@@ -399,6 +434,10 @@ public final class ObserverApp extends ApplicationAdapter {
                     Gdx.files.absolute(spriteSheetFile.toAbsolutePath().toString()));
             this.actorRenderer = new ActorRenderer(population.registry(), spriteIndex,
                     spriteSheet, lampGlow, depthVision);
+            // Same atlas, same sprite sheet, same lamp map as the tile view — the first-person
+            // frame is a second reading of one world, not a second world.
+            this.fpvRenderer = new FirstPersonRenderer(atlas, spriteSheet, lampGlow);
+            this.fpvActors = new CellActorIndex(population.registry(), spriteIndex);
             // Fishing-spot overlay (S6): the sim-side registry drawn in world space,
             // z-order terrain -> water -> SPOTS -> actors. Omniscient while observing;
             // in Play mode only the played soul's sim-confirmed-perceived spots draw.
@@ -574,6 +613,14 @@ public final class ObserverApp extends ApplicationAdapter {
 
         float deltaSeconds = Gdx.graphics.getDeltaTime();
         boolean playModeActive = playMode != null && playMode.active();
+        // THE SWITCH (V). First person needs eyes to look through, so it is only available
+        // while an actor is driven; asking for it without one says so rather than doing
+        // nothing. Toggling never touches the simulation — it changes which of two readings
+        // of the same tick stream is on screen.
+        if (population != null && Gdx.input.isKeyJustPressed(Input.Keys.V)) {
+            applyViewToggle();
+        }
+        boolean firstPerson = viewMode.firstPersonVisible();
         // Play mode repurposes WASD to drive the played actor (PLAY-MODE-SPEC.md §5.1) and —
         // Sprint 4 "the climb" — Up/Down to climb stairs, so camera panning AND z-scrub are
         // suppressed while it is active (the follow-camera owns the viewed floor); zoom
@@ -593,8 +640,11 @@ public final class ObserverApp extends ApplicationAdapter {
                     population.system().spells(), population.system().skillTracks(),
                     spellButtons, toasts, spellFeedbackTracker, driver.currentTick(),
                     camera.viewportHeightPx(), lastCast);
+            // In first person WASD means forward/strafe relative to the look direction, so the
+            // world-axis read is suppressed here and FirstPersonInput does the rotating — both
+            // ending at PlayModeInput.applyMovement, the one route into the sim's move intent.
             boolean clickConsumedByPlayMode = PlayModeInput.poll(playMode, inspector, camera,
-                    population.registry(), zLevel.z());
+                    population.registry(), zLevel.z(), !firstPerson);
             if (!clickConsumedByPlayMode && !clickConsumedBySpellBar) {
                 // Depth-aware click-to-inspect (S4 EPIC): same-z actor wins; an empty tile
                 // falls through to the visible below-z actor. Play-mode verb picks above
@@ -628,6 +678,18 @@ public final class ObserverApp extends ApplicationAdapter {
             // The SELL verb (S8): B turns carried materials into Royals at a counter in reach
             // through the sim's shared exchange; outcome toast via SellFeedbackTracker.
             SellInput.poll(playMode, population.registry(), toasts, sellFeedbackTracker);
+            // First-person look and step. Left/Right turn the client-side view yaw (never
+            // Actor.setFacing — facing is serialized sim state the twin-run gate compares);
+            // PageUp/PageDown shear the horizon; WASD steps relative to where you are looking.
+            if (firstPerson) {
+                FirstPersonInput.poll(eye, playMode, population.registry(),
+                        deltaSeconds, camera.viewportHeightPx());
+            } else {
+                // The turn keys stay live on the map, so the facing wedge is something you aim
+                // before you press V rather than a read-out you discover afterwards. Arrow-key
+                // panning is already suppressed while an actor is driven, so nothing collides.
+                FirstPersonInput.pollTurn(eye, playMode, deltaSeconds);
+            }
             // The JOURNAL toggle (S3): J opens/closes the quest pane (J was unbound; the
             // design's verify-free-then-bind rule). Shares the pane with the masters board.
             if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
@@ -666,6 +728,10 @@ public final class ObserverApp extends ApplicationAdapter {
                     PlayModeInput.applyMovement(playMode, population.registry(),
                             scriptMoveDx, scriptMoveDy);
                 }
+                if (scriptForward != 0 || scriptStrafe != 0) {
+                    FirstPersonInput.applyMove(eye, playMode, population.registry(),
+                            scriptForward, scriptStrafe);
+                }
                 applyScriptFrame(framesRendered);
             }
         }
@@ -679,6 +745,11 @@ public final class ObserverApp extends ApplicationAdapter {
             driver.update(deltaSeconds);
         }
         applyFollowCamera();
+        trackEye(deltaSeconds);
+        // The transition dollies the tile camera toward max zoom on the way in and back out
+        // again on the way out, so the frame the cross-fade lands on is already showing the
+        // patch of ground you are about to be standing on.
+        camera.setZoom(viewMode.dollyZoom(camera.zoom()));
 
         projection.setToOrtho2D(0, 0, camera.viewportWidthPx(), camera.viewportHeightPx());
         batch.setProjectionMatrix(projection);
@@ -687,13 +758,17 @@ public final class ObserverApp extends ApplicationAdapter {
         // the same DayPhase boundaries as the HUD clock tag. Scene draws only — the HUD
         // below stays untinted (both renderers restore the batch to white).
         AmbientLight ambient = AmbientLight.at(driver.currentTick());
-        renderer.draw(batch, camera, zLevel.z(), ambient);
-        if (fishingSpotRenderer != null) {
-            // Between water and actors (spec z-order): a fisher stands IN the ripple.
-            fishingSpotRenderer.draw(batch, camera, zLevel.z(), icons.whitePixel());
-        }
-        if (actorRenderer != null) {
-            actorRenderer.draw(batch, camera, zLevel.z(), ambient);
+        boolean drawTopDown = viewMode.topDownVisible();
+        if (drawTopDown) {
+            renderer.draw(batch, camera, zLevel.z(), ambient);
+            if (fishingSpotRenderer != null) {
+                // Between water and actors (spec z-order): a fisher stands IN the ripple.
+                fishingSpotRenderer.draw(batch, camera, zLevel.z(), icons.whitePixel());
+            }
+            if (actorRenderer != null) {
+                actorRenderer.draw(batch, camera, zLevel.z(), ambient);
+            }
+            drawFacingWedge();
         }
         // Place labels: the door plaques and the street fingerposts are world furniture,
         // drawn just after the actors (a figure in a doorway stands UNDER their shop's sign)
@@ -706,7 +781,7 @@ public final class ObserverApp extends ApplicationAdapter {
         // nothing. Playing: the driven actor's OWN tile, so the sign speaks when you walk up
         // to the door instead of whenever the mouse drifts. The overlay applies the matching
         // reach (3 tiles free-camera, 1 tile doorway).
-        if (placeSignRenderer != null && !placeSignRenderer.isEmpty()) {
+        if (drawTopDown && placeSignRenderer != null && !placeSignRenderer.isEmpty()) {
             int attentionX;
             int attentionY;
             boolean attentionLive;
@@ -724,6 +799,10 @@ public final class ObserverApp extends ApplicationAdapter {
                     attentionX, attentionY, attentionLive, playModeActive, ambient);
         }
 
+        if (viewMode.firstPersonVisible() && fpvRenderer != null) {
+            drawFirstPerson(ambient);
+        }
+
         // DF-style HUD block (Behavior 2 of this pass): a solid black panel behind the nav +
         // clock lines — plus, on populated fixtures, the VERB legend line (Sprint 4 playtest
         // fix: the social-verb surface was undiscoverable), the district pulse, and, while an
@@ -734,8 +813,15 @@ public final class ObserverApp extends ApplicationAdapter {
         hudLines.add(HudText.describeTokens(zLevel.z(), camera.zoom()));
         hudLines.add(HudText.describeTimeTokens(driver.currentTick(), driver.speed().name()));
         if (population != null) {
-            hudLines.add(playModeActive ? HudText.playModeKeybindingTokens()
-                    : HudText.observerVerbKeybindingTokens());
+            // While driving, the verb line; while driving in first person, the line that says
+            // which keys just changed meaning (WASD is now look-relative, the arrows turn).
+            if (!playModeActive) {
+                hudLines.add(HudText.observerVerbKeybindingTokens());
+            } else if (viewMode.settledFirstPerson()) {
+                hudLines.add(HudText.firstPersonKeybindingTokens());
+            } else {
+                hudLines.add(HudText.playModeKeybindingTokens());
+            }
             // S8 payoff legibility: Royals (banked) and Coins (carried) are different money
             // and a player has to be able to tell a sale from a pickpocketing.
             if (playModeActive) {
@@ -744,6 +830,15 @@ public final class ObserverApp extends ApplicationAdapter {
                                 population.items(), population.system().bankAccounts()),
                         com.trojia.client.inspect.Purse.coinsOf(playMode.playedActorId(),
                                 population.items())));
+            }
+            // Orientation, in both modes: the band under the eye and the bearing it is
+            // looking along. The band is the whole point of the Z-axis being legible —
+            // "z=19" on the quay and "z=22" on a roof is how a climb reads as a climb in
+            // text as well as in the picture.
+            if (playModeActive && eye.isPlaced()) {
+                hudLines.add(List.of(HudToken.dimText(HudText.eyeLine(eye.band(),
+                        ViewFacing.compassPoint(eye.yaw()),
+                        Math.round(ViewFacing.compassDegrees(eye.yaw()))))));
             }
             // S6 motivation legibility: the district pulse — a one-line living census
             // (working / duty-out / starving / held / confined / dead), recomputed live.
@@ -767,10 +862,15 @@ public final class ObserverApp extends ApplicationAdapter {
                     camera.viewportHeightPx() - HUD_MARGIN_PX - i * lineHeight, hudLines.get(i));
         }
         if (inspectorRenderer != null) {
-            inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());
+            // The sheet and the feed belong on screen in both modes; the world-space tile
+            // highlight belongs only to the camera that has tiles on screen.
+            inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z(),
+                    drawTopDown);
         }
         if (population != null && !spellButtons.isEmpty()) {
-            // The craftings bar, drawn after the sheet so it can dock against its edge.
+            // The craftings bar, drawn after the sheet so it can dock against its edge. It is a
+            // screen-space column, so it survives the first-person switch: a driven actor can
+            // still work a crafting through its own eyes.
             spellBarRenderer.draw(batch, font, icons, population.system().spells(),
                     population.system().skillTracks(), population.registry(),
                     population.system().activeEffects(),
@@ -779,14 +879,14 @@ public final class ObserverApp extends ApplicationAdapter {
                     spellButtons, camera.viewportWidthPx(), camera.viewportHeightPx(),
                     inspector != null && inspector.hasSelection(), driver.currentTick());
         }
-        if (nameplateRenderer != null) {
+        if (drawTopDown && nameplateRenderer != null) {
             // Hover nameplate at the live cursor; hold N to plate every on-screen actor
             // (or the script's `plates` toggle — the tape has no keys to hold).
             nameplateRenderer.draw(batch, font, icons, camera, zLevel.z(),
                     Gdx.input.getX(), Gdx.input.getY(),
                     Gdx.input.isKeyPressed(Input.Keys.N) || scriptPlatesHeld);
         }
-        if (placeSignRenderer != null && !placeSignRenderer.isEmpty()) {
+        if (drawTopDown && placeSignRenderer != null && !placeSignRenderer.isEmpty()) {
             // The one NES pop-up: HUD, not scene — hard-edged, opaque, blocky-lettered, never
             // dimmed and never faded. It snaps on with the plan and snaps off with it.
             //
@@ -822,6 +922,12 @@ public final class ObserverApp extends ApplicationAdapter {
                     mastersOpen ? MastersBoardText.lines(population.system().skillTracks(),
                             population.registry(), population.identity(), mastersSnapshot)
                             : List.of(), "(M close)");
+        }
+        if (playModeActive && eye.isPlaced()) {
+            // Drawn identically in both modes and through the whole cross-fade: the one
+            // element that provably does not move when the picture changes.
+            compass.draw(batch, font, icons.whitePixel(), eye.yaw(),
+                    camera.viewportWidthPx(), camera.viewportHeightPx());
         }
         if (toastRenderer != null) {
             // Toasts age by rendered wall-clock seconds (readable at any sim speed).
@@ -940,8 +1046,140 @@ public final class ObserverApp extends ApplicationAdapter {
                         population.system().spells(), population.system().skillTracks(),
                         population.system().spells().rawOf(action.args().trim()),
                         toasts, spellFeedbackTracker, driver.currentTick());
+                case FPV -> applyViewToggle();
+                case TURN -> FirstPersonInput.applyTurn(eye, action.intArgs()[0]);
+                case STEP -> {
+                    int[] fs = action.intArgs();
+                    scriptForward = fs[0];
+                    scriptStrafe = fs[1];
+                }
+                case LOOK -> eye.setLookShear(action.intArgs()[0], camera.viewportHeightPx());
+                case FACE -> eye.setYaw((float) Math.toRadians(action.intArgs()[0] - 90));
             }
         }
+    }
+
+    /** Refused when nothing is being driven: first person needs eyes to look through. */
+    static final String FIRST_PERSON_NEEDS_ACTOR =
+            "Select an actor and press P before switching to first person.";
+
+    /** Which actor the eye is currently seated behind, so a hand-over reseeds the yaw once. */
+    private int eyeActorId = Actor.NONE;
+
+    /**
+     * The V toggle. A no-op-with-an-explanation while nothing is driven; otherwise it starts
+     * the cross-fade. It does not seed the eye — {@link #trackEye} has been doing that since
+     * the moment the actor was taken over, which is why the facing wedge on the map already
+     * showed the direction the first-person frame is about to open on.
+     *
+     * <p>What it does do on the way IN is make the frame open on what the wedge promised:
+     * level the horizon (a shear left over from the last time you were in first person is not
+     * an aim you took, and it re-opens the view staring at the floor) and stop any travel-yaw
+     * swing still running (that swing is the tile view's, and the camera's own contract says
+     * the yaw in first person is the player's alone).
+     */
+    private void applyViewToggle() {
+        if (playMode == null || !playMode.active()) {
+            if (toasts != null) {
+                toasts.add(FIRST_PERSON_NEEDS_ACTOR);
+            }
+            return;
+        }
+        if (viewMode.toggle(camera.zoom()) == ViewModeState.Mode.FIRST_PERSON) {
+            eye.levelTheHorizon();
+            eye.cancelTravelSwing();
+        }
+    }
+
+    /**
+     * THE DECOUPLING, once per frame: hand the eye the cell the sim has actually committed the
+     * driven actor to, and let it ease. The actor is a tile-stepper with an occupancy cap and a
+     * speed gate and none of that changes; the eye is a continuous position that happens to be
+     * on its way there.
+     *
+     * <p>Taking over a new actor seats the eye instantly and seeds the view yaw from that
+     * actor's {@code facing()} — the only time the sim's four-way facing is read into the
+     * continuous yaw, and it is never written back. See {@link FirstPersonCamera}.
+     *
+     * <p>While the tile view is the one on screen the step also aims the yaw, so the facing
+     * wedge drawn on the driven actor turns as it walks. In first person it does not: there the
+     * movement keys are already relative to the yaw, and adopting the travelled direction would
+     * snap the player's aim to the nearest of eight every time they took a step.
+     */
+    private void trackEye(float deltaSeconds) {
+        viewMode.advance(deltaSeconds);
+        if (playMode == null || !playMode.active()) {
+            // Not a hard cut: if the first-person frame is up when the body is let go, it fades
+            // out the way it faded in. Every other mode change in this client is a transition.
+            // The eye keeps hold of the released actor's id until the fade lands, so the body
+            // you were just looking out of does not pop into the middle of its own last frame.
+            viewMode.releaseToTopDown();
+            if (!viewMode.firstPersonVisible()) {
+                eyeActorId = Actor.NONE;
+            } else {
+                // The fade is still showing the first-person frame, so the eye still has to
+                // walk: it was mid-stride when the body was let go, and skipping this froze
+                // the picture solid for the whole 0.34 s while it faded. It reads nothing new
+                // from the sim — it is finishing the ease it already had.
+                eye.advance(deltaSeconds);
+            }
+            return;
+        }
+        int playedId = playMode.playedActorId();
+        Actor played = population.registry().get(playedId);
+        int cell = played.cell();
+        if (playedId != eyeActorId || !eye.isPlaced()) {
+            eyeActorId = playedId;
+            eye.snapTo(PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell),
+                    ViewFacing.yawOfFacing(played.facing()));
+        } else {
+            eye.followCell(PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell),
+                    !viewMode.firstPersonVisible());
+        }
+        eye.advance(deltaSeconds);
+    }
+
+    /**
+     * The arrowhead on the driven actor in the tile view, pointing along the view yaw — half
+     * of what makes the switch survivable (see {@link FacingWedge}). Drawn over the actor
+     * sprite, under every HUD surface.
+     */
+    private void drawFacingWedge() {
+        if (playMode == null || !playMode.active() || !eye.isPlaced()) {
+            return;
+        }
+        int cell = population.registry().get(playMode.playedActorId()).cell();
+        if (PackedPos.z(cell) != zLevel.z()) {
+            return; // the driven actor is on another floor; the wedge belongs with the body
+        }
+        int span = camera.tileSpanPx();
+        float centreX = camera.tileToScreenX(PackedPos.x(cell)) + span / 2f;
+        float centreY = camera.viewportHeightPx()
+                - (camera.tileToScreenY(PackedPos.y(cell)) + span / 2f);
+        FacingWedge.draw(batch, icons.whitePixel(),
+                FacingWedge.corners(centreX, centreY, span, eye.yaw()),
+                com.badlogic.gdx.graphics.Color.toFloatBits(1f, 0.85f, 0.35f, 0.92f));
+    }
+
+    /**
+     * Plans and draws the first-person frame. The plan is a pure function of the tile lanes
+     * and the eye; the renderer below it only looks up textures. Actor positions are re-bucketed
+     * every frame — nothing is cached across a tick, the same no-staleness contract the tile
+     * renderers keep.
+     *
+     * <p>{@link #eyeActorId} is handed to the planner as the actor to hide: it is the body this
+     * frame is being seen out of, and without that the driven actor's own sprite stands in the
+     * middle of its own view for most of every stride (the eye slides between cells while the
+     * sim has already committed the body to the one ahead).
+     */
+    private void drawFirstPerson(AmbientLight ambient) {
+        fpvActors.refresh();
+        EyeProjection projection = EyeProjection.of(eye.eyeX(), eye.eyeY(), eye.eyeHeight(),
+                eye.yaw(), camera.viewportWidthPx(), camera.viewportHeightPx(),
+                EyeProjection.DEFAULT_FOV_DEGREES, eye.lookShearPx());
+        List<ViewQuad> plan = fpvPlanner.plan(projection, eye.band(), cellSight, fpvActors,
+                eyeActorId);
+        fpvRenderer.draw(batch, plan, projection, icons.whitePixel(), ambient, viewMode.blend());
     }
 
     /** Debug/verification aid only: dumps the current framebuffer to a PNG at {@code path}. */
@@ -960,6 +1198,12 @@ public final class ObserverApp extends ApplicationAdapter {
     private static void flipVertically(Pixmap pixmap) {
         int w = pixmap.getWidth();
         int h = pixmap.getHeight();
+        // Blending OFF: drawPixel composites by default, so any pixel the frame left with
+        // alpha below 1 — pooled water, a mid-cross-fade first-person frame — would blend a
+        // mirror image of the screen into itself and read as a rendering bug in the evidence
+        // rather than as the screenshot artifact it is.
+        Pixmap.Blending previous = pixmap.getBlending();
+        pixmap.setBlending(Pixmap.Blending.None);
         for (int y = 0; y < h / 2; y++) {
             for (int x = 0; x < w; x++) {
                 int top = pixmap.getPixel(x, y);
@@ -968,6 +1212,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 pixmap.drawPixel(x, h - 1 - y, top);
             }
         }
+        pixmap.setBlending(previous);
     }
 
     /**
