@@ -41,6 +41,12 @@ sim walking Ditta Pilchard #1 out to the quay under her own AI before she is tak
   tiles out. This is correct perspective and it is what the horizon shear is for, but it is
   worth a decision later: a wider field, or a small default downward bias when the eye is
   standing at an edge with air beyond it.
+- **open: the ward's names are invisible in first person.** The place-sign hanging signs and
+  the NES pop-up are drawn against the tile camera's screen positions, so they are skipped
+  while the first-person frame is up and 39 named doors go back to being anonymous doors —
+  which is the exact defect the S8 pass was opened to fix, reintroduced by a camera that
+  cannot draw them. Not fudged with a screen-space guess: a sign belongs on the door, which
+  means projecting it like any other surface, which is a real piece of work.
 - **open: no top-down inset in first person.** The compass and the `eye z=` readout carry
   bearing and band, which is enough not to get lost, but the survey's suggestion of a small
   corner minimap is still the thing that would make the ward's verticality legible while

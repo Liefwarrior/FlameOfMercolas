@@ -155,17 +155,37 @@ public final class FirstPersonPlanner {
         int eyeCellY = (int) Math.floor(eye.eyeY());
         float maxDepth = DRAW_RADIUS_TILES + 1.5f;
         for (int ring = DRAW_RADIUS_TILES; ring >= 1; ring--) {
-            for (int dx = -ring; dx <= ring; dx++) {
-                maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX + dx, eyeCellY - ring,
+            // WITHIN a ring the order matters too, and it is not free. A sight line crosses
+            // at most two cells of a ring, they are always neighbours in the same edge row or
+            // the same side column, and the farther of the two is always the one further
+            // along that row or column from the eye's own axis. So each group is walked from
+            // its corners inward — which is a distance sort with no sort. The two edge rows
+            // come before the two side columns because the only place a sight line crosses
+            // one of each is at a ring's corner, and there the corner cell (an edge-row cell)
+            // is the farther one.
+            for (int m = ring; m >= 0; m--) {
+                maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX - m, eyeCellY - ring,
                         maxDepth);
-                maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX + dx, eyeCellY + ring,
+                maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX - m, eyeCellY + ring,
                         maxDepth);
+                if (m != 0) {
+                    maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX + m, eyeCellY - ring,
+                            maxDepth);
+                    maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX + m, eyeCellY + ring,
+                            maxDepth);
+                }
             }
-            for (int dy = -ring + 1; dy <= ring - 1; dy++) {
-                maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX - ring, eyeCellY + dy,
+            for (int m = ring - 1; m >= 0; m--) {
+                maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX - ring, eyeCellY - m,
                         maxDepth);
-                maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX + ring, eyeCellY + dy,
+                maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX + ring, eyeCellY - m,
                         maxDepth);
+                if (m != 0) {
+                    maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX - ring, eyeCellY + m,
+                            maxDepth);
+                    maybeColumn(out, eye, eyeBand, sight, actors, eyeCellX + ring, eyeCellY + m,
+                            maxDepth);
+                }
             }
         }
         // The eye's own cell last: nearest, and never frustum-tested (its centre can sit

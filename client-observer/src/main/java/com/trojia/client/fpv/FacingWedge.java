@@ -26,13 +26,18 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 public final class FacingWedge {
 
     /** How far the tip reaches from the tile's centre, as a fraction of the tile span. */
-    private static final float TIP = 0.62f;
+    private static final float TIP = 0.72f;
 
-    /** How far the two base corners sit from the centre, as a fraction of the tile span. */
-    private static final float BASE = 0.26f;
+    /**
+     * How far the two base corners sit from the centre, as a fraction of the tile span.
+     * Together with {@link #SPREAD} this puts the whole chevron <em>ahead</em> of the body
+     * rather than centred on it: a marker that covers the actor it is describing tells you
+     * which way you are pointing at the price of hiding who is pointing.
+     */
+    private static final float BASE = 0.40f;
 
     /** Half-angle of the arrowhead, radians. */
-    private static final float SPREAD = (float) Math.toRadians(140);
+    private static final float SPREAD = (float) Math.toRadians(33);
 
     private FacingWedge() {
     }

@@ -170,6 +170,27 @@ class FirstPersonPlannerTest {
                 "painter's order broken: the far wall must be drawn before the near one");
     }
 
+    /**
+     * Ring order alone is not enough: a sight line can cross two cells of the SAME ring, and
+     * the nearer of the two must still be drawn last. Two walls one tile apart along a
+     * diagonal sight line is the case that catches a naive left-to-right ring walk.
+     */
+    @Test
+    void twoCellsOfOneRingOnOneSightLineAreStillOrderedFarToNear() {
+        FpvScene scene = street();
+        scene.put(36, 33, BAND, TileForm.WALL, FpvScene.OAK);   // ring 4, nearer
+        scene.put(36, 34, BAND, TileForm.WALL, FpvScene.OAK);   // ring 4, farther
+        EyeProjection eye = EyeProjection.of(32.5f, 32.5f,
+                BandGeometry.floorHeight(BAND) + BandGeometry.EYE_HEIGHT,
+                0.36f, W, H, EyeProjection.DEFAULT_FOV_DEGREES, 0f);
+        List<ViewQuad> plan = FpvScene.planner().plan(eye, BAND, scene, ActorSight.empty());
+        int nearer = firstIndexOf(plan, 36, 33, BAND);
+        int farther = firstIndexOf(plan, 36, 34, BAND);
+        assertTrue(nearer >= 0 && farther >= 0, "both same-ring walls should be planned");
+        assertTrue(farther < nearer,
+                "same-ring painter order broken: the farther cell must be drawn first");
+    }
+
     @Test
     void theWholePlanIsOrderedFarToNearByRing() {
         FpvScene scene = street();
@@ -184,6 +205,29 @@ class FirstPersonPlannerTest {
                             + ": " + ring + " after " + previousRing);
             previousRing = ring;
         }
+    }
+
+    @Test
+    void everyQuadKnowsHowFarAwayItIs() {
+        FpvScene scene = street();
+        List<ViewQuad> plan = FpvScene.planner()
+                .plan(eyeAt(32.5f, 32.5f, BAND), BAND, scene, ActorSight.empty());
+        for (ViewQuad quad : plan) {
+            float straightLine = (float) Math.hypot(quad.tileX() + 0.5f - 32.5f,
+                    quad.tileY() + 0.5f - 32.5f);
+            assertTrue(quad.distance() >= straightLine - 1.0f
+                            && quad.distance() <= straightLine + 3.0f,
+                    "reported distance " + quad.distance() + " does not match the cell at "
+                            + quad.tileX() + "," + quad.tileY() + " (" + straightLine + ")");
+        }
+        // And it is monotone with the ring, which is what makes the plan order meaningful.
+        float nearest = Float.MAX_VALUE;
+        float farthest = 0f;
+        for (ViewQuad quad : plan) {
+            nearest = Math.min(nearest, quad.distance());
+            farthest = Math.max(farthest, quad.distance());
+        }
+        assertTrue(farthest > nearest * 2f, "the plan should span a range of distances");
     }
 
     // ------------------------------------------------------------------ the z-axis
