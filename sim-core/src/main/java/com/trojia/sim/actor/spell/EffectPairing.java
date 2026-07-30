@@ -143,17 +143,20 @@ public final class EffectPairing {
      * formatting refusals of its own.
      */
     static String illegalReason(EffectKind kind, EffectMode mode) {
+        // Every clause below is worded so the mode name lands after its noun rather than in
+        // front of it: an enum spliced into an article reads "a INSTANT temperature", and a
+        // refusal a content author has to squint past is only half a refusal.
         String why = switch (kind) {
             case TEMPERATURE -> "body heat is a state a link HOLDS open: a body carries no"
                     + " thermal store, its offset from ambient IS the sum of its live held rows,"
-                    + " so a " + mode + " temperature has nowhere to land";
+                    + " so a temperature worked " + mode + " has nowhere to land";
             case VITALITY -> "a wound is an EVENT, not a state a link holds: hit points are a"
-                    + " written number and nothing in the sim reads a held vitality row, so a "
-                    + mode + " vitality would resolve and change nothing";
+                    + " written number and nothing in the sim reads a held vitality row, so a"
+                    + " vitality worked " + mode + " would resolve and change nothing";
             case ATTRIBUTE -> "attributes are DERIVED from the skill table on every read"
-                    + " (PROGRESSION-SPEC section 5), so there is no field for a " + mode
-                    + " attribute to write; a crafting can only lean on the number while the"
-                    + " link holds";
+                    + " (PROGRESSION-SPEC section 5), so there is no field for an attribute"
+                    + " worked " + mode + " to write; a crafting can only lean on the number"
+                    + " while the link holds";
         };
         return "the " + kind + " axis cannot be worked " + mode + " -- " + why
                 + ". Legal modes for " + kind + ": " + legalModes(kind);
