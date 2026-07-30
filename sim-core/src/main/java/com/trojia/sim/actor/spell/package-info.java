@@ -12,7 +12,7 @@
  * unit a <em>link</em>: "a crafting requires a link between the two entities, normally this
  * would be an arm or a blade" (L459). The physics is
  * Gerik's lecture — heat is the currency (L445), too much of it into one spot simply hurts
- * (L448), distance and magnitude both bleed (L452), many small transfers beat one big one
+ * (L449), distance and magnitude both bleed (L454), many small transfers beat one big one
  * (L457) — and the ceiling is the Tora tower: twenty full crafters pooled make one lit torch
  * flare (L567). A docker warming their hands sits comfortably under that line.
  *

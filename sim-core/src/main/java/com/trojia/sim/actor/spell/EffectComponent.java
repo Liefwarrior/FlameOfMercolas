@@ -45,7 +45,7 @@ public record EffectComponent(EffectKind kind, EffectMode mode, int magnitude, i
 
     /**
      * How much this part actually MOVES, in axis-neutral transfer points — the number the cost
-     * model prices (L452: "the more you transfer the more is lost to nature"). Never 0 for a
+     * model prices (L454: "the more you transfer the more is lost to nature"). Never 0 for a
      * non-zero magnitude: a nudge below one whole point still costs a point.
      *
      * <p><b>Duration is priced on BOTH lingering shapes, not just the trickle.</b> An

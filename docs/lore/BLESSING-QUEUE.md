@@ -105,7 +105,7 @@ it is shipped behind a flag in the raws' own `provenance` fields, the chromatis 
     code that can report one, because that axis is folded into the single function every check in
     the game reads.
 21. **Duration is now priced on held craftings** (`SpellCost.HELD_PERIOD_TICKS = 300`). Canon
-    prices magnitude and distance explicitly (L452) and dose count implicitly (L457); nothing in
+    prices magnitude and distance explicitly (L454) and dose count implicitly (L457); nothing in
     the novel prices a hold, so the constant is invented. It exists because without it a held
     effect cost the same at one tick as at ten thousand, which made the documented claim that an
     unreviewed spell cannot be accidentally strong false for the mode every temperature and

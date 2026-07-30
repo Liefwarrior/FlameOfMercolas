@@ -12,7 +12,7 @@ package com.trojia.sim.actor.spell;
  * <p><b>Canon.</b> There is exactly one operation in the novel's magic — energy moved along a
  * link — and these three are the three places it can land. Gerik heals a wound with "heat
  * energy from the enemies" (L445) and the same transfer into a small part of a body simply
- * "hurts" (L448): warmth and harm are ONE verb with the endpoint changed, which is why
+ * "hurts" (L449): warmth and harm are ONE verb with the endpoint changed, which is why
  * {@link #TEMPERATURE} and {@link #VITALITY} are separate axes rather than separate spells. The
  * third is the royal mage's line at Eric's birth (L98) — untrained magic "can be expressed as
  * unnatural intelligence, or in strength, or reflexes" — i.e. a stat nudge, quoted.

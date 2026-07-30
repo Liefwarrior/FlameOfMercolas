@@ -62,7 +62,7 @@
       "components": [
         { "effect": "VITALITY", "mode": "INSTANT", "magnitude": -1 }
       ],
-      "canonAnchor": "'too much energy hurts... you're applying it to a small part of his body' (L448)",
+      "canonAnchor": "'too much energy hurts... you're applying it to a small part of his body' (L449)",
       "provenance": "Simple Magic seed spell, the HARM axis at its floor. One hit point, once - a nettle-snap, the smallest transfer a link can carry. No crafting on the public shelf can put a body on the ground; the vitality floor is structural (ActiveEffects.VITALITY_FLOOR)."
     },
     {
@@ -78,7 +78,7 @@
       "components": [
         { "effect": "VITALITY", "mode": "OVER_TIME", "magnitude": -1, "durationTicks": 30 }
       ],
-      "canonAnchor": "'it would be less taxing to do lots of tiny transfers than one big one' (L457); energy into a body concentrates and hurts (L448-449)",
+      "canonAnchor": "'it would be less taxing to do lots of tiny transfers than one big one' (L457); energy into a body concentrates and hurts (L449)",
       "provenance": "Simple Magic seed spell. A trickle, not a blow: three doses of one hit point as the heat works through. Deliberately dearer than Sting because the cost model prices every dose it will deliver."
     },
     {

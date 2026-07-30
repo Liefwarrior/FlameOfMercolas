@@ -14,6 +14,16 @@ for Eli. Every number in `content/raws/spells/spells.json` and every constant in
 3. The `Lore\*.html` files are **NON-CANON** (AI fan summaries). One of them is cited exactly
    once below, and only to say what it is and that it was discarded — see §5.
 
+**Every cite in this file, in `content/raws/spells/spells.json` and in `com.trojia.sim.actor.spell`
+was re-verified line by line against the novel** (round 3). Three were wrong and are corrected
+everywhere they appeared:
+
+| was | is | why |
+| --- | --- | --- |
+| L452 — the cost model's load-bearing cite, in 15 places including shipped javadoc | **L454** | L452 is Gerik saying *what* a crafting moves and between whom. The clause the whole cost model is built on — "the more you transfer the more is lost to nature, also the further it travels the more is lost" — plus the lazy-recruit line are two lines further on, at L454. |
+| L448, in 10 places including a shipped `canonAnchor` | **L449** | L448 is *Eric's objection* ("that can't be true... nobody should ever die"). Gerik's answer — "too much energy hurts. Plus you're applying it to a small part of his body... a small part of his arm, or head moves down" — is L449, and BOTH quotes this dossier used to split across two lines come from it. |
+| L569 — heart-links stopping hearts | **L567** | L569 is Eric looking at a square full of soldiers; there is no crafting in it. The heart-link that "killed them instantly" is L567 (with L560's five soldiers "clutching their chests"). |
+
 **Two rulings landed on 2026-07-30 and are applied throughout this file.** Both replaced an
 invention with something canon already supplies:
 
@@ -73,12 +83,13 @@ built on it.
   with heat energy from the enemies" (L445). Eric links into a campfire to refill himself
   (L505).
 - **Harm is the same operation, applied badly.** "too much energy hurts... you're applying it to
-  a small part of his body" (L448). Force is heat's sibling: energy into a body makes "a small
-  part of his arm, or head move down" (L449); Eric shatters a log "by putting pressure on
-  various parts of it" (L530).
+  a small part of his body" (L449). Force is heat's sibling: the same line has energy into a
+  body make "a small part of his arm, or head moves down" (L449); Eric shatters a log "by
+  putting pressure on various parts of it" (L530).
 - **Distance and magnitude both bleed.** "the more you transfer the more is lost to nature, also
-  the further it travels the more is lost" (L452) — energy "always wants to go the easiest
-  route, like a lazy recruit, always downhill."
+  the further it travels the more is lost" (L454) — energy "always wants to go the easiest
+  route, like a lazy recruit, always downhill" (L454). (L452 is the line ABOVE, which says what
+  a crafting moves and between whom; it carries neither clause.)
 - **Many small beats one big.** "it would be less taxing to do lots of tiny transfers than one
   big one" (L457).
 - **A link needs a bridge.** "A crafting requires a link between the two entities, normally this
@@ -95,7 +106,7 @@ built on it.
   throughput: "any other crafter would have to open a thousand links and kill fifty men to get
   as much energy as you or I have inside us" (L516).
 - **Where the Luxerne tier starts, so we know what to stay under.** Heart-links stop hearts
-  instantly (L560, L569); a head-link bursts vessels (L561); a pocket-to-torch link levels a
+  instantly (L560, L567); a head-link bursts vessels (L561); a pocket-to-torch link levels a
   stairwell (L567). None of that belongs to a docker.
 - **Books are issued in two grades.** "This particular gathering of books was issued to the
   public because it was overly general and skimmed over most of the battles and details"
@@ -112,11 +123,11 @@ translate between. That is the effect-axis table, author-supplied.
 
 | Canon | Sim |
 |---|---|
-| L445 heat is the currency; L448 too much energy hurts | `EffectKind.TEMPERATURE` and `EffectKind.VITALITY` are the SAME operation with the endpoint changed, which is why they are separate axes and not separate spells |
+| L445 heat is the currency; L449 too much energy hurts | `EffectKind.TEMPERATURE` and `EffectKind.VITALITY` are the SAME operation with the endpoint changed, which is why they are separate axes and not separate spells |
 | L98 "unnatural intelligence, or in strength, or reflexes" | `EffectKind.ATTRIBUTE` with a `param` of WIT / MGT / AGI — the three named expressions ARE the attribute roster, quoted |
-| L445 mend vs L448 harm | one signed magnitude per component; the minus sign is the whole of opposition. `knit_the_skin` is `scald` with a plus |
-| L452 distance bleeds | `SpellCost.RESIST_PER_TILE = 4` |
-| L452 magnitude bleeds | `SpellCost.RESIST_PER_TRANSFER_POINT = 1`, over `EffectComponent.transferPoints()` |
+| L445 mend vs L449 harm | one signed magnitude per component; the minus sign is the whole of opposition. `knit_the_skin` is `scald` with a plus |
+| L454 distance bleeds | `SpellCost.RESIST_PER_TILE = 4` |
+| L454 magnitude bleeds | `SpellCost.RESIST_PER_TRANSFER_POINT = 1`, over `EffectComponent.transferPoints()` |
 | L457 many small beats one big | `EffectMode.OVER_TIME`, dosed every `ActiveEffects.OVER_TIME_PERIOD_TICKS`; a trickle pays for every dose it will deliver, so a long effect is honestly dearer |
 | L459 a link needs a bridge; the gift is rare | `TargetShape.TOUCH` is the ordinary case; `TargetShape.RANGED` exists in the vocabulary, costs `SpellCost.RESIST_UNBRIDGED = 20` on top of distance, and **is authored on no spell in the shipped list** |
 | L567 twenty crafters make one torch flare; L516 ~1/1000 of a Luxerne | `ActiveEffects.VITALITY_FLOOR = 1` — no crafting can put a body on the ground. Structural, not a tuning value: the only code that writes a hit point enforces it |
@@ -124,8 +135,8 @@ translate between. That is the effect-axis table, author-supplied.
 | L98 "even with training it is limited" | `SkillChecks.LINKCRAFT_CEIL_PERMILLE = 900`; mastery never buys certainty, the same contract every other check family in the file carries |
 | L443 crafting is changing nature, not standing apart from it | the effects land on ordinary sim state — hit points, needs, the one attribute function — never on a parallel "magic" pool |
 | L2472 the public edition is the shallow one | `ActiveEffects.ATTRIBUTE_MODIFIER_LIMIT = 2` — the second structural bound. A live attribute row is folded into `SkillTrackRegistry.attribute()`, the ONE function every check in the game reads, so an unbounded stack of nudges would be an unbounded multiplier on the entire skill system. Nothing off the shallow shelf may be strong, and that is enforced twice: the loader refuses an authored magnitude past the limit, and the live SUM is clamped to it, so stacking cannot walk past it either |
-| L452 "the more you transfer the more is lost" — including over time | duration is priced on BOTH lingering shapes. A trickle pays per dose (`ActiveEffects.OVER_TIME_PERIOD_TICKS`); a hold pays per period it keeps the link open (`SpellCost.HELD_PERIOD_TICKS = 300`, deliberately coarser, because holding a link is not the same work as pushing fresh transfers through it). Before this, a held effect cost the same at one tick as at ten thousand |
-| one operation, three endpoints (L445 heat / L448 harm / L98 the three expressions) | `EffectPairing` — the (axis × time-shape) table. Heat and tuning are **held** (`WHILE_ACTIVE` only: a body carries no thermal store and an attribute is recomputed from skills on every read, so there is nothing for a one-off to write). A wound is **delivered** (`INSTANT` or `OVER_TIME`: hit points are a written number and nothing reads a held vitality row). The other five pairings are refused at load, by name |
+| L454 "the more you transfer the more is lost" — including over time | duration is priced on BOTH lingering shapes. A trickle pays per dose (`ActiveEffects.OVER_TIME_PERIOD_TICKS`); a hold pays per period it keeps the link open (`SpellCost.HELD_PERIOD_TICKS = 300`, deliberately coarser, because holding a link is not the same work as pushing fresh transfers through it). Before this, a held effect cost the same at one tick as at ten thousand |
+| one operation, three endpoints (L445 heat / L449 harm / L98 the three expressions) | `EffectPairing` — the (axis × time-shape) table. Heat and tuning are **held** (`WHILE_ACTIVE` only: a body carries no thermal store and an attribute is recomputed from skills on every read, so there is nothing for a one-off to write). A wound is **delivered** (`INSTANT` or `OVER_TIME`: hit points are a written number and nothing reads a held vitality row). The other five pairings are refused at load, by name |
 
 **Not derived from canon, stated plainly:** the specific integers (15 deci-Kelvin of warmth, 600
 ticks, base resists 0–14, cooldowns 200–700, the 96-row effect table, the 50-tick warmth→REST
@@ -162,7 +173,7 @@ These are the load-bearing readings. Each is defensible; none is stated outright
    collide with smithing in a skill list (and canon itself jokes about that collision at L442).
    LoT2's academic name for the field is *Thectrochanics*. "Linkcraft" is invented, anchored on
    L459's "link". Rename freely.
-4. **"Kinematics and thermology" as in-world vocabulary.** The physics is canon (L448–457); the
+4. **"Kinematics and thermology" as in-world vocabulary.** The physics is canon (L447–457); the
    two words are not. The code and the raws use canon's own words instead — *crafting*, *link*,
    *transfer* — and leave Thectrochanics to the Runemasters.
 5. **The warmth→REST coupling.** Being warm is restful and being cold is not; canon says nothing

@@ -246,9 +246,9 @@ final class SpellcraftTest {
         SpellDefinition big = invented.get(invented.rawOf("big"));
 
         assertTrue(SpellCost.resistFor(small, 6) > SpellCost.resistFor(small, 1),
-                "the further it travels the more is lost (L452)");
+                "the further it travels the more is lost (L454)");
         assertTrue(SpellCost.resistFor(big, 1) > SpellCost.resistFor(small, 1),
-                "the more you transfer the more is lost (L452)");
+                "the more you transfer the more is lost (L454)");
         assertEquals(5, SpellCost.resistFor(big, 1) - SpellCost.resistFor(small, 1),
                 "five extra hit points of transfer cost five points of difficulty");
 

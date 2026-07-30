@@ -24,7 +24,7 @@ package com.trojia.sim.actor.spell;
  *       — its offset from ambient IS the live sum of its held rows — so a one-off or a dosed
  *       temperature has nowhere to land. {@link EffectMode#WHILE_ACTIVE} only.</li>
  *   <li><b>A wound is an EVENT.</b> "too much energy hurts... you're applying it to a small part
- *       of his body" (L448), delivered at once or dose by dose ("lots of tiny transfers", L457).
+ *       of his body" (L449), delivered at once or dose by dose ("lots of tiny transfers", L457).
  *       Hit points are a written number, and nothing anywhere reads a held vitality row, so
  *       {@link EffectMode#WHILE_ACTIVE} is refused: mending is not a state you hold, it is a
  *       change you make. {@link EffectMode#INSTANT} and {@link EffectMode#OVER_TIME}.</li>
