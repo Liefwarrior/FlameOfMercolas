@@ -155,7 +155,30 @@ public final class HudText {
                 HudToken.text(" climb   "),
                 HudToken.icon(IconKey.I), HudToken.text(" disguise   "),
                 HudToken.icon(IconKey.J), HudToken.text(" journal   "),
+                // The switch has to be findable from the map, or nobody ever presses it.
+                HudToken.icon(IconKey.V), HudToken.text(" first person   "),
                 HudToken.icon(IconKey.P), HudToken.text(" release"));
+    }
+
+    /**
+     * The legend shown in place of the verb line while the first-person view is up. The verbs
+     * themselves do not change — a stair is a stair from either camera — but the keys that
+     * mean something different do, and those are the ones a player needs told: WASD is now
+     * forward and strafe relative to where you are looking rather than north and east, and
+     * the left/right arrows turn instead of scrubbing floors.
+     */
+    public static List<HudToken> firstPersonKeybindingTokens() {
+        return List.of(
+                HudToken.icon(IconKey.W), HudToken.icon(IconKey.A), HudToken.icon(IconKey.S),
+                HudToken.icon(IconKey.D), HudToken.text(" walk   "),
+                HudToken.icon(IconKey.ARROW_LEFT), HudToken.icon(IconKey.ARROW_RIGHT),
+                HudToken.text(" turn   "),
+                HudToken.icon(IconKey.SHIFT), HudToken.text(" turn fast   "),
+                HudToken.icon(IconKey.PAGE_UP), HudToken.icon(IconKey.PAGE_DOWN),
+                HudToken.text(" look   "),
+                HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
+                HudToken.text(" climb   "),
+                HudToken.icon(IconKey.V), HudToken.text(" back to the map"));
     }
 
     /** {@link #purse}'s "no bank account behind this hand" sentinel for {@code royals}. */

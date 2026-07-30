@@ -1,0 +1,50 @@
+# The first-person view, reproducible with no hands (ObserverScript tape, --script=).
+#
+#   ./gradlew.bat :client-observer:run --args="--fixture=docks --smoke=1500 \
+#       --script=<abs path>/content/playtests/fpv_tarwalk.txt"
+#
+# A smoke run advances exactly one sim tick per rendered frame, so a frame number is a tick
+# number and two runs of this tape produce the same session and pixel-identical screenshots.
+# Every verb below goes through the same apply* seam the live keys call: nothing here is a
+# back door, and none of it can be done to the world by a camera.
+#
+# Two things to know when reading the frame numbers. Animation is timed in WALL-CLOCK
+# seconds, and a smoke frame takes a millisecond or two rather than a sixtieth of a second,
+# so a cross-fade that covers twenty frames at 60fps eats a hundred or more here. And the
+# subject is left to her own legs for the first thousand ticks: Ditta Pilchard (#1) lodges
+# inland and works the quay apron, and letting the sim walk her out there is both the honest
+# way to reach the waterfront and a demonstration that the camera is not driving anything.
+
+   2 select=1
+   3 follow
+   6 zoom=4
+
+# --- she walks to work under her own AI; we watch from above -----------------------
+1150 shot=build/playtest/fpv-01-map-before-the-switch.png
+1160 play
+1170 shot=build/playtest/fpv-02-map-with-facing-wedge.png
+
+# --- the switch --------------------------------------------------------------------
+1180 fpv
+1210 shot=build/playtest/fpv-03-midfade-in.png
+1290 face=0
+1330 shot=build/playtest/fpv-04-facing-the-harbour.png
+
+# --- the z axis: down at the water, up at the ward ----------------------------------
+1340 look=-300
+1370 shot=build/playtest/fpv-05-looking-down.png
+1380 look=300
+1405 shot=build/playtest/fpv-06-looking-up.png
+1410 look=0
+
+# --- walking, and a turn -------------------------------------------------------------
+1415 step=1,0
+1445 step=0,0
+1448 shot=build/playtest/fpv-07-after-walking.png
+1450 face=90
+1462 shot=build/playtest/fpv-08-facing-east.png
+
+# --- and back to the map --------------------------------------------------------------
+1465 fpv
+1475 shot=build/playtest/fpv-09-midfade-out.png
+1495 shot=build/playtest/fpv-10-back-on-the-map.png

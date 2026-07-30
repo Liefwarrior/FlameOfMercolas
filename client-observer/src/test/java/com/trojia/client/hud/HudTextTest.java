@@ -111,7 +111,12 @@ class HudTextTest {
         assertTrue(sources.size() >= 5,
                 () -> "the input-package scan found almost nothing (" + sources
                         + ") — the scan is broken, not the legend");
-        List<HudToken> legend = HudText.playModeKeybindingTokens();
+        // The driving legend is now two lines, because the first-person view rebinds some of
+        // these keys to mean something else and says so on its own line. The demand is
+        // unchanged: every key a play-mode input class binds must be on a screen the player
+        // is looking at while driving.
+        List<HudToken> legend = new ArrayList<>(HudText.playModeKeybindingTokens());
+        legend.addAll(HudText.firstPersonKeybindingTokens());
         SortedSet<String> bound = new TreeSet<>();
         for (Path source : sources) {
             Matcher m = KEY_BINDING.matcher(Files.readString(source));
@@ -152,6 +157,7 @@ class HudTextTest {
     /** The {@link IconKey} for a libGDX key name, or {@code null} when the pack has no glyph. */
     private static IconKey iconFor(String keyName) {
         String enumName = switch (keyName) {
+            case "SHIFT_LEFT", "SHIFT_RIGHT" -> "SHIFT";
             case "UP" -> "ARROW_UP";
             case "DOWN" -> "ARROW_DOWN";
             case "LEFT" -> "ARROW_LEFT";

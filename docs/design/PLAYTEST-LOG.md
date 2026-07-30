@@ -13,6 +13,43 @@ plus the S5 re-verification pass. Anything the lost ranking held beyond these is
 unrecoverable and is declared as such — this file is the durable record going forward:
 new playtest defects get filed HERE, in the same shape, in the sprint they are found.
 
+## FPV pass (the first-person view) — one round
+
+Source: Eli, verbatim — *"I want a demo with the ability to switch between 1st person and
+the top-down tile view... Make sure you don't make it jarring, interpolate when moving so
+that you get a really smooth high fps... I want that, but also with the ability to have a
+Z-axis like Daggerfall."* Tape: `content/playtests/fpv_tarwalk.txt` (10 screenshots, the
+sim walking Ditta Pilchard #1 out to the quay under her own AI before she is taken over).
+
+- **fixed: the selection reticle floated in mid-air in first person.** was: the inspector
+  drew its gold tile-highlight frame at `MapCamera`'s screen position for the selected
+  tile, in every mode. With no tiles on screen that position means nothing — it landed
+  near the middle of the first-person frame and read as a targeting reticle nobody had
+  built. now: `InspectorRenderer.draw` takes a `worldHighlight` flag; the character sheet
+  and the event feed stay in both modes (they are panels), the world-space highlight is
+  drawn only by the camera that has tiles on screen.
+- **fixed: screenshots of a translucent frame composited a mirror of themselves.** was:
+  `flipVertically` used `Pixmap.drawPixel`, which blends by default, so any pixel the frame
+  left with alpha below 1 — pooled water, a mid-cross-fade first-person frame — mixed a
+  vertically mirrored copy of the screen into the PNG. It looked exactly like a rendering
+  bug and it was in the evidence, not the renderer. now: blending is switched off for the
+  flip and restored afterward. Pre-existing; the first-person cross-fade is just the first
+  thing that made a whole frame translucent.
+- **open: you have to look down to see water at your own feet.** With a 72-degree
+  horizontal field of view at 16:9 the vertical fan is about 44 degrees, so the harbour a
+  band below the quay does not clear the bottom of a level frame until roughly a dozen
+  tiles out. This is correct perspective and it is what the horizon shear is for, but it is
+  worth a decision later: a wider field, or a small default downward bias when the eye is
+  standing at an edge with air beyond it.
+- **open: no top-down inset in first person.** The compass and the `eye z=` readout carry
+  bearing and band, which is enough not to get lost, but the survey's suggestion of a small
+  corner minimap is still the thing that would make the ward's verticality legible while
+  you are inside it.
+- **open: front and side of a building look identical.** Neither shipped art pack authors a
+  per-face form token, so every wall face draws the plan-view `wall` region. The resolver
+  already keys on a form token, so this is a pack change (`face`) with no renderer work —
+  filed, not fudged.
+
 ## S8 pass (place labels: the NES sign box) — two rounds
 
 Source: Eli exploring the shipped ward, verbatim — *"We also need to label buildings!

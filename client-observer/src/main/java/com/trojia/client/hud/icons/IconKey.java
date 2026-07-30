@@ -46,6 +46,12 @@ public enum IconKey {
     // K takes the pelt off a downed body, B turns carried goods into Royals at a counter.
     K("keyboard_k.png"),
     B("keyboard_b.png"),
+    // The first-person view (2026-07-29): V switches between the tile view and the driven
+    // actor's own eyes, PageUp/PageDown crane the horizon up and down, Shift turns fast.
+    V("keyboard_v.png"),
+    PAGE_UP("keyboard_page_up.png"),
+    PAGE_DOWN("keyboard_page_down.png"),
+    SHIFT("keyboard_shift.png"),
     MOUSE_LEFT_CLICK("mouse_left.png");
 
     private final String fileName;

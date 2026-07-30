@@ -163,6 +163,10 @@ public final class ObserverApp extends ApplicationAdapter {
     /** Scripted held-movement state (the {@code hold=dx,dy} verb), applied every frame. */
     private int scriptMoveDx;
     private int scriptMoveDy;
+    /** Scripted held first-person walk (the {@code step=forward,strafe} verb): the same
+     * held-key semantics as {@code hold}, but look-relative, so a tape can walk a street. */
+    private int scriptForward;
+    private int scriptStrafe;
     /** Scripted hold-N nameplates toggle (the {@code plates} verb). */
     private boolean scriptPlatesHeld;
     /** A {@code shot=path} scheduled for the current frame; captured after the batch ends. */
@@ -693,6 +697,10 @@ public final class ObserverApp extends ApplicationAdapter {
                     PlayModeInput.applyMovement(playMode, population.registry(),
                             scriptMoveDx, scriptMoveDy);
                 }
+                if (scriptForward != 0 || scriptStrafe != 0) {
+                    FirstPersonInput.applyMove(eye, playMode, population.registry(),
+                            scriptForward, scriptStrafe);
+                }
                 applyScriptFrame(framesRendered);
             }
         }
@@ -774,8 +782,15 @@ public final class ObserverApp extends ApplicationAdapter {
         hudLines.add(HudText.describeTokens(zLevel.z(), camera.zoom()));
         hudLines.add(HudText.describeTimeTokens(driver.currentTick(), driver.speed().name()));
         if (population != null) {
-            hudLines.add(playModeActive ? HudText.playModeKeybindingTokens()
-                    : HudText.observerVerbKeybindingTokens());
+            // While driving, the verb line; while driving in first person, the line that says
+            // which keys just changed meaning (WASD is now look-relative, the arrows turn).
+            if (!playModeActive) {
+                hudLines.add(HudText.observerVerbKeybindingTokens());
+            } else if (viewMode.settledFirstPerson()) {
+                hudLines.add(HudText.firstPersonKeybindingTokens());
+            } else {
+                hudLines.add(HudText.playModeKeybindingTokens());
+            }
             // S8 payoff legibility: Royals (banked) and Coins (carried) are different money
             // and a player has to be able to tell a sale from a pickpocketing.
             if (playModeActive) {
@@ -816,7 +831,10 @@ public final class ObserverApp extends ApplicationAdapter {
                     camera.viewportHeightPx() - HUD_MARGIN_PX - i * lineHeight, hudLines.get(i));
         }
         if (inspectorRenderer != null) {
-            inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z());
+            // The sheet and the feed belong on screen in both modes; the world-space tile
+            // highlight belongs only to the camera that has tiles on screen.
+            inspectorRenderer.draw(batch, font, icons, camera, inspector, zLevel.z(),
+                    drawTopDown);
         }
         if (drawTopDown && nameplateRenderer != null) {
             // Hover nameplate at the live cursor; hold N to plate every on-screen actor
@@ -984,8 +1002,11 @@ public final class ObserverApp extends ApplicationAdapter {
                 case TURN -> FirstPersonInput.applyTurn(eye, action.intArgs()[0]);
                 case STEP -> {
                     int[] fs = action.intArgs();
-                    FirstPersonInput.applyMove(eye, playMode, population.registry(), fs[0], fs[1]);
+                    scriptForward = fs[0];
+                    scriptStrafe = fs[1];
                 }
+                case LOOK -> lookShearPx = action.intArgs()[0];
+                case FACE -> eye.setYaw((float) Math.toRadians(action.intArgs()[0] - 90));
             }
         }
     }
@@ -1096,6 +1117,12 @@ public final class ObserverApp extends ApplicationAdapter {
     private static void flipVertically(Pixmap pixmap) {
         int w = pixmap.getWidth();
         int h = pixmap.getHeight();
+        // Blending OFF: drawPixel composites by default, so any pixel the frame left with
+        // alpha below 1 — pooled water, a mid-cross-fade first-person frame — would blend a
+        // mirror image of the screen into itself and read as a rendering bug in the evidence
+        // rather than as the screenshot artifact it is.
+        Pixmap.Blending previous = pixmap.getBlending();
+        pixmap.setBlending(Pixmap.Blending.None);
         for (int y = 0; y < h / 2; y++) {
             for (int x = 0; x < w; x++) {
                 int top = pixmap.getPixel(x, y);
@@ -1104,6 +1131,7 @@ public final class ObserverApp extends ApplicationAdapter {
                 pixmap.drawPixel(x, h - 1 - y, top);
             }
         }
+        pixmap.setBlending(previous);
     }
 
     /**
