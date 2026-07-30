@@ -331,6 +331,16 @@ public final class ActiveEffects {
      * arriving here means a component got past the loader — a loud throw rather than the silent
      * return this used to do, which is exactly how five pairings came to resolve, charge a
      * resist, narrate success and change nothing.
+     *
+     * <p><b>The sum is taken in {@code long}, and that is load-bearing.</b> This used to read
+     * {@code Math.max(FLOOR, Math.min(max, target.hp() + magnitude))} — and the addition ran in
+     * {@code int} BEFORE either clamp could see it. Nothing bounds a VITALITY magnitude (the
+     * floor below is what makes that safe), so a mend authored large wrapped negative on the way
+     * in, the clamps then faithfully clamped the wrapped number, and a crafting that narrated
+     * "the link holds" and printed "On them: +2000000000 hit points" delivered the maximum wound
+     * the floor allows. A heal that wounds is the loudest possible version of a crafting lying
+     * about what it did. In {@code long} the clamps see the real number, so the sign of the
+     * magnitude is the direction the body moves, always.
      */
     static void applyOnce(Actor target, EffectKind kind, int param, int magnitude) {
         if (kind != EffectKind.VITALITY) {
@@ -338,8 +348,8 @@ public final class ActiveEffects {
                     + " -- EffectPairing refuses that pairing at load, so reaching applyOnce with"
                     + " it means a component was built without its canonical constructor");
         }
-        int max = target.stats().hp();
-        int next = Math.max(VITALITY_FLOOR, Math.min(max, target.hp() + magnitude));
+        long max = target.stats().hp();
+        long next = Math.max(VITALITY_FLOOR, Math.min(max, (long) target.hp() + magnitude));
         target.setHp((short) next);
     }
 
