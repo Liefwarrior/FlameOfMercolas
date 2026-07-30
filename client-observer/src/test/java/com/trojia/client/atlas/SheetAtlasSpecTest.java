@@ -179,9 +179,12 @@ class SheetAtlasSpecTest {
             // was the AI-generated patchwork the multi-cell hash scatter produced on every
             // dominant SMOOTH surface. Each such region is now trimmed to ONE cell, so
             // variantCount<=1 => the renderer draws variant 0 => one clean repeated tile.
+            // NINTH revision adds four more single-cell smooth surfaces: trudgeon's own coursing
+            // block, leather's own awning, the Reman floor slab, and the grey grit threshold.
             for (String smooth : List.of("wall_brick", "wall_stone", "wall_masonry", "wall_plank",
-                    "wall_hatch", "floor_tile", "floor_stone", "floor_plank",
-                    "roof_thatch", "roof_tile", "roof_cloth",
+                    "wall_beam", "wall_hatch", "floor_tile", "floor_slab", "floor_stone",
+                    "floor_plank", "floor_grit",
+                    "roof_thatch", "roof_tile", "roof_cloth", "roof_hide",
                     "facade_granite", "facade_brick", "facade_reman")) {
                 assertEquals(1, spec.variantCount(smooth),
                         smooth + " must be a single homogeneous cell");

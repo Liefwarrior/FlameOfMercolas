@@ -9,22 +9,30 @@
     "wall_brick":   [1, 6],
     "wall_stone":   [5, 6],
     "wall_masonry": [9, 6],
-    "wall_rubble":  [[9, 6], [10, 6], [9, 9], [10, 9], [9, 7]],
+    "wall_rubble":  [[10, 6], [9, 9], [10, 9]],
     "wall_plank":   [9, 7],
-    "wall_hatch":   [5, 6],
+    "wall_beam":    [10, 10],
+    "wall_hatch":   [6, 6],
     "wall_crystal": [[29, 4], [30, 4], [29, 5], [30, 5]],
     "wall_moss":    [[0, 24], [1, 24], [3, 26], [4, 26]],
     "floor_pave":   [[3, 19], [0, 19]],
-    "floor_tile":   [3, 19],
+    "floor_tile":   [7, 20],
+    "floor_slab":   [4, 20],
     "floor_stone":  [1, 19],
     "floor_plank":  [4, 19],
     "floor_earth":  [[4, 24], [5, 24], [11, 26]],
-    "floor_cobble": [[1, 19], [0, 20], [2, 19]],
+    "floor_cobble": [[0, 20], [2, 19], [1, 21]],
     "floor_crystal":[[29, 4], [30, 4], [29, 5], [30, 5]],
     "floor_moss":   [[0, 24], [1, 24], [3, 26], [4, 26]],
-    "roof_thatch":  [3, 19],
+    "floor_grit":   [2, 24],
+    "floor_sand":   [6, 24],
+    "floor_litter": [0, 21],
+    "floor_kerb":   [0, 22],
+    "floor_drain":  [1, 23],
+    "roof_thatch":  [5, 21],
     "roof_tile":    [28, 10],
     "roof_cloth":   [28, 11],
+    "roof_hide":    [23, 11],
     "water":        [[29, 4], [30, 4], [29, 5], [30, 5]],
     "missing":      [[24, 7]],
     "facade_granite": [8, 0],
@@ -33,10 +41,15 @@
     "slope_a":        [[6, 7], [5, 9]],
     "stair_rung":     [[6, 20]]
   },
+  "intentionalAliases": [
+    ["wall_crystal", "floor_crystal", "water"],
+    ["wall_moss", "floor_moss"]
+  ],
+  "intentionalAliasesProvenance": "NINTH revision, the palette-honesty pass. RULE, enforced by ArtMappingCollisionTest (client-observer): no two region names may resolve to the same [col,row] atlas cell unless the whole set is listed here as a deliberate alias. Two sets are deliberate and stay. (1) wall_crystal / floor_crystal / water are the SAME four clean open-pool-water cells on purpose -- chromatis, ice and the harbour fluid are one substance seen as block, floor and fluid, and a moving water surface that changed shape between its block and floor forms would read as a seam, not a material. (2) wall_moss / floor_moss are the same four grass/lightstone cells for the identical block-vs-floor reason. Every OTHER duplicate the eighth revision carried was an accident and is repaired above; the repairs are itemised in variantPatternsProvenance.",
   "variantPatterns": {
     "floor_pave": "periodic"
   },
-  "variantPatternsProvenance": "SEVENTH revision, the senior-level-design homogeneity pass (Eli 2026-07-15, DECISIONS.md art register + TILE-ART-SPEC section 12). Eli's biggest issue with the sixth-revision docks was that the map read as AI-generated because the cosmetic-variant hash scatters a DIFFERENT cell in every tile of any multi-cell region -- so every dominant smooth surface (house/shop/compound interior floors, building walls, roofs, civic facades) was a restless irregular patchwork instead of a clean designed surface. The fix, two parts, both presentation-only (WorldHasher/sim-core untouched): (A) every SMOOTH surface region was trimmed to a SINGLE [col,row] cell -- variantCount<=1 => variant 0 => one clean repeated tile (wall_brick/wall_stone/wall_masonry/wall_plank/wall_hatch, floor_tile/floor_stone/floor_plank, roof_thatch/roof_tile/roof_cloth, facade_granite/facade_brick/facade_reman). (B) the sidewalk/civic-flagstone gets a dedicated NEW region floor_pave (2 tonally-contrasting flagstone cells: light tan [3,19] + mid grey [0,19], ~27 luma + warm/cool contrast) tagged pattern 'periodic' here: WorldRenderer draws (x^y)&1 -- an obvious regular 2-tone laid-paver weave a random hash cannot produce (VariantPattern.PERIODIC). EIGHTH revision (Eli 2026-07-15, exteriors/streetscape pass): the SEVENTH-revision pair [[0,19],[2,19]] was two grey-flagstone cells differing by ~1 luma/channel, so the periodic weave rendered as a uniform grey strip (invisible); repointed to the light-tan [3,19] + mid-grey [0,19] pair (post-granite-tint (177,150,102) vs (128,128,105): ~27 luma AND +49 red-channel warm/cool contrast) so the laid-paver weave now reads unmistakably. Still exactly 2 cells + 'periodic'; both are genuine flagstone paver textures so the weave reads as coherent civic paving. granite.forms.floor was re-pointed floor_tile -> floor_pave; the audit confirmed granite-floor is NEVER a private living floor in gen_docks_surface.py, only civic paving (quay apron, bathhouse, guardhouse, watch-post, well plaza, storm-drain floors) -- all correctly 'laid flagstone'. Home/compound floors use oak/trudgeon/brick/reman/dirt floors, untouched. ONLY the genuinely-rough materials keep the multi-cell HASH scatter: floor_earth (dirt/ash -- bare ground, yards, hovels, street centers, intersections), wall_rubble (hovels, tar-yard fence, cache sheds), water (moving harbor surface), plus the unplaced floor_cobble/wall_crystal/wall_moss/slope_a. That is exactly Eli's hierarchy: sidewalks obvious/regular, smooth floors homogeneous, only middle-of-street/rough zones irregular.",
+  "variantPatternsProvenance": "SEVENTH revision, the senior-level-design homogeneity pass (Eli 2026-07-15, DECISIONS.md art register + TILE-ART-SPEC section 12). Eli's biggest issue with the sixth-revision docks was that the map read as AI-generated because the cosmetic-variant hash scatters a DIFFERENT cell in every tile of any multi-cell region -- so every dominant smooth surface (house/shop/compound interior floors, building walls, roofs, civic facades) was a restless irregular patchwork instead of a clean designed surface. The fix, two parts, both presentation-only (WorldHasher/sim-core untouched): (A) every SMOOTH surface region was trimmed to a SINGLE [col,row] cell -- variantCount<=1 => variant 0 => one clean repeated tile (wall_brick/wall_stone/wall_masonry/wall_plank/wall_hatch, floor_tile/floor_stone/floor_plank, roof_thatch/roof_tile/roof_cloth, facade_granite/facade_brick/facade_reman). (B) the sidewalk/civic-flagstone gets a dedicated NEW region floor_pave (2 tonally-contrasting flagstone cells: light tan [3,19] + mid grey [0,19], ~27 luma + warm/cool contrast) tagged pattern 'periodic' here: WorldRenderer draws (x^y)&1 -- an obvious regular 2-tone laid-paver weave a random hash cannot produce (VariantPattern.PERIODIC). EIGHTH revision (Eli 2026-07-15, exteriors/streetscape pass): the SEVENTH-revision pair [[0,19],[2,19]] was two grey-flagstone cells differing by ~1 luma/channel, so the periodic weave rendered as a uniform grey strip (invisible); repointed to the light-tan [3,19] + mid-grey [0,19] pair (post-granite-tint (177,150,102) vs (128,128,105): ~27 luma AND +49 red-channel warm/cool contrast) so the laid-paver weave now reads unmistakably. Still exactly 2 cells + 'periodic'; both are genuine flagstone paver textures so the weave reads as coherent civic paving. granite.forms.floor was re-pointed floor_tile -> floor_pave; the audit confirmed granite-floor is NEVER a private living floor in gen_docks_surface.py, only civic paving (quay apron, bathhouse, guardhouse, watch-post, well plaza, storm-drain floors) -- all correctly 'laid flagstone'. Home/compound floors use oak/trudgeon/brick/reman/dirt floors, untouched. ONLY the genuinely-rough materials keep the multi-cell HASH scatter: floor_earth (dirt/ash -- bare ground, yards, hovels, street centers, intersections), wall_rubble (hovels, tar-yard fence, cache sheds), water (moving harbor surface), plus the unplaced floor_cobble/wall_crystal/wall_moss/slope_a. That is exactly Eli's hierarchy: sidewalks obvious/regular, smooth floors homogeneous, only middle-of-street/rough zones irregular. NINTH REVISION (the palette-honesty pass, quality slice 1): the eighth-revision table asserted a tile hierarchy the sheet did not actually deliver, because six region names were resolving onto cells another region already owned -- the map was drawing a lie, and no level-design work downstream could be judged fairly against it. Six repairs, all pure cell moves: no Java, no bake, no hash movement. (1) floor_tile [3,19] -> [7,20]. floor_tile IS the brick arterial and [3,19] IS floor_pave's light-tan paver, so the ward's top-tier street shared half its tiles with the sidewalk beside it; it now draws the pale cool blue-grey flagstone (177,191,197), a third stone family this sheet carries and the pack had never touched. (2) roof_thatch [3,19] -> [5,21]. The same cell again: every thatched roof in the ward was cut from the brick road surface. It now has its own tan flagstone cell under the unchanged straw-gold multiply. (3) wall_rubble drops [9,6] and [9,7] from its scatter, leaving [[10,6],[9,9],[10,9]]. Those two cells are wall_masonry's and wall_plank's, so a mudbrick hovel drew as Reman concrete or as timber roughly one tile in five -- a collision that was actively erasing the canon wealth gradient the compounds are built on (DECISIONS.md, Trojian housing: Compounds). Still three cells, still HASH-scattered, still rough. (4) wall_hatch [5,6] -> [6,6]. [5,6] is wall_stone's cell: phorys was drawing as tinted granite. (5) floor_cobble drops [1,19] (floor_stone's cell) and now scatters [[0,20],[2,19],[1,21]], three grey flagstone cells, so glowstone's floor is its own irregular cobble. (6) leather leaves roof_cloth for its own awning cell roof_hide [23,11], and trudgeon_wood (with its getilia-treated derivative) leaves wall_plank for wall_beam [10,10]. Those two shares are a large part of why a bed, a chest, a counter and a crate were four names for one sprite. Two additions ride with the repairs. reman_concrete's floor takes floor_slab [4,20] -- it used to be floor_tile, which is to say the arterial. And FIVE fully-opaque exterior floor registers are declared and held ready for the ground pass: floor_grit [2,24] solid grey gravel, floor_sand [6,24] solid pale sand, floor_litter [0,21] littered flagstone, floor_kerb [0,22] kerbed flagstone, floor_drain [1,23] drain-grate flagstone. Only floor_grit is spent so far (ash's floor -- the one threshold register that can be painted without minting a material raw); the other four are declared, verified opaque and deliberately unreferenced, which is legal because SheetTileAtlas builds from the resolver's REFERENCED set, so an unspent register costs nothing at boot.",
   "regionsProvenance": "Cells hand-picked from CityPack/tilemap_packed.png (37x28 @16px) by zoom-reading the actual sheet and pixel-sampling candidate cells, then proving each region tiles into a solid low-frequency mass under the real cosmetic-variant hash (TILE-ART-SPEC section 12). Wall blocks sit at rows 5-12: red brick cols 0-3, grey ashlar cols 4-7, warm sandstone cols 8-11; the picks avoid the border/edge columns (0/3/4/7/8/11) and take only interior cells so coursing tiles seamlessly. Floor blocks sit at rows 19-27: grey flagstone cols 0-2, tan flagstone cols 3-5, tilled earth cols 8-14 rows 25-27, grass cols 0-1 row 24; floor_earth/floor_moss use the pure solid-fill cells at row 24 (0/1 grass, 4/5 dirt) plus one speckled center to kill the grass-to-dirt autotile edge grid. water/wall_crystal/floor_crystal use the pool's clean open-water cells (cols 29-30 rows 4-5), avoiding the grey stone pool rim. Facades are the three grand multi-register elevation blocks at rows 0-3 (grey cols 8-15, red-brick cols 0-7, sandstone cols 24-31), interior cells rows 0-2 -- these tile into ornate windowed ashlar reading unambiguously as a civic building frontage, distinct from plain wall_stone (the honest 'grand elevation, not free-standing columns' Rome cue: no literal fluted-column/arch asset exists in this pack -- its vertical-rhythm cells cols 12-19 are modern glass storefronts, not arcades). slope_a/stair_rung reuse plain ashlar/flagstone cells (no diagonal-slope or stair tile exists on this sheet; ramps/stairs render as solid sloped stone -- low impact, they are rare). missing = (24,7), an off-terrain prop cell that reads as clearly-wrong if it ever surfaces.",
   "missingRegion": "missing",
   "voidColor": "#000000",
@@ -86,7 +99,7 @@
       }
     },
     "thatch": {
-      "notes": "Roofing straw: no gold/straw tileable surface exists in the City Pack, so a straw-gold #E8D67A multiply over the tan flagstone shape (roof_thatch) supplies the hue -- a solid golden-tan roof mass.",
+      "notes": "Roofing straw: no gold/straw tileable surface exists in the City Pack, so a straw-gold #E8D67A multiply over a tan flagstone shape (roof_thatch) supplies the hue -- a solid golden-tan roof mass. NINTH revision: roof_thatch moved to [5,21], a cell of its own -- it used to BE the brick arterial's cell, which is why a thatched roof drew as a road.",
       "tint": "#E8D67A",
       "forms": {
         "block": { "byAppearance": ["roof_thatch"] },
@@ -97,22 +110,22 @@
       }
     },
     "trudgeon_wood": {
-      "notes": "Regional timber, lore-distinct from oak. Same solid-sandstone-shape compromise as oak (no wood surface exists); a darker warm-brown #A5672E multiply keeps the two woods visually distinct as timber-framed masses.",
+      "notes": "Regional timber, lore-distinct from oak. NINTH revision: trudgeon no longer shares oak's cell -- it draws its own coursing block (wall_beam, [10,10]) under the darker warm-brown #A5672E multiply, so a trudgeon stall, a trudgeon hovel shell and a trudgeon board read as a different timber from an oak crate instead of the same sprite at a slightly different brown.",
       "tint": "#A5672E",
       "forms": {
-        "block": { "byAppearance": ["wall_plank"] },
-        "wall":  { "byAppearance": ["wall_plank"] },
+        "block": { "byAppearance": ["wall_beam"] },
+        "wall":  { "byAppearance": ["wall_beam"] },
         "floor": { "byAppearance": ["floor_plank"] },
         "ramp":  { "byAppearance": ["slope_a"] },
         "stair": { "byAppearance": ["stair_rung"] }
       }
     },
     "trudgeon_wood@getilia_soak": {
-      "notes": "Treatment-derived id minted at load (getilia_soak); the '@' is verbatim in the material key but not a filesystem path (regions are grid coords, not files). Darker #8A5626 multiply than raw trudgeon_wood so the getilia treatment reads as a visible change.",
+      "notes": "Treatment-derived id minted at load (getilia_soak); the '@' is verbatim in the material key but not a filesystem path (regions are grid coords, not files). Darker #8A5626 multiply than raw trudgeon_wood so the getilia treatment reads as a visible change; the NINTH revision moves it onto trudgeon's own wall_beam block along with its base material.",
       "tint": "#8A5626",
       "forms": {
-        "block": { "byAppearance": ["wall_plank"] },
-        "wall":  { "byAppearance": ["wall_plank"] },
+        "block": { "byAppearance": ["wall_beam"] },
+        "wall":  { "byAppearance": ["wall_beam"] },
         "floor": { "byAppearance": ["floor_plank"] },
         "ramp":  { "byAppearance": ["slope_a"] },
         "stair": { "byAppearance": ["stair_rung"] }
@@ -130,7 +143,7 @@
       }
     },
     "brick": {
-      "notes": "No tint: the City Pack's native red-brick coursing (wall_brick) is exactly what brick should look like -- solid, low-frequency terracotta courses.",
+      "notes": "No tint: the City Pack's native red-brick coursing (wall_brick) is exactly what brick should look like -- solid, low-frequency terracotta courses. NINTH revision: brick's FLOOR -- the ward's arterial spine -- moves off the tan cell it shared with the paver weave onto the pale cool slab (floor_tile, [7,20]), so the arterial and the sidewalk are finally two different surfaces.",
       "forms": {
         "block": { "byAppearance": ["wall_brick"] },
         "wall":  { "byAppearance": ["wall_brick"] },
@@ -171,7 +184,7 @@
       }
     },
     "phorys": {
-      "notes": "Crystalline/veined mineral: kept on the grey ashlar shape (wall_hatch) with a teal-cyan #6FB0C0 multiply so phorys keeps its own identity distinct from the plain grey stone materials and from chromatis/ice's blue pool cells.",
+      "notes": "Crystalline/veined mineral: kept on a grey ashlar shape (wall_hatch) with a teal-cyan #6FB0C0 multiply so phorys keeps its own identity distinct from the plain grey stone materials and from chromatis/ice's blue pool cells. NINTH revision: wall_hatch moved [5,6] -> [6,6], because [5,6] is wall_stone's own cell and phorys was drawing as tinted granite.",
       "tint": "#6FB0C0",
       "forms": {
         "block": { "byAppearance": ["wall_hatch"] },
@@ -216,12 +229,12 @@
       }
     },
     "ash": {
-      "notes": "Shares the sandstone coursing shape (wall_rubble) with dirt; a muted grey-brown #9E968A multiply reads as burnt/soot rather than raw earth.",
+      "notes": "Shares the sandstone coursing shape (wall_rubble) with dirt; a muted grey-brown #9E968A multiply reads as burnt/soot rather than raw earth. NINTH revision: ash's FLOOR moves off dirt's tilled-earth cells onto the solid grey grit register (floor_grit, [2,24]) -- tinted it lands near (96,99,93), a dark cinder ground that reads as a swept threshold slab against pale paving. This is the one new exterior register the ward can spend today without minting a material.",
       "tint": "#9E968A",
       "forms": {
         "block": { "byAppearance": ["wall_rubble"] },
         "wall":  { "byAppearance": ["wall_rubble"] },
-        "floor": { "byAppearance": ["floor_earth"] },
+        "floor": { "byAppearance": ["floor_grit"] },
         "ramp":  { "byAppearance": ["slope_a"] },
         "stair": { "byAppearance": ["stair_rung"] }
       }
@@ -238,11 +251,11 @@
     },
     "reman_concrete": {
       "provenance": "Reman engineering = concrete-equivalent, the wealth-high compound material (canon-trojian-compounds).",
-      "notes": "No tint: the City Pack's warm sandstone/travertine coursing (wall_masonry) IS the Rome-travertine mass this material wants -- injecting warm cream stone into the wealthy compounds. Differs from granite by SHAPE and warmth (sandstone coursing vs granite's grey ashlar) and from steel (which shares this region) by steel's added cool tint.",
+      "notes": "No tint: the City Pack's warm sandstone/travertine coursing (wall_masonry) IS the Rome-travertine mass this material wants -- injecting warm cream stone into the wealthy compounds. Differs from granite by SHAPE and warmth (sandstone coursing vs granite's grey ashlar) and from steel (which shares this region) by steel's added cool tint. NINTH revision: the compound floor moves off floor_tile onto its own warm travertine slab (floor_slab, [4,20]), so a condo's own floor stops being cut from the same cell as the arterial outside its gate.",
       "forms": {
         "block": { "byAppearance": ["wall_masonry"] },
         "wall":  { "byAppearance": ["wall_masonry"] },
-        "floor": { "byAppearance": ["floor_tile"] },
+        "floor": { "byAppearance": ["floor_slab"] },
         "ramp":  { "byAppearance": ["slope_a"] },
         "stair": { "byAppearance": ["stair_rung"] }
       }
@@ -257,11 +270,11 @@
     },
     "leather": {
       "provenance": "Rooftop-slum construction (canon-trojian-compounds): cheap stretched hide.",
-      "notes": "Striped market-awning canvas shape (roof_cloth) reads as stretched fabric. Dim warm-brown #8A6B44 multiply makes it deliberately poorer/dimmer than reman_concrete and than cloth's slightly lighter tint, per the canon wealth gradient.",
+      "notes": "Stretched hide. NINTH revision: leather takes its OWN awning cell (roof_hide, [23,11]) instead of sharing cloth's -- under the dim warm-brown #8A6B44 multiply it lands near (81,81,44), a dark olive-brown roughly 48 luma below cloth's (129,86,50), so a hide-walled roof hut and a canvas-walled roof hut are two different shanties and a hide-bound press is not a bedroll. Still deliberately poorer and dimmer than reman_concrete, per the canon wealth gradient.",
       "tint": "#8A6B44",
       "forms": {
-        "block": { "byAppearance": ["roof_cloth"] },
-        "wall":  { "byAppearance": ["roof_cloth"] },
+        "block": { "byAppearance": ["roof_hide"] },
+        "wall":  { "byAppearance": ["roof_hide"] },
         "floor": { "byAppearance": ["floor_plank"] },
         "ramp":  { "byAppearance": ["slope_a"] },
         "stair": { "byAppearance": ["stair_rung"] }
