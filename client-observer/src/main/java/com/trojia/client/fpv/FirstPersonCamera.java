@@ -159,6 +159,10 @@ public final class FirstPersonCamera {
     private float feetHeight;
     private float yaw;
 
+    /** Horizon shear in screen px, positive looking up — always inside the projection's own
+     * clamp, because this IS the accumulator and not a copy of one. */
+    private float lookShearPx;
+
     private int band;
     private int targetTileX;
     private int targetTileY;
@@ -205,7 +209,45 @@ public final class FirstPersonCamera {
         this.measuredInterval = 0f;
         this.yaw = normalize(yawRadians);
         this.yawTarget = Float.NaN;
+        // The horizon comes back level with the eye. A shear is where THIS pair of eyes was
+        // looking; carrying it into a different body (or into a frame that is only now
+        // opening) re-opens the view staring at the floor while the facing wedge on the map
+        // said otherwise, which is the one thing the switch anchors exist to prevent.
+        this.lookShearPx = 0f;
         this.seeded = true;
+    }
+
+    /**
+     * Levels the horizon without moving the eye — what the V key does on the way in, so the
+     * first-person frame always opens on the eyeline the wedge promised.
+     */
+    public void levelTheHorizon() {
+        lookShearPx = 0f;
+    }
+
+    /**
+     * Cranes the view up ({@code +}) or down ({@code -}) by {@code deltaPx}, <b>clamping the
+     * accumulator</b> against {@link EyeProjection#clampShear}.
+     *
+     * <p>The clamp belongs here rather than only at the projection, because this is the number
+     * a held key integrates into. See {@link EyeProjection#clampShear} for what an unclamped
+     * accumulator did to the control.
+     *
+     * @param deltaPx           this frame's shear change in px
+     * @param viewportHeightPx  the viewport the clamp is measured against
+     */
+    public void shearBy(float deltaPx, int viewportHeightPx) {
+        setLookShear(lookShearPx + deltaPx, viewportHeightPx);
+    }
+
+    /** Sets the shear outright (the scripted tape's LOOK action), clamped the same way. */
+    public void setLookShear(float shearPx, int viewportHeightPx) {
+        lookShearPx = EyeProjection.clampShear(shearPx, viewportHeightPx);
+    }
+
+    /** The current horizon shear in px — never outside the clamp. */
+    public float lookShearPx() {
+        return lookShearPx;
     }
 
     /** Whether {@link #snapTo} has ever run — the eye has nowhere to be until it has. */
@@ -356,6 +398,20 @@ public final class FirstPersonCamera {
     /** Sets the view direction outright (the mode switch seeding it from a facing). */
     public void setYaw(float radians) {
         yaw = normalize(radians);
+        yawTarget = Float.NaN;
+    }
+
+    /**
+     * Drops any travel-yaw swing still in flight, leaving the yaw exactly where it is.
+     *
+     * <p>What this is for: the swing is a <em>tile-view</em> behaviour — the wedge turning to
+     * follow a walk nobody aimed — and the class contract above says the yaw in first person is
+     * the player's alone. A swing started on the map did not stop at the mode change, so
+     * pressing V mid-stride handed the player a view that kept rotating under them for up to
+     * 300 ms without a key being touched. The contract is now enforced at the seam rather than
+     * merely written down.
+     */
+    public void cancelTravelSwing() {
         yawTarget = Float.NaN;
     }
 

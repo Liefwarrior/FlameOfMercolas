@@ -51,32 +51,43 @@ public final class FirstPersonInput {
     /**
      * Applies one frame's first-person input.
      *
-     * @param camera        the eye whose yaw this may turn
-     * @param playMode      the driven-actor state; a no-op when nothing is driven
-     * @param registry      the live actor registry
-     * @param deltaSeconds  frame time, for the continuous turn
-     * @param shearPx       the current horizon shear, in px
-     * @return the new horizon shear in px (unchanged unless the look keys are held)
+     * @param camera            the eye whose yaw and horizon this may move
+     * @param playMode          the driven-actor state; a no-op when nothing is driven
+     * @param registry          the live actor registry
+     * @param deltaSeconds      frame time, for the continuous turn and look
+     * @param viewportHeightPx  the viewport the look clamp is measured against
      */
-    public static float poll(FirstPersonCamera camera, PlayModeState playMode,
-            ActorRegistry registry, float deltaSeconds, float shearPx) {
+    public static void poll(FirstPersonCamera camera, PlayModeState playMode,
+            ActorRegistry registry, float deltaSeconds, int viewportHeightPx) {
         if (!playMode.active()) {
-            return shearPx;
+            return;
         }
         pollTurn(camera, playMode, deltaSeconds);
         int look = (Gdx.input.isKeyPressed(Input.Keys.PAGE_UP) ? 1 : 0)
                 - (Gdx.input.isKeyPressed(Input.Keys.PAGE_DOWN) ? 1 : 0);
-        float shear = shearPx;
-        if (look != 0) {
-            shear += look * SHEAR_PX_PER_SECOND * deltaSeconds;
-        }
+        applyLook(camera, look, deltaSeconds, viewportHeightPx);
 
         int forward = (Gdx.input.isKeyPressed(Input.Keys.W) ? 1 : 0)
                 - (Gdx.input.isKeyPressed(Input.Keys.S) ? 1 : 0);
         int strafe = (Gdx.input.isKeyPressed(Input.Keys.D) ? 1 : 0)
                 - (Gdx.input.isKeyPressed(Input.Keys.A) ? 1 : 0);
         applyMove(camera, playMode, registry, forward, strafe);
-        return shear;
+    }
+
+    /**
+     * The deterministic LOOK seam: crane up ({@code +1}), down ({@code -1}) or hold
+     * ({@code 0}) for one frame.
+     *
+     * <p>The camera clamps the accumulator itself, which is the whole fix — this used to
+     * integrate a raw float the renderer clamped on the way out, so a held key wound up
+     * seconds of slack the opposite key had to unwind before the horizon moved at all.
+     */
+    public static void applyLook(FirstPersonCamera camera, int look, float deltaSeconds,
+            int viewportHeightPx) {
+        if (look == 0) {
+            return;
+        }
+        camera.shearBy(look * SHEAR_PX_PER_SECOND * deltaSeconds, viewportHeightPx);
     }
 
     /**

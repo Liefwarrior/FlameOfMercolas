@@ -190,8 +190,6 @@ public final class ObserverApp extends ApplicationAdapter {
     private FirstPersonRenderer fpvRenderer;
     private WorldCellSight cellSight;
     private CellActorIndex fpvActors;
-    /** Horizon shear, px: looking up/down is a Doom-style shear, not a pitch. */
-    private float lookShearPx;
     private final FollowZSnap followZSnap = new FollowZSnap();
     private final QuitGuard quitGuard = new QuitGuard();
     private TileAtlas atlas;
@@ -656,8 +654,8 @@ public final class ObserverApp extends ApplicationAdapter {
             // Actor.setFacing — facing is serialized sim state the twin-run gate compares);
             // PageUp/PageDown shear the horizon; WASD steps relative to where you are looking.
             if (firstPerson) {
-                lookShearPx = FirstPersonInput.poll(eye, playMode, population.registry(),
-                        deltaSeconds, lookShearPx);
+                FirstPersonInput.poll(eye, playMode, population.registry(),
+                        deltaSeconds, camera.viewportHeightPx());
             } else {
                 // The turn keys stay live on the map, so the facing wedge is something you aim
                 // before you press V rather than a read-out you discover afterwards. Arrow-key
@@ -1010,7 +1008,7 @@ public final class ObserverApp extends ApplicationAdapter {
                     scriptForward = fs[0];
                     scriptStrafe = fs[1];
                 }
-                case LOOK -> lookShearPx = action.intArgs()[0];
+                case LOOK -> eye.setLookShear(action.intArgs()[0], camera.viewportHeightPx());
                 case FACE -> eye.setYaw((float) Math.toRadians(action.intArgs()[0] - 90));
             }
         }
@@ -1028,6 +1026,12 @@ public final class ObserverApp extends ApplicationAdapter {
      * the cross-fade. It does not seed the eye — {@link #trackEye} has been doing that since
      * the moment the actor was taken over, which is why the facing wedge on the map already
      * showed the direction the first-person frame is about to open on.
+     *
+     * <p>What it does do on the way IN is make the frame open on what the wedge promised:
+     * level the horizon (a shear left over from the last time you were in first person is not
+     * an aim you took, and it re-opens the view staring at the floor) and stop any travel-yaw
+     * swing still running (that swing is the tile view's, and the camera's own contract says
+     * the yaw in first person is the player's alone).
      */
     private void applyViewToggle() {
         if (playMode == null || !playMode.active()) {
@@ -1036,7 +1040,10 @@ public final class ObserverApp extends ApplicationAdapter {
             }
             return;
         }
-        viewMode.toggle(camera.zoom());
+        if (viewMode.toggle(camera.zoom()) == ViewModeState.Mode.FIRST_PERSON) {
+            eye.levelTheHorizon();
+            eye.cancelTravelSwing();
+        }
     }
 
     /**
@@ -1064,6 +1071,12 @@ public final class ObserverApp extends ApplicationAdapter {
             viewMode.releaseToTopDown();
             if (!viewMode.firstPersonVisible()) {
                 eyeActorId = Actor.NONE;
+            } else {
+                // The fade is still showing the first-person frame, so the eye still has to
+                // walk: it was mid-stride when the body was let go, and skipping this froze
+                // the picture solid for the whole 0.34 s while it faded. It reads nothing new
+                // from the sim — it is finishing the ease it already had.
+                eye.advance(deltaSeconds);
             }
             return;
         }
@@ -1118,7 +1131,7 @@ public final class ObserverApp extends ApplicationAdapter {
         fpvActors.refresh();
         EyeProjection projection = EyeProjection.of(eye.eyeX(), eye.eyeY(), eye.eyeHeight(),
                 eye.yaw(), camera.viewportWidthPx(), camera.viewportHeightPx(),
-                EyeProjection.DEFAULT_FOV_DEGREES, lookShearPx);
+                EyeProjection.DEFAULT_FOV_DEGREES, eye.lookShearPx());
         List<ViewQuad> plan = fpvPlanner.plan(projection, eye.band(), cellSight, fpvActors,
                 eyeActorId);
         fpvRenderer.draw(batch, plan, projection, icons.whitePixel(), ambient, viewMode.blend());

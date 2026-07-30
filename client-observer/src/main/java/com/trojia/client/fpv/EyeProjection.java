@@ -71,9 +71,29 @@ public final class EyeProjection {
         this.viewportH = viewportH;
         this.tanHalfFov = (float) Math.tan(Math.toRadians(fovDegrees) / 2.0);
         this.focalPx = (viewportW / 2f) / tanHalfFov;
-        float maxShear = MAX_SHEAR_FRACTION * viewportH;
         // Looking UP moves the horizon DOWN the screen, so a positive shear subtracts.
-        this.horizonY = viewportH / 2f - Math.max(-maxShear, Math.min(maxShear, shearPx));
+        this.horizonY = viewportH / 2f - clampShear(shearPx, viewportH);
+    }
+
+    /**
+     * The look clamp, as a function anything holding a shear can call — which is the point of
+     * it being public.
+     *
+     * <p>It used to be applied here and only here, on the way into the projection, while the
+     * input kept a raw accumulator of its own. Holding {@code PageUp} for three seconds
+     * therefore wound that accumulator to 1260 px against a clamp of 324, the frame stopped
+     * moving at the clamp, and {@code PageDown} then spent two and a half seconds unwinding
+     * slack before the horizon budged — the control locking up exactly where the view is worth
+     * having, leaning over the quay at the harbour. A clamp that is only applied at the far end
+     * of a pipe does not clamp the pipe.
+     *
+     * @param shearPx     the wanted shear in px (positive looks up)
+     * @param viewportH   viewport height in screen px
+     * @return the shear the horizon can actually take
+     */
+    public static float clampShear(float shearPx, int viewportH) {
+        float maxShear = MAX_SHEAR_FRACTION * viewportH;
+        return Math.max(-maxShear, Math.min(maxShear, shearPx));
     }
 
     /**
