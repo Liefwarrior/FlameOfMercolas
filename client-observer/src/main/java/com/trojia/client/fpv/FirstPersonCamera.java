@@ -92,8 +92,17 @@ public final class FirstPersonCamera {
      * a climb reads as climbing, but still short of the next step. */
     public static final float CLIMB_ARRIVAL_FRACTION = 0.92f;
 
-    /** Shortest an ease may be: below this a step is a teleport again. */
-    public static final float MIN_EASE_SECONDS = 0.045f;
+    /**
+     * Shortest an ease may be: below this a step is a teleport again.
+     *
+     * <p>It has to stay under the <b>shortest real cadence</b>, which is 25 ms — fast-forward
+     * (4x) with a {@code speedTicksPerStep=1} actor. The previous 45 ms was nearly twice that,
+     * so at the fastest speed the ease could never finish before the next step arrived and the
+     * eye trailed the body by a permanent third of a cell. That is a slow leak, not a glide —
+     * each re-based ease covers a little more ground so the lag settles rather than growing —
+     * but it is still the camera quietly disagreeing with the sim about where you are.
+     */
+    public static final float MIN_EASE_SECONDS = 0.020f;
 
     /** Longest a lateral ease may be, however slow the sim is running. Sized to clear the
      * slowest real cadence (a {@code speedTicksPerStep=2} actor at real time: 200 ms) with

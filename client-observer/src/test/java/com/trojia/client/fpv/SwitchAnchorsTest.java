@@ -76,6 +76,59 @@ class SwitchAnchorsTest {
     }
 
     /**
+     * <b>The wedge is live.</b> It was not: the yaw was seeded once from {@code Actor.facing()}
+     * when the actor was taken over and then never moved again, so the marker on the map went
+     * on pointing wherever the body happened to be facing at that moment however far you walked
+     * it. An anchor that is wrong is worse than an anchor that is missing — this one promises
+     * the first-person frame will open one way and opens it another.
+     */
+    @Test
+    void theWedgeTurnsWithTheActorAsItWalks() {
+        FirstPersonCamera eye = new FirstPersonCamera();
+        eye.snapTo(50, 50, 19, ViewFacing.yawOf(com.trojia.sim.world.Dir.EAST));
+        float cx = 100f;
+        float cy = 200f;
+        float span = 32f;
+        assertTrue(FacingWedge.corners(cx, cy, span, eye.yaw())[0] > cx,
+                "seeded facing EAST, the wedge should start pointing right");
+
+        // The tile view is what is on screen, so a committed step aims the marker.
+        eye.followCell(50, 49, 19, true); // stepped NORTH
+        for (int i = 0; i < 60; i++) {
+            eye.advance(FRAME);
+        }
+        assertTrue(FacingWedge.corners(cx, cy, span, eye.yaw())[1] > cy,
+                "after walking north the wedge must point UP the screen, not east");
+
+        eye.followCell(49, 49, 19, true); // then WEST
+        for (int i = 0; i < 60; i++) {
+            eye.advance(FRAME);
+        }
+        assertTrue(FacingWedge.corners(cx, cy, span, eye.yaw())[0] < cx,
+                "after walking west the wedge must point left");
+    }
+
+    /**
+     * <b>And it is aimable.</b> Turning is live from the tile view while an actor is driven —
+     * the arrow keys are free there, because {@code CameraInput} suppresses panning whenever
+     * something is being driven — so a player can stand still, point the wedge down the street
+     * they mean to walk, and press V already looking that way. The aim survives until the next
+     * committed step, which is the only thing with a better claim on where you are looking.
+     */
+    @Test
+    void anAimedWedgeHoldsItsDirectionUntilTheNextStep() {
+        FirstPersonCamera eye = new FirstPersonCamera();
+        eye.snapTo(50, 50, 19, ViewFacing.yawOf(com.trojia.sim.world.Dir.EAST));
+        eye.turn((float) Math.toRadians(90)); // aim it south, standing still
+        float aimed = eye.yaw();
+        for (int i = 0; i < 120; i++) {
+            eye.advance(FRAME);
+        }
+        assertEquals(aimed, eye.yaw(), 1e-5, "standing still must not drift the aim");
+        assertTrue(tipY(100f, 200f, 32f, eye.yaw()) < 200f, "aimed south, pointing down-screen");
+    }
+
+    /**
      * The wedge and the eye read the same number. If the wedge ever tracked
      * {@code Actor.facing()} instead, a diagonal stride would promise east and deliver
      * north-east, because the sim's facing takes the x component of a diagonal.
@@ -174,15 +227,42 @@ class SwitchAnchorsTest {
         }
     }
 
+    /**
+     * <b>Letting the body go is a fade, not a cut.</b> It used to be the one un-transitioned
+     * mode change in the client: release the driven actor while in first person and the frame
+     * vanished mid-stride. Everything the cross-fade exists to prevent applies at least as
+     * strongly on the way out.
+     */
     @Test
-    void losingTheDrivenActorDropsStraightBackToTheMap() {
+    void losingTheDrivenActorFadesBackToTheMap() {
         ViewModeState mode = new ViewModeState();
         mode.toggle(4);
         mode.advance(ViewModeState.TRANSITION_SECONDS);
-        mode.forceTopDown();
+        assertEquals(1f, mode.blend(), 1e-6);
+
+        mode.releaseToTopDown();
         assertEquals(ViewModeState.Mode.TOP_DOWN, mode.mode());
+        assertTrue(mode.transitioning(), "letting go of the body must not be a hard cut");
+        mode.advance(ViewModeState.TRANSITION_SECONDS / 2f);
+        assertTrue(mode.topDownVisible() && mode.firstPersonVisible(),
+                "both frames must be on screen while the release fades");
+
+        mode.advance(ViewModeState.TRANSITION_SECONDS);
         assertEquals(0f, mode.blend(), 1e-6);
         assertFalse(mode.firstPersonVisible());
+        // And it is idempotent: the caller runs it every frame while nothing is driven.
+        mode.releaseToTopDown();
+        assertFalse(mode.transitioning());
+        assertEquals(0f, mode.blend(), 1e-6);
+    }
+
+    /** Releasing from the tile view is a no-op, not a spurious fade. */
+    @Test
+    void releasingWhileAlreadyOnTheMapChangesNothing() {
+        ViewModeState mode = new ViewModeState();
+        mode.releaseToTopDown();
+        assertFalse(mode.transitioning());
+        assertEquals(0f, mode.blend(), 1e-6);
     }
 
     // ------------------------------------------------------------------ the sky
@@ -199,6 +279,30 @@ class SwitchAnchorsTest {
                 "the sky must darken with the ward");
         assertTrue(night.b() / day.b() > night.r() / day.r(),
                 "and cool as it darkens, like every other scene draw");
+    }
+
+    /**
+     * <b>The other half of the frame gets painted too.</b> The plan reaches twenty tiles and no
+     * farther; a ground plane below the eye creeps toward the horizon line as it recedes and
+     * never arrives, so there is always a band of frame between the last drawn tile and the
+     * horizon. Left to the pack's void black that band was a stripe of pure black sitting at
+     * eye level — worst of all standing on the quay looking out over the harbour, which is the
+     * view this whole feature exists for.
+     */
+    @Test
+    void thereIsGroundUnderTheHorizonAsWellAsSkyOverIt() {
+        SkyBand.Rgb sky = SkyBand.colorAt(AmbientLight.NEUTRAL);
+        SkyBand.Rgb haze = SkyBand.groundHazeAt(AmbientLight.NEUTRAL);
+        assertTrue(haze.r() > 0.05f && haze.g() > 0.05f && haze.b() > 0.05f,
+                "a black band at eye level reads as a rendering fault, not as distance");
+        assertTrue(haze.g() < sky.g() && haze.b() < sky.b(),
+                "the ground must sit darker than the sky, or the horizon stops being one");
+        assertTrue(haze.r() / haze.b() > sky.r() / sky.b(),
+                "and warmer, so the far ward is earth under slate rather than more slate");
+
+        SkyBand.Rgb night = SkyBand.groundHazeAt(new AmbientLight(0.25f, 0.25f, 0.4f, 1f));
+        assertTrue(night.g() < haze.g(), "and it takes the day/night cycle like everything else");
+        assertTrue(night.g() > 0f, "but never all the way to black");
     }
 
     private static float tipX(float cx, float cy, float span, float yaw) {
