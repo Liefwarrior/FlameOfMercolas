@@ -140,7 +140,8 @@ class PlayableCraftingLoopTest {
 
         assertEquals(SpellAvailability.ILLITERATE,
                 toasts.visible().get(0).text(),
-                "the libraries opened to any who can READ, and a gull cannot");
+                "what a common crafter has is a BOOK -- the public-issue edition (L2472) -- "
+                        + "and a gull cannot read one");
         assertEquals(Actor.NONE, pop.registry().get(beast).playerSpellRaw());
     }
 

@@ -2,6 +2,7 @@ package com.trojia.sim.actor;
 
 import com.trojia.sim.actor.spell.ActiveEffects;
 import com.trojia.sim.actor.spell.EffectKind;
+import com.trojia.sim.actor.spell.EffectMode;
 import com.trojia.sim.actor.spell.SpellCost;
 import com.trojia.sim.actor.spell.SpellDefinition;
 import com.trojia.sim.actor.spell.SpellRawsLoader;
@@ -450,6 +451,153 @@ final class SpellcraftTest {
                 "ten deci-Kelvin is a degree");
         assertEquals(1, EffectKind.VITALITY.unitsPerTransferPoint());
         assertEquals(2, EffectKind.ATTRIBUTE.unitsPerTransferPoint());
+    }
+
+    // ==================================================================
+    // NO SILENT NO-OPS — the positive half
+    // ==================================================================
+
+    /**
+     * EVERY SURVIVING PAIRING, CAST FOR REAL, OBSERVED MOVING SOMETHING. {@code NoSilentNoOpTest}
+     * proves the five dead pairings can no longer be authored; this proves the four that CAN be
+     * authored all reach live sim state through the real verb, at the shortest duration the
+     * pairing table lets them carry. Between the two files the system can state the property it
+     * is built on: <b>a crafting that gets past the loader does something.</b>
+     *
+     * <p>Each of the four is authored here as raws text at its own minimum, cast into a wired
+     * sim, and then read back through the function the rest of the game reads it through — hit
+     * points, the held temperature offset, the REST need, and the push contest.
+     */
+    @Test
+    void everySurvivingPairingIsObservedChangingTheWorld() {
+        SpellRegistry authored = SpellRawsLoader.parse("""
+                {
+                  "id": "spells",
+                  "spells": [
+                    { "id": "delivered_at_once", "displayName": "Delivered At Once",
+                      "skill": "linkcraft", "target": "TOUCH", "range": 1,
+                      "components": [ { "effect": "VITALITY", "mode": "INSTANT",
+                                        "magnitude": -2 } ] },
+                    { "id": "delivered_by_dose", "displayName": "Delivered By Dose",
+                      "skill": "linkcraft", "target": "TOUCH", "range": 1,
+                      "components": [ { "effect": "VITALITY", "mode": "OVER_TIME",
+                                        "magnitude": -1, "durationTicks": 10 } ] },
+                    { "id": "held_warmth", "displayName": "Held Warmth",
+                      "skill": "linkcraft", "target": "TOUCH", "range": 1,
+                      "components": [ { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE",
+                                        "magnitude": 20, "durationTicks": 50 } ] },
+                    { "id": "held_nudge", "displayName": "Held Nudge",
+                      "skill": "linkcraft", "target": "TOUCH", "range": 1,
+                      "components": [ { "effect": "ATTRIBUTE", "mode": "WHILE_ACTIVE",
+                                        "magnitude": 1, "param": "AGI",
+                                        "durationTicks": 1 } ] }
+                  ]
+                }
+                """);
+        ActorRegistry registry = new ActorRegistry();
+        Actor caster = spawn(registry, HERE);
+        Actor subject = spawn(registry, NEXT_DOOR);
+        MagicContext ctx = new MagicContext(registry, authored);
+        ctx.tracks.seedLevel(caster.id(), ctx.tracks.linkcraftRaw(), 100);
+
+        // VITALITY x INSTANT -- a wound, delivered at once, written to hit points.
+        int hpBefore = subject.hp();
+        castUntilItWorks(caster, ctx, authored.rawOf("delivered_at_once"), subject.id());
+        assertEquals(hpBefore - 2, subject.hp(), "an instant wound is an hp write, on the tick");
+
+        // VITALITY x OVER_TIME -- a wound, delivered dose by dose on its own cadence.
+        int hpBeforeTrickle = subject.hp();
+        castUntilItWorks(caster, ctx, authored.rawOf("delivered_by_dose"), subject.id());
+        long castAt = ctx.tick();
+        for (long t = castAt + 1; t <= castAt + ActiveEffects.OVER_TIME_PERIOD_TICKS; t++) {
+            ctx.effects.tick(registry, t);
+        }
+        assertEquals(hpBeforeTrickle - 1, subject.hp(),
+                "one period delivers exactly one dose -- the shortest legal trickle is not a"
+                        + " no-op, which is exactly why anything shorter is refused");
+
+        // TEMPERATURE x WHILE_ACTIVE -- a held offset, read by summing live rows, paying REST.
+        assertEquals(0, ctx.effects.temperatureOffsetDeciK(subject.id()));
+        // Off the ceiling first: the need is saturating, and a body already fully rested would
+        // absorb the payment silently -- which would make this assertion pass for the wrong
+        // reason if warmth ever stopped paying at all.
+        subject.applyNeedDelta(Need.REST, -5_000);
+        int restBefore = subject.need(Need.REST);
+        castUntilItWorks(caster, ctx, authored.rawOf("held_warmth"), subject.id());
+        assertEquals(20, ctx.effects.temperatureOffsetDeciK(subject.id()),
+                "the body's offset from ambient IS the live sum of its held rows");
+        long warmedAt = ctx.tick();
+        for (long t = warmedAt + 1; t <= warmedAt + ActiveEffects.WARMTH_REST_PERIOD_TICKS; t++) {
+            ctx.effects.tick(registry, t);
+        }
+        assertNotEquals(restBefore, subject.need(Need.REST),
+                "and one full cadence reaches one REST payment -- the shortest legal warmth"
+                        + " moves a number the rest of the sim reads");
+
+        // ATTRIBUTE x WHILE_ACTIVE -- in force from the tick it is filed, felt by every check.
+        int pushBefore = SkillChecks.pushContestPermille(ctx.tracks, subject.id(), caster.id());
+        castUntilItWorks(caster, ctx, authored.rawOf("held_nudge"), subject.id());
+        assertEquals(pushBefore + SkillChecks.POINTS_TO_PERMILLE,
+                SkillChecks.pushContestPermille(ctx.tracks, subject.id(), caster.id()),
+                "a one-tick nudge is a real nudge on the tick it is filed");
+    }
+
+    /**
+     * A CAST ON A CORPSE COSTS NOTHING AND STAMPS NOTHING. {@code resolveCast} is the shared
+     * public verb — an AI policy, a queued intent that outlived its target, or a test can reach
+     * it without pre-validating — and a dead body is not a body a link can be forged to. Refused
+     * before the latch, the use-XP or the resist, the {@code CullVerb} precondition idiom.
+     */
+    @Test
+    void aCastOnACorpseIsRefusedBeforeItCostsAnything() {
+        SpellRegistry shipped = SpellRawsLoader.load(locateRawsDir());
+        ActorRegistry registry = new ActorRegistry();
+        Actor caster = spawn(registry, HERE);
+        Actor victim = spawn(registry, NEXT_DOOR);
+        MagicContext ctx = new MagicContext(registry, shipped);
+        ctx.tracks.seedLevel(caster.id(), ctx.tracks.linkcraftRaw(), 100);
+        victim.setStatus(StatusBit.DEAD, true);
+
+        int linkcraft = ctx.tracks.linkcraftRaw();
+        int grainsBefore = ctx.tracks.progressGrains(caster.id(), linkcraft);
+        assertFalse(SpellVerb.resolveCast(caster, ctx, shipped.rawOf("lend_the_warmth"),
+                victim.id()), "no link is forged to a corpse");
+        assertEquals(ReasonCode.NO_LINK_TO_TARGET, caster.lastReasonCode());
+        assertEquals(grainsBefore, ctx.tracks.progressGrains(caster.id(), linkcraft),
+                "and nothing is charged: no XP,");
+        assertEquals(0L, caster.castUntilTick(), "no latch on the hand,");
+        assertEquals(0, ctx.effects.liveCount(), "and no row filed on the dead");
+    }
+
+    /**
+     * A CAST WITH NOWHERE TO PUT ITS ROW IS REFUSED OUT LOUD. The table used to evict the
+     * soonest-expiring row to make space, which meant one actor's crafting could delete
+     * another's live warmth with nothing said to anybody. Now the room is reserved before
+     * anything is charged, and the player is told.
+     */
+    @Test
+    void aCastWithNoRoomLeftIsRefusedRatherThanEvictingSomebodyElsesEffect() {
+        SpellRegistry shipped = SpellRawsLoader.load(locateRawsDir());
+        ActorRegistry registry = new ActorRegistry();
+        Actor caster = spawn(registry, HERE);
+        MagicContext ctx = new MagicContext(registry, shipped);
+        ctx.tracks.seedLevel(caster.id(), ctx.tracks.linkcraftRaw(), 100);
+        for (int s = 0; s < ActiveEffects.SLOT_CAPACITY; s++) {
+            ctx.effects.add(caster.id(), EffectKind.TEMPERATURE, EffectMode.WHILE_ACTIVE, 0, 15,
+                    0L, 10_000L);
+        }
+        assertEquals(0, ctx.effects.freeSlots());
+
+        int grainsBefore = ctx.tracks.progressGrains(caster.id(), ctx.tracks.linkcraftRaw());
+        assertFalse(SpellVerb.resolveCast(caster, ctx, shipped.rawOf("warm_the_hands"),
+                caster.id()), "a crafting with nowhere to land does not land");
+        assertEquals(ReasonCode.NO_ROOM_FOR_CRAFTING, caster.lastReasonCode(),
+                "and says so, with a stamp the toast tracker can read");
+        assertEquals(ActiveEffects.SLOT_CAPACITY, ctx.effects.liveCount(),
+                "every row that was already working is still working");
+        assertEquals(grainsBefore,
+                ctx.tracks.progressGrains(caster.id(), ctx.tracks.linkcraftRaw()),
+                "and the refusal cost the caster nothing at all");
     }
 
     // ==================================================================
