@@ -187,12 +187,168 @@ class FirstPersonCameraTest {
                 "standing still must not restart an ease every frame");
     }
 
+    // ------------------------------------------------------------------ the stride curve
+
+    /**
+     * The curve is exact at both ends and monotone in between — the minimum for "the eye ends
+     * up in the cell the sim put the body in, having only ever gone forwards".
+     */
     @Test
-    void easeOutLeavesImmediatelyAndSettles() {
-        assertEquals(0f, FirstPersonCamera.easeOut(0f), 1e-6);
-        assertEquals(1f, FirstPersonCamera.easeOut(1f), 1e-6);
-        assertTrue(FirstPersonCamera.easeOut(0.25f) > 0.25f,
-                "ease-out must be ahead of linear early — that is the responsiveness");
-        assertTrue(FirstPersonCamera.easeOut(0.75f) > 0.75f);
+    void theStrideCurveIsExactAtBothEndsAndNeverBacksUp() {
+        assertEquals(0f, FirstPersonCamera.strideEase(0f), 1e-6);
+        assertEquals(1f, FirstPersonCamera.strideEase(1f), 1e-6);
+        float previous = -1f;
+        for (int i = 0; i <= 100; i++) {
+            float e = FirstPersonCamera.strideEase(i / 100f);
+            assertTrue(e >= previous, "the stride curve went backwards at t=" + (i / 100f));
+            previous = e;
+        }
+    }
+
+    /**
+     * <b>The lurch, as an assertion.</b> The previous curve — ease-out cubic — put 58% of the
+     * cell behind you in the first quarter of the ease and 88% in the first half, then coasted.
+     * A stride does not do that. Nothing may be more than a fifth ahead of a straight line at
+     * any point, which is loose enough to allow a real push-off and tight enough that
+     * ease-out cubic fails it three times over.
+     */
+    @Test
+    void theStrideIsNotFrontLoadedTheWayALurchIs() {
+        for (int i = 1; i < 100; i++) {
+            float t = i / 100f;
+            float e = FirstPersonCamera.strideEase(t);
+            assertTrue(e - t <= 0.20f,
+                    "the stride is front-loaded at t=" + t + ": " + e + " vs linear " + t
+                            + " — that is a lunge, not a step");
+            assertTrue(t - e <= 0.20f, "the stride stalls at t=" + t);
+        }
+        // For the record, the curve this replaced, at the same two points.
+        assertTrue(1f - (float) Math.pow(0.75, 3) > 0.55f);
+    }
+
+    /**
+     * <b>The eye never stops moving mid-stride.</b> This is the actual complaint: the old ease
+     * finished in 62% of the cadence and then held the eye perfectly still for the rest of it,
+     * which reads as a lurch and a freeze rather than as walking. Sampled per frame at 60 Hz
+     * over a real 200 ms cadence, every frame must carry a real fraction of the cell.
+     */
+    @Test
+    void everyFrameOfAStrideMovesTheEye() {
+        FirstPersonCamera cam = placed();
+        float cadence = 0.200f; // a speedTicksPerStep=2 actor at real time
+        cam.followCell(41, 60, BAND);
+        runSeconds(cam, cadence);
+        cam.followCell(42, 60, BAND);   // now the cadence is measured
+
+        float frame = 1 / 60f;
+        float average = 1f / (cadence / frame); // cell fraction per frame at constant speed
+        float floor = average * FirstPersonCamera.MIN_STRIDE_SPEED_FRACTION * 0.9f;
+        float previous = cam.eyeX();
+        int frames = (int) (cadence / frame);
+        int stalled = 0;
+        for (int i = 0; i < frames; i++) {
+            cam.advance(frame);
+            float moved = cam.eyeX() - previous;
+            previous = cam.eyeX();
+            if (moved < floor) {
+                stalled++;
+            }
+        }
+        assertTrue(stalled <= 1,
+                stalled + " of " + frames + " frames of a 200 ms stride did not move the eye "
+                        + "(only the one settle frame is allowed)");
+    }
+
+    @Test
+    void theStrideFillsTheCadenceItMeasured() {
+        FirstPersonCamera cam = placed();
+        float cadence = 0.200f;
+        cam.followCell(41, 60, BAND);
+        runSeconds(cam, cadence);
+        cam.followCell(42, 60, BAND);
+        // Still striding after five sixths of the cadence: the eye is walking, not parked.
+        runSeconds(cam, cadence * 5f / 6f);
+        assertTrue(cam.isStriding(),
+                "the stride ended with a third of the cadence still to run — that is the lurch");
+        runSeconds(cam, cadence);
+        assertFalse(cam.isStriding(), "and it still has to land before the next step is due");
+    }
+
+    // ------------------------------------------------------------------ the yaw follows a walk
+
+    /**
+     * The facing wedge on the map draws this yaw, so a yaw that never moves is a marker that
+     * lies about where the first-person frame will open. While the tile view is the one on
+     * screen, a committed step aims it.
+     */
+    @Test
+    void theYawSwingsToTheDirectionActuallyWalked() {
+        FirstPersonCamera cam = placed();
+        cam.snapTo(40, 60, BAND, 0f); // looking EAST
+        cam.followCell(40, 59, BAND, true); // stepped NORTH (world y runs south)
+        assertTrue(cam.isTurningToTravel(), "a step on the map must aim the wedge");
+        runSeconds(cam, 0.5f);
+        assertEquals(3 * Math.PI / 2, cam.yaw(), 1e-4, "the yaw must end up pointing NORTH");
+        assertFalse(cam.isTurningToTravel(), "and land on it, not asymptote toward it");
+    }
+
+    /** A diagonal stride points diagonally. {@code Actor.facing()} takes the x component of a
+     * diagonal, so a wedge reading that would promise east and deliver north-east. */
+    @Test
+    void aDiagonalStrideAimsTheWedgeDiagonally() {
+        FirstPersonCamera cam = placed();
+        cam.snapTo(40, 60, BAND, 0f);
+        cam.followCell(41, 61, BAND, true); // south-east
+        runSeconds(cam, 0.5f);
+        assertEquals(Math.PI / 4, cam.yaw(), 1e-4);
+    }
+
+    /** It takes the SHORT way round, so walking west from a yaw of nearly-north swings a
+     * quarter turn rather than three quarters. */
+    @Test
+    void theSwingTakesTheShortWayRound() {
+        FirstPersonCamera cam = placed();
+        cam.snapTo(40, 60, BAND, (float) (3 * Math.PI / 2)); // NORTH
+        cam.followCell(39, 60, BAND, true);                  // WEST is a quarter turn back
+        cam.advance(1 / 60f);
+        float delta = FirstPersonCamera.shortestTurn((float) (3 * Math.PI / 2), cam.yaw());
+        assertTrue(delta < 0f, "the swing went the long way round the compass");
+        runSeconds(cam, 0.5f);
+        assertEquals(Math.PI, cam.yaw(), 1e-4);
+    }
+
+    /** In first person the yaw is the player's: the movement keys are relative to it, so
+     * adopting the travelled direction would quantise the aim to one of eight every step. */
+    @Test
+    void aFirstPersonStepNeverAimsTheView() {
+        FirstPersonCamera cam = placed();
+        cam.snapTo(40, 60, BAND, 0.7f);
+        cam.followCell(40, 59, BAND); // the no-adopt overload — what first person calls
+        runSeconds(cam, 0.5f);
+        assertEquals(0.7f, cam.yaw(), 1e-5, "first person must never re-aim the player's look");
+        assertFalse(cam.isTurningToTravel());
+    }
+
+    /** An explicit turn beats a swing already in flight — you aimed, so you meant it. */
+    @Test
+    void aimingCancelsASwingInFlight() {
+        FirstPersonCamera cam = placed();
+        cam.snapTo(40, 60, BAND, 0f);
+        cam.followCell(40, 59, BAND, true);
+        cam.advance(1 / 60f);
+        cam.turn(0.25f);
+        assertFalse(cam.isTurningToTravel(), "aiming must cancel the follow, not queue behind it");
+        float aimed = cam.yaw();
+        runSeconds(cam, 0.5f);
+        assertEquals(aimed, cam.yaw(), 1e-5);
+    }
+
+    @Test
+    void shortestTurnIsSignedAndWrapsTheShortWay() {
+        assertEquals(0.2f, FirstPersonCamera.shortestTurn(0.1f, 0.3f), 1e-5);
+        assertEquals(-0.2f, FirstPersonCamera.shortestTurn(0.3f, 0.1f), 1e-5);
+        assertEquals(-0.2f, FirstPersonCamera.shortestTurn(0.1f, 0.1f - 0.2f), 1e-5);
+        assertEquals(0.2f,
+                FirstPersonCamera.shortestTurn((float) (2 * Math.PI - 0.1), 0.1f), 1e-5);
     }
 }

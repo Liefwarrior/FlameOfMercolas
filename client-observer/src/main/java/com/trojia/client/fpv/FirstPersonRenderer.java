@@ -30,7 +30,11 @@ import java.util.List;
  *
  * <p><b>Lighting is the same lighting.</b> Depth is {@link DepthVision#shade} — the one curve
  * the tile view's look-down and its depth actors already share, so a floor one band down is
- * the same shade of recessed whichever key you last pressed. Lamp pools come from the same
+ * the same shade of recessed whichever key you last pressed. What that curve is <em>fed</em> is
+ * {@link BandGeometry#lookDownDepth}: bands strictly below the eye's own continuous height,
+ * counted off that height rather than off the sim's band index. Above the eye it is zero,
+ * because a look-down recession curve has nothing to say about a roof. Lamp pools come from the
+ * same
  * precomputed {@link LampGlowMap} with the same lerp, and night water gets the same cool pull
  * as the top-down overlay. The only thing here that has no top-down counterpart is
  * {@link #faceShade}, and it cannot cause a disagreement because the tile view never draws a
@@ -91,32 +95,43 @@ public final class FirstPersonRenderer {
         }
         drawSky(batch, eye, whitePixel, ambient, alpha);
         float lampF = ambient.lampFactor();
+        float eyeHeight = eye.eyeHeight();
         for (ViewQuad quad : plan) {
             if (quad instanceof ViewQuad.Terrain terrain) {
-                drawTerrain(batch, terrain, ambient, lampF, alpha);
+                drawTerrain(batch, terrain, ambient, lampF, alpha, eyeHeight);
             } else if (quad instanceof ViewQuad.Billboard billboard) {
-                drawBillboard(batch, billboard, ambient, lampF, alpha);
+                drawBillboard(batch, billboard, ambient, lampF, alpha, eyeHeight);
             }
         }
         batch.setColor(Color.WHITE);
     }
 
-    /** The flat band of sky above the horizon (see {@link SkyBand} for why there is one). */
+    /**
+     * The frame's backdrop: sky above the horizon, ground haze below it, together covering
+     * every pixel of the viewport before a single quad is drawn (see {@link SkyBand} for why
+     * both halves are painted rather than just the top one). Nothing else in this class is
+     * allowed to assume anything was cleared behind it.
+     */
     private void drawSky(SpriteBatch batch, EyeProjection eye, TextureRegion whitePixel,
             AmbientLight ambient, float alpha) {
+        float width = eye.viewportWidthPx();
         float horizon = Math.max(0f, Math.min(eye.viewportHeightPx(), eye.horizonY()));
-        float height = eye.viewportHeightPx() - horizon;
-        if (height <= 0f) {
-            return;
+        if (horizon > 0f) {
+            SkyBand.Rgb haze = SkyBand.groundHazeAt(ambient);
+            batch.setColor(haze.r(), haze.g(), haze.b(), alpha);
+            batch.draw(whitePixel, 0f, 0f, width, horizon);
         }
-        SkyBand.Rgb sky = SkyBand.colorAt(ambient);
-        batch.setColor(sky.r(), sky.g(), sky.b(), alpha);
-        batch.draw(whitePixel, 0f, horizon, eye.viewportWidthPx(), height);
+        float skyHeight = eye.viewportHeightPx() - horizon;
+        if (skyHeight > 0f) {
+            SkyBand.Rgb sky = SkyBand.colorAt(ambient);
+            batch.setColor(sky.r(), sky.g(), sky.b(), alpha);
+            batch.draw(whitePixel, 0f, horizon, width, skyHeight);
+        }
         batch.setColor(Color.WHITE);
     }
 
     private void drawTerrain(SpriteBatch batch, ViewQuad.Terrain q, AmbientLight ambient,
-            float lampF, float alpha) {
+            float lampF, float alpha, float eyeHeight) {
         TextureRegion region = atlas.region(q.regionName(), q.variant(), 0);
         float ambR = ambient.r();
         float ambG = ambient.g();
@@ -128,7 +143,8 @@ public final class FirstPersonRenderer {
             ambG *= 1f - WorldRenderer.WATER_NIGHT_COOL_G * lampF;
         }
         float[] lit = litAmbient(ambR, ambG, ambB, lampF, q.tileX(), q.tileY(), q.bandZ());
-        DepthVision.Shade shade = DepthVision.shade(Math.abs(q.bandDelta()));
+        DepthVision.Shade shade =
+                DepthVision.shade(BandGeometry.lookDownDepth(eyeHeight, q.bandZ()));
         float face = faceShade(q.face());
         float r = lit[0] * shade.r() * face;
         float g = lit[1] * shade.g() * face;
@@ -151,11 +167,12 @@ public final class FirstPersonRenderer {
      * smudge.
      */
     private void drawBillboard(SpriteBatch batch, ViewQuad.Billboard q, AmbientLight ambient,
-            float lampF, float alpha) {
+            float lampF, float alpha, float eyeHeight) {
         TextureRegion region = sheet.region(q.sprite());
         float[] lit = litAmbient(ambient.r(), ambient.g(), ambient.b(), lampF,
                 q.tileX(), q.tileY(), q.bandZ());
-        DepthVision.Shade shade = DepthVision.shade(Math.abs(q.bandDelta()));
+        DepthVision.Shade shade =
+                DepthVision.shade(BandGeometry.lookDownDepth(eyeHeight, q.bandZ()));
         float r = lit[0] * shade.r();
         float g = lit[1] * shade.g();
         float b = lit[2] * shade.b();

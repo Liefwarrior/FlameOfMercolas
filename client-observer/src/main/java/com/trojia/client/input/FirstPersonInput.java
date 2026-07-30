@@ -24,7 +24,9 @@ import com.trojia.sim.actor.ActorRegistry;
  *   <li>{@code A}/{@code D} — strafe left / right. (Not turn: turning with the same keys that
  *       move you is what makes a tile-stepped first-person view feel like driving a tank.)</li>
  *   <li>{@code Left}/{@code Right} — turn, continuously, at {@link #TURN_DEGREES_PER_SECOND}.
- *       Held {@code Shift} doubles it for a quick about-face.</li>
+ *       Held {@code Shift} doubles it for a quick about-face. Live from the tile view too
+ *       while an actor is driven ({@link #pollTurn}), which is what makes the facing wedge
+ *       something you can aim before you switch rather than a read-out.</li>
  *   <li>{@code Up}/{@code Down} — unchanged: they are still the CLIMB verb
  *       ({@link ClimbInput}), because a stair is a stair from either camera.</li>
  *   <li>{@code PageUp}/{@code PageDown} — look up / down. A horizon shear, not a pitch (see
@@ -61,13 +63,7 @@ public final class FirstPersonInput {
         if (!playMode.active()) {
             return shearPx;
         }
-        boolean fast = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)
-                || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
-        int turn = (Gdx.input.isKeyPressed(Input.Keys.RIGHT) ? 1 : 0)
-                - (Gdx.input.isKeyPressed(Input.Keys.LEFT) ? 1 : 0);
-        if (turn != 0) {
-            applyTurn(camera, turn * (fast ? 2f : 1f) * TURN_DEGREES_PER_SECOND * deltaSeconds);
-        }
+        pollTurn(camera, playMode, deltaSeconds);
         int look = (Gdx.input.isKeyPressed(Input.Keys.PAGE_UP) ? 1 : 0)
                 - (Gdx.input.isKeyPressed(Input.Keys.PAGE_DOWN) ? 1 : 0);
         float shear = shearPx;
@@ -81,6 +77,31 @@ public final class FirstPersonInput {
                 - (Gdx.input.isKeyPressed(Input.Keys.A) ? 1 : 0);
         applyMove(camera, playMode, registry, forward, strafe);
         return shear;
+    }
+
+    /**
+     * <b>The turn keys alone</b>, polled from either view.
+     *
+     * <p>This exists split out because the facing wedge is one of the three anchors that make
+     * the mode switch survivable, and an anchor you cannot aim is not one. Left/Right turn the
+     * view yaw while the tile view is on screen too — the keys are free there, since
+     * {@code CameraInput} suppresses arrow-key panning whenever an actor is being driven — so a
+     * player can point the wedge down the street they mean to walk and then press V already
+     * looking that way. In first person {@link #poll} calls this as its first act, so it is the
+     * same code path and there is no second turn implementation to drift.
+     */
+    public static void pollTurn(FirstPersonCamera camera, PlayModeState playMode,
+            float deltaSeconds) {
+        if (!playMode.active()) {
+            return;
+        }
+        boolean fast = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)
+                || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+        int turn = (Gdx.input.isKeyPressed(Input.Keys.RIGHT) ? 1 : 0)
+                - (Gdx.input.isKeyPressed(Input.Keys.LEFT) ? 1 : 0);
+        if (turn != 0) {
+            applyTurn(camera, turn * (fast ? 2f : 1f) * TURN_DEGREES_PER_SECOND * deltaSeconds);
+        }
     }
 
     /**

@@ -17,8 +17,16 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
  * <p>It tracks the <em>view yaw</em>, not the sim's four-way facing, and that is deliberate.
  * The view yaw is what the first-person camera will actually use; the sim's facing is written
  * only on a committed step and takes the x component of a diagonal, so a wedge following it
- * would promise east and deliver north-east. The yaw is seeded from the facing once and is
- * the player's after that.
+ * would promise east and deliver north-east.
+ *
+ * <p><b>It is live, and it is aimable, and it needs to be both.</b> Live: while the tile view
+ * is the one on screen, every committed step swings the yaw toward the direction actually
+ * travelled ({@link FirstPersonCamera#followCell(int, int, int, boolean)}), so walking the
+ * driven actor across the ward turns the marker with it instead of leaving it pointing at
+ * wherever the actor happened to be facing when you took control. Aimable: Left/Right turn the
+ * yaw from the tile view too, not only from inside first person, so you can stand still, point
+ * the wedge down the street you want to look along, and press V. An explicit turn wins until
+ * the next step.
  *
  * <p>{@link #corners} is pure screen arithmetic and is where the test lives; the draw below is
  * three vertices and a repeat.

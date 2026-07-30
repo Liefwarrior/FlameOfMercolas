@@ -164,9 +164,26 @@ public final class EyeProjection {
      * {@code depth} forward of the eye: above this it is off the top edge. Used to stop each
      * column's upward band scan exactly where the frame stops, which is an <em>exact</em>
      * cutoff rather than a budget — a cell above this line contributes no pixels.
+     *
+     * <p><b>Feed it the cell's FAR depth, not its near one</b> ({@link #cellFarDepth}). The
+     * limit rises with distance, so the near side of a cell is the strictest possible test and
+     * using it culls surfaces whose far half is squarely on screen. That was worth a
+     * ninety-pixel hole of sky along the top of every indoor frame — the nearest three rings of
+     * ceiling slab were being dropped, and because the scan <em>breaks</em> at the first band
+     * over the line, so was everything above them.
      */
     public float highestVisibleHeight(float depth) {
         return eyeHeight + (viewportH - horizonY) * depth / focalPx;
+    }
+
+    /**
+     * Forward distance to the farthest point of the unit cell centred on {@code (cx, cy)} —
+     * exactly {@code depthOf(centre) + (|cos yaw| + |sin yaw|) / 2}, the support function of a
+     * unit square along the view axis. Nothing in the cell is farther, so a cutoff taken here
+     * never discards a surface that has pixels on screen.
+     */
+    public float cellFarDepth(float cx, float cy) {
+        return depthOf(cx, cy) + 0.5f * (Math.abs(cos) + Math.abs(sin));
     }
 
     // ------------------------------------------------------------------ getters

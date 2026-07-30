@@ -39,9 +39,18 @@ public final class BandGeometry {
     /** Eye height above the floor slab the actor is standing on, in world units. */
     public static final float EYE_HEIGHT = 1.70f;
 
-    /** Height of a standing actor's billboard, in world units (head just under the eyeline
-     * of someone a band up looking down at them; taller than the eye so people read as
-     * people, shorter than the band so they fit under a ceiling). */
+    /**
+     * World size of one 16px sprite cell drawn as a billboard — and therefore, for the
+     * one-cell actor sprites the index ships, a standing actor's height (head just under the
+     * eyeline of someone a band up looking down at them; taller than the eye so people read as
+     * people, shorter than the band so they fit under a ceiling).
+     *
+     * <p>It is a <b>cell</b> size rather than a height because the art cell is square: the
+     * billboard is {@code cellsW} by {@code cellsH} of these, so a square sprite draws square
+     * and the figure inked inside it keeps its own proportions. Measured over the 25 actor
+     * sprites in {@code content/art/sprites}, that ink is a median 11 px wide by 15 px tall in
+     * a 16 px cell, so a standing figure reads about 1.8 world units tall and 1.3 wide.
+     */
     public static final float ACTOR_HEIGHT = 1.90f;
 
     private BandGeometry() {
@@ -55,6 +64,37 @@ public final class BandGeometry {
     /** World height of band {@code z}'s ceiling plane, i.e. band {@code z+1}'s floor slab. */
     public static float ceilingHeight(int z) {
         return (z + 1) * BAND_HEIGHT;
+    }
+
+    /**
+     * <b>How many bands below the eye a band reads as, for depth shading</b> — measured from
+     * the eye's continuous height rather than from its band index, and never negative.
+     *
+     * <p>Two bugs live in the naive {@code abs(bandZ - eyeBand)} this replaces.
+     *
+     * <p>First, the sign. {@code DepthVision.shade} is the tile view's <em>look-down</em>
+     * recession curve: it dims and cools a surface for being seen from above through air.
+     * Feeding it the absolute band difference applied that curve to everything <em>above</em>
+     * the eye too, so a rooftop three storeys up — the thing the sky is shining on — was
+     * rendered dimmer and bluer than the street under your feet. Above the eye the answer is
+     * zero: no recession, that is not what recession means.
+     *
+     * <p>Second, the timing. The band index is the sim's, and it changes the instant a climb
+     * commits, while the eye takes {@code CLIMB_ARRIVAL_FRACTION} of a step cadence to actually
+     * rise. For the whole of that the eye was still visually on the lower band while every
+     * surface on it counted as one band down, so the entire ward dimmed a step and then
+     * un-dimmed on arrival. Measuring off the eased height instead, the count changes when the
+     * eye is genuinely halfway between the two floors, which is what climbing looks like.
+     *
+     * @param eyeHeight the eye's continuous world height ({@code EyeProjection.eyeHeight()})
+     * @param bandZ     the band being shaded
+     */
+    public static int lookDownDepth(float eyeHeight, int bandZ) {
+        // The eye's own floor plane, backed out of the eye height; the epsilon is one head-bob
+        // dip, so a mid-stride bob can never tip a band into counting as one deeper.
+        float feet = eyeHeight - EYE_HEIGHT;
+        float bands = (feet - floorHeight(bandZ)) / BAND_HEIGHT + 0.021f;
+        return bands <= 0f ? 0 : (int) bands;
     }
 
     /**

@@ -9,6 +9,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -392,7 +393,228 @@ class FirstPersonPlannerTest {
                 "the corpse squash must carry over from the tile view");
     }
 
+    /**
+     * <b>You cannot see yourself, at any point in a stride.</b>
+     *
+     * <p>This is the one first-person bug that cannot be argued about: the actor whose eyes you
+     * are looking out of had its own sprite planted in the middle of its own frame. It is a
+     * stride-shaped bug, not a still-frame one — the sim commits the body to the cell ahead and
+     * the eye spends the next tenth of a second crossing into it, so the body is a metre in
+     * front of the camera for most of every step and only tucks under it at the moment of
+     * arrival. So the whole cadence is walked, at the real 200 ms / 60 fps rate, and every
+     * single frame of it is planned and checked.
+     *
+     * <p>The same walk is planned twice: once naming the driven actor and once naming nobody,
+     * so the test also proves the sprite <em>would</em> have been there. A test that only
+     * asserts an absence passes just as well when the actor was never planned at all.
+     */
+    @Test
+    void thePlayedActorIsInNoneOfItsOwnFramesAcrossAWholeStride() {
+        FpvScene scene = street();
+        com.trojia.client.sprite.SpriteRef sprite = new com.trojia.client.sprite.SpriteRef(
+                "dockhand", 0, 0, 1, 1, 1, java.util.Set.of("actor"));
+        int played = 42;
+        int bystander = 99;
+        int[] body = {32, 32};
+        ActorSight actors = (x, y, z) -> {
+            if (z != BAND) {
+                return ActorSight.NONE_HERE;
+            }
+            if (x == body[0] && y == body[1]) {
+                return List.of(new ActorSight.Mark(played, sprite, false));
+            }
+            if (x == 32 && y == 24) {
+                return List.of(new ActorSight.Mark(bystander, sprite, false));
+            }
+            return ActorSight.NONE_HERE;
+        };
+
+        FirstPersonCamera cam = new FirstPersonCamera();
+        cam.snapTo(32, 32, BAND, (float) (3 * Math.PI / 2)); // looking north, walking north
+        FirstPersonPlanner planner = FpvScene.planner();
+        int frames = 0;
+        int framesShowingSelfWhenNotHidden = 0;
+        int framesShowingTheBystander = 0;
+        for (int step = 0; step < 4; step++) {
+            body[1] -= 1;
+            cam.followCell(body[0], body[1], BAND);
+            for (int f = 0; f < 12; f++) { // 12 frames at 60 Hz == the 200 ms real cadence
+                cam.advance(1 / 60f);
+                EyeProjection eye = EyeProjection.of(cam.eyeX(), cam.eyeY(), cam.eyeHeight(),
+                        cam.yaw(), W, H, EyeProjection.DEFAULT_FOV_DEGREES, 0f);
+                frames++;
+                for (ViewQuad q : planner.plan(eye, cam.band(), scene, actors, played)) {
+                    if (q instanceof ViewQuad.Billboard b) {
+                        assertNotEquals(played, b.actorId(),
+                                "the driven actor drew itself at frame " + frames
+                                        + ", eye at " + cam.eyeX() + "," + cam.eyeY()
+                                        + " body at " + body[0] + "," + body[1]);
+                        if (b.actorId() == bystander) {
+                            framesShowingTheBystander++;
+                        }
+                    }
+                }
+                for (ViewQuad q : planner.plan(eye, cam.band(), scene, actors,
+                        FirstPersonPlanner.SHOW_EVERYONE)) {
+                    if (q instanceof ViewQuad.Billboard b && b.actorId() == played) {
+                        framesShowingSelfWhenNotHidden++;
+                    }
+                }
+            }
+        }
+        assertEquals(48, frames);
+        assertTrue(framesShowingSelfWhenNotHidden > frames / 2,
+                "this test is not proving anything: without the exclusion the driven actor was "
+                        + "only in " + framesShowingSelfWhenNotHidden + " of " + frames
+                        + " frames anyway");
+        assertTrue(framesShowingTheBystander > frames / 2,
+                "the exclusion must hide exactly one actor, not switch actors off: the "
+                        + "bystander appeared in " + framesShowingTheBystander + " frames");
+    }
+
+    /**
+     * The billboard carries the sprite cell's own aspect. Every actor sprite the index ships is
+     * a single square 16px cell; drawing it one tile wide and 1.90 tall stretched every figure
+     * to near-double height, so the same dockhand was a square from above and a lamppost from
+     * the street.
+     */
+    @Test
+    void aBillboardKeepsItsSpriteCellsOwnAspect() {
+        FpvScene scene = street();
+        com.trojia.client.sprite.SpriteRef square = new com.trojia.client.sprite.SpriteRef(
+                "one_cell", 0, 0, 1, 1, 1, java.util.Set.of("actor"));
+        com.trojia.client.sprite.SpriteRef wide = new com.trojia.client.sprite.SpriteRef(
+                "two_wide", 0, 0, 2, 1, 1, java.util.Set.of("actor"));
+        EyeProjection eye = eyeAt(32.5f, 32.5f, BAND);
+        float[] squareBox = billboardBox(FpvScene.planner()
+                .plan(eye, BAND, scene, oneActorAt(32, 27, BAND, square)));
+        assertEquals(squareBox[0], squareBox[1], 0.5f,
+                "a square sprite cell must plan a square quad, not a 1.90:1 stretch");
+
+        float[] wideBox = billboardBox(FpvScene.planner()
+                .plan(eye, BAND, scene, oneActorAt(32, 27, BAND, wide)));
+        assertEquals(2f * squareBox[0], wideBox[0], 0.5f,
+                "a two-cell-wide sprite must plan twice as wide");
+        assertEquals(squareBox[1], wideBox[1], 0.5f, "and exactly as tall");
+    }
+
+    // ------------------------------------------------------------------ the frame's edges
+
+    /**
+     * <b>The ceiling must run off the top of the frame, not stop short of it.</b>
+     *
+     * <p>The upward band scan stops where the frame stops, which is right — but it was taking
+     * that cutoff at each column's <em>near</em> side. The limit rises with distance, so the
+     * near side is the strictest possible test: the nearest few rings of overhead slab, whose
+     * far halves were squarely on screen, were dropped, and because the scan breaks at the
+     * first band over the line everything above them went too. Standing indoors and craning up,
+     * the top of the frame was sky.
+     */
+    @Test
+    void theCeilingOverheadReachesTheTopOfTheFrame() {
+        FpvScene scene = street();
+        scene.fill(20, 44, 20, 44, BAND + 1, TileForm.FLOOR, FpvScene.OAK); // a roof over it all
+        EyeProjection eye = eyeAt(32.5f, 32.5f, BAND, LOOK_UP);
+        List<ViewQuad> plan = FpvScene.planner().plan(eye, BAND, scene, ActorSight.empty());
+
+        float highest = 0f;
+        int ceilingQuads = 0;
+        for (ViewQuad quad : plan) {
+            if (quad.bandZ() != BAND + 1 || quad.face() != Face.BOTTOM) {
+                continue;
+            }
+            ceilingQuads++;
+            highest = Math.max(highest, highestCornerY(quad));
+        }
+        assertTrue(ceilingQuads > 20, "an enclosed street should be roofed: " + ceilingQuads);
+        assertTrue(highest >= H,
+                "the ceiling stops " + (H - highest) + " px short of the top of the frame — "
+                        + "that gap is a hole of sky over an indoor room");
+    }
+
+    /**
+     * The same cutoff, and the same fix, seen from the side that makes it a two-views
+     * disagreement rather than a cosmetic one: an actor on the gallery above your head is a
+     * fact about who is in the ward, and the tile view has never had any trouble showing it.
+     */
+    @Test
+    void anActorOnTheBandAboveIsNotCulledWhileItsFloorIsInFrame() {
+        FpvScene scene = street();
+        scene.fill(20, 44, 20, 44, BAND + 1, TileForm.FLOOR, FpvScene.OAK);
+        com.trojia.client.sprite.SpriteRef sprite = new com.trojia.client.sprite.SpriteRef(
+                "watch", 0, 0, 1, 1, 1, java.util.Set.of("actor"));
+        EyeProjection eye = eyeAt(32.5f, 32.5f, BAND); // level gaze, no craning
+        List<ViewQuad> plan = FpvScene.planner()
+                .plan(eye, BAND, scene, oneActorAt(32, 29, BAND + 1, sprite));
+
+        ViewQuad.Billboard upstairs = null;
+        for (ViewQuad quad : plan) {
+            if (quad instanceof ViewQuad.Billboard b && b.bandZ() == BAND + 1) {
+                upstairs = b;
+            }
+        }
+        assertNotNull(upstairs, "a figure on the gallery one band up vanished from first person "
+                + "while the gallery floor it stands on is still in frame");
+        assertEquals(1, upstairs.bandDelta());
+        assertTrue(lowestCornerY(upstairs) < H && lowestCornerY(upstairs) > eye.horizonY(),
+                "and it must land above the horizon and inside the frame, at screen y "
+                        + lowestCornerY(upstairs));
+    }
+
+    /**
+     * Unauthored VOID draws nothing — and does not stop the downward scan, because
+     * {@code WorldRenderer.cellDrawsSomething} says false for it and so the tile view's
+     * look-down walks straight through. Stopping here was a latent disagreement between the two
+     * cameras about how deep a column shows, in exactly the place the agreement test cannot
+     * reach: it can only compare columns where first person showed something, and this bug's
+     * signature is first person showing nothing.
+     */
+    @Test
+    void unauthoredVoidDoesNotStopTheDescentTheTileViewWalksThrough() {
+        FpvScene scene = street();
+        for (int y = 22; y <= 28; y++) {
+            for (int x = 28; x <= 36; x++) {
+                scene.put(x, y, BAND, TileForm.OPEN, 0);        // a hole in the street
+                scene.put(x, y, BAND - 1, TileForm.VOID, 0);    // unauthored space under it
+                scene.put(x, y, BAND - 2, TileForm.FLOOR, FpvScene.GRANITE);
+            }
+        }
+        List<ViewQuad> plan = FpvScene.planner()
+                .plan(eyeAt(32.5f, 32.5f, BAND, LOOK_DOWN), BAND, scene, ActorSight.empty());
+        long throughTheVoid = plan.stream().filter(q -> q.bandZ() == BAND - 2).count();
+        long voidItself = plan.stream().filter(q -> q.bandZ() == BAND - 1).count();
+        assertTrue(throughTheVoid > 0,
+                "the floor under a void cell was invisible; the tile view's look-down walks "
+                        + "straight through void and shows it");
+        assertEquals(0, voidItself,
+                "void must draw nothing at all — it only stops being a wall to the scan");
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    private static ActorSight oneActorAt(int ax, int ay, int az,
+            com.trojia.client.sprite.SpriteRef sprite) {
+        return (x, y, z) -> x == ax && y == ay && z == az
+                ? List.of(new ActorSight.Mark(7, sprite, false))
+                : ActorSight.NONE_HERE;
+    }
+
+    /** {@code {width, height}} in screen px of the plan's first billboard. */
+    private static float[] billboardBox(List<ViewQuad> plan) {
+        for (ViewQuad q : plan) {
+            if (q instanceof ViewQuad.Billboard b) {
+                float[] c = b.corners();
+                return new float[] {Math.abs(c[4] - c[0]), Math.abs(c[3] - c[1])};
+            }
+        }
+        throw new AssertionError("no billboard planned");
+    }
+
+    private static float lowestCornerY(ViewQuad quad) {
+        float[] c = quad.corners();
+        return Math.min(Math.min(c[1], c[3]), Math.min(c[5], c[7]));
+    }
+
 
     private static String describe(ViewQuad.Terrain t) {
         return "(" + t.tileX() + "," + t.tileY() + ",z" + t.bandZ() + ") " + t.face();

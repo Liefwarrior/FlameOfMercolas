@@ -106,7 +106,26 @@ public final class ViewModeState {
         return mode;
     }
 
-    /** Forces the view back to the tile camera without a fade (the driven actor went away). */
+    /**
+     * The driven actor went away — released, or dead, or taken over by something else. Sends
+     * the view back to the tile camera <b>through the same fade the V key uses</b>, which is
+     * the point: this was the one mode change in the client that was a hard cut, and a hard cut
+     * out of first person is exactly the disorientation the cross-fade exists to prevent.
+     *
+     * <p>Idempotent — the caller runs it every frame while nothing is driven, and once the fade
+     * has landed it does nothing at all.
+     */
+    public void releaseToTopDown() {
+        if (mode == Mode.TOP_DOWN && blend <= 0f) {
+            transitioning = false;
+            return;
+        }
+        mode = Mode.TOP_DOWN;
+        transitioning = blend > 0f;
+    }
+
+    /** Forces the view back to the tile camera with no fade at all — teardown, and the tests
+     * that need a known state. {@link #releaseToTopDown} is what losing an actor uses. */
     public void forceTopDown() {
         mode = Mode.TOP_DOWN;
         blend = 0f;

@@ -25,6 +25,12 @@ import java.util.Map;
  * <p>Reads only. Nothing here writes to an actor, and in particular nothing writes
  * {@code Actor.setFacing} — turning the camera is a client-side view yaw, never a fact in the
  * world (see {@link FirstPersonCamera}).
+ *
+ * <p><b>This index buckets everybody, deliberately.</b> Hiding the driven actor from its own
+ * view is a visibility decision, and visibility decisions live in
+ * {@link FirstPersonPlanner#plan(EyeProjection, int, CellSight, ActorSight, int)} where a
+ * headless test can read them — filtering here as well would put the same rule in two places
+ * and let one of them rot.
  */
 public final class CellActorIndex implements ActorSight {
 

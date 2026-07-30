@@ -105,6 +105,9 @@ public final class FirstPersonPlanner {
      * common case must not allocate. */
     static final float[] FULL_UVS = {0f, 1f, 0f, 0f, 1f, 0f, 1f, 1f};
 
+    /** {@code excludeActorId} value meaning "hide nobody" — a plan for a disembodied eye. */
+    public static final int SHOW_EVERYONE = com.trojia.sim.actor.Actor.NONE;
+
     /** The top-down corpse squash, carried over so a body reads the same in both views. */
     public static final float CORPSE_SQUASH = 0.45f;
 
@@ -130,6 +133,8 @@ public final class FirstPersonPlanner {
     private final float[] screenX = new float[6];
     private final float[] screenY = new float[6];
     private boolean lastClipTrimmed;
+    /** The actor whose eyes this frame is being planned through — never drawn. */
+    private int hiddenActorId = SHOW_EVERYONE;
 
     public FirstPersonPlanner(MaterialRegistry materials, FluidRegistry fluids,
             TileArtResolver artResolver, RegionCatalog catalog) {
@@ -140,16 +145,37 @@ public final class FirstPersonPlanner {
     }
 
     /**
-     * Plans one frame.
-     *
-     * @param eye     the frame's projection (eye position, yaw, viewport)
-     * @param eyeBand the absolute world z the eye's actor is standing on
-     * @param sight   the tile lanes
-     * @param actors  who is standing where
-     * @return the frame's quads, farthest first — draw them in this order
+     * Plans one frame for a disembodied eye — every actor in the ward is drawn, including one
+     * standing where the eye is. Only the terrain tests want this; the live view always names
+     * the actor it is looking out of.
      */
     public List<ViewQuad> plan(EyeProjection eye, int eyeBand, CellSight sight,
             ActorSight actors) {
+        return plan(eye, eyeBand, sight, actors, SHOW_EVERYONE);
+    }
+
+    /**
+     * Plans one frame.
+     *
+     * <p><b>You cannot see yourself.</b> {@code excludeActorId} is the driven actor — the one
+     * whose eyes this is — and it contributes no billboard at all. That is not a nicety: the
+     * eye slides continuously while the actor steps on the grid ({@link FirstPersonCamera}),
+     * so for most of every stride the sim has already committed the body to the cell ahead
+     * while the eye is still crossing into it, and the body's own sprite stands square in the
+     * middle of the frame. The exclusion is by id rather than by cell because that is the only
+     * form that stays correct mid-stride, when "the eye's cell" and "the actor's cell" are two
+     * different cells.
+     *
+     * @param eye             the frame's projection (eye position, yaw, viewport)
+     * @param eyeBand         the absolute world z the eye's actor is standing on
+     * @param sight           the tile lanes
+     * @param actors          who is standing where
+     * @param excludeActorId  the actor being looked out of, or {@link #SHOW_EVERYONE}
+     * @return the frame's quads, farthest first — draw them in this order
+     */
+    public List<ViewQuad> plan(EyeProjection eye, int eyeBand, CellSight sight,
+            ActorSight actors, int excludeActorId) {
+        this.hiddenActorId = excludeActorId;
         List<ViewQuad> out = new ArrayList<>(768);
         int eyeCellX = (int) Math.floor(eye.eyeX());
         int eyeCellY = (int) Math.floor(eye.eyeY());
@@ -190,7 +216,8 @@ public final class FirstPersonPlanner {
         }
         // The eye's own cell last: nearest, and never frustum-tested (its centre can sit
         // behind the eye plane mid-stride).
-        planColumn(out, eye, eyeBand, sight, actors, eyeCellX, eyeCellY, 1f);
+        planColumn(out, eye, eyeBand, sight, actors, eyeCellX, eyeCellY,
+                eye.cellFarDepth(eyeCellX + 0.5f, eyeCellY + 0.5f));
         return out;
     }
 
@@ -199,9 +226,8 @@ public final class FirstPersonPlanner {
         if (!eye.mayBeVisible(cx + 0.5f, cy + 0.5f, maxDepth)) {
             return;
         }
-        float nearDepth = Math.max(EyeProjection.NEAR_PLANE,
-                eye.depthOf(cx + 0.5f, cy + 0.5f) - 1f);
-        planColumn(out, eye, eyeBand, sight, actors, cx, cy, nearDepth);
+        planColumn(out, eye, eyeBand, sight, actors, cx, cy,
+                eye.cellFarDepth(cx + 0.5f, cy + 0.5f));
     }
 
     /**
@@ -209,16 +235,24 @@ public final class FirstPersonPlanner {
      * draws, then upward until the frame runs out of sky (see the class javadoc's vertical
      * rule).
      *
-     * @param nearDepth forward distance to the column's near side, for the upward cutoff
+     * <p>The upward cutoff is taken at the column's <b>far</b> depth, which is what makes it an
+     * exact cutoff rather than an over-eager one. The lowest thing anything in band {@code b}
+     * can occupy is that band's floor slab — an actor stands on it, a wall starts at it, the
+     * slab itself is it — so if the slab is off the top of the frame at the cell's farthest
+     * point, nothing in that band or any band above it has a pixel on screen, and the break is
+     * sound.
+     *
+     * @param farDepth forward distance to the column's far side ({@link
+     *                 EyeProjection#cellFarDepth})
      */
     private void planColumn(List<ViewQuad> out, EyeProjection eye, int eyeBand, CellSight sight,
-            ActorSight actors, int cx, int cy, float nearDepth) {
+            ActorSight actors, int cx, int cy, float farDepth) {
         for (int b = eyeBand; b >= eyeBand - BANDS_BELOW; b--) {
             if (!planCell(out, eye, eyeBand, sight, actors, cx, cy, b)) {
                 break;
             }
         }
-        float ceiling = eye.highestVisibleHeight(nearDepth);
+        float ceiling = eye.highestVisibleHeight(Math.max(EyeProjection.NEAR_PLANE, farDepth));
         for (int b = eyeBand + 1; b <= eyeBand + BANDS_ABOVE; b++) {
             if (BandGeometry.floorHeight(b) > ceiling) {
                 break; // this band and everything over it is off the top of the frame
@@ -230,9 +264,10 @@ public final class FirstPersonPlanner {
     /**
      * Emits one cell's faces and occupants.
      *
-     * @return {@code true} if a downward scan may continue past this cell — i.e. the cell is
-     *         empty air with no pooled fluid. Anything else stops the descent, whether it
-     *         draws (a slab, a wall, water) or not (the void border).
+     * @return {@code true} if a downward scan may continue past this cell — i.e. nothing here
+     *         draws. Only a cell that draws (a slab, a wall, pooled water) stops the descent,
+     *         which is the tile view's {@code cellDrawsSomething} verbatim; the world's outer
+     *         edge stops it because there is no cell to read.
      */
     private boolean planCell(List<ViewQuad> out, EyeProjection eye, int eyeBand, CellSight sight,
             ActorSight actors, int cx, int cy, int b) {
@@ -241,7 +276,11 @@ public final class FirstPersonPlanner {
         }
         int form = sight.form();
         if (form == VOID) {
-            return false;
+            // Unauthored void draws nothing and — this is the fix — does not stop the descent
+            // either. WorldRenderer.cellDrawsSomething says false for VOID, so the tile view's
+            // look-down walks straight through it; stopping here made the two views disagree
+            // about how deep a column shows the moment one had a void cell in it.
+            return true;
         }
         int fluidBits = sight.fluidBits();
         int materialLane = sight.materialId();
@@ -381,6 +420,16 @@ public final class FirstPersonPlanner {
      * it. The top-down view's stack-cascade nudge is deliberately not carried over: occupancy
      * is capped at one per cell sim-side, and the cascade only ever existed to stop two
      * co-located sprites hiding each other on a flat map.
+     *
+     * <p><b>The billboard is square because the sprite cell is square.</b> Every actor sprite
+     * in the shipped index is one 16x16 cell, and the ink inside it measures 11 px across by
+     * 15 px tall (median over all 25 actor sprites) — a figure with its own proportions.
+     * Drawing that cell one tile wide and {@link BandGeometry#ACTOR_HEIGHT} tall stretched
+     * every one of them by 1.9x vertically, so the same dockhand was a square from above and a
+     * lamppost from the street. The quad now carries the cell's own aspect
+     * ({@code cellsW : cellsH}), sized so the ink still stands at about
+     * {@code ACTOR_HEIGHT} — the corpse squash is applied after, because that flattening is
+     * deliberate and carried over from the tile view.
      */
     private void planOccupants(List<ViewQuad> out, EyeProjection eye, ActorSight actors,
             int cx, int cy, int b, int bandDelta) {
@@ -398,9 +447,13 @@ public final class FirstPersonPlanner {
         float sx = eye.screenX(lateral, depth);
         float base = BandGeometry.floorHeight(b);
         for (ActorSight.Mark mark : here) {
+            if (mark.actorId() == hiddenActorId) {
+                continue; // this is you
+            }
             float height = BandGeometry.ACTOR_HEIGHT * mark.sprite().cellsH()
                     * (mark.corpse() ? CORPSE_SQUASH : 1f);
-            float halfW = eye.halfWidthPx(mark.sprite().cellsW(), depth);
+            float halfW = eye.halfWidthPx(
+                    BandGeometry.ACTOR_HEIGHT * mark.sprite().cellsW(), depth);
             float yBottom = eye.screenY(base, depth);
             float yTop = eye.screenY(base + height, depth);
             float[] corners = {

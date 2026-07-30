@@ -658,6 +658,11 @@ public final class ObserverApp extends ApplicationAdapter {
             if (firstPerson) {
                 lookShearPx = FirstPersonInput.poll(eye, playMode, population.registry(),
                         deltaSeconds, lookShearPx);
+            } else {
+                // The turn keys stay live on the map, so the facing wedge is something you aim
+                // before you press V rather than a read-out you discover afterwards. Arrow-key
+                // panning is already suppressed while an actor is driven, so nothing collides.
+                FirstPersonInput.pollTurn(eye, playMode, deltaSeconds);
             }
             // The JOURNAL toggle (S3): J opens/closes the quest pane (J was unbound; the
             // design's verify-free-then-bind rule). Shares the pane with the masters board.
@@ -1043,12 +1048,23 @@ public final class ObserverApp extends ApplicationAdapter {
      * <p>Taking over a new actor seats the eye instantly and seeds the view yaw from that
      * actor's {@code facing()} — the only time the sim's four-way facing is read into the
      * continuous yaw, and it is never written back. See {@link FirstPersonCamera}.
+     *
+     * <p>While the tile view is the one on screen the step also aims the yaw, so the facing
+     * wedge drawn on the driven actor turns as it walks. In first person it does not: there the
+     * movement keys are already relative to the yaw, and adopting the travelled direction would
+     * snap the player's aim to the nearest of eight every time they took a step.
      */
     private void trackEye(float deltaSeconds) {
         viewMode.advance(deltaSeconds);
         if (playMode == null || !playMode.active()) {
-            eyeActorId = Actor.NONE;
-            viewMode.forceTopDown();
+            // Not a hard cut: if the first-person frame is up when the body is let go, it fades
+            // out the way it faded in. Every other mode change in this client is a transition.
+            // The eye keeps hold of the released actor's id until the fade lands, so the body
+            // you were just looking out of does not pop into the middle of its own last frame.
+            viewMode.releaseToTopDown();
+            if (!viewMode.firstPersonVisible()) {
+                eyeActorId = Actor.NONE;
+            }
             return;
         }
         int playedId = playMode.playedActorId();
@@ -1059,7 +1075,8 @@ public final class ObserverApp extends ApplicationAdapter {
             eye.snapTo(PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell),
                     ViewFacing.yawOfFacing(played.facing()));
         } else {
-            eye.followCell(PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell));
+            eye.followCell(PackedPos.x(cell), PackedPos.y(cell), PackedPos.z(cell),
+                    !viewMode.firstPersonVisible());
         }
         eye.advance(deltaSeconds);
     }
@@ -1091,13 +1108,19 @@ public final class ObserverApp extends ApplicationAdapter {
      * and the eye; the renderer below it only looks up textures. Actor positions are re-bucketed
      * every frame — nothing is cached across a tick, the same no-staleness contract the tile
      * renderers keep.
+     *
+     * <p>{@link #eyeActorId} is handed to the planner as the actor to hide: it is the body this
+     * frame is being seen out of, and without that the driven actor's own sprite stands in the
+     * middle of its own view for most of every stride (the eye slides between cells while the
+     * sim has already committed the body to the one ahead).
      */
     private void drawFirstPerson(AmbientLight ambient) {
         fpvActors.refresh();
         EyeProjection projection = EyeProjection.of(eye.eyeX(), eye.eyeY(), eye.eyeHeight(),
                 eye.yaw(), camera.viewportWidthPx(), camera.viewportHeightPx(),
                 EyeProjection.DEFAULT_FOV_DEGREES, lookShearPx);
-        List<ViewQuad> plan = fpvPlanner.plan(projection, eye.band(), cellSight, fpvActors);
+        List<ViewQuad> plan = fpvPlanner.plan(projection, eye.band(), cellSight, fpvActors,
+                eyeActorId);
         fpvRenderer.draw(batch, plan, projection, icons.whitePixel(), ambient, viewMode.blend());
     }
 
