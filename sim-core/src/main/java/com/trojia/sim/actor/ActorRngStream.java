@@ -115,7 +115,16 @@ public enum ActorRngStream {
      * per-tick counter, spatialKey = the CULLER's id (the body is inert — the work is the
      * knife-hand's, exactly like the fishing cast's).
      */
-    CHECK_CULL("check.cull");
+    CHECK_CULL("check.cull"),
+    /**
+     * The crafting check (Simple Magic, {@code SpellVerb}): one draw per cast attempt,
+     * resolved caster {@code linkcraft + WIT} against the difficulty {@code SpellCost} computes
+     * from what the crafting moves and how far, through {@link SkillChecks}' linkcraft family.
+     * APPENDED last (name-derived salt — no existing draw re-phases); drawn through the shared
+     * per-actor per-tick counter, spatialKey = the CASTER's id (the link is the caster's work,
+     * exactly like the fishing cast's and the cull's).
+     */
+    CHECK_LINKCRAFT("check.linkcraft");
 
     private final String streamName;
     private final long salt;

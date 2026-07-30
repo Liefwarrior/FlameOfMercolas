@@ -46,6 +46,9 @@ public enum IconKey {
     // K takes the pelt off a downed body, B turns carried goods into Royals at a counter.
     K("keyboard_k.png"),
     B("keyboard_b.png"),
+    // Simple Magic (the craftings bar): X repeats the last crafting worked. The bar itself is
+    // clicked, so the mouse glyph carries it on the legend beside this one.
+    X("keyboard_x.png"),
     MOUSE_LEFT_CLICK("mouse_left.png");
 
     private final String fileName;

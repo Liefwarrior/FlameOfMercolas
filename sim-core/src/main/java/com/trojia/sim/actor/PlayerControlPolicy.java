@@ -125,6 +125,20 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
                 self.setLastReasonCode(ReasonCode.NO_QUARRY_IN_REACH);
             }
         }
+        // Cast intent (Simple Magic — the spell bar down the right of the screen): ONE crafting
+        // worked this tick, through the same shared verb any future AI caster will use
+        // (LINKCRAFT XP on the attempt, the check.linkcraft draw against the difficulty
+        // SpellCost computes, the components landed on success, the per-caster latch stamped
+        // either way). The client sends the spell raw and, optionally, the body it clicked; a
+        // NONE target lets the sim pick the spell's own lowest-id target in reach, so the
+        // keyboard path and the click path resolve identically. Consumed unconditionally (the
+        // §5.2 stale-intent rule); anything unworkable stamps NO_LINK_TO_TARGET for the toast.
+        int spellRaw = self.playerSpellRaw();
+        int spellTarget = self.playerSpellTargetId();
+        self.setPlayerSpellIntent(Actor.NONE, Actor.NONE);
+        if (spellRaw != Actor.NONE) {
+            resolveCastIntent(self, ctx, spellRaw, spellTarget);
+        }
         // Sell intent (S8 — the counter half of the playable loop): one pass of the shared
         // counter sale, item for coin, through the same BankVerbs exchange the AI fishers use.
         // Consumed unconditionally (the §5.2 stale-intent rule); the verb stamps SOLD_GOODS or
@@ -158,6 +172,25 @@ public final class PlayerControlPolicy implements BehaviorPolicy {
                         SKYRUNNING_ROOF_STEP_CP, roofRegionKey(self.cell()), ctx.tick());
             }
         }
+    }
+
+    /**
+     * Resolves one crafting intent (Simple Magic) through the shared verb. This method used to
+     * carry its OWN copy of the level gate, the latch and the reach rule — which is exactly why
+     * {@code SpellVerb.resolveCast} carried none of them, and why the button was safe while the
+     * shared verb was not. It now does one thing the verb cannot: fills in a target the client
+     * did not name, so the keyboard path and the click path resolve identically. Every refusal
+     * and every stamp belongs to {@code SpellVerb.refusalFor}.
+     */
+    private static void resolveCastIntent(Actor self, ActorContext ctx, int spellRaw,
+            int requestedTarget) {
+        var spells = ctx.spells();
+        int target = requestedTarget;
+        if (target == Actor.NONE && spells.isValidRaw(spellRaw)) {
+            target = com.trojia.sim.actor.spell.SpellVerb.targetInReach(self, ctx.registry(),
+                    spells.get(spellRaw));
+        }
+        com.trojia.sim.actor.spell.SpellVerb.resolveCast(self, ctx, spellRaw, target);
     }
 
     /** The §3.3 satiation context for a roof cell: its {@code (x>>4, y>>4, z)} region id. */

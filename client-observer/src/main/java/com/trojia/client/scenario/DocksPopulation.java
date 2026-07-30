@@ -834,6 +834,14 @@ public final class DocksPopulation implements ScenarioPopulation {
         ActorsSystem system = new ActorsSystem(worldSeed, typeStats, jobs, registry, homes,
                 relationships, items, bank, world, fixtures, skillTracks, factionStandings,
                 questRegistry);
+        // Simple Magic: the public shelf, bound at bake before the first tick. The spell
+        // universe is raws only — it never rides a save, so a crafting's raw index comes from
+        // the raws bytes and nothing else.
+        // Gated against THIS bake's own skill universe, so the registry a crafting's "skill" key
+        // is validated against is provably the same object the sim later gates, checks and
+        // trains it in -- a misspelt key is a load failure here, never a crafting with no gate.
+        system.bindSpells(com.trojia.sim.actor.spell.SpellRawsLoader.load(rawsRoot,
+                skillTracks.skills()));
         system.recordFoodMintedAtBake(foodSeeded);
         return new DocksPopulation(system, typeStats, jobs, homes, relationships, items,
                 registry, worldSeed, builder.trackedGroundMoverId, builder.movers,

@@ -90,5 +90,38 @@ public enum ReasonCode {
     /** S8 counter sale: carried MATERIALS changed hands for Royals ({@code SellVerb}). */
     SOLD_GOODS,
     /** Play mode: the sell intent found no willing, coin-carrying counter within reach. */
-    NO_BUYER_IN_REACH
+    NO_BUYER_IN_REACH,
+    /**
+     * Simple Magic: a crafting took — the link opened and every one of the spell's components
+     * landed on its target ({@code SpellVerb}). What actually changed is the spell's own data.
+     */
+    SPELL_WORKED,
+    /** Simple Magic: the link would not open. The check failed; the use-XP was earned anyway. */
+    SPELL_FIZZLED,
+    /** Play mode: the cast intent found nothing this crafting could reach (the bridge rule). */
+    NO_LINK_TO_TARGET,
+    /**
+     * Simple Magic: the ward's lingering-effect table had no free rows for what this crafting
+     * would have filed, so the cast was refused BEFORE it cost anything. The alternative was to
+     * evict somebody else's live effect silently, which is the same lie as a cast that lands
+     * nothing ({@code ActiveEffects.freeSlots}).
+     */
+    NO_ROOM_FOR_CRAFTING,
+    /**
+     * Simple Magic: this body does not read at all, so no crafting is available to it — the
+     * literacy gate ({@code SpellVerb.isLiterate}). A gull cannot use a library.
+     */
+    CANNOT_READ_A_CRAFTING,
+    /**
+     * Simple Magic: the reader has not got deep enough into the shelf for this row — its live
+     * level in the crafting's OWN declared skill is under {@code SpellDefinition.minLevel}. The
+     * public-issue edition against the restricted one on the top shelf (L2472).
+     */
+    CRAFTING_UNREAD,
+    /**
+     * Simple Magic: the hand is still on the last link — this caster's cast latch has not run
+     * out ({@code Actor.castUntilTick}). Stamped by the shared verb rather than by whichever
+     * caller happened to remember the rule.
+     */
+    CRAFTING_HAND_LATCHED
 }

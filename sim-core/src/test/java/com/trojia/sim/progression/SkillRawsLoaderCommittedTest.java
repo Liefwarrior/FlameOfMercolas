@@ -16,10 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 final class SkillRawsLoaderCommittedTest {
 
-    /** All 19 skill ids in id order: sorted string keys, first key = 0. */
+    /** All 20 skill ids in id order: sorted string keys, first key = 0. */
     private static final List<String> EXPECTED_IDS = List.of(
             "bladework", "channeling", "cracksmanship", "dire_bows", "fieldcraft",
             "fishing", "grit", "harness", "heavy_arms", "kit_keeping", "lancework",
+            "linkcraft",
             "mixtures", "open_hand", "seacraft", "shieldwall", "sidearms", "skyrunning",
             "streetwise", "the_flame");
 
@@ -31,8 +32,8 @@ final class SkillRawsLoaderCommittedTest {
     }
 
     @Test
-    void loadsNineteenSkills() {
-        assertEquals(19, registry.size());
+    void loadsTwentySkills() {
+        assertEquals(20, registry.size());
     }
 
     @Test
@@ -58,6 +59,7 @@ final class SkillRawsLoaderCommittedTest {
         assertSkill("seacraft", GoverningAttribute.AGI, AptitudeTier.NEGLECTED);
         assertSkill("fishing", GoverningAttribute.AGI, AptitudeTier.NEGLECTED);
         assertSkill("the_flame", GoverningAttribute.NONE, AptitudeTier.FLAME);
+        assertSkill("linkcraft", GoverningAttribute.WIT, AptitudeTier.TRAINED);
     }
 
     private static void assertSkill(String key, GoverningAttribute gov, AptitudeTier apt) {

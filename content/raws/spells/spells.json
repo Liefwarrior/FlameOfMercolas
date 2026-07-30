@@ -1,0 +1,182 @@
+{
+  "id": "spells",
+  "spells": [
+    {
+      "id": "warm_the_hands",
+      "displayName": "Warm the Hands",
+      "skill": "linkcraft",
+      "minLevel": 0,
+      "baseResist": 0,
+      "cooldownTicks": 200,
+      "target": "SELF",
+      "range": 0,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE", "magnitude": 15, "durationTicks": 600 }
+      ],
+      "canonAnchor": "heat is the working currency of a crafting - Gerik knits skin shut with 'heat energy from the enemies' (L445); Eric links a campfire to refill himself (L505)",
+      "provenance": "Simple Magic seed spell, the TEMPERATURE axis. 1.5 degrees of held warmth for ten minutes of ward time - a dry coat on a wet quay, nothing more. SELF because no link needs forging to your own hands."
+    },
+    {
+      "id": "lend_the_warmth",
+      "displayName": "Lend the Warmth",
+      "skill": "linkcraft",
+      "minLevel": 1,
+      "baseResist": 4,
+      "cooldownTicks": 300,
+      "target": "TOUCH",
+      "range": 1,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE", "magnitude": 15, "durationTicks": 600 }
+      ],
+      "canonAnchor": "the same transfer across a bridged link - 'a crafting requires a link between the two entities, normally this would be an arm or a blade' (L459)",
+      "provenance": "Simple Magic seed spell. Warm the Hands with one word changed (SELF -> TOUCH) and a little more difficulty for the link it now has to open: the target shape is data too."
+    },
+    {
+      "id": "draw_the_chill",
+      "displayName": "Draw the Chill",
+      "skill": "linkcraft",
+      "minLevel": 0,
+      "baseResist": 0,
+      "cooldownTicks": 200,
+      "target": "TOUCH",
+      "range": 1,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE", "magnitude": -20, "durationTicks": 600 }
+      ],
+      "canonAnchor": "the same transfer with the endpoint swapped: an emptied chromatis stake reads 'very cold to the touch, almost like ice' (L2782-2784)",
+      "provenance": "Simple Magic seed spell. Proof the axes are signed rather than paired: this is Warm the Hands with a minus sign and nothing else. Keeps a catch from turning on a hot day."
+    },
+    {
+      "id": "sting",
+      "displayName": "Sting",
+      "skill": "linkcraft",
+      "minLevel": 0,
+      "baseResist": 0,
+      "cooldownTicks": 300,
+      "target": "TOUCH",
+      "range": 1,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "VITALITY", "mode": "INSTANT", "magnitude": -1 }
+      ],
+      "canonAnchor": "'too much energy hurts... you're applying it to a small part of his body' (L449)",
+      "provenance": "Simple Magic seed spell, the HARM axis at its floor. One hit point, once - a nettle-snap, the smallest transfer a link can carry. No crafting on the public shelf can put a body on the ground; the vitality floor is structural (ActiveEffects.VITALITY_FLOOR)."
+    },
+    {
+      "id": "scald",
+      "displayName": "Scald",
+      "skill": "linkcraft",
+      "minLevel": 1,
+      "baseResist": 10,
+      "cooldownTicks": 500,
+      "target": "TOUCH",
+      "range": 1,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "VITALITY", "mode": "OVER_TIME", "magnitude": -1, "durationTicks": 30 }
+      ],
+      "canonAnchor": "'it would be less taxing to do lots of tiny transfers than one big one' (L457); energy into a body concentrates and hurts (L449)",
+      "provenance": "Simple Magic seed spell. A trickle, not a blow: three doses of one hit point as the heat works through. Deliberately dearer than Sting because the cost model prices every dose it will deliver."
+    },
+    {
+      "id": "knit_the_skin",
+      "displayName": "Knit the Skin",
+      "skill": "linkcraft",
+      "minLevel": 2,
+      "baseResist": 12,
+      "cooldownTicks": 600,
+      "target": "SELF",
+      "range": 0,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "VITALITY", "mode": "OVER_TIME", "magnitude": 1, "durationTicks": 40 }
+      ],
+      "canonAnchor": "Gerik heals his own arm by 'knitting the skin back together with heat energy from the enemies' (L445) - canon's own words for this exact operation",
+      "provenance": "Simple Magic seed spell. Scald with the sign flipped and the target turned inward, which is the whole argument for signed magnitudes and a data-driven target shape: mending and harming were never two systems. SELF because canon's own instance of this operation is Gerik healing his OWN arm."
+    },
+    {
+      "id": "close_the_cut",
+      "displayName": "Close the Cut",
+      "skill": "linkcraft",
+      "minLevel": 3,
+      "baseResist": 14,
+      "cooldownTicks": 600,
+      "target": "TOUCH",
+      "range": 1,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "VITALITY", "mode": "OVER_TIME", "magnitude": 1, "durationTicks": 40 }
+      ],
+      "canonAnchor": "Gerik knits skin shut with 'heat energy from the enemies' (L445) - the same operation Knit the Skin runs, worked across the bridged link of L459 instead of on your own arm",
+      "provenance": "Simple Magic, round 2. Knit the Skin turned OUTWARD, and the reason it exists is a disclosure: NOTHING in this sim regenerates hit points. A body that takes a scald carries it until somebody mends it, and before this row the only mending crafting was SELF-target, so one docker could harm a neighbour permanently and no crafting on the shelf could undo it. Dearer than Knit the Skin (a link to another body, L459) and gated deeper, but the loop now closes. Nothing else reads hit points yet, so today an unmended body is a number on a sheet rather than a bleed with consequences - and the vitality floor means it can never become one."
+    },
+    {
+      "id": "steady_the_hand",
+      "displayName": "Steady the Hand",
+      "skill": "linkcraft",
+      "minLevel": 0,
+      "baseResist": 4,
+      "cooldownTicks": 400,
+      "target": "SELF",
+      "range": 0,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "ATTRIBUTE", "mode": "WHILE_ACTIVE", "magnitude": 1, "param": "AGI", "durationTicks": 900 }
+      ],
+      "canonAnchor": "\"'Magic' can be expressed as unnatural intelligence, or in strength, or reflexes\" (L98) - the founding line for untrained magic, and its three named expressions ARE the three attributes",
+      "provenance": "Simple Magic seed spell, the STAT axis. One point of AGI for a quarter-hour. Because the whole game reads attributes through one function, this is felt in the shove contest, the lift, the cast, the cull and the next crafting - the standing Morrowind steer, taken literally."
+    },
+    {
+      "id": "set_the_shoulders",
+      "displayName": "Set the Shoulders",
+      "skill": "linkcraft",
+      "minLevel": 1,
+      "baseResist": 6,
+      "cooldownTicks": 400,
+      "target": "SELF",
+      "range": 0,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "ATTRIBUTE", "mode": "WHILE_ACTIVE", "magnitude": 1, "param": "MGT", "durationTicks": 900 }
+      ],
+      "canonAnchor": "L98's 'in strength'; Ignis's flesh magic is canon's worked example of self-tuning physiology (WorldBible section 3.2)",
+      "provenance": "Simple Magic seed spell. Same row as Steady the Hand with one word changed - the param field is the whole difference between two spells."
+    },
+    {
+      "id": "clear_the_head",
+      "displayName": "Clear the Head",
+      "skill": "linkcraft",
+      "minLevel": 2,
+      "baseResist": 8,
+      "cooldownTicks": 400,
+      "target": "SELF",
+      "range": 0,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "ATTRIBUTE", "mode": "WHILE_ACTIVE", "magnitude": 1, "param": "WIT", "durationTicks": 900 }
+      ],
+      "canonAnchor": "L98's 'unnatural intelligence'",
+      "provenance": "Simple Magic seed spell. The one crafting that feeds itself: WIT governs the linkcraft check, so a cleared head makes the next link likelier. Bounded by the same cost model as everything else, and priced highest of the three nudges for exactly that reason."
+    },
+    {
+      "id": "sap_the_step",
+      "displayName": "Sap the Step",
+      "skill": "linkcraft",
+      "minLevel": 3,
+      "baseResist": 14,
+      "cooldownTicks": 700,
+      "target": "TOUCH",
+      "range": 1,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "ATTRIBUTE", "mode": "WHILE_ACTIVE", "magnitude": -1, "param": "AGI", "durationTicks": 600 }
+      ],
+      "canonAnchor": "the same tuning turned outward; L98's three expressions with the sign reversed",
+      "provenance": "Simple Magic seed spell, the deepest thing on the public shelf. Taking a point off somebody else's reflexes is dearer than lending yourself one, and the raws say so only through baseResist - no code knows this spell is unkind."
+    }
+  ],
+  "notes": "THE SPELL LIST IS DATA. Every crafting here is (effect x magnitude x duration x chance x area) and nothing else, so an eleventh spell is an eleventh row - no Java, no enum, no table. WHAT THE LOADER REFUSES (EffectPairing): TEMPERATURE and ATTRIBUTE are HELD axes and take WHILE_ACTIVE only; VITALITY is a DELIVERED one and takes INSTANT or OVER_TIME only; a magnitude of 0 is refused; an ATTRIBUTE magnitude past +/-2 is refused; and a lingering component shorter than its own cadence (10 ticks for a trickle, 50 for a held warmth) is refused. Every one of those used to load, resolve, be charged its full difficulty, toast success and change nothing - so the rule is that a crafting which gets past the loader is AUTHORED to do something - every part of it is an (axis x time-shape) some code here actually reads, at a duration long enough to reach it. That is a LOAD-time property of the ROW: a cast can still fizzle (by design), and a wound on a body already at the vitality floor or a nudge on an actor already at the attribute limit is absorbed. What is unauthorable is a crafting that is a no-op by construction. WHAT NOTHING CLAMPS: magnitude on the temperature and vitality axes. SpellCost prices what a crafting moves, how far, how wide AND how long it holds, and the linkcraft check does the rest, which is why a spell nobody has reviewed cannot be accidentally strong. The two structural bounds are the vitality floor (no body below 1 hp, ever) and the attribute limit (a live nudge is read by every check in the game, so it is held to +/-2 however many rows stack). Note what is NOT here: every entry is SELF or TOUCH. Canon gates the unbridged link behind 'the gift' ('almost nobody can do this', L459), so the vocabulary supports RANGED and the public shelf does not teach it. canonAnchor/provenance/notes are documentation-only and ignored by the loader."
+}

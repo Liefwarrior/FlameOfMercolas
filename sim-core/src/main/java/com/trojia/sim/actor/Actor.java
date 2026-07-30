@@ -233,6 +233,13 @@ public abstract class Actor {
      */
     private long culledUntilTick;
     /**
+     * The absolute tick until which this actor may not work another crafting (Simple Magic's
+     * cast latch). Per-CASTER, not per-spell: a hand that has just held a link open is busy,
+     * whichever crafting it was, so a bar of buttons cannot be strafed for a free effect from
+     * each. Absolute tick, never a countdown (determinism rule). A persisted scalar
+     * (serialize/load/hash — the {@code culledUntilTick} triad).
+     */
+    private long castUntilTick;
     /**
      * The absolute tick this actor's HUNGER first hit 0 in the CURRENT starvation spell, or
      * {@link #NEVER_STARVING} while fed (any recovery above 0 resets it). When a spell has
@@ -301,6 +308,20 @@ public abstract class Actor {
      * pass of {@code SellVerb.sellMaterialsInReach}. Never persisted.
      */
     private boolean playerSellIntent;
+    /**
+     * The raw index of the crafting this played actor intends to work this tick (Simple Magic's
+     * spell bar), or {@link #NONE}. Same contract as {@link #playerMoveTargetCell}: per-frame
+     * input intent set by the observer's input layer, consumed (and reset) by
+     * {@code PlayerControlPolicy.act}, which resolves ONE cast through
+     * {@code SpellVerb.resolveCast}. Never persisted.
+     */
+    private int playerSpellRaw = NONE;
+    /**
+     * The body this played actor intends to work its crafting on, or {@link #NONE} to let the
+     * sim pick the spell's own lowest-id target in reach. Per-frame input intent; never
+     * persisted.
+     */
+    private int playerSpellTargetId = NONE;
 
     // ---- cached A* route (§2.5 pathfinding addendum): a derived/recomputable cache, not
     // ground-truth state — the same "per-actor bookkeeping vs. registry" distinction the
@@ -327,6 +348,12 @@ public abstract class Actor {
         this.anchorCell = cell;
         this.needs = new short[Need.COUNT];
         this.needAccum = new int[Need.COUNT];
+        // Simple Magic: hp starts at the TYPE's authored maximum. It has been persisted and
+        // hashed since the ACTR chunk existed and was never once initialised, so every body in
+        // the ward has carried 0 hp and the character sheet has printed "hp: 0" for eight
+        // sprints. Nothing read it before the vitality axis, so this costs no behaviour — it
+        // just makes the field mean what the raws always said it meant.
+        this.hp = stats.hp();
         for (Need need : Need.values()) {
             this.needs[need.ordinal()] = (short) stats.need(need).start();
         }
@@ -1121,6 +1148,32 @@ public abstract class Actor {
     /** Stamps the futile-chase backoff's absolute end tick ({@link BeastHuntPolicy}). */
     public final void setHuntBackoffUntilTick(long tick) {
         this.huntBackoffUntilTick = tick;
+    }
+
+    /** The absolute tick this actor's crafting hand comes free again (Simple Magic). */
+    public final long castUntilTick() {
+        return castUntilTick;
+    }
+
+    /** Stamps the crafting latch (the cast verb; the serializer on load). */
+    public final void setCastUntilTick(long tick) {
+        this.castUntilTick = tick;
+    }
+
+    /** The crafting this played actor means to work this tick, or {@link #NONE}. */
+    public final int playerSpellRaw() {
+        return playerSpellRaw;
+    }
+
+    /** The body it means to work it on, or {@link #NONE} for "whatever is in reach". */
+    public final int playerSpellTargetId() {
+        return playerSpellTargetId;
+    }
+
+    /** Arms (or clears, with {@link #NONE}) this tick's crafting intent. */
+    public final void setPlayerSpellIntent(int spellRaw, int targetId) {
+        this.playerSpellRaw = spellRaw;
+        this.playerSpellTargetId = targetId;
     }
 
     /** The absolute tick until which this actor may not take another scalp (S8 cull latch). */

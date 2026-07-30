@@ -182,6 +182,35 @@ public interface ActorContext {
     }
 
     /**
+     * The bake-bound spell universe (Simple Magic): every crafting the public shelf teaches,
+     * loaded from {@code content/raws/spells/spells.json}.
+     * {@link com.trojia.sim.actor.spell.SpellRegistry#EMPTY} where no raws are wired — nothing
+     * is castable and every cast intent falls through to its refusal stamp.
+     */
+    default com.trojia.sim.actor.spell.SpellRegistry spells() {
+        return com.trojia.sim.actor.spell.SpellRegistry.EMPTY;
+    }
+
+    /**
+     * The live lingering-effect table (Simple Magic): held warmths, timed attribute nudges and
+     * trickling transfers. The unwired default is a private throwaway table that no cast can
+     * ever reach, because reaching it requires {@link #spells()} to be non-empty and an unwired
+     * context has no spells — the {@code FishingSpots.EMPTY} discipline.
+     */
+    default com.trojia.sim.actor.spell.ActiveEffects activeEffects() {
+        return UnwiredMagic.EFFECTS;
+    }
+
+    /** Holder for the unwired-context effect table (see {@link #activeEffects()}). */
+    final class UnwiredMagic {
+        static final com.trojia.sim.actor.spell.ActiveEffects EFFECTS =
+                new com.trojia.sim.actor.spell.ActiveEffects();
+
+        private UnwiredMagic() {
+        }
+    }
+
+    /**
      * The civic/market pool account loiter fines are paid into (law &amp; order pass, Pass 11) —
      * the same finite employer/market pool payroll draws from, so fines recirculate as wages.
      * {@link Actor#NONE} where no payroll is wired: the fine step is then skipped entirely

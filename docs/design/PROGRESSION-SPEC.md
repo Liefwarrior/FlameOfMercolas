@@ -58,7 +58,7 @@ Total 0→100 cost at Trained: `Σ_{L=0}^{99}(L+1)×100×20 grains = 10,100,000 
 
 ---
 
-## 2. Skill list (18 skills)
+## 2. Skill list (20 skills)
 
 Naming: canon terms cited; everything else **(placeholder)**. "Gov" = governing attribute
 (§5); "Apt" = Gabri's aptitude (aptitudes placeholder / needs-blessing except where a
@@ -90,6 +90,7 @@ assassins — see DECISIONS.md); **The Draw → Dire Bows** and **Gutter-Ken →
 | 17 | **Fieldcraft** (placeholder, Sprint 5 civic-labor pass) | plot-tending, sowing, harvest, beast-keeping | MGT | Neglected | courtyard-farm compound canon (compounds farm their own courts; Saltgate harvest baskets); Herdis's pen, Cobb's kennels |
 | 18 | **Seacraft** (placeholder, Sprint 5 civic-labor pass) | sail-handling, oars, lines, tides, deck work | AGI | Neglected | the fishbone pier's three crewed hulls (Kestrel, Bregga's Promise, Deep Keel) |
 | 19 | **Fishing** (placeholder, Sprint 6 fishing pass — Eli's directive 2026-07-24) | reading water for spots (%chance-to-see), casting, landing the catch | AGI | Neglected | port-city invention; canon [SILENT] — "it's the ocean and a port" |
+| 20 | **Linkcraft** (invented name, Simple Magic pass — see `docs/lore/MAGIC-CANON.md`; canon calls the practice *crafting*, which would collide with smithing in a skill list) | public-shelf craftings: opening a link and moving heat, force or the body's own tuning across it | WIT | Trained | "A crafting requires a link between the two entities, normally this would be an arm or a blade" (L459); Gerik's transfer lecture (L442–457); "even with training it is limited" (L98); public-issue vs restricted library editions (L2472) |
 
 **Sprint-5 containment rules on #17/#18 (binding this sprint):** neither skill appears in
 any §5 AttributeWeights row — they train without moving any attribute, so no existing
@@ -97,6 +98,28 @@ contest odds (push/pickpocket/search) shift from the new raws alone. Folding the
 is its own future sprint with its own blessing. **Save-frame contract:** the skill count
 moved 16 → 18; `SkillTrackRegistry`'s load-time frame guard makes every 16-skill-era save
 refuse to load (loudly, by design) — regenerate saves/goldens from these raws.
+
+**Simple Magic containment rules on #20 (binding this pass):** Linkcraft likewise appears
+in **no** §5 AttributeWeights row — levelling it moves no attribute, so no existing contest
+odds shift from the new raws alone. It *reads* WIT for its own check, which is the gate the
+lore asks for: what a common crafter has is a **book**, and the book is the public-issue
+edition that "skimmed over most of the battles and details" (L2472). Folding linkcraft into
+§5 is a later pass with its own blessing. What DOES now move every contest is the crafting
+itself: a live `ATTRIBUTE` effect is folded into `SkillTrackRegistry.attribute()`, so a timed
++1 AGI is felt by the shove contest, the lift, the cast and the cull at once — the standing
+Morrowind steer, taken literally. That reach is why the axis is **structurally bounded**:
+`ActiveEffects.ATTRIBUTE_MODIFIER_LIMIT = 2` clamps the live sum of an actor's attribute rows
+in both directions, and the raws loader refuses an authored magnitude past it, so no stack of
+craftings can become an unbounded multiplier on the whole skill system. **Save-frame
+contract:** the skill count moved 19 → 20; the same frame guard refuses every 19-skill-era
+save, loudly, by design.
+
+**Simple Magic use-XP (§3.1 addendum):** `Linkcraft | cast ATTEMPT (worked or fizzled) 60`,
+priced at the same scale as the fishing cast and the cull attempt so no verb is the
+obviously better grind. The §3.3 satiation context key is **the spell's own raw index**, not
+a constant (the Flame track's choice) — grinding one crafting decays to the 25% floor while
+a crafting you have not worked before still pays full rate. That is deliberate: the premise
+of the whole system is a population that reads broadly, so the XP curve rewards breadth.
 
 **Job training map (Sprint 5, raws-authored in `jobs.json` via `trainsSkill`/`trainCp`):**
 every civic job declares the skill its daily work trains; awards fire only at discrete

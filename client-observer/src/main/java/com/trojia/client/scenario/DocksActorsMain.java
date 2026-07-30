@@ -351,6 +351,7 @@ public final class DocksActorsMain {
         guardJam.print(ticks);
         printStatueReport(laborerCells, ticks);
         printFishingReport(population);
+        printCraftingsReport(population);
         printGoodsConservation(population, identity);
         printDeathReport(population, identity);
         printDailyLifeProof(registry, jobs, commuter, patroller, wanderer, keeper, beasts);
@@ -1250,6 +1251,87 @@ public final class DocksActorsMain {
         }
         System.out.println("  FISHING skill holders: " + holders
                 + (holders > 0 ? "  (" + census + (holders > 12 ? ", ..." : "") + ")" : ""));
+        System.out.println("============================================================================");
+    }
+
+    /**
+     * SIMPLE MAGIC report: the public shelf as the bake actually bound it — every crafting,
+     * what it moves, how far it reaches, what it is checked against and what a novice's odds
+     * on it are — plus whatever lingering effects are live right now and the LINKCRAFT census.
+     *
+     * <p><b>Why the odds are printed here and not just on a toast.</b> Nothing clamps
+     * magnitude in this system: {@code SpellCost} prices what a crafting moves and how far,
+     * and the check does the rest. That makes the resist column the entire balance argument,
+     * and an argument nobody can read is an argument nobody can catch being wrong. A tenth
+     * crafting added to the raws tomorrow prints its own row here with no code change, which
+     * is the same property the whole pass is built on.
+     *
+     * <p>No AI works craftings this pass, so an inputless soak prints an empty effect table
+     * and a zero census — and that is the honest reading, not a hidden failure. Ascending
+     * scans only; every number is a pure read.
+     */
+    private static void printCraftingsReport(DocksPopulation population) {
+        var system = population.system();
+        var spells = system.spells();
+        var effects = system.activeEffects();
+        var tracks = system.skillTracks();
+        var registry = population.registry();
+        System.out.println();
+        System.out.println("================ SIMPLE MAGIC (the public shelf) ============================");
+        System.out.println("  craftings bound: " + spells.size()
+                + ";  each gated on the skill ITS OWN raws row names;  lingering rows live: "
+                + effects.liveCount()
+                + "/" + effects.slotCapacity());
+        for (int raw = 0; raw < spells.size(); raw++) {
+            var spell = spells.get(raw);
+            long resist = com.trojia.sim.actor.spell.SpellCost.resistFor(spell, spell.reach());
+            // A NOVICE's odds: level 0 in whatever skill the row names, base WIT. Reading it
+            // off the unwired table rather than off any live actor keeps the column a property
+            // of the CONTENT, so the report says the same thing on an empty ward.
+            int noviceOdds = com.trojia.sim.actor.SkillChecks.craftingPermille(
+                    com.trojia.sim.actor.SkillTrackRegistry.UNWIRED, 0,
+                    com.trojia.sim.actor.Actor.NONE, resist);
+            StringBuilder parts = new StringBuilder();
+            for (int c = 0; c < spell.components().size(); c++) {
+                var part = spell.components().get(c);
+                parts.append(c == 0 ? "" : " + ").append(part.kind()).append(' ')
+                        .append(part.magnitude() >= 0 ? "+" : "").append(part.magnitude());
+                if (part.durationTicks() > 0) {
+                    parts.append('/').append(part.durationTicks()).append('t');
+                }
+            }
+            System.out.println("    " + pad(spell.key(), 20)
+                    + pad(spell.skillKey(), 11)
+                    + pad(spell.targetShape().name().toLowerCase(java.util.Locale.ROOT), 7)
+                    + " Lv" + spell.minLevel()
+                    + "  resist " + pad(Long.toString(resist), 4)
+                    + "  novice " + (noviceOdds / 10) + "%"
+                    + "  cd " + pad(spell.cooldownTicks() + "t", 6)
+                    + "  " + parts);
+        }
+        for (int s = 0; s < effects.slotCapacity(); s++) {
+            if (effects.isLive(s)) {
+                // The axis selector belongs on this line: an ATTRIBUTE row that reads
+                // "ATTRIBUTE 1" without naming WHICH attribute is a dump you cannot check a
+                // crafting against, and the whole point of the report is that it is checkable.
+                String axis = effects.kindAt(s).toString();
+                if (effects.kindAt(s) == com.trojia.sim.actor.spell.EffectKind.ATTRIBUTE) {
+                    axis += " " + com.trojia.sim.progression.AttributeId
+                            .values()[effects.paramAt(s)].name();
+                }
+                System.out.println("    live: #" + effects.targetAt(s) + " "
+                        + axis + " " + effects.magnitudeAt(s) + " "
+                        + effects.modeAt(s) + " until t=" + effects.endTickAt(s));
+            }
+        }
+        int holders = 0;
+        for (int i = 0; i < registry.size(); i++) {
+            if (tracks.level(i, tracks.linkcraftRaw()) > 0) {
+                holders++;
+            }
+        }
+        System.out.println("  LINKCRAFT skill holders: " + holders
+                + "  (no AI works craftings this pass -- the played soul is the only caster)");
         System.out.println("============================================================================");
     }
 

@@ -46,7 +46,9 @@ import java.util.List;
 public final class InspectorRenderer {
 
     private static final float MARGIN = 8f;
-    private static final float PANEL_WIDTH = 430f;
+    /** The character sheet's column width, px. Public: the craftings bar docks against it
+     *  (SpellBar) rather than drawing underneath it. */
+    public static final float PANEL_WIDTH = 430f;
     private static final int LOG_VISIBLE_LINES = 16;
     private static final Color PANEL_COLOR = new Color(0.86f, 0.90f, 0.98f, 1f);
     private static final Color LOG_COLOR = new Color(0.72f, 0.80f, 0.72f, 1f);

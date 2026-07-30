@@ -202,7 +202,7 @@ Canon's energy system (the Source / crafting / links) is the game's long-term ph
 
 ### 4.1 The canon rules (Gerik's lecture + practice scenes)
 
-1. **Conservation.** Energy is transferred, never destroyed: spent body energy "transfers to him" on contact (novel L447); crafting moves energy between self, opponents, environment (L452).
+1. **Conservation.** Energy is transferred, never destroyed: spent body energy "transfers to him" on contact (novel L447); crafting moves energy between self and opponents (L452), and between a body and the environment (L505).
 2. **Dissipation with size and distance.** "The more you transfer the more is lost to nature, also the further it travels the more is lost... it would be less taxing to do lots of tiny transfers than one big one" (novel L454–457). Loss scales with transfer magnitude AND link length; many small links beat one big link.
 3. **Links need a bridge, with material affinity.** A link requires touch, a held weapon, or a sensed source; "With living things it's easy, they kind of draw you into them. It's much harder with things that aren't alive like a rock or a sword" (novel L503). Affinity ordering: living > dead organic > inert rock/metal.
 4. **The Source is an external reservoir.** A pocket "directly in his chest... couldn't identify it as heat energy" (novel L505), effectively unbounded at Eric/Vallech tier (L516: energy "as strong as a thousand men"), refillable from environment (link to campfire, L505), with overdraw shutdown (L2517).
