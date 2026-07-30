@@ -173,9 +173,13 @@ class PlaceSignsLoaderTest {
         List<PlaceSign> signs = PlaceSignsLoader.load(tmx);
         long doors = signs.stream().filter(s -> s.kind() == PlaceSign.Kind.DOOR).count();
         long ways = signs.stream().filter(s -> s.kind() == PlaceSign.Kind.WAY).count();
-        assertEquals(39, doors, () -> "the ward's authored buildings, from " + tmx);
-        assertEquals(40, ways, () -> "the ward's authored streets and waterfront, from " + tmx);
-        assertEquals(79, signs.size());
+        // 40 doors and 43 ways since the tenure pass (quality slice 5, gazetteer 2.8/3.3):
+        // one new door plaque on the Netter mansion -- the ward's only house whose plaque
+        // disagrees with its own gate -- and three glebe fingerposts, one at each hovel-band
+        // head, saying why the 45 hovels are the ward's only unsigned dwellings.
+        assertEquals(40, doors, () -> "the ward's authored buildings, from " + tmx);
+        assertEquals(43, ways, () -> "the ward's authored streets and waterfront, from " + tmx);
+        assertEquals(83, signs.size());
         assertTrue(signs.stream().anyMatch(s -> "Tarwalk".equals(s.place())));
         assertTrue(signs.stream().anyMatch(s -> "The Fishbone Pier".equals(s.place())));
         assertTrue(signs.stream().anyMatch(s -> "The Weighhouse".equals(s.place())));

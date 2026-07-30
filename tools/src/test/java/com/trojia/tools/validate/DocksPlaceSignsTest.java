@@ -57,7 +57,13 @@ class DocksPlaceSignsTest {
             assertTrue(signed.stream().anyMatch(name -> name.startsWith(compound)),
                     () -> "compound " + compound + " has no place_sign; signed: " + signed);
         }
-        assertEquals(39, signed.stream().filter(n -> !n.startsWith("sign_w_")).count(),
+        // 39 gates and doorways, plus ONE house plaque: the Netter mansion's own door
+        // (quality slice 5, gazetteer 2.8/3.3). It is the single place in the ward where
+        // the plot and the house give different answers -- the gate twenty tiles away says
+        // the charge is pledged at Fenner's, the door says "hers; the ground is not" --
+        // and signing the other three great houses would teach a player the opposite,
+        // that the two lines always agree.
+        assertEquals(40, signed.stream().filter(n -> !n.startsWith("sign_w_")).count(),
                 () -> "unexpected building-sign roster: " + signed);
     }
 

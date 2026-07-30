@@ -2521,14 +2521,29 @@ PLACE_SIGNS = [
      "The Royal Counting-House", "Master Gilt's; never once robbed"),
     # The four Compounds (gazetteer 2.5): a compound's sign hangs at its GATE.
     #
+    # The second line carries WHO HOLDS THE CHARGE (gazetteer 2.8, DECISIONS.md "Trojian
+    # tenure: the charge and the bond", Eli 2026-07-29). Eli ruled the tenure model is
+    # never to be drawn -- "no it doesn't need to be visible, just use the info to
+    # populate signage appropriately" -- so a plaque is its whole visible surface. A gate
+    # plaque already had a second line describing the compound; the ward knows something
+    # more useful to put there, and a gate is exactly where a real register would say it.
     ("c1_quayward", 12, 72, 105, 8, 97, 71, 115,
-     "The Quayward Compound", "mansion and condos, no rooftop slum"),
+     "The Quayward Compound", "Ceffa Quayward holds the charge"),
     ("c2_netters", 11, 139, 65, 116, 66, 159, 93,
-     "The Netters' Compound", "condos around a courtyard farm"),
+     "The Netters' Compound", "the charge is pledged at Fenner's"),
     ("c3_saltgate_terrace", 12, 111, 100, 84, 101, 125, 115,
-     "Saltgate Terrace", "multiple stories; land is scarce"),
+     "Saltgate Terrace", "Tarl Saltgate holds the charge"),
     ("c4_gullet", 11, 177, 65, 166, 66, 190, 93,
-     "The Gullet Compound", "decayed; its courtyard gone to trash"),
+     "The Gullet Compound", "the charge is vacant; ask Mag"),
+    # THE TEACHING PAIR. The Netter mansion's own door, twenty tiles inside the gate that
+    # says the charge is pledged. It is the ONE house in the ward that gets a plaque of its
+    # own, because it is the one place where the plot and the house give different answers
+    # (2.8: the widow owns her house outright and pledged the GROUND under it to Fenner).
+    # A player who walks from the gate to the door reads the entire three-tier model off
+    # two signs, with no overlay, no UI and nobody explaining it. Signing the other three
+    # great houses would teach the opposite -- that the two lines always agree.
+    ("c2_netter_house", 11, 128, 79, 116, 66, 127, 93,
+     "The Netter house", "hers; the ground is not"),
 ]
 
 # ----------------------------------------------------------------------
@@ -2649,6 +2664,19 @@ WAY_SIGNS = [
      "The Beaching Strand", "it shades into mudflats at low tide"),
     ("w_outfall", 11, 171, 26, 170, 25, 173, 26,
      "The Outfall", "the sewer mouth in the seawall"),
+    # THE GLEBE (gazetteer 2.8). The 45 hovels are the ward's only unsigned dwellings, and
+    # the reason is a fact about tenure, not an oversight: Church ground, never let to
+    # anyone, no Den Duke, no ground penny -- token alms in place of one, which is what the
+    # Mission's alms traffic IS. Unsigned reads as forgotten until something on the ground
+    # says the absence is the point, so each hovel band gets one kerb fingerpost. They are
+    # ways, not doors: nobody hangs a plaque over forty-five separate hovel doorways, and
+    # the glebe is a stretch of ground rather than a building.
+    ("w_glebe_quayback", 11, 81, 55, 82, 52, 97, 59,
+     "Flame ground", "no charge is let; this is the glebe"),
+    ("w_glebe_eastfield", 12, 143, 104, 144, 101, 188, 111,
+     "Flame ground", "no charge is let; this is the glebe"),
+    ("w_glebe_gallows", 13, 9, 121, 8, 116, 181, 126,
+     "Flame ground", "no charge is let; this is the glebe"),
 ]
 
 # Self-check: a sign must hang ON or WITHIN ONE STEP OF its own footprint (the
