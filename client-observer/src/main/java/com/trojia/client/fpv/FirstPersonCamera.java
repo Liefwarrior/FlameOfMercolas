@@ -46,11 +46,21 @@ package com.trojia.client.fpv;
  * steps and sizes each ease off the last one, clamped, so it lands before the next step is due
  * at any sim speed without being told what the sim speed is.
  *
- * <p>A vertical band change gets its own, longer ease ({@link #CLIMB_ARRIVAL_FRACTION}): a
- * climb should read as a climb, and an instant band-height translation is the most jarring
- * thing this view can do. And each lateral stride carries a small head dip, phase-locked to
- * the ease itself rather than free-running, so the bob is the walk instead of a wobble laid
- * over it — now that the ease spans the whole cadence, so does the dip.
+ * <p><b>A climb reads as a climb, but not because it is slower.</b> It used to be: the lateral
+ * ease took 0.62 of the cadence and a band change took 0.92, so the climb was half again as
+ * long. Now both take 0.92 and at every real cadence the two clamps
+ * ({@link #MAX_STEP_EASE_SECONDS}, {@link #MAX_CLIMB_EASE_SECONDS}) are slack, so a climb and a
+ * step take exactly the same 184 ms. That is stated here rather than quietly left as a stale
+ * claim, because what actually separates them is bigger than a duration ever was: the climb
+ * covers {@link BandGeometry#BAND_HEIGHT} world units of rise in the time a step covers one of
+ * ground, which is 2.75x the speed and straight up, and it carries no head bob at all
+ * ({@link #BOB_DIP} is suppressed for a band change). Stretching it further is not free — an
+ * ease longer than the cadence means the eye trails the body up a staircase — so the climb
+ * clamp stays the longer of the two and only bites when the sim is running slowly.
+ *
+ * <p>Each lateral stride carries that small head dip, phase-locked to the ease itself rather
+ * than free-running, so the bob is the walk instead of a wobble laid over it — and now that the
+ * ease spans the whole cadence, so does the dip.
  *
  * <h2>Yaw is the client's, facing is the sim's</h2>
  *
@@ -88,8 +98,10 @@ public final class FirstPersonCamera {
      */
     public static final float STEP_ARRIVAL_FRACTION = 0.92f;
 
-    /** Fraction of the measured step interval a band change is allowed to take — longer, so
-     * a climb reads as climbing, but still short of the next step. */
+    /** Fraction of the measured step interval a band change takes. Equal to the lateral one
+     * now that the lateral stride fills its cadence — see the class javadoc on why a climb no
+     * longer needs to be longer to read as a climb. What still differs is
+     * {@link #MAX_CLIMB_EASE_SECONDS}, which lets a climb stretch when the sim runs slowly. */
     public static final float CLIMB_ARRIVAL_FRACTION = 0.92f;
 
     /**

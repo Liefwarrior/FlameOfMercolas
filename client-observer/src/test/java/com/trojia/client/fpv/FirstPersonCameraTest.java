@@ -103,9 +103,15 @@ class FirstPersonCameraTest {
                 "at a 50ms cadence the ease was still running when the next step was due");
     }
 
+    /**
+     * The climb clamp is the longer of the two, so once the sim is running slowly enough for
+     * the clamps to bite at all, a band change does still ease longer than a lateral step. At
+     * the real cadences neither clamp bites and the two are the same length — see
+     * {@code FirstPersonStrideTest} for what separates them there.
+     */
     @Test
-    void aBandChangeEasesLongerThanALateralStepAtTheSameCadence() {
-        float cadence = 0.40f;
+    void aBandChangeEasesLongerThanALateralStepOnceTheClampsBite() {
+        float cadence = 0.40f; // slower than any real cadence, so both clamps are in play
         FirstPersonCamera lateral = placed();
         lateral.followCell(41, 60, BAND);
         runSeconds(lateral, cadence);

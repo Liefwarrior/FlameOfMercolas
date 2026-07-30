@@ -194,20 +194,40 @@ class FirstPersonStrideTest {
     }
 
     /**
-     * A climb still reads as a climb. Raising the arrival fraction for the lateral stride
-     * brought it level with the climb's, so the thing that still separates them is the longer
-     * clamp — and that has to be enough to be visible.
+     * <b>A climb takes exactly as long as a step at every real cadence, and that is fine.</b>
+     * Raising the lateral arrival fraction to fill the cadence brought it level with the
+     * climb's, so the old "a climb eases longer" is no longer true and is not claimed. What is
+     * asserted instead is what actually distinguishes the two, and it is a bigger difference
+     * than a duration ever was: in the same time, the climb covers a whole band of rise rather
+     * than one tile of ground — 2.75x the speed, straight up — and it never dips.
+     *
+     * <p>The head bob is the tell. A stride dips and recovers; a climb that dipped would read
+     * as tripping on the stair.
      */
     @Test
-    void aClimbStillTakesLongerThanAStepAtTheSlowestRealCadence() {
+    void aClimbCoversABandInTheTimeAStepCoversATileAndNeverDips() {
         float cadence = 0.200f;
         FirstPersonCamera lateral = walkedTo(cadence, 41, 60, BAND);
         FirstPersonCamera climb = walkedTo(cadence, 40, 60, BAND + 1);
-        runSeconds(lateral, cadence);
-        runSeconds(climb, cadence);
+
+        float standing = BandGeometry.floorHeight(BAND) + BandGeometry.EYE_HEIGHT;
+        float previous = climb.eyeHeight();
+        int frames = Math.round(cadence / FRAME);
+        for (int i = 0; i < frames; i++) {
+            climb.advance(FRAME);
+            assertTrue(climb.eyeHeight() >= previous - 1e-5f,
+                    "the eye dipped while climbing — the stride bob must not apply to a climb");
+            previous = climb.eyeHeight();
+        }
+        advanceFrames(lateral, frames);
+
         assertFalse(lateral.isStriding(), "a lateral step must land inside its own cadence");
-        assertTrue(climb.eyeHeight() > BandGeometry.floorHeight(BAND) + BandGeometry.EYE_HEIGHT,
-                "a climb must actually rise");
+        assertFalse(climb.isStriding(), "and so must a climb, or a staircase becomes a glide");
+        assertEquals(41.5f, lateral.eyeX(), 1e-4);
+        assertEquals(BandGeometry.floorHeight(BAND + 1) + BandGeometry.EYE_HEIGHT,
+                climb.eyeHeight(), 1e-4, "a climb must land exactly on the new band's floor");
+        assertEquals(BandGeometry.BAND_HEIGHT, climb.eyeHeight() - standing, 1e-4,
+                "in one cadence a climb covers a whole band while a step covers one tile");
     }
 
     private static FirstPersonCamera walkedTo(float cadence, int x, int y, int z) {
