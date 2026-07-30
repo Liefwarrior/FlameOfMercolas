@@ -138,6 +138,11 @@ public final class HudText {
      * third line while an actor is being driven. Movement is deliberately absent
      * ({@code WASD} already reads as movement from the nav line's pan group being
      * suppressed); this line carries the VERBS.
+     *
+     * <p><b>This is the line the anti-stale guard checks.</b> Every key a play-mode input class
+     * binds and can actually be pressed while the tile view is up has to be here — see
+     * {@code HudTextTest}, and see {@link #firstPersonKeybindingTokens} for the one narrow
+     * category that is allowed to live on the other line instead.
      */
     public static List<HudToken> playModeKeybindingTokens() {
         return List.of(
@@ -153,6 +158,14 @@ public final class HudText {
                 HudToken.icon(IconKey.B), HudToken.text(" sell   "),
                 HudToken.icon(IconKey.ARROW_UP), HudToken.icon(IconKey.ARROW_DOWN),
                 HudToken.text(" climb   "),
+                // The turn keys are LIVE ON THE MAP (FirstPersonInput.pollTurn runs from the
+                // tile view too, so the facing wedge is something you aim before you press V).
+                // They shipped in round 2 on no screen while driving, and the anti-stale guard
+                // was widened to let that through instead of the legend being corrected. They
+                // belong here, on the line that is actually in front of the player.
+                HudToken.icon(IconKey.ARROW_LEFT), HudToken.icon(IconKey.ARROW_RIGHT),
+                HudToken.text(" turn   "),
+                HudToken.icon(IconKey.SHIFT), HudToken.text(" turn fast   "),
                 HudToken.icon(IconKey.I), HudToken.text(" disguise   "),
                 HudToken.icon(IconKey.J), HudToken.text(" journal   "),
                 // The switch has to be findable from the map, or nobody ever presses it.
@@ -166,6 +179,13 @@ public final class HudText {
      * mean something different do, and those are the ones a player needs told: WASD is now
      * forward and strafe relative to where you are looking rather than north and east, and
      * the left/right arrows turn instead of scrubbing floors.
+     *
+     * <p>This line is <b>not</b> a place to park a binding that the map-side legend ought to
+     * carry. It only gets to be the sole home of a key that <em>does nothing at all</em> until
+     * this frame is up — today that is exactly {@code PageUp}/{@code PageDown}, the look
+     * keys — and {@code HudTextTest} enforces both halves of that: the category is named
+     * explicitly, and every key in it is checked against the input sources to prove it really
+     * is unreachable from the tile view.
      */
     public static List<HudToken> firstPersonKeybindingTokens() {
         return List.of(

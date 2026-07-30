@@ -111,12 +111,13 @@ class HudTextTest {
         assertTrue(sources.size() >= 5,
                 () -> "the input-package scan found almost nothing (" + sources
                         + ") — the scan is broken, not the legend");
-        // The driving legend is now two lines, because the first-person view rebinds some of
-        // these keys to mean something else and says so on its own line. The demand is
-        // unchanged: every key a play-mode input class binds must be on a screen the player
-        // is looking at while driving.
-        List<HudToken> legend = new ArrayList<>(HudText.playModeKeybindingTokens());
-        legend.addAll(HudText.firstPersonKeybindingTokens());
+        // RESTORED (round 3) to what Sprint 8 demanded and no wider: the ONE legend line the
+        // player is looking at while driving. Round 2 widened this to the union of the driving
+        // line and the first-person line so that map-side turn keys could pass while appearing
+        // on neither screen the player was looking at — which is precisely the failure this
+        // guard was built to catch, admitted by loosening the guard. The turn keys are on the
+        // driving line now. The single narrow exemption below is a category, not a union.
+        List<HudToken> legend = HudText.playModeKeybindingTokens();
         SortedSet<String> bound = new TreeSet<>();
         for (Path source : sources) {
             Matcher m = KEY_BINDING.matcher(Files.readString(source));
@@ -130,6 +131,9 @@ class HudTextTest {
             if (NOT_VERB_KEYS.contains(key)) {
                 continue;
             }
+            if (FIRST_PERSON_ONLY_KEYS.contains(key)) {
+                continue; // its own test below, which is stricter than this one
+            }
             IconKey icon = iconFor(key);
             assertNotNull(icon, () -> "a play-mode input class binds " + key
                     + " and IconKey has no glyph for it — add one (the S8 K/B defect)");
@@ -138,6 +142,83 @@ class HudTextTest {
                             + " and the play-mode legend does not carry it — the verb is on"
                             + " no screen (PLAYTEST-LOG.md fix #1)");
         }
+    }
+
+    /**
+     * <b>The one narrow exemption</b>, and the price of it is the test right below.
+     *
+     * <p>A key may live on the first-person legend instead of the driving legend only if it
+     * does <em>nothing whatsoever</em> until the first-person frame is up — not "means
+     * something else there", which is what the turn keys are, and what the widened guard was
+     * quietly letting through. Adding a name here is not a way past the guard: whatever is
+     * named here is then proved unreachable from the tile view against the input sources
+     * themselves.
+     */
+    private static final Set<String> FIRST_PERSON_ONLY_KEYS = Set.of("PAGE_UP", "PAGE_DOWN");
+
+    /**
+     * The exemption, audited. Two demands, and a key has to pass both:
+     *
+     * <ol>
+     *   <li>it is on the first-person legend, so it is on <em>a</em> screen; and</li>
+     *   <li>it is genuinely unreachable while the tile view is on screen — the only
+     *       first-person input the tile view polls is {@code FirstPersonInput.pollTurn}, so the
+     *       key must appear nowhere in that method and nowhere in any other play-mode input
+     *       class.</li>
+     * </ol>
+     *
+     * <p>Without the second demand the category is just the widened net with a nicer name.
+     */
+    @Test
+    void theFirstPersonOnlyExemptionIsAuditedRatherThanAsserted() throws IOException {
+        List<HudToken> firstPersonLegend = HudText.firstPersonKeybindingTokens();
+        Path firstPersonInput = null;
+        for (Path source : playModeInputSources()) {
+            if (source.getFileName().toString().equals("FirstPersonInput.java")) {
+                firstPersonInput = source;
+            }
+        }
+        assertNotNull(firstPersonInput, "the first-person input class moved or vanished");
+        String pollTurnBody = methodBody(Files.readString(firstPersonInput), "void pollTurn(");
+        // The extraction has to be doing something, or every assertion below passes vacuously:
+        // pollTurn demonstrably reads the turn keys, which is why they are on the driving line.
+        assertTrue(pollTurnBody.contains("Input.Keys.LEFT")
+                        && pollTurnBody.contains("Input.Keys.RIGHT"),
+                "the pollTurn extraction found no turn keys — the audit is reading nothing");
+
+        for (String key : FIRST_PERSON_ONLY_KEYS) {
+            IconKey icon = iconFor(key);
+            assertNotNull(icon, () -> key + " is exempt from the driving legend and has no "
+                    + "glyph for the legend it IS on");
+            assertTrue(firstPersonLegend.contains(HudToken.icon(icon)),
+                    () -> key + " is exempt from the driving legend and is not on the "
+                            + "first-person legend either — it is on no screen at all");
+            assertFalse(pollTurnBody.contains("Input.Keys." + key),
+                    () -> key + " is read by pollTurn, which the TILE view polls every frame — "
+                            + "it is live on the map and belongs on the driving legend");
+            for (Path source : playModeInputSources()) {
+                if (source.equals(firstPersonInput)) {
+                    continue;
+                }
+                assertFalse(Files.readString(source).contains("Input.Keys." + key),
+                        () -> key + " is bound by " + source.getFileName() + " as well, so it "
+                                + "is not first-person-only — put it on the driving legend");
+            }
+        }
+    }
+
+    /**
+     * The source text of one method, from its declaration to the first close brace at method
+     * indentation. Crude on purpose: it only has to be right about one small method whose shape
+     * a compiler is already checking.
+     */
+    private static String methodBody(String source, String declaration) {
+        String normalized = source.replace("\r\n", "\n");
+        int start = normalized.indexOf(declaration);
+        assertTrue(start > 0, () -> "cannot find " + declaration + " to audit");
+        int end = normalized.indexOf("\n    }", start);
+        assertTrue(end > start, () -> "cannot find the end of " + declaration);
+        return normalized.substring(start, end);
     }
 
     /** {@code Input.Keys.NAME} — every key any play-mode input class binds. */
