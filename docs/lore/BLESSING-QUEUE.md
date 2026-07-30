@@ -45,7 +45,7 @@ Status legend: **RULED** = engineering decision made under ARCHITECTURE.md autho
     glowstone tint raws #C43A2F vs art #B22D2D (art wins on screen until unified); water/ice
     display colors provisional.
 
-## Simple Magic — public-shelf craftings (OPEN, awaiting Eli)
+## Simple Magic — public-shelf craftings (items 16 and 18 ANSWERED 2026-07-30; the rest OPEN)
 
 Full dossier with line cites: `docs/lore/MAGIC-CANON.md`. Nothing below blocks the build; all of
 it is shipped behind a flag in the raws' own `provenance` fields, the chromatis §1.1 convention.
@@ -55,26 +55,67 @@ it is shipped behind a flag in the raws' own `provenance` fields, the chromatis 
     takes the gift, which "almost nobody" has. This pass reads that as: the GIFT is for the
     UNBRIDGED link; an arm or a blade is the ordinary case. The entire premise rests on this
     reading. **Highest-value ruling in this queue.**
-16. **The imperial edict opening the Granadad libraries "to any who can read."** No such edict,
-    and no public Granadad library, exists in the novel — canon has the Library of the
-    Runemasters in *Mercia* (L2478) and the Divine Light Cathedral's own library in Granadad
-    (L2412). The public-issue-vs-restricted-edition mechanic IS canon (L2472). Recommend blessing
-    the edict as a GAME-CANON-ADDITION.
+16. ~~**The imperial edict opening the Granadad libraries.**~~ **ANSWERED by Eli, 2026-07-30 —
+    WITHDRAWN, not blessed.** Eli declined the invention and took canon's own mechanism instead:
+    books come in two grades, and Gerik's public-issue gathering "was issued to the public because
+    it was overly general and skimmed over most of the battles and details" (L2472) before he
+    climbs a chair for the real edition off the top shelf. **That** is why common magic is weak —
+    the public shelf teaches the shallow edition — and it needs no edict at all. The edict is gone
+    from `package-info`, `SpellVerb`, `SkillChecks`, the skills raws provenance, PROGRESSION-SPEC
+    and `MAGIC-CANON.md`. Canon's real libraries are left where canon put them and are NOT the
+    source of the ward's craftings: the **Library of the Runemasters** in *Mercia* inside the Du
+    Vron Dezdant (L2478), and the monastery library of the **Divine Light Cathedral** in Granadad
+    (L2412), which belongs to Gabri's order. Nothing left to bless.
 17. **"Linkcraft" as the skill's name.** Invented. Canon's word is *crafting* (collides with
     smithing in a skill list — the novel itself jokes about the collision at L442); LoT2's
     academic name for the field is *Thectrochanics*. Rename freely; nothing else depends on it.
-18. **"The seven systems."** Canon says SIX Steward planes (L726, L2468; WB L742 "Six vs seven
-    Luxerne → six"). The seven-power table is `Lore\SECRET-MATERIALS-PROPER-NOUNS.html` §7, which
-    this project's own rule and the WorldBible header both class as non-canon. If a seven is
-    wanted, the canon seven is **six Steward planes + the Flame of Mercolas** (WB L273/L407,
-    "NOT a Luxerne power... Distinct system"). This pass builds on the Source alone and does not
-    depend on the answer.
-19. **Warmth pays REST.** Being warm is restful; canon is silent. Small (1 REST per deci-Kelvin
-    per 50 ticks) and today it only ever touches the played soul. Cut freely.
+18. **"The seven systems." ANSWERED by Eli, 2026-07-30, in three parts — and the third one is a
+    SECRET.** (a) The canon seven is the novel's **six Steward systems** — Trojja/the Source,
+    Mercan/flesh, Vervan/lightstuff, Fran/wards, Rema/creation, Firra/will-shaping (L726, L2468,
+    L1479; WB L742 "Six vs seven Luxerne → six") — **plus the Flame of Mercolas**, which WB
+    L273/L407 name explicitly as "NOT a Luxerne power… Distinct system" and which is Gabri's own
+    religious office. That framing invents nothing. (b) **They are a HIERARCHY, not peers: the
+    Flame is the strongest and sits at the top.** (c) **The seventh is a SECRET, and in-world the
+    answer is six.** The public, scholars, Mercolan experts and the Runemasters all believe six —
+    which is *why* the novel and the WorldBible say six, so the count was never an error. The
+    Flame has never died, is continuous rather than hereditary, and lends its power to **Wielders**
+    (canon's own word for Gabri, WB L273). **The `Lore\SECRET-MATERIALS-PROPER-NOUNS.html` §7
+    "Seven Powers" table stays DISCARDED** on the two grounds already ruled here, and note it is
+    not this seven anyway — it demotes the Flame to one peer school among seven, which is exactly
+    backwards. Written up with cites in `MAGIC-CANON.md` §5, **flagged there as out-of-world
+    knowledge**, with a hard content rule (§5.4: every in-world surface says six, no NPC hints,
+    no knowing barks) and a prohibition (§5.5: the Flame gets no spell row, no shelf entry and no
+    spell-bar button — the absence is the design). The shipped craftings stay on the **Source**.
+    **Canon correction on the record:** the commissioning brief glossed *Y'marr* as the bearer of
+    a power; canon uses it for the Beast's corruption-mirror, the *opposite* of a bearer (L1487,
+    L1170, WB L120–123). Eli's "its Y'marr has never been seen before" survives the correction
+    and is strengthened by it — see `MAGIC-CANON.md` §5.3.
+18b. **Book 2 (Eli): the Flame is absorbed entirely by Gabri or Devon.** Recorded in
+    `MAGIC-CANON.md` §5.8 as **UNPUBLISHED AUTHOR INTENT, NOT YET CANON**. Nothing is built
+    toward it and nothing of it appears in content; it is on the record only so a future sprint
+    does not design against it.
+19. **Warmth pays REST.** Being warm is restful; canon is silent. **Resized 2026-07-30** from 1
+    REST per deci-Kelvin per 50 ticks (which was half a serf's whole natural REST decay — too
+    strong for a documented nudge) to 1 per 5 deci-Kelvin, i.e. 3 points per cadence against a
+    decay of 30. Today it only ever touches the played actor. Cut freely.
 20. **Balance numbers** (DEFAULT — batch-veto anytime): warmth ±15/-20 deci-Kelvin for 600 ticks,
     harm 1–3 hp, attribute nudges ±1, base resists 0–14, cooldowns 200–700 ticks, the linkcraft
     check family at base 500 / floor 50 / ceiling 900, and `SpellCost` at 4 per tile / 1 per
-    transfer point / 6 per area tile / 20 for an unbridged link. Nothing clamps magnitude — the
-    cost model is what keeps an unreviewed spell weak — except the one structural rule that no
-    crafting may take a body below 1 hp (calibrated on L567: twenty full crafters pooled make one
-    lit torch flare).
+    transfer point / 6 per area tile / 20 for an unbridged link / one held period per 300 ticks.
+    Nothing clamps magnitude on the temperature axis — the cost model is what keeps an unreviewed
+    spell weak — but TWO rules are structural, one per axis that could otherwise reach past the
+    system: no crafting may take a body below 1 hp (calibrated on L567: twenty full crafters
+    pooled make one lit torch flare), and a live attribute modifier is bounded at ±2 in the only
+    code that can report one, because that axis is folded into the single function every check in
+    the game reads.
+21. **Duration is now priced on held craftings** (`SpellCost.HELD_PERIOD_TICKS = 300`). Canon
+    prices magnitude and distance explicitly (L452) and dose count implicitly (L457); nothing in
+    the novel prices a hold, so the constant is invented. It exists because without it a held
+    effect cost the same at one tick as at ten thousand, which made the documented claim that an
+    unreviewed spell cannot be accidentally strong false for the mode every temperature and
+    attribute crafting uses. Shifts the shipped list's resists by 1–3 points. Veto the number
+    freely; the principle is not really optional.
+22. **`close_the_cut`** (TOUCH mend, Lv 3) — a v0 content addition, `knit_the_skin` turned
+    outward. Added because **nothing in this sim regenerates hit points**, so before it the only
+    mending row was SELF-target and harm done to a neighbour could never be undone. Canon-anchored
+    on L445 (Gerik knitting skin with borrowed heat) across L459's bridged link.

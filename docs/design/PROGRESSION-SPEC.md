@@ -102,11 +102,15 @@ refuse to load (loudly, by design) — regenerate saves/goldens from these raws.
 **Simple Magic containment rules on #20 (binding this pass):** Linkcraft likewise appears
 in **no** §5 AttributeWeights row — levelling it moves no attribute, so no existing contest
 odds shift from the new raws alone. It *reads* WIT for its own check, which is the gate the
-lore asks for (the libraries opened to any who can **read**), and folding it into §5 is a
-later pass with its own blessing. What DOES now move every contest is the crafting itself:
-a live `ATTRIBUTE` effect is folded into `SkillTrackRegistry.attribute()`, so a timed +1 AGI
-is felt by the shove contest, the lift, the cast and the cull at once — the standing
-Morrowind steer, taken literally, and bounded by the cast's own cost model. **Save-frame
+lore asks for: what a common crafter has is a **book**, and the book is the public-issue
+edition that "skimmed over most of the battles and details" (L2472). Folding linkcraft into
+§5 is a later pass with its own blessing. What DOES now move every contest is the crafting
+itself: a live `ATTRIBUTE` effect is folded into `SkillTrackRegistry.attribute()`, so a timed
++1 AGI is felt by the shove contest, the lift, the cast and the cull at once — the standing
+Morrowind steer, taken literally. That reach is why the axis is **structurally bounded**:
+`ActiveEffects.ATTRIBUTE_MODIFIER_LIMIT = 2` clamps the live sum of an actor's attribute rows
+in both directions, and the raws loader refuses an authored magnitude past it, so no stack of
+craftings can become an unbounded multiplier on the whole skill system. **Save-frame
 contract:** the skill count moved 19 → 20; the same frame guard refuses every 19-skill-era
 save, loudly, by design.
 
