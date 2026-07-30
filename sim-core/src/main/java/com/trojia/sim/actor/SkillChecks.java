@@ -122,11 +122,35 @@ public final class SkillChecks {
      * The one pure threshold function: success permille for {@code score} vs
      * {@code resistScore} around {@code basePermille}, clamped to
      * {@code [floorPermille, ceilPermille]}.
+     *
+     * <p><b>Computed in a width that cannot wrap.</b> This used to build the raw permille in
+     * {@code int}: {@code base + 10 * (score - resist)}. Every resist the ward's own content
+     * produces is a two-digit number, so it read as safe — but {@code SpellCost} computes a
+     * crafting's resist from what it moves, and the magnitude a crafting may author is not
+     * bounded on two of the three axes. Past a resist of roughly 215 million the multiply
+     * wrapped POSITIVE, and the difficulty curve inverted: the most expensive crafting
+     * authorable became the easiest one to land, at the ceiling, with the check line quoting
+     * the honest resist beside the dishonest odds. Widening here is the fix at the one place
+     * every check family in this file passes through, so no family can acquire the defect
+     * separately; {@link SpellCost#RESIST_CEILING} saturates the other end so the subtraction
+     * cannot wrap either.
      */
     public static int successPermille(int score, int resistScore, int basePermille,
             int floorPermille, int ceilPermille) {
-        int raw = basePermille + POINTS_TO_PERMILLE * (score - resistScore);
-        return Math.max(floorPermille, Math.min(ceilPermille, raw));
+        return successPermille(score, (long) resistScore, basePermille, floorPermille,
+                ceilPermille);
+    }
+
+    /**
+     * The same threshold against a resist too wide for an {@code int} — what
+     * {@link com.trojia.sim.actor.spell.SpellCost#resistFor} computes for a crafting that
+     * authors a large transfer, a long hold or both. Saturating rather than wrapping: a dearer
+     * crafting is never an easier one.
+     */
+    public static int successPermille(int score, long resistScore, int basePermille,
+            int floorPermille, int ceilPermille) {
+        long raw = basePermille + (long) POINTS_TO_PERMILLE * ((long) score - resistScore);
+        return (int) Math.max(floorPermille, Math.min(ceilPermille, raw));
     }
 
     /** Whether a named draw passes a permille threshold (unsigned modulus — no sign bias). */
@@ -236,13 +260,20 @@ public final class SkillChecks {
      * {@code ActiveEffects.ATTRIBUTE_MODIFIER_LIMIT}, so the loop cannot run away.
      * Degrades to the base where the skill table is unwired.
      *
+     * <p><b>The resist is a {@code long} because it is COMPUTED, not authored.</b> Every other
+     * family in this file is measured against a resist a content author typed; this one is
+     * measured against what the crafting actually moves and how far, and two of the three axes
+     * carry no authored magnitude ceiling. It arrives here already saturated
+     * ({@link com.trojia.sim.actor.spell.SpellCost#RESIST_CEILING}), and the threshold above is
+     * computed in a width that cannot wrap, so paying more can never buy better odds.
+     *
      * <p><b>{@code skillRaw} comes from the SPELL, not from Java.</b> Every
      * {@code SpellDefinition} names its governing skill in raws; a crafting authored against a
      * different skill tomorrow is gated and grown by that skill with no code change, which is
      * the whole promise of the vocabulary.
      */
     public static int craftingPermille(SkillTrackRegistry tracks, int casterId, int skillRaw,
-            int resist) {
+            long resist) {
         int score = tracks.level(casterId, skillRaw) + tracks.attribute(casterId, AttributeId.WIT);
         return successPermille(score, resist, LINKCRAFT_BASE_PERMILLE,
                 LINKCRAFT_FLOOR_PERMILLE, LINKCRAFT_CEIL_PERMILLE);

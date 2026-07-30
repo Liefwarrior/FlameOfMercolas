@@ -69,11 +69,20 @@ public record SpellDefinition(String key, String displayName, String skillKey, i
         return longest;
     }
 
-    /** Total transfer points across every part — the magnitude half of the cost (L452/L457). */
-    public int transferPoints() {
-        int total = 0;
+    /**
+     * Total transfer points across every part — the magnitude half of the cost (L454/L457).
+     * Summed in {@code long} and saturated at {@link SpellCost#RESIST_CEILING}: a component
+     * list is unbounded and two of the three axes carry no authored magnitude ceiling, so an
+     * {@code int} sum here could wrap negative and hand the check a crafting that is cheaper
+     * for being bigger.
+     */
+    public long transferPoints() {
+        long total = 0L;
         for (int i = 0; i < components.size(); i++) {
             total += components.get(i).transferPoints();
+            if (total >= SpellCost.RESIST_CEILING) {
+                return SpellCost.RESIST_CEILING;
+            }
         }
         return total;
     }

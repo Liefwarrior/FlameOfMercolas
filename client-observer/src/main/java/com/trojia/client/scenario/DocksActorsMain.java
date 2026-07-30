@@ -1284,7 +1284,7 @@ public final class DocksActorsMain {
                 + "/" + effects.slotCapacity());
         for (int raw = 0; raw < spells.size(); raw++) {
             var spell = spells.get(raw);
-            int resist = com.trojia.sim.actor.spell.SpellCost.resistFor(spell, spell.reach());
+            long resist = com.trojia.sim.actor.spell.SpellCost.resistFor(spell, spell.reach());
             // A NOVICE's odds: level 0 in whatever skill the row names, base WIT. Reading it
             // off the unwired table rather than off any live actor keeps the column a property
             // of the CONTENT, so the report says the same thing on an empty ward.
@@ -1304,7 +1304,7 @@ public final class DocksActorsMain {
                     + pad(spell.skillKey(), 11)
                     + pad(spell.targetShape().name().toLowerCase(java.util.Locale.ROOT), 7)
                     + " Lv" + spell.minLevel()
-                    + "  resist " + pad(Integer.toString(resist), 4)
+                    + "  resist " + pad(Long.toString(resist), 4)
                     + "  novice " + (noviceOdds / 10) + "%"
                     + "  cd " + pad(spell.cooldownTicks() + "t", 6)
                     + "  " + parts);

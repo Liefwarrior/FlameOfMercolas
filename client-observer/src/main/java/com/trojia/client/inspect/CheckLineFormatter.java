@@ -181,7 +181,7 @@ public final class CheckLineFormatter {
      * @param resist    the resist the sim rolled against ({@code SpellCost.resistFor})
      */
     public static String spellLine(SkillTrackRegistry tracks, int casterId, int skillRaw,
-            String spellName, int resist, boolean worked) {
+            String spellName, long resist, boolean worked) {
         String outcome = worked ? "THE LINK HOLDS" : "THE LINK SLIPS";
         if (!tracks.isWired() || skillRaw == Actor.NONE) {
             return "[crafting -- " + outcome + "]";

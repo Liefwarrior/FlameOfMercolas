@@ -65,8 +65,32 @@ public final class SpellCost {
      * (L459); doing without one takes the gift, and "almost nobody can do this." So every
      * {@link TargetShape#RANGED} spell pays this on top of its distance, which is why the
      * ward's public-shelf list contains none.
+     *
+     * <p><b>A spread pays it too, and it used to slip past.</b> A crafting with an
+     * {@link SpellDefinition#areaRadius} reaches bodies the caster is not touching, by
+     * definition: the arm or the blade bridges to the TARGET, and nothing at all bridges to the
+     * neighbours the spread also catches. Charging the tax only on {@link TargetShape#RANGED}
+     * made an area crafting the cheap way to do the thing canon says almost nobody can do — a
+     * TOUCH spell spreading five tiles cost 30 while the same reach as a single-target bolt cost
+     * 40, so the crowd version was the bargain. Both unbridged shapes pay the same gift tax now,
+     * once each.
      */
     public static final int RESIST_UNBRIDGED = 20;
+
+    /**
+     * The widest difficulty this model will report. Not a balance number — a saturation point.
+     *
+     * <p>Nothing clamps magnitude on the temperature and vitality axes (that is the whole
+     * argument of this class: an outsized crafting prices itself out instead of being refused),
+     * so {@link SpellDefinition#transferPoints} is genuinely unbounded from the raws' side, and
+     * the sum below has to be able to survive an author typing a magnitude of two billion held
+     * for a year. Beyond this point the crafting is already pinned at
+     * {@code SkillChecks.LINKCRAFT_FLOOR_PERMILLE} many orders of magnitude over, so saturating
+     * costs no legibility — and it keeps the subtraction inside
+     * {@code SkillChecks.successPermille} in a width that cannot wrap, which is the defect this
+     * constant exists to make unreachable.
+     */
+    public static final long RESIST_CEILING = 1_000_000_000L;
 
     private SpellCost() {
     }
@@ -74,18 +98,27 @@ public final class SpellCost {
     /**
      * The difficulty this crafting is actually checked against at this distance: the authored
      * base, plus the distance bleed, the transfer bleed (which now includes duration, on both
-     * lingering shapes), the spread and (for an unbridged link) canon's gift tax. This is the
-     * number {@code SkillChecks.craftingPermille} takes and the number the on-screen check line
-     * quotes, so what a player sees is what the sim rolled.
+     * lingering shapes), the spread and (for either unbridged shape) canon's gift tax. This is
+     * the number {@code SkillChecks.craftingPermille} takes and the number the on-screen check
+     * line quotes, so what a player sees is what the sim rolled.
+     *
+     * <p><b>Computed in {@code long} and saturated at {@link #RESIST_CEILING}.</b> Every term
+     * here is a product of two authored integers, and the transfer term is a product of a
+     * magnitude and a duration — so in {@code int} this sum wrapped, and a wrapped resist is a
+     * NEGATIVE resist, which is a crafting that got easier by costing more. Monotonic by
+     * construction now: no input to this function can make the result smaller.
      */
-    public static int resistFor(SpellDefinition spell, int distance) {
-        int resist = spell.baseResist()
-                + RESIST_PER_TILE * Math.max(0, distance)
-                + RESIST_PER_TRANSFER_POINT * spell.transferPoints()
-                + RESIST_PER_AREA_TILE * spell.areaRadius();
+    public static long resistFor(SpellDefinition spell, int distance) {
+        long resist = spell.baseResist()
+                + (long) RESIST_PER_TILE * Math.max(0, distance)
+                + (long) RESIST_PER_TRANSFER_POINT * spell.transferPoints()
+                + (long) RESIST_PER_AREA_TILE * spell.areaRadius();
         if (spell.targetShape() == TargetShape.RANGED) {
             resist += RESIST_UNBRIDGED;
         }
-        return resist;
+        if (spell.areaRadius() > 0) {
+            resist += RESIST_UNBRIDGED;
+        }
+        return Math.min(RESIST_CEILING, resist);
     }
 }

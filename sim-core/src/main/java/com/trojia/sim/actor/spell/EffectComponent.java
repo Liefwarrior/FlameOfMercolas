@@ -58,12 +58,15 @@ public record EffectComponent(EffectKind kind, EffectMode mode, int magnitude, i
      * unreviewed spell cannot be accidentally strong was measurably false: an author could hold
      * a nudge for a week for the price of holding it for a heartbeat.
      */
-    public int transferPoints() {
-        int units = Math.abs(magnitude);
+    public long transferPoints() {
+        // In long from the first operation. |Integer.MIN_VALUE| does not fit an int, a magnitude
+        // near the int ceiling times a duration in the millions does not fit an int, and either
+        // wrap turns "the more you transfer the more is lost" into its own opposite.
+        long units = Math.abs((long) magnitude);
         if (units == 0) {
-            return 0;
+            return 0L;
         }
-        int perPeriod = Math.max(1, units / kind.unitsPerTransferPoint());
+        long perPeriod = Math.max(1L, units / kind.unitsPerTransferPoint());
         return perPeriod * pricedPeriods();
     }
 

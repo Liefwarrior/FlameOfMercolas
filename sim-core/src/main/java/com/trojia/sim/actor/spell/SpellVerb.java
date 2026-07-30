@@ -161,7 +161,7 @@ public final class SpellVerb {
         int distance = spell.targetShape() == TargetShape.SELF
                 ? 0
                 : ActorGeometry.chebyshev(self.cell(), ctx.registry().get(targetId).cell());
-        int resist = SpellCost.resistFor(spell, distance);
+        long resist = SpellCost.resistFor(spell, distance);
         long draw = ctx.draw(ActorRngStream.CHECK_LINKCRAFT, self.id(),
                 ctx.nextDrawIndex(self.id()));
         if (!SkillChecks.passes(draw,
