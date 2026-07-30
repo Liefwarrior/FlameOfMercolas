@@ -57,9 +57,11 @@ import java.util.List;
  * order, so the plan comes out in draw order and is stable frame to frame.
  *
  * <p>Within a cell, faces are ordered by how far their surface sits from the eyeline, farthest
- * first, so the harbour bed draws under its own water and a floor draws under the roof that
- * hides it. Occupants come last in their cell, so an actor stands on the floor rather than in
- * it.
+ * first, so a shallow pool draws over the floor slab it is standing on and a floor draws under
+ * the roof that hides it. (That is a <em>within-cell</em> guarantee only: the bed of a deep
+ * water column is a different cell, and the shared descent rule stops at the water, so it is
+ * never planned at all — see {@link #planFluidSurface}.) Occupants come last in their cell, so
+ * an actor stands on the floor rather than in it.
  *
  * <h2>The vertical rule is the top-down look-down rule, rotated</h2>
  *
@@ -242,13 +244,27 @@ public final class FirstPersonPlanner {
      * point, nothing in that band or any band above it has a pixel on screen, and the break is
      * sound.
      *
+     * <p><b>The descent stops where the EYE is, not where the body has been committed.</b> A
+     * cell only blocks the view below it if you are above it, and mid-climb you are not: the
+     * sim commits {@code eyeBand} to the new band the instant the climb resolves, while the
+     * eye takes {@link FirstPersonCamera#CLIMB_ARRIVAL_FRACTION} of a step cadence to rise
+     * through it. The naive scan started at the committed band, hit its floor slab (a slab
+     * draws, so the descent stops), and never planned the band the eye was physically still
+     * standing in — for the first ~70 ms of every climb the frame was missing the storey around
+     * it, which at a real cadence is four frames of a staircase with no staircase in them. The
+     * guard is exact rather than a fudge: {@code eyeHeight >= floorHeight(b)} is precisely
+     * "this slab is at or below the eye", which is the condition that makes the stop sound in
+     * the first place. The reach is left anchored on {@code eyeBand} so this can only ever
+     * <em>add</em> the band under your feet, never see deeper than the tile view does.
+     *
      * @param farDepth forward distance to the column's far side ({@link
      *                 EyeProjection#cellFarDepth})
      */
     private void planColumn(List<ViewQuad> out, EyeProjection eye, int eyeBand, CellSight sight,
             ActorSight actors, int cx, int cy, float farDepth) {
         for (int b = eyeBand; b >= eyeBand - BANDS_BELOW; b--) {
-            if (!planCell(out, eye, eyeBand, sight, actors, cx, cy, b)) {
+            boolean seeThrough = planCell(out, eye, eyeBand, sight, actors, cx, cy, b);
+            if (!seeThrough && eye.eyeHeight() >= BandGeometry.floorHeight(b)) {
                 break;
             }
         }
@@ -380,8 +396,16 @@ public final class FirstPersonPlanner {
      * is the surface of a body of water.
      *
      * <p>A fluid cell draws exactly one horizontal translucent surface, and only when nothing
-     * is pooled in the cell above it — so the harbour's two-band water column is one surface
-     * with the bed under it, not two stacked sheets. The surface sits {@code depth/8} of the
+     * is pooled in the cell above it — so the harbour's two-band water column is one surface,
+     * not two stacked sheets. <b>What that surface composites against is the frame's backdrop,
+     * not its own bed</b>, and that is worth stating plainly because the obvious reading is
+     * wrong: harbour water is alphaQ8 240 of 256 and you can see through it, but the shared
+     * descent rule stops at the first cell that draws and pooled fluid draws, so the bed under
+     * it is never planned — exactly as the tile view's own look-down never plans it either.
+     * The two views agree; what they agree on is that the bed is not shown. Fixing it means
+     * changing the descent rule in <em>both</em> views, which is a bigger decision than a
+     * renderer gets to make on its own. It is why the backdrop had to stop being void black
+     * ({@link SkyBand#groundHazeAt}). The surface sits {@code depth/8} of the
      * way up its own band ({@link BandGeometry#fluidSurfaceHeight}), which puts full-depth
      * harbour water just under the lip of the quay above it and the bathhouse's depth-2 pool
      * ankle-deep on its own floor, from one rule. Alpha comes from the pack's own per-depth

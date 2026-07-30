@@ -290,6 +290,57 @@ class FirstPersonPlannerTest {
                 "a cellar was visible through a solid street");
     }
 
+    /**
+     * <b>Mid-climb, the storey the eye is still standing in is drawn.</b>
+     *
+     * <p>The sim commits the new band the instant the climb resolves; the eye takes
+     * {@link FirstPersonCamera#CLIMB_ARRIVAL_FRACTION} of a step cadence to rise through it.
+     * Scanning down from the committed band hit the new floor slab immediately — a slab draws,
+     * so the descent stopped — and the band the eye was physically inside was planned for none
+     * of those frames. At the real 200 ms cadence that is the first four frames of every climb
+     * showing a ceiling and no room.
+     *
+     * <p>Driven through the real camera rather than a hand-set height, so the timing claim is
+     * the shipped one: the test asserts up front that there really are frames where the eye's
+     * band and the sim's disagree, or it would be proving nothing.
+     */
+    @Test
+    void midClimbTheStoreyTheEyeIsStillStandingInIsDrawn() {
+        FpvScene scene = street();                                   // the storey climbed out of
+        scene.fill(20, 44, 20, 44, BAND + 1, TileForm.FLOOR, FpvScene.OAK); // the one climbed to
+
+        FirstPersonCamera cam = new FirstPersonCamera();
+        cam.snapTo(32, 32, BAND, (float) (3 * Math.PI / 2));
+        cam.followCell(32, 33, BAND);                                // teach it the cadence
+        for (int i = 0; i < 12; i++) {
+            cam.advance(1 / 60f);
+        }
+        cam.followCell(32, 32, BAND + 1);                            // up the stair
+
+        int framesMidClimb = 0;
+        for (int frame = 0; frame < 12; frame++) {
+            cam.advance(1 / 60f);
+            int standingIn = (int) Math.floor(cam.eyeHeight() / BandGeometry.BAND_HEIGHT);
+            if (standingIn == cam.band()) {
+                continue;                                            // the eye has arrived
+            }
+            framesMidClimb++;
+            EyeProjection eye = EyeProjection.of(32.5f, 32.5f, cam.eyeHeight(), cam.yaw(),
+                    W, H, EyeProjection.DEFAULT_FOV_DEGREES, 0f);
+            List<ViewQuad> plan = FpvScene.planner()
+                    .plan(eye, cam.band(), scene, ActorSight.empty());
+            // Ten tiles up the street: a floor slab 1.7 units under the eye does not clear the
+            // bottom of a level frame any nearer than that, which is geometry, not culling.
+            assertFalse(quadsFor(plan, 32, 22, standingIn).isEmpty(),
+                    "frame " + frame + " of the climb: the eye is inside band " + standingIn
+                            + " and that band was culled — the sim had already committed band "
+                            + cam.band());
+        }
+        assertTrue(framesMidClimb >= 3,
+                "only " + framesMidClimb + " frames had the eye below its committed band; the "
+                        + "test is not exercising the climb");
+    }
+
     @Test
     void theColumnNeverReachesPastTheSharedLookDownBudget() {
         FpvScene scene = new FpvScene(); // all air except one very deep floor
