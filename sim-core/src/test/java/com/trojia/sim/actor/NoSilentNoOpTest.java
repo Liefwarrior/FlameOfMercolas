@@ -7,6 +7,7 @@ import com.trojia.sim.actor.spell.EffectPairing;
 import com.trojia.sim.actor.spell.SpellRawsLoader;
 import com.trojia.sim.actor.spell.SpellRegistry;
 import com.trojia.sim.progression.AttributeId;
+import com.trojia.sim.progression.SkillRegistry;
 
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +45,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 final class NoSilentNoOpTest {
 
+    /** The skill universe the loader gates every {@code "skill"} key against. */
+    private static final SkillRegistry SKILLS =
+            com.trojia.sim.progression.SkillRawsLoader.load(RawsDir.locate());
+
     // ==================================================================
     // The nine-cell matrix, authored cell by cell
     // ==================================================================
@@ -62,14 +67,14 @@ final class NoSilentNoOpTest {
             for (EffectMode mode : EffectMode.values()) {
                 String cell = kind + "/" + mode;
                 if (EffectPairing.isLegal(kind, mode)) {
-                    SpellRegistry loaded = SpellRawsLoader.parse(oneComponentSpell(kind, mode));
+                    SpellRegistry loaded = SpellRawsLoader.parse(SKILLS, oneComponentSpell(kind, mode));
                     assertNotNull(loaded.get(loaded.rawOf("under_test")),
                             cell + " is read by the sim and must be authorable");
                     accepted.add(cell);
                     continue;
                 }
                 RuntimeException thrown = assertThrows(RuntimeException.class,
-                        () -> SpellRawsLoader.parse(oneComponentSpell(kind, mode)),
+                        () -> SpellRawsLoader.parse(SKILLS, oneComponentSpell(kind, mode)),
                         cell + " is read by nothing in the sim: authoring it used to resolve,"
                                 + " charge a resist, toast success and change nothing");
                 String message = String.valueOf(thrown.getMessage());
@@ -104,12 +109,12 @@ final class NoSilentNoOpTest {
     void aTrickleShorterThanOneDosePeriodIsRefused() {
         int period = ActiveEffects.OVER_TIME_PERIOD_TICKS;
         RuntimeException thrown = assertThrows(RuntimeException.class,
-                () -> SpellRawsLoader.parse(spell(EffectKind.VITALITY, EffectMode.OVER_TIME,
+                () -> SpellRawsLoader.parse(SKILLS, spell(EffectKind.VITALITY, EffectMode.OVER_TIME,
                         -1, period - 1)),
                 "under one period a trickle delivers zero doses and is charged for all of them");
         assertTrue(String.valueOf(thrown.getMessage()).contains("at least " + period),
                 "the refusal names the cadence it fell short of: " + thrown.getMessage());
-        assertNotNull(SpellRawsLoader.parse(spell(EffectKind.VITALITY, EffectMode.OVER_TIME,
+        assertNotNull(SpellRawsLoader.parse(SKILLS, spell(EffectKind.VITALITY, EffectMode.OVER_TIME,
                         -1, period)),
                 "exactly one period delivers exactly one dose, so exactly one period is legal");
     }
@@ -124,10 +129,10 @@ final class NoSilentNoOpTest {
     void aHeldWarmthShorterThanOneRestCadenceIsRefused() {
         int cadence = ActiveEffects.WARMTH_REST_PERIOD_TICKS;
         assertThrows(RuntimeException.class,
-                () -> SpellRawsLoader.parse(spell(EffectKind.TEMPERATURE,
+                () -> SpellRawsLoader.parse(SKILLS, spell(EffectKind.TEMPERATURE,
                         EffectMode.WHILE_ACTIVE, 15, cadence - 1)),
                 "a warmth that expires before its first REST payment moved nothing");
-        assertNotNull(SpellRawsLoader.parse(spell(EffectKind.TEMPERATURE,
+        assertNotNull(SpellRawsLoader.parse(SKILLS, spell(EffectKind.TEMPERATURE,
                         EffectMode.WHILE_ACTIVE, 15, cadence)),
                 "one full cadence reaches one payment, so one full cadence is legal");
     }
@@ -141,7 +146,7 @@ final class NoSilentNoOpTest {
     void aHeldNudgeNeedsNoCadenceBecauseEveryCheckReadsItImmediately() {
         assertEquals(1, EffectPairing.minimumEffectiveTicks(EffectKind.ATTRIBUTE,
                 EffectMode.WHILE_ACTIVE));
-        assertNotNull(SpellRawsLoader.parse(spell(EffectKind.ATTRIBUTE,
+        assertNotNull(SpellRawsLoader.parse(SKILLS, spell(EffectKind.ATTRIBUTE,
                         EffectMode.WHILE_ACTIVE, 1, 1)),
                 "a one-tick nudge is felt by anything that checks on that tick");
     }
@@ -155,7 +160,7 @@ final class NoSilentNoOpTest {
                     continue;
                 }
                 assertThrows(RuntimeException.class,
-                        () -> SpellRawsLoader.parse(spell(kind, mode, 0,
+                        () -> SpellRawsLoader.parse(SKILLS, spell(kind, mode, 0,
                                 EffectPairing.minimumEffectiveTicks(kind, mode))),
                         kind + "/" + mode + " magnitude 0 used to consume a persisted slot"
                                 + " and do nothing with it");
@@ -177,17 +182,17 @@ final class NoSilentNoOpTest {
     @Test
     void theAttributeAxisIsBoundedByTheLoaderAndByTheLiveSum() {
         int limit = ActiveEffects.ATTRIBUTE_MODIFIER_LIMIT;
-        assertNotNull(SpellRawsLoader.parse(spell(EffectKind.ATTRIBUTE,
+        assertNotNull(SpellRawsLoader.parse(SKILLS, spell(EffectKind.ATTRIBUTE,
                         EffectMode.WHILE_ACTIVE, limit, 100)),
                 "the limit itself is authorable");
         RuntimeException thrown = assertThrows(RuntimeException.class,
-                () -> SpellRawsLoader.parse(spell(EffectKind.ATTRIBUTE,
+                () -> SpellRawsLoader.parse(SKILLS, spell(EffectKind.ATTRIBUTE,
                         EffectMode.WHILE_ACTIVE, limit + 1, 100)),
                 "one point past it is not, in either direction");
         assertTrue(String.valueOf(thrown.getMessage()).contains("bounded at +/-" + limit),
                 "and the refusal says what the bound is: " + thrown.getMessage());
         assertThrows(RuntimeException.class,
-                () -> SpellRawsLoader.parse(spell(EffectKind.ATTRIBUTE,
+                () -> SpellRawsLoader.parse(SKILLS, spell(EffectKind.ATTRIBUTE,
                         EffectMode.WHILE_ACTIVE, -(limit + 1), 100)),
                 "a sap past the bound is the same defect with a minus sign");
 

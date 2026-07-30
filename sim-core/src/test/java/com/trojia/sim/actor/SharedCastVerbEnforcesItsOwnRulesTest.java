@@ -249,7 +249,7 @@ final class SharedCastVerbEnforcesItsOwnRulesTest {
     /** A context with a wired skill table, a real effect table and a composed spell universe. */
     private static final class VerbContext extends NoOpActorContext {
         final SkillTrackRegistry tracks = new SkillTrackRegistry(
-                com.trojia.sim.progression.SkillRawsLoader.load(locateRawsDir()));
+                com.trojia.sim.progression.SkillRawsLoader.load(RawsDir.locate()));
         final ActiveEffects effects = new ActiveEffects();
         private final SpellRegistry spells;
 
@@ -273,17 +273,5 @@ final class SharedCastVerbEnforcesItsOwnRulesTest {
         public ActiveEffects activeEffects() {
             return effects;
         }
-    }
-
-    private static java.nio.file.Path locateRawsDir() {
-        java.nio.file.Path dir = java.nio.file.Path.of("").toAbsolutePath();
-        for (int i = 0; i < 6 && dir != null; i++, dir = dir.getParent()) {
-            java.nio.file.Path candidate = dir.resolve("content").resolve("raws");
-            if (java.nio.file.Files.isDirectory(candidate)) {
-                return candidate;
-            }
-        }
-        throw new IllegalStateException("content/raws not found above "
-                + java.nio.file.Path.of("").toAbsolutePath());
     }
 }

@@ -6,16 +6,17 @@ import com.trojia.sim.actor.spell.EffectMode;
 import com.trojia.sim.actor.spell.SpellCost;
 import com.trojia.sim.actor.spell.SpellDefinition;
 import com.trojia.sim.actor.spell.SpellRawsLoader;
+import com.trojia.sim.actor.spell.SpellRawsValidationException;
 import com.trojia.sim.actor.spell.SpellRegistry;
 import com.trojia.sim.actor.spell.SpellVerb;
 import com.trojia.sim.actor.type.Serf;
 import com.trojia.sim.progression.AttributeId;
 import com.trojia.sim.progression.SkillRawsLoader;
+import com.trojia.sim.progression.SkillRegistry;
 import com.trojia.sim.world.PackedPos;
 
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,6 +41,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * felt by the ONE function every check in the game already reads.
  */
 final class SpellcraftTest {
+
+    /**
+     * The skill universe every crafting in this file is gated against — a required argument to
+     * the loader, because a spell names the skill that gates it, checks it and grows with it.
+     */
+    private static final SkillRegistry SKILLS = SkillRawsLoader.load(locateRawsDir());
 
     private static final int Z = 10;
     private static final int HERE = PackedPos.pack(50, 50, Z);
@@ -93,7 +100,7 @@ final class SpellcraftTest {
      */
     @Test
     void twoSpellsNobodyAuthoredWorkWithNoJavaAtAll() {
-        SpellRegistry invented = SpellRawsLoader.parse("""
+        SpellRegistry invented = SpellRawsLoader.parse(SKILLS, """
                 {
                   "id": "spells",
                   "spells": [
@@ -220,7 +227,7 @@ final class SpellcraftTest {
 
     @Test
     void distanceAndTransferBothBleedIntoTheDifficulty() {
-        SpellRegistry invented = SpellRawsLoader.parse("""
+        SpellRegistry invented = SpellRawsLoader.parse(SKILLS, """
                 {
                   "id": "spells",
                   "spells": [
@@ -246,7 +253,7 @@ final class SpellcraftTest {
                 "five extra hit points of transfer cost five points of difficulty");
 
         // ...and a trickle pays for every dose it will deliver, so duration is priced too.
-        SpellRegistry trickles = SpellRawsLoader.parse("""
+        SpellRegistry trickles = SpellRawsLoader.parse(SKILLS, """
                 {
                   "id": "spells",
                   "spells": [
@@ -268,7 +275,7 @@ final class SpellcraftTest {
 
     @Test
     void noCraftingCanEverPutABodyOnTheGround() {
-        SpellRegistry murderous = SpellRawsLoader.parse("""
+        SpellRegistry murderous = SpellRawsLoader.parse(SKILLS, """
                 {
                   "id": "spells",
                   "spells": [
@@ -362,7 +369,7 @@ final class SpellcraftTest {
 
     @Test
     void malformedCraftingsFailLoudlyRatherThanVanishingFromTheBar() {
-        assertThrows(RuntimeException.class, () -> SpellRawsLoader.parse("""
+        assertThrows(RuntimeException.class, () -> SpellRawsLoader.parse(SKILLS, """
                 { "id": "spells", "spells": [
                   { "id": "nonsense", "displayName": "Nonsense", "skill": "linkcraft",
                     "target": "TOUCH",
@@ -371,7 +378,7 @@ final class SpellcraftTest {
                 ] }
                 """), "a param on an axis that takes none is a content bug, not a shrug");
 
-        assertThrows(RuntimeException.class, () -> SpellRawsLoader.parse("""
+        assertThrows(RuntimeException.class, () -> SpellRawsLoader.parse(SKILLS, """
                 { "id": "spells", "spells": [
                   { "id": "nameless", "displayName": "Nameless", "skill": "linkcraft",
                     "target": "TOUCH",
@@ -380,7 +387,7 @@ final class SpellcraftTest {
                 ] }
                 """), "an ATTRIBUTE part must say WHICH attribute");
 
-        assertThrows(RuntimeException.class, () -> SpellRawsLoader.parse("""
+        assertThrows(RuntimeException.class, () -> SpellRawsLoader.parse(SKILLS, """
                 { "id": "spells", "spells": [
                   { "id": "unreachable", "displayName": "Unreachable", "skill": "linkcraft",
                     "target": "RANGED",
@@ -388,6 +395,55 @@ final class SpellcraftTest {
                                       "magnitude": -1 } ] }
                 ] }
                 """), "a RANGED crafting must declare how far it reaches");
+
+        SpellRawsValidationException typo = assertThrows(SpellRawsValidationException.class,
+                () -> SpellRawsLoader.parse(SKILLS, """
+                { "id": "spells", "spells": [
+                  { "id": "mistyped", "displayName": "Mistyped", "skill": "linkraft",
+                    "target": "SELF",
+                    "components": [ { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE",
+                                      "magnitude": 15, "durationTicks": 600 } ] }
+                ] }
+                """), "a misspelt skill key is a crafting with no gate, no dice and no XP");
+        assertTrue(typo.getMessage().contains("linkraft"),
+                "the refusal names the key that is wrong: " + typo.getMessage());
+        assertTrue(typo.getMessage().contains("spells[0].skill"),
+                "and the exact field path: " + typo.getMessage());
+        assertTrue(typo.getMessage().contains("linkcraft"),
+                "and the skills the ward actually has: " + typo.getMessage());
+    }
+
+    /**
+     * A MISSPELT SKILL KEY USED TO LOAD CLEAN, AND EVERYTHING DOWNSTREAM AGREED WITH IT.
+     * {@code SkillTrackRegistry.rawOfSkill} answers {@link Actor#NONE} for a key it does not
+     * know, {@code level()} reads 0 off {@code NONE}, so the {@code minLevel} gate passed for
+     * everybody; {@code award()} trained nothing; and the check ran against a skill that did not
+     * exist. The typo was invisible in every direction — the crafting simply worked, for anyone,
+     * forever, and grew nobody. This pins that the loader is now where that stops.
+     */
+    @Test
+    void aSkillKeyTheRegistryDoesNotKnowIsRefusedRatherThanSilentlyUngated() {
+        SkillTrackRegistry tracks = new SkillTrackRegistry(SkillRawsLoader.load(locateRawsDir()));
+        assertEquals(Actor.NONE, tracks.rawOfSkill("linkraft"),
+                "the misspelling really does resolve to nothing...");
+        assertEquals(0, tracks.level(0, tracks.rawOfSkill("linkraft")),
+                "...and nothing reads as level 0, which is what made the gate vanish");
+
+        assertThrows(SpellRawsValidationException.class, () -> SpellRawsLoader.parse(SKILLS, """
+                { "id": "spells", "spells": [
+                  { "id": "ungated", "displayName": "Ungated", "skill": "linkraft",
+                    "minLevel": 99, "target": "SELF",
+                    "components": [ { "effect": "TEMPERATURE", "mode": "WHILE_ACTIVE",
+                                      "magnitude": 15, "durationTicks": 600 } ] }
+                ] }
+                """), "a minLevel of 99 in a skill nobody has is a gate that opens for everyone");
+
+        // Every shipped crafting names a skill the registry knows -- the same check, run over
+        // the content that actually ships.
+        for (SpellDefinition spell : SpellRawsLoader.load(locateRawsDir()).all()) {
+            assertNotEquals(Actor.NONE, tracks.rawOfSkill(spell.skillKey()),
+                    spell.key() + " names a skill the ward does not have: " + spell.skillKey());
+        }
     }
 
     @Test
@@ -415,7 +471,7 @@ final class SpellcraftTest {
      */
     @Test
     void aCraftingAuthoredAgainstADifferentSkillIsGatedAndGrownByThatSkill() {
-        SpellRegistry channelled = SpellRawsLoader.parse("""
+        SpellRegistry channelled = SpellRawsLoader.parse(SKILLS, """
                 { "id": "spells", "spells": [
                   { "id": "fill_the_stone", "displayName": "Fill the Stone",
                     "skill": "channeling", "minLevel": 3, "target": "SELF",
@@ -470,7 +526,7 @@ final class SpellcraftTest {
      */
     @Test
     void everySurvivingPairingIsObservedChangingTheWorld() {
-        SpellRegistry authored = SpellRawsLoader.parse("""
+        SpellRegistry authored = SpellRawsLoader.parse(SKILLS, """
                 {
                   "id": "spells",
                   "spells": [
@@ -629,14 +685,6 @@ final class SpellcraftTest {
     }
 
     private static Path locateRawsDir() {
-        Path dir = Path.of("").toAbsolutePath();
-        for (int i = 0; i < 6 && dir != null; i++, dir = dir.getParent()) {
-            Path candidate = dir.resolve("content").resolve("raws");
-            if (Files.isDirectory(candidate)) {
-                return candidate;
-            }
-        }
-        throw new IllegalStateException("content/raws not found above "
-                + Path.of("").toAbsolutePath());
+        return RawsDir.locate();
     }
 }

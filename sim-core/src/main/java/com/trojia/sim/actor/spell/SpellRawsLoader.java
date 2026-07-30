@@ -9,6 +9,7 @@ import com.trojia.sim.json.JsonString;
 import com.trojia.sim.json.JsonValue;
 import com.trojia.sim.json.MiniJson;
 import com.trojia.sim.progression.AttributeId;
+import com.trojia.sim.progression.SkillRegistry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -26,9 +27,14 @@ import java.util.TreeMap;
  * <p><b>This file is the deliverable.</b> Everything a crafting is lives in the JSON: which
  * axis it moves, by how much, for how long, how far it reaches, how wide it spreads, which
  * skill gates it and at what level. Adding a spell is adding a row here — no Java, no rebuild
- * of any table, no new enum. {@link #parse(String)} is public precisely so a spellcrafting
- * screen (or a test proving the vocabulary is real) can compose a definition at runtime out of
- * the same parts, with no file on disk at all.
+ * of any table, no new enum. {@link #parse(SkillRegistry, String)} is public precisely so a
+ * spellcrafting screen (or a test proving the vocabulary is real) can compose a definition at
+ * runtime out of the same parts, with no file on disk at all.
+ *
+ * <p><b>The skill universe is an argument, not an afterthought.</b> Every route in takes a
+ * {@link SkillRegistry} and every {@code "skill"} key is checked against it, because a crafting
+ * names the skill that gates it, checks it and grows with it — so an unknown key is not a typo
+ * with a cosmetic consequence, it is a crafting with no gate, no dice and no XP.
  *
  * <p><b>Schema</b> (top-level object): {@code "id"} and {@code "spells"}, an array of spell
  * objects:
@@ -86,9 +92,24 @@ public final class SpellRawsLoader {
     private SpellRawsLoader() {
     }
 
-    /** Loads and validates {@code spells/spells.json} under a raws root (e.g. {@code content/raws}). */
+    /**
+     * Loads and validates {@code spells/spells.json} under a raws root (e.g.
+     * {@code content/raws}), gating every {@code "skill"} key against the skill universe in the
+     * SAME raws root.
+     */
     public static SpellRegistry load(Path rawsRoot) {
         java.util.Objects.requireNonNull(rawsRoot, "rawsRoot");
+        return load(rawsRoot, com.trojia.sim.progression.SkillRawsLoader.load(rawsRoot));
+    }
+
+    /**
+     * Loads and validates {@code spells/spells.json} under a raws root against an
+     * already-built skill universe — what the bake uses, so the registry that GATES a crafting
+     * is provably the same object the sim later measures it in.
+     */
+    public static SpellRegistry load(Path rawsRoot, SkillRegistry skills) {
+        java.util.Objects.requireNonNull(rawsRoot, "rawsRoot");
+        java.util.Objects.requireNonNull(skills, "skills");
         Path file = rawsRoot.resolve(SPELLS_FILE.replace('/', java.io.File.separatorChar));
         if (!Files.isRegularFile(file)) {
             throw new SpellRawsValidationException(SPELLS_FILE,
@@ -100,13 +121,18 @@ public final class SpellRawsLoader {
         } catch (IOException e) {
             throw new UncheckedIOException("failed reading raws file " + file, e);
         }
-        return parse(bytes);
+        return parse(skills, bytes);
     }
 
-    /** Loads and validates {@code spells/spells.json} from a classpath resource root. */
+    /**
+     * Loads and validates {@code spells/spells.json} from a classpath resource root, gating
+     * every {@code "skill"} key against the skill universe in the same resource root.
+     */
     public static SpellRegistry load(ClassLoader classLoader, String resourceRoot) {
         java.util.Objects.requireNonNull(classLoader, "classLoader");
         java.util.Objects.requireNonNull(resourceRoot, "resourceRoot");
+        SkillRegistry skills =
+                com.trojia.sim.progression.SkillRawsLoader.load(classLoader, resourceRoot);
         String trimmed = trimSlashes(resourceRoot);
         String resourcePath = trimmed.isEmpty() ? SPELLS_FILE : trimmed + "/" + SPELLS_FILE;
         byte[] bytes;
@@ -120,15 +146,19 @@ public final class SpellRawsLoader {
         } catch (IOException e) {
             throw new UncheckedIOException("failed reading raws resource " + resourcePath, e);
         }
-        return parse(bytes);
+        return parse(skills, bytes);
     }
 
     /**
      * Parses spell raws straight out of a string — the seam that proves the vocabulary is real.
      * A new crafting can be composed and cast without a file, a rebuild or a line of Java.
+     *
+     * <p>The skill universe is REQUIRED, not optional: a crafting names the skill that gates it,
+     * checks it and grows with it, so a spell parsed against no registry is a spell with no gate.
      */
-    public static SpellRegistry parse(String json) {
-        return parse(json.getBytes(StandardCharsets.UTF_8));
+    public static SpellRegistry parse(SkillRegistry skills, String json) {
+        java.util.Objects.requireNonNull(skills, "skills");
+        return parse(skills, json.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String trimSlashes(String s) {
@@ -143,7 +173,7 @@ public final class SpellRawsLoader {
         return s.substring(start, end);
     }
 
-    private static SpellRegistry parse(byte[] bytes) {
+    private static SpellRegistry parse(SkillRegistry skills, byte[] bytes) {
         JsonValue tree;
         try {
             tree = MiniJson.parse(bytes, JsonNumberMode.INTEGER_ONLY);
@@ -167,7 +197,7 @@ public final class SpellRawsLoader {
                 throw new SpellRawsValidationException(SPELLS_FILE, "spells[" + i + "]",
                         "spell entry must be an object");
             }
-            SpellDefinition definition = parseSpell(spellObject, i);
+            SpellDefinition definition = parseSpell(spellObject, i, skills);
             if (byKey.putIfAbsent(definition.key(), definition) != null) {
                 throw new SpellRawsValidationException(SPELLS_FILE, "spells[" + i + "].id",
                         "duplicate spell id \"" + definition.key() + "\"");
@@ -176,12 +206,12 @@ public final class SpellRawsLoader {
         return SpellRegistry.of(new ArrayList<>(byKey.values()));
     }
 
-    private static SpellDefinition parseSpell(JsonObject raw, int index) {
+    private static SpellDefinition parseSpell(JsonObject raw, int index, SkillRegistry skills) {
         String path = "spells[" + index + "]";
         rejectUnknown(raw, SPELL_FIELDS, path);
         String key = requireString(raw, path + ".id", "id");
         String displayName = requireString(raw, path + ".displayName", "displayName");
-        String skill = requireString(raw, path + ".skill", "skill");
+        String skill = requireSkill(raw, path + ".skill", skills);
         TargetShape target = parseTarget(requireString(raw, path + ".target", "target"), path);
         int minLevel = optionalInt(raw, path, "minLevel", 0);
         int baseResist = optionalInt(raw, path, "baseResist", 0);
@@ -259,6 +289,35 @@ public final class SpellRawsLoader {
         }
         throw new SpellRawsValidationException(SPELLS_FILE, path + ".param",
                 "unknown attribute \"" + string.value() + "\"");
+    }
+
+    /**
+     * The governing skill, checked against the SKILL REGISTRY exactly as {@code effect},
+     * {@code mode}, {@code target} and {@code param} are checked against their own universes.
+     *
+     * <p><b>This used to be a bare {@code requireString}.</b> A misspelt {@code "linkraft"}
+     * loaded clean and shipped a crafting with no gate at all:
+     * {@code SkillTrackRegistry.rawOfSkill} returns {@code Actor.NONE} for a key it does not
+     * know, {@code level()} reads 0 off {@code NONE}, so the {@code minLevel} gate passed for
+     * everybody, {@code award()} trained nothing, and the check ran against a skill that did not
+     * exist. The typo was invisible in every direction — the crafting simply worked, for anyone,
+     * forever, and grew nobody. Refused by name now, with the field path and the skills the ward
+     * actually has.
+     */
+    private static String requireSkill(JsonObject raw, String path, SkillRegistry skills) {
+        String key = requireString(raw, path, "skill");
+        if (!skills.contains(key)) {
+            StringBuilder known = new StringBuilder();
+            for (var skill : skills.all()) {
+                known.append(known.length() == 0 ? "" : ", ").append(skill.key());
+            }
+            throw new SpellRawsValidationException(SPELLS_FILE, path,
+                    "unknown skill \"" + key + "\" -- a crafting names the skill that gates it,"
+                            + " checks it and grows with it, so a skill the registry does not"
+                            + " know is a crafting with no gate, no dice and no XP. Known skills:"
+                            + " " + known);
+        }
+        return key;
     }
 
     private static EffectKind parseKind(String literal, String path) {

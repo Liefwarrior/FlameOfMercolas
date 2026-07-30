@@ -35,6 +35,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class SpellInputTest {
 
+    /** The skill universe the loader gates every {@code "skill"} key against. */
+    private static final com.trojia.sim.progression.SkillRegistry SKILLS =
+            SkillRawsLoader.load(RepoPaths.locate("content", "raws"));
+
     private static final SpellRegistry SPELLS =
             SpellRawsLoader.load(RepoPaths.locate("content", "raws"));
 
@@ -251,7 +255,7 @@ class SpellInputTest {
 
     @Test
     void theEffectLineReadsAnyCraftingIncludingOnesNobodyAuthored() {
-        SpellRegistry invented = SpellRawsLoader.parse("""
+        SpellRegistry invented = SpellRawsLoader.parse(SKILLS, """
                 { "id": "spells", "spells": [
                   { "id": "odd", "displayName": "Odd", "skill": "linkcraft",
                     "target": "RANGED", "range": 4,
