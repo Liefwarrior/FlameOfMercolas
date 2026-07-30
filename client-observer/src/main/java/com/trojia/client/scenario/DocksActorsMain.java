@@ -1311,8 +1311,16 @@ public final class DocksActorsMain {
         }
         for (int s = 0; s < effects.slotCapacity(); s++) {
             if (effects.isLive(s)) {
+                // The axis selector belongs on this line: an ATTRIBUTE row that reads
+                // "ATTRIBUTE 1" without naming WHICH attribute is a dump you cannot check a
+                // crafting against, and the whole point of the report is that it is checkable.
+                String axis = effects.kindAt(s).toString();
+                if (effects.kindAt(s) == com.trojia.sim.actor.spell.EffectKind.ATTRIBUTE) {
+                    axis += " " + com.trojia.sim.progression.AttributeId
+                            .values()[effects.paramAt(s)].name();
+                }
                 System.out.println("    live: #" + effects.targetAt(s) + " "
-                        + effects.kindAt(s) + " " + effects.magnitudeAt(s) + " "
+                        + axis + " " + effects.magnitudeAt(s) + " "
                         + effects.modeAt(s) + " until t=" + effects.endTickAt(s));
             }
         }

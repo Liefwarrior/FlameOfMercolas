@@ -222,15 +222,6 @@ public final class ActiveEffects {
         return Actor.NONE;
     }
 
-    /** Clears every row working on {@code actorId} (a body that died stops being warm). */
-    public void clearFor(int actorId) {
-        for (int s = 0; s < SLOT_CAPACITY; s++) {
-            if (slotTarget[s] == actorId) {
-                slotTarget[s] = NO_TARGET;
-            }
-        }
-    }
-
     // ======================================================================
     // Reads the rest of the sim makes
     // ======================================================================
