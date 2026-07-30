@@ -90,10 +90,6 @@ it is shipped behind a flag in the raws' own `provenance` fields, the chromatis 
     a power; canon uses it for the Beast's corruption-mirror, the *opposite* of a bearer (L1487,
     L1170, WB L120–123). Eli's "its Y'marr has never been seen before" survives the correction
     and is strengthened by it — see `MAGIC-CANON.md` §5.3.
-18b. **Book 2 (Eli): the Flame is absorbed entirely by Gabri or Devon.** Recorded in
-    `MAGIC-CANON.md` §5.8 as **UNPUBLISHED AUTHOR INTENT, NOT YET CANON**. Nothing is built
-    toward it and nothing of it appears in content; it is on the record only so a future sprint
-    does not design against it.
 19. **Warmth pays REST.** Being warm is restful; canon is silent. **Resized 2026-07-30** from 1
     REST per deci-Kelvin per 50 ticks (which was half a serf's whole natural REST decay — too
     strong for a documented nudge) to 1 per 5 deci-Kelvin, i.e. 3 points per cadence against a
@@ -119,3 +115,8 @@ it is shipped behind a flag in the raws' own `provenance` fields, the chromatis 
     outward. Added because **nothing in this sim regenerates hit points**, so before it the only
     mending row was SELF-target and harm done to a neighbour could never be undone. Canon-anchored
     on L445 (Gerik knitting skin with borrowed heat) across L459's bridged link.
+23. **Book 2 (Eli): the Flame is absorbed entirely by Gabri or Devon.** NOT A BLESSING REQUEST —
+    recorded in `MAGIC-CANON.md` §5.8 as **UNPUBLISHED AUTHOR INTENT, NOT YET CANON**. Nothing is
+    built toward it and nothing of it appears in any in-world surface; it is on the record only
+    so a future sprint does not design against it. (WorldBible spells the apprentice *Devin*,
+    WB L408.)
