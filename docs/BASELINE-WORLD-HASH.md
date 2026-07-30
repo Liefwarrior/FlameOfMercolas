@@ -162,3 +162,70 @@ Recorded from the twin-run gate inside the green full build (`run A` and `run B`
 text byte-identical). The pre-S8 number at the top of this file is **not** re-blessed to it — that
 one is the pre-arc reference and stays that. Use this one when a later slice wants to prove itself
 inert against the ward as Simple Magic left it.
+
+---
+
+## The quality-pass drift, on the record
+
+The quality pass (2026-07-30, `wip/quality-pass`: the palette, the tenure lore, the furniture
+register, the ground under the buildings, the signs) moved the number. This section says
+exactly where, in this file's own discipline, so a later reader can tell a deliberate step from
+a regression. The gate reports `DRIFT` against the pre-S8 number and that is the expected
+reading.
+
+### What drifted, and why it had to
+
+**One thing changed the world, and it is a REBAKE.** `content/maps/src/docks_surface.tmx` was
+regenerated from `tools/scripts/gen_docks_surface.py` and `DocksSurfaceBakeTest` rewrote
+`content/maps/baked/docks_surface.trojsav` from it. Two of the five slices author into that map,
+and both of them write MATERIAL ids onto terrain and floor lanes — which is precisely what
+`WorldHasher.hashWorld` reads. A hovel's hearth changing from granite to brick moves the number
+by construction; there is no version of the change that leaves it alone.
+
+1. **Slice 3, the furniture register.** 406 fixture cells changed material. A bed, a table, a
+   shop counter, a chest and a crate stack were drawn from the same four gids as the buildings
+   around them — Brann's Chandlery was an oak shell with oak shelving, an oak counter and an oak
+   goods pile, thirteen fixture cells resolving to the exact atlas cell and tint of the wall
+   behind them. They now resolve to five registers of their own (brick hearth, canvas bedding,
+   hide press, trudgeon board, oak stock), with a deterministic alternate wherever a shell
+   already owns the piece's first choice.
+2. **Slice 4, the ground under the buildings.** 597 stoop cells on the floor lane (a three-cell
+   threshold in the opposite register at 206 of the ward's 225 doors), the C1/C2/C3 courtyards
+   restored from civic flagstone to 577 cells of tilled earth — the courtyard-farm DECISIONS.md
+   says a Compound *is* — and the dwelling apron widened from the 45 hovels to all 71 dwelling
+   rects. `ash/FLOOR` enters the ward for the first time since the tileset was authored, as the
+   dark-grit threshold register.
+
+### What was proved INERT
+
+* **Slice 1, the palette (six atlas-cell collisions repaired), and slice 2, the lore.** Measured,
+  not argued: the twin-run gate run *after* those two slices and *before* any rebake returned
+  `0x4483dbe6d7ebd9e1` — the post-Simple-Magic number, unchanged. `art-mapping.json` is read by
+  the observer at boot and never by the sim; docs are docs.
+* **Slice 5, the signs.** Also measured. The baked TROJSAV is byte-identical with and without the
+  four new `place_sign` markers — sha256
+  `b9dcb19b8472cc8e81cb292c9c1c463d207270c8ba6432693039fe3df6ec6be4` both times, taken by
+  regenerating the map with the sign table toggled off, re-running the bake, and comparing. The
+  importer defers marker baking; `PlaceSignsLoader` reads them at runtime; they never enter
+  sim-core.
+* **Walkability cannot have moved, in both authoring slices.** Slice 4 writes only the FLOOR
+  lane, and walkability is a function of terrain FORM alone. Slice 3 writes terrain, but only
+  ever swaps one WALL material for another WALL material on a cell that was already solid — a
+  brick hearth blocks exactly as a granite hearth did. The generator's own door-standard,
+  anchor-walkability and reachability audits and `DocksOccupancyInvariantTest` all pass
+  unchanged.
+* **The ward's behaviour did not change.** The 15,000-tick report is 181,241 characters both
+  before and after the pass — the same length to the character across 692 actors living,
+  working, fighting and dying. Terrain material ids moved; nothing that reads them did.
+
+### The post-quality-pass number
+
+```
+at commit ca61d65 (branch wip/quality-pass), 15,000 ticks, 692 actors
+COMBINED WORLD HASH: 0xd52ac3ed8e904d98
+```
+
+Recorded from the twin-run gate inside the green full build (`run A` and `run B` identical,
+report text byte-identical, `GATE_EXIT=0`). The pre-S8 number at the top of this file is **not**
+re-blessed to it — that one is the pre-arc reference and stays that. Use this one when a later
+slice wants to prove itself inert against the ward as the quality pass left it.

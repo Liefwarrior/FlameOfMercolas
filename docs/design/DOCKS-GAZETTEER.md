@@ -161,6 +161,148 @@ points and water.
 
 ---
 
+### 2.8 The charge and the bond — Trojian tenure (DECISIONS.md, Eli 2026-07-29)
+
+The ground of Granadad is not property. It is a **charge**: a trust the Priests of the
+Flame hold for historical and legal preservation, and let out. Three tiers, and nobody
+at any tier owns the earth. The Flame holds every **plot** and will not sell one. A
+**Den Duke** holds the charge on a plot — the compound, its wall, its gate, its
+courtyard — pays the Flame a charge-rent each quarter, and lets the ground under each
+house to that house's owner. **Individuals own their houses outright**, standing on
+ground they will never own.
+
+The consequence is the point. A family can own its house free and clear and still owe
+the man who rents the earth beneath it, and that man does not own the earth either. You
+are not landless; you are ground-rented, and the thing you own cannot be moved off the
+thing you do not.
+
+The Church's register of who holds what is **the roll**. A thing is true in Granadad
+when it is on the roll.
+
+**The ground penny.** Ground rent falls due each quarter, owed by each house-owner to
+the plot's Den Duke. It is never rent on the dwelling — the dwelling is the tenant's
+own — only on the earth under it. It is payable in Royals. It is also payable in
+yourself.
+
+**Going bondsworn.** A house-owner who cannot find the penny may lease their own labour
+to their Den Duke until the arrears are worked off. The tenant becomes **bondsworn**;
+the Den Duke becomes their **bondholder**. While the bond runs, the bondsworn's wage is
+the bondholder's and their work is the bondholder's yard; in return the bondholder owes
+**keep** — board and biscuit, set low. Working the bond out is **discharge**, and the
+Flame blesses a discharged debt, which is cheap for the Flame and worth a great deal to
+the discharged. This is what Trojian serfdom is: not a caste and not a birth, but a debt
+relation dressed as a tenancy, entered voluntarily by people with one asset left. A serf
+is not born a serf. A serf is a house-owner who had a bad quarter. (This supersedes the
+"'serf' framing placeholder" note in §4.2.)
+
+**The same instrument, three uses.** A Den Duke settles ground rent with it. A
+**Craftlord** staffs a shed with it, and the ward has been doing so since the identity
+pass without a name for it — Cooper Aldous Stave's "six apprentices bunked in the loft,
+the trade's old arrangement"; Salla's "eight seasonal curers bunked in the lofts";
+Squall's "six stokers who bunk by the fires"; Dagny's "six haulers bunking rough among
+the flotsam". Every bunked-staff line in §4.4 is a bond that has been in the ward since
+S1. And a **Guild** acquires competition with it: you do not undercut a rival, you buy
+the paper on his hands, and then his output is yours. A bond is a transferable holding —
+that is the whole guild mechanic, and it needs no other machinery.
+
+**Canon grounding.** The institution is **(placeholder — invented for v0)**; the novel
+names no landlord, tenant, lease, freehold or duke. Two canon anchors carry it. L1481
+establishes that land in Trojia is **stewarded**: magic passes "to the next person with
+the closest tie to their land's steward", and a descendant of a steward is *recognized* —
+land-stewardship is a real Trojian legal and magical category, and it is held in trust
+rather than owned outright. That is the rhyme the Church freehold is built on. L1820
+establishes debt as a power of the first magnitude: "I do not wish to continue on while
+in the debt of another man. It is a power that has broken thrones." Leasing yourself in
+lieu of Royals is that line made into an instrument. L2077 (rooms rented from an
+innkeeper) establishes that commercial letting exists; L2328 (the squalid suburbs, the
+poor fighting over the dumping) establishes the class outcome. §2.8 names the tenure that
+produces it.
+
+**The rooftop tier.** A rooftop lodger rents from the **house-owner beneath them**, not
+from the Den Duke of the plot. A roof is part of a house and the house is individually
+owned, so the roof is its owner's to let. Three consequences, and all three are wanted.
+Every mansion-poor house-owner becomes a petty landlord — which is exactly Goodman
+Saltgate's authored posture: he does not think about the roof people because they are not
+his tenants, they are his tenants' tenants. Roof income is what makes a struggling
+house-owner look solvent enough to bear a raised ground penny, so the Duke has an interest
+in the roofs he cannot touch. And when a house is taken for arrears, **the roof goes with
+it, and the roof people were never parties to the case**: a hearing that saves one family
+can turn out six who never spoke. The Flame weighs the tenant. Nobody weighs the lodgers.
+The §2.5 rule stands unchanged — rooftops are unseemly for every Trojian except a
+presented Wielder — and this is now also an economic fact and not only a social one.
+
+**Who holds the ground in the Docks.** The ruling is that the existing owning family IS
+the Den Duke of its own plot; §4.4 already committed to it, and demoting these five to
+house-owners under an absentee Duke would throw away authored fiction to import an
+off-map actor.
+
+| Plot | Den Duke | Defence, from §4.4 |
+|---|---|---|
+| C1 The Quayward | **Ceffa Quayward** | "runs the courtyard market her farming tenants stock" — three generations of ground, low pennies, high standing with the Flame. She is the good Duke, which is what makes "grooming an heir at her elbow" the ward's slowest-burning threat. C1 has no rooftop slum: under this model that is not a map fact but a choice by her house-owners not to let their roofs. |
+| C2 The Netters' | **Widow Annis Netter** — *and the charge is pledged* | §4.5's `netter-fenner-debt` already reads "signed against the house itself" and "the house stands on his patience". Ruling: what she pledged is **the charge**, not the house. If she defaults, **Fenner becomes Den Duke of the Netters' compound** — a pawnbroker one bad quarter from holding the ground under forty dockworker families. This makes §4.7 THE WIDOW'S PAPER load-bearing rather than decorative. |
+| C3 Saltgate Terrace | **Goodman Tarl Saltgate** | "mansion-poor and tenant-rich" is a rent roll with no cash behind it. He is himself in arrears to the Flame, so he petitions most and loses most: the ward's distraint engine. "The terrace roofs above him house people he prefers not to think about" is now literally true — they are not his tenants. |
+| C4 The Gullet | **none — the charge is vacant** | The Flame has not re-let it. §4.4: "Rent is not paid in the Gullet, but respects are, and they are paid to Mag." **Gullet Mag** is the Gullet's ground-holder in fact and not in law. A vacant charge is a prize; any actor, including the player, may petition for it. |
+| The 45 hovels | **none — this is the glebe** | Church ground never let to anyone, squatted and worked directly, token alms in place of a penny. This explains the Mission's alms traffic, explains why the hovel rows are the only unsigned dwellings in the ward, and produces the good inversion: **the poorest are the least enserfed**. A Duke who wants labour cannot get it from the glebe; he must go to the Gullet, to the Rows, or to his own tenants. |
+
+Working ground is held on the same terms by **Craftlords**: Foreman Hemp at the Ropewalk,
+Ulwer at Pitchfield, Cooper Stave at the cooperage, Salla on Salt Row, Harl at the yard,
+Dagny at the Wrackhouse, Squall at the bathhouse, and Keeper Vetch — "Landlord of the
+Rows" — who is a house-owner sub-letting hammock-space nightly while paying a work charge
+quarterly, which is precisely what §4.4 already says he does.
+
+**Wastrels** own nothing, so nothing can be taken from them; the only thing they can
+pledge is themselves. They are the bond pool of last resort, and at the ward's starvation
+margin that is not a figure of speech.
+
+**The hearing.** A Den Duke cannot turn a family out. He brings a **petition** to the
+Mission, and the plot's charter priest — in the Docks, Father Maell — hears it. The Duke
+makes an **offering**; it is an offering and not a fee, and it does not buy the verdict.
+The priest weighs, in the Flame's own register of concern for the soul rather than
+commercial interest:
+
+- *what the Duke must show* — arrears proved by the roll, and that he offered terms
+  before he asked for the ground back;
+- *what the tenant may plead* — years kept on that ground, actors under the roof, what the
+  household gives at the Mission, honest custom at the counters, and labour already given
+  under a former bond;
+- *what the priest brings* — his own **faith**, which a well-tended Mission raises and a
+  neglected one does not;
+- *what the ward brings* — the Flame does not put a family on the street in a hungry
+  quarter;
+- *what the Duke's own conduct costs him* — a Duke behind on his own charge-rent pleads
+  badly, and a Duke known for hard dealing pleads worse.
+
+Six outcomes, and only one of them is eviction:
+
+1. **Dismissed** — the petition refused and the Duke warned; his standing with the Flame falls.
+2. **A stay** — one quarter's grace, arrears frozen.
+3. **An abatement** — the priest permanently reduces the ground penny. The Duke eats it
+   forever. The Flame shaving a Duke's income is the sharpest instrument in the ward.
+4. **A bond ordered** — the tenant keeps the house and the Duke takes the labour. A
+   court-ordered bond cannot be sold on to anyone else.
+5. **Distraint** — the house passes to the Duke. The family is **roofed**: turned out of
+   the house and onto a roof deck, or into the Gullet. The lodgers above them go too.
+6. **The charge revoked** — available only against the Duke, when his own arrears and
+   conduct bottom out: the Flame strips the plot's charge and re-lets it. This is how a
+   tenant, or a player, brings a case rather than only defends one.
+
+Two words for the two fates of a defaulter: **bondsworn** (kept the house, sold the
+years) and **roofed** (kept the years, lost the house).
+
+**What a Duke does with a distrained house**, in order: install a bondsworn worker who has
+nowhere to sleep; sell it to whoever can pay; re-let it at lodging rates to the
+highest-standing homeless actor; or let it rot, which is how the Gullet got the way it is.
+
+**Presentation, binding.** None of this is drawn. There is no ownership overlay, no
+painted ground and no boundary line. Ownership is reported by the signage register
+(§3.3): a compound's gate plaque names who holds the charge, and where the plot and the
+house disagree, the house says so. The C2 pair is the teaching case — the gate reads
+*"the charge is pledged at Fenner's"* and the Netter mansion door, twenty tiles away,
+reads *"hers; the ground is not."* A player standing between the two learns the whole
+model without a word of interface.
+
+---
+
 ## 3. Establishments (keyed locations)
 
 "Runs it" gives the §4 actor group; K# keys are the Tiled marker ids (§8). Investigation-relevant sites flagged ◆. **Proprietor names are CANON as of the S1 identity pass (2026-07-22)** — every named proprietor below (and one authored head per remaining staffed site) is bound to its real spawned actor in `content/raws/names/notables.json` (§4.4, the Forty Notables); the in-table "(placeholder)" tags are retained only as the original authorship record.
@@ -307,9 +449,9 @@ line), the site's own FOOTPRINT rect, and `kind`. Every string is this document'
 trimmed — the generator refuses any line over 36 characters or outside plain ASCII, refuses a
 sign that drifts more than 2 tiles off its own footprint, and refuses two signs on one cell.
 
-**Signed (39 buildings):** K01–K34, K36, and the four Compounds C1–C4 at their gates.
+**Signed (40 buildings):** K01–K34, K36, the four Compounds C1–C4 at their gates, and — added by the tenure pass (§2.8) — the Netter mansion's own door, the one house in the ward whose plaque disagrees with its gate's.
 
-**Signed (26 ways) — added in round 2 (Eli: "THE STREETS HAVE NO NAMES ... a player pans the
+**Signed (29 ways) — added in round 2 (Eli: "THE STREETS HAVE NO NAMES ... a player pans the
 ward and every road is anonymous"), closing what the paragraph below used to file as open.**
 `kind=way` marks a place you travel ALONG rather than go IN; its mark is a kerb FINGERPOST, not
 a hanging plaque, because a plaque hangs over a doorway and a street has no door. A way is long
@@ -327,6 +469,7 @@ and thin, so it carries several signs, one per segment rect, all saying the same
 | The Beaching Strand | 1 (z10, the strand walk plane) | §2.2 |
 | The Outfall | 1, on the seawall above the grate | §2.2 |
 | The Fishbone Pier / First, Second, Third Finger | 1 each | §3.2 |
+| Flame ground (the glebe) | 3, one at each hovel-band head | §2.8 |
 
 The three finger piers carry §3.2's own numbering (`finger_01/02/03`) spelled out; no other way
 name is invented here. The Outfall's sign stands at z11 on the seawall the grate is set into,
@@ -353,9 +496,40 @@ Round 1 had none of that and six plaques named a neighbour when pointed at.
   smuggling shed does not hang a sign.
 
 **Still unlabelled (open, §9-tier):** the ambient sites that have never had a K-key and were
-never meant to hang a sign — West Garden Court, the Bilgewater Gap market walk's stall posts,
-the hovel rows — plus every named place of the OTHER map files of §8.1, which do not exist yet.
+never meant to hang a sign — West Garden Court, the Bilgewater Gap market walk's stall posts —
+plus every named place of the OTHER map files of §8.1, which do not exist yet. The hovel rows
+have left this list: the individual hovels are still unsigned and always will be, but each band
+now carries a glebe fingerpost saying WHY (§2.8 — Church ground, no charge let), which turns an
+absence into a statement.
 Every named street and waterfront feature of §2.2/§2.3 is now signed (the table above).
+
+**Ownership on the plaques (§2.8, Eli 2026-07-29).** Eli ruled that plot ownership is
+never rendered — *"no it doesn't need to be visible, just use the info to populate
+signage appropriately"* — so the four compound gate plaques carry it on their second
+line, in the register's own terse voice, and one new door plaque carries the plot/house
+disagreement:
+
+| Mark | Line 1 | Line 2 | Chars |
+|---|---|---|---|
+| C1 gate | The Quayward Compound | Ceffa Quayward holds the charge | 31 |
+| C2 gate | The Netters' Compound | the charge is pledged at Fenner's | 33 |
+| C3 gate | Saltgate Terrace | Tarl Saltgate holds the charge | 30 |
+| C4 gate | The Gullet Compound | the charge is vacant; ask Mag | 29 |
+| C2 mansion door (new) | The Netter house | hers; the ground is not | 23 |
+
+A house within a compound says something different from the plot it stands on **only
+where the two genuinely disagree**. The ward does not sign forty condos; a register names
+the gate and the great house and nothing else, which is what a real register would do.
+That is why exactly one door plaque is added and not five: at C1, C3 and C4 the gate's
+answer is also the house's answer, and a second sign twenty tiles away repeating it would
+teach the player that the two lines are the same thing — which is the one idea §2.8 needs
+them not to believe.
+
+A third family, legal under §9's "open" tier: one fingerpost at each hovel-band head
+reading *"Flame ground; no charge is let"* (30). This is how a player learns the glebe
+exists at all — the 45 hovels are the ward's only unsigned dwellings precisely because
+nobody holds their charge, and an unsigned row reads as an oversight until something on
+the ground says the absence is the point.
 
 Presentation contract, binding: a place name is a way of LOOKING at the ward, not a fact in
 it. The signs are never baked into the TROJSAV, never enter sim-core, never feed the world
@@ -393,7 +567,7 @@ Each: docks presence · needs/rhythm · idle behavior · reactions (fire/water/c
 - Fire: respond, form bucket lines, conscript Serfs — competently for structures, uselessly for tar. Water/flood: rope off, don't enter. Crime: detain or beat per watch raws; brutality normalized, investigation nonexistent — they keep order, they don't solve anything.
 - Faces: `guard`.
 
-**SERF** — *(canon-adjacent: the suburb poor of L2328 are the parent texture; "serf" framing placeholder)*
+**SERF** — *(canon-adjacent: the suburb poor of L2328 are the parent texture. The placeholder caste framing is retired by §2.8: a serf is a house-owner who went bondsworn against the ground penny, not a class anyone is born into.)*
 - Presence: the crowd. 30–50 by day (stevedore gangs on the quays, fishwives at Dawnstalls, gutting crews on Salt Row, sweepers, water-carriers); drops to a handful at night.
 - Needs/rhythm: paid daily in coin, spent nightly in the ward (dossier labor-market pattern): dawn muster → cargo/fish work → dusk pay-out → tavern → the Rows or a cellar bunk.
 - Idle: queue, gossip at the Netmenders' Arcade, mend, scavenge the strand at low tide, tend the Drowned-Name Wall.

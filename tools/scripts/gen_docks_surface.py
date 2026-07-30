@@ -44,6 +44,26 @@ LEATHER_WALL = 34
 CLOTH_WALL = 35
 DIRT_RAMP = 36   # appended to materials.tsx (append-only, tile id 35)
 BRICK_RAMP = 37  # appended to materials.tsx (append-only, tile id 36)
+# Quality slice 4 (the ground under the buildings). ash/FLOOR has sat in materials.tsx
+# since the tileset was authored and has never once been painted; the art-mapping NINTH
+# revision gives it its own solid grey grit cell (floor_grit), which makes it the ward's
+# THIRD exterior floor register alongside the paver weave and bare earth -- and the only
+# new one obtainable without minting a material raw. It is spent on door stoops.
+ASH_FLOOR = 28
+
+FURN_HEARTH = BRICK_WALL      # a red-brick firebox: the one warm mass in a room
+FURN_BED = CLOTH_WALL         # bedding, striped canvas
+FURN_PRESS = LEATHER_WALL     # hide-bound chest / press / wardrobe
+FURN_BOARD = TRUDGEON_WALL    # a worked board: counters, tables, shelves, racks
+FURN_STOCK = OAK_WALL         # goods: crates, barrels, bales, stacked cargo
+# Second choice per piece, used only when the shell already owns the first.
+FURN_ALT = {
+    FURN_HEARTH: GRANITE_WALL,     # a stone hearth in a brick house
+    FURN_BED: LEATHER_WALL,        # a hide bedroll in a canvas tent
+    FURN_PRESS: STEEL_WALL,        # a steel-banded strongbox in a hide hut
+    FURN_BOARD: GETILIA_WALL,      # a getilia-treated board in a trudgeon shed
+    FURN_STOCK: THATCH_WALL,       # baled fibre where the store is timber-built
+}
 # DECISIONS.md Art register FIFTH revision (Eli 2026-07-15, DF-translated Kenney /
 # Roman-pillared civic facades): 3 civic-only material clones (content/raws/materials/
 # *_facade.json), WALL-only, appended to materials.tsx (tile ids 37-39). Used ONLY on the
@@ -116,9 +136,29 @@ def _second_door_cell(x0, y0, x1, y1, dx, dy, doors):
     return None
 
 
+# Every door the ward punches, recorded as (z, x, y, outward nx, outward ny) so the
+# ground pass (5.9) can lay a stoop on the STREET side of it without re-deriving which
+# side that is. A door is the one cell of a building a player actually walks through and
+# until slice 4 not one of them was marked on the ground.
+DOORS = []
+SHELLS = []      # (z, x0, y0, x1, y1, wall gid) -- every walled story authored
+
+
+def _record_door(z, x0, y0, x1, y1, dx, dy):
+    if dy == y0:
+        DOORS.append((z, dx, dy, 0, -1))
+    elif dy == y1:
+        DOORS.append((z, dx, dy, 0, 1))
+    elif dx == x0:
+        DOORS.append((z, dx, dy, -1, 0))
+    elif dx == x1:
+        DOORS.append((z, dx, dy, 1, 0))
+
+
 def shell(z, x0, y0, x1, y1, wall, floor=None, doors=(), skip_sides=()):
     """Walled building story: border walls, full-rect floor, door gaps. PASS 9: every
     1-wide door is auto-widened to the >=2-wide door standard via _second_door_cell."""
+    SHELLS.append((z, x0, y0, x1, y1, wall))
     if floor is not None:
         frect(z, x0, y0, x1, y1, floor)
     border(z, x0, y0, x1, y1, wall, skip_sides)
@@ -131,6 +171,7 @@ def shell(z, x0, y0, x1, y1, wall, floor=None, doors=(), skip_sides=()):
         T[z][dy][dx] = 0
         if floor is not None:
             F[z][dy][dx] = floor
+        _record_door(z, x0, y0, x1, y1, dx, dy)
 
 
 def mk(z, cls, name, tx, ty, **props):
@@ -193,7 +234,7 @@ def intersection(z, x0, y0, x1, y1):
 
 
 # --- slab-clutter fixtures (dressing pass; break up barren smooth expanses) ---
-def crate_grid(z, x0, y0, x1, y1, gid=OAK_WALL, bw=2, bh=2, gx=1, gy=1):
+def crate_grid(z, x0, y0, x1, y1, gid=FURN_STOCK, bw=2, bh=2, gx=1, gy=1):
     """Standardized grid of storage stacks: bw x bh solid crate/barrel islands (gid,
     default OAK_WALL) tiled from the NW corner with gx/gy-wide aisles between, so a
     warehouse/cargo bay reads as neatly racked goods that stay traversable. Like
@@ -225,29 +266,62 @@ def rug(z, x0, y0, x1, y1, gid=GRANITE_FLOOR):
                 F[z][y][x] = gid
 
 
-# --- atomic homey pieces (a furniture cell is a solid WALL-gid tile) ---
-def bed(z, x, y):
-    T[z][y][x] = CLOTH_WALL
+# --- THE FURNITURE REGISTER (quality slice 3, 2026-07-30) ------------------
+# A furniture cell is a solid WALL-gid tile, and until this pass the ward spent
+# FOUR materials on the whole of its interior life: a bed, a table, a shop
+# counter, a chest, a crate stack and a load-bearing wall were drawn from the
+# same handful of gids as the buildings they stood inside. Brann's Chandlery was
+# the worst case and not an unusual one -- an OAK shell with OAK shelving, an OAK
+# counter and an OAK rope pile, thirteen fixture cells resolving to the exact
+# atlas cell and tint of the wall behind them. That is why interiors read as
+# noise instead of as rooms: there was nothing to read.
+#
+# Each piece now takes a material NOTHING structural in its own building uses, so
+# an object stands out from its shell by hue and by coursing shape both (the
+# art-mapping NINTH revision pulled trudgeon and leather onto cells of their own
+# for exactly this). Where a shell happens to BE the piece's own material -- a
+# brick house wanting a brick hearth, a canvas tent wanting a canvas bed -- the
+# _furn() fallback swaps in the register's second choice, deterministically.
+FURNITURE = []      # (z, x, y, gid) -- every cell laid through the atomic pieces
 
 
-def chest(z, x, y):
-    T[z][y][x] = LEATHER_WALL
+def _furn(piece, shell=None):
+    """The gid for a furniture piece that is never the gid of the shell it stands
+    in. Deterministic: first choice unless the shell already is it, then the
+    register's single documented alternate."""
+    return FURN_ALT[piece] if shell == piece else piece
 
 
-def hearth(z, x, y):
-    T[z][y][x] = GRANITE_WALL
+def _lay(z, x0, y0, x1, y1, gid):
+    trect(z, x0, y0, x1, y1, gid)
+    for fy in range(y0, y1 + 1):
+        for fx in range(x0, x1 + 1):
+            FURNITURE.append((z, fx, fy, gid))
 
 
-def table(z, x0, y0, x1, y1):
-    trect(z, x0, y0, x1, y1, OAK_WALL)
+# --- atomic homey pieces ---
+def bed(z, x, y, shell=None):
+    _lay(z, x, y, x, y, _furn(FURN_BED, shell))
 
 
-def shelf(z, x0, y0, x1, y1):
-    trect(z, x0, y0, x1, y1, OAK_WALL)
+def chest(z, x, y, shell=None):
+    _lay(z, x, y, x, y, _furn(FURN_PRESS, shell))
 
 
-def shop_counter(z, x0, y0, x1, y1):
-    trect(z, x0, y0, x1, y1, OAK_WALL)
+def hearth(z, x, y, shell=None):
+    _lay(z, x, y, x, y, _furn(FURN_HEARTH, shell))
+
+
+def table(z, x0, y0, x1, y1, shell=None):
+    _lay(z, x0, y0, x1, y1, _furn(FURN_BOARD, shell))
+
+
+def shelf(z, x0, y0, x1, y1, shell=None):
+    _lay(z, x0, y0, x1, y1, _furn(FURN_BOARD, shell))
+
+
+def shop_counter(z, x0, y0, x1, y1, shell=None):
+    _lay(z, x0, y0, x1, y1, _furn(FURN_BOARD, shell))
 
 
 # --- interior room fixtures ---
@@ -273,7 +347,7 @@ def partition(z, x0, y0, x1, y1, wall, door):
                 break
 
 
-def homey_touches(z, hearth_xy, bed_xys, chest_xy=None, table_rect=None):
+def homey_touches(z, hearth_xy, bed_xys, chest_xy=None, table_rect=None, shell=None):
     """Standardized 'lived-in home' furniture drop: a hearth, one bed per household
     member, an optional chest and table -- so every home feels lived-in without being
     hand-bespoke (Eli: "Homes should have homey touches"). Callers pass cells that sit
@@ -281,13 +355,13 @@ def homey_touches(z, hearth_xy, bed_xys, chest_xy=None, table_rect=None):
     furniture ZONES the room (a sleeping corner, a hearth-and-table common area) without
     trapping the occupants."""
     (hx, hy) = hearth_xy
-    hearth(z, hx, hy)
+    hearth(z, hx, hy, shell)
     for (bx, by) in bed_xys:
-        bed(z, bx, by)
+        bed(z, bx, by, shell)
     if chest_xy is not None:
-        chest(z, chest_xy[0], chest_xy[1])
+        chest(z, chest_xy[0], chest_xy[1], shell)
     if table_rect is not None:
-        table(z, table_rect[0], table_rect[1], table_rect[2], table_rect[3])
+        table(z, table_rect[0], table_rect[1], table_rect[2], table_rect[3], shell)
 
 
 def compound_unit_interior(z, x0, y0, x1, y1, door, wall=REMAN_WALL):
@@ -311,14 +385,14 @@ def compound_unit_interior(z, x0, y0, x1, y1, door, wall=REMAN_WALL):
     partition(z, px, y0 + 1, px, y1 - 1, wall, (px, mid_y))
     # common/hearth room (west of the partition): hearth on the back wall + a table
     homey_touches(z, (x0 + 1, back_y), bed_xys=(),
-                  table_rect=(x0 + 3, back_y, x0 + 4, back_y))
+                  table_rect=(x0 + 3, back_y, x0 + 4, back_y), shell=wall)
     # sleeping alcove (east of the partition): two beds along the back wall + a chest
-    bed(z, px + 1, back_y)
-    bed(z, px + 2, back_y)
-    chest(z, x1 - 1, front_y)
+    bed(z, px + 1, back_y, wall)
+    bed(z, px + 2, back_y, wall)
+    chest(z, x1 - 1, front_y, wall)
 
 
-def hovel_touches(z, x0, y0, x1, y1, door, anchor):
+def hovel_touches(z, x0, y0, x1, y1, door, anchor, shell=None):
     """Squalor-tier lived-in touches for an un-partitionable shanty: hearth + up to
     two beds + a chest, all on the interior strip against the wall OPPOSITE the door,
     skipping the anchor cell and the door-aligned cell so the door->anchor spine and
@@ -335,11 +409,11 @@ def hovel_touches(z, x0, y0, x1, y1, door, anchor):
              and not (dx in (x0, x1) and c[1] == dy)]     # keep door row clear
     if not strip:
         return
-    hearth(z, *strip[0])
+    hearth(z, strip[0][0], strip[0][1], shell)
     for c in strip[1:-1][:2]:
-        bed(z, *c)
+        bed(z, c[0], c[1], shell)
     if len(strip) >= 2:
-        chest(z, *strip[-1])
+        chest(z, strip[-1][0], strip[-1][1], shell)
 
 
 # ======================================================================
@@ -764,13 +838,13 @@ for y in range(35, 50):                             # ledger-room partition
     T[11][y][65] = OAK_WALL
 T[11][37][65] = 0
 T[11][38][65] = 0                                   # PASS 9: door standard (>=2 wide)
-trect(11, 58, 37, 60, 37, OAK_WALL)                 # counter
+trect(11, 58, 37, 60, 37, FURN_BOARD)               # counter
 T[11][48][58] = OAK_STAIR_UP
 # Ledger-room library-stack racking (2026-07-15 interior-detail pass, design 3): the K29
 # racking-island idiom -- two rack columns with an aisle gap, inside the ledger room (x66-70).
 for rx in (67, 69):
-    trect(11, rx, 39, rx, 42, OAK_WALL)
-    trect(11, rx, 45, rx, 48, OAK_WALL)
+    trect(11, rx, 39, rx, 42, FURN_BOARD)
+    trect(11, rx, 45, rx, 48, FURN_BOARD)
 shell(12, 56, 34, 71, 50, GRANITE_WALL, GRANITE_FLOOR)
 T[12][48][58] = OAK_STAIR_DOWN
 # The customs archive / clerks' loft (2026-07-15 interior-detail pass, design 5): the z12
@@ -778,7 +852,7 @@ T[12][48][58] = OAK_STAIR_DOWN
 # racking (K29 idiom verbatim), a clerks' rest nook, and a strongroom sealed like K15's cage.
 RACK_COLS_K01 = [(59, 60), (63, 64), (67, 68)]
 for (rx0, rx1) in RACK_COLS_K01:
-    trect(12, rx0, 37, rx1, 46, OAK_WALL)
+    trect(12, rx0, 37, rx1, 46, FURN_BOARD)
 for aisle_y in (38, 41, 44):                        # cross-aisle breaks through every rack
     for (rx0, rx1) in RACK_COLS_K01:
         for x in range(rx0, rx1 + 1):
@@ -830,7 +904,7 @@ T[11][37][125] = 0
 T[11][38][125] = 0                                  # PASS 9: door standard (>=2 wide)
 T[11][43][125] = 0
 T[11][44][125] = 0                                  # PASS 9: door standard (>=2 wide)
-cells(11, [(116, 37), (119, 37), (116, 42), (119, 42)], OAK_WALL)
+cells(11, [(116, 37), (119, 37), (116, 42), (119, 42)], FURN_BOARD)   # patron tables
 # Classic top-down tavern convention (A Link to the Past / Secret of Mana), design 3.1: bar
 # perpendicular to the door (already true), a hearth against the back wall, patrons seated.
 cells(11, [(117, 45), (118, 45)], GRANITE_WALL)     # hearth, south back wall
@@ -851,7 +925,7 @@ T[12][45][127] = OAK_STAIR_DOWN
 # were bare shells with zero furniture -- each now has a bed + storage piece.
 cells(12, [(116, 36), (124, 36), (116, 44), (124, 44)], CLOTH_WALL)   # beds, one per quadrant
 cells(12, [(118, 38), (118, 46)], LEATHER_WALL)     # NW/SW trunks
-cells(12, [(126, 38), (126, 46)], OAK_WALL)         # NE/SE nightstands (127,45 stair kept clear)
+cells(12, [(126, 38), (126, 46)], FURN_BOARD)       # NE/SE nightstands (127,45 stair kept clear)
 frect(13, 114, 34, 128, 47, THATCH_FLOOR)
 mk(11, "light_source", "lamp_gull_door", 121, 33, luminance=18)
 mk(11, "light_source", "lamp_gull_bar", 120, 39, luminance=16)
@@ -865,8 +939,8 @@ mk(11, "script_anchor", "patron_seat_gull_06_anchor", 121, 40)
 
 # K04 The Bilge (mid tavern + hammock loft) -- 12x10
 shell(11, 100, 34, 111, 43, TRUDGEON_WALL, OAK_FLOOR, doors=[(105, 34), (106, 34)])
-trect(11, 103, 37, 107, 37, OAK_WALL)               # bar
-cells(11, [(101, 40), (109, 40)], OAK_WALL)         # tables
+trect(11, 103, 37, 107, 37, _furn(FURN_BOARD, TRUDGEON_WALL))   # bar
+cells(11, [(101, 40), (109, 40)], _furn(FURN_BOARD, TRUDGEON_WALL))   # tables
 cells(11, [(104, 41), (105, 41)], GRANITE_WALL)     # hearth, back wall (design 3.1)
 T[11][41][109] = OAK_STAIR_UP
 shell(12, 100, 34, 111, 43, TRUDGEON_WALL, OAK_FLOOR)
@@ -888,8 +962,8 @@ mk(11, "script_anchor", "patron_seat_bilge_04_anchor", 110, 41)
 shell(11, 58, 66, 70, 77, GRANITE_WALL, OAK_FLOOR,
       doors=[(63, 66), (64, 66), (70, 71), (70, 72)])
 cells(11, [(59, 72), (60, 72)], GRANITE_WALL)       # hearth
-trect(11, 62, 73, 64, 73, OAK_WALL)                 # counter
-cells(11, [(60, 69), (63, 70), (66, 69)], OAK_WALL)
+trect(11, 62, 73, 64, 73, FURN_BOARD)               # counter
+cells(11, [(60, 69), (63, 70), (66, 69)], FURN_BOARD)   # taproom tables
 T[11][75][68] = OAK_STAIR_UP
 shell(12, 58, 66, 70, 77, OAK_WALL, OAK_FLOOR)
 for x in range(59, 70):                             # landlady's rooms
@@ -926,13 +1000,13 @@ for x in range(25, 31):                             # stockroom partition
     T[11][71][x] = OAK_WALL
 T[11][71][27] = 0
 T[11][71][28] = 0                                   # PASS 9: door standard (>=2 wide)
-cells(11, [(25, 73), (30, 73)], OAK_WALL)
+cells(11, [(25, 73), (30, 73)], FURN_BOARD)         # stockroom shelving
 # Earthbound/Stardew Valley shop convention (design 3.2): shelving lines two walls, a counter
 # sits near the door, distinct trade-flavored fixtures -- rope racks + oil-lamp shelving here.
-cells(11, [(25, 68), (25, 69)], OAK_WALL)           # west-wall rope racks
-cells(11, [(30, 68), (30, 69)], OAK_WALL)           # east-wall oil-lamp shelving
-cells(11, [(26, 70), (29, 70)], OAK_WALL)           # sales counter (x27/28 kept clear, door-aligned)
-cells(11, [(27, 73)], OAK_WALL)                     # stockroom rope-coil pile
+cells(11, [(25, 68), (25, 69)], FURN_BOARD)         # west-wall rope racks
+cells(11, [(30, 68), (30, 69)], FURN_BOARD)         # east-wall oil-lamp shelving
+cells(11, [(26, 70), (29, 70)], FURN_BOARD)         # sales counter (x27/28 kept clear, door-aligned)
+cells(11, [(27, 73)], _furn(FURN_STOCK, OAK_WALL))  # stockroom rope-coil pile
 shell(10, 26, 70, 30, 73, GRANITE_WALL, GRANITE_FLOOR)   # cellar carve (gray ledger)
 T[10][72][28] = OAK_STAIR_UP
 T[11][72][28] = OAK_STAIR_DOWN
@@ -1035,8 +1109,8 @@ mk(10, "script_anchor", "dungeon_seam_drowned_hold", 184, 40)
 
 # K14 Wrackhouse (salvage house) -- 10x9
 shell(11, 164, 34, 173, 42, TRUDGEON_WALL, DIRT_FLOOR, doors=[(168, 34), (169, 34)])
-trect(11, 165, 38, 166, 38, OAK_WALL)               # salvage racks
-trect(11, 171, 38, 172, 38, OAK_WALL)
+trect(11, 165, 38, 166, 38, _furn(FURN_BOARD, TRUDGEON_WALL))   # salvage racks
+trect(11, 171, 38, 172, 38, _furn(FURN_BOARD, TRUDGEON_WALL))
 T[11][36][172] = STEEL_WALL                         # the diving bell
 for x in range(165, 173):                           # stockroom partition
     T[11][39][x] = OAK_WALL
@@ -1053,7 +1127,7 @@ for x in range(123, 128):                           # cage partition with slot
     T[11][54][x] = STEEL_WALL
 T[11][54][125] = 0
 T[11][54][124] = 0                                  # PASS 9: door standard (>=2 wide)
-T[11][57][127] = OAK_WALL                           # strongbox
+T[11][57][127] = FURN_PRESS                         # strongbox
 frect(12, 122, 52, 128, 58, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k15_fenners_anchor", 125, 56)
 mk(11, "script_anchor", "fenner_sign_anchor", 125, 51)
@@ -1073,8 +1147,8 @@ for y in range(67, 80):                             # chapel partition
     T[11][y][90] = OAK_WALL
 T[11][71][90] = 0
 T[11][72][90] = 0                                   # PASS 9: door standard (>=2 wide)
-trect(11, 84, 69, 87, 69, OAK_WALL)                 # alms-hall tables
-trect(11, 84, 72, 87, 72, OAK_WALL)
+trect(11, 84, 69, 87, 69, FURN_BOARD)               # alms-hall tables
+trect(11, 84, 72, 87, 72, FURN_BOARD)
 # Compound/civic-hall convention (Ald-ruhn "big crab" reading + Earthbound church-pew
 # register, design 3.3): pew rows flanking the tables, real bunks in the dormitory.
 cells(11, [(84, 68), (85, 68), (86, 68), (87, 68)], GRANITE_WALL)   # pew row, north
@@ -1117,7 +1191,7 @@ shell(11, 100, 52, 119, 58, TRUDGEON_WALL, DIRT_FLOOR, doors=[(104, 52), (105, 5
 for hx in (102, 105, 108, 111, 114, 117):           # hammock posts
     T[11][54][hx] = OAK_WALL
     T[11][57][hx] = OAK_WALL
-T[11][53][101] = OAK_WALL                           # landlord counter
+T[11][53][101] = _furn(FURN_BOARD, TRUDGEON_WALL)   # landlord counter
 frect(12, 100, 52, 119, 58, THATCH_FLOOR)
 mk(11, "script_anchor", "business_k19_rows_anchor", 109, 55)
 
@@ -1145,12 +1219,12 @@ mk(11, "script_anchor", "business_k22_netmenders_anchor", 45, 34)
 shell(11, 40, 66, 53, 76, TRUDGEON_WALL, DIRT_FLOOR, doors=[(46, 66), (47, 66)])
 trect(11, 41, 73, 42, 74, OAK_WALL)                 # barrel stacks
 trect(11, 50, 68, 51, 69, OAK_WALL)
-trect(11, 44, 71, 47, 71, OAK_WALL)                 # workbench
+trect(11, 44, 71, 47, 71, _furn(FURN_BOARD, TRUDGEON_WALL))     # workbench
 # Earthbound/Stardew Valley shop convention (design 3.2): stave stacks + workbench tools --
 # the cooper's own trade-flavored fixtures, distinct from Brann's rope/lamp register.
 trect(11, 48, 73, 49, 74, OAK_WALL)                 # stave stack, mirrors the barrel stack
-cells(11, [(43, 68), (45, 68)], OAK_WALL)           # stave-drying rack, north wall
-cells(11, [(44, 72), (47, 72)], OAK_WALL)           # tool cells flanking the workbench
+cells(11, [(43, 68), (45, 68)], _furn(FURN_BOARD, TRUDGEON_WALL))   # stave-drying rack
+cells(11, [(44, 72), (47, 72)], _furn(FURN_BOARD, TRUDGEON_WALL))   # tool cells
 frect(12, 40, 66, 53, 76, THATCH_FLOOR)
 mk(11, "script_anchor", "business_k23_coopers_anchor", 47, 70)
 
@@ -1178,7 +1252,7 @@ mk(11, "script_anchor", "kennel_dog_anchor_03", 171, 53)
 # the roster; net-mending/sail-repair, distinct trade from Brann's general
 # chandlery) -- 8x8, shrunk into the same lot
 shell(11, 8, 70, 15, 77, TRUDGEON_WALL, OAK_FLOOR, doors=[(11, 70), (12, 70)])
-trect(11, 9, 74, 10, 75, OAK_WALL)                  # canvas-cutting table
+trect(11, 9, 74, 10, 75, _furn(FURN_BOARD, TRUDGEON_WALL))      # canvas-cutting table
 mk(11, "script_anchor", "business_k26_sailmaker_anchor", 11, 73)
 mk(11, "light_source", "lamp_sailmaker_door", 11, 69, luminance=12)
 
@@ -1187,7 +1261,7 @@ mk(11, "light_source", "lamp_sailmaker_door", 11, 69, luminance=12)
 # freed; granite shell per the Salt Row smokehouse fire-safety precedent
 shell(11, 32, 70, 38, 78, GRANITE_WALL, OAK_FLOOR, doors=[(35, 70)])
 cells(11, [(33, 75), (34, 75)], GRANITE_WALL)       # bake oven
-trect(11, 36, 73, 37, 73, OAK_WALL)                 # counter
+trect(11, 36, 73, 37, 73, FURN_BOARD)               # counter
 mk(11, "script_anchor", "business_k27_hardtack_anchor", 35, 74)
 mk(11, "light_source", "lamp_hardtack_oven", 33, 75, luminance=10)
 
@@ -1201,7 +1275,7 @@ mk(11, "light_source", "lamp_hardtack_oven", 33, 75, luminance=10)
 # for ("outfit near where they bunk" -- K19 The Rows is a few tiles further
 # west along the same row).
 shell(11, 130, 58, 135, 64, OAK_WALL, OAK_FLOOR, doors=[(133, 58)])
-trect(11, 132, 61, 134, 61, OAK_WALL)               # counter + racks
+trect(11, 132, 61, 134, 61, FURN_BOARD)             # counter + racks
 mk(11, "script_anchor", "business_k28_slopchest_anchor", 133, 62)
 
 # K29 The Long Store (general dry-goods warehouse: open floor, racking, a
@@ -1215,8 +1289,8 @@ mk(11, "script_anchor", "business_k28_slopchest_anchor", 133, 62)
 # corridor), and a plausible warehouse footprint hugging the road.
 shell(11, 79, 82, 97, 92, BRICK_WALL, DIRT_FLOOR, doors=[(87, 82), (88, 82)])
 for rx in (83, 89, 93):
-    trect(11, rx, 85, rx + 1, 88, OAK_WALL)         # racking islands, aisles between
-trect(11, 81, 89, 82, 90, OAK_WALL)                 # foreman's desk nook
+    trect(11, rx, 85, rx + 1, 88, FURN_STOCK)       # racking islands (goods, not boards)
+trect(11, 81, 89, 82, 90, FURN_BOARD)               # foreman's desk nook
 # Dressing pass (slab-clutter): receiving strip -- extend the 3 racking islands up into
 # y83-84 (taller stacks, no gaps); dispatch bay -- two free-standing crate islands + a
 # sack pallet (anchor aisle x87-88 stays clear full height). Foreman's desk untouched.
@@ -1248,7 +1322,7 @@ for y in range(81, 88):                             # armory partition (unchange
     T[11][y][109] = OAK_WALL
 T[11][85][109] = 0
 T[11][86][109] = 0                                  # PASS 9: door standard (>=2 wide)
-trect(11, 105, 86, 107, 86, OAK_WALL)               # watch-room table (unchanged)
+trect(11, 105, 86, 107, 86, FURN_BOARD)             # watch-room table
 for dx in (102, 104, 106, 108, 110):                # steel dividers between the six cells
     T[11][90][dx] = STEEL_WALL
 for x in range(101, 112):                           # steel cell back wall (south)
@@ -1278,7 +1352,7 @@ mk(11, "light_source", "lamp_guardhouse_door", 106, 79, luminance=18)
 # STEEL_WALL vault ring enclosing ONE chest cell (the future Royal COIN vault -- Phase 2
 # seeds it, NOT here), a teller counter + banker stand, two flanking guard posts.
 shell(11, 150, 48, 159, 59, GRANITE_WALL, GRANITE_FLOOR, doors=[(154, 48)])
-trect(11, 152, 52, 155, 52, OAK_WALL)               # teller counter (both flanks left open)
+trect(11, 152, 52, 155, 52, FURN_BOARD)             # teller counter (both flanks left open)
 for (vx, vy) in ((151, 56), (151, 57), (153, 57),
                  (151, 58), (152, 58), (153, 58)):  # STEEL vault ring; (152,56) stays the door
     T[11][vy][vx] = STEEL_WALL                       # -> ONE enclosed chest cell at (152,57);
@@ -1347,9 +1421,9 @@ for (sx0, sy0, sx1, sy1, name, ax, ay) in CACHE_SHEDS:
 # 3.6 Benches (2026-07-15 interior-detail pass, design 6): existing-material cells, no new
 # art -- placed off the walking spine, in already-authored ambient/plaza floor.
 # ======================================================================
-cells(11, [(18, 71), (21, 71)], OAK_WALL)           # West Garden Court, flanking its anchor
+cells(11, [(18, 71), (21, 71)], FURN_BOARD)         # West Garden Court, flanking its anchor
 cells(11, [(60, 29), (62, 29), (68, 29), (70, 29)], GRANITE_WALL)   # Weighhouse frontage plaza
-cells(11, [(117, 29), (119, 29), (123, 29), (125, 29)], OAK_WALL)   # outside the Gilded Gull
+cells(11, [(117, 29), (119, 29), (123, 29), (125, 29)], FURN_BOARD)  # outside the Gilded Gull
 cells(13, [(100, 120), (103, 120)], GRANITE_WALL)   # Gallows Row well plaza
 
 # ======================================================================
@@ -1701,7 +1775,7 @@ for i, (x0, y0, x1, y1, ds) in enumerate(C4_GROUND):
 # reachable. Blind flood-verified from each anchor.
 # c01 (166-171,66-79): 4-wide -> horizontal split (common N with door+anchor | sleeping S).
 partition(11, 167, 73, 170, 73, BRICK_WALL, (168, 73))
-hearth(11, 167, 67); table(11, 169, 68, 170, 68); chest(11, 167, 72)
+hearth(11, 167, 67, BRICK_WALL); table(11, 169, 68, 170, 68); chest(11, 167, 72)
 bed(11, 167, 74); bed(11, 170, 74); bed(11, 167, 78); chest(11, 170, 78)
 # c02 (166-171,80-93): beds shifted off (167,88) so the (166,88) rot gap stays reachable.
 # PASS 9: ALL beds hug the south back wall (y92) -- the old (169,88)/(170,88) pair sat
@@ -1715,14 +1789,14 @@ bed(11, 167, 74); bed(11, 170, 74); bed(11, 167, 78); chest(11, 170, 78)
 # its own anchor (168,86) and can cap every neighbour of any pinch cell the partition
 # leaves. An open single room has no pinch cells at all -- a beast can always circle the
 # parked residents. (The hearth-north / sleeping-south zoning survives via furniture.)
-hearth(11, 167, 81); table(11, 169, 82, 170, 82)
+hearth(11, 167, 81, BRICK_WALL); table(11, 169, 82, 170, 82)
 bed(11, 167, 92); bed(11, 168, 92); bed(11, 169, 92); chest(11, 170, 92)
 # c03 (172-175,66-75): 2-wide interior -> NO partition (would trap 1-wide rooms); col 173 spine.
-hearth(11, 174, 67); bed(11, 174, 69); bed(11, 174, 71); chest(11, 174, 73)
+hearth(11, 174, 67, BRICK_WALL); bed(11, 174, 69); bed(11, 174, 71); chest(11, 174, 73)
 # c04 (180-190,66-75): vertical split (west common with door+anchor | east sleeping).
 partition(11, 186, 67, 186, 74, BRICK_WALL, (186, 70))
 bed(11, 188, 67); bed(11, 189, 67); chest(11, 189, 74)
-hearth(11, 181, 67); table(11, 181, 73, 182, 73)
+hearth(11, 181, 67, BRICK_WALL); table(11, 181, 73, 182, 73)
 # PASS 9 (route redundancy): c05 gains a SECOND exit -- a rot-eaten south door pair onto
 # Backwall Alley (y94) -- because the strip is the quarter's proven predator wedge trap
 # (see DocksPopulation's Gullet-gull/mouse-den history): a beast boxed in by occupancy-
@@ -1745,11 +1819,11 @@ unit_anchor(12, "cmp4_condo_06_anchor", 184, 76, 190, 93)
 # with three door pairs (west, south, east rot gaps) has no pinch cell anywhere -- a beast
 # can always circle the parked residents. Zoning survives via the furniture.
 bed(11, 185, 77); bed(11, 189, 77); chest(11, 185, 78)
-hearth(11, 189, 83); table(11, 185, 91, 186, 91); bed(11, 188, 92); bed(11, 189, 92)
+hearth(11, 189, 83, BRICK_WALL); table(11, 185, 91, 186, 91); bed(11, 188, 92); bed(11, 189, 92)
 # c06 (upper of c05, z12): same calls, z=12 (no wall door, no rot gap; stair-only access).
 partition(12, 186, 82, 189, 82, BRICK_WALL, (187, 82))
 bed(12, 185, 77); bed(12, 189, 77); chest(12, 185, 78)
-hearth(12, 189, 83); table(12, 185, 91, 186, 91); bed(12, 188, 92); bed(12, 189, 92)
+hearth(12, 189, 83, BRICK_WALL); table(12, 185, 91, 186, 91); bed(12, 188, 92); bed(12, 189, 92)
 # Collapsed south unit: perimeter only, no roof, rubble
 border(11, 172, 86, 183, 93, BRICK_WALL)
 cells(11, [(175, 89), (180, 91)], OAK_WALL)
@@ -1865,8 +1939,35 @@ for (n, x0, y0, x1, y1, door, z) in HOVELS:
     # Homey touches (design §1/§2): hearth + beds + chest on the back strip opposite the
     # door; NO partition (hovels are too shallow to divide without trapping). Placed
     # before the anchor marker so the anchor/door spine stays clear by construction.
-    hovel_touches(z, x0, y0, x1, y1, door, (cx, cy))
+    hovel_touches(z, x0, y0, x1, y1, door, (cx, cy), shell=wall)
     mk(z, "script_anchor", "hovel_%02d_anchor" % n, cx, cy)
+
+# ======================================================================
+# 5.5 THE DWELLING REGISTER (quality slice 4). Which rects an actor sleeps in --
+# every hovel, every compound condo, every compound mansion. Until this pass the
+# only dwellings the ground knew about were the 45 hovels: _grit() hard-coded a
+# 1-cell bare-earth apron round each of them, and that apron is the single reason
+# Band C reads as a lived-in slum row rather than sheds dropped on a car park.
+# The register generalises it to all ~100 dwellings, so a home has ground of its
+# own everywhere in the ward, not only where the ward is poor.
+# ======================================================================
+DWELLING_RECTS = []      # (z, x0, y0, x1, y1)
+for (_n, _x0, _y0, _x1, _y1, _door, _z) in HOVELS:
+    DWELLING_RECTS.append((_z, _x0, _y0, _x1, _y1))
+DWELLING_RECTS.append((12, 8, 97, 31, 115))                      # C1 mansion
+for (_x0, _x1) in C1_N:
+    DWELLING_RECTS.append((12, _x0, 97, _x1, 103))               # C1 north condos
+for (_x0, _x1) in C1_S:
+    DWELLING_RECTS.append((12, _x0, 110, _x1, 115))              # C1 south condos
+DWELLING_RECTS.append((11, 116, 66, 127, 93))                    # C2 mansion
+for (_x0, _y0, _x1, _y1, _d) in C2_GROUND:
+    DWELLING_RECTS.append((11, _x0, _y0, _x1, _y1))              # C2 condos
+DWELLING_RECTS.append((12, 84, 101, 95, 115))                    # C3 mansion
+for (_x0, _y0, _x1, _y1, _ds) in C3_GROUND:
+    DWELLING_RECTS.append((12, _x0, _y0, _x1, _y1))              # C3 condos
+for (_x0, _y0, _x1, _y1, _ds) in C4_GROUND:
+    DWELLING_RECTS.append((11, _x0, _y0, _x1, _y1))              # C4 condos
+DWELLING_RECTS.append((11, 184, 76, 190, 93))                    # C4 c05
 
 # Band B east field: goat pen
 border(12, 146, 109, 158, 114, TRUDGEON_WALL)
@@ -1984,18 +2085,31 @@ GRIT_KEEP = [  # (z, x0, y0, x1, y1) -- dirt that STAYS dirt (deliberate grit; n
     (11, 100, 52, 119, 58),   # K19 The Rows flophouse (explicit squalor -- packed-dirt doss floor)
     (12, 146,109, 158,114),   # goat pen yard (livestock pen)
     (12, 165,112, 190,115),   # Cache Row sheds (unlicensed smuggling-pocket dirt shells)
+    # --- THE COURTYARD FARMS (quality slice 4, restoring a canon ruling) ---
+    # DECISIONS.md, Trojian housing: Compounds (Eli 2026-07-13): "A Compound = one large
+    # walled lot: a courtyard/atrium farm at the center (crops for the resident families)".
+    # The 5.8 densification pass paved all three of them -- pave_dirt's "C1 courtyard + west
+    # field", "Terrace Walk frontage + C3 courtyard" and the east merchant sea over C2 --
+    # which left twelve farm_tile_* anchors (section 4.5) standing as invisible markers on
+    # civic flagstone. A compound whose middle is granite is not a compound, it is a
+    # forecourt. These three rects are the farms, and they are grit for the same reason the
+    # West Garden Court is: on tilled ground the dirt IS the feature.
+    (12,  32,104,  70,109),   # C1 The Quayward courtyard farm (39x6)
+    (11, 128, 76, 151, 85),   # C2 The Netters' courtyard farm (24x10)
+    (12,  96,102, 123,107),   # C3 Saltgate Terrace courtyard farm (28x6)
 ]
 
 
 def _grit(x, y, z):
     """True if (x,y,z) is deliberate grit that must stay bare dirt: an explicit GRIT_KEEP
-    zone, or within a 1-cell apron of any hovel (packed-dirt slum yards, incl. the roofless
-    cloth-tent interiors which are visible and must not be paved)."""
+    zone, or within a 1-cell apron of any DWELLING (packed-earth house yards, incl. the
+    roofless cloth-tent interiors which are visible and must not be paved). Slice 4
+    widened the apron rule from the 45 hovels to the whole dwelling register."""
     for (kz, kx0, ky0, kx1, ky1) in GRIT_KEEP:
         if z == kz and kx0 <= x <= kx1 and ky0 <= y <= ky1:
             return True
-    for (n, hx0, hy0, hx1, hy1, door, hz) in HOVELS:   # 1-cell slum-yard apron
-        if z == hz and hx0 - 1 <= x <= hx1 + 1 and hy0 - 1 <= y <= hy1 + 1:
+    for (dz, dx0, dy0, dx1, dy1) in DWELLING_RECTS:   # 1-cell house-yard apron
+        if z == dz and dx0 - 1 <= x <= dx1 + 1 and dy0 - 1 <= y <= dy1 + 1:
             return True
     return False
 
@@ -2045,6 +2159,114 @@ pave_dirt(12, 144, 96, 191,115, GRANITE_FLOOR) # Band-B east field connective la
 pave_dirt(13,  96,119, 107,123, GRANITE_FLOOR) # Gallows Row well plaza
 pave_dirt(13,   0,116, 191,119, GRANITE_FLOOR) # N hovel-row connective lanes
 pave_dirt(13,   0,123, 191,127, GRANITE_FLOOR) # S hovel-row connective lanes
+
+# The courtyard farms are proved unpaved HERE, before 5.9 lays doorsteps on them: after
+# the stoop pass each condo door onto a courtyard has three deliberate paver cells in front
+# of it, and a check run afterwards could not tell a doorstep from densification paving that
+# survived. This is the honest place to ask the question.
+COURTYARD_FARMS = GRIT_KEEP[-3:]
+for (kz, kx0, ky0, kx1, ky1) in COURTYARD_FARMS:
+    for fy in range(ky0, ky1 + 1):
+        for fx in range(kx0, kx1 + 1):
+            if F[kz][fy][fx] == GRANITE_FLOOR:
+                raise SystemExit("courtyard farm cell (%d,%d,z%d) is still paved"
+                                 % (fx, fy, kz))
+
+# ======================================================================
+# 5.9 THE STOOPS (quality slice 4). Eli: "buildings, actors, and the environment all
+# still seem quite disorganized". One reason, and the cheapest to fix: a door was a hole
+# in a wall with the same ground on both sides of it. Nothing on the floor said where a
+# building began. Every real street says it -- a step, a scraped slab, a patch of cinder
+# swept out of the hearth -- and a top-down ward has nothing BUT the floor to say it with.
+#
+# So every door in the district now gets a three-cell stoop on the STREET side, painted in
+# the register OPPOSITE whatever it opens onto, which is what makes it read as a threshold
+# rather than more of the same surface:
+#
+#   opens onto the paver weave (GRANITE_FLOOR) -> ASH_FLOOR,     dark swept grit
+#   opens onto the arterial slab (BRICK_FLOOR) -> GRANITE_FLOOR, laid paver
+#   opens onto bare earth        (DIRT_FLOOR)  -> GRANITE_FLOOR, a laid doorstep
+#
+# Self-guarding in the safe_sidewalk/pave_dirt idiom: a cell is painted only when it is
+# currently OPEN EXTERIOR FLOOR (terrain 0, floor set, no fluid) holding one of those three
+# registers, so a door that opens into a courtyard already handled, into another building,
+# onto a stair, a ramp or water paints nothing at all and no footprint moves. FLOOR layer
+# only -- walkability is a function of T, and T is not touched here, which is why the
+# reachability audits must come back byte-identical.
+# ======================================================================
+STOOP_OPPOSITE = {
+    GRANITE_FLOOR: ASH_FLOOR,
+    BRICK_FLOOR: GRANITE_FLOOR,
+    DIRT_FLOOR: GRANITE_FLOOR,
+}
+
+# The register a stoop answers is read from a SNAPSHOT taken before any stoop is laid.
+# Without it the pass is order-dependent: two doors one cell apart both claim the cell
+# between them, the first turns it from earth to paver, and the second then sees paver and
+# turns it to grit -- so a single doorway ends up half laid-stone and half cinder. That is
+# deterministic but it looks like an accident, which is the exact quality this slice exists
+# to remove. Snapshot, and every door answers the ground as it found it.
+_pre_stoop = [[row[:] for row in F[z]] for z in range(ZCOUNT)]
+
+_stoop_cells = 0
+_doors_with_stoop = 0
+for (dz, dx, dy, nx, ny) in DOORS:
+    ox, oy = dx + nx, dy + ny
+    if nx == 0:                                   # door in a horizontal run -> stoop runs E-W
+        run = ((ox - 1, oy), (ox, oy), (ox + 1, oy))
+    else:                                         # door in a vertical run -> stoop runs N-S
+        run = ((ox, oy - 1), (ox, oy), (ox, oy + 1))
+    laid = 0
+    for (sx, sy) in run:
+        if not (0 <= sx < W and 0 <= sy < H):
+            continue
+        if T[dz][sy][sx] != 0 or FL[dz][sy][sx] != 0:
+            continue
+        gid = STOOP_OPPOSITE.get(_pre_stoop[dz][sy][sx])
+        if gid is None:
+            continue
+        F[dz][sy][sx] = gid
+        laid += 1
+    _stoop_cells += laid
+    if laid:
+        _doors_with_stoop += 1
+
+# Self-checks. These are the slice's own claims, asserted rather than asserted-about.
+if _doors_with_stoop * 2 < len(DOORS):
+    raise SystemExit("stoops: only %d of %d doors reached open exterior ground"
+                     % (_doors_with_stoop, len(DOORS)))
+_farm_soil = 0
+for (kz, kx0, ky0, kx1, ky1) in COURTYARD_FARMS:
+    for fy in range(ky0, ky1 + 1):
+        for fx in range(kx0, kx1 + 1):
+            if T[kz][fy][fx] == 0 and F[kz][fy][fx] == DIRT_FLOOR:
+                _farm_soil += 1
+if _farm_soil < 200:
+    raise SystemExit("courtyard farms hold only %d tilled cells" % _farm_soil)
+print("ground pass: %d doors, %d with a stoop, %d stoop cells, %d farm-soil cells, "
+      "%d dwelling rects aproned"
+      % (len(DOORS), _doors_with_stoop, _stoop_cells, _farm_soil, len(DWELLING_RECTS)))
+
+# ----------------------------------------------------------------------
+# THE FURNITURE CENSUS (quality slice 3). The claim the register makes is that no
+# piece of furniture is cut from the same material as the building around it --
+# which, since a material owns its atlas cell and its tint, is the same as saying
+# no fixture draws as a chunk of its own wall. Before this pass Brann's Chandlery
+# scored thirteen of thirteen against it. Asserted here rather than described.
+# ----------------------------------------------------------------------
+_camouflaged = []
+for (fz, fx, fy, fgid) in FURNITURE:
+    if T[fz][fy][fx] != fgid:
+        continue                       # painted over later; whatever won is not this piece
+    for (sz, sx0, sy0, sx1, sy1, swall) in SHELLS:
+        if sz == fz and sx0 < fx < sx1 and sy0 < fy < sy1 and swall == fgid:
+            _camouflaged.append((fz, fx, fy, fgid, swall))
+            break
+if _camouflaged:
+    raise SystemExit("furniture census: %d fixture cells draw as their own shell, e.g. %r"
+                     % (len(_camouflaged), _camouflaged[:6]))
+print("furniture census: %d fixture cells laid, 0 drawing as the shell around them"
+      % len(FURNITURE))
 
 # ======================================================================
 # 6. Patrol, muster, exits (blueprint section 6; script_anchors only —
@@ -2306,14 +2528,30 @@ PLACE_SIGNS = [
     ("k36_counting_house", 11, 154, 47, 150, 48, 159, 59,
      "The Royal Counting-House", "Master Gilt's; never once robbed"),
     # The four Compounds (gazetteer 2.5): a compound's sign hangs at its GATE.
+    #
+    # The second line carries WHO HOLDS THE CHARGE (gazetteer 2.8, DECISIONS.md "Trojian
+    # tenure: the charge and the bond", Eli 2026-07-29). Eli ruled the tenure model is
+    # never to be drawn -- "no it doesn't need to be visible, just use the info to
+    # populate signage appropriately" -- so a plaque is its whole visible surface. A gate
+    # plaque already had a second line describing the compound; the ward knows something
+    # more useful to put there, and a gate is exactly where a real register would say it.
     ("c1_quayward", 12, 72, 105, 8, 97, 71, 115,
-     "The Quayward Compound", "mansion and condos, no rooftop slum"),
+     "The Quayward Compound", "Ceffa Quayward holds the charge"),
     ("c2_netters", 11, 139, 65, 116, 66, 159, 93,
-     "The Netters' Compound", "condos around a courtyard farm"),
+     "The Netters' Compound", "the charge is pledged at Fenner's"),
     ("c3_saltgate_terrace", 12, 111, 100, 84, 101, 125, 115,
-     "Saltgate Terrace", "multiple stories; land is scarce"),
+     "Saltgate Terrace", "Tarl Saltgate holds the charge"),
     ("c4_gullet", 11, 177, 65, 166, 66, 190, 93,
-     "The Gullet Compound", "decayed; its courtyard gone to trash"),
+     "The Gullet Compound", "the charge is vacant; ask Mag"),
+    # THE TEACHING PAIR. The Netter mansion's own door, twenty tiles inside the gate that
+    # says the charge is pledged. It is the ONE house in the ward that gets a plaque of its
+    # own, because it is the one place where the plot and the house give different answers
+    # (2.8: the widow owns her house outright and pledged the GROUND under it to Fenner).
+    # A player who walks from the gate to the door reads the entire three-tier model off
+    # two signs, with no overlay, no UI and nobody explaining it. Signing the other three
+    # great houses would teach the opposite -- that the two lines always agree.
+    ("c2_netter_house", 11, 128, 79, 116, 66, 127, 93,
+     "The Netter house", "hers; the ground is not"),
 ]
 
 # ----------------------------------------------------------------------
@@ -2434,6 +2672,19 @@ WAY_SIGNS = [
      "The Beaching Strand", "it shades into mudflats at low tide"),
     ("w_outfall", 11, 171, 26, 170, 25, 173, 26,
      "The Outfall", "the sewer mouth in the seawall"),
+    # THE GLEBE (gazetteer 2.8). The 45 hovels are the ward's only unsigned dwellings, and
+    # the reason is a fact about tenure, not an oversight: Church ground, never let to
+    # anyone, no Den Duke, no ground penny -- token alms in place of one, which is what the
+    # Mission's alms traffic IS. Unsigned reads as forgotten until something on the ground
+    # says the absence is the point, so each hovel band gets one kerb fingerpost. They are
+    # ways, not doors: nobody hangs a plaque over forty-five separate hovel doorways, and
+    # the glebe is a stretch of ground rather than a building.
+    ("w_glebe_quayback", 11, 81, 55, 82, 52, 97, 59,
+     "Flame ground", "no charge is let; this is the glebe"),
+    ("w_glebe_eastfield", 12, 143, 104, 144, 101, 188, 111,
+     "Flame ground", "no charge is let; this is the glebe"),
+    ("w_glebe_gallows", 13, 9, 121, 8, 116, 181, 126,
+     "Flame ground", "no charge is let; this is the glebe"),
 ]
 
 # Self-check: a sign must hang ON or WITHIN ONE STEP OF its own footprint (the
