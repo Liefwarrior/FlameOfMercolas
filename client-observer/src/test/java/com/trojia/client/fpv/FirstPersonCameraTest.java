@@ -349,6 +349,31 @@ class FirstPersonCameraTest {
         assertEquals(aimed, cam.yaw(), 1e-5);
     }
 
+    /**
+     * A swing started on the map does not survive the switch into first person.
+     *
+     * <p>It used to: pressing V mid-stride handed the player a view that kept rotating under
+     * them for up to 300 ms with no key touched, which contradicts this class's own contract
+     * that the first-person yaw is the player's alone. The switch calls
+     * {@link FirstPersonCamera#cancelTravelSwing()} and the yaw stops exactly where it is —
+     * which is also where the facing wedge was pointing when the player pressed the key.
+     */
+    @Test
+    void theSwitchIntoFirstPersonStopsATravelSwingWhereItStands() {
+        FirstPersonCamera cam = placed();
+        cam.snapTo(40, 60, BAND, 0f);
+        cam.followCell(40, 59, BAND, true);   // a walk the player did not aim
+        cam.advance(1 / 60f);
+        assertTrue(cam.isTurningToTravel(), "the wedge should be swinging to follow the walk");
+
+        float atTheSwitch = cam.yaw();
+        cam.cancelTravelSwing();              // press V
+        assertFalse(cam.isTurningToTravel());
+        runSeconds(cam, 0.5f);
+        assertEquals(atTheSwitch, cam.yaw(), 1e-5,
+                "the first-person frame must not keep turning by itself");
+    }
+
     @Test
     void shortestTurnIsSignedAndWrapsTheShortWay() {
         assertEquals(0.2f, FirstPersonCamera.shortestTurn(0.1f, 0.3f), 1e-5);

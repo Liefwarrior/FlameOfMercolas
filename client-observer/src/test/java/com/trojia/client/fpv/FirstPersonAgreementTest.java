@@ -418,20 +418,48 @@ class FirstPersonAgreementTest {
      * which is exactly the work that scales with how alive the place is. It now boots the real
      * {@code DocksPopulation} and times {@code refresh() + plan()} together, because that pair
      * is what a rendered frame actually pays.
+     *
+     * <p><b>And it is measured where the ward is densest, not where it is average.</b> The
+     * second cut stood at the centroid of the walkable quayside — a planning convenience, found
+     * by averaging coordinates, with no claim at all to being expensive. A tripwire set at the
+     * average is a tripwire that a real frame walks under. So the stand is now <em>searched
+     * for</em>: a stride of quayside tiles is planned once per octant and the (tile, facing)
+     * pair that produced the most quads is the one that gets timed. That is the most expensive
+     * frame in the ward this test can find, and it is the number the gate is asserted against.
      */
     @Test
     void planningAPopulatedFrameStaysWellInsideAFrame() {
-        int[] stand = onTheStreet();
         FirstPersonPlanner planner = planner();
         CellSight sight = new WorldCellSight(world);
         DocksPopulation population = DocksPopulation.build(loaded.worldSeed(), world);
         CellActorIndex actors = new CellActorIndex(population.registry(), shippedSprites());
         int inTheWard = population.registry().size();
         assertTrue(inTheWard > 100, "an empty ward would flatter this number: " + inTheWard);
+        actors.refresh();
+
+        // ---- find the worst frame in the ward, rather than an average one
+        int[] stand = null;
+        double worstYaw = 0;
+        int worstQuads = -1;
+        int candidates = 0;
+        for (int[] candidate : quaysideStandsEvery(6)) {
+            candidates++;
+            for (int octant = 0; octant < 8; octant++) {
+                double yaw = octant * Math.PI / 4;
+                int size = planner.plan(eyeOn(candidate, yaw), candidate[2], sight, actors,
+                        Actor.NONE).size();
+                if (size > worstQuads) {
+                    worstQuads = size;
+                    stand = candidate;
+                    worstYaw = yaw;
+                }
+            }
+        }
+        assertTrue(candidates > 50, "the stand search found almost nowhere: " + candidates);
 
         for (int i = 0; i < 20; i++) {
             actors.refresh();
-            planner.plan(eyeOn(stand, i * 0.31), stand[2], sight, actors, Actor.NONE);
+            planner.plan(eyeOn(stand, worstYaw), stand[2], sight, actors, Actor.NONE);
         }
         long start = System.nanoTime();
         int frames = 60;
@@ -439,7 +467,9 @@ class FirstPersonAgreementTest {
         int billboards = 0;
         for (int i = 0; i < frames; i++) {
             actors.refresh();
-            List<ViewQuad> plan = planner.plan(eyeOn(stand, i * 0.1), stand[2], sight, actors,
+            // Jitter the eye within the same cell rather than swinging the yaw: this is the
+            // densest FACING, and rotating off it would measure a cheaper frame again.
+            List<ViewQuad> plan = planner.plan(eyeOn(stand, worstYaw), stand[2], sight, actors,
                     Actor.NONE);
             quads += plan.size();
             for (ViewQuad quad : plan) {
@@ -449,13 +479,40 @@ class FirstPersonAgreementTest {
             }
         }
         double msPerFrame = (System.nanoTime() - start) / 1e6 / frames;
-        System.out.println("fpv planner: " + String.format("%.2f", msPerFrame)
-                + " ms/frame, " + (quads / frames) + " quads/frame of which "
-                + String.format("%.1f", billboards / (double) frames) + " billboards, with "
-                + inTheWard + " actors in the ward (docks, band " + stand[2] + ")");
+        System.out.println("fpv planner (DENSEST of " + candidates + " stands x 8 facings): "
+                + String.format("%.2f", msPerFrame) + " ms/frame, " + (quads / frames)
+                + " quads/frame of which "
+                + String.format("%.1f", billboards / (double) frames) + " billboards, standing at ("
+                + stand[0] + "," + stand[1] + ",z" + stand[2] + ") facing "
+                + Math.round(Math.toDegrees(worstYaw)) + " deg, with " + inTheWard
+                + " actors in the ward");
         assertTrue(msPerFrame < 8.0,
                 "planning took " + msPerFrame + " ms/frame — it has to share the frame with a "
                         + "12 ms sim tick budget");
+    }
+
+    /**
+     * Every {@code stride}-th walkable tile on the quayside band, as candidate stands. A stride
+     * rather than all of them because this feeds an eight-facing search and the point is to
+     * find the ward's expensive corners, not to enumerate its floor.
+     */
+    private static List<int[]> quaysideStandsEvery(int stride) {
+        TileCursor cursor = world.cursor();
+        int band = FixtureWorldLoader.DOCKS_QUAYSIDE_LEVEL_Z;
+        List<int[]> stands = new java.util.ArrayList<>();
+        int seen = 0;
+        for (int y = 0; y < worldHeight; y++) {
+            for (int x = 0; x < worldWidth; x++) {
+                cursor.moveTo(PackedPos.pack(x, y, band));
+                if (cursor.form() != TileForm.FLOOR) {
+                    continue;
+                }
+                if (seen++ % stride == 0) {
+                    stands.add(new int[] {x, y, band});
+                }
+            }
+        }
+        return stands;
     }
 
     /** The shipped sprite index, so the billboards cost what they really cost. */
