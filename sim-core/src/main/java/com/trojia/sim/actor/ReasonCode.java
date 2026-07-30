@@ -99,5 +99,12 @@ public enum ReasonCode {
     /** Simple Magic: the link would not open. The check failed; the use-XP was earned anyway. */
     SPELL_FIZZLED,
     /** Play mode: the cast intent found nothing this crafting could reach (the bridge rule). */
-    NO_LINK_TO_TARGET
+    NO_LINK_TO_TARGET,
+    /**
+     * Simple Magic: the ward's lingering-effect table had no free rows for what this crafting
+     * would have filed, so the cast was refused BEFORE it cost anything. The alternative was to
+     * evict somebody else's live effect silently, which is the same lie as a cast that lands
+     * nothing ({@code ActiveEffects.freeSlots}).
+     */
+    NO_ROOM_FOR_CRAFTING
 }

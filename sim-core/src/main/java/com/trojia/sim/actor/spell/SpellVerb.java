@@ -37,7 +37,15 @@ import com.trojia.sim.world.PackedPos;
  * <p><b>What a cast may never do.</b> Put a body on the ground. {@link ActiveEffects}'s
  * vitality floor holds every target at 1 hp or better, so no crafting can spend the ecology's
  * budget, trip the death feed or feed the justice pipeline. Weak is not a tuning choice here —
- * it is a structural property of the only code that can write a hit point.
+ * it is a structural property of the only code that can write a hit point, and the same is true
+ * of the ATTRIBUTE axis: {@link ActiveEffects#ATTRIBUTE_MODIFIER_LIMIT} holds the one axis that
+ * reaches every check in the game to a couple of points however many rows are stacked on it.
+ *
+ * <p><b>What a cast may never BE.</b> A lie. Two guards run here before anything is charged —
+ * the bodies are alive, and the effect table has room for what this crafting will file — and a
+ * third ran long before, at load: every component is an (axis x time-shape) pairing that some
+ * code in this sim actually reads ({@link EffectPairing}). A cast that resolves, charges a
+ * resist and narrates success can no longer have changed nothing.
  */
 public final class SpellVerb {
 
@@ -51,8 +59,9 @@ public final class SpellVerb {
     public static final int CAST_ATTEMPT_CP = 60;
 
     /**
-     * Factions that never work a crafting. The libraries were opened "to any who can READ", so
-     * the gate is literacy and a gull does not have it. Stated as data-shaped constants rather
+     * Factions that never work a crafting. The public shelf is a SHELF — "issued to the public
+     * because it was overly general and skimmed over most of the battles and details" (L2472) —
+     * so the gate is literacy, and a gull does not have it. Stated as data-shaped constants rather
      * than a type list so a new beast type inherits the exclusion for free — the
      * {@code CullVerb.NON_CULLING_FACTIONS} precedent.
      */
@@ -127,6 +136,21 @@ public final class SpellVerb {
      */
     public static boolean resolveCast(Actor self, ActorContext ctx, int spellRaw, int targetId) {
         SpellDefinition spell = ctx.spells().get(spellRaw);
+        // LIVENESS, before anything is charged. This is the shared public verb, so it is reached
+        // by paths that have not pre-validated (a future AI caster; a test; a queued intent that
+        // outlived its target), and a corpse is not a body a link can be forged to -- the
+        // CullVerb's own precondition discipline. Costs nothing and stamps nothing on the dead.
+        if (!isLive(ctx, self.id()) || !isLive(ctx, targetId)) {
+            self.setLastReasonCode(ReasonCode.NO_LINK_TO_TARGET);
+            return false;
+        }
+        // ROOM, also before anything is charged. Filing an effect used to evict somebody else's
+        // live row to make space, silently; now a cast that will not fit is refused out loud and
+        // costs the caster nothing at all -- no latch, no XP, no resist.
+        if (ctx.activeEffects().freeSlots() < rowsNeeded(spell, ctx, targetId)) {
+            self.setLastReasonCode(ReasonCode.NO_ROOM_FOR_CRAFTING);
+            return false;
+        }
         self.setCastUntilTick(ctx.tick() + spell.cooldownTicks());
         SkillTrackRegistry tracks = ctx.skillTracks();
         // The crafting's OWN skill, named in its raws row -- never a hardcoded one. A spell
@@ -151,6 +175,39 @@ public final class SpellVerb {
         }
         self.setLastReasonCode(ReasonCode.SPELL_WORKED);
         return true;
+    }
+
+    /** Whether {@code actorId} addresses a body that is still standing in this registry. */
+    private static boolean isLive(ActorContext ctx, int actorId) {
+        return actorId >= 0 && actorId < ctx.registry().size()
+                && !ctx.registry().get(actorId).isDead();
+    }
+
+    /**
+     * How many {@link ActiveEffects} rows one resolution of this crafting would file: its
+     * lingering parts, once for the target and once for every body its spread would also catch.
+     * Read-only, draw-free, ascending-slot — the same scan {@link #spread} makes, run first so
+     * the cast can be refused before it costs anybody anything.
+     */
+    private static int rowsNeeded(SpellDefinition spell, ActorContext ctx, int targetId) {
+        int perBody = spell.lingeringPartCount();
+        if (perBody == 0) {
+            return 0;
+        }
+        int bodies = 1;
+        if (spell.areaRadius() > 0) {
+            ActorRegistry registry = ctx.registry();
+            int centre = registry.get(targetId).cell();
+            int centreZ = PackedPos.z(centre);
+            for (int i = 0; i < registry.size(); i++) {
+                Actor other = registry.get(i);
+                if (i != targetId && !other.isDead() && PackedPos.z(other.cell()) == centreZ
+                        && ActorGeometry.chebyshev(centre, other.cell()) <= spell.areaRadius()) {
+                    bodies++;
+                }
+            }
+        }
+        return perBody * bodies;
     }
 
     /** Lands every component of {@code spell} on one body. */

@@ -50,7 +50,19 @@ import java.util.TreeMap;
  * }
  * </pre>
  * {@code param} is required for the {@code ATTRIBUTE} axis (an {@code AttributeId} name) and
- * forbidden elsewhere. {@code canonAnchor}, {@code provenance} and {@code notes} are
+ * forbidden elsewhere.
+ *
+ * <p><b>Not every (effect x mode) pair is authorable, and the refusal is loud.</b>
+ * {@link EffectPairing} is the table: TEMPERATURE and ATTRIBUTE are HELD axes
+ * ({@code WHILE_ACTIVE} only), VITALITY is a DELIVERED one ({@code INSTANT} or
+ * {@code OVER_TIME}), a magnitude of 0 is refused, an ATTRIBUTE magnitude past
+ * {@link ActiveEffects#ATTRIBUTE_MODIFIER_LIMIT} is refused, and a lingering component shorter
+ * than its own cadence ({@link EffectPairing#minimumEffectiveTicks}) is refused. Each of those
+ * used to load, resolve, be charged its full difficulty and change nothing; each is now a
+ * {@link SpellRawsValidationException} naming the exact {@code components[i]} that is wrong and
+ * why. A crafting that gets past this loader does something.
+ *
+ * <p>{@code canonAnchor}, {@code provenance} and {@code notes} are
  * documentation-only and ignored — the materials/skills raws convention, and the project's way
  * of flagging what is canon and what is invention on the row itself.
  *

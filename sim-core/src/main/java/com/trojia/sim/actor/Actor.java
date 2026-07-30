@@ -241,7 +241,6 @@ public abstract class Actor {
      */
     private long castUntilTick;
     /**
-    /**
      * The absolute tick this actor's HUNGER first hit 0 in the CURRENT starvation spell, or
      * {@link #NEVER_STARVING} while fed (any recovery above 0 resets it). When a spell has
      * lasted {@link #STARVATION_GRACE_TICKS} — a LONG grace, days not hours, so only the
@@ -1151,7 +1150,6 @@ public abstract class Actor {
         this.huntBackoffUntilTick = tick;
     }
 
-    /** The absolute tick until which this actor may not take another scalp (S8 cull latch). */
     /** The absolute tick this actor's crafting hand comes free again (Simple Magic). */
     public final long castUntilTick() {
         return castUntilTick;
@@ -1178,6 +1176,7 @@ public abstract class Actor {
         this.playerSpellTargetId = targetId;
     }
 
+    /** The absolute tick until which this actor may not take another scalp (S8 cull latch). */
     public final long culledUntilTick() {
         return culledUntilTick;
     }

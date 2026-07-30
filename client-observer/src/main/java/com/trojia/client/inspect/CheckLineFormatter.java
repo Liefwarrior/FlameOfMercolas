@@ -164,7 +164,7 @@ public final class CheckLineFormatter {
     /**
      * The crafting check's visible dice (Simple Magic): {@code [Linkcraft 3 vs Warm the Hands
      * 5: 55% -- THE LINK HOLDS]} through the shared {@link #contestLine} shape, odds from the
-     * sim's own {@link SkillChecks#linkcraftPermille} at narration time (the honesty note — the
+     * sim's own {@link SkillChecks#craftingPermille} at narration time (the honesty note — the
      * attempt's own XP may already have nudged the level the line shows).
      *
      * <p>The opposition clause names the crafting and the difficulty it was ACTUALLY measured

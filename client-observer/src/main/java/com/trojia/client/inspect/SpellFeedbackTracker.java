@@ -38,6 +38,7 @@ public final class SpellFeedbackTracker {
     public static final String WORKED = "The link opens; it takes.";
     public static final String FIZZLED = "The link will not hold.";
     public static final String NO_LINK = SpellAvailability.NO_TARGET;
+    public static final String NO_ROOM = SpellAvailability.NO_ROOM;
 
     private final ActorRegistry registry;
     private final ToastQueue toasts;
@@ -173,6 +174,7 @@ public final class SpellFeedbackTracker {
             case SPELL_WORKED -> WORKED;
             case SPELL_FIZZLED -> FIZZLED;
             case NO_LINK_TO_TARGET -> NO_LINK;
+            case NO_ROOM_FOR_CRAFTING -> NO_ROOM;
             default -> null;
         };
     }

@@ -15,6 +15,13 @@ package com.trojia.sim.actor.spell;
  * be accidentally overpowered, because the same sum prices it the moment it exists. Author a
  * "harm 9 at range 12" and its own resist buries it; the raws need no reviewer.
  *
+ * <p><b>All four spendable axes are priced.</b> Magnitude and distance are canon's own two
+ * (L452); spread is the third; DURATION is the fourth, charged inside
+ * {@link EffectComponent#transferPoints} for a trickle's doses AND for a hold's periods
+ * ({@link #HELD_PERIOD_TICKS}). A held crafting used to be the hole in that argument: it cost
+ * exactly the same at one tick as at ten thousand, and WHILE_ACTIVE is the mode every
+ * temperature and every attribute crafting uses.
+ *
  * <p>Pure integer arithmetic on a definition and a distance — no state, no draws, no reads.
  */
 public final class SpellCost {
@@ -28,6 +35,23 @@ public final class SpellCost {
 
     /** Resist added per transfer point moved (L452, "the more you transfer the more is lost"). */
     public static final int RESIST_PER_TRANSFER_POINT = 1;
+
+    /**
+     * Ticks of {@link EffectMode#WHILE_ACTIVE} hold that count as ONE priced period
+     * ({@link EffectComponent#pricedPeriods}). Duration is the fourth thing a crafting can spend,
+     * and before this constant existed it was the one thing nothing charged for: a held effect
+     * cost the same whether it lasted a tick or a week, so the whole "an unreviewed spell cannot
+     * be accidentally strong" argument had a hole in it exactly the size of the mode every
+     * temperature and attribute crafting uses.
+     *
+     * <p>Deliberately much coarser than {@link ActiveEffects#OVER_TIME_PERIOD_TICKS}: L457 says
+     * many small transfers beat one big one, so the trickle is the cheap-per-dose shape and the
+     * hold is the continuous one. Holding a link open bleeds (L452), but it is not the same work
+     * as pushing a fresh transfer through it every ten ticks. At this size the shipped
+     * ten-minute warmth pays two periods and a fifteen-minute nudge pays three, while a crafting
+     * authored to hold for a day prices itself straight through the check's floor.
+     */
+    public static final int HELD_PERIOD_TICKS = 300;
 
     /**
      * Resist added per tile of area radius: one link split across a crowd is thinner than one
@@ -49,9 +73,10 @@ public final class SpellCost {
 
     /**
      * The difficulty this crafting is actually checked against at this distance: the authored
-     * base, plus the distance bleed, the transfer bleed, the spread and (for an unbridged link)
-     * canon's gift tax. This is the number {@code SkillChecks.linkcraftPermille} takes and the
-     * number the on-screen check line quotes, so what a player sees is what the sim rolled.
+     * base, plus the distance bleed, the transfer bleed (which now includes duration, on both
+     * lingering shapes), the spread and (for an unbridged link) canon's gift tax. This is the
+     * number {@code SkillChecks.craftingPermille} takes and the number the on-screen check line
+     * quotes, so what a player sees is what the sim rolled.
      */
     public static int resistFor(SpellDefinition spell, int distance) {
         int resist = spell.baseResist()

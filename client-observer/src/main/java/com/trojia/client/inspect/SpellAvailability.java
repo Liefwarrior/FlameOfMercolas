@@ -40,6 +40,15 @@ public final class SpellAvailability {
     /** Nothing this crafting could reach. */
     public static final String NO_TARGET = "Nothing within reach of that link.";
 
+    /**
+     * The ward is already holding every crafting it can hold. Said out loud rather than quietly
+     * evicting somebody else's live effect to make space (the sim's {@code NO_ROOM_FOR_CRAFTING}
+     * stamp) — a held warmth that vanishes for reasons nobody can see is the same lie as a cast
+     * that lands nothing.
+     */
+    public static final String NO_ROOM = "Too many craftings are already working; nothing else"
+            + " will hold.";
+
     private SpellAvailability() {
     }
 

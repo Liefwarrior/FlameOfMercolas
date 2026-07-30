@@ -26,9 +26,9 @@ import java.io.IOException;
  *
  * <p><b>Determinism.</b> Fixed capacity, primitive parallel arrays, ascending-slot iteration
  * everywhere, no draws of its own, no allocation on the tick path. A cast that arrives with the
- * table full evicts the row that would have expired soonest (lowest slot breaking the tie), so
- * the newest crafting is always the one that lands and the outcome never depends on allocation
- * history.
+ * table full is REFUSED before it is charged anything ({@code SpellVerb}'s room guard against
+ * {@link #freeSlots}) rather than evicting somebody else's live row: an effect that vanishes
+ * mid-duration for reasons no player can see is the same lie as a cast that lands nothing.
  */
 public final class ActiveEffects {
 
@@ -58,8 +58,37 @@ public final class ActiveEffects {
      */
     public static final int WARMTH_REST_PERIOD_TICKS = 50;
 
-    /** Deci-Kelvin of held offset that buys one point of REST per {@link #WARMTH_REST_PERIOD_TICKS}. */
-    public static final int DECIK_PER_REST_POINT = 1;
+    /**
+     * Deci-Kelvin of held offset that buys one point of REST per
+     * {@link #WARMTH_REST_PERIOD_TICKS}.
+     *
+     * <p>Sized so the shipped {@code warm_the_hands} is a NUDGE. A serf's REST decays 600 per
+     * kilotick, i.e. 30 points per this cadence; at the old exchange rate of one point per
+     * deci-Kelvin the shipped 15-deci-Kelvin warmth paid 15 — half a serf's whole natural decay,
+     * from a crafting documented as "a dry coat on a wet quay, nothing more". At this rate the
+     * same warmth pays 3, about a tenth of the decay: felt over an afternoon, never a substitute
+     * for a bed.
+     */
+    public static final int DECIK_PER_REST_POINT = 5;
+
+    /**
+     * The most an actor's LIVE attribute rows may sum to on one attribute, in either direction —
+     * the ATTRIBUTE axis's structural bound, and the exact counterpart of {@link #VITALITY_FLOOR}.
+     *
+     * <p>Weak is not a tuning choice on this axis either. An attribute row is folded into
+     * {@code SkillTrackRegistry.attribute()}, which is the ONE function every check in the game
+     * reads — the shove contest, the lift, the pry, the cast, the cull, and the next crafting.
+     * With no bound, a stack of held nudges was an unbounded multiplier on the entire skill
+     * system. Eli's balance argument is the lore: the public shelf is the watered-down edition
+     * that "skimmed over most of the details" (L2472), so nothing off it should be strong, and
+     * that has to be structural rather than a habit content authors keep.
+     *
+     * <p>Bound at both ends, in two places that cannot disagree: {@link EffectPairing} refuses an
+     * AUTHORED magnitude past this (so no crafting narrates a nudge it cannot deliver), and
+     * {@link #attributeModifier} clamps the LIVE SUM to it (so stacking craftings cannot walk
+     * past it either). Two rows of +2 read as +2, not +4.
+     */
+    public static final int ATTRIBUTE_MODIFIER_LIMIT = 2;
 
     /** {@code slotTarget[s] == NO_TARGET} marks a free row. */
     private static final int NO_TARGET = Actor.NONE;
@@ -141,17 +170,38 @@ public final class ActiveEffects {
     // Adding
     // ======================================================================
 
+    /** Rows nobody is using right now — what a cast must reserve before it resolves. */
+    public int freeSlots() {
+        return SLOT_CAPACITY - liveCount();
+    }
+
     /**
-     * Files one lingering effect and returns the slot it took. {@code startTick} is the tick
-     * the crafting resolved; {@code endTick} is absolute. Free rows are taken lowest-first; a
-     * full table evicts the soonest-to-expire row (lowest slot on a tie) so the newest crafting
-     * always lands — a deterministic, bounded policy that never depends on allocation history.
+     * Files one lingering effect and returns the slot it took, lowest free row first.
+     * {@code startTick} is the tick the crafting resolved; {@code endTick} is absolute.
+     *
+     * <p><b>A full table throws; it never evicts.</b> The earlier policy quietly evicted the
+     * soonest-to-expire row, which meant one actor's cast could delete another actor's live
+     * warmth with nothing said to anybody — a held effect vanishing mid-duration for reasons no
+     * player could ever see. {@link SpellVerb} reserves room through {@link #freeSlots} before it
+     * charges anything, and refuses the cast out loud when there is none, so reaching this throw
+     * means a caller skipped the reservation rather than that the ward ran hot.
+     *
+     * <p><b>An illegal pairing throws too.</b> This method is public and takes a loose
+     * {@code (kind, mode)} pair, so it is the one route into the table that does not pass
+     * through {@link EffectComponent}'s constructor. Filing a row nothing reads would be a
+     * fully-priced no-op wearing a different hat, so the same {@link EffectPairing} table
+     * guards this door as guards the loader's.
      */
     public int add(int targetId, EffectKind kind, EffectMode mode, int param, int magnitude,
             long startTick, long endTick) {
+        if (!EffectPairing.isLegal(kind, mode)) {
+            throw new IllegalArgumentException(EffectPairing.illegalReason(kind, mode));
+        }
         int slot = lowestFreeSlot();
         if (slot == Actor.NONE) {
-            slot = soonestExpiringSlot();
+            throw new IllegalStateException("the effect table is full (" + SLOT_CAPACITY
+                    + " rows): a caller filed an effect without reserving room for it first"
+                    + " -- see SpellVerb's room guard and ActiveEffects.freeSlots()");
         }
         slotTarget[slot] = targetId;
         slotKind[slot] = (byte) kind.ordinal();
@@ -170,16 +220,6 @@ public final class ActiveEffects {
             }
         }
         return Actor.NONE;
-    }
-
-    private int soonestExpiringSlot() {
-        int best = 0;
-        for (int s = 1; s < SLOT_CAPACITY; s++) {
-            if (slotEndTick[s] < slotEndTick[best]) {
-                best = s;
-            }
-        }
-        return best;
     }
 
     /** Clears every row working on {@code actorId} (a body that died stops being warm). */
@@ -215,6 +255,12 @@ public final class ActiveEffects {
      * {@link EffectKind#ATTRIBUTE} rows for that {@code attributeOrdinal}. Read by
      * {@code SkillTrackRegistry.attribute}, which is how a crafting reaches every check in the
      * game at once.
+     *
+     * <p>CLAMPED to {@link #ATTRIBUTE_MODIFIER_LIMIT} in both directions. This is the stack
+     * limit, and it lives here for the same reason {@link #VITALITY_FLOOR} lives in
+     * {@link #applyOnce}: the only code that can report an attribute modifier is the code that
+     * enforces its bound, so "weak" is a property of the sim rather than a discipline content
+     * authors are trusted to keep.
      */
     public int attributeModifier(int actorId, int attributeOrdinal) {
         int sum = 0;
@@ -225,7 +271,7 @@ public final class ActiveEffects {
                 sum += slotMagnitude[s];
             }
         }
-        return sum;
+        return Math.max(-ATTRIBUTE_MODIFIER_LIMIT, Math.min(ATTRIBUTE_MODIFIER_LIMIT, sum));
     }
 
     // ======================================================================
@@ -263,8 +309,7 @@ public final class ActiveEffects {
                     applyOnce(registry.get(targetId), kind, slotParam[s], slotMagnitude[s]);
                 } else if (mode == EffectMode.WHILE_ACTIVE && kind == EffectKind.TEMPERATURE
                         && elapsed % WARMTH_REST_PERIOD_TICKS == 0) {
-                    registry.get(targetId).applyNeedDelta(Need.REST,
-                            slotMagnitude[s] / DECIK_PER_REST_POINT);
+                    registry.get(targetId).applyNeedDelta(Need.REST, restPayment(slotMagnitude[s]));
                 }
             }
             if (slotEndTick[s] <= tick) {
@@ -274,14 +319,33 @@ public final class ActiveEffects {
     }
 
     /**
+     * REST points one held deci-Kelvin offset pays per {@link #WARMTH_REST_PERIOD_TICKS}. Any
+     * non-zero warmth pays at least one point in its own direction: integer division would
+     * otherwise turn a small held warmth into a fully-priced no-op, which is the same defect
+     * {@link EffectPairing} exists to make unauthorable. Mirrors {@link
+     * EffectComponent#transferPoints}'s "a nudge below one whole point still costs a point".
+     */
+    static int restPayment(int magnitudeDeciK) {
+        int points = magnitudeDeciK / DECIK_PER_REST_POINT;
+        return points != 0 ? points : Integer.signum(magnitudeDeciK);
+    }
+
+    /**
      * Lands one dose of one axis on one body — the ONE place an effect becomes a state change,
-     * shared by the trickle above and by {@link SpellVerb}'s instant parts. Held axes
-     * ({@link EffectKind#TEMPERATURE}, {@link EffectKind#ATTRIBUTE}) write nothing here: they
-     * ARE their live rows, and are read by summing them.
+     * shared by the trickle above and by {@link SpellVerb}'s instant parts.
+     *
+     * <p>{@link EffectKind#VITALITY} is the only axis that is DELIVERED; the held axes are read
+     * by summing their live rows and write nothing anywhere. That is not a convenience, it is
+     * the pairing table ({@link EffectPairing}) seen from the other end, so anything else
+     * arriving here means a component got past the loader — a loud throw rather than the silent
+     * return this used to do, which is exactly how five pairings came to resolve, charge a
+     * resist, narrate success and change nothing.
      */
     static void applyOnce(Actor target, EffectKind kind, int param, int magnitude) {
         if (kind != EffectKind.VITALITY) {
-            return;
+            throw new IllegalStateException("the " + kind + " axis is never delivered as a dose"
+                    + " -- EffectPairing refuses that pairing at load, so reaching applyOnce with"
+                    + " it means a component was built without its canonical constructor");
         }
         int max = target.stats().hp();
         int next = Math.max(VITALITY_FLOOR, Math.min(max, target.hp() + magnitude));

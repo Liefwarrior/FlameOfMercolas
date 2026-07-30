@@ -98,6 +98,22 @@
       "provenance": "Simple Magic seed spell. Scald with the sign flipped and the target turned inward, which is the whole argument for signed magnitudes and a data-driven target shape: mending and harming were never two systems. SELF because canon's own instance of this operation is Gerik healing his OWN arm."
     },
     {
+      "id": "close_the_cut",
+      "displayName": "Close the Cut",
+      "skill": "linkcraft",
+      "minLevel": 3,
+      "baseResist": 14,
+      "cooldownTicks": 600,
+      "target": "TOUCH",
+      "range": 1,
+      "areaRadius": 0,
+      "components": [
+        { "effect": "VITALITY", "mode": "OVER_TIME", "magnitude": 1, "durationTicks": 40 }
+      ],
+      "canonAnchor": "Gerik knits skin shut with 'heat energy from the enemies' (L445) - the same operation Knit the Skin runs, worked across the bridged link of L459 instead of on your own arm",
+      "provenance": "Simple Magic, round 2. Knit the Skin turned OUTWARD, and the reason it exists is a disclosure: NOTHING in this sim regenerates hit points. A body that takes a scald carries it until somebody mends it, and before this row the only mending crafting was SELF-target, so one docker could harm a neighbour permanently and no crafting on the shelf could undo it. Dearer than Knit the Skin (a link to another body, L459) and gated deeper, but the loop now closes. Nothing else reads hit points yet, so today an unmended body is a number on a sheet rather than a bleed with consequences - and the vitality floor means it can never become one."
+    },
+    {
       "id": "steady_the_hand",
       "displayName": "Steady the Hand",
       "skill": "linkcraft",
@@ -162,5 +178,5 @@
       "provenance": "Simple Magic seed spell, the deepest thing on the public shelf. Taking a point off somebody else's reflexes is dearer than lending yourself one, and the raws say so only through baseResist - no code knows this spell is unkind."
     }
   ],
-  "notes": "THE SPELL LIST IS DATA. Every crafting here is (effect x magnitude x duration x chance x area) and nothing else, so a tenth spell is a tenth row - no Java, no enum, no table. Nothing clamps magnitude: SpellCost prices what a crafting moves and how far, and the linkcraft check does the rest, which is why a spell nobody has reviewed cannot be accidentally strong. Note what is NOT here: every entry is SELF or TOUCH. Canon gates the unbridged link behind 'the gift' ('almost nobody can do this', L459), so the vocabulary supports RANGED and the public shelf does not teach it. canonAnchor/provenance/notes are documentation-only and ignored by the loader."
+  "notes": "THE SPELL LIST IS DATA. Every crafting here is (effect x magnitude x duration x chance x area) and nothing else, so an eleventh spell is an eleventh row - no Java, no enum, no table. WHAT THE LOADER REFUSES (EffectPairing): TEMPERATURE and ATTRIBUTE are HELD axes and take WHILE_ACTIVE only; VITALITY is a DELIVERED one and takes INSTANT or OVER_TIME only; a magnitude of 0 is refused; an ATTRIBUTE magnitude past +/-2 is refused; and a lingering component shorter than its own cadence (10 ticks for a trickle, 50 for a held warmth) is refused. Every one of those used to load, resolve, be charged its full difficulty, toast success and change nothing - so the rule is that a crafting which gets past the loader DOES something. WHAT NOTHING CLAMPS: magnitude on the temperature and vitality axes. SpellCost prices what a crafting moves, how far, how wide AND how long it holds, and the linkcraft check does the rest, which is why a spell nobody has reviewed cannot be accidentally strong. The two structural bounds are the vitality floor (no body below 1 hp, ever) and the attribute limit (a live nudge is read by every check in the game, so it is held to +/-2 however many rows stack). Note what is NOT here: every entry is SELF or TOUCH. Canon gates the unbridged link behind 'the gift' ('almost nobody can do this', L459), so the vocabulary supports RANGED and the public shelf does not teach it. canonAnchor/provenance/notes are documentation-only and ignored by the loader."
 }
