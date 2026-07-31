@@ -69,9 +69,20 @@ ARG BUILD_TYPE=RelWithDebInfo
 
 WORKDIR /src
 
-# Only native/ is copied. content/ (1.2 GB of art) and .claude/worktrees
+# The baked worlds — 21 KB, three files. They come in FIRST because they change
+# far less often than the source, so an edit to a .cpp does not invalidate this
+# layer. The content tests open these actual files; without them the test gate
+# collapses to "fixed.hpp compiles". Everything else under content/ (1.2 GB of
+# art) stays out — see .dockerignore.
+#
+# The path must land at /src/content/maps/baked, because that is what
+# native/content/CMakeLists.txt resolves ../../content to from /src/native.
+COPY content/maps/baked /src/content/maps/baked
+
+# Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
-# has no use for either, and content is read at runtime straight from the repo.
+# has no use for either, and the rest of content is read at runtime straight
+# from the repo.
 COPY native /src/native
 
 # FetchContent lands here. A cache mount keeps SDL3 from being re-cloned and
@@ -87,6 +98,41 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     ninja --version; \
     x86_64-w64-mingw32-g++ --version | head -1; \
     \
+    echo "=== invalidate every cached object built from other bytes ==="; \
+    # Ninja decides what to recompile by comparing mtimes, and /build-cache
+    # survives between builds — including builds of a DIFFERENT source tree at
+    # the same paths (a scratch copy used for mutation testing, a second
+    # worktree). COPY stamps each file with the mtime it had in the build
+    # context, which can be OLDER than a cached object compiled from different
+    # bytes. Ninja then prints "no work to do" and ctest reports a verdict on
+    # code that is not in this tree.
+    #
+    # Not hypothetical. This build reported `CHECK(floor_mod(-1,32) == 999)`
+    # failing — an assertion that exists nowhere in the repo, served whole from
+    # a stale object left behind by an earlier mutation test.
+    #
+    # Stamping the copied sources to now makes every cached object of OURS
+    # unconditionally out of date, so our code is always recompiled from the
+    # bytes in this context. Third-party objects live under /deps (FetchContent
+    # puts each dependency's binary dir there) and are pinned by commit SHA, so
+    # they stay cached and the build stays quick. This must run inside this RUN
+    # rather than as its own layer: a separate layer would itself be cached,
+    # and would hand back mtimes older than the poisoned objects again.
+    find /src -exec touch {} +; \
+    \
+    echo "=== the baked worlds must be in the context ==="; \
+    # The content tests read these. If .dockerignore stops re-admitting
+    # content/maps/baked/** the cmake configure below fails anyway, but it
+    # fails 200 lines into a FetchContent log; say it plainly here instead.
+    for w in compound_block docks_surface tavern_fixture; do \
+        test -f "/src/content/maps/baked/$w.trojsav" \
+            || { echo "FATAL: /src/content/maps/baked/$w.trojsav is missing from the"; \
+                 echo "       build context. .dockerignore must re-admit"; \
+                 echo "       content/maps/baked/** or the TROJSAV tests cannot run."; \
+                 exit 1; }; \
+    done; \
+    ls -l /src/content/maps/baked; \
+    \
     echo "=== host check: build sim + tests for Linux and actually run them ==="; \
     # A cross-compiled .exe cannot be executed here, so correctness is proven on
     # a host build of the same sources. The client is skipped: no SDL needed to
@@ -97,6 +143,33 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         -DGRANADAD_BUILD_TESTS=ON \
         -DGRANADAD_REVISION="${GRANADAD_REVISION}"; \
     cmake --build /build-cache/hostcheck; \
+    \
+    # A gate is only worth what it covers. Before this check the suite was one
+    # test — fixed.hpp — while ctest cheerfully printed "100% tests passed,
+    # 1 tests out of 1" and everyone read the word "passed". The 57 TROJSAV
+    # cases that open the owner's real baked worlds ran nowhere.
+    #
+    # So: assert a floor on the count, not just on the verdict. If the content
+    # module falls out of the build, or doctest's per-case discovery quietly
+    # collapses to a single entry, this fails instead of shrinking in silence.
+    # Raise the floor when the suite grows; never lower it to make a build pass.
+    echo "=== the gate must cover more than one test ==="; \
+    GRANADAD_MIN_TESTS=50; \
+    test_count="$(ctest --test-dir /build-cache/hostcheck -N \
+        | sed -n 's/^Total Tests: *//p')"; \
+    echo "ctest knows about ${test_count} tests (floor: ${GRANADAD_MIN_TESTS})"; \
+    if [ -z "$test_count" ] || [ "$test_count" -lt "$GRANADAD_MIN_TESTS" ]; then \
+        echo "FATAL: the test gate has shrunk to ${test_count:-0} tests, below the"; \
+        echo "       floor of ${GRANADAD_MIN_TESTS}. Something stopped being built."; \
+        echo "       Check add_subdirectory(content) in native/CMakeLists.txt and"; \
+        echo "       that content/maps/baked reached the build context."; \
+        exit 1; \
+    fi; \
+    ctest --test-dir /build-cache/hostcheck -N | grep -q "docks_surface loads completely" \
+        || { echo "FATAL: the TROJSAV cases that load the real baked worlds are not"; \
+             echo "       registered. The gate would pass without ever opening a"; \
+             echo "       .trojsav file."; exit 1; }; \
+    \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \
     echo "=== cross-compile: Windows x86-64 .exe ==="; \
@@ -161,6 +234,8 @@ FROM debian:bookworm-slim@${DEBIAN_DIGEST} AS artifacts
 COPY --from=build /out /artifacts
 COPY docker/publish.sh /usr/local/bin/publish.sh
 
-# `docker compose up` runs this: copy the built artifacts onto the bind mount at
-# the repo's dist/ and print what landed there.
+# `docker compose run --rm --build build` runs this: copy the built artifacts
+# onto the bind mount at the repo's dist/ and print what landed there. If it
+# fails, its non-zero exit reaches the caller — which is the whole reason the
+# documented command is `run` and not `up`. See docker-compose.yml.
 ENTRYPOINT ["/usr/local/bin/publish.sh"]

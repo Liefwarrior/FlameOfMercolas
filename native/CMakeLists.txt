@@ -39,6 +39,14 @@ include(Determinism)
 include(StaticRuntime)
 include(Dependencies)
 
+# enable_testing() has to happen in the top-level directory BEFORE any
+# add_subdirectory() that registers tests, or the subdirectory's add_test()
+# calls are silently dropped from the ctest run. That silence is exactly the
+# failure this build is trying not to have.
+if(GRANADAD_BUILD_TESTS)
+    enable_testing()
+endif()
+
 # ---------------------------------------------------------------------------
 # sim-core — the deterministic simulation. No SDL, no rendering, no floats.
 # ---------------------------------------------------------------------------
@@ -57,6 +65,22 @@ granadad_apply_determinism(granadad-sim)
 # than discovering a rendering type leaked into simulation state later.
 
 # ---------------------------------------------------------------------------
+# granadad-content — the TROJSAV / world-format reader, and the tests that read
+# the owner's real baked worlds.
+#
+# This is deliberately part of the default build rather than a standalone
+# side-project. Left out, `ctest` reported "100% tests passed, 1 tests out of 1"
+# — that one test being fixed.hpp — while the 57 cases and ~900k assertions
+# that prove the format reader against the actual shipped files ran nowhere.
+# A green badge that narrow is worse than no badge.
+#
+# Configure fails outright if the baked worlds are missing (see
+# content/CMakeLists.txt), which is what keeps someone from quietly dropping
+# them out of the docker context again.
+# ---------------------------------------------------------------------------
+add_subdirectory(content)
+
+# ---------------------------------------------------------------------------
 # client-observer — the SDL3 window. Floats are legal HERE and only here.
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_CLIENT)
@@ -72,7 +96,6 @@ endif()
 # tests
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_TESTS)
-    enable_testing()
     add_executable(granadad-tests tests/test_fixed.cpp)
     target_link_libraries(granadad-tests PRIVATE granadad-sim doctest::doctest)
     granadad_apply_determinism(granadad-tests)

@@ -18,6 +18,20 @@
 !native/**
 !docker/**
 
+# --- re-admitted: the baked worlds the content tests read ---
+# granadad-content's tests are not unit tests over synthetic bytes; they open
+# the owner's actual shipped .trojsav files and assert against facts read out of
+# them. Without these three files in the context the content tests cannot run,
+# and the build gate shrinks to "fixed.hpp compiles" while still printing green.
+#
+# This is 21 KB of baked worlds, not the 1.2 GB art tree. content/art and
+# everything else under content/ stay out — only maps/baked comes in.
+# Cost measured at the time of writing:
+#   compound_block.trojsav    2,051 B
+#   docks_surface.trojsav    17,695 B
+#   tavern_fixture.trojsav      845 B
+!content/maps/baked/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**

@@ -99,10 +99,17 @@ if(GRANADAD_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/../../content" ABSOLUTE)
     set(GRANADAD_CONTENT_DIR "${GRANADAD_DEFAULT_CONTENT_DIR}" CACHE PATH
         "Repo content/ directory holding the baked .trojsav worlds the tests read")
+    # Hard failure, on purpose. The tempting alternative — skip the tests when
+    # the data is absent — is how a build gate quietly shrinks to nothing: drop
+    # content/maps/baked out of .dockerignore and every one of these cases
+    # vanishes while the build still prints green. Missing data is a broken
+    # build context, not a reason to test less.
     if(NOT EXISTS "${GRANADAD_CONTENT_DIR}/maps/baked/tavern_fixture.trojsav")
         message(FATAL_ERROR
             "granadad-content tests need the baked worlds at "
-            "${GRANADAD_CONTENT_DIR}/maps/baked — pass -DGRANADAD_CONTENT_DIR=<repo>/content")
+            "${GRANADAD_CONTENT_DIR}/maps/baked — pass -DGRANADAD_CONTENT_DIR=<repo>/content. "
+            "In the docker build this means .dockerignore stopped re-admitting "
+            "content/maps/baked/** into the build context.")
     endif()
 
     add_executable(granadad-content-tests
@@ -117,10 +124,22 @@ if(GRANADAD_BUILD_TESTS)
     target_compile_definitions(granadad-content-tests PRIVATE
         "GRANADAD_CONTENT_DIR=\"${GRANADAD_CONTENT_DIR}\"")
     granadad_apply_determinism(granadad-content-tests)
+    # Only defined when embedded in the native/ spine. Without it a mingw build
+    # of this binary imports libstdc++-6.dll and dies before main().
+    if(COMMAND granadad_static_runtime)
+        granadad_static_runtime(granadad-content-tests)
+    endif()
 
     # Per-test-case ctest entries when doctest ships its discovery module,
     # otherwise one entry for the whole binary. Either way `ctest` runs them.
-    if(EXISTS "${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
+    #
+    # Discovery works by RUNNING the freshly linked binary with --list-test-cases
+    # at build time. That is impossible when cross-compiling — the Windows .exe
+    # will not execute on the Linux build host — and the attempt fails the build
+    # rather than the test. Cross builds therefore register the single-binary
+    # entry; the host build, which is the one that actually runs ctest, gets the
+    # per-case breakdown.
+    if(NOT CMAKE_CROSSCOMPILING AND EXISTS "${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
         include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
         doctest_discover_tests(granadad-content-tests)
     else()
