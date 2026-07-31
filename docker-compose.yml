@@ -1,11 +1,31 @@
 # Granadad: The Darkstreets — reproducible build of the native C++ game.
 #
-#   docker compose up --build
+#   docker compose run --rm --build build
 #
 # That is the whole thing. It compiles the C++ in a pinned container and drops
 # the finished binary in ./dist. Then, on Windows, natively:
 #
 #   .\dist\granadad.exe
+#
+# ---------------------------------------------------------------------------
+# WHY `run` AND NOT `up`
+# ---------------------------------------------------------------------------
+# Because `docker compose up` exits 0 when the container inside it exits 1.
+#
+# That is not a theory. Point GRANADAD_DIST at an unmounted path and the
+# container prints "FATAL: ... is not mounted", compose logs "build-1 exited
+# with code 1" — and `echo $?` says 0. A build gate that cannot go red is worse
+# than no gate, because it is trusted.
+#
+# `docker compose run` propagates the container's exit status by construction.
+# There is no flag to remember and no flag to forget. (`up --build
+# --exit-code-from build` is equivalent, but only if you type all of it, every
+# time, and nobody ever does.)
+#
+# The image build itself already fails loudly either way — a compile error or a
+# failed PE check stops `docker compose build`. The hole was only ever in the
+# publish step, which is the last thing that runs and the one that decides
+# whether dist/ actually got written.
 #
 # ---------------------------------------------------------------------------
 # WHAT DOCKER DOES AND DOES NOT DO HERE
@@ -20,8 +40,12 @@
 # (see the `file ... | grep PE32+` check in docker/build.Dockerfile), so this
 # cannot silently degrade into shipping the wrong kind of executable.
 #
-# The 1.2 GB content/ tree is NOT copied into the container. The game reads it
-# at runtime, from the repo, on your machine. See .dockerignore.
+# The 1.2 GB content/ tree is NOT copied into the container, with one deliberate
+# exception: content/maps/baked/ (three files, 21 KB), which the TROJSAV reader
+# tests open and assert against. Everything else — content/art above all — the
+# game reads at runtime, from the repo, on your machine. See .dockerignore.
+#
+# Nothing here writes to content/. It is copied in read-only and never mounted.
 
 services:
   build:
@@ -35,6 +59,9 @@ services:
         GRANADAD_REVISION: ${GRANADAD_REVISION:-docker}
         BUILD_TYPE: ${BUILD_TYPE:-RelWithDebInfo}
     image: granadad-build:latest
+    # One-shot build step, not a service: never restart it, and never let a
+    # retry paper over a red exit.
+    restart: "no"
     volumes:
       # The one bind mount: finished artifacts land in the repo's dist/.
       - ./dist:/out

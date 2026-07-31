@@ -14,16 +14,24 @@ fast loop.
 From the repo root:
 
 ```
-docker compose up --build
+docker compose run --rm --build build
 ```
 
-That is the whole thing. It compiles the C++ inside a pinned container and puts
-a native Windows binary in `dist/`. Then, on Windows, natively:
+That is the whole thing. It compiles the C++ inside a pinned container, runs the
+test suite, and puts a native Windows binary in `dist/`. Then, on Windows,
+natively:
 
 ```
 .\dist\granadad.exe --selftest     # no window, just proves the binary works
 .\dist\granadad.exe                # the game
 ```
+
+> **`run`, not `up`.** `docker compose up` exits **0 even when the container
+> inside it exits 1** — it prints `build-1 exited with code 1` and then hands
+> your shell a success. A build gate that cannot go red is worse than no gate,
+> because it gets trusted. `docker compose run` propagates the container's exit
+> status by construction, with no flag to forget. (`docker compose up --build
+> --exit-code-from build` is equivalent if you type all of it every time.)
 
 ### What docker is and is not doing here
 
@@ -37,8 +45,25 @@ checks each artifact is a real PE32+ binary *and* that its import table contains
 no MinGW runtime DLLs. If either check fails the build stops rather than putting
 a broken file in `dist/`.
 
-The 1.2 GB `content/` tree never enters the container. The game reads it at
-runtime, from the repo, on your machine.
+The 1.2 GB `content/` tree does not enter the container — with one deliberate
+exception: `content/maps/baked/`, three files totalling 21 KB. Those are the
+owner's real shipped worlds, and the TROJSAV reader's tests open them and assert
+against facts read out of the actual bytes. Without them in the context those
+tests cannot run at all, and the build gate shrinks to "fixed.hpp compiles"
+while still printing green. Everything else, `content/art` included, stays out;
+the game reads it at runtime, from the repo, on your machine.
+
+Nothing in the build writes to `content/`. It is mounted nowhere and copied
+read-only into the image.
+
+### What the gate actually covers
+
+`ctest` runs on a **host (Linux) build of the same sources** — a cross-compiled
+`.exe` cannot execute on the build machine, so correctness is proven on a native
+build and reproducibility on the cross build. The run covers the fixed-point
+math *and* the full TROJSAV reader suite against the three real baked worlds.
+The Dockerfile asserts a floor on the test count, so the suite cannot quietly
+shrink back to one test and keep the green badge.
 
 ### Output
 
@@ -69,8 +94,8 @@ recorded in `BUILD-MANIFEST.txt`, so drift shows up instead of hiding.
 ### Options
 
 ```
-GRANADAD_REVISION=$(git rev-parse --short HEAD) docker compose up --build
-BUILD_TYPE=Debug docker compose up --build
+GRANADAD_REVISION=$(git rev-parse --short HEAD) docker compose run --rm --build build
+BUILD_TYPE=Debug docker compose run --rm --build build
 ```
 
 `GRANADAD_REVISION` gets baked into the binary and printed on startup, so a bug
