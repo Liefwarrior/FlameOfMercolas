@@ -96,6 +96,12 @@ public:
         /// Fingerprint of the raws the save was made with. A mismatch on load
         /// is a hard fail in the Java — goldens are meaningless across raws
         /// changes.
+        ///
+        /// VERIFICATION GAP (M0): this is read and can be compared, but nothing
+        /// here RECOMPUTES it — the C++ raws loader does not exist yet, so
+        /// there is no second opinion to check it against. All three shipped
+        /// worlds carry 0x6101F30069B57FF1, which the tests pin; the mismatch
+        /// hard-fail lands with the raws loader.
         std::uint64_t rawsFingerprint = 0;
     };
 

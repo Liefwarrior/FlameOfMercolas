@@ -36,6 +36,13 @@ endif()
 
 # The spine supplies granadad_apply_determinism. Standalone needs its own, and
 # it must stay in step with native/cmake/Determinism.cmake.
+# VERIFICATION GAP (M0): this module has been configured, built and tested on
+# Linux / GCC 12 only. The machine it was written on has no C++ toolchain at
+# all — Visual Studio is installed without the C++ workload and there is no
+# MSVC, clang or mingw — so the build ran in a debian:bookworm-slim container.
+# The MSVC branch below and every /-style flag in it are UNCOMPILED. Nothing
+# here is Linux-specific by design (the one platform #if is the _wfopen path in
+# trojsav.cpp), but "should port" is not "did port".
 if(NOT COMMAND granadad_apply_determinism)
     function(granadad_apply_determinism target)
         if(MSVC)
