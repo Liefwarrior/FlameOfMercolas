@@ -1,0 +1,66 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "local",
+      "inherits": "base",
+      "displayName": "Local dev (host compiler, RelWithDebInfo)",
+      "description": "Fast iteration on whatever compiler this machine has. Use this while writing code.",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "local-debug",
+      "inherits": "base",
+      "displayName": "Local dev (host compiler, Debug)",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "sim-only",
+      "inherits": "base",
+      "displayName": "Simulation + tests, no SDL",
+      "description": "Skips the SDL3 fetch entirely. The quickest way to run the test suite.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "GRANADAD_BUILD_CLIENT": "OFF"
+      }
+    },
+    {
+      "name": "mingw-cross",
+      "inherits": "base",
+      "displayName": "Cross-compile to Windows .exe (mingw-w64)",
+      "description": "What the docker build runs. Needs a mingw-w64 toolchain; on Windows use the docker path instead.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-mingw-w64.cmake"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "local", "configurePreset": "local" },
+    { "name": "local-debug", "configurePreset": "local-debug" },
+    { "name": "sim-only", "configurePreset": "sim-only" },
+    { "name": "mingw-cross", "configurePreset": "mingw-cross" }
+  ],
+  "testPresets": [
+    {
+      "name": "local",
+      "configurePreset": "local",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "sim-only",
+      "configurePreset": "sim-only",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

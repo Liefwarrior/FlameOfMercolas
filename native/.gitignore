@@ -1,0 +1,14 @@
+# CMake build trees (presets put them under native/build/<preset>)
+build/
+out/
+
+# Per-developer preset overrides — deliberately not shared
+CMakeUserPresets.json
+
+# Compiler droppings
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+compile_commands.json

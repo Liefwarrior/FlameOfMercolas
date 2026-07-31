@@ -1,0 +1,31 @@
+# Docker build context for the native C++ build (docker/build.Dockerfile).
+#
+# The repo is ~2.8 GB on disk. The two monsters are:
+#   content/art          1.2 GB   (authored art / Kenney packs)
+#   .claude/worktrees    1.6 GB   (parallel agent checkouts, nested inside the repo)
+# Neither is needed to COMPILE. The C++ build needs source, CMake files and
+# nothing else; content/ is read at RUNTIME by the natively-run binary straight
+# out of the repo, so it never has to enter the build context.
+#
+# This file is therefore an ALLOWLIST: deny everything, then re-admit the few
+# directories the compiler actually reads. That keeps the context in the low
+# hundreds of KB and, more importantly, keeps it that way when someone drops
+# another gigabyte of art into the tree.
+
+**
+
+# --- re-admitted: the only things the build actually compiles ---
+!native/**
+!docker/**
+
+# --- and then trim build junk back out of the re-admitted paths ---
+native/build/**
+native/out/**
+native/.cache/**
+native/**/*.o
+native/**/*.obj
+native/**/*.exe
+native/**/*.pdb
+native/**/*.ilk
+native/**/CMakeUserPresets.json
+native/**/.DS_Store
