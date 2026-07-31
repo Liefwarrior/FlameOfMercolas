@@ -29,6 +29,7 @@ set(GRANADAD_REVISION "local" CACHE STRING "Git revision baked into the binary")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Determinism)
+include(StaticRuntime)
 include(Dependencies)
 
 # ---------------------------------------------------------------------------
@@ -55,16 +56,9 @@ if(GRANADAD_BUILD_CLIENT)
     add_executable(granadad src/client/main.cpp src/client/stb_impl.cpp)
     target_link_libraries(granadad PRIVATE granadad-sim ${GRANADAD_SDL_TARGET} stb::stb)
     granadad_apply_determinism(granadad)
-
-    if(MINGW)
-        # Ship one self-contained .exe: fold libgcc/libstdc++/winpthread in
-        # rather than making the owner carry three MinGW runtime DLLs next to
-        # the game. Console subsystem stays on — the sim prints, and we want
-        # stdout to work when it is launched from a terminal on Windows.
-        target_link_options(granadad PRIVATE
-            -static-libgcc -static-libstdc++
-            -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive -Wl,-Bdynamic)
-    endif()
+    # Console subsystem stays on — the sim prints, and we want stdout to work
+    # when the game is launched from a terminal on Windows.
+    granadad_static_runtime(granadad)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -75,6 +69,7 @@ if(GRANADAD_BUILD_TESTS)
     add_executable(granadad-tests tests/test_fixed.cpp)
     target_link_libraries(granadad-tests PRIVATE granadad-sim doctest::doctest)
     granadad_apply_determinism(granadad-tests)
+    granadad_static_runtime(granadad-tests)
     add_test(NAME granadad-tests COMMAND granadad-tests)
 endif()
 

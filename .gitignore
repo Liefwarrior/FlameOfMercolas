@@ -25,6 +25,9 @@ replay_pid*
 *.log
 /local/
 
+# Native build artifacts published by `docker compose up --build`
+/dist/
+
 # Carrier-pigeon watch (local operational log, not project content)
 /PIGEON-TO-CLAUDE.md
 /PIGEON-FROM-CLAUDE.md

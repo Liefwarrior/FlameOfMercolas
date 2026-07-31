@@ -1,0 +1,43 @@
+# Granadad: The Darkstreets — reproducible build of the native C++ game.
+#
+#   docker compose up --build
+#
+# That is the whole thing. It compiles the C++ in a pinned container and drops
+# the finished binary in ./dist. Then, on Windows, natively:
+#
+#   .\dist\granadad.exe
+#
+# ---------------------------------------------------------------------------
+# WHAT DOCKER DOES AND DOES NOT DO HERE
+# ---------------------------------------------------------------------------
+# Docker is the BUILD surface, not the runtime. The container compiles and then
+# exits. It does not run the game, does not open a window, does not need a GPU
+# and does not want an X server. The artifact it produces is a native Windows
+# .exe (PE32+), cross-compiled with mingw-w64 — NOT a Linux binary and NOT a
+# WASM/browser target.
+#
+# The build refuses to publish anything that is not a genuine Windows PE binary
+# (see the `file ... | grep PE32+` check in docker/build.Dockerfile), so this
+# cannot silently degrade into shipping the wrong kind of executable.
+#
+# The 1.2 GB content/ tree is NOT copied into the container. The game reads it
+# at runtime, from the repo, on your machine. See .dockerignore.
+
+services:
+  build:
+    build:
+      context: .
+      dockerfile: docker/build.Dockerfile
+      args:
+        # Stamped into the binary so `granadad.exe --version` names the commit
+        # it came from. Set GRANADAD_REVISION in your environment (or a .env
+        # file) to record the real SHA; otherwise it just says "docker".
+        GRANADAD_REVISION: ${GRANADAD_REVISION:-docker}
+        BUILD_TYPE: ${BUILD_TYPE:-RelWithDebInfo}
+    image: granadad-build:latest
+    volumes:
+      # The one bind mount: finished artifacts land in the repo's dist/.
+      - ./dist:/out
+    # Nothing here talks to the network at run time; the deps were fetched
+    # during the image build.
+    network_mode: none
