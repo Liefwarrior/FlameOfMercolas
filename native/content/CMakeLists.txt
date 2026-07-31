@@ -139,6 +139,12 @@ if(GRANADAD_BUILD_TESTS)
     # rather than the test. Cross builds therefore register the single-binary
     # entry; the host build, which is the one that actually runs ctest, gets the
     # per-case breakdown.
+    #
+    # Not a precaution taken on faith: with the CMAKE_CROSSCOMPILING clause
+    # removed, the docker build fails at
+    #   FAILED: bin/granadad-content-tests.exe ..._tests-<hash>.cmake
+    #   CMake Error at .../doctest-src/scripts/cmake/doctestAddTests.cmake:45
+    # because ninja links the .exe and immediately tries to execute it.
     if(NOT CMAKE_CROSSCOMPILING AND EXISTS "${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
         include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
         doctest_discover_tests(granadad-content-tests)
