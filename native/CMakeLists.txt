@@ -5,6 +5,13 @@ cmake_minimum_required(VERSION 3.24)
 # Console toolchains lag, so this targets C++20 and nothing newer. See
 # native/README.md for both build paths (docker for reproducible, CMake preset
 # for fast local iteration).
+#
+# VERIFICATION GAP (M0): the docker path is verified end to end — configure,
+# cross-compile, host ctest, and the resulting .exe run natively on Windows.
+# The CMakePresets paths (local, local-debug, sim-only, mingw-cross) are NOT
+# verified: the machine this was authored on has no cmake, ninja or C++
+# compiler installed, so nothing outside the container was ever executed. The
+# preset definitions are believed correct but untested.
 
 project(granadad
     VERSION 0.1.0
