@@ -32,6 +32,12 @@ natively:
 > because it gets trusted. `docker compose run` propagates the container's exit
 > status by construction, with no flag to forget. (`docker compose up --build
 > --exit-code-from build` is equivalent if you type all of it every time.)
+>
+> If you type `up` from muscle memory anyway, you still get a red exit. The
+> compose file carries a second service, `guard`, whose only job is to depend on
+> `build` completing successfully — and compose *does* fail when a dependency
+> fails, even though it forgives a container that exits 1 on its own. Belt and
+> braces; `run` remains the documented command.
 
 ### What docker is and is not doing here
 
@@ -60,10 +66,19 @@ read-only into the image.
 
 `ctest` runs on a **host (Linux) build of the same sources** — a cross-compiled
 `.exe` cannot execute on the build machine, so correctness is proven on a native
-build and reproducibility on the cross build. The run covers the fixed-point
-math *and* the full TROJSAV reader suite against the three real baked worlds.
-The Dockerfile asserts a floor on the test count, so the suite cannot quietly
-shrink back to one test and keep the green badge.
+build and reproducibility on the cross build.
+
+| | cases | assertions |
+|---|---|---|
+| `granadad-tests` — fixed-point, wrapping, floor div/mod | 5 | 425 |
+| `granadad-content-tests` — TROJSAV reader vs. the real baked worlds | 57 | 902,044 |
+| **ctest total** | **58** | |
+
+The build prints both lines every run, so "tests passed" never has to be taken
+on faith. It also asserts a **floor** on the ctest count and checks by name that
+the cases which load `docks_surface.trojsav` are registered — the suite used to
+be one test (fixed.hpp) while `ctest` printed `100% tests passed, 1 tests out of
+1`, and it must not be able to shrink back there quietly.
 
 ### Output
 

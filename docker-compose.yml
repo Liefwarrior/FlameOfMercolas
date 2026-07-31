@@ -27,6 +27,9 @@
 # publish step, which is the last thing that runs and the one that decides
 # whether dist/ actually got written.
 #
+# The `guard` service below closes the hole for `up` as well, for the day
+# somebody types the old command from memory. See its comment.
+#
 # ---------------------------------------------------------------------------
 # WHAT DOCKER DOES AND DOES NOT DO HERE
 # ---------------------------------------------------------------------------
@@ -47,24 +50,49 @@
 #
 # Nothing here writes to content/. It is copied in read-only and never mounted.
 
+x-granadad: &granadad
+  build:
+    context: .
+    dockerfile: docker/build.Dockerfile
+    args:
+      # Stamped into the binary so `granadad.exe --version` names the commit
+      # it came from. Set GRANADAD_REVISION in your environment (or a .env
+      # file) to record the real SHA; otherwise it just says "docker".
+      GRANADAD_REVISION: ${GRANADAD_REVISION:-docker}
+      BUILD_TYPE: ${BUILD_TYPE:-RelWithDebInfo}
+  image: granadad-build:latest
+  # One-shot build step, not a service: never restart it, and never let a
+  # retry paper over a red exit.
+  restart: "no"
+  # Nothing here talks to the network at run time; the deps were fetched
+  # during the image build.
+  network_mode: none
+
 services:
   build:
-    build:
-      context: .
-      dockerfile: docker/build.Dockerfile
-      args:
-        # Stamped into the binary so `granadad.exe --version` names the commit
-        # it came from. Set GRANADAD_REVISION in your environment (or a .env
-        # file) to record the real SHA; otherwise it just says "docker".
-        GRANADAD_REVISION: ${GRANADAD_REVISION:-docker}
-        BUILD_TYPE: ${BUILD_TYPE:-RelWithDebInfo}
-    image: granadad-build:latest
-    # One-shot build step, not a service: never restart it, and never let a
-    # retry paper over a red exit.
-    restart: "no"
+    <<: *granadad
     volumes:
       # The one bind mount: finished artifacts land in the repo's dist/.
       - ./dist:/out
-    # Nothing here talks to the network at run time; the deps were fetched
-    # during the image build.
-    network_mode: none
+
+  # Not a build step. A seatbelt for the wrong command.
+  #
+  # `docker compose up` swallows a container's non-zero exit — but it does NOT
+  # swallow a DEPENDENCY that failed to complete. So this service exists purely
+  # to depend on `build` succeeding. Type the documented `run` command and this
+  # never starts; type `up` out of habit and a failed build now surfaces as
+  # "dependency failed to start" and a red exit code instead of a green lie.
+  #
+  # It shares the build's image, so it costs one cached container start and
+  # nothing else. Do not give it a bind mount and do not make it do work: the
+  # moment it has a job, it stops being a seatbelt and starts being a thing that
+  # can fail for its own reasons.
+  guard:
+    <<: *granadad
+    depends_on:
+      build:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'echo "build published to dist/ — see dist/BUILD-MANIFEST.txt"'

@@ -172,6 +172,14 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \
+    # ctest reports per-case pass/fail; it never says how many assertions were
+    # behind them. Run the two suites once more, directly, so the build log
+    # states plainly what the green badge is worth. Half a second, and it means
+    # nobody has to take "tests passed" on faith.
+    echo "=== what the gate actually proved ==="; \
+    /build-cache/hostcheck/bin/granadad-tests | tail -3; \
+    /build-cache/hostcheck/bin/granadad-content-tests | tail -3; \
+    \
     echo "=== cross-compile: Windows x86-64 .exe ==="; \
     cmake -S /src/native -B /build-cache/win -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE=/src/native/cmake/toolchain-mingw-w64.cmake \
