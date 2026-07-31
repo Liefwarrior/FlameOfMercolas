@@ -285,6 +285,24 @@ void expectReject(const FrameBuilder& frame, const char* label) {
     CHECK_THROWS_AS(codec.decode(in, world.chunk(0), cells), FormatError);
 }
 
+/// Emits the six core lanes after MATERIAL, solid, plus an empty CHARGE block.
+///
+/// Frames built this way are byte-wise well-formed from end to end, so a
+/// malformed MATERIAL lane can only be caught by that lane's OWN validation —
+/// not incidentally by the reader running off the end of a short buffer. Without
+/// this, "reject a lane whose runs cover 8191 cells" passes even if the coverage
+/// check is deleted, because the truncated frame throws anyway.
+FrameBuilder& completeAfterMaterial(FrameBuilder& frame) {
+    frame.solidLane(1, static_cast<std::uint8_t>(TileForm::Void))
+        .solidLane(1, flag_bits::kBlocksMove | flag_bits::kBlocksLight)
+        .solidLane(2, 0)
+        .solidLane(2, 0)
+        .solidLane(2, 0)
+        .solidLane(1, 0);
+    frame.u8(1).overlayBlock(0, {});
+    return frame;
+}
+
 }  // namespace
 
 TEST_CASE("a future codec version is rejected rather than guessed at") {
@@ -306,24 +324,46 @@ TEST_CASE("a lane-width mismatch is rejected") {
 }
 
 TEST_CASE("runs that do not cover exactly 8192 cells are rejected") {
-    SUBCASE("short") {
+    // Each of these completes the frame after MATERIAL, so the byte stream is
+    // well-formed throughout and only the lane's own validation can reject it.
+    SUBCASE("one cell short") {
         FrameBuilder frame;
         frame.header(7);
         frame.u8(2).u8(kModeRle).u16(1).u16(8191).u16(0);
+        completeAfterMaterial(frame);
         expectReject(frame, "runs short");
+    }
+    SUBCASE("many runs, still one cell short") {
+        FrameBuilder frame;
+        frame.header(7);
+        frame.u8(2).u8(kModeRle).u16(3).u16(4000).u16(1).u16(4000).u16(2).u16(191).u16(3);
+        completeAfterMaterial(frame);
+        expectReject(frame, "runs short multi");
     }
     SUBCASE("overrun") {
         FrameBuilder frame;
         frame.header(7);
         frame.u8(2).u8(kModeRle).u16(2).u16(8192).u16(0).u16(1).u16(0);
+        completeAfterMaterial(frame);
         expectReject(frame, "runs overrun");
     }
     SUBCASE("zero-length run") {
         FrameBuilder frame;
         frame.header(7);
         frame.u8(2).u8(kModeRle).u16(2).u16(0).u16(0).u16(8192).u16(0);
+        completeAfterMaterial(frame);
         expectReject(frame, "zero run");
     }
+}
+
+TEST_CASE("a frame whose declared runCount stops early is rejected") {
+    // runCount = 0 with a fully-formed remainder: the lane covers no cells at
+    // all and every following byte still parses.
+    FrameBuilder frame;
+    frame.header(7);
+    frame.u8(2).u8(kModeRle).u16(0);
+    completeAfterMaterial(frame);
+    expectReject(frame, "zero runCount");
 }
 
 TEST_CASE("an unknown encoding mode is rejected") {

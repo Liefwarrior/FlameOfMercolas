@@ -33,6 +33,12 @@ std::vector<std::uint8_t> readAllBytes(const std::filesystem::path& path) {
 const fx::BakedWorldFacts kAllWorlds[] = {fx::kTavernFixture, fx::kDocksSurface,
                                           fx::kCompoundBlock};
 
+/// Forces a section read and consumes the result, so section()'s [[nodiscard]]
+/// is honoured inside doctest's throw-assertion macros.
+std::size_t sectionSize(TrojSav& save, SectionId id) {
+    return save.section(id).size();
+}
+
 }  // namespace
 
 TEST_CASE("every shipped .trojsav opens with the expected header") {
@@ -113,7 +119,7 @@ TEST_CASE("section blobs are zlib-wrapped, not raw deflate") {
 
 TEST_CASE("an absent section is an error, not an empty result") {
     TrojSav save = TrojSav::readFile(fx::bakedMap(fx::kTavernFixture.name));
-    CHECK_THROWS_AS(save.section(sections::kFlud), FormatError);
+    CHECK_THROWS_AS(sectionSize(save, sections::kFlud), FormatError);
 }
 
 // ---------------------------------------------------------------------------
@@ -178,9 +184,9 @@ TEST_CASE("a CRC32C mismatch is rejected on access, not at open") {
     TrojSav save = TrojSav::readBytes(bytes, "mutated");
     CHECK(save.toc().size() == 2);
     // WRLD is untouched and still readable.
-    CHECK_NOTHROW(save.section(sections::kWrld));
+    CHECK_NOTHROW(sectionSize(save, sections::kWrld));
     // META now fails its checksum.
-    CHECK_THROWS_AS(save.section(sections::kMeta), FormatError);
+    CHECK_THROWS_AS(sectionSize(save, sections::kMeta), FormatError);
 }
 
 TEST_CASE("a corrupt compressed blob is rejected") {
@@ -192,7 +198,7 @@ TEST_CASE("a corrupt compressed blob is rejected") {
         bytes[i] ^= 0xA5;
     }
     TrojSav save = TrojSav::readBytes(bytes, "mutated");
-    CHECK_THROWS_AS(save.section(sections::kWrld), FormatError);
+    CHECK_THROWS_AS(sectionSize(save, sections::kWrld), FormatError);
 }
 
 TEST_CASE("a wrong declared uncompressed length is rejected") {
@@ -201,7 +207,7 @@ TEST_CASE("a wrong declared uncompressed length is rejected") {
     const std::size_t field = 36 + 32 + 20;
     bytes[field] = static_cast<std::uint8_t>(bytes[field] ^ 0x01);
     TrojSav save = TrojSav::readBytes(bytes, "mutated");
-    CHECK_THROWS_AS(save.section(sections::kWrld), FormatError);
+    CHECK_THROWS_AS(sectionSize(save, sections::kWrld), FormatError);
 }
 
 TEST_CASE("opening a file that does not exist is an error") {

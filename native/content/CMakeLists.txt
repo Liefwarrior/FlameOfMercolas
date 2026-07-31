@@ -84,11 +84,18 @@ if(GRANADAD_BUILD_TESTS)
 
     # The tests read the real baked worlds. content/ is the owner's canon and is
     # READ-ONLY: nothing in this build ever writes into it.
-    get_filename_component(GRANADAD_REPO_CONTENT_DIR
+    #
+    # Overridable so the module can be configured from a copied or relocated
+    # source tree (mutation testing, vendoring) rather than only from its home
+    # in the repo.
+    get_filename_component(GRANADAD_DEFAULT_CONTENT_DIR
         "${CMAKE_CURRENT_SOURCE_DIR}/../../content" ABSOLUTE)
-    if(NOT EXISTS "${GRANADAD_REPO_CONTENT_DIR}/maps/baked/tavern_fixture.trojsav")
+    set(GRANADAD_CONTENT_DIR "${GRANADAD_DEFAULT_CONTENT_DIR}" CACHE PATH
+        "Repo content/ directory holding the baked .trojsav worlds the tests read")
+    if(NOT EXISTS "${GRANADAD_CONTENT_DIR}/maps/baked/tavern_fixture.trojsav")
         message(FATAL_ERROR
-            "granadad-content tests need the baked worlds at ${GRANADAD_REPO_CONTENT_DIR}/maps/baked")
+            "granadad-content tests need the baked worlds at "
+            "${GRANADAD_CONTENT_DIR}/maps/baked — pass -DGRANADAD_CONTENT_DIR=<repo>/content")
     endif()
 
     add_executable(granadad-content-tests
@@ -101,7 +108,7 @@ if(GRANADAD_BUILD_TESTS)
     )
     target_link_libraries(granadad-content-tests PRIVATE granadad-content doctest::doctest)
     target_compile_definitions(granadad-content-tests PRIVATE
-        "GRANADAD_CONTENT_DIR=\"${GRANADAD_REPO_CONTENT_DIR}\"")
+        "GRANADAD_CONTENT_DIR=\"${GRANADAD_CONTENT_DIR}\"")
     granadad_apply_determinism(granadad-content-tests)
 
     # Per-test-case ctest entries when doctest ships its discovery module,
