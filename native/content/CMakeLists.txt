@@ -62,6 +62,13 @@ if(NOT COMMAND granadad_apply_determinism)
                 -fno-fast-math
                 -ffp-contract=off
                 -fno-strict-aliasing)
+            target_compile_options(${target} PRIVATE
+                "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=."
+                "-ffile-prefix-map=${CMAKE_BINARY_DIR}=./build")
+            if(FETCHCONTENT_BASE_DIR)
+                target_compile_options(${target} PRIVATE
+                    "-ffile-prefix-map=${FETCHCONTENT_BASE_DIR}=./deps")
+            endif()
         endif()
     endfunction()
 
