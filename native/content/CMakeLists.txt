@@ -233,4 +233,18 @@ if(GRANADAD_BUILD_TESTS)
     else()
         add_test(NAME granadad-content-tests COMMAND granadad-content-tests)
     endif()
+
+    # The cross-toolchain comparator gets its own ctest entry so it cannot rot
+    # in silence. It is the thing the Windows run is compared AGAINST, and a
+    # comparator that has quietly stopped producing a report would take the
+    # whole cross-platform determinism claim down with it while every other
+    # test stayed green — which is precisely the shape of the gap #75 closed.
+    #
+    # Skipped when cross-compiling, for the same reason doctest's discovery is:
+    # the Windows .exe cannot be executed on the Linux build host.
+    if(NOT CMAKE_CROSSCOMPILING)
+        add_test(NAME granadad-content-fingerprint
+            COMMAND granadad-content-tests --fingerprint
+                    "${CMAKE_CURRENT_BINARY_DIR}/content-fingerprint.txt")
+    endif()
 endif()

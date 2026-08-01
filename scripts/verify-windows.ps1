@@ -1,5 +1,5 @@
 <#
-Granadad: The Darkstreets — the half of the build gate that only Windows can run.
+Granadad: The Darkstreets -- the half of the build gate that only Windows can run.
 
     docker compose run --rm --build build      <- compiles, and proves Linux/GCC
     .\scripts\verify-windows.ps1               <- proves mingw/Windows, and compares
@@ -9,7 +9,7 @@ WHY THIS SCRIPT EXISTS
 sim-core bans float/double so that the same bytes decode to the same world
 state on every toolchain. Until task #75 that claim had been tested on exactly
 one toolchain. The docker build cross-compiled granadad-content-tests.exe and
-then threw it away unexecuted — it had to, because the content directory was a
+then threw it away unexecuted -- it had to, because the content directory was a
 compile-time constant naming a path inside the build container.
 
 The container still cannot finish the job: it cannot run a PE binary, and
@@ -20,14 +20,19 @@ WHAT IT PROVES
 --------------
 1. The 57-case content suite passes under mingw/Windows, not just GCC/Linux.
 2. The stronger comparator: both platforms emit a report of the DECODED state
-   of every shipped world — section CRCs of what miniz inflated, a CRC32C over
+   of every shipped world -- section CRCs of what miniz inflated, a CRC32C over
    every decoded lane, and per-form / per-material / per-flags / per-fluid
-   histograms over all ~2.7M tiles — and the two reports are compared byte for
+   histograms over all ~2.7M tiles -- and the two reports are compared byte for
    byte. "57 passed" on both sides is a weak comparator: the two strings are
    equal no matter what the binaries decoded. These bytes are not.
 
 A difference here is a REAL FINDING, not a flaky test. Report it; do not
 regenerate the Linux side to make it match.
+
+ASCII ONLY, deliberately. Windows PowerShell 5.1 reads a BOM-less .ps1 as the
+system ANSI code page, so a single em dash in a comment makes the whole file
+fail to parse -- which is how this script first ran. It has to work under both
+5.1 (`powershell`) and 7 (`pwsh`), so it stays in the 7-bit range.
 #>
 
 [CmdletBinding()]
@@ -72,7 +77,7 @@ Require $exe         'Run: docker compose run --rm --build build'
 Require $linuxReport 'Run: docker compose run --rm --build build (it publishes the Linux report).'
 
 # The whole point of task #75: the path is an argument to the binary, not a
-# constant inside it. Set for this process only — nothing persistent.
+# constant inside it. Set for this process only -- nothing persistent.
 $env:GRANADAD_CONTENT_DIR = $ContentDir
 
 # --- 1. the suites, natively -----------------------------------------------
@@ -83,7 +88,7 @@ Write-Host '--- 1. the content suite, under mingw/Windows'
 $suiteExit = $LASTEXITCODE
 Write-Host "    exit code: $suiteExit"
 if ($suiteExit -ne 0) {
-    Fail "the content suite failed on Windows (exit $suiteExit) — it passes on Linux/GCC, so this is a genuine cross-toolchain divergence."
+    Fail "the content suite failed on Windows (exit $suiteExit) -- it passes on Linux/GCC, so this is a genuine cross-toolchain divergence."
 }
 
 if (Test-Path -LiteralPath $simExe) {
@@ -148,12 +153,12 @@ the two toolchains decoded the owner's worlds DIFFERENTLY.
         justifies banning float/double from sim-core does not hold on these
         two targets. Do NOT regenerate either report to make them agree.
 
-        Both reports are in dist/ — keep them.
+        Both reports are in dist/ -- keep them.
 '@
 }
 
 Write-Host ''
-Write-Host '  IDENTICAL — the two toolchains decoded every shipped world to the same state.' -ForegroundColor Green
+Write-Host '  IDENTICAL -- the two toolchains decoded every shipped world to the same state.' -ForegroundColor Green
 Write-Host ''
 Write-Host '=== PASS ==='
 Write-Host '  linux/gcc     : 57 content cases + report'

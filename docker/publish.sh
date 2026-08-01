@@ -32,17 +32,23 @@ echo ""
 cd "$DEST"
 for f in *; do
     [ -f "$f" ] || continue
-    printf '  %-28s %10s bytes\n' "$f" "$(wc -c < "$f" | tr -d ' ')"
+    printf '  %-34s %10s bytes\n' "$f" "$(wc -c < "$f" | tr -d ' ')"
 done
-echo ""
-echo "The build gate is only HALF done. This container cannot execute a PE"
-echo "binary, so the mingw/Windows side of the determinism check — the content"
-echo "suite, and the byte-for-byte comparison of the decoded world state"
-echo "against content-fingerprint-linux-gcc.txt — has to run on the host:"
-echo ""
-echo "    powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-windows.ps1"
-echo ""
-echo "Run the game natively on Windows:"
-echo "    .\\dist\\granadad.exe --selftest"
-echo "    .\\dist\\granadad.exe"
-echo ""
+
+# printf, not echo. /bin/sh here is dash, whose echo expands backslash escapes
+# with no way to turn it off: `echo ".\scripts\verify-windows.ps1"` prints
+# ".\scripts<VT>erify-windows.ps1", because \v is a vertical tab. The one thing
+# this block exists to do is print a command the owner can copy, so it cannot
+# be allowed to mangle Windows paths.
+printf '%s\n' ""
+printf '%s\n' "The build gate is only HALF done. This container cannot execute a PE"
+printf '%s\n' "binary, so the mingw/Windows side of the determinism check - the content"
+printf '%s\n' "suite, and the byte-for-byte comparison of the decoded world state"
+printf '%s\n' "against content-fingerprint-linux-gcc.txt - has to run on the host:"
+printf '%s\n' ""
+printf '%s\n' "    powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-windows.ps1"
+printf '%s\n' ""
+printf '%s\n' "Run the game natively on Windows:"
+printf '%s\n' "    .\\dist\\granadad.exe --selftest"
+printf '%s\n' "    .\\dist\\granadad.exe"
+printf '%s\n' ""
