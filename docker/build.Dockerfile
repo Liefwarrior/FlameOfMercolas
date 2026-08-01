@@ -191,6 +191,34 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
            exit 1;; esac; \
     echo "ok: determinism codegen reaches miniz; -Werror reaches only our code"; \
     \
+    # ----------------------------------------------------------------------
+    # No unordered containers. Checked by grep, and that is not laziness.
+    # ----------------------------------------------------------------------
+    # std::unordered_map's iteration order is a function of the keys, the
+    # insertion sequence and the standard library's bucket policy. Two runs of
+    # the same binary in the same process therefore AGREE -- which means the
+    # twin-run gate, the one check that catches nondeterminism, is structurally
+    # blind to this. It only diverges against another machine, another libstdc++
+    # or another toolchain, which is exactly when it is most expensive to find.
+    #
+    # So it is banned outright and the ban is enforced here, at the only place
+    # that can see it. Sorted or dense-index containers, everywhere, tests
+    # included. The one hit allowed is the word appearing in a comment that
+    # explains this rule.
+    echo "=== no unordered containers anywhere in native/ ==="; \
+    if grep -rn --include=*.cpp --include=*.hpp \
+         'std::unordered_\(map\|set\|multimap\|multiset\)' /src/native \
+         | grep -v '^\s*//' | grep -v '// *.*unordered' | grep -v '^[^:]*:[0-9]*: *\*' \
+         | grep -v '^[^:]*:[0-9]*:\s*//'; then \
+        echo "FATAL: an unordered container reached native/. Iteration order is"; \
+        echo "       then a property of the standard library, and the twin-run"; \
+        echo "       gate CANNOT see it: both runs share a process and agree"; \
+        echo "       with each other while disagreeing with every other machine."; \
+        echo "       Use std::map, a sorted vector, or a dense index."; \
+        exit 1; \
+    fi; \
+    echo "ok: no std::unordered_* in native/"; \
+    \
     # A gate is only worth what it covers. Before this check the suite was one
     # test — fixed.hpp — while ctest cheerfully printed "100% tests passed,
     # 1 tests out of 1" and everyone read the word "passed". The 57 TROJSAV
@@ -200,8 +228,14 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # module falls out of the build, or doctest's per-case discovery quietly
     # collapses to a single entry, this fails instead of shrinking in silence.
     # Raise the floor when the suite grows; never lower it to make a build pass.
+    #
+    # M1: 59 -> 128. The jump is mostly granadad-tests, which used to be ONE
+    # ctest entry for the whole binary no matter how many cases it held --
+    # doctest_discover_tests now registers it per case, so the sim suite is
+    # visible to this floor for the first time. The remainder is the twin-run
+    # gate and the world-hash fingerprint, one entry each.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=50; \
+    GRANADAD_MIN_TESTS=128; \
     test_count="$(ctest --test-dir /build-cache/hostcheck -N \
         | sed -n 's/^Total Tests: *//p')"; \
     echo "ctest knows about ${test_count} tests (floor: ${GRANADAD_MIN_TESTS})"; \
@@ -216,6 +250,16 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         || { echo "FATAL: the TROJSAV cases that load the real baked worlds are not"; \
              echo "       registered. The gate would pass without ever opening a"; \
              echo "       .trojsav file."; exit 1; }; \
+    ctest --test-dir /build-cache/hostcheck -N | grep -q "granadad-twin-run-gate" \
+        || { echo "FATAL: the twin-run gate is not registered with ctest. It is the"; \
+             echo "       only check here that can catch NONDETERMINISM rather than"; \
+             echo "       incorrectness, and every other guarantee rests on it."; \
+             exit 1; }; \
+    ctest --test-dir /build-cache/hostcheck -N \
+        | grep -q "every shipped world hashes to exactly what the JVM said" \
+        || { echo "FATAL: the case that compares the C++ world hash against the"; \
+             echo "       JVM's is not registered. Without it the hasher is only"; \
+             echo "       being compared to itself."; exit 1; }; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \
@@ -226,6 +270,23 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     echo "=== what the gate actually proved ==="; \
     /build-cache/hostcheck/bin/granadad-tests | tail -3; \
     /build-cache/hostcheck/bin/granadad-content-tests | tail -3; \
+    \
+    # ----------------------------------------------------------------------
+    # The twin-run gate, at length, with its output in the build log.
+    # ----------------------------------------------------------------------
+    # ctest already ran it -- and ctest prints "Passed", which is the same three
+    # letters whether the gate compared two runs or compared nothing. This runs
+    # it long and prints what it actually compared, so the log states the claim
+    # rather than asserting it.
+    echo "=== the twin-run determinism gate ==="; \
+    /build-cache/hostcheck/bin/granadad-twin-gate --ticks 2000 --walkers 128; \
+    \
+    # A gate that has never been observed going red has not been shown to work.
+    # Its two comparators are unit-tested against synthetic divergence in
+    # native/tests/test_twin_gate.cpp; the whole-gate mutation proof is a manual
+    # run against a scratch copy of the tree and is recorded in the M1 report,
+    # not here -- deliberately introducing nondeterminism inside the build that
+    # is supposed to reject it would be a hard thing to ever remove safely.
     \
     # ----------------------------------------------------------------------
     # Half of the cross-toolchain comparison. The other half only Windows can
@@ -270,11 +331,43 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     GRANADAD_CONTENT_DIR=/relocated /build-cache/hostcheck/bin/granadad-content-tests | tail -3; \
     echo "ok: the env var selects the worlds, and the report ignores the path"; \
     \
+    # ----------------------------------------------------------------------
+    # The same treatment for the SIMULATION half, added in M1.
+    # ----------------------------------------------------------------------
+    # The content fingerprint proves both toolchains DECODE the shipped worlds
+    # to the same bytes. It says nothing about whether those bytes then HASH the
+    # same, or whether a run over them lands in the same place -- and those are
+    # the two claims M1 adds. So the world-hash report gets the identical
+    # treatment: relocation-invariant, bogus-path-fatal, published for Windows
+    # to match byte for byte.
+    echo "=== the world hash and a run over it, on this toolchain ==="; \
+    /build-cache/hostcheck/bin/granadad-twin-gate \
+        --fingerprint /out/world-hash-linux-gcc.txt; \
+    GRANADAD_CONTENT_DIR=/relocated \
+        /build-cache/hostcheck/bin/granadad-twin-gate \
+        --fingerprint /tmp/relocated-world-hash.txt; \
+    cmp /out/world-hash-linux-gcc.txt /tmp/relocated-world-hash.txt \
+        || { echo "FATAL: the same worlds read from a different directory hashed"; \
+             echo "       differently. The report describes world state and must"; \
+             echo "       say nothing about where it was read from."; exit 1; }; \
+    if GRANADAD_CONTENT_DIR=/definitely-not-a-directory \
+       /build-cache/hostcheck/bin/granadad-twin-gate \
+       --fingerprint /tmp/should-not-exist.txt >/dev/null 2>&1; then \
+        echo "FATAL: a bogus GRANADAD_CONTENT_DIR still produced a world-hash"; \
+        echo "       report, so the variable is being ignored and the Windows"; \
+        echo "       .exe would silently compare nothing."; \
+        exit 1; \
+    fi; \
+    \
     echo "=== linux/gcc side of the comparison ==="; \
-    wc -c < /out/content-fingerprint-linux-gcc.txt | xargs echo "report bytes:"; \
-    sha256sum /out/content-fingerprint-linux-gcc.txt; \
+    for report in content-fingerprint-linux-gcc.txt world-hash-linux-gcc.txt; do \
+        echo "--- $report"; \
+        wc -c < "/out/$report" | xargs echo "    report bytes:"; \
+        sha256sum "/out/$report"; \
+    done; \
     head -8 /out/content-fingerprint-linux-gcc.txt; \
     echo "        [...]"; \
+    grep -E 'hash\.(wrld|combined) |run\.(wrld|combined) ' /out/world-hash-linux-gcc.txt; \
     \
     echo "=== cross-compile: Windows x86-64 .exe ==="; \
     cmake -S /src/native -B /build-cache/win -G Ninja \
@@ -322,7 +415,8 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # in a refactor and the build stays green while the cross-toolchain claim
     # quietly reverts to one toolchain. That is exactly how this gap was born.
     echo "=== the windows half must actually ship ==="; \
-    for required in granadad-content-tests.exe content-fingerprint-linux-gcc.txt; do \
+    for required in granadad-content-tests.exe content-fingerprint-linux-gcc.txt \
+                    granadad-tests.exe granadad-twin-gate.exe world-hash-linux-gcc.txt; do \
         test -f "/out/$required" \
             || { echo "FATAL: /out/$required is missing. Without it the"; \
                  echo "       cross-toolchain comparison cannot be run on Windows"; \

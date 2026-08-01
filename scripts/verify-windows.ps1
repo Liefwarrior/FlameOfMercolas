@@ -22,13 +22,23 @@ here, on the machine the binary actually ships to.
 
 WHAT IT PROVES
 --------------
-1. The 57-case content suite passes under mingw/Windows, not just GCC/Linux.
-2. The stronger comparator: both platforms emit a report of the DECODED state
-   of every shipped world -- section CRCs of what miniz inflated, a CRC32C over
-   every decoded lane, and per-form / per-material / per-flags / per-fluid
-   histograms over all ~2.7M tiles -- and the two reports are compared byte for
-   byte. "57 passed" on both sides is a weak comparator: the two strings are
-   equal no matter what the binaries decoded. These bytes are not.
+1. The content suite and the sim suite both pass under mingw/Windows, not just
+   GCC/Linux, and the twin-run determinism gate passes there too.
+2. The stronger comparator, now in two halves, both compared byte for byte:
+
+   content-fingerprint  the DECODED state of every shipped world -- section
+                        CRCs of what miniz inflated, a CRC32C over every
+                        decoded lane, and per-form / per-material / per-flags
+                        / per-fluid histograms over all ~2.7M tiles.
+
+   world-hash           the canonical world HASH of every shipped world, plus
+                        the final per-section hashes of a fixed simulation run
+                        over it. Added in M1: the fingerprint proves the two
+                        toolchains read the same bytes, and this proves they
+                        then hash and simulate them the same way.
+
+   "N passed" on both sides is a weak comparator: the two strings are equal no
+   matter what the binaries decoded. These bytes are not.
 
 A difference here is a REAL FINDING, not a flaky test. Report it; do not
 regenerate the Linux side to make it match.
@@ -60,8 +70,11 @@ if (-not $DistDir)    { $DistDir    = Join-Path $repoRoot 'dist' }
 
 $exe        = Join-Path $DistDir 'granadad-content-tests.exe'
 $simExe     = Join-Path $DistDir 'granadad-tests.exe'
+$gateExe    = Join-Path $DistDir 'granadad-twin-gate.exe'
 $linuxReport = Join-Path $DistDir 'content-fingerprint-linux-gcc.txt'
 $winReport   = Join-Path $DistDir 'content-fingerprint-windows-mingw.txt'
+$linuxHashReport = Join-Path $DistDir 'world-hash-linux-gcc.txt'
+$winHashReport   = Join-Path $DistDir 'world-hash-windows-mingw.txt'
 
 function Fail([string] $message, [int] $code = 1) {
     Write-Host ''
@@ -73,6 +86,59 @@ function Require([string] $path, [string] $why) {
     if (-not (Test-Path -LiteralPath $path)) {
         Fail "$path is missing.`n        $why" 2
     }
+}
+
+# Byte-for-byte, with a line-level explanation when it fails. Returns nothing;
+# calls Fail and exits when the two files differ.
+function CompareReports([string] $label, [string] $linuxPath, [string] $winPath, [string] $meaning) {
+    $linuxBytes = [System.IO.File]::ReadAllBytes($linuxPath)
+    $winBytes   = [System.IO.File]::ReadAllBytes($winPath)
+
+    $lHash = (Get-FileHash -LiteralPath $linuxPath -Algorithm SHA256).Hash
+    $wHash = (Get-FileHash -LiteralPath $winPath   -Algorithm SHA256).Hash
+
+    Write-Host ("  {0}" -f $label)
+    Write-Host ("    linux/gcc     {0,7} bytes  sha256 {1}" -f $linuxBytes.Length, $lHash)
+    Write-Host ("    mingw/windows {0,7} bytes  sha256 {1}" -f $winBytes.Length, $wHash)
+
+    $firstDiff = -1
+    $shared = [Math]::Min($linuxBytes.Length, $winBytes.Length)
+    for ($i = 0; $i -lt $shared; $i++) {
+        if ($linuxBytes[$i] -ne $winBytes[$i]) { $firstDiff = $i; break }
+    }
+    if ($firstDiff -lt 0 -and $linuxBytes.Length -ne $winBytes.Length) { $firstDiff = $shared }
+
+    if ($firstDiff -lt 0) {
+        Write-Host '    IDENTICAL' -ForegroundColor Green
+        return
+    }
+
+    Write-Host ''
+    Write-Host "  FIRST DIFFERENCE AT BYTE OFFSET $firstDiff" -ForegroundColor Red
+    # Line-level, so the finding is readable rather than a hex dump.
+    $linuxLines = [System.IO.File]::ReadAllLines($linuxPath)
+    $winLines   = [System.IO.File]::ReadAllLines($winPath)
+    $maxLines = [Math]::Max($linuxLines.Length, $winLines.Length)
+    $shown = 0
+    for ($n = 0; $n -lt $maxLines -and $shown -lt 40; $n++) {
+        $l = if ($n -lt $linuxLines.Length) { $linuxLines[$n] } else { '<missing>' }
+        $w = if ($n -lt $winLines.Length)   { $winLines[$n]   } else { '<missing>' }
+        if ($l -ne $w) {
+            Write-Host ("  line {0}" -f ($n + 1)) -ForegroundColor Yellow
+            Write-Host ("    linux/gcc     : {0}" -f $l)
+            Write-Host ("    mingw/windows : {0}" -f $w)
+            $shown++
+        }
+    }
+    Fail @"
+the two toolchains disagreed about $meaning.
+
+        This is a real finding, not a flaky test. The determinism claim that
+        justifies banning float/double from sim-core does not hold on these
+        two targets. Do NOT regenerate either report to make them agree.
+
+        Both reports are in dist/ -- keep them.
+"@
 }
 
 Write-Host '=== granadad: windows half of the cross-toolchain gate ==='
@@ -96,9 +162,11 @@ if ($Build) {
     if ($buildExit -ne 0) { Fail "the docker build failed (exit $buildExit); nothing downstream of it is worth running." $buildExit }
 }
 
-Require $ContentDir  'This is the owner''s read-only canon; the suite reads content\maps\baked from it.'
-Require $exe         'Run: docker compose run --rm --build build'
-Require $linuxReport 'Run: docker compose run --rm --build build (it publishes the Linux report).'
+Require $ContentDir      'This is the owner''s read-only canon; the suite reads content\maps\baked from it.'
+Require $exe             'Run: docker compose run --rm --build build'
+Require $gateExe         'Run: docker compose run --rm --build build (it publishes the twin-run gate).'
+Require $linuxReport     'Run: docker compose run --rm --build build (it publishes the Linux report).'
+Require $linuxHashReport 'Run: docker compose run --rm --build build (it publishes the Linux world-hash report).'
 
 # The whole point of task #75: the path is an argument to the binary, not a
 # constant inside it. Set for this process only -- nothing persistent.
@@ -122,70 +190,42 @@ if (Test-Path -LiteralPath $simExe) {
     if ($LASTEXITCODE -ne 0) { Fail "granadad-tests.exe failed on Windows (exit $LASTEXITCODE)." }
 }
 
-# --- 2. the comparator ------------------------------------------------------
+Write-Host ''
+Write-Host '--- 1c. the twin-run determinism gate, under mingw/Windows'
+# The gate proved determinism WITHIN the Linux process. Running it here proves
+# it within a Windows process too -- a different allocator, a different C
+# runtime, a different startup order.
+& $gateExe --ticks 2000 --walkers 128
+if ($LASTEXITCODE -ne 0) { Fail "the twin-run gate failed on Windows (exit $LASTEXITCODE) -- it passes on Linux/GCC, so the same seed produced two different runs in a Windows process." }
+
+# --- 2. the comparators -----------------------------------------------------
 
 Write-Host ''
-Write-Host '--- 2. the decoded-state report, under mingw/Windows'
-if (Test-Path -LiteralPath $winReport) { Remove-Item -LiteralPath $winReport -Force }
+Write-Host '--- 2. the two reports, under mingw/Windows'
+if (Test-Path -LiteralPath $winReport)     { Remove-Item -LiteralPath $winReport -Force }
+if (Test-Path -LiteralPath $winHashReport) { Remove-Item -LiteralPath $winHashReport -Force }
+
 & $exe --fingerprint $winReport
-if ($LASTEXITCODE -ne 0) { Fail "could not produce the Windows report (exit $LASTEXITCODE)." }
-Require $winReport 'the binary reported success but wrote nothing.'
+if ($LASTEXITCODE -ne 0) { Fail "could not produce the Windows content report (exit $LASTEXITCODE)." }
+Require $winReport 'granadad-content-tests.exe reported success but wrote nothing.'
+
+& $gateExe --fingerprint $winHashReport
+if ($LASTEXITCODE -ne 0) { Fail "could not produce the Windows world-hash report (exit $LASTEXITCODE)." }
+Require $winHashReport 'granadad-twin-gate.exe reported success but wrote nothing.'
 
 # --- 3. byte for byte -------------------------------------------------------
 
 Write-Host ''
 Write-Host '--- 3. byte-for-byte comparison'
 
-$linuxBytes = [System.IO.File]::ReadAllBytes($linuxReport)
-$winBytes   = [System.IO.File]::ReadAllBytes($winReport)
-
-$linuxHash = (Get-FileHash -LiteralPath $linuxReport -Algorithm SHA256).Hash
-$winHash   = (Get-FileHash -LiteralPath $winReport   -Algorithm SHA256).Hash
-
-Write-Host ("  linux/gcc     {0,7} bytes  sha256 {1}" -f $linuxBytes.Length, $linuxHash)
-Write-Host ("  mingw/windows {0,7} bytes  sha256 {1}" -f $winBytes.Length, $winHash)
-
-$firstDiff = -1
-$shared = [Math]::Min($linuxBytes.Length, $winBytes.Length)
-for ($i = 0; $i -lt $shared; $i++) {
-    if ($linuxBytes[$i] -ne $winBytes[$i]) { $firstDiff = $i; break }
-}
-if ($firstDiff -lt 0 -and $linuxBytes.Length -ne $winBytes.Length) { $firstDiff = $shared }
-
-if ($firstDiff -ge 0) {
-    Write-Host ''
-    Write-Host "  FIRST DIFFERENCE AT BYTE OFFSET $firstDiff" -ForegroundColor Red
-    # Line-level, so the finding is readable rather than a hex dump.
-    $linuxLines = [System.IO.File]::ReadAllLines($linuxReport)
-    $winLines   = [System.IO.File]::ReadAllLines($winReport)
-    $maxLines = [Math]::Max($linuxLines.Length, $winLines.Length)
-    $shown = 0
-    for ($n = 0; $n -lt $maxLines -and $shown -lt 40; $n++) {
-        $l = if ($n -lt $linuxLines.Length) { $linuxLines[$n] } else { '<missing>' }
-        $w = if ($n -lt $winLines.Length)   { $winLines[$n]   } else { '<missing>' }
-        if ($l -ne $w) {
-            Write-Host ("  line {0}" -f ($n + 1)) -ForegroundColor Yellow
-            Write-Host ("    linux/gcc     : {0}" -f $l)
-            Write-Host ("    mingw/windows : {0}" -f $w)
-            $shown++
-        }
-    }
-    Fail @'
-the two toolchains decoded the owner's worlds DIFFERENTLY.
-
-        This is a real finding, not a flaky test. The determinism claim that
-        justifies banning float/double from sim-core does not hold on these
-        two targets. Do NOT regenerate either report to make them agree.
-
-        Both reports are in dist/ -- keep them.
-'@
-}
+CompareReports 'decoded world state' $linuxReport $winReport `
+    'what the shipped worlds DECODE to'
+CompareReports 'world hash + simulation run' $linuxHashReport $winHashReport `
+    'what the shipped worlds HASH to, or where a run over them ends up'
 
 Write-Host ''
-Write-Host '  IDENTICAL -- the two toolchains decoded every shipped world to the same state.' -ForegroundColor Green
-Write-Host ''
-Write-Host '=== PASS ==='
-Write-Host '  linux/gcc     : 57 content cases + report'
-Write-Host '  mingw/windows : 57 content cases + report'
-Write-Host '  comparison    : byte-for-byte identical'
+Write-Host '=== PASS ===' -ForegroundColor Green
+Write-Host '  linux/gcc     : content suite + sim suite + twin-run gate + both reports'
+Write-Host '  mingw/windows : content suite + sim suite + twin-run gate + both reports'
+Write-Host '  comparison    : both reports byte-for-byte identical'
 exit 0

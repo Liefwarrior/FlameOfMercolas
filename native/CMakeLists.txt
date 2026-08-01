@@ -130,6 +130,41 @@ granadad_apply_determinism(granadad-sim)
 # than discovering a rendering type leaked into simulation state later.
 
 # ---------------------------------------------------------------------------
+# granadad-gate — the twin-run determinism gate.
+#
+# A library plus a thin executable, rather than one main.cpp, so the comparators
+# and the workload are reachable from the doctest suite. A gate whose own logic
+# is untested is a gate you find out about on the day it should have gone red.
+# ---------------------------------------------------------------------------
+add_library(granadad-gate STATIC
+    src/gate/workload.cpp
+    src/gate/twin_run.cpp
+    src/gate/world_hash_report.cpp
+)
+target_include_directories(granadad-gate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(granadad-gate PUBLIC granadad-sim)
+# Same runtime-first / compile-time-default contract the content suite uses: the
+# path baked in here is the build container's and does not exist on the machine
+# the .exe ships to, so $GRANADAD_CONTENT_DIR overrides it. See
+# granadad/content/content_dir.hpp for the incident that made that necessary.
+#
+# PUBLIC: content_dir.hpp is header-only and #errors without this define, so
+# every target that includes it needs it — including granadad-twin-gate, which
+# is a separate target from the library that holds the report.
+target_compile_definitions(granadad-gate PUBLIC
+    "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
+if(MSVC)
+    # VERIFICATION GAP (M1): std::getenv under /WX, never compiled — no MSVC here.
+    target_compile_definitions(granadad-gate PUBLIC _CRT_SECURE_NO_WARNINGS)
+endif()
+granadad_apply_determinism(granadad-gate)
+
+add_executable(granadad-twin-gate src/gate/main.cpp)
+target_link_libraries(granadad-twin-gate PRIVATE granadad-gate)
+granadad_apply_determinism(granadad-twin-gate)
+granadad_static_runtime(granadad-twin-gate)
+
+# ---------------------------------------------------------------------------
 # client-observer — the SDL3 window. Floats are legal HERE and only here.
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_CLIENT)
@@ -152,20 +187,17 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_rng.cpp
         tests/test_world_hash.cpp
         tests/test_engine.cpp
+        tests/test_twin_gate.cpp
     )
-    target_link_libraries(granadad-tests PRIVATE granadad-sim doctest::doctest)
+    target_link_libraries(granadad-tests PRIVATE granadad-gate doctest::doctest)
 
-    # tests/test_world_hash.cpp loads the real baked worlds and compares the C++
-    # hash against what a JVM produced from the same files, so it needs the
-    # content directory — resolved through granadad/content/content_dir.hpp,
-    # the ONE implementation of the runtime-env-first,
-    # compile-time-default-second order the docker build actually proves.
-    target_compile_definitions(granadad-tests PRIVATE
-        "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
-    if(MSVC)
-        # VERIFICATION GAP (M1): std::getenv under /WX, never compiled here.
-        target_compile_definitions(granadad-tests PRIVATE _CRT_SECURE_NO_WARNINGS)
-    endif()
+    # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
+    # granadad-gate's PUBLIC compile definitions. tests/test_world_hash.cpp
+    # loads the real baked worlds and compares the C++ hash against what a JVM
+    # produced from the same files, so it needs the content directory —
+    # resolved through granadad/content/content_dir.hpp, which is the ONE
+    # implementation of the runtime-env-first, compile-time-default-second
+    # order the docker build actually proves.
 
     granadad_apply_determinism(granadad-tests)
     granadad_static_runtime(granadad-tests)
@@ -189,7 +221,18 @@ if(GRANADAD_BUILD_TESTS)
         add_test(NAME granadad-tests COMMAND granadad-tests)
     endif()
 
-endif()
+    # The twin-run gate as a ctest entry. It is the only check in this build that
+    # can catch nondeterminism rather than incorrectness, and a gate that is not
+    # wired into `ctest` is a gate somebody has to remember to run.
+    #
+    # Cross builds skip it for the same reason as above: the .exe does not run
+    # here. scripts/verify-windows.ps1 runs it natively on the other side.
+    if(NOT CMAKE_CROSSCOMPILING)
+        add_test(NAME granadad-twin-run-gate COMMAND granadad-twin-gate)
+        add_test(NAME granadad-world-hash-fingerprint
+            COMMAND granadad-twin-gate --fingerprint
+                    "${CMAKE_CURRENT_BINARY_DIR}/world-hash.txt")
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -209,3 +252,8 @@ if(GRANADAD_BUILD_TESTS)
     # which meant the cross-platform determinism claim rested on one platform.
     install(TARGETS granadad-content-tests RUNTIME DESTINATION .)
 endif()
+
+# The twin-run gate ships whether or not tests are built: it is not a test, it
+# is the determinism proof, and its --fingerprint report is the sim-side half of
+# the cross-toolchain comparison scripts/verify-windows.ps1 completes.
+install(TARGETS granadad-twin-gate RUNTIME DESTINATION .)
