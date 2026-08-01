@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "fixtures.hpp"
+#include "granadad/content/ascii.hpp"
 #include "granadad/content/crc32c.hpp"
 #include "granadad/content/lanes.hpp"
 #include "granadad/content/trojsav.hpp"
@@ -18,53 +19,11 @@
 namespace granadad::content::testing {
 namespace {
 
-// ---------------------------------------------------------------------------
-// formatting, without libc
-// ---------------------------------------------------------------------------
-// std::to_string and snprintf both end up in the C runtime's printf, and the
-// two sides of this comparison link different C runtimes (glibc on Linux,
-// msvcrt through mingw on Windows). For plain integers they would almost
-// certainly agree — but "almost certainly" is the exact substance of the claim
-// under test, so the report does not ask them.
-
-std::string dec(std::uint64_t value) {
-    char buffer[20];
-    std::size_t at = sizeof(buffer);
-    do {
-        buffer[--at] = static_cast<char>('0' + static_cast<int>(value % 10u));
-        value /= 10u;
-    } while (value != 0u);
-    return std::string(buffer + at, sizeof(buffer) - at);
-}
-
-// No std::size_t overload: on both targets here size_t and uint64_t are the
-// same type, so it would be a redefinition rather than an overload.
-
-std::string dec(std::int32_t value) {
-    if (value < 0) {
-        // Negated in unsigned space so INT32_MIN does not overflow.
-        return "-" + dec(0u - static_cast<std::uint64_t>(value));
-    }
-    return dec(static_cast<std::uint64_t>(value));
-}
-
-std::string hexDigits(std::uint64_t value, int digits) {
-    static constexpr char kHex[] = "0123456789ABCDEF";
-    std::string out(static_cast<std::size_t>(digits), '0');
-    for (int i = digits - 1; i >= 0; --i) {
-        out[static_cast<std::size_t>(i)] = kHex[static_cast<std::size_t>(value & 0xFu)];
-        value >>= 4;
-    }
-    return out;
-}
-
-std::string hex32(std::uint32_t value) {
-    return "0x" + hexDigits(value, 8);
-}
-
-std::string hex64(std::uint64_t value) {
-    return "0x" + hexDigits(value, 16);
-}
+// The integer-to-ASCII helpers this file used to carry privately now live in
+// granadad/content/ascii.hpp, because the simulation's world-hash report is the
+// other half of the same cross-toolchain comparison and needed the identical
+// formatting. One copy, so the two reports cannot drift apart in how they
+// render a number. The reasoning for hand-rolling them at all is in that header.
 
 // ---------------------------------------------------------------------------
 // checksums over decoded state
@@ -316,32 +275,10 @@ std::string fingerprintReport() {
 }
 
 bool writeReportFile(const std::string& path, const std::string& text, std::string* error) {
-    const std::filesystem::path target(path);
-    std::FILE* handle = nullptr;
-#if defined(_WIN32)
-    // "wb", and it matters: text mode on Windows would turn every '\n' into
-    // "\r\n" and the byte comparison against the Linux report would fail for a
-    // reason that has nothing to do with the simulation.
-    handle = _wfopen(target.c_str(), L"wb");
-#else
-    handle = std::fopen(target.c_str(), "wb");
-#endif
-    if (handle == nullptr) {
-        if (error != nullptr) {
-            *error = "cannot open for writing: " + path;
-        }
-        return false;
-    }
-    const std::size_t written = std::fwrite(text.data(), 1, text.size(), handle);
-    const bool flushed = std::fflush(handle) == 0;
-    const bool closed = std::fclose(handle) == 0;
-    if (written != text.size() || !flushed || !closed) {
-        if (error != nullptr) {
-            *error = "short write to " + path;
-        }
-        return false;
-    }
-    return true;
+    // Moved to granadad/content/ascii.hpp so the world-hash report writes its
+    // bytes through the identical path. Kept as a name here because the
+    // fingerprint's own main() and its comment history both point at it.
+    return writeTextFile(path, text, error);
 }
 
 }  // namespace granadad::content::testing

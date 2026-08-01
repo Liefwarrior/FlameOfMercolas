@@ -134,6 +134,7 @@ if(NOT TARGET miniz::miniz)
 endif()
 
 add_library(granadad-content STATIC
+    src/ascii.cpp
     src/byte_reader.cpp
     src/chunk_codec.cpp
     src/coords.cpp
