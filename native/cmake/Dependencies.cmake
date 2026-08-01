@@ -33,10 +33,36 @@ endif()
 
 # --- miniz — zlib inflate for the TROJSAV sections.
 # 3.1.2
-set(BUILD_SHARED_LIBS    OFF CACHE BOOL "" FORCE)
-set(MINIZ_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(MINIZ_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(MINIZ_BUILD_HEADER_ONLY OFF CACHE BOOL "" FORCE)
+#
+# The option names are UNPREFIXED, which is upstream's choice and not a typo
+# here. At pin 77d0dce8, miniz/CMakeLists.txt declares:
+#
+#     option(BUILD_EXAMPLES    "Build examples"  ${MINIZ_STANDALONE_PROJECT})
+#     option(BUILD_TESTS       "Build tests"     ${MINIZ_STANDALONE_PROJECT})
+#     option(BUILD_HEADER_ONLY "Build a header-only version" OFF)
+#     option(INSTALL_PROJECT   "Install project" ${MINIZ_STANDALONE_PROJECT})
+#
+# This file used to set MINIZ_BUILD_TESTS / MINIZ_BUILD_EXAMPLES /
+# MINIZ_BUILD_HEADER_ONLY. Those names match nothing upstream: they were three
+# inert cache entries that read, to anyone scanning this file, like they were
+# holding the build down. Fixed in #74 by using the real names.
+#
+# Belt and braces rather than strictly necessary — MINIZ_STANDALONE_PROJECT is
+# OFF whenever PROJECT_NAME is already defined, which it always is by the time
+# FetchContent adds miniz — but a default we do not control is not the same as
+# a decision we made, and stating it costs three lines.
+#
+# The generic names are a shared namespace, so the collision risk is real and
+# worth naming: SDL3 reads SDL_TESTS/SDL_EXAMPLES, nlohmann reads
+# JSON_BuildTests, doctest reads DOCTEST_WITH_TESTS. None of them looks at
+# BUILD_TESTS or BUILD_EXAMPLES, so nothing else in this file is affected. Check
+# again before adding a dependency that does.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS       OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
+set(BUILD_HEADER_ONLY OFF CACHE BOOL "" FORCE)
+set(BUILD_FUZZERS     OFF CACHE BOOL "" FORCE)
+set(INSTALL_PROJECT   OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(miniz
     GIT_REPOSITORY https://github.com/richgel999/miniz.git
     GIT_TAG        77d0dce8627735138c51770d1799a1ef48f2117d
@@ -86,6 +112,19 @@ if(NOT TARGET miniz::miniz)
     endif()
 endif()
 
+# miniz is the zlib inflate behind every TROJSAV section, so the bytes it
+# returns are world state and it compiles with the determinism flags. The full
+# argument — including which of those flags are provably inert for integer
+# DEFLATE and why they are applied anyway — is in Determinism.cmake.
+granadad_apply_determinism_deps(miniz::miniz)
+
+# Third-party headers must not be judged by our -Werror. miniz in particular
+# hands us 19 -Wunused-function warnings through a plain -I include; stb above
+# has always used SYSTEM, and now so does everything else.
+foreach(dep IN ITEMS miniz::miniz doctest::doctest nlohmann_json::nlohmann_json)
+    granadad_mark_headers_system(${dep})
+endforeach()
+
 # Same for SDL: we ask for static, but do not assume we got it.
 if(GRANADAD_BUILD_CLIENT)
     if(TARGET SDL3::SDL3-static)
@@ -98,4 +137,8 @@ if(GRANADAD_BUILD_CLIENT)
         message(FATAL_ERROR "SDL3 built but exposed no usable target")
     endif()
     message(STATUS "granadad: linking SDL via ${GRANADAD_SDL_TARGET}")
+    # Headers only. SDL deliberately does NOT get the determinism codegen flags:
+    # it is renderer-side, never linked into granadad-sim, and nothing it
+    # produces is allowed to reach simulation state. See Determinism.cmake.
+    granadad_mark_headers_system(${GRANADAD_SDL_TARGET})
 endif()

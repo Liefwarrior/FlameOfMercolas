@@ -13,10 +13,18 @@ include(FetchContent)
 # --- miniz — zlib inflate for the TROJSAV sections. NOT used for CRC: miniz's
 # mz_crc32 is IEEE, and TROJSAV carries Castagnoli. See crc32c.hpp.
 # 3.1.2
-set(BUILD_SHARED_LIBS       OFF CACHE BOOL "" FORCE)
-set(MINIZ_BUILD_TESTS       OFF CACHE BOOL "" FORCE)
-set(MINIZ_BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
-set(MINIZ_BUILD_HEADER_ONLY OFF CACHE BOOL "" FORCE)
+#
+# UNPREFIXED option names, upstream's choice, not a typo here — at pin
+# 77d0dce8 miniz declares option(BUILD_TESTS ...), option(BUILD_EXAMPLES ...),
+# option(BUILD_HEADER_ONLY ...). This file used to say MINIZ_BUILD_TESTS and
+# friends, which match nothing and did nothing while looking load-bearing.
+# Same fix and the same collision note as native/cmake/Dependencies.cmake.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS       OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
+set(BUILD_HEADER_ONLY OFF CACHE BOOL "" FORCE)
+set(BUILD_FUZZERS     OFF CACHE BOOL "" FORCE)
+set(INSTALL_PROJECT   OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(miniz
     GIT_REPOSITORY https://github.com/richgel999/miniz.git
     GIT_TAG        77d0dce8627735138c51770d1799a1ef48f2117d
@@ -42,3 +50,14 @@ if(NOT TARGET miniz::miniz)
         message(FATAL_ERROR "miniz built but exposed no usable target")
     endif()
 endif()
+
+# miniz inflates every TROJSAV section, so its output is world state and it
+# compiles with the determinism codegen flags — same as in the spine. The
+# argument for each flag lives in native/cmake/Determinism.cmake.
+granadad_apply_determinism_deps(miniz::miniz)
+
+# ...and its headers stay out of reach of our -Werror. Without this, the 19
+# -Wunused-function warnings miniz.h emits become 19 build errors.
+foreach(dep IN ITEMS miniz::miniz doctest::doctest)
+    granadad_mark_headers_system(${dep})
+endforeach()
