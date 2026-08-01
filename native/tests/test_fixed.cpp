@@ -1,20 +1,13 @@
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+// The main() moved to tests/test_main.cpp when this stopped being the only file
+// in the suite. The wrapping cases moved to tests/test_wrap.cpp, where they grew
+// the INT_MIN boundary the originals did not cover.
+
 #include <doctest/doctest.h>
 
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/fixed.hpp"
 
 using namespace granadad::sim;
-
-TEST_CASE("int32 arithmetic wraps the way Java does") {
-    // The Java reference build relies on int wraparound. C++ calls signed
-    // overflow undefined, so these must go through the explicit helpers.
-    CHECK(wrap_add(2147483647, 1) == -2147483648);
-    CHECK(wrap_add(-2147483648, -1) == 2147483647);
-    CHECK(wrap_sub(-2147483648, 1) == 2147483647);
-    CHECK(wrap_mul(65536, 65536) == 0);
-    CHECK(wrap_mul(2147483647, 2) == -2);
-}
 
 TEST_CASE("Q16.16 round-trips and multiplies without losing the unit") {
     CHECK(q16_from_int(0) == 0);

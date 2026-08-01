@@ -10,8 +10,10 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/fixed.hpp"
@@ -41,9 +43,17 @@ int run_selftest() {
         const char* name;
         bool ok;
     };
+    // Typed bounds, never the literals: `-2147483648` parses as unary minus on
+    // a value too big for an int, so it is a long (or long long) and picks the
+    // 64-bit wrap_* overload -- or, on a platform where long is 32 bits, is an
+    // ambiguous call. See the same note in src/sim/fixed.cpp.
+    constexpr std::int32_t kI32Min = std::numeric_limits<std::int32_t>::min();
+    constexpr std::int32_t kI32Max = std::numeric_limits<std::int32_t>::max();
+
     const Case cases[] = {
-        {"wrap_add overflow", wrap_add(2147483647, 1) == -2147483648},
-        {"wrap_sub underflow", wrap_sub(-2147483648, 1) == 2147483647},
+        {"wrap_add overflow", wrap_add(kI32Max, 1) == kI32Min},
+        {"wrap_sub underflow", wrap_sub(kI32Min, 1) == kI32Max},
+        {"wrap_abs INT_MIN", wrap_abs(kI32Min) == kI32Min},
         {"q16 identity", q16_mul(Q16_ONE, Q16_ONE) == Q16_ONE},
         {"floor_div negative", floor_div(-1, 32) == -1},
         {"floor_mod negative", floor_mod(-1, 32) == 31},

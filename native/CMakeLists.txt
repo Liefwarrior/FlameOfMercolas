@@ -48,25 +48,11 @@ if(GRANADAD_BUILD_TESTS)
 endif()
 
 # ---------------------------------------------------------------------------
-# sim-core — the deterministic simulation. No SDL, no rendering, no floats.
-# ---------------------------------------------------------------------------
-add_library(granadad-sim STATIC
-    src/sim/fixed.cpp
-    src/sim/build_info.cpp
-)
-target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(granadad-sim PUBLIC nlohmann_json::nlohmann_json miniz::miniz)
-target_compile_definitions(granadad-sim PRIVATE
-    GRANADAD_VERSION="${PROJECT_VERSION}"
-    GRANADAD_REVISION="${GRANADAD_REVISION}")
-granadad_apply_determinism(granadad-sim)
-
-# sim-core must never see SDL. Keeping the link surface honest here is cheaper
-# than discovering a rendering type leaked into simulation state later.
-
-# ---------------------------------------------------------------------------
 # granadad-content — the TROJSAV / world-format reader, and the tests that read
 # the owner's real baked worlds.
+#
+# Added BEFORE granadad-sim, because as of M1 sim links it. See the seam note on
+# granadad-sim below.
 #
 # This is deliberately part of the default build rather than a standalone
 # side-project. Left out, `ctest` reported "100% tests passed, 1 tests out of 1"
@@ -88,7 +74,60 @@ granadad_apply_determinism(granadad-sim)
 # byte between the two platforms. See docker/build.Dockerfile and
 # scripts/verify-windows.ps1.
 # ---------------------------------------------------------------------------
+
+# Hoisted out of content/CMakeLists.txt so it exists whether or not tests are
+# built: granadad-twin-gate needs it too, and it is not a test target. Set with
+# the same name and the same default, so whichever directory reaches the cache
+# first wins and the other is a no-op — and content/ standalone still computes
+# its own with no reference upward.
+get_filename_component(GRANADAD_DEFAULT_CONTENT_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../content" ABSOLUTE)
+set(GRANADAD_CONTENT_DIR "${GRANADAD_DEFAULT_CONTENT_DIR}" CACHE PATH
+    "Repo content/ directory holding the baked .trojsav worlds")
+
 add_subdirectory(content)
+
+# ---------------------------------------------------------------------------
+# sim-core — the deterministic simulation. No SDL, no rendering, no floats.
+# ---------------------------------------------------------------------------
+add_library(granadad-sim STATIC
+    src/sim/fixed.cpp
+    src/sim/build_info.cpp
+    src/sim/system_id.cpp
+    src/sim/world_hash.cpp
+    src/sim/engine.cpp
+)
+target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+# THE SEAM, resolved deliberately in M1: sim depends on content, and content
+# never depends on sim.
+#
+# Before this line no built binary could load a world and tick it. The world
+# hasher has to walk a World's decoded lanes, and World, Coords and the lane
+# registry all live in granadad::content -- which was written standalone on
+# purpose so the format reader could be developed and tested without pulling in
+# SDL or a simulation.
+#
+# Three ways out were available: sim links content, content's world types move
+# up into a third module, or a new module sits between them. This is the first,
+# and the direction matters more than the choice: content still links nothing of
+# ours, so `cmake -S native/content` still configures, builds and tests on its
+# own exactly as its header comment promises. The arrow only ever points one
+# way, and the day it points both is the day neither module can be reasoned
+# about alone.
+#
+# PUBLIC, not PRIVATE: granadad/sim/world_hash.hpp includes
+# granadad/content/world.hpp in its interface, so anything linking sim needs
+# content's headers too.
+target_link_libraries(granadad-sim
+    PUBLIC granadad-content nlohmann_json::nlohmann_json miniz::miniz)
+target_compile_definitions(granadad-sim PRIVATE
+    GRANADAD_VERSION="${PROJECT_VERSION}"
+    GRANADAD_REVISION="${GRANADAD_REVISION}")
+granadad_apply_determinism(granadad-sim)
+
+# sim-core must never see SDL. Keeping the link surface honest here is cheaper
+# than discovering a rendering type leaked into simulation state later.
 
 # ---------------------------------------------------------------------------
 # client-observer — the SDL3 window. Floats are legal HERE and only here.
@@ -106,11 +145,51 @@ endif()
 # tests
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_TESTS)
-    add_executable(granadad-tests tests/test_fixed.cpp)
+    add_executable(granadad-tests
+        tests/test_main.cpp
+        tests/test_fixed.cpp
+        tests/test_wrap.cpp
+        tests/test_rng.cpp
+        tests/test_world_hash.cpp
+        tests/test_engine.cpp
+    )
     target_link_libraries(granadad-tests PRIVATE granadad-sim doctest::doctest)
+
+    # tests/test_world_hash.cpp loads the real baked worlds and compares the C++
+    # hash against what a JVM produced from the same files, so it needs the
+    # content directory — resolved through granadad/content/content_dir.hpp,
+    # the ONE implementation of the runtime-env-first,
+    # compile-time-default-second order the docker build actually proves.
+    target_compile_definitions(granadad-tests PRIVATE
+        "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
+    if(MSVC)
+        # VERIFICATION GAP (M1): std::getenv under /WX, never compiled here.
+        target_compile_definitions(granadad-tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
+
     granadad_apply_determinism(granadad-tests)
     granadad_static_runtime(granadad-tests)
-    add_test(NAME granadad-tests COMMAND granadad-tests)
+
+    # Per-CASE ctest entries, not one entry for the binary.
+    #
+    # This block is why M1's tests are visible to the docker build's test-count
+    # floor at all. granadad-tests was registered with a plain add_test(), so it
+    # counted as exactly ONE test no matter how many cases it held — adding
+    # thirty would have moved the floor by zero and a future collapse of the sim
+    # suite to a single case would have gone unnoticed.
+    #
+    # The CMAKE_CROSSCOMPILING guard is copied from content/CMakeLists.txt for
+    # the reason recorded there: discovery works by RUNNING the freshly linked
+    # binary, which is impossible for a Windows .exe on the Linux build host and
+    # fails the build rather than the test.
+    if(NOT CMAKE_CROSSCOMPILING AND EXISTS "${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
+        include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
+        doctest_discover_tests(granadad-tests)
+    else()
+        add_test(NAME granadad-tests COMMAND granadad-tests)
+    endif()
+
+endif()
 endif()
 
 # ---------------------------------------------------------------------------
