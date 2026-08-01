@@ -28,6 +28,26 @@
 // grep across the whole actor package for emit() finds nothing. The bus carries
 // zero traffic. When a system needs to publish an event, that is the moment to
 // build it -- with a consumer in the same commit.
+//
+// The input gate is not ported for the third version of the same reason: with
+// only these systems registered there is nothing submitting commands, and the
+// Java's drain() is a no-op every tick of the soak. TickBegin exists as a phase
+// so it has somewhere to land when a client does.
+//
+// VERIFICATION GAP (M1): there is no save/load. The Java's engine contract
+// asserts `run K+N` is identical to `save@K, load, run N` -- and its twin-run
+// gate does not exercise that either, so the property is stated in both
+// codebases and checked in neither. The RNG makes it true by construction (the
+// world seed is the only persisted RNG state, and test_rng.cpp pins that a
+// fresh source rebound to a tick reproduces it), but "by construction" is not
+// "observed". A save/load leg belongs in the gate the moment there is a
+// serialiser to exercise.
+//
+// VERIFICATION GAP (M1): the phase-ordinal collapse from Java's 12 to 3 was
+// established by READING the Java engine -- ordinals feed only the event bus's
+// ordering key and a per-phase diagnostics array, neither of which affects
+// state -- not by running it. No Gradle task and no Java test was executed
+// during this port.
 
 #include <cstdint>
 #include <memory>

@@ -49,6 +49,20 @@
 //   * Anything that is stable within a process but varies across processes or
 //     machines. That hole is covered from the other side: --fingerprint emits a
 //     report that the Linux and Windows builds are compared on byte for byte.
+//
+// WHAT IT HAS BEEN OBSERVED CATCHING. A gate that has never gone red has not
+// been shown to work, so it was run against a scratch copy of the tree with
+// deliberate nondeterminism compiled in (M1, 2026-08-01):
+//
+//   a clock-derived nudge inside a walker's heading draw
+//       -> both comparators fired; sub-hashes localised it to DRFT while WRLD,
+//          HEAR and LEDG still agreed; ctest exit 8, gate exit 1
+//   a wall-clock elapsed_ns line added to the REPORT only
+//       -> hash comparator IDENTICAL, text comparator red at the offending
+//          line; gate exit 1
+//
+// The second is the one that justifies having two comparators at all: the
+// combined world hash agreed to the bit and the run was still not reproducible.
 
 #include <cstddef>
 #include <string>

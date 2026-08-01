@@ -70,15 +70,31 @@ build and reproducibility on the cross build.
 
 | | cases | assertions |
 |---|---|---|
-| `granadad-tests` — fixed-point, wrapping, floor div/mod | 5 | 425 |
+| `granadad-tests` — RNG, wrapping, world hasher, engine, gate | 68 | 14,157 |
 | `granadad-content-tests` — TROJSAV reader vs. the real baked worlds | 57 | 902,044 |
-| **ctest total** | **58** | |
+| `granadad-twin-run-gate` | 1 | — |
+| `granadad-content-fingerprint`, `granadad-world-hash-fingerprint` | 2 | — |
+| **ctest total** | **128** | |
 
-The build prints both lines every run, so "tests passed" never has to be taken
-on faith. It also asserts a **floor** on the ctest count and checks by name that
-the cases which load `docks_surface.trojsav` are registered — the suite used to
-be one test (fixed.hpp) while `ctest` printed `100% tests passed, 1 tests out of
-1`, and it must not be able to shrink back there quietly.
+The build prints the assertion counts every run, so "tests passed" never has to
+be taken on faith. It also asserts a **floor** on the ctest count and checks by
+name that four things are registered: the cases which load
+`docks_surface.trojsav`, the case that compares the C++ world hash against the
+JVM's, and the twin-run gate. The suite used to be one test (fixed.hpp) while
+`ctest` printed `100% tests passed, 1 tests out of 1`, and it must not be able
+to shrink back there quietly.
+
+Note the shape of the M1 jump from 58 to 128: `granadad-tests` was registered
+with a plain `add_test()`, so it counted as **one** entry no matter how many
+cases it held — adding thirty would have moved the floor by zero. It is
+`doctest_discover_tests`-ed per case now, like the content suite.
+
+It greps all of `native/` for `std::unordered_map` and friends and fails on a
+hit. That ban cannot be enforced by the twin-run gate: an unordered container's
+iteration order is a function of the keys and the insertion sequence, so two
+runs in one process agree with each other and diverge only against another
+machine or another standard library. The gate covers what grep cannot; grep
+covers what the gate cannot.
 
 And it checks the **compile lines themselves**, out of `compile_commands.json`,
 printing them as it goes:
@@ -115,13 +131,13 @@ depend on you remembering:
 powershell -ExecutionPolicy Bypass -File .\scripts\verify-windows.ps1 -Build
 ```
 
-Two suites passing is the weak half of that — `57 passed` here and `57 passed`
+Suites passing is the weak half of that — `57 passed` here and `57 passed`
 there are equal strings no matter what the two binaries decoded. So both sides
-also emit a **report of the decoded state**, and the script compares the two
-byte for byte:
+emit **two reports**, and the script compares each pair byte for byte:
 
 ```
-.\dist\granadad-content-tests.exe --fingerprint <file>
+.\dist\granadad-content-tests.exe --fingerprint <file>   # decoded state
+.\dist\granadad-twin-gate.exe     --fingerprint <file>   # hash + a run
 ```
 
 Per shipped world, that report carries the section CRCs of what miniz actually
@@ -132,6 +148,11 @@ promotion, miniz's output — moves a number in it. The report deliberately
 contains no paths, no timestamps and no platform banner, is formatted without
 libc, serialises multi-byte values little-endian by hand, and is written in
 binary mode, so that comparing the bytes means what it says.
+
+The second report is M1's. The first proves the two toolchains read the same
+bytes; the second proves they then **hash** those bytes to the same 64 bits and
+that a fixed 240-tick simulation run over them ends in the same place. Both
+claims needed proving on both platforms, not one.
 
 **A difference there is a real finding, not a flaky test.** Do not regenerate
 either side to make them agree.
@@ -146,9 +167,11 @@ missing from `dist/` — but nothing forces you to type it.
 | File | What it is |
 |---|---|
 | `dist/granadad.exe` | The game. Self-contained — no DLLs to ship beside it. |
-| `dist/granadad-tests.exe` | The fixed-point suite, as a Windows binary. |
+| `dist/granadad-tests.exe` | The sim suite — RNG, hasher, engine, gate — as a Windows binary. Needs `$env:GRANADAD_CONTENT_DIR`. |
 | `dist/granadad-content-tests.exe` | The TROJSAV reader suite + `--fingerprint`, as a Windows binary. Needs `$env:GRANADAD_CONTENT_DIR`. |
+| `dist/granadad-twin-gate.exe` | The twin-run determinism gate + `--fingerprint`. Needs `$env:GRANADAD_CONTENT_DIR`. |
 | `dist/content-fingerprint-linux-gcc.txt` | The Linux/GCC decoded-state report, to compare against. |
+| `dist/world-hash-linux-gcc.txt` | The Linux/GCC world-hash + simulation-run report, to compare against. |
 | `dist/BUILD-MANIFEST.txt` | Revision, toolchain versions, sha256 of each artifact. |
 
 ### How reproducible, exactly
