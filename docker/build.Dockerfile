@@ -141,8 +141,55 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         -DCMAKE_BUILD_TYPE=Debug \
         -DGRANADAD_BUILD_CLIENT=OFF \
         -DGRANADAD_BUILD_TESTS=ON \
+        -DGRANADAD_WERROR=ON \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
         -DGRANADAD_REVISION="${GRANADAD_REVISION}"; \
     cmake --build /build-cache/hostcheck; \
+    \
+    # ----------------------------------------------------------------------
+    # The flags each target compiles with, asserted rather than assumed.
+    # ----------------------------------------------------------------------
+    # Both halves of this were real. granadad_apply_determinism() is called only
+    # on OUR targets, so miniz — the zlib inflate behind every TROJSAV section,
+    # i.e. the code that turns bytes on disk into world state — compiled with
+    # none of it. And -Werror is worth nothing if it silently stops reaching a
+    # target after a refactor.
+    #
+    # So check the actual command lines cmake generated, not the CMake we hoped
+    # we wrote. Printing them too, because "the build says it checked" is the
+    # kind of claim this project does not accept on faith.
+    echo "=== flags: what each target actually compiles with ==="; \
+    cc_json=/build-cache/hostcheck/compile_commands.json; \
+    test -f "$cc_json" || { echo "FATAL: no compile_commands.json to check"; exit 1; }; \
+    ours="$(grep '"command"' "$cc_json" | grep 'content/src/trojsav\.cpp' | head -1)"; \
+    theirs="$(grep '"command"' "$cc_json" | grep 'miniz-src/miniz_tinfl\.c' | head -1)"; \
+    test -n "$ours"   || { echo "FATAL: trojsav.cpp not in compile_commands.json"; exit 1; }; \
+    test -n "$theirs" || { echo "FATAL: miniz_tinfl.c not in compile_commands.json — is miniz still built from source?"; exit 1; }; \
+    echo "--- ours   (content/src/trojsav.cpp)"; \
+    echo "$ours" | tr ' ' '\n' | grep -E '^-(f|W|std)' | sort | tr '\n' ' '; echo; \
+    echo "    includes: $(echo "$ours" | grep -oE '\-isystem' | wc -l) -isystem, $(echo "$ours" | grep -oE ' \-I[^ ]+' | wc -l) -I"; \
+    echo "--- theirs (miniz_tinfl.c)"; \
+    echo "$theirs" | tr ' ' '\n' | grep -E '^-(f|W|std)' | sort | tr '\n' ' '; echo; \
+    for flag in -fwrapv -ffp-contract=off -fno-fast-math -fno-strict-aliasing; do \
+        case "$theirs" in *"$flag"*) ;; \
+            *) echo "FATAL: miniz compiles without $flag. It inflates every"; \
+               echo "       TROJSAV section, so its output IS world state."; \
+               echo "       Call granadad_apply_determinism_deps(miniz::miniz)."; \
+               exit 1;; \
+        esac; \
+    done; \
+    case "$ours" in *-Werror*) ;; \
+        *) echo "FATAL: our own code compiles without -Werror."; exit 1;; esac; \
+    case "$theirs" in *-Werror*) \
+            echo "FATAL: -Werror reached third-party source. That makes every"; \
+            echo "       upstream bump a build break, and it ends with somebody"; \
+            echo "       switching -Werror off for everyone."; exit 1;; \
+        *) ;; esac; \
+    case "$ours" in *-isystem*) ;; \
+        *) echo "FATAL: no -isystem on our compile line — dependency headers are"; \
+           echo "       being judged by -Werror. See granadad_mark_headers_system."; \
+           exit 1;; esac; \
+    echo "ok: determinism codegen reaches miniz; -Werror reaches only our code"; \
     \
     # A gate is only worth what it covers. Before this check the suite was one
     # test — fixed.hpp — while ctest cheerfully printed "100% tests passed,
@@ -187,6 +234,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         -DCMAKE_INSTALL_PREFIX=/out \
         -DGRANADAD_BUILD_CLIENT=ON \
         -DGRANADAD_BUILD_TESTS=ON \
+        -DGRANADAD_WERROR=ON \
         -DGRANADAD_REVISION="${GRANADAD_REVISION}"; \
     cmake --build /build-cache/win; \
     cmake --install /build-cache/win; \
