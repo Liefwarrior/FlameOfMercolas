@@ -1,10 +1,11 @@
 {
-  "version": 6,
+  "version": 5,
   "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
   "configurePresets": [
     {
       "name": "base",
       "hidden": true,
+      "description": "Shared settings. Every preset below inherits this, including generator: Ninja — see native/README.md for how to build with something else.",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "generator": "Ninja",
       "cacheVariables": {
