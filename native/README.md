@@ -108,6 +108,13 @@ you finish the gate on the host:
 powershell -ExecutionPolicy Bypass -File .\scripts\verify-windows.ps1
 ```
 
+Or run **both halves as one command**, which is the version that does not
+depend on you remembering:
+
+```
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-windows.ps1 -Build
+```
+
 Two suites passing is the weak half of that — `57 passed` here and `57 passed`
 there are equal strings no matter what the two binaries decoded. So both sides
 also emit a **report of the decoded state**, and the script compares the two

@@ -4,6 +4,10 @@ Granadad: The Darkstreets -- the half of the build gate that only Windows can ru
     docker compose run --rm --build build      <- compiles, and proves Linux/GCC
     .\scripts\verify-windows.ps1               <- proves mingw/Windows, and compares
 
+or both halves as one command, which is the point of -Build:
+
+    .\scripts\verify-windows.ps1 -Build
+
 WHY THIS SCRIPT EXISTS
 ----------------------
 sim-core bans float/double so that the same bytes decode to the same world
@@ -40,7 +44,11 @@ param(
     # The repo's content/ directory. The .exe reads it from the environment.
     [string] $ContentDir,
     # Where the docker build published its artifacts.
-    [string] $DistDir
+    [string] $DistDir,
+    # Run the docker build first, so the whole gate is one command. Without
+    # this the Windows half is a thing you have to remember, and a check you
+    # have to remember is a check that rots.
+    [switch] $Build
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,6 +79,22 @@ Write-Host '=== granadad: windows half of the cross-toolchain gate ==='
 Write-Host "  repo:        $repoRoot"
 Write-Host "  content dir: $ContentDir"
 Write-Host "  dist dir:    $DistDir"
+
+if ($Build) {
+    Write-Host ''
+    Write-Host '--- 0. docker compose run --rm --build build'
+    Push-Location $repoRoot
+    try {
+        # `run`, not `up`: up exits 0 when the container inside it exits 1.
+        # See the long comment in docker-compose.yml.
+        docker compose run --rm --build build
+        $buildExit = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+    Write-Host "    exit code: $buildExit"
+    if ($buildExit -ne 0) { Fail "the docker build failed (exit $buildExit); nothing downstream of it is worth running." $buildExit }
+}
 
 Require $ContentDir  'This is the owner''s read-only canon; the suite reads content\maps\baked from it.'
 Require $exe         'Run: docker compose run --rm --build build'
