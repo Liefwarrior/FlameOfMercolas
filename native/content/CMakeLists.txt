@@ -29,13 +29,18 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     option(GRANADAD_BUILD_TESTS "Build the doctest suite" ON)
     list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-    include(ContentDependencies)
 else()
     set(GRANADAD_CONTENT_STANDALONE FALSE)
 endif()
 
-# The spine supplies granadad_apply_determinism. Standalone needs its own, and
-# it must stay in step with native/cmake/Determinism.cmake.
+# The spine supplies granadad_apply_determinism, granadad_apply_determinism_deps
+# and granadad_mark_headers_system. Standalone needs its own, and they must stay
+# in step with native/cmake/Determinism.cmake — which is where the reasoning
+# behind every one of these flags lives. Do not re-derive it here; go read it.
+#
+# These are defined BEFORE include(ContentDependencies) on purpose: that file
+# has to flag miniz the moment it materialises it.
+#
 # VERIFICATION GAP (M0): this module has been configured, built and tested on
 # Linux / GCC 12 only. The machine it was written on has no C++ toolchain at
 # all — Visual Studio is installed without the C++ workload and there is no
@@ -43,21 +48,77 @@ endif()
 # The MSVC branch below and every /-style flag in it are UNCOMPILED. Nothing
 # here is Linux-specific by design (the one platform #if is the _wfopen path in
 # trojsav.cpp), but "should port" is not "did port".
+# VERIFICATION GAP (#74): /utf-8, /W4 and /WX are part of that — added for the
+# same reasons as the GCC side, never once run through MSVC.
 if(NOT COMMAND granadad_apply_determinism)
-    function(granadad_apply_determinism target)
+    option(GRANADAD_WERROR "Treat compiler warnings as errors" ON)
+
+    function(granadad_determinism_codegen target)
         if(MSVC)
-            target_compile_options(${target} PRIVATE /fp:strict /fp:except- /permissive- /W4)
+            target_compile_options(${target} PRIVATE /fp:strict /fp:except- /utf-8)
         else()
             target_compile_options(${target} PRIVATE
                 -fwrapv               # signed overflow wraps, like Java
                 -fno-fast-math
                 -ffp-contract=off
-                -fno-strict-aliasing
+                -fno-strict-aliasing)
+        endif()
+    endfunction()
+
+    function(granadad_apply_determinism target)
+        granadad_determinism_codegen(${target})
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /permissive- /W4)
+            if(GRANADAD_WERROR)
+                target_compile_options(${target} PRIVATE /WX)
+            endif()
+        else()
+            target_compile_options(${target} PRIVATE
                 -Wall -Wextra
                 -Wconversion
                 -Wdouble-promotion)
+            if(GRANADAD_WERROR)
+                target_compile_options(${target} PRIVATE -Werror)
+            endif()
         endif()
     endfunction()
+
+    # Third-party source in the sim data path: codegen flags, no warnings.
+    function(granadad_apply_determinism_deps target)
+        if(NOT TARGET ${target})
+            message(FATAL_ERROR
+                "granadad_apply_determinism_deps(${target}): no such target.")
+        endif()
+        get_target_property(_granadad_aliased ${target} ALIASED_TARGET)
+        if(_granadad_aliased)
+            set(target ${_granadad_aliased})
+        endif()
+        get_target_property(_granadad_type ${target} TYPE)
+        if(_granadad_type STREQUAL "INTERFACE_LIBRARY")
+            return()
+        endif()
+        granadad_determinism_codegen(${target})
+    endfunction()
+
+    # Third-party headers must not be judged by our -Werror.
+    function(granadad_mark_headers_system target)
+        if(NOT TARGET ${target})
+            return()
+        endif()
+        get_target_property(_granadad_aliased ${target} ALIASED_TARGET)
+        if(_granadad_aliased)
+            set(target ${_granadad_aliased})
+        endif()
+        get_target_property(_granadad_dirs ${target} INTERFACE_INCLUDE_DIRECTORIES)
+        if(_granadad_dirs)
+            set_property(TARGET ${target} PROPERTY
+                INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_granadad_dirs}")
+        endif()
+    endfunction()
+endif()
+
+if(GRANADAD_CONTENT_STANDALONE)
+    include(ContentDependencies)
 endif()
 
 if(NOT TARGET miniz::miniz)
