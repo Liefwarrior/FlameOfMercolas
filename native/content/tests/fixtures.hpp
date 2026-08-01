@@ -6,6 +6,7 @@
 // never write anything back.
 
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 
@@ -13,9 +14,31 @@
 
 namespace granadad::content::testing {
 
-/// The repo's content/ directory, baked in at configure time.
+/// The environment variable that names the content/ directory at RUN TIME.
+inline constexpr const char* kContentDirEnvVar = "GRANADAD_CONTENT_DIR";
+
+/// The repo's content/ directory.
+///
+/// Runtime first, configure-time second, and that order is the whole point.
+/// This binary is cross-compiled for Windows inside a Linux container, so the
+/// path baked in at configure time is the CONTAINER's /src/content — a path
+/// that does not exist on the machine the .exe actually runs on. While the
+/// directory was a compile-time constant the Windows build could be linked but
+/// never executed, which meant the format reader was proven on GCC/Linux and
+/// completely unproven on the toolchain that ships. See task #75.
+///
+/// The fallback stays because the Linux host build inside the container has no
+/// environment set and should keep working with no ceremony.
 inline std::filesystem::path contentDir() {
-    return std::filesystem::path(GRANADAD_CONTENT_DIR);
+    // getenv, not _dupenv_s: this is a test binary reading a path the owner set
+    // one line earlier in their own shell, and the C standard function is the
+    // one that exists on every toolchain here. MSVC's C4996 for it is silenced
+    // for this target in CMakeLists.txt rather than by writing two code paths.
+    const char* fromEnv = std::getenv(kContentDirEnvVar);
+    if (fromEnv != nullptr && *fromEnv != '\0') {
+        return std::filesystem::path(fromEnv);
+    }
+    return std::filesystem::path(GRANADAD_CONTENT_DIR_DEFAULT);
 }
 
 inline std::filesystem::path bakedMap(const std::string& name) {

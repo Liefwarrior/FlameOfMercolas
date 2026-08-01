@@ -78,14 +78,15 @@ granadad_apply_determinism(granadad-sim)
 # content/CMakeLists.txt), which is what keeps someone from quietly dropping
 # them out of the docker context again.
 #
-# VERIFICATION GAP (#73): the content suite is RUN on Linux/GCC only. The cross
-# build compiles and links granadad-content-tests.exe — so the module is proven
-# to build for Windows — but that .exe is never executed and is deliberately not
-# installed into dist/. It cannot usefully be: GRANADAD_CONTENT_DIR is baked in
-# at configure time and points at the container's /src/content, a path that does
-# not exist on the owner's machine. Making it runnable on Windows means letting
-# fixtures.hpp take the directory from the environment at run time, falling back
-# to the compiled-in default. Worth doing; not done here.
+# Closed in #75: the content suite now runs on BOTH toolchains. fixtures.hpp
+# resolves the content directory from $GRANADAD_CONTENT_DIR at run time, so the
+# cross-built granadad-content-tests.exe is installed into dist/ and executed
+# natively on Windows against the repo's own content/. Pass/fail is the weak
+# half of that; the strong half is `--fingerprint`, which writes a report of the
+# decoded world state (section CRCs, per-lane CRC32C, per-form / per-material /
+# per-flags / per-fluid histograms over every tile) that is compared byte for
+# byte between the two platforms. See docker/build.Dockerfile and
+# scripts/verify-windows.ps1.
 # ---------------------------------------------------------------------------
 add_subdirectory(content)
 
@@ -124,4 +125,8 @@ if(GRANADAD_BUILD_CLIENT)
 endif()
 if(GRANADAD_BUILD_TESTS)
     install(TARGETS granadad-tests RUNTIME DESTINATION .)
+    # Shipped so the format reader can be tested on the toolchain that actually
+    # ships it. Before #75 this binary was compiled, linked and thrown away,
+    # which meant the cross-platform determinism claim rested on one platform.
+    install(TARGETS granadad-content-tests RUNTIME DESTINATION .)
 endif()

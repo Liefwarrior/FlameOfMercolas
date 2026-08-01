@@ -182,6 +182,7 @@ if(GRANADAD_BUILD_TESTS)
 
     add_executable(granadad-content-tests
         tests/test_main.cpp
+        tests/fingerprint.cpp
         tests/test_crc32c.cpp
         tests/test_coords.cpp
         tests/test_chunk_codec.cpp
@@ -189,8 +190,21 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_world_reader.cpp
     )
     target_link_libraries(granadad-content-tests PRIVATE granadad-content doctest::doctest)
+    # The DEFAULT, not the answer. fixtures.hpp reads $GRANADAD_CONTENT_DIR at
+    # run time and only falls back to this. That is what lets the same source
+    # produce a mingw .exe that is actually runnable: the path baked in during
+    # the cross build is the build container's /src/content, which does not
+    # exist on the machine the .exe ships to. See tests/fixtures.hpp.
     target_compile_definitions(granadad-content-tests PRIVATE
-        "GRANADAD_CONTENT_DIR=\"${GRANADAD_CONTENT_DIR}\"")
+        "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
+    if(MSVC)
+        # std::getenv is what fixtures.hpp uses to read the content directory.
+        # MSVC deprecates it (C4996) in favour of _dupenv_s, and with /WX that
+        # is a build break. Silenced here rather than by growing a second code
+        # path in a test fixture.
+        # VERIFICATION GAP (#75): never compiled — no MSVC on this machine.
+        target_compile_definitions(granadad-content-tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
     granadad_apply_determinism(granadad-content-tests)
     # Only defined when embedded in the native/ spine. Without it a mingw build
     # of this binary imports libstdc++-6.dll and dies before main().
