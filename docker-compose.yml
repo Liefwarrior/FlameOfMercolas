@@ -2,10 +2,31 @@
 #
 #   docker compose run --rm --build build
 #
-# That is the whole thing. It compiles the C++ in a pinned container and drops
-# the finished binary in ./dist. Then, on Windows, natively:
+# It compiles the C++ in a pinned container and drops the finished binaries in
+# ./dist. Then, on Windows, natively:
 #
+#   .\scripts\verify-windows.ps1     <- finishes the gate; see below
 #   .\dist\granadad.exe
+#
+# ---------------------------------------------------------------------------
+# THE GATE DOES NOT FINISH IN HERE
+# ---------------------------------------------------------------------------
+# Docker proves the Linux/GCC half. It cannot prove the half that ships.
+#
+# sim-core bans float/double so the same bytes decode to the same world state
+# on every toolchain — and until task #75 that had been tested on exactly one
+# toolchain, because the cross build compiled granadad-content-tests.exe and
+# threw it away unexecuted. Now the content directory is read from
+# $GRANADAD_CONTENT_DIR at run time, so the .exe ships in dist/ and runs on the
+# host against the repo's own content/.
+#
+# The container also publishes dist/content-fingerprint-linux-gcc.txt: the
+# decoded state of every shipped world (section CRCs, per-lane CRC32C, per-form
+# / per-material / per-flags / per-fluid histograms over ~2.7M tiles).
+# scripts/verify-windows.ps1 produces the same report under mingw/Windows and
+# compares the two byte for byte. A difference there is a real determinism
+# finding. This container cannot run that script — executing a PE binary under
+# wine would prove something about wine.
 #
 # ---------------------------------------------------------------------------
 # WHY `run` AND NOT `up`

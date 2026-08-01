@@ -227,6 +227,55 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     /build-cache/hostcheck/bin/granadad-tests | tail -3; \
     /build-cache/hostcheck/bin/granadad-content-tests | tail -3; \
     \
+    # ----------------------------------------------------------------------
+    # Half of the cross-toolchain comparison. The other half only Windows can
+    # run — see scripts/verify-windows.ps1.
+    # ----------------------------------------------------------------------
+    # sim-core bans float/double so the decode is identical on every toolchain.
+    # Until #75 that was tested on exactly one toolchain: the cross build
+    # compiled granadad-content-tests.exe and threw it away, because
+    # GRANADAD_CONTENT_DIR was a compile-time constant naming a path inside
+    # this container.
+    #
+    # Now it is read from the environment at run time. Proved here, twice,
+    # because only the pair is worth anything:
+    #   1. same worlds under a DIFFERENT path -> byte-identical report.
+    #      Alone this proves nothing; the compiled-in default would pass it.
+    #   2. a bogus path -> non-zero exit. This is the one that shows the
+    #      variable is actually being read.
+    echo "=== \$GRANADAD_CONTENT_DIR is read at run time ==="; \
+    mkdir -p /out /relocated/maps; \
+    cp -a /src/content/maps/baked /relocated/maps/baked; \
+    /build-cache/hostcheck/bin/granadad-content-tests \
+        --fingerprint /out/content-fingerprint-linux-gcc.txt; \
+    GRANADAD_CONTENT_DIR=/relocated \
+        /build-cache/hostcheck/bin/granadad-content-tests \
+        --fingerprint /tmp/relocated-fingerprint.txt; \
+    cmp /out/content-fingerprint-linux-gcc.txt /tmp/relocated-fingerprint.txt \
+        || { echo "FATAL: the same worlds read from a different directory produced"; \
+             echo "       a different report. The report is supposed to describe"; \
+             echo "       world state and nothing whatsoever about where it was"; \
+             echo "       read from — otherwise the Windows comparison would fail"; \
+             echo "       for reasons that have nothing to do with determinism."; \
+             exit 1; }; \
+    if GRANADAD_CONTENT_DIR=/definitely-not-a-directory \
+       /build-cache/hostcheck/bin/granadad-content-tests \
+       --fingerprint /tmp/should-not-exist.txt >/dev/null 2>&1; then \
+        echo "FATAL: a bogus GRANADAD_CONTENT_DIR still produced a report, so the"; \
+        echo "       variable is being ignored and fixtures.hpp::contentDir() has"; \
+        echo "       gone back to the compiled-in constant. The Windows .exe would"; \
+        echo "       then silently test nothing on the machine it ships to."; \
+        exit 1; \
+    fi; \
+    GRANADAD_CONTENT_DIR=/relocated /build-cache/hostcheck/bin/granadad-content-tests | tail -3; \
+    echo "ok: the env var selects the worlds, and the report ignores the path"; \
+    \
+    echo "=== linux/gcc side of the comparison ==="; \
+    wc -c < /out/content-fingerprint-linux-gcc.txt | xargs echo "report bytes:"; \
+    sha256sum /out/content-fingerprint-linux-gcc.txt; \
+    head -8 /out/content-fingerprint-linux-gcc.txt; \
+    echo "        [...]"; \
+    \
     echo "=== cross-compile: Windows x86-64 .exe ==="; \
     cmake -S /src/native -B /build-cache/win -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE=/src/native/cmake/toolchain-mingw-w64.cmake \
@@ -267,6 +316,27 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         fi; \
         echo "    imports: $(x86_64-w64-mingw32-objdump -p "$exe" | grep -c 'DLL Name:') system DLL(s), no MinGW runtime"; \
     done; \
+    \
+    # The Windows half of the comparison needs two things in dist/, and neither
+    # is something a compile error would catch: an install() rule can be dropped
+    # in a refactor and the build stays green while the cross-toolchain claim
+    # quietly reverts to one toolchain. That is exactly how this gap was born.
+    echo "=== the windows half must actually ship ==="; \
+    for required in granadad-content-tests.exe content-fingerprint-linux-gcc.txt; do \
+        test -f "/out/$required" \
+            || { echo "FATAL: /out/$required is missing. Without it the"; \
+                 echo "       cross-toolchain comparison cannot be run on Windows"; \
+                 echo "       and the determinism claim rests on Linux/GCC alone."; \
+                 echo "       See install(TARGETS granadad-content-tests) in"; \
+                 echo "       native/CMakeLists.txt and scripts/verify-windows.ps1."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: dist/ carries the Windows content suite and the Linux report"; \
+    # VERIFICATION GAP (#75): this container CANNOT finish the job. Running the
+    # PE binary here would need wine, which would be a third toolchain emulating
+    # the second — proof about wine, not about Windows. The comparison is
+    # completed by scripts/verify-windows.ps1 on the host, which publish.sh
+    # prints as the next command. Nothing forces the owner to type it.
     \
     echo "=== manifest ==="; \
     { \

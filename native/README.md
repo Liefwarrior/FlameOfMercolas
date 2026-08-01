@@ -91,12 +91,57 @@ printing them as it goes:
 Every one of those was wrong at some point, and none of them is visible in a
 green test run.
 
+### What the gate does *not* cover: the toolchain that ships
+
+Everything above runs under Linux/GCC. The binary you actually run is built by
+mingw-w64. sim-core bans `float`/`double` precisely so those two decode the same
+bytes to the same world state — and until task #75 that claim had **never been
+tested across two toolchains**. The cross build compiled
+`granadad-content-tests.exe`, linked it, and threw it away, because the content
+directory was a compile-time constant naming a path inside the container.
+
+It is no longer a constant. `fixtures.hpp` reads `$GRANADAD_CONTENT_DIR` at run
+time (falling back to the configure-time path), the `.exe` ships in `dist/`, and
+you finish the gate on the host:
+
+```
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-windows.ps1
+```
+
+Two suites passing is the weak half of that — `57 passed` here and `57 passed`
+there are equal strings no matter what the two binaries decoded. So both sides
+also emit a **report of the decoded state**, and the script compares the two
+byte for byte:
+
+```
+.\dist\granadad-content-tests.exe --fingerprint <file>
+```
+
+Per shipped world, that report carries the section CRCs of what miniz actually
+inflated, a CRC32C over **every decoded lane**, and per-form / per-material /
+per-flags / per-fluid histograms over all ~2.7 million tiles. Anything that
+differs in the decode — byte order, shift signedness, `char` signedness, integer
+promotion, miniz's output — moves a number in it. The report deliberately
+contains no paths, no timestamps and no platform banner, is formatted without
+libc, serialises multi-byte values little-endian by hand, and is written in
+binary mode, so that comparing the bytes means what it says.
+
+**A difference there is a real finding, not a flaky test.** Do not regenerate
+either side to make them agree.
+
+The container cannot run this itself: executing a PE binary under wine would
+prove something about wine. `publish.sh` prints the command as the next step,
+and the build fails if `granadad-content-tests.exe` or the Linux report is
+missing from `dist/` — but nothing forces you to type it.
+
 ### Output
 
 | File | What it is |
 |---|---|
 | `dist/granadad.exe` | The game. Self-contained — no DLLs to ship beside it. |
-| `dist/granadad-tests.exe` | The doctest suite, as a Windows binary. |
+| `dist/granadad-tests.exe` | The fixed-point suite, as a Windows binary. |
+| `dist/granadad-content-tests.exe` | The TROJSAV reader suite + `--fingerprint`, as a Windows binary. Needs `$env:GRANADAD_CONTENT_DIR`. |
+| `dist/content-fingerprint-linux-gcc.txt` | The Linux/GCC decoded-state report, to compare against. |
 | `dist/BUILD-MANIFEST.txt` | Revision, toolchain versions, sha256 of each artifact. |
 
 ### How reproducible, exactly
