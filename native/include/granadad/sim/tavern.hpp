@@ -328,6 +328,13 @@ inline constexpr std::int32_t kReachQ8 = 2 * kSubOne;
 // every time the ward is built from the same seed -- see lockpick.hpp on why a
 // lock is not re-rolled between attempts.
 
+/// VERIFICATION GAP (S9): THESE FOUR BOXES ARE THE ONLY LOCKS IN THE GAME.
+/// The district's doors, the Chandlery's counting room, the Drowned Hold and
+/// the smuggler undercellars have no locks -- because none of them is
+/// simulated, and a lock on a room nobody can enter would be a lock nobody can
+/// pick. lockpick.hpp's kMaxPins is 6 and Lock carries `wards` precisely so
+/// that the day the ward's other interiors exist, nothing in that file changes.
+///
 /// Pins in a guest's strongbox. Three: it is a travelling box under a bed, not
 /// the Chandlery's counting-room door.
 inline constexpr std::int32_t kStrongboxPins = 3;

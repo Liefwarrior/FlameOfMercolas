@@ -2050,6 +2050,12 @@ Notice Tavern::noticeBy(const Actor& actor) const noexcept {
                                          q8_tile(playerY_), playerBand_);
     in.observerFacing = actor.facing();
     in.bearingToBody = bearingTo(actor.x(), actor.y(), playerX_, playerY_);
+    // VERIFICATION GAP (S9): the rule reads the light on the PLAYER'S tile and
+    // nothing else. An actor standing under a lantern is no easier for the
+    // player to make out than one in the dark, because nothing in this build
+    // asks -- there is no player-side perception at all, only the room's
+    // perception of the player. The field is symmetric and would answer it;
+    // what is missing is a caller.
     in.light = lightOnPlayer();
     // WHOSE JOB IS LOOKING. A bouncer on the floor, anybody already closing on
     // the player, and every watchman -- derived from the owner's own
