@@ -42,18 +42,29 @@ inline constexpr std::int32_t kHarbourSurfaceBand = 18;
 
 // --- the spawn --------------------------------------------------------------
 
-/// Tarwalk, the working spine, mid-district, facing west-north-west.
+/// Tarwalk, six tiles off the Gilded Gull's door, facing the frontage.
 ///
-/// Chosen by search rather than by taste: of every standable tile on the
-/// quayside and every facing, this one has four of the authored lamps in its
-/// ninety-degree view with line of sight to three of them, twenty-three tiles
-/// of open street ahead, and the harbour off the right shoulder. It is the view
-/// the district is most recognisable from, and it is the one the sprint's
-/// captures are taken from.
-inline constexpr std::int32_t kSpawnTileX = 146;
-inline constexpr std::int32_t kSpawnTileY = 64;
+/// MOVED IN S2, and the old one is worth recording. S1 spawned at (146, 64)
+/// facing 300 degrees and its header called that "the view the district is most
+/// recognisable from". It was not: the frame is 48% empty sky over a one-tile
+/// wall, and it is the weakest picture the renderer produces. The S1 review
+/// found the same frame at yaw 120 sold the visual target and the authored
+/// default did not.
+///
+/// This one is picked for what the game is: you arrive on the working quay with
+/// the whole granite frontage of the Gilded Gull (K03, DOCKS-GAZETTEER §3)
+/// across the street, its door lamp burning in the gap, a warehouse shoulder to
+/// the right and the Tarwalk running away to the left. 32% sky, and the sky is
+/// doing work. It is also where S2's tavern is, so the first thing a player can
+/// walk into is a room with people in it.
+///
+/// Same connected component as the old spawn -- both stand on the Tarwalk quay
+/// apron -- so every reachability count below is unchanged, and
+/// test_tile_query.cpp re-derives all five from the baked bytes to prove it.
+inline constexpr std::int32_t kSpawnTileX = 152;
+inline constexpr std::int32_t kSpawnTileY = 60;
 inline constexpr std::int32_t kSpawnBand = kBandQuayside;
-inline constexpr Angle kSpawnYaw = angle_from_degrees(300);
+inline constexpr Angle kSpawnYaw = angle_from_degrees(165);
 
 /// Every tile reachable from the spawn under the movement rules, counted by a
 /// flood fill in test_tile_query.cpp. Pinned so that a change to the step rules

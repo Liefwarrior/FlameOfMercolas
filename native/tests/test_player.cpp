@@ -181,15 +181,53 @@ TEST_CASE("walls stop the body and it never ends up inside one") {
 }
 
 TEST_CASE("the body cannot walk off the quay onto the water") {
-    // North of the spawn Tarwalk runs into the harbour: OPEN air over deep
-    // water. Walking north for twenty seconds must end on stone.
+    // REWRITTEN IN S2, because the S1 version could not fail. It asserted
+    // walkable(bodyTile) and fluidDepth(bodyTile) < blocking -- the same two
+    // predicates that gate movement, so both were true by construction. Proven
+    // in the S1 review: making walkable() accept OPEN, which is precisely the
+    // failure this case is named for, turned four other cases red and left this
+    // one green.
+    //
+    // So the claim is now about the HARBOUR'S OWN GEOMETRY, read out of the
+    // baked bytes, and about where the body ends up on it.
+    const TileQuery& tiles = docksTiles();
+    constexpr std::int32_t kLastQuayRow = 58;
+    constexpr std::int32_t kEdgeRow = 57;
+
+    // The map first. Column 143 is a gap between two finger piers: the quay's
+    // last floor row is y=58, and the two rows north of it hold nothing at all.
+    REQUIRE(tiles.form(kWalkTileX, kLastQuayRow, docks::kSpawnBand) ==
+            content::TileForm::Floor);
+    CHECK(tiles.form(kWalkTileX, kEdgeRow, docks::kSpawnBand) == content::TileForm::Open);
+    CHECK(tiles.form(kWalkTileX, kEdgeRow - 1, docks::kSpawnBand) == content::TileForm::Open);
+    // ...and the harbour is under them, filled to the top of z=18 at the depth
+    // that blocks a body outright.
+    CHECK(tiles.fluidDepth(kWalkTileX, kEdgeRow - 1, docks::kHarbourSurfaceBand) == 7);
+    CHECK(tiles.fluidDepth(kWalkTileX, kEdgeRow - 1, docks::kHarbourSurfaceBand) >=
+          kBlockingFluidDepth);
+    // There is no band to step into off the edge, at any level the rule allows.
+    CHECK(tiles.stepBand(kWalkTileX, kLastQuayRow, docks::kSpawnBand, kWalkTileX, kEdgeRow) ==
+          TileQuery::kNoBand);
+
+    // Now the body. Twenty seconds due north is far more than the seven tiles
+    // it has, so it must arrive at the edge and stop dead on the last row.
     PlayerBody body = spawned();
     for (int i = 0; i < 20 * kStepsPerSecond; ++i) {
         body.step(walkForward());
-        REQUIRE(docksTiles().walkable(body.tileX(), body.tileY(), body.band()));
-        REQUIRE(docksTiles().fluidDepth(body.tileX(), body.tileY(), body.band()) <
-                kBlockingFluidDepth);
     }
+    CHECK(body.tileY() == kLastQuayRow);
+    CHECK(body.tileX() == kWalkTileX);
+    CHECK(body.band() == docks::kBandQuayside);
+    // It walked all the way to the lip -- within one step's travel of the tile
+    // boundary -- rather than stopping a comfortable tile short.
+    CHECK(body.y() - q8_of_tile(kLastQuayRow) >= 0);
+    CHECK(body.y() - q8_of_tile(kLastQuayRow) < kWalkSpeed);
+    // The collision square DOES hang out over the water, and that is deliberate:
+    // OPEN is not solid, so leaning over a quay edge is legal. What is not legal
+    // is putting the body's CENTRE -- its feet, and the tile every other system
+    // asks about -- anywhere but on the deck.
+    CHECK(q8_tile(body.y() - kBodyRadius) == kEdgeRow);
+    CHECK(q8_tile(body.y()) == kLastQuayRow);
 }
 
 TEST_CASE("a body sliding along a wall keeps its tangential speed") {

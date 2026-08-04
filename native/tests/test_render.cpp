@@ -126,7 +126,9 @@ TEST_CASE("the Docks render to a frame with a world in it") {
     // open sky above.
     CHECK(stats.worldPixels > 8000);
     CHECK(stats.skyPixels > 3000);
-    CHECK(stats.worldPixels + stats.skyPixels == 320U * 180U);
+    // (S1 also asserted worldPixels + skyPixels == w*h here. That is an
+    // identity -- world_renderer.cpp defines skyPixels as w*h - worldPixels --
+    // so it could not fail. Removed rather than kept as decoration.)
 
     // It is a lit scene with depth, not a flat fill.
     CHECK(stats.distinctColours > 200);
@@ -135,11 +137,27 @@ TEST_CASE("the Docks render to a frame with a world in it") {
     CHECK(stats.nearestDepth < 3.0F);
     CHECK(stats.furthestDepth > 12.0F);
 
-    // The bottom of the frame is ground, the top is sky. If the projection ever
-    // flips, this is what says so.
-    const float ground = meanLuma(frame, 0, 150, 320, 180);
-    const float above = meanLuma(frame, 0, 0, 320, 20);
-    CHECK(ground != above);
+    // The bottom of the frame is GROUND and the top is SKY, stated as the
+    // direction it actually is. S1 checked `groundLuma != skyLuma`, which is
+    // true for a flipped projection too.
+    const auto worldFraction = [&frame](int y0, int y1) {
+        std::size_t world = 0;
+        for (int y = y0; y < y1; ++y) {
+            for (int x = 0; x < frame.width(); ++x) {
+                if (std::isfinite(frame.depth()[frame.index(x, y)])) {
+                    ++world;
+                }
+            }
+        }
+        return static_cast<float>(world) /
+               static_cast<float>(frame.width() * (y1 - y0));
+    };
+    // Standing on a street with the eye level: the deck fills the bottom of the
+    // frame and there is nothing but sky at the very top.
+    CHECK(worldFraction(150, 180) > 0.99F);
+    CHECK(worldFraction(0, 12) < 0.05F);
+    CHECK(worldFraction(150, 180) > worldFraction(0, 12));
+
     // Every pixel that is world has a finite depth; every sky pixel does not.
     std::size_t finite = 0;
     for (const float d : frame.depth()) {
@@ -297,12 +315,43 @@ TEST_CASE("the HUD's health bar tracks the number it is given") {
 }
 
 TEST_CASE("the compass names the direction the body is facing") {
+    // All eight points, not two. S1 checked N and W and then asserted
+    // `body.yaw() == kSpawnYaw` -- which session.cpp assigns from that same
+    // constant -- under a title about the compass, and never drew one.
     CHECK(sim::compass_point(sim::kFacingNorth) == "N");
+    CHECK(sim::compass_point(sim::kFacingEast) == "E");
+    CHECK(sim::compass_point(sim::kFacingSouth) == "S");
     CHECK(sim::compass_point(sim::kFacingWest) == "W");
-    // The needle is drawn from the same BAM the body carries, so there is no
-    // second source of truth for which way the player is looking.
-    Session session(docksAt(20));
-    CHECK(session.body().yaw() == sim::docks::kSpawnYaw);
+    CHECK(sim::compass_point(sim::kFacingNorth + sim::kTurnFull / 8) == "NE");
+    CHECK(sim::compass_point(sim::kFacingEast + sim::kTurnFull / 8) == "SE");
+    CHECK(sim::compass_point(sim::kFacingSouth + sim::kTurnFull / 8) == "SW");
+    CHECK(sim::compass_point(sim::kFacingWest + sim::kTurnFull / 8) == "NW");
+    // It rounds to the nearest point rather than truncating toward one.
+    CHECK(sim::compass_point(sim::kFacingNorth + sim::kTurnFull / 32) == "N");
+    CHECK(sim::compass_point(sim::kTurnFull - sim::kTurnFull / 32) == "N");
+
+    // And the drawn needle tracks the BAM it is handed. Two headings, one
+    // frame each, and the strip the compass lives in must not be identical --
+    // otherwise the ribbon is a picture and the yaw is decoration.
+    const auto compassStrip = [](std::int32_t yawBam) {
+        Framebuffer frame(320, 180);
+        frame.clear(Rgb{0.0F, 0.0F, 0.0F});
+        HudState hud;
+        hud.yawBam = yawBam;
+        drawHud(frame, hud);
+        std::vector<std::uint32_t> strip;
+        for (int y = 0; y < 24; ++y) {
+            for (int x = 80; x < 240; ++x) {
+                strip.push_back(frame.pixels()[frame.index(x, y)]);
+            }
+        }
+        return strip;
+    };
+    CHECK(compassStrip(sim::kFacingNorth) != compassStrip(sim::kFacingEast));
+    CHECK(compassStrip(sim::kFacingNorth) == compassStrip(sim::kFacingNorth));
+    // A degree of turn moves it; a full turn brings it back to the same pixels.
+    CHECK(compassStrip(sim::kFacingNorth) ==
+          compassStrip(sim::kFacingNorth + sim::kTurnFull));
 }
 
 TEST_CASE("the capture path produces a PNG with no window anywhere in sight") {
@@ -348,14 +397,33 @@ TEST_CASE("the capture upscales with nearest neighbour and nothing else") {
 }
 
 TEST_CASE("walking to the water's edge keeps the harbour in front of the eye") {
-    // A behavioural check on the whole stack: walk north off Tarwalk, and the
-    // frame should end up with more water in the lower half than it started
-    // with. Water is the darkest thing in the district at dusk.
+    // A behavioural check on the whole stack: walk north off Tarwalk to the
+    // quay lip. What was a deck two feet under the eye becomes open harbour two
+    // levels down and thirty tiles wide, so the lower half of the frame both
+    // recedes and darkens -- water is the darkest thing in the district at
+    // dusk. S1 checked only that the two numbers DIFFERED, under a comment that
+    // promised a direction.
     Session session(docksAt(20));
     session.body().setYaw(sim::kFacingNorth);
     Framebuffer before(320, 180);
     session.drawFrame(before);
     const float startLower = meanLuma(before, 0, 110, 320, 180);
+
+    const auto meanLowerDepth = [](const Framebuffer& frame) {
+        double sum = 0.0;
+        int count = 0;
+        for (int y = 110; y < 180; ++y) {
+            for (int x = 0; x < frame.width(); ++x) {
+                const float d = frame.depth()[frame.index(x, y)];
+                if (std::isfinite(d)) {
+                    sum += static_cast<double>(d);
+                    ++count;
+                }
+            }
+        }
+        return count == 0 ? 0.0F : static_cast<float>(sum / static_cast<double>(count));
+    };
+    const float startDepth = meanLowerDepth(before);
 
     sim::MoveInput forward;
     forward.forward = 1;
@@ -364,7 +432,13 @@ TEST_CASE("walking to the water's edge keeps the harbour in front of the eye") {
     Framebuffer after(320, 180);
     session.drawFrame(after);
     const float endLower = meanLuma(after, 0, 110, 320, 180);
+    const float endDepth = meanLowerDepth(after);
 
+    // It walked, and it stopped at the lip rather than in the water.
     CHECK(session.body().tileY() < sim::docks::kSpawnTileY);
-    CHECK(startLower != endLower);
+    CHECK(session.body().band() == sim::docks::kBandQuayside);
+    // ...and the view below the horizon is now the harbour: further away, and
+    // darker than the lamplit deck it replaced.
+    CHECK(endDepth > startDepth);
+    CHECK(endLower < startLower);
 }
