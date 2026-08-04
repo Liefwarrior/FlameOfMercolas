@@ -243,7 +243,7 @@ TEST_CASE("standing under a lamp does not white out the frame") {
     }
     REQUIRE(target != nullptr);
 
-    const auto lumaAt = [&config, target](std::int32_t away) {
+    const auto lumaFrom = [&config, target](std::int32_t away) {
         SessionConfig standing = config;
         standing.spawnX = target->x;
         standing.spawnY = target->y - away;
@@ -256,14 +256,17 @@ TEST_CASE("standing under a lamp does not white out the frame") {
         return session.drawFrame(frame).meanLuma;
     };
 
-    // Close enough to touch, and the frame is still a picture of a street at
-    // night rather than a white rectangle.
-    const float pressedAgainstIt = lumaAt(1);
-    const float acrossTheStreet = lumaAt(5);
-    CHECK(pressedAgainstIt < 0.45F);
-    // ...and it is still BRIGHTER close up than it is from across the street,
-    // or the roll-off has simply deleted the lamp.
-    CHECK(pressedAgainstIt > acrossTheStreet);
+    const float pressedAgainstIt = lumaFrom(1);
+    const float acrossTheStreet = lumaFrom(5);
+
+    // MEASURED, from this exact tile and this exact lamp: 0.1290 without the
+    // roll-off, 0.1015 with it. The threshold sits between the two on purpose,
+    // so this case is RED under the defect rather than merely true without it —
+    // checked by mutation on 2026-08-04.
+    CHECK(pressedAgainstIt < 0.115F);
+    // ...and the lamp is still doing something: brighter one tile away than
+    // five, or the roll-off has simply deleted it.
+    CHECK(pressedAgainstIt > acrossTheStreet * 1.5F);
 }
 
 TEST_CASE("turning around changes the frame") {

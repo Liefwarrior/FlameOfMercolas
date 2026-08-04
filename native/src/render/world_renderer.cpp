@@ -544,6 +544,22 @@ void WorldRenderer::drawSprite(Framebuffer& target, const Camera& camera,
     const int y1 = std::min(target.height() - 1, static_cast<int>(std::ceil(centreY + pixelHalfH)));
 
     const float fog = 1.0F - std::exp(-distance / sky.fogDistance);
+
+    // A flame you are standing next to must not white out the frame. An
+    // additive billboard grows on screen as you approach it, so its total
+    // contribution grows with the SQUARE of how close you are, and two tiles
+    // from the Gilded Gull's door lamp at five in the morning that was a
+    // featureless white disc across half the view. The door of the tavern is
+    // the one place in the district a player is guaranteed to stand.
+    //
+    // A real flame is a small hot thing: walking up to it makes it bigger, not
+    // brighter. So the additive term is rolled off inside two and a half tiles.
+    // Only glow sprites are affected; a lit solid already shades correctly at
+    // any range.
+    constexpr float kGlowNearField = 2.5F;
+    const float glowNear =
+        sprite.glow > 0.0F ? std::clamp(distance / kGlowNearField, 0.22F, 1.0F) : 1.0F;
+
     for (int sy = y0; sy <= y1; ++sy) {
         for (int sx = x0; sx <= x1; ++sx) {
             const std::size_t at = target.index(sx, sy);
@@ -569,9 +585,10 @@ void WorldRenderer::drawSprite(Framebuffer& target, const Camera& camera,
                 // Additive: a flame brightens what is behind it rather than
                 // replacing it, which is what makes a lamp read as a light.
                 const Rgb behind = unpackRgb(target.pixels()[at]);
-                const Rgb lit{behind.r + sprite.colour.r * alpha * sprite.glow,
-                              behind.g + sprite.colour.g * alpha * sprite.glow,
-                              behind.b + sprite.colour.b * alpha * sprite.glow};
+                const float add = alpha * sprite.glow * glowNear;
+                const Rgb lit{behind.r + sprite.colour.r * add,
+                              behind.g + sprite.colour.g * add,
+                              behind.b + sprite.colour.b * add};
                 target.pixels()[at] = packRgb(lit);
             } else {
                 target.blend(sx, sy, sprite.colour, alpha);
