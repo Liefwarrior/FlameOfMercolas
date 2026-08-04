@@ -122,9 +122,15 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state);
 /// game runs at, and some labels are longer than that no matter how they are
 /// worded: "SIGN ON: THE SKYRUNNERS" is twenty-three, and S6's own shipped
 /// frame printed it as "7 SIGN ON: THE." -- a row that names nothing. More
-/// clipping logic cannot fix a label that does not fit; a second line can, and
-/// the bottom band already has the room because the grid is four rows in a
-/// six-row band.
+/// clipping logic cannot fix a label that does not fit; a second line can.
+///
+/// IT GOES IN THE TOP BAND, UNDER WHAT THEY SAID, and that is a measurement
+/// and not a preference. At 1280x720 the bottom band is 154 pixels between the
+/// exclusion rectangle and the frame edge: four rows of the topic grid and
+/// thirty spare pixels, which is two short of a fifth row. A detail line drawn
+/// under the grid would be clipped off the bottom of the frame -- the same
+/// class of bug it exists to fix. The top band is sized from what it draws, so
+/// it grows by a row and nothing else moves.
 ///
 /// So the grid stays terse and scannable, and the ONE row the player has the
 /// cursor on is spelled out in full across the whole width underneath it. An

@@ -1752,6 +1752,14 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += result.skyrunStages;
     }
 
+    // S7. The cursor, last, so it survives every scripted line above it. This
+    // is the flag that lets a frame be taken OF the row that does not fit --
+    // see SmokeRunConfig::cursorRow on why that had to be possible.
+    if (config.cursorRow > 0 && session.talking()) {
+        const int want = config.cursorRow - 1;
+        session.moveTopicCursor(want - session.topicCursor());
+    }
+
     Framebuffer frame(config.session.width, config.session.height);
     result.stats = session.drawFrame(frame);
     result.lampCount = session.lampCount();

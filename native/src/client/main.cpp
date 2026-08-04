@@ -148,6 +148,8 @@ void print_usage() {
         "  --topic=N[,N...]     pick these topics once it is open (1-based, as\n"
         "                       the numbers printed beside them on screen)\n"
         "  --offer=N            name this number across a counter\n"
+        "  --cursor=N           put the topic cursor on row N without picking\n"
+        "                       it, so a frame can be taken OF a long label\n"
         "  --again              close the conversation and open it again\n"
         "  --flame[=WHERE]      run the Priest of the Flame line and capture it.\n"
         "                       WHERE is talk (the finished conversation), bench\n"
@@ -268,6 +270,9 @@ void print_usage() {
             options.smoke.skyrun = true;
             options.smoke.skyrunEnd = value;
             options.wantsSmoke = true;
+        } else if (starts_with(arg, "--cursor=", &value)) {
+            options.smoke.cursorRow = std::max(0, std::atoi(value));
+            options.smoke.talk = true;
         } else if (starts_with(arg, "--offer=", &value)) {
             options.smoke.offer = std::atoi(value);
             options.smoke.talk = true;

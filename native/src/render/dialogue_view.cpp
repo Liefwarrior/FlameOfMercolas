@@ -211,8 +211,27 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     if (static_cast<int>(speech.size()) > maxSpeechRows) {
         speech.resize(static_cast<std::size_t>(std::max(0, maxSpeechRows)));
     }
-    const int topHeight =
-        std::min(centre.y0 - scale, margin + rowStep * (1 + static_cast<int>(speech.size())));
+    // ---- the detail line: the picked row, spelled out ----------------------
+    //
+    // THE COLUMN IS EIGHTEEN GLYPHS AND SOME LABELS ARE NOT. S6's own shipped
+    // frame printed "7 SIGN ON: THE." -- clipped on a word boundary to a row
+    // that names nothing at all -- and two contracts as "8 TAKE 3 SCALPS." and
+    // "9 TAKE 4 SCALPS.". No amount of cleverness in clipLabel fixes a string
+    // longer than the space it has, so the row the cursor is on gets a line of
+    // its own, the whole width of the frame, with nothing taken off it.
+    //
+    // IT LIVES IN THE TOP BAND AND NOT UNDER THE GRID, and that is a
+    // measurement rather than a preference: at 1280x720 the bottom band is
+    // 154 pixels between the exclusion rectangle and the frame edge, which is
+    // four rows of the topic grid and thirty spare pixels -- two short of a
+    // fifth row. A detail line drawn there would be clipped off the bottom of
+    // the frame, which is the same class of bug as the one it exists to fix.
+    // The top band is sized from what it draws, so it simply grows by a row.
+    const std::string detail = dialogueDetailLine(state);
+    const int detailRows = detail.empty() ? 0 : 1;
+    const int topHeight = std::min(
+        centre.y0 - scale,
+        margin + rowStep * (1 + static_cast<int>(speech.size()) + detailRows));
     target.fillRect(0, 0, target.width(), topHeight, kPanel, 0.82F);
     target.fillRect(0, topHeight, target.width(), scale, kEdge, 0.55F);
 
@@ -233,6 +252,15 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     for (std::size_t i = 0; i < speech.size(); ++i) {
         drawText(target, margin, margin + rowStep * static_cast<int>(i + 1), speech[i], kSpeechInk,
                  0.94F, scale);
+    }
+    if (detailRows > 0) {
+        const int y = margin + rowStep * (static_cast<int>(speech.size()) + 1);
+        if (y + 6 * scale <= topHeight) {
+            const std::size_t width = static_cast<std::size_t>(
+                std::max(8, (target.width() - 2 * margin) / glyphAdvance));
+            drawText(target, margin, y, "> " + clipLabel(detail, width), kTopicPicked, 0.92F,
+                     scale);
+        }
     }
 
     // ---- the bottom band: what you can say --------------------------------
@@ -343,29 +371,6 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
                  scale);
     }
 
-    // ---- the detail line: the picked row, spelled out ----------------------
-    //
-    // THE COLUMN IS EIGHTEEN GLYPHS AND SOME LABELS ARE NOT. S6's own shipped
-    // frame printed "7 SIGN ON: THE." -- clipped on a word boundary to a row
-    // that names nothing at all -- and two contracts as "8 TAKE 3 SCALPS." and
-    // "9 TAKE 4 SCALPS.". No amount of cleverness in clipLabel fixes a string
-    // that is longer than the space it has.
-    //
-    // This is the space it has. One row, under the grid, the whole width of the
-    // frame, showing the label the cursor is on with nothing taken off it. The
-    // band already had the room: the grid is four rows in a six-row band.
-    const std::string detail = dialogueDetailLine(state);
-    if (!detail.empty()) {
-        const int y = bottomTop + scale + rows * rowStep;
-        // Never past the bottom edge, and never into the play space. Both
-        // clauses matter: the band's height is computed, not fixed, and a
-        // resolution that leaves no room simply does not get the line.
-        const std::size_t width =
-            static_cast<std::size_t>(std::max(1, (target.width() - 2 * margin) / glyphAdvance));
-        if (y + 6 * scale <= target.height() && y > centre.y1) {
-            drawText(target, margin, y, clipLabel(detail, width), kTopicPicked, 0.90F, scale);
-        }
-    }
 }
 
 }  // namespace granadad::render

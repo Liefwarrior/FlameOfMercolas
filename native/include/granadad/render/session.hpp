@@ -314,6 +314,16 @@ struct SmokeRunConfig {
     /// A number to name across a counter once a haggle is open. Negative names
     /// nothing and leaves the counter showing.
     int offer = -1;
+    /// S7. Put the topic cursor on this row (1-based, as the numbers printed
+    /// beside the topics) without picking it. Zero leaves the cursor where the
+    /// conversation put it.
+    ///
+    /// A CAPTURE FLAG THAT EXISTS BECAUSE OF A DEFECT. S6's shipped frame
+    /// printed "7 SIGN ON: THE." and the fix -- a detail line spelling the
+    /// picked row out in full -- can only be PHOTOGRAPHED with the cursor on
+    /// the row that does not fit. Without this, the frame that proves the fix
+    /// cannot be taken and the claim goes back to being a paragraph.
+    int cursorRow = 0;
     /// Close whatever conversation is open and start it again. This is how a
     /// capture shows the SAME person greeting you differently after you have
     /// done something to them -- rob them, then say hello.
