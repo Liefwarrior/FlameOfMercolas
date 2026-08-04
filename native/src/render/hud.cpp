@@ -260,7 +260,9 @@ void drawHud(Framebuffer& target, const HudState& state) {
     if (state.showHealth) {
         drawHealth(target, state);
     }
-    drawCompass(target, state);
+    if (state.showCompass) {
+        drawCompass(target, state);
+    }
     drawClock(target, state);
     drawRoom(target, state);
 }

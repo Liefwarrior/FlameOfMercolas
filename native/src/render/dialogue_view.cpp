@@ -91,8 +91,12 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     // Height is computed from the rows it will actually draw and then CLAMPED
     // to the top of the exclusion rectangle. If a line ever wants more room
     // than the band has, the line loses; the play space does not.
-    const std::size_t columns =
-        static_cast<std::size_t>(std::max(8, (target.width() - 2 * margin) / glyphAdvance));
+    // Wrapped clear of the top-right corner, which is the clock's and the
+    // purse's and stays theirs: a spoken line running under a two-digit hour is
+    // unreadable and looks like a bug.
+    const int reservedRight = 34 * scale;
+    const std::size_t columns = static_cast<std::size_t>(
+        std::max(8, (target.width() - 2 * margin - reservedRight) / glyphAdvance));
     std::vector<std::string> speech = wrapText(state.line, columns);
     const int maxSpeechRows = std::max(0, (centre.y0 - margin - rowStep * 2) / rowStep);
     if (static_cast<int>(speech.size()) > maxSpeechRows) {
@@ -110,8 +114,11 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         cursorX += drawText(target, cursorX, margin, state.epithet, kEpithetInk, 0.80F, scale);
     }
     if (!state.attitude.empty()) {
-        const int width = textWidth(state.attitude, scale);
-        drawText(target, target.width() - margin - width, margin, state.attitude,
+        // Beside the name, not against the right edge: the right edge is the
+        // clock's. Colour carries it -- red for hostile, green for warm and up
+        // -- so standing is legible without reading.
+        cursorX += glyphAdvance;
+        drawText(target, cursorX, margin, "(" + state.attitude + ")",
                  attitudeInk(state.attitude), 0.95F, scale);
     }
     for (std::size_t i = 0; i < speech.size(); ++i) {
@@ -143,22 +150,28 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         return;
     }
 
+    // How many rows the band ACTUALLY has, computed rather than assumed. The
+    // first version used a fixed six and broke out of the loop the moment a row
+    // ran past the bottom edge -- which silently dropped the entire second
+    // column, so a speaker with seven things to say showed four of them.
     const int columnWidth = (target.width() - 2 * margin) / kTopicColumns;
-    const std::size_t shown = std::min(state.topics.size(), static_cast<std::size_t>(kTopicSlots));
+    const int rows =
+        std::clamp((target.height() - bottomTop - 2 * scale) / rowStep, 1, kTopicRows);
+    const std::size_t shown =
+        std::min(state.topics.size(), static_cast<std::size_t>(rows * kTopicColumns));
     for (std::size_t i = 0; i < shown; ++i) {
-        const int column = static_cast<int>(i) / kTopicRows;
-        const int row = static_cast<int>(i) % kTopicRows;
+        const int column = static_cast<int>(i) / rows;
+        const int row = static_cast<int>(i) % rows;
         const int x = margin + column * columnWidth;
         const int y = bottomTop + scale + row * rowStep;
-        if (y + 6 * scale > target.height()) {
-            break;
+        if (column >= kTopicColumns || y + 6 * scale > target.height()) {
+            continue;
         }
         const bool picked = static_cast<int>(i) == state.cursor;
         std::string label = (i < 9 ? std::to_string(i + 1) : std::string(".")) + " " +
                             state.topics[i];
         // Truncated to the column rather than allowed to run into the next one.
-        const std::size_t room =
-            static_cast<std::size_t>(std::max(1, (columnWidth - glyphAdvance) / glyphAdvance));
+        const std::size_t room = static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance));
         if (label.size() > room) {
             label.resize(room);
         }

@@ -123,6 +123,10 @@ void print_usage() {
         "  --sensitivity=N      mouse look, BAM per count (default 14)\n"
         "  --clock=N            simulated seconds per real second (default 1)\n"
         "  --hold               do not walk during --smoke; let the world move\n"
+        "  --talk               open a conversation before the shutter goes\n"
+        "  --topic=N[,N...]     pick these topics once it is open\n"
+        "  --offer=N            name this number across a counter\n"
+        "  --again              close the conversation and open it again\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n");
@@ -178,6 +182,26 @@ void print_usage() {
             options.smoke.session.clockScale = std::clamp(std::atoi(value), 1, 3600);
         } else if (std::strcmp(arg, "--hold") == 0) {
             options.smoke.walk = false;
+        } else if (std::strcmp(arg, "--talk") == 0) {
+            options.smoke.talk = true;
+        } else if (std::strcmp(arg, "--again") == 0) {
+            options.smoke.talk = true;
+            options.smoke.again = true;
+        } else if (starts_with(arg, "--offer=", &value)) {
+            options.smoke.offer = std::atoi(value);
+            options.smoke.talk = true;
+        } else if (starts_with(arg, "--topic=", &value)) {
+            options.smoke.talk = true;
+            const char* cursor = value;
+            while (*cursor != 0) {
+                options.smoke.topics.push_back(std::atoi(cursor));
+                while (*cursor != 0 && *cursor != ',') {
+                    ++cursor;
+                }
+                if (*cursor == ',') {
+                    ++cursor;
+                }
+            }
         } else if (starts_with(arg, "--world=", &value)) {
             options.smoke.session.world = value;
         } else if (starts_with(arg, "--spawn=", &value)) {

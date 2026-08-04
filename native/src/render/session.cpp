@@ -582,8 +582,12 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // top of it.
     const bool conversing = talking();
     hud.roomLabel = conversing ? std::string_view{} : std::string_view{room};
+    // The ward's opinion of you sits under the purse -- unless somebody is in
+    // front of you, in which case THEIR opinion is the one that matters and the
+    // panel is already showing it.
     const std::string_view standing = tavern_->dialogue().ledger().reputationLabel();
-    hud.standingLabel = standing;
+    hud.standingLabel = conversing ? std::string_view{} : standing;
+    hud.showCompass = !conversing;
     // A bouncer's warning outranks anything the player did to themselves: it is
     // the one line in this game they must not miss.
     const bool warned = !tavern_->lastWarning().empty() &&
@@ -617,6 +621,28 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.step(input);
     }
 
+    // A capture OF a conversation, not of somebody standing beside one. Driven
+    // through exactly the calls a keypress makes, so the frame a sprint proves
+    // itself with is a picture of the game and not of a test harness.
+    if (config.talk) {
+        session.interact();
+        result.talking = session.talking();
+        for (const int topic : config.topics) {
+            if (topic >= 0) {
+                session.chooseTopic(static_cast<std::size_t>(topic));
+            }
+        }
+        if (config.offer >= 0 && session.haggling()) {
+            const int delta = config.offer - session.haggleOffer();
+            session.adjustOffer(delta);
+        }
+        if (config.again) {
+            session.closeConversation();
+            session.interact();
+        }
+        result.talking = session.talking();
+    }
+
     Framebuffer frame(config.session.width, config.session.height);
     result.stats = session.drawFrame(frame);
     result.lampCount = session.lampCount();
@@ -636,13 +662,17 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " art=" << (session.atlas().fromAuthoredArt() ? "custom" : "procedural")
             << " | world px=" << result.stats.worldPixels
             << " sky px=" << result.stats.skyPixels
-            << " sprite px=" << result.stats.spritePixels << " luma="
+            << " sprite px=" << result.stats.spritePixels
+            << " actor px=" << result.stats.actorPixels << " luma="
             << result.stats.meanLuma << " colours=" << result.stats.distinctColours;
     result.summary = summary.str();
 
-    if (config.stamp) {
+    // The corner stamp, unless somebody is standing in it: while a conversation
+    // is open the top-left is the speaker's name, and two strings in the same
+    // eleven characters of screen is unreadable in a capture.
+    if (config.stamp && !result.talking) {
         const int scale = std::max(1, frame.height() / 180);
-        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S2", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
+        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S3", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
                  scale);
     }
 

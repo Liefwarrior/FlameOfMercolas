@@ -135,7 +135,7 @@ void DialogueDirector::buildTopics() {
     if (!barks_.resolve(personal).empty()) {
         Topic topic;
         topic.kind = TopicKind::Personal;
-        topic.label = "ASK ABOUT THEIR OWN BUSINESS";
+        topic.label = "THEIR BUSINESS";
         topic.barkKey = std::string(barks_.resolve(personal));
         topics_.push_back(std::move(topic));
     }
@@ -161,7 +161,10 @@ void DialogueDirector::buildTopics() {
         }
         Topic topic;
         topic.kind = TopicKind::History;
-        topic.label = "ASK ABOUT " + upper(a->name) + " AND " + upper(b->name);
+        // The ward's own short names, because a topic list is a menu and
+        // "ASK ABOUT SERGEANT VESS AND MASTER VENN" does not fit in a
+        // column that has to leave the middle of the screen alone.
+        topic.label = upper(a->id) + " AND " + upper(b->id);
         topic.barkKey = key;
         topic.payload = static_cast<std::int32_t>(topics_.size());
         topics_.push_back(std::move(topic));
@@ -171,7 +174,7 @@ void DialogueDirector::buildTopics() {
     if (barks_.has("gossip")) {
         Topic topic;
         topic.kind = TopicKind::WardTalk;
-        topic.label = "ASK WHAT THE WARD IS SAYING";
+        topic.label = "THE WARD";
         topic.barkKey = "gossip";
         topics_.push_back(std::move(topic));
     }
@@ -188,7 +191,7 @@ void DialogueDirector::buildTopics() {
         if (!key.empty()) {
             Topic topic;
             topic.kind = TopicKind::Quest;
-            topic.label = "ASK ABOUT THE VANISHED CLERK";
+            topic.label = "THE VANISHED CLERK";
             topic.barkKey = key;
             topics_.push_back(std::move(topic));
         }
@@ -202,8 +205,7 @@ void DialogueDirector::buildTopics() {
             const SkillTrack::Entry* entry = skills_.find(speaker_.skillId);
             Topic topic;
             topic.kind = TopicKind::Mastery;
-            topic.label =
-                "ASK ABOUT " + upper(entry == nullptr ? speaker_.skillId : entry->displayName);
+            topic.label = upper(entry == nullptr ? speaker_.skillId : entry->displayName);
             topic.barkKey = key;
             topics_.push_back(std::move(topic));
         }
@@ -219,7 +221,7 @@ void DialogueDirector::buildTopics() {
 
         Topic topic;
         topic.kind = TopicKind::Trade;
-        topic.label = "HAGGLE FOR " + std::string(goodsName(speaker_.goods));
+        topic.label = "HAGGLE:" + std::string(goodsName(speaker_.goods));
         topic.payload = speaker_.basePrice;
         topics_.push_back(std::move(topic));
     }
@@ -229,13 +231,13 @@ void DialogueDirector::buildTopics() {
         Topic topic;
         topic.kind = TopicKind::BuyDrinkFor;
         topic.payload = kBoughtDrinkCost;
-        topic.label = "STAND THEM A DRINK - " + coins(kBoughtDrinkCost);
+        topic.label = "BUY THEM A DRINK";
         topics_.push_back(std::move(topic));
     }
     if (speaker_.purse > 0) {
         Topic topic;
         topic.kind = TopicKind::PickPocket;
-        topic.label = "PUT A HAND IN THEIR PURSE";
+        topic.label = "PICK THEIR POCKET";
         topics_.push_back(std::move(topic));
     }
 

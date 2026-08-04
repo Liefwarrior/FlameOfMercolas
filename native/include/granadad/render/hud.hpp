@@ -34,6 +34,11 @@ struct HudState {
     /// clear rule gets broken by accident. Punching closes the conversation, so
     /// the bar is back before it can ever matter.
     bool showHealth = true;
+    /// Same rule at the other edge: the top band belongs to whoever is talking
+    /// to you, so the compass ribbon and the place name stand down. The clock
+    /// and the purse stay, because a price is being discussed and the hour is
+    /// why the doors are open.
+    bool showCompass = true;
     /// BAM facing, straight off the body.
     std::int32_t yawBam = 0;
     /// Shown under the compass. Empty draws nothing.

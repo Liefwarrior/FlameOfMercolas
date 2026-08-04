@@ -58,11 +58,15 @@ struct DialogueViewState {
     std::string goods;
 };
 
-/// How many topic rows fit in one column of the bottom band, and how many
-/// columns there are. Twelve slots, which is more than any authored speaker
-/// currently has.
-inline constexpr int kTopicRows = 6;
-inline constexpr int kTopicColumns = 2;
+/// The topic grid. Four rows is what the bottom band can hold at 640x360
+/// without crossing into the exclusion rectangle -- it is a measurement, not a
+/// preference -- and three columns is what it takes to show all twelve of
+/// Master Venn's, who has the longest list in the game: his own business,
+/// three authored micro-histories, the ward, the vanished clerk, his trade,
+/// buying a bed, arguing about the price of one, standing him a drink, a hand
+/// in his purse, and leaving.
+inline constexpr int kTopicRows = 4;
+inline constexpr int kTopicColumns = 3;
 inline constexpr int kTopicSlots = kTopicRows * kTopicColumns;
 
 /// Draws the whole surface over a rendered frame. A closed conversation draws

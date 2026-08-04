@@ -217,6 +217,21 @@ struct SmokeRunConfig {
     /// Walk the scripted route forward. Off holds position, which is what a
     /// capture of a room wants.
     bool walk = true;
+    /// Open a conversation with whoever is in reach before the shutter goes.
+    /// This is how a sprint captures a frame OF a conversation rather than a
+    /// frame of somebody standing next to one.
+    bool talk = false;
+    /// Topics to pick once the conversation is open, in order. Out-of-range
+    /// entries are ignored, so a capture script cannot crash on a speaker who
+    /// happens to have fewer things to say.
+    std::vector<int> topics;
+    /// A number to name across a counter once a haggle is open. Negative names
+    /// nothing and leaves the counter showing.
+    int offer = -1;
+    /// Close whatever conversation is open and start it again. This is how a
+    /// capture shows the SAME person greeting you differently after you have
+    /// done something to them -- rob them, then say hello.
+    bool again = false;
 };
 
 struct SmokeRunResult {
@@ -229,6 +244,8 @@ struct SmokeRunResult {
     std::int32_t endBand = 0;
     /// Who was in the room when the shutter went.
     std::int32_t actorsInFrame = 0;
+    /// True when a conversation was open at the moment of capture.
+    bool talking = false;
 };
 
 /// Runs a scripted session and, optionally, writes a PNG. No window, no GPU,
