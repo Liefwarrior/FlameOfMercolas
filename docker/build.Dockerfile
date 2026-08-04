@@ -415,7 +415,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # instead of a tautology, the abatement made undeletable, and the
     # bond-pipe precondition constructed instead of tested for.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=413; \
+    GRANADAD_MIN_TESTS=442; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -430,17 +430,25 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         echo "       that content/maps/baked reached the build context."; \
         exit 1; \
     fi; \
-    printf '%s\n' "$ctest_list" | grep -qF "docks_surface loads completely" \
+    # WHY A SHELL `case` AND NOT `printf | grep -qF`. S9 found this the hard
+    # way: every one of the checks below used to be a pipeline, and `grep -q`
+    # EXITS THE MOMENT IT MATCHES. With `set -o pipefail` on and a test list
+    # that has grown to four hundred lines, printf is still writing when grep
+    # goes away, takes SIGPIPE, and the pipeline reports failure FOR A CASE
+    # THAT IS REGISTERED. It bit "the stealth line is one row on an edge",
+    # sitting at #265 of 442, and it would have bitten a different case every
+    # time the suite grew. A glob match against the variable spawns no process,
+    # cannot race, and is what these were always trying to say.
+    case "$ctest_list" in *"docks_surface loads completely"*) ;; *) false;; esac \
         || { echo "FATAL: the TROJSAV cases that load the real baked worlds are not"; \
              echo "       registered. The gate would pass without ever opening a"; \
              echo "       .trojsav file."; exit 1; }; \
-    printf '%s\n' "$ctest_list" | grep -qF "granadad-twin-run-gate" \
+    case "$ctest_list" in *"granadad-twin-run-gate"*) ;; *) false;; esac \
         || { echo "FATAL: the twin-run gate is not registered with ctest. It is the"; \
              echo "       only check here that can catch NONDETERMINISM rather than"; \
              echo "       incorrectness, and every other guarantee rests on it."; \
              exit 1; }; \
-    printf '%s\n' "$ctest_list" \
-        | grep -qF "every shipped world hashes to exactly what the JVM said" \
+    case "$ctest_list" in *"every shipped world hashes to exactly what the JVM said"*) ;; *) false;; esac \
         || { echo "FATAL: the case that compares the C++ world hash against the"; \
              echo "       JVM's is not registered. Without it the hasher is only"; \
              echo "       being compared to itself."; exit 1; }; \
@@ -448,14 +456,12 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # the real district can be drawn and checked HERE, with no window and no
     # GPU; and the art case must load the owner's actual sheet rather than the
     # procedural fallback, which is the one thing that never ships.
-    printf '%s\n' "$ctest_list" \
-        | grep -qF "the Docks render to a frame with a world in it" \
+    case "$ctest_list" in *"the Docks render to a frame with a world in it"*) ;; *) false;; esac \
         || { echo "FATAL: the case that renders the Docks in first person is not"; \
              echo "       registered. Every sprint after S1 proves itself with a"; \
              echo "       captured frame, and this is what keeps that path alive."; \
              exit 1; }; \
-    printf '%s\n' "$ctest_list" \
-        | grep -qF "the owner's art pack loads when it is there" \
+    case "$ctest_list" in *"the owner's art pack loads when it is there"*) ;; *) false;; esac \
         || { echo "FATAL: the case that loads content/art/custom is not"; \
              echo "       registered, so the renderer is only ever being tested"; \
              echo "       against its own procedural fallback."; exit 1; }; \
@@ -470,7 +476,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "the executable finds a content tree one level above itself" \
         "a frame that runs no step keeps its mouse look for the next one" \
         "granadad-twin-run-gate-tavern"; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the things S2 is judged on."; \
                  exit 1; }; \
@@ -490,7 +496,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "an actor is drawn where the simulation says the actor is" \
         "sprite pixels and people are counted apart" \
         "the Gull's lights come out of the baked bytes, not out of the renderer"; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the things S3 is judged on."; \
                  exit 1; }; \
@@ -516,7 +522,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "nobody witnesses anything through a wall" \
         "every topic is reachable by a number printed beside it" \
         "the workbench draws where a conversation is allowed to be"; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the things S4 is judged on."; \
                  exit 1; }; \
@@ -546,7 +552,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "a counted stage refuses to be turned in until it has been done" \
         "the gate's workload actually moves a faction number" \
         ; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the things S5 is judged on."; \
                  exit 1; }; \
@@ -577,7 +583,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "the gate's workload actually takes a contract off the board" \
         "the sack and the job are one line each, on the edge, and empty when there is nothing" \
         ; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the things S6 is judged on."; \
                  exit 1; }; \
@@ -595,7 +601,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "the picked topic is spelled out in full under the grid, however long it is" \
         "two jobs on one board are told apart by the first word, not the last" \
         ; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the S6 findings S7 is judged on."; \
                  exit 1; }; \
@@ -624,7 +630,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "granadad-ward-soak" \
         "granadad-twin-run-gate-ward" \
         ; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the things S7 is judged on."; \
                  exit 1; }; \
@@ -640,7 +646,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "the abatement is the sharpest instrument in the ward, and it is not dead code" \
         "the bond is the pipe: leased labour turns up in the bondholder's yard" \
         ; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the S7 findings S8 is judged on."; \
                  exit 1; }; \
@@ -669,12 +675,66 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "the scripted nemesis arc is played, not staged, and the HUD says who he is" \
         "beaten by a named labourer in a fist fight, and he is not who he was" \
         ; do \
-        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the things S8 is judged on."; \
                  exit 1; }; \
     done; \
     echo "ok: S8's nemesis cases are all registered"; \
+    \
+    # S9, part one: the S8 review's findings, closed with cases rather than
+    # comments. The first is S7's finding #8 finally shut -- the ward's day
+    # turning inside the windowed game -- and the last two are the nemesis
+    # book's two lookups that were quietly wrong.
+    for case in \
+        "the ward's roll is in the windowed game, and a rival can take ground on it" \
+        "a guild is a guild OF something: the trade picks the house, not the faction" \
+        "the book survives its own codec, which is the seam a save file uses" \
+        "a rival keeps his record when the roster hands him a different id" \
+        "a labourer who puts the player down rises on the ward's own ladder" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the S8 findings S9 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S9's carry-forward cases are all registered"; \
+    \
+    # S9, part two: stealth, thievery and lockpicking. The last named is the
+    # sprint's ACCEPTANCE -- a burglary played from the keys, in the dark,
+    # against a lock that can beat you.
+    for case in \
+        "light is an integer field with the renderer's own shape" \
+        "the sky is committed dark, and a roof takes three quarters of it" \
+        "noise is what you are doing, and the loudest thing wins" \
+        "every clause of the notice rule moves the answer, and none of them alone decides it" \
+        "crouching, the dark and the skill are what a player does about it" \
+        "the Gull's own lamps light the law, not only the eye" \
+        "the same crime is witnessed in a lit taproom and missed in a dark one" \
+        "a hand in a coat is refused when the mark can see you and taken when they cannot" \
+        "a trained sneak lifts in a loud room what the same hands cannot lift standing up" \
+        "skyrunning and cracksmanship both rise from a night's work" \
+        "crouching is the room's own state, and the body pays for it in speed" \
+        "the stealth line is one row on an edge, and it says what it is looking at" \
+        "a lock's pins are a pure function of the seed and the lock, and never re-rolled" \
+        "skill buys information and forgiveness, and never buys success" \
+        "a wrong probe strains the wire, and enough of them snap it" \
+        "the last pick snapping jams the lock, and only force opens it then" \
+        "the feel tells a trained hand which way it was wrong, and an apprentice nothing" \
+        "the box above the stair is locked, and cracksmanship is what opens it" \
+        "forcing a lock always works, is the loudest thing in the house, and costs half" \
+        "a jammed lock is permanent, and the room says so with the box still shut" \
+        "your own rented room is not a lock to pick" \
+        "Finch sells wire to his own and to nobody else" \
+        "the lock row draws the whole minigame, and the centre of the screen stays empty" \
+        "a burglary is played from the keys: crouch, cross, lift, climb, pick, empty" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things S9 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S9's stealth, thievery and lockpicking cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \

@@ -46,10 +46,10 @@ public:
          std::int32_t band = gull::kGroundBand)
         : world_(content::loadWorldFile(content::bakedMap(docks::kWorldName))),
           tiles_(std::make_unique<TileQuery>(world_)),
-          engine_(std::make_unique<PhasedEngine>(0x4752414E41444144ull, world_)),
+          engine_(std::make_unique<PhasedEngine>(kSeed, world_)),
           body_(std::make_unique<PlayerBody>(*tiles_, tileX, tileY, band, kFacingSouth)) {
         body_->setLandingFloor(docks::kLandingFloor);
-        auto tavern = std::make_unique<Tavern>(*tiles_, timeOfDay, 0x4752414E41444144ull,
+        auto tavern = std::make_unique<Tavern>(*tiles_, timeOfDay, kSeed,
                                                content::contentDir());
         tavern_ = tavern.get();
         engine_->register_system(std::move(tavern));
@@ -102,6 +102,29 @@ public:
         tavern_->chooseTopic(static_cast<std::size_t>(at));
         return true;
     }
+
+    /// S9. Opens the lock on the guest-room box the body is standing at, the
+    /// honest way: the wire goes in, and every pin is probed until it drops.
+    ///
+    /// It knows where the pins are, and that is not a cheat -- pinDepth() is a
+    /// PUBLIC PURE FUNCTION of the world seed and the lock's own id, so this is
+    /// exactly what a burglar who has worked this box before remembers. A test
+    /// that had to brute-force nine depths would be testing the search, and
+    /// test_lockpick.cpp is where the search is tested.
+    void pickOpen(std::int32_t room) {
+        REQUIRE(tavern_->beginPick().result == ServiceResult::Served);
+        const Lock lock = Tavern::strongboxLock(room);
+        for (std::int32_t pin = 0; pin < lock.pins; ++pin) {
+            const std::int32_t want = pinDepth(kSeed, lock, pin);
+            tavern_->movePick(want - tavern_->picking().depth());
+            tavern_->probeLock();
+        }
+        REQUIRE((tavern_->openedLocks() & (1 << room)) != 0);
+    }
+
+    /// The seed both the engine and the tavern are built on, named once so the
+    /// lock lookup above and the constructor cannot drift apart.
+    static constexpr std::uint64_t kSeed = 0x4752414E41444144ull;
 
 private:
     content::World world_;
@@ -425,6 +448,13 @@ TEST_CASE("a box above the stair is cracked, and your own is not a crime") {
     Tavern& gull = room.tavern();
     const std::int32_t coinBefore = gull.playerCoin();
 
+    // S9. THE BOX HAS A LID ON IT NOW. Until this sprint a hand went straight
+    // in; the lock is what makes CRACKSMANSHIP a skill instead of a multiplier
+    // on the take, and this case goes red the day the refusal stops happening.
+    CHECK(gull.crackStrongbox().result == ServiceResult::Refused);
+    CHECK(gull.dialogue().crimes().tally(Crime::Burgle) == 0);
+    room.pickOpen(1);
+
     const Tavern::StealResult took = gull.crackStrongbox();
     REQUIRE(took.result == ServiceResult::Served);
     CHECK(took.coin >= kStrongboxCoin);
@@ -666,8 +696,9 @@ TEST_CASE("a player can sign on with the roofs and finish the Skyrunner line") {
         gull.endConversation();
     };
 
-    // 3. a box above the stair.
+    // 3. a box above the stair. S9: and the lock on it, picked first.
     room.standAt(gull::kRooms[0].standX, gull::kRooms[0].standY, gull::kUpperBand);
+    room.pickOpen(0);
     REQUIRE(gull.crackStrongbox().result == ServiceResult::Served);
     room.standAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
     reportToFinch();

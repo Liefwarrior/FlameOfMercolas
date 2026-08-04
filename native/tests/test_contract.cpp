@@ -796,9 +796,16 @@ TEST_CASE("caught: a load, a warrant, and a job that dies in the impound") {
     // 2. A LOAD. Four boxes above the stair, four pieces with names on them --
     //    which is what a recovery contract is for and what a watchman hangs on
     //    you.
+    //
+    //    S9: AND FOUR LOCKS. A burglar who is in a hurry and has no wire puts
+    //    a shoulder to the lid, which always works, is the loudest thing in the
+    //    building, and costs half the coin -- exactly the trade this job is
+    //    about. There is nobody on the guest floor to hear it, which is why the
+    //    hour of the night still matters.
     for (std::int32_t i = 0; i < gull::kRoomCount; ++i) {
         room.standAt(gull::kRooms[static_cast<std::size_t>(i)].standX,
                      gull::kRooms[static_cast<std::size_t>(i)].standY, gull::kUpperBand);
+        REQUIRE(gull.forceLock().result == ServiceResult::Served);
         REQUIRE(gull.crackStrongbox().result == ServiceResult::Served);
     }
     CHECK(talk.crimes().stash().count(Contraband::Artifact) == gull::kRoomCount);
