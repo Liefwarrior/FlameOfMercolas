@@ -220,6 +220,33 @@ CUTPURSE` bottom left, and the centre of the frame completely empty.
 
 ---
 
+## One faucet, closed
+
+The smuggling run was the only unbounded act of the six. Delivering a bale left
+the snug no emptier than it found it, so the same bale could be carried out of
+the same door forever: 22 coin, a Smuggle tally and 8 standing with the roofs
+per lap. Every other act is self-limiting — a lift takes the purse down, a box
+is emptied once, a lean costs the mark real coin, a fence needs something to
+sell. The snug holds two a night now and restocks when the doors open, exactly
+like the cellar.
+
+---
+
+## One thing about the gate itself
+
+`ctest --test-dir ... -N` came back one case short on a single run of the gate
+during this sprint — the named-case check reported
+`FATAL: the case "the owner's eleven authored craftings all pass the rules this build enforces" is not registered`
+while the count on the line above it read the full 349. The next run, with no
+source change, was green, and every run since has been. This is
+`doctest_discover_tests` enumerating by running the test binary, and it is a
+property of the gate rather than of S5's code — recorded here because a gate
+that goes red for a reason that is not a real failure is a gate people start to
+re-run instead of read, and the next person to see it should know it has been
+seen before.
+
+---
+
 ## Known gaps, marked in the code as well as here
 
 - **Nothing casts.** `spellforge.hpp:276`. Unchanged from S4.
@@ -233,3 +260,10 @@ CUTPURSE` bottom left, and the centre of the frame completely empty.
   in it to commit them against.
 - **The topic labels still truncate mid-word.** They no longer collide.
 - **Six unlock tokens still have no reader.**
+- **The leap's ARC is not collided against** (`player.cpp`, `flyLeapStep`). Both endpoints and
+  every tile of the flight path are checked when the jump is armed; the parabola between them is
+  not. Nothing in the shipped district can be in the way.
+- **A bale is a boolean** (`tavern.cpp`, `handleBale`). No inventory exists, so it has no weight,
+  no contents and no owner.
+- **Fall damage lands on the tavern's copy of the player's hit points**, because that is the only
+  place hit points exist in this build.
