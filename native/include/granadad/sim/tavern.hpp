@@ -44,6 +44,10 @@
 #include "granadad/sim/brawl.hpp"
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/engine.hpp"
+// S9. A lock is a thing in the room, and being unseen is a fact about the room:
+// both belong to whoever owns the taproom's people and its lamps.
+#include "granadad/sim/lockpick.hpp"
+#include "granadad/sim/stealth.hpp"
 // S8. Being put on the floor is a promotion event for whoever did it, and the
 // book that records it lives beside the room that owns the player's hit points
 // for exactly the reason the crime ledger lives beside the dialogue: the state
@@ -316,6 +320,50 @@ inline constexpr std::int32_t kPlayerActorId = 0;
 /// How close a body has to be to a strongbox or a bale to put hands on it, Q8.
 inline constexpr std::int32_t kReachQ8 = 2 * kSubOne;
 
+// --- S9: the locks on the four guest boxes ----------------------------------
+//
+// The boxes were unlocked from S5 until now, and it showed: CRACKSMANSHIP was
+// read once, to scale the take out of a box that had opened itself. Each box
+// now carries a lock whose id is its room index, so its pins are the same pins
+// every time the ward is built from the same seed -- see lockpick.hpp on why a
+// lock is not re-rolled between attempts.
+
+/// Pins in a guest's strongbox. Three: it is a travelling box under a bed, not
+/// the Chandlery's counting-room door.
+inline constexpr std::int32_t kStrongboxPins = 3;
+/// And how it is warded. The two rooms on the harbour side are the good rooms
+/// -- a captain pays for the window -- so their boxes are the better locks.
+[[nodiscard]] constexpr std::int32_t strongboxWards(std::int32_t room) noexcept {
+    return (room == 0 || room == 1) ? 2 : 1;
+}
+
+/// What a lift out of somebody's coat is worth beyond the coin: one piece of
+/// property, which is what a fence exists to buy.
+inline constexpr std::int32_t kLiftPieces = 1;
+/// How close a hand has to get, Q8. Arm's length and not a tile more.
+inline constexpr std::int32_t kLiftReachQ8 = kSubOne + kSubHalf;
+
+// --- what stealth is worth to a hand in a coat -------------------------------
+//
+// A LIFT IS TWO QUESTIONS AND THEY ARE NOT THE SAME QUESTION. Whether somebody
+// can see you standing at their elbow is one thing -- at arm's length, in any
+// light, they generally can, and pretending otherwise would be silly. Whether
+// they feel the hand is another, and that is CRACKSMANSHIP against their own
+// STREETWISE, which is exactly how the dialogue layer's PickPocket topic has
+// resolved it since S3 and is not being changed here.
+//
+// So stealth does not decide the lift. It MOVES THE NUMBER, by a bounded
+// amount, in the direction it should: a mark who is staring straight at you in
+// a lamp pool is harder, and one who is turned away in a dark room with a
+// crowd shouting over him is easier. That bound is what stops either half
+// swamping the other -- a rule where being crouched beat a master's wits would
+// be a rule where the skill did not matter.
+
+/// Points of notice per point of the mark's guard.
+inline constexpr std::int32_t kLiftNoticePerPoint = 3;
+/// And the most, either way, that being seen or unseen is worth.
+inline constexpr std::int32_t kLiftStealthSwing = 12;
+
 /// Bales in the snug per night.
 ///
 /// S6 SHIPPED A BOARD THE WARD COULD NOT SUPPLY, and this constant plus the
@@ -555,9 +603,107 @@ public:
     /// Cracks the strongbox at the foot of the bed in the guest room the body
     /// is standing in. Refused for a room the player rented, for a box already
     /// emptied, and from the wrong floor.
+    ///
+    /// S9 PUTS A LOCK ON IT. This now refuses a box whose lock is still shut,
+    /// with ServiceResult::Refused and a line that says so. The way through is
+    /// beginPick() and probeLock(), or forceLock() and the noise that comes
+    /// with it.
     StealResult crackStrongbox();
     /// Which of the four boxes have been emptied, as a bitmask. Hashed.
     [[nodiscard]] std::int32_t crackedBoxes() const noexcept { return crackedBoxes_; }
+
+    // --- S9: stealth ---------------------------------------------------------
+    //
+    // See stealth.hpp for the rule and every number in it. What lives here is
+    // the ROOM'S half: which lamps are burning, how loud the taproom is, and
+    // who is in a position to notice.
+
+    [[nodiscard]] Stance stance() const noexcept { return stealth_.stance(); }
+    void setStance(Stance stance) noexcept { stealth_.setStance(stance); }
+    /// C. Down on your haunches, or back up.
+    void toggleStance() noexcept { stealth_.toggleStance(); }
+    /// Told once a movement step by whoever owns the body: is it moving, and
+    /// is it running. This is how footfalls reach the notice rule.
+    void setPlayerMotion(bool moving, bool running) noexcept;
+    [[nodiscard]] const StealthState& stealth() const noexcept { return stealth_; }
+    /// What the body is doing to the air right now, 0..kNoiseMax.
+    [[nodiscard]] std::int32_t playerNoise() const noexcept { return stealth_.noise(); }
+
+    /// Every flame the SIMULATION counts, as integer light sources. The same
+    /// list houseLights() gives the renderer, in the units stealth.hpp weighs.
+    [[nodiscard]] std::vector<SimLight> simLights() const;
+    /// What is falling on the tile the player is standing on, 0..kLightMax.
+    [[nodiscard]] std::int32_t lightOnPlayer() const noexcept;
+    /// The same for any tile in the room.
+    [[nodiscard]] std::int32_t lightAt(std::int32_t tileX, std::int32_t tileY,
+                                       std::int32_t band) const noexcept;
+
+    /// Whether one actor can currently make the player out, and the working.
+    /// Everything witnessCount and spreadWitness decide goes through here.
+    [[nodiscard]] Notice noticeBy(const Actor& actor) const noexcept;
+    /// The loudest read anybody in the room has on the player right now, for a
+    /// HUD that wants to say HIDDEN or SEEN. Empty room reads zero.
+    [[nodiscard]] Notice worstNotice() const noexcept;
+    /// True when nobody present can make the player out.
+    [[nodiscard]] bool hidden() const noexcept { return !worstNotice().seen; }
+
+    // --- S9: the locks -------------------------------------------------------
+
+    /// Picks the body is carrying.
+    [[nodiscard]] std::int32_t picks() const noexcept { return picks_; }
+    void setPicks(std::int32_t picks) noexcept;
+    /// Which of the four boxes have been opened, and which are jammed shut.
+    /// Both hashed: a jammed lock is permanent world change.
+    [[nodiscard]] std::int32_t openedLocks() const noexcept { return openedLocks_; }
+    [[nodiscard]] std::int32_t jammedLocks() const noexcept { return jammedLocks_; }
+    [[nodiscard]] std::int32_t forcedLocks() const noexcept { return forcedLocks_; }
+
+    /// The lock on the box at the foot of the bed in room `room`.
+    [[nodiscard]] static Lock strongboxLock(std::int32_t room) noexcept;
+
+    /// The attempt currently under the wire, for whoever draws it.
+    [[nodiscard]] const Lockpicking& picking() const noexcept { return picking_; }
+
+    /// G on a locked box. Puts the wire in. Refused off the guest floor, away
+    /// from a bed, on your own rented room, on a box already open, on a jammed
+    /// one, and with no picks left.
+    struct PickResult {
+        ServiceResult result = ServiceResult::NobodyThere;
+        Feel feel = Feel::Idle;
+        /// True when the lock came open on this call.
+        bool opened = false;
+        /// True when somebody heard or saw it.
+        bool seen = false;
+        std::string line;
+    };
+    PickResult beginPick();
+    /// SPACE while the wire is in. One probe at the depth the pick is held at.
+    PickResult probeLock();
+    /// W/S while the wire is in.
+    void movePick(std::int32_t delta) noexcept;
+    /// ESC. Takes the wire out; the lock relocks itself.
+    void abandonPick() noexcept;
+    /// F while the wire is in, or on a jammed lock. Always opens it, is the
+    /// loudest thing in the building, and bends what is inside.
+    PickResult forceLock();
+
+    // --- S9: the hand in the coat --------------------------------------------
+
+    /// T. Lifts from whoever is nearest, IN THE ROOM, with no conversation
+    /// open. The dialogue layer's own PickPocket topic is still there and still
+    /// works across a table; this is the same crime committed from behind.
+    ///
+    /// TWO SKILLS, and the split is deliberate. Getting close enough unseen is
+    /// SKYRUNNING -- whose row in the owner's skills.json says in as many words
+    /// that it covers "sneak, pickpocket, takedown" -- and what the fingers do
+    /// once they are there is CRACKSMANSHIP, which is what the ward's ledger
+    /// has charged a lift to since S4. A lift charges both, and the mark
+    /// noticing you is a stealth question before it is a skill contest.
+    StealResult liftFrom();
+
+    /// Buys a set of picks off the Skyrunners' own contact. Wants membership,
+    /// reach and coin, exactly as taking the bale does.
+    StealResult buyPicks();
 
     /// What a landing off the roofs cost.
     struct LandingResult {
@@ -898,6 +1044,10 @@ private:
     RegionPath path_;
     DialogueDirector dialogue_;
     CounterRandomSource rng_;
+    /// The world's own seed, kept because a LOCK's pins are a pure function of
+    /// it and of the lock's id -- no tick, no stream position, no draw. See
+    /// lockpick.hpp on why a lock is not re-rolled between attempts.
+    std::uint64_t worldSeed_ = 0;
     std::int32_t playerActionSeq_ = 0;
 
     std::vector<Actor> actors_;
@@ -993,6 +1143,24 @@ private:
     std::int32_t lastBlowBy_ = -1;
     Rise lastDefeat_;
     bool defeatRelease_ = false;
+
+    // --- S9 -------------------------------------------------------------------
+    /// How the body is carrying itself and what it is doing to the air. Hashed:
+    /// crouching changes who sees a crime, and a thing that decides a crime is
+    /// state.
+    StealthState stealth_;
+    /// The lock under the wire right now, if any.
+    Lockpicking picking_;
+    /// Which of the four boxes the wire is in, or -1.
+    std::int32_t pickingRoom_ = -1;
+    /// Picks in the roll. Finite, spendable, and buyable off Finch.
+    std::int32_t picks_ = kStartingPicks;
+    /// Bit i set once room i's LOCK is open (which is not the same as its box
+    /// being emptied -- crackedBoxes_ is that), jammed shut for good, or
+    /// forced. All three are permanent world change, so all three are hashed.
+    std::int32_t openedLocks_ = 0;
+    std::int32_t jammedLocks_ = 0;
+    std::int32_t forcedLocks_ = 0;
 };
 
 }  // namespace granadad::sim

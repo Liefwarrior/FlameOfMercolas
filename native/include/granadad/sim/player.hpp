@@ -192,6 +192,11 @@ struct MoveInput {
     Angle pitchDelta = 0;
     /// Hold to run.
     bool run = false;
+    /// S9. Down on the haunches. Halves the walk (kCrouchSpeedPercent, in
+    /// sim/stealth.hpp, which is where every stealth number lives) and refuses
+    /// to be a run at the same time -- crouch-running is a thing this game does
+    /// not have and is the cheapest way to make crouching free.
+    bool crouch = false;
 };
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,7 @@
 #include "granadad/sim/player.hpp"
 
+#include "granadad/sim/stealth.hpp"
+
 #include "granadad/sim/rng.hpp"
 
 namespace granadad::sim {
@@ -169,7 +171,13 @@ void PlayerBody::step(const MoveInput& input) noexcept {
     }
 
     // --- walk ---------------------------------------------------------------
-    const std::int32_t speed = input.run ? kRunSpeed : kWalkSpeed;
+    //
+    // S9: crouching halves it, and it beats running. What being unseen costs
+    // in a first-person game is TIME, and this is where the bill is paid.
+    std::int32_t speed = input.run && !input.crouch ? kRunSpeed : kWalkSpeed;
+    if (input.crouch) {
+        speed = (speed * kCrouchSpeedPercent) / 100;
+    }
     if (input.forward != 0 || input.strafe != 0) {
         // Direction in Q16, intent in {-1,0,1}, speed in Q8-per-step. The
         // product is Q16*Q8 and comes back to Q8 with one shift, in 64 bits so

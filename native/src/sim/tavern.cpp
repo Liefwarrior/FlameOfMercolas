@@ -20,6 +20,18 @@ namespace {
     return second >= from || second < until;
 }
 
+/// ASCII upper case, for the 4x6 font and nothing else. The same one-line rule
+/// the dialogue layer applies to an authored name; no programmer is renaming
+/// anybody here.
+[[nodiscard]] std::string upperCase(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+    }
+    return out;
+}
+
 /// Diagonal shoves would otherwise be sqrt(2) stronger than straight ones. Same
 /// 46341/65536 the body's movement uses.
 [[nodiscard]] std::int32_t diagonalScaled(std::int32_t impulse) noexcept {
@@ -301,6 +313,7 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
       path_(tiles, gull::kRegion),
       dialogue_(DialogueDirector::load(contentDir)),
       rng_(worldSeed, id_.salt()),
+      worldSeed_(worldSeed),
       timeOfDay_(((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay) {
     startedAt_ = timeOfDay_;
     // The nemesis book reads the same registry the director does -- SHARED, not
@@ -661,6 +674,10 @@ void Tavern::stepMovement() {
         }
     }
     wasInside_ = inside;
+    // S9. One movement step of forgetting: the noise a probe or a snapped pick
+    // made fades out over kNoiseFadeSteps. Done last so the delivery above is
+    // judged against the noise that was in the air when it happened.
+    stealth_.step();
 }
 
 void Tavern::tick(const TickContext& context) {
@@ -1715,28 +1732,18 @@ void Tavern::spreadWitness(std::int32_t victimId, Deed deed) {
     //                     in the taproom, whatever its (x, y) says.
     //   3. LINE OF SIGHT  asked of the tiles, through the one function that
     //                     answers "does this block a ray".
+    //   4. S9 -- AND THEY ACTUALLY NOTICED. Light, sound, whether they were
+    //      facing you and how much SKYRUNNING is behind your feet. Asked
+    //      through the one rule witnessCount asks, so a deed cannot be
+    //      remembered by somebody the heat never counted.
     if (!playerKnown_) {
         return;
     }
-    const std::int32_t range = kWitnessRangeTiles * kSubOne;
-    const std::int32_t playerTileX = q8_tile(playerX_);
-    const std::int32_t playerTileY = q8_tile(playerY_);
     for (const Actor& actor : actors_) {
-        if (!actor.present() || actor.id() == victimId) {
+        if (actor.id() == victimId) {
             continue;
         }
-        if (actor.band() != playerBand_) {
-            continue;
-        }
-        const std::int32_t distance = actor.distanceTo(playerX_, playerY_);
-        if (distance > range) {
-            continue;
-        }
-        // Arm's reach needs no sight line -- see kWitnessReachTiles on why the
-        // bar counter is the reason that clause exists.
-        if (distance > kWitnessReachTiles * kSubOne && tiles_ != nullptr &&
-            !tiles_->lineOfSight(actor.tileX(), actor.tileY(), playerTileX, playerTileY,
-                                 playerBand_)) {
+        if (!noticeBy(actor).seen) {
             continue;
         }
         dialogue_.ledger().witness(actor.id(), deed);
@@ -1939,35 +1946,136 @@ std::int32_t Tavern::witnessCount(std::int32_t exceptId) const noexcept {
     if (!playerKnown_) {
         return 0;
     }
-    const std::int32_t playerTileX = q8_tile(playerX_);
-    const std::int32_t playerTileY = q8_tile(playerY_);
     std::int32_t seen = 0;
     for (const Actor& actor : actors_) {
-        if (!actor.present() || actor.id() == exceptId ||
-            actor.activity() == Activity::Downed) {
+        if (actor.id() == exceptId) {
             continue;
         }
-        // A rat saw you. A rat will not be telling anybody.
-        if (actor.role() == ActorRole::Vermin) {
-            continue;
+        // S9 ROUTES THIS THROUGH THE NOTICE RULE. The three clauses S3 fixed --
+        // range, floor, line of sight -- are still every bit of it that they
+        // were, and they now live in noticeBy() with light, sound, facing and
+        // the skill beside them. One rule, two callers, and no way for a crime
+        // to be witnessed by one path and missed by the other.
+        if (noticeBy(actor).seen) {
+            ++seen;
         }
-        if (actor.band() != playerBand_) {
-            continue;
-        }
-        const std::int32_t dx = actor.x() - playerX_;
-        const std::int32_t dy = actor.y() - playerY_;
-        const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
-        if (distance > kWitnessRangeTiles * kSubOne) {
-            continue;
-        }
-        if (distance > kWitnessReachTiles * kSubOne && tiles_ != nullptr &&
-            !tiles_->lineOfSight(actor.tileX(), actor.tileY(), playerTileX, playerTileY,
-                                 playerBand_)) {
-            continue;
-        }
-        ++seen;
     }
     return seen;
+}
+
+// ---------------------------------------------------------------------------
+// S9: light, sound, and who is in a position to notice
+// ---------------------------------------------------------------------------
+
+void Tavern::setPlayerMotion(bool moving, bool running) noexcept {
+    stealth_.setMotion(moving, running);
+}
+
+std::vector<SimLight> Tavern::simLights() const {
+    // ONE LIST OF LAMPS, TWO CONSUMERS. houseLights() is what the renderer
+    // draws and this is what the law weighs, and they are the same lights
+    // derived from the same rule: a flame that is bright to the eye and dark to
+    // a watchman would be the exact bug that having two fields invites.
+    std::vector<SimLight> lights;
+    for (const gull::HouseLight& light : houseLights()) {
+        std::int32_t luminance = 0;
+        switch (light.kind) {
+            case gull::LightKind::Hearth:
+                // A banked fire in a stone hearth throws the furthest of the
+                // three, which is why the room going dark at three in the
+                // morning is the burglar's hour.
+                luminance = 22;
+                break;
+            case gull::LightKind::Lantern:
+                luminance = 16;
+                break;
+            case gull::LightKind::Candle:
+                luminance = 9;
+                break;
+        }
+        lights.push_back(SimLight{light.x, light.y, light.band, luminance});
+    }
+    return lights;
+}
+
+std::int32_t Tavern::lightAt(std::int32_t tileX, std::int32_t tileY,
+                             std::int32_t band) const noexcept {
+    const bool indoors = gull::insideFootprint(tileX, tileY);
+    return illuminationAt(simLights(), tileX, tileY, band, timeOfDay_, indoors);
+}
+
+std::int32_t Tavern::lightOnPlayer() const noexcept {
+    if (!playerKnown_) {
+        return 0;
+    }
+    return lightAt(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
+}
+
+Notice Tavern::noticeBy(const Actor& actor) const noexcept {
+    NoticeInput in;
+    in.stance = stealth_.stance();
+    in.noise = stealth_.noise();
+    in.roomNoise = noise();
+    in.sneakLevel = dialogue_.skills().level(kRoofSkill);
+    if (!playerKnown_) {
+        in.oblivious = true;
+        return noticeOf(in);
+    }
+    // The three refusals that are not a matter of degree. A rat is not a
+    // witness, a man on the floor is not a witness, and somebody who is not in
+    // the room at all is not a witness.
+    if (!actor.present() || actor.activity() == Activity::Downed ||
+        actor.role() == ActorRole::Vermin) {
+        in.oblivious = true;
+        return noticeOf(in);
+    }
+    // SAME FLOOR. A body on the guest floor is not in the taproom, whatever its
+    // (x, y) says -- the S3 review's own finding, kept exactly.
+    if (actor.band() != playerBand_) {
+        in.oblivious = true;
+        return noticeOf(in);
+    }
+    const std::int32_t dx = actor.x() - playerX_;
+    const std::int32_t dy = actor.y() - playerY_;
+    const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+    if (distance > kWitnessRangeTiles * kSubOne) {
+        in.oblivious = true;
+        return noticeOf(in);
+    }
+    in.distanceQ8 = distance;
+    // Arm's reach needs no sight line -- see kWitnessReachTiles on why the bar
+    // counter is the reason that clause exists.
+    in.lineOfSight = distance <= kWitnessReachTiles * kSubOne || tiles_ == nullptr ||
+                     tiles_->lineOfSight(actor.tileX(), actor.tileY(), q8_tile(playerX_),
+                                         q8_tile(playerY_), playerBand_);
+    in.observerFacing = actor.facing();
+    in.bearingToBody = bearingTo(actor.x(), actor.y(), playerX_, playerY_);
+    in.light = lightOnPlayer();
+    // WHOSE JOB IS LOOKING. A bouncer on the floor, anybody already closing on
+    // the player, and every watchman -- derived from the owner's own
+    // factions.json through factionOf, so nobody wrote a second table.
+    const Activity doing = actor.activity();
+    in.alert = actor.role() == ActorRole::Bouncer || doing == Activity::Watching ||
+               doing == Activity::Warning || doing == Activity::Ejecting ||
+               doing == Activity::Brawling ||
+               factionOf(actor) == dialogue_.factions().indexOf("watch");
+    return noticeOf(in);
+}
+
+Notice Tavern::worstNotice() const noexcept {
+    Notice worst;
+    bool any = false;
+    for (const Actor& actor : actors_) {
+        const Notice one = noticeBy(actor);
+        // The one who reads you best. Ties break on the earlier id, because
+        // actors_ is never reordered -- so two runs cannot disagree about who
+        // is looking hardest.
+        if (!any || one.read - one.cover > worst.read - worst.cover) {
+            worst = one;
+            any = true;
+        }
+    }
+    return worst;
 }
 
 void Tavern::injurePlayer(std::int32_t amount) {
@@ -2006,6 +2114,16 @@ Tavern::StealResult Tavern::crackStrongbox() {
         out.line = "ALREADY EMPTY.";
         return out;
     }
+    // S9. THE BOX IS LOCKED. S5's burglary was a keypress beside a container
+    // that had no lid on it; CRACKSMANSHIP was read once, afterwards, to scale
+    // what fell out. The lock has to be OPEN before a hand goes in, and getting
+    // it open is beginPick() and probeLock() -- or forceLock(), and the noise.
+    if ((openedLocks_ & bit) == 0) {
+        out.result = ServiceResult::Refused;
+        out.line = (jammedLocks_ & bit) != 0 ? "THE LOCK IS RUINED. FORCE IT OR LEAVE IT."
+                                             : "IT IS LOCKED.";
+        return out;
+    }
     crackedBoxes_ |= bit;
     const std::int32_t craft = dialogue_.skills().level(kThieverySkill);
     // WHAT A HAND THE WARD HAS TAKEN STILL MANAGES. The only lasting
@@ -2015,6 +2133,12 @@ Tavern::StealResult Tavern::crackStrongbox() {
     const std::int32_t hands = dialogue_.crimes().takePercent();
     out.coin = (kStrongboxCoin + craft / 4) * hands / 100;
     out.loot = std::max(1, (1 + craft / 20) * hands / 100);
+    // AND WHAT A BOOT THROUGH THE LID COSTS. Forcing always works, and this is
+    // the price of it: half the coin, because a box that has been stove in
+    // spills, and because a cracksman who can pick should.
+    if ((forcedLocks_ & bit) != 0) {
+        out.coin = (out.coin * kForcedYieldPercent) / 100;
+    }
     out.seen = witnessCount(kPlayerActorId) > 0;
     playerCoin_ = wrap_add(playerCoin_, out.coin);
     dialogue_.setPlayerCoin(playerCoin_);
@@ -2055,27 +2179,348 @@ Tavern::StealResult Tavern::crackStrongbox() {
 }
 
 // ---------------------------------------------------------------------------
+// S9: the lock, the wire, and the boot
+// ---------------------------------------------------------------------------
+
+Lock Tavern::strongboxLock(std::int32_t room) noexcept {
+    Lock lock;
+    // THE ROOM INDEX IS THE LOCK'S IDENTITY, so the same seed builds the same
+    // four locks every time and a player who has worked this box before knows
+    // where its pins sit. Offset by one so room 0 is not lock id 0, which is
+    // what an uninitialised Lock would be.
+    lock.id = room + 1;
+    lock.pins = kStrongboxPins;
+    lock.wards = strongboxWards(room);
+    return lock;
+}
+
+void Tavern::setPicks(std::int32_t picks) noexcept {
+    picks_ = std::max(0, picks);
+}
+
+void Tavern::movePick(std::int32_t delta) noexcept {
+    picking_.moveDepth(delta);
+}
+
+void Tavern::abandonPick() noexcept {
+    picking_.abandon();
+    pickingRoom_ = -1;
+}
+
+Tavern::PickResult Tavern::beginPick() {
+    PickResult out;
+    if (!playerKnown_ || playerBand_ != gull::kUpperBand) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO PICK.";
+        return out;
+    }
+    const std::int32_t room = gull::roomAtStand(q8_tile(playerX_), q8_tile(playerY_));
+    if (room < 0) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO PICK.";
+        return out;
+    }
+    const std::int32_t bit = 1 << room;
+    if (room == rentedRoom_) {
+        // Your own box, and your own key. Refused for the same reason cracking
+        // it is: renting a bed to burgle yourself is not a crime and must not
+        // be a way to farm the skill either.
+        out.result = ServiceResult::Refused;
+        out.line = "THAT ONE IS YOURS.";
+        return out;
+    }
+    if ((openedLocks_ & bit) != 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = "IT IS ALREADY OPEN.";
+        return out;
+    }
+    if ((jammedLocks_ & bit) != 0) {
+        out.result = ServiceResult::Refused;
+        out.feel = Feel::Jammed;
+        out.line = "THE WARDS ARE RUINED. FORCE IT OR LEAVE IT.";
+        return out;
+    }
+    if (picks_ <= 0) {
+        out.result = ServiceResult::NoCoin;
+        out.line = "NO WIRE LEFT.";
+        return out;
+    }
+    picking_.begin(strongboxLock(room), worldSeed_, dialogue_.skills().level(kThieverySkill));
+    pickingRoom_ = room;
+    out.result = ServiceResult::Served;
+    out.line = "WIRE IN. " + std::to_string(picking_.lock().pins) + " PINS, " +
+               std::to_string(picks_) + " PICKS.";
+    return out;
+}
+
+Tavern::PickResult Tavern::probeLock() {
+    PickResult out;
+    if (!picking_.open() || pickingRoom_ < 0) {
+        out.result = ServiceResult::NobodyThere;
+        out.feel = Feel::Nothing;
+        out.line = "NOTHING UNDER THE WIRE.";
+        return out;
+    }
+    const std::int32_t room = pickingRoom_;
+    const std::int32_t bit = 1 << room;
+    const Feel feel = picking_.probe(picks_);
+    out.feel = feel;
+    out.result = ServiceResult::Served;
+
+    // EVERY PROBE IS A SOUND, and a snapped pick is a louder one. It goes into
+    // the same StealthState a footstep does, so the room judges a lock being
+    // worked exactly the way it judges everything else.
+    stealth_.makeNoise(feel == Feel::Broke || feel == Feel::Jammed ? kBreakNoise : kProbeNoise);
+
+    // THE HANDS ARE CHARGED FOR THE ATTEMPT, not for the success. Morrowind's
+    // own rule, and the one this project has been applying since S3: you get
+    // better at locks by working locks, including the ones that beat you.
+    dialogue_.skills().use(kThieverySkill);
+
+    switch (feel) {
+        case Feel::Set:
+            out.line = "A PIN DROPS. " + std::to_string(picking_.pinsSet()) + "/" +
+                       std::to_string(picking_.lock().pins) + ".";
+            break;
+        case Feel::TooShallow:
+            out.line = "TOO SHALLOW.";
+            break;
+        case Feel::TooDeep:
+            out.line = "TOO DEEP.";
+            break;
+        case Feel::NoFeel:
+            out.line = "NOTHING. YOU CANNOT TELL WHERE.";
+            break;
+        case Feel::Broke:
+            out.line = "THE PICK SNAPS. " + std::to_string(picks_) + " LEFT.";
+            break;
+        case Feel::Jammed:
+            jammedLocks_ |= bit;
+            pickingRoom_ = -1;
+            out.line = "THE LAST PICK SNAPS OFF IN THE WARDS.";
+            break;
+        case Feel::Open:
+            openedLocks_ |= bit;
+            pickingRoom_ = -1;
+            // A LOCK THAT COMES OPEN IS WORTH MORE THAN A PIN. The extra effort
+            // is the whole of the level-up curve for this skill: a cracksman
+            // rises by finishing, not by fiddling.
+            dialogue_.skills().use(kThieverySkill, 3);
+            out.opened = true;
+            out.line = "IT GIVES. THE BOX IS OPEN.";
+            break;
+        default:
+            out.line = "NOTHING UNDER THE WIRE.";
+            break;
+    }
+    // WHO HEARD IT. Judged after the noise is in the air, which is why
+    // makeNoise is above and not below: probing a lock in a house with people
+    // still in it is a different act from probing one at four in the morning,
+    // and it is the same rule that decides both.
+    out.seen = witnessCount(kPlayerActorId) > 0;
+    if (out.seen) {
+        spreadWitness(kPlayerActorId, Deed::Robbed);
+        reportOffence(Offence::Stole);
+        out.line += " SEEN.";
+    }
+    return out;
+}
+
+Tavern::PickResult Tavern::forceLock() {
+    PickResult out;
+    if (!playerKnown_ || playerBand_ != gull::kUpperBand) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO FORCE.";
+        return out;
+    }
+    const std::int32_t room = gull::roomAtStand(q8_tile(playerX_), q8_tile(playerY_));
+    if (room < 0) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO FORCE.";
+        return out;
+    }
+    if (room == rentedRoom_) {
+        out.result = ServiceResult::Refused;
+        out.line = "THAT ONE IS YOURS.";
+        return out;
+    }
+    const std::int32_t bit = 1 << room;
+    if ((openedLocks_ & bit) != 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = "IT IS ALREADY OPEN.";
+        return out;
+    }
+    picking_.abandon();
+    pickingRoom_ = -1;
+    openedLocks_ |= bit;
+    forcedLocks_ |= bit;
+    // THE LOUDEST THING IN THE BUILDING. Nothing about this is subtle and that
+    // is the design: force is always available, always works, and is never the
+    // quiet answer.
+    stealth_.makeNoise(kForceNoise);
+    out.result = ServiceResult::Served;
+    out.feel = Feel::Forced;
+    out.opened = true;
+    out.line = "THE LID GOES. LOUDLY.";
+    out.seen = witnessCount(kPlayerActorId) > 0;
+    if (out.seen) {
+        spreadWitness(kPlayerActorId, Deed::Robbed);
+        reportOffence(Offence::Stole);
+        out.line += " SEEN.";
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// S9: the hand in the coat, and the wire that opens what it cannot reach
+// ---------------------------------------------------------------------------
+
+Tavern::StealResult Tavern::liftFrom() {
+    StealResult out;
+    if (!playerKnown_) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOBODY WITHIN REACH.";
+        return out;
+    }
+    const Actor* mark = nearestTo(playerX_, playerY_, kLiftReachQ8);
+    if (mark == nullptr) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOBODY WITHIN REACH.";
+        return out;
+    }
+    if (mark->coin() <= 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = upperCase(mark->name()) + " HAS NOTHING ON THEM.";
+        return out;
+    }
+
+    // TWO SKILLS AND ONE NUMBER. See the note on kLiftNoticePerPoint for why
+    // stealth moves the mark's guard rather than deciding the lift outright.
+    //
+    // Deterministic, and no draw: a roll here would be a draw the twin-run gate
+    // has to account for, which is the same reason the dialogue layer's own
+    // PickPocket topic has never rolled one either.
+    const Notice notice = noticeBy(*mark);
+    const std::int32_t craft = dialogue_.skills().level(kThieverySkill);
+    // Their STREETWISE, out of the roster, through the same accessor the
+    // dialogue layer's own PickPocket topic reads it with. One number, one
+    // source, and no second table to let drift.
+    const std::int32_t wits = speakerFor(*mark).awareness;
+    const std::int32_t swing = std::clamp((notice.read - notice.cover) / kLiftNoticePerPoint,
+                                          -kLiftStealthSwing, kLiftStealthSwing);
+    const std::int32_t guard = std::max(0, wits + swing);
+    const bool caught = craft < guard;
+
+    // THE APPROACH IS CHARGED WHETHER OR NOT THE HAND WAS. You learn to move
+    // quietly by moving quietly at somebody, and being caught teaches more than
+    // most things do.
+    dialogue_.skills().use(kRoofSkill);
+
+    if (caught) {
+        out.result = ServiceResult::Refused;
+        out.seen = true;
+        out.line = upperCase(mark->name()) +
+                   (notice.seen ? " WAS WATCHING YOUR HANDS." : " FEELS THE HAND AND TURNS.");
+        dialogue_.ledger().witness(mark->id(), Deed::Robbed);
+        dialogue_.noteCrime(Crime::Lift, true);
+        spreadWitness(mark->id(), Deed::Robbed);
+        reportOffence(Offence::Stole);
+        return out;
+    }
+
+    const std::int32_t markId = mark->id();
+    const std::int32_t purse = mark->coin();
+    const std::int32_t lifted = std::min(purse, 1 + craft / 8 + purse / 4);
+    if (Actor* lighter = mutableActorById(markId); lighter != nullptr) {
+        lighter->setCoin(purse - lifted);
+    }
+    playerCoin_ = wrap_add(playerCoin_, lifted);
+    dialogue_.setPlayerCoin(playerCoin_);
+    // A purse carries something that is not coin, and that something is what a
+    // fence is for.
+    dialogue_.crimes().takeLoot(kLiftPieces);
+    out.result = ServiceResult::Served;
+    out.coin = lifted;
+    out.loot = kLiftPieces;
+    // WHO ELSE SAW IT. The mark did not; that is what "not caught" means. The
+    // rest of the room is a separate question and it is the room's own rule
+    // that answers it.
+    out.seen = witnessCount(markId) > 0;
+    dialogue_.noteCrime(Crime::Lift, out.seen);
+    if (out.seen) {
+        spreadWitness(markId, Deed::Robbed);
+        reportOffence(Offence::Stole);
+    }
+    out.line = "LIFTED " + std::to_string(lifted) + "C OFF " + upperCase(mark->name()) +
+               (out.seen ? ", AND SEEN." : ".");
+    return out;
+}
+
+Tavern::StealResult Tavern::buyPicks() {
+    StealResult out;
+    if (!playerKnown_) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOBODY HERE SELLS WIRE.";
+        return out;
+    }
+    const Actor* contact = nullptr;
+    for (const Actor& actor : actors_) {
+        if (actor.role() != ActorRole::SkyrunnerContact || !actor.present()) {
+            continue;
+        }
+        if (actor.distanceTo(playerX_, playerY_) <= kReachQ8) {
+            contact = &actor;
+            break;
+        }
+    }
+    if (contact == nullptr) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOBODY HERE SELLS WIRE.";
+        return out;
+    }
+    const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
+    if (!dialogue_.standings().isMember(roofs)) {
+        // Nobody sells a stranger picks, for the same reason nobody hands one a
+        // bale. The roofs' first rung is what a lock is actually gated behind.
+        out.result = ServiceResult::Refused;
+        out.line = "HE SELLS WIRE TO HIS OWN.";
+        return out;
+    }
+    const std::int32_t price = kPickPrice * kPicksPerSet;
+    if (playerCoin_ < price) {
+        out.result = ServiceResult::NoCoin;
+        out.line = "NOT FOR WHAT YOU ARE CARRYING.";
+        return out;
+    }
+    playerCoin_ = wrap_add(playerCoin_, -price);
+    dialogue_.setPlayerCoin(playerCoin_);
+    picks_ += kPicksPerSet;
+    out.result = ServiceResult::Served;
+    out.coin = -price;
+    out.line = std::to_string(kPicksPerSet) + " PICKS FOR " + std::to_string(price) + "C. " +
+               std::to_string(picks_) + " IN THE ROLL.";
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // S6: the Watch, and the one thing S5's warrant could not do
 // ---------------------------------------------------------------------------
 
 bool Tavern::canSeePlayer(const Actor& actor) const noexcept {
-    if (!playerKnown_ || !actor.present() || actor.activity() == Activity::Downed) {
-        return false;
-    }
-    if (actor.band() != playerBand_) {
-        return false;
-    }
-    const std::int32_t dx = actor.x() - playerX_;
-    const std::int32_t dy = actor.y() - playerY_;
-    const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
-    if (distance > kWatchSightTiles * kSubOne) {
-        return false;
-    }
-    if (distance <= kWitnessReachTiles * kSubOne || tiles_ == nullptr) {
-        return true;
-    }
-    return tiles_->lineOfSight(actor.tileX(), actor.tileY(), q8_tile(playerX_),
-                               q8_tile(playerY_), playerBand_);
+    // S9. THE WATCHMAN IS SUBJECT TO THE SAME RULE AS EVERYBODY ELSE, and this
+    // is the most consequential place it applies: watchStance()'s own header
+    // note calls the Closing beat "THE WINDOW: out of the door, out of his
+    // sight, and it is over". Until now the only way through that window was
+    // distance. It is now also DARK and QUIET and DOWN ON YOUR HAUNCHES, which
+    // is what a window is supposed to be.
+    //
+    // kWatchSightTiles and kWitnessRangeTiles are both 8 and a static_assert
+    // below holds them together, so routing the Watch through the room's own
+    // notice rule changes the RANGE not at all -- only what happens inside it.
+    static_assert(kWatchSightTiles == kWitnessRangeTiles,
+                  "the Watch and the room must agree how far a person can be seen, or "
+                  "canSeePlayer and witnessCount are two rules pretending to be one");
+    return noticeBy(actor).seen;
 }
 
 Actor* Tavern::watchmanWatchingPlayer() noexcept {
@@ -2586,6 +3031,18 @@ void Tavern::hash_into(HashSink& sink) const {
         sink.put_byte(static_cast<std::uint32_t>(good));
     }
     sink.put_int(static_cast<std::uint32_t>(scalpedVermin_));
+    // S9: how the body is carrying itself, what it is doing to the air, and
+    // every lock in the building. All of it decides whether a crime is
+    // witnessed or an act is possible at all, so all of it is state the
+    // twin-run gate compares -- a jammed lock in particular is permanent world
+    // change and a hash that could not see it would not protect it.
+    stealth_.hashInto(sink);
+    picking_.hashInto(sink);
+    sink.put_int(static_cast<std::uint32_t>(pickingRoom_));
+    sink.put_int(static_cast<std::uint32_t>(picks_));
+    sink.put_int(static_cast<std::uint32_t>(openedLocks_));
+    sink.put_int(static_cast<std::uint32_t>(jammedLocks_));
+    sink.put_int(static_cast<std::uint32_t>(forcedLocks_));
     sink.put_byte(static_cast<std::uint32_t>(watchStance_));
     sink.put_byte(static_cast<std::uint32_t>(watchCause_));
     sink.put_int(static_cast<std::uint32_t>(watchmanId_));
