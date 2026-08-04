@@ -65,16 +65,36 @@ inline constexpr std::int32_t kMaxPins = 6;
 /// enough to walk with two keys.
 inline constexpr std::int32_t kPinDepths = 9;
 
-/// Wrong probes a pick survives before it snaps, before skill.
-inline constexpr std::int32_t kStrainPerPick = 3;
+/// Wrong probes a pick survives ON ONE PIN before it snaps, before skill.
+///
+/// S10 RETUNED THIS, AND THE S9 REVIEW IS WHY. Its fifth finding: "there is no
+/// test and no scripted run anywhere in which a lock is picked open without
+/// foreknowledge of its pins" -- every case that opened one cleanly looked
+/// pinDepth() up first, and every shipped `--burgle` mode ended `jammed=4
+/// forced=4`. A minigame the only winning move in which is the boot is not a
+/// minigame. Three numbers moved and one rule changed; the case that proves the
+/// result is `a lock opens to a hand that only has what a player has`, which
+/// drives a bisect off Feel alone and never calls pinDepth.
+/// FIVE, and the arithmetic is on purpose. A bisect over nine notches costs
+/// three wrong probes at the outside; the good rooms' boxes are warded, which
+/// takes one off; three plus one of slack is five. Set it to four and the two
+/// harbour-side boxes -- the ones a captain pays for -- become unopenable by
+/// any hand in the MVP, which is how S9 shipped.
+inline constexpr std::int32_t kStrainPerPick = 5;
 /// And what CRACKSMANSHIP adds: one more wrong probe per this many levels.
-inline constexpr std::int32_t kStrainPerCraftLevels = 12;
+inline constexpr std::int32_t kStrainPerCraftLevels = 10;
 /// Ceiling on the strain a pick will ever take. A master still breaks wire.
 inline constexpr std::int32_t kStrainCeiling = 8;
 
 /// The level at and above which the lock tells you WHICH WAY you were wrong.
 /// Below it a bad probe is just a bad probe.
-inline constexpr std::int32_t kFeelLevel = 10;
+///
+/// S10: 10 -> 3. usesForLevel() charges 4+6+8 = 18 probes for level 3, so feel
+/// is a THING THE PLAYER EARNS IN ONE SITTING at the boxes rather than a thing
+/// no MVP character ever reaches. Below it a lock is a nine-deep blind search
+/// you should force; at it a lock is a bisection you can win. That is the
+/// taught choice this file's own header claims to be teaching.
+inline constexpr std::int32_t kFeelLevel = 3;
 /// Levels per point of tolerance -- how far off a probe may be and still set
 /// the pin. Zero tolerance below the first band, which is what makes an
 /// untrained hand a search of nine depths.
@@ -184,6 +204,13 @@ public:
     void moveDepth(std::int32_t delta) noexcept;
 
     /// Strain on the wire, and what it takes.
+    ///
+    /// S10: strain is PER PIN. It resets the moment a pin drops, so a lock is
+    /// three small budgets and not one shared one. Before this it accumulated
+    /// across the whole attempt, which meant the third pin of a three-pin box
+    /// was always worked on a wire that had already spent its slack on the
+    /// first two -- the arithmetic behind the S9 review's `jammed=4 forced=4`.
+    /// Progress is progress; a snapped pick still drops every pin you set.
     [[nodiscard]] std::int32_t strain() const noexcept { return strain_; }
     [[nodiscard]] std::int32_t strainLimit() const noexcept { return strainLimit_; }
 

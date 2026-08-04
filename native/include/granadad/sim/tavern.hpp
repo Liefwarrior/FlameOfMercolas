@@ -650,9 +650,34 @@ public:
     [[nodiscard]] Notice noticeBy(const Actor& actor) const noexcept;
     /// The loudest read anybody in the room has on the player right now, for a
     /// HUD that wants to say HIDDEN or SEEN. Empty room reads zero.
+    ///
+    /// SCOPE, MARKED HERE AND NOT ONLY IN A SPRINT REPORT (S9 review, finding
+    /// 7): THE WHOLE STEALTH SYSTEM IS THIS BUILDING'S. It walks `actors_` --
+    /// the Gilded Gull's eleven to sixteen -- because they are the only bodies
+    /// in the game with tiles, hours and facings. The 692 actors of the ward
+    /// live in Ward's economic roll and have no position to be seen from. So in
+    /// the Docks proper there is nobody to hide from and the HUD's stealth row
+    /// does not draw (Session::stealthLine returns empty outside the room). The
+    /// rule itself is building-agnostic -- sim/stealth.hpp takes an observer and
+    /// a body and knows nothing about taverns -- so what a second room costs is
+    /// a second cast, not a second system.
     [[nodiscard]] Notice worstNotice() const noexcept;
     /// True when nobody present can make the player out.
     [[nodiscard]] bool hidden() const noexcept { return !worstNotice().seen; }
+
+    /// How many people are close enough, awake enough and on the right floor to
+    /// have a chance of noticing the player at all -- everyone `noticeBy` does
+    /// NOT rule out as oblivious before it weighs a single clause.
+    ///
+    /// S10, and the S9 review is why. Its second finding: the burglary
+    /// acceptance asserted `hidden()` at a doorway that is EMPTY at two in the
+    /// morning, so the beat landed whether or not stealth worked at all -- and
+    /// it duly passed with the notice rule hard-wired to `seen = true`. "Nobody
+    /// saw me" is only a claim about stealth when somebody was there to. This
+    /// is the somebody-was-there half, and it is on the simulation rather than
+    /// counted by the test so both the scripted line and the case read it the
+    /// same way.
+    [[nodiscard]] std::int32_t watchersInReach() const noexcept;
 
     // --- S9: the locks -------------------------------------------------------
 

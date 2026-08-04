@@ -356,23 +356,80 @@ TEST_CASE("the Gull's own lamps light the law, not only the eye") {
 }
 
 TEST_CASE("the same crime is witnessed in a lit taproom and missed in a dark one") {
-    // Nine at night, standing at the bar, upright: the room sees you.
-    Room evening(hourOfDay(21), gull::kBartenderX, gull::kBarY + 2, gull::kGroundBand);
-    evening.tavern().setPlayerMotion(false, false);
+    // ONE TILE, TWO HOURS. Both halves stand in the same place -- just inside
+    // the door, which is where a burglar comes in and where the bouncers work
+    // -- so the only thing that differs between them is the hour, the stance
+    // and the light. Standing at the BAR would not do it: kWitnessReachTiles
+    // says an observer at arm's length needs no sight line and no light, which
+    // is deliberate (see the note on it) and would make this a case about
+    // distance wearing a stealth case's name.
+    const std::int32_t standX = gull::kDoorX0;
+    const std::int32_t standY = gull::kDoorY + 1;
+
+    // Nine at night, in the doorway, upright, walking in: the room sees you.
+    Room evening(hourOfDay(21), standX, standY, gull::kGroundBand);
+    evening.tavern().setPlayerMotion(true, false);
+    REQUIRE(evening.tavern().watchersInReach() > 0);
     CHECK(evening.tavern().witnessCount(kPlayerActorId) > 0);
     CHECK_FALSE(evening.tavern().hidden());
 
-    // FOUR IN THE MORNING, CROUCHED. The doors are shut, the lanterns and the
-    // candles are out, and whoever is still in the room cannot make you out.
-    Room night(hourOfDay(4), gull::kBartenderX, gull::kBarY + 2, gull::kGroundBand);
+    // TWO IN THE MORNING, CROUCHED, STILL. The doors have just been barred, the
+    // lanterns and the table candles are out, and the night staff are still in
+    // the building -- which is exactly why a burglar keeps this hour and not
+    // four, when the Gull is empty and being unseen proves nothing.
+    Room night(hourOfDay(2), standX, standY, gull::kGroundBand);
     night.tavern().setPlayerMotion(false, false);
     night.tavern().setStance(Stance::Crouched);
-    const std::int32_t seenCrouched = night.tavern().witnessCount(kPlayerActorId);
 
-    // AND STAND BACK UP AND START RUNNING, and the same dark room hears you.
+    // THIS HALF USED TO ASSERT NOTHING, and the S9 review proved it rather than
+    // suspecting it: the case passed with `Notice::seen` hard-wired to true --
+    // every observer in reach seeing through dark, crouch, silence and skill --
+    // because all it ever checked was `witnessCount() >= seenCrouched`, which
+    // holds when both sides are zero and when both sides are equal. The claim
+    // in the case NAME is the claim that belongs here.
+    //
+    // First: THERE IS SOMEBODY TO MISS YOU. Awake, upright, on this floor and
+    // in range. A room nobody is standing in trivially fails to see you, and
+    // that is not the behaviour this case is named for.
+    REQUIRE(night.tavern().watchersInReach() > 0);
+    CHECK(night.tavern().witnessCount(kPlayerActorId) == 0);
+    CHECK(night.tavern().hidden());
+    // The dark is real and not assumed: the same tile, unlit.
+    CHECK(night.tavern().lightOnPlayer() < evening.tavern().lightOnPlayer());
+
+    // AND STAND BACK UP AND RUN AT SOMEBODY, and the same dark room has you.
+    // Three tiles off a body that is still awake, upright, running: the light
+    // is the same 2 it was in the doorway, so what changed is the stance, the
+    // noise and the wall that is no longer between you.
+    const Actor* awake = nullptr;
+    for (const Actor& actor : night.tavern().actors()) {
+        if (actor.present() && actor.band() == gull::kGroundBand &&
+            actor.activity() != Activity::Downed && actor.role() != ActorRole::Vermin) {
+            awake = &actor;
+            break;
+        }
+    }
+    REQUIRE(awake != nullptr);
+    night.standAt(awake->tileX(), awake->tileY() + 3, gull::kGroundBand);
     night.tavern().setStance(Stance::Upright);
     night.tavern().setPlayerMotion(true, true);
-    CHECK(night.tavern().witnessCount(kPlayerActorId) >= seenCrouched);
+    const Notice running = night.tavern().worstNotice();
+    CHECK(night.tavern().witnessCount(kPlayerActorId) > 0);
+    CHECK_FALSE(night.tavern().hidden());
+
+    // AND CROUCHING BACK DOWN ON THAT SAME TILE MOVES THE MARGIN, STRICTLY.
+    // Three tiles from a man who is looking at you is close enough that
+    // crouching does not save you -- which is the rule working, not failing --
+    // so what this asserts is the number the rule decides on rather than the
+    // yes/no it decides. Same place, same hour, same man: the stance and the
+    // footfalls are the whole difference.
+    night.tavern().setStance(Stance::Crouched);
+    night.tavern().setPlayerMotion(false, false);
+    const Notice creeping = night.tavern().worstNotice();
+    CHECK(running.read + running.noise - running.cover >
+          creeping.read + creeping.noise - creeping.cover);
+    CHECK(creeping.cover > running.cover);
+    CHECK(creeping.noise < running.noise);
 }
 
 TEST_CASE("a hand in a coat is refused when the mark can see you and taken when they cannot") {
@@ -537,4 +594,29 @@ TEST_CASE("the stealth line is one row on an edge, and it says what it is lookin
 
     session.toggleCrouch();
     CHECK(session.stealthLine().find("CROUCH") != std::string::npos);
+
+    // AND IT SAYS HIDDEN WHEN YOU ARE. The S9 review's third finding: this case
+    // only ever tested the line in ONE direction -- it asserted "SEEN" and that
+    // the word CROUCH appears, and passed with the notice rule disabled, so
+    // nothing anywhere proved the HUD is capable of printing the good news.
+    // Two in the morning, doors barred, lanterns out, down on your haunches,
+    // just inside the door rather than leaning on the bar -- an observer at
+    // arm's length needs neither light nor a sight line and would make this a
+    // case about distance.
+    render::SessionConfig dark = config;
+    dark.timeOfDay = 2 * 3600;
+    dark.spawnX = gull::kDoorX0;
+    dark.spawnY = gull::kDoorY + 1;
+    render::Session night(dark);
+    night.stepMany(MoveInput{}, 2);
+    night.toggleCrouch();
+    const std::string quiet = night.stealthLine();
+    REQUIRE_FALSE(quiet.empty());
+    CHECK(quiet.substr(0, 6) == "HIDDEN");
+    CHECK(quiet.find("DARK") != std::string::npos);
+    CHECK(quiet.find('\n') == std::string::npos);
+    CHECK(quiet.size() < 40);
+    // And the simulation agrees with the line: the HUD is not allowed to be
+    // cheerier than the rule underneath it.
+    CHECK(night.hidden());
 }

@@ -2068,6 +2068,32 @@ Notice Tavern::noticeBy(const Actor& actor) const noexcept {
     return noticeOf(in);
 }
 
+std::int32_t Tavern::watchersInReach() const noexcept {
+    if (!playerKnown_) {
+        return 0;
+    }
+    std::int32_t count = 0;
+    for (const Actor& actor : actors_) {
+        // THE SAME FOUR REFUSALS noticeBy applies before it weighs anything --
+        // present, upright, not vermin, same floor, within the witness range.
+        // Deliberately not factored into a shared helper: noticeBy returns a
+        // Notice and this returns a count, and a helper that returned "is this
+        // one oblivious" would be a third place the range could drift.
+        if (!actor.present() || actor.activity() == Activity::Downed ||
+            actor.role() == ActorRole::Vermin || actor.band() != playerBand_) {
+            continue;
+        }
+        const std::int32_t dx = actor.x() - playerX_;
+        const std::int32_t dy = actor.y() - playerY_;
+        const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+        if (distance > kWitnessRangeTiles * kSubOne) {
+            continue;
+        }
+        ++count;
+    }
+    return count;
+}
+
 Notice Tavern::worstNotice() const noexcept {
     Notice worst;
     bool any = false;
@@ -2076,7 +2102,18 @@ Notice Tavern::worstNotice() const noexcept {
         // The one who reads you best. Ties break on the earlier id, because
         // actors_ is never reordered -- so two runs cannot disagree about who
         // is looking hardest.
-        if (!any || one.read - one.cover > worst.read - worst.cover) {
+        //
+        // S10 FIXED THE MARGIN THIS RANKS ON. It was `read - cover`, and
+        // noticeOf decides with `read + noise > cover` -- so the NOISE the body
+        // is making was left out of the comparison that picks whose opinion
+        // counts. A body running through a dark room could be ranked behind a
+        // sleeping man whose Notice reads a flat zero, and `hidden()` would
+        // then answer off the sleeper while a bouncer four tiles away had
+        // seen=true. Found by a case that expected an upright sprint to be
+        // noticed and got HIDDEN back with `read=0 cover=20 noise=0` -- the
+        // signature of an oblivious actor winning the ranking.
+        const std::int32_t margin = one.read + one.noise - one.cover;
+        if (!any || margin > worst.read + worst.noise - worst.cover) {
             worst = one;
             any = true;
         }

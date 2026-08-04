@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <sstream>
 #include <utility>
 
@@ -9,6 +10,7 @@
 #include "granadad/content/world_reader.hpp"
 #include "granadad/render/capture.hpp"
 #include "granadad/sim/angle.hpp"
+#include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
 
 namespace granadad::render {
@@ -1929,9 +1931,133 @@ constexpr std::int32_t kBurgleBeats = 7;
 /// many -- the S4 review's whole complaint about scripted lines that report a
 /// number and nothing else.
 std::int32_t gBurgleBeatMask = 0;
+/// And how many people were awake, upright, on this floor and in range when
+/// beat 2 was judged. Zero means the beat proved nothing -- see the note there.
+std::int32_t gBurgleWatchers = 0;
+/// Probes made on the SECOND box by `--burgle=lock`, so the case that proves
+/// that frame is a live attempt can say so with a number instead of a picture.
+std::int32_t gLockEndingProbes = 0;
+
+/// WORKS THE LOCK UNDER THE WIRE WITH WHAT A PLAYER HAS, AND NOTHING ELSE.
+///
+/// The S9 review's fifth finding, verbatim: "there is no test and no scripted
+/// run anywhere in which a lock is picked open without foreknowledge of its
+/// pins." Every case that opened one cleanly called `pinDepth()` first and
+/// drove the pick straight to the answer; every shipped `--burgle` ended
+/// `jammed=4 forced=4`. That is not a minigame with a hard tuning, it is a
+/// minigame with no win condition on the board.
+///
+/// So: this is THE STRATEGY, written as a player would play it. It may look at
+/// exactly four things, all of them on screen in the HUD's own lock row --
+/// where the pick is being held, how many pins have dropped, how much strain is
+/// on the wire, and what the last probe felt like. It never calls pinDepth, it
+/// never touches the Lock, and it never reads the seed. Give it a hand with no
+/// feel and it sweeps the track, which is all an apprentice can do; give it a
+/// hand at kFeelLevel and it bisects, which is what the feel is FOR.
+///
+/// `stopAtPins` lets a capture halt mid-attempt so the shutter catches the
+/// surface with pins down and the wire still in. Negative works it to the end.
+/// Returns the number of probes made.
+int workTheWire(Session& session, std::int32_t stopAtPins = -1,
+                std::int32_t maxProbes = -1) {
+    // The window the pin is known to be inside, in depth notches. Reset every
+    // time a pin drops or a pick snaps, because both mean the wire is now on a
+    // pin this strategy knows nothing about.
+    std::int32_t low = 0;
+    std::int32_t high = sim::kPinDepths - 1;
+    // Which notches have already been ruled out for the pin under the wire. A
+    // player's memory of the last few seconds, and nothing more.
+    std::uint32_t tried = 0;
+    const auto forget = [&]() {
+        low = 0;
+        high = sim::kPinDepths - 1;
+        tried = 0;
+    };
+    std::int32_t pinsSeen = session.picking() ? session.lockpicking().pinsSet() : 0;
+    int probes = 0;
+    // A generous guard. A bisect finishes in four probes a pin; a blind sweep
+    // takes nine and breaks wire doing it, and the roll runs out long before
+    // this does.
+    for (int guard = 0; guard < 400 && session.picking(); ++guard) {
+        const sim::Lockpicking& wire = session.lockpicking();
+        if (stopAtPins >= 0 && wire.pinsSet() >= stopAtPins) {
+            break;
+        }
+        if (maxProbes >= 0 && probes >= maxProbes) {
+            break;
+        }
+        if (wire.pinsSet() != pinsSeen) {
+            pinsSeen = wire.pinsSet();
+            forget();
+        }
+        if (low > high) {
+            forget();
+        }
+        // The midpoint of what is left, or -- when the midpoint has already
+        // been tried, which is the no-feel case -- the nearest notch to it that
+        // has not been. THE SWEEP HAS TO REACH EVERY DEPTH: a version of this
+        // that only ever walked the window upward looped over four of the nine
+        // notches forever and could not open a lock at all.
+        std::int32_t aim = low + (high - low) / 2;
+        if ((tried & (1U << aim)) != 0U) {
+            aim = -1;
+            for (std::int32_t spread = 1; spread < sim::kPinDepths && aim < 0; ++spread) {
+                const std::int32_t mid = low + (high - low) / 2;
+                const std::int32_t down = mid - spread;
+                const std::int32_t up = mid + spread;
+                if (down >= low && (tried & (1U << down)) == 0U) {
+                    aim = down;
+                } else if (up <= high && (tried & (1U << up)) == 0U) {
+                    aim = up;
+                }
+            }
+            if (aim < 0) {
+                // Every notch in the window is spent. Widen to the whole track,
+                // and if that is spent too the pin moved under us -- forget it
+                // all and start again.
+                forget();
+                aim = 0;
+                while (aim < sim::kPinDepths && (tried & (1U << aim)) != 0U) {
+                    ++aim;
+                }
+                if (aim >= sim::kPinDepths) {
+                    aim = 0;
+                }
+            }
+        }
+        session.movePick(aim - wire.depth());
+        session.probeLock();
+        ++probes;
+        tried |= 1U << aim;
+        switch (wire.lastFeel()) {
+            case sim::Feel::TooShallow:
+                // The pin is DEEPER than where the pick was held.
+                low = aim + 1;
+                break;
+            case sim::Feel::TooDeep:
+                high = aim - 1;
+                break;
+            case sim::Feel::NoFeel:
+                // No information at all. The notch is crossed off and nothing
+                // else is learned. This is the apprentice's whole game, and it
+                // is why an apprentice forces boxes.
+                break;
+            case sim::Feel::Set:
+            case sim::Feel::Broke:
+            case sim::Feel::Jammed:
+            case sim::Feel::Open:
+            default:
+                forget();
+                break;
+        }
+    }
+    return probes;
+}
 
 [[nodiscard]] int runBurgleLine(Session& session, const std::string& ending) {
     int landed = 0;
+    gBurgleWatchers = 0;
+    gLockEndingProbes = 0;
     gBurgleBeatMask = 0;
     std::int32_t beat = 0;
     const auto mark = [&](bool ok) {
@@ -1956,8 +2082,35 @@ std::int32_t gBurgleBeatMask = 0;
     //    at which point being seen is the game working rather than the stealth
     //    failing, and a beat that could not tell those two apart would be a
     //    beat worth nothing.
+    //
+    //    S10: AND SOMEBODY HAS TO BE THERE TO MISS YOU. The S9 review proved
+    //    this beat landed with the notice rule hard-wired to seen -- at two in
+    //    the morning the doorway is empty, everyone in reach reads oblivious,
+    //    and "nobody saw me" was a fact about the hour rather than about
+    //    stealth. The bit now needs a body in range that is awake, upright and
+    //    on this floor, so it is a claim that can fail. If the night staff have
+    //    all gone to bed, the burglar walks in until one of them is in reach.
     walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
-    mark(session.hidden());
+    if (session.tavern().watchersInReach() == 0) {
+        // Nobody at the door. Go and stand near whoever is still up -- being
+        // unseen next to a man is the beat; being unseen in an empty room is
+        // not, and the run should fail rather than quietly pass if there is
+        // nobody in the building at all.
+        const sim::Actor* awake = nullptr;
+        for (const sim::Actor& actor : session.tavern().actors()) {
+            if (actor.present() && actor.band() == session.body().band() &&
+                actor.activity() != sim::Activity::Downed &&
+                actor.role() != sim::ActorRole::Vermin) {
+                awake = &actor;
+                break;
+            }
+        }
+        if (awake != nullptr) {
+            walkToTile(session, awake->tileX() + 2, awake->tileY());
+        }
+    }
+    gBurgleWatchers = session.tavern().watchersInReach();
+    mark(session.hidden() && gBurgleWatchers > 0);
 
     // 3. a hand in the coat of whoever is still on a stool.
     //
@@ -2004,19 +2157,13 @@ std::int32_t gBurgleBeatMask = 0;
     session.steal();
     mark(session.picking());
 
-    // 6. WORK THE LOCK. Pin by pin, and blind: nothing here looks up where the
-    //    pins are. It searches the depth track the way a player without the
-    //    feel does, and it stops the moment the lock gives or the wire is gone.
-    for (int guard = 0; guard < 400 && session.picking(); ++guard) {
-        const sim::Lockpicking& wire = session.lockpicking();
-        const std::int32_t at = wire.depth();
-        if (at >= sim::kPinDepths - 1) {
-            session.movePick(-(sim::kPinDepths - 1));
-        } else {
-            session.movePick(1);
-        }
-        session.probeLock();
-    }
+    // 6. WORK THE LOCK, the way the player in this body can. workTheWire() is
+    //    a strategy and not a cheat: it reads the depth the pick is at, how
+    //    many pins have dropped, and what the last probe FELT LIKE, and it
+    //    reads nothing else. Below kFeelLevel that degenerates to the same
+    //    blind sweep S9 shipped, because a hand with no feel has no better
+    //    move; at and above it, it bisects.
+    workTheWire(session);
     const std::int32_t roomBit = 1 << 2;
     if ((session.tavern().openedLocks() & roomBit) == 0) {
         // The wire is gone and the lock is ruined. A burglar with a jammed lock
@@ -2032,21 +2179,59 @@ std::int32_t gBurgleBeatMask = 0;
     mark(session.tavern().crackedBoxes() != before);
 
     if (ending == "lock") {
-        // AND HE STARTS ON THE NEXT ONE. The wire goes into the box across the
-        // landing and two pins are set, so the shutter catches the lockpicking
-        // surface itself rather than the room it happens in. Nothing is faked:
-        // this is the same beginPick/movePick/probeLock a keyboard reaches.
+        // AND HE STARTS ON THE NEXT ONE, WITH THE HANDS THE FIRST ONE GAVE HIM.
+        //
+        // S9 SHIPPED THIS FRAME POSED AND SAID IT WAS NOT. Its comment read
+        // "Nothing is faked" directly above a setPicks() that refilled the roll
+        // out of nowhere and a pinDepth() lookup that drove the pick to the
+        // answer -- the S9 review's fourth finding, and it was right: the CALLS
+        // were the ones a keyboard reaches, the STATE was not, and the captured
+        // PNG read PICKS 5 STRAIN 0/3 after a burglary that had just spent
+        // every pick in the roll.
+        //
+        // What happens instead is the arc the retuning exists for. Beat 6 has
+        // just cost this burglar most of his wire and taught his hands a great
+        // deal doing it -- every probe is a use, and usesForLevel charges 18 of
+        // them for CRACKSMANSHIP 3, which is kFeelLevel. So he goes back down
+        // to the snug, buys wire off the Skyrunners' own contact with the same
+        // G a keyboard presses, comes back up, and works the box across the
+        // landing with a hand that can now hear it. Nothing here knows where a
+        // pin is.
+        walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+        session.dropDown();
+        // The oath first. Nobody sells a stranger wire -- Tavern::buyPicks
+        // refuses anyone off the Skyrunners' ladder in as many words -- so the
+        // burglar takes their first rung off Finch through the same Join topic
+        // the roof line uses, and then buys. Both are keys.
+        if (speakTo(session, "Finch")) {
+            pick(session, sim::TopicKind::Join);
+            session.closeConversation();
+        }
+        const sim::Actor* contact = nullptr;
+        for (const sim::Actor& actor : session.tavern().actors()) {
+            if (actor.role() == sim::ActorRole::SkyrunnerContact && actor.present()) {
+                contact = &actor;
+                break;
+            }
+        }
+        if (contact != nullptr) {
+            walkToTile(session, contact->tileX(), contact->tileY());
+            // Two sets if he can afford them: a bisect wants four notches of
+            // slack a pin and the roll is the only thing that buys patience.
+            session.tavern().buyPicks();
+            session.tavern().buyPicks();
+        }
+        walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+        climbAndLand(session);
         const sim::gull::GuestRoom& next = sim::gull::kRooms[3];
         walkToTile(session, next.standX, next.standY);
-        session.tavern().setPicks(sim::kStartingPicks);
         session.steal();
-        const sim::Lock lock = sim::Tavern::strongboxLock(3);
-        for (std::int32_t pin = 0; pin < lock.pins - 1 && session.picking(); ++pin) {
-            const std::int32_t want =
-                sim::pinDepth(session.config().worldSeed, lock, pin);
-            session.movePick(want - session.lockpicking().depth());
-            session.probeLock();
-        }
+        // Worked, and then STOPPED WHILE IT IS STILL BEING WORKED -- either
+        // when the last pin is one away or after a handful of probes, whichever
+        // comes first. That is what makes the shutter catch the minigame rather
+        // than its aftermath, and it is a budget on the PLAYER'S side of the
+        // wire, not a hand on the lock's side.
+        gLockEndingProbes = workTheWire(session, sim::kStrongboxPins - 1, 8);
         session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
                                              next.bedX, next.bedY));
         session.body().setPitch(sim::angle_from_degrees(-14));
@@ -2323,6 +2508,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         const std::int32_t landed =
             static_cast<std::int32_t>(runBurgleLine(session, config.burgleEnd));
         result.burgleBeats = landed;
+        result.burgleBeatMask = gBurgleBeatMask;
+        result.watchersInReach = gBurgleWatchers;
         result.scriptedWanted += kBurgleBeats;
         result.scriptedLanded += landed;
         result.talking = session.talking();
@@ -2353,6 +2540,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     result.endTileY = session.body().tileY();
     result.endBand = session.body().band();
     result.actorsInFrame = session.tavern().presentCount();
+    result.craftLevel = session.tavern().dialogue().skills().level(sim::kThieverySkill);
+    result.pinsSet = session.picking() ? session.lockpicking().pinsSet() : 0;
 
     const int hour = session.timeOfDay() / 3600;
     const int minute = (session.timeOfDay() / 60) % 60;
@@ -2376,7 +2565,17 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                                     : "none")
                 << " light=" << session.tavern().lightOnPlayer()
                 << " noise=" << session.tavern().playerNoise()
-                << " " << (session.hidden() ? "hidden" : "seen")
+                // WHETHER THE STEALTH BEAT PROVED ANYTHING, printed beside it.
+                // `watchers=` is how many awake, upright bodies were in range
+                // when beat 2 was judged; a `hidden` with `watchers=0` beside it
+                // is a fact about the hour and not about being unseen, and the
+                // S9 review had to read the source to work that out. Now it is
+                // one word away from the claim.
+                << " watchers=" << gBurgleWatchers
+                << " " << (session.hidden() ? "hidden" : "seen") << " "
+                << " picking=" << (session.picking() ? "yes" : "no")
+                << " pins=" << (session.picking() ? session.lockpicking().pinsSet() : 0)
+                << " nextprobes=" << gLockEndingProbes
                 << " picks=" << session.picks()
                 << " locks open=" << session.tavern().openedLocks()
                 << " jammed=" << session.tavern().jammedLocks()
@@ -2491,8 +2690,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // eleven characters of screen is unreadable in a capture.
     if (config.stamp && !result.talking) {
         const int scale = std::max(1, frame.height() / 180);
-        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S6", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
-                 scale);
+        // DERIVED, NOT TYPED. S9's read "GRANADAD S6" -- a literal three sprints
+        // out of date, burnt into the top-left of every capture including all
+        // four of S9's own, and found by the review in a PNG rather than in the
+        // source. It reads the project version now, which CMake sets in one
+        // place and build_info() carries, so there is nothing here left to
+        // forget to update.
+        const sim::BuildInfo info = sim::build_info();
+        std::string stamp = "GRANADAD ";
+        stamp.append(info.version);
+        drawText(frame, 4 * scale, 4 * scale, stamp, Rgb{0.55F, 0.53F, 0.46F}, 0.7F, scale);
     }
 
     result.ok = !result.scriptFellShort();

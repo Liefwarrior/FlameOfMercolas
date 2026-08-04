@@ -197,7 +197,15 @@ TEST_CASE("the feel tells a trained hand which way it was wrong, and an apprenti
     const Lock box{13, 3, 0};
     const std::int32_t want = pinDepth(kSeed, box, 0);
     // A pin that is not at either end, so both answers are reachable.
-    if (want > 0 && want < kPinDepths - 1) {
+    //
+    // S10: THIS IS A REQUIRE AND NOT AN `if`. The S9 review's minor finding --
+    // it computed pinDepth(kSeed, Lock{13,3,0}, 0) = 3 by hand and confirmed
+    // the body does run today, but a case whose assertions sit behind a
+    // data-dependent branch is a case that can silently stop testing anything
+    // the day a constant moves. If this ever fails, pick a different lock id.
+    REQUIRE(want > 0);
+    REQUIRE(want < kPinDepths - 1);
+    {
         Lockpicking trained;
         std::int32_t picks = kStartingPicks;
         trained.begin(box, kSeed, kFeelLevel);
@@ -437,13 +445,13 @@ TEST_CASE("the lock row draws the whole minigame, and the centre of the screen s
 
     // AND THE FRAME IT DRAWS INTO KEEPS ITS MIDDLE. The HUD rule is a testable
     // claim and not a preference; this is it, with the lock row on screen.
+    //
+    // S10 deleted two framebuffers from here that were rendered and then
+    // `(void)`-discarded -- dead work left by an abandoned comparison, and the
+    // S9 review's second minor finding. The comparison that actually proves the
+    // rule is the with-lock/without-lock pair below.
     session.steal();
     REQUIRE(session.picking());
-    render::Framebuffer dressed(config.width, config.height);
-    session.drawFrame(dressed);
-    render::Framebuffer bare(config.width, config.height);
-    session.renderer().renderFrame(bare, session.camera(), render::RenderSettings{},
-                                   std::vector<render::SpriteInstance>{});
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
     // The world under the two differs (one ran the renderer directly), so this
     // asserts what the RULE says: nothing the HUD draws is inside the box. Text
@@ -461,8 +469,6 @@ TEST_CASE("the lock row draws the whole minigame, and the centre of the screen s
                     without.pixels()[without.index(x, y)]);
         }
     }
-    (void)bare;
-    (void)dressed;
 }
 
 TEST_CASE("a burglary is played from the keys: crouch, cross, lift, climb, pick, empty") {
@@ -487,4 +493,191 @@ TEST_CASE("a burglary is played from the keys: crouch, cross, lift, climb, pick,
     // to assume it landed. See runBurgleLine on why the beat is the hand and
     // not the coin.
     CHECK(played.summary.find("lift=tried") != std::string::npos);
+
+    // AND THE STEALTH BEAT IS A CLAIM THAT CAN FAIL.
+    //
+    // The S9 review's second finding, and it was proved rather than argued:
+    // this acceptance passed with `Notice::seen` hard-wired to true. Its only
+    // stealth beat was `mark(session.hidden())` at a doorway that is EMPTY at
+    // two in the morning, so it landed because nobody was there, not because
+    // the burglar was unseen. Beat 2 now needs BOTH -- somebody awake, upright
+    // and in range, AND that somebody failing to make him out -- and the run
+    // says so in its own summary.
+    CHECK(played.summary.find(" hidden ") != std::string::npos);
+    CHECK(played.summary.find("watchers=") != std::string::npos);
+    CHECK(played.summary.find("watchers=0 ") == std::string::npos);
+    // Bit 1 is beat 2. Named here because a mask of 127 says nothing about
+    // WHICH claim held, and this is the one the review found hollow.
+    CHECK((played.burgleBeatMask & 0x2) != 0);
+}
+
+TEST_CASE("a lock opens to a hand that only has what a player has") {
+    // THE CASE THE S9 REVIEW SAID DID NOT EXIST, verbatim: "there is no test
+    // and no scripted run anywhere in which a lock is picked open without
+    // foreknowledge of its pins."
+    //
+    // So: a solver with a player's information and no more. It may look at the
+    // depth the pick is held at, how many pins have dropped, and WHAT THE LAST
+    // PROBE FELT LIKE -- the three things the HUD's own lock row prints. It
+    // never calls pinDepth(), never reads Lock::id, never touches the seed.
+    // Given feel, it bisects; that is what the feel is for.
+    //
+    // If this case ever goes red, the tuning is wrong and not the test.
+    const auto crackIt = [](const Lock& lock, std::uint64_t seed, std::int32_t craft,
+                            std::int32_t picksInRoll) {
+        struct Attempt {
+            bool opened = false;
+            bool jammed = false;
+            std::int32_t probes = 0;
+            std::int32_t picksLeft = 0;
+        };
+        Lockpicking wire;
+        std::int32_t picks = picksInRoll;
+        wire.begin(lock, seed, craft);
+        std::int32_t low = 0;
+        std::int32_t high = kPinDepths - 1;
+        std::uint32_t tried = 0;
+        std::int32_t pinsSeen = 0;
+        Attempt out;
+        for (int guard = 0; guard < 400 && wire.open(); ++guard) {
+            if (wire.pinsSet() != pinsSeen) {
+                pinsSeen = wire.pinsSet();
+                low = 0;
+                high = kPinDepths - 1;
+                tried = 0;
+            }
+            if (low > high) {
+                low = 0;
+                high = kPinDepths - 1;
+                tried = 0;
+            }
+            std::int32_t aim = low + (high - low) / 2;
+            if ((tried & (1U << aim)) != 0U) {
+                aim = -1;
+                const std::int32_t mid = low + (high - low) / 2;
+                for (std::int32_t spread = 1; spread < kPinDepths && aim < 0; ++spread) {
+                    if (mid - spread >= low && (tried & (1U << (mid - spread))) == 0U) {
+                        aim = mid - spread;
+                    } else if (mid + spread <= high &&
+                               (tried & (1U << (mid + spread))) == 0U) {
+                        aim = mid + spread;
+                    }
+                }
+                if (aim < 0) {
+                    low = 0;
+                    high = kPinDepths - 1;
+                    aim = 0;
+                    while (aim < kPinDepths && (tried & (1U << aim)) != 0U) {
+                        ++aim;
+                    }
+                    if (aim >= kPinDepths) {
+                        tried = 0;
+                        aim = 0;
+                    }
+                }
+            }
+            wire.moveDepth(aim - wire.depth());
+            const Feel felt = wire.probe(picks);
+            ++out.probes;
+            tried |= 1U << aim;
+            if (felt == Feel::TooShallow) {
+                low = aim + 1;
+            } else if (felt == Feel::TooDeep) {
+                high = aim - 1;
+            } else if (felt != Feel::NoFeel) {
+                low = 0;
+                high = kPinDepths - 1;
+                tried = 0;
+            }
+        }
+        out.opened = wire.opened();
+        out.jammed = wire.jammed();
+        out.picksLeft = picks;
+        return out;
+    };
+
+    // EVERY LOCK IN THE WARD, at the level the feel arrives at, out of a full
+    // roll. All four have to give: a minigame that is winnable on three boxes
+    // out of four is a minigame with a wall in it.
+    for (std::int32_t room = 0; room < 4; ++room) {
+        const Lock box = Tavern::strongboxLock(room);
+        const auto got = crackIt(box, kSeed, kFeelLevel, kStartingPicks);
+        INFO("room " << room << " probes " << got.probes << " picks left " << got.picksLeft);
+        CHECK(got.opened);
+        CHECK_FALSE(got.jammed);
+        // And it does not take all day. Three pins, nine notches, feel: a
+        // bisect is four probes a pin at the outside.
+        CHECK(got.probes <= 4 * box.pins);
+    }
+
+    // AND ACROSS SEEDS, so this is not one lucky world. Ten different worlds,
+    // the same four boxes, the same hand.
+    std::int32_t opened = 0;
+    for (std::uint64_t bump = 0; bump < 10; ++bump) {
+        for (std::int32_t room = 0; room < 4; ++room) {
+            const auto got =
+                crackIt(Tavern::strongboxLock(room), kSeed + bump * 0x9E3779B97F4A7C15ull,
+                        kFeelLevel, kStartingPicks);
+            opened += got.opened ? 1 : 0;
+        }
+    }
+    CHECK(opened == 40);
+
+    // AND THE SAME HAND WITH NO FEEL IS A DIFFERENT GAME. One notch below the
+    // band, the wire tells it nothing, and a blind sweep of nine depths against
+    // four probes of slack loses far more often than it wins. That asymmetry IS
+    // the skill: what CRACKSMANSHIP buys is information, and the case that
+    // proves the feel works is the case that proves its absence hurts.
+    std::int32_t blindOpened = 0;
+    for (std::uint64_t bump = 0; bump < 10; ++bump) {
+        for (std::int32_t room = 0; room < 4; ++room) {
+            const auto got =
+                crackIt(Tavern::strongboxLock(room), kSeed + bump * 0x9E3779B97F4A7C15ull,
+                        kFeelLevel - 1, kStartingPicks);
+            blindOpened += got.opened ? 1 : 0;
+        }
+    }
+    INFO("blind opened " << blindOpened << " of 40");
+    CHECK(blindOpened < opened);
+}
+
+TEST_CASE("the burglar's second box is opened by hands the first one taught") {
+    // THE ARC, PLAYED. `--burgle=lock` used to refill the roll out of nowhere
+    // and drive the pick straight to a pinDepth() lookup -- S9's fourth
+    // finding. What it does now is the game: the first box costs every pick in
+    // the roll and is forced, the eighteen probes that cost buy CRACKSMANSHIP 3
+    // which is kFeelLevel, the burglar takes the Skyrunners' first rung off
+    // Finch and buys wire, and the second box is worked by a hand that can hear
+    // it. Nothing in that path knows where a pin is.
+    render::SmokeRunConfig run;
+    run.session.contentDir = content::contentDir();
+    run.burgle = true;
+    run.burgleEnd = "lock";
+    run.session.timeOfDay = render::scriptedStartHour(run) * 3600;
+    run.steps = 0;
+    run.stamp = false;
+
+    const render::SmokeRunResult played = render::runSmoke(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK(played.burgleBeats == 7);
+    // THE FIRST BOX IS PICKED, NOT KICKED. `openedLocks` bit 2 is the box the
+    // seven beats are about, and `forcedLocks` staying clear of it is the whole
+    // retuning in one assertion: S9 shipped `jammed=4 forced=4` on every mode.
+    CHECK((played.summary.find("locks open=4 ") != std::string::npos));
+    CHECK(played.summary.find("forced=0") != std::string::npos);
+    // The hands were taught by working it. Every probe is a use, including the
+    // wrong ones -- Morrowind's rule, and this project's since S3.
+    CHECK(played.craftLevel > 0);
+    // AND THE FRAME IS A LIVE ATTEMPT, NOT A POSE. A second lock is under the
+    // wire when the shutter goes; the wire in it was bought off Finch with the
+    // same Join-then-buy a keyboard reaches; and the probes on it were aimed by
+    // workTheWire, which cannot see a pin. S9's version of this frame called
+    // setPicks() to refill the roll out of nowhere and drove the pick to a
+    // pinDepth() lookup, under a comment that said "Nothing is faked".
+    CHECK(played.summary.find("picking=yes") != std::string::npos);
+    CHECK(played.summary.find("nextprobes=0 ") == std::string::npos);
+    CHECK(played.summary.find("nextprobes=") != std::string::npos);
+    // Wire in the roll at capture: bought, not conjured.
+    CHECK(played.summary.find("picks=0 ") == std::string::npos);
 }

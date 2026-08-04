@@ -121,6 +121,13 @@ Feel Lockpicking::probe(std::int32_t& picksLeft) noexcept {
     const std::int32_t magnitude = off < 0 ? -off : off;
     if (magnitude <= tolerance_) {
         ++pin_;
+        // S10: THE WIRE GETS ITS SLACK BACK WHEN A PIN DROPS. Strain used to
+        // run for the whole attempt, so the last pin of a lock was always
+        // worked on a wire the earlier pins had already half-spent -- which is
+        // the arithmetic that made every shipped burglary end in the boot. A
+        // pin is now its own budget. The snap still costs you every pin you
+        // set, so this buys patience, not safety.
+        strain_ = 0;
         if (pin_ >= lock_.pins) {
             open_ = false;
             opened_ = true;
@@ -179,6 +186,14 @@ void Lockpicking::hashInto(HashSink& sink) const {
     sink.put_int(static_cast<std::uint32_t>(depth_));
     sink.put_int(static_cast<std::uint32_t>(strain_));
     sink.put_int(static_cast<std::uint32_t>(probes_));
+    // S10, closing the S9 review's third minor finding verbatim: "hashInto
+    // omits strainLimit_, tolerance_, feel_ ... it is a surface that will bite
+    // when a save file resumes an attempt". They are derived from a hashed
+    // skill today, so nothing diverges today; a resumed attempt is exactly the
+    // case where they stop being derived, and the gate should already cover it.
+    sink.put_int(static_cast<std::uint32_t>(strainLimit_));
+    sink.put_int(static_cast<std::uint32_t>(tolerance_));
+    sink.put_byte(feel_ ? 1U : 0U);
     sink.put_byte(static_cast<std::uint32_t>(last_));
 }
 

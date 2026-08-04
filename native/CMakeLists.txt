@@ -14,7 +14,12 @@ cmake_minimum_required(VERSION 3.24)
 # preset definitions are believed correct but untested.
 
 project(granadad
-    VERSION 0.1.0
+    # S10 ships the playable demo. The version is the ONE place the build says
+    # how far along it is: the capture stamp, the title card and --help all read
+    # it out of build_info() now rather than each carrying their own literal.
+    # S9 shipped "GRANADAD S6" burnt into the corner of every frame, three
+    # sprints stale, and the review found it in a screenshot.
+    VERSION 0.10.0
     DESCRIPTION "Granadad: The Darkstreets — deterministic simulation of the Docks district of Trojia"
     LANGUAGES CXX)
 

@@ -482,6 +482,20 @@ struct SmokeRunResult {
     std::int32_t nemesisBeats = 0;
     /// And of the seven beats of the burglary.
     std::int32_t burgleBeats = 0;
+    /// WHICH of them landed, one bit each, in order. A count says how many; a
+    /// mask says which, and a case that cares about one specific claim -- beat
+    /// 2, "somebody awake was in reach and did not make me out" -- can name it.
+    std::int32_t burgleBeatMask = 0;
+    /// CRACKSMANSHIP at the moment of capture, and how many pins are down on
+    /// whatever lock is still under the wire. Both zero when no lock is open.
+    /// Exposed so the acceptance can assert the ARC -- hands taught by the
+    /// first box opening the second -- rather than only the beat count.
+    std::int32_t craftLevel = 0;
+    std::int32_t pinsSet = 0;
+    /// How many people were awake, upright, on the player's floor and in range
+    /// at the moment the burglar's stealth beat was judged. A "nobody saw me"
+    /// with this at zero is a fact about the hour, not about stealth.
+    std::int32_t watchersInReach = 0;
     /// What a scripted line WANTED to land, and what it did.
     ///
     /// S5 ADDS THESE BECAUSE S4'S CAPTURE PATH LIED. runFlameLine returned a
