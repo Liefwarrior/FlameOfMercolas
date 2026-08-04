@@ -184,6 +184,44 @@ TEST_CASE("an alms stage still counts drinks without saying so, and the Mission'
 // RULES
 // ===========================================================================
 
+TEST_CASE("a counted stage refuses to be turned in until it has been done") {
+    // THE ONE THING A COUNTED STAGE IS FOR. S5's own scripted capture found
+    // this: `tally` was added beside `alms` and the guard in
+    // DialogueDirector::choose still named only `alms`, so every Skyrunner
+    // stage advanced whether the act had been done or not -- a nine-stage line
+    // finishable by pressing one key nine times.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    DialogueDirector& talk = gull.dialogue();
+
+    REQUIRE(room.standBy("Finch") != nullptr);
+    REQUIRE(gull.talkTo());
+    REQUIRE(room.pick(TopicKind::Join));
+    REQUIRE(talk.journal().stagesDone("skyrunner-tenant") == 1);
+
+    // Stage two wants two purses and has had none.
+    REQUIRE(room.topicOfKind(TopicKind::QuestBeat) >= 0);
+    REQUIRE(room.pick(TopicKind::QuestBeat));
+    CHECK(talk.journal().stagesDone("skyrunner-tenant") == 1);
+    REQUIRE(room.pick(TopicKind::QuestBeat));
+    CHECK(talk.journal().stagesDone("skyrunner-tenant") == 1);
+
+    // One is not two either.
+    talk.noteTally("lifts");
+    REQUIRE(room.pick(TopicKind::QuestBeat));
+    CHECK(talk.journal().stagesDone("skyrunner-tenant") == 1);
+
+    talk.noteTally("lifts");
+    REQUIRE(room.pick(TopicKind::QuestBeat));
+    CHECK(talk.journal().stagesDone("skyrunner-tenant") == 2);
+
+    // And a tally the CURRENT stage does not count moves nothing: the counter
+    // is per stage, so the roofs cannot be farmed ahead of being asked.
+    const std::int32_t at = talk.journal().counter("skyrunner-tenant");
+    talk.noteTally("leaps");
+    CHECK(talk.journal().counter("skyrunner-tenant") == at);
+}
+
 TEST_CASE("heat is what the Watch HEARD, and an act nobody saw raises none of it") {
     CrimeLedger ledger;
     CHECK(ledger.heat() == 0);
@@ -569,42 +607,55 @@ TEST_CASE("a player can sign on with the roofs and finish the Skyrunner line") {
     CHECK(talk.journal().stagesDone("skyrunner-tenant") == 2);
     gull.endConversation();
 
+    // GO, DO THE ONE THING, COME BACK AND SAY SO. A counted stage counts what
+    // is done WHILE IT IS THE STAGE, so the line has to be walked in order --
+    // which is the whole shape of a questline and the reason this case is
+    // twice as long as it looks like it should be.
+    const auto reportToFinch = [&]() {
+        REQUIRE(room.standBy("Finch") != nullptr);
+        REQUIRE(gull.talkTo());
+        REQUIRE(room.pick(TopicKind::QuestBeat));
+        gull.endConversation();
+    };
+
     // 3. a box above the stair.
     room.standAt(gull::kRooms[0].standX, gull::kRooms[0].standY, gull::kUpperBand);
     REQUIRE(gull.crackStrongbox().result == ServiceResult::Served);
+    room.standAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+    reportToFinch();
+    CHECK(talk.journal().stagesDone("skyrunner-tenant") == 3);
 
-    // 4. and 5. the way up and the way across, with the real body.
-    PlayerBody& body = room.body();
-    body.setYaw(kFacingNorth);
-    // Placed against the guest floor's north wall, which is the burglar's own
-    // route: in the door, up the stair, out over the wall of the room you
-    // rented.
+    // 4. the way up, with the real body. Placed against the guest floor's north
+    //    wall, which is the burglar's own route: in the door, up the stair, and
+    //    out over the wall of the room you rented. The tally is the one
+    //    Session::settleLanding raises on a landing.
     PlayerBody climber(room.tiles(), 150, 67, gull::kUpperBand, kFacingNorth);
     climber.setLandingFloor(docks::kLandingFloor);
     REQUIRE(climber.mantle().ok());
+    REQUIRE(climber.band() == gull::kRoofBand);
     talk.noteTally("climbs");
     talk.noteCrime(Crime::RoofRun, false);
-    (void)body;
+    room.standAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+    reportToFinch();
+    CHECK(talk.journal().stagesDone("skyrunner-tenant") == 4);
 
+    // 5. and the way across.
     PlayerBody jumper(room.tiles(), gull::kFootprintX0, 70, gull::kRoofBand, kFacingWest);
     jumper.setLandingFloor(docks::kLandingFloor);
     REQUIRE(jumper.leap(kLeapReachTiles).ok());
     talk.noteTally("leaps");
-
-    room.standAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
-    REQUIRE(room.standBy("Finch") != nullptr);
-    REQUIRE(gull.talkTo());
-    REQUIRE(room.pick(TopicKind::QuestBeat));   // the box
-    REQUIRE(room.pick(TopicKind::QuestBeat));   // the climb
-    REQUIRE(room.pick(TopicKind::QuestBeat));   // the leap
+    reportToFinch();
     CHECK(talk.journal().stagesDone("skyrunner-tenant") == 5);
 
-    // 6. sell it. The second rung has to be earned first, and the line's own
-    //    standing is what earns it.
-    if (talk.standings().nextRung(roofs) != nullptr) {
-        (void)talk.skills().setLevel(kRoofSkill, 6);
-        (void)room.pick(TopicKind::Advance);
-    }
+    // 6. sell it. THE SECOND RUNG HAS TO BE EARNED FIRST -- a cutpurse is not a
+    //    fence -- and it is measured in SKYRUNNING, which is what all that
+    //    climbing was for.
+    REQUIRE(room.standBy("Finch") != nullptr);
+    REQUIRE(gull.talkTo());
+    // Short of the skill, the rung is refused out loud.
+    CHECK_FALSE(talk.standings().unlocked(roofs, "fence"));
+    (void)talk.skills().setLevel(kRoofSkill, 6);
+    REQUIRE(room.pick(TopicKind::Advance));
     REQUIRE(talk.standings().unlocked(roofs, "fence"));
     REQUIRE(room.pick(TopicKind::Fence));
     REQUIRE(room.pick(TopicKind::QuestBeat));

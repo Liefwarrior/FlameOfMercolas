@@ -999,8 +999,21 @@ void walkStraightTo(Session& session, std::int32_t tileX, std::int32_t tileY) {
 /// still WALKS: each waypoint is steered to with ordinary movement steps
 /// through ordinary collision, so a captured frame is still a picture of a body
 /// that got there on its feet.
+/// The box the capture harness routes inside: the Gull, both its floors, and
+/// enough of the Tarwalk to contain the AUTHORED SPAWN.
+///
+/// gull::kRegion stops at kStreetY - 2, which is y=61, and the spawn is at
+/// y=60. One tile short. A router whose box does not contain the body's own
+/// cell refuses outright, so every walk that began at the spawn fell through to
+/// the greedy fallback -- which is the S4 behaviour this was supposed to
+/// replace, and it is why `--skyrun` reached every patron in the room and never
+/// once reached the man in the snug.
+constexpr sim::TileBox kCaptureRegion{
+    sim::gull::kFootprintX0 - 2, sim::docks::kSpawnTileY - 2, sim::gull::kGroundBand,
+    sim::gull::kFootprintX1 + 2, sim::gull::kFootprintY1 + 1, sim::gull::kUpperBand};
+
 void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
-    sim::RegionPath router(session.tiles(), sim::gull::kRegion);
+    sim::RegionPath router(session.tiles(), kCaptureRegion);
     std::vector<sim::PathStep> route;
     const sim::PathStep from{session.body().tileX(), session.body().tileY(),
                              session.body().band()};
@@ -1199,14 +1212,9 @@ bool pick(Session& session, sim::TopicKind kind) {
         ++landed;
     }
 
-    // 2. up it. The stair is authored, so this is an ordinary walk and not a
-    //    climb: pushing north off the stair tile is what takes the band up.
-    for (int guard = 0; guard < 240 && session.body().band() != sim::gull::kUpperBand; ++guard) {
-        session.body().setYaw(sim::kFacingNorth);
-        sim::MoveInput input;
-        input.forward = 1;
-        session.step(input);
-    }
+    // 2. up it, with the up-key -- see PlayerBody::mantle on why a stair in
+    //    this build needs a verb and why walking north off it does nothing.
+    session.climb();
     if (session.body().band() == sim::gull::kUpperBand) {
         ++landed;
     }
@@ -1232,16 +1240,55 @@ bool pick(Session& session, sim::TopicKind kind) {
         walkToTile(session, sim::gull::kFootprintX0, 70);
         session.body().setYaw(sim::kFacingWest);
         session.climb();
+        session.body().setPitch(sim::angle_from_degrees(-10));
     } else if (ending == "street") {
         walkToTile(session, sim::gull::kFootprintX0, 70);
         session.body().setYaw(sim::kFacingWest);
         session.dropDown();
     } else {
-        // Looking down at the ward over the north-west corner.
-        session.body().setYaw(sim::angle_from_degrees(250));
-        session.body().setPitch(sim::angle_from_degrees(-16));
+        // North-west off the corner of the lead: the Gull's own roof in the
+        // foreground, the next house's across two tiles of alley, and the
+        // Tarwalk, the piers and the harbour under the fog beyond it. This is
+        // the view the sprint is FOR -- the ward seen from where a Trojian has
+        // no business being.
+        session.body().setYaw(sim::angle_from_degrees(315));
+        session.body().setPitch(sim::angle_from_degrees(-8));
     }
     return landed;
+}
+
+/// Stands in front of somebody and turns in whatever beat is owed.
+void reportTo(Session& session, std::string_view who) {
+    if (speakTo(session, who)) {
+        pick(session, sim::TopicKind::QuestBeat);
+        session.closeConversation();
+    }
+}
+
+/// In at the door, up the stair, across the guest floor, and over the north
+/// wall onto the lead.
+void upOntoTheLead(Session& session) {
+    walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+    session.climb();
+    walkToTile(session, 150, sim::gull::kFootprintY0 + 1);
+    session.body().setYaw(sim::kFacingNorth);
+    session.climb();
+}
+
+/// Off the Gull's west edge into the alley -- two storeys, which a Tenant of
+/// the roofs lands without hurting himself -- and back in at the door.
+void downFromTheLead(Session& session) {
+    walkToTile(session, sim::gull::kFootprintX0, 70);
+    session.body().setYaw(sim::kFacingWest);
+    session.dropDown();
+    walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
+}
+
+/// Back down the flight, for when the body is on the guest floor rather than
+/// the roof.
+void comeDownstairs(Session& session) {
+    walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+    session.dropDown();
 }
 
 /// THE SKYRUNNER LINE, played the way a player plays it and nothing reaching
@@ -1274,61 +1321,76 @@ bool pick(Session& session, sim::TopicKind kind) {
         session.closeConversation();
     }
 
-    // 3. a box above the stair. Up the authored stair first.
+    // 3. a box above the stair. Up the authored stair first -- with the up-key,
+    //    because walking at a stair in this build does nothing (see
+    //    PlayerBody::mantle).
     walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
-    for (int guard = 0; guard < 240 && session.body().band() != sim::gull::kUpperBand; ++guard) {
-        session.body().setYaw(sim::kFacingNorth);
-        sim::MoveInput input;
-        input.forward = 1;
-        session.step(input);
-    }
+    session.climb();
     walkToTile(session, sim::gull::kRooms[1].standX, sim::gull::kRooms[1].standY);
     session.steal();
+    comeDownstairs(session);
+    reportTo(session, "Finch");
 
-    // 4. and 5. the roof, and the alley.
-    walkToTile(session, 150, sim::gull::kFootprintY0 + 1);
-    session.body().setYaw(sim::kFacingNorth);
-    session.climb();
+    // 4. the roof. AND THE ROUND TRIP IS THE POINT: a counted stage only counts
+    //    what you do WHILE IT IS THE STAGE, so the line is walked the way a
+    //    player walks it -- go, do the one thing, come back and say so. A
+    //    script that did all six acts and then reported six times would prove
+    //    nothing about the questline at all.
+    upOntoTheLead(session);
+    downFromTheLead(session);
+    reportTo(session, "Finch");
+
+    // 5. the alley.
+    upOntoTheLead(session);
     walkToTile(session, sim::gull::kFootprintX0, 70);
     session.body().setYaw(sim::kFacingWest);
     session.climb();
-    // Back down to the street and in at the door again.
-    walkToTile(session, sim::gull::kFootprintX0 - 3, 70);
-    session.body().setYaw(sim::kFacingSouth);
-    session.dropDown();
-    for (int guard = 0; guard < 6 && session.body().band() != sim::gull::kGroundBand; ++guard) {
-        session.body().setYaw(sim::kFacingWest);
-        session.dropDown();
-    }
-    walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
+    // Back east over the same two tiles of air, and then off the Gull's own
+    // west edge into the alley rather than off the far side of a house whose
+    // street the router does not carry.
+    session.body().setYaw(sim::kFacingEast);
+    session.climb();
+    downFromTheLead(session);
+    reportTo(session, "Finch");
 
-    // Report the three body beats and take the bale.
+    // 6. sell it -- WHICH FIRST MEANS EARNING THE RUNG THAT MAKES HIM A FENCE.
+    //    A cutpurse is not a fence, the Skyrunners' second rung is measured in
+    //    SKYRUNNING, and nothing but roofs raises that. So the body goes back
+    //    up and works the alley until the roofs will have it: leap west, leap
+    //    east, and again, which is exactly what the guild's name means.
+    upOntoTheLead(session);
+    walkToTile(session, sim::gull::kFootprintX0, 70);
+    for (int i = 0; i < 24 && talk.skills().level(sim::kRoofSkill) < 5; ++i) {
+        session.body().setYaw(sim::kFacingWest);
+        session.climb();
+        session.body().setYaw(sim::kFacingEast);
+        session.climb();
+    }
+    downFromTheLead(session);
     if (speakTo(session, "Finch")) {
-        pick(session, sim::TopicKind::QuestBeat);   // the box
-        pick(session, sim::TopicKind::QuestBeat);   // the climb
-        pick(session, sim::TopicKind::QuestBeat);   // the leap
-        // 6. sell it.
+        pick(session, sim::TopicKind::Advance);
         pick(session, sim::TopicKind::Fence);
         pick(session, sim::TopicKind::QuestBeat);
         session.closeConversation();
     }
 
     // 7. lean on somebody.
-    for (const char* mark : {"Tarn Wrenhale", "Colm Tarbeck", "Sella Brinewall"}) {
+    for (const char* mark : {"Tarn Wrenhale", "Colm Tarbeck", "Sella Brinewall",
+                             "Hobbin Mastwright"}) {
+        if (talk.journal().counter(questId) > 0) {
+            break;
+        }
         if (speakTo(session, mark)) {
             pick(session, sim::TopicKind::Lean);
             session.closeConversation();
         }
     }
-    if (speakTo(session, "Finch")) {
-        pick(session, sim::TopicKind::QuestBeat);
-        session.closeConversation();
-    }
+    reportTo(session, "Finch");
 
     // 8. the bale, out of the door past the Watch.
     walkToTile(session, sim::gull::kBaleX, sim::gull::kBaleY);
     session.steal();
-    walkToTile(session, sim::gull::kDoorX0, sim::gull::kStreetY);
+    walkToTile(session, sim::gull::kStreetX, sim::gull::kStreetY);
     walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
     if (speakTo(session, "Finch")) {
         pick(session, sim::TopicKind::QuestBeat);

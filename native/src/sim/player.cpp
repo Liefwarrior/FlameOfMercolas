@@ -252,6 +252,34 @@ RoofResult PlayerBody::mantle() noexcept {
     if (leapStepsLeft_ > 0) {
         return RoofResult{RoofMove::Airborne, 0, 0};
     }
+
+    // THE FLIGHT YOU ARE STANDING ON, FIRST -- and this is a bug fix wearing a
+    // feature's clothes.
+    //
+    // The Gilded Gull's stair is authored as ONE cell, (159,77), a STAIR at
+    // z19 and a STAIR again at z20, with open floor all round it on both
+    // levels. Walk onto it and stepBand's preference order -- same level, then
+    // down, then up -- keeps you on z19 forever, because every neighbour is
+    // standable at z19 and the same-level answer always wins. A flood fill over
+    // the walking rule finds ZERO z19 -> z20 transitions anywhere in the
+    // building.
+    //
+    // So the guest floor of the ward's grandest house, with its four rentable
+    // rooms, its innkeeper and its four strongboxes, HAS NEVER BEEN REACHABLE
+    // ON FOOT. S2 shipped rentRoom() and sleep() and S4 wrote a case about a
+    // robbery on that floor; every one of them put the body up there by
+    // constructing it there. Nobody noticed, because nobody ever walked.
+    //
+    // Rather than reorder the walking rule -- which would turn every ramp on
+    // Saltgate Rise into a one-way trip and move a pinned reachability count
+    // that has nothing to do with this -- the sprint's own up-key takes the
+    // stairs. Stand on the flight, press it, and you are on the next floor.
+    // dropOff() comes back down the same way.
+    if (tiles_->climbable(tileX(), tileY(), band_) &&
+        tiles_->standable(tileX(), tileY(), band_ + 1)) {
+        return land(tileX(), tileY(), band_, band_ + 1, 0);
+    }
+
     const TileStep facing = facing_step(yaw_);
     const std::int32_t ahead = tileX() + facing.dx;
     const std::int32_t asideY = tileY() + facing.dy;
@@ -268,6 +296,12 @@ RoofResult PlayerBody::mantle() noexcept {
 RoofResult PlayerBody::dropOff() noexcept {
     if (leapStepsLeft_ > 0) {
         return RoofResult{RoofMove::Airborne, 0, 0};
+    }
+    // Back down the flight you are standing on -- see mantle() on why a stair
+    // needs a verb at all in this build.
+    if (tiles_->climbable(tileX(), tileY(), band_) &&
+        tiles_->standable(tileX(), tileY(), band_ - 1)) {
+        return land(tileX(), tileY(), band_, band_ - 1, 0);
     }
     const TileStep facing = facing_step(yaw_);
     const std::int32_t ahead = tileX() + facing.dx;

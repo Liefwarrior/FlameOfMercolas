@@ -707,7 +707,9 @@ Reply DialogueDirector::choose(std::size_t index) {
                 break;
             }
             const QuestStage& stage = line->stages[static_cast<std::size_t>(topic.payload)];
-            if (stage.kind == StageKind::Alms && journal_.counter(line->id) < stage.count) {
+            const bool counted =
+                stage.kind == StageKind::Alms || stage.kind == StageKind::Tally;
+            if (counted && journal_.counter(line->id) < stage.count) {
                 // Not enough of it done. He says the task again rather than
                 // saying nothing, which is what a quest marker cannot do.
                 std::string spoken(

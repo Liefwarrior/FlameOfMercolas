@@ -126,7 +126,18 @@ std::int32_t TileQuery::stepBand(std::int32_t fromX, std::int32_t fromY, std::in
     if (standable(x, y, fromZ)) {
         return fromZ;
     }
-    if (standable(x, y, fromZ - 1)) {
+    // A BODY FALLS THROUGH AIR AND THROUGH NOTHING ELSE, and the `!solid`
+    // clause is S5's, found by trying to walk across the Gilded Gull's guest
+    // floor.
+    //
+    // Every interior partition of that floor is a WALL at z20 standing over
+    // open taproom at z19. Without this clause the down-rule reads "the tile
+    // ahead is not standable at my band and is standable one below, so step
+    // down" -- and a body walking into a first-floor wall DROPS THROUGH IT into
+    // the room underneath. The district has 429 places where that is true. It
+    // is why a capture that climbed the stair correctly ended up back in the
+    // taproom, and it would have been a player's first bug report.
+    if (!solid(x, y, fromZ) && standable(x, y, fromZ - 1)) {
         return fromZ - 1;
     }
     if (standable(x, y, fromZ + 1) &&

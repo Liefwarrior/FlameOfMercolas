@@ -122,6 +122,16 @@ constexpr std::int32_t kDy[4] = {0, 0, 1, -1};
                 visit(landed);
             }
         }
+        // And the flight you are standing on, up and down. See
+        // PlayerBody::mantle on why a stair needs a verb in this build at all.
+        if (roofs && tiles.climbable(x, y, z)) {
+            if (tiles.standable(x, y, z + 1)) {
+                visit(Cell{x, y, z + 1});
+            }
+            if (z - 1 >= docks::kLandingFloor && tiles.standable(x, y, z - 1)) {
+                visit(Cell{x, y, z - 1});
+            }
+        }
     }
     return seen;
 }
@@ -234,6 +244,52 @@ TEST_CASE("the roof-slum plane was completely unreachable and is not any more") 
           docks::kRoofReachableOnRoofs);
     CHECK(countOnBand(reachable(tiles, true), docks::kBandUpper) ==
           docks::kRoofReachableOnUpper);
+}
+
+TEST_CASE("the Gull's guest floor has never been reachable on foot, and now is") {
+    const TileQuery tiles(docksWorld());
+
+    // ONE cell of stair, a STAIR at both bands, open floor all round it on
+    // both. Every neighbour is standable at z19, so stepBand's preference
+    // order -- same level, then down, then up -- keeps a body downstairs
+    // forever.
+    CHECK(tiles.climbable(gull::kStairX, gull::kStairY, gull::kGroundBand));
+    CHECK(tiles.climbable(gull::kStairX, gull::kStairY, gull::kUpperBand));
+
+    std::int32_t transitions = 0;
+    for (std::int32_t y = gull::kFootprintY0; y <= gull::kFootprintY1; ++y) {
+        for (std::int32_t x = gull::kFootprintX0; x <= gull::kFootprintX1; ++x) {
+            if (!tiles.standable(x, y, gull::kGroundBand)) {
+                continue;
+            }
+            for (int d = 0; d < 4; ++d) {
+                if (tiles.stepBand(x, y, gull::kGroundBand, x + kDx[d], y + kDy[d]) ==
+                    gull::kUpperBand) {
+                    ++transitions;
+                }
+            }
+        }
+    }
+    // NOT ONE. S2 shipped rentRoom() and sleep() and S4 wrote a case about a
+    // robbery on that floor; all of them put the body up there by constructing
+    // it there, and nobody ever walked.
+    CHECK(transitions == 0);
+
+    // The sprint's own up-key takes the flight.
+    PlayerBody body(tiles, gull::kStairX, gull::kStairY, gull::kGroundBand, kFacingNorth);
+    REQUIRE(body.spawnedLegally());
+    const RoofResult up = body.mantle();
+    CHECK(up.ok());
+    CHECK(body.band() == gull::kUpperBand);
+    CHECK(body.tileX() == gull::kStairX);
+    CHECK(body.tileY() == gull::kStairY);
+    // Climbing a stair is not falling and does not hurt.
+    CHECK(body.takeFallBands() == 0);
+
+    // And the same verb comes back down it.
+    const RoofResult down = body.dropOff();
+    CHECK(down.ok());
+    CHECK(body.band() == gull::kGroundBand);
 }
 
 TEST_CASE("the whole roof of the Gilded Gull can be stood on") {

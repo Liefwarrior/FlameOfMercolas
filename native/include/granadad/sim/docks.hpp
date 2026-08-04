@@ -76,10 +76,19 @@ inline constexpr Angle kSpawnYaw = angle_from_degrees(165);
 /// lintels. All of the growth is on the two bands that have buildings on them;
 /// the upper band and the strand below the quay did not move by a single tile,
 /// which is what says the change opened INTERIORS and not the map.
-inline constexpr std::int32_t kReachableFromSpawn = 16934;
+///
+/// RE-DERIVED AGAIN IN S5, and again the correction OPENED the map rather than
+/// sealing it. The down-clause of the step rule let a body walk into a wall on
+/// an upper floor and fall THROUGH it to the room below -- 429 places in this
+/// district, including every interior partition of the Gilded Gull's guest
+/// floor. Bodies that used to drop off the upper band and get stuck there stay
+/// on it now: the whole of the +120 is on z21 and not one tile of it is
+/// anywhere else, which is what says the change stopped a FALL rather than
+/// opening a door.
+inline constexpr std::int32_t kReachableFromSpawn = 17054;
 inline constexpr std::int32_t kReachableOnQuayside = 11089;
 inline constexpr std::int32_t kReachableOnMidSlope = 3043;
-inline constexpr std::int32_t kReachableOnUpper = 1911;
+inline constexpr std::int32_t kReachableOnUpper = 2031;
 /// Under the piers and down at the strand — one level below the quay.
 inline constexpr std::int32_t kReachableBelowQuay = 891;
 
@@ -112,13 +121,14 @@ inline constexpr std::int32_t kBandRoofs = 22;
 inline constexpr std::int32_t kStandableOnRoofs = 1706;
 
 /// Reachable from the spawn once the body can climb, leap and drop. The walk-
-/// only number is kReachableFromSpawn (16,934) and it does not move: the
-/// walking rule is untouched, and everything below is what the new verbs ADD.
-/// 6,810 tiles, and every one of them is a roof, a gallery or a back way onto
-/// one.
-inline constexpr std::int32_t kReachableWithRoofMoves = 23744;
-inline constexpr std::int32_t kRoofReachableOnUpper = 3263;
-inline constexpr std::int32_t kRoofReachableOnRoofs = 1234;
+/// only number is kReachableFromSpawn (17,054) and the S5 correction to the
+/// down-rule is the ONLY thing that moved it. Everything below is what the new verbs ADD on top.
+/// 7,906 tiles, and every one of them is a roof, a gallery or a back way onto
+/// one: every standable cell of the mid-slope band bar sixty-nine, and 1,664 of
+/// the 1,706 on the roof-slum plane that had NONE at all.
+inline constexpr std::int32_t kReachableWithRoofMoves = 24960;
+inline constexpr std::int32_t kRoofReachableOnUpper = 3864;
+inline constexpr std::int32_t kRoofReachableOnRoofs = 1664;
 
 /// The lowest band a roof move may put a body on in THIS district. Everything
 /// under the harbour surface is the unbuilt dungeon -- see

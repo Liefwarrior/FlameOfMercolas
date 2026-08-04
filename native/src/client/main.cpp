@@ -572,8 +572,21 @@ int main(int argc, char** argv) {
             const render::SmokeRunResult result = render::runSmoke(options.smoke);
             std::printf("granadad: %s\n", result.summary.c_str());
             if (!options.smoke.screenshot.empty()) {
-                std::printf("granadad: %s %s\n", result.ok ? "wrote" : "FAILED to write",
+                // The PNG and the RUN are two different verdicts, and S5 keeps
+                // them apart. A scripted line that fell short still writes its
+                // frame -- that frame is evidence OF the shortfall -- and the
+                // process still exits non-zero. Printing "FAILED to write" for
+                // a file that WAS written sends the next reader after the wrong
+                // bug, and it sent me after one.
+                std::printf("granadad: wrote %s\n",
                             options.smoke.screenshot.string().c_str());
+            }
+            if (result.scriptFellShort()) {
+                std::printf(
+                    "granadad: scripted run landed %d of %d beats -- this frame is NOT a"
+                    " picture of what was asked for\n",
+                    static_cast<int>(result.scriptedLanded),
+                    static_cast<int>(result.scriptedWanted));
             }
             return result.ok ? 0 : 1;
         }
