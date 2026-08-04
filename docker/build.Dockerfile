@@ -415,7 +415,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # instead of a tautology, the abatement made undeletable, and the
     # bond-pipe precondition constructed instead of tested for.
     #
-    # S10: 442 -> 464. The demo. The bloodletter trail -- twelve authored
+    # S10: 442 -> 469. The demo. The bloodletter trail -- twelve authored
     # leads at the map's own clue anchors, checked against the BAKED world
     # rather than against a comment, walked end to end on foot by the
     # district's own router; the two dead ends, asserted dead; the five
@@ -426,7 +426,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # claim in its own name, and the burglary's stealth beat needing
     # somebody awake in the room to miss it.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=464; \
+    GRANADAD_MIN_TESTS=469; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -766,6 +766,10 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "the notes, the keys and the world never fight over the middle of the screen" \
         "a lock opens to a hand that only has what a player has" \
         "the burglar's second box is opened by hands the first one taught" \
+        "the Skyrunner line lands all nine of its stages" \
+        "the Priest of the Flame line lands all six of its stages" \
+        "the nemesis arc lands all seven of its beats" \
+        "the roof line gets onto the lead and back down again, all three ways" \
         ; do \
         case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \

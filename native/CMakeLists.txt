@@ -311,6 +311,10 @@ if(GRANADAD_BUILD_TESTS)
         # than against a comment, and the five tracks the ward remembers you by.
         tests/test_casebook.cpp
         tests/test_firstrun.cpp
+        # And every scripted line the demo advertises, accepted -- see the file
+        # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
+        # in the suite to notice.
+        tests/test_scripted_lines.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 

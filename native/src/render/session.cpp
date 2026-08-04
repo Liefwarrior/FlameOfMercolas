@@ -2908,6 +2908,25 @@ std::int32_t gTrailUnreached = 0;
     walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
     climbAndLand(session);
     walkToTile(session, sim::gull::kRooms[1].standX, sim::gull::kRooms[1].standY);
+    // AND THE BOX IS ACTUALLY OPENED, WHICH THIS LINE STOPPED DOING IN S9 AND
+    // NOBODY NOTICED FOR A SPRINT.
+    //
+    // S9 made a locked box put the WIRE in rather than opening itself -- its own
+    // documented change -- and left this beat as a single steal(), which from
+    // that day forward put a wire in a lock and walked away. The stage counts a
+    // CRACKED box, so the run has landed 2 of 9 and exited 1 ever since; the S9
+    // review re-ran --burgle, --nemesis and --ward and did not re-run this one.
+    // Verified against the S9 tip before changing anything: identical output,
+    // `stages=2 cracks=0`, so this is S9's regression and not S10's.
+    //
+    // What it does now is what a burglar does: work the wire, and put a
+    // shoulder to it if the wire loses. Both are keys.
+    session.steal();
+    workTheWire(session);
+    if (session.picking()) {
+        session.stopPicking();
+    }
+    session.forceLock();
     session.steal();
     comeDownstairs(session);
     reportTo(session, "Finch");
