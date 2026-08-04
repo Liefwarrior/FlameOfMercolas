@@ -232,6 +232,13 @@ bool NotableRegistry::isKnower(std::string_view historyId,
     return std::binary_search(found->knowers.begin(), found->knowers.end(), notableId);
 }
 
+// VERIFICATION GAP (S3): 39 of the 42 notables are LOADED but nobody speaks
+// them. Only Master Venn, Father Maell and Captain Ivo Wake are bound to an
+// actor the player can walk up to, because the Gilded Gull is the only room in
+// the district that is staffed. Every other personal table, micro-history and
+// rumor domain in the raws is proven reachable BY THE REGISTRY -- see
+// test_dialogue.cpp -- and unreachable IN THE GAME. That closes when the rest
+// of the ward's 692 actors spawn, not before.
 std::vector<const History*> NotableRegistry::tellableBy(std::string_view notableId) const {
     std::vector<const History*> own;
     std::vector<const History*> heard;

@@ -240,6 +240,12 @@ void SocialLedger::seed(std::int32_t actorId, std::int32_t disposition) {
     entryFor(actorId).disposition = clampDisposition(disposition);
 }
 
+// VERIFICATION GAP (S3): reputation() has exactly one consumer, and it is this
+// label in the corner of the HUD. No actor reads the ward's opinion to decide
+// anything -- a bouncer does not refuse a man the whole district is talking
+// about, and a shopkeeper prices off HIS OWN memory of you and not the ward's.
+// The number is real, moved by real witnesses and folded into the world hash;
+// what it does not yet do is anything.
 std::string_view SocialLedger::reputationLabel() const noexcept {
     if (reputation_ >= kFriendAtOrAbove) {
         return "THE WARD OWES YOU";

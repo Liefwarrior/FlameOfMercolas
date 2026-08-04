@@ -299,6 +299,13 @@ int run_client(const Options& options) {
                 case SDL_EVENT_QUIT:
                     running = false;
                     break;
+                // VERIFICATION GAP (S3): NOTHING TESTS THIS SWITCH. Every branch
+                // below calls a Session method the suite drives directly, so the
+                // behaviour is covered and the BINDING is not -- a key wired to
+                // the wrong verb, or a conversation that fails to capture the
+                // keyboard, would ship green. It is the same gap S1 and S2 have
+                // in this file and it needs an input-layer harness, not another
+                // case.
                 case SDL_EVENT_KEY_DOWN:
                     // A CONVERSATION TAKES THE KEYBOARD. Everything below is
                     // still Session's — the client owns no game logic — but
