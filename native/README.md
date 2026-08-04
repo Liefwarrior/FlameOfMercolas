@@ -35,6 +35,19 @@ be able to prove visually that it works, and a capture path that needs a
 desktop is a capture path nobody runs. `--help` lists the rest — `--time`,
 `--spawn`, `--yaw`, `--fov`, `--width/--height/--scale`.
 
+`--talk`, `--topic=N[,N...]`, `--offer=N` and `--again` drive a conversation
+before the shutter goes, through exactly the calls a keypress makes. That is how
+a sprint photographs the thing it built rather than describing it:
+
+```
+granadad --smoke=0 --hold --time=21 --spawn=155,69,19 --yaw=225 \
+         --topic=5 --again --screenshot=caught.png
+```
+
+— walk up to Sella Brinewall at nine at night, put a hand in her purse, get
+caught, and say hello again. She is (HOSTILE) in red and greeting you out of a
+different authored table.
+
 ### Controls
 
 | | |
@@ -43,25 +56,65 @@ desktop is a capture path nobody runs. `--help` lists the rest — `--time`,
 | mouse | look |
 | `Left` / `Right` | keyboard turn, 65 deg/s |
 | `Shift` | run |
-| `E` | talk, and do business — a drink from the bartender, a room from the innkeeper |
+| `E` | talk to whoever is in front of you |
 | `F` | throw a punch. Under a roof with bouncers in it, that is an offence |
 | `R` | sleep, if you have rented a room and are standing in it |
 | `Tab` | release the mouse |
 | `F12` | screenshot to `granadad-screenshot.png` |
 | `Esc` | quit |
 
+**While somebody is talking to you the keyboard belongs to the conversation.**
+
+| | |
+|---|---|
+| `1`–`9` | pick that topic |
+| `Up` / `Down` (or `W` / `S`) | move the cursor — it reaches topics ten to twelve, which no number key does |
+| `E` / `Enter` | pick the topic under the cursor |
+| `Esc` | end the conversation (it does not quit the game) |
+| `F` | punch them, which also ends the conversation |
+
+**Haggling** replaces the topic list with a counter:
+
+| | |
+|---|---|
+| `Left` / `Right` | name a lower or higher number (`Shift` moves it five at a time) |
+| `Enter` / `E` | say it |
+| `T` | take their price without arguing |
+| `Esc` | walk away, which they remember |
+
 You spawn on the Tarwalk six tiles off the door of **the Gilded Gull** (K03), the
-captains' tavern. Walk in. It has fourteen people in it who keep hours: Master
+captains' tavern. Walk in. It has fifteen people in it who keep hours: Master
 Venn on the stair, Gerta Saltcotte behind the bar, two bouncers on a rota that
-overlaps for the loud hours, Father Maell for an hour in the evening, and a
-Skyrunner in the snug after ten who will not talk to you. The fire is lit from
-ten in the morning until three. Come at five and the room is black and empty.
+overlaps for the loud hours, Father Maell for an hour in the evening, Captain Ivo
+Wake of the *Kestrel* from seven, and a Skyrunner in the snug after ten who will
+not talk to you. The fire is lit from ten in the morning until three. Come at
+five and the room is black and empty.
+
+**Every word any of them says was written by the owner**, in
+`content/raws/barks/barks.json`. Nothing in the C++ writes dialogue; it picks an
+authored key and reads a row. Which key depends on their trade, on the hour, and
+on what they think of you — so the same docker greets you out of a different
+table once you have robbed him. What they will TALK about depends on what the
+raws say they are allowed to know: Master Venn is party to one of the ward's
+fifteen authored micro-histories and licensed by
+`content/raws/rumors/rumors.json` to repeat two more, so he has three stories on
+his list and Captain Wake has none. **That is the whole gate. There is no
+persuasion check anywhere in the game** — if you cannot get an answer you are
+standing in front of the wrong person.
+
+They remember. Stand a docker a drink and he warms to you; put a hand in his
+purse and get caught and he will not speak civilly to you again, everyone in the
+room saw it, and the ward hears about it (top right corner). A hostile landlord
+does not pour, whatever you offer him. A friendly one charges less for the same
+bed, with no haggling at all — and if you do haggle, how far he comes down is
+your **streetwise** against his, and your streetwise goes up by haggling.
 
 Throwing a punch gets you warned to your face and then physically put out of the
 door. That is a brawl, and it resolves in the world with no transition. Draw a
 blade and it stops being a brawl — see `--help` and
 `native/include/granadad/sim/brawl.hpp` for the rule, which is explicit and
-tested on its own.
+tested on its own. The room remembers that too, and remembers it harder than
+anything else on the list.
 
 > **`run`, not `up`.** `docker compose up` exits **0 even when the container
 > inside it exits 1** — it prints `build-1 exited with code 1` and then hands

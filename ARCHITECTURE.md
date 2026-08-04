@@ -324,15 +324,27 @@ thing being built. `native/` is. Its status, kept honest as the rewrite goes:
 | **Actors** — identity, roles, daily schedules, tile-stepped movement with Q8 sub-tile position | **BUILT** (S2), for one building's worth | `native/src/sim/actor.cpp` |
 | **Region pathing** — bounded breadth-first, deterministic, no corner-cutting | **BUILT** (S2) | `native/src/sim/region_path.cpp` |
 | **The brawl / lethal rule** | **BUILT** (S2) — see `DECISIONS.md` | `native/src/sim/brawl.cpp` |
-| **The Gilded Gull** — six staff, eight patrons, hours, trade, a door policy | **BUILT** (S2) | `native/src/sim/tavern.cpp` |
+| **The Gilded Gull** — six staff, nine patrons, hours, trade, a door policy | **BUILT** (S2, one patron added S3) | `native/src/sim/tavern.cpp` |
 | Spell raws reader (modular components, for the priest and for S4) | **BUILT** (S2) | `native/src/sim/spellbook.cpp` |
-| Needs, wages, relationships, crime beyond one room, the macro economy | **NOT BUILT** | — |
-| Save / load | **NOT BUILT** | — |
-| The dedicated first-person combat screen | **NOT BUILT** — S2 raises the escalation flag and stops resolving; nothing consumes it yet | — |
+| **Bark tables** — the owner's 210 authored tables behind a family / attitude / hour fallback chain | **BUILT** (S3) | `native/src/sim/barks.cpp` |
+| **The Forty Notables, their micro-histories and the rumor domains** — who may repeat which story | **BUILT** (S3) as a registry; only three of the 42 are bound to a spawned actor so far | `native/src/sim/notables.cpp` |
+| **Relationships** — per-actor memory of what the player did, ward-wide reputation, hashed into world state | **BUILT** (S3) | `native/src/sim/social.cpp` |
+| **Player skills** — use-XP over the 20-skill vocabulary in the raws | **BUILT** (S3), two skills consumed (`streetwise`, `cracksmanship`) | `native/src/sim/social.cpp` |
+| **Barter** — haggling as an argument with rounds and patience, moved by standing and by skill | **BUILT** (S3) | `native/src/sim/barter.cpp` |
+| **Conversation** — topics, gated socially and never by a roll; the surface that draws it | **BUILT** (S3) | `native/src/sim/dialogue.cpp`, `native/src/render/dialogue_view.cpp` |
+| Needs, wages, crime beyond one room, the macro economy | **NOT BUILT** | — |
+| Save / load | **NOT BUILT** — S3 ships a versioned byte encoding for the relationship ledger, proven by round trip, with nothing writing it to disk | `SocialLedger::encode` |
+| The dedicated first-person combat screen | **NOT BUILT** — S3 gave `escalated()` a consumer (the room remembers a drawn blade and the bar stops serving), but the screen itself does not exist | — |
 
 Everything the Tier-3 "phantom scope" section below names — thermal, reactions, propagated
 light, the fluid solver, the bubble, the macro economy — is still **NOT BUILT and must not be
-built**. S2 changed nothing about that.
+built**. Neither S2 nor S3 changed anything about that.
+
+**S3's one binding design law, taken from DOCKS-GAZETTEER section 5.3 and enforced in code:**
+the investigation is never persuasion. No dialogue topic is gated by a dice roll. A topic is on
+the list because the person in front of you is a party to that story, or because
+`content/raws/rumors/rumors.json` licenses them to repeat it. Skill decides exactly one thing in
+the conversation layer, and it is the price of a mug of ale.
 
 ---
 
