@@ -290,13 +290,13 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # Docks in here, on every build, because the renderer is software and needs
     # no window.
     #
-    # S2: 183 -> 227. The Gilded Gull -- its geometry re-read from the baked
+    # S2: 183 -> 228. The Gilded Gull -- its geometry re-read from the baked
     # bytes, the brawl/lethal rule as a table, the pathfinder, the door policy
     # end to end -- plus the content-directory resolver that decides whether the
     # shipped game starts at all, the client's fixed-timestep loop, and a second
     # twin-run gate entry with the tavern registered.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=227; \
+    GRANADAD_MIN_TESTS=228; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.

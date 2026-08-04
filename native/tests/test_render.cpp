@@ -227,6 +227,45 @@ TEST_CASE("a lamp in view draws a flame, and a lamp behind you does not") {
     CHECK(behind.spritePixels == 0);
 }
 
+TEST_CASE("standing under a lamp does not white out the frame") {
+    // An additive billboard grows on screen as you approach it, so its total
+    // contribution grows with the square of how close you are. Two tiles from
+    // the Gilded Gull's door lamp at five in the morning, that was a
+    // featureless white disc across half the view. A flame is a small hot
+    // thing: walking up to it makes it bigger, not brighter.
+    SessionConfig config = docksAt(5);
+    const Session probe(config);
+    const Lamp* target = nullptr;
+    for (const Lamp& lamp : probe.renderer().lamps()) {
+        if (lamp.name == "lamp_gull_door") {
+            target = &lamp;
+        }
+    }
+    REQUIRE(target != nullptr);
+
+    const auto lumaAt = [&config, target](std::int32_t away) {
+        SessionConfig standing = config;
+        standing.spawnX = target->x;
+        standing.spawnY = target->y - away;
+        standing.spawnBand = target->z;
+        standing.spawnYaw = sim::kFacingSouth;
+        standing.spawnYawGiven = true;
+        Session session(standing);
+        REQUIRE(session.body().spawnedLegally());
+        Framebuffer frame(320, 180);
+        return session.drawFrame(frame).meanLuma;
+    };
+
+    // Close enough to touch, and the frame is still a picture of a street at
+    // night rather than a white rectangle.
+    const float pressedAgainstIt = lumaAt(1);
+    const float acrossTheStreet = lumaAt(5);
+    CHECK(pressedAgainstIt < 0.45F);
+    // ...and it is still BRIGHTER close up than it is from across the street,
+    // or the roll-off has simply deleted the lamp.
+    CHECK(pressedAgainstIt > acrossTheStreet);
+}
+
 TEST_CASE("turning around changes the frame") {
     Session session(docksAt(20));
     Framebuffer north(320, 180);
