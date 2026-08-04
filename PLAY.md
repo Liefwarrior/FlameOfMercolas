@@ -156,6 +156,7 @@ In `docs/frames/`, all captured from the shipped binary with no window:
 | `s10-07-the-gull.png` | the Gilded Gull at nine at night |
 | `s10-08-the-lock.png` | the wire in a guest's strongbox |
 | `s10-09-the-taproom.png` | back down among the people who heard you |
+| `s10-10-skyrun.png` | the Skyrunner line, nine stages, working again |
 
 Every one is reproducible:
 
