@@ -258,6 +258,31 @@ combined hash `0xE95257B603A1F71B`, 118,227 bytes of report, identical.
 
 ---
 
+## Mutation record
+
+Four deliberate breaks, applied together, built, and reverted. `git status` clean afterwards and
+`grep -c MUTANT` = 0 in both files.
+
+| Mutation | Went red |
+|---|---|
+| `compound.cpp` — `farmHands` counts a bonded household in the yard it SLEEPS in | *buy the paper on a compound's hands and its courtyard comes up thin* |
+| `compound.cpp` — `weighPetition` folds `offering / 8` into the weight | *an offering is an offering and not a fee: it does not buy the verdict* |
+| `compound.cpp` — `bedYield`'s neglect cliff never triggers | *a bed nobody turns over comes up worth nothing* |
+| `tavern.cpp` — the condemned early return, restored verbatim | *the rope is not an amnesty: a condemned man is the one face the ward knows* |
+
+`99% tests passed, 4 tests failed out of 394`, and each landed on the case whose name states the
+claim.
+
+**One thing the record does NOT say.** Mutation 1 did not also kill *the bond is the pipe*. That
+case checks `farmHands(plot) == headsWorkingIn(plot) / kHeadsPerFarmHand`, and moving one small
+household can leave the floored count unchanged — so the equality held under the mutant. It is
+fixed: the case now buys every transferable bond off the seller and, once a whole pair of hands has
+moved, requires `farmHands` to have actually fallen. Saying this here rather than quietly widening
+the table is the point — S6's table claimed a kill it had not made, and that is the finding this
+sprint opened with.
+
+---
+
 ## Verification
 
 | | |

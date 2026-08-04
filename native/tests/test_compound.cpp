@@ -383,6 +383,21 @@ TEST_CASE("the bond is the pipe: leased labour turns up in the bondholder's yard
     CHECK(ward->farmHands(from) == headsWorkingIn(from) / kHeadsPerFarmHand);
     CHECK(ward->farmHands(to) == headsWorkingIn(to) / kHeadsPerFarmHand);
 
+    // AND ENOUGH OF IT TO MOVE A WHOLE PAIR OF HANDS. One small household can
+    // leave a yard without changing farmHands at all -- the count floors at
+    // kHeadsPerFarmHand -- so a case that stopped at one transfer could be
+    // satisfied by a farmHands that had never heard of a bond. Buy every
+    // transferable bond off the seller until the hands really do fall.
+    const std::int32_t handsFromBefore = ward->farmHands(from);
+    for (const Household& home : ward->households()) {
+        if (home.bonded() && home.bondholder == from && !home.bondOrdered) {
+            (void)ward->transferBond(home.id, to);
+        }
+    }
+    if (headsWorkingIn(from) + kHeadsPerFarmHand <= fromBefore) {
+        CHECK(ward->farmHands(from) < handsFromBefore);
+    }
+
     // A bond a PRIEST ordered is not a holding anybody can sell. Section 2.8:
     // "a court-ordered bond cannot be sold on to anyone else."
     std::int32_t ordered = -1;
