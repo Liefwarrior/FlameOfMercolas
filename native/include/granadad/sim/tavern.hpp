@@ -33,6 +33,7 @@
 //
 // NO FLOATS.
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -310,11 +311,26 @@ inline constexpr std::int32_t kPlayerActorId = 0;
 /// How close a body has to be to a strongbox or a bale to put hands on it, Q8.
 inline constexpr std::int32_t kReachQ8 = 2 * kSubOne;
 
-/// Bales in the snug per night. A boat brings what a boat brings.
-inline constexpr std::int32_t kBalesPerNight = 2;
+/// Bales in the snug per night.
+///
+/// S6 SHIPPED A BOARD THE WARD COULD NOT SUPPLY, and this constant plus the
+/// one below is where it went wrong. Two bales, three units each, and ONE good
+/// drawn for the whole night out of three: a night landed at most six units of
+/// a good the player had a one-in-three chance of even wanting. Against that,
+/// `flower_loft` asks 3-6 flower in two days, `dust_grey_ledger` asks 1-3 dust
+/// TONIGHT and `spirit_row` asks 2-5 quayfire. Most of the nightly board was
+/// work a player was structurally unable to take, and only Cull's scalp bounty
+/// -- fed by the vermin and not by the boat -- was reliably completable.
+///
+/// Three bales now, and the good is drawn PER BALE rather than per night, out
+/// of what tonight's board actually asked for. See Tavern::drawBaleGoods.
+inline constexpr std::int32_t kBalesPerNight = 3;
 /// And how many UNITS are in one. S5's bale was a bool; a bale has contents
 /// now, and what is in it is what a contract can want and a watchman can find.
 inline constexpr std::int32_t kBaleUnits = 3;
+/// The three goods a boat actually lands. Scalps come off the ward's own rats
+/// and a christening cup comes out of somebody's strongbox; neither is cargo.
+inline constexpr std::int32_t kBoatGoodCount = 3;
 
 /// Rats on the skirting after the doors shut, per night. Four, because the
 /// ward's smallest bounty asks for two and its largest for four -- a night's
@@ -785,7 +801,18 @@ private:
     [[nodiscard]] std::int32_t verminFirstId() const noexcept;
     /// What tonight's boat brought. Drawn once a night, so both bales in the
     /// snug are the same cargo -- because they came off the same hull.
-    [[nodiscard]] Contraband drawBaleGood() noexcept;
+    /// What the boat lands tonight, one good per bale.
+    ///
+    /// NOT UNIFORM, AND THAT IS THE POINT. A smuggler's boat is not a lottery:
+    /// it lands what somebody on the ward has already paid to have landed. So
+    /// each bale's good is drawn from the goods TONIGHT'S OWN BOARD asks for,
+    /// restricted to the three a hull actually carries, and only falls back to
+    /// a flat draw over those three when the board wants none of them. That is
+    /// what makes the nightly work completable without making it free: the
+    /// player still has to carry it out past a watchman whose eye is on the
+    /// WEIGHT of the sack, and three bales of quayfire is the most conspicuous
+    /// load in the game.
+    void drawBaleGoods() noexcept;
     /// The authored skill level of a roster body, without building a Speaker.
     [[nodiscard]] std::int32_t rosterSkillOf(const Actor& actor) const noexcept;
     void tickBrawl();
@@ -865,8 +892,11 @@ private:
     /// the same bale out of the same door until the guild loves them. A boat
     /// brings what a boat brings.
     std::int32_t balesInSnug_ = kBalesPerNight;
-    /// And what is in them tonight.
-    Contraband baleGood_ = Contraband::Moonshine;
+    /// And what is in each of them tonight, one entry per bale. Indexed by
+    /// `balesInSnug_ - 1`, so the snug empties from the top of the stack and a
+    /// bale put back down is the bale picked up again.
+    std::array<Contraband, static_cast<std::size_t>(kBalesPerNight)> baleGoods_{
+        Contraband::Moonshine, Contraband::Dust, Contraband::Flower};
     /// Bit i is set once room i's strongbox has been emptied.
     std::int32_t crackedBoxes_ = 0;
     /// The highest band the player has stood on. See settleLanding.

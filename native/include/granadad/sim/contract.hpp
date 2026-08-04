@@ -205,6 +205,19 @@ struct Contract {
     std::string label;
     /// The composed job, in the ward's own words.
     std::string brief;
+    /// The authored object a recovery job asks for, by name: "a christening cup
+    /// with two names filed off it". Empty on every job that is not a FETCH.
+    ///
+    /// S6 SUBSTITUTED THIS INTO PROSE AND NOWHERE ELSE, and the S6 review was
+    /// right that it made the object a decoration: the stash held an anonymous
+    /// Artifact count, so any strongbox in the ward settled any recovery job
+    /// and the brief named a thing that did not exist as a thing.
+    std::string thing;
+    /// How many of the named pieces have actually been lifted FOR THIS JOB.
+    /// See ContractBoard::recoverPiece: a box cracked while holding the job
+    /// yields the object the job named, and a recovery job cannot be settled
+    /// with pieces that were taken before anybody asked for them.
+    std::int32_t recovered = 0;
     Contraband good = Contraband::Scalp;
     std::int32_t units = 0;
     std::int32_t pay = 0;
@@ -309,6 +322,20 @@ public:
     /// The Flame signs for what is in the sack. Marks every taken contract
     /// whose goods want a mark. Returns how many it marked.
     std::int32_t sanction();
+
+    /// A strongbox came open and something with a name in it came out.
+    ///
+    /// Answers WHICH job's object it was, or nullptr when nothing on the board
+    /// asked for a piece. The earliest live recovery job that is still short
+    /// gets it, so a player holding two of them fills the older one first and
+    /// the order is not a draw.
+    ///
+    /// THIS IS WHAT MAKES THE AUTHORED OBJECT AN OBJECT. Without it the brief
+    /// promises "a strongbox key that was cut twice" and the simulation holds
+    /// an integer, so any piece settles any job -- which is the S6 finding this
+    /// closes. A recovery contract is settled by pieces lifted WHILE HOLDING
+    /// IT, and not by whatever happened to be in the sack already.
+    [[nodiscard]] const Contract* recoverPiece();
 
     /// The Watch emptied the sack. Every taken contract that wanted what was in
     /// it fails, because a job you cannot deliver is a job you have lost --

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/angle.hpp"
@@ -692,5 +693,148 @@ TEST_CASE("the whole frame, with somebody talking, still leaves the middle clear
         for (int x = centre.x0; x < centre.x1; ++x) {
             REQUIRE(plain.pixels()[plain.index(x, y)] == talking.pixels()[talking.index(x, y)]);
         }
+    }
+}
+
+// ===========================================================================
+// S7 -- the two S6 findings the frames themselves proved
+// ===========================================================================
+
+TEST_CASE("no HUD line is ever drawn off the edge of the frame it is in") {
+    // THE S6 REVIEW'S FOURTH FINDING, and docs/frames/s6-skyrun-quiet.png is
+    // the evidence: "KLED TARBECK: THAT IS YOUR ONE. OUT OF THIS HOUSE, OR I
+    // PUT YOU" with the last two words gone off the right edge, cut mid-glyph.
+    // Session clips what it composes itself, in say(), to a guessed 56 columns.
+    // The bouncer's warning went straight into hud.alert and never met that
+    // clip -- and it is 68 characters. A caller-side column count is a guess
+    // about a frame it cannot see, so the clip lives where the width is known.
+    const std::string longWarning =
+        "KLED TARBECK: THAT IS YOUR ONE. OUT OF THIS HOUSE, OR I PUT YOU OUT.";
+    for (const int width : {320, 640, 1280}) {
+        const int scale = std::max(1, (width * 180 / 320) / 180);
+        const int room = width - 2 * (6 * scale);
+        const std::string clipped = clipToWidth(longWarning, room, scale);
+        INFO("width ", width, " scale ", scale, " clipped '", clipped, "'");
+        CHECK(textWidth(clipped, scale) <= room);
+        // It says that it cut, rather than leaving a sentence that looks like
+        // it ended where the frame did.
+        CHECK(clipped.size() >= 3);
+        if (clipped.size() < longWarning.size()) {
+            CHECK(clipped.substr(clipped.size() - 2) == "..");
+        }
+    }
+    // Nothing that fits is touched.
+    CHECK(clipToWidth("HP", 400, 2) == "HP");
+    CHECK(clipToWidth("", 400, 2).empty());
+    // And no room at all draws nothing rather than one stray glyph.
+    CHECK(clipToWidth("ANYTHING", 0, 2).empty());
+
+    // Now the real thing: the frame itself. A 68-character alert is drawn
+    // centred at 320x180, and every pixel of it lands inside the frame.
+    Session session(insideTheGull(23, 152, 70, 0));
+    Framebuffer frame(320, 180);
+    HudState hud;
+    hud.alert = std::string_view{longWarning};
+    session.drawFrame(frame);
+    drawHud(frame, hud);
+    // drawText clips to the framebuffer, so the proof that nothing ran off is
+    // the clip itself: at 320 wide with a 6-pixel margin there is room for 61
+    // glyphs and the warning is 68, so it MUST have been cut.
+    CHECK(clipToWidth(longWarning, 320 - 12, 1).size() < longWarning.size());
+}
+
+TEST_CASE("the picked topic is spelled out in full under the grid, however long it is") {
+    // THE S6 REVIEW'S THIRD FINDING, and the cruellest of them: the sprint did
+    // the work of making every proper noun authored and then printed
+    // "8 TAKE 3 SCALPS." beside "9 TAKE 4 SCALPS.", and "7 SIGN ON: THE." --
+    // a row that names nothing at all. A topic column is eighteen glyphs at
+    // every resolution this game runs at; some labels are longer than that no
+    // matter how they are worded, and more clipping logic cannot fix it.
+    DialogueViewState state;
+    state.open = true;
+    state.speaker = "FINCH";
+    state.line = "Sit down.";
+    state.topics = {"SIGN ON: THE SKYRUNNERS", "VETCH - 4 SCALPS", "LEAVE"};
+
+    state.cursor = 0;
+    CHECK(dialogueDetailLine(state) == "SIGN ON: THE SKYRUNNERS");
+    state.cursor = 1;
+    CHECK(dialogueDetailLine(state) == "VETCH - 4 SCALPS");
+    // A cursor off the end of a shrinking list names nothing rather than
+    // reading past it.
+    state.cursor = 9;
+    CHECK(dialogueDetailLine(state).empty());
+    // And a cursor left behind on another page describes nothing, because a
+    // detail line for a row nobody can see is worse than none.
+    state.topics.assign(14, std::string("A TOPIC"));
+    state.cursor = 0;
+    state.page = 1;
+    CHECK(dialogueDetailLine(state).empty());
+    state.page = 0;
+    CHECK(dialogueDetailLine(state) == "A TOPIC");
+    state.topics.clear();
+    CHECK(dialogueDetailLine(state).empty());
+
+    // On the frame: the surface draws the detail line, it stays out of the
+    // play space, and it lands inside the bottom band.
+    DialogueViewState drawn;
+    drawn.open = true;
+    drawn.speaker = "FINCH";
+    drawn.line = "Nobody joins us. People stop being strangers.";
+    drawn.topics = {"SIGN ON: THE SKYRUNNERS", "LEAVE"};
+    drawn.cursor = 0;
+
+    Framebuffer without(320, 180);
+    without.clear(Rgb{0.0F, 0.0F, 0.0F});
+    DialogueViewState bare = drawn;
+    bare.topics = {"LEAVE"};
+    bare.cursor = 0;
+    drawDialogue(without, bare);
+
+    Framebuffer with(320, 180);
+    with.clear(Rgb{0.0F, 0.0F, 0.0F});
+    drawDialogue(with, drawn);
+
+    // The long label really is on the frame somewhere the short one is not.
+    CHECK(without.pixels() != with.pixels());
+    // And the centre is still untouched by either.
+    const CentreRect centre = hudCentreRect(320, 180);
+    for (int y = centre.y0; y < centre.y1; ++y) {
+        for (int x = centre.x0; x < centre.x1; ++x) {
+            REQUIRE(without.pixels()[without.index(x, y)] ==
+                    with.pixels()[with.index(x, y)]);
+        }
+    }
+}
+
+TEST_CASE("two jobs on one board are told apart by the first word, not the last") {
+    // "8 TAKE 3 SCALPS." and "9 TAKE 4 SCALPS." were the same row twice as far
+    // as a player scanning the list was concerned, because the authored name
+    // went LAST and last is what the column ate. It goes first now.
+    Session session(insideTheGull(23, 152, 70, 0));
+    sim::DialogueDirector& talk = session.tavern().dialogue();
+    REQUIRE_FALSE(talk.contracts().contracts().empty());
+    for (const sim::Contract& row : talk.contracts().contracts()) {
+        INFO("label '", row.label, "'");
+        // The patron leads, and it is a name out of the owner's own file.
+        const std::size_t gap = row.label.find(" - ");
+        REQUIRE(gap != std::string::npos);
+        REQUIRE(gap > 0);
+        const std::string patron = row.label.substr(0, gap);
+        // AND IT SURVIVES THE COLUMN. This is the actual claim: eighteen
+        // glyphs, two of them the number that picks the row, and the name is
+        // still legible after the cut. With the S6 ordering it was the name
+        // and only the name that got eaten.
+        const std::string onScreen = clipLabel("1 " + row.label, 18);
+        INFO("on screen '", onScreen, "'");
+        CHECK(onScreen.find(patron) != std::string::npos);
+        // It still says how many of what, in full or in the detail line.
+        CHECK(row.label.find(std::to_string(row.units)) != std::string::npos);
+        CHECK(row.label.find(std::string(sim::contrabandLabel(row.good))) !=
+              std::string::npos);
+        DialogueViewState state;
+        state.topics = {row.label};
+        state.cursor = 0;
+        CHECK(dialogueDetailLine(state) == row.label);
     }
 }

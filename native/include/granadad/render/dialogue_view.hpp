@@ -115,6 +115,23 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state);
 /// unless the word alone is longer than the column.
 [[nodiscard]] std::vector<std::string> wrapText(const std::string& text, std::size_t columns);
 
+/// The full, UNCUT label of the row the cursor is on -- what the detail line
+/// under the grid prints.
+///
+/// WHY THIS EXISTS. A topic column is eighteen glyphs at every resolution this
+/// game runs at, and some labels are longer than that no matter how they are
+/// worded: "SIGN ON: THE SKYRUNNERS" is twenty-three, and S6's own shipped
+/// frame printed it as "7 SIGN ON: THE." -- a row that names nothing. More
+/// clipping logic cannot fix a label that does not fit; a second line can, and
+/// the bottom band already has the room because the grid is four rows in a
+/// six-row band.
+///
+/// So the grid stays terse and scannable, and the ONE row the player has the
+/// cursor on is spelled out in full across the whole width underneath it. An
+/// empty list, or a cursor on the MORE row, gives an empty string and the line
+/// is not drawn.
+[[nodiscard]] std::string dialogueDetailLine(const DialogueViewState& state);
+
 /// Cuts a topic label to the room its column has, ON A WORD BOUNDARY, and says
 /// out loud that it cut.
 ///

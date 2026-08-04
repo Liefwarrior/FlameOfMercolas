@@ -109,6 +109,20 @@ inline constexpr std::int32_t kWatchSightTiles = 8;
 /// from across a room and a face is not.
 inline constexpr std::int32_t kRecognisePermille = 45;
 
+/// And what a CONDEMNED face is worth, which is a different question. A warrant
+/// is paper in a drawer; a sentence of the rope was passed in public and every
+/// watchman in the ward was told the face it was passed on. So a condemned man
+/// is recognised whether or not there is a warrant out, at better than two and
+/// a half times the rate of one -- and being taken again costs him the sack,
+/// the fine, the jobs those goods were for and the night, every time.
+///
+/// S7 FIXED AN EXPLOIT WITH THIS NUMBER. Tavern::tickWatch used to return
+/// early on condemned(): no notice, no recognition, no arrest, forever. Two
+/// Skyrunner arrests bought permanent immunity from the law, so the ward's
+/// harshest sentence was mechanically its safest state. It is not a status bit
+/// the Watch ignores; it is the reason the Watch does not have to work for it.
+inline constexpr std::int32_t kCondemnedRecognisePermille = 120;
+
 /// Seconds a watchman will chase before he gives it up and goes back to his
 /// drink. Long enough to be caught standing still, short enough that the door
 /// is a real answer -- which is the whole counterplay and what the roofs are
@@ -140,6 +154,14 @@ enum class Sentence : std::uint8_t {
     /// visible -- the ward has condemned you, everyone knows it, and no favour
     /// clears it. The day this build has a combat screen and a death, this is
     /// the hook it hangs on.
+    ///
+    /// WHAT IT DOES TO THE LAW, said out loud because S6's version of this
+    /// comment did not and the omission WAS the bug. Condemnation does not
+    /// switch the Watch off. A condemned man is recognised on sight at
+    /// kCondemnedRecognisePermille -- warrant or no warrant -- and every
+    /// subsequent arrest still empties the sack, takes the fine, kills the
+    /// jobs those goods were for and jumps the clock. The sentence is the
+    /// worst state in the game to be in, not the safest.
     Condemned = 4,
 };
 

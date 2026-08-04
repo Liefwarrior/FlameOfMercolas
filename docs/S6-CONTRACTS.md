@@ -194,8 +194,19 @@ the claim that broke.
 | `contrabandLegal` returns true for everything | `what a sack holds is measured in weight…`, `every good resolves both ways…`, `the sack and the job are one line each…`, `caught: a load, a warrant…` |
 | a Skyrunner's first offence stops being the hand | `the sentence is canon's…`, `an arrest empties the sack…`, `caught: a load, a warrant…` |
 | the board stops refusing ids `notables.json` does not have | `a generated job can only ever name somebody the owner's file has` |
-| a watchman's eye stops depending on the load | `a watchman notices a load, not a count…` |
+| a watchman's eye stops depending on the load, IN THE PURE FUNCTION | `a watchman notices a load, not a count…` |
+| ~~a watchman's eye stops depending on the load, AT THE CALL SITE~~ | **NOTHING. This survived, and S7 found it.** |
 | the Flame's mark stops being required | `a bounty is not paid without the Flame's mark…` |
+
+**CORRECTED BY S7, and the correction matters more than the table.** The row about the
+watchman's eye was applied to `noticePermille` itself and not to the one place the simulation
+calls it. Swapping `illicitWeight()` for `illicitUnits()` at `tavern.cpp`'s call site left all
+371 cases green: the case named above drives the pure function, and nothing drove the wire. In
+play the mutation is severe — four jars of quayfire is 96 drams against four twists of dust at
+12, and under the mutation both are four, so the whole good-choice tradeoff the sprint is built
+on evaporates in silence. The table as originally written read as broader coverage than existed.
+S7 adds *a watchman's eye is on the load AT THE CALL SITE, not only in the arithmetic*, which
+drives `Tavern::tickWatch` with both sacks and requires the heavier one to be seen sooner.
 
 The third of those only goes red because `content/raws/contracts/contracts.json` carries a
 **deliberate bad id** — `nobody_at_all`, in `bounty_rats`' patron list. A filter that has never
@@ -209,9 +220,9 @@ The tree was restored from git afterwards and `git status` is clean.
 
 | | |
 |---|---|
-| `docs/frames/s6-work-offered.png` | Watchman Cull's list at ten at night: `8 TAKE 3 SCALPS.` and `9 TAKE 4 SCALPS.` beside his own business and the ward's gossip |
+| `docs/frames/s6-work-offered.png` | Watchman Cull's list at ten at night: `8 TAKE 3 SCALPS.` and `9 TAKE 4 SCALPS.` beside his own business and the ward's gossip. **THIS CAPTION WAS WRONG AND S7 CORRECTED IT.** Those two rows are the bug, not the feature: the label was built patron-LAST, the eighteen-glyph column ate the authored proper noun, and two different jobs for two different people printed as the same row with one integer changed. S7 rebuilt the label patron-first (`VETCH - 4 SCALPS`) and put the picked row's full label on a detail line under the grid. The frame is kept as the evidence. |
 | `docs/frames/s6-bounty.png` | the same table an hour later, paid: *"THAT IS HONEST WORK AND YOU LOOK STRANGE DOING IT."*, purse 40 → 52 |
-| `docs/frames/s6-skyrun-quiet.png` | the Skyrunner line finished at one in the morning, nine of nine, with nobody from the Watch in the building |
+| `docs/frames/s6-skyrun-quiet.png` | the Skyrunner line finished at one in the morning, nine of nine, with nobody from the Watch in the building. **It also shows a 68-character bouncer warning running off the right edge, cut mid-glyph** — `hud.alert` was drawn centred, unwrapped and unclipped. S7 clips it where the frame width is actually known. |
 | `docs/frames/s6-smoke.png` | the authored spawn on the Tarwalk, 27 lamps, custom art |
 
 **Not captured, and said rather than implied:** there is no frame in which a rat is clearly

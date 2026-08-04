@@ -50,6 +50,26 @@ bool topicsPaginate(std::size_t topics) noexcept {
     return topicPageCount(topics) > 1;
 }
 
+std::string dialogueDetailLine(const DialogueViewState& state) {
+    if (state.topics.empty()) {
+        return {};
+    }
+    // The cursor is an index into the WHOLE list, never into the page -- which
+    // is the contract DialogueViewState::cursor already states. A cursor that
+    // has run off the end of a shrinking list names nothing rather than
+    // reading past it.
+    if (state.cursor < 0 || static_cast<std::size_t>(state.cursor) >= state.topics.size()) {
+        return {};
+    }
+    // Only when the cursor is actually on the page being shown. Pressing 0 to
+    // turn the page leaves the cursor behind on the old one, and a detail line
+    // describing a row nobody can see is worse than no detail line.
+    if (topicPageOf(state.cursor) != state.page) {
+        return {};
+    }
+    return state.topics[static_cast<std::size_t>(state.cursor)];
+}
+
 std::vector<std::string> wrapText(const std::string& text, std::size_t columns) {
     std::vector<std::string> lines;
     if (columns == 0) {
@@ -321,6 +341,30 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         drawText(target, x + glyphAdvance / 2, y, label,
                  printed[i].picked ? kTopicPicked : kTopicInk, printed[i].picked ? 0.98F : 0.82F,
                  scale);
+    }
+
+    // ---- the detail line: the picked row, spelled out ----------------------
+    //
+    // THE COLUMN IS EIGHTEEN GLYPHS AND SOME LABELS ARE NOT. S6's own shipped
+    // frame printed "7 SIGN ON: THE." -- clipped on a word boundary to a row
+    // that names nothing at all -- and two contracts as "8 TAKE 3 SCALPS." and
+    // "9 TAKE 4 SCALPS.". No amount of cleverness in clipLabel fixes a string
+    // that is longer than the space it has.
+    //
+    // This is the space it has. One row, under the grid, the whole width of the
+    // frame, showing the label the cursor is on with nothing taken off it. The
+    // band already had the room: the grid is four rows in a six-row band.
+    const std::string detail = dialogueDetailLine(state);
+    if (!detail.empty()) {
+        const int y = bottomTop + scale + rows * rowStep;
+        // Never past the bottom edge, and never into the play space. Both
+        // clauses matter: the band's height is computed, not fixed, and a
+        // resolution that leaves no room simply does not get the line.
+        const std::size_t width =
+            static_cast<std::size_t>(std::max(1, (target.width() - 2 * margin) / glyphAdvance));
+        if (y + 6 * scale <= target.height() && y > centre.y1) {
+            drawText(target, margin, y, clipLabel(detail, width), kTopicPicked, 0.90F, scale);
+        }
     }
 }
 

@@ -892,3 +892,201 @@ TEST_CASE("caught: a load, a warrant, and a job that dies in the impound") {
     CHECK(gull.takeArrestRelease());
     CHECK_FALSE(gull.takeArrestRelease());
 }
+
+// ===========================================================================
+// S7 -- THE S6 FINDINGS, AS CASES THAT CAN GO RED
+// ===========================================================================
+
+TEST_CASE("a watchman's eye is on the load AT THE CALL SITE, not only in the arithmetic") {
+    // THE S6 MUTATION SURVIVOR. Swapping illicitWeight() for illicitUnits() at
+    // tavern.cpp's one call to noticePermille left all 371 cases green: the
+    // only case that tested the claim -- "a watchman notices a load, not a
+    // count" -- drove the pure function, and nothing drove the wire.
+    //
+    // Four jars of quayfire is ninety-six drams. Four twists of dust is
+    // twelve. Under the mutation both are four, both weigh the same to the
+    // ward, and the whole good-choice tradeoff the contraband economy is built
+    // on evaporates in silence. So: the same room, the same seed, the same man
+    // across the same table, and the only difference is what is in the sack.
+    const auto secondsUntilNoticed = [](Contraband good, std::int32_t units,
+                                        std::int32_t hour) -> int {
+        Room room(hourOfDay(hour), gull::kBartenderX, gull::kBartenderY + 1);
+        Tavern& gull = room.tavern();
+        REQUIRE(gull.dialogue().crimes().stash().add(good, units) == units);
+        if (room.standBy("Watchman Cull") == nullptr) {
+            return -1;
+        }
+        constexpr int kCeiling = 400;
+        for (int second = 0; second < kCeiling; ++second) {
+            (void)room.standBy("Watchman Cull");
+            room.run(1);
+            if (gull.watchStance() != Tavern::WatchStance::Idle || gull.lastArrest().happened) {
+                return second;
+            }
+        }
+        return kCeiling;
+    };
+
+    // Summed over three different nights so the answer is a property of the
+    // arithmetic and not of one lucky draw.
+    int jars = 0;
+    int twists = 0;
+    // Watchman Cull drinks from nine until one, so these are three hours he is
+    // actually in the room for.
+    for (const std::int32_t hour : {21, 22, 23}) {
+        const int withJars = secondsUntilNoticed(Contraband::Moonshine, 4, hour);
+        const int withTwists = secondsUntilNoticed(Contraband::Dust, 4, hour);
+        REQUIRE(withJars >= 0);
+        REQUIRE(withTwists >= 0);
+        jars += withJars;
+        twists += withTwists;
+    }
+    INFO("seconds to be noticed carrying jars ", jars, ", carrying dust ", twists);
+    // Ninety-six drams is seen sooner than twelve. Under the mutation these two
+    // numbers are IDENTICAL, because four is four.
+    CHECK(jars < twists);
+}
+
+TEST_CASE("the rope is not an amnesty: a condemned man is the one face the ward knows") {
+    // THE S6 ENDGAME HOLE. Tavern::tickWatch returned early on condemned() --
+    // idle stance, no watchman, no notice, no arrest, permanently -- so two
+    // Skyrunner arrests bought the rest of the game at zero risk and the
+    // harshest sentence in the ward was mechanically its safest state.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    CrimeLedger& crimes = gull.dialogue().crimes();
+
+    // Sentenced as a Skyrunner until the ward runs out of worse to do: the
+    // hand, and then the rope. A sentence needs paper behind it, so the heat
+    // that puts paper out is raised before each one.
+    for (int pass = 0; pass < 6 && !crimes.condemned(); ++pass) {
+        crimes.addHeat(kWarrantAt);
+        crimes.arrest(true, 0, static_cast<std::uint64_t>(pass) * 7U + 3U);
+    }
+    REQUIRE(crimes.condemned());
+    const std::int32_t arrestsBefore = crimes.arrests();
+
+    // A sack, and the man who keeps the impound sitting across the table.
+    REQUIRE(crimes.stash().add(Contraband::Moonshine, 4) == 4);
+    REQUIRE(room.standBy("Watchman Cull") != nullptr);
+
+    bool taken = false;
+    for (int second = 0; second < 900 && !taken; ++second) {
+        (void)room.standBy("Watchman Cull");
+        room.run(1);
+        taken = gull.lastArrest().happened;
+    }
+    // He is taken. There is no paper to connect any more -- the ward passed
+    // sentence on this face in public -- and the arrest costs what an arrest
+    // costs.
+    CHECK(taken);
+    CHECK(gull.lastArrest().cause != WatchCause::None);
+    CHECK(crimes.stash().illicitUnits() == 0);
+    CHECK(crimes.arrests() >= arrestsBefore);
+    // And a condemned man is recognised markedly more readily than a merely
+    // wanted one, which is the number that replaced the early return.
+    CHECK(kCondemnedRecognisePermille > kRecognisePermille);
+}
+
+TEST_CASE("a recovery job is settled by the piece it named, not by a count in a sack") {
+    // THE OBJECT WAS A DECORATION. content/raws/contracts/contracts.json
+    // authors four of them -- "a christening cup with two names filed off it"
+    // -- and S6 substituted them into prose and nowhere else, while the stash
+    // held an anonymous Artifact count. Any box in the ward settled any job.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    DialogueDirector& talk = gull.dialogue();
+
+    // Four pieces in the sack BEFORE anybody asked for one. Fenced goods, not
+    // somebody's christening cup.
+    REQUIRE(talk.crimes().stash().add(Contraband::Artifact, 4) == 4);
+
+    ContractBoard& board = talk.contracts();
+    // Walk the nights until the tide posts a recovery job, so this case does
+    // not depend on which four are up tonight.
+    std::int32_t job = -1;
+    std::int32_t onDay = 0;
+    for (std::int32_t day = 0; day < 60 && job < 0; ++day) {
+        board.refresh(day, 0x4752414E41444144ull, talk.standings());
+        for (const Contract& row : board.contracts()) {
+            if (row.good == Contraband::Artifact && row.state == ContractState::Offered) {
+                job = row.id;
+                onDay = day;
+                break;
+            }
+        }
+    }
+    REQUIRE(job >= 0);
+    REQUIRE(board.take(job) == TakeResult::Taken);
+    REQUIRE(board.find(job) != nullptr);
+    // The brief promised an object and the object has a name out of the
+    // owner's own file.
+    CHECK_FALSE(board.find(job)->thing.empty());
+    CHECK(board.find(job)->recovered == 0);
+    const std::int32_t wanted = board.find(job)->units;
+
+    // Four pieces in hand and it is STILL short, because none of them is the
+    // one that was asked for.
+    const Settlement early = board.turnIn(job, talk.crimes().stash(), onDay);
+    CHECK(early.result == TurnInResult::Short);
+    CHECK(talk.crimes().stash().count(Contraband::Artifact) == 4);
+
+    // Now go and get it. One box, one named object, and the board says which
+    // job it belonged to.
+    for (std::int32_t i = 0; i < wanted; ++i) {
+        const Contract* got = board.recoverPiece();
+        REQUIRE(got != nullptr);
+        CHECK(got->id == job);
+    }
+    CHECK(board.find(job)->recovered == wanted);
+    const Settlement paid = board.turnIn(job, talk.crimes().stash(), onDay);
+    CHECK(paid.result == TurnInResult::Paid);
+    CHECK(paid.pay > 0);
+}
+
+TEST_CASE("a boat lands what the ward ordered, so the night's board can be filled at all") {
+    // THE BOARD WAS UNDELIVERABLE. Two bales, three units, ONE good drawn per
+    // night out of three: at most six units of a good the player had a
+    // one-in-three chance of wanting, against a board asking 3-6 flower, 1-3
+    // dust TONIGHT and 2-5 quayfire. Most nights offered work nobody could take.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    DialogueDirector& talk = gull.dialogue();
+
+    // Which goods tonight's board asks for, out of the three a hull carries.
+    std::vector<Contraband> wanted;
+    for (const Contract& row : talk.contracts().contracts()) {
+        const std::int32_t index = static_cast<std::int32_t>(row.good);
+        if (index >= 1 && index <= kBoatGoodCount &&
+            std::find(wanted.begin(), wanted.end(), row.good) == wanted.end()) {
+            wanted.push_back(row.good);
+        }
+    }
+    REQUIRE_FALSE(wanted.empty());
+
+    // Sworn to the roofs, because nobody hands a stranger a bale.
+    REQUIRE(room.standBy("Finch") != nullptr);
+    REQUIRE(gull.talkTo());
+    REQUIRE(room.pick(TopicKind::Join));
+    gull.endConversation();
+
+    // Pick up every bale in the snug and see what came off the boat. THREE
+    // now, not two, and the good is drawn per bale rather than per night.
+    std::int32_t bales = 0;
+    for (std::int32_t i = 0; i < kBalesPerNight; ++i) {
+        room.standAt(gull::kBaleX, gull::kBaleY, gull::kGroundBand);
+        const Tavern::StealResult got = gull.handleBale();
+        REQUIRE(got.result == ServiceResult::Served);
+        ++bales;
+        const Contraband landed = talk.crimes().baleGood();
+        INFO("bale ", i, " landed ", contrabandSymbol(landed));
+        // EVERY BALE IS SOMETHING SOMEBODY ASKED FOR. Not a lottery: a
+        // smuggler's boat lands what has already been paid for.
+        CHECK(std::find(wanted.begin(), wanted.end(), landed) != wanted.end());
+        // Put it down again so the next one can be picked up.
+        room.standAt(gull::kBaleX, gull::kBaleY, gull::kGroundBand);
+        REQUIRE(gull.handleBale().result == ServiceResult::Served);
+    }
+    CHECK(bales == kBalesPerNight);
+    CHECK(kBalesPerNight * kBaleUnits == 9);
+}

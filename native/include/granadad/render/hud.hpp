@@ -18,6 +18,7 @@
 // them creeping inwards, and the test that checks it goes red if they do.
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 #include "granadad/render/framebuffer.hpp"
@@ -102,5 +103,19 @@ int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb
 
 /// Width in pixels a string would occupy at a scale.
 [[nodiscard]] int textWidth(std::string_view text, int scale) noexcept;
+
+/// Cuts a string to what fits in `pixels` at this scale, and marks the cut.
+///
+/// EVERY HUD LINE THAT IS NOT ANCHORED TO AN EDGE GOES THROUGH THIS. A line
+/// anchored right or left is clamped by its anchor; a CENTRED line is not, and
+/// the alert is the only centred line the HUD has. S6 shipped a 68-character
+/// bouncer warning into it at 1280x720 -- roughly 1,380 pixels of text in a
+/// 1,280-pixel frame -- and the last two words were drawn off the edge, cut
+/// mid-glyph. docs/frames/s6-skyrun-quiet.png is the evidence.
+///
+/// Callers used to clip to a column count they guessed (Session::say's 56), and
+/// a second caller that did not know about the guess is exactly how the bug
+/// got in. The frame knows its own width; this takes it.
+[[nodiscard]] std::string clipToWidth(std::string_view text, int pixels, int scale);
 
 }  // namespace granadad::render

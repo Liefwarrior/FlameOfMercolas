@@ -1,0 +1,103 @@
+{
+  "id": "house_barks",
+  "notes": "S7 ADDITION, and it exists to fix a rule this project had already written down and then broke. contract.hpp says 'not one proper noun in this file's output was chosen by a programmer'; the Gilded Gull's final warning was a hardcoded English sentence sitting in tavern.cpp, composed by whoever wrote the door policy. It is here now, with three rows instead of one, so a bouncer does not say the same sentence to every player on every night of the ward's life. Same rule every other bark file obeys: NOTHING in the code writes a spoken line. The keys resolve through the same fallback chain barks.json uses, and this file is loaded after the owner's own, so it can never take a key of theirs.",
+  "tables": [
+    {
+      "key": "house.warning",
+      "rows": [
+        "That is your one. Out of this house.",
+        "You have had the only word you get. The door.",
+        "I said it once. There is no second time in here.",
+        "Out. Master Venn keeps a quiet room and you are not it."
+      ]
+    },
+    {
+      "key": "house.eject",
+      "rows": [
+        "You were told. Mind the step.",
+        "Out you go, and the step is not my fault.",
+        "Walk or be carried. Either way it is the same door."
+      ]
+    },
+    {
+      "key": "ward.rent.due",
+      "rows": [
+        "The penny falls at quarter-day and the Flame keeps the roll, not me.",
+        "Ground rent. Not for the house - the house is yours. For the dirt under it.",
+        "Pay the Duke or lease him the year. Those are the two ways it has ever gone."
+      ]
+    },
+    {
+      "key": "ward.rent.arrears",
+      "rows": [
+        "Two quarters behind. He has been patient and patience is a thing men run out of.",
+        "The roll says what the roll says. You are on the wrong side of it.",
+        "He offered terms. That is the part the priest will ask about."
+      ]
+    },
+    {
+      "key": "ward.bond.taken",
+      "rows": [
+        "Bondsworn, then. Your wage is his and your work is his yard.",
+        "You kept the house and sold the years. Most would call that the better half.",
+        "Board and biscuit, set low, and the arrears come off a little each quarter."
+      ]
+    },
+    {
+      "key": "ward.bond.discharged",
+      "rows": [
+        "Worked out and blessed. The Flame does that part cheap and it is worth a great deal.",
+        "Discharged. Nobody holds paper on you this morning.",
+        "Your wage is your own again. Do not sign the next one in a hungry quarter."
+      ]
+    },
+    {
+      "key": "ward.petition.heard",
+      "rows": [
+        "Father Maell hears it at the Mission. He weighs the tenant, not the ledger.",
+        "The offering is an offering. It does not buy the verdict and he will say so.",
+        "A Duke behind on his own charge pleads badly. Everyone knows it but the Duke."
+      ]
+    },
+    {
+      "key": "ward.petition.dismissed",
+      "rows": [
+        "Refused, and the Duke warned in front of the whole Mission.",
+        "The Flame does not put a family on the street in a hungry quarter.",
+        "He came for the ground and went home with a caution."
+      ]
+    },
+    {
+      "key": "ward.petition.distraint",
+      "rows": [
+        "The house passes. They are roofed by the week's end.",
+        "And the roof people go too. Nobody weighed them; they were never parties to it.",
+        "Kept the years, lost the house. There is a word for that and it is not a kind one."
+      ]
+    },
+    {
+      "key": "ward.harvest.good",
+      "rows": [
+        "The courtyard beds came in heavy. There will be bread that is not the Mission's.",
+        "Good ground, well turned. The atrium keeps its own larder and it is full.",
+        "Every bed cut and carried. Nobody in this compound eats thin this quarter."
+      ]
+    },
+    {
+      "key": "ward.harvest.failed",
+      "rows": [
+        "Nobody turned the beds. What came up was not worth the carrying.",
+        "Neglected ground pays neglected. The larder is a shelf and a smell.",
+        "Two beds dead and the third not worth cutting. That is a hungry quarter starting."
+      ]
+    },
+    {
+      "key": "ward.hunger",
+      "rows": [
+        "The larder is out. There is the Mission, and after the Mission there is the Gullet.",
+        "Thin quarter. The children eat and the rest of us watch them do it.",
+        "Alms tonight. Do not make a face about it; half this row is in the same queue."
+      ]
+    }
+  ]
+}

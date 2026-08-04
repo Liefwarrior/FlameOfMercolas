@@ -1,0 +1,114 @@
+{
+  "id": "docks_roll",
+  "notes": "S7 ADDITION. THE ROLL -- the Church's register of who holds what, and the only place in this build where a plot, a house or a Den Duke is named. Every `denDuke` and `pledgedTo` id below is a cross-reference into content/raws/names/notables.json and every one of them is refused at load by name if the registry does not have it, exactly as the contract board's brokers are: the roll can never quietly grow a forty-third notable. The structure is DOCKS-GAZETTEER.md section 2.8's own table, transcribed and given numbers; the five rows are C1 The Quayward, C2 The Netters', C3 Saltgate Terrace, C4 The Gullet and the glebe, and the tenure of each is the ruling that section already made. What is NOT authored here is who lives in them: household sizes are drawn from content/raws/actors/household.json's own weights {1:20,2:35,3:25,4:15,5:5}, which is the canon-derived distribution section 2.5 cites, so the population is derived rather than invented. PLACEHOLDER, and said out loud: the novel names no landlord, tenant, lease, freehold or duke. Section 2.8 records the two canon anchors (L1481 land-stewardship, L1820 debt) the institution is built on. Every coin figure below is a game-balance number and nothing more.",
+  "quarterDays": 90,
+  "crops": [
+    {
+      "id": "barley",
+      "label": "BARLEY",
+      "growDays": 40,
+      "yieldPerBed": 60,
+      "note": "The courtyard staple. Forty days from sowing to the sickle, and it wants turning over every third day or it comes up thin."
+    },
+    {
+      "id": "beans",
+      "label": "BEANS",
+      "growDays": 30,
+      "yieldPerBed": 42,
+      "note": "Quicker and lighter. What a compound puts in when the barley failed and there is a hungry quarter coming."
+    },
+    {
+      "id": "roots",
+      "label": "ROOTS",
+      "growDays": 50,
+      "yieldPerBed": 78,
+      "note": "Slow, heavy, and it keeps. The bed a family plants when it means to still be on that ground next year."
+    }
+  ],
+  "plots": [
+    {
+      "id": "C1_QUAYWARD",
+      "name": "THE QUAYWARD",
+      "tenure": "charged",
+      "denDuke": "quayward",
+      "priest": "maell",
+      "chargeRent": 220,
+      "groundPenny": 34,
+      "roofRent": 0,
+      "beds": 20,
+      "crop": "roots",
+      "mansionHouseholds": 7,
+      "condos": 8,
+      "roofHuts": 0,
+      "dukeCoin": 900,
+      "note": "Three generations of ground, low pennies, high standing with the Flame. She runs the courtyard market her farming tenants stock, and C1 has no rooftop slum -- section 2.8 rules that is a choice by her house-owners and not a map fact."
+    },
+    {
+      "id": "C2_NETTERS",
+      "name": "THE NETTERS",
+      "tenure": "pledged",
+      "denDuke": "netter",
+      "pledgedTo": "fenner",
+      "priest": "maell",
+      "chargeRent": 240,
+      "groundPenny": 40,
+      "roofRent": 11,
+      "beds": 16,
+      "crop": "barley",
+      "mansionHouseholds": 6,
+      "condos": 8,
+      "roofHuts": 3,
+      "dukeCoin": 260,
+      "note": "The charge is pledged, not the house. If the widow defaults, Fenner becomes Den Duke of the ground under forty dockworker families -- which is what makes section 4.7 THE WIDOW'S PAPER load-bearing rather than decorative."
+    },
+    {
+      "id": "C3_SALTGATE",
+      "name": "SALTGATE TERRACE",
+      "tenure": "charged",
+      "denDuke": "saltgate",
+      "priest": "maell",
+      "chargeRent": 260,
+      "groundPenny": 44,
+      "roofRent": 13,
+      "beds": 14,
+      "crop": "barley",
+      "mansionHouseholds": 6,
+      "condos": 8,
+      "roofHuts": 4,
+      "dukeCoin": 120,
+      "note": "Mansion-poor and tenant-rich: a rent roll with no cash behind it. He is himself in arrears to the Flame, so he petitions most and loses most -- the ward's distraint engine. The terrace roofs above him house people he prefers not to think about, and they are not his tenants."
+    },
+    {
+      "id": "C4_GULLET",
+      "name": "THE GULLET",
+      "tenure": "vacant",
+      "priest": "maell",
+      "chargeRent": 150,
+      "groundPenny": 18,
+      "roofRent": 6,
+      "beds": 8,
+      "crop": "beans",
+      "mansionHouseholds": 0,
+      "condos": 6,
+      "roofHuts": 5,
+      "dukeCoin": 0,
+      "note": "The Flame has not re-let it. Rent is not paid in the Gullet but respects are, and they are paid to Mag, who is the ground-holder in fact and not in law. A vacant charge is a prize; any actor, including the player, may petition for it."
+    },
+    {
+      "id": "GLEBE_HOVELS",
+      "name": "THE HOVEL ROWS",
+      "tenure": "glebe",
+      "priest": "maell",
+      "chargeRent": 0,
+      "groundPenny": 0,
+      "roofRent": 0,
+      "beds": 24,
+      "crop": "roots",
+      "mansionHouseholds": 0,
+      "condos": 45,
+      "roofHuts": 0,
+      "dukeCoin": 0,
+      "note": "Church ground never let to anyone, squatted and worked directly, token alms in place of a penny. This is why the hovel rows are the only unsigned dwellings in the ward, and it produces the good inversion: the poorest are the least enserfed. A Duke who wants labour cannot get it from the glebe."
+    }
+  ]
+}

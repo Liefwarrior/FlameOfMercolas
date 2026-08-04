@@ -66,6 +66,22 @@ void put_string(HashSink& sink, std::string_view text) {
     return out;
 }
 
+/// The name a topic row has room for.
+///
+/// A topic column is EIGHTEEN GLYPHS WIDE at every resolution this game runs
+/// at -- 320x180, 640x360 and 1280x720 all compute the same eighteen (see
+/// drawDialogue's columnWidth / glyphAdvance) -- and two of those are spent on
+/// the number that picks the row. "GOODMAN TARL SALTGATE" cannot be printed in
+/// sixteen and neither can "KEEPER VETCH"; "SALTGATE" and "VETCH" can.
+///
+/// So the row gets the LAST word of the authored name and nothing else. It is
+/// still the owner's own string -- no programmer named anybody -- and it is
+/// what the ward calls these people anyway: Vetch, Saltgate, Mag, Crumb.
+[[nodiscard]] std::string shortName(std::string_view name) {
+    const std::size_t at = name.rfind(' ');
+    return upperAscii(at == std::string_view::npos ? name : name.substr(at + 1));
+}
+
 /// Replaces every occurrence of `token` with `value`. Small and linear: a brief
 /// is one sentence and there are five tokens.
 void substitute(std::string& text, std::string_view token, std::string_view value) {
@@ -507,11 +523,24 @@ void ContractBoard::refresh(std::int32_t day, std::uint64_t worldSeed,
         // difference between a radiant job and a slot machine.
         const ContractPerson* wants = raws_->person(patron);
         const ContractPerson* from = raws_->person(sourceId);
-        row.label = offer.verb + " " + std::to_string(units) + " " +
-                    std::string(contrabandLabel(offer.good));
-        if (wants != nullptr) {
-            row.label += " FOR " + upperAscii(wants->name);
-        }
+        // THE PATRON LEADS, AND THAT IS THE WHOLE FIX.
+        //
+        // S6 built "TAKE 4 SCALPS FOR KEEPER VETCH" and the eighteen-column
+        // topic grid printed "8 TAKE 3 SCALPS." beside "9 TAKE 4 SCALPS." --
+        // two rows differing by one integer, with the authored proper noun the
+        // sprint existed to prove cut off the end. The name went last, so the
+        // name was what the column ate.
+        //
+        // It goes first now, and the units and the good follow it:
+        // "VETCH - 4 SCALPS" is sixteen glyphs, fits the column WITH its
+        // number, names the person, and two bounties on one board are told
+        // apart by the first word instead of the last. The verb the offer
+        // authors is not lost -- it is in the brief, which is what the row
+        // shows once it is picked, and the full label is on the detail line
+        // under the grid either way (dialogueDetailLine).
+        row.label = (wants == nullptr ? std::string("THE WARD") : shortName(wants->name)) + " - " +
+                    std::to_string(units) + " " + std::string(contrabandLabel(offer.good));
+        row.thing = thing;
         row.brief = offer.brief;
         substitute(row.brief, "{patron}", wants == nullptr ? "somebody" : wants->name);
         substitute(row.brief, "{patronSite}", wants == nullptr ? "the ward" : wants->place);
@@ -567,6 +596,14 @@ Settlement ContractBoard::turnIn(std::int32_t id, Stash& stash, std::int32_t day
         out.result = TurnInResult::NeedsSanction;
         return out;
     }
+    if (row->good == Contraband::Artifact && row->recovered < row->units) {
+        // THE PIECE IS THE PIECE. A recovery job named an object out of the
+        // owner's own file -- "a sea-chart with the wrong soundings inked over
+        // the right ones" -- and pieces already in the sack are not it. Short,
+        // and for the same reason a job for four jars is short at three.
+        out.result = TurnInResult::Short;
+        return out;
+    }
     out.unitsTaken = stash.take(row->good, row->units);
     out.pay = row->pay;
     out.result = TurnInResult::Paid;
@@ -574,6 +611,20 @@ Settlement ContractBoard::turnIn(std::int32_t id, Stash& stash, std::int32_t day
     ++paid_;
     earned_ += row->pay;
     return out;
+}
+
+const Contract* ContractBoard::recoverPiece() {
+    // Ascending by id, and rows_ is kept ascending by id -- so "the earliest
+    // live recovery job still short" is the first match in a forward walk and
+    // no sort is needed to make the order a fact rather than a habit.
+    for (Contract& row : rows_) {
+        if (!row.live() || row.good != Contraband::Artifact || row.recovered >= row.units) {
+            continue;
+        }
+        ++row.recovered;
+        return &row;
+    }
+    return nullptr;
 }
 
 std::int32_t ContractBoard::sanction() {
@@ -620,6 +671,10 @@ void ContractBoard::hashInto(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(row.dueOnDay));
         sink.put_byte(static_cast<std::uint32_t>(row.state));
         sink.put_byte(row.sanctioned ? 1U : 0U);
+        // S7: how many of the named pieces this job actually has. It decides
+        // whether the job can be settled, so it is state and the twin-run gate
+        // has to be able to see it.
+        sink.put_int(static_cast<std::uint32_t>(row.recovered));
     }
     sink.put_int(static_cast<std::uint32_t>(paid_));
     sink.put_int(static_cast<std::uint32_t>(failed_));

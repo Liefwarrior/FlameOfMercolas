@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <string>
 
 #include "granadad/sim/angle.hpp"
 
@@ -88,6 +89,29 @@ int textWidth(std::string_view text, int scale) noexcept {
         return 0;
     }
     return (static_cast<int>(text.size()) * kGlyphAdvance - 1) * scale;
+}
+
+std::string clipToWidth(std::string_view text, int pixels, int scale) {
+    const int step = kGlyphAdvance * std::max(1, scale);
+    const int room = pixels / step;
+    if (room <= 0) {
+        return {};
+    }
+    if (static_cast<int>(text.size()) <= room) {
+        return std::string(text);
+    }
+    // Two glyphs of the room are the mark, so the cut line is never wider than
+    // the whole line would have been -- and the mark is what says "there was
+    // more of this" rather than leaving a sentence that looks finished.
+    if (room <= 2) {
+        return std::string(text.substr(0, static_cast<std::size_t>(room)));
+    }
+    std::string out(text.substr(0, static_cast<std::size_t>(room - 2)));
+    while (!out.empty() && out.back() == ' ') {
+        out.pop_back();
+    }
+    out += "..";
+    return out;
 }
 
 int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
@@ -277,14 +301,28 @@ void drawRoom(Framebuffer& target, const HudState& state) {
                  Rgb{0.72F, 0.70F, 0.62F}, 0.88F, scale);
     }
     if (!state.alert.empty()) {
-        const int width = textWidth(state.alert, scale);
+        // CLIPPED HERE, WHICH IS THE ONLY PLACE THAT CAN DO IT HONESTLY.
+        //
+        // S6 shipped a frame -- docs/frames/s6-skyrun-quiet.png -- reading
+        // "KLED TARBECK: THAT IS YOUR ONE. OUT OF THIS HOUSE, OR I PUT YOU"
+        // with the last two words off the right edge, cut mid-glyph. Session
+        // clips what it composes itself to 56 columns in say(), but the
+        // bouncer's warning is assigned into hud.alert straight off the tavern
+        // and never went through it, and the warning is 68 characters.
+        //
+        // A caller-side column count is a guess about a frame it cannot see.
+        // The frame is here. Clip to the width that actually exists, so every
+        // alert from every source is safe by construction and no future caller
+        // has to remember a number.
+        const std::string alert = clipToWidth(state.alert, target.width() - 2 * margin, scale);
+        const int width = textWidth(alert, scale);
         const int x = std::max(margin, (target.width() - width) / 2);
         // One row higher than it used to sit. A long alert is clamped to the
         // left margin, and at 15 rows up that is exactly where the "HP" label
         // is -- so a full-width line printed "HPSOMEBODY SAID SOMETHING". The
         // bottom-left is a stack now (bar, HP, alert, rung, objective) and every
         // row in it has its own.
-        drawText(target, x, target.height() - margin - 23 * scale, state.alert,
+        drawText(target, x, target.height() - margin - 23 * scale, alert,
                  Rgb{0.90F, 0.62F, 0.30F}, 0.95F, scale);
     }
 }

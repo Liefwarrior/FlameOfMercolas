@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <utility>
 
 #include "granadad/sim/fixed.hpp"
@@ -306,8 +307,12 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
     // Tonight's boat, and tonight's work. Both are posted before anybody has
     // taken a step, so a session that opens at ten at night opens on a board
     // that has been up since the doors did.
-    baleGood_ = drawBaleGood();
+    // THE BOARD FIRST, THEN THE BOAT. The order is load-bearing since S7:
+    // drawBaleGoods reads tonight's offers to decide what a hull landed, so a
+    // boat drawn before the board was posted would be a boat that had nothing
+    // to read.
     dialogue_.postContracts(dayNumber(), rng_.world_seed());
+    drawBaleGoods();
     applySchedules();
     // Everybody whose shift has already started is AT their post, not walking
     // in from the street: a session that opens at eight in the evening opens on
@@ -670,19 +675,22 @@ void Tavern::advanceSecond() {
     // clock on the wall, because the clock wraps at midnight and a memory that
     // wrapped with it would hand the Watch a clean sheet every night.
     dialogue_.crimes().cool(elapsed_);
+    // A new day is new work. refresh() answers instantly on a day it has
+    // already posted, so this is a comparison and not a rebuild.
+    //
+    // BEFORE THE RESTOCK, not after. The boat reads the board -- see
+    // drawBaleGoods -- so the board has to be tonight's before the hull is.
+    dialogue_.postContracts(dayNumber(), rng_.world_seed());
     if (timeOfDay_ == gull::kOpensAt) {
         drinkStock_ = kOpeningStock;
         balesInSnug_ = kBalesPerNight;
-        baleGood_ = drawBaleGood();
+        drawBaleGoods();
         // A fresh night brings fresh vermin, exactly as it brings fresh
         // barrels. Both are what stop their trade being a faucet.
         scalpedVermin_ = 0;
         rentedRoom_ = -1;
         stockedOnDay_ = tick_;
     }
-    // A new day is new work. refresh() answers instantly on a day it has
-    // already posted, so this is a comparison and not a rebuild.
-    dialogue_.postContracts(dayNumber(), rng_.world_seed());
     // Somebody put on the floor comes round. A brawl is not a killing, so a
     // downed patron is a patron who gets up in a minute or two with a headache
     // and a quarter of their health -- and then walks back to their stool,
@@ -728,12 +736,48 @@ void Tavern::skipHours(std::int32_t hours) {
     skipTo((timeOfDay_ + (forward % 24) * 3600) % kSecondsPerDay);
 }
 
-Contraband Tavern::drawBaleGood() noexcept {
+void Tavern::drawBaleGoods() noexcept {
     // A boat brings a boat's cargo: powder, spirit or bales. It does not bring
     // rats and it does not bring somebody's christening cup, so the draw is
     // over exactly the three the harbour actually lands.
-    const std::uint64_t roll = rng_.draw(0xBA1EU, playerActionSeq_);
-    return static_cast<Contraband>(1 + static_cast<std::int32_t>(roll % 3U));
+    //
+    // WHAT THE WARD ORDERED COMES FIRST. Tonight's board is already posted by
+    // the time the doors open, and every offer on it names a good. The wanted
+    // set is those goods, filtered to the three a hull carries; a bale is drawn
+    // from that set when it is non-empty, and from all three when it is not.
+    // Without this, S6's snug landed six units of one good chosen by a coin
+    // that had never read the board -- and most of the board was undeliverable.
+    std::array<Contraband, kBoatGoodCount> wanted{};
+    std::int32_t wantedCount = 0;
+    for (const Contract& row : dialogue_.contracts().contracts()) {
+        if (row.state != ContractState::Offered && row.state != ContractState::Taken) {
+            continue;
+        }
+        const std::int32_t index = static_cast<std::int32_t>(row.good);
+        if (index < 1 || index > kBoatGoodCount) {
+            // Scalps and pieces are not cargo. The ward's own rats supply the
+            // one and somebody's strongbox supplies the other.
+            continue;
+        }
+        bool seen = false;
+        for (std::int32_t i = 0; i < wantedCount; ++i) {
+            seen = seen || wanted[static_cast<std::size_t>(i)] == row.good;
+        }
+        if (!seen) {
+            wanted[static_cast<std::size_t>(wantedCount)] = row.good;
+            ++wantedCount;
+        }
+    }
+    for (std::int32_t bale = 0; bale < kBalesPerNight; ++bale) {
+        const std::uint64_t roll = rng_.draw(0xBA1EU, playerActionSeq_ + bale);
+        if (wantedCount > 0) {
+            baleGoods_[static_cast<std::size_t>(bale)] =
+                wanted[static_cast<std::size_t>(roll % static_cast<std::uint64_t>(wantedCount))];
+        } else {
+            baleGoods_[static_cast<std::size_t>(bale)] =
+                static_cast<Contraband>(1 + static_cast<std::int32_t>(roll % kBoatGoodCount));
+        }
+    }
 }
 
 void Tavern::applySchedules() {
@@ -881,8 +925,18 @@ void Tavern::tickBouncers() {
                 standing_ = Standing::Warned;
                 warnedAtTick_ = tick_;
                 ++warningsGiven_;
-                lastWarning_ = responder->name() +
-                               ": that is your one. Out of this house, or I put you out.";
+                // OUT OF THE RAWS, NOT OUT OF THIS FILE. S6 shipped a
+                // hardcoded English sentence here -- a spoken line composed by
+                // whoever wrote the door policy -- in a project whose stated
+                // discipline (contract.hpp) is that not one proper noun in a
+                // system's output is chosen by a programmer. It is authored
+                // now, in content/raws/barks/house_barks.json, and it rotates
+                // on how many warnings this house has given, so a bouncer does
+                // not say the same sentence twice in a night.
+                lastWarning_ = responder->name() + ": " +
+                               std::string(dialogue_.barks().line(
+                                   dialogue_.barks().resolve({std::string("house.warning")}),
+                                   warningsGiven_));
             }
             break;
         }
@@ -1784,6 +1838,13 @@ Tavern::StealResult Tavern::crackStrongbox() {
     // the signet -- the thing a recovery contract can ask for by name and a
     // watchman can hang on you. One a box, because there is one of it.
     const std::int32_t piece = dialogue_.crimes().stash().add(Contraband::Artifact, 1);
+    // AND IT IS THE PIECE SOMEBODY ASKED FOR. S6 put an integer in the sack and
+    // let the brief promise a christening cup; the object had no existence.
+    // Now the box yields the object the job named, the job records that it has
+    // it, and a recovery contract can only be settled with pieces lifted while
+    // the player was actually carrying it. nullptr means nobody had asked --
+    // then it is anonymous loot and a fence's problem.
+    const Contract* wanted = piece > 0 ? dialogue_.contracts().recoverPiece() : nullptr;
     dialogue_.noteCrime(Crime::Burgle, out.seen);
     if (out.seen) {
         spreadWitness(kPlayerActorId, Deed::Robbed);
@@ -1792,7 +1853,16 @@ Tavern::StealResult Tavern::crackStrongbox() {
     out.result = ServiceResult::Served;
     out.line = "CRACKED IT - " + std::to_string(out.coin) + "C AND " +
                std::to_string(out.loot) + " PIECE" + (out.seen ? ", AND SEEN." : ".");
-    if (piece > 0) {
+    if (wanted != nullptr && !wanted->thing.empty()) {
+        // THE OWNER'S OWN WORDS, upper-cased for the 4x6 font and nothing else
+        // done to them. No programmer named this object.
+        std::string named;
+        named.reserve(wanted->thing.size());
+        for (const char c : wanted->thing) {
+            named.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+        }
+        out.line += " " + named + ".";
+    } else if (piece > 0) {
         out.line += " SOMETHING WITH A NAME ON IT.";
     }
     return out;
@@ -1847,14 +1917,16 @@ Actor* Tavern::watchmanWatchingPlayer() noexcept {
 
 void Tavern::tickWatch() {
     CrimeLedger& crimes = dialogue_.crimes();
-    if (crimes.condemned()) {
-        // Already sentenced to the rope. Nothing further is taken and no
-        // watchman crosses the room about it -- see Sentence::Condemned on
-        // exactly what this build does and does not simulate.
-        watchStance_ = WatchStance::Idle;
-        watchmanId_ = -1;
-        return;
-    }
+    // S6 SHIPPED THE OPPOSITE OF THIS AND IT WAS AN EXPLOIT. The condemned
+    // branch used to return here -- stance idle, no watchman, no notice, no
+    // arrest -- which made the ward's HARSHEST sentence its SAFEST state: two
+    // Skyrunner arrests bought the rest of the game at zero risk, and the only
+    // residual cost (kMaimedTakePercent) had already been paid at the first.
+    //
+    // A condemned man is not invisible. He is the one face in the ward every
+    // watchman already has. There is no early return any more; what
+    // condemnation changes is kCondemnedRecognisePermille, below, and it
+    // changes it in the direction the fiction says.
 
     if (watchStance_ == WatchStance::Closing) {
         Actor* officer = watchmanId_ < 0 ? nullptr : mutableActorById(watchmanId_);
@@ -1912,11 +1984,20 @@ void Tavern::tickWatch() {
     // A WARRANT IS NOT A BEACON. He has to connect the face to the paper, and
     // that is its own roll -- see kRecognisePermille on why paper alone being
     // instant cause would make "wanted" mean "the game is over".
+    //
+    // A CONDEMNED FACE IS. There is no paper to connect any more: the ward
+    // passed sentence on this man in public and every watchman in it was told
+    // who he was. He is recognised at kCondemnedRecognisePermille whether or
+    // not a warrant is out, which is what makes the rope a punishment rather
+    // than the amnesty S6 shipped.
+    const std::int32_t recognisePermille =
+        crimes.condemned() ? kCondemnedRecognisePermille
+                           : (crimes.warrant() ? kRecognisePermille : 0);
     const bool recognised =
-        crimes.warrant() &&
+        recognisePermille > 0 &&
         passes(rng_.draw(static_cast<std::uint64_t>(officer->id()) ^ 0x57415252U,
                          static_cast<std::int32_t>(tick_ % 4096)),
-               kRecognisePermille);
+               recognisePermille);
     const WatchCause cause = watchCause(recognised, noticed, sack.illicitUnits());
     if (cause == WatchCause::None) {
         return;
@@ -2155,7 +2236,11 @@ Tavern::StealResult Tavern::handleBale() {
     CrimeLedger& crimes = dialogue_.crimes();
     if (crimes.carryingBale()) {
         crimes.dropBale();
-        ++balesInSnug_;
+        // CLAMPED, and it has to be. The snug restocks to kBalesPerNight when
+        // the doors open, and a player who was holding a bale across that
+        // moment would otherwise put down a fourth one and index off the end
+        // of the stack the next time they picked it up.
+        balesInSnug_ = std::min(kBalesPerNight, balesInSnug_ + 1);
         out.result = ServiceResult::Served;
         out.line = "PUT IT DOWN.";
         return out;
@@ -2189,10 +2274,15 @@ Tavern::StealResult Tavern::handleBale() {
     // it was a flag with a name. It has a KIND and a COUNT now, both decided by
     // the boat that landed it, and what comes out of it at the threshold is
     // what a contract can want and a watchman can find.
-    crimes.takeBale(baleGood_, kBaleUnits);
+    //
+    // S7: PER BALE, not per night. The snug empties from the top of the stack,
+    // so three bales can be three different goods and a player with two jobs
+    // on the board can fill both from one night's hull.
+    const Contraband good = baleGoods_[static_cast<std::size_t>(balesInSnug_)];
+    crimes.takeBale(good, kBaleUnits);
     out.result = ServiceResult::Served;
     out.loot = kBaleUnits;
-    out.line = "A BALE OF " + std::string(contrabandLabel(baleGood_)) + " - " +
+    out.line = "A BALE OF " + std::string(contrabandLabel(good)) + " - " +
                std::to_string(kBaleUnits) + " OF IT.";
     return out;
 }
@@ -2306,7 +2396,9 @@ void Tavern::hash_into(HashSink& sink) const {
     // S6: tonight's cargo, which rats are gone, and where a watchman is in the
     // business of taking you. All of it decides what happens next, so all of it
     // is state the twin-run gate compares.
-    sink.put_byte(static_cast<std::uint32_t>(baleGood_));
+    for (const Contraband good : baleGoods_) {
+        sink.put_byte(static_cast<std::uint32_t>(good));
+    }
     sink.put_int(static_cast<std::uint32_t>(scalpedVermin_));
     sink.put_byte(static_cast<std::uint32_t>(watchStance_));
     sink.put_byte(static_cast<std::uint32_t>(watchCause_));

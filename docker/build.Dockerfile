@@ -371,8 +371,15 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # can go red rather than comments that cannot: the witness radius pinned from
     # BOTH sides, the same-floor clause, the line-of-sight clause, and the topic
     # list proved completely addressable from the keyboard at any length.
+    #
+    # S7: 371 -> 378. The four S6 review findings closed with cases that can go
+    # red -- the watchman's eye tested AT THE CALL SITE and not only in the
+    # arithmetic, the condemned-man amnesty closed, the authored object given
+    # an existence, and the boat made to land what the board asked for -- plus
+    # the two the shipped frames themselves proved: no HUD line drawn off the
+    # edge, and the picked topic spelled out in full under the grid.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=371; \
+    GRANADAD_MIN_TESTS=378; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -540,6 +547,24 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: S6's named cases are all registered"; \
+    \
+    # S7, part one: the four S6 review findings, and the two its own shipped \
+    # frames proved. Every one of these is a claim that used to be a comment. \
+    for case in \
+        "a watchman's eye is on the load AT THE CALL SITE, not only in the arithmetic" \
+        "the rope is not an amnesty: a condemned man is the one face the ward knows" \
+        "a recovery job is settled by the piece it named, not by a count in a sack" \
+        "a boat lands what the ward ordered, so the night's board can be filled at all" \
+        "no HUD line is ever drawn off the edge of the frame it is in" \
+        "the picked topic is spelled out in full under the grid, however long it is" \
+        "two jobs on one board are told apart by the first word, not the last" \
+        ; do \
+        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the S6 findings S7 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S7's carry-forward cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \
