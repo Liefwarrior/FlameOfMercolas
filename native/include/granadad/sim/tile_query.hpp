@@ -216,6 +216,52 @@ public:
     /// the wrong sentinel should not compile into a subtle out-of-world walk.
     static constexpr std::int32_t kNoBand = INT32_MIN;
 
+    // --- S5: the roofs ------------------------------------------------------
+    //
+    // WHY THESE ARE HERE AND NOT IN THE BODY. stepBand above is the WALKING
+    // rule and it is deliberately strict: up only where a ramp or a stair was
+    // authored. That rule is why the district's eight thousand roof cells were
+    // standable and unreachable -- DOCKS-GAZETTEER section 2.6 says so out
+    // loud, and files the roof planes' isolation as intentional "until the
+    // law/economy layers learn to climb (S5+)".
+    //
+    // This is S5. The Skyrunners are named for running the roofs
+    // (DOCKS-GAZETTEER section 2.5: rooftops are unseemly, which is exactly why
+    // burglars use them as a highway), so the climb is a real movement mode and
+    // it gets its geometry answered in the SAME place walking and sight are
+    // answered, for the same reason: two opinions about what a wall is would
+    // drift.
+
+    /// The band a body standing at (fromX, fromY, fromZ) reaches by hauling
+    /// itself onto the neighbouring column (x, y) -- a MANTLE. kNoBand when
+    /// there is nothing there to climb.
+    ///
+    /// THE RULE, and every clause of it is load-bearing:
+    ///
+    ///   * the column being climbed is SOLID at the climber's own band. That is
+    ///     the wall face the hands go on. Without it a body would haul itself
+    ///     up through open air, and the taproom's ceiling would be a ladder.
+    ///   * its top -- (x, y, fromZ + 1) -- is standable. You climb onto a
+    ///     surface, not into a wall.
+    ///   * the climber has room to rise: (fromX, fromY, fromZ + 1) is not
+    ///     solid. A body under a first-floor slab cannot stand up.
+    ///
+    /// ONE BAND, never two, so a two-storey frontage cannot be climbed from the
+    /// street and the Gilded Gull's roof is reached the way a burglar reaches
+    /// it: in the door, up the stair, and out over the wall of the room you
+    /// rented.
+    [[nodiscard]] std::int32_t mantleBand(std::int32_t fromX, std::int32_t fromY,
+                                          std::int32_t fromZ, std::int32_t x,
+                                          std::int32_t y) const noexcept;
+
+    /// The band a body dropping down column (x, y) from `fromZ` lands on,
+    /// searching at most `maxFall` levels below it. Returns `fromZ` itself when
+    /// that is already standable -- so a caller can tell a step from a fall by
+    /// comparing the answer. kNoBand when there is no floor within reach, which
+    /// is what stops a body walking off a quay into the harbour.
+    [[nodiscard]] std::int32_t landingBand(std::int32_t x, std::int32_t y, std::int32_t fromZ,
+                                           std::int32_t maxFall) const noexcept;
+
 private:
     const content::World* world_;
     std::int32_t sizeX_ = 0;

@@ -154,4 +154,36 @@ inline constexpr std::int32_t kQuarterSine[257] = {
 /// Rounds to the nearest of N, NE, E, SE, S, SW, W, NW.
 [[nodiscard]] std::string_view compass_point(Angle yaw) noexcept;
 
+/// One tile of movement on the grid: exactly one of (0,-1), (1,0), (0,1),
+/// (-1,0).
+struct TileStep {
+    std::int32_t dx = 0;
+    std::int32_t dy = 0;
+};
+
+/// The FOUR-point compass step a facing means, rounded to the nearest.
+///
+/// Added in S5 for the roof moves. A mantle grips one wall face and a leap
+/// crosses one alley, and both of those are questions about a TILE and not
+/// about a direction vector: "which cell am I facing" has no answer at 47
+/// degrees, and a body that half-committed to two of them would climb through
+/// the corner between two buildings. So the roof verbs line the jump up, which
+/// is what a person does before they take one.
+[[nodiscard]] constexpr TileStep facing_step(Angle yaw) noexcept {
+    // +eighth of a turn, then which quarter: rounds to the nearest axis rather
+    // than truncating toward north.
+    const std::int32_t quadrant =
+        (((yaw & (kTurnFull - 1)) + kTurnFull / 8) / kTurnQuarter) & 3;
+    switch (quadrant) {
+        case 0:
+            return TileStep{0, -1};
+        case 1:
+            return TileStep{1, 0};
+        case 2:
+            return TileStep{0, 1};
+        default:
+            return TileStep{-1, 0};
+    }
+}
+
 }  // namespace granadad::sim

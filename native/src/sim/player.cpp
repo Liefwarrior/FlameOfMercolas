@@ -19,6 +19,52 @@ namespace {
 
 }  // namespace
 
+std::string_view roofMoveName(RoofMove move) noexcept {
+    switch (move) {
+        case RoofMove::Done:
+            return "done";
+        case RoofMove::NoLedge:
+            return "no ledge";
+        case RoofMove::NoHeadroom:
+            return "no headroom";
+        case RoofMove::NoGap:
+            return "no gap";
+        case RoofMove::NoLanding:
+            return "no landing";
+        case RoofMove::Airborne:
+            return "airborne";
+        case RoofMove::Blocked:
+            return "blocked";
+    }
+    return "?";
+}
+
+std::int32_t safeDropBands(std::int32_t skyrunningLevel, bool taughtByTheRoofs) noexcept {
+    // One band free to anybody, a second at journeyman skyrunning, and a third
+    // only to somebody the roofs have shown where to land. Capped at the
+    // deepest fall the geometry allows, so "safe" can never mean "no fall is a
+    // fall".
+    std::int32_t bands = kSafeDropBands;
+    if (skyrunningLevel >= 10) {
+        bands += 1;
+    }
+    if (taughtByTheRoofs) {
+        bands += 1;
+    }
+    return bands > kMaxDropBands ? kMaxDropBands : bands;
+}
+
+std::int32_t leapReachTiles(std::int32_t skyrunningLevel, bool taughtByTheRoofs) noexcept {
+    std::int32_t tiles = kLeapReachTiles;
+    if (taughtByTheRoofs) {
+        tiles += 1;
+    }
+    if (skyrunningLevel >= 20) {
+        tiles += 1;
+    }
+    return tiles;
+}
+
 PlayerBody::PlayerBody(const TileQuery& tiles, std::int32_t tileX, std::int32_t tileY,
                        std::int32_t band, Angle yaw) noexcept
     : tiles_(&tiles),
@@ -94,6 +140,15 @@ void PlayerBody::moveAxis(std::int32_t deltaX, std::int32_t deltaY) noexcept {
     }
 }
 
+void PlayerBody::settleFeet() noexcept {
+    const std::int32_t targetZ = q8_of_tile(band_);
+    if (feetZ_ < targetZ) {
+        feetZ_ = feetZ_ + kEyeEaseRate > targetZ ? targetZ : feetZ_ + kEyeEaseRate;
+    } else if (feetZ_ > targetZ) {
+        feetZ_ = feetZ_ - kEyeEaseRate < targetZ ? targetZ : feetZ_ - kEyeEaseRate;
+    }
+}
+
 void PlayerBody::step(const MoveInput& input) noexcept {
     ++steps_;
 
@@ -102,6 +157,16 @@ void PlayerBody::step(const MoveInput& input) noexcept {
     yaw_ = wrap_add(yaw_, input.yawDelta);
     yaw_ &= (kTurnFull - 1);
     setPitch(wrap_add(pitch_, input.pitchDelta));
+
+    // --- fly ----------------------------------------------------------------
+    //
+    // A body in the air is not steering. The look above still runs, because
+    // turning your head mid-jump is free and looking down at the street you are
+    // crossing is the whole point of a leap; the legs are not.
+    if (leapStepsLeft_ > 0) {
+        flyLeapStep();
+        return;
+    }
 
     // --- walk ---------------------------------------------------------------
     const std::int32_t speed = input.run ? kRunSpeed : kWalkSpeed;
@@ -135,12 +200,7 @@ void PlayerBody::step(const MoveInput& input) noexcept {
     }
 
     // --- settle onto the band's surface -------------------------------------
-    const std::int32_t targetZ = q8_of_tile(band_);
-    if (feetZ_ < targetZ) {
-        feetZ_ = feetZ_ + kEyeEaseRate > targetZ ? targetZ : feetZ_ + kEyeEaseRate;
-    } else if (feetZ_ > targetZ) {
-        feetZ_ = feetZ_ - kEyeEaseRate < targetZ ? targetZ : feetZ_ - kEyeEaseRate;
-    }
+    settleFeet();
 }
 
 void PlayerBody::push(std::int32_t dxQ8, std::int32_t dyQ8) noexcept {
@@ -148,14 +208,198 @@ void PlayerBody::push(std::int32_t dxQ8, std::int32_t dyQ8) noexcept {
     // along a wall slides down it instead of stopping dead on the first
     // corner. moveAxis already caps and substeps, so an impulse of any size is
     // safe against tunnelling.
+    if (leapStepsLeft_ > 0) {
+        // A bouncer cannot shove somebody who is over the alley. The ejection
+        // path calls this every second and it must not silently teleport a body
+        // out of an arc it is already committed to.
+        return;
+    }
     moveAxis(dxQ8, 0);
     moveAxis(0, dyQ8);
-    const std::int32_t targetZ = q8_of_tile(band_);
-    if (feetZ_ < targetZ) {
-        feetZ_ = feetZ_ + kEyeEaseRate > targetZ ? targetZ : feetZ_ + kEyeEaseRate;
-    } else if (feetZ_ > targetZ) {
-        feetZ_ = feetZ_ - kEyeEaseRate < targetZ ? targetZ : feetZ_ - kEyeEaseRate;
+    settleFeet();
+}
+
+// ---------------------------------------------------------------------------
+// S5: the roof moves
+// ---------------------------------------------------------------------------
+
+RoofResult PlayerBody::land(std::int32_t tileX, std::int32_t tileY, std::int32_t fromBand,
+                            std::int32_t toBand, std::int32_t tiles) noexcept {
+    const std::int32_t cx = q8_tile_centre(tileX);
+    const std::int32_t cy = q8_tile_centre(tileY);
+    if (!bodyFits(cx, cy, toBand)) {
+        return RoofResult{RoofMove::Blocked, 0, 0};
     }
+    x_ = cx;
+    y_ = cy;
+    band_ = toBand;
+    const std::int32_t fell = fromBand > toBand ? fromBand - toBand : 0;
+    fallBands_ += fell;
+    RoofResult out;
+    out.move = RoofMove::Done;
+    out.bands = toBand > fromBand ? toBand - fromBand : fell;
+    out.tiles = tiles;
+    return out;
+}
+
+std::int32_t PlayerBody::takeFallBands() noexcept {
+    const std::int32_t bands = fallBands_;
+    fallBands_ = 0;
+    return bands;
+}
+
+RoofResult PlayerBody::mantle() noexcept {
+    if (leapStepsLeft_ > 0) {
+        return RoofResult{RoofMove::Airborne, 0, 0};
+    }
+    const TileStep facing = facing_step(yaw_);
+    const std::int32_t ahead = tileX() + facing.dx;
+    const std::int32_t asideY = tileY() + facing.dy;
+    if (tiles_->solid(tileX(), tileY(), band_ + 1)) {
+        return RoofResult{RoofMove::NoHeadroom, 0, 0};
+    }
+    const std::int32_t top = tiles_->mantleBand(tileX(), tileY(), band_, ahead, asideY);
+    if (top == TileQuery::kNoBand) {
+        return RoofResult{RoofMove::NoLedge, 0, 0};
+    }
+    return land(ahead, asideY, band_, top, 1);
+}
+
+RoofResult PlayerBody::dropOff() noexcept {
+    if (leapStepsLeft_ > 0) {
+        return RoofResult{RoofMove::Airborne, 0, 0};
+    }
+    const TileStep facing = facing_step(yaw_);
+    const std::int32_t ahead = tileX() + facing.dx;
+    const std::int32_t asideY = tileY() + facing.dy;
+    if (tiles_->standable(ahead, asideY, band_)) {
+        // Walkable ground. Walk onto it.
+        return RoofResult{RoofMove::NoGap, 0, 0};
+    }
+    if (tiles_->solid(ahead, asideY, band_)) {
+        return RoofResult{RoofMove::NoLanding, 0, 0};
+    }
+    const std::int32_t deepest = deepestLanding();
+    if (deepest > band_ - 1) {
+        return RoofResult{RoofMove::NoLanding, 0, 0};
+    }
+    const std::int32_t floorBand =
+        tiles_->landingBand(ahead, asideY, band_ - 1, band_ - 1 - deepest);
+    if (floorBand == TileQuery::kNoBand) {
+        // Nothing under it. This is what stops a body stepping off the Long Quay
+        // into the harbour on purpose.
+        return RoofResult{RoofMove::NoLanding, 0, 0};
+    }
+    return land(ahead, asideY, band_, floorBand, 1);
+}
+
+RoofResult PlayerBody::leap(std::int32_t reachTiles) noexcept {
+    if (leapStepsLeft_ > 0) {
+        return RoofResult{RoofMove::Airborne, 0, 0};
+    }
+    const TileStep facing = facing_step(yaw_);
+    const std::int32_t reach = reachTiles < 1 ? 1 : reachTiles;
+    const std::int32_t fromX = tileX();
+    const std::int32_t fromY = tileY();
+
+    // THE FAR ROOF FIRST. A jumper who lines up the gap is aiming at the other
+    // side of it, not at the alley floor two storeys down -- and the alley is
+    // always there, so a nearest-landing-wins search would make every leap a
+    // fall and the roofs would still not join up. That was the first version of
+    // this and the case that crosses the Gull's own alley caught it.
+    //
+    // Pass one walks out to the end of the reach looking only at the launch
+    // band, and stops at the first wall: nothing is ever leapt THROUGH.
+    std::int32_t clear = 0;
+    for (std::int32_t t = 1; t <= reach; ++t) {
+        const std::int32_t tx = fromX + facing.dx * t;
+        const std::int32_t ty = fromY + facing.dy * t;
+        if (tiles_->solid(tx, ty, band_)) {
+            break;
+        }
+        if (tiles_->standable(tx, ty, band_)) {
+            if (t == 1) {
+                // Ground at arm's length. That is a step, and a leap that
+                // pretended otherwise would be a free dash across open floor.
+                return RoofResult{RoofMove::NoGap, 0, 0};
+            }
+            return armLeap(tx, ty, band_, t);
+        }
+        clear = t;
+    }
+    // Pass two: no far side at this height, so come down. Up to two bands, and
+    // the NEAREST one, because a body dropping out of a jump does not get to
+    // choose which roof it hits.
+    const std::int32_t deepest = deepestLanding();
+    for (std::int32_t t = 1; t <= clear; ++t) {
+        const std::int32_t tx = fromX + facing.dx * t;
+        const std::int32_t ty = fromY + facing.dy * t;
+        for (std::int32_t drop = 1; drop <= 2; ++drop) {
+            if (band_ - drop >= deepest && tiles_->standable(tx, ty, band_ - drop)) {
+                return armLeap(tx, ty, band_ - drop, t);
+            }
+        }
+    }
+    return RoofResult{RoofMove::NoLanding, 0, 0};
+}
+
+std::int32_t PlayerBody::deepestLanding() const noexcept {
+    const std::int32_t byHeight = band_ - kMaxDropBands;
+    return landingFloor_ > byHeight ? landingFloor_ : byHeight;
+}
+
+RoofResult PlayerBody::armLeap(std::int32_t tileX, std::int32_t tileY, std::int32_t toBand,
+                               std::int32_t tiles) noexcept {
+    const std::int32_t total = tiles * kLeapStepsPerTile;
+    leapFromX_ = x_;
+    leapFromY_ = y_;
+    leapToX_ = q8_tile_centre(tileX);
+    leapToY_ = q8_tile_centre(tileY);
+    leapFromBand_ = band_;
+    leapToBand_ = toBand;
+    leapStepsTotal_ = total;
+    leapStepsLeft_ = total;
+    RoofResult out;
+    out.move = RoofMove::Done;
+    out.bands = band_ > toBand ? band_ - toBand : 0;
+    out.tiles = tiles;
+    return out;
+}
+
+void PlayerBody::flyLeapStep() noexcept {
+    --leapStepsLeft_;
+    const std::int32_t done = leapStepsTotal_ - leapStepsLeft_;
+    // Position by exact integer interpolation from the ENDPOINTS rather than by
+    // accumulating a per-step delta: a remainder that accumulated would put two
+    // machines a Q8 unit apart by the far side of the alley.
+    x_ = leapFromX_ + (leapToX_ - leapFromX_) * done / leapStepsTotal_;
+    y_ = leapFromY_ + (leapToY_ - leapFromY_) * done / leapStepsTotal_;
+
+    if (leapStepsLeft_ > 0) {
+        // The arc. A parabola in integers: 4*a*t*(1-t) at its simplest, with t
+        // as done/total, which stays exact because the multiply happens before
+        // the divide.
+        const std::int32_t startZ = q8_of_tile(leapFromBand_);
+        const std::int32_t endZ = q8_of_tile(leapToBand_);
+        const std::int32_t glide = startZ + (endZ - startZ) * done / leapStepsTotal_;
+        const std::int32_t rise = 4 * kLeapArcQ8 * done * (leapStepsTotal_ - done) /
+                                  (leapStepsTotal_ * leapStepsTotal_);
+        feetZ_ = glide + rise;
+        return;
+    }
+
+    // Down. Through the same collision a walking step uses -- and if the far
+    // roof has been made unstandable underneath us since the jump was armed,
+    // the body stays where it was rather than ending up inside masonry.
+    const RoofResult landed =
+        land(q8_tile(leapToX_), q8_tile(leapToY_), leapFromBand_, leapToBand_, 0);
+    if (!landed.ok()) {
+        x_ = leapFromX_;
+        y_ = leapFromY_;
+        band_ = leapFromBand_;
+    }
+    leapStepsTotal_ = 0;
+    settleFeet();
 }
 
 // VERIFICATION GAP (S2): the body's digest is NOT part of the world hash.
@@ -172,6 +416,14 @@ std::uint64_t PlayerBody::digest() const noexcept {
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(feetZ_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(yaw_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(pitch_)));
+    // S5. A body in the air is a body two runs have to agree about: the arc is
+    // integer, the landing is decided when the jump is armed, and a fingerprint
+    // taken mid-flight has to see all of it.
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(leapStepsLeft_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(leapToX_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(leapToY_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(leapToBand_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(fallBands_)));
     return mix64(h + static_cast<std::uint64_t>(steps_));
 }
 

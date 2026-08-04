@@ -35,6 +35,7 @@
 // sprint does to the speed constants.
 
 #include <cstdint>
+#include <string_view>
 
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/tile_query.hpp"
@@ -85,6 +86,95 @@ inline constexpr std::int32_t kMaxStepQ8 = 64;
 inline constexpr Angle kMaxPitch = kTurnQuarter - 512;
 
 // ---------------------------------------------------------------------------
+// S5: the roof moves
+// ---------------------------------------------------------------------------
+//
+// THE SKYRUNNERS ARE NAMED FOR THIS. DOCKS-GAZETTEER section 2.5 rules that
+// rooftops are unseemly for every Trojian except a presented Wielder, "which is
+// WHY the poor live there and WHY burglars/assassins ('Skyrunners') use the
+// rooftop-slum layer as their highway". Section 2.6 then files the roof planes'
+// same-z isolation as deliberate "until the law/economy layers learn to climb
+// (S5+)".
+//
+// Three verbs, and between them they turn 8,132 standable-but-unreachable cells
+// of the baked district into a road:
+//
+//   MANTLE   haul yourself one band onto the top of the wall you are facing.
+//   LEAP     line a gap up and cross it, in the air, landing at your own band
+//            or up to two below.
+//   DROP     step off a ledge and fall to the first floor under you.
+//
+// All three are integer, all three go through the same collision the walking
+// step does, and none of them rolls a die: what a skill buys is REACH and a
+// SAFE HEIGHT, never a chance.
+
+/// Levels a body may fall in one drop before there is simply nothing under it.
+inline constexpr std::int32_t kMaxDropBands = 3;
+
+/// Levels a body may fall without being hurt, before any guild has shown it
+/// where to put its feet. One: a kerb is free, a storey is not.
+inline constexpr std::int32_t kSafeDropBands = 1;
+
+/// How far a running leap carries, in tiles, before any guild teaching. Three
+/// is measured, not guessed: the alley between the Gilded Gull's roof and its
+/// neighbour's is two tiles of air, and a body has to land on the far side of
+/// it.
+inline constexpr std::int32_t kLeapReachTiles = 3;
+
+/// Movement steps a leap spends in the air per tile crossed. Eight at sixty
+/// steps a second is an eighth of a second a tile — fast enough to read as a
+/// jump, slow enough to see the street go past underneath.
+inline constexpr std::int32_t kLeapStepsPerTile = 8;
+
+/// How high the arc of a leap lifts the feet at its top, Q8. Cosmetic in the
+/// sense that nothing collides against it, simulation state in the sense that
+/// it is integer and it is in the digest.
+inline constexpr std::int32_t kLeapArcQ8 = 56;
+
+/// What a roof move did, or why it did not.
+enum class RoofMove : std::uint8_t {
+    /// It happened.
+    Done = 0,
+    /// Nothing in front of you to grip: no wall face, or its top is not a
+    /// surface.
+    NoLedge = 1,
+    /// A ceiling over your own head. You cannot stand up into a floor slab.
+    NoHeadroom = 2,
+    /// The far side is walkable — that is a step, not a leap.
+    NoGap = 3,
+    /// Air all the way to the end of your reach, or a wall in the middle of it.
+    NoLanding = 4,
+    /// Already in the air.
+    Airborne = 5,
+    /// The body would not fit where it came down.
+    Blocked = 6,
+};
+
+[[nodiscard]] std::string_view roofMoveName(RoofMove move) noexcept;
+
+/// What a roof move cost.
+struct RoofResult {
+    RoofMove move = RoofMove::NoLedge;
+    /// Bands risen (a mantle) or fallen (a drop, or a leap that came down
+    /// lower than it left). Never negative.
+    std::int32_t bands = 0;
+    /// Tiles crossed. Only a leap moves more than one.
+    std::int32_t tiles = 0;
+
+    [[nodiscard]] bool ok() const noexcept { return move == RoofMove::Done; }
+};
+
+/// Bands a body may fall unhurt with this much SKYRUNNING behind it and,
+/// separately, with the roofs' own teaching. Integer, monotonic, and capped:
+/// nobody ever walks off a three-storey roof for free.
+[[nodiscard]] std::int32_t safeDropBands(std::int32_t skyrunningLevel,
+                                         bool taughtByTheRoofs) noexcept;
+
+/// How far a leap carries with this much SKYRUNNING and the roofs' teaching.
+[[nodiscard]] std::int32_t leapReachTiles(std::int32_t skyrunningLevel,
+                                          bool taughtByTheRoofs) noexcept;
+
+// ---------------------------------------------------------------------------
 // input
 // ---------------------------------------------------------------------------
 
@@ -118,6 +208,52 @@ public:
 
     /// One movement step. See the header comment on the two clocks.
     void step(const MoveInput& input) noexcept;
+
+    // --- S5: the roof moves -------------------------------------------------
+
+    /// Hauls the body one band onto the ledge it is FACING. The facing is
+    /// snapped to the four-point compass first (angle.hpp, facing_step) -- you
+    /// line a climb up before you take it.
+    RoofResult mantle() noexcept;
+
+    /// Steps off the ledge in front and falls to the first floor under it.
+    /// Refuses when the tile ahead is walkable, because that is a step.
+    RoofResult dropOff() noexcept;
+
+    /// Lines up the gap in front and crosses it. `reachTiles` is how far this
+    /// body can carry -- see leapReachTiles(); the guild's teaching is a
+    /// caller's fact, not the body's.
+    ///
+    /// The body is AIRBORNE for kLeapStepsPerTile steps per tile afterwards:
+    /// step() flies it along the arc and lands it, so a leap is something the
+    /// player watches happen rather than a teleport with a sound effect.
+    RoofResult leap(std::int32_t reachTiles) noexcept;
+
+    /// True while a leap is still in the air.
+    [[nodiscard]] bool airborne() const noexcept { return leapStepsLeft_ > 0; }
+
+    /// Bands the last landing fell through, cleared by reading it. This is how
+    /// whoever owns the player's hit points learns that the roof hurt.
+    [[nodiscard]] std::int32_t takeFallBands() noexcept;
+
+    /// The lowest band a roof move will ever put this body on.
+    ///
+    /// THIS EXISTS BECAUSE THE ROOF MOVES FOUND A TRAPDOOR. Below the Docks'
+    /// harbour surface the map is DUNGEON: the smuggler undercellars, the
+    /// sewer outfall and the drowned structure of DOCKS-GAZETTEER section 2.1,
+    /// none of which this build simulates. The harbour bed at world z16 is
+    /// 4,066 cells of FLOOR whose own FLUID lane is clear -- the water stands
+    /// in the two cells above it -- so the walkability rule calls it standable,
+    /// and 313 of the columns over it are dry all the way down. A body that
+    /// stepped off the mudflats into one of those shafts landed on the seabed
+    /// and COULD NOT GET BACK UP: z17 has not one standable cell to mantle
+    /// onto. A trapdoor into an unfinished level is not a feature.
+    ///
+    /// So the caller says where the world's floor is, out loud. The Docks says
+    /// docks::kHarbourSurfaceBand, and the day the dungeon is built it says
+    /// something lower on purpose rather than by accident.
+    void setLandingFloor(std::int32_t band) noexcept { landingFloor_ = band; }
+    [[nodiscard]] std::int32_t landingFloor() const noexcept { return landingFloor_; }
 
     /// Displaces the body by a Q8 impulse it did not ask for -- a shove.
     ///
@@ -171,6 +307,20 @@ private:
     /// Returns the band the body ended on.
     void moveAxis(std::int32_t deltaX, std::int32_t deltaY) noexcept;
 
+    /// Eases the feet toward the band's own surface. One rule, three callers.
+    void settleFeet() noexcept;
+    /// Advances one step of a leap already in the air.
+    void flyLeapStep() noexcept;
+    /// Commits the body to an arc between here and a validated landing.
+    RoofResult armLeap(std::int32_t tileX, std::int32_t tileY, std::int32_t toBand,
+                       std::int32_t tiles) noexcept;
+    /// The lowest band this body may come down on right now: the deeper of its
+    /// own falling limit and the world's floor.
+    [[nodiscard]] std::int32_t deepestLanding() const noexcept;
+    /// Puts the body down on a tile at a band, reporting how far it fell.
+    RoofResult land(std::int32_t tileX, std::int32_t tileY, std::int32_t fromBand,
+                    std::int32_t toBand, std::int32_t tiles) noexcept;
+
     const TileQuery* tiles_;
     std::int32_t x_ = 0;
     std::int32_t y_ = 0;
@@ -180,6 +330,24 @@ private:
     Angle pitch_ = 0;
     std::int64_t steps_ = 0;
     bool spawnedLegally_ = false;
+
+    // --- S5: a leap in progress ---------------------------------------------
+    //
+    // All integer, all in the digest: a body caught mid-air when a save or a
+    // gate fingerprint is taken is a body two runs have to agree about.
+    std::int32_t leapStepsLeft_ = 0;
+    std::int32_t leapStepsTotal_ = 0;
+    std::int32_t leapFromX_ = 0;
+    std::int32_t leapFromY_ = 0;
+    std::int32_t leapToX_ = 0;
+    std::int32_t leapToY_ = 0;
+    std::int32_t leapFromBand_ = 0;
+    std::int32_t leapToBand_ = 0;
+    /// Bands the last landing fell through, waiting to be read.
+    std::int32_t fallBands_ = 0;
+    /// See setLandingFloor. INT32_MIN is "no floor at all", which is what a
+    /// synthetic test world wants and what the shipped district must not have.
+    std::int32_t landingFloor_ = INT32_MIN;
 };
 
 }  // namespace granadad::sim

@@ -253,6 +253,8 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_spellforge.cpp
         tests/test_questline.cpp
         tests/test_step_pump.cpp
+        # S5 -- the roofs, and the trade that runs on them.
+        tests/test_roofrun.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 

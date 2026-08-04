@@ -61,6 +61,10 @@ namespace gull {
 /// Ground floor -- the taproom -- and the guest floor above it.
 inline constexpr std::int32_t kGroundBand = 19;
 inline constexpr std::int32_t kUpperBand = 20;
+/// And the lead over both of them: fifteen by fourteen of flat roof, authored
+/// since S1, standable since S1, and unreachable until S5 taught the body to
+/// climb. It is the Skyrunners' front door to the ward's grandest house.
+inline constexpr std::int32_t kRoofBand = 21;
 
 /// Footprint including the walls. 15 x 14, the district's largest interior
 /// after the Ropewalk.

@@ -89,6 +89,43 @@ inline constexpr std::int32_t kStandableOnQuayside = 11432;
 inline constexpr std::int32_t kStandableOnMidSlope = 7459;
 inline constexpr std::int32_t kStandableOnUpper = 3921;
 
+// --- S5: the roofs ----------------------------------------------------------
+//
+// THE DISTRICT WAS TWO THIRDS SHUT. Every number above is the WALKING rule --
+// up only where a ramp or a stair was authored -- and under it 8,132 standable
+// cells of the baked Docks could not be got to at all: the compound roof decks,
+// the rooftop slums, and the whole of the plane below. That is not a defect;
+// DOCKS-GAZETTEER section 2.6 files it as design, "roof-slum planes whose
+// same-z isolation is the point until the law/economy layers learn to climb
+// (S5+)".
+//
+// S5 is the sprint that learns. The three roof moves in player.hpp -- mantle,
+// leap, drop -- are the whole of it, and test_roofrun.cpp re-derives every
+// number below from the baked bytes with a flood fill that uses nothing but
+// those moves and the ordinary walking one.
+
+/// The roof-slum plane: the tops of the two-storey compounds. Local z14 in
+/// DOCKS-GAZETTEER section 2.1's z-profile, world z22. Before S5, ZERO of its
+/// 1,706 standable cells were reachable from the spawn by any means.
+inline constexpr std::int32_t kBandRoofs = 22;
+
+inline constexpr std::int32_t kStandableOnRoofs = 1706;
+
+/// Reachable from the spawn once the body can climb, leap and drop. The walk-
+/// only number is kReachableFromSpawn (16,934) and it does not move: the
+/// walking rule is untouched, and everything below is what the new verbs ADD.
+/// 6,810 tiles, and every one of them is a roof, a gallery or a back way onto
+/// one.
+inline constexpr std::int32_t kReachableWithRoofMoves = 23744;
+inline constexpr std::int32_t kRoofReachableOnUpper = 3263;
+inline constexpr std::int32_t kRoofReachableOnRoofs = 1234;
+
+/// The lowest band a roof move may put a body on in THIS district. Everything
+/// under the harbour surface is the unbuilt dungeon -- see
+/// PlayerBody::setLandingFloor for the trapdoor this closes and why the seabed
+/// looked walkable in the first place.
+inline constexpr std::int32_t kLandingFloor = kHarbourSurfaceBand;
+
 // --- named places -----------------------------------------------------------
 //
 // ADDED IN S2, because the HUD was printing street names it did not know. S1's

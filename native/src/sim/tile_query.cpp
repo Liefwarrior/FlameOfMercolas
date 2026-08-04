@@ -136,4 +136,49 @@ std::int32_t TileQuery::stepBand(std::int32_t fromX, std::int32_t fromY, std::in
     return kNoBand;
 }
 
+std::int32_t TileQuery::mantleBand(std::int32_t fromX, std::int32_t fromY, std::int32_t fromZ,
+                                   std::int32_t x, std::int32_t y) const noexcept {
+    const std::int32_t top = fromZ + 1;
+    if (!standable(x, y, top)) {
+        return kNoBand;
+    }
+    // The wall face the hands go on. This is the clause that separates a mantle
+    // from levitation, and the one a mutation would remove first.
+    if (!solid(x, y, fromZ)) {
+        return kNoBand;
+    }
+    // Room to stand up in.
+    if (solid(fromX, fromY, fromZ + 1)) {
+        return kNoBand;
+    }
+    return top;
+}
+
+std::int32_t TileQuery::landingBand(std::int32_t x, std::int32_t y, std::int32_t fromZ,
+                                    std::int32_t maxFall) const noexcept {
+    const std::int32_t floor = maxFall < 0 ? fromZ : fromZ - maxFall;
+    for (std::int32_t z = fromZ; z >= floor; --z) {
+        if (standable(x, y, z)) {
+            return z;
+        }
+        // A body falls through AIR and through nothing else.
+        //
+        // Both clauses below were found by the case that steps off the Long
+        // Quay. Without the second one, the harbour is three levels of open
+        // cell with a FLOOR at the bottom -- the seabed, which the walkability
+        // rule calls standable because its own FLUID lane is clear and the
+        // WATER is the two cells above it. A drop that ignored the water would
+        // have the player wade off the quay and land, dry, on the bottom of
+        // the harbour. Swimming does not exist in this build; falling into
+        // water is therefore not a landing, it is a refusal.
+        if (solid(x, y, z)) {
+            return kNoBand;
+        }
+        if (fluidDepth(x, y, z) >= kBlockingFluidDepth) {
+            return kNoBand;
+        }
+    }
+    return kNoBand;
+}
+
 }  // namespace granadad::sim
