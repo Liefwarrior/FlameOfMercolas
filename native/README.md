@@ -35,9 +35,21 @@ be able to prove visually that it works, and a capture path that needs a
 desktop is a capture path nobody runs. `--help` lists the rest — `--time`,
 `--spawn`, `--yaw`, `--fov`, `--width/--height/--scale`.
 
-`--talk`, `--topic=N[,N...]`, `--offer=N` and `--again` drive a conversation
-before the shutter goes, through exactly the calls a keypress makes. That is how
-a sprint photographs the thing it built rather than describing it:
+`--talk`, `--topic=N[,N...]`, `--offer=N`, `--again` and `--flame` drive a
+conversation before the shutter goes, through exactly the calls a keypress
+makes. That is how a sprint photographs the thing it built rather than
+describing it. **`--topic` is one-based**, matching the numbers printed beside
+the topics on screen; it was zero-based in S3 and the review caught it.
+
+`--flame` plays the whole Priest of the Flame line and captures wherever it
+finishes — the oath, the night pot, the captain's word, the report, the
+teaching, and a crafting composed at the bench — walking the body between
+parties with real movement steps and reporting how many stages actually landed:
+
+```
+granadad --smoke=0 --hold --time=20 --spawn=150,74,19 --flame \
+         --screenshot=flame.png
+```
 
 ```
 granadad --smoke=0 --hold --time=21 --spawn=155,69,19 --yaw=225 \
@@ -67,11 +79,35 @@ different authored table.
 
 | | |
 |---|---|
-| `1`–`9` | pick that topic |
-| `Up` / `Down` (or `W` / `S`) | move the cursor — it reaches topics ten to twelve, which no number key does |
+| `1`–`9` | pick the topic printed with that number |
+| `0` | turn to the next page — the row that says `0 MORE (2/3)` |
+| `Up` / `Down` (or `W` / `S`) | move the cursor; it turns the page with you |
 | `E` / `Enter` | pick the topic under the cursor |
 | `Esc` | end the conversation (it does not quit the game) |
 | `F` | punch them, which also ends the conversation |
+
+**The list is PAGED, nine to a page, and that is a fix rather than a style.**
+S3 drew a twelve-slot grid numbered `1`–`9` and then three rows whose number was
+a full stop, reachable only by the arrow keys with nothing on screen saying so —
+and Master Venn already filled all twelve, so the thirteenth topic would have
+vanished with no ellipsis at all. Nine is the page because those are the keys;
+the tenth row names the key that turns it; and a list of any length is now
+completely addressable from the keyboard.
+
+**The workbench** replaces the topic list when the priest opens it. Five fields
+— what is moved, how it is moved, how much, for how long, and across what link —
+priced live by canon's own cost model:
+
+| | |
+|---|---|
+| `Up` / `Down` (or `W` / `S`) | walk the five fields |
+| `Left` / `Right` (or `A` / `D`) | change the value under the cursor |
+| `E` / `Enter` | make it |
+| `Esc` | put the tools down |
+
+A composition the rules refuse is refused **out loud**, in the priest's own
+authored voice with the reason bracketed after it, and the bench stays open so
+it can be fixed. Being told why is the lesson.
 
 **Haggling** replaces the topic list with a counter:
 
@@ -459,8 +495,18 @@ What is real underneath:
 | renderer | software voxel-column first person, the owner's own tile art, lamp glow, billboards, a HUD that hugs the edges. |
 | capture | `--smoke=N --screenshot=PATH`, with no window anywhere in it. |
 
-What is NOT here yet: actors, dialogue, items, combat, quests, save/load. Those
-are the sprints after this one.
+On top of that, as of S4: the Gilded Gull with fourteen people in it who keep
+hours and remember what you did; conversation as a list of topics assembled from
+the owner's authored content; five factions with a ladder each, standing, rank
+and an influence over the ward that moves what a counter charges and how long a
+bouncer waits; and the Priest of the Flame line — six stages, playable in one
+evening, ending in a crafting you composed yourself out of canon's own effect
+vocabulary.
+
+What is NOT here yet: **casting** what you learned or composed (the grimoire
+records craftings and nothing resolves one), items, the dedicated combat screen,
+save/load to disk, and any of the ward outside the Gull's walls. Those are the
+sprints after this one.
 
 `content/` is read-only canon and is reused verbatim — never retype, regenerate
 or "improve" anything under it. New files may be added; the baked lamp sidecars

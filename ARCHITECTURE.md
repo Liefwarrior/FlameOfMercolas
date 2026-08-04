@@ -332,13 +332,23 @@ thing being built. `native/` is. Its status, kept honest as the rewrite goes:
 | **Player skills** — use-XP over the 20-skill vocabulary in the raws | **BUILT** (S3), two skills consumed (`streetwise`, `cracksmanship`) | `native/src/sim/social.cpp` |
 | **Barter** — haggling as an argument with rounds and patience, moved by standing and by skill | **BUILT** (S3) | `native/src/sim/barter.cpp` |
 | **Conversation** — topics, gated socially and never by a roll; the surface that draws it | **BUILT** (S3) | `native/src/sim/dialogue.cpp`, `native/src/render/dialogue_view.cpp` |
+| **Factions** — the owner's five, a ladder each, standing, rank and ward influence; hashed and byte-encodable | **BUILT** (S4) — four of the five are joinable in the Gilded Gull; the Watch has no recruiter in that room | `native/src/sim/faction.cpp` |
+| **Questlines** — authored stages with conditions this build can actually resolve, and the journal that walks them | **BUILT** (S4) — one line ships, the Priest of the Flame's, six stages | `native/src/sim/questline.cpp` |
+| **Spellcrafting** — canon's own cost model, the (axis × time-shape) pairing table, a composition bench and a grimoire | **BUILT** (S4) | `native/src/sim/spellforge.cpp` |
+| Casting what you learned or composed | **NOT BUILT** (S4) — the grimoire records craftings and nothing resolves one. `SpellVerb`-equivalent, active effects and the warmth→REST coupling are all still Java-side only | — |
 | Needs, wages, crime beyond one room, the macro economy | **NOT BUILT** | — |
 | Save / load | **NOT BUILT** — S3 ships a versioned byte encoding for the relationship ledger, proven by round trip, with nothing writing it to disk | `SocialLedger::encode` |
 | The dedicated first-person combat screen | **NOT BUILT** — S3 gave `escalated()` a consumer (the room remembers a drawn blade and the bar stops serving), but the screen itself does not exist | — |
 
 Everything the Tier-3 "phantom scope" section below names — thermal, reactions, propagated
 light, the fluid solver, the bubble, the macro economy — is still **NOT BUILT and must not be
-built**. Neither S2 nor S3 changed anything about that.
+built**. Nothing in S2, S3 or S4 changed anything about that.
+
+**S4's binding design laws** (both recorded in full in `docs/design/DECISIONS.md`): every rung of
+every faction ladder is earned, and is measured in standing *and* in that faction's own skill;
+and the Flame of Mercolas ships nothing — `MAGIC-CANON.md` §5.5 — so the Priest of the Flame's
+questline hands over the *Source* off the public-issue shelf, says so out loud in its own
+authored line, and a test greps every authored row in `content/` for a seventh power.
 
 **S3's one binding design law, taken from DOCKS-GAZETTEER section 5.3 and enforced in code:**
 the investigation is never persuasion. No dialogue topic is gated by a dice roll. A topic is on
