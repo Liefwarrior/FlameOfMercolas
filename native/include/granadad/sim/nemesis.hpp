@@ -377,4 +377,38 @@ private:
     std::int32_t defeats_ = 0;
 };
 
+// ---------------------------------------------------------------------------
+// VERIFICATION GAPS (S8) -- what this file does NOT do
+// ---------------------------------------------------------------------------
+//
+// VERIFICATION GAP (S8): THERE IS NO COMBAT SCREEN, AND IT IS NOW LOAD-BEARING.
+// A nemesis means the player Harm from his first win, and brawl.hpp's third
+// clause says beating a BLOODIED man while meaning him Harm is not a bar fight
+// whatever is in your hands -- so every rematch escalates partway through and
+// the room correctly stops resolving it. The FIRST defeat can be taken in the
+// world and no other. Tavern::concedeTo is the seam
+// docs/design/COMBAT-SCREEN-SPEC.md's screen will call, and the scripted arc
+// uses it for the two defeats that finish the rise. That is a screen missing,
+// not a rule bent.
+//
+// VERIFICATION GAP (S8): HE HUNTS, HE DOES NOT AMBUSH. Past kHuntsAtGrudge a
+// rival crosses the room to wherever the player is and stands there. He never
+// throws the first punch: starting a fight is still the player's verb, and an
+// NPC who opens one wants an aggression model this build does not have.
+//
+// VERIFICATION GAP (S8): ONE ROOM. A nemesis rises out of the Gilded Gull's
+// fourteen and nowhere else, because the Gull is still the only staffed
+// building in the district. His trade house has a canon SEAT in
+// docs/design/DOCKS-GAZETTEER.md section 3 and nobody can walk to it.
+//
+// VERIFICATION GAP (S8): THE MEMBERS DO NOT KNOW. A founded chapter enlists
+// real actors by id and the roster is hashed, but nothing an enlisted member
+// does is different for it -- no greeting, no price, no schedule. The toll is
+// charged against the parent FACTION rather than against the member, so a
+// chapter's weight reaches a counter its members do not personally keep.
+//
+// VERIFICATION GAP (S8): NOTHING IS WRITTEN TO DISK. encode()/decode() are
+// proven by round trip and nothing calls them, which is the same gap
+// SocialLedger has carried since S3 and for the same reason.
+
 }  // namespace granadad::sim
