@@ -1,0 +1,72 @@
+{
+  "id": "flame-disciple",
+  "title": "The Disciple's Oath",
+  "faction": "temple",
+  "giver": "maell",
+  "stages": [
+    {
+      "key": "oath",
+      "kind": "oath",
+      "party": "maell",
+      "label": "TAKE THE DISCIPLE'S OATH",
+      "objective": "Father Maell keeps an evening hour in the Gilded Gull. Tell him you will be awake when the Mission needs waking.",
+      "log": "Father Maell wrote me on the Mission's roll. No test, no catechism - only whether I can be woken at three in the morning.",
+      "barkKey": "quest.flame-disciple.oath.maell",
+      "grantsRank": 1,
+      "standing": 12
+    },
+    {
+      "key": "nightpot",
+      "kind": "alms",
+      "party": "maell",
+      "count": 3,
+      "label": "THE NIGHT POT",
+      "objective": "Alms is sitting with somebody while they eat. Stand three people in this room a drink out of your own purse.",
+      "log": "Stood three of the Gull's own a drink out of my purse. Maell calls that the whole of the office and he is not being kind about it.",
+      "barkKey": "quest.flame-disciple.nightpot.maell",
+      "standing": 14
+    },
+    {
+      "key": "water",
+      "kind": "talk",
+      "party": "wake",
+      "label": "ASK THE CAPTAIN ABOUT THE WATER",
+      "objective": "Maell wrote three letters to the monastery about something wrong on the water and nobody answered. Find a seaman who was out there. Captain Ivo Wake of the Kestrel drinks here.",
+      "log": "Wake says the harbour runs warm out of the outfall on the ebb, in this month, three nights together. He keeps an honest log and wishes he did not.",
+      "barkKey": "quest.flame-disciple.water.wake",
+      "standing": 16
+    },
+    {
+      "key": "letters",
+      "kind": "talk",
+      "party": "maell",
+      "label": "BRING MAELL THE CAPTAIN'S WORD",
+      "objective": "Take the captain's word back to Father Maell.",
+      "log": "Told Maell. Three letters, no reply, and now a captain says it to his face - he is glad and he is sick.",
+      "barkKey": "quest.flame-disciple.letters.maell",
+      "standing": 18
+    },
+    {
+      "key": "lamp",
+      "kind": "teach",
+      "party": "maell",
+      "label": "LET MAELL TEACH YOU",
+      "objective": "Maell has something small to hand over. Sit down and let him.",
+      "log": "Maell taught me a crafting off the shallow shelf. He said plainly what it is not: it is not the Flame. The Flame is an office and a vigil and it is not his to hand over.",
+      "barkKey": "quest.flame-disciple.lamp.maell",
+      "standing": 20
+    },
+    {
+      "key": "forge",
+      "kind": "forge",
+      "party": "maell",
+      "label": "COMPOSE A CRAFTING OF YOUR OWN",
+      "objective": "The books stop where the money stopped. After that you are composing. Name what is moved, how much, how far and how long.",
+      "log": "Composed a crafting nobody printed. Four numbers in a coat, Maell calls it.",
+      "barkKey": "quest.flame-disciple.forge.maell",
+      "standing": 24,
+      "terminal": true
+    }
+  ],
+  "notes": "S4 addition. content/raws/quests/quests.json is the owner's authored canon and is UNTOUCHED. This is a SECOND quest file in the same directory with a smaller schema, and the difference is deliberate rather than sloppy: quests.json's vanished-clerk line advances on enter_zone, search and item conditions over a bank hall and a locked drawer, none of which this build has. Authoring a stage against a condition nothing can evaluate would be authoring a quest that cannot be finished. Every 'kind' here is one this build actually resolves, in the room it actually simulates. THE VOCABULARY: oath (accept at the party, which is what makes you a member), alms (do a counted deed - here, buy N people a drink out of your own purse), talk (stand in front of the named party and raise it), teach (be taught a crafting out of content/raws/spells/spells.json), forge (compose one). 'party' is a content/raws/names/notables.json id and nothing else - maell is the Priest of the Flame at K17, wake is Captain Ivo Wake of the Kestrel. NO STAGE IS GATED BY A ROLL, per DECISIONS.md's S3 ruling: a stage advances because you found the right person, not because a check passed. The one thing that is gated is what the priest will TEACH, and that gate is the authored minLevel in spells.json, which is the literacy tier and not a dice roll. CANON: DOCKS-GAZETTEER section 3 (the Mission is the Divine Light almshouse - soup, bunks, a disciple always awake, white garb the locals distrust) and section 4.3 (Maell's three unanswered letters about something wrong on the water, written before the first body came up; Onna found that body on the night round; Wake was at sea that night and can prove it, which interests him more than it should). MAGIC-CANON.md section 5.5 is binding on the last two stages and they obey it: what Maell teaches and what he helps compose is the SOURCE off the public-issue shelf, never the Flame, and the 'lamp' stage says so out loud in the priest's own line."
+}

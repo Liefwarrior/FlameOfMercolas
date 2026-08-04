@@ -1,0 +1,63 @@
+{
+  "id": "faction_ranks",
+  "ladders": [
+    {
+      "faction": "dockhands",
+      "skill": "fieldcraft",
+      "baseInfluence": 55,
+      "rivals": [],
+      "ranks": [
+        { "title": "Bondsworn", "standing": 8, "skillLevel": 0, "unlocks": ["gang"] },
+        { "title": "Laborer", "standing": 26, "skillLevel": 4, "unlocks": ["gang", "price"] },
+        { "title": "Foreman", "standing": 58, "skillLevel": 10, "unlocks": ["gang", "price", "call"] }
+      ]
+    },
+    {
+      "faction": "merchants",
+      "skill": "streetwise",
+      "baseInfluence": 45,
+      "rivals": [],
+      "ranks": [
+        { "title": "Stallkeep", "standing": 10, "skillLevel": 0, "unlocks": ["price"] },
+        { "title": "Trader", "standing": 30, "skillLevel": 6, "unlocks": ["price", "credit"] },
+        { "title": "Craftlord", "standing": 65, "skillLevel": 14, "unlocks": ["price", "credit", "charge"] }
+      ]
+    },
+    {
+      "faction": "skyrunners",
+      "skill": "skyrunning",
+      "baseInfluence": 30,
+      "rivals": ["watch"],
+      "ranks": [
+        { "title": "Tenant", "standing": 8, "skillLevel": 0, "unlocks": ["roof"] },
+        { "title": "Cutpurse", "standing": 22, "skillLevel": 5, "unlocks": ["roof", "fence"] },
+        { "title": "Robber", "standing": 44, "skillLevel": 11, "unlocks": ["roof", "fence", "price"] },
+        { "title": "Skyrunner", "standing": 72, "skillLevel": 18, "unlocks": ["roof", "fence", "price", "lair"] }
+      ]
+    },
+    {
+      "faction": "temple",
+      "skill": "linkcraft",
+      "baseInfluence": 40,
+      "rivals": [],
+      "ranks": [
+        { "title": "Disciple", "standing": 10, "skillLevel": 0, "unlocks": ["bunk", "teaching"] },
+        { "title": "Almsbearer", "standing": 28, "skillLevel": 2, "unlocks": ["bunk", "teaching", "price"] },
+        { "title": "Acolyte", "standing": 52, "skillLevel": 3, "unlocks": ["bunk", "teaching", "price", "forge"] },
+        { "title": "Shepherd", "standing": 84, "skillLevel": 7, "unlocks": ["bunk", "teaching", "price", "forge", "charge"] }
+      ]
+    },
+    {
+      "faction": "watch",
+      "skill": "kit_keeping",
+      "baseInfluence": 35,
+      "rivals": ["skyrunners"],
+      "ranks": [
+        { "title": "Runner", "standing": 10, "skillLevel": 0, "unlocks": ["muster"] },
+        { "title": "Watchman", "standing": 32, "skillLevel": 6, "unlocks": ["muster", "grace"] },
+        { "title": "Sergeant", "standing": 66, "skillLevel": 13, "unlocks": ["muster", "grace", "warrant"] }
+      ]
+    }
+  ],
+  "notes": "S4 addition. content/raws/factions/factions.json is the owner's authored canon and is UNTOUCHED; this file hangs a LADDER off each of its five faction ids and adds nothing to the registry itself. A ladder that names a faction factions.json does not have is refused at load, by name, so this file can never invent a sixth faction by typo. RANK ORDER IS ARRAY ORDER: rank 0 is not a member, rank 1 is the first row. Each ladder is deliberately a DIFFERENT SHAPE - three rungs for the garrison and the Row, four for the roofs and the Mission - because 'each with its own ranking system' means the ladders are not one ladder with the labels swapped. WHAT EACH RUNG COSTS: standing earned with that faction, AND a level in that faction's own skill (the Morrowind steer - you cannot talk your way up a ladder that is measured in what your hands can do). WHAT A RUNG BUYS: the unlock tokens, which are read by name and never by rank number, so a re-ordered ladder cannot silently move what a rung opens. Tokens in use this sprint: 'teaching' (the priest will teach out of content/raws/spells/spells.json), 'forge' (he will compose a new one with you), 'price' (a member-run counter charges you the member's rate). The rest - gang, call, credit, charge, roof, fence, lair, bunk, muster, grace, warrant - are declared where they belong and read by nothing yet; they are the seams the later sprints hang on, and no code pretends otherwise. RIVALS: the only declared pair is watch <-> skyrunners, and it is not invented - factions.json's own note says the Skyrunners are 'the mirror ledger of every justice event' and warm to whoever the Watch corrects. Influence moved toward one is moved away from the other, which is what a mirror is. The Temple has NO rival on purpose: DECISIONS.md, the Trojian tenure ruling - 'The Church never opposes anyone openly; it makes itself unavoidable while appearing to serve.' TITLES: Watchman, Sergeant, Cutpurse, Robber, Skyrunner, Stallkeep, Trader, Laborer, Acolyte and Shepherd are canon words already in this repo (content/raws/jobs/jobs.json ids, or names in content/raws/names/notables.json - Watchman Cull, Sergeant Vess, Sergeant Brakk, Foreman Cathal Hemp, Foreman Dray). Craftlord and Bondsworn are DECISIONS.md's own words from the Trojian tenure ruling. Tenant is Finch's epithet ('the quiet tenant'). Disciple is content/raws/actors/disciple_of_the_flame.json. INVENTED, and flagged rather than smuggled: 'Almsbearer', and the fact that the Mission's ladder stops below Priest - the ward has exactly one Priest of the Flame, canon names him Father Maell, and a player is not going to become him by carrying soup. baseInfluence and every standing/skillLevel number is v0 balance, invented, and tuned so the first rung of any ladder is reachable in one evening and the top of one is not."
+}

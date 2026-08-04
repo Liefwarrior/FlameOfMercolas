@@ -1,0 +1,262 @@
+{
+  "id": "barks_flame",
+  "tables": [
+    {
+      "key": "faction.join",
+      "rows": [
+        "Then you are one of ours. Do not make me regret the word.",
+        "Signed on, and the roll is longer by a name.",
+        "You are counted with us now. Counting is the easy part."
+      ]
+    },
+    {
+      "key": "faction.rank",
+      "rows": [
+        "You have earned the step. Stand on it.",
+        "Higher, then. The work does not get lighter.",
+        "The roll moves your name up a line."
+      ]
+    },
+    {
+      "key": "faction.blocked",
+      "rows": [
+        "Not yet. You know what is wanting.",
+        "You have not done the work for that step.",
+        "Come back when there is more behind you."
+      ]
+    },
+    {
+      "key": "faction.temple.join",
+      "rows": [
+        "Kneel or do not, it is the same to the lamp. Say you will carry the pot when the pot is heavy, and you are a disciple of this Mission.",
+        "We take anyone. That is the scandal of us. Say the words and the bunkroom is yours when you need it.",
+        "A disciple is not a holy thing. A disciple is somebody who is awake at three in the morning when a stranger knocks. Will you be awake?"
+      ]
+    },
+    {
+      "key": "faction.temple.rank",
+      "rows": [
+        "The Mission has more of you than it did. Take the step.",
+        "You have carried enough of it. The roll moves you up.",
+        "Higher, and colder. The higher rungs of this Mission are all night work."
+      ]
+    },
+    {
+      "key": "faction.temple.blocked",
+      "rows": [
+        "Not yet, and I will not pretend otherwise to be kind.",
+        "The step is there. You are not on it. Do the work.",
+        "You want the title before the nights. Everyone does."
+      ]
+    },
+    {
+      "key": "faction.watch.join",
+      "rows": [
+        "Sign the roll. The garrison feeds you and the ward hates you; both are steady.",
+        "You want the coat? The coat wants sober men at the dawn muster.",
+        "Take the arm-band. Lose it and buy the next one yourself."
+      ]
+    },
+    {
+      "key": "faction.watch.rank",
+      "rows": [
+        "Up a line on the roster. Your rounds get longer, not shorter.",
+        "Sergeant's word carries. You have it.",
+        "The garrison writes you down higher. Do not make the ink a joke."
+      ]
+    },
+    {
+      "key": "faction.watch.blocked",
+      "rows": [
+        "No. Come back with more rounds behind you.",
+        "The roster does not move for asking.",
+        "Not on your record. Not yet."
+      ]
+    },
+    {
+      "key": "faction.skyrunners.join",
+      "rows": [
+        "Nobody joins. Some people stop being strangers. You have stopped.",
+        "There is no roll and there is no oath. There is a roof, and whether it holds you.",
+        "You want in. Fine. Nothing is written down, which is the whole point of us."
+      ]
+    },
+    {
+      "key": "faction.skyrunners.rank",
+      "rows": [
+        "The roofs know your step now.",
+        "Higher up the tiles. Mind the fourth course, it is rotten from the rain.",
+        "You go where the taller people go. Do not fall in front of the Watch."
+      ]
+    },
+    {
+      "key": "faction.skyrunners.blocked",
+      "rows": [
+        "Not with those hands.",
+        "You are still a ground person. Ground people ask questions like that.",
+        "No. And asking twice is how a name gets remembered wrongly."
+      ]
+    },
+    {
+      "key": "faction.merchants.join",
+      "rows": [
+        "The Row takes anyone who pays what they said they would pay. Twice running, mind.",
+        "Welcome to the counter side of it. The scales are honest and the talk is not.",
+        "You are one of the Row. Do not undercut a neighbour in front of a neighbour."
+      ]
+    },
+    {
+      "key": "faction.merchants.rank",
+      "rows": [
+        "Your word carries a bigger number now.",
+        "Up the Row. The good stalls face the morning tide; remember that.",
+        "You buy at the dawn bell and sell at the dusk one. Now people let you."
+      ]
+    },
+    {
+      "key": "faction.merchants.blocked",
+      "rows": [
+        "Your ledger is too thin for that.",
+        "No. Trade a while longer where people can see you do it.",
+        "The Row moves slow on purpose. So does this."
+      ]
+    },
+    {
+      "key": "faction.dockhands.join",
+      "rows": [
+        "You lift when the whistle goes and you drink when it goes again. That is all of it.",
+        "The gang takes you. The gang also remembers who leans on a crate.",
+        "One of us, then. Mind your back and mind the man beside you."
+      ]
+    },
+    {
+      "key": "faction.dockhands.rank",
+      "rows": [
+        "You call the lift now. Call it clear or somebody loses a foot.",
+        "Up the gang. More rope, same wage.",
+        "The foreman knows your name without asking it twice."
+      ]
+    },
+    {
+      "key": "faction.dockhands.blocked",
+      "rows": [
+        "Not with those shoulders yet.",
+        "Work the tide a few more times.",
+        "No. The gang decides that with its hands, not its mouth."
+      ]
+    },
+    {
+      "key": "quest.flame-disciple",
+      "rows": [
+        "The Mission takes anyone. That is why nobody trusts the white cloth.",
+        "Father Maell keeps a lamp lit and a pot on. Ask him what it costs him.",
+        "The white garb is not a welcome sight out here, and they wear it anyway."
+      ]
+    },
+    {
+      "key": "quest.flame-disciple.oath.maell",
+      "rows": [
+        "You keep looking at the cloth. Everyone does. It is only cloth. Come to the Mission, carry the pot two nights running, and you may wear it - the ward will trust you less and need you more.",
+        "There is no test. There is a pot of soup that is too heavy at three in the morning, and there is whether you are there. Say you will be, and you are a disciple.",
+        "I will not ask you what you believe. I will ask whether you can be woken. Say yes and I will write you on the roll tonight."
+      ]
+    },
+    {
+      "key": "quest.flame-disciple.nightpot.maell",
+      "rows": [
+        "The pot goes out at the turn of the tide and it comes back empty. That is the whole of the office. Stand three of this room a drink out of your own purse and I will believe you understand it.",
+        "Alms is not coin thrown at a step. It is sitting with somebody while they eat. Buy three of these people what they came in for, and sit while they drink it.",
+        "Onna does the night round alone and has done since the body came up. Take three of this room a drink and I will let you say you helped."
+      ]
+    },
+    {
+      "key": "quest.flame-disciple.water.wake",
+      "rows": [
+        "Maell sent you. Of course he did. I was out past the fishbone the night of it and I can prove it, and I have started to wish I could not. There is a run of water off the outfall that stays warm after the tide turns. Warm. In this month.",
+        "The priest wants a seaman's word and here it is: the harbour is wrong on the ebb. Not the swell, not the wind. The water comes back out of that grate when it has no business coming out of anything.",
+        "I keep my log honest, which is a curse. Three nights running the Kestrel's boat would not hold a line by the outfall. Something under it is moving the water and it is not the sea."
+      ]
+    },
+    {
+      "key": "quest.flame-disciple.letters.maell",
+      "rows": [
+        "Warm water on the ebb. I wrote that to the monastery three times before there was a body to write about, and three times nobody answered. Now a captain says it to my face in a tavern and I am glad and I am sick.",
+        "Then it is not only me. Three letters, no reply, and I had begun to think I was an old man frightening himself. Say it again to Onna. She will not sleep either, but she will not be alone in it.",
+        "You went and asked. That is the whole difference between a disciple and a witness - a witness waits to be asked. Sit down. I am going to teach you something small."
+      ]
+    },
+    {
+      "key": "quest.flame-disciple.lamp.maell",
+      "rows": [
+        "The lamp in the Mission has not gone out on my watch in nineteen years. That is not a miracle, it is a habit, and habits can be handed over. Watch my hands.",
+        "Six powers the scholars count, and only one of them was ever written down for people like us - and the edition they let us have skims the details. What is left in it is enough to warm your hands and close a cut. Take it.",
+        "Understand what this is not. This is not the Flame. The Flame is an office and a vigil and it is not mine to hand you. This is a link, an arm, and a little heat moved from where it is to where it is wanted."
+      ]
+    },
+    {
+      "key": "quest.flame-disciple.forge.maell",
+      "rows": [
+        "You have the shape of it now. A crafting is only what it moves, how much, how far, and for how long. Name those four and you have made one nobody wrote down for you.",
+        "The books stop where the money stopped. After that you are composing, not reading. Tell me what you want moved and I will tell you what it will cost you.",
+        "This is the part they do not print. Every crafting on the shallow shelf is four numbers in a coat. Choose your four."
+      ]
+    },
+    {
+      "key": "quest.flame-disciple.done.maell",
+      "rows": [
+        "You carry the pot and you can close a cut. The Mission has had worse disciples and buried better ones.",
+        "There is nothing more I can put in your hands. What is left is nights, and you already know what those cost.",
+        "Go and be awake somewhere useful."
+      ]
+    },
+    {
+      "key": "teaching.offered",
+      "rows": [
+        "Sit. Hands on the table where I can see them.",
+        "This one first. It is the smallest thing in the book and you will use it most.",
+        "Slowly. The link is the whole of it; the rest is arithmetic."
+      ]
+    },
+    {
+      "key": "teaching.taken",
+      "rows": [
+        "There. You will fumble it in the cold for a month and then you will not.",
+        "It took. Do not show it off - a docker warming his hands is nothing, and a man who wants to be seen doing it is something.",
+        "Good. Now do it again when you are tired, which is when it matters."
+      ]
+    },
+    {
+      "key": "teaching.beyond",
+      "rows": [
+        "Beyond you tonight. Not forever, and not by much.",
+        "That one sits further up the shelf than your hands reach. Come back when they do.",
+        "No. You would spend everything you have and drop it, and I would have to carry you home."
+      ]
+    },
+    {
+      "key": "forge.opened",
+      "rows": [
+        "Then compose. What is moved, how much, how far, how long.",
+        "The table is yours. Tell me the shape and I will tell you the price.",
+        "Go on. It is only four numbers and a nerve."
+      ]
+    },
+    {
+      "key": "forge.struck",
+      "rows": [
+        "That will hold. Write it in your own hand; a crafting in somebody else's is a borrowed coat.",
+        "It works. It is not pretty and it is yours.",
+        "There. Nobody printed that one. Mind what you do with it."
+      ]
+    },
+    {
+      "key": "forge.refused",
+      "rows": [
+        "No. That is not a crafting, that is a wish with numbers on it.",
+        "It would open, take everything you have and change nothing. I will not let you pay for that.",
+        "The shape is wrong. Fix it and ask again."
+      ]
+    }
+  ],
+  "notes": "S4 addition. content/raws/barks/barks.json is the owner's authored canon and is UNTOUCHED; this is a SECOND table file in the same directory, merged by BarkTables::load in sorted filename order with the owner's file loaded FIRST and winning every duplicate key. Same schema: rows of {key, rows[]}, ASCII only. WHAT IS AUTHORED HERE: the faction join/rank/refusal voices for the five factions in content/raws/factions/factions.json, and the six-stage Priest of the Flame line (content/raws/quests/flame_disciple.json). CANON RULES OBEYED, deliberately and checkably. (1) MAGIC-CANON.md section 5.4: every in-world surface says SIX. Father Maell names six powers once, in quest.flame-disciple.lamp.maell, and is confidently correct as far as this world knows. The word 'seven' appears nowhere in this file and a test asserts it. (2) MAGIC-CANON.md section 5.5: the Flame ships nothing. Maell teaches the SOURCE off the public-issue shelf (L2472) and says outright that what he is handing over is not the Flame - 'The Flame is an office and a vigil and it is not mine to hand you'. No line here offers, teaches, describes or hints at a Flame effect. (3) DOCKS-GAZETTEER section 3 / section 4.3: the Mission is the Divine Light almshouse (soup, bunks, a disciple always awake, white garb the locals distrust); Maell wrote three unanswered letters to the monastery about something wrong on the water before the first body came up; Onna found that body on the night round. Captain Ivo Wake was at sea that night and can prove it, 'which interests him more than it should'. Every one of those is a line here. (4) DECISIONS.md, the S3 ruling: no topic is gated by a roll. A stage advances because you stood in front of the right person, not because a check passed."
+}

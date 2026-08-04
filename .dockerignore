@@ -86,6 +86,25 @@
 !content/raws/rumors/**
 !content/raws/skills/**
 
+# --- re-admitted: the raws the ward's GUILDS come out of (S4) ---
+# 12 KB, three files, and they are in the context for the same reason every
+# other raws directory above is: the loaders are deliberately silent about a
+# missing file so the game still boots during a content edit, and that silence
+# is exactly what would let a whole suite pass against an empty registry.
+#
+#   factions/factions.json   2 KB   the owner's five factions and their jobs
+#   factions/ranks.json      4 KB   S4: a ladder hung off each of those five
+#   quests/*.json            6 KB   the owner's vanished-clerk line, which this
+#                                   build skips by shape, and the Priest of the
+#                                   Flame line, which it runs
+#
+# quests/ comes in whole rather than by filename, because QuestBook::load reads
+# the DIRECTORY and tells the two schemas apart by shape. Admitting one file and
+# not the other would make the case that proves it skips the owner's file pass
+# for the wrong reason.
+!content/raws/factions/**
+!content/raws/quests/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**
