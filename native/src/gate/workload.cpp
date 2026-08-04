@@ -32,6 +32,15 @@ using content::hex64;
 using content::padLeft;
 using content::padRight;
 
+/// A signed integer, formatted without libc for the same reason everything else
+/// in this report is: the bytes are compared across two toolchains.
+[[nodiscard]] std::string signed_dec(std::int32_t value) {
+    if (value < 0) {
+        return "-" + dec(static_cast<std::uint64_t>(-static_cast<std::int64_t>(value)));
+    }
+    return dec(static_cast<std::uint64_t>(value));
+}
+
 /// The global tile index of a packed world position.
 [[nodiscard]] std::size_t tile_of(const content::Coords& coords, std::int32_t pos) noexcept {
     return content::World::tileIndex(static_cast<std::size_t>(coords.chunkIndex(pos)),
@@ -275,6 +284,37 @@ public:
             tavern_->stepMovement();
         }
         ++ticks_;
+
+        // S5: THE WORKLOAD COMMITS CRIMES, and it does so because the S4 review
+        // found that it did not. Faction state has been in the world hash since
+        // S4 and the Tavern has been a registered system since S2 -- but
+        // nothing in this workload ever moved a faction number, so the gate
+        // compared zeros to zeros for every one of those rows and would have
+        // gone green over a mirror ledger that had stopped working entirely.
+        //
+        // A hand in a purse every ninety seconds moves ALL of it through the
+        // real path: the tally, the Watch's heat, the roofs' standing, the
+        // garrison's by the mirror, the thief's own cracksmanship, the victim's
+        // memory and the coin in two purses.
+        if (ticks_ % 90 == 0) {
+            if (tavern_->talkTo()) {
+                const std::vector<sim::Topic>& topics = tavern_->dialogue().topics();
+                for (std::size_t i = 0; i < topics.size(); ++i) {
+                    if (topics[i].kind == sim::TopicKind::PickPocket) {
+                        (void)tavern_->chooseTopic(i);
+                        break;
+                    }
+                }
+                tavern_->endConversation();
+            }
+        }
+        // And a roof-run every four minutes. The gate has no body -- it is a
+        // headless engine, not a session -- so this is REPORTED rather than
+        // walked, which is the one thing in this file that reaches past the
+        // player-facing verbs, and it is said out loud here rather than hidden.
+        if (ticks_ % 240 == 0) {
+            tavern_->dialogue().noteCrime(sim::Crime::RoofRun, false);
+        }
     }
 
     void hash_into(sim::HashSink& sink) const override {
@@ -432,11 +472,22 @@ RunResult run_workload(const WorkloadConfig& config) {
                    + padLeft(dec(drift_view->chatter()), 8) + "  ledger[" + ledger_view->render()
                    + "]";
             if (tavern_view != nullptr) {
+                const sim::DialogueDirector& talk = tavern_view->dialogue();
+                const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+                const std::int32_t watch = talk.factions().indexOf("watch");
                 out += "  gull[in=" +
                        dec(static_cast<std::uint64_t>(tavern_view->presentCount())) + " noise=" +
                        dec(static_cast<std::uint64_t>(tavern_view->noise())) + " stock=" +
                        dec(static_cast<std::uint64_t>(tavern_view->drinkStock())) + " clock=" +
                        dec(static_cast<std::uint64_t>(tavern_view->timeOfDay())) + "]";
+                // S5: printed as well as hashed, so the report SHOWS the
+                // faction and crime rows moving instead of asserting that they
+                // are compared.
+                out += "  roofs[lifts=" +
+                       dec(static_cast<std::uint64_t>(talk.crimes().tally(sim::Crime::Lift))) +
+                       " heat=" + dec(static_cast<std::uint64_t>(talk.crimes().heat())) +
+                       " sky=" + signed_dec(talk.standings().standing(roofs)) +
+                       " watch=" + signed_dec(talk.standings().standing(watch)) + "]";
             }
             out += "\n";
         }

@@ -41,14 +41,38 @@ makes. That is how a sprint photographs the thing it built rather than
 describing it. **`--topic` is one-based**, matching the numbers printed beside
 the topics on screen; it was zero-based in S3 and the review caught it.
 
-`--flame` plays the whole Priest of the Flame line and captures wherever it
-finishes — the oath, the night pot, the captain's word, the report, the
-teaching, and a crafting composed at the bench — walking the body between
-parties with real movement steps and reporting how many stages actually landed:
+`--flame`, `--roofs` and `--skyrun` play whole scripted lines and capture
+wherever they finish, walking the body with real movement steps along routes the
+ROOM'S OWN pathfinder produced. **They report how many beats landed and exit
+non-zero when a run falls short** — S4's did neither, and a run that landed zero
+of six stages photographed the wrong person and exited 0. The PNG is still
+written when a run falls short, because a frame of a short run is evidence of
+the shortfall.
 
 ```
-granadad --smoke=0 --hold --time=20 --spawn=150,74,19 --flame \
-         --screenshot=flame.png
+granadad --smoke=0 --hold --time=20 --flame --screenshot=flame.png
+granadad --smoke=0 --hold --time=20 --roofs --screenshot=roof.png
+granadad --smoke=0 --hold --time=23 --skyrun --screenshot=skyrun.png
+```
+
+`--flame` needs no `--spawn`: it walks in from the authored spawn on the Tarwalk
+like anybody else. It did not in S4, and this README documented a command that
+could not work.
+
+`--roofs` climbs onto the roof of the Gilded Gull and looks down at the ward —
+in at the door, up the stair with `SPACE`, across the guest floor, out over the
+north wall. `--roofs=leap` carries on across two tiles of alley onto the next
+house; `--roofs=street` takes the two-storey drop back down.
+
+`--skyrun` plays the Skyrunner line end to end at eleven at night: sign on with
+Finch in the snug, take two purses, crack a guest's box above the stair, get on
+the roof, cross the alley, work the roofs until they will have you as a
+Cutpurse, sell what you took, lean on somebody, and carry a bale out of the door
+past Watchman Cull. Nine stages, and it reports what it earned:
+
+```
+roofs stages=9 rank=2 Cutpurse standing=100 watch=-63
+climbs=1 lifts=2 cracks=1 leans=1 fences=1 runs=1 heat=60 warrant=yes skyrunning=5
 ```
 
 ```
@@ -71,6 +95,9 @@ different authored table.
 | `E` | talk to whoever is in front of you |
 | `F` | throw a punch. Under a roof with bouncers in it, that is an offence |
 | `R` | sleep, if you have rented a room and are standing in it |
+| `Space` | **up.** Mantle onto the ledge you are facing, or leap the gap in front of you — the geometry decides which. It also takes a stair |
+| `X` | **down.** Step off the ledge in front and take the fall |
+| `G` | put hands on what is here: a guest's strongbox at a bed-foot, or the bale in the snug |
 | `Tab` | release the mouse |
 | `F12` | screenshot to `granadad-screenshot.png` |
 | `Esc` | quit |
@@ -118,12 +145,30 @@ it can be fixed. Being told why is the lesson.
 | `T` | take their price without arguing |
 | `Esc` | walk away, which they remember |
 
+**The roofs are a road.** `SPACE` mantles you one band onto the top of the wall
+you are facing — a solid face to grip, a surface on top of it, room over your own
+head, and one band only, so the street cannot climb a two-storey frontage. When
+there is nothing to grip it leaps instead, across up to three tiles of air,
+aiming at the far roof and taking the alley only when there is no far roof. `X`
+steps off a ledge and falls up to three bands; past what your legs and the
+Skyrunners' teaching allow, it hurts. Nothing in any of the three rolls a die:
+what `skyrunning` and the roofs' own `roof` token buy is a band of safe drop and
+a tile of carry.
+
+The district was two thirds shut before that. 8,132 standable cells of the baked
+Docks — the compound roof decks and the rooftop slums — could not be got to at
+all, which `docs/design/DOCKS-GAZETTEER.md` §2.6 filed as deliberate "until the
+law/economy layers learn to climb (S5+)". Reachable-from-spawn is **24,960**
+tiles now against 17,054 on foot, and the roof-slum plane goes from **zero**
+reachable cells to 1,664.
+
 You spawn on the Tarwalk six tiles off the door of **the Gilded Gull** (K03), the
-captains' tavern. Walk in. It has fifteen people in it who keep hours: Master
+captains' tavern. Walk in. It has sixteen people in it who keep hours: Master
 Venn on the stair, Gerta Saltcotte behind the bar, two bouncers on a rota that
 overlaps for the loud hours, Father Maell for an hour in the evening, Captain Ivo
-Wake of the *Kestrel* from seven, and a Skyrunner in the snug after ten who will
-not talk to you. The fire is lit from ten in the morning until three. Come at
+Wake of the *Kestrel* from seven, Watchman Cull off duty from nine, and Finch the
+quiet tenant in the snug after ten, who will not talk to you until you have
+stopped being a stranger. The fire is lit from ten in the morning until three. Come at
 five and the room is black and empty.
 
 **Every word any of them says was written by the owner**, in
@@ -196,11 +241,11 @@ build and reproducibility on the cross build.
 
 | | cases | assertions |
 |---|---|---|
-| `granadad-tests` — RNG, wrapping, world hasher, engine, gate, angles, tile queries, the body, lamps, atlas, renderer | 123 | 56,767 |
-| `granadad-content-tests` — TROJSAV reader vs. the real baked worlds | 57 | 902,044 |
-| `granadad-twin-run-gate` | 1 | — |
+| `granadad-tests` — RNG, wrapping, world hasher, engine, gate, angles, tile queries, the body, the roofs, lamps, atlas, renderer, the room, the ward's voice, the guilds, the crimes | 288 | 355,000+ |
+| `granadad-content-tests` — TROJSAV reader vs. the real baked worlds | 57 | 902,056 |
+| `granadad-twin-run-gate` — two entries: bare, and with the tavern registered | 2 | — |
 | `granadad-content-fingerprint`, `granadad-world-hash-fingerprint` | 2 | — |
-| **ctest total** | **183** | |
+| **ctest total** | **349** | |
 
 Some of those cases **render frames of the real Docks**, inside the container,
 with no window and no GPU — the renderer is software, so a frame is an ordinary
@@ -503,10 +548,22 @@ bouncer waits; and the Priest of the Flame line — six stages, playable in one
 evening, ending in a crafting you composed yourself out of canon's own effect
 vocabulary.
 
+And, as of S5, the roofs and the trade that runs on them. **Six criminal acts** —
+a purse lifted, a guest's strongbox cracked, a bale of contraband carried out
+past a watchman, stolen property sold to a fence, somebody leaned on for coin,
+and being on a roof at all — every one of which moves the same four numbers
+through the same call: a questline's tally, the **heat** the Watch keeps, the
+roofs' regard for you, and the garrison's, by the mirror the ladders declared in
+S4. Heat is what the Watch HEARD rather than what you did, it cools five minutes
+a point including through a night asleep, and past sixty there is paper out on
+you and the HUD says so in red. Four dead unlock tokens got readers, the Watch
+got a recruiter a player can stand in front of, and **the Skyrunners got a
+nine-stage line** that walks you through every one of the six acts once.
+
 What is NOT here yet: **casting** what you learned or composed (the grimoire
 records craftings and nothing resolves one), items, the dedicated combat screen,
-save/load to disk, and any of the ward outside the Gull's walls. Those are the
-sprints after this one.
+save/load to disk, **arrest** — a warrant is issued and nothing acts on it — and
+any of the ward outside the Gull's walls. Those are the sprints after this one.
 
 `content/` is read-only canon and is reused verbatim — never retype, regenerate
 or "improve" anything under it. New files may be added; the baked lamp sidecars

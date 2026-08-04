@@ -18,6 +18,7 @@
 
 #include "granadad/gate/twin_run.hpp"
 #include "granadad/gate/workload.hpp"
+#include "granadad/sim/docks.hpp"
 
 using namespace granadad::gate;
 
@@ -190,6 +191,37 @@ TEST_CASE("the walkers actually move and actually chatter") {
     // property of the map, and pinning it here would make this test about
     // tavern_fixture's floor plan.
     CHECK(last_counter(run.report, "blocked=") >= 0);
+}
+
+TEST_CASE("the gate's workload actually moves a faction number") {
+    // THE S4 REVIEW'S LAST FINDING. Faction state has been in the world hash
+    // since S4 and the Tavern has been a registered system since S2 -- and
+    // nothing this workload did ever moved a faction number, so the gate
+    // compared zeros to zeros for every one of those rows. A mirror ledger that
+    // had stopped working entirely would have passed.
+    //
+    // The driver puts a hand in a purse every ninety seconds now, through the
+    // real path. Same failure class the case above guards against: a workload
+    // that runs and does nothing is perfectly deterministic and proves nothing.
+    WorkloadConfig config;
+    config.world = granadad::sim::docks::kWorldName;
+    config.ticks = 400;
+    config.walkers = 8;
+    config.sample_every = 100;
+    config.with_tavern = true;
+    const RunResult run = run_workload(config);
+
+    CHECK(last_counter(run.report, "lifts=") > 0);
+    CHECK(last_counter(run.report, "heat=") > 0);
+    CHECK(last_counter(run.report, "sky=") > 0);
+    // The mirror: what the roofs gain the garrison loses, and the report prints
+    // it with a sign so a run that stopped mirroring is visible in the text and
+    // not only in a hash nobody can read.
+    CHECK(run.report.find("watch=-") != std::string::npos);
+
+    // And it is still deterministic with all of that moving.
+    const TwinRunOutcome outcome = twin_run(config);
+    CHECK(outcome.passed);
 }
 
 TEST_CASE("the gate passes on the code as it stands") {

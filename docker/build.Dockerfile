@@ -365,7 +365,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # BOTH sides, the same-floor clause, the line-of-sight clause, and the topic
     # list proved completely addressable from the keyboard at any length.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=348; \
+    GRANADAD_MIN_TESTS=349; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -494,6 +494,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "a player can sign on with the roofs and finish the Skyrunner line" \
         "page two of a long list DRAWS nine numbered rows, not none" \
         "a counted stage refuses to be turned in until it has been done" \
+        "the gate's workload actually moves a faction number" \
         ; do \
         printf '%s\n' "$ctest_list" | grep -qF "$case" \
             || { echo "FATAL: the case \"$case\" is not registered."; \

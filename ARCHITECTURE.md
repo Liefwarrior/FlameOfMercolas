@@ -318,25 +318,28 @@ thing being built. `native/` is. Its status, kept honest as the rewrite goes:
 | TROJSAV / world-format reader | **BUILT** — 65 cases, 902,056 assertions over the real baked worlds | `native/content/` |
 | Counter RNG, wrapping helpers, world hasher, phased tick loop | **BUILT** (M1) — bit-equivalent to the JVM by golden vectors | `native/src/sim/` |
 | Twin-run determinism gate | **BUILT** (M1), extended S2 with a second entry that registers the tavern | `native/src/gate/` |
-| Sub-tile Q8 player body, collision, the climb rule | **BUILT** (S1) | `native/src/sim/player.cpp` |
+| Sub-tile Q8 player body, collision, the climb rule | **BUILT** (S1), corrected twice since: doorway lintels (S2) and falling through walls (S5) | `native/src/sim/player.cpp` |
+| **Roof traversal** — mantle, leap and drop, all integer, none of them rolling | **BUILT** (S5) — reachable-from-spawn 17,054 -> 24,960, and the roof-slum plane at z22 goes from ZERO reachable cells to 1,664 | `native/src/sim/player.cpp`, `native/src/sim/tile_query.cpp` |
 | Software first-person renderer, lamp bake, HUD | **BUILT** (S1) | `native/src/render/` |
 | Content-directory resolution (env → the exe's own tree → configure-time) | **BUILT** (S2) — S1 shipped an .exe that could not find its own worlds | `native/content/src/content_dir.cpp` |
 | **Actors** — identity, roles, daily schedules, tile-stepped movement with Q8 sub-tile position | **BUILT** (S2), for one building's worth | `native/src/sim/actor.cpp` |
 | **Region pathing** — bounded breadth-first, deterministic, no corner-cutting | **BUILT** (S2) | `native/src/sim/region_path.cpp` |
 | **The brawl / lethal rule** | **BUILT** (S2) — see `DECISIONS.md` | `native/src/sim/brawl.cpp` |
-| **The Gilded Gull** — six staff, nine patrons, hours, trade, a door policy | **BUILT** (S2, one patron added S3) | `native/src/sim/tavern.cpp` |
+| **The Gilded Gull** — six staff, ten patrons, hours, trade, a door policy | **BUILT** (S2; one patron added S3, one S5) | `native/src/sim/tavern.cpp` |
 | Spell raws reader (modular components, for the priest and for S4) | **BUILT** (S2) | `native/src/sim/spellbook.cpp` |
 | **Bark tables** — the owner's 210 authored tables behind a family / attitude / hour fallback chain | **BUILT** (S3) | `native/src/sim/barks.cpp` |
 | **The Forty Notables, their micro-histories and the rumor domains** — who may repeat which story | **BUILT** (S3) as a registry; only three of the 42 are bound to a spawned actor so far | `native/src/sim/notables.cpp` |
 | **Relationships** — per-actor memory of what the player did, ward-wide reputation, hashed into world state | **BUILT** (S3) | `native/src/sim/social.cpp` |
-| **Player skills** — use-XP over the 20-skill vocabulary in the raws | **BUILT** (S3), two skills consumed (`streetwise`, `cracksmanship`) | `native/src/sim/social.cpp` |
+| **Player skills** — use-XP over the 20-skill vocabulary in the raws | **BUILT** (S3); four consumed as of S5 (`streetwise`, `cracksmanship`, `linkcraft`, `skyrunning`) | `native/src/sim/social.cpp` |
 | **Barter** — haggling as an argument with rounds and patience, moved by standing and by skill | **BUILT** (S3) | `native/src/sim/barter.cpp` |
 | **Conversation** — topics, gated socially and never by a roll; the surface that draws it | **BUILT** (S3) | `native/src/sim/dialogue.cpp`, `native/src/render/dialogue_view.cpp` |
-| **Factions** — the owner's five, a ladder each, standing, rank and ward influence; hashed and byte-encodable | **BUILT** (S4) — four of the five are joinable in the Gilded Gull; the Watch has no recruiter in that room | `native/src/sim/faction.cpp` |
-| **Questlines** — authored stages with conditions this build can actually resolve, and the journal that walks them | **BUILT** (S4) — one line ships, the Priest of the Flame's, six stages | `native/src/sim/questline.cpp` |
+| **Factions** — the owner's five, a ladder each, standing, rank and ward influence; hashed and byte-encodable | **BUILT** (S4) — ALL FIVE joinable in the Gilded Gull as of S5, when the Watch got a recruiter in the room; seven of fourteen unlock tokens now have readers | `native/src/sim/faction.cpp` |
+| **Questlines** — authored stages with conditions this build can actually resolve, and the journal that walks them | **BUILT** (S4) — two lines ship: the Priest of the Flame's six stages and the Skyrunners' nine | `native/src/sim/questline.cpp` |
+| **Crime** — six acts, one call site, heat the Watch keeps, a warrant with hysteresis, loot, contraband; hashed and byte-encodable | **BUILT** (S5) | `native/src/sim/crime.cpp` |
 | **Spellcrafting** — canon's own cost model, the (axis × time-shape) pairing table, a composition bench and a grimoire | **BUILT** (S4) | `native/src/sim/spellforge.cpp` |
 | Casting what you learned or composed | **NOT BUILT** (S4) — the grimoire records craftings and nothing resolves one. `SpellVerb`-equivalent, active effects and the warmth→REST coupling are all still Java-side only | — |
-| Needs, wages, crime beyond one room, the macro economy | **NOT BUILT** | — |
+| Needs, wages, the macro economy | **NOT BUILT** | — |
+| Crime beyond the Gilded Gull's walls | **NOT BUILT** (S5) — the six acts, the heat and the warrant are real and the ward outside this building has nobody in it to commit them against. There is no arrest, no cell and no gibbet: `ranks.json` and DECISIONS.md's Skyrunner escalation ruling both describe a Watch that acts on a warrant, and nothing does | — |
 | Save / load | **NOT BUILT** — S3 ships a versioned byte encoding for the relationship ledger, proven by round trip, with nothing writing it to disk | `SocialLedger::encode` |
 | The dedicated first-person combat screen | **NOT BUILT** — S3 gave `escalated()` a consumer (the room remembers a drawn blade and the bar stops serving), but the screen itself does not exist | — |
 
@@ -349,6 +352,14 @@ every faction ladder is earned, and is measured in standing *and* in that factio
 and the Flame of Mercolas ships nothing — `MAGIC-CANON.md` §5.5 — so the Priest of the Flame's
 questline hands over the *Source* off the public-issue shelf, says so out loud in its own
 authored line, and a test greps every authored row in `content/` for a seventh power.
+
+**S5's binding design laws** (recorded in full in `docs/design/DECISIONS.md`): the roofs are a
+road and three verbs are the whole of it — mantle, leap, drop — and what a skill or a guild buys
+is REACH and a SAFE HEIGHT, never a chance; a body falls through air and through nothing else
+(not a wall, not the harbour); every one of the ward's six criminal acts goes through ONE call
+site that moves the tally, the heat and both sides of the Watch/Skyrunner mirror together; heat
+is what the Watch HEARD rather than what you did; and a scripted capture that fell short of what
+it was asked to do must say so and exit non-zero.
 
 **S3's one binding design law, taken from DOCKS-GAZETTEER section 5.3 and enforced in code:**
 the investigation is never persuasion. No dialogue topic is gated by a dice roll. A topic is on
