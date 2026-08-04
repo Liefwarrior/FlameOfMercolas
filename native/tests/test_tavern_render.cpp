@@ -1061,10 +1061,25 @@ TEST_CASE("the ward's roll is in the windowed game, and a rival can take ground 
 
     // AND THE ROLL IS TICKING, not merely present: a day of the ward passes
     // while the player stands in the taproom, and the land does a day's work.
+    //
+    // S9 REPLACES TWO TAUTOLOGIES HERE. The S8 review found that this block
+    // asserted `day() >= dayBefore` and `stats().days >= 0` on monotonic
+    // int64s that start at zero -- both true of a ward that had never run a
+    // second -- and its own probe showed exactly that: ten slept nights and ten
+    // minutes of play left stats().days at 0, because Ward::tick counts engine
+    // seconds and every skip in Session moved the TAVERN'S clock without them.
+    // These two go red on the code as it was.
     const std::int64_t dayBefore = session.ward().day();
+    const std::int64_t harvestsBefore = session.ward().stats().harvests;
+    // Twelve hours to the morning and twelve back to the evening: one whole
+    // day of the ward, jumped exactly the way sleeping in a rented bed jumps
+    // it. Nothing in between is simulated -- that is what a skip IS -- and the
+    // land still has to do its day's work.
+    session.skipToHour(8);
     session.skipToHour(20);
     session.stepMany(sim::MoveInput{}, 240);
-    CHECK(session.ward().day() >= dayBefore);
-    CHECK(session.ward().stats().days >= 0);
+    CHECK(session.ward().day() > dayBefore);
+    CHECK(session.ward().stats().days > 0);
+    CHECK(session.ward().stats().harvests > harvestsBefore);
 }
 

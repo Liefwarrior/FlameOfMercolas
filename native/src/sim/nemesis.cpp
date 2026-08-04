@@ -161,8 +161,21 @@ std::int32_t ChapterRaws::forTrade(std::string_view trade,
             return static_cast<std::int32_t>(i);
         }
     }
+    // THEN TRADE, BUT NEVER ACROSS A FACTION. S9 closes the S8 review's third
+    // finding: this pass used to match on trade alone, so Sella Brinewall -- a
+    // DOCKHAND whose trade is streetwise -- founded The Chandlers' Row, which
+    // chapters.json says belongs to the MERCHANTS, and then recordDefeat booked
+    // her influence and her toll against the dockhands. A hand founded a
+    // merchants' house and taxed the quay gang for it.
+    //
+    // A chapter with no faction of its own is still fair game on trade; one
+    // that names a faction is that faction's house and nobody else's. What is
+    // left over falls to the faction-only pass below, which is the right answer
+    // anyway: you found a house of YOUR OWN guild.
     for (std::size_t i = 0; i < chapters_.size(); ++i) {
-        if (!trade.empty() && chapters_[i].trade == trade) {
+        if (!trade.empty() && chapters_[i].trade == trade &&
+            (chapters_[i].faction.empty() || factionId.empty() ||
+             chapters_[i].faction == factionId)) {
             return static_cast<std::int32_t>(i);
         }
     }
@@ -218,12 +231,20 @@ void NemesisBook::attach(std::shared_ptr<const FactionRegistry> factions) {
 }
 
 const Nemesis* NemesisBook::of(std::int32_t actorId) const noexcept {
+    // S9 CLOSES THE S8 REVIEW'S SECOND FINDING. This used to `break` on the
+    // first rival whose id sorted past the one asked for, which is only correct
+    // while rivals_ is sorted BY ID -- and entryFor() reassigns actorId in
+    // place, without re-sorting, on exactly the path nemesis.hpp advertises as
+    // "the persistent-ward door, left open on purpose": a save reloaded against
+    // a bigger cast hands the same man a different id. One rival past the
+    // reassigned one and of() returned nullptr for a man the book has.
+    //
+    // The fix is to stop pretending the list is ordered. There are a handful of
+    // rivals in a ward and a linear scan over them is free; a sort that has to
+    // be remembered on every write is not.
     for (const Nemesis& rival : rivals_) {
         if (rival.actorId == actorId) {
             return &rival;
-        }
-        if (rival.actorId > actorId) {
-            break;
         }
     }
     return nullptr;

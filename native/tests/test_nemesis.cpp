@@ -200,6 +200,79 @@ TEST_CASE("a guild is a guild OF something: the trade picks the house, not the f
     // And a man with no trade and no faction founds nothing at all.
     CHECK(chapters.forTrade("", "") < 0);
     CHECK(chapters.at(-1) == nullptr);
+
+    // S9 CLOSES THE S8 REVIEW'S THIRD FINDING. The trade-only pass used to
+    // match a chapter of ANY faction, so a DOCKHAND whose trade is streetwise
+    // -- Sella Brinewall and Kled Tarbeck are both on the Gull's own roster --
+    // founded The Chandlers' Row, which chapters.json says belongs to the
+    // MERCHANTS. recordDefeat then booked her influence and her toll against
+    // the dockhands: a hand founded a merchants' house and taxed the quay gang
+    // for it. This goes red on the faction clause being removed.
+    const std::int32_t merchantHouse = chapters.forTrade("streetwise", "merchants");
+    const std::int32_t dockHouse = chapters.forTrade("streetwise", "dockhands");
+    REQUIRE(merchantHouse >= 0);
+    REQUIRE(dockHouse >= 0);
+    CHECK(chapters.at(merchantHouse)->faction == "merchants");
+    CHECK(chapters.at(dockHouse)->faction == "dockhands");
+    CHECK(merchantHouse != dockHouse);
+    // Whatever a rising body founds, it is a house of THEIR OWN GUILD. Said
+    // over every chapter in the owner's file, so a new one cannot slip through.
+    for (const char* guild : {"dockhands", "merchants", "watch", "skyrunners", "temple"}) {
+        for (const char* trade : {"streetwise", "kit_keeping", "fieldcraft", "seacraft",
+                                  "fishing", "skyrunning", "channeling", "bladework"}) {
+            const std::int32_t found = chapters.forTrade(trade, guild);
+            if (found < 0) {
+                continue;
+            }
+            INFO(guild, " / ", trade, " -> ", chapters.at(found)->id);
+            CHECK(chapters.at(found)->faction == guild);
+        }
+    }
+}
+
+TEST_CASE("a rival keeps his record when the roster hands him a different id") {
+    // S9 CLOSES THE S8 REVIEW'S SECOND FINDING, and the door it was found
+    // behind is the one nemesis.hpp advertises: "a name that is already in the
+    // book keeps its record and takes the new id". A save reloaded against a
+    // bigger cast is exactly that path, and of() used to `break` out of the
+    // scan the moment an id sorted past the one it was asked for -- which is
+    // only correct while rivals_ is sorted by id, and entryFor() reassigns ids
+    // in place without re-sorting.
+    NemesisBook book;
+    book.attach(registry());
+
+    const auto beat = [&](std::int32_t actorId, const char* who) {
+        Defeat blow;
+        blow.actorId = actorId;
+        blow.who = who;
+        blow.epithet = "the Steady";
+        blow.jobPrefix = "serf";
+        blow.trade = "fieldcraft";
+        blow.day = 1;
+        RiseWorld world;
+        (void)book.recordDefeat(blow, world);
+    };
+
+    // Two rivals, entered in ascending id order, exactly as one room hands
+    // them out.
+    beat(4, "Tarn Wrenhale");
+    beat(9, "Sella Brinewall");
+    REQUIRE(book.of(4) != nullptr);
+    REQUIRE(book.of(9) != nullptr);
+
+    // NOW THE WORLD IS REBUILT AND THE SAME MAN IS SOMEBODY ELSE'S NUMBER.
+    // Tarn comes back as id 11, past Sella; the list is now {11, 9}.
+    beat(11, "Tarn Wrenhale");
+    CHECK(book.byName("Tarn Wrenhale") != nullptr);
+    CHECK(book.byName("Tarn Wrenhale")->actorId == 11);
+    CHECK(book.of(4) == nullptr);
+    // This is the assertion that used to read CHECK( nullptr != nullptr ).
+    REQUIRE(book.of(11) != nullptr);
+    CHECK(book.of(11)->who == "Tarn Wrenhale");
+    CHECK(book.of(11)->wins == 2);
+    // And the man who did not move is still where he was.
+    REQUIRE(book.of(9) != nullptr);
+    CHECK(book.of(9)->who == "Sella Brinewall");
 }
 
 // ===========================================================================
@@ -249,8 +322,18 @@ TEST_CASE("a labourer who puts the player down rises on the ward's own ladder") 
     CHECK(room.tavern().lastDefeat().promoted);
 
     // AND HIS GUILD IS HEAVIER IN THE WARD FOR IT.
-    CHECK(room.tavern().dialogue().standings().influence(dockhands) ==
-          influenceBefore + kInfluencePerWin);
+    //
+    // S9 REWRITES THIS ASSERTION, and it is the S8 review's "minor" finding
+    // closed. It used to read `influenceBefore + kInfluencePerWin`, which is
+    // the constant it exists to detect changes in: zero that constant and the
+    // case stayed green while a win stopped moving the ward at all. It now
+    // asserts the BEHAVIOUR -- a win makes his guild strictly heavier -- and
+    // pins the size separately, so either half can go red on its own.
+    const std::int32_t influenceAfter =
+        room.tavern().dialogue().standings().influence(dockhands);
+    CHECK(influenceAfter > influenceBefore);
+    CHECK(influenceAfter - influenceBefore == kInfluencePerWin);
+    CHECK(kInfluencePerWin > 0);
 
     // He went through the player's coat on the way past.
     CHECK(room.tavern().playerCoin() < purseBefore);

@@ -625,6 +625,24 @@ public:
     /// and -- every quarter -- the ground.
     void endOfDay();
 
+    /// Runs the ward forward to `worldDay`, one endOfDay() per day crossed.
+    ///
+    /// S9 ADDS THIS, AND IT IS THE S7 REVIEW'S EIGHTH FINDING FINALLY CLOSED.
+    /// Ward::tick counted a second per engine tick and did a day's work every
+    /// 86,400 of them; the windowed game ticks the engine once per sixty
+    /// movement steps and, crucially, SKIPS -- sleeping in a rented bed, a
+    /// night in a cell, a blackout after a beating and every scripted capture
+    /// move the tavern's clock without simulating what they jumped. The Ward
+    /// never heard about any of it. Ten slept nights and ten minutes of
+    /// continuous play left stats().days at zero, and the whole 3,300-line
+    /// economy had never run a single day inside the game.
+    ///
+    /// So the WORLD'S day is the authority and the ward follows it. Monotonic
+    /// and idempotent: asking for a day already reached does nothing, so the
+    /// tick's own counter and the tavern's calendar cannot double-count each
+    /// other. Whoever owns both clocks calls this; see render::Session.
+    void advanceToDay(std::int64_t worldDay);
+
     // --- the player ---------------------------------------------------------
     //
     // EVERY ONE OF THESE IS A THING AN NPC ALREADY DOES. The player leases the

@@ -523,7 +523,20 @@ void Ward::tick(const TickContext& context) {
     // bridge case in test_compound.cpp asserts rather than assumes.
     (void)context;
     ++seconds_;
-    if (seconds_ % kSecondsPerDay == 0) {
+    // Expressed through advanceToDay so there is ONE place a day turns. With
+    // nothing else driving the ward this is bit-for-bit what it always was: at
+    // second 86,400 the target becomes 1, day_ is 0, and exactly one endOfDay()
+    // runs. With the tavern's calendar also driving it -- which is what the
+    // windowed game does -- whichever clock reaches a day first turns it and
+    // the other finds the work already done.
+    advanceToDay(seconds_ / kSecondsPerDay);
+}
+
+void Ward::advanceToDay(std::int64_t worldDay) {
+    // MONOTONIC. A day cannot be un-run, and a target already passed is a
+    // no-op rather than a rewind: the harvest, the wage and the meal have all
+    // happened and there is no undoing them.
+    while (day_ < worldDay) {
         endOfDay();
     }
 }
