@@ -244,6 +244,36 @@ house, and it is why `Finch sells wire to his own` and why the skill rises off e
 
 ---
 
+## The cases have teeth
+
+Two mutation runs, both against the same tree the green above names.
+
+**Five mutations at once** — the light term deleted from the notice rule, the crouch worth nothing,
+`crackStrongbox` back to ignoring the lock, every probe setting a pin, and `Ward::advanceToDay` a
+no-op. `MUTANT_EXIT=1`, `97% tests passed, 13 tests failed out of 442`:
+
+```
+ 27 - a day off the engine's clock is the same day as a day off endOfDay
+ 57 - a box above the stair is cracked, and your own is not a crime
+128 - a wrong probe strains the wire, and enough of them snap it
+129 - the last pick snapping jams the lock, and only force opens it then
+130 - the feel tells a trained hand which way it was wrong, and an apprentice nothing
+132 - the box above the stair is locked, and cracksmanship is what opens it
+134 - a jammed lock is permanent, and the room says so with the box still shut
+138 - the lock row draws the whole minigame, and the centre of the screen stays empty
+139 - a burglary is played from the keys: crouch, cross, lift, climb, pick, empty
+257 - every clause of the notice rule moves the answer, and none of them alone decides it
+258 - crouching, the dark and the skill are what a player does about it
+262 - a trained sneak lifts in a loud room what the same hands cannot lift standing up
+320 - the ward's roll is in the windowed game, and a rival can take ground on it
+```
+
+**And the sprint's headline claim on its own** — `read += 0` for the light term and nothing else
+changed. `MUTANT_EXIT=1`, `99% tests passed, 2 tests failed out of 442`: #257 and #262. Light
+mattering is a claim that can go red by itself.
+
+---
+
 ## What S9 does NOT do
 
 Marked here and in the code, not left to be discovered.
