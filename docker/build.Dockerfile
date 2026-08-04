@@ -107,6 +107,19 @@ COPY content/raws/names /src/content/raws/names
 COPY content/raws/rumors /src/content/raws/rumors
 COPY content/raws/skills /src/content/raws/skills
 
+# The raws the ward's GUILDS come out of, 12 KB (S4). factions.json is the
+# owner's five factions and the jobs that belong to each; ranks.json is the
+# ladder S4 hangs off every one of them; quests/ carries both the owner's
+# vanished-clerk line, which this build skips BY SHAPE, and the Priest of the
+# Flame line, which it runs end to end.
+#
+# quests/ is copied whole rather than by filename, because QuestBook::load reads
+# the directory and tells the two schemas apart itself. Copying one file and not
+# the other would make the case that proves it skips the owner's file pass for
+# entirely the wrong reason.
+COPY content/raws/factions /src/content/raws/factions
+COPY content/raws/quests /src/content/raws/quests
+
 # Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
 # has no use for either, and the rest of content is read at runtime straight
@@ -204,7 +217,9 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # -- worse -- passes against the empty-content fallback. Say it plainly,
     # here, where it is one line instead of nineteen red cases.
     for raw in barks/barks.json names/notables.json names/histories.json \
-               names/names.json rumors/rumors.json skills/skills.json; do \
+               names/names.json rumors/rumors.json skills/skills.json \
+               barks/flame_barks.json factions/factions.json factions/ranks.json \
+               quests/quests.json quests/flame_disciple.json; do \
         test -f "/src/content/raws/$raw" \
             || { echo "FATAL: /src/content/raws/$raw is missing from the build"; \
                  echo "       context. .dockerignore must re-admit it, or the"; \
@@ -337,8 +352,19 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # purpose-built world, the Q8 read caught mid-stride, actor pixels
     # counted apart from candle pixels, and the Gull's furniture derived
     # from the baked bytes.
+    #
+    # S4: 270 -> 311. The guilds -- the owner's five factions, the ladders hung
+    # off them, the mirror between the Watch and the roofs, the byte codec, and
+    # what a rung does to the price of a mug across a real counter; the six-stage
+    # Priest of the Flame line played end to end through the same calls a
+    # keypress makes; canon's own spell cost model and the pairing table it
+    # refuses by, run against the owner's own eleven authored craftings; the
+    # composition bench. Plus the six S3 review findings closed with cases that
+    # can go red rather than comments that cannot: the witness radius pinned from
+    # BOTH sides, the same-floor clause, the line-of-sight clause, and the topic
+    # list proved completely addressable from the keyboard at any length.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=270; \
+    GRANADAD_MIN_TESTS=311; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -419,6 +445,32 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: S3's named cases are all registered"; \
+    \
+    # S4's, by name. The first eight are the sprint's own claims -- a faction
+    # you can join, a ladder you climb, influence that reaches the price of a
+    # mug, a questline finished, and spellcrafting priced by canon's own model.
+    # The last five are S3 review findings, each closed with a case that goes
+    # red when the rule is removed rather than a comment that cannot.
+    for case in \
+        "a player can take the oath, climb the Mission's ladder and finish the priest's line" \
+        "the five factions come out of the owner's file and the ladders hang off it" \
+        "every rung is earned, including the first" \
+        "the mirror ledger: what the Watch gains the roofs lose" \
+        "a rung on the Row is worth real coin across a real counter" \
+        "the priest's authored voice never says there are seven" \
+        "the owner's eleven authored craftings all pass the rules this build enforces" \
+        "a quest file is read for its shape, and the owner's is left alone" \
+        "a deed carries eight tiles and no further" \
+        "a robbery on the guest floor is not witnessed by the taproom below" \
+        "nobody witnesses anything through a wall" \
+        "every topic is reachable by a number printed beside it" \
+        "the workbench draws where a conversation is allowed to be"; do \
+        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things S4 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S4's named cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \
@@ -639,6 +691,36 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # the second — proof about wine, not about Windows. The comparison is
     # completed by scripts/verify-windows.ps1 on the host, which publish.sh
     # prints as the next command. Nothing forces the owner to type it.
+    \
+    # ----------------------------------------------------------------------
+    # THE GATE STAMPS ITSELF. S4, closing the S3 review's sixth finding.
+    # ----------------------------------------------------------------------
+    # This whole layer is one cached RUN. Re-run the documented build command on
+    # an unchanged tree and docker reuses it: the command exits 0 having
+    # executed nothing, and the S3 review got exactly that green and correctly
+    # refused to trust it.
+    #
+    # The cache key IS the source tree, so a reused layer does mean these tests
+    # passed against THIS tree. What it does not mean is that anything ran just
+    # now. So the gate records what it verified and when, publish.sh prints it,
+    # and a reader can tell the two apart instead of guessing.
+    #
+    # The digest is over native/ alone, sorted with LC_ALL=C so the ordering is
+    # the bytes' and not the locale's. It is the answer to "which tree did this
+    # green come from", and it is printed rather than compared: comparing it to
+    # a host-side recomputation would need the two to agree about line endings
+    # and path separators, which is a claim this build has not proved and will
+    # not assert.
+    echo "=== the gate stamps itself ==="; \
+    tree_digest="$(cd /src/native && find . -type f -print0 \
+        | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"; \
+    { \
+      echo "gate executed:  $(date -u '+%Y-%m-%dT%H:%M:%SZ') UTC"; \
+      echo "revision:       ${GRANADAD_REVISION}"; \
+      echo "native/ digest: ${tree_digest}"; \
+      echo "ctest cases:    ${test_count} (floor ${GRANADAD_MIN_TESTS})"; \
+    } > /out/GATE-STAMP.txt; \
+    cat /out/GATE-STAMP.txt; \
     \
     echo "=== manifest ==="; \
     { \
