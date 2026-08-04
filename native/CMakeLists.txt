@@ -103,6 +103,13 @@ add_library(granadad-sim STATIC
     src/sim/brawl.cpp
     src/sim/actor.cpp
     src/sim/spellbook.cpp
+    # S3 -- the social layer. barks/notables read the owner's raws and write
+    # nothing; social/barter/dialogue are the state and the rules over them.
+    src/sim/barks.cpp
+    src/sim/notables.cpp
+    src/sim/social.cpp
+    src/sim/barter.cpp
+    src/sim/dialogue.cpp
     src/sim/tavern.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
