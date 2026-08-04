@@ -32,7 +32,9 @@
 #include "granadad/render/hud.hpp"
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/world_renderer.hpp"
+#include "granadad/sim/compound.hpp"
 #include "granadad/sim/engine.hpp"
+#include "granadad/sim/notables.hpp"
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
@@ -89,6 +91,17 @@ public:
     /// The room, and the fourteen people in it.
     [[nodiscard]] sim::Tavern& tavern() noexcept { return *tavern_; }
     [[nodiscard]] const sim::Tavern& tavern() const noexcept { return *tavern_; }
+
+    /// THE WARD'S OWN ROLL, IN THE WINDOWED GAME. S7 built the compounds and
+    /// nothing outside a batch text report ever constructed one: the S7
+    /// review's eighth finding, verbatim -- "3,303 lines of economy that the
+    /// player cannot see, touch, or be affected by". A Session builds one now
+    /// and registers it on the same engine the Gull runs on, so the roll is
+    /// ticking while the player stands in the taproom, and the first thing in
+    /// the game that reaches into it is the man who put them on the floor
+    /// taking the Gullet's vacant charge.
+    [[nodiscard]] sim::Ward& ward() noexcept { return *ward_; }
+    [[nodiscard]] const sim::Ward& ward() const noexcept { return *ward_; }
 
     /// Advances the body by one movement step, and the world with it.
     void step(const sim::MoveInput& input);
@@ -150,6 +163,17 @@ public:
     /// bale in the snug.
     void steal();
 
+    /// S8. Puts the player back on their feet after somebody has put them on
+    /// the floor: the room revives them and moves the clock on, the body goes
+    /// out onto the quay apron where an ejected man ends up, and the message
+    /// line carries whatever the winner said standing over them.
+    ///
+    /// ON Session AND NOT IN THE CLIENT for the same reason the six verbs are:
+    /// the suite drives exactly the code a real defeat drives. It is not bound
+    /// to a key -- nothing the player presses reaches it -- because losing a
+    /// fight is not a verb.
+    void settleDefeat();
+
     /// What the last roof move did, in words. Exposed so a test can assert on
     /// the REPORT and not only on where the body ended up.
     [[nodiscard]] const std::string& lastRoofMove() const noexcept { return roofMove_; }
@@ -176,6 +200,11 @@ public:
     [[nodiscard]] std::string stashLine() const;
     /// "RUN 4 FLOWER FOR SQUALL 3/4", or empty when no job is open.
     [[nodiscard]] std::string contractLine() const;
+    /// "RIVAL TARN WRENHALE - CRAFTLORD x3  HUNTING", or empty when nobody has
+    /// ever put the player down. PUBLIC for the same reason stashLine is: the
+    /// HUD rule is a testable claim and not a preference, and a case pins both
+    /// what this says and that it stays on its edge.
+    [[nodiscard]] std::string rivalLine() const;
 
     // --- the conversation ---------------------------------------------------
     //
@@ -262,6 +291,11 @@ private:
     std::unique_ptr<sim::PhasedEngine> engine_;
     /// Owned by the engine; borrowed here.
     sim::Tavern* tavern_ = nullptr;
+    /// The compound roll, also owned by the engine and borrowed here.
+    sim::Ward* ward_ = nullptr;
+    /// The notables registry the roll is refused against. Held because Ward
+    /// takes it by reference and the reference has to outlive the constructor.
+    std::unique_ptr<sim::NotableRegistry> who_;
     RenderSettings settings_;
     int timeOfDay_ = 0;
     std::int64_t elapsedSeconds_ = 0;
@@ -346,6 +380,14 @@ struct SmokeRunConfig {
     /// "away" (closed, so the HUD's own sack and job lines are visible).
     bool contract = false;
     std::string contractEnd = "talk";
+    /// S8. Play the nemesis arc: pick a fight with a named labourer, lose it,
+    /// wake on the quay, come back the next evening and lose it twice more --
+    /// by which time he has a rung, a trade house with members in it, a
+    /// permanent cut of the ward's prices and his name on the compound roll as
+    /// a Den Duke. WHERE is "talk" (standing in front of what he became) or
+    /// "away" (closed, so the HUD's own RIVAL line is visible).
+    bool nemesis = false;
+    std::string nemesisEnd = "away";
     /// Run the Priest of the Flame line end to end and capture wherever it
     /// finishes: the oath, the night pot, the captain's word, the report, the
     /// teaching, and a crafting composed at the bench. Driven through the same
@@ -379,6 +421,8 @@ struct SmokeRunResult {
     std::int32_t skyrunStages = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
+    /// How many of the seven beats of the nemesis arc landed.
+    std::int32_t nemesisBeats = 0;
     /// What a scripted line WANTED to land, and what it did.
     ///
     /// S5 ADDS THESE BECAUSE S4'S CAPTURE PATH LIED. runFlameLine returned a

@@ -71,6 +71,12 @@ struct HudState {
     /// What the current questline wants next, in the journal's own words.
     /// Bottom-left under the guild, and clipped to a single line.
     std::string_view objectiveLabel;
+    /// S8: the man who has put the player on the floor most often, what he
+    /// answers to now, and whether he is looking for them -- "RIVAL BRAM
+    /// MARROW - CRAFTLORD x2  HUNTING". Bottom-left under the objective, still
+    /// on the edge. Empty draws nothing, which is the usual case: nobody has
+    /// beaten you yet.
+    std::string_view rivalLabel;
     /// One line about the room the player is standing in. Bottom-right.
     std::string_view roomLabel;
     /// Something said to the player that they need to have heard -- a

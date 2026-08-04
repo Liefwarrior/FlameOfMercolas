@@ -300,6 +300,23 @@ void drawRoom(Framebuffer& target, const HudState& state) {
                  target.height() - margin - 7 * scale, state.roomLabel,
                  Rgb{0.72F, 0.70F, 0.62F}, 0.88F, scale);
     }
+    // S8: the man who put you here, one row above the room line and anchored to
+    // the same edge.
+    //
+    // BOTTOM-RIGHT AND NOT BOTTOM-LEFT, and that is a measurement rather than a
+    // taste. The bottom-left stack already reaches y - 32*scale for the
+    // objective, which at 320x180 is inside the exclusion rectangle's rows; one
+    // more row up would be further in. This edge has two rows of clear space
+    // under the rectangle at every resolution the game runs at. The centre stays
+    // empty, which is the rule.
+    if (!state.rivalLabel.empty()) {
+        const int width = textWidth(state.rivalLabel, scale);
+        // A hunted man should not have to read the line to notice it.
+        const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
+        drawText(target, target.width() - margin - width,
+                 target.height() - margin - 15 * scale, state.rivalLabel,
+                 hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F}, 0.90F, scale);
+    }
     if (!state.alert.empty() && state.showAlert) {
         // CLIPPED HERE, WHICH IS THE ONLY PLACE THAT CAN DO IT HONESTLY.
         //

@@ -933,3 +933,125 @@ TEST_CASE("two jobs on one board are told apart by the first word, not the last"
         CHECK(dialogueDetailLine(state) == row.label);
     }
 }
+
+// ===========================================================================
+// S8 -- the nemesis, through the client's own calls
+// ===========================================================================
+
+TEST_CASE("the scripted nemesis arc is played, not staged, and the HUD says who he is") {
+    // THE SPRINT'S ACCEPTANCE AT THE CLIENT LEVEL. runNemesisLine walks the
+    // body, presses the punch key, lets the room resolve a real brawl, and
+    // takes the respawn Session::step() finds -- Tavern::concedeTo exists and
+    // is deliberately not used anywhere in it.
+    SmokeRunConfig config;
+    config.session = insideTheGull(20, 152, 70, 180);
+    config.session.width = 320;
+    config.session.height = 180;
+    config.steps = 0;
+    config.walk = false;
+    config.nemesis = true;
+    config.nemesisEnd = "away";
+
+    const SmokeRunResult result = runSmoke(config);
+    INFO(result.summary);
+    // EVERY BEAT. A scripted run that landed some of what it asked for is a
+    // frame that is not a picture of what it claims -- S5's own review found
+    // exactly that, and runSmoke fails the process for it now.
+    CHECK(result.nemesisBeats == 7);
+    CHECK(result.scriptedLanded == result.scriptedWanted);
+    CHECK(result.ok);
+    // And the summary names him, so a build log is evidence rather than a
+    // number. The arc is worth nothing if you cannot tell who rose.
+    CHECK(result.summary.find("Tarn Wrenhale") != std::string::npos);
+    CHECK(result.summary.find("holds") != std::string::npos);
+}
+
+TEST_CASE("the man who put you down is one line on an edge, and the centre stays empty") {
+    // The HUD rule, applied to the newest row on it. COMBAT-FEEL-REFERENCE
+    // section 3: the HUD hugs all four edges and the centre stays clear. The
+    // Java build's first-person view failed exactly here.
+    Session session(insideTheGull(20, 152, 70, 180));
+    CHECK(session.rivalLine().empty());
+
+    // Lose to him three times, through the room's own beating path.
+    const sim::Actor* tarn = nullptr;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (actor.name() == "Tarn Wrenhale") {
+            tarn = &actor;
+        }
+    }
+    REQUIRE(tarn != nullptr);
+    for (int round = 0; round < 3; ++round) {
+        session.tavern().concedeTo(tarn->id());
+        session.settleDefeat();
+        session.skipToHour(20);
+    }
+    const std::string line = session.rivalLine();
+    INFO("rival line '", line, "'");
+    CHECK_FALSE(line.empty());
+    CHECK(line.find("TARN WRENHALE") != std::string::npos);
+    CHECK(line.find("HUNTING") != std::string::npos);
+
+    // On the frame: it draws, and the play space is untouched by it.
+    Framebuffer without(320, 180);
+    without.clear(Rgb{0.0F, 0.0F, 0.0F});
+    HudState bare;
+    drawHud(without, bare);
+
+    Framebuffer with(320, 180);
+    with.clear(Rgb{0.0F, 0.0F, 0.0F});
+    HudState named;
+    named.rivalLabel = std::string_view{line};
+    drawHud(with, named);
+
+    CHECK(without.pixels() != with.pixels());
+    const CentreRect centre = hudCentreRect(320, 180);
+    for (int y = centre.y0; y < centre.y1; ++y) {
+        for (int x = centre.x0; x < centre.x1; ++x) {
+            REQUIRE(without.pixels()[without.index(x, y)] == with.pixels()[with.index(x, y)]);
+        }
+    }
+    // And it is anchored to the right edge, so a long name cannot run off the
+    // frame the way S6's alert did.
+    CHECK(textWidth(line, 1) <= 320 - 12);
+}
+
+TEST_CASE("the ward's roll is in the windowed game, and a rival can take ground on it") {
+    // THE S7 REVIEW'S EIGHTH FINDING. The compounds were built and nothing with
+    // a window on it ever constructed one -- "3,303 lines of economy that the
+    // player cannot see, touch, or be affected by". A Session builds the roll
+    // now, on the same engine the Gull runs on.
+    Session session(insideTheGull(20, 152, 70, 180));
+    REQUIRE(session.ward().loaded());
+    CHECK(session.ward().plots().size() >= 5);
+    CHECK(session.ward().heads() > 0);
+
+    const std::int32_t gullet = session.ward().plotNamed("C4_GULLET");
+    REQUIRE(gullet >= 0);
+    CHECK(session.ward().plots()[static_cast<std::size_t>(gullet)].tenure == sim::Tenure::Vacant);
+
+    const sim::Actor* tarn = nullptr;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (actor.name() == "Tarn Wrenhale") {
+            tarn = &actor;
+        }
+    }
+    REQUIRE(tarn != nullptr);
+    for (int round = 0; round < 3; ++round) {
+        session.tavern().concedeTo(tarn->id());
+        session.settleDefeat();
+        session.skipToHour(20);
+    }
+    const sim::Plot& plot = session.ward().plots()[static_cast<std::size_t>(gullet)];
+    CHECK(plot.tenure == sim::Tenure::Charged);
+    CHECK(plot.heldBy == "Tarn Wrenhale");
+
+    // AND THE ROLL IS TICKING, not merely present: a day of the ward passes
+    // while the player stands in the taproom, and the land does a day's work.
+    const std::int64_t dayBefore = session.ward().day();
+    session.skipToHour(20);
+    session.stepMany(sim::MoveInput{}, 240);
+    CHECK(session.ward().day() >= dayBefore);
+    CHECK(session.ward().stats().days >= 0);
+}
+

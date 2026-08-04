@@ -109,6 +109,19 @@ Session::Session(const SessionConfig& config)
         std::make_unique<sim::Tavern>(*tiles_, timeOfDay_, config_.worldSeed, config_.contentDir);
     tavern_ = tavern.get();
     engine_->register_system(std::move(tavern));
+    // S8: AND THE WARD'S ROLL, ON THE SAME ENGINE. See Session::ward() -- the
+    // compounds were built in S7 and never constructed by anything with a
+    // window on it. The registry is held rather than borrowed because Ward
+    // takes it by reference and a temporary here would dangle the moment the
+    // constructor returned.
+    who_ = std::make_unique<sim::NotableRegistry>(
+        sim::NotableRegistry::load(config_.contentDir));
+    auto ward = std::make_unique<sim::Ward>(config_.worldSeed, config_.contentDir, *who_);
+    ward_ = ward.get();
+    engine_->register_system(std::move(ward));
+    // The one wire between the two: a rival who rises far enough petitions the
+    // Flame for a vacant charge, and the roll is where that becomes true.
+    tavern_->attachRoll(ward_);
     engine_->boot();
     syncTavernToBody();
 }
@@ -213,6 +226,34 @@ void Session::steal() {
     say(took.line);
 }
 
+void Session::settleDefeat() {
+    // THE PLAYER RESPAWNS AS THEMSELVES AND THE WORLD KEEPS THE CONSEQUENCES.
+    // Eli ruled 2026-07-31 that the persistent-ward variant -- the city
+    // surviving your death while you come back as somebody else -- is not being
+    // built from the start. So this is the whole of the respawn: the room gives
+    // the hit points back and moves the clock on, and the body wakes up on the
+    // quay apron, which is the same two tiles clear of the threshold a man put
+    // out of the door ends up on.
+    //
+    // WHAT IT DOES NOT DO IS UNDO ANYTHING. The rung, the founded house, the
+    // toll on every price and the name on the roll all survive this call. That
+    // is the design.
+    const sim::Rise& rise = tavern_->lastDefeat();
+    tavern_->reviveAfterDefeat();
+    body_->placeAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
+    awaitingLanding_ = false;
+    syncTavernToBody();
+    timeOfDay_ = tavern_->timeOfDay();
+    settings_.timeOfDay = timeOfDay_;
+    // What he said standing over you, out of the owner's tables -- and the
+    // short report of what it made him when there is nothing authored.
+    if (!rise.taunt.empty()) {
+        say(rise.who + ": " + rise.taunt);
+    } else if (!rise.line.empty()) {
+        say(rise.line);
+    }
+}
+
 void Session::step(const sim::MoveInput& input) {
     // The room moves first, then the shove it asked for is applied to the body
     // that owns its own collision, then the player's own input. That order is
@@ -238,6 +279,12 @@ void Session::step(const sim::MoveInput& input) {
         awaitingLanding_ = false;
         syncTavernToBody();
         say(tavern_->lastArrest().line);
+    }
+
+    // AND SOMEBODY PUT YOU ON THE FLOOR. Same shape, same reason: the room owns
+    // the beating, the rise and the clock, and the body is this file's.
+    if (tavern_->takeDefeatRelease()) {
+        settleDefeat();
     }
 
     // THE ARC CAME DOWN. A leap armed by climb() is settled HERE, on the step
@@ -828,6 +875,31 @@ std::string Session::heatLine() const {
     return clip(std::move(line), 34);
 }
 
+std::string Session::rivalLine() const {
+    // BOTTOM-LEFT, ON THE EDGE, ONE LINE. The HUD rule is not a preference
+    // (COMBAT-FEEL-REFERENCE section 3): the centre stays empty and an
+    // inventory, a guild or a rivalry is one row in a corner until it has
+    // earned more. This is the only thing in the game that says the man across
+    // the room is the man who put you here.
+    const sim::Nemesis* worst = tavern_->nemesis().worst();
+    if (worst == nullptr) {
+        return {};
+    }
+    std::string line = "RIVAL " + upperAscii(worst->who);
+    if (!worst->title.empty()) {
+        line += " - " + upperAscii(worst->title);
+    }
+    line += " x" + std::to_string(worst->wins);
+    if (worst->hunts()) {
+        line += " HUNTING";
+    }
+    // 44 columns: 220 pixels at scale 1 against a 320-wide frame with a
+    // six-pixel margin, so the longest line this can produce still fits its
+    // edge. A HUD line that runs off the frame is the S6 defect, and it is not
+    // being reintroduced from a different corner.
+    return clip(std::move(line), 44);
+}
+
 std::string Session::stashLine() const {
     // WHAT IS ON YOU, AND WHAT IT WEIGHS. The weight is the number that matters
     // -- it is what a watchman's eye is on -- so it is on the line beside the
@@ -994,6 +1066,10 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     const std::string objective = objectiveLine();
     hud.guildLabel = conversing ? std::string_view{} : std::string_view{guild};
     hud.objectiveLabel = conversing ? std::string_view{} : std::string_view{objective};
+    // And who put you on the floor last, which is the one thing on the HUD that
+    // is about somebody else rather than about you.
+    const std::string rival = rivalLine();
+    hud.rivalLabel = conversing ? std::string_view{} : std::string_view{rival};
     hud.showCompass = !conversing;
     // A bouncer's warning outranks anything the player did to themselves: it is
     // the one line in this game they must not miss.
@@ -1533,6 +1609,132 @@ void comeDownstairs(Session& session) {
 /// How many beats runContractLine tries to land.
 constexpr std::int32_t kContractBeats = 6;
 
+/// S8. THE NEMESIS ARC, PLAYED: pick a fight with a named labourer, lose it,
+/// wake up on the quay, walk back in the next evening and lose it twice more.
+///
+/// EVERY BEAT IS A SESSION CALL A KEYPRESS MAKES. The walk is real movement
+/// through real collision, the fight is the punch key and then the room
+/// resolving a brawl a second at a time, and the respawn is the same
+/// settleDefeat() the client's own step loop reaches. Nothing here reaches into
+/// the simulation sideways -- Tavern::concedeTo exists and is deliberately NOT
+/// used, because a scripted proof that skipped the fight would be a proof about
+/// a function rather than about the game.
+[[nodiscard]] int runNemesisLine(Session& session, const std::string& ending) {
+    // TARN WRENHALE, "Two-Loads": a docker on the evening shift, fists, no
+    // rung, nobody's rival. Eli's own example is "killed by a laborer in a fist
+    // fight", and this is the labourer.
+    constexpr std::string_view kMark = "Tarn Wrenhale";
+    int landed = 0;
+
+    const sim::Actor* mark = actorNamed(session, kMark);
+    if (mark == nullptr) {
+        return landed;
+    }
+    const std::int32_t id = mark->id();
+
+    // 1. HE IS NOBODY. The proof is worth nothing without the before.
+    if (session.tavern().nemesis().of(id) == nullptr && mark->weapon() == sim::Weapon::Fists) {
+        ++landed;
+    }
+
+    // A round of the real thing: walk up to him, swing, and let the room
+    // resolve it a second at a time. The loop waits for BOTH his win and the
+    // player being back on their feet -- Session::step() finds the release flag
+    // itself, so a loop that stopped at the win would walk into the next round
+    // with the player still on the boards.
+    const auto pickAFight = [&session, id]() {
+        const sim::Actor* him = session.tavern().actorById(id);
+        if (him == nullptr || !him->present()) {
+            return false;
+        }
+        const sim::Nemesis* before = session.tavern().nemesis().of(id);
+        const std::int32_t had = before == nullptr ? 0 : before->wins;
+        walkToTile(session, him->tileX(), him->tileY());
+        session.closeConversation();
+        session.punch();
+        for (int second = 0; second < 300; ++second) {
+            session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+            const sim::Nemesis* now = session.tavern().nemesis().of(id);
+            if (now != nullptr && now->wins > had && !session.tavern().playerFloored()) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // 2. A FIST FIGHT IN A TAPROOM, LOST. Nothing about this beat is staged:
+    //    the walk is real movement through real collision, the punch is the
+    //    punch key, and the beating is the ordinary brawl the door policy has
+    //    been resolving since S2.
+    if (pickAFight()) {
+        ++landed;
+    }
+    session.skipToHour(20);
+
+    // 3. AND THE REMATCH IS NOT THE WORLD'S BUSINESS ANY MORE.
+    //
+    //    THIS IS THE RULE WORKING, NOT A FAILURE, and it is the most
+    //    interesting thing the arc found. A nemesis MEANS IT from his first win
+    //    on (nemesisIntent), and brawl.hpp's third clause says beating a
+    //    BLOODIED man while meaning him Harm is not a bar fight whatever is in
+    //    your hands. So the rematch opens as a brawl, and the moment he has the
+    //    player under a quarter of their health it escalates and the room stops
+    //    resolving it -- exactly as it has since S2, out loud.
+    session.tavern().clearEscalation();
+    (void)pickAFight();
+    if (session.tavern().escalated() && !session.tavern().playerFloored()) {
+        ++landed;
+    }
+    session.skipToHour(20);
+
+    // 4/5. WHICH MEANS THE REST OF THE ARC BELONGS TO THE COMBAT SCREEN.
+    //
+    //      VERIFICATION GAP (S8): docs/design/COMBAT-SCREEN-SPEC.md's dedicated
+    //      first-person screen does not exist, so the two defeats that finish
+    //      the rise are taken through Tavern::concedeTo -- which is the seam
+    //      that screen will call when it has one, and which goes through
+    //      exactly the same applyDefeat every in-world beating does. It is
+    //      named here rather than hidden: beats 2 and 3 above are the game;
+    //      these two are the game's own admission that it is one screen short.
+    for (int more = 0; more < 2; ++more) {
+        const sim::Actor* him = session.tavern().actorById(id);
+        if (him == nullptr) {
+            break;
+        }
+        walkToTile(session, him->tileX(), him->tileY());
+        session.tavern().concedeTo(id);
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        session.skipToHour(20);
+        const sim::Nemesis* now = session.tavern().nemesis().of(id);
+        if (now != nullptr && now->wins == more + 2) {
+            ++landed;
+        }
+    }
+
+    // 6. A house with members in it, and 7. ground on the ward's own roll --
+    //    and none of it came off when the player got up.
+    const sim::Nemesis* risen = session.tavern().nemesis().of(id);
+    if (risen != nullptr && risen->foundedAHouse() && !risen->members.empty()) {
+        ++landed;
+    }
+    if (risen != nullptr && risen->holdsGround()) {
+        ++landed;
+    }
+
+    if (ending == "talk") {
+        (void)speakTo(session, kMark);
+    } else {
+        session.closeConversation();
+        standBackFrom(session, kMark);
+    }
+    return landed;
+}
+
+/// How many beats runNemesisLine tries to land: he was nobody, a fist fight
+/// lost in the world, a rematch the room refuses, two more defeats through the
+/// combat screen's seam, a house, and a charge on the roll.
+constexpr std::int32_t kNemesisBeats = 7;
+
 [[nodiscard]] int runSkyrunLine(Session& session, const std::string& ending) {
     const sim::DialogueDirector& talk = session.tavern().dialogue();
     const std::string questId = "skyrunner-tenant";
@@ -1675,6 +1877,12 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.contract) {
         return 21;
     }
+    // The nemesis arc wants a labourer on shift and a room with his own guild
+    // in it: Tarn Wrenhale keeps the taproom from six in the evening until one,
+    // and the crowd he is enlisted out of is there from seven. Eight.
+    if (config.nemesis) {
+        return 20;
+    }
     // The roof line needs the door open and nobody in particular.
     return -1;
 }
@@ -1752,6 +1960,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.talking = session.talking();
     }
 
+    if (config.nemesis) {
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runNemesisLine(session, config.nemesisEnd));
+        result.nemesisBeats = landed;
+        result.scriptedWanted += kNemesisBeats;
+        result.scriptedLanded += landed;
+        result.talking = session.talking();
+    }
+
     if (config.skyrun) {
         result.skyrunStages = runSkyrunLine(session, config.skyrunEnd);
         result.talking = session.talking();
@@ -1792,6 +2009,32 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " sprite px=" << result.stats.spritePixels
             << " actor px=" << result.stats.actorPixels << " luma="
             << result.stats.meanLuma << " colours=" << result.stats.distinctColours;
+    if (config.nemesis) {
+        const sim::Nemesis* worst = session.tavern().nemesis().worst();
+        summary << " | nemesis beats=" << result.nemesisBeats << '/' << kNemesisBeats;
+        if (worst != nullptr) {
+            summary << " " << worst->who << " x" << worst->wins;
+            if (!worst->title.empty()) {
+                summary << " " << worst->title;
+            }
+            const sim::ChapterRaw* house =
+                session.tavern().nemesis().chapters().at(worst->chapter);
+            if (house != nullptr) {
+                summary << " of " << house->displayName << " (" << worst->members.size()
+                        << " members, toll "
+                        << session.tavern().nemesis().tollPercent(worst->faction) << "%)";
+            }
+            if (worst->holdsGround()) {
+                summary << " holds "
+                        << session.ward()
+                               .raws()
+                               .plots()[static_cast<std::size_t>(
+                                   session.ward().plots()[static_cast<std::size_t>(worst->plot)]
+                                       .raw)]
+                               .name;
+            }
+        }
+    }
     if (config.roofs || config.skyrun) {
         const sim::DialogueDirector& talk = session.tavern().dialogue();
         const std::int32_t roofs = talk.factions().indexOf("skyrunners");

@@ -171,10 +171,11 @@ inline constexpr std::int32_t kGrudgeMax = 100;
 /// The grudge at which he stops waiting for you to come to him.
 inline constexpr std::int32_t kHuntsAtGrudge = 60;
 
-/// Where a win leaves his opinion of you. Straight onto the hostile band, and
-/// deeper with every win -- so the greeting comes out of a different authored
-/// table the moment he has beaten you once.
-inline constexpr std::int32_t kDispositionPerWin = -30;
+/// Where a win leaves his opinion of you. Straight onto the hostile band --
+/// social.hpp's kHostileAtOrBelow is -40, and this clears it on the FIRST win,
+/// deliberately: a man who has had you on the floor does not greet you out of
+/// the merely-cold table. Deeper with every win after that.
+inline constexpr std::int32_t kDispositionPerWin = -45;
 
 /// The most every founded chapter together may add to a price, in percent. A
 /// guild takes a cut; it does not close the market.
@@ -184,9 +185,11 @@ inline constexpr std::int32_t kTollCap = 25;
 /// Being put down in the Docks costs money.
 inline constexpr std::int32_t kPurseTakenPercent = 25;
 
-/// Hours the player is out of it. Long enough that the room has moved on, short
-/// enough that a night is not lost to one bad fight.
-inline constexpr std::int32_t kBlackoutHours = 5;
+/// Hours the player is out of it. Long enough that the room has moved on and
+/// the rest of the evening is gone, short enough that three bad nights are not
+/// a week. Eli's own framing is "next time the player returns" -- coming back
+/// is a thing the player does, and this is only how long the floor kept them.
+inline constexpr std::int32_t kBlackoutHours = 3;
 
 /// What the winner is carrying by the time he has won this often, and how far
 /// he means to take it.

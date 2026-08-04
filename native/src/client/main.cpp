@@ -161,6 +161,11 @@ void print_usage() {
         "  --skyrun[=WHERE]     play the Skyrunner line -- sign on, two purses, a\n"
         "                       box, the roof, the alley, the fence, a lean and a\n"
         "                       bale past the Watch. WHERE is talk or away\n"
+        "  --nemesis[=WHERE]    lose a fist fight to a named labourer three\n"
+        "                       times and watch him rise: a rung, a guild\n"
+        "                       with members in it, a permanent cut of the\n"
+        "                       ward's prices and his name on the compound\n"
+        "                       roll as a Den Duke. WHERE is talk or away\n"
         "  --contract[=WHERE]   play the ward's own bounty -- take it off the\n"
         "                       Watch, get the Flame's mark, hunt the taproom\n"
         "                       and get paid. WHERE is talk or away\n"
@@ -262,6 +267,13 @@ void print_usage() {
         } else if (starts_with(arg, "--roofs=", &value)) {
             options.smoke.roofs = true;
             options.smoke.roofsEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--nemesis") == 0) {
+            options.smoke.nemesis = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--nemesis=", &value)) {
+            options.smoke.nemesis = true;
+            options.smoke.nemesisEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--skyrun") == 0) {
             options.smoke.skyrun = true;

@@ -906,7 +906,7 @@ void Tavern::reportOffence(Offence offence) {
 
 void Tavern::tickBouncers() {
     if (standing_ == Standing::Barred) {
-        if (barredUntilTick_ >= 0 && tick_ >= barredUntilTick_) {
+        if (barredUntilTick_ >= 0 && elapsed_ >= barredUntilTick_) {
             standing_ = Standing::Welcome;
             offences_ = 0;
             barredUntilTick_ = -1;
@@ -990,7 +990,15 @@ void Tavern::tickBouncers() {
             if (!playerInside()) {
                 standing_ = Standing::Barred;
                 ++timesEjected_;
-                barredUntilTick_ = tick_ + kBarredSeconds;
+                // CHARGED AGAINST elapsed_ AND NOT tick_, since S8, and it
+                // is the same correction S6 made to the Watch's heat for the
+                // same reason: tick_ counts ticks that were RUN and elapsed_
+                // counts simulated seconds INCLUDING the ones a skipTo jumped.
+                // A player who was put out of the door and then slept a night
+                // in a rented bed came back to a house that still had not
+                // forgotten, because the clock the door policy read had not
+                // moved. A night is a night.
+                barredUntilTick_ = elapsed_ + kBarredSeconds;
                 responder->setActivity(Activity::Watching);
                 respondingBouncerId_ = -1;
                 brawlers_.clear();
