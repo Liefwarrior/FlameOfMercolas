@@ -85,6 +85,24 @@ granadad --smoke=0 --hold --time=21 --spawn=155,69,19 --yaw=225 \
 caught, and say hello again. She is (HOSTILE) in red and greeting you out of a
 different authored table.
 
+`--trail` **walks the bloodletter trail** — the investigation the district is
+about. Every beat is the same two calls a keyboard makes: the district's own
+breadth-first router to a lead's site, then `Q`. It reports how many leads it
+READ against how many it WALKED TO, and those differing is a hard failure,
+because it means a site in `content/raws/quests/casebook.json` cannot be reached
+on foot:
+
+```
+trail read=10/10 leads=12 cold=3 unreached=0 dread=100 closed=yes
+flame=3 called=WIELDER OF THE FLAME notes=shut
+```
+
+Ten leads close the case without leaving the quayside plane; the remaining two
+sit one band down on the strand and this line does not climb, so it says so.
+`--trail=start` captures the opening page of a new game, `--trail=keys` the
+in-game controls, `--trail=notes` the casebook, and `mission`/`weighhouse`/`hold`
+stop after that lead.
+
 `--burgle` robs the Gull, and it sets its own clock to **two in the morning**
 because that is the only state of this building a burglary is possible in: the
 doors have just been barred, the lanterns and the table candles are out, and the
@@ -121,6 +139,9 @@ back down among the people who did hear him.
 | `G` | put hands on what is here: a guest's strongbox at a bed-foot (**locked since S9** — this puts the wire in), the bale in the snug, a downed rat, or a set of picks off Finch |
 | `C` | **crouch.** Half speed, and worth more than twenty levels of skill |
 | `T` | **lift.** A hand in the coat of whoever is at your elbow, with no conversation open |
+| `Q` | **look at what is here.** The investigation verb — see `--trail` |
+| `J` | **your casebook.** Every lead you have been told about, and where to go |
+| `F1` | **the keys**, in the game, paged nine at a time. You should not need this table |
 | `Tab` | release the mouse |
 | `F12` | screenshot to `granadad-screenshot.png` |
 | `Esc` | quit |

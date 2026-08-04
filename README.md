@@ -26,12 +26,20 @@ docker compose run --rm --build build      # reproducible build -> dist/
 ```
 
 `granadad.exe --help` lists every scripted line the build plays back with no window:
-`--flame`, `--skyrun`, `--contract`, `--roofs`, `--nemesis`.
+`--trail`, `--flame`, `--skyrun`, `--contract`, `--roofs`, `--nemesis`, `--burgle`.
 
-You spawn on the Tarwalk six tiles off the door of the Gilded Gull, the captains' tavern.
-Walk in: `E` talks and does business, `F` throws a punch, `R` sleeps in a room you have
-rented. There are fourteen people in there who keep hours, and two of them will put you out
-of the door if you make them.
+**Start here: [`PLAY.md`](PLAY.md)** -- how to launch it, what to try in the first ten
+minutes, and an honest account of what is and is not fun yet.
+
+You spawn on the Tarwalk six tiles off the door of the Gilded Gull, the captains' tavern, at
+dawn, with a case open and one lead in it: a body came up against the outfall grate at low
+tide. `Q` looks at what is in front of you, `J` opens your casebook, `F1` lists every key.
+The trail is twelve leads long, two of them dead ends that are the point, and it runs from
+the Mission's back room to the doors of a warehouse that has been condemned for nine years.
+
+Walk into the Gull: `E` talks and does business, `F` throws a punch, `R` sleeps in a room you
+have rented. There are sixteen people in there who keep hours, and two of them will put you
+out of the door if you make them.
 
 Lose a fist fight in there and the man who put you on the floor gets something for it: a rung
 on his own guild's ladder, weight in the ward that its rival loses, and -- if you keep going
