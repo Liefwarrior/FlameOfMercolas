@@ -299,7 +299,11 @@ std::string Session::lockLine() const {
     }
     line += "  DEPTH ";
     for (std::int32_t d = 0; d < sim::kPinDepths; ++d) {
-        line += d == wire.depth() ? '#' : '.';
+        // '+' and not '#': the 4x6 font in hud.cpp has fifty-two glyphs and a
+        // hash is not one of them, so the pick's own position drew as a hole in
+        // the track. Caught by looking at the frame, which is the point of
+        // looking at the frame.
+        line += d == wire.depth() ? '+' : '.';
     }
     line += "  STRAIN " + std::to_string(wire.strain()) + "/" +
             std::to_string(wire.strainLimit());
@@ -2027,7 +2031,26 @@ std::int32_t gBurgleBeatMask = 0;
     session.steal();
     mark(session.tavern().crackedBoxes() != before);
 
-    if (ending == "street") {
+    if (ending == "lock") {
+        // AND HE STARTS ON THE NEXT ONE. The wire goes into the box across the
+        // landing and two pins are set, so the shutter catches the lockpicking
+        // surface itself rather than the room it happens in. Nothing is faked:
+        // this is the same beginPick/movePick/probeLock a keyboard reaches.
+        const sim::gull::GuestRoom& next = sim::gull::kRooms[3];
+        walkToTile(session, next.standX, next.standY);
+        session.tavern().setPicks(sim::kStartingPicks);
+        session.steal();
+        const sim::Lock lock = sim::Tavern::strongboxLock(3);
+        for (std::int32_t pin = 0; pin < lock.pins - 1 && session.picking(); ++pin) {
+            const std::int32_t want =
+                sim::pinDepth(session.config().worldSeed, lock, pin);
+            session.movePick(want - session.lockpicking().depth());
+            session.probeLock();
+        }
+        session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
+                                             next.bedX, next.bedY));
+        session.body().setPitch(sim::angle_from_degrees(-14));
+    } else if (ending == "street") {
         session.dropDown();
         walkToTile(session, sim::gull::kStreetX, sim::gull::kStreetY);
     } else if (ending == "taproom") {
@@ -2036,10 +2059,14 @@ std::int32_t gBurgleBeatMask = 0;
         walkToTile(session, sim::gull::kBartenderX, sim::gull::kBarY + 2);
         session.body().setYaw(sim::kFacingNorth);
     } else {
-        // Standing over the box that has just been emptied, looking at it.
+        // Back down the landing, looking at the room that has just been done.
+        // NOT nose-first against the bed block: standing on the tile you
+        // cracked the box from fills the frame with one CLOTH face and shows
+        // nothing, which is what the first shipped attempt at this frame did.
+        walkToTile(session, 152, 72);
         session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
                                              box.bedX, box.bedY));
-        session.body().setPitch(sim::angle_from_degrees(-14));
+        session.body().setPitch(sim::angle_from_degrees(-8));
     }
     return landed;
 }

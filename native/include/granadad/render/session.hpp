@@ -440,8 +440,9 @@ struct SmokeRunConfig {
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
-    /// the box you have just opened), "taproom" (back down among the people who
-    /// did not hear you) or "street" (out of the door with it).
+    /// the box you have just opened), "lock" (the wire in the NEXT box, so the
+    /// lockpicking surface itself is on screen), "taproom" (back down among the
+    /// people who did not hear you) or "street" (out of the door with it).
     bool burgle = false;
     std::string burgleEnd = "box";
     /// Run the Priest of the Flame line end to end and capture wherever it

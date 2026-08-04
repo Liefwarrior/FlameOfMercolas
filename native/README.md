@@ -53,6 +53,7 @@ the shortfall.
 granadad --smoke=0 --hold --time=20 --flame --screenshot=flame.png
 granadad --smoke=0 --hold --time=20 --roofs --screenshot=roof.png
 granadad --smoke=0 --hold --time=23 --skyrun --screenshot=skyrun.png
+granadad --burgle=lock --screenshot=burgle.png
 ```
 
 `--flame` needs no `--spawn`: it walks in from the authored spawn on the Tarwalk
@@ -84,6 +85,26 @@ granadad --smoke=0 --hold --time=21 --spawn=155,69,19 --yaw=225 \
 caught, and say hello again. She is (HOSTILE) in red and greeting you out of a
 different authored table.
 
+`--burgle` robs the Gull, and it sets its own clock to **two in the morning**
+because that is the only state of this building a burglary is possible in: the
+doors have just been barred, the lanterns and the table candles are out, and the
+night staff are still inside to be crept past. Seven beats — crouch, a dark
+doorway nobody can make you out in, a hand in a coat, up the stair, the wire into
+a guest's box, the lock open, the box emptied — and it prints which ones landed
+as a bitmask plus which way the lift went:
+
+```
+burgle beats=7/7 mask=127 lift=tried light=2 noise=88 hidden picks=0
+locks open=4 jammed=4 forced=4 cracked=4 cracksmanship=3 skyrunning=1
+```
+
+`jammed=4 forced=4` is the game working, not the demo failing: a scripted
+burglar starts with CRACKSMANSHIP at zero, so he searches the pins blind, breaks
+all five picks, jams the lock and has to put a shoulder to it — loudly, and for
+half the coin a clean pick would have paid. `--burgle=lock` leaves the wire in
+the next box so the lockpicking row itself is on screen; `--burgle=taproom` walks
+back down among the people who did hear him.
+
 ### Controls
 
 | | |
@@ -97,10 +118,23 @@ different authored table.
 | `R` | sleep, if you have rented a room and are standing in it |
 | `Space` | **up.** Mantle onto the ledge you are facing, or leap the gap in front of you — the geometry decides which. It also takes a stair |
 | `X` | **down.** Step off the ledge in front and take the fall |
-| `G` | put hands on what is here: a guest's strongbox at a bed-foot, or the bale in the snug |
+| `G` | put hands on what is here: a guest's strongbox at a bed-foot (**locked since S9** — this puts the wire in), the bale in the snug, a downed rat, or a set of picks off Finch |
+| `C` | **crouch.** Half speed, and worth more than twenty levels of skill |
+| `T` | **lift.** A hand in the coat of whoever is at your elbow, with no conversation open |
 | `Tab` | release the mouse |
 | `F12` | screenshot to `granadad-screenshot.png` |
 | `Esc` | quit |
+
+**While the wire is in a lock the keyboard belongs to the lock.** Same shape
+the conversation and the workbench already use: a mode the *simulation* is in,
+which the client reads.
+
+| | |
+|---|---|
+| `W` / `S` (or `Up` / `Down`) | raise and lower the pick along the nine-depth track |
+| `Space` | probe at that depth. A pin drops, or the wire strains |
+| `F` | put a shoulder to the lid. Always works, loudest thing in the building, costs half the coin |
+| `Esc` | take the wire out. The lock relocks |
 
 **While somebody is talking to you the keyboard belongs to the conversation.**
 
@@ -560,10 +594,48 @@ you and the HUD says so in red. Four dead unlock tokens got readers, the Watch
 got a recruiter a player can stand in front of, and **the Skyrunners got a
 nine-stage line** that walks you through every one of the six acts once.
 
+And, as of **S9, being unseen and getting in.** Light crossed the line: the
+simulation now keeps its own *integer* field over the same authored lamps, on
+the same radius, peak and falloff curve the renderer draws with, and every
+question about who saw you goes through one rule that weighs six things against
+each other —
+
+| moves the read | moves the cover |
+|---|---|
+| how close they are | crouching (`C`), which halves your speed |
+| how much light is falling on you | your SKYRUNNING, capped |
+| whether you are inside their forward arc | how loud the *room* is |
+| whether they are on duty | |
+| the noise you are making | |
+
+— with masonry taking a great deal off the read and not all of it, because
+blind is not deaf. `witnessCount`, `spreadWitness` and the Watch's own
+`canSeePlayer` are all the same rule now, so a crime cannot be witnessed by
+somebody the heat never counted.
+
+**The four strongboxes above the stair are locked.** CRACKSMANSHIP used to be
+read once, after a box had opened itself, to scale what fell out; it is now what
+opens it. A lock's pins are a pure function of the world seed and the lock's own
+id — no draw consumed, never re-rolled — so walking away from a half-picked box
+and coming back is the same box. Skill buys the *feel* (whether the wire tells
+you which way you were wrong) and the *tolerance* (how far off a probe may be),
+and never buys success. The wire snaps under strain, picks are finite and bought
+off Finch, a lock with no wire left is **jammed for good**, and force is always
+there, always works, is the loudest thing in the building and costs half the
+coin.
+
+**And a hand goes in from behind.** `T` lifts from whoever is at your elbow with
+no conversation open: CRACKSMANSHIP against their STREETWISE, exactly as the
+dialogue topic has resolved it since S3, moved by a bounded amount in whichever
+direction the light, the crowd and your own posture point. Both skills are
+charged whether the hand came out full or not — Morrowind's rule, and this
+project's standing steer.
+
 What is NOT here yet: **casting** what you learned or composed (the grimoire
-records craftings and nothing resolves one), items, the dedicated combat screen,
-save/load to disk, **arrest** — a warrant is issued and nothing acts on it — and
-any of the ward outside the Gull's walls. Those are the sprints after this one.
+records craftings and nothing resolves one), items, **the dedicated combat
+screen** — still the largest hole, and it is what blocks the second and third
+wins of S8's own nemesis arc — save/load to disk, and any of the ward outside
+the Gull's walls. Those are the sprints after this one.
 
 `content/` is read-only canon and is reused verbatim — never retype, regenerate
 or "improve" anything under it. New files may be added; the baked lamp sidecars
