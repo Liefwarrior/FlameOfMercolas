@@ -133,10 +133,26 @@ if(NOT TARGET miniz::miniz)
         "granadad-content needs target miniz::miniz (the spine's Dependencies.cmake provides it)")
 endif()
 
+# The content directory the binaries fall back on when nothing else answers.
+#
+# Hoisted out of the tests block in S2: granadad-content now OWNS the resolver
+# (src/content_dir.cpp), so the define belongs on the library and reaches every
+# target that links it. It used to be repeated on four targets, which meant the
+# docker build's proof that $GRANADAD_CONTENT_DIR is honoured was a proof about
+# whichever copy it happened to run.
+#
+# Overridable so the module can be configured from a copied or relocated source
+# tree (mutation testing, vendoring) rather than only from its home in the repo.
+get_filename_component(GRANADAD_DEFAULT_CONTENT_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../content" ABSOLUTE)
+set(GRANADAD_CONTENT_DIR "${GRANADAD_DEFAULT_CONTENT_DIR}" CACHE PATH
+    "Repo content/ directory holding the baked .trojsav worlds the tests read")
+
 add_library(granadad-content STATIC
     src/ascii.cpp
     src/byte_reader.cpp
     src/chunk_codec.cpp
+    src/content_dir.cpp
     src/coords.cpp
     src/crc32c.cpp
     src/lanes.cpp
@@ -148,6 +164,17 @@ add_library(granadad::content ALIAS granadad-content)
 
 target_include_directories(granadad-content PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(granadad-content PRIVATE miniz::miniz)
+# PUBLIC: content_dir.hpp #errors without it, and everything downstream includes
+# it. The DEFAULT, not the answer -- see the header for the resolution order.
+target_compile_definitions(granadad-content PUBLIC
+    "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
+if(MSVC)
+    # std::getenv is what content_dir.cpp uses to read the content directory.
+    # MSVC deprecates it (C4996) in favour of _dupenv_s, and with /WX that is a
+    # build break. Silenced here rather than by growing a second code path.
+    # VERIFICATION GAP (#75): never compiled -- no MSVC on this machine.
+    target_compile_definitions(granadad-content PUBLIC _CRT_SECURE_NO_WARNINGS)
+endif()
 granadad_apply_determinism(granadad-content)
 
 # ---------------------------------------------------------------------------
@@ -161,13 +188,9 @@ if(GRANADAD_BUILD_TESTS)
     # The tests read the real baked worlds. content/ is the owner's canon and is
     # READ-ONLY: nothing in this build ever writes into it.
     #
-    # Overridable so the module can be configured from a copied or relocated
-    # source tree (mutation testing, vendoring) rather than only from its home
-    # in the repo.
-    get_filename_component(GRANADAD_DEFAULT_CONTENT_DIR
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../content" ABSOLUTE)
-    set(GRANADAD_CONTENT_DIR "${GRANADAD_DEFAULT_CONTENT_DIR}" CACHE PATH
-        "Repo content/ directory holding the baked .trojsav worlds the tests read")
+    # GRANADAD_CONTENT_DIR is set above, beside the library that now carries the
+    # define.
+    #
     # Hard failure, on purpose. The tempting alternative — skip the tests when
     # the data is absent — is how a build gate quietly shrinks to nothing: drop
     # content/maps/baked out of .dockerignore and every one of these cases
@@ -187,25 +210,13 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_crc32c.cpp
         tests/test_coords.cpp
         tests/test_chunk_codec.cpp
+        tests/test_content_dir.cpp
         tests/test_trojsav.cpp
         tests/test_world_reader.cpp
     )
+    # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
+    # granadad-content's PUBLIC compile definitions.
     target_link_libraries(granadad-content-tests PRIVATE granadad-content doctest::doctest)
-    # The DEFAULT, not the answer. fixtures.hpp reads $GRANADAD_CONTENT_DIR at
-    # run time and only falls back to this. That is what lets the same source
-    # produce a mingw .exe that is actually runnable: the path baked in during
-    # the cross build is the build container's /src/content, which does not
-    # exist on the machine the .exe ships to. See tests/fixtures.hpp.
-    target_compile_definitions(granadad-content-tests PRIVATE
-        "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
-    if(MSVC)
-        # std::getenv is what fixtures.hpp uses to read the content directory.
-        # MSVC deprecates it (C4996) in favour of _dupenv_s, and with /WX that
-        # is a build break. Silenced here rather than by growing a second code
-        # path in a test fixture.
-        # VERIFICATION GAP (#75): never compiled — no MSVC on this machine.
-        target_compile_definitions(granadad-content-tests PRIVATE _CRT_SECURE_NO_WARNINGS)
-    endif()
     granadad_apply_determinism(granadad-content-tests)
     # Only defined when embedded in the native/ spine. Without it a mingw build
     # of this binary imports libstdc++-6.dll and dies before main().

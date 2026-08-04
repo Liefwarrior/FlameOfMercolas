@@ -64,6 +64,12 @@ ENV SOURCE_DATE_EPOCH=1700000000
 # ---------------------------------------------------------------------------
 FROM toolchain AS build
 
+# bash, not the default /bin/sh. Debian's sh is dash, and dash has no
+# `set -o pipefail` — it exits 2 on the attempt. The build's one un-duplicated
+# piped run (the relocated-content-dir content suite) needs pipefail to be able
+# to go red at all, so the shell that gets it is the shell that has it.
+SHELL ["/bin/bash", "-c"]
+
 ARG GRANADAD_REVISION=docker
 ARG BUILD_TYPE=RelWithDebInfo
 
@@ -99,6 +105,11 @@ ENV FETCHCONTENT_BASE_DIR=/deps
 RUN --mount=type=cache,target=/deps,sharing=locked \
     --mount=type=cache,target=/build-cache,sharing=locked \
     set -eux; \
+    # pipefail, added in S2. Without it a pipeline's status is the LAST
+    # command's, so `granadad-content-tests | tail -3` reports success no matter
+    # what the suite did. One run in here is not duplicated by ctest -- the
+    # relocated-content-dir run below -- and it was the one being swallowed.
+    set -o pipefail; \
     echo "=== toolchain ==="; \
     cmake --version | head -1; \
     ninja --version; \
@@ -373,6 +384,55 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     fi; \
     GRANADAD_CONTENT_DIR=/relocated /build-cache/hostcheck/bin/granadad-content-tests | tail -3; \
     echo "ok: the env var selects the worlds, and the report ignores the path"; \
+    \
+    # ----------------------------------------------------------------------
+    # The SHIPPED binary must find its own worlds with NOTHING set. (S2)
+    # ----------------------------------------------------------------------
+    # S1 published a dist\granadad.exe that died on the owner's machine with
+    #   granadad: cannot open TROJSAV: /src/content\maps\baked\docks_surface.trojsav
+    # — the build container's own path, baked in at configure time. Nothing sets
+    # GRANADAD_CONTENT_DIR for the GAME; scripts/verify-windows.ps1 sets it for
+    # the test binaries only, so this gate could not see it. README.md documents
+    # that exact command as the way to play.
+    #
+    # The check has to be non-vacuous, which takes three things at once:
+    #   * the environment variable UNSET,
+    #   * the configure-time default MOVED OUT OF THE WAY, and
+    #   * a content tree one level above the executable, which is dist/ exactly.
+    # With any of those missing the run would pass on the old behaviour.
+    echo "=== the shipped binary finds its own worlds with nothing set (S2) ==="; \
+    mkdir -p /fakeinstall/dist; \
+    cp -a /src/content /fakeinstall/content; \
+    cp /build-cache/hostcheck/bin/granadad-twin-gate /fakeinstall/dist/; \
+    mv /src/content /src/content.hidden; \
+    if env -u GRANADAD_CONTENT_DIR /fakeinstall/dist/granadad-twin-gate \
+         --fingerprint /tmp/self-found.txt; then \
+        echo "ok: it walked up from dist/ and found content/maps/baked"; \
+    else \
+        mv /src/content.hidden /src/content; \
+        echo "FATAL: with GRANADAD_CONTENT_DIR unset and the configure-time"; \
+        echo "       default gone, the binary could not find the content tree"; \
+        echo "       one directory above itself. That is the state dist/ ships"; \
+        echo "       in, so the game does not start on the owner's machine."; \
+        echo "       See granadad::content::searchForContentDir."; \
+        exit 1; \
+    fi; \
+    # ...and the negative, or the run above proves only that /src/content was
+    # still readable somehow. Nowhere above /tmp/orphan holds a content tree, so
+    # this MUST fail.
+    mkdir -p /tmp/orphan; \
+    cp /build-cache/hostcheck/bin/granadad-twin-gate /tmp/orphan/; \
+    if env -u GRANADAD_CONTENT_DIR /tmp/orphan/granadad-twin-gate \
+         --fingerprint /tmp/should-not-exist.txt >/dev/null 2>&1; then \
+        mv /src/content.hidden /src/content; \
+        echo "FATAL: a binary with no content tree anywhere near it still"; \
+        echo "       produced a report, so the search is not what found the"; \
+        echo "       worlds a moment ago and the check above proved nothing."; \
+        exit 1; \
+    fi; \
+    mv /src/content.hidden /src/content; \
+    rm -rf /fakeinstall /tmp/orphan; \
+    echo "ok: found beside the exe, and NOT found when there is nothing to find"; \
     \
     # ----------------------------------------------------------------------
     # The same treatment for the SIMULATION half, added in M1.

@@ -75,11 +75,11 @@ endif()
 # scripts/verify-windows.ps1.
 # ---------------------------------------------------------------------------
 
-# Hoisted out of content/CMakeLists.txt so it exists whether or not tests are
-# built: granadad-twin-gate needs it too, and it is not a test target. Set with
-# the same name and the same default, so whichever directory reaches the cache
-# first wins and the other is a no-op — and content/ standalone still computes
-# its own with no reference upward.
+# Set here as well as in content/CMakeLists.txt, with the same name and the same
+# default, so whichever directory reaches the cache first wins and the other is
+# a no-op — and content/ standalone still computes its own with no reference
+# upward. The DEFINE that carries it to the compiler is granadad-content's, and
+# only granadad-content's.
 get_filename_component(GRANADAD_DEFAULT_CONTENT_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/../content" ABSOLUTE)
 set(GRANADAD_CONTENT_DIR "${GRANADAD_DEFAULT_CONTENT_DIR}" CACHE PATH
@@ -145,21 +145,13 @@ add_library(granadad-gate STATIC
     src/gate/world_hash_report.cpp
 )
 target_include_directories(granadad-gate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+# GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content, which owns the
+# resolver as of S2. Same runtime-first / compile-time-default contract: the
+# path baked in is the build container's and does not exist on the machine the
+# .exe ships to, so $GRANADAD_CONTENT_DIR and then the executable's own tree
+# outrank it. See granadad/content/content_dir.hpp for both incidents that made
+# that necessary.
 target_link_libraries(granadad-gate PUBLIC granadad-sim)
-# Same runtime-first / compile-time-default contract the content suite uses: the
-# path baked in here is the build container's and does not exist on the machine
-# the .exe ships to, so $GRANADAD_CONTENT_DIR overrides it. See
-# granadad/content/content_dir.hpp for the incident that made that necessary.
-#
-# PUBLIC: content_dir.hpp is header-only and #errors without this define, so
-# every target that includes it needs it — including granadad-twin-gate, which
-# is a separate target from the library that holds the report.
-target_compile_definitions(granadad-gate PUBLIC
-    "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
-if(MSVC)
-    # VERIFICATION GAP (M1): std::getenv under /WX, never compiled — no MSVC here.
-    target_compile_definitions(granadad-gate PUBLIC _CRT_SECURE_NO_WARNINGS)
-endif()
 granadad_apply_determinism(granadad-gate)
 
 add_executable(granadad-twin-gate src/gate/main.cpp)
@@ -190,12 +182,8 @@ add_library(granadad-render STATIC
     src/render/stb_impl.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+# GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
 target_link_libraries(granadad-render PUBLIC granadad-sim stb::stb)
-target_compile_definitions(granadad-render PUBLIC
-    "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
-if(MSVC)
-    target_compile_definitions(granadad-render PUBLIC _CRT_SECURE_NO_WARNINGS)
-endif()
 granadad_apply_determinism(granadad-render)
 
 # The lamp baker. Turns a fixture's authored light_source markers into the

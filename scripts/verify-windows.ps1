@@ -198,6 +198,50 @@ Write-Host '--- 1c. the twin-run determinism gate, under mingw/Windows'
 & $gateExe --ticks 2000 --walkers 128
 if ($LASTEXITCODE -ne 0) { Fail "the twin-run gate failed on Windows (exit $LASTEXITCODE) -- it passes on Linux/GCC, so the same seed produced two different runs in a Windows process." }
 
+# --- 1d. the SHIPPED game, with nothing set --------------------------------
+#
+# S1 published a dist\granadad.exe that could not start here. It resolved its
+# content directory to the build container's /src/content, and nothing in this
+# script or in the docker build ever ran it -- both set GRANADAD_CONTENT_DIR
+# first, for the TEST binaries, so the gate was structurally blind to the one
+# path a player takes. README.md documents this exact command as "the game".
+#
+# So: environment cleared, real .exe, real frame written to disk.
+
+$gameExe = Join-Path $DistDir 'granadad.exe'
+if (Test-Path -LiteralPath $gameExe) {
+    Write-Host ''
+    Write-Host '--- 1d. the shipped game boots with GRANADAD_CONTENT_DIR cleared'
+    $shot = Join-Path $DistDir 'verify-smoke.png'
+    if (Test-Path -LiteralPath $shot) { Remove-Item -LiteralPath $shot -Force }
+
+    $saved = $env:GRANADAD_CONTENT_DIR
+    Remove-Item Env:\GRANADAD_CONTENT_DIR -ErrorAction SilentlyContinue
+    try {
+        & $gameExe "--smoke=40" "--screenshot=$shot"
+        $gameExit = $LASTEXITCODE
+    } finally {
+        $env:GRANADAD_CONTENT_DIR = $saved
+    }
+    Write-Host "    exit code: $gameExit"
+    if ($gameExit -ne 0) {
+        Fail @"
+the shipped game could not start with no environment set (exit $gameExit).
+
+        This is what a player gets. granadad.exe has to find content\maps\baked
+        by walking up from its own directory -- dist\granadad.exe is one level
+        below <repo>\content. See granadad::content::searchForContentDir.
+"@
+    }
+    Require $shot 'granadad.exe reported success but wrote no frame.'
+    $shotBytes = (Get-Item -LiteralPath $shot).Length
+    Write-Host "    wrote $shot ($shotBytes bytes)"
+    if ($shotBytes -lt 1000) { Fail 'the captured frame is too small to be a real PNG.' }
+} else {
+    Write-Host ''
+    Write-Host '--- 1d. SKIPPED: dist\granadad.exe is not present (client build off?)'
+}
+
 # --- 2. the comparators -----------------------------------------------------
 
 Write-Host ''
