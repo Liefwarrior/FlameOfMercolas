@@ -129,6 +129,12 @@ add_library(granadad-sim STATIC
     # the leasehold that moves labour between them. The first system in this
     # build whose unit of time is a DAY rather than a second.
     src/sim/compound.cpp
+    # S8 -- the nemesis. Putting the player on the floor is a promotion event:
+    # a rung off the owner's own ladders, a trade house founded out of
+    # content/raws/factions/chapters.json with real members and a permanent
+    # toll on the ward's prices, and a vacant charge taken on the compound
+    # roll. Listed AFTER compound.cpp because it reaches into the roll.
+    src/sim/nemesis.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -273,6 +279,10 @@ if(GRANADAD_BUILD_TESTS)
         # S7 -- the compounds: the roll, the courtyard farms, the leasehold,
         # and the soak that proves the ward feeds itself.
         tests/test_compound.cpp
+        # S8 -- the nemesis: the man who put the player down, the rung he
+        # climbed for it, the house he founded, the charge he took on the roll,
+        # and the rematch that takes none of it back.
+        tests/test_nemesis.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 

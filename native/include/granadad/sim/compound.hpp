@@ -434,6 +434,15 @@ struct Plot {
     std::int32_t flameStanding = kFlameStandingStart;
     /// True when the PLAYER holds this plot's charge.
     bool playerIsDuke = false;
+    /// Who holds the charge when it is NOT the Duke the raws named -- the name
+    /// of an actor the Flame re-let it to. Empty means the roll still reads the
+    /// way content/raws/compounds/compounds.json wrote it.
+    ///
+    /// S8 ADDS THIS FOR THE NEMESIS AND IT IS NOT A NEMESIS FIELD. Section 2.8
+    /// says a vacant charge is a prize "any actor -- including the player --
+    /// may petition for", and until now only the player could. This is the
+    /// name the roll carries for anybody else who does.
+    std::string heldBy;
     /// Beds, in the roll's own order.
     std::vector<CropBed> beds;
     /// Ascending household ids resident on this plot.
@@ -579,6 +588,24 @@ public:
     [[nodiscard]] std::int64_t day() const noexcept { return day_; }
     [[nodiscard]] const WardStats& stats() const noexcept { return stats_; }
     [[nodiscard]] const Hearing& lastHearing() const noexcept { return lastHearing_; }
+
+    /// The index of the plot with this compounds.json id, or -1.
+    [[nodiscard]] std::int32_t plotNamed(std::string_view plotId) const noexcept;
+
+    /// The Flame re-lets a VACANT charge to somebody who is not the player.
+    ///
+    /// S8. Section 2.8 rules that a vacant charge is a prize and "any actor --
+    /// including the player -- may petition for it", and until now only the
+    /// player could: petitionForCharge is a player verb with a player purse
+    /// behind it. This is the same re-letting for anybody else, and it does the
+    /// same three things to the roll -- the tenure changes, the plot gets a
+    /// holder, and the ground under every house-owner on it is suddenly let
+    /// from somebody who is standing there.
+    ///
+    /// Refused for the glebe (Church ground never let to anyone), for a charge
+    /// somebody already holds, and for a nameless holder: the roll does not
+    /// carry anonymous Dukes.
+    TenureResult grantCharge(std::int32_t plotIndex, std::string_view holder);
 
     /// Hands free for this plot's courtyard TODAY, counting bondsworn labour
     /// that has been leased in and not counting labour leased away. This one

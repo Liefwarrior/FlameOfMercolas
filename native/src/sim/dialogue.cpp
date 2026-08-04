@@ -73,6 +73,8 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "turn in";
         case TopicKind::Sanction:
             return "sanction";
+        case TopicKind::Rival:
+            return "rival";
     }
     return "?";
 }
@@ -515,6 +517,18 @@ void DialogueDirector::buildTopics() {
         }
     }
 
+    // 9a2. S8 -- the man who put you on the floor. He is not a quest-giver and
+    //      he has nothing to sell; the topic exists because he has BEATEN you,
+    //      which is a fact about the world and not about a roll. It is the one
+    //      row on this list that the player did not earn.
+    if (speaker_.rivalWins > 0) {
+        Topic topic;
+        topic.kind = TopicKind::Rival;
+        topic.label = "WHAT HE WANTS NOW";
+        topic.payload = speaker_.rivalWins;
+        topics_.push_back(std::move(topic));
+    }
+
     // 9b. S6 -- the Flame's mark. DECISIONS.md: the Church "sanctions the
     //     redemption of a scalp". A priest offers it when you are carrying
     //     something that wants signing for and nothing else; a bounty that
@@ -813,6 +827,28 @@ Reply DialogueDirector::choose(std::size_t index) {
                     standings_.addStanding(temple, 1);
                 }
             }
+            break;
+        }
+        case TopicKind::Rival: {
+            // HE ANSWERS OUT OF THE OWNER'S OWN FILE, and which table depends
+            // on what he has become since: a man who founded a house over your
+            // body says a different thing from a man who has beaten you once.
+            // The chain is most specific first, exactly like every other one.
+            std::vector<std::string> chain;
+            if (!speaker_.rivalHouse.empty()) {
+                chain.push_back("nemesis.topic.house");
+            }
+            if (speaker_.rivalWins > 1) {
+                chain.push_back("nemesis.topic.again");
+            }
+            chain.push_back("nemesis.topic");
+            out = reply(TopicKind::Rival, speak(chain, TopicKind::Rival, speaker_.rivalWins));
+            if (out.line.empty()) {
+                out.line = "HE SAYS NOTHING. HE DOES NOT HAVE TO.";
+            }
+            // Talking to him does not make it better. A conversation is not an
+            // apology and this one costs a point of what little is left.
+            ledger_.record(speaker_.actorId, Deed::Spoke);
             break;
         }
         case TopicKind::Favour: {

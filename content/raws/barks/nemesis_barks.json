@@ -1,0 +1,75 @@
+{
+  "id": "nemesis_barks",
+  "tables": [
+    {
+      "key": "nemesis.taunt",
+      "rows": [
+        "Stay down. It suits you.",
+        "That is the ward, friend. It does not care who you were.",
+        "Somebody had to be first. Might as well have been me.",
+        "Get up when you can. I will be about."
+      ]
+    },
+    {
+      "key": "nemesis.first",
+      "rows": [
+        "Look at that. The floor of the Gull, and you on it.",
+        "I have carried heavier than you off this boards.",
+        "You picked the wrong hand to swing at, and now everybody watched.",
+        "There. Now the room knows my name and not yours."
+      ]
+    },
+    {
+      "key": "nemesis.again",
+      "rows": [
+        "Twice. A man could make a living out of you.",
+        "You keep coming back and I keep going up. Do not stop.",
+        "They are starting to ask who I am. That is your doing.",
+        "Second time. There will not need to be a fourth."
+      ]
+    },
+    {
+      "key": "nemesis.founded",
+      "rows": [
+        "There are men who will work for me now. You bought them for me.",
+        "I have a house of my own out of this. You should see the roll.",
+        "Every hand on that trade answers to me, and it started with you on your back.",
+        "A guild, they call it. I call it what your face paid for."
+      ]
+    },
+    {
+      "key": "nemesis.charge",
+      "rows": [
+        "The ground under this ward is mine to let. Ask the Flame.",
+        "I hold the charge now. You are standing on it.",
+        "They put my name on the roll this morning. A thing is true when it is on the roll.",
+        "Den Duke. Say it once so I can hear how it sounds in your mouth."
+      ]
+    },
+    {
+      "key": "nemesis.topic",
+      "rows": [
+        "What I want is for you to remember whose house this is.",
+        "Nothing. That is the point. I do not need anything from you any more.",
+        "I want you to keep walking in here. It has been good for me."
+      ]
+    },
+    {
+      "key": "nemesis.topic.again",
+      "rows": [
+        "You have asked me that from the floor twice now.",
+        "What I want is a third time, and then I am done with you.",
+        "Ask the men who work for me. They will tell you what I want."
+      ]
+    },
+    {
+      "key": "nemesis.topic.house",
+      "rows": [
+        "I want what any Craftlord wants. Hands, ground, and quiet.",
+        "There is a house behind me now. You are talking to all of it.",
+        "Come and see the yard some time. Bring your purse; you will need it."
+      ]
+    }
+  ],
+  "notes": "S8 addition. The owner's content/raws/barks/barks.json is UNTOUCHED and always loads FIRST -- see barkRawsFiles, where the merge rule is that the first file to carry a key wins -- so nothing in here can take a line the owner wrote. These are the tables a NEMESIS speaks from: the man who put the player on the floor, taunting over them, and answering the one topic that exists because of it. Keys are picked by NemesisBook::recordDefeat and resolved by the room through the ordinary fallback chain; no C++ anywhere writes one of these sentences."
+}

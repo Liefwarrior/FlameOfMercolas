@@ -1,0 +1,114 @@
+{
+  "id": "faction_chapters",
+  "chapters": [
+    {
+      "id": "almoners",
+      "displayName": "The Almoners' Chapter",
+      "faction": "temple",
+      "trade": "channeling",
+      "site": "K17",
+      "seat": "",
+      "influence": 10,
+      "toll": 3,
+      "founderTitle": "Almoner",
+      "notes": "The Mission's own alms round, run as a house rather than as a duty. No seat: the Flame holds every plot and will not let one to its own clergy."
+    },
+    {
+      "id": "chandlers",
+      "displayName": "The Chandlers' Row",
+      "faction": "merchants",
+      "trade": "streetwise",
+      "site": "K08",
+      "seat": "C4_GULLET",
+      "influence": 14,
+      "toll": 9,
+      "founderTitle": "Craftlord",
+      "notes": "K08 Brann's Chandlery and the counter trades along Ropewynd. The steepest toll on the board, because a chandler sells the one thing every hull needs."
+    },
+    {
+      "id": "coopers",
+      "displayName": "The Coopers' and Blockmakers' Guild",
+      "faction": "dockhands",
+      "trade": "kit_keeping",
+      "site": "K23",
+      "seat": "C4_GULLET",
+      "influence": 14,
+      "toll": 8,
+      "founderTitle": "Craftlord",
+      "notes": "K23 Cooper & Blockmaker's shed. DOCKS-GAZETTEER section 2.8 already names Cooper Stave a Craftlord holding working ground on the same terms as a Den Duke -- a hand who rises out of the quay gang and takes the cooperage is stepping into a chair canon has already built."
+    },
+    {
+      "id": "cutpurses",
+      "displayName": "The Cutpurse Ring",
+      "faction": "skyrunners",
+      "trade": "streetwise",
+      "site": "K15",
+      "seat": "",
+      "influence": 8,
+      "toll": 5,
+      "founderTitle": "Ringleader",
+      "notes": "K15 Fenner's Pawn and the wage-advance usury in the back of it. No seat: a ring that took a charge would have an address, and the whole point of it is not having one."
+    },
+    {
+      "id": "netters",
+      "displayName": "The Netters' Company",
+      "faction": "dockhands",
+      "trade": "seacraft",
+      "site": "K10",
+      "seat": "C4_GULLET",
+      "influence": 12,
+      "toll": 6,
+      "founderTitle": "Craftlord",
+      "notes": "K10 Dawnstalls and the boats behind it. The Netters already hold C2 on the roll, so a second Netter house is a rival branch and not a merger."
+    },
+    {
+      "id": "nightmuster",
+      "displayName": "The Night Muster",
+      "faction": "watch",
+      "trade": "kit_keeping",
+      "site": "K21",
+      "seat": "",
+      "influence": 10,
+      "toll": 4,
+      "founderTitle": "Sergeant-at-Arms",
+      "notes": "The watchpost's own night roll, stood up as a standing company. No seat: DECISIONS.md's tenure ruling keeps the garrison off the charge roll."
+    },
+    {
+      "id": "roofline",
+      "displayName": "The Roofline",
+      "faction": "skyrunners",
+      "trade": "skyrunning",
+      "site": "K13",
+      "seat": "C4_GULLET",
+      "influence": 12,
+      "toll": 7,
+      "founderTitle": "Roofmaster",
+      "notes": "K13 The Drowned Hold, officially empty for nine years. A Roofmaster who takes the charge on the Gullet owns the ground the ward's poorest stand on and the road over their heads at once."
+    },
+    {
+      "id": "saltrow",
+      "displayName": "The Salt Row Company",
+      "faction": "dockhands",
+      "trade": "fishing",
+      "site": "K11",
+      "seat": "C4_GULLET",
+      "influence": 11,
+      "toll": 6,
+      "founderTitle": "Craftlord",
+      "notes": "K11 Salt Row: gutting sheds, salting tubs, smokehouses. Salla holds it in the gazetteer; a fishwife who rises takes it from her."
+    },
+    {
+      "id": "ropewalk",
+      "displayName": "The Ropewalk Gang",
+      "faction": "dockhands",
+      "trade": "fieldcraft",
+      "site": "K07",
+      "seat": "C4_GULLET",
+      "influence": 12,
+      "toll": 6,
+      "founderTitle": "Foreman",
+      "notes": "K07 The Ropewalk, the longest interior in the district, worked by a fifty-hand gang. Foreman Hemp holds it in the gazetteer -- a labourer who rises far enough is who takes it off him."
+    }
+  ],
+  "notes": "S8 addition. The owner's content/raws/factions/factions.json is UNTOUCHED canon and still has exactly five factions; this file hangs TRADE HOUSES off them. A chapter naming a faction factions.json does not have is refused at load, by name, the same gate compounds.json and contracts.json pass through, so this file can never invent a sixth faction by typo. WHAT A CHAPTER IS FOR: when somebody puts the player on the floor often enough they found one of these, it enlists real actors out of the room, its influence goes onto its parent faction's weight in the ward, and its toll is added to every price that faction's counters quote the player -- permanently. See native/include/granadad/sim/nemesis.hpp. `site` is a DOCKS-GAZETTEER section 3 key and `seat` is a content/raws/compounds/compounds.json plot id; a chapter whose head rises far enough petitions the Flame for that plot's vacant charge and becomes its Den Duke. Only C4_GULLET is vacant on the roll at day zero, so the first house to reach that rung takes it and the rest are refused by the roll rather than by this file. `founderTitle` is canon's own word: section 2.8 calls the men who hold working ground on these terms CRAFTLORDS."
+}

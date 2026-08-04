@@ -44,6 +44,11 @@
 #include "granadad/sim/brawl.hpp"
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/engine.hpp"
+// S8. Being put on the floor is a promotion event for whoever did it, and the
+// book that records it lives beside the room that owns the player's hit points
+// for exactly the reason the crime ledger lives beside the dialogue: the state
+// and the rule that moves it belong together.
+#include "granadad/sim/nemesis.hpp"
 // The roof moves' own vocabulary: a landing is charged HERE, in the room that
 // owns the player's hit points, so RoofResult and safeDropBands are part of
 // this header's interface. See Tavern::settleLanding.
@@ -727,6 +732,48 @@ public:
     /// long a bouncer lets you finish your drink.
     [[nodiscard]] std::int32_t graceSecondsForPlayer() const noexcept;
 
+    // --- S8: the nemesis ------------------------------------------------------
+    //
+    // KILLING THE PLAYER IS A PROMOTION EVENT. See nemesis.hpp for the whole
+    // design; what lives here is the four places the room touches it -- who
+    // landed the blow, what a win does to the roster, what a win does to a
+    // price, and putting the player back on their feet afterwards.
+
+    [[nodiscard]] const NemesisBook& nemesis() const noexcept { return nemesis_; }
+
+    /// Joins the room to the ward's own roll, so a risen rival can take a
+    /// vacant charge on it. May be null and usually is in a synthetic test:
+    /// a rise that cannot reach the roll still ranks, still founds a house and
+    /// still remembers -- see NemesisBook::recordDefeat.
+    ///
+    /// THIS IS ALSO THE S7 REVIEW'S EIGHTH FINDING, ANSWERED. S7 built 3,303
+    /// lines of ward economy that the windowed client never constructed. It
+    /// constructs one now, and the first thing that reaches into it is the man
+    /// who put the player on the floor.
+    void attachRoll(Ward* roll) noexcept { roll_ = roll; }
+    [[nodiscard]] const Ward* roll() const noexcept { return roll_; }
+
+    /// What the last defeat did. `happened` is false until there has been one.
+    [[nodiscard]] const Rise& lastDefeat() const noexcept { return lastDefeat_; }
+
+    /// True once, after the player has been put down, so whoever owns the body
+    /// can put it back on the street. Read and CLEARED -- the same shape the
+    /// arrest release has, and for the same reason.
+    [[nodiscard]] bool takeDefeatRelease() noexcept;
+
+    /// The player comes to. Moves the clock on by kBlackoutHours, gives the hit
+    /// points back and clears the floor; the CALLER moves the body, because the
+    /// room never holds a pointer to it.
+    ///
+    /// It does NOT clear anything the rival gained. That is the whole design.
+    void reviveAfterDefeat();
+
+    /// Puts the player on the floor at somebody's hands, with no fight around
+    /// it. The seam a dedicated combat screen will use when it has one, and the
+    /// seam a scripted proof uses now -- so the rise can be driven through
+    /// exactly the code a real beating drives.
+    void concedeTo(std::int32_t actorId);
+
     // --- trouble ------------------------------------------------------------
 
     [[nodiscard]] Standing playerStanding() const noexcept { return standing_; }
@@ -832,6 +879,20 @@ private:
     /// What a drawn blade does to a room full of people, exactly once.
     void noteEscalation(std::int32_t targetId);
 
+    // --- S8 -------------------------------------------------------------------
+    /// THE ONE CALL SITE A DEFEAT GOES THROUGH, wherever the player went down.
+    /// Builds the Defeat out of the roster, hands it to the book, and applies
+    /// what comes back to the things the ROOM owns: the purse, the roster's
+    /// weapons, and the ejection that follows a man being carried out.
+    void applyDefeat(std::int32_t winnerId);
+    /// Puts the right thing in every rival's hands and the right intent behind
+    /// it. Called wherever the room re-seats itself, so a rival who walked out
+    /// and came back is still carrying what he earned.
+    void armRivals();
+    /// Every present actor and the faction that claims each, in roster order.
+    /// What a founding chapter enlists out of.
+    [[nodiscard]] RiseWorld riseWorld() noexcept;
+
     SystemId id_;
     const TileQuery* tiles_;
     RegionPath path_;
@@ -922,6 +983,16 @@ private:
     /// skipTo jumped. The clock on the wall wraps at midnight and the Watch's
     /// memory does not, so heat is charged against this and not timeOfDay_.
     std::int64_t elapsed_ = 0;
+
+    // --- S8 -------------------------------------------------------------------
+    NemesisBook nemesis_;
+    /// The ward's roll, borrowed. Never owned; may be null.
+    Ward* roll_ = nullptr;
+    /// Who landed the blow that is currently taking the player down. -1 when
+    /// nobody has hit them since the last defeat was settled.
+    std::int32_t lastBlowBy_ = -1;
+    Rise lastDefeat_;
+    bool defeatRelease_ = false;
 };
 
 }  // namespace granadad::sim

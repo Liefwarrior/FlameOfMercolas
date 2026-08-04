@@ -113,6 +113,16 @@ struct Speaker {
     /// the ones who would simply hit you: a bouncer, a watchman, and anybody
     /// whose job is to be leaned on for a living.
     bool leanable = false;
+
+    // --- S8: what he is to you ------------------------------------------------
+
+    /// How many times this person has put the player on the floor. Zero for
+    /// everybody who never has, which is nearly everybody.
+    std::int32_t rivalWins = 0;
+    /// The rung or the house-title he answers to because of it, or "".
+    std::string rivalTitle;
+    /// The trade house he founded over the player's body, or "".
+    std::string rivalHouse;
 };
 
 // ---------------------------------------------------------------------------
@@ -161,6 +171,13 @@ enum class TopicKind : std::uint8_t {
     Lean = 16,
     /// Ask your own guild for the one thing a top rung is actually for.
     Favour = 17,
+    /// S8. Ask the man who has had you on the floor what he wants now. The one
+    /// topic on this list that only exists because of something that happened
+    /// TO the player rather than something they did. APPENDED, for the reason
+    /// on Buy: the ordinal is folded into which authored row a topic speaks
+    /// from, so an insert in the middle would move every existing speaker's
+    /// lines.
+    Rival = 21,
     /// S6. Take a job off somebody who hands them out. The payload is the
     /// contract's own id, or -1 when the broker will not talk to you yet --
     /// which is a topic on purpose, because a player has to be able to ask
@@ -267,6 +284,13 @@ public:
     // --- S4: the guilds, the lines and the book -----------------------------
 
     [[nodiscard]] const FactionRegistry& factions() const noexcept { return *factions_; }
+    /// The SAME registry, shared rather than borrowed. Anything that keeps a
+    /// FactionLedger of its own -- the nemesis book does -- has to hold the
+    /// owner rather than a pointer into a director that may be copied or moved,
+    /// which is exactly the bug FactionLedger::attach's note describes.
+    [[nodiscard]] std::shared_ptr<const FactionRegistry> factionsShared() const noexcept {
+        return factions_;
+    }
     [[nodiscard]] FactionLedger& standings() noexcept { return standings_; }
     [[nodiscard]] const FactionLedger& standings() const noexcept { return standings_; }
     [[nodiscard]] const QuestBook& quests() const noexcept { return quests_; }

@@ -386,17 +386,30 @@ TEST_CASE("the bond is the pipe: leased labour turns up in the bondholder's yard
     // AND ENOUGH OF IT TO MOVE A WHOLE PAIR OF HANDS. One small household can
     // leave a yard without changing farmHands at all -- the count floors at
     // kHeadsPerFarmHand -- so a case that stopped at one transfer could be
-    // satisfied by a farmHands that had never heard of a bond. Buy every
-    // transferable bond off the seller until the hands really do fall.
+    // satisfied by a farmHands that had never heard of a bond.
+    //
+    // S7 WROTE THAT AS `if (precondition) { CHECK(...) }` AND THE REVIEW WAS
+    // RIGHT ABOUT IT: a guarded assertion is an assertion that passes by not
+    // running. So the precondition is CONSTRUCTED instead -- buy every
+    // transferable bond off the seller, and give the ward another day to write
+    // more paper if a round of buying was not enough -- and then REQUIRED, so a
+    // ward that stopped producing bonds is a red case and not a silent skip.
     const std::int32_t handsFromBefore = ward->farmHands(from);
-    for (const Household& home : ward->households()) {
-        if (home.bonded() && home.bondholder == from && !home.bondOrdered) {
-            (void)ward->transferBond(home.id, to);
+    bool wholeHandMoved = false;
+    for (std::int32_t round = 0; round < 400 && !wholeHandMoved; ++round) {
+        for (const Household& home : ward->households()) {
+            if (home.bonded() && home.bondholder == from && !home.bondOrdered) {
+                (void)ward->transferBond(home.id, to);
+            }
+        }
+        wholeHandMoved = headsWorkingIn(from) + kHeadsPerFarmHand <= fromBefore;
+        if (!wholeHandMoved) {
+            ward->endOfDay();
         }
     }
-    if (headsWorkingIn(from) + kHeadsPerFarmHand <= fromBefore) {
-        CHECK(ward->farmHands(from) < handsFromBefore);
-    }
+    INFO("heads in the seller's yard ", headsWorkingIn(from), " of ", fromBefore);
+    REQUIRE(wholeHandMoved);
+    CHECK(ward->farmHands(from) < handsFromBefore);
 
     // A bond a PRIEST ordered is not a holding anybody can sell. Section 2.8:
     // "a court-ordered bond cannot be sold on to anyone else."
@@ -480,12 +493,102 @@ TEST_CASE("a Den Duke cannot turn a family out, and only one of the six answers 
     CHECK(stats.verdicts[static_cast<std::size_t>(Verdict::Distraint)] * 2 < stats.petitions);
     // And a house that DID pass took the roof with it, because the lodgers
     // above were never parties to the case.
-    if (stats.housesDistrained > 0) {
-        CHECK(stats.lodgersTurnedOut >= 0);
+    //
+    // S7 WROTE THIS AS `CHECK(stats.lodgersTurnedOut >= 0)` ON AN int64 THAT
+    // STARTS AT ZERO AND ONLY EVER INCREMENTS. It cannot fail, and the S7
+    // review proved it: deleting the whole eviction loop in compound.cpp left
+    // the gate green. So the claim is stated as an INVARIANT over the roll
+    // instead, and the invariant is the canon sentence in compound.hpp -- "when
+    // a house is taken for arrears the roof goes with it".
+    REQUIRE(stats.housesDistrained > 0);
+    // NOBODY IS THE LODGER OF A HOUSE THAT IS NO LONGER A HOUSE. A distrained
+    // owner becomes a RoofHut themselves; a lodger still naming them landlord
+    // is a family paying rent to somebody who was turned out of the same
+    // building. Delete the eviction loop and this goes red on the first
+    // distrained owner who had anybody above them.
+    for (const Household& home : ward->households()) {
+        if (home.landlord < 0) {
+            continue;
+        }
+        INFO("household ", home.id, " names ", home.landlord, " landlord");
+        REQUIRE(home.landlord < static_cast<std::int32_t>(ward->households().size()));
+        const Household& owner = ward->households()[static_cast<std::size_t>(home.landlord)];
+        CHECK(owner.ownsHouse());
+        CHECK_FALSE(owner.roofed);
     }
+    // And it actually happened to somebody over two years, so the invariant
+    // above is not holding because nothing was ever turned out.
+    CHECK(stats.lodgersTurnedOut > 0);
     // Somebody leased themselves rather than lose the ground, and somebody
     // worked one out. Both halves of the instrument are live.
     CHECK(stats.bondsTaken > 0);
+}
+
+TEST_CASE("the abatement is the sharpest instrument in the ward, and it is not dead code") {
+    // THE S7 REVIEW'S FOURTH FINDING. Verdict::Abatement could be replaced with
+    // Verdict::Stay at compound.cpp and all 394 cases stayed green: the one
+    // answer that costs the Duke money FOREVER had nothing anywhere requiring
+    // it. A rule the gate cannot see is a rule the next refactor deletes.
+    //
+    // Two claims, and the first is the one the mutation walks into.
+    const std::unique_ptr<Ward> ward = freshWard();
+
+    // ONE: THE BAND IS THE ABATEMENT'S. weighPetition scores a case and the
+    // score picks the answer. Find a real household on a real morning whose
+    // score lands in the band section 2.8's abatement owns, and the priest must
+    // answer abatement -- not a stay, not a bond.
+    //
+    // The draw is FIXED so the jitter is zero and the score IS the weight:
+    // 10 % 21 == 10, and the jitter is (draw % 21) - 10.
+    constexpr std::uint64_t kNoJitter = 10;
+    bool found = false;
+    for (std::int32_t day = 0; day < 1200 && !found; ++day) {
+        ward->endOfDay();
+        for (const Household& home : ward->households()) {
+            if (!home.ownsHouse() || home.arrears <= 0) {
+                continue;
+            }
+            const Hearing weighed = ward->weighPetition(home.plot, home.id, 0, kNoJitter);
+            if (!weighed.heard || weighed.weight < 18 || weighed.weight >= 35) {
+                continue;
+            }
+            INFO("household ", home.id, " scored ", weighed.weight);
+            CHECK(weighed.verdict == Verdict::Abatement);
+            found = true;
+            break;
+        }
+    }
+    // Not "if we happened to find one". The ward has to produce a case in that
+    // band inside two years of its own arithmetic, or the band is unreachable
+    // and the answer really is decoration.
+    REQUIRE(found);
+
+    // TWO: IT LEAVES A PERMANENT MARK ON THE ROLL. Section 2.8: "the priest
+    // permanently reduces the ground penny; the Duke eats it forever." Nothing
+    // else in this file can lower a house-owner's penny without taking the
+    // house -- a distraint zeroes it and roofs the family -- so an owner still
+    // in their house paying LESS than the plot's authored penny is an
+    // abatement's fingerprint and can be nothing else.
+    const std::unique_ptr<Ward> years = freshWard();
+    for (std::int32_t day = 0; day < 730; ++day) {
+        years->endOfDay();
+    }
+    const WardStats& told = years->stats();
+    INFO("abatements ", told.verdicts[static_cast<std::size_t>(Verdict::Abatement)]);
+    CHECK(told.verdicts[static_cast<std::size_t>(Verdict::Abatement)] > 0);
+    std::int32_t abated = 0;
+    for (const Household& home : years->households()) {
+        if (!home.ownsHouse() || home.groundPenny <= 0) {
+            continue;
+        }
+        const std::int32_t authored =
+            years->raws()
+                .plots()[static_cast<std::size_t>(
+                    years->plots()[static_cast<std::size_t>(home.plot)].raw)]
+                .groundPenny;
+        abated += home.groundPenny < authored ? 1 : 0;
+    }
+    CHECK(abated > 0);
 }
 
 TEST_CASE("an offering is an offering and not a fee: it does not buy the verdict") {
@@ -756,3 +859,4 @@ TEST_CASE("a day off the engine's clock is the same day as a day off endOfDay") 
         REQUIRE(mine.hungryDays == theirs.hungryDays);
     }
 }
+

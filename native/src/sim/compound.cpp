@@ -1241,6 +1241,45 @@ TenureResult Ward::buyHouse(std::int32_t plotIndex) {
     return TenureResult::Done;
 }
 
+std::int32_t Ward::plotNamed(std::string_view plotId) const noexcept {
+    for (std::size_t i = 0; i < plots_.size(); ++i) {
+        if (raws_.plots()[static_cast<std::size_t>(plots_[i].raw)].id == plotId) {
+            return static_cast<std::int32_t>(i);
+        }
+    }
+    return -1;
+}
+
+TenureResult Ward::grantCharge(std::int32_t plotIndex, std::string_view holder) {
+    if (plotIndex < 0 || static_cast<std::size_t>(plotIndex) >= plots_.size()) {
+        return TenureResult::NoSuchThing;
+    }
+    if (holder.empty()) {
+        // The roll does not carry anonymous Dukes. A thing is true in Granadad
+        // when it is on the roll, and "somebody" is not a name.
+        return TenureResult::NoSuchThing;
+    }
+    Plot& plot = plots_[static_cast<std::size_t>(plotIndex)];
+    if (plot.tenure == Tenure::Glebe) {
+        return TenureResult::NoCause;
+    }
+    if (plot.tenure != Tenure::Vacant) {
+        return TenureResult::NotVacant;
+    }
+    const PlotRaw& raw = raws_.plots()[static_cast<std::size_t>(plot.raw)];
+    plot.tenure = Tenure::Charged;
+    plot.playerIsDuke = false;
+    plot.heldBy.assign(holder);
+    plot.dukeArrears = 0;
+    plot.flameStanding = kFlameStandingStart;
+    for (Household& home : households_) {
+        if (home.plot == plotIndex && home.ownsHouse() && !home.player) {
+            home.groundPenny = raw.groundPenny;
+        }
+    }
+    return TenureResult::Done;
+}
+
 TenureResult Ward::petitionForCharge(std::int32_t plotIndex) {
     if (plotIndex < 0 || static_cast<std::size_t>(plotIndex) >= plots_.size()) {
         return TenureResult::NoSuchThing;
@@ -1522,6 +1561,10 @@ void Ward::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(plot.dukeArrears));
         sink.put_int(static_cast<std::uint32_t>(plot.flameStanding));
         sink.put_byte(plot.playerIsDuke ? 1U : 0U);
+        // WHO HOLDS IT, in the digest. A charge re-let to an actor is a change
+        // to the roll, and a change to the roll the twin-run gate cannot see is
+        // a change the gate does not protect.
+        put_string(sink, plot.heldBy);
         sink.put_int(static_cast<std::uint32_t>(plot.beds.size()));
         for (const CropBed& bed : plot.beds) {
             sink.put_int(static_cast<std::uint32_t>(bed.age));

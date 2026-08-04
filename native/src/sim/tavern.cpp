@@ -303,6 +303,10 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
       rng_(worldSeed, id_.salt()),
       timeOfDay_(((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay) {
     startedAt_ = timeOfDay_;
+    // The nemesis book reads the same registry the director does -- SHARED, not
+    // a second load of the owner's file, so the two can never disagree about
+    // which faction is index 2.
+    nemesis_ = NemesisBook::load(contentDir, dialogue_.factionsShared());
     buildRoster();
     // Tonight's boat, and tonight's work. Both are posted before anybody has
     // taken a step, so a session that opens at ten at night opens on a board
@@ -814,6 +818,21 @@ void Tavern::applySchedules() {
                               gull::kGroundBand);
                 actor.setActivity(Activity::Walking);
             }
+            // S8: A MAN WITH A GRUDGE STOPS KEEPING HIS OWN HOURS. Past
+            // kHuntsAtGrudge the rota is still what puts him in the building,
+            // and where he stands once he is in it is wherever the player is.
+            // He is not attacking -- the brawl rules are unchanged and it still
+            // takes a punch to start one -- he is simply there, every time you
+            // turn round, which is what a nemesis is for.
+            const Nemesis* rival = nemesis_.of(actor.id());
+            if (rival != nullptr && rival->hunts() && playerKnown_ && playerInside() &&
+                playerBand_ == block->postBand) {
+                actor.setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
+                actor.setActivity(actor.atDestination() ? Activity::Watching
+                                                        : Activity::Walking);
+                actor.faceToward(playerX_, playerY_);
+                continue;
+            }
             actor.setDestination(block->postX, block->postY, block->postBand);
             actor.setActivity(actor.atDestination() ? block->activity : Activity::Walking);
             if (actor.atDestination() && actor.role() == ActorRole::Bartender) {
@@ -1102,6 +1121,12 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     target->setHealth(victim.hp, victim.hpMax);
     target->setActivity(result.blow.downed ? Activity::Downed : Activity::Brawling);
     target->faceToward(playerX_, playerY_);
+    if (result.blow.downed) {
+        // S8: THE REMATCH, and what winning one is worth. The grudge comes
+        // down; the rung, the house, the toll and the charge do not. You can
+        // beat him. You cannot un-found his guild.
+        nemesis_.recordVictory(target->id());
+    }
     dialogue_.ledger().record(target->id(), Deed::Struck);
     spreadWitness(target->id(), Deed::Struck);
     // Somebody you just hit is not somebody you are still talking to.
@@ -1160,6 +1185,12 @@ void Tavern::tickBrawl() {
         const Blow blow = strike(actor->weapon(), playerFighter, roll);
         if (blow.landed) {
             playerHp_ = std::max(kPlayerBrawlFloor, playerFighter.hp);
+            // WHOSE FIST IT WAS. S8 turns being put down into a promotion for
+            // whoever did it, so the room has to know which of the men swinging
+            // at it landed the last one -- and it is the LAST, not the first,
+            // because a man who joins in at the end and finishes you is who the
+            // room saw standing over you.
+            lastBlowBy_ = id;
         }
         actor->faceToward(playerX_, playerY_);
     }
@@ -1167,17 +1198,7 @@ void Tavern::tickBrawl() {
     if (playerHp_ <= kPlayerBrawlFloor && !playerFloored_) {
         // Down. A brawl stops there -- see kPlayerBrawlFloor -- and what
         // follows is not more fighting, it is being carried out.
-        playerFloored_ = true;
-        if (standing_ != Standing::Barred) {
-            standing_ = Standing::BeingEjected;
-        }
-        for (const std::int32_t id : brawlers_) {
-            if (Actor* actor = mutableActorById(id);
-                actor != nullptr && actor->activity() == Activity::Brawling) {
-                actor->setActivity(Activity::Walking);
-            }
-        }
-        brawlers_.clear();
+        applyDefeat(lastBlowBy_);
         return;
     }
 
@@ -1198,6 +1219,144 @@ void Tavern::tickBrawl() {
         }
         brawlers_.clear();
     }
+}
+
+// ---------------------------------------------------------------------------
+// S8 -- the nemesis
+// ---------------------------------------------------------------------------
+
+RiseWorld Tavern::riseWorld() noexcept {
+    RiseWorld world;
+    world.guilds = &dialogue_.standings();
+    world.ledger = &dialogue_.ledger();
+    world.roll = roll_;
+    for (const Actor& actor : actors_) {
+        if (!actor.present() || actor.role() == ActorRole::Vermin) {
+            continue;
+        }
+        world.presentIds.push_back(actor.id());
+        world.presentFactions.push_back(factionOf(actor));
+    }
+    return world;
+}
+
+void Tavern::applyDefeat(std::int32_t winnerId) {
+    playerFloored_ = true;
+    playerHp_ = kPlayerBrawlFloor;
+    if (standing_ != Standing::Barred) {
+        standing_ = Standing::BeingEjected;
+    }
+    for (const std::int32_t id : brawlers_) {
+        if (Actor* actor = mutableActorById(id);
+            actor != nullptr && actor->activity() == Activity::Brawling) {
+            actor->setActivity(Activity::Walking);
+        }
+    }
+    brawlers_.clear();
+    lastBlowBy_ = -1;
+
+    const Actor* winner = actorById(winnerId);
+    if (winner == nullptr || winner->role() == ActorRole::Vermin) {
+        // Nobody in particular put you down -- a fall, a rat, the floor itself.
+        // There is no rivalry with a staircase.
+        defeatRelease_ = true;
+        return;
+    }
+
+    Defeat defeat;
+    defeat.actorId = winner->id();
+    defeat.who = winner->name();
+    defeat.epithet = winner->epithet();
+    defeat.day = dayNumber();
+    defeat.playerCoin = playerCoin_;
+    // The job family the ROOM says he has, and his trade. The faction is
+    // derived from the family through the owner's own factions.json inside the
+    // book; nothing here tabulates it a second time.
+    const std::size_t index = static_cast<std::size_t>(winner->id() - 1);
+    const RosterEntry* entry = nullptr;
+    if (index < kStaff.size()) {
+        entry = &kStaff[index];
+    } else if (index - kStaff.size() < kPatrons.size()) {
+        entry = &kPatrons[index - kStaff.size()];
+    }
+    if (entry != nullptr) {
+        defeat.jobPrefix = std::string(jobFamilyKey(entry->family));
+        defeat.trade = entry->skillId;
+    }
+    // The Skyrunner contact presents as a wastrel and IS villain.skyrunner --
+    // presented identity against true identity, exactly as factionOf reads it.
+    if (winner->role() == ActorRole::SkyrunnerContact) {
+        defeat.jobPrefix = "villain";
+    }
+
+    lastDefeat_ = nemesis_.recordDefeat(defeat, riseWorld());
+
+    // WHAT THE ROOM OWNS, applied here and nowhere else: the purse he went
+    // through, and what everybody is carrying afterwards.
+    const std::int32_t taken = std::min(playerCoin_, lastDefeat_.coinTaken);
+    playerCoin_ -= taken;
+    lastDefeat_.coinTaken = taken;
+    if (Actor* paid = mutableActorById(winnerId); paid != nullptr) {
+        paid->giveCoin(taken);
+    }
+    // AND HE SAYS SOMETHING, out of the owner's own tables. The book picks
+    // WHICH authored key applies -- it knows nothing about barks -- and the
+    // room, which has the tables, resolves it. Nothing anywhere writes the
+    // line, which is the rule the whole conversation layer is built on.
+    const std::vector<std::string> chain{lastDefeat_.barkKey, std::string("nemesis.taunt")};
+    const std::string_view key = dialogue_.barks().resolve(chain);
+    if (!key.empty()) {
+        lastDefeat_.taunt =
+            std::string(dialogue_.barks().line(key, winner->id() + lastDefeat_.wins));
+    }
+    armRivals();
+    // A rung changed hands in this room, so the room learns whose side people
+    // are on -- the same call a player climbing a ladder makes.
+    applyRivalHostility();
+    defeatRelease_ = true;
+}
+
+void Tavern::armRivals() {
+    for (Actor& actor : actors_) {
+        const Nemesis* rival = nemesis_.of(actor.id());
+        if (rival == nullptr) {
+            continue;
+        }
+        // HE COMES PREPARED. Fists, then something off a table, then a blade --
+        // and brawl.hpp's own rule then says a fight with him is no longer this
+        // room's business. That is not decoration: the room refuses to resolve
+        // it with fist rules, out loud, which is what a man who has beaten you
+        // twice ought to feel like.
+        actor.setWeapon(rival->weapon());
+        actor.setIntent(rival->intent());
+    }
+}
+
+void Tavern::concedeTo(std::int32_t actorId) {
+    if (playerFloored_) {
+        return;
+    }
+    applyDefeat(actorId);
+}
+
+bool Tavern::takeDefeatRelease() noexcept {
+    const bool release = defeatRelease_;
+    defeatRelease_ = false;
+    return release;
+}
+
+void Tavern::reviveAfterDefeat() {
+    // The hours are gone and so is a quarter of the purse. NOTHING the rival
+    // gained comes back: he is still on the rung, his house is still founded,
+    // its toll is still on the price of a mug and the roll still says who holds
+    // the Gullet. Permanence is the point.
+    skipHours(kBlackoutHours);
+    playerHp_ = playerHpMax_;
+    playerFloored_ = false;
+    if (standing_ == Standing::BeingEjected || standing_ == Standing::BeingWarned) {
+        standing_ = Standing::Welcome;
+    }
+    armRivals();
 }
 
 // ---------------------------------------------------------------------------
@@ -1247,6 +1406,13 @@ std::int32_t Tavern::drinkPriceForPlayer() const {
     // ale costs a different number of coin because of a roll you are on and a
     // ladder you climbed, with no dialogue open and nobody haggling.
     terms.guildPercent = guildPricePercent(dialogue_.standings(), factionOf(*bartender));
+    // S8: AND WHAT THE MAN WHO BEAT YOU TAKES OFF THE TOP. A rival who has
+    // founded a trade house inside the guild behind this counter puts a
+    // permanent cut on every price that guild quotes you -- see
+    // NemesisBook::tollPercent. It is the same integer channel a rung already
+    // moves, so a house founded over your body is legible as the price of a
+    // mug going up and staying up.
+    terms.guildPercent += nemesis_.tollPercent(factionOf(*bartender));
     return askingPrice(terms);
 }
 
@@ -1265,6 +1431,7 @@ std::int32_t Tavern::roomPriceForPlayer() const {
     terms.merchantSkill = kStaff[0].streetwise;
     terms.goods = Goods::Room;
     terms.guildPercent = guildPricePercent(dialogue_.standings(), factionOf(*innkeeper));
+    terms.guildPercent += nemesis_.tollPercent(factionOf(*innkeeper));
     return askingPrice(terms);
 }
 
@@ -1478,6 +1645,17 @@ Speaker Tavern::speakerFor(const Actor& actor) const {
             break;
         default:
             break;
+    }
+    // S8. What he is to the PLAYER, which is a different fact from what he is
+    // to the ward. Only ever non-zero for somebody who has had them on the
+    // floor, which is nearly nobody.
+    if (const Nemesis* rival = nemesis_.of(actor.id()); rival != nullptr) {
+        speaker.rivalWins = rival->wins;
+        speaker.rivalTitle = rival->title;
+        if (const ChapterRaw* house = nemesis_.chapters().at(rival->chapter);
+            house != nullptr) {
+            speaker.rivalHouse = house->displayName;
+        }
     }
     // A mood override outranks the greeting: somebody on the floor of a taproom
     // has something else to say, and the raws already wrote it.
@@ -2408,6 +2586,13 @@ void Tavern::hash_into(HashSink& sink) const {
     sink.put_byte(arrestRelease_ ? 1U : 0U);
     sink.put_byte(wasInside_ ? 1U : 0U);
     sink.put_long(static_cast<std::uint64_t>(elapsed_));
+    // S8: everybody who has ever put the player on the floor, and everything
+    // the ward gave them for it. A rung, a founded house and a charge on the
+    // roll are the most permanent state this build has; state the twin-run gate
+    // cannot see is state the gate does not protect.
+    sink.put_int(static_cast<std::uint32_t>(lastBlowBy_));
+    sink.put_byte(defeatRelease_ ? 1U : 0U);
+    nemesis_.hashInto(sink);
     dialogue_.hashInto(sink);
 }
 
