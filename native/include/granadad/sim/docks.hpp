@@ -69,16 +69,24 @@ inline constexpr Angle kSpawnYaw = angle_from_degrees(165);
 /// Every tile reachable from the spawn under the movement rules, counted by a
 /// flood fill in test_tile_query.cpp. Pinned so that a change to the step rules
 /// which quietly seals a band off cannot pass as an improvement.
-inline constexpr std::int32_t kReachableFromSpawn = 15328;
-inline constexpr std::int32_t kReachableOnQuayside = 10247;
-inline constexpr std::int32_t kReachableOnMidSlope = 2279;
+///
+/// RE-DERIVED IN S2 after the headroom correction in tile_query.hpp. The S1
+/// numbers were 15,328 / 10,247 / 2,279 / 1,911 / 891, and the district gained
+/// 1,606 reachable tiles when its doorways stopped being sealed by their own
+/// lintels. All of the growth is on the two bands that have buildings on them;
+/// the upper band and the strand below the quay did not move by a single tile,
+/// which is what says the change opened INTERIORS and not the map.
+inline constexpr std::int32_t kReachableFromSpawn = 16934;
+inline constexpr std::int32_t kReachableOnQuayside = 11089;
+inline constexpr std::int32_t kReachableOnMidSlope = 3043;
 inline constexpr std::int32_t kReachableOnUpper = 1911;
 /// Under the piers and down at the strand — one level below the quay.
 inline constexpr std::int32_t kReachableBelowQuay = 891;
 
-/// Tiles a body can stand on, per band, over the whole district.
-inline constexpr std::int32_t kStandableOnQuayside = 11310;
-inline constexpr std::int32_t kStandableOnMidSlope = 7369;
-inline constexpr std::int32_t kStandableOnUpper = 3901;
+/// Tiles a body can stand on, per band, over the whole district. S1: 11,310 /
+/// 7,369 / 3,901, before the doorway lintels counted as standable.
+inline constexpr std::int32_t kStandableOnQuayside = 11432;
+inline constexpr std::int32_t kStandableOnMidSlope = 7459;
+inline constexpr std::int32_t kStandableOnUpper = 3921;
 
 }  // namespace granadad::sim::docks

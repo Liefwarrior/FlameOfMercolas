@@ -99,6 +99,11 @@ add_library(granadad-sim STATIC
     src/sim/angle.cpp
     src/sim/tile_query.cpp
     src/sim/player.cpp
+    src/sim/region_path.cpp
+    src/sim/brawl.cpp
+    src/sim/actor.cpp
+    src/sim/spellbook.cpp
+    src/sim/tavern.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -222,6 +227,7 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_angle.cpp
         tests/test_tile_query.cpp
         tests/test_player.cpp
+        tests/test_tavern.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp

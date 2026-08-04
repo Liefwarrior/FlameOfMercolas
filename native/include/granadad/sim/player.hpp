@@ -119,6 +119,14 @@ public:
     /// One movement step. See the header comment on the two clocks.
     void step(const MoveInput& input) noexcept;
 
+    /// Displaces the body by a Q8 impulse it did not ask for -- a shove.
+    ///
+    /// Goes through exactly the same axis-separated, substepped, collision-
+    /// checked path a walking step does, so being put out of a tavern door
+    /// cannot push a body through a wall, off a quay or up a level. This is the
+    /// bouncer's whole job, expressed in one call.
+    void push(std::int32_t dxQ8, std::int32_t dyQ8) noexcept;
+
     // --- where it is -------------------------------------------------------
 
     [[nodiscard]] std::int32_t x() const noexcept { return x_; }

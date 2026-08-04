@@ -143,6 +143,21 @@ void PlayerBody::step(const MoveInput& input) noexcept {
     }
 }
 
+void PlayerBody::push(std::int32_t dxQ8, std::int32_t dyQ8) noexcept {
+    // Same order as a walking step: one axis, then the other, so a body shoved
+    // along a wall slides down it instead of stopping dead on the first
+    // corner. moveAxis already caps and substeps, so an impulse of any size is
+    // safe against tunnelling.
+    moveAxis(dxQ8, 0);
+    moveAxis(0, dyQ8);
+    const std::int32_t targetZ = q8_of_tile(band_);
+    if (feetZ_ < targetZ) {
+        feetZ_ = feetZ_ + kEyeEaseRate > targetZ ? targetZ : feetZ_ + kEyeEaseRate;
+    } else if (feetZ_ > targetZ) {
+        feetZ_ = feetZ_ - kEyeEaseRate < targetZ ? targetZ : feetZ_ - kEyeEaseRate;
+    }
+}
+
 std::uint64_t PlayerBody::digest() const noexcept {
     std::uint64_t h =
         mix64(static_cast<std::uint64_t>(static_cast<std::uint32_t>(x_)) * 0x9E3779B97F4A7C15ull);

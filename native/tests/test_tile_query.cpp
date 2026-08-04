@@ -181,8 +181,10 @@ TEST_CASE("a step up needs a ramp or a stair, and mostly there is not one") {
             }
         }
     }
-    CHECK(allowed == 110);
-    CHECK(refused == 5035);
+    // S1: 110 / 5,035, before the headroom correction made doorway lintels
+    // standable (tile_query.hpp). Both sides moved and the ratio did not.
+    CHECK(allowed == 109);
+    CHECK(refused == 4849);
     // The point: the overwhelming majority of one-level rises in this district
     // are walls, and the body cannot walk up them.
     CHECK(refused > allowed * 40);

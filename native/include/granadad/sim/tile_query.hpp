@@ -118,9 +118,34 @@ public:
     /// RAMP or STAIR — the two forms that authorise a one-level step up.
     [[nodiscard]] bool climbable(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept;
 
-    /// Whether a body standing on (x,y,z) has somewhere to put its head. One
-    /// clear level is enough: a body is under a tile tall, so a FLOOR slab at
-    /// z+1 is a low ceiling and not a refusal. Only a filled cell refuses.
+    /// Whether a body standing on (x,y,z) has somewhere to put its head.
+    ///
+    /// CORRECTED IN S2, and the correction is why the district's buildings can
+    /// be walked into at all.
+    ///
+    /// S1 refused any FILLED cell at z+1 while allowing a FLOOR there. Read
+    /// against the geometry the renderer draws from the same lanes, that is
+    /// backwards:
+    ///
+    ///     FLOOR at z+1 is the slab hanging from the TOP of that cell --
+    ///                  [z+1-slab, z+1]. A low ceiling, and the tightest case
+    ///                  there is. S1 allowed it.
+    ///     WALL  at z+1 fills the cell from its own floor upward -- [z+1, z+2].
+    ///                  That is MORE clearance than the floor slab, not less.
+    ///                  S1 refused it.
+    ///
+    /// A WALL one level up is what sits over every doorway in a two-storey
+    /// building, because the storey above has an exterior wall and the door is
+    /// a gap in the storey below. Under the S1 rule the door tiles of the
+    /// Gilded Gull, the Bilge, the Lantern Room and every other multi-storey
+    /// site in the Docks were not standable, so nothing -- player or actor --
+    /// could get through them. The interiors were authored, baked, rendered,
+    /// and sealed.
+    ///
+    /// So the only form that refuses is VOID: the world's own border ring,
+    /// where there is no cell to have headroom in. The pinned reachability
+    /// counts in docks.hpp moved as a result and were all re-derived from the
+    /// baked bytes; test_tile_query.cpp re-derives them on every build.
     [[nodiscard]] bool headroom(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept;
 
     /// walkable() and headroom() together — "a body can be here".

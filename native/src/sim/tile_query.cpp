@@ -60,7 +60,9 @@ bool TileQuery::climbable(std::int32_t x, std::int32_t y, std::int32_t z) const 
 }
 
 bool TileQuery::headroom(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
-    return !solid(x, y, z + 1);
+    // See the header: WALL at z+1 starts a whole tile above the feet and is
+    // more clearance than a FLOOR slab, not less. VOID is the world border.
+    return form(x, y, z + 1) != TileForm::Void;
 }
 
 bool TileQuery::standable(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
