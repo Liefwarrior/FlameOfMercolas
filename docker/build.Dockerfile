@@ -126,6 +126,24 @@ COPY content/raws/quests /src/content/raws/quests
 # every case about it would pass against nothing.
 COPY content/raws/contracts /src/content/raws/contracts
 
+# S7: the roll, and the households on it.
+#
+# compounds.json is the five plots of DOCKS-GAZETTEER section 2.8 and it is
+# refused at load, plot by plot, unless notables.json has the Den Duke, the
+# creditor and the charter priest it names -- the same gate the contract board
+# above passes through, and without the file in the context that refusal would
+# be proved by an absence.
+#
+# household.json is the canon household-size distribution the ward's population
+# is DERIVED from ({1:20,2:35,3:25,4:15,5:5}, the same numbers section 2.5
+# cites when it derives the ward). The loader falls back to a copy of those
+# weights compiled into the code, deliberately, so the game still boots while
+# somebody is editing a raw -- and that fallback is exactly why the real file
+# has to be here, or the claim that the population comes out of the owner's own
+# numbers would never be tested.
+COPY content/raws/compounds /src/content/raws/compounds
+COPY content/raws/actors /src/content/raws/actors
+
 # Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
 # has no use for either, and the rest of content is read at runtime straight
@@ -372,14 +390,19 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # BOTH sides, the same-floor clause, the line-of-sight clause, and the topic
     # list proved completely addressable from the keyboard at any length.
     #
-    # S7: 371 -> 378. The four S6 review findings closed with cases that can go
-    # red -- the watchman's eye tested AT THE CALL SITE and not only in the
-    # arithmetic, the condemned-man amnesty closed, the authored object given
-    # an existence, and the boat made to land what the board asked for -- plus
-    # the two the shipped frames themselves proved: no HUD line drawn off the
-    # edge, and the picked topic spelled out in full under the grid.
+    # S7: 371 -> 394. Two halves. The four S6 review findings closed with cases
+    # that can go red -- the watchman's eye tested AT THE CALL SITE and not
+    # only in the arithmetic, the condemned-man amnesty closed, the authored
+    # object given an existence, and the boat made to land what the board asked
+    # for -- plus the two the shipped frames themselves proved: no HUD line
+    # drawn off the edge, and the picked topic spelled out in full under the
+    # grid. Then the compounds: the roll refused against the owner's own
+    # notables, courtyard crops that grow and FAIL, the bond that moves labour
+    # between compounds, the priest's six outcomes, the player's
+    # lease-buy-let-collect arc, and TWO gate entries -- a twin run over the
+    # ward and a two-year soak whose exit code IS the balance bar.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=378; \
+    GRANADAD_MIN_TESTS=394; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -565,6 +588,35 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: S7's carry-forward cases are all registered"; \
+    \
+    # S7, part two: the compounds. The last three named are the sprint's \
+    # ACCEPTANCE -- two years of the ward feeding itself at or under the bar \
+    # the Java build held, the bridge that says a day off the engine's clock \
+    # is the same day the soak's shortcut runs, and the soak itself as a ctest \
+    # entry whose EXIT CODE is the balance bar. \
+    for case in \
+        "the roll names nobody the owner's own file does not have" \
+        "a compound is dwelling units inside one wall, not a street of houses" \
+        "a courtyard bed grows, is cut, and feeds the compound it stands in" \
+        "a bed nobody turns over comes up worth nothing" \
+        "buy the paper on a compound's hands and its courtyard comes up thin" \
+        "the bond is the pipe: leased labour turns up in the bondholder's yard" \
+        "the ground penny falls on the earth, never on the dwelling" \
+        "a Den Duke cannot turn a family out, and only one of the six answers is eviction" \
+        "an offering is an offering and not a fee: it does not buy the verdict" \
+        "the player leases space, buys a house, becomes a landlord, and collects" \
+        "leasing yourself in lieu of the penny is a debt relation, not a caste" \
+        "two years of the ward: the compounds feed themselves, and nothing drowns" \
+        "a day off the engine's clock is the same day as a day off endOfDay" \
+        "granadad-ward-soak" \
+        "granadad-twin-run-gate-ward" \
+        ; do \
+        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things S7 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S7's compound cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \

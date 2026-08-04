@@ -114,6 +114,29 @@
 # absence.
 !content/raws/contracts/**
 
+# --- re-admitted: the roll, and the households on it (S7) ---
+# 8 KB, two files, and both are here for the reason every entry above is: a
+# loader that is silent about a missing file lets a whole suite pass against
+# nothing.
+#
+#   compounds/compounds.json   the five plots of DOCKS-GAZETTEER section 2.8 --
+#                              C1-C4 and the glebe -- with their Den Dukes,
+#                              their charge-rents, their ground pennies and
+#                              their courtyard beds. Every denDuke, pledgedTo
+#                              and priest id in it is REFUSED AT LOAD unless
+#                              the owner's notables.json has it, so without the
+#                              file in the context that refusal is proved by an
+#                              absence.
+#   actors/household.json      the canon household-size weights the ward's
+#                              population is DERIVED from ({1:20,2:35,3:25,
+#                              4:15,5:5}, the same numbers section 2.5 cites).
+#                              Without it the ward silently falls back to a
+#                              copy of those weights compiled into the code,
+#                              and the claim that the population comes out of
+#                              the owner's file would be untested.
+!content/raws/compounds/**
+!content/raws/actors/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**

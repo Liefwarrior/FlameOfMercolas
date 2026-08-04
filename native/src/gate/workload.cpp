@@ -15,9 +15,11 @@
 #include "granadad/content/lanes.hpp"
 #include "granadad/content/world.hpp"
 #include "granadad/content/world_reader.hpp"
+#include "granadad/sim/compound.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/engine_error.hpp"
+#include "granadad/sim/notables.hpp"
 #include "granadad/sim/fixed.hpp"
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/rng.hpp"
@@ -419,8 +421,9 @@ RunResult run_workload(const WorkloadConfig& config) {
         throw sim::EngineError("sample_every must be at least 1");
     }
 
-    const std::string world_name =
-        config.with_tavern ? std::string(sim::docks::kWorldName) : config.world;
+    const std::string world_name = (config.with_tavern || config.with_ward)
+                                       ? std::string(sim::docks::kWorldName)
+                                       : config.world;
     content::World world = content::loadWorldFile(content::bakedMap(world_name));
 
     // Declared before the engine so it outlives it: the Tavern borrows this
@@ -446,6 +449,15 @@ RunResult run_workload(const WorkloadConfig& config) {
     engine.register_system(std::move(ledger));
     engine.register_system(std::move(drift));
     engine.register_system(std::move(heartbeat));
+
+    if (config.with_ward) {
+        // THE COMPOUNDS. Registered before the tavern so registration order
+        // inside the Actors phase stays a stated fact rather than an accident
+        // of which flag was typed first.
+        engine.register_system(std::make_unique<sim::Ward>(
+            config.seed, content::contentDir(),
+            sim::NotableRegistry::load(content::contentDir())));
+    }
 
     const sim::Tavern* tavern_view = nullptr;
     if (config.with_tavern) {

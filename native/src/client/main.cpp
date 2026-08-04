@@ -23,6 +23,7 @@
 #include <string>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/sim/compound.hpp"
 #include "granadad/render/capture.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/session.hpp"
@@ -45,6 +46,23 @@ void print_build_banner() {
                 static_cast<int>(info.revision.size()), info.revision.data(),
                 static_cast<int>(info.target.size()), info.target.data(),
                 static_cast<int>(info.compiler.size()), info.compiler.data());
+}
+
+/// S7. The ward's own economy, printed. Two years of the compounds by default.
+///
+/// NO WINDOW, and it needs none: the compounds are simulation and the report is
+/// text. It is the same call the build gate makes, so what a player reads here
+/// and what the gate enforces cannot drift apart.
+int run_ward(std::int64_t days) {
+    const sim::WardSoakResult soak =
+        sim::runWardSoak(days, granadad::content::contentDir(), 0x4752414E41444144ull);
+    std::fputs(soak.report.c_str(), stdout);
+    if (!soak.passed) {
+        std::printf("\n  OUT OF BALANCE: %s\n", soak.problem.c_str());
+        return 1;
+    }
+    std::printf("\n  the ward fed itself for %lld days.\n", static_cast<long long>(soak.days));
+    return 0;
 }
 
 // Exercises the deterministic primitives without touching SDL, so it can be run
@@ -145,6 +163,11 @@ void print_usage() {
         "                       Watch, get the Flame's mark, hunt the taproom\n"
         "                       and get paid. WHERE is talk or away\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
+        "  --ward[=DAYS]        run the ward's compounds -- courtyard farms,\n"
+        "                       ground rents, bonds and the priest's hearings\n"
+        "                       -- for DAYS (default 730) and print what the\n"
+        "                       land gave, what the mouths took and who went\n"
+        "                       hungry. No window\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n");
 }
@@ -158,6 +181,16 @@ void print_usage() {
     for (int i = 1; i < argc; ++i) {
         const char* arg = argv[i];
         const char* value = nullptr;
+        if (std::strcmp(arg, "--ward") == 0) {
+            stop = true;
+            exitCode = run_ward(730);
+            return options;
+        }
+        if (starts_with(arg, "--ward=", &value)) {
+            stop = true;
+            exitCode = run_ward(std::atoi(value));
+            return options;
+        }
         if (std::strcmp(arg, "--selftest") == 0) {
             stop = true;
             exitCode = run_selftest();

@@ -19,6 +19,7 @@
 #include "granadad/gate/twin_run.hpp"
 #include "granadad/gate/workload.hpp"
 #include "granadad/gate/world_hash_report.hpp"
+#include "granadad/sim/compound.hpp"
 
 namespace {
 
@@ -93,6 +94,27 @@ int run_fingerprint(const std::string& output_path) {
     return 0;
 }
 
+/// S7. Two years of the compounds, and the balance bar enforced by the build.
+///
+/// THIS IS A GATE AND NOT A REPORT. The Java build held serf starvation at or
+/// below 5%; sim::kStarvationBarPermille is that number, and a ward that
+/// starves past it exits non-zero. So does one whose courtyards drown the ward
+/// in surplus -- an economy with nothing scarce in it is not balanced, it is
+/// switched off. A balance claim nobody can fail is a balance claim nobody has
+/// made.
+int run_ward_soak(std::int64_t days) {
+    const granadad::sim::WardSoakResult soak = granadad::sim::runWardSoak(
+        days, granadad::content::contentDir(), 0x4752414E41444144ull);
+    std::fputs(soak.report.c_str(), stdout);
+    if (!soak.passed) {
+        std::fprintf(stderr, "FATAL: the ward's economy is out of balance: %s\n",
+                     soak.problem.c_str());
+        return 1;
+    }
+    std::printf("\n  the ward fed itself for %lld days.\n", static_cast<long long>(soak.days));
+    return 0;
+}
+
 int run_gate(const granadad::gate::WorkloadConfig& config) {
     granadad::gate::TwinRunOutcome outcome;
     try {
@@ -120,6 +142,8 @@ std::int64_t parse_int(const char* text, std::int64_t fallback) {
 
 int main(int argc, char** argv) {
     bool want_fingerprint = false;
+    bool want_ward_soak = false;
+    std::int64_t soak_days = 730;
     std::string output_path;
     granadad::gate::WorkloadConfig config;
 
@@ -139,6 +163,22 @@ int main(int argc, char** argv) {
             config.walkers = static_cast<std::int32_t>(parse_int(argv[++i], config.walkers));
         } else if (arg == "--world" && i + 1 < argc) {
             config.world = argv[++i];
+        } else if (arg == "--ward-soak") {
+            want_ward_soak = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                soak_days = parse_int(argv[++i], soak_days);
+            }
+        } else if (arg.starts_with("--ward-soak=")) {
+            want_ward_soak = true;
+            soak_days = parse_int(
+                std::string(arg.substr(std::string_view("--ward-soak=").size())).c_str(),
+                soak_days);
+        } else if (arg == "--ward") {
+            // The compounds registered as another system and ticked, so the
+            // twin run compares the roll, the courtyards and the bonds the way
+            // it already compares the taproom.
+            config.with_ward = true;
+            config.world = "docks_surface";
         } else if (arg == "--tavern") {
             // Registers the Gilded Gull and drives its movement clock. Forces
             // the world to docks_surface; see WorkloadConfig::with_tavern for
@@ -149,6 +189,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
             std::fprintf(stderr,
                          "usage: granadad-twin-gate [--ticks N] [--walkers N] [--world NAME]\n"
+                         "       granadad-twin-gate [--tavern] [--ward]\n"
+                         "       granadad-twin-gate --ward-soak [DAYS]\n"
                          "       granadad-twin-gate --fingerprint FILE\n");
             return 2;
         }
@@ -159,5 +201,8 @@ int main(int argc, char** argv) {
         return complain_about_content_dir();
     }
 
+    if (want_ward_soak) {
+        return run_ward_soak(soak_days);
+    }
     return want_fingerprint ? run_fingerprint(output_path) : run_gate(config);
 }

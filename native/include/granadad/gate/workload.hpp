@@ -52,6 +52,19 @@ struct WorkloadConfig {
     /// is frozen and the tavern gets its OWN ctest entry, which proves the
     /// same property about the same code without touching the baseline.
     bool with_tavern = false;
+
+    /// S7. Registers the ward's compounds -- the roll, the courtyard farms and
+    /// the bonds between them -- as another system. Forces `world` to
+    /// docks_surface for the same reason with_tavern does.
+    ///
+    /// OFF by default and with its own ctest entry, for the same reason the
+    /// tavern is: the published cross-toolchain report is compared byte for
+    /// byte between Linux and Windows and the baseline workload stays frozen.
+    ///
+    /// A DAY IS THE WARD'S UNIT, so a short gate run does no day's work at all
+    /// and would compare an untouched roll. The entry that runs this uses
+    /// enough ticks to cross a day boundary; see the CMakeLists comment on it.
+    bool with_ward = false;
 };
 
 /// What one run produced.

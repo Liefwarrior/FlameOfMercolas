@@ -125,6 +125,10 @@ add_library(granadad-sim STATIC
     src/sim/watch.cpp
     src/sim/contract.cpp
     src/sim/tavern.cpp
+    # S7 -- the compounds. The roll (who holds what), the courtyard farms, and
+    # the leasehold that moves labour between them. The first system in this
+    # build whose unit of time is a DAY rather than a second.
+    src/sim/compound.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -266,6 +270,9 @@ if(GRANADAD_BUILD_TESTS)
         # S6 -- the goods, the radiant work over them, and the law that takes
         # both away.
         tests/test_contract.cpp
+        # S7 -- the compounds: the roll, the courtyard farms, the leasehold,
+        # and the soak that proves the ward feeds itself.
+        tests/test_compound.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 
@@ -322,6 +329,24 @@ if(GRANADAD_BUILD_TESTS)
         # would be a sprint that regenerated the thing the comparison rests on.
         add_test(NAME granadad-twin-run-gate-tavern
             COMMAND granadad-twin-gate --tavern --ticks 900)
+        # S7: the same gate over the ward's compounds -- 122 households, five
+        # courtyards, the roll, the bonds and the priest's hearings, run twice
+        # from one seed and required to agree bit for bit.
+        #
+        # 90,000 TICKS AND NOT 900, and the number is load-bearing. A day is
+        # the ward's unit: at 86,400 ticks to the day a shorter run would tick
+        # a system that had not yet done a day's work and would compare an
+        # untouched roll twice, which is a green that proves nothing. This
+        # crosses one day boundary and the twin run therefore compares a ward
+        # that has grown, eaten, bought and been paid.
+        add_test(NAME granadad-twin-run-gate-ward
+            COMMAND granadad-twin-gate --ward --ticks 90000)
+        # S7: THE BALANCE BAR, ENFORCED BY THE BUILD. Two years of the
+        # compounds, and the run exits non-zero if the ward starves past
+        # kStarvationBarPermille (the Java build's own 5%) OR if it drowns in
+        # surplus with nothing scarce in it. A balance claim nobody can fail is
+        # a balance claim nobody has made.
+        add_test(NAME granadad-ward-soak COMMAND granadad-twin-gate --ward-soak 730)
     endif()
 endif()
 
