@@ -270,6 +270,11 @@ struct SmokeRunConfig {
     /// steps between parties -- nothing here reaches into the simulation
     /// sideways, which is the only way a captured frame is evidence.
     bool flame = false;
+    /// How the scripted line leaves the screen for the shutter: "talk" is the
+    /// finished conversation with its topic list, "bench" opens the priest's
+    /// workbench, "away" closes the conversation so the HUD's own guild line
+    /// and objective are visible. Only read when `flame` is set.
+    std::string flameEnd = "talk";
 };
 
 struct SmokeRunResult {

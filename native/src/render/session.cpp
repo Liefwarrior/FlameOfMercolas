@@ -148,6 +148,15 @@ void Session::stepMany(const sim::MoveInput& input, int steps) {
 }
 
 void Session::say(std::string line) {
+    // Clipped to what the bottom edge can hold at the narrowest resolution this
+    // game runs at. S4 started routing a questline's journal prose through here
+    // -- whole sentences out of the raws -- and the first capture of it ran off
+    // the right edge mid-word, which looks like a bug because it is one.
+    constexpr std::size_t kAlertColumns = 56;
+    if (line.size() > kAlertColumns) {
+        line.resize(kAlertColumns);
+        line += "..";
+    }
     message_ = std::move(line);
     // Six seconds on screen. Long enough to read at a glance, short enough that
     // the bottom of the frame is usually empty.
@@ -776,29 +785,59 @@ namespace {
 /// Gives up rather than spinning: a scripted capture that cannot reach somebody
 /// must produce a frame and a summary that says so, never a hang.
 void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
-    for (int axis = 0; axis < 2; ++axis) {
-        for (int guard = 0; guard < 400; ++guard) {
-            const std::int32_t dx = sim::q8_tile_centre(tileX) - session.body().x();
-            const std::int32_t dy = sim::q8_tile_centre(tileY) - session.body().y();
-            const bool wantX = axis == 0;
-            const std::int32_t want = wantX ? dx : dy;
-            if (want > -sim::kSubOne / 2 && want < sim::kSubOne / 2) {
-                break;
+    // Greedy, with sidesteps. The taproom has four tables in it and a counter
+    // across the middle, so "east until the x matches, then south" walks into
+    // furniture; when the way it wants to go is blocked it tries the other axis
+    // and then either perpendicular, which is enough to get round a table.
+    //
+    // Deliberately NOT a pathfinder. The room already has one (RegionPath) and
+    // it belongs to the actors; a capture script that reimplemented it would be
+    // a second answer to "how do you cross this room" and the two would drift.
+    // This gives up and returns rather than grinding, and the caller's summary
+    // reports what actually happened.
+    const std::int32_t goalX = sim::q8_tile_centre(tileX);
+    const std::int32_t goalY = sim::q8_tile_centre(tileY);
+    for (int guard = 0; guard < 1200; ++guard) {
+        const std::int32_t dx = goalX - session.body().x();
+        const std::int32_t dy = goalY - session.body().y();
+        // An eighth of a tile, not a half. Half a tile of slop leaves the eye
+        // pressed against the next cell's face, and a capture framed from there
+        // is a photograph of a wall -- which is exactly what the first version
+        // of this produced.
+        const std::int32_t tolerance = sim::kSubOne / 8;
+        const bool closeX = dx > -tolerance && dx < tolerance;
+        const bool closeY = dy > -tolerance && dy < tolerance;
+        if (closeX && closeY) {
+            return;
+        }
+        const sim::Angle eastWest = dx > 0 ? sim::kFacingEast : sim::kFacingWest;
+        const sim::Angle northSouth = dy > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+        // The axis with more ground left to cover goes first.
+        const bool xFirst = (dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy);
+        const sim::Angle tries[4] = {
+            xFirst ? eastWest : northSouth,
+            xFirst ? northSouth : eastWest,
+            xFirst ? sim::kFacingNorth : sim::kFacingEast,
+            xFirst ? sim::kFacingSouth : sim::kFacingWest,
+        };
+        bool moved = false;
+        for (const sim::Angle facing : tries) {
+            if ((facing == eastWest && closeX) || (facing == northSouth && closeY)) {
+                continue;
             }
-            if (wantX) {
-                session.body().setYaw(want > 0 ? sim::kFacingEast : sim::kFacingWest);
-            } else {
-                session.body().setYaw(want > 0 ? sim::kFacingSouth : sim::kFacingNorth);
-            }
+            session.body().setYaw(facing);
             const std::int32_t beforeX = session.body().x();
             const std::int32_t beforeY = session.body().y();
             sim::MoveInput input;
             input.forward = 1;
             session.step(input);
-            if (session.body().x() == beforeX && session.body().y() == beforeY) {
-                // Walked into something. Try the other axis rather than grind.
+            if (session.body().x() != beforeX || session.body().y() != beforeY) {
+                moved = true;
                 break;
             }
+        }
+        if (!moved) {
+            return;
         }
     }
 }
@@ -814,12 +853,68 @@ void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
     return -1;
 }
 
-/// Opens a conversation with whoever is at `tile`, walking there first.
-[[nodiscard]] bool speakTo(Session& session, std::int32_t tileX, std::int32_t tileY) {
-    walkToTile(session, tileX, tileY);
+/// The present actor of that name, or nullptr.
+[[nodiscard]] const sim::Actor* actorNamed(const Session& session, std::string_view name) {
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (actor.present() && actor.name() == name) {
+            return &actor;
+        }
+    }
+    return nullptr;
+}
+
+/// Walks to a named person and opens a conversation with them.
+///
+/// Onto their OWN tile, and that is not laziness. "Who answers" is the nearest
+/// body within two tiles with ties broken on the lower id, and the Gull's cast
+/// stand shoulder to shoulder: from the tile south of Captain Wake, Edda
+/// Pierpont is exactly as near and has the lower id, so a capture aiming at the
+/// captain would quietly photograph her instead. Distance zero has no tie to
+/// break. The frame is composed afterwards, by stepping back off them.
+[[nodiscard]] bool speakTo(Session& session, std::string_view name) {
+    const sim::Actor* who = actorNamed(session, name);
+    if (who == nullptr) {
+        return false;
+    }
+    walkToTile(session, who->tileX(), who->tileY());
     session.closeConversation();
     session.interact();
-    return session.talking();
+    return session.talking() && session.tavern().dialogue().speaker().name == name;
+}
+
+/// Steps back off somebody and turns to look at them, so the captured frame has
+/// a person in it rather than the inside of their coat.
+void standBackFrom(Session& session, std::string_view name) {
+    const sim::Actor* who = actorNamed(session, name);
+    if (who == nullptr) {
+        return;
+    }
+    // A spot the body can stand in AND see them from. Asked of the same two
+    // functions the simulation asks -- standable() and lineOfSight() -- because
+    // a capture that framed itself inside a table would be a picture of the
+    // inside of a table, and the first version of this was.
+    const std::int32_t band = who->band();
+    const std::int32_t offsets[6][2] = {{0, -3}, {0, 3}, {-3, 0}, {3, 0}, {0, -2}, {2, 0}};
+    for (const auto& offset : offsets) {
+        const std::int32_t x = who->tileX() + offset[0];
+        const std::int32_t y = who->tileY() + offset[1];
+        if (!session.tiles().standable(x, y, band) ||
+            !session.tiles().lineOfSight(x, y, who->tileX(), who->tileY(), band)) {
+            continue;
+        }
+        walkToTile(session, x, y);
+        if (session.body().tileX() != x || session.body().tileY() != y) {
+            continue;
+        }
+        const std::int32_t dx = who->tileX() - x;
+        const std::int32_t dy = who->tileY() - y;
+        if ((dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy)) {
+            session.body().setYaw(dx > 0 ? sim::kFacingEast : sim::kFacingWest);
+        } else {
+            session.body().setYaw(dy > 0 ? sim::kFacingSouth : sim::kFacingNorth);
+        }
+        return;
+    }
 }
 
 /// Picks the first topic of a kind, if it is on the list.
@@ -840,12 +935,12 @@ bool pick(Session& session, sim::TopicKind kind) {
 /// It reports how many stages actually landed rather than asserting anything --
 /// the assertions live in the test suite, where a red is a red. This is the
 /// path that produces a PICTURE of it.
-[[nodiscard]] int runFlameLine(Session& session) {
+[[nodiscard]] int runFlameLine(Session& session, const std::string& ending) {
     const sim::DialogueDirector& talk = session.tavern().dialogue();
     const std::string questId = "flame-disciple";
 
     // 1. the oath, at Maell's evening table
-    if (speakTo(session, 150, 74)) {
+    if (speakTo(session, "Father Maell")) {
         pick(session, sim::TopicKind::Join);
     }
     // 2. the night pot: three drinks out of the player's own purse, then turned
@@ -859,11 +954,11 @@ bool pick(Session& session, sim::TopicKind kind) {
         pick(session, sim::TopicKind::QuestBeat);
     }
     // 3. the captain, who was out past the fishbone the night of it.
-    if (speakTo(session, 155, 74)) {
+    if (speakTo(session, "Captain Ivo Wake")) {
         pick(session, sim::TopicKind::QuestBeat);
     }
     // 4. back to the priest with it, 5. be taught, 6. compose.
-    if (speakTo(session, 150, 74)) {
+    if (speakTo(session, "Father Maell")) {
         pick(session, sim::TopicKind::QuestBeat);
         pick(session, sim::TopicKind::Learn);
         // 7. Keep sitting with him. Every crafting off the shallow shelf is
@@ -889,6 +984,17 @@ bool pick(Session& session, sim::TopicKind kind) {
             session.commitForge();
         }
     }
+    // Compose the shot: back off the priest, looking at him, with whatever he
+    // last said still on the panel.
+    if (ending == "bench") {
+        // The workshop an Acolyte's rung opened, standing open. Nothing is
+        // committed: this is the bench mid-composition, which is the thing
+        // worth photographing.
+        pick(session, sim::TopicKind::Forge);
+    } else if (ending == "away") {
+        session.closeConversation();
+    }
+    standBackFrom(session, "Father Maell");
     return talk.journal().stagesDone(questId);
 }
 
@@ -933,7 +1039,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
 
     if (config.flame) {
-        result.flameStages = runFlameLine(session);
+        result.flameStages = runFlameLine(session, config.flameEnd);
         result.talking = session.talking();
     }
 

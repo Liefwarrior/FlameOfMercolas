@@ -146,11 +146,11 @@ void drawHealth(Framebuffer& target, const HudState& state) {
     // what the line you are on wants next. All of it hugs the corner and none
     // of it reaches the middle of the screen.
     if (!state.guildLabel.empty()) {
-        drawText(target, x, y - 16 * scale, state.guildLabel, Rgb{0.86F, 0.74F, 0.44F}, 0.92F,
+        drawText(target, x, y - 24 * scale, state.guildLabel, Rgb{0.86F, 0.74F, 0.44F}, 0.92F,
                  scale);
     }
     if (!state.objectiveLabel.empty()) {
-        drawText(target, x, y - 24 * scale, state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.80F,
+        drawText(target, x, y - 32 * scale, state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.80F,
                  scale);
     }
 }
@@ -260,7 +260,12 @@ void drawRoom(Framebuffer& target, const HudState& state) {
     if (!state.alert.empty()) {
         const int width = textWidth(state.alert, scale);
         const int x = std::max(margin, (target.width() - width) / 2);
-        drawText(target, x, target.height() - margin - 15 * scale, state.alert,
+        // One row higher than it used to sit. A long alert is clamped to the
+        // left margin, and at 15 rows up that is exactly where the "HP" label
+        // is -- so a full-width line printed "HPSOMEBODY SAID SOMETHING". The
+        // bottom-left is a stack now (bar, HP, alert, rung, objective) and every
+        // row in it has its own.
+        drawText(target, x, target.height() - margin - 23 * scale, state.alert,
                  Rgb{0.90F, 0.62F, 0.30F}, 0.95F, scale);
     }
 }

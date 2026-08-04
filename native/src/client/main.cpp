@@ -128,7 +128,10 @@ void print_usage() {
         "                       the numbers printed beside them on screen)\n"
         "  --offer=N            name this number across a counter\n"
         "  --again              close the conversation and open it again\n"
-        "  --flame              run the Priest of the Flame line and capture it\n"
+        "  --flame[=WHERE]      run the Priest of the Flame line and capture it.\n"
+        "                       WHERE is talk (the finished conversation), bench\n"
+        "                       (the workshop standing open) or away (closed, so\n"
+        "                       the HUD's own rung and objective are visible)\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n");
@@ -191,6 +194,10 @@ void print_usage() {
             options.smoke.again = true;
         } else if (std::strcmp(arg, "--flame") == 0) {
             options.smoke.flame = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--flame=", &value)) {
+            options.smoke.flame = true;
+            options.smoke.flameEnd = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--offer=", &value)) {
             options.smoke.offer = std::atoi(value);
