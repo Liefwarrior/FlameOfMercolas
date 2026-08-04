@@ -85,11 +85,24 @@ FetchContent_Declare(doctest
     GIT_TAG        2d0a9359a60c51affe2a9bebb1be1dca47868151
     GIT_SHALLOW    TRUE)
 
-# --- stb — PNG decode. No tags upstream, no CMake; pinned by commit.
+# --- stb — PNG decode and PNG encode. No tags upstream, no CMake; pinned by
+# commit.
+#
+# NOT shallow, and that is deliberate. Every other dependency here is pinned to
+# a commit that upstream also tagged, so a `--depth 1` clone lands on it. stb
+# has no tags at all, so this pin is an ordinary commit in the middle of master
+# — and the moment upstream pushes past it, `git clone --depth 1` fetches only
+# the new tip and the checkout fails with
+#
+#     fatal: reference is not a tree: 31c1ad374564...
+#
+# which is what this build started doing. The choice was re-pin to whatever
+# master says today, or clone the history. Re-pinning to a moving target to fix
+# a reproducibility mechanism would be the wrong way round: the pin is the
+# point. stb is a handful of header files, so the full clone costs a second.
 FetchContent_Declare(stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        31c1ad37456438565541f4919958214b6e762fb4
-    GIT_SHALLOW    TRUE)
+    GIT_TAG        31c1ad37456438565541f4919958214b6e762fb4)
 
 set(GRANADAD_DEPS miniz nlohmann_json doctest stb)
 if(GRANADAD_BUILD_CLIENT)
