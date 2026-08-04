@@ -964,6 +964,19 @@ TEST_CASE("the scripted nemesis arc is played, not staged, and the HUD says who 
     // number. The arc is worth nothing if you cannot tell who rose.
     CHECK(result.summary.find("Tarn Wrenhale") != std::string::npos);
     CHECK(result.summary.find("holds") != std::string::npos);
+
+    // AND THE `talk` ENDING PHOTOGRAPHS THE RIGHT MAN. His stool and Wick
+    // Hempson's are one tile apart and speakTo opens on whoever is nearest, so
+    // the first shipped frame of this line was a conversation with the wrong
+    // docker -- the same class of thing the S4 review caught in the Priest of
+    // the Flame's capture, and the reason the ending retries.
+    SmokeRunConfig talking = config;
+    talking.nemesisEnd = "talk";
+    const SmokeRunResult shown = runSmoke(talking);
+    INFO(shown.summary);
+    CHECK(shown.nemesisBeats == 7);
+    CHECK(shown.talking);
+    CHECK(shown.summary.find("talking to Tarn Wrenhale") != std::string::npos);
 }
 
 TEST_CASE("the man who put you down is one line on an edge, and the centre stays empty") {

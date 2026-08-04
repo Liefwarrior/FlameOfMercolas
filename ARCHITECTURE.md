@@ -343,12 +343,14 @@ thing being built. `native/` is. Its status, kept honest as the rewrite goes:
 | Casting what you learned or composed | **NOT BUILT** (S4) — the grimoire records craftings and nothing resolves one. `SpellVerb`-equivalent, active effects and the warmth→REST coupling are all still Java-side only | — |
 | Needs, wages, the macro economy | **NOT BUILT** | — |
 | Crime beyond the Gilded Gull's walls | **PARTIAL** (S6) — the arrest, the cell and the sentence exist and are canon's; what does not is anywhere to commit a crime. The ward outside this building still has nobody in it, so a contract can NAME Fenner at his counter and Squall at the bathhouse and you cannot walk up to either. The Gull is still the only room with people in it | `native/src/sim/watch.cpp` |
-| Save / load | **NOT BUILT** — S3 ships a versioned byte encoding for the relationship ledger, proven by round trip, with nothing writing it to disk | `SocialLedger::encode` |
-| The dedicated first-person combat screen | **NOT BUILT** — S3 gave `escalated()` a consumer (the room remembers a drawn blade and the bar stops serving), but the screen itself does not exist | — |
+| **The compounds** — the roll, courtyard farms that fail when nobody works them, the ground penny, the leasehold that moves labour between yards, and the priest's six answers | **BUILT** (S7); joined to the windowed game in S8, when `render::Session` began constructing a `Ward` and registering it on the same engine the Gilded Gull runs on | `native/src/sim/compound.cpp` |
+| **The nemesis** — putting the player on the floor is a promotion event: a rung off the owner's own ladders, ward influence through the S4 mirror, a trade house founded out of `chapters.json` with real members and a permanent toll on prices, a vacant charge taken on the compound roll, and a memory that changes the greeting and what is in his hands | **BUILT** (S8); hashed and byte-encodable, and keyed on the winner's NAME so the persistent-ward variant Eli deferred on 2026-07-31 needs no rewrite here | `native/src/sim/nemesis.cpp` |
+| Save / load | **NOT BUILT** — S3 ships a versioned byte encoding for the relationship ledger, proven by round trip, with nothing writing it to disk; S8 adds a second (`NemesisBook::encode`) with the same gap | `SocialLedger::encode`, `NemesisBook::encode` |
+| The dedicated first-person combat screen | **NOT BUILT** — S3 gave `escalated()` a consumer (the room remembers a drawn blade and the bar stops serving), and S8 gave it a SEAM (`Tavern::concedeTo`, which the nemesis arc uses and names as a gap), but the screen itself does not exist. It is now load-bearing: a nemesis means the player Harm from his first win, so `brawl.hpp`'s bloodied clause takes every rematch out of the world | — |
 
 Everything the Tier-3 "phantom scope" section below names — thermal, reactions, propagated
 light, the fluid solver, the bubble, the macro economy — is still **NOT BUILT and must not be
-built**. Nothing in S2, S3 or S4 changed anything about that.
+built**. Nothing in S2 through S8 changed anything about that.
 
 **S4's binding design laws** (both recorded in full in `docs/design/DECISIONS.md`): every rung of
 every faction ladder is earned, and is measured in standing *and* in that faction's own skill;
@@ -371,6 +373,16 @@ generated in SHAPE and authored in every proper noun -- a broker, patron or sour
 drams, and on PAPER he has to connect a face to, and out of his sight is out of it; the sentence
 is the one Eli already gave on 2026-07-14 and nothing kills the player; and the Church signs for
 the taking of a scalp before the knife rather than after it.
+
+**S8's binding design laws** (Eli's own, recorded in `docs/design/DECISIONS.md`): putting the
+player on the floor is a PROMOTION EVENT for whoever did it, and the rise moves through the
+systems the ward already runs on -- a rung off the owner's own ladders, influence through the S4
+mirror, a trade house out of an authored file, a charge on the compound roll -- never through a
+parallel one. Permanence is the point: beating him afterwards takes the grudge down and leaves
+the rank, the house, the toll and the ground exactly where they are. And the PLAYER respawns as
+themselves, per Eli's 2026-07-31 ruling that the persistent-ward variant is not being built from
+the start -- so every record in the book is keyed on the WINNER, and the day a save carries a
+second protagonist nothing in it has to be rewritten.
 
 **S3's one binding design law, taken from DOCKS-GAZETTEER section 5.3 and enforced in code:**
 the investigation is never persuasion. No dialogue topic is gated by a dice roll. A topic is on

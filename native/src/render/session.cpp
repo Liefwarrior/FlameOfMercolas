@@ -1722,7 +1722,20 @@ constexpr std::int32_t kContractBeats = 6;
     }
 
     if (ending == "talk") {
-        (void)speakTo(session, kMark);
+        // RETRIED, because his own post has a neighbour. speakTo opens on
+        // whoever is NEAREST, and Tarn Wrenhale's stool and Wick Hempson's are
+        // one tile apart -- so the first attempt can photograph the wrong man,
+        // which is exactly the class of thing the S4 review caught in the
+        // Priest of the Flame's capture. speakTo already answers whether the
+        // person who spoke is the person asked for; this believes it.
+        for (int attempt = 0; attempt < 6; ++attempt) {
+            if (speakTo(session, kMark)) {
+                break;
+            }
+            session.closeConversation();
+            // He is hunting by now, so standing still closes the gap for you.
+            session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        }
     } else {
         session.closeConversation();
         standBackFrom(session, kMark);
@@ -2012,6 +2025,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     if (config.nemesis) {
         const sim::Nemesis* worst = session.tavern().nemesis().worst();
         summary << " | nemesis beats=" << result.nemesisBeats << '/' << kNemesisBeats;
+        // WHO IS ON THE FRAME, named, so a capture cannot quietly photograph
+        // the wrong docker. The first shipped attempt at the `talk` ending did
+        // exactly that -- his stool and Wick Hempson's are one tile apart.
+        if (session.talking()) {
+            summary << " talking to " << session.tavern().dialogue().speaker().name;
+        }
         if (worst != nullptr) {
             summary << " " << worst->who << " x" << worst->wins;
             if (!worst->title.empty()) {

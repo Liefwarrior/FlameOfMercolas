@@ -245,7 +245,8 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                barks/flame_barks.json factions/factions.json factions/ranks.json \
                quests/quests.json quests/flame_disciple.json \
                barks/roof_barks.json quests/skyrunner_tenant.json \
-               contracts/contracts.json barks/contract_barks.json; do \
+               contracts/contracts.json barks/contract_barks.json \
+               factions/chapters.json barks/nemesis_barks.json; do \
         test -f "/src/content/raws/$raw" \
             || { echo "FATAL: /src/content/raws/$raw is missing from the build"; \
                  echo "       context. .dockerignore must re-admit it, or the"; \
@@ -401,8 +402,20 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # between compounds, the priest's six outcomes, the player's
     # lease-buy-let-collect arc, and TWO gate entries -- a twin run over the
     # ward and a two-year soak whose exit code IS the balance bar.
+    #
+    # S8: 394 -> 413. The nemesis -- the man who put the player on the
+    # floor, the rung he climbs off the owner's own ladders for it, the
+    # trade house he founds out of the new chapters.json with real members
+    # and a permanent toll on the ward's prices, the vacant charge he takes
+    # on the compound roll, the memory that changes how he greets you and
+    # what is in his hands, and the arc played end to end through a real
+    # taproom brawl. Plus the four S7 review findings closed with cases
+    # that can go red: the HUD alert off the topic grid with a PIXEL
+    # assertion behind it, the lodgers' eviction stated as an invariant
+    # instead of a tautology, the abatement made undeletable, and the
+    # bond-pipe precondition constructed instead of tested for.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=394; \
+    GRANADAD_MIN_TESTS=413; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -617,6 +630,51 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: S7's compound cases are all registered"; \
+    \
+    # S8, part one: the four S7 review findings. Every one of these was a
+    # case that could not go red, and three of them were proved dead by a
+    # mutation that shipped green.
+    for case in \
+        "a warning shouted mid-conversation does not land on the topic grid" \
+        "a Den Duke cannot turn a family out, and only one of the six answers is eviction" \
+        "the abatement is the sharpest instrument in the ward, and it is not dead code" \
+        "the bond is the pipe: leased labour turns up in the bondholder's yard" \
+        ; do \
+        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the S7 findings S8 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S8's carry-forward cases are all registered"; \
+    \
+    # S8, part two: the nemesis. The last named is the sprint's ACCEPTANCE
+    # -- a named labourer puts the player down in an ordinary fist fight,
+    # the player gets up, and the labourer is not who he was.
+    for case in \
+        "a trade house can only ever rise inside a faction the owner's file has" \
+        "a guild is a guild OF something: the trade picks the house, not the faction" \
+        "a labourer who puts the player down rises on the ward's own ladder" \
+        "what one guild gains in the ward, its declared rival loses" \
+        "the second win founds a house with real members, and a mug never costs what it did" \
+        "the third win puts his name on the ward's roll" \
+        "a rise that cannot reach the roll still ranks and still founds" \
+        "he remembers, and he does not greet you the way he did" \
+        "he comes prepared, and a man with a blade is not a brawl any more" \
+        "past the grudge he stops keeping his own hours" \
+        "you can win the rematch, and you still cannot un-found his guild" \
+        "the book survives its own codec, which is the seam a save file uses" \
+        "the ward's roll is in the windowed game, and a rival can take ground on it" \
+        "the man who put you down is one line on an edge, and the centre stays empty" \
+        "the gate's workload actually loses a fight and hashes what it cost" \
+        "the scripted nemesis arc is played, not staged, and the HUD says who he is" \
+        "beaten by a named labourer in a fist fight, and he is not who he was" \
+        ; do \
+        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things S8 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S8's nemesis cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \
@@ -858,13 +916,36 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # and path separators, which is a claim this build has not proved and will
     # not assert.
     echo "=== the gate stamps itself ==="; \
-    tree_digest="$(cd /src/native && find . -type f -print0 \
+    # NORMALISED, since S8, so A HOST CAN RECOMPUTE IT.
+    #
+    # The S7 review's sixth finding was that this stamp could not be used as
+    # evidence the gate ran on the committed tree: it hashed raw bytes at
+    # container paths, and this file said out loud that it would not try to
+    # make the two sides agree about line endings. They agree now.
+    #
+    # A scratch copy of native/ has its CRLF line endings folded to LF, and
+    # the digest is sha256 over `sha256sum` output for every file, sorted
+    # LC_ALL=C by its ./-relative path. scripts/verify-windows.ps1 computes
+    # exactly that from the repo and FAILS on a mismatch -- so a green that
+    # belongs to other bytes (a stale COPY layer, an uncommitted edit, a
+    # second worktree) says which instead of being quietly trusted.
+    #
+    # It is a COPY and not the tree itself because the build has already
+    # happened against those exact bytes and nothing after this line may
+    # touch them.
+    rm -rf /tmp/stamp; \
+    cp -a /src/native /tmp/stamp; \
+    find /tmp/stamp -type f -exec sed -i 's/\r$//' {} +; \
+    tree_digest="$(cd /tmp/stamp && find . -type f -print0 \
         | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"; \
+    stamp_files="$(cd /tmp/stamp && find . -type f | wc -l)"; \
+    rm -rf /tmp/stamp; \
     { \
       echo "gate executed:  $(date -u '+%Y-%m-%dT%H:%M:%SZ') UTC"; \
       echo "revision:       ${GRANADAD_REVISION}"; \
       echo "native/ digest: ${tree_digest}"; \
       echo "ctest cases:    ${test_count} (floor ${GRANADAD_MIN_TESTS})"; \
+      echo "native/ files:  ${stamp_files}"; \
     } > /out/GATE-STAMP.txt; \
     cat /out/GATE-STAMP.txt; \
     \

@@ -252,6 +252,14 @@ Three things worth reading out of that table:
    3 distraints, 1 charge revoked. Three houses passed and one roof household went with the family
    below them, having been party to nothing.
 
+> **S8 note.** The S7 review reported 21 petitions / 0 abatements / 72,787 pennies against this
+> table and called the sentence above false. S8 could not reproduce those figures on either
+> toolchain: at the S7 tip (`824b8ba`), three runs of the Linux/GCC host build and three of the
+> shipped `dist\granadad-twin-gate.exe` all produce exactly what is printed here. Reproduce with
+> `.\dist\granadad-twin-gate.exe --ward-soak 730` or `.\dist\granadad.exe --ward`. The review's
+> separate finding that `Verdict::Abatement` could be DELETED with the gate green was correct and
+> is closed in S8 — see `docs/S8-NEMESIS.md`.
+
 `granadad-twin-gate --ward --ticks 90000` runs the ward twice in one process — 90,000 ticks, which
 is the number it takes to cross a day boundary at 86,400 seconds to the day — and both runs agree:
 combined hash `0xE95257B603A1F71B`, 118,227 bytes of report, identical.

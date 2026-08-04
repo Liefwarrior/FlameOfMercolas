@@ -247,6 +247,42 @@ TEST_CASE("the gate's workload actually takes a contract off the board") {
     CHECK(outcome.passed);
 }
 
+TEST_CASE("the gate's workload actually loses a fight and hashes what it cost") {
+    // THE SAME FAILURE CLASS, TWO SPRINTS LATER. The nemesis book is folded
+    // into the tavern's hash, and a workload nobody ever beats compares an
+    // empty book to an empty book on every row of it -- perfectly
+    // deterministic, and proving nothing about the most permanent state this
+    // build has.
+    WorkloadConfig config;
+    config.world = granadad::sim::docks::kWorldName;
+    config.ticks = 900;
+    config.walkers = 8;
+    config.sample_every = 100;
+    const bool tavern = true;
+    config.with_tavern = tavern;
+    const RunResult run = run_workload(config);
+
+    // It starts with nobody, which is what makes the rest of this a change.
+    CHECK(run.report.find("rival[none]") != std::string::npos);
+    // And ends with somebody, by name, on a rung.
+    CHECK(run.report.find("rival[Tarn Wrenhale") != std::string::npos);
+    CHECK(last_counter(run.report, "rank") > 0);
+    // AND A HOUSE WAS FOUNDED OVER THE PLAYER'S BODY. The chapter index stops
+    // being -1, which is the row a save file would have to carry and the row a
+    // book that had quietly stopped founding anything would leave at -1.
+    bool founded = false;
+    for (int chapter = 0; chapter < 9; ++chapter) {
+        founded = founded ||
+                  run.report.find("house" + std::to_string(chapter) + " ") != std::string::npos;
+    }
+    INFO(run.report.substr(run.report.rfind("rival[")));
+    CHECK(founded);
+
+    // And it is still deterministic with a rivalry moving under it.
+    const TwinRunOutcome outcome = twin_run(config);
+    CHECK(outcome.passed);
+}
+
 TEST_CASE("the gate passes on the code as it stands") {
     const TwinRunOutcome outcome = twin_run(tiny());
     CHECK(outcome.passed);

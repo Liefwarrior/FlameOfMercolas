@@ -564,7 +564,7 @@ TEST_CASE("past the grudge he stops keeping his own hours") {
     CHECK(gap <= 2);
 }
 
-TEST_CASE("you can win the rematch; you cannot un-found his guild") {
+TEST_CASE("you can win the rematch, and you still cannot un-found his guild") {
     // PERMANENCE IS THE POINT. Beating him afterwards is worth exactly one
     // thing -- he stops looking for you -- and it is worth nothing else.
     NemesisBook book = NemesisBook::load(content::contentDir(), registry());

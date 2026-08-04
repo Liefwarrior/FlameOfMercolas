@@ -267,9 +267,81 @@ CompareReports 'decoded world state' $linuxReport $winReport `
 CompareReports 'world hash + simulation run' $linuxHashReport $winHashReport `
     'what the shipped worlds HASH to, or where a run over them ends up'
 
+# --- 4. the gate stamp names the tree it came from --------------------------
+#
+# THE S7 REVIEW'S SIXTH FINDING. A digest printed into dist\GATE-STAMP.txt is
+# only evidence if somebody can recompute it, and until S8 nobody could: the
+# container hashed raw bytes at container paths and the Dockerfile said out loud
+# that it would not try to make the two sides agree about line endings.
+#
+# They agree now. The container folds CRLF to LF in a scratch copy of native\
+# and takes sha256 over `sha256sum` output for every file, sorted LC_ALL=C by
+# its ./-relative path. This does the same thing here, byte for byte, and
+# refuses to pass on a mismatch -- so a green that belongs to a stale COPY
+# layer, an uncommitted edit or a second worktree now says which.
+
+Write-Host ''
+Write-Host '--- 4. the gate stamp against this working tree'
+$stampFile = Join-Path $DistDir 'GATE-STAMP.txt'
+if (-not (Test-Path -LiteralPath $stampFile)) {
+    Fail 'dist\GATE-STAMP.txt is missing. The container writes it, so a dist\ without one was not published by this build.'
+}
+$stampMatch = Select-String -LiteralPath $stampFile -Pattern 'native/ digest:\s*([0-9a-f]{64})'
+if (-not $stampMatch) { Fail 'dist\GATE-STAMP.txt carries no native/ digest line.' }
+$stamped = $stampMatch.Matches[0].Groups[1].Value
+
+$nativeRoot = (Resolve-Path (Join-Path $repoRoot 'native')).Path
+$sha = [System.Security.Cryptography.SHA256]::Create()
+$rels = [System.Collections.Generic.List[string]]::new()
+foreach ($f in Get-ChildItem -LiteralPath $nativeRoot -Recurse -File) {
+    $rels.Add('./' + $f.FullName.Substring($nativeRoot.Length + 1).Replace('\', '/'))
+}
+$sorted = $rels.ToArray()
+[Array]::Sort($sorted, [System.StringComparer]::Ordinal)
+
+$manifest = [System.Text.StringBuilder]::new()
+foreach ($rel in $sorted) {
+    $full = Join-Path $nativeRoot ($rel.Substring(2) -replace '/', '\')
+    $raw = [System.IO.File]::ReadAllBytes($full)
+    # sed 's/\r$//' folds CRLF to LF and leaves a lone CR alone, so this does
+    # the same: drop a CR only when the next byte is LF.
+    $lf = [System.Collections.Generic.List[byte]]::new($raw.Length)
+    for ($i = 0; $i -lt $raw.Length; $i++) {
+        if ($raw[$i] -eq 13 -and ($i + 1) -lt $raw.Length -and $raw[$i + 1] -eq 10) { continue }
+        $lf.Add($raw[$i])
+    }
+    $digest = ($sha.ComputeHash($lf.ToArray()) | ForEach-Object { $_.ToString('x2') }) -join ''
+    # `sha256sum` prints "<hex>  <path>" and a trailing newline per file.
+    [void]$manifest.Append($digest + '  ' + $rel + "`n")
+}
+$here = ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($manifest.ToString())) |
+    ForEach-Object { $_.ToString('x2') }) -join ''
+
+Write-Host "    files   : $($sorted.Length)"
+Write-Host "    stamped : $stamped"
+Write-Host "    here    : $here"
+if ($stamped -ne $here) {
+    Fail @"
+the gate stamp does not describe this working tree.
+
+        dist\GATE-STAMP.txt says the container tested a native/ whose
+        normalised digest is
+            $stamped
+        and this tree normalises to
+            $here
+
+        So the green in that stamp is a green for OTHER BYTES: the tree has
+        been edited since the build, or docker served a layer built from a
+        different tree. Re-run:
+            docker compose run --rm --build build
+"@
+}
+Write-Host '    the published green belongs to these bytes.'
+
 Write-Host ''
 Write-Host '=== PASS ===' -ForegroundColor Green
 Write-Host '  linux/gcc     : content suite + sim suite + twin-run gate + both reports'
 Write-Host '  mingw/windows : content suite + sim suite + twin-run gate + both reports'
 Write-Host '  comparison    : both reports byte-for-byte identical'
+Write-Host '  gate stamp    : the published green names THIS native/ tree'
 exit 0

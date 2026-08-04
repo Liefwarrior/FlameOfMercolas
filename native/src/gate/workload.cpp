@@ -336,6 +336,30 @@ public:
                 }
             }
         }
+        // S8: AND IT LOSES A FIGHT, for exactly the reason S5 made it commit
+        // crimes and S6 made it take work. The nemesis book is in the tavern's
+        // hash; a workload nobody ever beats compares an empty book to an empty
+        // book on every row of it, which is perfectly deterministic and proves
+        // nothing at all.
+        //
+        // Losing one moves a rung on a real ladder, a faction's weight and its
+        // rival's, an actor's weapon and intent, a memory in the social ledger
+        // and -- for a gate run with the ward registered -- a charge on the
+        // roll. All of it hashed, all of it compared.
+        //
+        // REPORTED rather than fought, like the roof-run above and for the same
+        // reason: the gate is a headless engine with a player who never moves,
+        // so it cannot pick a fight across a taproom. Tavern::concedeTo is the
+        // same call the combat screen will make, and it is said out loud here.
+        if (ticks_ % 420 == 0) {
+            for (const sim::Actor& actor : tavern_->actors()) {
+                if (actor.present() && actor.role() == sim::ActorRole::Patron) {
+                    tavern_->concedeTo(actor.id());
+                    tavern_->reviveAfterDefeat();
+                    break;
+                }
+            }
+        }
     }
 
     void hash_into(sim::HashSink& sink) const override {
@@ -524,6 +548,20 @@ RunResult run_workload(const WorkloadConfig& config) {
                        " heat=" + dec(static_cast<std::uint64_t>(talk.crimes().heat())) +
                        " sky=" + signed_dec(talk.standings().standing(roofs)) +
                        " watch=" + signed_dec(talk.standings().standing(watch)) + "]";
+                // S8: and who has been beating the player, printed for the same
+                // reason -- a report that SHOWS the book moving is worth more
+                // than an assertion that it is compared.
+                const sim::Nemesis* worst = tavern_view->nemesis().worst();
+                out += "  rival[";
+                if (worst == nullptr) {
+                    out += "none";
+                } else {
+                    out += worst->who + " x" +
+                           dec(static_cast<std::uint64_t>(worst->wins)) + " rank" +
+                           dec(static_cast<std::uint64_t>(worst->rank)) + " house" +
+                           signed_dec(worst->chapter) + " plot" + signed_dec(worst->plot);
+                }
+                out += "]";
             }
             out += "\n";
         }
