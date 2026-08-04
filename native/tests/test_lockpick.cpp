@@ -681,3 +681,60 @@ TEST_CASE("the burglar's second box is opened by hands the first one taught") {
     // Wire in the roll at capture: bought, not conjured.
     CHECK(played.summary.find("picks=0 ") == std::string::npos);
 }
+
+TEST_CASE("the lock row is the only thing drawn on the lock's row") {
+    // A DEFECT FOUND IN A PNG, closed with pixels.
+    //
+    // The lock row is drawn at height - margin - 31*scale and the objective row
+    // at 32*scale off the same edge -- one scaled pixel apart, on a font six
+    // rows tall. docs/frames/s10-08-the-lock.png caught the two of them
+    // interleaved: "THE 1OCKUNPINS -TENADEPTH ....+....". Same class of defect
+    // the S7 review found with the alert over the topic grid, same fix: the
+    // wire is a MODE and a mode owns its row.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 2 * 3600;
+    config.spawnX = gull::kRooms[2].standX;
+    config.spawnY = gull::kRooms[2].standY;
+    config.spawnBand = gull::kUpperBand;
+    render::Session session(config);
+    session.stepMany(MoveInput{}, 2);
+    // With the wire OUT, this session is on a rung and has something to say in
+    // both of the rows the lock is about to want. That is the precondition:
+    // asserting a suppression against two empty strings proves nothing.
+    const std::int32_t roofs = session.tavern().dialogue().factions().indexOf("skyrunners");
+    REQUIRE(roofs >= 0);
+    session.tavern().dialogue().standings().addStanding(roofs, 40);
+    REQUIRE(session.tavern().dialogue().standings().join(
+                roofs, session.tavern().dialogue().skills()) == LadderResult::Granted);
+    REQUIRE_FALSE(session.guildLine().empty());
+
+    session.steal();
+    REQUIRE(session.picking());
+    REQUIRE_FALSE(session.lockLine().empty());
+    // AND THE TWO ROWS UNDER IT STAND DOWN. Same pixel row; a mode owns it.
+    CHECK(session.guildLine().empty());
+    CHECK(session.objectiveLine().empty());
+
+    // Draw the frame with the wire in, and the same frame with it out. The row
+    // the lock occupies must be the lock's alone: with the wire out, whatever
+    // the objective row wanted to say is free to say it.
+    render::Framebuffer withWire(config.width, config.height);
+    session.drawFrame(withWire);
+    session.stopPicking();
+    REQUIRE_FALSE(session.picking());
+    render::Framebuffer without(config.width, config.height);
+    session.drawFrame(without);
+
+    // The two frames differ -- the lock row is really there.
+    CHECK(withWire.pixels() != without.pixels());
+    // AND THE CENTRE IS STILL EMPTY IN BOTH, which is the rule the whole HUD
+    // is built against and the reason the row cannot simply be moved.
+    const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
+    for (int y = centre.y0; y < centre.y1; ++y) {
+        for (int x = centre.x0; x < centre.x1; ++x) {
+            REQUIRE(withWire.pixels()[withWire.index(x, y)] ==
+                    without.pixels()[without.index(x, y)]);
+        }
+    }
+}

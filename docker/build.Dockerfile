@@ -414,8 +414,19 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # assertion behind it, the lodgers' eviction stated as an invariant
     # instead of a tautology, the abatement made undeletable, and the
     # bond-pipe precondition constructed instead of tested for.
+    #
+    # S10: 442 -> 464. The demo. The bloodletter trail -- twelve authored
+    # leads at the map's own clue anchors, checked against the BAKED world
+    # rather than against a comment, walked end to end on foot by the
+    # district's own router; the two dead ends, asserted dead; the five
+    # legend tracks; the first-run page, the in-game key list, and the
+    # centre of the screen staying clear with each of them up. Plus the S9
+    # review's findings closed with cases that can go red: a lock opened by
+    # a hand that only has what a player has, the dark room asserting the
+    # claim in its own name, and the burglary's stealth beat needing
+    # somebody awake in the room to miss it.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=442; \
+    GRANADAD_MIN_TESTS=464; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -735,6 +746,33 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: S9's stealth, thievery and lockpicking cases are all registered"; \
+    \
+    # S10. The demo's own claims, by name. A trail whose cases silently stopped
+    # being built would leave a green build with no investigation in the game --
+    # and the two that close S9's findings are exactly the ones a future sprint
+    # would be tempted to delete when they went red.
+    for case in \
+        "the casebook loads the owner's own trail, and every lead is reachable from the hook" \
+        "every lead stands somewhere a body can stand in the baked Docks" \
+        "the trail is walked across the real district, on foot, by the router" \
+        "you cannot read a clue nobody has pointed you at" \
+        "the trail is walked end to end, and the dead ends cost a walk and pay a clue" \
+        "the look key finds the body, and the district's other corners stay quiet" \
+        "the casebook opens in the conversation's own bands and leaves the middle alone" \
+        "working the trail is what the Flame's track is made of, and it pays a rung" \
+        "the five tracks are five different people, and the titles never collide" \
+        "a new game opens on the case, not on a systems demo" \
+        "the keys are in the game, and every verb the client binds is on the list" \
+        "the notes, the keys and the world never fight over the middle of the screen" \
+        "a lock opens to a hand that only has what a player has" \
+        "the burglar's second box is opened by hands the first one taught" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things S10 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S10's trail, legend and first-run cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \

@@ -116,6 +116,7 @@ CasebookRaws CasebookRaws::load(const std::filesystem::path& contentDir) {
             continue;
         }
         lead.place = stringField(node, "place");
+        lead.brief = stringField(node, "short");
         lead.what = stringField(node, "what");
         lead.who = stringField(node, "who");
         lead.found = stringField(node, "found");

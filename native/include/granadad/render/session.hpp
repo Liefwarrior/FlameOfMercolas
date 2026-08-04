@@ -317,6 +317,14 @@ public:
     /// HUD rule is a testable claim and not a preference, and a case pins both
     /// what this says and that it stays on its edge.
     [[nodiscard]] std::string rivalLine() const;
+    /// "THE SKYRUNNERS - TENANT", or empty when the player is on no rung AND
+    /// whenever a lock is open -- the wire's own row is the same pixel row as
+    /// this one. PUBLIC so that suppression is a claim a case can make rather
+    /// than a thing only pixels could catch.
+    [[nodiscard]] std::string guildLine() const;
+    /// What the questline in progress wants next, and empty for the same
+    /// reason while the wire is in.
+    [[nodiscard]] std::string objectiveLine() const;
 
     // --- the conversation ---------------------------------------------------
     //
@@ -394,12 +402,8 @@ private:
     /// Charges a landing to the body: the skill, the guild's teaching, the hit
     /// points and the roof-run tally, in the one place a landing is resolved.
     void settleLanding(const sim::RoofResult& move);
-    /// "THE TEMPLE OF THE FLAME - DISCIPLE", or empty when on no rung.
-    [[nodiscard]] std::string guildLine() const;
     /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
     [[nodiscard]] std::string heatLine() const;
-    /// What the questline in progress wants next, in its own short label.
-    [[nodiscard]] std::string objectiveLine() const;
 
     SessionConfig config_;
     content::World world_;

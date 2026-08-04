@@ -104,6 +104,11 @@ struct Lead {
     std::string id;
     /// "MISSION OF THE FLAME" -- the place, in the words the sign uses.
     std::string place;
+    /// "THE MISSION" -- the same place in a casebook row. The topic grid this
+    /// borrows is three columns wide, so a long name arrives cut; the short one
+    /// is AUTHORED rather than truncated at draw time, because a machine that
+    /// picks where to cut a proper noun picks badly.
+    std::string brief;
     /// "THE BODY, AND WHOEVER FOUND IT" -- what you are going there for.
     std::string what;
     /// notables.json id of whoever tells you, or empty for a lead that is a

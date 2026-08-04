@@ -137,10 +137,19 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
         return false;
     };
     for (const char* key : {"W A S D", "SHIFT", "C  CROUCH", "SPACE", "X  DOWN", "Q  LOOK",
-                            "J  YOUR CASEBOOK", "E  TALK", "G  HANDS", "T  LIFT", "F  THROW",
-                            "R  SLEEP", "ESC", "TAB", "F12"}) {
+                            "J  CASEBOOK", "E  TALK", "G  HANDS", "T  PICK", "F  PUNCH",
+                            "R  SLEEP", "ESC", "TAB", "F12", "LOCK:"}) {
         INFO("missing key row: " << key);
         CHECK(mentions(key));
+    }
+
+    // AND EVERY ROW FITS THE COLUMN IT IS DRAWN IN. Sixteen characters is what
+    // a third of the bottom band holds at 640x360; the first S10 capture of
+    // this page shipped "SPACE  UP: MANT." and a player reads a truncation as
+    // the binding.
+    for (const std::string& row : keys.topics) {
+        INFO("key row too wide: " << row);
+        CHECK(row.size() <= 16);
     }
 
     // IT PAGES. Twenty rows against nine keys is exactly the shape that dropped

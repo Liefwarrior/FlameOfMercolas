@@ -99,27 +99,35 @@ struct RoleLook {
 /// because a keyboard reference that lives beside the SDL bindings drifts from
 /// them the moment somebody rebinds one without looking down. This is drawn
 /// from the same Session verbs the client calls.
+///
+/// AND EVERY ROW FITS ITS COLUMN. The grid is three columns of about sixteen
+/// characters -- Master Venn's twelve topics are what sized it -- and the first
+/// S10 capture of this page shipped "SPACE  UP: MANT." and "E  TALK TO WHOE.".
+/// A controls page that arrives truncated is worse than none, because a player
+/// reads the truncation as the binding.
 const char* const kKeyRows[] = {
     "W A S D  WALK",
     "MOUSE  LOOK",
     "SHIFT  RUN",
     "C  CROUCH",
-    "SPACE  UP: MANTLE, LEAP, STAIR",
-    "X  DOWN: STEP OFF AND FALL",
-    "Q  LOOK AT WHAT IS HERE",
-    "J  YOUR CASEBOOK",
-    "E  TALK TO WHOEVER IS THERE",
-    "G  HANDS ON IT: BOX, BALE, PICKS",
-    "T  LIFT FROM WHOEVER IS AT YOUR ELBOW",
-    "F  THROW A PUNCH",
-    "R  SLEEP, IN A ROOM YOU RENTED",
-    "1-9  PICK THE TOPIC BY NUMBER",
-    "0  NEXT PAGE OF A LONG LIST",
-    "ESC  BACK OUT OF ANYTHING",
-    "TAB  RELEASE THE MOUSE",
+    "SPACE  UP",
+    "X  DOWN",
+    "Q  LOOK AT IT",
+    "J  CASEBOOK",
+    "E  TALK",
+    "G  HANDS ON IT",
+    "T  PICK A PURSE",
+    "F  PUNCH",
+    "R  SLEEP",
+    "1-9  PICK ROW",
+    "0  NEXT PAGE",
+    "ESC  BACK OUT",
+    "TAB  FREE MOUSE",
     "F12  SCREENSHOT",
-    "IN A LOCK: W S AIM, SPACE PROBE",
-    "IN A LOCK: F SHOULDER IT, ESC OUT",
+    "LOCK: W S  AIM",
+    "LOCK: SPACE TRY",
+    "LOCK: F  FORCE",
+    "LOCK: ESC  OUT",
 };
 
 }  // namespace
@@ -936,9 +944,11 @@ DialogueViewState Session::dialogueView() const {
         view.open = true;
         view.speaker = "CONTROLS";
         view.epithet = "GRANADAD: THE DARKSTREETS";
+        // THREE LINES IS WHAT THE TOP BAND WRAPS TO, so this is written to fit
+        // in two. The first version ran to four and lost its own last sentence.
         view.line =
-            "YOU ARE IN THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS WHETHER YOU "
-            "WATCH IT OR NOT. PRESS F1 AGAIN TO PUT THIS DOWN.";
+            "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS WHETHER YOU WATCH IT "
+            "OR NOT. F1 PUTS THIS DOWN.";
         for (const char* row : kKeyRows) {
             view.topics.emplace_back(row);
         }
@@ -956,8 +966,13 @@ DialogueViewState Session::dialogueView() const {
         view.open = true;
         view.speaker = "THE CASEBOOK";
         view.epithet = std::string(caseRaws_.title());
-        const std::string_view mood = caseRaws_.dreadLabel(casebook_.dread());
-        view.attitude = std::string(mood);
+        // THE ATTITUDE FIELD IS SHORT BY CONSTRUCTION -- in a conversation it
+        // holds "WARM" or "HOSTILE" -- and the top-right of that band is where
+        // the HUD draws the clock over it. The first S10 capture put a
+        // twenty-nine character dread band there and the clock landed in the
+        // middle of it. The ward's nerve moved down onto the line, where it is
+        // the first thing you read in your own notes, which is also better.
+        view.attitude = casebook_.closed() ? "CLOSED" : "OPEN";
         const std::vector<std::int32_t> heard = casebook_.known();
         const sim::Legend book = legend();
         if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < heard.size()) {
@@ -969,14 +984,18 @@ DialogueViewState Session::dialogueView() const {
             view.line = what == sim::LeadState::Open
                             ? lead.place + ". " + lead.what + "."
                             : lead.found + " " + lead.detail;
-        } else if (heard.empty()) {
+        } else if (casebook_.readCount() == 0) {
+            // THE OPENING PAGE OF A NEW GAME: the hook, and nothing else. It is
+            // the first thing a player ever reads in this game and it gets the
+            // band to itself.
             view.line = std::string(caseRaws_.hook());
         } else {
-            // The opening page: the hook, and what the ward calls you for the
-            // work so far. One line, because the top band wraps to three and
-            // the fourth would push into the play space.
-            view.line = std::string(caseRaws_.hook()) + "  THEY CALL YOU " +
-                        std::string(book.title()) + ".";
+            // And afterwards: what the ward's nerve is doing, and what it calls
+            // you for the work so far. TWO SHORT SENTENCES, because the band
+            // wraps to three lines and the S10 capture that ran to four lost
+            // "OF THE FLAME" off the end of its own title.
+            view.line = std::string(caseRaws_.dreadLabel(casebook_.dread())) +
+                        ". THEY CALL YOU " + std::string(book.title()) + ".";
         }
         for (const std::int32_t index : heard) {
             const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
@@ -995,7 +1014,13 @@ DialogueViewState Session::dialogueView() const {
                     row = "  ";
                     break;
             }
-            view.topics.push_back(row + lead.place);
+            // THE SHORT NAME, and it is authored rather than truncated here.
+            // The topic grid is three columns and about fourteen characters a
+            // cell -- Master Venn's twelve topics are what sized it -- so
+            // "MISSION OF THE FLAME" arrived on the first S10 capture as
+            // "MISSION OF.". casebook.json carries a `short` for every lead and
+            // a case pins that all of them fit.
+            view.topics.push_back(row + (lead.brief.empty() ? lead.place : lead.brief));
         }
         view.cursor = caseCursor_;
         view.page = casePage_;
@@ -1321,6 +1346,20 @@ namespace {
 }  // namespace
 
 std::string Session::guildLine() const {
+    // NOTHING WHILE THE WIRE IS IN. The lock row is drawn at
+    // height - margin - 31*scale; this one is drawn at 24*scale above the
+    // health bar, which IS height - margin - 31*scale. The same pixel row.
+    // docs/frames/s10-08-the-lock.png caught the two interleaved, reading "THE
+    // 1OCKUNPINS -TENADEPTH ....+....". It is the same class of defect the S7
+    // review found with the alert over the topic grid and it gets the same fix:
+    // a MODE owns its row. The wire is a mode, and while it is in, which ladder
+    // you are highest on is not what the player is reading.
+    //
+    // It is suppressed HERE and not at the draw call so a case can assert it --
+    // a suppression that lives inside drawFrame is only checkable in pixels.
+    if (picking()) {
+        return {};
+    }
     const sim::DialogueDirector& talk = tavern_->dialogue();
     const std::int32_t top = talk.standings().highestRankedFaction();
     if (top < 0) {
@@ -1469,6 +1508,11 @@ std::string Session::contractLine() const {
 }
 
 std::string Session::objectiveLine() const {
+    // And the row above it, for the same reason: the lock's own row is bounded
+    // by these two and a long lock line is nearly the width of the frame.
+    if (picking()) {
+        return {};
+    }
     const sim::DialogueDirector& talk = tavern_->dialogue();
     // A TAKEN JOB OUTRANKS AN AUTHORED STAGE, because a job has a deadline and
     // a questline does not. The Skyrunner line graduates into contract work,
@@ -1606,7 +1650,16 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // -- it is on the casebook's own page, because a title is something you
     // look up and not something you need every frame.
     const std::string investigation = caseLine();
-    hud.caseLabel = conversing ? std::string_view{} : std::string_view{investigation};
+    // ONE SLOT, TWO TENANTS, AND THE MESSAGE WINS.
+    //
+    // The case row sits at y - 16*scale off the health bar, which IS
+    // height - margin - 23*scale -- the same pixel row the alert has used since
+    // S6. The first S10 capture shipped a clue printed straight through
+    // "CASE 1/4 > ...". They are not moved apart, because at 320x180 that row
+    // is the only one left in the bottom-left stack that is outside the
+    // exclusion rectangle: there is nowhere to move to. So the alert takes it
+    // while it is up, and the case row comes back six seconds later, which is
+    // the behaviour a player wants anyway.
     // And who put you on the floor last, which is the one thing on the HUD that
     // is about somebody else rather than about you.
     const std::string rival = rivalLine();
@@ -1621,6 +1674,14 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     } else if (!conversing) {
         hud.alert = std::string_view{message_};
     }
+    // AND ONLY NOW THE CASE ROW, because it shares a pixel row with the alert
+    // and has to be able to see whether one is showing. Set any earlier and
+    // `hud.alert` is still empty -- which is exactly the bug the first S10
+    // capture of the Mission shipped, with a clue printed straight through
+    // "CASE 1/4 > MISSION OF THE FLAME".
+    const bool messaging = !hud.alert.empty() && hud.showAlert;
+    hud.caseLabel =
+        (conversing || messaging) ? std::string_view{} : std::string_view{investigation};
     hud.showHealth = !conversing;
     // AND THE BOTTOM BAND IS THE TOPIC LIST'S, WHOLE. The alert used to be
     // drawn over it and S7 shipped the frame that proves it -- see
@@ -2509,7 +2570,12 @@ std::int32_t gTrailUnreached = 0;
         return 0;
     }
     std::int32_t last = -1;
-    for (int guard = 0; guard < 32; ++guard) {
+    // `start` walks nowhere: it is the FIRST FRAME of a new game, which is the
+    // one state a capture could not otherwise reach -- SessionConfig's opening
+    // page is set by the client and not by the smoke path, so a scripted run
+    // has to ask for it. Nothing else about the session differs.
+    const int rounds = ending == "start" ? 0 : 32;
+    for (int guard = 0; guard < rounds; ++guard) {
         // The nearest OPEN lead on this band. Nearest, because that is what a
         // player does, and because it makes the walk short enough to watch.
         std::int32_t best = -1;
@@ -2575,16 +2641,35 @@ std::int32_t gTrailUnreached = 0;
         }
     }
     // And where the shutter goes.
-    if (ending == "notes") {
+    if (ending == "notes" || ending == "start") {
         session.toggleCasebook();
     } else if (ending == "keys") {
         session.toggleKeys();
     } else if (last >= 0) {
-        // Facing the thing that was just written down, so the frame is of the
-        // place and not of the walk away from it.
+        // STAND BACK, THEN LOOK AT IT. The anchors are counters, flagstones and
+        // sagging floors, so a body that has walked onto one is standing with
+        // its nose against masonry -- the first S10 capture of the Mission is a
+        // photograph of a brown wall. Four tiles back is inside kLookRangeTiles,
+        // so the clue is still readable from there, and it is the difference
+        // between a frame of a place and a frame of a surface.
         const sim::Lead& lead = raws->leads()[static_cast<std::size_t>(last)];
+        for (const std::int32_t back : {7, 6, 5, 4, 3}) {
+            if (walkAcrossDistrict(session, lead.site.x, lead.site.y + back) ||
+                walkAcrossDistrict(session, lead.site.x + back, lead.site.y) ||
+                walkAcrossDistrict(session, lead.site.x, lead.site.y - back) ||
+                walkAcrossDistrict(session, lead.site.x - back, lead.site.y)) {
+                break;
+            }
+        }
         session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
                                              lead.site.x, lead.site.y));
+        // AND THE CLUE IS NOT RE-PRINTED FOR THE SHUTTER. Backing off puts the
+        // body outside kLookRangeTiles, which is the correct answer -- seven
+        // tiles is out of reach of a flagstone -- so pressing Q again from here
+        // says "NOTHING HERE WORTH WRITING DOWN", which it should. The clue is
+        // in the casebook, which is where a clue belongs; what this frame is of
+        // is the PLACE, with the CASE row under it saying where the trail
+        // stands. `--trail=notes` is the frame of the writing.
     }
     return gTrailRead;
 }
@@ -3248,7 +3333,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // The corner stamp, unless somebody is standing in it: while a conversation
     // is open the top-left is the speaker's name, and two strings in the same
     // eleven characters of screen is unreadable in a capture.
-    if (config.stamp && !result.talking) {
+    // NOT WHILE ANY PANEL IS UP. The top-left is the speaker's name whenever
+    // the conversation surface is drawing -- and S10 gave that surface two more
+    // users, the casebook and the key list, neither of which sets `talking`.
+    // The first S10 capture shipped "GRANADAD 0.10.0" printed straight through
+    // "THE CASEBOOK" because this test only knew about the third of them.
+    if (config.stamp && !result.talking && !session.casebookOpen() && !session.keysOpen()) {
         const int scale = std::max(1, frame.height() / 180);
         // DERIVED, NOT TYPED. S9's read "GRANADAD S6" -- a literal three sprints
         // out of date, burnt into the top-left of every capture including all

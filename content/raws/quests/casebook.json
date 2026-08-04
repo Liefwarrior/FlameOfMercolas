@@ -16,6 +16,7 @@
   "leads": [
     {
       "id": "mission-backroom",
+      "short": "THE BODY",
       "place": "MISSION OF THE FLAME",
       "what": "THE BODY, AND WHOEVER FOUND IT",
       "who": "onna",
@@ -29,6 +30,7 @@
     },
     {
       "id": "mission-flagstones",
+      "short": "FLAGSTONES",
       "place": "MISSION OF THE FLAME",
       "what": "THE FLAGSTONES IT LAY ON OVERNIGHT",
       "who": "maell",
@@ -41,6 +43,7 @@
     },
     {
       "id": "the-outfall",
+      "short": "THE OUTFALL",
       "place": "THE OUTFALL",
       "what": "THE SEWER MOUTH IN THE SEAWALL",
       "who": "",
@@ -54,6 +57,7 @@
     },
     {
       "id": "weighhouse-ledger",
+      "short": "THE LEDGER",
       "place": "THE WEIGHHOUSE",
       "what": "THE HARBORMASTER'S LEDGER",
       "who": "crell",
@@ -66,6 +70,7 @@
     },
     {
       "id": "harls-yard",
+      "short": "HARL'S YARD",
       "place": "HARL'S YARD",
       "what": "THE HULL THAT CAME IN THAT NIGHT",
       "who": "harl",
@@ -78,6 +83,7 @@
     },
     {
       "id": "kings-bond",
+      "short": "KING'S BOND",
       "place": "THE KING'S BOND",
       "what": "WHERE STRUCK CARGO IS SUPPOSED TO GO",
       "who": "grieve",
@@ -91,6 +97,7 @@
     },
     {
       "id": "branns-grayledger",
+      "short": "GRAY LEDGER",
       "place": "BRANN'S CHANDLERY",
       "what": "THE GRAY LEDGER",
       "who": "brann",
@@ -103,6 +110,7 @@
     },
     {
       "id": "wrackhouse-salvage",
+      "short": "WRACKHOUSE",
       "place": "WRACKHOUSE",
       "what": "WHAT THE SEA SPAT UP, AND WHO SOLD IT",
       "who": "dagny",
@@ -115,6 +123,7 @@
     },
     {
       "id": "kennel-row",
+      "short": "KENNEL ROW",
       "place": "KENNEL ROW",
       "what": "THE DOGS, AND WHAT THEY WILL NOT DO",
       "who": "cobb",
@@ -127,6 +136,7 @@
     },
     {
       "id": "drowned-name-wall",
+      "short": "NAME WALL",
       "place": "THE DROWNED-NAME WALL",
       "what": "CANDLE STUBS, AND NAMES SCRATCHED",
       "who": "",
@@ -139,6 +149,7 @@
     },
     {
       "id": "tarry-jek",
+      "short": "TARRY JEK",
       "place": "THE BEACHING STRAND",
       "what": "THE MUDLARK, IF YOU THINK TO HIRE WHAT EVERYONE ELSE KICKS",
       "who": "jek",
@@ -151,6 +162,7 @@
     },
     {
       "id": "drowned-hold",
+      "short": "DROWNED HOLD",
       "place": "THE DROWNED HOLD",
       "what": "LAMPLIGHT UNDER THE DOORS OF A CONDEMNED WAREHOUSE",
       "who": "tolley",

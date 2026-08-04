@@ -364,8 +364,23 @@ void drawRoom(Framebuffer& target, const HudState& state) {
         // The frame is here. Clip to the width that actually exists, so every
         // alert from every source is safe by construction and no future caller
         // has to remember a number.
-        const std::string alert = clipToWidth(state.alert, target.width() - 2 * margin, scale);
-        const int width = textWidth(alert, scale);
+        // AND DRAWN SMALLER RATHER THAN CUT.
+        //
+        // S10: clipping is the last resort and it used to be the first. The 4x6
+        // font is scaled by the frame HEIGHT, so at 1280x720 a glyph is twenty
+        // pixels wide and the row holds sixty-four characters however wide the
+        // window is -- and the first S10 capture shipped a clue reading "...THE
+        // FACE FIXED IN..". A line the player has to read is worth a size
+        // smaller; a line nobody can finish is worth nothing. So take the
+        // largest scale it fits at, down to 1, and only then clip.
+        int alertScale = scale;
+        while (alertScale > 1 &&
+               textWidth(state.alert, alertScale) > target.width() - 2 * margin) {
+            --alertScale;
+        }
+        const std::string alert =
+            clipToWidth(state.alert, target.width() - 2 * margin, alertScale);
+        const int width = textWidth(alert, alertScale);
         const int x = std::max(margin, (target.width() - width) / 2);
         // One row higher than it used to sit. A long alert is clamped to the
         // left margin, and at 15 rows up that is exactly where the "HP" label
@@ -373,7 +388,7 @@ void drawRoom(Framebuffer& target, const HudState& state) {
         // bottom-left is a stack now (bar, HP, alert, rung, objective) and every
         // row in it has its own.
         drawText(target, x, target.height() - margin - 23 * scale, alert,
-                 Rgb{0.90F, 0.62F, 0.30F}, 0.95F, scale);
+                 Rgb{0.90F, 0.62F, 0.30F}, 0.95F, alertScale);
     }
 }
 

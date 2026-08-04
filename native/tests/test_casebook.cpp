@@ -527,3 +527,22 @@ TEST_CASE("the trail is walked across the real district, on foot, by the router"
     CHECK(played.summary.find("dread=0 ") == std::string::npos);
     CHECK(played.summary.find("called=NOBODY") == std::string::npos);
 }
+
+TEST_CASE("a casebook row fits the column it is drawn in") {
+    // THE ROW IS THREE COLUMNS WIDE AND THAT IS A MEASUREMENT, not a taste:
+    // dialogue_view.hpp sized the grid on Master Venn's twelve topics. The
+    // first S10 capture shipped "1 ? MISSION OF." because the casebook handed
+    // it the full place name. Every lead carries an authored short name and
+    // this is where the length of it is enforced.
+    //
+    // Fourteen: the two-character state marker plus twelve of name, which is
+    // what a column holds at 640x360 before clipToWidth starts cutting.
+    for (const Lead& lead : raws().leads()) {
+        INFO("lead " << lead.id << " short '" << lead.brief << "'");
+        CHECK_FALSE(lead.brief.empty());
+        CHECK(lead.brief.size() <= 12);
+        // And it is a NAME, not a truncation: no trailing full stop, which is
+        // what an automatic cut leaves behind.
+        CHECK(lead.brief.back() != '.');
+    }
+}
