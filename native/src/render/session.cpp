@@ -154,34 +154,129 @@ void Session::say(std::string line) {
     messageSteps_ = 6 * sim::kStepsPerSecond;
 }
 
+bool Session::talking() const noexcept {
+    return tavern_->dialogue().isOpen();
+}
+
+bool Session::haggling() const noexcept {
+    return tavern_->dialogue().isHaggling();
+}
+
 void Session::interact() {
-    const sim::TalkResult talk = tavern_->talkToNearest();
-    if (talk.result == sim::ServiceResult::NobodyThere) {
+    if (talking()) {
+        chooseTopic(static_cast<std::size_t>(std::max(0, topicCursor_)));
+        return;
+    }
+    if (!tavern_->talkTo()) {
         say("NOBODY WITHIN REACH");
         return;
     }
-    const sim::Actor* who =
-        tavern_->nearestTo(body_->x(), body_->y(), 2 * sim::kSubOne);
-    if (who != nullptr && who->role() == sim::ActorRole::Bartender) {
-        const sim::ServiceResult bought = tavern_->buyDrink();
-        if (bought == sim::ServiceResult::Served) {
-            say(talk.speaker + " POURS. -" + std::to_string(sim::kDrinkPrice) + " C");
-            return;
-        }
-        say(talk.speaker + ": " + std::string(sim::serviceResultName(bought)));
+    topicCursor_ = 0;
+    haggleOffer_ = 0;
+    const sim::DialogueDirector& talk = tavern_->dialogue();
+    say(talk.speaker().name + ": " + talk.greeting());
+}
+
+void Session::moveTopicCursor(int delta) {
+    if (!talking()) {
         return;
     }
-    if (who != nullptr && who->role() == sim::ActorRole::Innkeeper) {
-        const sim::ServiceResult rented = tavern_->rentRoom();
-        if (rented == sim::ServiceResult::Served) {
-            say(talk.speaker + ": ROOM " + std::to_string(tavern_->rentedRoom() + 1) +
-                " IS YOURS");
-            return;
-        }
-        say(talk.speaker + ": " + std::string(sim::serviceResultName(rented)));
+    const int count = static_cast<int>(tavern_->dialogue().topics().size());
+    if (count <= 0) {
+        topicCursor_ = 0;
         return;
     }
-    say(talk.speaker + ": " + talk.line);
+    // Wraps, so holding one direction walks the whole list.
+    topicCursor_ = ((topicCursor_ + delta) % count + count) % count;
+}
+
+void Session::chooseTopic(std::size_t index) {
+    if (!talking()) {
+        return;
+    }
+    const sim::Reply reply = tavern_->chooseTopic(index);
+    if (!reply.ok && reply.line.empty()) {
+        return;
+    }
+    if (reply.haggling) {
+        // Open the argument at what they are asking, so the first press of a
+        // key is a concession rather than a guess.
+        haggleOffer_ = tavern_->dialogue().haggle().asking();
+    }
+    if (!reply.line.empty()) {
+        say(tavern_->dialogue().speaker().name + ": " + reply.line);
+    }
+    if (talking()) {
+        const int count = static_cast<int>(tavern_->dialogue().topics().size());
+        if (count > 0 && topicCursor_ >= count) {
+            topicCursor_ = count - 1;
+        }
+    } else {
+        topicCursor_ = 0;
+    }
+}
+
+void Session::closeConversation() {
+    tavern_->endConversation();
+    topicCursor_ = 0;
+    haggleOffer_ = 0;
+}
+
+void Session::adjustOffer(int delta) {
+    if (!haggling()) {
+        return;
+    }
+    const int ceiling = std::max(1, tavern_->dialogue().haggle().asking());
+    haggleOffer_ = std::clamp(haggleOffer_ + delta, 0, ceiling);
+}
+
+void Session::makeOffer() {
+    if (!haggling()) {
+        return;
+    }
+    const std::string who = tavern_->dialogue().speaker().name;
+    const sim::Reply reply = tavern_->offerPrice(haggleOffer_);
+    if (!reply.line.empty()) {
+        say(who + ": " + reply.line);
+    }
+    haggleOffer_ = haggling() ? std::min(haggleOffer_, tavern_->dialogue().haggle().asking()) : 0;
+}
+
+void Session::takeAskingPrice() {
+    if (!haggling()) {
+        return;
+    }
+    const std::string who = tavern_->dialogue().speaker().name;
+    const sim::Reply reply = tavern_->takeAskingPrice();
+    if (!reply.line.empty()) {
+        say(who + ": " + reply.line);
+    }
+    haggleOffer_ = 0;
+}
+
+DialogueViewState Session::dialogueView() const {
+    DialogueViewState view;
+    const sim::DialogueDirector& talk = tavern_->dialogue();
+    if (!talk.isOpen()) {
+        return view;
+    }
+    view.open = true;
+    view.speaker = talk.speaker().name;
+    view.epithet = talk.speaker().epithet;
+    view.attitude = std::string(sim::attitudeName(talk.attitude()));
+    view.line = talk.lastLine();
+    view.cursor = topicCursor_;
+    for (const sim::Topic& topic : talk.topics()) {
+        view.topics.push_back(topic.label);
+    }
+    if (talk.isHaggling()) {
+        view.haggling = true;
+        view.asking = talk.haggle().asking();
+        view.offer = haggleOffer_;
+        view.patience = talk.haggle().patience();
+        view.goods = std::string(sim::goodsName(talk.haggle().terms().goods));
+    }
+    return view;
 }
 
 void Session::punch() {
@@ -261,57 +356,51 @@ std::string Session::placeLabel() const {
 }
 
 std::vector<Lamp> Session::tavernLights() const {
+    // WHERE the flames are is the simulation's answer, derived from the baked
+    // bytes (see gull::taproomTables). All this does is decide what each kind
+    // of flame looks like -- brightness and colour, which are rendering, and
+    // which are the only part of a light a renderer has any business owning.
+    //
+    // S2 hardcoded seven tile coordinates here with no derivation and no test.
+    // The S2 review was right that this file had no business knowing them.
     std::vector<Lamp> lights;
-    if (tavern_->fireLit()) {
-        // The hearth, in the south wall. Two cells of it, so the fire lights
-        // the wall face it is set into as well as the floor in front.
-        for (std::int32_t x = sim::gull::kHearthX0; x <= sim::gull::kHearthX1; ++x) {
-            Lamp fire;
-            fire.name = "gull_hearth";
-            fire.x = x;
-            fire.y = sim::gull::kHearthY;
-            fire.z = sim::gull::kGroundBand;
-            fire.luminance = 26;
-            fire.warmth = LampWarmth::Fire;
-            lights.push_back(fire);
+    for (const sim::gull::HouseLight& light : tavern_->houseLights()) {
+        Lamp lamp;
+        lamp.x = light.x;
+        lamp.y = light.y;
+        lamp.z = light.band;
+        switch (light.kind) {
+            case sim::gull::LightKind::Hearth:
+                lamp.name = "gull_hearth";
+                lamp.luminance = 26;
+                lamp.warmth = LampWarmth::Fire;
+                break;
+            case sim::gull::LightKind::Candle:
+                lamp.name = "gull_candle";
+                lamp.luminance = 17;
+                lamp.warmth = LampWarmth::Fire;
+                break;
+            case sim::gull::LightKind::Lantern:
+                // Cooler than the fire, so the room has two colours of light in
+                // it and not one. The Gull is the captains' house and the
+                // district's grandest room; charts on the walls are no use in
+                // the dark, and a fifteen-tile interior lit by two hearth cells
+                // and four candles reads as a cellar.
+                lamp.name = "gull_lantern";
+                lamp.luminance = 22;
+                lamp.warmth = LampWarmth::Lantern;
+                break;
         }
-    }
-    if (tavern_->isOpen()) {
-        // A candle on each of the four taproom tables. Out with the doors.
-        static constexpr std::int32_t kTableX[] = {148, 151, 148, 151};
-        static constexpr std::int32_t kTableY[] = {69, 69, 74, 74};
-        for (int i = 0; i < 4; ++i) {
-            Lamp candle;
-            candle.name = "gull_candle";
-            candle.x = kTableX[i];
-            candle.y = kTableY[i];
-            candle.z = sim::gull::kGroundBand;
-            candle.luminance = 17;
-            candle.warmth = LampWarmth::Fire;
-            lights.push_back(candle);
-        }
-        // Three hanging lanterns down the length of the taproom. The Gull is
-        // the captains' house and the district's grandest room; charts on the
-        // walls are no use in the dark, and a fifteen-tile interior lit by two
-        // hearth cells and four candles reads as a cellar. Cooler than the
-        // fire, so the room has two colours of light in it and not one.
-        static constexpr std::int32_t kLanternX[] = {150, 154, 152};
-        static constexpr std::int32_t kLanternY[] = {68, 68, 75};
-        for (int i = 0; i < 3; ++i) {
-            Lamp lantern;
-            lantern.name = "gull_lantern";
-            lantern.x = kLanternX[i];
-            lantern.y = kLanternY[i];
-            lantern.z = sim::gull::kGroundBand;
-            lantern.luminance = 22;
-            lantern.warmth = LampWarmth::Lantern;
-            lights.push_back(lantern);
-        }
+        lights.push_back(std::move(lamp));
     }
     return lights;
 }
 
 std::vector<SpriteInstance> Session::actorSprites() const {
+    return actorSprites(camera());
+}
+
+std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
     std::vector<SpriteInstance> sprites;
     const SkyState sky = skyAt(timeOfDay_);
     const std::vector<Lamp> live = tavernLights();
@@ -355,6 +444,7 @@ std::vector<SpriteInstance> Session::actorSprites() const {
             sprite.glow = 0.0F;
             // Hard-edged: chunky and readable, per the visual target.
             sprite.softness = 0.0F;
+            sprite.person = true;
             sprites.push_back(sprite);
         };
 
@@ -367,6 +457,52 @@ std::vector<SpriteInstance> Session::actorSprites() const {
         part(0.20F, 0.17F * build, 0.20F * build, look.legs);
         part(0.55F, 0.21F * build, 0.20F * build, look.torso);
         part(0.83F, 0.12F * build, 0.10F * build, look.head);
+
+        // THE FACE, and the reason it is here.
+        //
+        // Actor::faceToward() computes an eight-point facing and hashInto()
+        // commits it to world state on every tick -- and until now no renderer
+        // read it. A feature that exists only as data. The S2 review called
+        // that out and it is the cheapest single step from "snowman" toward
+        // the Barony bar: whether somebody is LOOKING AT YOU is the one thing
+        // about a person you need to be able to read across a dark room.
+        //
+        // So: a small pale patch on the head, offset a hair toward whichever
+        // way they are facing, drawn only when that way is roughly toward the
+        // eye. Turn your back on them and it is gone. Purely presentational --
+        // the facing itself belongs to the simulation and is never written here.
+        const float facingRad =
+            static_cast<float>(actor.facing()) * (2.0F * kPi / 65536.0F);
+        // BAM 0 is north, which is -Y, and increases clockwise (sim/angle.hpp).
+        const float faceX = std::sin(facingRad);
+        const float faceY = -std::cos(facingRad);
+        const float toEyeX = view.x - px;
+        const float toEyeY = view.y - py;
+        const float span = std::sqrt(toEyeX * toEyeX + toEyeY * toEyeY);
+        if (span < 0.0001F) {
+            continue;
+        }
+        // Cosine of the angle between where they look and where the eye is.
+        const float towards = (faceX * toEyeX + faceY * toEyeY) / span;
+        if (towards <= 0.15F) {
+            continue;  // turned away; you get the back of a head
+        }
+        SpriteInstance face;
+        // Pushed a fraction of a tile out of the head in the direction of gaze,
+        // so a figure at an angle reads as being at an angle.
+        face.x = px + faceX * 0.09F * build;
+        face.y = py + faceY * 0.09F * build;
+        face.z = floorZ + 0.85F;
+        face.halfWidth = 0.075F * build;
+        face.halfHeight = 0.055F * build;
+        const float lift = 1.35F;
+        face.colour = Rgb{std::min(1.0F, look.head.r * light.r * lift),
+                          std::min(1.0F, look.head.g * light.g * lift),
+                          std::min(1.0F, look.head.b * light.b * lift)};
+        face.glow = 0.0F;
+        face.softness = 0.0F;
+        face.person = true;
+        sprites.push_back(face);
     }
     return sprites;
 }
@@ -411,10 +547,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         sprites.push_back(flame);
     }
 
-    const std::vector<SpriteInstance> people = actorSprites();
+    const Camera view = camera();
+    const std::vector<SpriteInstance> people = actorSprites(view);
     sprites.insert(sprites.end(), people.begin(), people.end());
 
-    const FrameStats stats = renderer_->renderFrame(target, camera(), settings, sprites);
+    const FrameStats stats = renderer_->renderFrame(target, view, settings, sprites);
 
     HudState hud;
     hud.health = tavern_->playerHp();
@@ -440,12 +577,26 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         }
         room = line.str();
     }
-    hud.roomLabel = room;
+    // While a conversation is open the bottom band belongs to the topic list,
+    // so the room line and the running message stand down rather than draw on
+    // top of it.
+    const bool conversing = talking();
+    hud.roomLabel = conversing ? std::string_view{} : std::string_view{room};
+    const std::string_view standing = tavern_->dialogue().ledger().reputationLabel();
+    hud.standingLabel = standing;
     // A bouncer's warning outranks anything the player did to themselves: it is
     // the one line in this game they must not miss.
     const bool warned = !tavern_->lastWarning().empty() &&
                         tavern_->playerStanding() != sim::Standing::Welcome;
-    hud.alert = warned ? std::string_view{tavern_->lastWarning()} : std::string_view{message_};
+    if (warned) {
+        hud.alert = std::string_view{tavern_->lastWarning()};
+    } else if (!conversing) {
+        hud.alert = std::string_view{message_};
+    }
+    hud.showHealth = !conversing;
+    // The panel FIRST, the HUD over it: a bouncer's warning has to survive
+    // being told mid-conversation, and it is the one line that outranks a menu.
+    drawDialogue(target, dialogueView());
     drawHud(target, hud);
     return stats;
 }

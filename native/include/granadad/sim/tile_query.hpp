@@ -146,6 +146,24 @@ public:
     /// where there is no cell to have headroom in. The pinned reachability
     /// counts in docks.hpp moved as a result and were all re-derived from the
     /// baked bytes; test_tile_query.cpp re-derives them on every build.
+    ///
+    /// S3, AND THIS IS THE HONEST PART. The S2 review mutated this function to
+    /// `return true` and the whole 228-test gate stayed green. It was right to:
+    /// the shipped Docks contains NO cell that is walkable with VOID directly
+    /// above it, so over that one map this rule and `true` are the same
+    /// function, and no count re-derived from those bytes can tell them apart.
+    /// That is a fact about the map, not a licence to delete the rule -- the
+    /// next baked world (an interior, a sewer, anything authored right up to
+    /// the border) will have such cells, and a body standing in the world's
+    /// own border ring is exactly the bug this refuses.
+    ///
+    /// So it is proved on a world built to contain the case:
+    /// test_tile_query.cpp's "headroom refuses the world's own ceiling" stands
+    /// a FLOOR under a VOID cell in a purpose-built World and requires
+    /// standable() to say no. That case goes red on `return true`. The same
+    /// case ALSO asserts, against the real Docks, that the district has no such
+    /// cell -- so the day the map gains one, the comment above stops being true
+    /// out loud rather than quietly.
     [[nodiscard]] bool headroom(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept;
 
     /// walkable() and headroom() together — "a body can be here".

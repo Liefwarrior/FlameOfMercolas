@@ -276,16 +276,74 @@ int run_client(const Options& options) {
                     running = false;
                     break;
                 case SDL_EVENT_KEY_DOWN:
+                    // A CONVERSATION TAKES THE KEYBOARD. Everything below is
+                    // still Session's — the client owns no game logic — but
+                    // while somebody is talking to you, the arrows pick topics
+                    // rather than turning your head, and Escape ends the
+                    // conversation rather than the game.
+                    if (session.talking() && !event.key.repeat) {
+                        if (session.haggling()) {
+                            const int stride =
+                                (SDL_GetModState() & SDL_KMOD_SHIFT) != 0 ? 5 : 1;
+                            if (event.key.key == SDLK_LEFT || event.key.key == SDLK_DOWN) {
+                                session.adjustOffer(-stride);
+                                break;
+                            }
+                            if (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) {
+                                session.adjustOffer(stride);
+                                break;
+                            }
+                            if (event.key.key == SDLK_RETURN || event.key.key == SDLK_E) {
+                                session.makeOffer();
+                                break;
+                            }
+                            if (event.key.key == SDLK_T) {
+                                session.takeAskingPrice();
+                                break;
+                            }
+                            if (event.key.key == SDLK_ESCAPE) {
+                                session.closeConversation();
+                                break;
+                            }
+                            break;
+                        }
+                        if (event.key.key == SDLK_ESCAPE) {
+                            session.closeConversation();
+                            break;
+                        }
+                        if (event.key.key == SDLK_UP || event.key.key == SDLK_W) {
+                            session.moveTopicCursor(-1);
+                            break;
+                        }
+                        if (event.key.key == SDLK_DOWN || event.key.key == SDLK_S) {
+                            session.moveTopicCursor(1);
+                            break;
+                        }
+                        if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
+                            session.chooseTopic(
+                                static_cast<std::size_t>(event.key.key - SDLK_1));
+                            break;
+                        }
+                        if (event.key.key == SDLK_RETURN || event.key.key == SDLK_E) {
+                            session.interact();
+                            break;
+                        }
+                        if (event.key.key == SDLK_F) {
+                            // Still legal, and it ends the conversation the way
+                            // a punch always ends a conversation.
+                            session.punch();
+                            break;
+                        }
+                        break;
+                    }
                     if (event.key.key == SDLK_ESCAPE) {
                         running = false;
                     } else if (event.key.key == SDLK_TAB) {
                         mouseLook = !mouseLook;
                         SDL_SetWindowRelativeMouseMode(window, mouseLook);
                     } else if (event.key.key == SDLK_E && !event.key.repeat) {
-                        // Talk, buy a drink, take a room — whichever the person
-                        // in front of you is for. All three verbs live on
-                        // Session so the test suite drives the same code a
-                        // keypress does.
+                        // Talk. What used to be one sentence and a silent
+                        // purchase is now a topic list — see Session::interact.
                         session.interact();
                     } else if (event.key.key == SDLK_F && !event.key.repeat) {
                         session.punch();
@@ -316,7 +374,10 @@ int run_client(const Options& options) {
             }
         }
 
-        const bool* keys = SDL_GetKeyboardState(nullptr);
+        // Held keys move the body — unless somebody is talking to you, in which
+        // case W and S are walking the topic list and must not also walk you
+        // out of the room.
+        const bool* keys = session.talking() ? nullptr : SDL_GetKeyboardState(nullptr);
         if (keys != nullptr) {
             if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) {
                 held.forward += 1;

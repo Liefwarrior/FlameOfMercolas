@@ -27,6 +27,7 @@
 
 #include "granadad/content/world.hpp"
 #include "granadad/render/atlas.hpp"
+#include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/lamps.hpp"
@@ -115,8 +116,13 @@ public:
     // code a keypress does. The client binds E, F and R to these and owns no
     // game logic of its own.
 
-    /// E. Talks to whoever is in reach, and does business with them if they are
-    /// in a trade: a drink from the bartender, a room from the innkeeper.
+    /// E. Opens a conversation with whoever is in reach; picks the topic under
+    /// the cursor when one is already open.
+    ///
+    /// S3 CHANGED WHAT THIS KEY MEANS, deliberately. In S2 it produced one
+    /// sentence and, for the two people who sell things, silently completed a
+    /// purchase. Buying is now a topic on a list beside asking them about the
+    /// vanished clerk, which is what "topics, not a single greeting" means.
     void interact();
     /// F. Throws a punch. In a taproom that is an offence, and the house has
     /// opinions about it.
@@ -127,6 +133,32 @@ public:
     /// The last thing that happened, for the HUD. Fades after a few seconds.
     [[nodiscard]] const std::string& lastMessage() const noexcept { return message_; }
 
+    // --- the conversation ---------------------------------------------------
+    //
+    // All of it on Session, for the same reason the three verbs are: the test
+    // suite drives exactly the code a keypress does, and the client owns no
+    // game logic of its own.
+
+    [[nodiscard]] bool talking() const noexcept;
+    /// True when the conversation has turned into an argument about a price.
+    [[nodiscard]] bool haggling() const noexcept;
+    /// Everything the surface draws. Empty and closed when nobody is talking.
+    [[nodiscard]] DialogueViewState dialogueView() const;
+    /// Which topic the cursor is on.
+    [[nodiscard]] int topicCursor() const noexcept { return topicCursor_; }
+    void moveTopicCursor(int delta);
+    /// Picks a topic by index. Out of range does nothing.
+    void chooseTopic(std::size_t index);
+    void closeConversation();
+
+    /// What the player is about to offer, while haggling.
+    [[nodiscard]] int haggleOffer() const noexcept { return haggleOffer_; }
+    void adjustOffer(int delta);
+    /// Says the number.
+    void makeOffer();
+    /// Takes the price on the table without argument.
+    void takeAskingPrice();
+
     /// The lights the tavern is currently showing: its hearth while the fire is
     /// lit, its table candles while the doors are open. Empty when the house is
     /// dark. Exposed so a test can assert the room goes dark rather than
@@ -135,6 +167,13 @@ public:
 
     /// Every actor in view, as billboards, already shaded by the light where
     /// they stand.
+    ///
+    /// Takes the CAMERA, because one part of a person is view-dependent: the
+    /// face only shows when they are looking roughly your way. See the note in
+    /// the implementation on why the eight-point facing the simulation has been
+    /// hashing since S2 finally gets drawn.
+    [[nodiscard]] std::vector<SpriteInstance> actorSprites(const Camera& view) const;
+    /// The same, through the body's own eye.
     [[nodiscard]] std::vector<SpriteInstance> actorSprites() const;
 
 private:
@@ -157,6 +196,11 @@ private:
     std::string message_;
     /// Movement steps the message has left to live.
     std::int32_t messageSteps_ = 0;
+    /// Which topic the cursor is on, and what number the player is about to
+    /// name across a counter. Both are pure UI state -- the standing, the
+    /// prices and the memory all live in the simulation.
+    int topicCursor_ = 0;
+    int haggleOffer_ = 0;
 };
 
 /// What a scripted capture run was asked to do.

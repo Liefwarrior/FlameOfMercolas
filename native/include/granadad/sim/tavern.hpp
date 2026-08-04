@@ -41,6 +41,7 @@
 
 #include "granadad/sim/actor.hpp"
 #include "granadad/sim/brawl.hpp"
+#include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/region_path.hpp"
 #include "granadad/sim/spellbook.hpp"
@@ -131,6 +132,53 @@ inline constexpr TileBox kRegion{kFootprintX0 - 1, kStreetY - 2, kGroundBand,
 
 // --- the hours --------------------------------------------------------------
 
+// --- the lights, DERIVED ----------------------------------------------------
+//
+// S2 hardcoded four table tiles and three lantern tiles in the renderer, with
+// no derivation and no test -- the exact thing the header rule above forbids,
+// and the S2 review caught it. They are computed here now, out of the baked
+// bytes and out of coordinates that are themselves re-read from the baked bytes
+// on every build.
+
+/// A tile, when only a tile is meant.
+struct TilePos {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+};
+
+/// What kind of flame a house light is. The renderer decides what that looks
+/// like; the simulation decides where they are and when they burn.
+enum class LightKind : std::uint8_t {
+    /// The fire in the south wall.
+    Hearth = 0,
+    /// A candle standing on a piece of furniture.
+    Candle = 1,
+    /// A lantern hanging from the ceiling.
+    Lantern = 2,
+};
+
+struct HouseLight {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::int32_t band = kGroundBand;
+    LightKind kind = LightKind::Candle;
+};
+
+/// The taproom's FURNITURE, read out of the world: every solid cell inside the
+/// walls on the ground floor that is not the bar counter, not the hearth and
+/// not the snug partition. Those are the tables, and a table is where a candle
+/// stands. Ascending by (y, x), so the list is the map's and not the caller's.
+[[nodiscard]] std::vector<TilePos> taproomTables(const TileQuery& tiles);
+
+/// How many the baked Docks actually has. Pinned so a re-bake that moves the
+/// furniture is a red test rather than a room that quietly goes dark.
+inline constexpr std::size_t kTableCount = 4;
+
+/// Where the three hanging lanterns are, derived from the door and the bar --
+/// both of which test_tavern.cpp re-reads from the baked bytes. A captains'
+/// house lights its threshold and its counter; nothing else needs a rule.
+[[nodiscard]] std::vector<TilePos> lanternTiles();
+
 /// Doors open at eleven and shut at two. A captains' house keeps late hours
 /// because ships come in on the tide, not on the clock.
 inline constexpr std::int32_t kOpensAt = hourOfDay(11);
@@ -147,7 +195,9 @@ inline constexpr std::int32_t kFireLitUntil = hourOfDay(3);
 // trade
 // ---------------------------------------------------------------------------
 
-/// What a drink and a bed cost, in the smallest coin there is.
+/// What a drink and a bed cost, in the smallest coin there is. THE ODDS, not
+/// the price: what the player actually pays comes out of drinkPriceForPlayer()
+/// and moves with how the bartender feels about them and how well they haggle.
 inline constexpr std::int32_t kDrinkPrice = 2;
 inline constexpr std::int32_t kRoomPrice = 12;
 /// Barrels in the cellar at open. A tavern that never runs dry has no economy.
@@ -298,6 +348,12 @@ public:
     [[nodiscard]] bool isOpen() const noexcept;
     [[nodiscard]] bool fireLit() const noexcept;
 
+    /// Every flame the house is showing right now: the hearth while the fire is
+    /// lit, a candle on every derived table and the hanging lanterns while the
+    /// doors are open, nothing at all when the house is dark. The SIMULATION
+    /// owns this, not the renderer -- see the derivation note on gull::.
+    [[nodiscard]] std::vector<gull::HouseLight> houseLights() const;
+
     // --- who is in the room -------------------------------------------------
 
     [[nodiscard]] const std::vector<Actor>& actors() const noexcept { return actors_; }
@@ -320,8 +376,30 @@ public:
     [[nodiscard]] std::int32_t drinkStock() const noexcept { return drinkStock_; }
     [[nodiscard]] std::int32_t drinksPlayerHasHad() const noexcept { return playerDrinks_; }
 
+    /// What the bar and the stair will charge the player RIGHT NOW.
+    ///
+    /// kDrinkPrice and kRoomPrice are what the goods are worth. What you pay is
+    /// what the person behind the counter thinks of you, plus what your
+    /// streetwise is worth against theirs, plus whatever you last argued them
+    /// down to. This is the single most legible place standing shows up: a warm
+    /// bartender charges less than a cold one for the same mug, every time,
+    /// with no dialogue open.
+    [[nodiscard]] std::int32_t drinkPriceForPlayer() const;
+    [[nodiscard]] std::int32_t roomPriceForPlayer() const;
+    /// The price last settled by haggling, or -1. Cleared when it is used, so
+    /// one argument buys one drink.
+    [[nodiscard]] std::int32_t negotiatedDrinkPrice() const noexcept {
+        return negotiatedDrink_;
+    }
+    [[nodiscard]] std::int32_t negotiatedRoomPrice() const noexcept { return negotiatedRoom_; }
+
     /// Buys a drink across the bar. The player must be within reach of the
     /// bartender, who must be on shift, with stock, and be paid.
+    ///
+    /// Returns Refused when the bartender is HOSTILE. That is the one refusal
+    /// in the trade path, and it is deliberate: DOCKS-GAZETTEER section 5.3
+    /// forbids refusing INFORMATION, and says nothing about a landlord who
+    /// caught you with a hand in his till.
     ServiceResult buyDrink();
 
     /// Rents one of the four rooms above the stair from the innkeeper.
@@ -334,7 +412,42 @@ public:
 
     /// Talks to whoever is nearest. Every role answers differently, and the
     /// Skyrunner contact answers by not answering.
+    ///
+    /// KEPT because the roles' service answers are real -- "barrels are dry
+    /// until the doors open again" is the bartender's own stock talking. It is
+    /// no longer the whole of a conversation: talkTo() is.
     [[nodiscard]] TalkResult talkToNearest();
+
+    // --- conversation -------------------------------------------------------
+    //
+    // The Gull owns the ward's social state for now, because the Gull is the
+    // only room with people in it. When the district's other houses are staffed
+    // the director moves up a level and every one of them borrows the same one;
+    // nothing below depends on it living here.
+
+    [[nodiscard]] DialogueDirector& dialogue() noexcept { return dialogue_; }
+    [[nodiscard]] const DialogueDirector& dialogue() const noexcept { return dialogue_; }
+
+    /// Describes an actor to the dialogue layer: who they are, which of the
+    /// Forty they are (if any), what they will talk shop about, what they sell.
+    [[nodiscard]] Speaker speakerFor(const Actor& actor) const;
+
+    /// Opens a conversation with whoever is in reach. False when nobody is.
+    bool talkTo();
+    /// Picks a topic. The reply's coin and offences are applied HERE, so the
+    /// dialogue layer never has to know what a tavern is.
+    Reply chooseTopic(std::size_t index);
+    /// Haggling moves, legal only while a haggle is open.
+    Reply offerPrice(std::int32_t coins);
+    Reply takeAskingPrice();
+    void endConversation();
+
+    /// Everybody present who could see it remembers that they saw it. This is
+    /// what makes a robbery in a full taproom different from one in an empty
+    /// one, and it is what moves the ward's own opinion.
+    void spreadWitness(std::int32_t victimId, Deed deed);
+    /// How far across a room a deed carries, in tiles.
+    static constexpr std::int32_t kWitnessRangeTiles = 8;
 
     /// What the priest of the Flame will teach a student at this level of
     /// LINKCRAFT -- the skill the eleven authored spells are actually cast
@@ -380,7 +493,10 @@ public:
     /// says so, rather than quietly resolving a knife fight with fist rules.
     [[nodiscard]] FightClass escalation() const noexcept { return escalation_; }
     [[nodiscard]] bool escalated() const noexcept { return escalation_ == FightClass::Lethal; }
-    void clearEscalation() noexcept { escalation_ = FightClass::Brawl; }
+    void clearEscalation() noexcept {
+        escalation_ = FightClass::Brawl;
+        escalationSeen_ = false;
+    }
 
     /// The fight as the rule sees it right now: the player plus everybody
     /// currently swinging.
@@ -403,10 +519,15 @@ private:
     /// rolls.
     [[nodiscard]] std::uint64_t drawForPlayerAction() noexcept;
 
+    void applyReply(Reply& reply);
+    /// What a drawn blade does to a room full of people, exactly once.
+    void noteEscalation(std::int32_t targetId);
+
     SystemId id_;
     const TileQuery* tiles_;
     RegionPath path_;
     Spellbook spellbook_;
+    DialogueDirector dialogue_;
     CounterRandomSource rng_;
     std::int32_t playerActionSeq_ = 0;
 
@@ -433,6 +554,15 @@ private:
     std::int32_t drinkStock_ = kOpeningStock;
     std::int32_t rentedRoom_ = -1;
     std::int64_t stockedOnDay_ = -1;
+    /// -1 when nothing has been argued down. Set by a struck haggle and spent
+    /// by the purchase that follows it.
+    std::int32_t negotiatedDrink_ = -1;
+    std::int32_t negotiatedRoom_ = -1;
+    /// Which actor the open conversation is with, or -1.
+    std::int32_t talkingToId_ = -1;
+    /// Set once when a blade is drawn, so the room reacts to it exactly once
+    /// rather than every second the classifier keeps saying "lethal".
+    bool escalationSeen_ = false;
 
     // trouble
     Standing standing_ = Standing::Welcome;

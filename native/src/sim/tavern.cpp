@@ -42,6 +42,23 @@ struct RosterEntry {
     std::int32_t toSecond;
     Activity activity;
     std::int32_t coin;
+    // --- S3: who they are socially -----------------------------------------
+    /// A content/raws/names/notables.json id, or "". Only three of this roster
+    /// are among the Forty: Master Venn, who owns the house; Father Maell, who
+    /// drinks in it; and Captain Ivo Wake, whose ship is on the fishbone pier
+    /// and whose trade this house is named for. The other twelve are Venn's
+    /// hired staff and the ward's dockers, and the raws never named them --
+    /// which is why they speak from the generic tables and not from a personal
+    /// one somebody would have had to invent.
+    const char* notableId;
+    /// Which greet.<family>.* set of tables they answer from.
+    JobFamily family;
+    /// The trade they will talk shop about, out of the authored mastery lines.
+    const char* skillId;
+    std::int32_t skillLevel;
+    /// Their streetwise: what a haggle is fought with, and what notices a hand
+    /// in a purse.
+    std::int32_t streetwise;
 };
 
 // THE CAST OF THE GILDED GULL.
@@ -60,42 +77,101 @@ struct RosterEntry {
 // came up, and the Gilded Gull is where the men who were on the water drink.
 constexpr std::array<RosterEntry, 6> kStaff = {{
     {"Master Venn", "landlord of the Gilded Gull", ActorRole::Innkeeper, 158, 76,
-     hourOfDay(7), hourOfDay(1), Activity::Working, 300},
+     hourOfDay(7), hourOfDay(1), Activity::Working, 300,
+     // notables.json: streetwise 30, and "each certain the other hears more".
+     "venn", JobFamily::Trade, "streetwise", 30, 30},
     {"Gerta Saltcotte", "the Fair-Weight", ActorRole::Bartender, gull::kBartenderX,
-     gull::kBartenderY, hourOfDay(10, 30), hourOfDay(2, 30), Activity::Working, 80},
+     gull::kBartenderY, hourOfDay(10, 30), hourOfDay(2, 30), Activity::Working, 80,
+     "", JobFamily::Trade, "streetwise", 18, 18},
     {"Ox Gullbane", "Slab-Fist", ActorRole::Bouncer, 153, 67, hourOfDay(11), hourOfDay(20),
-     Activity::Watching, 20},
+     Activity::Watching, 20, "", JobFamily::Serf, "kit_keeping", 12, 10},
     {"Kled Tarbeck", "the Patient", ActorRole::Bouncer, 154, 75, hourOfDay(18), hourOfDay(3),
-     Activity::Watching, 20},
+     Activity::Watching, 20, "", JobFamily::Serf, "streetwise", 14, 14},
     {"Father Maell", "of the Mission", ActorRole::PriestOfTheFlame, 149, 74, hourOfDay(19),
-     hourOfDay(21, 30), Activity::Drinking, 8},
+     hourOfDay(21, 30), Activity::Drinking, 8,
+     // notables.json: channeling 40. A master, and the tables have master lines.
+     "maell", JobFamily::Clergy, "channeling", 40, 8},
     {"Wisp", "Low-Tide", ActorRole::SkyrunnerContact, 158, 68, hourOfDay(22), hourOfDay(3),
-     Activity::Drinking, 60},
+     Activity::Drinking, 60, "", JobFamily::Wastrel, "skyrunning", 30, 26},
 }};
 
 /// The patrons. Two thin hours at midday when the lunch trade is in, and then
 /// the whole crowd from the dusk pay-out until the small hours -- the wage loop
 /// DOCKS-GAZETTEER §4 describes: dawn muster, cargo work, dusk pay-out, tavern.
-constexpr std::array<RosterEntry, 8> kPatrons = {{
+///
+/// S3 adds ONE, and only one, and he is canon: Captain Ivo Wake, master of the
+/// Kestrel on the fishbone pier. The Gull is the CAPTAINS' tavern
+/// (DOCKS-GAZETTEER §3); Wake "was at sea the night of the killings and can
+/// prove it, which interests him more than it should", which is a man who wants
+/// to be asked. He is here so at least one of the Forty is a person you can
+/// walk up to, rather than a row in a JSON file.
+constexpr std::array<RosterEntry, 9> kPatrons = {{
     {"Bram Marrow", "the Steady", ActorRole::Patron, 149, 69, hourOfDay(12), hourOfDay(14),
-     Activity::Drinking, kPatronPurse},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 11, 8},
     {"Marta Coldquay", "Crane-Eye", ActorRole::Patron, 150, 69, hourOfDay(12), hourOfDay(14),
-     Activity::Drinking, kPatronPurse},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 22, 9},
     {"Tarn Wrenhale", "Two-Loads", ActorRole::Patron, 151, 70, hourOfDay(18), hourOfDay(1),
-     Activity::Drinking, kPatronPurse},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 15, 7},
     {"Sella Brinewall", "the Quiet", ActorRole::Patron, 154, 70, hourOfDay(18), hourOfDay(1),
-     Activity::Drinking, kPatronPurse},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "streetwise", 12, 12},
     {"Wick Hempson", "Rope-burned", ActorRole::Patron, 150, 70, hourOfDay(19), hourOfDay(2),
-     Activity::Drinking, kPatronPurse},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "kit_keeping", 24, 6},
     {"Hobbin Mastwright", "Salt-cracked", ActorRole::Patron, 150, 74, hourOfDay(19),
-     hourOfDay(2), Activity::Drinking, kPatronPurse},
+     hourOfDay(2), Activity::Drinking, kPatronPurse, "", JobFamily::Maritime, "seacraft", 26, 9},
     {"Edda Pierpont", "the Broad", ActorRole::Patron, 156, 73, hourOfDay(20), hourOfDay(2),
-     Activity::Drinking, kPatronPurse},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fishing", 19, 11},
     {"Colm Tarbeck", "the Willing", ActorRole::Patron, 148, 72, hourOfDay(20), hourOfDay(1),
-     Activity::Drinking, kPatronPurse},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 8, 5},
+    {"Captain Ivo Wake", "of the Kestrel", ActorRole::Patron, 155, 73, hourOfDay(19),
+     hourOfDay(1), Activity::Drinking, 45,
+     // notables.json: seacraft 35, which the mastery tables have adept lines for.
+     "wake", JobFamily::Maritime, "seacraft", 35, 16},
 }};
 
 }  // namespace
+
+namespace gull {
+
+std::vector<TilePos> taproomTables(const TileQuery& tiles) {
+    std::vector<TilePos> tables;
+    // Ascending y then x: the map's own order, so two machines walking this
+    // produce the same list and the renderer's candle order is stable.
+    for (std::int32_t y = kFootprintY0 + 1; y <= kFootprintY1 - 1; ++y) {
+        for (std::int32_t x = kFootprintX0 + 1; x <= kFootprintX1 - 1; ++x) {
+            if (!tiles.solid(x, y, kGroundBand)) {
+                continue;
+            }
+            // The bar counter is not a table -- the bartender stands behind it
+            // and nobody puts a candle on a working counter.
+            if (y == kBarY && x >= kBarX0 && x <= kBarX1) {
+                continue;
+            }
+            // Nor is the hearth, which is masonry and already on fire.
+            if (y == kHearthY && x >= kHearthX0 && x <= kHearthX1) {
+                continue;
+            }
+            // Nor the partition the snug stands behind.
+            if (x == kSnugX0 - 1) {
+                continue;
+            }
+            tables.push_back(TilePos{x, y});
+        }
+    }
+    return tables;
+}
+
+std::vector<TilePos> lanternTiles() {
+    return {
+        // Over the threshold, one for each door leaf: the first thing a crew
+        // off a ship sees.
+        TilePos{kDoorX0, kDoorY + 1},
+        TilePos{kDoorX1, kDoorY + 1},
+        // And over the counter, on the customers' side of it.
+        TilePos{(kBarX0 + kBarX1) / 2, kBarY - 1},
+    };
+}
+
+}  // namespace gull
 
 std::string_view serviceResultName(ServiceResult result) noexcept {
     switch (result) {
@@ -155,6 +231,7 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
       tiles_(&tiles),
       path_(tiles, gull::kRegion),
       spellbook_(Spellbook::load(contentDir)),
+      dialogue_(DialogueDirector::load(contentDir)),
       rng_(worldSeed, id_.salt()),
       timeOfDay_(((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay) {
     buildRoster();
@@ -215,10 +292,44 @@ bool Tavern::fireLit() const noexcept {
     return withinDayWindow(timeOfDay_, gull::kFireLitFrom, gull::kFireLitUntil);
 }
 
+std::vector<gull::HouseLight> Tavern::houseLights() const {
+    std::vector<gull::HouseLight> lights;
+    if (fireLit()) {
+        // GUARDED, and the guard is the point: `for (x = X0; x <= X1; ++x)` with
+        // X0 past X1 is an EMPTY loop, so an inverted hearth range would put the
+        // fire out with nothing red anywhere. The S2 review found exactly that.
+        if (gull::kHearthX0 <= gull::kHearthX1) {
+            for (std::int32_t x = gull::kHearthX0; x <= gull::kHearthX1; ++x) {
+                lights.push_back(
+                    gull::HouseLight{x, gull::kHearthY, gull::kGroundBand, gull::LightKind::Hearth});
+            }
+        }
+    }
+    if (isOpen()) {
+        for (const gull::TilePos& table : gull::taproomTables(*tiles_)) {
+            lights.push_back(gull::HouseLight{table.x, table.y, gull::kGroundBand,
+                                              gull::LightKind::Candle});
+        }
+        for (const gull::TilePos& hook : gull::lanternTiles()) {
+            lights.push_back(
+                gull::HouseLight{hook.x, hook.y, gull::kGroundBand, gull::LightKind::Lantern});
+        }
+    }
+    return lights;
+}
+
 void Tavern::setTimeOfDay(std::int32_t secondOfDay) noexcept {
     timeOfDay_ = ((secondOfDay % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay;
 }
 
+// VERIFICATION GAP (S2): skipTo FAKES the hours it skips. Nothing that would
+// have happened in them happens -- no drinks poured, no wages spent, no patron
+// walking home. The cellar is restocked and everybody is teleported to wherever
+// their rota says they should be. A night asleep is therefore not the same
+// world as a night watched, and no test asserts it should be.
+//
+// S3 note: what it deliberately does NOT touch is the social ledger. Sleeping
+// a night does not make anybody forget you robbed them.
 void Tavern::skipTo(std::int32_t secondOfDay) {
     setTimeOfDay(secondOfDay);
     // A night has gone by in one step, so the cellar has been restocked and the
@@ -666,6 +777,12 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         // bouncers come over is a door-policy question. Drawing a blade in the
         // Gilded Gull answers both.
         escalation_ = result.fight;
+        // THE CONSUMER escalated() did not have in S2. A drawn blade in a
+        // captains' house is not a private matter: the man it is pointed at
+        // remembers it above everything else in this list, and every soul who
+        // could see it remembers it nearly as hard. Their greetings change, the
+        // ward's opinion drops, and the bar stops serving you.
+        noteEscalation(target->id());
         reportOffence(Offence::Brawled);
         return result;
     }
@@ -675,8 +792,26 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     target->setHealth(victim.hp, victim.hpMax);
     target->setActivity(result.blow.downed ? Activity::Downed : Activity::Brawling);
     target->faceToward(playerX_, playerY_);
+    dialogue_.ledger().record(target->id(), Deed::Struck);
+    spreadWitness(target->id(), Deed::Struck);
+    // Somebody you just hit is not somebody you are still talking to.
+    if (talkingToId_ == target->id()) {
+        endConversation();
+    }
     reportOffence(Offence::Brawled);
     return result;
+}
+
+void Tavern::noteEscalation(std::int32_t targetId) {
+    if (escalationSeen_) {
+        return;
+    }
+    escalationSeen_ = true;
+    if (targetId >= 0) {
+        dialogue_.ledger().record(targetId, Deed::DrewSteel);
+    }
+    spreadWitness(targetId, Deed::DrewSteel);
+    endConversation();
 }
 
 void Tavern::tickBrawl() {
@@ -690,6 +825,7 @@ void Tavern::tickBrawl() {
     const FightClass fight = classifyFight(fighters);
     if (!resolvesInWorld(fight)) {
         escalation_ = fight;
+        noteEscalation(brawlers_.empty() ? -1 : brawlers_.front());
         return;
     }
 
@@ -782,6 +918,40 @@ void Tavern::tickPatrons() {
     }
 }
 
+std::int32_t Tavern::drinkPriceForPlayer() const {
+    if (negotiatedDrink_ >= 0) {
+        return negotiatedDrink_;
+    }
+    const Actor* bartender = findRole(ActorRole::Bartender, false);
+    if (bartender == nullptr) {
+        return kDrinkPrice;
+    }
+    HaggleTerms terms;
+    terms.basePrice = kDrinkPrice;
+    terms.attitude = dialogue_.ledger().attitudeOf(bartender->id());
+    terms.playerSkill = dialogue_.skills().level(kHaggleSkill);
+    terms.merchantSkill = kStaff[1].streetwise;
+    terms.goods = Goods::Drink;
+    return askingPrice(terms);
+}
+
+std::int32_t Tavern::roomPriceForPlayer() const {
+    if (negotiatedRoom_ >= 0) {
+        return negotiatedRoom_;
+    }
+    const Actor* innkeeper = findRole(ActorRole::Innkeeper, false);
+    if (innkeeper == nullptr) {
+        return kRoomPrice;
+    }
+    HaggleTerms terms;
+    terms.basePrice = kRoomPrice;
+    terms.attitude = dialogue_.ledger().attitudeOf(innkeeper->id());
+    terms.playerSkill = dialogue_.skills().level(kHaggleSkill);
+    terms.merchantSkill = kStaff[0].streetwise;
+    terms.goods = Goods::Room;
+    return askingPrice(terms);
+}
+
 ServiceResult Tavern::buyDrink() {
     if (standing_ == Standing::Barred) {
         return ServiceResult::Barred;
@@ -796,16 +966,23 @@ ServiceResult Tavern::buyDrink() {
     if (!playerKnown_ || bartender->distanceTo(playerX_, playerY_) > 2 * kSubOne) {
         return ServiceResult::TooFar;
     }
+    // The behaviour change the whole social layer exists to produce. A
+    // bartender who has caught you with a hand in his purse does not pour.
+    if (dialogue_.ledger().attitudeOf(bartender->id()) == Attitude::Hostile) {
+        return ServiceResult::Refused;
+    }
     if (drinkStock_ <= 0) {
         return ServiceResult::OutOfStock;
     }
-    if (playerCoin_ < kDrinkPrice) {
+    const std::int32_t price = drinkPriceForPlayer();
+    if (playerCoin_ < price) {
         return ServiceResult::NoCoin;
     }
-    playerCoin_ -= kDrinkPrice;
-    bartender->giveCoin(kDrinkPrice);
+    playerCoin_ -= price;
+    bartender->giveCoin(price);
     --drinkStock_;
     ++playerDrinks_;
+    negotiatedDrink_ = -1;
     bartender->faceToward(playerX_, playerY_);
     return ServiceResult::Served;
 }
@@ -821,14 +998,19 @@ ServiceResult Tavern::rentRoom() {
     if (!playerKnown_ || innkeeper->distanceTo(playerX_, playerY_) > 2 * kSubOne) {
         return ServiceResult::TooFar;
     }
+    if (dialogue_.ledger().attitudeOf(innkeeper->id()) == Attitude::Hostile) {
+        return ServiceResult::Refused;
+    }
     if (rentedRoom_ >= 0) {
         return ServiceResult::Served;  // already have one; the man does not charge twice
     }
-    if (playerCoin_ < kRoomPrice) {
+    const std::int32_t price = roomPriceForPlayer();
+    if (playerCoin_ < price) {
         return ServiceResult::NoCoin;
     }
-    playerCoin_ -= kRoomPrice;
-    innkeeper->giveCoin(kRoomPrice);
+    playerCoin_ -= price;
+    innkeeper->giveCoin(price);
+    negotiatedRoom_ = -1;
     // The rooms are let in order. Four of them, and the last three are for the
     // captains this house is named for -- so the player gets the first free one.
     rentedRoom_ = 0;
@@ -899,6 +1081,195 @@ TalkResult Tavern::talkToNearest() {
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// conversation
+// ---------------------------------------------------------------------------
+
+Speaker Tavern::speakerFor(const Actor& actor) const {
+    Speaker speaker;
+    speaker.actorId = actor.id();
+    speaker.name = actor.name();
+    speaker.epithet = actor.epithet();
+    speaker.purse = actor.coin();
+    // Ids are assigned 1..N in roster order and actors_ is never reordered, so
+    // the roster row IS the actor. Guarded anyway: an id that fell outside the
+    // table would otherwise read off the end of it.
+    const std::size_t index = static_cast<std::size_t>(actor.id() - 1);
+    const RosterEntry* entry = nullptr;
+    if (index < kStaff.size()) {
+        entry = &kStaff[index];
+    } else if (index - kStaff.size() < kPatrons.size()) {
+        entry = &kPatrons[index - kStaff.size()];
+    }
+    if (entry != nullptr) {
+        speaker.notableId = entry->notableId;
+        speaker.family = entry->family;
+        speaker.skillId = entry->skillId;
+        speaker.skillLevel = entry->skillLevel;
+        speaker.haggleSkill = entry->streetwise;
+        speaker.awareness = entry->streetwise;
+    }
+    switch (actor.role()) {
+        case ActorRole::Bartender:
+            speaker.trades = true;
+            speaker.goods = Goods::Drink;
+            speaker.basePrice = kDrinkPrice;
+            break;
+        case ActorRole::Innkeeper:
+            speaker.trades = true;
+            speaker.goods = Goods::Room;
+            speaker.basePrice = kRoomPrice;
+            break;
+        default:
+            break;
+    }
+    // A mood override outranks the greeting: somebody on the floor of a taproom
+    // has something else to say, and the raws already wrote it.
+    if (actor.activity() == Activity::Downed) {
+        speaker.moodKey = "mood.downed";
+    } else if (standing_ == Standing::Warned || standing_ == Standing::BeingEjected) {
+        // Being walked to the door is a state the whole room can see.
+        if (actor.role() == ActorRole::Bouncer) {
+            speaker.moodKey = "mood.harried";
+        }
+    }
+    return speaker;
+}
+
+bool Tavern::talkTo() {
+    const Actor* actor = nearestTo(playerX_, playerY_, 2 * kSubOne);
+    if (actor == nullptr) {
+        dialogue_.close();
+        talkingToId_ = -1;
+        return false;
+    }
+    dialogue_.setPlayerCoin(playerCoin_);
+    if (!dialogue_.open(speakerFor(*actor), timeOfDay_)) {
+        talkingToId_ = -1;
+        return false;
+    }
+    talkingToId_ = actor->id();
+    if (Actor* turning = mutableActorById(actor->id()); turning != nullptr) {
+        // They look at you while you talk to them. Cheap, and it is the whole
+        // difference between a person and a prop.
+        turning->faceToward(playerX_, playerY_);
+    }
+    return true;
+}
+
+void Tavern::spreadWitness(std::int32_t victimId, Deed deed) {
+    const std::int32_t range = kWitnessRangeTiles * kSubOne;
+    for (const Actor& actor : actors_) {
+        if (!actor.present() || actor.id() == victimId) {
+            continue;
+        }
+        if (actor.distanceTo(playerX_, playerY_) > range) {
+            continue;
+        }
+        dialogue_.ledger().witness(actor.id(), deed);
+    }
+}
+
+void Tavern::applyReply(Reply& reply) {
+    if (!reply.ok) {
+        return;
+    }
+    switch (reply.kind) {
+        case TopicKind::Buy: {
+            // The intent came from the dialogue layer; the counter resolves it,
+            // through exactly the same buyDrink()/rentRoom() that the S2 verbs
+            // used. One purchase path, not two.
+            const bool drink = dialogue_.speaker().goods == Goods::Drink;
+            const std::int32_t before = playerCoin_;
+            const ServiceResult served = drink ? buyDrink() : rentRoom();
+            if (served == ServiceResult::Served) {
+                reply.line = "PAID " + std::to_string(before - playerCoin_) + "C.";
+            } else {
+                reply.line = std::string(serviceResultName(served));
+                reply.ok = false;
+            }
+            dialogue_.setPlayerCoin(playerCoin_);
+            reply.coinDelta = 0;
+            break;
+        }
+        case TopicKind::Trade:
+            if (reply.coinDelta < 0) {
+                // A struck price is an AGREEMENT, not a payment: no coin moves
+                // here. It is remembered, and the purchase that follows across
+                // the counter -- buyDrink(), rentRoom() -- charges it.
+                if (dialogue_.speaker().goods == Goods::Drink) {
+                    negotiatedDrink_ = -reply.coinDelta;
+                } else {
+                    negotiatedRoom_ = -reply.coinDelta;
+                }
+                reply.coinDelta = 0;
+            }
+            break;
+        case TopicKind::BuyDrinkFor:
+            if (reply.coinDelta < 0) {
+                // The drink comes off the bar like any other. Dry barrels do not
+                // undo the gesture: you offered, and the room saw you offer.
+                if (drinkStock_ > 0) {
+                    --drinkStock_;
+                    if (Actor* bartender = findRole(ActorRole::Bartender, true);
+                        bartender != nullptr) {
+                        bartender->giveCoin(-reply.coinDelta);
+                    }
+                }
+                spreadWitness(talkingToId_, Deed::BoughtDrink);
+            }
+            break;
+        case TopicKind::PickPocket:
+            if (reply.offence) {
+                // Caught. Everybody who could see it remembers, the ward hears,
+                // and the house sends somebody over.
+                spreadWitness(talkingToId_, Deed::Robbed);
+                reportOffence(Offence::Stole);
+            } else if (reply.coinDelta > 0) {
+                // The coin came off a real purse and the world says so.
+                if (Actor* victim = mutableActorById(talkingToId_); victim != nullptr) {
+                    victim->takeCoin(reply.coinDelta);
+                }
+            }
+            break;
+        default:
+            break;
+    }
+    if (reply.coinDelta != 0) {
+        playerCoin_ = std::max(0, wrap_add(playerCoin_, reply.coinDelta));
+        dialogue_.setPlayerCoin(playerCoin_);
+    }
+    if (reply.closes) {
+        talkingToId_ = -1;
+    }
+}
+
+Reply Tavern::chooseTopic(std::size_t index) {
+    dialogue_.setPlayerCoin(playerCoin_);
+    Reply reply = dialogue_.choose(index);
+    applyReply(reply);
+    return reply;
+}
+
+Reply Tavern::offerPrice(std::int32_t coins) {
+    dialogue_.setPlayerCoin(playerCoin_);
+    Reply reply = dialogue_.offerPrice(coins);
+    applyReply(reply);
+    return reply;
+}
+
+Reply Tavern::takeAskingPrice() {
+    dialogue_.setPlayerCoin(playerCoin_);
+    Reply reply = dialogue_.takeAsking();
+    applyReply(reply);
+    return reply;
+}
+
+void Tavern::endConversation() {
+    dialogue_.close();
+    talkingToId_ = -1;
+}
+
 std::vector<const Spell*> Tavern::priestTeaches(std::int32_t linkcraftLevel) const {
     const Actor* priest = findRole(ActorRole::PriestOfTheFlame, true);
     if (priest == nullptr) {
@@ -947,10 +1318,19 @@ void Tavern::hash_into(HashSink& sink) const {
     sink.put_long(static_cast<std::uint64_t>(barredUntilTick_));
     sink.put_int(static_cast<std::uint32_t>(respondingBouncerId_));
     sink.put_byte(static_cast<std::uint32_t>(escalation_));
+    sink.put_byte(escalationSeen_ ? 1U : 0U);
     sink.put_int(static_cast<std::uint32_t>(brawlers_.size()));
     for (const std::int32_t id : brawlers_) {
         sink.put_int(static_cast<std::uint32_t>(id));
     }
+    // S3: everything anybody remembers about the player, the skills they have
+    // earned, and whatever price is on the table. All of it is simulation
+    // state, so all of it is in the hash -- a relationship the twin-run gate
+    // could not see would be a relationship the gate does not protect.
+    sink.put_int(static_cast<std::uint32_t>(negotiatedDrink_));
+    sink.put_int(static_cast<std::uint32_t>(negotiatedRoom_));
+    sink.put_int(static_cast<std::uint32_t>(talkingToId_));
+    dialogue_.hashInto(sink);
 }
 
 }  // namespace granadad::sim

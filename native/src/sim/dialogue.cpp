@@ -47,6 +47,8 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "pick pocket";
         case TopicKind::Leave:
             return "leave";
+        case TopicKind::Buy:
+            return "buy";
     }
     return "?";
 }
@@ -207,8 +209,14 @@ void DialogueDirector::buildTopics() {
         }
     }
 
-    // 6. Trade.
+    // 6. Trade -- take the price on the board, or argue about it.
     if (speaker_.trades && speaker_.basePrice > 0) {
+        Topic buy;
+        buy.kind = TopicKind::Buy;
+        buy.label = "BUY " + std::string(goodsName(speaker_.goods));
+        buy.payload = speaker_.basePrice;
+        topics_.push_back(std::move(buy));
+
         Topic topic;
         topic.kind = TopicKind::Trade;
         topic.label = "HAGGLE FOR " + std::string(goodsName(speaker_.goods));
@@ -326,6 +334,11 @@ Reply DialogueDirector::choose(std::size_t index) {
                 out = reply(TopicKind::PickPocket, "LIFTED " + coins(lifted) + ".");
                 out.coinDelta = lifted;
             }
+            break;
+        }
+        case TopicKind::Buy: {
+            out = reply(TopicKind::Buy, {});
+            out.wantsPurchase = true;
             break;
         }
         case TopicKind::Leave: {

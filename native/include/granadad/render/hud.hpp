@@ -29,6 +29,11 @@ namespace granadad::render {
 struct HudState {
     int health = 100;
     int healthMax = 100;
+    /// Off while a conversation is open. The bottom band is a topic list then,
+    /// and two things fighting over the same forty pixels is how the centre-
+    /// clear rule gets broken by accident. Punching closes the conversation, so
+    /// the bar is back before it can ever matter.
+    bool showHealth = true;
     /// BAM facing, straight off the body.
     std::int32_t yawBam = 0;
     /// Shown under the compass. Empty draws nothing.
@@ -37,6 +42,9 @@ struct HudState {
     int timeOfDaySeconds = -1;
     /// The purse, top-right under the clock. Negative draws nothing.
     int coin = -1;
+    /// What the ward as a whole thinks of the player, top-right under the
+    /// purse. Reputation READABLE rather than hidden. Empty draws nothing.
+    std::string_view standingLabel;
     /// One line about the room the player is standing in. Bottom-right.
     std::string_view roomLabel;
     /// Something said to the player that they need to have heard -- a

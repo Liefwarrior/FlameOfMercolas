@@ -41,6 +41,18 @@ constexpr Glyph kGlyphs[] = {
     {'Z', {0xF, 0x1, 0x2, 0x4, 0x8, 0xF}}, {'-', {0x0, 0x0, 0xF, 0x0, 0x0, 0x0}},
     {'.', {0x0, 0x0, 0x0, 0x0, 0x0, 0x4}}, {':', {0x0, 0x4, 0x0, 0x0, 0x4, 0x0}},
     {'/', {0x1, 0x1, 0x2, 0x4, 0x8, 0x8}}, {'%', {0x9, 0x1, 0x2, 0x4, 0x8, 0x9}},
+    // S3. The authored barks are prose, not HUD labels: they are full of
+    // apostrophes, commas, questions and parenthetical stage directions. Every
+    // one of those used to advance the cursor and draw nothing, so
+    // "You've got sand, showing that face at the ropes." came out as a line
+    // with holes in it. These are the characters content/raws/barks/barks.json
+    // actually uses, and nothing else.
+    {',', {0x0, 0x0, 0x0, 0x0, 0x4, 0x8}}, {''', {0x4, 0x4, 0x0, 0x0, 0x0, 0x0}},
+    {'!', {0x4, 0x4, 0x4, 0x4, 0x0, 0x4}}, {'?', {0x6, 0x9, 0x1, 0x2, 0x0, 0x2}},
+    {'(', {0x2, 0x4, 0x4, 0x4, 0x4, 0x2}}, {')', {0x4, 0x2, 0x2, 0x2, 0x2, 0x4}},
+    {';', {0x0, 0x4, 0x0, 0x0, 0x4, 0x8}}, {'"', {0xA, 0xA, 0x0, 0x0, 0x0, 0x0}},
+    {'+', {0x0, 0x4, 0xE, 0x4, 0x0, 0x0}}, {'>', {0x8, 0x4, 0x2, 0x2, 0x4, 0x8}},
+    {'<', {0x2, 0x4, 0x8, 0x8, 0x4, 0x2}}, {'*', {0x0, 0xA, 0x4, 0xA, 0x0, 0x0}},
 };
 
 constexpr int kGlyphW = 4;
@@ -213,6 +225,13 @@ void drawClock(Framebuffer& target, const HudState& state) {
         const std::string_view purse(text);
         drawText(target, target.width() - margin - textWidth(purse, scale), y, purse,
                  Rgb{0.82F, 0.72F, 0.38F}, 0.9F, scale);
+        y += 9 * scale;
+    }
+    // S3: reputation, readable, in the corner where the numbers live. The ward
+    // has an opinion about you and it is not a hidden statistic.
+    if (!state.standingLabel.empty()) {
+        drawText(target, target.width() - margin - textWidth(state.standingLabel, scale), y,
+                 state.standingLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.82F, scale);
     }
 }
 
@@ -238,7 +257,9 @@ void drawRoom(Framebuffer& target, const HudState& state) {
 }  // namespace
 
 void drawHud(Framebuffer& target, const HudState& state) {
-    drawHealth(target, state);
+    if (state.showHealth) {
+        drawHealth(target, state);
+    }
     drawCompass(target, state);
     drawClock(target, state);
     drawRoom(target, state);

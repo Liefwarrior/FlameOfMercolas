@@ -158,6 +158,12 @@ void PlayerBody::push(std::int32_t dxQ8, std::int32_t dyQ8) noexcept {
     }
 }
 
+// VERIFICATION GAP (S2): the body's digest is NOT part of the world hash.
+// PlayerBody is not a SimulationSystem, so nothing folds it into a WorldHasher
+// section; the twin-run gate compares this number only where a workload asks
+// for it by hand. Two runs that diverged in the player's position alone, with
+// every registered system agreeing, would pass the gate. Closing it means
+// either registering the body as a system or hashing it from whoever owns it.
 std::uint64_t PlayerBody::digest() const noexcept {
     std::uint64_t h =
         mix64(static_cast<std::uint64_t>(static_cast<std::uint32_t>(x_)) * 0x9E3779B97F4A7C15ull);

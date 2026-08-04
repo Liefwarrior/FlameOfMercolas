@@ -79,6 +79,14 @@ struct SpriteInstance {
     /// a hard-edged ellipse, which is what a body has to be to read as chunky
     /// at 320x180 instead of as a smudge.
     float softness = 1.0F;
+    /// True when this billboard is part of a PERSON.
+    ///
+    /// It exists because of the S2 review. "The room is lit and full at nine"
+    /// asserted `spritePixels > 0`, and a lit Gull carries nine flame sprites --
+    /// so the check passed with every human being in the room invisible. This
+    /// flag is what lets a frame say how much of it is people, separately from
+    /// how much of it is candles.
+    bool person = false;
 };
 
 struct RenderSettings {
@@ -105,6 +113,9 @@ struct FrameStats {
     std::size_t skyPixels = 0;
     std::size_t worldPixels = 0;
     std::size_t spritePixels = 0;
+    /// The subset of spritePixels contributed by billboards flagged `person`.
+    /// See SpriteInstance::person for the defect this exists to catch.
+    std::size_t actorPixels = 0;
     /// Mean luminance of the whole frame, 0..1.
     float meanLuma = 0.0F;
     /// Distinct packed colours, capped — a solid fill scores 1.

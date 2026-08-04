@@ -105,6 +105,11 @@ enum class TopicKind : std::uint8_t {
     PickPocket = 7,
     /// End it.
     Leave = 8,
+    /// Buy the thing at whatever price is currently on the table. Appended
+    /// after Leave on purpose: the ordinal is folded into which authored row a
+    /// topic speaks from, so inserting in the middle would move every existing
+    /// speaker's lines.
+    Buy = 9,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -143,6 +148,10 @@ struct Reply {
     bool closes = false;
     /// True when a haggle is now waiting for a number.
     bool haggling = false;
+    /// TopicKind::Buy declares an INTENT and nothing more -- the director does
+    /// not know what a cellar is. Whoever owns the counter resolves it and
+    /// fills in the line and the coin.
+    bool wantsPurchase = false;
 };
 
 // ---------------------------------------------------------------------------

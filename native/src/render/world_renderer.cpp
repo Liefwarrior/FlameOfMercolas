@@ -155,6 +155,10 @@ bool WorldRenderer::voxelAt(std::int32_t x, std::int32_t y, std::int32_t z,
             out.top = static_cast<float>(z);
             out.topFace = FaceKind::FloorTop;
             break;
+        // VERIFICATION GAP (S2): a RAMP is drawn as a thinner flat slab, not as
+        // a slope. Walking one looks like stepping onto a low kerb rather than
+        // climbing. The movement rule is right (stepBand authorises the climb);
+        // it is the picture that is wrong, and nothing tests the picture.
         case content::TileForm::Ramp:
             out.bottom = static_cast<float>(z) - kRampSlab;
             out.top = static_cast<float>(z);
@@ -474,6 +478,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
 
     // --- sprites -----------------------------------------------------------
     std::size_t spritePixels = 0;
+    std::size_t actorPixels = 0;
     if (settings.drawSprites) {
         // Far to near, so a nearer glow lands on top of a further one.
         std::vector<std::pair<float, const SpriteInstance*>> ordered;
@@ -486,7 +491,11 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
         std::sort(ordered.begin(), ordered.end(),
                   [](const auto& a, const auto& b) { return a.first > b.first; });
         for (const auto& entry : ordered) {
+            const std::size_t before = spritePixels;
             drawSprite(target, camera, settings, sky, *entry.second, focal, horizon, spritePixels);
+            if (entry.second->person) {
+                actorPixels += spritePixels - before;
+            }
         }
     }
 
@@ -494,6 +503,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
     FrameStats stats;
     stats.worldPixels = worldPixels;
     stats.spritePixels = spritePixels;
+    stats.actorPixels = actorPixels;
     stats.skyPixels = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) -
                       worldPixels;
     stats.nearestDepth = std::isfinite(nearest) ? nearest : 0.0F;

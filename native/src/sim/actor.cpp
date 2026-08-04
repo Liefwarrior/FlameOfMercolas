@@ -209,6 +209,11 @@ void Actor::step(RegionPath& path, std::int32_t speed) noexcept {
     y_ = approach(y_, targetY);
 }
 
+// VERIFICATION GAP (S2): THERE IS NO ACTOR-ACTOR COLLISION. Neither step() nor
+// push() knows another actor exists. Two actors routed to adjacent posts will
+// walk through each other, and the player can stand inside a bouncer. Only the
+// tile grid pushes back. Nothing tests this because there is nothing to test:
+// the rule is absent, not wrong.
 void Actor::push(const TileQuery& tiles, std::int32_t dxQ8, std::int32_t dyQ8) noexcept {
     // One axis at a time, same as the player's body, so being shoved along a
     // wall slides instead of sticking. No substepping: a shove is bounded by

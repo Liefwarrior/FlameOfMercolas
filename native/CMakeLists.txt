@@ -189,6 +189,7 @@ add_library(granadad-render STATIC
     src/render/lighting.cpp
     src/render/world_renderer.cpp
     src/render/hud.cpp
+    src/render/dialogue_view.cpp
     src/render/capture.cpp
     src/render/session.cpp
     src/render/step_pump.cpp
