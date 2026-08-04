@@ -92,6 +92,35 @@ std::vector<std::string> wrapText(const std::string& text, std::size_t columns) 
     return lines;
 }
 
+std::string clipLabel(const std::string& label, std::size_t room) {
+    if (room == 0) {
+        return {};
+    }
+    if (label.size() <= room) {
+        return label;
+    }
+    // One glyph of the room is the mark, so the cut label is never wider than
+    // the whole label would have been.
+    const std::size_t keep = room - 1;
+    const std::size_t space = label.rfind(' ', keep);
+    // A leading number and a space is how a topic row is composed ("6 THE
+    // VANISHED CLERK"), so the FIRST space is furniture rather than a word
+    // boundary -- cutting there would print "6." and name nothing.
+    const std::size_t firstSpace = label.find(' ');
+    std::string cut;
+    if (space != std::string::npos && space > 0 && space != firstSpace) {
+        cut = label.substr(0, space);
+    } else {
+        cut = label.substr(0, keep);
+    }
+    // Trailing spaces would put the mark out in the open.
+    while (!cut.empty() && cut.back() == ' ') {
+        cut.pop_back();
+    }
+    cut += '.';
+    return cut;
+}
+
 std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int page, int cursor,
                                    int capacity) {
     const int total = static_cast<int>(topics.size());
@@ -263,19 +292,19 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         if (column >= kTopicColumns || y + 6 * scale > target.height()) {
             continue;
         }
-        std::string label = printed[i].label;
-        // Truncated to the column rather than allowed to run into the next one
-        // -- AND a two-glyph gutter, which S4 did not have. Its own headline
-        // frame shows topic 5 reading "ASK TO BE MADE SHE" with the next
-        // column's "9" jammed against the E: the row is drawn at x + half a
-        // glyph and the next column's cursor arrow at x - half a glyph, so a
-        // label sized to the whole column overruns it by one glyph and collides
-        // with the arrow of the one after. Two back.
+        // Cut to the column rather than allowed to run into the next one -- AND
+        // a two-glyph gutter, which S4 did not have. Its own headline frame
+        // shows topic 5 reading "ASK TO BE MADE SHE" with the next column's "9"
+        // jammed against the E: the row is drawn at x + half a glyph and the
+        // next column's cursor arrow at x - half a glyph, so a label sized to
+        // the whole column overruns it by one glyph and collides with the arrow
+        // of the one after. Two back.
+        //
+        // ON A WORD BOUNDARY since S6 -- see clipLabel, and the two labels in
+        // S5's own shipped frame that made it necessary.
         const std::size_t room =
             static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance - 2));
-        if (label.size() > room) {
-            label.resize(room);
-        }
+        const std::string label = clipLabel(printed[i].label, room);
         if (printed[i].picked) {
             drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, 0.95F, scale);
         }

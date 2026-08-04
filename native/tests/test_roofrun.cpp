@@ -20,6 +20,7 @@
 #include "granadad/content/content_dir.hpp"
 #include "granadad/content/world.hpp"
 #include "granadad/content/world_reader.hpp"
+#include "granadad/render/session.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/player.hpp"
@@ -28,6 +29,7 @@
 
 using namespace granadad::sim;
 namespace content = granadad::content;
+namespace render = granadad::render;
 
 namespace {
 
@@ -508,4 +510,167 @@ TEST_CASE("a body in the air is in the digest, and cannot be shoved out of its a
         b.step(idle);
         REQUIRE(a.digest() == b.digest());
     }
+}
+
+// ---------------------------------------------------------------------------
+// S6: the landing, and who charges it
+// ---------------------------------------------------------------------------
+//
+// Two findings of the S5 review live here.
+//
+//   * THE LEAP WAS A TELEPORT IN THE SHIPPED CLIENT. PlayerBody's arc was
+//     proved above -- and Session::climb then ran `while (airborne()) step()`
+//     inside the keypress and threw it away. The design note on
+//     PlayerBody::leap and the assertion in the case above were both true of
+//     the body and false of the game.
+//   * THE GLUE HAD NO TEST. Fall damage, the skill use, the roof-run crime and
+//     both questline tallies went through Session::settleLanding, which lived
+//     in the client layer where the simulation suite could not reach it.
+//     test_crime.cpp had to hand-call noteTally/noteCrime to get past the roof
+//     beats of the Skyrunner line, which proved the questline and nothing else.
+//
+// The charge is Tavern::settleLanding now. These cases drive it both ways: from
+// the room directly, and through the key a player presses.
+
+TEST_CASE("a leap is armed by the key and flown by the pump, and lands ONCE") {
+    render::SessionConfig config;
+    config.contentDir = granadad::content::contentDir();
+    config.world = docks::kWorldName;
+    config.timeOfDay = 22 * 3600;
+    config.timeOfDayGiven = true;
+    // Standing on the Gull's lead at its west edge, facing the alley -- the
+    // same two tiles of air the body-level case above crosses.
+    config.spawnX = gull::kFootprintX0;
+    config.spawnY = 70;
+    config.spawnBand = gull::kRoofBand;
+    config.spawnYaw = kFacingWest;
+    config.spawnYawGiven = true;
+    config.width = 64;
+    config.height = 64;
+    render::Session session(config);
+    REQUIRE(session.body().spawnedLegally());
+
+    DialogueDirector& talk = session.tavern().dialogue();
+    const SkillTrack::Entry* craft = talk.skills().find(kRoofSkill);
+    REQUIRE(craft != nullptr);
+    REQUIRE(craft->uses == 0);
+    // Standing on the lead is where the session began, so nothing is owed for
+    // it: a body that has not arrived anywhere has not run a roof.
+    REQUIRE(talk.crimes().tally(Crime::RoofRun) == 0);
+    REQUIRE(session.tavern().highestBandReached() == gull::kRoofBand);
+
+    session.climb();
+
+    // THE PRESS DID NOT RESOLVE THE JUMP. This is the whole finding: the body
+    // is in the air, the landing has not been charged, and the craft it takes
+    // has not been paid for yet.
+    CHECK(session.body().airborne());
+    CHECK(session.awaitingLanding());
+    CHECK(session.body().tileX() == gull::kFootprintX0);
+    CHECK(talk.skills().find(kRoofSkill)->uses == 0);
+
+    const int flown = session.flyOutLeap();
+    // Eight movement steps a tile, three tiles: a quarter of a second of air,
+    // which is a jump you can watch.
+    CHECK(flown == 3 * kLeapStepsPerTile);
+    CHECK_FALSE(session.body().airborne());
+    CHECK_FALSE(session.awaitingLanding());
+    CHECK(session.body().tileX() == gull::kFootprintX0 - 3);
+
+    // AND THE LANDING CHARGED, on the step the feet touched: a leap is worth
+    // two uses of the craft, a climb one.
+    CHECK(talk.skills().find(kRoofSkill)->uses == 2);
+
+    // Another hundred steps of standing there charge nothing more.
+    session.stepMany(MoveInput{}, 100);
+    CHECK(talk.skills().find(kRoofSkill)->uses == 2);
+    // And crossing back at the same height is not an arrival anywhere new.
+    CHECK(talk.crimes().tally(Crime::RoofRun) == 0);
+}
+
+TEST_CASE("the up-key onto the lead is a roof-run the moment it lands") {
+    // The other half of the glue, through the key a player actually presses: a
+    // mantle resolves under the hand, so the arrival, the crime and both sides
+    // of the mirror move on the press itself.
+    render::SessionConfig config;
+    config.contentDir = granadad::content::contentDir();
+    config.world = docks::kWorldName;
+    config.timeOfDay = 22 * 3600;
+    config.timeOfDayGiven = true;
+    // The guest floor's north wall, facing it -- the burglar's own way out.
+    config.spawnX = 150;
+    config.spawnY = 67;
+    config.spawnBand = gull::kUpperBand;
+    config.spawnYaw = kFacingNorth;
+    config.spawnYawGiven = true;
+    config.width = 64;
+    config.height = 64;
+    render::Session session(config);
+    REQUIRE(session.body().spawnedLegally());
+
+    DialogueDirector& talk = session.tavern().dialogue();
+    const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+    const std::int32_t watch = talk.factions().indexOf("watch");
+    REQUIRE(roofs >= 0);
+    REQUIRE(watch >= 0);
+    const std::int32_t skyBefore = talk.standings().standing(roofs);
+    const std::int32_t watchBefore = talk.standings().standing(watch);
+    REQUIRE(session.tavern().highestBandReached() == gull::kUpperBand);
+
+    session.climb();
+
+    CHECK_FALSE(session.awaitingLanding());
+    CHECK(session.body().band() == gull::kRoofBand);
+    CHECK(session.tavern().highestBandReached() == gull::kRoofBand);
+    CHECK(talk.crimes().tally(Crime::RoofRun) == 1);
+    CHECK(talk.standings().standing(roofs) > skyBefore);
+    CHECK(talk.standings().standing(watch) < watchBefore);
+    CHECK(talk.skills().find(kRoofSkill)->uses == 1);
+}
+
+TEST_CASE("the room charges a landing: the craft, the fall, the roof and the tally") {
+    const TileQuery tiles(docksWorld());
+    Tavern gull(tiles, hourOfDay(22), 0x5350524E47ull, granadad::content::contentDir());
+    DialogueDirector& talk = gull.dialogue();
+    const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+    const std::int32_t watch = talk.factions().indexOf("watch");
+    REQUIRE(roofs >= 0);
+    REQUIRE(watch >= 0);
+
+    gull.setPlayer(q8_tile_centre(gull::kBartenderX), q8_tile_centre(gull::kBarY - 1),
+                   gull::kGroundBand);
+    const std::int32_t hpBefore = gull.playerHp();
+    const std::int32_t skyBefore = talk.standings().standing(roofs);
+    const std::int32_t watchBefore = talk.standings().standing(watch);
+
+    // A mantle onto the lead: one band up, no fall, and the first arrival
+    // anywhere high.
+    const Tavern::LandingResult up =
+        gull.settleLanding(RoofResult{RoofMove::Done, 1, 1}, 0, gull::kRoofBand);
+    CHECK(up.hurt == 0);
+    CHECK(up.roofRun);
+    CHECK(up.counted == "climbs");
+    CHECK(talk.crimes().tally(Crime::RoofRun) == 1);
+    CHECK(talk.skills().level(kRoofSkill) >= 0);
+    CHECK(gull.playerHp() == hpBefore);
+    // The mirror ranks.json declares: what the roofs gain, the garrison loses
+    // half of. A landing that reached the tally and missed this would be the
+    // exact bug noteCrime's one-call-site shape exists to prevent.
+    CHECK(talk.standings().standing(roofs) > skyBefore);
+    CHECK(talk.standings().standing(watch) < watchBefore);
+
+    // A second arrival at the same height is not a second roof-run.
+    const Tavern::LandingResult again =
+        gull.settleLanding(RoofResult{RoofMove::Done, 0, 3}, 0, gull::kRoofBand);
+    CHECK_FALSE(again.roofRun);
+    CHECK(again.counted == "leaps");
+    CHECK(talk.crimes().tally(Crime::RoofRun) == 1);
+
+    // And a fall past what untaught legs can take costs hit points. Two bands
+    // fallen, one of them free.
+    REQUIRE(safeDropBands(talk.skills().level(kRoofSkill), false) == kSafeDropBands);
+    const Tavern::LandingResult down =
+        gull.settleLanding(RoofResult{RoofMove::Done, 2, 0}, 2, gull::kGroundBand);
+    CHECK(down.hurt == 12);
+    CHECK(gull.playerHp() == hpBefore - 12);
 }

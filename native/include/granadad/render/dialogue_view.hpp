@@ -115,6 +115,22 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state);
 /// unless the word alone is longer than the column.
 [[nodiscard]] std::vector<std::string> wrapText(const std::string& text, std::size_t columns);
 
+/// Cuts a topic label to the room its column has, ON A WORD BOUNDARY, and says
+/// out loud that it cut.
+///
+/// S5 shipped `label.resize(room)`, which cuts mid-word, and its own headline
+/// frame docs/frames/s5-skyrunner-line.png has "6 THE VANISHED CLE" and "7 ASK
+/// TO BE MADE R" printed on it. A label that stops in the middle of a word
+/// reads as a rendering bug rather than as a list that is longer than the
+/// column, which is what it actually is.
+///
+/// The rule: keep whole words while they fit, drop the first one that does not,
+/// and mark the cut with a full stop. A single word longer than the column has
+/// nowhere to break, so it is still cut -- but it is cut one short and marked,
+/// so even that case says "there is more of this word" instead of pretending
+/// the label ended there.
+[[nodiscard]] std::string clipLabel(const std::string& label, std::size_t room);
+
 /// One printed row of the topic list: the number the player presses, a space,
 /// and the label -- exactly the string drawText is handed.
 struct TopicRow {

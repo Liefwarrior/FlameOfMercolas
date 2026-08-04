@@ -572,6 +572,50 @@ TEST_CASE("a spoken line wraps at spaces and never off the edge") {
     CHECK(wrapText("anything", 0).empty());
 }
 
+TEST_CASE("a topic label too long for its column stops at a word, not mid-word") {
+    // THE S5 REVIEW'S FIFTH FINDING, and it is visible in the sprint's own
+    // shipped frame: docs/frames/s5-skyrunner-line.png has "6 THE VANISHED CLE"
+    // and "7 ASK TO BE MADE R" printed on it. drawDialogue was calling
+    // label.resize(room), which cuts wherever the column happens to end.
+    CHECK(clipLabel("6 ASK ABOUT THE VANISHED CLERK", 18) == "6 ASK ABOUT THE.");
+    CHECK(clipLabel("7 ASK TO BE MADE READY", 18) == "7 ASK TO BE MADE.");
+    // Nothing is cut that fits.
+    CHECK(clipLabel("1 LEAVE", 18) == "1 LEAVE");
+    CHECK(clipLabel("123456789012345678", 18) == "123456789012345678");
+    // The mark never makes the label wider than the column it was cut for.
+    for (const std::size_t room : {std::size_t{4}, std::size_t{8}, std::size_t{18}}) {
+        CHECK(clipLabel("6 ASK ABOUT THE VANISHED CLERK", room).size() <= room);
+    }
+    // One word with nowhere to break is still cut -- and still says so, rather
+    // than pretending the label ended where the column did.
+    CHECK(clipLabel("SUPERCALIFRAGILISTIC", 8) == "SUPERCA.");
+    // The number and its space are furniture, not a word boundary: cutting
+    // there would print "6." and name nothing.
+    CHECK(clipLabel("6 VANISHED", 5) == "6 VA.");
+    CHECK(clipLabel("anything", 0).empty());
+}
+
+TEST_CASE("a scripted line sets the clock it needs, and never one that was asked for") {
+    // THE S6 REVIEW'S FIRST FIX-FIRST ITEM. `--skyrun` at its own documented
+    // invocation landed 0 of 9 beats and exited 1, because the flag defaults to
+    // eight in the evening and Finch does not keep the snug until ten.
+    SmokeRunConfig skyrun;
+    skyrun.skyrun = true;
+    CHECK(scriptedStartHour(skyrun) == 22);
+
+    SmokeRunConfig flame;
+    flame.flame = true;
+    CHECK(scriptedStartHour(flame) == 20);
+
+    // The roof line wants the door open and nobody in particular.
+    SmokeRunConfig roofs;
+    roofs.roofs = true;
+    CHECK(scriptedStartHour(roofs) == -1);
+
+    // A plain capture is a plain capture.
+    CHECK(scriptedStartHour(SmokeRunConfig{}) == -1);
+}
+
 TEST_CASE("the whole frame, with somebody talking, still leaves the middle clear") {
     // The surface and the HUD together, over a real render of the real room --
     // which is the only configuration that actually ships.

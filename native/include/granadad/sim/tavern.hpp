@@ -43,6 +43,10 @@
 #include "granadad/sim/brawl.hpp"
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/engine.hpp"
+// The roof moves' own vocabulary: a landing is charged HERE, in the room that
+// owns the player's hit points, so RoofResult and safeDropBands are part of
+// this header's interface. See Tavern::settleLanding.
+#include "granadad/sim/player.hpp"
 #include "granadad/sim/region_path.hpp"
 #include "granadad/sim/spellbook.hpp"
 #include "granadad/sim/tile_query.hpp"
@@ -513,6 +517,38 @@ public:
     /// Which of the four boxes have been emptied, as a bitmask. Hashed.
     [[nodiscard]] std::int32_t crackedBoxes() const noexcept { return crackedBoxes_; }
 
+    /// What a landing off the roofs cost.
+    struct LandingResult {
+        /// Hit points the fall took, or 0.
+        std::int32_t hurt = 0;
+        /// True when this landing was the first arrival somewhere new and high,
+        /// and therefore a roof-run the ward could have minded.
+        bool roofRun = false;
+        /// The counted verb the questline was told about: "climbs" or "leaps".
+        std::string_view counted;
+    };
+
+    /// Charges a roof landing: the craft it takes, the fall it cost, the
+    /// roof-run it was, and the counted verb a questline stage might want.
+    ///
+    /// MOVED HERE IN S6, out of render::Session, and it is a correction rather
+    /// than a tidy-up. The S5 review's third finding was that this glue -- which
+    /// owns fall damage, a skill use, a crime and two questline tallies -- had
+    /// no test that could go red, because it lived in the client layer and the
+    /// simulation suite could not reach it: test_crime.cpp had to hand-call
+    /// noteTally() and noteCrime() to walk the Skyrunner line past its roof
+    /// beats, which proved the questline and proved nothing about the landing.
+    ///
+    /// It is simulation state -- hit points, a tally, heat, two faction numbers
+    /// -- so it belongs in the room that owns them. Session now hands the room
+    /// the fall the body reported and draws whatever comes back.
+    LandingResult settleLanding(const RoofResult& move, std::int32_t fellBands,
+                                std::int32_t landedBand);
+    /// The highest band the player has ever stood on in this room's memory. A
+    /// roof-run is counted once per ARRIVAL somewhere new and high rather than
+    /// once per step, and this is what tells the two apart.
+    [[nodiscard]] std::int32_t highestBandReached() const noexcept { return highestBand_; }
+
     /// Takes the bale in the snug, or puts it back down. The roofs do not hand
     /// a bale to a stranger, so it wants membership; carrying it OUT of the
     /// house past somebody who would mind is the run, and the room notices that
@@ -728,6 +764,8 @@ private:
     std::int32_t balesInSnug_ = kBalesPerNight;
     /// Bit i is set once room i's strongbox has been emptied.
     std::int32_t crackedBoxes_ = 0;
+    /// The highest band the player has stood on. See settleLanding.
+    std::int32_t highestBand_ = 0;
     /// Whether the player was inside the walls on the previous movement step.
     /// A bale is DELIVERED by crossing the threshold with it, and a crossing is
     /// a transition and not a state.

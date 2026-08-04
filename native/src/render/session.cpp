@@ -94,7 +94,6 @@ Session::Session(const SessionConfig& config)
     // surface is unbuilt dungeon, and a body that fell into it could not climb
     // back out. See PlayerBody::setLandingFloor for the shaft this closes.
     body_->setLandingFloor(sim::docks::kLandingFloor);
-    highestBand_ = body_->band();
     timeOfDay_ = ((config_.timeOfDay % sim::kSecondsPerDay) + sim::kSecondsPerDay) %
                  sim::kSecondsPerDay;
     settings_.timeOfDay = timeOfDay_;
@@ -117,46 +116,14 @@ void Session::syncTavernToBody() {
 // ---------------------------------------------------------------------------
 
 void Session::settleLanding(const sim::RoofResult& move) {
-    sim::DialogueDirector& talk = tavern_->dialogue();
-    // Every climb, leap and fall is a use of the craft it takes.
-    talk.skills().use(sim::kRoofSkill, move.tiles > 1 ? 2 : 1);
-
-    const std::int32_t fell = body_->takeFallBands();
-    const std::int32_t roofs = talk.factions().indexOf("skyrunners");
-    const std::int32_t safe = sim::safeDropBands(talk.skills().level(sim::kRoofSkill),
-                                                 talk.standings().unlocked(roofs, "roof"));
-    if (fell > safe) {
-        // VERIFICATION GAP (S5): fall damage lands on the TAVERN'S copy of the
-        // player's hit points, because that is the only place hit points exist
-        // in this build -- so a body that falls off a roof three streets away
-        // is hurt by the Gilded Gull's bookkeeping. It is the right number in
-        // the wrong owner, and it moves when the player has a body of their own
-        // rather than a room that keeps score for them.
-        //
-        // Ten a band past what the legs can take. It floors at the brawl floor
-        // like everything else in this build: nothing kills the player yet, and
-        // pretending a roof does would be the first thing that did.
-        const std::int32_t hurt = (fell - safe) * 12;
-        tavern_->injurePlayer(hurt);
-        roofMove_ += " - " + std::to_string(hurt) + " HURT";
-    }
-
-    // A ROOF-RUN IS AN ARRIVAL, not a step. Counted the first time the body
-    // gets higher than it has ever been, so a player pacing about on the lead
-    // does not farm the guild's regard by walking in circles.
-    if (body_->band() > highestBand_) {
-        highestBand_ = body_->band();
-        if (body_->band() >= sim::gull::kRoofBand) {
-            // Nobody looks up: a roof-run is witnessed by nobody in this build,
-            // which is the whole social point of the roofs and is stated here
-            // rather than implied.
-            talk.noteCrime(sim::Crime::RoofRun, false);
-        }
-    }
-    // The two body verbs the questline counts by name. They are not crimes and
-    // do not raise heat, so they go to the tally directly.
-    if (move.ok()) {
-        talk.noteTally(move.tiles > 1 ? "leaps" : "climbs");
+    // THE CHARGE IS THE ROOM'S. Everything a landing moves -- the craft, the
+    // hit points, the roof-run, the counted verb -- is simulation state, and it
+    // moved out of this file in S6 so the simulation suite can drive it and a
+    // mutation to any clause of it can go red. See Tavern::settleLanding.
+    const sim::Tavern::LandingResult charged =
+        tavern_->settleLanding(move, body_->takeFallBands(), body_->band());
+    if (charged.hurt > 0) {
+        roofMove_ += " - " + std::to_string(charged.hurt) + " HURT";
     }
 }
 
@@ -179,22 +146,29 @@ void Session::climb() {
         return;
     }
     if (leapt) {
-        // A leap is in the AIR: the body lands when the arc runs out, so the
-        // skill, the fall and the tally are charged then and not now. The steps
-        // that fly it are the client's or the capture script's, exactly like
-        // any other movement.
+        // A LEAP IS WATCHED, NOT TELEPORTED, and this is the S5 review's second
+        // finding closed. S5 shipped a `while (body_->airborne()) step()` right
+        // here, inside the keypress: the arc ran to its end before the frame
+        // that showed the jump was ever drawn, so every leap in real play was
+        // instant -- and it burned twenty-four movement steps of tavern clock
+        // inside one frame while it did it. player.hpp:227 says a leap is
+        // "something the player watches happen rather than a teleport with a
+        // sound effect" and test_roofrun.cpp asserts it of PlayerBody; the
+        // client then threw the arc away.
+        //
+        // So the press ARMS the leap and nothing more. The ordinary step pump
+        // -- the client's, a capture script's, a test's -- flies it, and the
+        // landing is settled in step() at the moment the feet touch, which is
+        // also the only moment takeFallBands() has anything to report.
         roofMove_ = "OVER " + std::to_string(move.tiles) + " TILES";
         say(roofMove_);
-        // Force the arc to run here as well as in the caller's loop, so a
-        // scripted capture that calls climb() and then draws gets a body that
-        // has landed rather than one frozen mid-jump.
-        while (body_->airborne()) {
-            step(sim::MoveInput{});
-        }
-    } else {
-        roofMove_ = "UP ONTO THE LEDGE";
-        say(roofMove_);
+        pendingLanding_ = move;
+        awaitingLanding_ = true;
+        syncTavernToBody();
+        return;
     }
+    roofMove_ = "UP ONTO THE LEDGE";
+    say(roofMove_);
     settleLanding(move);
     syncTavernToBody();
 }
@@ -244,6 +218,17 @@ void Session::step(const sim::MoveInput& input) {
     body_->step(input);
     syncTavernToBody();
 
+    // THE ARC CAME DOWN. A leap armed by climb() is settled HERE, on the step
+    // the feet touch, because that is the only step on which the body has a
+    // fall to report -- takeFallBands() is written by PlayerBody::land and read
+    // exactly once. Charging it at the keypress, as S5 did, meant charging it
+    // before the fall existed.
+    if (awaitingLanding_ && !body_->airborne()) {
+        awaitingLanding_ = false;
+        settleLanding(pendingLanding_);
+        syncTavernToBody();
+    }
+
     if (messageSteps_ > 0 && --messageSteps_ == 0) {
         message_.clear();
     }
@@ -266,6 +251,20 @@ void Session::stepMany(const sim::MoveInput& input, int steps) {
     for (int i = 0; i < steps; ++i) {
         step(input);
     }
+}
+
+int Session::flyOutLeap() {
+    int steps = 0;
+    // Bounded by construction -- kLeapStepsPerTile * the longest reach any
+    // teaching buys -- but bounded HERE as well, because a loop whose exit
+    // depends on simulation state is a loop that hangs a build the day that
+    // state is wrong.
+    constexpr int kCeiling = 4 * sim::kLeapStepsPerTile * sim::kLeapReachTiles;
+    while (body_->airborne() && steps < kCeiling) {
+        step(sim::MoveInput{});
+        ++steps;
+    }
+    return steps;
 }
 
 void Session::say(std::string line) {
@@ -986,6 +985,16 @@ void walkStraightTo(Session& session, std::int32_t tileX, std::int32_t tileY) {
     }
 }
 
+/// Presses the up-key and then WATCHES the jump. A mantle resolves under the
+/// hand; a leap arms an arc and the ordinary step pump flies it, so a scripted
+/// capture spends the same twenty-four movement steps in the air a player does
+/// rather than arriving instantly. See Session::climb on why the press stopped
+/// draining the arc itself.
+void climbAndLand(Session& session) {
+    session.climb();
+    (void)session.flyOutLeap();
+}
+
 /// Walks the body to a tile with REAL movement steps, along a route THE ROOM'S
 /// OWN PATHFINDER produced.
 ///
@@ -1221,7 +1230,7 @@ bool pick(Session& session, sim::TopicKind kind) {
 
     // 2. up it, with the up-key -- see PlayerBody::mantle on why a stair in
     //    this build needs a verb and why walking north off it does nothing.
-    session.climb();
+    climbAndLand(session);
     if (session.body().band() == sim::gull::kUpperBand) {
         ++landed;
     }
@@ -1229,7 +1238,7 @@ bool pick(Session& session, sim::TopicKind kind) {
     // 3. to the north wall of the guest floor, and over it.
     walkToTile(session, 150, sim::gull::kFootprintY0 + 1);
     session.body().setYaw(sim::kFacingNorth);
-    session.climb();
+    climbAndLand(session);
     if (session.body().band() == sim::gull::kRoofBand) {
         ++landed;
     }
@@ -1246,7 +1255,7 @@ bool pick(Session& session, sim::TopicKind kind) {
         // West, over the two tiles of air between this house and the next.
         walkToTile(session, sim::gull::kFootprintX0, 70);
         session.body().setYaw(sim::kFacingWest);
-        session.climb();
+        climbAndLand(session);
         session.body().setPitch(sim::angle_from_degrees(-10));
     } else if (ending == "street") {
         walkToTile(session, sim::gull::kFootprintX0, 70);
@@ -1276,10 +1285,10 @@ void reportTo(Session& session, std::string_view who) {
 /// wall onto the lead.
 void upOntoTheLead(Session& session) {
     walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
-    session.climb();
+    climbAndLand(session);
     walkToTile(session, 150, sim::gull::kFootprintY0 + 1);
     session.body().setYaw(sim::kFacingNorth);
-    session.climb();
+    climbAndLand(session);
 }
 
 /// Off the Gull's west edge into the alley -- two storeys, which a Tenant of
@@ -1332,7 +1341,7 @@ void comeDownstairs(Session& session) {
     //    because walking at a stair in this build does nothing (see
     //    PlayerBody::mantle).
     walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
-    session.climb();
+    climbAndLand(session);
     walkToTile(session, sim::gull::kRooms[1].standX, sim::gull::kRooms[1].standY);
     session.steal();
     comeDownstairs(session);
@@ -1351,12 +1360,12 @@ void comeDownstairs(Session& session) {
     upOntoTheLead(session);
     walkToTile(session, sim::gull::kFootprintX0, 70);
     session.body().setYaw(sim::kFacingWest);
-    session.climb();
+    climbAndLand(session);
     // Back east over the same two tiles of air, and then off the Gull's own
     // west edge into the alley rather than off the far side of a house whose
     // street the router does not carry.
     session.body().setYaw(sim::kFacingEast);
-    session.climb();
+    climbAndLand(session);
     downFromTheLead(session);
     reportTo(session, "Finch");
 
@@ -1369,9 +1378,9 @@ void comeDownstairs(Session& session) {
     walkToTile(session, sim::gull::kFootprintX0, 70);
     for (int i = 0; i < 24 && talk.skills().level(sim::kRoofSkill) < 5; ++i) {
         session.body().setYaw(sim::kFacingWest);
-        session.climb();
+        climbAndLand(session);
         session.body().setYaw(sim::kFacingEast);
-        session.climb();
+        climbAndLand(session);
     }
     downFromTheLead(session);
     if (speakTo(session, "Finch")) {
@@ -1414,9 +1423,31 @@ void comeDownstairs(Session& session) {
 
 }  // namespace
 
+int scriptedStartHour(const SmokeRunConfig& config) noexcept {
+    // Finch keeps the snug from ten at night; the whole Skyrunner line is sworn
+    // to him and cannot start without him in the room.
+    if (config.skyrun) {
+        return 22;
+    }
+    // Father Maell takes an evening hour in the Gull between seven and half
+    // past nine. Eight is the middle of it, which is also the default.
+    if (config.flame) {
+        return 20;
+    }
+    // The roof line needs the door open and nobody in particular.
+    return -1;
+}
+
 SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     SmokeRunResult result;
-    Session session(config.session);
+    SessionConfig started = config.session;
+    if (!started.timeOfDayGiven) {
+        const int hour = scriptedStartHour(config);
+        if (hour >= 0) {
+            started.timeOfDay = hour * 3600;
+        }
+    }
+    Session session(started);
 
     // A scripted walk, so a capture at N steps is a picture of the game moving
     // rather than a picture of the spawn. Forward, with a slow drift of the

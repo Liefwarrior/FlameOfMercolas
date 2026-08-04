@@ -11,7 +11,16 @@ namespace {
 
 constexpr std::uint8_t kCrimeMagic0 = 'G';
 constexpr std::uint8_t kCrimeMagic1 = 'C';
-constexpr std::uint8_t kCrimeVersion = 1;
+/// 2 (S6): the heat clock is written as sixty-four bits.
+///
+/// S5 encoded `cooledAtTick_` -- an std::int64_t -- through putI32, so a ledger
+/// round-tripped through a save came back with the low half of the tick it was
+/// cooled at. The S5 review found it, and found that the round-trip case could
+/// not see it either: the only tick it ever used was four cooling periods, well
+/// inside thirty-two bits. Unreachable in practice is not the same as correct,
+/// and a codec that silently narrows is the sort of thing that is discovered by
+/// a save file rather than by a test.
+constexpr std::uint8_t kCrimeVersion = 2;
 
 void putI32(std::vector<std::uint8_t>& out, std::int32_t value) {
     const std::uint32_t bits = static_cast<std::uint32_t>(value);
@@ -32,6 +41,28 @@ void putI32(std::vector<std::uint8_t>& out, std::int32_t value) {
                                (static_cast<std::uint32_t>(bytes[cursor + 3]) << 24);
     cursor += 4;
     out = static_cast<std::int32_t>(bits);
+    return true;
+}
+
+void putI64(std::vector<std::uint8_t>& out, std::int64_t value) {
+    const std::uint64_t bits = static_cast<std::uint64_t>(value);
+    for (int shift = 0; shift < 64; shift += 8) {
+        out.push_back(static_cast<std::uint8_t>((bits >> shift) & 0xFFU));
+    }
+}
+
+[[nodiscard]] bool takeI64(const std::vector<std::uint8_t>& bytes, std::size_t& cursor,
+                           std::int64_t& out) {
+    if (cursor + 8 > bytes.size()) {
+        return false;
+    }
+    std::uint64_t bits = 0;
+    for (int i = 0; i < 8; ++i) {
+        bits |= static_cast<std::uint64_t>(bytes[cursor + static_cast<std::size_t>(i)])
+                << (i * 8);
+    }
+    cursor += 8;
+    out = static_cast<std::int64_t>(bits);
     return true;
 }
 
@@ -247,7 +278,7 @@ std::vector<std::uint8_t> CrimeLedger::encode() const {
     putI32(out, heat_);
     putI32(out, laidLow_);
     putI32(out, balesRun_);
-    putI32(out, static_cast<std::int32_t>(cooledAtTick_));
+    putI64(out, cooledAtTick_);
     out.push_back(bale_ ? 1U : 0U);
     out.push_back(warrant_ ? 1U : 0U);
     return out;
@@ -265,13 +296,12 @@ bool CrimeLedger::decode(const std::vector<std::uint8_t>& bytes, CrimeLedger& ou
             return false;
         }
     }
-    std::int32_t cooled = 0;
     if (!takeI32(bytes, cursor, parsed.committed_) || !takeI32(bytes, cursor, parsed.loot_) ||
         !takeI32(bytes, cursor, parsed.heat_) || !takeI32(bytes, cursor, parsed.laidLow_) ||
-        !takeI32(bytes, cursor, parsed.balesRun_) || !takeI32(bytes, cursor, cooled)) {
+        !takeI32(bytes, cursor, parsed.balesRun_) ||
+        !takeI64(bytes, cursor, parsed.cooledAtTick_)) {
         return false;
     }
-    parsed.cooledAtTick_ = cooled;
     if (cursor + 2 > bytes.size()) {
         return false;
     }
@@ -290,7 +320,9 @@ void CrimeLedger::hashInto(HashSink& sink) const {
     sink.put_int(static_cast<std::uint32_t>(heat_));
     sink.put_int(static_cast<std::uint32_t>(laidLow_));
     sink.put_int(static_cast<std::uint32_t>(balesRun_));
-    sink.put_int(static_cast<std::uint32_t>(cooledAtTick_));
+    // Sixty-four bits, like the codec: a digest that folded the low half would
+    // agree about two ledgers cooled 2^32 seconds apart.
+    sink.put_long(static_cast<std::uint64_t>(cooledAtTick_));
     sink.put_byte(bale_ ? 1U : 0U);
     sink.put_byte(warrant_ ? 1U : 0U);
 }

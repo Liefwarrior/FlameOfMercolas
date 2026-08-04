@@ -411,6 +411,13 @@ void Tavern::skipTo(std::int32_t secondOfDay) {
 // ---------------------------------------------------------------------------
 
 void Tavern::setPlayer(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band) noexcept {
+    if (!playerKnown_) {
+        // The band the player STARTED on is not an arrival anywhere. Seeded on
+        // the first sighting so a session that spawns on the lead does not
+        // credit itself with a roof-run for standing still -- see
+        // settleLanding, which is the only thing that raises this afterwards.
+        highestBand_ = band;
+    }
     playerX_ = xQ8;
     playerY_ = yQ8;
     playerBand_ = band;
@@ -1588,6 +1595,52 @@ Tavern::StealResult Tavern::crackStrongbox() {
     return out;
 }
 
+Tavern::LandingResult Tavern::settleLanding(const RoofResult& move, std::int32_t fellBands,
+                                            std::int32_t landedBand) {
+    LandingResult out;
+    // Every climb, leap and fall is a use of the craft it takes.
+    dialogue_.skills().use(kRoofSkill, move.tiles > 1 ? 2 : 1);
+
+    const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
+    const std::int32_t safe = safeDropBands(dialogue_.skills().level(kRoofSkill),
+                                            dialogue_.standings().unlocked(roofs, "roof"));
+    if (fellBands > safe) {
+        // VERIFICATION GAP (S5, still open in S6): fall damage lands on the
+        // TAVERN'S copy of the player's hit points, because that is the only
+        // place hit points exist in this build -- so a body that falls off a
+        // roof three streets away is hurt by the Gilded Gull's bookkeeping. It
+        // is the right number in the wrong owner, and it moves when the player
+        // has a body of their own rather than a room that keeps score for them.
+        //
+        // Twelve a band past what the legs can take. It floors at the brawl
+        // floor like everything else in this build: nothing kills the player
+        // yet, and pretending a roof does would be the first thing that did.
+        out.hurt = (fellBands - safe) * 12;
+        injurePlayer(out.hurt);
+    }
+
+    // A ROOF-RUN IS AN ARRIVAL, not a step. Counted the first time the body
+    // gets higher than it has ever been, so a player pacing about on the lead
+    // does not farm the guild's regard by walking in circles.
+    if (landedBand > highestBand_) {
+        highestBand_ = landedBand;
+        if (landedBand >= gull::kRoofBand) {
+            // Nobody looks up: a roof-run is witnessed by nobody in this build,
+            // which is the whole social point of the roofs and is stated here
+            // rather than implied.
+            dialogue_.noteCrime(Crime::RoofRun, false);
+            out.roofRun = true;
+        }
+    }
+    // The two body verbs the questline counts by name. They are not crimes and
+    // do not raise heat, so they go to the tally directly.
+    if (move.ok()) {
+        out.counted = move.tiles > 1 ? "leaps" : "climbs";
+        dialogue_.noteTally(out.counted);
+    }
+    return out;
+}
+
 Tavern::StealResult Tavern::handleBale() {
     StealResult out;
     CrimeLedger& crimes = dialogue_.crimes();
@@ -1737,6 +1790,9 @@ void Tavern::hash_into(HashSink& sink) const {
     // on the last step, and how long this room has been running.
     sink.put_int(static_cast<std::uint32_t>(crackedBoxes_));
     sink.put_int(static_cast<std::uint32_t>(balesInSnug_));
+    // S6: the highest the player has been. It decides whether the next landing
+    // is a roof-run or a lap of the lead, so it is state and not a readout.
+    sink.put_int(static_cast<std::uint32_t>(highestBand_));
     sink.put_byte(wasInside_ ? 1U : 0U);
     sink.put_long(static_cast<std::uint64_t>(elapsed_));
     dialogue_.hashInto(sink);

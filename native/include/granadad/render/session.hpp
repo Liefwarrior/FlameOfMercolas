@@ -56,6 +56,10 @@ struct SessionConfig {
     int height = 360;
     /// Seconds since midnight AT THE START. It moves from there.
     int timeOfDay = 20 * 3600;
+    /// True when somebody NAMED the hour. A scripted line whose cast is not in
+    /// the room at the default hour sets its own clock when this is false, and
+    /// never overrides an hour that was asked for. See scriptedStartHour().
+    bool timeOfDayGiven = false;
     /// Horizontal field of view in degrees.
     int fovDegrees = 90;
     /// The only persisted RNG state there is.
@@ -149,6 +153,18 @@ public:
     /// What the last roof move did, in words. Exposed so a test can assert on
     /// the REPORT and not only on where the body ended up.
     [[nodiscard]] const std::string& lastRoofMove() const noexcept { return roofMove_; }
+
+    /// True between a leap being armed and the feet touching down: the arc is
+    /// in the air and its landing has not been charged yet. Exposed so a test
+    /// can prove the press did NOT resolve the jump.
+    [[nodiscard]] bool awaitingLanding() const noexcept { return awaitingLanding_; }
+    /// Runs the step pump until an armed leap has landed, and answers how many
+    /// steps that took. Zero when nothing was in the air.
+    ///
+    /// This is not a shortcut past the simulation: it is the ordinary step()
+    /// in a loop, the same one the client's pump calls, which is what makes a
+    /// scripted capture a picture of the game rather than of a harness.
+    int flyOutLeap();
 
     /// The last thing that happened, for the HUD. Fades after a few seconds.
     [[nodiscard]] const std::string& lastMessage() const noexcept { return message_; }
@@ -259,10 +275,10 @@ private:
     bool forgeOpen_ = false;
     /// What the last roof move did, for the HUD and for the tests.
     std::string roofMove_;
-    /// The highest band the body has stood on. A roof-run is counted once per
-    /// ARRIVAL somewhere new and high rather than once per step, and this is
-    /// what tells the two apart.
-    std::int32_t highestBand_ = 0;
+    /// The leap that is in the air, and whether one is. Settled by step() on
+    /// the movement step the feet touch -- see the note there.
+    sim::RoofResult pendingLanding_;
+    bool awaitingLanding_ = false;
 };
 
 /// What a scripted capture run was asked to do.
@@ -350,6 +366,21 @@ struct SmokeRunResult {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }
 };
+
+/// The hour of the clock a scripted line NEEDS, or -1 when it does not care.
+///
+/// S5's `--skyrun` shipped broken at its own documented invocation and the S6
+/// review found it: the flag defaults to eight in the evening, Finch is
+/// authored to keep the snug from ten (tavern.cpp, hourOfDay(22)), and a line
+/// whose first beat is an oath sworn to a man who is not in the building lands
+/// zero of nine beats and exits 1. `--flame` had exactly the same shape in S4
+/// and was fixed by hand; this is the same fix, stated once, for every scripted
+/// line there will ever be.
+///
+/// A line SETS the clock only when nobody named an hour. `--time=4 --skyrun`
+/// still runs at four in the morning and still fails loudly, because an hour
+/// the caller asked for is an hour the caller meant.
+[[nodiscard]] int scriptedStartHour(const SmokeRunConfig& config) noexcept;
 
 /// Runs a scripted session and, optionally, writes a PNG. No window, no GPU,
 /// no display server: this is the path every later sprint proves itself with.

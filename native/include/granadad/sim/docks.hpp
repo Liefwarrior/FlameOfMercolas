@@ -126,6 +126,26 @@ inline constexpr std::int32_t kStandableOnRoofs = 1706;
 /// 7,906 tiles, and every one of them is a roof, a gallery or a back way onto
 /// one: every standable cell of the mid-slope band bar sixty-nine, and 1,664 of
 /// the 1,706 on the roof-slum plane that had NONE at all.
+///
+/// WHAT THIS NUMBER IS, EXACTLY -- restated in S6 because the S5 review found
+/// the claim wider than the proof. This is what THE RULES PERMIT, counted by a
+/// flood fill in test_roofrun.cpp that offers every roof move the rules allow
+/// from every cell. It is NOT a count of cells PlayerBody has been driven to.
+///
+/// The two differ in one known place and it is worth naming: the body takes the
+/// authored stair unconditionally whenever it is standing on a climbable cell
+/// (PlayerBody::mantle, and the note there on why the Gull's guest floor was
+/// unreachable without it), so from a stair cell the body will never offer the
+/// facing mantle -- while the fill offers both. The fill is therefore an UPPER
+/// BOUND: every cell it counts is reachable under the movement rules, and a
+/// cell reachable only by mantling a wall while standing on a flight of stairs
+/// is counted here and cannot currently be walked to.
+///
+/// The number that IS proved of the body is the one test_roofrun.cpp's body-
+/// level cases pin -- the Gull's roof, the alley crossing and the drop -- and a
+/// mutation that guts PlayerBody::mantle's stair clause turns those red while
+/// leaving the three reachability counts green. That asymmetry is the reason
+/// this paragraph exists.
 inline constexpr std::int32_t kReachableWithRoofMoves = 24960;
 inline constexpr std::int32_t kRoofReachableOnUpper = 3864;
 inline constexpr std::int32_t kRoofReachableOnRoofs = 1664;

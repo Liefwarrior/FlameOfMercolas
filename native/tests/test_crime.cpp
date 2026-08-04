@@ -371,6 +371,33 @@ TEST_CASE("the crime ledger round-trips through its own bytes") {
     CHECK_FALSE(CrimeLedger::decode(bent, wrecked));
 }
 
+TEST_CASE("the heat clock survives its own codec past thirty-two bits") {
+    // THE S5 REVIEW'S SEVENTH FINDING. cooledAtTick_ is an std::int64_t and S5
+    // encoded it through putI32, so a ledger written after 2^31 simulated
+    // seconds came back with the low half of its own clock. The round-trip case
+    // above could not see it: the only tick it ever used was four cooling
+    // periods, which is twenty minutes.
+    //
+    // Three thousand million seconds is about ninety-five years of simulated
+    // time -- unreachable in play, and that is exactly why a test has to be the
+    // thing that reaches it.
+    constexpr std::int64_t kFarFuture = 3000000000LL;
+    CrimeLedger before;
+    before.cool(kFarFuture);
+    before.addHeat(40);
+    REQUIRE(before.heat() == 40);
+
+    CrimeLedger after;
+    REQUIRE(CrimeLedger::decode(before.encode(), after));
+    CHECK(after.heat() == 40);
+
+    // One cooling period past where the clock was left forgets exactly one
+    // point. A clock that came back narrowed reads as a negative tick, the ward
+    // is handed ninety-five years to forget in, and this is 0.
+    after.cool(kFarFuture + kHeatCoolSeconds);
+    CHECK(after.heat() == 39);
+}
+
 // ===========================================================================
 // ROOM
 // ===========================================================================
@@ -648,14 +675,23 @@ TEST_CASE("a player can sign on with the roofs and finish the Skyrunner line") {
 
     // 4. the way up, with the real body. Placed against the guest floor's north
     //    wall, which is the burglar's own route: in the door, up the stair, and
-    //    out over the wall of the room you rented. The tally is the one
-    //    Session::settleLanding raises on a landing.
+    //    out over the wall of the room you rented.
+    //
+    //    S6 DRIVES THE GLUE INSTEAD OF IMITATING IT. S5 hand-called noteTally()
+    //    and noteCrime() here, which is how the S5 review found that the code
+    //    that really raises them -- fall damage, the skill use, the roof-run and
+    //    the counted verb -- had no test at all: it lived in render::Session,
+    //    where this suite could not reach it. It is Tavern::settleLanding now
+    //    and the room is asked to charge the landing the body just made.
     PlayerBody climber(room.tiles(), 150, 67, gull::kUpperBand, kFacingNorth);
     climber.setLandingFloor(docks::kLandingFloor);
-    REQUIRE(climber.mantle().ok());
+    const RoofResult mantled = climber.mantle();
+    REQUIRE(mantled.ok());
     REQUIRE(climber.band() == gull::kRoofBand);
-    talk.noteTally("climbs");
-    talk.noteCrime(Crime::RoofRun, false);
+    const Tavern::LandingResult charged =
+        gull.settleLanding(mantled, climber.takeFallBands(), climber.band());
+    REQUIRE(charged.roofRun);
+    REQUIRE(charged.counted == "climbs");
     room.standAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
     reportToFinch();
     CHECK(talk.journal().stagesDone("skyrunner-tenant") == 4);
@@ -663,8 +699,15 @@ TEST_CASE("a player can sign on with the roofs and finish the Skyrunner line") {
     // 5. and the way across.
     PlayerBody jumper(room.tiles(), gull::kFootprintX0, 70, gull::kRoofBand, kFacingWest);
     jumper.setLandingFloor(docks::kLandingFloor);
-    REQUIRE(jumper.leap(kLeapReachTiles).ok());
-    talk.noteTally("leaps");
+    const RoofResult jumped = jumper.leap(kLeapReachTiles);
+    REQUIRE(jumped.ok());
+    // The arc is flown before it is charged, which is what the client does now
+    // as well -- see Session::climb and the S5 review's teleport finding.
+    MoveInput idle;
+    while (jumper.airborne()) {
+        jumper.step(idle);
+    }
+    REQUIRE(gull.settleLanding(jumped, jumper.takeFallBands(), jumper.band()).counted == "leaps");
     reportToFinch();
     CHECK(talk.journal().stagesDone("skyrunner-tenant") == 5);
 

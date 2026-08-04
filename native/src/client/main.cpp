@@ -116,7 +116,10 @@ void print_usage() {
         "  --width=N            internal render width  (default 640)\n"
         "  --height=N           internal render height (default 360)\n"
         "  --scale=N            window / capture upscale, nearest neighbour (default 2)\n"
-        "  --time=HH            hour of the day, 0-23 (default 20, dusk)\n"
+        "  --time=HH            hour of the day, 0-23 (default 20, dusk). A\n"
+        "                       scripted line sets its own hour when this is not\n"
+        "                       given -- --skyrun wants 22, when Finch is in\n"
+        "                       the snug -- and never overrides one that is\n"
         "  --fov=DEG            horizontal field of view (default 90)\n"
         "  --spawn=X,Y,Z        spawn tile (default the authored Tarwalk spawn)\n"
         "  --yaw=DEG            spawn facing, 0 = north (default 0)\n"
@@ -182,6 +185,9 @@ void print_usage() {
             options.smoke.captureScale = options.windowScale;
         } else if (starts_with(arg, "--time=", &value)) {
             options.smoke.session.timeOfDay = (std::atoi(value) % 24) * 3600;
+            // Named, so a scripted line does not set its own clock over the
+            // top of it. See render::scriptedStartHour.
+            options.smoke.session.timeOfDayGiven = true;
         } else if (starts_with(arg, "--fov=", &value)) {
             options.smoke.session.fovDegrees = std::clamp(std::atoi(value), 40, 130);
         } else if (starts_with(arg, "--yaw=", &value)) {
