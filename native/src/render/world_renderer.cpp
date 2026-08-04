@@ -247,9 +247,29 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
     float furthest = 0.0F;
     std::size_t worldPixels = 0;
 
+    // Unwritten rows, split at the horizon. Everything that sits entirely
+    // BELOW the eye projects entirely below the horizon, and vice versa — so
+    // once the ground half of a column is full, the rest of that column's ray
+    // can skip every buried voxel it walks past. The district is built on a
+    // solid WALL substrate eleven levels deep, so without this the ray tests
+    // four or five invisible voxels in every cell for forty-four tiles.
+    const int horizonRow =
+        std::clamp(static_cast<int>(std::lround(std::clamp(horizon, -1.0e6F, 1.0e6F))), 0, height);
+
     for (int sx = 0; sx < width; ++sx) {
         std::fill(written.begin(), written.end(), static_cast<char>(0));
         int remaining = height;
+        int remainingBelow = height - horizonRow;
+        int remainingAbove = horizonRow;
+        const auto markWritten = [&](int row) {
+            written[static_cast<std::size_t>(row)] = 1;
+            --remaining;
+            if (row >= horizonRow) {
+                --remainingBelow;
+            } else {
+                --remainingAbove;
+            }
+        };
 
         const float cameraX = (2.0F * static_cast<float>(sx) + 1.0F) / static_cast<float>(width) -
                               1.0F;
@@ -296,6 +316,12 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                     if (!voxelAt(mapX, mapY, z, voxel)) {
                         continue;
                     }
+                    if (voxel.top <= camera.z && remainingBelow == 0) {
+                        continue;  // entirely below the eye, and the ground is full
+                    }
+                    if (voxel.bottom >= camera.z && remainingAbove == 0) {
+                        continue;  // entirely above the eye, and the sky is full
+                    }
                     const Rgb lampLight = glow_.at(mapX, mapY, z);
                     const Rgb surfaceLight{sky.ambient.r + lampLight.r, sky.ambient.g + lampLight.g,
                                            sky.ambient.b + lampLight.b};
@@ -341,8 +367,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                                              colour.b * surfaceLight.b * facing};
                                 colour = lerp(colour, sky.fog, fog);
                                 target.set(sx, sy, colour, safeEnter);
-                                written[static_cast<std::size_t>(sy)] = 1;
-                                --remaining;
+                                markWritten(sy);
                                 ++worldPixels;
                             }
                             nearest = std::min(nearest, safeEnter);
@@ -418,8 +443,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                             const float fog = 1.0F - std::exp(-distance / sky.fogDistance);
                             colour = lerp(colour, sky.fog, fog);
                             target.set(sx, sy, colour, distance);
-                            written[static_cast<std::size_t>(sy)] = 1;
-                            --remaining;
+                            markWritten(sy);
                             ++worldPixels;
                             nearest = std::min(nearest, distance);
                             furthest = std::max(furthest, distance);
