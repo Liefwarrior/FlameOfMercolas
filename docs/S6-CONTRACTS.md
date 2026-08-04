@@ -5,7 +5,7 @@ name and not a directory). Every claim here has a command beside it or a case na
 gate that can go red for it.
 
 Gate: `docker compose run --rm --build build` → **exit 0**, `100% tests passed, 0 tests failed
-out of 370`, floor raised 349 → 370. Cross-toolchain: `scripts\verify-windows.ps1` → **exit 0**,
+out of 371`, floor raised 349 → 371. Cross-toolchain: `scripts\verify-windows.ps1` → **exit 0**,
 both reports byte-identical between linux/gcc and mingw/windows.
 
 ---
@@ -180,6 +180,28 @@ the world can be told apart from a run stopped by a bug.
 The fix was not to soften the law. The scripted burglar now starts at **one in the morning**,
 when Finch still keeps the snug until three and the impound keeper went home at one. The hour
 is part of what the line teaches.
+
+---
+
+## The cases are not decoration
+
+Five mutations to the S6 layer, one gate run, `MUTATION_EXITCODE=1`,
+`98% tests passed, 9 tests failed out of 371` — every one of them on a case whose NAME states
+the claim that broke.
+
+| Mutation | Went red |
+|---|---|
+| `contrabandLegal` returns true for everything | `what a sack holds is measured in weight…`, `every good resolves both ways…`, `the sack and the job are one line each…`, `caught: a load, a warrant…` |
+| a Skyrunner's first offence stops being the hand | `the sentence is canon's…`, `an arrest empties the sack…`, `caught: a load, a warrant…` |
+| the board stops refusing ids `notables.json` does not have | `a generated job can only ever name somebody the owner's file has` |
+| a watchman's eye stops depending on the load | `a watchman notices a load, not a count…` |
+| the Flame's mark stops being required | `a bounty is not paid without the Flame's mark…` |
+
+The third of those only goes red because `content/raws/contracts/contracts.json` carries a
+**deliberate bad id** — `nobody_at_all`, in `bounty_rats`' patron list. A filter that has never
+had anything to filter is a filter nobody has tested. Do not remove it.
+
+The tree was restored from git afterwards and `git status` is clean.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "id": "contract_board",
-  "notes": "S6 ADDITION. WHAT A BROKER NEEDS BEFORE HE SAYS A WORD is the `needs` field, and the three of them are a gradient rather than a switch: `none` is a public bounty anybody may claim, `acquaintance` is a landlord who has to not dislike you, and `member` is a guild that has sworn you in - which is exactly what the Skyrunner questline graduates a player into. The owner's authored files are untouched; this one is new and every id in it is a cross-reference into content/raws/names/notables.json, content/raws/factions/factions.json and the five contraband goods the code names. A broker or a patron this file invents is refused at load, by name, so the board can never quietly grow a forty-third notable. WHAT A RADIANT CONTRACT IS HERE: the SHAPE is generated - which broker, which patron, how many, how long - and every NAME in it is authored. The brief is a template filled from the notables' own file, so a job always says who wants it, where they are, who lands it and where THEY are, and no two nights read the same. Payment is payPerUnit times units, moved by what the broker's own guild thinks of the player (guildPricePercent), so the ward's economy prices its own crime.",
+  "notes": "S6 ADDITION. WHAT A BROKER NEEDS BEFORE HE SAYS A WORD is the `needs` field, and the three of them are a gradient rather than a switch: `none` is a public bounty anybody may claim, `acquaintance` is a landlord who has to not dislike you, and `member` is a guild that has sworn you in - which is exactly what the Skyrunner questline graduates a player into. The owner's authored files are untouched; this one is new and every id in it is a cross-reference into content/raws/names/notables.json, content/raws/factions/factions.json and the five contraband goods the code names. A broker or a patron this file invents is refused at load, by name, so the board can never quietly grow a forty-third notable - and `bounty_rats` carries a DELIBERATE bad id, `nobody_at_all`, so that refusal is proved by a case rather than by the file happening to be correct. Do not remove it. WHAT A RADIANT CONTRACT IS HERE: the SHAPE is generated - which broker, which patron, how many, how long - and every NAME in it is authored. The brief is a template filled from the notables' own file, so a job always says who wants it, where they are, who lands it and where THEY are, and no two nights read the same. Payment is payPerUnit times units, moved by what the broker's own guild thinks of the player (guildPricePercent), so the ward's economy prices its own crime.",
   "sites": {
     "K01_WEIGHHOUSE": "the Weighhouse",
     "K02_IMPOUND": "the impound yard",
@@ -69,7 +69,7 @@
       "payPerUnit": 5,
       "days": 2,
       "brief": "{patron} is overrun at {patronSite} and the ward pays by the scalp. {source} says the worst of them come up out of {sourceSite} after the doors shut.",
-      "patrons": ["vetch", "crumb", "salla", "withy"],
+      "patrons": ["vetch", "crumb", "salla", "withy", "nobody_at_all"],
       "sources": ["cobb", "jek", "tolley"]
     },
     {

@@ -201,6 +201,26 @@ TEST_CASE("a generated job can only ever name somebody the owner's file has") {
         }
     }
 
+    // AND THE REFUSAL IS PROVED BY A CASE RATHER THAN BY THE FILE HAPPENING TO
+    // BE CORRECT. content/raws/contracts/contracts.json carries one DELIBERATE
+    // bad id -- `nobody_at_all`, in bounty_rats' patron list -- because a filter
+    // that has never had anything to filter is a filter nobody has tested. It
+    // is dropped, and the four real patrons beside it survive.
+    {
+        const ContractOffer* rats = nullptr;
+        for (const ContractOffer& offer : board().offers()) {
+            if (offer.id == "bounty_rats") {
+                rats = &offer;
+                break;
+            }
+        }
+        REQUIRE(rats != nullptr);
+        CHECK(std::find(rats->patrons.begin(), rats->patrons.end(), "nobody_at_all") ==
+              rats->patrons.end());
+        CHECK(rats->patrons.size() == 4);
+        CHECK(board().person("nobody_at_all") == nullptr);
+    }
+
     // The ward's own word for a site, and a sensible fallback for one the table
     // has not been told about.
     CHECK(board().siteName("K25_KENNEL_ROW") == "Kennel Row");
