@@ -20,7 +20,8 @@ constexpr std::uint8_t kCrimeMagic1 = 'C';
 /// inside thirty-two bits. Unreachable in practice is not the same as correct,
 /// and a codec that silently narrows is the sort of thing that is discovered by
 /// a save file rather than by a test.
-constexpr std::uint8_t kCrimeVersion = 2;
+/// 3 (S6): the sack has contents and the ward has a record of what it did back.
+constexpr std::uint8_t kCrimeVersion = 3;
 
 void putI32(std::vector<std::uint8_t>& out, std::int32_t value) {
     const std::uint32_t bits = static_cast<std::uint32_t>(value);
@@ -211,13 +212,71 @@ std::int32_t CrimeLedger::sellLoot(std::int32_t pieces, std::int32_t ratePercent
     return sold * kLootValue * rate / 100;
 }
 
-std::int32_t CrimeLedger::deliverBale() {
+void CrimeLedger::takeBale(Contraband good, std::int32_t units) noexcept {
+    bale_ = true;
+    baleGood_ = good;
+    baleUnits_ = std::max(0, units);
+}
+
+std::int32_t CrimeLedger::deliverBale(bool ownBuyer) {
     if (!bale_) {
         return 0;
     }
     bale_ = false;
     ++balesRun_;
-    return kBalePay;
+    if (ownBuyer) {
+        // The boat's own buyer takes it off you at the door. What was in it is
+        // theirs; the fee is yours.
+        return kBalePay;
+    }
+    // Somebody else hired you. The sack comes off your shoulder into your own,
+    // and whatever fitted is what you are now carrying -- which is also what a
+    // watchman will find and what a contract will take.
+    (void)stash_.add(baleGood_, baleUnits_);
+    return 0;
+}
+
+CrimeLedger::ArrestOutcome CrimeLedger::arrest(bool skyrunner, std::int32_t purse,
+                                               std::uint64_t draw) {
+    ArrestOutcome out;
+    out.sentence = sentenceFor(skyrunner, warrant_, arrests_);
+    // The impound first: Watchman Cull's whole job is seized cargo, and it is
+    // the one part of an arrest that happens whether or not there was paper.
+    out.unitsSeized = stash_.seizeIllicit();
+    out.fine = std::min(std::max(0, purse), fineFor(heat_, out.unitsSeized));
+    // A bale on your shoulder goes with the rest of it.
+    bale_ = false;
+    baleUnits_ = 0;
+
+    switch (out.sentence) {
+        case Sentence::Fined:
+            // No paper, so no cell and no record of an ARREST -- he stopped
+            // you, he took the jars, he charged you for his evening. The heat
+            // is untouched: being searched is not being punished for anything
+            // the ward had already heard about.
+            break;
+        case Sentence::Held:
+        case Sentence::Maimed:
+        case Sentence::Condemned:
+            ++arrests_;
+            out.heldHours = heldHours(draw);
+            // Served. The paper goes and the ward keeps a little of its memory
+            // -- see kHeatAfterSentence on why this is not zero.
+            heat_ = kHeatAfterSentence;
+            warrant_ = false;
+            if (out.sentence == Sentence::Maimed) {
+                maimed_ = true;
+            } else if (out.sentence == Sentence::Condemned) {
+                condemned_ = true;
+                // The rope does not un-take the hand.
+                maimed_ = true;
+            }
+            break;
+        case Sentence::None:
+            break;
+    }
+    lastSentence_ = out.sentence;
+    return out;
 }
 
 void CrimeLedger::addHeat(std::int32_t delta) {
@@ -281,6 +340,17 @@ std::vector<std::uint8_t> CrimeLedger::encode() const {
     putI64(out, cooledAtTick_);
     out.push_back(bale_ ? 1U : 0U);
     out.push_back(warrant_ ? 1U : 0U);
+    // S6, appended: what is in the sack, what is on the shoulder, and what the
+    // ward has done about it. Appended and never inserted, which is the same
+    // rule the draw schedule follows and for the same reason.
+    const std::vector<std::uint8_t> sack = stash_.encode();
+    out.insert(out.end(), sack.begin(), sack.end());
+    out.push_back(static_cast<std::uint8_t>(baleGood_));
+    putI32(out, baleUnits_);
+    putI32(out, arrests_);
+    out.push_back(static_cast<std::uint8_t>(lastSentence_));
+    out.push_back(maimed_ ? 1U : 0U);
+    out.push_back(condemned_ ? 1U : 0U);
     return out;
 }
 
@@ -307,6 +377,32 @@ bool CrimeLedger::decode(const std::vector<std::uint8_t>& bytes, CrimeLedger& ou
     }
     parsed.bale_ = bytes[cursor] != 0;
     parsed.warrant_ = bytes[cursor + 1] != 0;
+    cursor += 2;
+
+    // The sack. Its own codec owns its own header, so a stash that grows a
+    // sixth good refuses this blob by its own count rather than by ours.
+    const std::vector<std::uint8_t> sack(bytes.begin() + static_cast<std::ptrdiff_t>(cursor),
+                                         bytes.end());
+    if (!Stash::decode(sack, parsed.stash_)) {
+        return false;
+    }
+    cursor += 4 + 4 * kContrabandCount;
+
+    if (cursor >= bytes.size() || bytes[cursor] >= static_cast<std::uint8_t>(kContrabandCount)) {
+        return false;
+    }
+    parsed.baleGood_ = static_cast<Contraband>(bytes[cursor]);
+    ++cursor;
+    if (!takeI32(bytes, cursor, parsed.baleUnits_) ||
+        !takeI32(bytes, cursor, parsed.arrests_)) {
+        return false;
+    }
+    if (cursor + 3 > bytes.size() || bytes[cursor] > static_cast<std::uint8_t>(Sentence::Condemned)) {
+        return false;
+    }
+    parsed.lastSentence_ = static_cast<Sentence>(bytes[cursor]);
+    parsed.maimed_ = bytes[cursor + 1] != 0;
+    parsed.condemned_ = bytes[cursor + 2] != 0;
     out = parsed;
     return true;
 }
@@ -325,6 +421,14 @@ void CrimeLedger::hashInto(HashSink& sink) const {
     sink.put_long(static_cast<std::uint64_t>(cooledAtTick_));
     sink.put_byte(bale_ ? 1U : 0U);
     sink.put_byte(warrant_ ? 1U : 0U);
+    // S6, appended in the same order the codec writes them.
+    stash_.hashInto(sink);
+    sink.put_byte(static_cast<std::uint32_t>(baleGood_));
+    sink.put_int(static_cast<std::uint32_t>(baleUnits_));
+    sink.put_int(static_cast<std::uint32_t>(arrests_));
+    sink.put_byte(static_cast<std::uint32_t>(lastSentence_));
+    sink.put_byte(maimed_ ? 1U : 0U);
+    sink.put_byte(condemned_ ? 1U : 0U);
 }
 
 // ---------------------------------------------------------------------------

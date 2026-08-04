@@ -43,6 +43,7 @@
 
 #include "granadad/sim/barks.hpp"
 #include "granadad/sim/barter.hpp"
+#include "granadad/sim/contract.hpp"
 #include "granadad/sim/crime.hpp"
 #include "granadad/sim/faction.hpp"
 #include "granadad/sim/notables.hpp"
@@ -160,6 +161,19 @@ enum class TopicKind : std::uint8_t {
     Lean = 16,
     /// Ask your own guild for the one thing a top rung is actually for.
     Favour = 17,
+    /// S6. Take a job off somebody who hands them out. The payload is the
+    /// contract's own id, or -1 when the broker will not talk to you yet --
+    /// which is a topic on purpose, because a player has to be able to ask
+    /// before they can be told no. APPENDED, for the reason on Buy: the ordinal
+    /// is folded into which authored row a topic speaks from.
+    TakeContract = 18,
+    /// Hand the goods over and be paid.
+    TurnIn = 19,
+    /// Ask a priest of the Flame to sign for what is in your sack.
+    /// DECISIONS.md's tenure ruling: the Church "sanctions the redemption of a
+    /// scalp", so the ward's own bounty is redeemed under a priest's mark and
+    /// not otherwise.
+    Sanction = 20,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -214,6 +228,10 @@ struct Reply {
     std::string journalLine;
     /// True when this reply put the player on a rung they were not on.
     bool ranked = false;
+    /// S6. The contract this reply moved, or -1. The room does not need it --
+    /// the coin is in coinDelta like every other payment -- but a HUD that
+    /// wants to say which job just closed does, and so does a test.
+    std::int32_t contractId = -1;
     /// S5. The act the world has to be told about, and whether it happened in
     /// front of anybody. kCrimeCount means "nothing criminal happened" -- the
     /// dialogue layer does not know what a taproom is, so whoever owns the room
@@ -279,6 +297,19 @@ public:
 
     /// The registry index of the Skyrunners, or -1.
     [[nodiscard]] std::int32_t roofsIndex() const noexcept;
+
+    // --- S6: the work, and what is in the sack -------------------------------
+
+    [[nodiscard]] ContractBoard& contracts() noexcept { return board_; }
+    [[nodiscard]] const ContractBoard& contracts() const noexcept { return board_; }
+    /// The authored templates, or an empty set when the raws were not found.
+    [[nodiscard]] const ContractRaws& contractRaws() const noexcept { return *contractRaws_; }
+    /// Posts a night's work. Called by whoever owns the clock -- the room does
+    /// it when the doors open, exactly where it restocks the cellar.
+    void postContracts(std::int32_t day, std::uint64_t worldSeed);
+    /// Whether this broker will talk about work to this player at all. Public
+    /// because the room's own scripted runs and the tests both need to ask.
+    [[nodiscard]] bool brokerWillTalk(const ContractBroker& broker) const noexcept;
 
     /// What the world says the player is carrying. Set before choose(), so the
     /// director can refuse a round it cannot pay for. Not hashed here -- the
@@ -362,6 +393,11 @@ private:
     /// One more person stood a drink. Counts toward any counted stage that is
     /// currently wanted, and toward none that is not.
     void noteAlmsGiven();
+    /// The broker this notable is, or nullptr. Three of the Forty are one.
+    [[nodiscard]] const ContractBroker* brokerFor(std::string_view notableId) const noexcept;
+    /// True when the player is carrying goods a taken contract cannot be paid
+    /// for without the Flame's mark.
+    [[nodiscard]] bool wantsSanction() const noexcept;
 
     BarkTables barks_;
     NotableRegistry notables_;
@@ -377,6 +413,10 @@ private:
     Spellbook spellbook_;
     Grimoire grimoire_;
     CrimeLedger crimes_;
+    /// Shared for the same reason the faction registry is: the director is
+    /// built by a factory that returns by value.
+    std::shared_ptr<const ContractRaws> contractRaws_;
+    ContractBoard board_;
     ForgeBench bench_;
     /// Which authored line the bench was opened for, and at which stage. Held
     /// across the composition because a bench is a conversation with rounds and

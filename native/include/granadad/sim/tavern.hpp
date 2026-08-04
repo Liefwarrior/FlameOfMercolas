@@ -312,6 +312,20 @@ inline constexpr std::int32_t kReachQ8 = 2 * kSubOne;
 
 /// Bales in the snug per night. A boat brings what a boat brings.
 inline constexpr std::int32_t kBalesPerNight = 2;
+/// And how many UNITS are in one. S5's bale was a bool; a bale has contents
+/// now, and what is in it is what a contract can want and a watchman can find.
+inline constexpr std::int32_t kBaleUnits = 3;
+
+/// Rats on the skirting after the doors shut, per night. Four, because the
+/// ward's smallest bounty asks for two and its largest for four -- a night's
+/// work is a night's work, and a fifth rat would make a bounty a formality.
+inline constexpr std::int32_t kVerminPerNight = 4;
+/// What a rat has. One clean punch.
+inline constexpr std::int32_t kVerminHealth = 4;
+/// The hours the taproom is quiet enough for them. From an hour before the
+/// doors shut until they open again.
+inline constexpr std::int32_t kVerminFrom = hourOfDay(1);
+inline constexpr std::int32_t kVerminUntil = hourOfDay(11);
 
 /// A BRAWL NEVER KILLS. That is what makes it a brawl, and it is why the door
 /// policy can be enforced with fists at all: the worst a taproom fight does to
@@ -400,7 +414,10 @@ public:
 
     [[nodiscard]] const std::vector<Actor>& actors() const noexcept { return actors_; }
     [[nodiscard]] const Actor* actorById(std::int32_t id) const noexcept;
+    /// PEOPLE in the room. A rat is not one of the fourteen.
     [[nodiscard]] std::int32_t presentCount() const noexcept;
+    /// And rats, counted apart for the same reason.
+    [[nodiscard]] std::int32_t verminPresent() const noexcept;
     [[nodiscard]] std::int32_t patronCount() const noexcept;
     /// 0 (empty) to 100 (pay night). What the room SOUNDS like.
     [[nodiscard]] std::int32_t noise() const noexcept;
@@ -549,6 +566,65 @@ public:
     /// once per step, and this is what tells the two apart.
     [[nodiscard]] std::int32_t highestBandReached() const noexcept { return highestBand_; }
 
+    /// Skins the downed vermin within reach. THE CULL VERB, and it is the Java
+    /// build's own rule read across: stand beside a body, spend the act, and
+    /// there is a scalp in your hand. A rat that has been skinned does not get
+    /// up again, which is what a per-night count of them is FOR -- without it
+    /// the ward's bounty is a coin faucet with whiskers.
+    ///
+    /// Refused for a rat still on its feet: this build has no killing, and a
+    /// brawl is what puts a thing on the floor.
+    StealResult takeScalp();
+    /// Which of tonight's vermin have been skinned, as a bitmask. Hashed.
+    [[nodiscard]] std::int32_t scalpedVermin() const noexcept { return scalpedVermin_; }
+
+    // --- S6: the Watch --------------------------------------------------------
+
+    /// Where a watchman is in the business of taking you.
+    enum class WatchStance : std::uint8_t {
+        /// Having a drink.
+        Idle = 0,
+        /// Has seen something and is crossing the room about it. THIS IS THE
+        /// WINDOW: out of the door, out of his sight, and it is over.
+        Closing = 1,
+        /// Hands on. Resolved in the same second it is reached.
+        Taken = 2,
+    };
+
+    /// What an arrest came to.
+    struct ArrestReport {
+        bool happened = false;
+        Sentence sentence = Sentence::None;
+        WatchCause cause = WatchCause::None;
+        std::int32_t unitsSeized = 0;
+        std::int32_t fine = 0;
+        std::int32_t heldHours = 0;
+        /// Contracts that died with the goods.
+        std::int32_t contractsLost = 0;
+        std::string officer;
+        std::string line;
+    };
+
+    [[nodiscard]] WatchStance watchStance() const noexcept { return watchStance_; }
+    [[nodiscard]] WatchCause watchInterest() const noexcept { return watchCause_; }
+    /// The watchman currently interested in the player, or nullptr.
+    [[nodiscard]] const Actor* respondingWatchman() const noexcept;
+    /// What the last watchman to look at you said, or empty.
+    [[nodiscard]] const std::string& lastDemand() const noexcept { return lastDemand_; }
+    /// The last arrest, whether or not it has been read.
+    [[nodiscard]] const ArrestReport& lastArrest() const noexcept { return lastArrest_; }
+    /// True once, after an arrest, so whoever owns the body can put it on the
+    /// street where the impound turns people loose. Read and CLEARED.
+    [[nodiscard]] bool takeArrestRelease() noexcept;
+
+    /// Which day of the world this is. Monotonic across midnight and across a
+    /// night in a cell, because a deadline that wrapped with the wall clock
+    /// would be a deadline nobody could miss.
+    [[nodiscard]] std::int32_t dayNumber() const noexcept;
+
+    /// Moves the clock on by whole hours, days included. What a sentence does.
+    void skipHours(std::int32_t hours);
+
     /// Takes the bale in the snug, or puts it back down. The roofs do not hand
     /// a bale to a stranger, so it wants membership; carrying it OUT of the
     /// house past somebody who would mind is the run, and the room notices that
@@ -685,6 +761,29 @@ private:
     void buildRoster();
     void applySchedules();
     void tickBouncers();
+    void tickWatch();
+    void tickVermin();
+    /// The watchman who can see the player right now, or nullptr.
+    [[nodiscard]] Actor* watchmanWatchingPlayer() noexcept;
+    /// True when this actor can see the player: present, same band, in range,
+    /// and with a line to them. The same rule witnessCount uses, asked about
+    /// one person.
+    [[nodiscard]] bool canSeePlayer(const Actor& actor) const noexcept;
+    /// The Watch puts its hands on you. One call site.
+    void applyArrest(Actor& officer);
+    /// The nearest downed vermin within reach, or nullptr.
+    [[nodiscard]] Actor* downedVerminInReach() noexcept;
+    /// The nearest rat on its feet within reach, or nullptr.
+    [[nodiscard]] const Actor* nearestVerminTo(std::int32_t xQ8, std::int32_t yQ8,
+                                               std::int32_t reachQ8) const noexcept;
+    /// The actor id of the first rat. Roster order: every person, then every
+    /// rat, so this plus an index is a rat's id and the bitmask has a home.
+    [[nodiscard]] std::int32_t verminFirstId() const noexcept;
+    /// What tonight's boat brought. Drawn once a night, so both bales in the
+    /// snug are the same cargo -- because they came off the same hull.
+    [[nodiscard]] Contraband drawBaleGood() noexcept;
+    /// The authored skill level of a roster body, without building a Speaker.
+    [[nodiscard]] std::int32_t rosterSkillOf(const Actor& actor) const noexcept;
     void tickBrawl();
     void tickPatrons();
     void advanceSecond();
@@ -762,10 +861,25 @@ private:
     /// the same bale out of the same door until the guild loves them. A boat
     /// brings what a boat brings.
     std::int32_t balesInSnug_ = kBalesPerNight;
+    /// And what is in them tonight.
+    Contraband baleGood_ = Contraband::Moonshine;
     /// Bit i is set once room i's strongbox has been emptied.
     std::int32_t crackedBoxes_ = 0;
     /// The highest band the player has stood on. See settleLanding.
     std::int32_t highestBand_ = 0;
+    // --- S6 -----------------------------------------------------------------
+    /// Bit i is set once tonight's i-th rat has been skinned.
+    std::int32_t scalpedVermin_ = 0;
+    WatchStance watchStance_ = WatchStance::Idle;
+    WatchCause watchCause_ = WatchCause::None;
+    std::int32_t watchmanId_ = -1;
+    std::int64_t noticedAtTick_ = -1;
+    std::string lastDemand_;
+    ArrestReport lastArrest_;
+    bool arrestRelease_ = false;
+    /// The second-of-day this room was constructed at, so dayNumber() can be
+    /// monotonic without the wall clock's midnight in it.
+    std::int32_t startedAt_ = 0;
     /// Whether the player was inside the walls on the previous movement step.
     /// A bale is DELIVERED by crossing the threshold with it, and a crossing is
     /// a transition and not a state.

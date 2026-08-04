@@ -346,7 +346,7 @@ TEST_CASE("the crime ledger round-trips through its own bytes") {
     before.commit(Crime::Smuggle, true);
     before.commit(Crime::RoofRun, false);
     before.takeLoot(4);
-    before.takeBale();
+    before.takeBale(Contraband::Flower, kBaleUnits);
     before.cool(4 * kHeatCoolSeconds);
 
     const std::vector<std::uint8_t> bytes = before.encode();

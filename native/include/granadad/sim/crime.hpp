@@ -40,6 +40,8 @@
 #include <string_view>
 #include <vector>
 
+#include "granadad/sim/contraband.hpp"
+#include "granadad/sim/watch.hpp"
 #include "granadad/sim/world_hash.hpp"
 
 namespace granadad::sim {
@@ -145,13 +147,69 @@ public:
     std::int32_t sellLoot(std::int32_t pieces, std::int32_t ratePercent);
 
     // --- contraband ---------------------------------------------------------
+    //
+    // S6 GIVES THE SACK CONTENTS. S5's own note here read "a bale is a BOOLEAN,
+    // not an item... what is being carried has no weight, no contents, no
+    // owner", and the S5 review carried it forward as an open gap. A bale has a
+    // KIND and a COUNT now, both decided by the boat, and what comes out of it
+    // is the same five goods a contract can ask for and a watchman can find.
 
     [[nodiscard]] bool carryingBale() const noexcept { return bale_; }
-    void takeBale() noexcept { bale_ = true; }
+    [[nodiscard]] Contraband baleGood() const noexcept { return baleGood_; }
+    [[nodiscard]] std::int32_t baleUnits() const noexcept { return bale_ ? baleUnits_ : 0; }
+    void takeBale(Contraband good, std::int32_t units) noexcept;
     void dropBale() noexcept { bale_ = false; }
     [[nodiscard]] std::int32_t balesRun() const noexcept { return balesRun_; }
+
     /// A bale landed where it was going. Returns the pay.
-    std::int32_t deliverBale();
+    ///
+    /// `ownBuyer` is whether the boat's OWN buyer is the one taking it off you.
+    /// When they are -- which is what happens when nobody has hired you, and is
+    /// exactly the S5 behaviour -- the goods go with them and the flat runner's
+    /// fee is what you get. When somebody else hired you, the sack comes off
+    /// your shoulder into your own stash and there is no fee, because the
+    /// contract is what pays and being paid twice for one bale would make the
+    /// snug a coin faucet with extra steps.
+    std::int32_t deliverBale(bool ownBuyer);
+
+    /// What the player is carrying that somebody would rather they were not.
+    [[nodiscard]] Stash& stash() noexcept { return stash_; }
+    [[nodiscard]] const Stash& stash() const noexcept { return stash_; }
+
+    // --- what the ward has done back ----------------------------------------
+
+    /// What an arrest cost.
+    struct ArrestOutcome {
+        Sentence sentence = Sentence::None;
+        /// Units of contraband into the impound.
+        std::int32_t unitsSeized = 0;
+        /// Coin the ward took, never more than the purse it was offered.
+        std::int32_t fine = 0;
+        /// Hours in a cell, or 0.
+        std::int32_t heldHours = 0;
+    };
+
+    /// THE WATCH TAKES YOU. The one call site an arrest goes through, for
+    /// exactly the reason noteCrime is the one an act goes through: a seizure
+    /// that emptied the sack and left the paper standing, or a sentence that
+    /// was passed and never recorded, is the bug this shape exists to prevent.
+    ///
+    /// `purse` is what the player has on them, so the fine can be capped at it;
+    /// `draw` is the roll behind the length of a sentence. Everything else is
+    /// the ledger's own state.
+    ArrestOutcome arrest(bool skyrunner, std::int32_t purse, std::uint64_t draw);
+
+    [[nodiscard]] std::int32_t arrests() const noexcept { return arrests_; }
+    [[nodiscard]] Sentence lastSentence() const noexcept { return lastSentence_; }
+    /// A hand the ward has taken. Permanent.
+    [[nodiscard]] bool maimed() const noexcept { return maimed_; }
+    /// Sentenced to the rope. See Sentence::Condemned on what this build does
+    /// and does not simulate.
+    [[nodiscard]] bool condemned() const noexcept { return condemned_; }
+    /// What the hands still manage, as a percentage of what two of them take.
+    [[nodiscard]] std::int32_t takePercent() const noexcept {
+        return maimed_ ? kMaimedTakePercent : 100;
+    }
 
     // --- what the Watch knows -----------------------------------------------
 
@@ -196,6 +254,16 @@ private:
     std::int64_t cooledAtTick_ = 0;
     bool bale_ = false;
     bool warrant_ = false;
+
+    // --- S6 -----------------------------------------------------------------
+    Stash stash_;
+    /// What the boat sent, and how much of it.
+    Contraband baleGood_ = Contraband::Moonshine;
+    std::int32_t baleUnits_ = 0;
+    std::int32_t arrests_ = 0;
+    Sentence lastSentence_ = Sentence::None;
+    bool maimed_ = false;
+    bool condemned_ = false;
 };
 
 /// What a fence pays this player, as a percentage of kLootValue a piece.

@@ -296,7 +296,12 @@ TEST_CASE("every post in the roster is a tile somebody can stand on") {
     // The failure this prevents is silent: an actor whose post is inside a wall
     // never arrives, never reaches Working, and stands in the doorway forever.
     Tavern tavern(docksTiles(), hourOfDay(20), 1, content::contentDir());
-    REQUIRE(tavern.actors().size() == 16);
+    // Sixteen people and, since S6, four rats -- appended after every person so
+    // an actor id is still a stable index into a roster that has only ever
+    // grown at the end. A rat's post is a tile like anybody else's and is
+    // checked by exactly the same loop, which is the point of it being an
+    // Actor at all.
+    REQUIRE(tavern.actors().size() == 20);
     for (const Actor& actor : tavern.actors()) {
         for (const ScheduleBlock& block : actor.schedule().blocks()) {
             INFO("post of ", actor.name());

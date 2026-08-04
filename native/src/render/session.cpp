@@ -71,6 +71,12 @@ struct RoleLook {
             // Grey on grey, keeping to the corner, hard to pick out. Deliberate.
             return {Rgb{0.22F, 0.23F, 0.25F}, Rgb{0.17F, 0.18F, 0.20F},
                     Rgb{0.40F, 0.33F, 0.29F}, 0.92F};
+        case sim::ActorRole::Vermin:
+            // Low, dark and small enough to be missed until it moves. A third
+            // of a person's height is what makes a rat read as a rat at ten
+            // tiles without a single new sprite.
+            return {Rgb{0.19F, 0.17F, 0.16F}, Rgb{0.15F, 0.13F, 0.13F},
+                    Rgb{0.24F, 0.20F, 0.19F}, 0.34F};
         case sim::ActorRole::Patron:
         default:
             return {Rgb{0.46F, 0.36F, 0.26F}, Rgb{0.26F, 0.21F, 0.17F},
@@ -196,8 +202,13 @@ void Session::steal() {
     syncTavernToBody();
     sim::Tavern::StealResult took = tavern_->crackStrongbox();
     if (took.result == sim::ServiceResult::TooFar) {
-        // Nothing to open here. The other thing hands can be put on is a bale.
+        // Nothing to open here. The other things hands can be put on are a bale
+        // in the snug and, since S6, a rat on the floor -- which is the ward's
+        // own source of the one contraband the ward pays a bounty ON.
         took = tavern_->handleBale();
+    }
+    if (took.result == sim::ServiceResult::TooFar) {
+        took = tavern_->takeScalp();
     }
     say(took.line);
 }
@@ -217,6 +228,17 @@ void Session::step(const sim::MoveInput& input) {
     }
     body_->step(input);
     syncTavernToBody();
+
+    // THE WATCH TOOK YOU AND HAS LET YOU GO. The room owns the sentence, the
+    // seizure and the clock; the BODY is this file's, so the walk to the
+    // impound and the morning at its gate happen here -- which is to say they
+    // do not happen at all, and that is stated rather than implied.
+    if (tavern_->takeArrestRelease()) {
+        body_->placeAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
+        awaitingLanding_ = false;
+        syncTavernToBody();
+        say(tavern_->lastArrest().line);
+    }
 
     // THE ARC CAME DOWN. A leap armed by climb() is settled HERE, on the step
     // the feet touch, because that is the only step on which the body has a
@@ -677,7 +699,11 @@ std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
             sprite.glow = 0.0F;
             // Hard-edged: chunky and readable, per the visual target.
             sprite.softness = 0.0F;
-            sprite.person = true;
+            // `person` is what the frame stats count apart from flames, and a
+            // rat is not one. It is drawn, it is lit and it is in the frame --
+            // it is simply not somebody, which is the same distinction
+            // presentCount() makes in the room itself.
+            sprite.person = actor.role() != sim::ActorRole::Vermin;
             sprites.push_back(sprite);
         };
 
@@ -776,12 +802,21 @@ std::string Session::guildLine() const {
 
 std::string Session::heatLine() const {
     const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
-    if (crimes.heat() <= 0 && crimes.loot() <= 0 && !crimes.carryingBale()) {
+    const sim::Stash& sack = crimes.stash();
+    if (crimes.heat() <= 0 && crimes.loot() <= 0 && !crimes.carryingBale() && sack.empty() &&
+        !crimes.maimed()) {
         return {};
     }
     std::string line;
+    // The two the ward has done TO you outrank everything else on the line:
+    // a condemned man wants to know he is one before he wants his heat.
+    if (crimes.condemned()) {
+        line = "CONDEMNED  ";
+    } else if (crimes.maimed()) {
+        line = "MAIMED  ";
+    }
     if (crimes.warrant()) {
-        line = "WANTED  ";
+        line += "WANTED  ";
     }
     line += "HEAT " + std::to_string(crimes.heat());
     if (crimes.loot() > 0) {
@@ -793,8 +828,64 @@ std::string Session::heatLine() const {
     return clip(std::move(line), 34);
 }
 
+std::string Session::stashLine() const {
+    // WHAT IS ON YOU, AND WHAT IT WEIGHS. The weight is the number that matters
+    // -- it is what a watchman's eye is on -- so it is on the line beside the
+    // count rather than buried in a sheet.
+    const sim::Stash& sack = tavern_->dialogue().crimes().stash();
+    if (sack.empty()) {
+        return {};
+    }
+    std::string line;
+    for (std::size_t i = 0; i < sim::kContrabandCount; ++i) {
+        const sim::Contraband good = static_cast<sim::Contraband>(i);
+        const std::int32_t held = sack.count(good);
+        if (held <= 0) {
+            continue;
+        }
+        if (!line.empty()) {
+            line += "  ";
+        }
+        line += std::to_string(held) + " " + std::string(sim::contrabandLabel(good));
+    }
+    if (sack.illicitWeight() > 0) {
+        line += "  " + std::to_string(sack.illicitWeight()) + "DR";
+    }
+    return clip(std::move(line), 34);
+}
+
+std::string Session::contractLine() const {
+    // The job with the least time left on it, because that is the one a player
+    // needs to be reminded about.
+    const sim::ContractBoard& board = tavern_->dialogue().contracts();
+    const sim::Contract* soonest = nullptr;
+    for (const sim::Contract& row : board.contracts()) {
+        if (!row.live()) {
+            continue;
+        }
+        if (soonest == nullptr || row.dueOnDay < soonest->dueOnDay ||
+            (row.dueOnDay == soonest->dueOnDay && row.id < soonest->id)) {
+            soonest = &row;
+        }
+    }
+    if (soonest == nullptr) {
+        return {};
+    }
+    const std::int32_t have =
+        tavern_->dialogue().crimes().stash().count(soonest->good);
+    return clip(soonest->label + " " + std::to_string(have) + "/" +
+                    std::to_string(soonest->units),
+                34);
+}
+
 std::string Session::objectiveLine() const {
     const sim::DialogueDirector& talk = tavern_->dialogue();
+    // A TAKEN JOB OUTRANKS AN AUTHORED STAGE, because a job has a deadline and
+    // a questline does not. The Skyrunner line graduates into contract work,
+    // so by the time a player is holding one the line is finished anyway.
+    if (const std::string work = contractLine(); !work.empty()) {
+        return work;
+    }
     for (const sim::Questline& line : talk.quests().lines()) {
         if (!talk.journal().started(line.id) || talk.journal().done(line.id)) {
             continue;
@@ -895,7 +986,9 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // carrying somebody's bale. Top right under the purse, hugging the edge --
     // the centre of the frame stays empty, which is the rule.
     const std::string heat = heatLine();
+    const std::string sack = stashLine();
     hud.heatLabel = conversing ? std::string_view{} : std::string_view{heat};
+    hud.stashLabel = conversing ? std::string_view{} : std::string_view{sack};
     // The rung, and what the line wants next. Bottom-left, over the health bar.
     const std::string guild = guildLine();
     const std::string objective = objectiveLine();

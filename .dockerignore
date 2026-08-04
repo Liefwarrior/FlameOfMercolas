@@ -105,6 +105,15 @@
 !content/raws/factions/**
 !content/raws/quests/**
 
+# --- re-admitted: the radiant contract board (S6) ---
+# 8 KB, one file, and it is in for the strongest version of the reason above:
+# every broker, patron and source it names is REFUSED AT LOAD unless the
+# owner's notables.json has that id. Without the file in the context the board
+# loads empty, every contract case passes against nothing, and the claim that a
+# generated job can only ever name somebody who exists would be proved by an
+# absence.
+!content/raws/contracts/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**

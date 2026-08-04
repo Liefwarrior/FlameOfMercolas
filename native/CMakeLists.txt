@@ -119,6 +119,11 @@ add_library(granadad-sim STATIC
     src/sim/spellforge.cpp
     # S5 -- the trade the roofs run on.
     src/sim/crime.cpp
+    # S6 -- the goods, the law that takes them off you, and the radiant work
+    # that is the reason to be carrying them in the first place.
+    src/sim/contraband.cpp
+    src/sim/watch.cpp
+    src/sim/contract.cpp
     src/sim/tavern.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")

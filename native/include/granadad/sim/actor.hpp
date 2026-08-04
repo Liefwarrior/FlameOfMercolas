@@ -67,6 +67,16 @@ enum class ActorRole : std::uint8_t {
     PriestOfTheFlame = 4,
     /// Present, and guarded. The S5 questline's way in.
     SkyrunnerContact = 5,
+    /// S6. Not somebody. A rat on the skirting after the doors shut, which is
+    /// the ward's own source of the one contraband the ward pays a bounty ON.
+    ///
+    /// It is an Actor and not a new kind of thing on purpose: it has a place to
+    /// be at an hour, it moves on the movement clock, it can be hit and it can
+    /// be on the floor -- every one of which the actor already does. What it is
+    /// NOT is a person: it does not witness, it cannot be talked to, it is not
+    /// counted in the room's noise, and hitting it is not an offence against
+    /// the house. Every one of those exclusions is stated at its own call site.
+    Vermin = 6,
 };
 
 [[nodiscard]] std::string_view actorRoleName(ActorRole role) noexcept;

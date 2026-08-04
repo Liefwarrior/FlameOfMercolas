@@ -67,6 +67,12 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "lean";
         case TopicKind::Favour:
             return "favour";
+        case TopicKind::TakeContract:
+            return "take work";
+        case TopicKind::TurnIn:
+            return "turn in";
+        case TopicKind::Sanction:
+            return "sanction";
     }
     return "?";
 }
@@ -84,7 +90,33 @@ DialogueDirector DialogueDirector::load(const std::filesystem::path& contentDir)
     out.standings_.attach(out.factions_);
     out.quests_ = QuestBook::load(contentDir);
     out.spellbook_ = Spellbook::load(contentDir);
+    // S6. The board's templates are read AFTER the notables and the factions,
+    // because it refuses its own rows by name against both of them.
+    out.contractRaws_ = std::make_shared<const ContractRaws>(
+        ContractRaws::load(contentDir, out.notables_, *out.factions_));
+    out.board_.attach(out.contractRaws_);
     return out;
+}
+
+void DialogueDirector::postContracts(std::int32_t day, std::uint64_t worldSeed) {
+    board_.refresh(day, worldSeed, standings_);
+}
+
+bool DialogueDirector::brokerWillTalk(const ContractBroker& broker) const noexcept {
+    if (broker.needs == "none") {
+        // A public bounty. The ward wants the rats gone and does not care who
+        // brings them.
+        return true;
+    }
+    if (broker.needs == "acquaintance") {
+        // A landlord who has to not dislike you. This is the one gate in the
+        // build that reads ATTITUDE rather than a rung, and it is the right
+        // shape for it: buying for your own cellar off somebody is a favour,
+        // and nobody does a favour for a man they have thrown out.
+        return attitude_ >= Attitude::Neutral;
+    }
+    const std::int32_t index = factions_->indexOf(broker.faction);
+    return standings_.isMember(index);
 }
 
 std::int32_t DialogueDirector::speakerFaction() const noexcept {
@@ -438,12 +470,84 @@ void DialogueDirector::buildTopics() {
         }
     }
 
+    // 10. S6 -- THE WORK. A broker's own jobs, waiting jobs first so a player
+    //     who came back with a full sack is not scrolling past tomorrow's
+    //     offers to find tonight's. Every label names the good, the number and
+    //     the person who wants it, and every one of those came out of the
+    //     owner's files.
+    if (const ContractBroker* broker = brokerFor(speaker_.notableId); broker != nullptr) {
+        if (!brokerWillTalk(*broker)) {
+            // ASKING IS ALWAYS ALLOWED, and being told no is an answer. A
+            // broker who will not deal with you yet still has to be visibly a
+            // broker, or the guild ladder has nothing at the top of it that a
+            // player can see before they climb.
+            Topic topic;
+            topic.kind = TopicKind::TakeContract;
+            topic.label = "ASK ABOUT WORK";
+            topic.payload = -1;
+            topics_.push_back(std::move(topic));
+        } else {
+            for (const std::int32_t id : board_.takenBy(broker->id)) {
+                const Contract* row = board_.find(id);
+                if (row == nullptr) {
+                    continue;
+                }
+                Topic topic;
+                topic.kind = TopicKind::TurnIn;
+                topic.label = "HAND OVER " + std::to_string(row->units) + " " +
+                              std::string(contrabandLabel(row->good));
+                topic.payload = id;
+                topic.arg = row->offerId;
+                topics_.push_back(std::move(topic));
+            }
+            for (const std::int32_t id : board_.offeredBy(broker->id)) {
+                const Contract* row = board_.find(id);
+                if (row == nullptr) {
+                    continue;
+                }
+                Topic topic;
+                topic.kind = TopicKind::TakeContract;
+                topic.label = row->label;
+                topic.payload = id;
+                topic.arg = row->offerId;
+                topics_.push_back(std::move(topic));
+            }
+        }
+    }
+
+    // 11. S6 -- the Flame's mark. DECISIONS.md: the Church "sanctions the
+    //     redemption of a scalp". A priest offers it when you are carrying
+    //     something that wants signing for and nothing else; a bounty that
+    //     needed no conscience under it would not be this setting's bounty.
+    if (speaker_.family == JobFamily::Clergy && wantsSanction()) {
+        Topic topic;
+        topic.kind = TopicKind::Sanction;
+        topic.label = "ASK THE FLAME TO SIGN";
+        topics_.push_back(std::move(topic));
+    }
+
     {
         Topic topic;
         topic.kind = TopicKind::Leave;
         topic.label = "SAY NO MORE";
         topics_.push_back(std::move(topic));
     }
+}
+
+const ContractBroker* DialogueDirector::brokerFor(std::string_view notableId) const noexcept {
+    if (notableId.empty() || contractRaws_ == nullptr) {
+        return nullptr;
+    }
+    return contractRaws_->broker(notableId);
+}
+
+bool DialogueDirector::wantsSanction() const noexcept {
+    for (const Contract& row : board_.contracts()) {
+        if (row.live() && row.needsSanction() && crimes_.stash().count(row.good) > 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -588,6 +692,121 @@ Reply DialogueDirector::choose(std::size_t index) {
             out.coinDelta = paid;
             out.crime = Crime::Fence;
             out.criminal = true;
+            break;
+        }
+        case TopicKind::TakeContract: {
+            const ContractBroker* broker = brokerFor(speaker_.notableId);
+            if (broker == nullptr) {
+                out = reply(TopicKind::TakeContract, "NO WORK HERE.");
+                out.ok = false;
+                break;
+            }
+            if (topic.payload < 0 || !brokerWillTalk(*broker)) {
+                // Asked, and brushed off. In the broker's own authored voice --
+                // the topic exists so that being refused is a thing that
+                // HAPPENS rather than a thing that is hidden.
+                out = reply(TopicKind::TakeContract,
+                            speak({"contract.blocked." + broker->id, "contract.blocked"},
+                                  TopicKind::TakeContract, 0));
+                if (out.line.empty()) {
+                    out.line = "NOTHING FOR YOU.";
+                }
+                out.ok = false;
+                break;
+            }
+            const TakeResult took = board_.take(topic.payload);
+            const Contract* row = board_.find(topic.payload);
+            if (took != TakeResult::Taken || row == nullptr) {
+                out = reply(TopicKind::TakeContract,
+                            speak({"contract.short"}, TopicKind::TakeContract, 0));
+                if (out.line.empty() || took == TakeResult::HandsFull) {
+                    out.line = "YOU ARE CARRYING ENOUGH ALREADY.";
+                }
+                out.ok = false;
+                break;
+            }
+            out = reply(TopicKind::TakeContract,
+                        speak({"contract.take." + broker->id, "contract.take"},
+                              TopicKind::TakeContract, topic.payload));
+            if (out.line.empty()) {
+                out.line = "TAKEN.";
+            }
+            // The brief is the JOB, in the ward's own words, and it goes where
+            // a questline's log line goes so the HUD and the journal need to
+            // know nothing about contracts to show it.
+            out.journalLine = row->brief;
+            out.contractId = row->id;
+            break;
+        }
+        case TopicKind::TurnIn: {
+            const ContractBroker* broker = brokerFor(speaker_.notableId);
+            const Contract* row = board_.find(topic.payload);
+            if (broker == nullptr || row == nullptr) {
+                out = reply(TopicKind::TurnIn, "NOT MY BUSINESS.");
+                out.ok = false;
+                break;
+            }
+            const std::int32_t pay = row->pay;
+            const Settlement settled = board_.turnIn(topic.payload, crimes_.stash(), board_.day());
+            out.contractId = topic.payload;
+            if (settled.result != TurnInResult::Paid) {
+                const char* chain = settled.result == TurnInResult::Late ? "contract.late"
+                                                                        : "contract.short";
+                out = reply(TopicKind::TurnIn,
+                            speak({std::string(chain)}, TopicKind::TurnIn, topic.payload));
+                if (out.line.empty()) {
+                    out.line = "NOT THE NUMBER.";
+                }
+                if (settled.result == TurnInResult::NeedsSanction) {
+                    // Named out loud, because a player who cannot find the
+                    // reason will assume the mechanic is broken.
+                    out.line = "THE FLAME HAS NOT SIGNED FOR THESE.";
+                }
+                out.ok = false;
+                out.contractId = topic.payload;
+                break;
+            }
+            // Every unit of it goes through the same hands that carried it, and
+            // the skill those hands use is the good's own -- fieldcraft for a
+            // knife, mixtures for a jar, cracksmanship for somebody else's
+            // plate. The Morrowind steer, applied to a trade.
+            skills_.use(contrabandSkill(row->good), settled.unitsTaken);
+            out = reply(TopicKind::TurnIn,
+                        speak({"contract.paid." + broker->id, "contract.paid"},
+                              TopicKind::TurnIn, topic.payload));
+            if (out.line.empty()) {
+                out.line = "COUNTED.";
+            }
+            out.line += " [" + coins(settled.pay) + "]";
+            out.coinDelta = settled.pay;
+            out.contractId = topic.payload;
+            (void)pay;
+            // Delivering work for a guild is a deed done to that guild, and it
+            // is the ONLY way a contract moves standing -- through exactly the
+            // faction ledger a bought drink moves.
+            const std::int32_t guild = factions_->indexOf(broker->faction);
+            if (guild >= 0) {
+                standings_.addStanding(guild, 2 + settled.unitsTaken / 2);
+            }
+            break;
+        }
+        case TopicKind::Sanction: {
+            const std::int32_t marked = board_.sanction();
+            out = reply(TopicKind::Sanction,
+                        speak({marked > 0 ? "contract.sanction" : "contract.sanction.refused"},
+                              TopicKind::Sanction, marked));
+            if (out.line.empty()) {
+                out.line = marked > 0 ? "MARKED." : "NOTHING TO WEIGH.";
+            }
+            out.ok = marked > 0;
+            // The Mission hears about it. A priest who signs for blood money is
+            // a priest who has been given a reason to remember you.
+            if (marked > 0) {
+                const std::int32_t temple = factions_->indexOf("temple");
+                if (temple >= 0) {
+                    standings_.addStanding(temple, 1);
+                }
+            }
             break;
         }
         case TopicKind::Favour: {
@@ -807,6 +1026,13 @@ Reply DialogueDirector::choose(std::size_t index) {
         case TopicKind::Fence:
         case TopicKind::Lean:
         case TopicKind::Favour:
+        // S6: taking a job moves it off the offered list and onto the waiting
+        // one, handing one in takes it off both, and a priest's mark changes
+        // whether a waiting one can be paid at all. All three change what the
+        // list should say, so all three rebuild it.
+        case TopicKind::TakeContract:
+        case TopicKind::TurnIn:
+        case TopicKind::Sanction:
             if (open_) {
                 buildTopics();
             }
@@ -1072,6 +1298,10 @@ void DialogueDirector::hashInto(HashSink& sink) const {
     // has heard. Heat reaches out and changes how the ward behaves, so two runs
     // that disagreed about it would be two different games.
     crimes_.hashInto(sink);
+    // S6. Tonight's work, what has been taken off it, and what it has paid.
+    // A board is regenerable from (day, seed, standings) and WHICH JOBS WERE
+    // TAKEN is not, so it is state and it is hashed.
+    board_.hashInto(sink);
     bench_.hashInto(sink);
     sink.put_byte(open_ ? 1U : 0U);
     sink.put_int(static_cast<std::uint32_t>(speaker_.actorId));

@@ -122,18 +122,27 @@ TEST_CASE("the room is lit and full at nine, dark and empty at five") {
 
     // Five in the morning: the fire is banked, the doors are shut, and there is
     // nobody in the building at all.
+    //
+    // NOBODY, not NOTHING -- S6 changed what the empty room contains and this
+    // is the case that says so. The rats are on the skirting between one in the
+    // morning and eleven, which is the whole reason the ward's bounty is
+    // something a player has to keep an hour for. presentCount() counts PEOPLE
+    // and reads zero; the frame is not empty, and that is deliberate.
     CHECK_FALSE(dawn.tavern().fireLit());
     CHECK_FALSE(dawn.tavern().isOpen());
     CHECK(dawn.tavernLights().empty());
     CHECK(dawn.tavern().presentCount() == 0);
-    CHECK(dawn.actorSprites().empty());
+    CHECK(dawn.tavern().verminPresent() == sim::kVerminPerNight);
     CHECK(dawnStats.actorPixels == 0);
 
     // And the two frames are genuinely different pictures: brighter, more
     // colours, and sprite pixels where there were none.
     CHECK(nightStats.meanLuma > dawnStats.meanLuma * 1.5F);
     CHECK(nightStats.distinctColours > dawnStats.distinctColours);
-    CHECK(dawnStats.spritePixels == 0);
+    // Sprite pixels at dawn are the rats and nothing else: a third of a
+    // person's height, unlit, in a black room. A handful of pixels against the
+    // night frame's thousands.
+    CHECK(dawnStats.spritePixels < nightStats.spritePixels / 20);
 
     // Neither is a picture of the outdoors: standing in a room means the walls
     // fill the frame.

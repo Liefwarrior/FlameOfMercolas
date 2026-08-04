@@ -176,6 +176,26 @@ constexpr std::array<RosterEntry, 10> kPatrons = {{
      "wake", JobFamily::Maritime, "seacraft", 35, 16, "dockhands"},
 }};
 
+/// TONIGHT'S RATS. Not people: no name pool was raided for them, they are not
+/// among the Forty, and the roster entry they get is the smallest one that
+/// still puts a body on a tile at an hour. They keep to the three corners of
+/// the taproom the bar cannot see into and the fourth is under the stair.
+///
+/// DOCKS-GAZETTEER section 3 gives the ward rat-catchers at Kennel Row and a
+/// dog yard to keep them in; the Watch pays by the scalp for what the terriers
+/// cannot reach. This is where a player gets the one contraband on the list
+/// that is not a crime to hold.
+struct VerminPost {
+    std::int32_t x;
+    std::int32_t y;
+};
+constexpr std::array<VerminPost, 4> kVerminPosts = {{
+    {gull::kFootprintX0 + 1, gull::kFootprintY1 - 1},
+    {gull::kFootprintX1 - 1, gull::kFootprintY0 + 2},
+    {gull::kHearthX0, gull::kHearthY - 1},
+    {gull::kSnugX0, gull::kFootprintY1 - 2},
+}};
+
 }  // namespace
 
 namespace gull {
@@ -281,7 +301,13 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
       dialogue_(DialogueDirector::load(contentDir)),
       rng_(worldSeed, id_.salt()),
       timeOfDay_(((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay) {
+    startedAt_ = timeOfDay_;
     buildRoster();
+    // Tonight's boat, and tonight's work. Both are posted before anybody has
+    // taken a step, so a session that opens at ten at night opens on a board
+    // that has been up since the doors did.
+    baleGood_ = drawBaleGood();
+    dialogue_.postContracts(dayNumber(), rng_.world_seed());
     applySchedules();
     // Everybody whose shift has already started is AT their post, not walking
     // in from the street: a session that opens at eight in the evening opens on
@@ -324,6 +350,24 @@ void Tavern::buildRoster() {
     }
     for (const RosterEntry& entry : kPatrons) {
         add(entry);
+    }
+
+    // And tonight's rats, appended AFTER every person, so an actor id is still
+    // a stable index into a roster that has only ever grown at the end.
+    for (const VerminPost& post : kVerminPosts) {
+        Actor rat(nextId, "Rat", "on the skirting", ActorRole::Vermin, post.x, post.y,
+                  gull::kGroundBand);
+        ScheduleBlock block;
+        block.fromSecond = kVerminFrom;
+        block.toSecond = kVerminUntil;
+        block.postX = post.x;
+        block.postY = post.y;
+        block.postBand = gull::kGroundBand;
+        block.activity = Activity::Working;
+        rat.schedule().add(block);
+        rat.setHealth(kVerminHealth, kVerminHealth);
+        actors_.push_back(std::move(rat));
+        ++nextId;
     }
 }
 
@@ -465,11 +509,32 @@ Actor* Tavern::mutableActorById(std::int32_t id) noexcept {
 std::int32_t Tavern::presentCount() const noexcept {
     std::int32_t count = 0;
     for (const Actor& actor : actors_) {
-        if (actor.present()) {
+        // PEOPLE. A rat in the corner is not one of the fourteen, does not make
+        // the room busier and is not somebody the frame is counting.
+        if (actor.present() && actor.role() != ActorRole::Vermin) {
             ++count;
         }
     }
     return count;
+}
+
+std::int32_t Tavern::verminPresent() const noexcept {
+    std::int32_t count = 0;
+    for (const Actor& actor : actors_) {
+        if (actor.present() && actor.role() == ActorRole::Vermin) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::int32_t Tavern::verminFirstId() const noexcept {
+    for (const Actor& actor : actors_) {
+        if (actor.role() == ActorRole::Vermin) {
+            return actor.id();
+        }
+    }
+    return 0;
 }
 
 std::int32_t Tavern::patronCount() const noexcept {
@@ -495,6 +560,13 @@ const Actor* Tavern::nearestTo(std::int32_t xQ8, std::int32_t yQ8,
     std::int32_t bestDistance = reachQ8 + 1;
     for (const Actor& actor : actors_) {
         if (!actor.present() || actor.activity() == Activity::Downed) {
+            continue;
+        }
+        // NEAREST PERSON. Everything that asks this -- talking, greeting, the
+        // conversation surface -- means somebody, and a rat has nothing to say.
+        // What DOES want a rat asks for one by name; see downedVerminInReach
+        // and playerPunchNearest.
+        if (actor.role() == ActorRole::Vermin) {
             continue;
         }
         const std::int32_t distance = actor.distanceTo(xQ8, yQ8);
@@ -558,7 +630,20 @@ void Tavern::stepMovement() {
     CrimeLedger& crimes = dialogue_.crimes();
     if (wasInside_ && !inside && crimes.carryingBale()) {
         const bool seen = witnessCount(kPlayerActorId) > 0;
-        const std::int32_t pay = crimes.deliverBale();
+        // WHOSE BALE IS IT. With no job open for what is in it, the boat's own
+        // buyer is waiting at the corner and the flat runner's fee is the pay
+        // -- which is exactly what S5 did and what its cases still assert. With
+        // a job open, the sack comes off your shoulder into your own and the
+        // contract is what pays, because being paid twice for one bale would
+        // make the snug a faucet with extra steps.
+        bool ownBuyer = true;
+        for (const Contract& row : dialogue_.contracts().contracts()) {
+            if (row.live() && row.good == crimes.baleGood()) {
+                ownBuyer = false;
+                break;
+            }
+        }
+        const std::int32_t pay = crimes.deliverBale(ownBuyer);
         playerCoin_ = wrap_add(playerCoin_, pay);
         dialogue_.setPlayerCoin(playerCoin_);
         dialogue_.noteCrime(Crime::Smuggle, seen);
@@ -588,15 +673,28 @@ void Tavern::advanceSecond() {
     if (timeOfDay_ == gull::kOpensAt) {
         drinkStock_ = kOpeningStock;
         balesInSnug_ = kBalesPerNight;
+        baleGood_ = drawBaleGood();
+        // A fresh night brings fresh vermin, exactly as it brings fresh
+        // barrels. Both are what stop their trade being a faucet.
+        scalpedVermin_ = 0;
         rentedRoom_ = -1;
         stockedOnDay_ = tick_;
     }
+    // A new day is new work. refresh() answers instantly on a day it has
+    // already posted, so this is a comparison and not a rebuild.
+    dialogue_.postContracts(dayNumber(), rng_.world_seed());
     // Somebody put on the floor comes round. A brawl is not a killing, so a
     // downed patron is a patron who gets up in a minute or two with a headache
     // and a quarter of their health -- and then walks back to their stool,
     // because the schedule is still theirs.
     for (Actor& actor : actors_) {
         if (actor.activity() != Activity::Downed) {
+            continue;
+        }
+        if (actor.role() == ActorRole::Vermin) {
+            // A rat on the floor stays on the floor. It is the one body in this
+            // room that does not get up with a headache, because it is the one
+            // body somebody is going to skin.
             continue;
         }
         actor.setHealth(actor.hp() + 1, actor.hpMax());
@@ -607,8 +705,35 @@ void Tavern::advanceSecond() {
 
     applySchedules();
     tickBouncers();
+    tickWatch();
     tickBrawl();
     tickPatrons();
+    tickVermin();
+}
+
+std::int32_t Tavern::dayNumber() const noexcept {
+    // Monotonic across midnight AND across a night in a cell: elapsed_ counts
+    // every simulated second this room has run including the ones a skip
+    // jumped, and the wall clock's wrap is not in it. A deadline measured
+    // against timeOfDay_ would be a deadline nobody could ever miss.
+    return static_cast<std::int32_t>((static_cast<std::int64_t>(startedAt_) + elapsed_) /
+                                     kSecondsPerDay);
+}
+
+void Tavern::skipHours(std::int32_t hours) {
+    const std::int32_t forward = std::max(0, hours);
+    // Whole days first, because skipTo can only ever carry the room round one
+    // face of the clock and a sentence is measured in nights.
+    elapsed_ += static_cast<std::int64_t>(forward / 24) * kSecondsPerDay;
+    skipTo((timeOfDay_ + (forward % 24) * 3600) % kSecondsPerDay);
+}
+
+Contraband Tavern::drawBaleGood() noexcept {
+    // A boat brings a boat's cargo: powder, spirit or bales. It does not bring
+    // rats and it does not bring somebody's christening cup, so the draw is
+    // over exactly the three the harbour actually lands.
+    const std::uint64_t roll = rng_.draw(0xBA1EU, playerActionSeq_);
+    return static_cast<Contraband>(1 + static_cast<std::int32_t>(roll % 3U));
 }
 
 void Tavern::applySchedules() {
@@ -623,6 +748,18 @@ void Tavern::applySchedules() {
                 continue;
             default:
                 break;
+        }
+
+        if (actor.role() == ActorRole::Vermin) {
+            // A rat that has been skinned does not get up and is not replaced
+            // until the boat, the barrels and the vermin are all restocked
+            // together at opening. This is what stops the ward's bounty being
+            // a coin faucet with whiskers.
+            const std::int32_t bit = 1 << (actor.id() - verminFirstId());
+            if ((scalpedVermin_ & bit) != 0) {
+                actor.setActivity(Activity::Away);
+                continue;
+            }
         }
 
         const ScheduleBlock* block = actor.schedule().at(timeOfDay_);
@@ -841,7 +978,34 @@ std::uint64_t Tavern::drawForPlayerAction() noexcept {
 Tavern::PunchResult Tavern::playerPunchNearest() {
     PunchResult result;
     const Actor* found = nearestTo(playerX_, playerY_, kMeleeReach);
+    // A RAT IS A TARGET AND A PERSON IS NOT NECESSARILY ONE. nearestTo answers
+    // with people, because everything else that asks it means somebody; a fist
+    // wants whichever of the two is actually closer.
+    const Actor* quarry = nearestVerminTo(playerX_, playerY_, kMeleeReach);
+    if (quarry != nullptr &&
+        (found == nullptr || quarry->distanceTo(playerX_, playerY_) <
+                                 found->distanceTo(playerX_, playerY_))) {
+        found = quarry;
+    }
     if (found == nullptr) {
+        return result;
+    }
+    if (found->role() == ActorRole::Vermin) {
+        // Killing vermin under a captains' roof is not a brawl and the house
+        // has no opinion about it: no offence is reported, nobody is told, and
+        // the fight classifier is never asked. Every one of those omissions is
+        // deliberate and this is where they are stated.
+        Actor* rat = mutableActorById(found->id());
+        if (rat == nullptr) {
+            return result;
+        }
+        result.swung = true;
+        result.targetId = rat->id();
+        result.targetName = rat->name();
+        Fighter prey = rat->asFighter();
+        result.blow = strike(playerWeapon_, prey, drawForPlayerAction());
+        rat->setHealth(prey.hp, prey.hpMax);
+        rat->setActivity(result.blow.downed ? Activity::Downed : Activity::Walking);
         return result;
     }
     Actor* target = mutableActorById(found->id());
@@ -1175,6 +1339,13 @@ TalkResult Tavern::talkToNearest() {
         case ActorRole::Patron:
             result.line = "Whole ward is drinking on a dead man's tide.";
             break;
+        case ActorRole::Vermin:
+            // Unreachable: nearestTo answers with people. Handled anyway,
+            // because the compiler asks and because "unreachable" is a claim
+            // that stops being true the day somebody changes nearestTo.
+            result.result = ServiceResult::NobodyThere;
+            result.line.clear();
+            break;
     }
     return result;
 }
@@ -1182,6 +1353,21 @@ TalkResult Tavern::talkToNearest() {
 // ---------------------------------------------------------------------------
 // conversation
 // ---------------------------------------------------------------------------
+
+std::int32_t Tavern::rosterSkillOf(const Actor& actor) const noexcept {
+    // The authored number for this body, out of the roster table, without
+    // building a whole Speaker to read one integer. Watchman Cull's kit-keeping
+    // is 25 because notables.json says he inventories seized cargo for a
+    // living, and that is exactly the skill a search is fought with.
+    const std::size_t index = static_cast<std::size_t>(actor.id() - 1);
+    if (index < kStaff.size()) {
+        return kStaff[index].skillLevel;
+    }
+    if (index - kStaff.size() < kPatrons.size()) {
+        return kPatrons[index - kStaff.size()].skillLevel;
+    }
+    return 0;
+}
 
 Speaker Tavern::speakerFor(const Actor& actor) const {
     Speaker speaker;
@@ -1521,6 +1707,10 @@ std::int32_t Tavern::witnessCount(std::int32_t exceptId) const noexcept {
             actor.activity() == Activity::Downed) {
             continue;
         }
+        // A rat saw you. A rat will not be telling anybody.
+        if (actor.role() == ActorRole::Vermin) {
+            continue;
+        }
         if (actor.band() != playerBand_) {
             continue;
         }
@@ -1578,12 +1768,22 @@ Tavern::StealResult Tavern::crackStrongbox() {
     }
     crackedBoxes_ |= bit;
     const std::int32_t craft = dialogue_.skills().level(kThieverySkill);
-    out.coin = kStrongboxCoin + craft / 4;
-    out.loot = 1 + craft / 20;
+    // WHAT A HAND THE WARD HAS TAKEN STILL MANAGES. The only lasting
+    // statistical penalty in this build, and it is canon's: DECISIONS.md says a
+    // Skyrunner loses the hand on a first offence, so a cracksman who has been
+    // through the Watch's yard is worth half of what he was.
+    const std::int32_t hands = dialogue_.crimes().takePercent();
+    out.coin = (kStrongboxCoin + craft / 4) * hands / 100;
+    out.loot = std::max(1, (1 + craft / 20) * hands / 100);
     out.seen = witnessCount(kPlayerActorId) > 0;
     playerCoin_ = wrap_add(playerCoin_, out.coin);
     dialogue_.setPlayerCoin(playerCoin_);
     dialogue_.crimes().takeLoot(out.loot);
+    // AND A PIECE WITH A NAME ON IT. The anonymous "loot" above is what a fence
+    // buys by the handful and asks nothing about; this is the cup, the chart,
+    // the signet -- the thing a recovery contract can ask for by name and a
+    // watchman can hang on you. One a box, because there is one of it.
+    const std::int32_t piece = dialogue_.crimes().stash().add(Contraband::Artifact, 1);
     dialogue_.noteCrime(Crime::Burgle, out.seen);
     if (out.seen) {
         spreadWitness(kPlayerActorId, Deed::Robbed);
@@ -1592,6 +1792,296 @@ Tavern::StealResult Tavern::crackStrongbox() {
     out.result = ServiceResult::Served;
     out.line = "CRACKED IT - " + std::to_string(out.coin) + "C AND " +
                std::to_string(out.loot) + " PIECE" + (out.seen ? ", AND SEEN." : ".");
+    if (piece > 0) {
+        out.line += " SOMETHING WITH A NAME ON IT.";
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// S6: the Watch, and the one thing S5's warrant could not do
+// ---------------------------------------------------------------------------
+
+bool Tavern::canSeePlayer(const Actor& actor) const noexcept {
+    if (!playerKnown_ || !actor.present() || actor.activity() == Activity::Downed) {
+        return false;
+    }
+    if (actor.band() != playerBand_) {
+        return false;
+    }
+    const std::int32_t dx = actor.x() - playerX_;
+    const std::int32_t dy = actor.y() - playerY_;
+    const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+    if (distance > kWatchSightTiles * kSubOne) {
+        return false;
+    }
+    if (distance <= kWitnessReachTiles * kSubOne || tiles_ == nullptr) {
+        return true;
+    }
+    return tiles_->lineOfSight(actor.tileX(), actor.tileY(), q8_tile(playerX_),
+                               q8_tile(playerY_), playerBand_);
+}
+
+Actor* Tavern::watchmanWatchingPlayer() noexcept {
+    const std::int32_t garrison = dialogue_.factions().indexOf("watch");
+    if (garrison < 0) {
+        return nullptr;
+    }
+    Actor* best = nullptr;
+    std::int32_t bestDistance = 0;
+    for (Actor& actor : actors_) {
+        // WHO IS A WATCHMAN IS DERIVED, not tabulated: the room knows an
+        // actor's job family and the owner's own factions.json says which
+        // faction claims that family's jobs. Nobody wrote a second table.
+        if (factionOf(actor) != garrison || !canSeePlayer(actor)) {
+            continue;
+        }
+        const std::int32_t distance = actor.distanceTo(playerX_, playerY_);
+        if (best == nullptr || distance < bestDistance) {
+            best = &actor;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+void Tavern::tickWatch() {
+    CrimeLedger& crimes = dialogue_.crimes();
+    if (crimes.condemned()) {
+        // Already sentenced to the rope. Nothing further is taken and no
+        // watchman crosses the room about it -- see Sentence::Condemned on
+        // exactly what this build does and does not simulate.
+        watchStance_ = WatchStance::Idle;
+        watchmanId_ = -1;
+        return;
+    }
+
+    if (watchStance_ == WatchStance::Closing) {
+        Actor* officer = watchmanId_ < 0 ? nullptr : mutableActorById(watchmanId_);
+        if (officer == nullptr || !officer->present() ||
+            officer->activity() == Activity::Downed || !canSeePlayer(*officer)) {
+            // OUT OF HIS SIGHT IS OUT OF IT. This is the whole counterplay and
+            // the reason the roofs are worth having: a man who gets through the
+            // door with a bale on his shoulder has got away with it, and the
+            // ward's own eight tiles of sight are what decide that.
+            watchStance_ = WatchStance::Idle;
+            watchmanId_ = -1;
+            watchCause_ = WatchCause::None;
+            if (officer != nullptr && officer->activity() == Activity::Warning) {
+                officer->setActivity(Activity::Watching);
+            }
+            return;
+        }
+        officer->setActivity(Activity::Warning);
+        officer->faceToward(playerX_, playerY_);
+        if (officer->distanceTo(playerX_, playerY_) > kMeleeReach) {
+            officer->setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
+            return;
+        }
+        applyArrest(*officer);
+        return;
+    }
+
+    // Idle. He glances up every few seconds; he is off shift with a drink in
+    // his hand, not frisking the room.
+    if (tick_ % kWatchLookSeconds != 0) {
+        return;
+    }
+    Actor* officer = watchmanWatchingPlayer();
+    if (officer == nullptr) {
+        return;
+    }
+    const Stash& sack = crimes.stash();
+    const std::int32_t permille =
+        noticePermille(sack.illicitWeight(), dialogue_.skills().level(kHaggleSkill),
+                       rosterSkillOf(*officer));
+    const bool noticed = passes(rng_.draw(static_cast<std::uint64_t>(officer->id()) ^ 0x5741U,
+                                          static_cast<std::int32_t>(tick_ % 4096)),
+                                permille);
+    const WatchCause cause = watchCause(crimes.warrant(), noticed, sack.illicitUnits());
+    if (cause == WatchCause::None) {
+        return;
+    }
+    watchStance_ = WatchStance::Closing;
+    watchmanId_ = officer->id();
+    watchCause_ = cause;
+    noticedAtTick_ = tick_;
+    lastDemand_ = officer->name() + ": " +
+                  std::string(dialogue_.barks().line(
+                      dialogue_.barks().resolve({std::string("watch.demand")}),
+                      static_cast<std::int32_t>(tick_ / kWatchLookSeconds)));
+    officer->setActivity(Activity::Warning);
+}
+
+void Tavern::applyArrest(Actor& officer) {
+    CrimeLedger& crimes = dialogue_.crimes();
+    const Stash before = crimes.stash();
+    const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
+    const bool skyrunner = dialogue_.standings().isMember(roofs);
+
+    const CrimeLedger::ArrestOutcome outcome =
+        crimes.arrest(skyrunner, playerCoin_, drawForPlayerAction());
+    playerCoin_ = std::max(0, playerCoin_ - outcome.fine);
+    dialogue_.setPlayerCoin(playerCoin_);
+    // A job whose goods are in the impound is a job you have lost. THIS is what
+    // makes an arrest cost more than a night: the coin was never the point.
+    const std::int32_t lost = dialogue_.contracts().seizeFor(before);
+
+    lastArrest_ = ArrestReport{};
+    lastArrest_.happened = true;
+    lastArrest_.sentence = outcome.sentence;
+    lastArrest_.cause = watchCause_;
+    lastArrest_.unitsSeized = outcome.unitsSeized;
+    lastArrest_.fine = outcome.fine;
+    lastArrest_.heldHours = outcome.heldHours;
+    lastArrest_.contractsLost = lost;
+    lastArrest_.officer = officer.name();
+
+    const char* table = "watch.fined";
+    switch (outcome.sentence) {
+        case Sentence::Held:
+            table = "watch.held";
+            break;
+        case Sentence::Maimed:
+            table = "watch.maimed";
+            break;
+        case Sentence::Condemned:
+            table = "watch.condemned";
+            break;
+        default:
+            break;
+    }
+    lastArrest_.line = officer.name() + ": " +
+                       std::string(dialogue_.barks().line(
+                           dialogue_.barks().resolve({std::string(table)}),
+                           crimes.arrests() + outcome.unitsSeized));
+
+    if (outcome.heldHours > 0) {
+        // The night goes by in the cell and nothing in it is simulated -- the
+        // same honest jump sleeping in a rented bed already makes.
+        skipHours(outcome.heldHours);
+    }
+    // Whatever the house was minding is somebody else's problem now.
+    standing_ = Standing::Welcome;
+    brawlers_.clear();
+    respondingBouncerId_ = -1;
+    watchStance_ = WatchStance::Idle;
+    watchmanId_ = -1;
+    watchCause_ = WatchCause::None;
+    officer.setActivity(Activity::Watching);
+    // And the body is turned loose on the Tarwalk. The room does not own it, so
+    // it asks -- see takeArrestRelease.
+    arrestRelease_ = true;
+}
+
+const Actor* Tavern::respondingWatchman() const noexcept {
+    return watchmanId_ < 0 ? nullptr : actorById(watchmanId_);
+}
+
+bool Tavern::takeArrestRelease() noexcept {
+    const bool pending = arrestRelease_;
+    arrestRelease_ = false;
+    return pending;
+}
+
+// ---------------------------------------------------------------------------
+// S6: the vermin, and the knife
+// ---------------------------------------------------------------------------
+
+void Tavern::tickVermin() {
+    for (Actor& actor : actors_) {
+        if (actor.role() != ActorRole::Vermin || !actor.present() ||
+            actor.activity() == Activity::Downed) {
+            continue;
+        }
+        if (!actor.atDestination()) {
+            continue;
+        }
+        // A rat does not hold a post; it works along a skirting. One tile at a
+        // time, inside the walls, on the room's own draw -- which is why two
+        // runs of one seed put every rat in the same corner.
+        const std::uint64_t roll = rng_.draw(static_cast<std::uint64_t>(actor.id()), 0);
+        const std::int32_t dx = static_cast<std::int32_t>(roll % 3U) - 1;
+        const std::int32_t dy = static_cast<std::int32_t>((roll / 3U) % 3U) - 1;
+        const std::int32_t toX = actor.tileX() + dx;
+        const std::int32_t toY = actor.tileY() + dy;
+        if (!gull::insideFootprint(toX, toY) || tiles_ == nullptr ||
+            !tiles_->standable(toX, toY, gull::kGroundBand)) {
+            continue;
+        }
+        actor.setDestination(toX, toY, gull::kGroundBand);
+        actor.setActivity(Activity::Walking);
+    }
+}
+
+const Actor* Tavern::nearestVerminTo(std::int32_t xQ8, std::int32_t yQ8,
+                                     std::int32_t reachQ8) const noexcept {
+    const Actor* best = nullptr;
+    std::int32_t bestDistance = reachQ8 + 1;
+    for (const Actor& actor : actors_) {
+        if (actor.role() != ActorRole::Vermin || !actor.present() ||
+            actor.activity() == Activity::Downed) {
+            continue;
+        }
+        const std::int32_t distance = actor.distanceTo(xQ8, yQ8);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = &actor;
+        }
+    }
+    return best;
+}
+
+Actor* Tavern::downedVerminInReach() noexcept {
+    if (!playerKnown_) {
+        return nullptr;
+    }
+    Actor* best = nullptr;
+    std::int32_t bestDistance = kReachQ8 + 1;
+    for (Actor& actor : actors_) {
+        if (actor.role() != ActorRole::Vermin || actor.activity() != Activity::Downed ||
+            actor.band() != playerBand_) {
+            continue;
+        }
+        const std::int32_t distance = actor.distanceTo(playerX_, playerY_);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = &actor;
+        }
+    }
+    return best;
+}
+
+Tavern::StealResult Tavern::takeScalp() {
+    StealResult out;
+    Actor* quarry = downedVerminInReach();
+    if (quarry == nullptr) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO SKIN.";
+        return out;
+    }
+    const std::int32_t bit = 1 << (quarry->id() - verminFirstId());
+    if ((scalpedVermin_ & bit) != 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = "ALREADY TAKEN.";
+        return out;
+    }
+    Stash& sack = dialogue_.crimes().stash();
+    if (sack.add(Contraband::Scalp, 1) <= 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = "YOU CANNOT CARRY ANOTHER THING.";
+        return out;
+    }
+    scalpedVermin_ |= bit;
+    quarry->setActivity(Activity::Away);
+    // A knife beside a carcass is FIELDCRAFT, which is the same skill the Java
+    // build's own cull verb charges for the same act.
+    dialogue_.skills().use(contrabandSkill(Contraband::Scalp), 1);
+    out.result = ServiceResult::Served;
+    out.loot = 1;
+    // NOT A CRIME, and stated rather than implied: the ward pays for these.
+    // Nothing goes through noteCrime, no heat is raised and no witness matters.
+    out.line = "ONE SCALP. THE WARD PAYS FOR THESE.";
     return out;
 }
 
@@ -1676,14 +2166,15 @@ Tavern::StealResult Tavern::handleBale() {
         return out;
     }
     --balesInSnug_;
-    // VERIFICATION GAP (S5): a bale is a BOOLEAN, not an item. There is no
-    // inventory in this build, so what is being carried has no weight, no
-    // contents, no owner and cannot be dropped anywhere but where it was picked
-    // up. Everything downstream of it -- the run, the pay, the tally, the heat
-    // -- is real; the object is a flag with a name.
-    crimes.takeBale();
+    // S6 CLOSES THE S5 GAP. A bale had no weight, no contents and no owner --
+    // it was a flag with a name. It has a KIND and a COUNT now, both decided by
+    // the boat that landed it, and what comes out of it at the threshold is
+    // what a contract can want and a watchman can find.
+    crimes.takeBale(baleGood_, kBaleUnits);
     out.result = ServiceResult::Served;
-    out.line = "THE BALE IS HEAVIER THAN IT LOOKS.";
+    out.loot = kBaleUnits;
+    out.line = "A BALE OF " + std::string(contrabandLabel(baleGood_)) + " - " +
+               std::to_string(kBaleUnits) + " OF IT.";
     return out;
 }
 
@@ -1793,6 +2284,17 @@ void Tavern::hash_into(HashSink& sink) const {
     // S6: the highest the player has been. It decides whether the next landing
     // is a roof-run or a lap of the lead, so it is state and not a readout.
     sink.put_int(static_cast<std::uint32_t>(highestBand_));
+    // S6: tonight's cargo, which rats are gone, and where a watchman is in the
+    // business of taking you. All of it decides what happens next, so all of it
+    // is state the twin-run gate compares.
+    sink.put_byte(static_cast<std::uint32_t>(baleGood_));
+    sink.put_int(static_cast<std::uint32_t>(scalpedVermin_));
+    sink.put_byte(static_cast<std::uint32_t>(watchStance_));
+    sink.put_byte(static_cast<std::uint32_t>(watchCause_));
+    sink.put_int(static_cast<std::uint32_t>(watchmanId_));
+    sink.put_long(static_cast<std::uint64_t>(noticedAtTick_));
+    sink.put_int(static_cast<std::uint32_t>(startedAt_));
+    sink.put_byte(arrestRelease_ ? 1U : 0U);
     sink.put_byte(wasInside_ ? 1U : 0U);
     sink.put_long(static_cast<std::uint64_t>(elapsed_));
     dialogue_.hashInto(sink);

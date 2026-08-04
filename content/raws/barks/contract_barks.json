@@ -1,0 +1,149 @@
+{
+  "id": "contract_barks",
+  "notes": "S6 ADDITION, and it obeys the same rule every other bark file does: NOTHING in the code writes a spoken line. The contract board composes a BRIEF from the notables' own file, which is menu furniture and a journal entry; what a broker actually SAYS when he hands you work, and what a watchman says when he puts his hand on your shoulder, is here. Keys resolve through the same fallback chain barks.json uses - the specific key first, then the generic - so a broker with no table of his own still speaks.",
+  "tables": [
+    {
+      "key": "contract.none",
+      "rows": [
+        "Nothing tonight. Come back when the tide has been in.",
+        "There is no work. There is always work, but there is no work I would give you.",
+        "Ask me at the end of the week."
+      ]
+    },
+    {
+      "key": "contract.take",
+      "rows": [
+        "Done. Do not come back here with it on you if there is anybody behind you.",
+        "Take it. If it goes wrong it was never mine and you never sat here.",
+        "That is the job. The number matters and the night it is done by matters more."
+      ]
+    },
+    {
+      "key": "contract.take.finch",
+      "rows": [
+        "You will do it in one night or you will not do it. A man who is halfway through a job for a week is a man explaining himself to somebody.",
+        "I am not going to write it down and neither are you. Count it twice before you carry it and once again before you hand it over.",
+        "Nobody looks up and nobody looks at a man walking like he is late. Both of those are the job."
+      ]
+    },
+    {
+      "key": "contract.take.cull",
+      "rows": [
+        "The ward pays it and the ward writes it down, which is the difference between this and everything else you will be offered in this room.",
+        "Bring them to me, not to the yard. The yard has a dog and the dog has opinions.",
+        "And bring a priest's word with them. I do not make the rule and I do not get to bend it."
+      ]
+    },
+    {
+      "key": "contract.take.venn",
+      "rows": [
+        "My cellar, my problem, and my coin. You were never asked and I never answered.",
+        "A captains' house that poured only what the Weighhouse stamped would be a captains' house with nothing in it.",
+        "Down the stair, past the snug, and do not stop to drink it."
+      ]
+    },
+    {
+      "key": "contract.short",
+      "rows": [
+        "That is not the number. Come back with the number.",
+        "Half a job is a job somebody else has to finish.",
+        "I can count. Go on."
+      ]
+    },
+    {
+      "key": "contract.paid",
+      "rows": [
+        "Counted. There is your coin and there is the end of it.",
+        "Good. I will find you when there is more.",
+        "That is the trade. Nobody thanked you and nobody will."
+      ]
+    },
+    {
+      "key": "contract.paid.cull",
+      "rows": [
+        "Counted, marked and paid. Ward's money, ward's ledger, and your name in it.",
+        "The Flame has signed for these, so I can. Off you go.",
+        "That is honest work and you look strange doing it."
+      ]
+    },
+    {
+      "key": "contract.paid.finch",
+      "rows": [
+        "Counted. Do not spend it in here.",
+        "You are getting quicker. That is not a compliment - quick men get careless the week after.",
+        "There. And I never saw your hands."
+      ]
+    },
+    {
+      "key": "contract.late",
+      "rows": [
+        "That was wanted three nights ago. It is worth nothing now and so is the promise.",
+        "The man who wanted it has stopped wanting it. That happens.",
+        "Too late. Keep them, sell them, throw them in the harbour."
+      ]
+    },
+    {
+      "key": "contract.blocked",
+      "rows": [
+        "I do not know you well enough to know anything.",
+        "Work? I am having a drink.",
+        "There is nothing here for you."
+      ]
+    },
+    {
+      "key": "contract.sanction",
+      "rows": [
+        "Blood taken is blood weighed. Hold them out. The Flame does not object to a rat, but it will be asked and it will answer.",
+        "The ward pays for these and the Church signs for them, and neither of those is the same as saying it was good.",
+        "Marked. Take them to the Watch, and take the mark with them."
+      ]
+    },
+    {
+      "key": "contract.sanction.refused",
+      "rows": [
+        "You are carrying nothing that needs my hand on it.",
+        "Come back when there is something to weigh."
+      ]
+    },
+    {
+      "key": "watch.demand",
+      "rows": [
+        "Stand where you are. Hands where I can see what is in them.",
+        "You. Yes, you. I have been looking at you for a while now.",
+        "I keep the impound. I know exactly what a full sack looks like on a thin man."
+      ]
+    },
+    {
+      "key": "watch.fined",
+      "rows": [
+        "Into the impound with it, and the ward will have its charge for my evening.",
+        "No paper on you, so no cell for you. The jars stay with me.",
+        "Consider that the cheapest night you will have this month."
+      ]
+    },
+    {
+      "key": "watch.held",
+      "rows": [
+        "There is paper out on you and I am the man holding it. Walk.",
+        "A cell, and the ward will decide how many nights of it. Nobody is going to hurt you.",
+        "You will be turned loose on the Tarwalk with your pockets lighter and your name written down."
+      ]
+    },
+    {
+      "key": "watch.maimed",
+      "rows": [
+        "A Skyrunner. I thought so. You know what the ward does with the hand.",
+        "First time, so it is the hand and not the rope. Do not make me learn your face twice.",
+        "They told you the roofs were a road. Nobody told you where it goes."
+      ]
+    },
+    {
+      "key": "watch.condemned",
+      "rows": [
+        "Twice. There is no third and you have always known there was no third.",
+        "The rope, then. It was never anything else once you took the first rung.",
+        "You will be held until they build the thing they hold you for."
+      ]
+    }
+  ]
+}

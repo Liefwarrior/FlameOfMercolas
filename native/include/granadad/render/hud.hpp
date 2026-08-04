@@ -54,6 +54,14 @@ struct HudState {
     /// carrying somebody else's bale. Top-right under the standing, still
     /// hugging the edge. Empty draws nothing, which is the usual case.
     std::string_view heatLabel;
+    /// S6: what is in the sack and what it weighs -- "3 FLOWER  24DR".
+    /// Top-right under the heat, still hugging the edge. Empty draws nothing.
+    ///
+    /// It is on the EDGE and not in a sheet on purpose. The Java build's
+    /// first-person view failed exactly here: its inspector ate the right half
+    /// of the screen. An inventory in this game is one line in a corner until
+    /// it has earned more.
+    std::string_view stashLabel;
     /// The ladder the player is highest on, and the rung: "FLAME - DISCIPLE".
     /// Bottom-left, stacked over the health bar, because that is where a
     /// character's own state lives and the centre stays empty. Drawn only when

@@ -21,6 +21,8 @@ std::string_view actorRoleName(ActorRole role) noexcept {
             return "priest";
         case ActorRole::SkyrunnerContact:
             return "skyrunner";
+        case ActorRole::Vermin:
+            return "vermin";
     }
     return "?";
 }

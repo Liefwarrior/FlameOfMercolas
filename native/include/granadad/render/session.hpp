@@ -242,6 +242,10 @@ private:
     [[nodiscard]] std::string guildLine() const;
     /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
     [[nodiscard]] std::string heatLine() const;
+    /// "3 FLOWER  24DR", or empty when the sack is empty.
+    [[nodiscard]] std::string stashLine() const;
+    /// "RUN 4 FLOWER FOR SQUALL 3/4", or empty when no job is open.
+    [[nodiscard]] std::string contractLine() const;
     /// What the questline in progress wants next, in its own short label.
     [[nodiscard]] std::string objectiveLine() const;
 

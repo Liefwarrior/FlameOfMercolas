@@ -290,6 +290,16 @@ public:
 
     // --- test/setup seams --------------------------------------------------
 
+    /// Puts the body down at the centre of a tile, with no walk, no collision
+    /// slide and no fall to charge.
+    ///
+    /// S6 ADDS THIS FOR ONE CALLER and it is worth naming: the Watch takes you
+    /// off the taproom floor and turns you loose on the Tarwalk in the morning,
+    /// and nothing between those two facts is simulated. It is the same honest
+    /// jump sleeping in a rented bed already makes. It is NOT a teleport verb
+    /// for the player -- nothing the player can press reaches it.
+    void placeAt(std::int32_t tileX, std::int32_t tileY, std::int32_t band) noexcept;
+
     void setYaw(Angle yaw) noexcept { yaw_ = yaw & (kTurnFull - 1); }
     void setPitch(Angle pitch) noexcept;
 

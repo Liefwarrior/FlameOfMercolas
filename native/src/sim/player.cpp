@@ -248,6 +248,18 @@ std::int32_t PlayerBody::takeFallBands() noexcept {
     return bands;
 }
 
+void PlayerBody::placeAt(std::int32_t tileX, std::int32_t tileY, std::int32_t band) noexcept {
+    x_ = q8_tile_centre(tileX);
+    y_ = q8_tile_centre(tileY);
+    band_ = band;
+    // Any arc in progress is over -- a body that was in the air is now in a
+    // cell -- and there is no fall waiting to be charged for the journey.
+    leapStepsLeft_ = 0;
+    leapStepsTotal_ = 0;
+    fallBands_ = 0;
+    feetZ_ = q8_of_tile(band_);
+}
+
 RoofResult PlayerBody::mantle() noexcept {
     if (leapStepsLeft_ > 0) {
         return RoofResult{RoofMove::Airborne, 0, 0};

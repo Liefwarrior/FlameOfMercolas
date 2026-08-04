@@ -120,6 +120,12 @@ COPY content/raws/skills /src/content/raws/skills
 COPY content/raws/factions /src/content/raws/factions
 COPY content/raws/quests /src/content/raws/quests
 
+# S6: the radiant contract board. Every broker, patron and source in it is a
+# cross-reference into notables.json and is refused at load if that file does
+# not have the id -- so without this in the context the board loads EMPTY and
+# every case about it would pass against nothing.
+COPY content/raws/contracts /src/content/raws/contracts
+
 # Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
 # has no use for either, and the rest of content is read at runtime straight
@@ -220,7 +226,8 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                names/names.json rumors/rumors.json skills/skills.json \
                barks/flame_barks.json factions/factions.json factions/ranks.json \
                quests/quests.json quests/flame_disciple.json \
-               barks/roof_barks.json quests/skyrunner_tenant.json; do \
+               barks/roof_barks.json quests/skyrunner_tenant.json \
+               contracts/contracts.json barks/contract_barks.json; do \
         test -f "/src/content/raws/$raw" \
             || { echo "FATAL: /src/content/raws/$raw is missing from the build"; \
                  echo "       context. .dockerignore must re-admit it, or the"; \

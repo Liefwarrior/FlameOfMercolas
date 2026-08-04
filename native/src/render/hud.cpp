@@ -249,10 +249,19 @@ void drawClock(Framebuffer& target, const HudState& state) {
     // the ward thinks. Red once there is paper out on you, because that is the
     // one line here a player must not have to read twice to notice.
     if (!state.heatLabel.empty()) {
-        const bool wanted = state.heatLabel.substr(0, 6) == "WANTED";
+        // Red for anything the ward has decided about you -- a warrant, a hand
+        // taken, a rope waiting -- and ash for the rest.
+        const bool wanted = state.heatLabel.find("WANTED") != std::string_view::npos ||
+                            state.heatLabel.find("MAIMED") != std::string_view::npos ||
+                            state.heatLabel.find("CONDEMNED") != std::string_view::npos;
         drawText(target, target.width() - margin - textWidth(state.heatLabel, scale), y,
                  state.heatLabel,
                  wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F}, 0.86F, scale);
+        y += 9 * scale;
+    }
+    if (!state.stashLabel.empty()) {
+        drawText(target, target.width() - margin - textWidth(state.stashLabel, scale), y,
+                 state.stashLabel, Rgb{0.58F, 0.66F, 0.52F}, 0.84F, scale);
     }
 }
 
