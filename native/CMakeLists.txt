@@ -124,6 +124,12 @@ add_library(granadad-sim STATIC
     src/sim/contraband.cpp
     src/sim/watch.cpp
     src/sim/contract.cpp
+    # S9 -- being unseen, and the lock. stealth.cpp is the first integer light
+    # model on this side of the line; lockpick.cpp is a lock whose pins are a
+    # pure function of the seed and never re-rolled. Both listed BEFORE
+    # tavern.cpp because the taproom is what owns a stance and four strongboxes.
+    src/sim/stealth.cpp
+    src/sim/lockpick.cpp
     src/sim/tavern.cpp
     # S7 -- the compounds. The roll (who holds what), the courtyard farms, and
     # the leasehold that moves labour between them. The first system in this
@@ -283,6 +289,11 @@ if(GRANADAD_BUILD_TESTS)
         # climbed for it, the house he founded, the charge he took on the roll,
         # and the rematch that takes none of it back.
         tests/test_nemesis.cpp
+        # S9 -- being unseen and getting in: the integer light field, the notice
+        # rule every clause of which can go red on its own, and a lock whose
+        # pins are a pure function of the seed.
+        tests/test_stealth.cpp
+        tests/test_lockpick.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 
