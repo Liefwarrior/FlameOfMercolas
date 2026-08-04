@@ -43,9 +43,25 @@ desktop is a capture path nobody runs. `--help` lists the rest — `--time`,
 | mouse | look |
 | `Left` / `Right` | keyboard turn, 65 deg/s |
 | `Shift` | run |
+| `E` | talk, and do business — a drink from the bartender, a room from the innkeeper |
+| `F` | throw a punch. Under a roof with bouncers in it, that is an offence |
+| `R` | sleep, if you have rented a room and are standing in it |
 | `Tab` | release the mouse |
 | `F12` | screenshot to `granadad-screenshot.png` |
 | `Esc` | quit |
+
+You spawn on the Tarwalk six tiles off the door of **the Gilded Gull** (K03), the
+captains' tavern. Walk in. It has fourteen people in it who keep hours: Master
+Venn on the stair, Gerta Saltcotte behind the bar, two bouncers on a rota that
+overlaps for the loud hours, Father Maell for an hour in the evening, and a
+Skyrunner in the snug after ten who will not talk to you. The fire is lit from
+ten in the morning until three. Come at five and the room is black and empty.
+
+Throwing a punch gets you warned to your face and then physically put out of the
+door. That is a brawl, and it resolves in the world with no transition. Draw a
+blade and it stops being a brawl — see `--help` and
+`native/include/granadad/sim/brawl.hpp` for the rule, which is explicit and
+tested on its own.
 
 > **`run`, not `up`.** `docker compose up` exits **0 even when the container
 > inside it exits 1** — it prints `build-1 exited with code 1` and then hands

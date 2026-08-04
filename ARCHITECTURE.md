@@ -308,6 +308,32 @@ for byte-compatible round-tripping — and wasted motion the moment anyone reads
 Arithmetic: 94 files documented-and-built, 5 documented-but-gutted, 0 in five phantom
 packages, **160 undocumented (62%)**, total 259.
 
+### 0.2.1 The C++ tree, and what of the above it has actually reached
+
+The table above describes the **Java** tree, which is the behavioural reference and is not the
+thing being built. `native/` is. Its status, kept honest as the rewrite goes:
+
+| Piece | Status | Where |
+|---|---|---|
+| TROJSAV / world-format reader | **BUILT** — 65 cases, 902,056 assertions over the real baked worlds | `native/content/` |
+| Counter RNG, wrapping helpers, world hasher, phased tick loop | **BUILT** (M1) — bit-equivalent to the JVM by golden vectors | `native/src/sim/` |
+| Twin-run determinism gate | **BUILT** (M1), extended S2 with a second entry that registers the tavern | `native/src/gate/` |
+| Sub-tile Q8 player body, collision, the climb rule | **BUILT** (S1) | `native/src/sim/player.cpp` |
+| Software first-person renderer, lamp bake, HUD | **BUILT** (S1) | `native/src/render/` |
+| Content-directory resolution (env → the exe's own tree → configure-time) | **BUILT** (S2) — S1 shipped an .exe that could not find its own worlds | `native/content/src/content_dir.cpp` |
+| **Actors** — identity, roles, daily schedules, tile-stepped movement with Q8 sub-tile position | **BUILT** (S2), for one building's worth | `native/src/sim/actor.cpp` |
+| **Region pathing** — bounded breadth-first, deterministic, no corner-cutting | **BUILT** (S2) | `native/src/sim/region_path.cpp` |
+| **The brawl / lethal rule** | **BUILT** (S2) — see `DECISIONS.md` | `native/src/sim/brawl.cpp` |
+| **The Gilded Gull** — six staff, eight patrons, hours, trade, a door policy | **BUILT** (S2) | `native/src/sim/tavern.cpp` |
+| Spell raws reader (modular components, for the priest and for S4) | **BUILT** (S2) | `native/src/sim/spellbook.cpp` |
+| Needs, wages, relationships, crime beyond one room, the macro economy | **NOT BUILT** | — |
+| Save / load | **NOT BUILT** | — |
+| The dedicated first-person combat screen | **NOT BUILT** — S2 raises the escalation flag and stops resolving; nothing consumes it yet | — |
+
+Everything the Tier-3 "phantom scope" section below names — thermal, reactions, propagated
+light, the fluid solver, the bubble, the macro economy — is still **NOT BUILT and must not be
+built**. S2 changed nothing about that.
+
 ---
 
 ## 1. Contract reconciliation

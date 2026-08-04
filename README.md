@@ -23,6 +23,11 @@ docker compose run --rm --build build      # reproducible build -> dist/
 .\scripts\verify-windows.ps1               # finishes the cross-toolchain determinism gate
 ```
 
+You spawn on the Tarwalk six tiles off the door of the Gilded Gull, the captains' tavern.
+Walk in: `E` talks and does business, `F` throws a punch, `R` sleeps in a room you have
+rented. There are fourteen people in there who keep hours, and two of them will put you out
+of the door if you make them.
+
 The Java tree (`sim-core/`, `client-observer/`, `tools/`, `headless/`) stays in place, untouched,
 as the behavioural reference until the C++ reaches parity. It is not the thing being built.
 
