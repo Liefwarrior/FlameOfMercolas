@@ -96,6 +96,9 @@ add_library(granadad-sim STATIC
     src/sim/system_id.cpp
     src/sim/world_hash.cpp
     src/sim/engine.cpp
+    src/sim/angle.cpp
+    src/sim/tile_query.cpp
+    src/sim/player.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -188,6 +191,9 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_world_hash.cpp
         tests/test_engine.cpp
         tests/test_twin_gate.cpp
+        tests/test_angle.cpp
+        tests/test_tile_query.cpp
+        tests/test_player.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate doctest::doctest)
 
