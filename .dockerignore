@@ -60,6 +60,32 @@
 # empty-book fallback.
 !content/raws/spells/**
 
+# --- re-admitted: the raws the ward SPEAKS out of (S3) ---
+# 100 KB, five files. The conversation layer writes no dialogue: every line in
+# the game comes out of barks.json under an authored key, every named person out
+# of notables.json, every story out of histories.json, and who may repeat which
+# story out of rumors.json. skills.json owns the list of things there are to be
+# good at, including the streetwise a haggle is fought with.
+#
+# They come in for exactly the reason spells.json does, and the first S3 build
+# proved the point: without them BarkTables::load returns an empty set, every
+# lookup returns nothing, and the whole social suite either fails or -- far
+# worse -- passes against the empty-content fallback while the gate prints
+# green. The loaders are deliberately silent about a missing file so the game
+# still boots during a content edit, and that silence is exactly why the raws
+# have to be in the context where a test can catch it.
+#
+#   barks/barks.json      59 KB   210 tables, 605 rows
+#   names/notables.json   23 KB   the Forty (42, with Sedge and Haddie)
+#   names/histories.json   7 KB   15 feuds, debts, romances, pacts, secrets
+#   names/names.json       5 KB   the authored name pools
+#   rumors/rumors.json     5 KB   who may repeat which story
+#   skills/skills.json    10 KB   the 20-skill vocabulary
+!content/raws/barks/**
+!content/raws/names/**
+!content/raws/rumors/**
+!content/raws/skills/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**

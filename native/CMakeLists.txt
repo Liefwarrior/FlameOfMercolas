@@ -240,6 +240,8 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_atlas.cpp
         tests/test_render.cpp
         tests/test_tavern_render.cpp
+        tests/test_social.cpp
+        tests/test_dialogue.cpp
         tests/test_step_pump.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)

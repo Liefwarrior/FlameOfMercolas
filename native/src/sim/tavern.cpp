@@ -1228,7 +1228,10 @@ void Tavern::applyReply(Reply& reply) {
             } else if (reply.coinDelta > 0) {
                 // The coin came off a real purse and the world says so.
                 if (Actor* victim = mutableActorById(talkingToId_); victim != nullptr) {
-                    victim->takeCoin(reply.coinDelta);
+                    // Discarded on purpose: the lift was already capped at what
+                    // is in the purse, and a refusal here would mean the purse
+                    // moved between the two, which nothing can do.
+                    (void)victim->takeCoin(reply.coinDelta);
                 }
             }
             break;

@@ -95,6 +95,18 @@ COPY content/art/custom /src/content/art/custom
 # actual spells.json rather than out of a table in a .cpp — see .dockerignore.
 COPY content/raws/spells /src/content/raws/spells
 
+# The raws the ward SPEAKS out of, 100 KB (S3). The conversation layer writes
+# no dialogue: barks.json is every line anybody says, notables.json is who the
+# Forty are, histories.json is the fifteen stories between them, rumors.json is
+# who may repeat which one, and skills.json owns the vocabulary a haggle is
+# fought in. All four loaders are deliberately silent about a missing file so a
+# content edit cannot stop the game booting -- which is exactly why these have
+# to be in the context: without them the suite would pass against empty tables.
+COPY content/raws/barks /src/content/raws/barks
+COPY content/raws/names /src/content/raws/names
+COPY content/raws/rumors /src/content/raws/rumors
+COPY content/raws/skills /src/content/raws/skills
+
 # Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
 # has no use for either, and the rest of content is read at runtime straight
@@ -182,6 +194,24 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
              echo "       content/raws/spells/** or the priest teaches nothing"; \
              echo "       and the case that proves he teaches from CANON is"; \
              echo "       proving it against the empty fallback."; exit 1; }; \
+    \
+    echo "=== the raws the ward SPEAKS out of must be in the context (S3) ==="; \
+    # Same trap as the spell raws, and S3's first build fell straight into it:
+    # BarkTables, NotableRegistry and SkillTrack are all deliberately SILENT
+    # about a missing file, because a content edit must not stop the game
+    # booting. Silent means a build with these files absent produces a game
+    # where nobody says anything and a suite that either fails confusingly or
+    # -- worse -- passes against the empty-content fallback. Say it plainly,
+    # here, where it is one line instead of nineteen red cases.
+    for raw in barks/barks.json names/notables.json names/histories.json \
+               names/names.json rumors/rumors.json skills/skills.json; do \
+        test -f "/src/content/raws/$raw" \
+            || { echo "FATAL: /src/content/raws/$raw is missing from the build"; \
+                 echo "       context. .dockerignore must re-admit it, or the"; \
+                 echo "       conversation layer has no words in it and the"; \
+                 echo "       cases that prove it speaks from CANON are proving"; \
+                 echo "       it against an empty table."; exit 1; }; \
+    done; \
     \
     echo "=== host check: build sim + tests for Linux and actually run them ==="; \
     # A cross-compiled .exe cannot be executed here, so correctness is proven on
@@ -295,8 +325,20 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # end to end -- plus the content-directory resolver that decides whether the
     # shipped game starts at all, the client's fixed-timestep loop, and a second
     # twin-run gate entry with the tavern registered.
+    #
+    # S3: 228 -> 270. The conversation layer -- the owner's 210 bark tables
+    # and the key vocabulary this code builds against them, the 42 notables
+    # with their 15 micro-histories and the rumor domains that gate who may
+    # repeat which one, the ledger that remembers what the player did (with
+    # its byte encoding round-tripped), use-XP skills over the skills raws,
+    # haggling as an argument, and the conversation surface proved to leave
+    # the centre of the screen alone. Plus the four S2 review findings that
+    # were closed with a case rather than a comment: headroom on a
+    # purpose-built world, the Q8 read caught mid-stride, actor pixels
+    # counted apart from candle pixels, and the Gull's furniture derived
+    # from the baked bytes.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=228; \
+    GRANADAD_MIN_TESTS=270; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -357,6 +399,26 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: S2's named cases are all registered"; \
+    \
+    # S3's, by name. The first five are the sprint's own claims; the last
+    # four are S2 review findings that were closed with a case that can go
+    # red rather than with a comment that cannot.
+    for case in \
+        "an actor's disposition changes what that actor DOES" \
+        "who can tell you what is decided by the raws, not by a dice roll" \
+        "standing is AUDIBLE: the same person greets you out of a different table" \
+        "the conversation surface leaves the centre of the screen alone" \
+        "a night's sleep does not make anybody forget" \
+        "headroom refuses the world's own ceiling" \
+        "an actor is drawn where the simulation says the actor is" \
+        "sprite pixels and people are counted apart" \
+        "the Gull's lights come out of the baked bytes, not out of the renderer"; do \
+        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things S3 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S3's named cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \

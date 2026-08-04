@@ -100,6 +100,10 @@ inline constexpr std::int32_t kWarmAtOrAbove = 20;
 inline constexpr std::int32_t kFriendAtOrAbove = 50;
 inline constexpr std::int32_t kKinAtOrAbove = 85;
 
+/// The highest standing that conversation ALONE can reach: one short of WARM.
+/// Everything above it costs coin, a favour, or trouble avoided.
+inline constexpr std::int32_t kTalkCeiling = kWarmAtOrAbove - 1;
+
 [[nodiscard]] Attitude attitudeFor(std::int32_t disposition) noexcept;
 
 /// What an actor remembers about the player. One per actor who has ever

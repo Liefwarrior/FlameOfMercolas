@@ -6,11 +6,15 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
+#include <span>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/content/lanes.hpp"
+#include "granadad/content/world.hpp"
 #include "granadad/content/world_reader.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/tile_query.hpp"
@@ -120,6 +124,89 @@ TEST_CASE("deep water blocks a walkable form") {
     // And the rule is not vacuous: some of those really are floor tiles that
     // have gone under.
     CHECK(deepAndWalkableForm > 0);
+}
+
+TEST_CASE("headroom refuses the world's own ceiling") {
+    // THE S2 REVIEW'S FIRST FINDING, closed. It mutated headroom() to
+    // `return true` and the entire 228-test gate stayed green, because the
+    // shipped Docks contains no cell that is walkable with VOID directly above
+    // it -- so over that map the rule and `true` really are the same function
+    // and no count re-derived from those bytes can tell them apart.
+    //
+    // Both halves are asserted here. First the rule, on a world built to
+    // contain the case; then the fact about the district, out loud, so the day
+    // the map gains such a cell this comment stops being true noisily.
+
+    SUBCASE("a floor under the void border is not somewhere a body can be") {
+        // Three chunks each way: 96 x 96 x 24 tiles, all OPEN to begin with.
+        content::World world(content::Coords(3, 3, 3), content::LaneLayout::core());
+        const std::span<std::uint8_t> forms = world.byteLane(content::kFormLane);
+        std::fill(forms.begin(), forms.end(),
+                  static_cast<std::uint8_t>(content::TileForm::Open));
+        const TileQuery tiles(world);
+        REQUIRE(tiles.sizeX() == 96);
+        REQUIRE(tiles.sizeZ() == 24);
+
+        const auto put = [&](std::int32_t x, std::int32_t y, std::int32_t z,
+                             content::TileForm form) {
+            forms[tiles.index(x, y, z)] = static_cast<std::uint8_t>(form);
+        };
+
+        // A floor with air above it: standable, obviously.
+        put(40, 40, 10, content::TileForm::Floor);
+        put(40, 40, 11, content::TileForm::Open);
+        REQUIRE(tiles.walkable(40, 40, 10));
+        CHECK(tiles.headroom(40, 40, 10));
+        CHECK(tiles.standable(40, 40, 10));
+
+        // A floor with a WALL above it: still standable. This is the S2
+        // correction -- a wall at z+1 starts a whole tile above the feet, which
+        // is what sits over every doorway in a two-storey building, and refusing
+        // it sealed every interior in the district.
+        put(41, 40, 10, content::TileForm::Floor);
+        put(41, 40, 11, content::TileForm::Wall);
+        REQUIRE(tiles.walkable(41, 40, 10));
+        CHECK(tiles.headroom(41, 40, 10));
+        CHECK(tiles.standable(41, 40, 10));
+
+        // A floor with VOID above it: walkable, and NOT standable. This is the
+        // case the shipped map does not have, and the case `return true` cannot
+        // survive.
+        put(42, 40, 10, content::TileForm::Floor);
+        put(42, 40, 11, content::TileForm::Void);
+        REQUIRE(tiles.walkable(42, 40, 10));
+        CHECK_FALSE(tiles.headroom(42, 40, 10));
+        CHECK_FALSE(tiles.standable(42, 40, 10));
+
+        // ...and the top of the world is the same case by another route: out of
+        // bounds reads as VOID, so nothing stands on the last level.
+        put(43, 40, tiles.sizeZ() - 1, content::TileForm::Floor);
+        REQUIRE(tiles.walkable(43, 40, tiles.sizeZ() - 1));
+        CHECK_FALSE(tiles.standable(43, 40, tiles.sizeZ() - 1));
+
+        // And the rule reaches the movement model, not just the query: a step
+        // onto that cell is refused at every band.
+        CHECK(tiles.stepBand(41, 40, 10, 42, 40) == TileQuery::kNoBand);
+        CHECK(tiles.stepBand(40, 40, 10, 41, 40) == 10);
+    }
+
+    SUBCASE("the shipped Docks has no such cell, which is why the counts cannot see it") {
+        const TileQuery tiles(docksWorld());
+        std::size_t walkableUnderVoid = 0;
+        for (std::int32_t z = 0; z < tiles.sizeZ(); ++z) {
+            for (std::int32_t y = 0; y < tiles.sizeY(); ++y) {
+                for (std::int32_t x = 0; x < tiles.sizeX(); ++x) {
+                    if (tiles.walkable(x, y, z) && !tiles.headroom(x, y, z)) {
+                        ++walkableUnderVoid;
+                    }
+                }
+            }
+        }
+        // Zero, today. If a re-bake ever authors ground up against the border
+        // ring this goes red, and the note in tile_query.hpp needs rewriting
+        // rather than quietly becoming false.
+        CHECK(walkableUnderVoid == 0);
+    }
 }
 
 TEST_CASE("the three walk bands are where the gazetteer says they are") {

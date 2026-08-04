@@ -69,9 +69,13 @@ std::int32_t askingPrice(const HaggleTerms& terms) noexcept {
     const std::int32_t base = std::max(1, terms.basePrice);
     const std::int32_t percent =
         100 + attitudePercent(terms.attitude) + skillPercent(terms.playerSkill, terms.merchantSkill);
-    // Rounded UP: the house rounds in its own favour, and a one-coin drink can
-    // never become a free one through integer division.
-    return std::max(1, (base * std::max(1, percent) + 99) / 100);
+    // Rounded to NEAREST, not up. Rounding up sounds like the house's habit
+    // until you do the arithmetic on a two-coin mug: every percentage above
+    // par, however small, becomes a whole extra coin, so a merely-cool
+    // bartender charges fifty per cent more than a friendly one. Nearest keeps
+    // the small prices honest and still moves a twelve-coin bed from eight to
+    // seventeen across the range, which is where the standing is legible.
+    return std::max(1, (base * std::max(1, percent) + 50) / 100);
 }
 
 std::int32_t reservePrice(const HaggleTerms& terms) noexcept {

@@ -124,6 +124,19 @@ TEST_CASE("the Gilded Gull is where the tavern says it is") {
     const TileQuery& tiles = docksTiles();
     using content::TileForm;
 
+    // EVERY RANGE IS GUARDED BEFORE IT IS WALKED. `for (x = X0; x <= X1; ++x)`
+    // with X0 past X1 is an EMPTY loop, so an inverted pair makes the whole
+    // check below vacuous and green. The S2 review pushed kHearthX0 past
+    // kHearthX1 and nothing anywhere went red -- while the renderer, which had
+    // the same loop, silently stopped drawing the fire. These four lines are
+    // the fix, and they are why the scalar pins below are worth anything.
+    REQUIRE(gull::kFootprintX0 < gull::kFootprintX1);
+    REQUIRE(gull::kFootprintY0 < gull::kFootprintY1);
+    REQUIRE(gull::kBarX0 < gull::kBarX1);
+    REQUIRE(gull::kHearthX0 <= gull::kHearthX1);
+    REQUIRE(gull::kSnugX0 <= gull::kSnugX1);
+    REQUIRE(gull::kDoorX0 < gull::kDoorX1);
+
     // The shell. Walls all the way round the footprint except at the door.
     for (std::int32_t x = gull::kFootprintX0; x <= gull::kFootprintX1; ++x) {
         const bool isDoor = x == gull::kDoorX0 || x == gull::kDoorX1;
@@ -175,11 +188,115 @@ TEST_CASE("the Gilded Gull is where the tavern says it is") {
     }
 }
 
+TEST_CASE("the Gull's lights come out of the baked bytes, not out of the renderer") {
+    // THE S2 REVIEW'S SEVENTH FINDING. session.cpp hardcoded four table tiles
+    // and three lantern tiles with no derivation and no test -- the exact thing
+    // tavern.hpp's own header rule forbids. The furniture is now READ from the
+    // world, and this is what says the reading is right.
+    const TileQuery& tiles = docksTiles();
+    const std::vector<gull::TilePos> tables = gull::taproomTables(tiles);
+
+    INFO("derived ", tables.size(), " table tiles");
+    for (const gull::TilePos& table : tables) {
+        INFO("table at ", table.x, ",", table.y);
+        // Inside the walls...
+        REQUIRE(table.x > gull::kFootprintX0);
+        REQUIRE(table.x < gull::kFootprintX1);
+        REQUIRE(table.y > gull::kFootprintY0);
+        REQUIRE(table.y < gull::kFootprintY1);
+        // ...solid in the baked bytes, because that is what furniture is...
+        REQUIRE(tiles.solid(table.x, table.y, gull::kGroundBand));
+        // ...and not the bar, not the hearth, not the partition.
+        REQUIRE_FALSE((table.y == gull::kBarY && table.x >= gull::kBarX0 &&
+                       table.x <= gull::kBarX1));
+        REQUIRE_FALSE((table.y == gull::kHearthY && table.x >= gull::kHearthX0 &&
+                       table.x <= gull::kHearthX1));
+        REQUIRE(table.x != gull::kSnugX0 - 1);
+        // A table nobody can reach is scenery. Every one has somewhere to sit.
+        bool reachable = false;
+        const std::int32_t nx[4] = {table.x + 1, table.x - 1, table.x, table.x};
+        const std::int32_t ny[4] = {table.y, table.y, table.y + 1, table.y - 1};
+        for (int d = 0; d < 4; ++d) {
+            reachable = reachable || tiles.standable(nx[d], ny[d], gull::kGroundBand);
+        }
+        REQUIRE(reachable);
+    }
+    // Ascending by (y, x): the map's order, so the candle list is the same on
+    // every machine.
+    for (std::size_t i = 1; i < tables.size(); ++i) {
+        REQUIRE((tables[i - 1].y < tables[i].y ||
+                 (tables[i - 1].y == tables[i].y && tables[i - 1].x < tables[i].x)));
+    }
+    // Pinned, so a re-bake that moves the furniture is red here rather than a
+    // room that quietly goes dark.
+    CHECK(tables.size() == gull::kTableCount);
+
+    // The lanterns hang off the door and the bar, both of which are re-read
+    // from the baked bytes above.
+    const std::vector<gull::TilePos> lanterns = gull::lanternTiles();
+    REQUIRE(lanterns.size() == 3);
+    for (const gull::TilePos& hook : lanterns) {
+        INFO("lantern at ", hook.x, ",", hook.y);
+        REQUIRE(gull::insideFootprint(hook.x, hook.y));
+        // A lantern hangs over somewhere you can walk, or it is inside a wall.
+        REQUIRE(tiles.standable(hook.x, hook.y, gull::kGroundBand));
+    }
+}
+
+TEST_CASE("the house shows its lights when the house is open, and not otherwise") {
+    SUBCASE("shut and cold at five in the morning") {
+        Room room(hourOfDay(5), gull::kStreetX, gull::kStreetY);
+        REQUIRE_FALSE(room.tavern().isOpen());
+        REQUIRE_FALSE(room.tavern().fireLit());
+        CHECK(room.tavern().houseLights().empty());
+    }
+    SUBCASE("lit and open at nine at night") {
+        Room room(hourOfDay(21), gull::kBartenderX, gull::kBarY - 1);
+        REQUIRE(room.tavern().isOpen());
+        REQUIRE(room.tavern().fireLit());
+        const std::vector<gull::HouseLight> lights = room.tavern().houseLights();
+        std::size_t hearth = 0;
+        std::size_t candles = 0;
+        std::size_t lanterns = 0;
+        for (const gull::HouseLight& light : lights) {
+            REQUIRE(light.band == gull::kGroundBand);
+            REQUIRE(gull::insideFootprint(light.x, light.y));
+            switch (light.kind) {
+                case gull::LightKind::Hearth:
+                    ++hearth;
+                    break;
+                case gull::LightKind::Candle:
+                    ++candles;
+                    break;
+                case gull::LightKind::Lantern:
+                    ++lanterns;
+                    break;
+            }
+        }
+        // Two hearth cells, a candle on every derived table, three lanterns.
+        // Non-zero on all three, so an inverted range that empties one of the
+        // loops is red HERE and not only in a screenshot nobody looks at.
+        CHECK(hearth == 2);
+        CHECK(candles == gull::kTableCount);
+        CHECK(lanterns == 3);
+    }
+    SUBCASE("the fire is banked before the doors open, and it is the only light") {
+        Room room(hourOfDay(10, 30), gull::kStreetX, gull::kStreetY);
+        REQUIRE(room.tavern().fireLit());
+        REQUIRE_FALSE(room.tavern().isOpen());
+        const std::vector<gull::HouseLight> lights = room.tavern().houseLights();
+        REQUIRE_FALSE(lights.empty());
+        for (const gull::HouseLight& light : lights) {
+            REQUIRE(light.kind == gull::LightKind::Hearth);
+        }
+    }
+}
+
 TEST_CASE("every post in the roster is a tile somebody can stand on") {
     // The failure this prevents is silent: an actor whose post is inside a wall
     // never arrives, never reaches Working, and stands in the doorway forever.
     Tavern tavern(docksTiles(), hourOfDay(20), 1, content::contentDir());
-    REQUIRE(tavern.actors().size() == 14);
+    REQUIRE(tavern.actors().size() == 15);
     for (const Actor& actor : tavern.actors()) {
         for (const ScheduleBlock& block : actor.schedule().blocks()) {
             INFO("post of ", actor.name());
@@ -459,8 +576,14 @@ TEST_CASE("the innkeeper rents a room and the player sleeps until morning") {
     Tavern& tavern = room.tavern();
 
     const std::int32_t purse = tavern.playerCoin();
+    // S3: kRoomPrice is what a bed is WORTH. What you pay is what the landlord
+    // thinks of you plus what your streetwise is worth against his, so the
+    // charge is asked for rather than assumed -- and a stranger with no trade
+    // skill pays a little over the odds, which is the whole point.
+    const std::int32_t asked = tavern.roomPriceForPlayer();
+    CHECK(asked >= kRoomPrice);
     REQUIRE(tavern.rentRoom() == ServiceResult::Served);
-    CHECK(tavern.playerCoin() == purse - kRoomPrice);
+    CHECK(tavern.playerCoin() == purse - asked);
     REQUIRE(tavern.rentedRoom() >= 0);
     REQUIRE(tavern.rentedRoom() < gull::kRoomCount);
 

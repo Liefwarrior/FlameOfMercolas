@@ -79,10 +79,12 @@ std::string_view deedName(Deed deed) noexcept {
 
 std::int32_t deedWeight(Deed deed) noexcept {
     switch (deed) {
+        // Zero, and deliberately: saying hello is not a favour. See the talk
+        // ceiling in record() for the rest of that rule.
         case Deed::Spoke:
-            return 1;
+            return 0;
         case Deed::Listened:
-            return 3;
+            return 2;
         case Deed::BoughtDrink:
             return 12;
         case Deed::PaidAsking:
@@ -190,7 +192,17 @@ Memory& SocialLedger::entryFor(std::int32_t actorId) {
 std::int32_t SocialLedger::record(std::int32_t actorId, Deed deed) {
     Memory& memory = entryFor(actorId);
     const std::int32_t weight = deedWeight(deed);
-    memory.disposition = clampDisposition(memory.disposition + weight);
+    if (deed == Deed::Spoke || deed == Deed::Listened) {
+        // YOU CANNOT CHAT YOUR WAY INTO BEING LIKED. Hearing somebody out is
+        // worth something, and it stops being worth anything just short of
+        // WARM: past that the only currency is coin spent, favours done and
+        // trouble not started. Without this, standing in front of a docker
+        // pressing one key three hundred times would make you his brother.
+        memory.disposition =
+            std::max(memory.disposition, std::min(memory.disposition + weight, kTalkCeiling));
+    } else {
+        memory.disposition = clampDisposition(memory.disposition + weight);
+    }
     memory.lastDeed = deed;
     if (weight > 0) {
         ++memory.favours;
