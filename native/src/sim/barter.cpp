@@ -67,8 +67,9 @@ std::int32_t skillPercent(std::int32_t playerSkill, std::int32_t merchantSkill) 
 
 std::int32_t askingPrice(const HaggleTerms& terms) noexcept {
     const std::int32_t base = std::max(1, terms.basePrice);
-    const std::int32_t percent =
-        100 + attitudePercent(terms.attitude) + skillPercent(terms.playerSkill, terms.merchantSkill);
+    const std::int32_t percent = 100 + attitudePercent(terms.attitude) +
+                                 skillPercent(terms.playerSkill, terms.merchantSkill) +
+                                 std::clamp(terms.guildPercent, -40, 40);
     // Rounded to NEAREST, not up. Rounding up sounds like the house's habit
     // until you do the arithmetic on a two-coin mug: every percentage above
     // par, however small, becomes a whole extra coin, so a merely-cool

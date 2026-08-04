@@ -57,6 +57,12 @@ struct HaggleTerms {
     std::int32_t playerSkill = 0;
     std::int32_t merchantSkill = 0;
     Goods goods = Goods::Drink;
+    /// S4: what the GUILD behind the counter is worth to this buyer, in whole
+    /// percent. Negative is the member's rate; positive is a strong faction
+    /// pricing a stranger up. Assembled by the caller out of the faction ledger
+    /// -- see guildPricePercent -- so this file still has no idea what a guild
+    /// is and can still be tested with nothing loaded.
+    std::int32_t guildPercent = 0;
 };
 
 /// How far the standing alone moves the price, in whole percent.

@@ -103,7 +103,17 @@ enum class TimeBand : std::uint8_t {
 // the tables
 // ---------------------------------------------------------------------------
 
+/// The owner's own table file. Always loaded FIRST and always wins a duplicate
+/// key -- see barkRawsFiles().
 [[nodiscard]] std::filesystem::path barkRawsPath(const std::filesystem::path& contentDir);
+[[nodiscard]] std::filesystem::path barkRawsDir(const std::filesystem::path& contentDir);
+
+/// Every *.json in content/raws/barks, the owner's first and the rest in sorted
+/// order. S4 added a SECOND table file rather than editing the owner's 59KB of
+/// canon; this is the seam that makes that legal, and the ordering is the rule
+/// that makes it safe.
+[[nodiscard]] std::vector<std::filesystem::path> barkRawsFiles(
+    const std::filesystem::path& contentDir);
 
 /// Every authored table, keyed and searchable. Loaded once and shared.
 class BarkTables {

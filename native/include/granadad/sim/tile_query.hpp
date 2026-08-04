@@ -169,6 +169,27 @@ public:
     /// walkable() and headroom() together — "a body can be here".
     [[nodiscard]] bool standable(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept;
 
+    /// Whether one tile can SEE another on the same band.
+    ///
+    /// Added in S4 because "everybody within eight tiles remembers it" was not
+    /// true: it was everybody within eight tiles THROUGH WALLS. A robbery at
+    /// the bar was witnessed by whoever was in the snug behind the partition,
+    /// and the S3 review found it.
+    ///
+    /// A supercover walk over the tile grid — the one that visits every cell
+    /// the line passes through rather than the thin Bresenham line, because a
+    /// sight-line that slips diagonally between two wall corners is exactly the
+    /// hole this closes. Both ENDPOINTS are excluded: standing in a doorway is
+    /// not standing in a wall, and an actor's own tile never blocks their own
+    /// eyes. Everything between is asked of solid(), which is already the one
+    /// place "does this block a ray" is answered.
+    ///
+    /// Integer only, and symmetric: swapping the endpoints gives the same
+    /// answer, which a test pins, because two people cannot disagree about
+    /// whether they can see each other.
+    [[nodiscard]] bool lineOfSight(std::int32_t x0, std::int32_t y0, std::int32_t x1,
+                                   std::int32_t y1, std::int32_t z) const noexcept;
+
     /// The band a body already at `fromZ` would end up in after moving onto
     /// column (x,y), or `kNoBand` if that column cannot be entered.
     ///

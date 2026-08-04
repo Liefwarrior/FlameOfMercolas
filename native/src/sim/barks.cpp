@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <system_error>
 
 #include <nlohmann/json.hpp>
 
@@ -149,59 +150,100 @@ std::filesystem::path barkRawsPath(const std::filesystem::path& contentDir) {
     return contentDir / "raws" / "barks" / "barks.json";
 }
 
+std::filesystem::path barkRawsDir(const std::filesystem::path& contentDir) {
+    return contentDir / "raws" / "barks";
+}
+
+std::vector<std::filesystem::path> barkRawsFiles(const std::filesystem::path& contentDir) {
+    std::vector<std::filesystem::path> files;
+    const std::filesystem::path owner = barkRawsPath(contentDir);
+    std::error_code error;
+    if (std::filesystem::is_regular_file(owner, error)) {
+        // THE OWNER'S FILE IS ALWAYS FIRST, and that is the whole of the merge
+        // rule: on a duplicate key the first file loaded wins, so nothing added
+        // later can overwrite a line the owner wrote. Not left to alphabetical
+        // luck -- "barks.json" happens to sort first today, and a file called
+        // "a_barks.json" tomorrow would silently take the ward's voice over.
+        files.push_back(owner);
+    }
+    std::vector<std::filesystem::path> extras;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator(barkRawsDir(contentDir), error)) {
+        if (!entry.is_regular_file(error) || entry.path().extension() != ".json") {
+            continue;
+        }
+        if (entry.path().filename() == owner.filename()) {
+            continue;
+        }
+        extras.push_back(entry.path());
+    }
+    // Sorted before use: directory iteration order is a property of the
+    // filesystem, and a table set that depended on it would differ between two
+    // machines carrying identical content.
+    std::sort(extras.begin(), extras.end());
+    files.insert(files.end(), extras.begin(), extras.end());
+    return files;
+}
+
 BarkTables BarkTables::load(const std::filesystem::path& contentDir) {
     BarkTables out;
-    std::ifstream file(barkRawsPath(contentDir), std::ios::binary);
-    if (!file) {
-        return out;
-    }
-    std::ostringstream text;
-    text << file.rdbuf();
+    for (const std::filesystem::path& path : barkRawsFiles(contentDir)) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            continue;
+        }
+        std::ostringstream text;
+        text << file.rdbuf();
 
-    const nlohmann::json document = nlohmann::json::parse(text.str(), nullptr, false);
-    if (document.is_discarded() || !document.is_object()) {
-        return out;
-    }
-    const auto tables = document.find("tables");
-    if (tables == document.end() || !tables->is_array()) {
-        return out;
-    }
+        const nlohmann::json document = nlohmann::json::parse(text.str(), nullptr, false);
+        if (document.is_discarded() || !document.is_object()) {
+            continue;
+        }
+        const auto tables = document.find("tables");
+        if (tables == document.end() || !tables->is_array()) {
+            continue;
+        }
 
-    for (const nlohmann::json& node : *tables) {
-        if (!node.is_object()) {
-            continue;
-        }
-        const auto key = node.find("key");
-        const auto rows = node.find("rows");
-        if (key == node.end() || !key->is_string() || rows == node.end() || !rows->is_array()) {
-            continue;
-        }
-        Table table;
-        table.key = key->get<std::string>();
-        if (table.key.empty()) {
-            continue;
-        }
-        for (const nlohmann::json& row : *rows) {
-            if (!row.is_string()) {
+        for (const nlohmann::json& node : *tables) {
+            if (!node.is_object()) {
                 continue;
             }
-            std::string line = foldToAscii(row.get<std::string>());
-            if (!line.empty()) {
-                table.rows.push_back(std::move(line));
+            const auto key = node.find("key");
+            const auto rows = node.find("rows");
+            if (key == node.end() || !key->is_string() || rows == node.end() ||
+                !rows->is_array()) {
+                continue;
             }
+            Table table;
+            table.key = key->get<std::string>();
+            if (table.key.empty()) {
+                continue;
+            }
+            for (const nlohmann::json& row : *rows) {
+                if (!row.is_string()) {
+                    continue;
+                }
+                std::string line = foldToAscii(row.get<std::string>());
+                if (!line.empty()) {
+                    table.rows.push_back(std::move(line));
+                }
+            }
+            if (table.rows.empty()) {
+                continue;
+            }
+            out.tables_.push_back(std::move(table));
         }
-        if (table.rows.empty()) {
-            continue;
-        }
-        out.tables_.push_back(std::move(table));
     }
 
     // Sorted by key so lookup is a binary search and iteration order is a
-    // property of the CONTENT rather than of the standard library.
-    std::sort(out.tables_.begin(), out.tables_.end(),
-              [](const Table& a, const Table& b) { return a.key < b.key; });
-    // A duplicate key in the raws would make lookup depend on sort stability.
-    // The last one wins, deterministically, and the earlier is dropped.
+    // property of the CONTENT rather than of the standard library. STABLE,
+    // because file order is now load-bearing: two tables with the same key must
+    // stay in the order they were read in.
+    std::stable_sort(out.tables_.begin(), out.tables_.end(),
+                     [](const Table& a, const Table& b) { return a.key < b.key; });
+    // std::unique keeps the FIRST of each run of equal keys, and a stable sort
+    // makes the first the one from the earliest file. So the owner's barks.json
+    // wins every collision, by construction rather than by convention.
     out.tables_.erase(std::unique(out.tables_.begin(), out.tables_.end(),
                                   [](const Table& a, const Table& b) { return a.key == b.key; }),
                       out.tables_.end());

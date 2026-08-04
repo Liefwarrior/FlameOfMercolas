@@ -69,6 +69,58 @@ bool TileQuery::standable(std::int32_t x, std::int32_t y, std::int32_t z) const 
     return walkable(x, y, z) && headroom(x, y, z);
 }
 
+bool TileQuery::lineOfSight(std::int32_t x0, std::int32_t y0, std::int32_t x1, std::int32_t y1,
+                            std::int32_t z) const noexcept {
+    if (x0 == x1 && y0 == y1) {
+        return true;
+    }
+    // Supercover: the walk visits every cell the segment passes through, so a
+    // ray cannot slip between two diagonally touching wall corners. All integer
+    // -- the loop counts crossings of vertical and horizontal grid lines with
+    // cross-multiplied comparisons and never divides.
+    const std::int32_t dx = x1 > x0 ? x1 - x0 : x0 - x1;
+    const std::int32_t dy = y1 > y0 ? y1 - y0 : y0 - y1;
+    const std::int32_t stepX = x1 > x0 ? 1 : -1;
+    const std::int32_t stepY = y1 > y0 ? 1 : -1;
+    std::int32_t x = x0;
+    std::int32_t y = y0;
+    // Distance travelled along each axis, counted in whole cells and compared
+    // as `nextX * dy` against `nextY * dx` -- the same test as comparing the
+    // two fractions, with no division and no float anywhere near it.
+    std::int32_t nextX = 1;
+    std::int32_t nextY = 1;
+    // Bounded so a coordinate pair nothing sane produced cannot spin forever.
+    // The walk reaches the far endpoint in at most dx + dy steps.
+    for (std::int32_t guard = dx + dy + 2; guard > 0; --guard) {
+        if (nextX * dy < nextY * dx) {
+            x += stepX;
+            ++nextX;
+        } else if (nextX * dy > nextY * dx) {
+            y += stepY;
+            ++nextY;
+        } else {
+            // Exactly through a lattice corner. You cannot see through a shut
+            // corner: if BOTH cells the line grazes are solid, this is two
+            // walls meeting and the ray stops there.
+            if (solid(x + stepX, y, z) && solid(x, y + stepY, z)) {
+                return false;
+            }
+            x += stepX;
+            y += stepY;
+            ++nextX;
+            ++nextY;
+        }
+        if (x == x1 && y == y1) {
+            // The far endpoint is the person being looked at, not an obstacle.
+            return true;
+        }
+        if (solid(x, y, z)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::int32_t TileQuery::stepBand(std::int32_t fromX, std::int32_t fromY, std::int32_t fromZ,
                                  std::int32_t x, std::int32_t y) const noexcept {
     if (standable(x, y, fromZ)) {
