@@ -26,6 +26,7 @@
 #include "granadad/render/capture.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/session.hpp"
+#include "granadad/render/step_pump.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
@@ -251,16 +252,17 @@ int run_client(const Options& options) {
 
     // The body advances on a fixed 60 Hz cadence whatever the frame rate does,
     // so what the simulation sees is a whole number of identical steps and a
-    // slow machine plays the same game as a fast one.
+    // slow machine plays the same game as a fast one. StepPump owns that, and
+    // owns the mouse-look carry that a frame producing zero steps used to drop
+    // on the floor — see granadad/render/step_pump.hpp.
+    render::StepPump pump;
     using Clock = std::chrono::steady_clock;
     Clock::time_point last = Clock::now();
-    double accumulator = 0.0;
-    const double stepSeconds = 1.0 / static_cast<double>(sim::kStepsPerSecond);
 
     bool running = true;
     std::int64_t frames = 0;
     while (running) {
-        sim::MoveInput input;
+        sim::MoveInput held;
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -285,10 +287,12 @@ int run_client(const Options& options) {
                     break;
                 case SDL_EVENT_MOUSE_MOTION:
                     if (mouseLook) {
-                        input.yawDelta += static_cast<std::int32_t>(event.motion.xrel) *
-                                          options.sensitivity;
-                        input.pitchDelta -= static_cast<std::int32_t>(event.motion.yrel) *
-                                            options.sensitivity;
+                        // Into the pump, not into a frame local. A frame that
+                        // runs no step must still keep the rotation.
+                        pump.addLook(static_cast<std::int32_t>(event.motion.xrel) *
+                                         options.sensitivity,
+                                     -static_cast<std::int32_t>(event.motion.yrel) *
+                                         options.sensitivity);
                     }
                     break;
                 default:
@@ -299,46 +303,32 @@ int run_client(const Options& options) {
         const bool* keys = SDL_GetKeyboardState(nullptr);
         if (keys != nullptr) {
             if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) {
-                input.forward += 1;
+                held.forward += 1;
             }
             if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]) {
-                input.forward -= 1;
+                held.forward -= 1;
             }
             if (keys[SDL_SCANCODE_D]) {
-                input.strafe += 1;
+                held.strafe += 1;
             }
             if (keys[SDL_SCANCODE_A]) {
-                input.strafe -= 1;
+                held.strafe -= 1;
             }
             if (keys[SDL_SCANCODE_RIGHT]) {
-                input.turn += 1;
+                held.turn += 1;
             }
             if (keys[SDL_SCANCODE_LEFT]) {
-                input.turn -= 1;
+                held.turn -= 1;
             }
-            input.run = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
+            held.run = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
         }
 
         const Clock::time_point now = Clock::now();
-        accumulator += std::chrono::duration<double>(now - last).count();
+        const double frameSeconds = std::chrono::duration<double>(now - last).count();
         last = now;
-        // Never simulate more than a quarter second in one frame: after a
-        // window drag or a breakpoint, catching up in real time is worse than
-        // dropping the missing steps.
-        accumulator = std::min(accumulator, 0.25);
-        bool consumedLook = false;
-        while (accumulator >= stepSeconds) {
-            sim::MoveInput stepInput = input;
-            if (consumedLook) {
-                // Mouse delta is per FRAME, not per step: applying it to every
-                // step of a slow frame would multiply the sensitivity by the
-                // frame time, which is the classic mouse-look bug.
-                stepInput.yawDelta = 0;
-                stepInput.pitchDelta = 0;
-            }
-            session.step(stepInput);
-            consumedLook = true;
-            accumulator -= stepSeconds;
+        const std::int32_t steps = pump.advance(frameSeconds);
+        for (std::int32_t i = 0; i < steps; ++i) {
+            session.step(pump.nextStepInput(held));
         }
 
         session.drawFrame(frame);

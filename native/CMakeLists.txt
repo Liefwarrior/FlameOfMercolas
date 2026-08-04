@@ -179,6 +179,7 @@ add_library(granadad-render STATIC
     src/render/hud.cpp
     src/render/capture.cpp
     src/render/session.cpp
+    src/render/step_pump.cpp
     src/render/stb_impl.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -224,6 +225,7 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp
+        tests/test_step_pump.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 
