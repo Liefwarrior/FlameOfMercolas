@@ -14,6 +14,8 @@
 #include "granadad/render/hud.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/angle.hpp"
+#include "granadad/sim/contraband.hpp"
+#include "granadad/sim/contract.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/tavern.hpp"
 
@@ -606,6 +608,39 @@ TEST_CASE("a topic label too long for its column stops at a word, not mid-word")
     // there would print "6." and name nothing.
     CHECK(clipLabel("6 VANISHED", 5) == "6 VA.");
     CHECK(clipLabel("anything", 0).empty());
+}
+
+TEST_CASE("the sack and the job are one line each, on the edge, and empty when there is nothing") {
+    // THE HUD RULE, applied to the two things S6 added to it. An inventory in
+    // this game is a line in a corner until it has earned more -- the Java
+    // build's first-person view failed exactly here, with an inspector sheet
+    // that ate the right half of the screen.
+    Session session(insideTheGull(23, 152, 70, 0));
+    CHECK(session.stashLine().empty());
+    CHECK(session.contractLine().empty());
+
+    sim::DialogueDirector& talk = session.tavern().dialogue();
+    talk.crimes().stash().add(sim::Contraband::Flower, 3);
+    const std::string sack = session.stashLine();
+    // What is on you, AND what it weighs -- the weight is the number a watchman
+    // is actually looking at, so it is on the line and not buried in a sheet.
+    CHECK(sack.find("3 FLOWER") != std::string::npos);
+    CHECK(sack.find("DR") != std::string::npos);
+    CHECK(sack.size() <= 34);
+
+    // A taken job replaces the questline's objective, because a job has a
+    // deadline and a questline does not.
+    REQUIRE_FALSE(talk.contracts().contracts().empty());
+    const std::int32_t id = talk.contracts().contracts().front().id;
+    REQUIRE(talk.contracts().take(id) == sim::TakeResult::Taken);
+    const sim::Contract* job = talk.contracts().find(id);
+    REQUIRE(job != nullptr);
+    const std::string work = session.contractLine();
+    CHECK(work.find(std::string(sim::contrabandLabel(job->good))) != std::string::npos);
+    // "have / wanted", so a player can see how close they are without opening
+    // anything.
+    CHECK(work.find("/" + std::to_string(job->units)) != std::string::npos);
+    CHECK(work.size() <= 34);
 }
 
 TEST_CASE("a scripted line sets the clock it needs, and never one that was asked for") {

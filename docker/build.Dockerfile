@@ -372,7 +372,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # BOTH sides, the same-floor clause, the line-of-sight clause, and the topic
     # list proved completely addressable from the keyboard at any length.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=370; \
+    GRANADAD_MIN_TESTS=371; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -532,6 +532,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "a scripted line sets the clock it needs, and never one that was asked for" \
         "the heat clock survives its own codec past thirty-two bits" \
         "the gate's workload actually takes a contract off the board" \
+        "the sack and the job are one line each, on the edge, and empty when there is nothing" \
         ; do \
         printf '%s\n' "$ctest_list" | grep -qF "$case" \
             || { echo "FATAL: the case \"$case\" is not registered."; \

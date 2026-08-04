@@ -39,6 +39,20 @@
 // live contracts a vector sorted by id, and every draw is the pure
 // (seed, day, slot, index) chain.
 //
+// VERIFICATION GAP (S6): A CONTRACT NAMES A WARD NOBODY LIVES IN. Every patron
+// and every source here is one of the Forty, at the site the owner's file binds
+// them to -- and the Gilded Gull is still the only room in this build with
+// people in it, so you cannot walk up to Fenner at his counter or Squall at the
+// bathhouse. The names, the places and the trades are real and the district
+// between them is scenery. What the brief buys today is that a job READS like
+// the ward; what it will buy when the other houses are staffed is a route.
+//
+// VERIFICATION GAP (S6): AND ITS GOODS COME OUT OF ONE BUILDING. A dust job is
+// filled by whatever the boat happened to land in the Gull's snug, not by going
+// to Merle's boathouse where the brief says it is. Three sources exist -- the
+// snug, a strongbox above the stair, and a rat on the skirting -- and all three
+// are inside these walls.
+//
 // NO BYTE CODEC, and that is a disclosure rather than an oversight -- the same
 // one QuestJournal makes. A board is regenerable from (day, seed, standings);
 // only which contracts were TAKEN is not, and that is four integers and a

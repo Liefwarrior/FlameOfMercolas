@@ -165,6 +165,13 @@ inline constexpr std::int32_t kHeldHoursMax = 72;
 /// Permanent, and it is the only lasting statistical penalty in the game.
 inline constexpr std::int32_t kMaimedTakePercent = 50;
 
+/// VERIFICATION GAP (S6): THERE IS NO CELL. A sentence jumps the clock, empties
+/// the sack, takes the fine and puts the body back on the Tarwalk -- and
+/// nothing between those facts is simulated. No patrol looks for you outside
+/// the Gilded Gull, no impound holds the goods as objects, and the gibbet
+/// DECISIONS.md names for a second Skyrunner offence is a status bit. The
+/// consequence is real and the PLACE it happens in is not built.
+///
 /// The heat left after a night in a cell. NOT ZERO: the ward has not forgotten
 /// what you did, it has been paid for it. Below kWarrantLapsesAt so the paper
 /// goes with the sentence -- you cannot be wanted for the thing you have just

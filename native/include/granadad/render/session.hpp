@@ -169,6 +169,14 @@ public:
     /// The last thing that happened, for the HUD. Fades after a few seconds.
     [[nodiscard]] const std::string& lastMessage() const noexcept { return message_; }
 
+    /// "3 FLOWER  24DR", or empty when the sack is empty. Public because the
+    /// HUD rule is a testable claim and not a preference: an inventory in this
+    /// game is ONE LINE on an edge until it has earned more, and a case pins
+    /// both its content and its width.
+    [[nodiscard]] std::string stashLine() const;
+    /// "RUN 4 FLOWER FOR SQUALL 3/4", or empty when no job is open.
+    [[nodiscard]] std::string contractLine() const;
+
     // --- the conversation ---------------------------------------------------
     //
     // All of it on Session, for the same reason the three verbs are: the test
@@ -242,10 +250,6 @@ private:
     [[nodiscard]] std::string guildLine() const;
     /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
     [[nodiscard]] std::string heatLine() const;
-    /// "3 FLOWER  24DR", or empty when the sack is empty.
-    [[nodiscard]] std::string stashLine() const;
-    /// "RUN 4 FLOWER FOR SQUALL 3/4", or empty when no job is open.
-    [[nodiscard]] std::string contractLine() const;
     /// What the questline in progress wants next, in its own short label.
     [[nodiscard]] std::string objectiveLine() const;
 

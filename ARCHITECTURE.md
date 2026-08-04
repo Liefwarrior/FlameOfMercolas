@@ -336,10 +336,13 @@ thing being built. `native/` is. Its status, kept honest as the rewrite goes:
 | **Factions** — the owner's five, a ladder each, standing, rank and ward influence; hashed and byte-encodable | **BUILT** (S4) — ALL FIVE joinable in the Gilded Gull as of S5, when the Watch got a recruiter in the room; seven of fourteen unlock tokens now have readers | `native/src/sim/faction.cpp` |
 | **Questlines** — authored stages with conditions this build can actually resolve, and the journal that walks them | **BUILT** (S4) — two lines ship: the Priest of the Flame's six stages and the Skyrunners' nine | `native/src/sim/questline.cpp` |
 | **Crime** — six acts, one call site, heat the Watch keeps, a warrant with hysteresis, loot, contraband; hashed and byte-encodable | **BUILT** (S5) | `native/src/sim/crime.cpp` |
+| **Contraband** — five goods with a worth, a heat, a weight and a skill each, and a sack bounded in drams and in units; hashed and byte-encodable | **BUILT** (S6) — a bale has a cargo and a count now, and three sources put goods in a player's hands: the snug, a strongbox and a rat | `native/src/sim/contraband.cpp` |
+| **Radiant contracts** — a board generated in shape and authored in every proper noun, priced through the ward's own guild economy | **BUILT** (S6) — three brokers, ten authored templates, four jobs a night, deterministic from `(worldSeed, day)`; refuses any id `notables.json` does not have | `native/src/sim/contract.cpp` |
+| **Arrest** — a watchman who notices a load or connects a face, and canon's own sentence | **BUILT** (S6) — seizure, fine, one to three days for anybody, the hand for a Skyrunner's first offence and the rope for the second; and every taken contract whose goods went to the impound dies with them | `native/src/sim/watch.cpp`, `native/src/sim/tavern.cpp` |
 | **Spellcrafting** — canon's own cost model, the (axis × time-shape) pairing table, a composition bench and a grimoire | **BUILT** (S4) | `native/src/sim/spellforge.cpp` |
 | Casting what you learned or composed | **NOT BUILT** (S4) — the grimoire records craftings and nothing resolves one. `SpellVerb`-equivalent, active effects and the warmth→REST coupling are all still Java-side only | — |
 | Needs, wages, the macro economy | **NOT BUILT** | — |
-| Crime beyond the Gilded Gull's walls | **NOT BUILT** (S5) — the six acts, the heat and the warrant are real and the ward outside this building has nobody in it to commit them against. There is no arrest, no cell and no gibbet: `ranks.json` and DECISIONS.md's Skyrunner escalation ruling both describe a Watch that acts on a warrant, and nothing does | — |
+| Crime beyond the Gilded Gull's walls | **PARTIAL** (S6) — the arrest, the cell and the sentence exist and are canon's; what does not is anywhere to commit a crime. The ward outside this building still has nobody in it, so a contract can NAME Fenner at his counter and Squall at the bathhouse and you cannot walk up to either. The Gull is still the only room with people in it | `native/src/sim/watch.cpp` |
 | Save / load | **NOT BUILT** — S3 ships a versioned byte encoding for the relationship ledger, proven by round trip, with nothing writing it to disk | `SocialLedger::encode` |
 | The dedicated first-person combat screen | **NOT BUILT** — S3 gave `escalated()` a consumer (the room remembers a drawn blade and the bar stops serving), but the screen itself does not exist | — |
 
@@ -360,6 +363,14 @@ is REACH and a SAFE HEIGHT, never a chance; a body falls through air and through
 site that moves the tally, the heat and both sides of the Watch/Skyrunner mirror together; heat
 is what the Watch HEARD rather than what you did; and a scripted capture that fell short of what
 it was asked to do must say so and exit non-zero.
+
+**S6's binding design laws** (recorded in full in `docs/design/DECISIONS.md`): radiant work is
+generated in SHAPE and authored in every proper noun -- a broker, patron or source the owner's
+`notables.json` does not have is refused at load, by name, and a contract's pay is the ward's own
+`guildPricePercent` rather than a second economy nobody can see; a watchman acts on a LOAD, in
+drams, and on PAPER he has to connect a face to, and out of his sight is out of it; the sentence
+is the one Eli already gave on 2026-07-14 and nothing kills the player; and the Church signs for
+the taking of a scalp before the knife rather than after it.
 
 **S3's one binding design law, taken from DOCKS-GAZETTEER section 5.3 and enforced in code:**
 the investigation is never persuasion. No dialogue topic is gated by a dice roll. A topic is on
