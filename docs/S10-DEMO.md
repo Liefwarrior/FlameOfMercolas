@@ -18,8 +18,9 @@ the trail wants you next. Plus the S9 review's findings, closed with cases that
 go red on the old code, and a polish pass driven entirely by looking at captured
 frames.
 
-Gate: **464 ctest entries** (was 442), **694,785 + 902,056 assertions**,
-twin-run gate PASS, `content/` untouched except the one new file.
+Gate: **469 ctest entries** (was 442), **767,564 + 902,056 assertions**,
+twin-run gate PASS, both toolchains byte-identical, `content/` untouched except
+the one new file.
 
 ---
 
@@ -211,7 +212,27 @@ pinning its width.
 
 ---
 
-## 6. What S10 does NOT do
+## 6. A regression S10 found in S9, and the general fix
+
+`--skyrun` has landed **2 of 9 beats and exited 1 since S9 shipped**. S9 made a
+locked box put the wire in rather than opening itself -- its own documented
+change -- and left the Skyrunner line's box beat as a single `steal()`, which
+from that day put a wire in a lock and walked away. The stage counts a *cracked*
+box. The S9 review re-ran `--burgle`, `--nemesis` and `--ward`; nobody re-ran
+this one, and nothing in the suite asserted it.
+
+Verified against the S9 tip in a throwaway worktree before touching anything:
+identical output, `stages=2 cracks=0`. The beat now works the wire and puts a
+shoulder to it when the wire loses -- both keys -- and lands `stages=9 cracks=1`,
+which is what `native/README.md` has been documenting all along.
+
+The general fix is `tests/test_scripted_lines.cpp`: **one case per advertised
+flag**, each asserting it lands ALL its beats. `--burgle` and `--trail` already
+had one; `--skyrun`, `--flame`, `--contract`, `--nemesis` and `--roofs` did not.
+
+---
+
+## 7. What S10 does NOT do
 
 Marked here and in the code, not only in a report.
 
