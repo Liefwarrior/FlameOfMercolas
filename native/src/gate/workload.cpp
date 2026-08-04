@@ -15,10 +15,13 @@
 #include "granadad/content/lanes.hpp"
 #include "granadad/content/world.hpp"
 #include "granadad/content/world_reader.hpp"
+#include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/engine_error.hpp"
 #include "granadad/sim/fixed.hpp"
+#include "granadad/sim/player.hpp"
 #include "granadad/sim/rng.hpp"
+#include "granadad/sim/tavern.hpp"
 #include "granadad/sim/world_hash.hpp"
 
 namespace granadad::gate {
@@ -242,6 +245,49 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// tavern driver -- phase tick-begin
+// ---------------------------------------------------------------------------
+//
+// The room runs on TWO clocks: it decides once a second and moves sixty times
+// a second (see granadad/sim/actor.hpp). The client's loop drives both. The
+// gate has only a tick, so the movement clock arrives as a system of its own,
+// registered in the phase that runs BEFORE actors -- exactly the order
+// Session::step uses, and for the same reason: everybody is where they are
+// going to be before anybody decides anything about it.
+//
+// It hashes only its own tick count. The tavern's state is the tavern's to
+// hash, and two systems folding the same numbers would make a divergence look
+// like two divergences.
+
+class TavernDriverSystem final : public sim::SimulationSystem {
+public:
+    explicit TavernDriverSystem(const sim::Tavern* tavern) noexcept
+        : tavern_(const_cast<sim::Tavern*>(tavern)) {}
+
+    [[nodiscard]] const sim::SystemId& id() const noexcept override { return id_; }
+    [[nodiscard]] sim::TickPhase phase() const noexcept override {
+        return sim::TickPhase::TickBegin;
+    }
+
+    void tick(const sim::TickContext& context) override {
+        (void)context;
+        for (std::int32_t step = 0; step < sim::kStepsPerSecond; ++step) {
+            tavern_->stepMovement();
+        }
+        ++ticks_;
+    }
+
+    void hash_into(sim::HashSink& sink) const override {
+        sink.put_long(static_cast<std::uint64_t>(ticks_));
+    }
+
+private:
+    sim::SystemId id_ = sim::SystemId::of("tavern.movement", "TVMV");
+    sim::Tavern* tavern_;
+    std::int64_t ticks_ = 0;
+};
+
+// ---------------------------------------------------------------------------
 // ledger -- phase tick-end
 // ---------------------------------------------------------------------------
 
@@ -314,7 +360,18 @@ RunResult run_workload(const WorkloadConfig& config) {
         throw sim::EngineError("sample_every must be at least 1");
     }
 
-    content::World world = content::loadWorldFile(content::bakedMap(config.world));
+    const std::string world_name =
+        config.with_tavern ? std::string(sim::docks::kWorldName) : config.world;
+    content::World world = content::loadWorldFile(content::bakedMap(world_name));
+
+    // Declared before the engine so it outlives it: the Tavern borrows this
+    // and the engine owns the Tavern. Destruction runs in reverse declaration
+    // order, so the engine goes first and the query is still alive while it
+    // does.
+    std::unique_ptr<sim::TileQuery> tiles;
+    if (config.with_tavern) {
+        tiles = std::make_unique<sim::TileQuery>(world);
+    }
 
     auto heartbeat = std::make_unique<HeartbeatSystem>();
     auto drift = std::make_unique<DriftSystem>(world, config.walkers);
@@ -330,11 +387,26 @@ RunResult run_workload(const WorkloadConfig& config) {
     engine.register_system(std::move(ledger));
     engine.register_system(std::move(drift));
     engine.register_system(std::move(heartbeat));
+
+    const sim::Tavern* tavern_view = nullptr;
+    if (config.with_tavern) {
+        auto tavern = std::make_unique<sim::Tavern>(*tiles, sim::hourOfDay(19), config.seed,
+                                                    content::contentDir());
+        // A player standing at the bar, and never moving. Everything that
+        // happens from here -- fourteen actors keeping their hours, walking
+        // routes out of a breadth-first search, ordering drinks, a bouncer
+        // deciding who to look at -- is state the twin-run gate now compares.
+        tavern->setPlayer(sim::q8_tile_centre(sim::gull::kBartenderX),
+                          sim::q8_tile_centre(sim::gull::kBarY - 1), sim::gull::kGroundBand);
+        tavern_view = tavern.get();
+        engine.register_system(std::move(tavern));
+        engine.register_system(std::make_unique<TavernDriverSystem>(tavern_view));
+    }
     engine.boot();
 
     std::string out;
     out += "granadad twin-run workload v1\n";
-    out += "  world        " + config.world + "\n";
+    out += "  world        " + world_name + "\n";
     out += "  seed         " + hex64(config.seed) + "\n";
     out += "  ticks        " + dec(config.ticks) + "\n";
     out += "  walkers      " + dec(static_cast<std::uint64_t>(drift_view->count())) + "\n";
@@ -358,7 +430,15 @@ RunResult run_workload(const WorkloadConfig& config) {
             out += "  t=" + padLeft(dec(tick), 7) + "  moved=" + padLeft(dec(drift_view->moves()), 8)
                    + "  blocked=" + padLeft(dec(drift_view->blocked()), 8) + "  chatter="
                    + padLeft(dec(drift_view->chatter()), 8) + "  ledger[" + ledger_view->render()
-                   + "]\n";
+                   + "]";
+            if (tavern_view != nullptr) {
+                out += "  gull[in=" +
+                       dec(static_cast<std::uint64_t>(tavern_view->presentCount())) + " noise=" +
+                       dec(static_cast<std::uint64_t>(tavern_view->noise())) + " stock=" +
+                       dec(static_cast<std::uint64_t>(tavern_view->drinkStock())) + " clock=" +
+                       dec(static_cast<std::uint64_t>(tavern_view->timeOfDay())) + "]";
+            }
+            out += "\n";
         }
     }
 

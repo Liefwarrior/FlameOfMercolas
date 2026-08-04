@@ -139,6 +139,12 @@ int main(int argc, char** argv) {
             config.walkers = static_cast<std::int32_t>(parse_int(argv[++i], config.walkers));
         } else if (arg == "--world" && i + 1 < argc) {
             config.world = argv[++i];
+        } else if (arg == "--tavern") {
+            // Registers the Gilded Gull and drives its movement clock. Forces
+            // the world to docks_surface; see WorkloadConfig::with_tavern for
+            // why this is a flag and not the default.
+            config.with_tavern = true;
+            config.world = "docks_surface";
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
             std::fprintf(stderr,

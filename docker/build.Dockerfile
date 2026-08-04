@@ -290,12 +290,13 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # Docks in here, on every build, because the renderer is software and needs
     # no window.
     #
-    # S2: 183 -> 226. The Gilded Gull -- its geometry re-read from the baked
+    # S2: 183 -> 227. The Gilded Gull -- its geometry re-read from the baked
     # bytes, the brawl/lethal rule as a table, the pathfinder, the door policy
     # end to end -- plus the content-directory resolver that decides whether the
-    # shipped game starts at all, and the client's fixed-timestep loop.
+    # shipped game starts at all, the client's fixed-timestep loop, and a second
+    # twin-run gate entry with the tavern registered.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=226; \
+    GRANADAD_MIN_TESTS=227; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -348,7 +349,8 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "a fist fight is a brawl and a knife fight is not" \
         "the room is lit and full at nine, dark and empty at five" \
         "the executable finds a content tree one level above itself" \
-        "a frame that runs no step keeps its mouse look for the next one"; do \
+        "a frame that runs no step keeps its mouse look for the next one" \
+        "granadad-twin-run-gate-tavern"; do \
         printf '%s\n' "$ctest_list" | grep -qF "$case" \
             || { echo "FATAL: the case \"$case\" is not registered."; \
                  echo "       It is one of the things S2 is judged on."; \

@@ -277,6 +277,18 @@ if(GRANADAD_BUILD_TESTS)
         add_test(NAME granadad-world-hash-fingerprint
             COMMAND granadad-twin-gate --fingerprint
                     "${CMAKE_CURRENT_BINARY_DIR}/world-hash.txt")
+        # S2: the same gate, over the district, with the Gilded Gull registered
+        # and its movement clock driven. This is the only check in the build
+        # that can catch NONDETERMINISM in the tavern rather than incorrectness
+        # — fourteen actors, breadth-first routes, drink orders and a door
+        # policy, run twice from one seed and required to agree bit for bit.
+        #
+        # A separate entry rather than a change to the default workload, so the
+        # published cross-toolchain report stays frozen: it is compared byte for
+        # byte between Linux and Windows, and a sprint that changed its contents
+        # would be a sprint that regenerated the thing the comparison rests on.
+        add_test(NAME granadad-twin-run-gate-tavern
+            COMMAND granadad-twin-gate --tavern --ticks 900)
     endif()
 endif()
 

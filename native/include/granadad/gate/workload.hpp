@@ -40,6 +40,18 @@ struct WorkloadConfig {
     std::int32_t walkers = 96;
     /// Emit a sample line every this many ticks. Must be >= 1.
     std::int64_t sample_every = 100;
+
+    /// Registers the Gilded Gull as a fourth system and drives its movement
+    /// clock, with a player standing at the bar. Forces `world` to
+    /// docks_surface, because that is the only world the tavern is in.
+    ///
+    /// OFF by default, deliberately. The gate's published cross-toolchain
+    /// report is compared byte for byte between Linux and Windows, and every
+    /// sprint that changed its content would be a sprint that had to
+    /// regenerate the thing the comparison rests on. So the default workload
+    /// is frozen and the tavern gets its OWN ctest entry, which proves the
+    /// same property about the same code without touching the baseline.
+    bool with_tavern = false;
 };
 
 /// What one run produced.
