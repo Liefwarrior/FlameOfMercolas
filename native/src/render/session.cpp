@@ -126,6 +126,13 @@ void Session::settleLanding(const sim::RoofResult& move) {
     const std::int32_t safe = sim::safeDropBands(talk.skills().level(sim::kRoofSkill),
                                                  talk.standings().unlocked(roofs, "roof"));
     if (fell > safe) {
+        // VERIFICATION GAP (S5): fall damage lands on the TAVERN'S copy of the
+        // player's hit points, because that is the only place hit points exist
+        // in this build -- so a body that falls off a roof three streets away
+        // is hurt by the Gilded Gull's bookkeeping. It is the right number in
+        // the wrong owner, and it moves when the player has a body of their own
+        // rather than a room that keeps score for them.
+        //
         // Ten a band past what the legs can take. It floors at the brawl floor
         // like everything else in this build: nothing kills the player yet, and
         // pretending a roof does would be the first thing that did.

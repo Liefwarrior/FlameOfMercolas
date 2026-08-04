@@ -410,6 +410,16 @@ void PlayerBody::flyLeapStep() noexcept {
     y_ = leapFromY_ + (leapToY_ - leapFromY_) * done / leapStepsTotal_;
 
     if (leapStepsLeft_ > 0) {
+        // VERIFICATION GAP (S5): the arc is not collided against. The two
+        // ENDPOINTS are validated when the jump is armed -- every tile of the
+        // flight path is checked for solidity at the launch band, and the
+        // landing is checked with bodyFits -- but the parabola between them
+        // passes through whatever is there. Nothing in the shipped district can
+        // be in the way (the flight path is open cells at the launch band, and
+        // the arc only ever rises above it), so this is a latent hole rather
+        // than a live one; a low overhang authored across an alley would find
+        // it.
+        //
         // The arc. A parabola in integers: 4*a*t*(1-t) at its simplest, with t
         // as done/total, which stays exact because the multiply happens before
         // the divide.

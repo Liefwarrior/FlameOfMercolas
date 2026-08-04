@@ -84,6 +84,13 @@ inline constexpr std::size_t kCrimeCount = 6;
 
 inline constexpr std::int32_t kHeatMax = 100;
 /// Heat at or above which the Watch has paper out on you.
+///
+/// VERIFICATION GAP (S5): NOTHING ARRESTS. A warrant is issued, hashed, shown
+/// in red on the HUD and read by exactly one thing -- how long a bouncer waits
+/// before putting you out. DECISIONS.md's Skyrunner escalation ruling describes
+/// a Watch that maims on the first offence and hangs on the second, and there
+/// is no such Watch: no patrol looks for you, no cell holds you and no gibbet
+/// exists. The state is real and its consequence is one line of grace.
 inline constexpr std::int32_t kWarrantAt = 60;
 /// And below which the paper lapses on its own.
 inline constexpr std::int32_t kWarrantLapsesAt = 20;

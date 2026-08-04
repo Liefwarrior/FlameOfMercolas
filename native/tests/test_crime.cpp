@@ -447,6 +447,27 @@ TEST_CASE("nobody hands a stranger a bale, and carrying one out past the law is 
     // And standing in the street holding nothing is not a second one.
     gull.stepMovement();
     CHECK(talk.crimes().tally(Crime::Smuggle) == 1);
+
+    // A BOAT BRINGS WHAT A BOAT BRINGS. Without a stock the run is a coin
+    // faucet: the snug is no emptier for a bale having left it, so the same
+    // bale can be carried out of the same door until the guild loves you.
+    for (std::int32_t i = 1; i < kBalesPerNight; ++i) {
+        // Back in at the door FIRST: a run lands on the crossing, so the room
+        // has to have seen the body inside before it can see it leave.
+        room.standAt(gull::kBaleX, gull::kBaleY, gull::kGroundBand);
+        gull.stepMovement();
+        REQUIRE(gull.handleBale().result == ServiceResult::Served);
+        room.standAt(gull::kStreetX, gull::kStreetY, gull::kGroundBand);
+        gull.stepMovement();
+    }
+    room.standAt(gull::kBaleX, gull::kBaleY, gull::kGroundBand);
+    gull.stepMovement();
+    CHECK(gull.handleBale().result == ServiceResult::OutOfStock);
+    CHECK(talk.crimes().tally(Crime::Smuggle) == kBalesPerNight);
+
+    // Morning restocks the snug the way it restocks the cellar.
+    gull.skipTo(gull::kOpensAt);
+    CHECK(gull.handleBale().result == ServiceResult::Served);
 }
 
 TEST_CASE("a cutpurse is not a fence: the second rung is what makes somebody buy") {

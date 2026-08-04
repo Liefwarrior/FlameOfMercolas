@@ -306,6 +306,9 @@ inline constexpr std::int32_t kPlayerActorId = 0;
 /// How close a body has to be to a strongbox or a bale to put hands on it, Q8.
 inline constexpr std::int32_t kReachQ8 = 2 * kSubOne;
 
+/// Bales in the snug per night. A boat brings what a boat brings.
+inline constexpr std::int32_t kBalesPerNight = 2;
+
 /// A BRAWL NEVER KILLS. That is what makes it a brawl, and it is why the door
 /// policy can be enforced with fists at all: the worst a taproom fight does to
 /// the player is put them on the floor and then out of it. Hit points stop
@@ -717,6 +720,12 @@ private:
     std::vector<std::int32_t> brawlers_;
 
     // --- S5 -----------------------------------------------------------------
+    /// How many bales are still in the snug tonight. Restocked when the doors
+    /// open, exactly like the cellar -- WITHOUT it, the run is a coin faucet: a
+    /// bale delivered leaves the snug empty of nothing, so a player can carry
+    /// the same bale out of the same door until the guild loves them. A boat
+    /// brings what a boat brings.
+    std::int32_t balesInSnug_ = kBalesPerNight;
     /// Bit i is set once room i's strongbox has been emptied.
     std::int32_t crackedBoxes_ = 0;
     /// Whether the player was inside the walls on the previous movement step.

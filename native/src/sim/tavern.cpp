@@ -393,6 +393,7 @@ void Tavern::skipTo(std::int32_t secondOfDay) {
     // room re-seated. Nothing in between is simulated and this is the one place
     // that is true -- see the header on what the tavern does not model.
     drinkStock_ = kOpeningStock;
+    balesInSnug_ = kBalesPerNight;
     applySchedules();
     for (Actor& actor : actors_) {
         if (actor.present()) {
@@ -579,6 +580,7 @@ void Tavern::advanceSecond() {
     dialogue_.crimes().cool(elapsed_);
     if (timeOfDay_ == gull::kOpensAt) {
         drinkStock_ = kOpeningStock;
+        balesInSnug_ = kBalesPerNight;
         rentedRoom_ = -1;
         stockedOnDay_ = tick_;
     }
@@ -1591,6 +1593,7 @@ Tavern::StealResult Tavern::handleBale() {
     CrimeLedger& crimes = dialogue_.crimes();
     if (crimes.carryingBale()) {
         crimes.dropBale();
+        ++balesInSnug_;
         out.result = ServiceResult::Served;
         out.line = "PUT IT DOWN.";
         return out;
@@ -1614,6 +1617,17 @@ Tavern::StealResult Tavern::handleBale() {
         out.line = "IT IS NOT YOURS TO PICK UP.";
         return out;
     }
+    if (balesInSnug_ <= 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = "THE SNUG IS EMPTY TONIGHT.";
+        return out;
+    }
+    --balesInSnug_;
+    // VERIFICATION GAP (S5): a bale is a BOOLEAN, not an item. There is no
+    // inventory in this build, so what is being carried has no weight, no
+    // contents, no owner and cannot be dropped anywhere but where it was picked
+    // up. Everything downstream of it -- the run, the pay, the tally, the heat
+    // -- is real; the object is a flag with a name.
     crimes.takeBale();
     out.result = ServiceResult::Served;
     out.line = "THE BALE IS HEAVIER THAN IT LOOKS.";
@@ -1722,6 +1736,7 @@ void Tavern::hash_into(HashSink& sink) const {
     // S5: which boxes have been emptied, whether the body was inside the walls
     // on the last step, and how long this room has been running.
     sink.put_int(static_cast<std::uint32_t>(crackedBoxes_));
+    sink.put_int(static_cast<std::uint32_t>(balesInSnug_));
     sink.put_byte(wasInside_ ? 1U : 0U);
     sink.put_long(static_cast<std::uint64_t>(elapsed_));
     dialogue_.hashInto(sink);
