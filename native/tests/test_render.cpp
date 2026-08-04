@@ -559,6 +559,107 @@ TEST_CASE("every topic is reachable by a number printed beside it") {
     CHECK(kTopicPageSize + 1 <= kTopicSlots);
 }
 
+TEST_CASE("page two of a long list DRAWS nine numbered rows, not none") {
+    // THE CASE S4 SHOULD HAVE HAD, and the S4 review is why it exists.
+    //
+    // S4 closed "topics past the ninth were unreachable" with the arithmetic
+    // case above, which never touches the drawing code. The review reinstated
+    // the original bug in dialogue_view.cpp -- `std::min(total,
+    // kTopicPageSize)` where the real line reads `std::min(total, first +
+    // kTopicPageSize)`, which makes page two and page three draw ZERO topic
+    // rows -- and the whole 311-case gate stayed green, because the neighbour
+    // below only asserts that SOME ink is on screen and an empty page still has
+    // a speaker header on it.
+    //
+    // topicRowsFor IS the drawing path: drawDialogue calls it and prints
+    // exactly what it returns. That mutation empties the vector this asserts.
+    std::vector<std::string> topics;
+    for (int i = 0; i < 20; ++i) {
+        topics.push_back("ASK ABOUT SOMETHING NUMBER " + std::to_string(i + 1));
+    }
+    const int capacity = kTopicSlots;
+
+    // Page one: nine numbered rows plus the row that names the key which turns
+    // the page.
+    const std::vector<TopicRow> first = topicRowsFor(topics, 0, 0, capacity);
+    REQUIRE(first.size() == static_cast<std::size_t>(kTopicPageSize) + 1);
+    for (int i = 0; i < kTopicPageSize; ++i) {
+        const std::string& label = first[static_cast<std::size_t>(i)].label;
+        INFO("page 1 row ", i, " = ", label);
+        REQUIRE(label.rfind(std::to_string(i + 1) + " ", 0) == 0);
+        REQUIRE(label.find(topics[static_cast<std::size_t>(i)]) != std::string::npos);
+    }
+    CHECK(first.back().label == "0 MORE (1/3)");
+    CHECK(first.front().picked);
+
+    // PAGE TWO. Nine rows again, numbered 1..9 again -- the number is the KEY,
+    // and the key is a slot on the visible page -- each carrying the tenth to
+    // eighteenth topic of the list.
+    const std::vector<TopicRow> second = topicRowsFor(topics, 1, kTopicPageSize, capacity);
+    REQUIRE(second.size() == static_cast<std::size_t>(kTopicPageSize) + 1);
+    for (int i = 0; i < kTopicPageSize; ++i) {
+        const std::string& label = second[static_cast<std::size_t>(i)].label;
+        INFO("page 2 row ", i, " = ", label);
+        REQUIRE(label.rfind(std::to_string(i + 1) + " ", 0) == 0);
+        REQUIRE(label.find(topics[static_cast<std::size_t>(kTopicPageSize + i)]) !=
+                std::string::npos);
+    }
+    CHECK(second.back().label == "0 MORE (2/3)");
+    CHECK(second.front().picked);
+
+    // Page three is the short one: two topics and the MORE row.
+    const std::vector<TopicRow> third = topicRowsFor(topics, 2, 2 * kTopicPageSize, capacity);
+    REQUIRE(third.size() == 3);
+    CHECK(third[0].label.rfind("1 ", 0) == 0);
+    CHECK(third[1].label.rfind("2 ", 0) == 0);
+    CHECK(third.back().label == "0 MORE (3/3)");
+
+    // Every topic of the list appears on exactly one page, in a row with a key
+    // printed on it. This is the claim the whole paging scheme rests on.
+    //
+    // Matched on the WHOLE row and not on a substring of it: "...NUMBER 1" is a
+    // prefix of "...NUMBER 12", and the first version of this counted every
+    // topic three times and told me the paging was broken when it was not.
+    for (const std::string& topic : topics) {
+        int seen = 0;
+        for (int page = 0; page < topicPageCount(topics.size()); ++page) {
+            for (const TopicRow& row : topicRowsFor(topics, page, -1, capacity)) {
+                const std::size_t space = row.label.find(' ');
+                if (space != std::string::npos && row.label.substr(space + 1) == topic) {
+                    ++seen;
+                }
+            }
+        }
+        INFO("topic ", topic);
+        REQUIRE(seen == 1);
+    }
+
+    // A single page of nine has no MORE row at all.
+    const std::vector<std::string> few(topics.begin(), topics.begin() + kTopicPageSize);
+    const std::vector<TopicRow> only = topicRowsFor(few, 0, 0, capacity);
+    CHECK(only.size() == static_cast<std::size_t>(kTopicPageSize));
+}
+
+TEST_CASE("a topic label stops short of the next column's key") {
+    // S4's own headline frame shows topic 5 reading "ASK TO BE MADE SHE" with
+    // the next column's "9" jammed against the E. A row is drawn at x + half a
+    // glyph and the next column's cursor arrow at x - half a glyph, so a label
+    // sized to the whole column overruns it by a glyph and collides with the
+    // arrow after it. Two glyphs back, and the arithmetic is pinned here.
+    for (const int height : {180, 360}) {
+        const int width = height * 16 / 9;
+        const int scale = std::max(1, height / 180);
+        const int margin = 5 * scale;
+        const int glyphAdvance = 5 * scale;
+        const int columnWidth = (width - 2 * margin) / kTopicColumns;
+        const int room = std::max(1, columnWidth / glyphAdvance - 2);
+        const int labelEnds = glyphAdvance / 2 + room * glyphAdvance;
+        const int nextArrowStarts = columnWidth - glyphAdvance / 2;
+        INFO("height ", height, " label ends ", labelEnds, " arrow at ", nextArrowStarts);
+        REQUIRE(labelEnds <= nextArrowStarts);
+    }
+}
+
 TEST_CASE("a long topic list draws its page, says there is more, and keeps the centre clear") {
     DialogueViewState view;
     view.open = true;
