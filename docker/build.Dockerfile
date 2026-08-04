@@ -91,6 +91,10 @@ COPY content/maps/baked /src/content/maps/baked
 # that never ships.
 COPY content/art/custom /src/content/art/custom
 
+# The spell raws, 11 KB. S2's priest of the Flame teaches out of the owner's
+# actual spells.json rather than out of a table in a .cpp — see .dockerignore.
+COPY content/raws/spells /src/content/raws/spells
+
 # Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
 # has no use for either, and the rest of content is read at runtime straight
@@ -166,6 +170,18 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
              echo "       light sources without it and the district goes dark."; \
              echo "       Re-derive it with granadad-bake-lamps."; exit 1; }; \
     ls -l /src/content/maps/baked; \
+    \
+    echo "=== the spell raws must be in the context (S2) ==="; \
+    # The priest of the Flame teaches from these. Without the file the
+    # Spellbook falls back to an empty book ON PURPOSE -- a missing raws
+    # directory must not stop the game booting -- so a test that only checked
+    # "he taught nothing" would pass here and prove nothing. Say it plainly.
+    test -f /src/content/raws/spells/spells.json \
+        || { echo "FATAL: /src/content/raws/spells/spells.json is missing from the"; \
+             echo "       build context. .dockerignore must re-admit"; \
+             echo "       content/raws/spells/** or the priest teaches nothing"; \
+             echo "       and the case that proves he teaches from CANON is"; \
+             echo "       proving it against the empty fallback."; exit 1; }; \
     \
     echo "=== host check: build sim + tests for Linux and actually run them ==="; \
     # A cross-compiled .exe cannot be executed here, so correctness is proven on
@@ -273,10 +289,19 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # the tile atlas, and the renderer -- which draws real frames of the real
     # Docks in here, on every build, because the renderer is software and needs
     # no window.
+    #
+    # S2: 183 -> 226. The Gilded Gull -- its geometry re-read from the baked
+    # bytes, the brawl/lethal rule as a table, the pathfinder, the door policy
+    # end to end -- plus the content-directory resolver that decides whether the
+    # shipped game starts at all, and the client's fixed-timestep loop.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=183; \
-    test_count="$(ctest --test-dir /build-cache/hostcheck -N \
-        | sed -n 's/^Total Tests: *//p')"; \
+    GRANADAD_MIN_TESTS=226; \
+    # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
+    # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
+    # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
+    # It went red exactly that way the first time pipefail was turned on.
+    ctest_list="$(ctest --test-dir /build-cache/hostcheck -N)"; \
+    test_count="$(printf '%s\n' "$ctest_list" | sed -n 's/^Total Tests: *//p')"; \
     echo "ctest knows about ${test_count} tests (floor: ${GRANADAD_MIN_TESTS})"; \
     if [ -z "$test_count" ] || [ "$test_count" -lt "$GRANADAD_MIN_TESTS" ]; then \
         echo "FATAL: the test gate has shrunk to ${test_count:-0} tests, below the"; \
@@ -285,17 +310,17 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         echo "       that content/maps/baked reached the build context."; \
         exit 1; \
     fi; \
-    ctest --test-dir /build-cache/hostcheck -N | grep -q "docks_surface loads completely" \
+    printf '%s\n' "$ctest_list" | grep -qF "docks_surface loads completely" \
         || { echo "FATAL: the TROJSAV cases that load the real baked worlds are not"; \
              echo "       registered. The gate would pass without ever opening a"; \
              echo "       .trojsav file."; exit 1; }; \
-    ctest --test-dir /build-cache/hostcheck -N | grep -q "granadad-twin-run-gate" \
+    printf '%s\n' "$ctest_list" | grep -qF "granadad-twin-run-gate" \
         || { echo "FATAL: the twin-run gate is not registered with ctest. It is the"; \
              echo "       only check here that can catch NONDETERMINISM rather than"; \
              echo "       incorrectness, and every other guarantee rests on it."; \
              exit 1; }; \
-    ctest --test-dir /build-cache/hostcheck -N \
-        | grep -q "every shipped world hashes to exactly what the JVM said" \
+    printf '%s\n' "$ctest_list" \
+        | grep -qF "every shipped world hashes to exactly what the JVM said" \
         || { echo "FATAL: the case that compares the C++ world hash against the"; \
              echo "       JVM's is not registered. Without it the hasher is only"; \
              echo "       being compared to itself."; exit 1; }; \
@@ -303,17 +328,33 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # the real district can be drawn and checked HERE, with no window and no
     # GPU; and the art case must load the owner's actual sheet rather than the
     # procedural fallback, which is the one thing that never ships.
-    ctest --test-dir /build-cache/hostcheck -N \
-        | grep -q "the Docks render to a frame with a world in it" \
+    printf '%s\n' "$ctest_list" \
+        | grep -qF "the Docks render to a frame with a world in it" \
         || { echo "FATAL: the case that renders the Docks in first person is not"; \
              echo "       registered. Every sprint after S1 proves itself with a"; \
              echo "       captured frame, and this is what keeps that path alive."; \
              exit 1; }; \
-    ctest --test-dir /build-cache/hostcheck -N \
-        | grep -q "the owner's art pack loads when it is there" \
+    printf '%s\n' "$ctest_list" \
+        | grep -qF "the owner's art pack loads when it is there" \
         || { echo "FATAL: the case that loads content/art/custom is not"; \
              echo "       registered, so the renderer is only ever being tested"; \
              echo "       against its own procedural fallback."; exit 1; }; \
+    \
+    # S2's four, by name. Each of these is a claim the sprint is judged on, and
+    # a claim whose test has quietly stopped being registered is a claim
+    # nobody is checking.
+    for case in \
+        "a brawler gets warned and then physically put out of the door" \
+        "a fist fight is a brawl and a knife fight is not" \
+        "the room is lit and full at nine, dark and empty at five" \
+        "the executable finds a content tree one level above itself" \
+        "a frame that runs no step keeps its mouse look for the next one"; do \
+        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things S2 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S2's named cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \

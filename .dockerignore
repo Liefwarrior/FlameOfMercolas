@@ -47,6 +47,19 @@
 # sets, 1.2 GB of it -- stays out and is read at runtime from the repo.
 !content/art/custom/**
 
+# --- re-admitted: the spell raws the priest of the Flame teaches from ---
+# 11 KB, one file. S2's priest offers what the owner actually wrote, and the
+# whole reason that matters is the standing direction on magic: effects have to
+# stay MODULAR -- a spell in these raws is a list of components, not a baked
+# outcome -- so spellcrafting can compose them later. A priest teaching out of a
+# table baked into a .cpp would be a priest teaching something nobody authored,
+# and the test that pins his offer would be pinning a fiction.
+#
+# It comes in for the same reason maps/baked and art/custom do: without it the
+# case that reads the raws either fails or, worse, quietly passes against the
+# empty-book fallback.
+!content/raws/spells/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**
