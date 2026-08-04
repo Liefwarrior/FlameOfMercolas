@@ -372,7 +372,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # BOTH sides, the same-floor clause, the line-of-sight clause, and the topic
     # list proved completely addressable from the keyboard at any length.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=349; \
+    GRANADAD_MIN_TESTS=370; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -509,6 +509,36 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: S5's named cases are all registered"; \
+    \
+    # S6: the goods, the radiant work over them, and the law that takes both \
+    # away. The two named last are the sprint's ACCEPTANCE -- a contract \
+    # accepted, performed and paid, and a separate run that ends in the \
+    # impound with the job dead beside the goods. \
+    for case in \
+        "a generated job can only ever name somebody the owner's file has" \
+        "a broker, patron or source the registry does not have is refused at load" \
+        "what a sack holds is measured in weight, and that is what gets you caught" \
+        "a watchman notices a load, not a count, and never a man with nothing on him" \
+        "the sentence is canon's: a night for anybody, the hand and then the rope for the roofs" \
+        "an arrest empties the sack, tears up the paper and remembers the hand" \
+        "the same night of the same world offers the same work, and the next night does not" \
+        "a bounty is not paid without the Flame's mark, and pay is the ward's own economy" \
+        "a contract taken, performed and paid: the ward's bounty, end to end" \
+        "caught: a load, a warrant, and a job that dies in the impound" \
+        "a warrant alone is enough, given long enough in front of the wrong man" \
+        "a leap is armed by the key and flown by the pump, and lands ONCE" \
+        "the room charges a landing: the craft, the fall, the roof and the tally" \
+        "a topic label too long for its column stops at a word, not mid-word" \
+        "a scripted line sets the clock it needs, and never one that was asked for" \
+        "the heat clock survives its own codec past thirty-two bits" \
+        "the gate's workload actually takes a contract off the board" \
+        ; do \
+        printf '%s\n' "$ctest_list" | grep -qF "$case" \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things S6 is judged on."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: S6's named cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \

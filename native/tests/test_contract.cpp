@@ -717,6 +717,37 @@ TEST_CASE("a contract taken, performed and paid: the ward's bounty, end to end")
     CHECK(talk.skills().find(contrabandSkill(Contraband::Scalp))->uses > 0);
 }
 
+TEST_CASE("a warrant alone is enough, given long enough in front of the wrong man") {
+    // THE HEADLINE S5 COULD NOT MAKE GOOD ON: "NOTHING ARRESTS". A warrant with
+    // no load behind it is cause on its own -- it simply takes a while, because
+    // an off-duty watchman has to connect a face to paper he is not carrying.
+    //
+    // Nothing is being carried here at all, which is the point: this is the
+    // paper doing the work and not the sack.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    DialogueDirector& talk = gull.dialogue();
+    talk.crimes().addHeat(kWarrantAt + 10);
+    REQUIRE(talk.crimes().warrant());
+    REQUIRE(talk.crimes().stash().empty());
+
+    for (int second = 0; second < 900 && !gull.lastArrest().happened; ++second) {
+        (void)room.standBy("Watchman Cull");
+        room.run(1);
+    }
+    const Tavern::ArrestReport& arrest = gull.lastArrest();
+    REQUIRE(arrest.happened);
+    CHECK(arrest.cause == WatchCause::Warrant);
+    CHECK(arrest.unitsSeized == 0);
+    // Not a Skyrunner, so the ordinary answer: a cell, and out.
+    CHECK(arrest.sentence == Sentence::Held);
+    CHECK(arrest.heldHours >= kHeldHoursMin);
+    CHECK(arrest.heldHours <= kHeldHoursMax);
+    CHECK_FALSE(talk.crimes().warrant());
+    CHECK(talk.crimes().arrests() == 1);
+    CHECK_FALSE(talk.crimes().maimed());
+}
+
 TEST_CASE("caught: a load, a warrant, and a job that dies in the impound") {
     // THE SEPARATE RUN. Same room, same seed, a different choice at every step.
     Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
@@ -801,7 +832,7 @@ TEST_CASE("caught: a load, a warrant, and a job that dies in the impound") {
 
     // He looks up, he crosses the table, and he takes you. Seconds, because you
     // are standing in front of him -- the whole counterplay is not being.
-    for (int second = 0; second < 30 && !gull.lastArrest().happened; ++second) {
+    for (int second = 0; second < 180 && !gull.lastArrest().happened; ++second) {
         (void)room.standBy("Watchman Cull");
         room.run(1);
     }

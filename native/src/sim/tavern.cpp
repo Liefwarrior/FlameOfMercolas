@@ -1872,6 +1872,17 @@ void Tavern::tickWatch() {
             }
             return;
         }
+        if (tick_ - noticedAtTick_ > kWatchClosingSeconds) {
+            // He gave it up. Twelve seconds of a man walking away is twelve
+            // seconds of an off-duty watchman deciding his drink is getting
+            // warm -- and it is the counterplay stated as a number rather than
+            // implied by a sight test.
+            watchStance_ = WatchStance::Idle;
+            watchmanId_ = -1;
+            watchCause_ = WatchCause::None;
+            officer->setActivity(Activity::Watching);
+            return;
+        }
         officer->setActivity(Activity::Warning);
         officer->faceToward(playerX_, playerY_);
         if (officer->distanceTo(playerX_, playerY_) > kMeleeReach) {
@@ -1898,7 +1909,15 @@ void Tavern::tickWatch() {
     const bool noticed = passes(rng_.draw(static_cast<std::uint64_t>(officer->id()) ^ 0x5741U,
                                           static_cast<std::int32_t>(tick_ % 4096)),
                                 permille);
-    const WatchCause cause = watchCause(crimes.warrant(), noticed, sack.illicitUnits());
+    // A WARRANT IS NOT A BEACON. He has to connect the face to the paper, and
+    // that is its own roll -- see kRecognisePermille on why paper alone being
+    // instant cause would make "wanted" mean "the game is over".
+    const bool recognised =
+        crimes.warrant() &&
+        passes(rng_.draw(static_cast<std::uint64_t>(officer->id()) ^ 0x57415252U,
+                         static_cast<std::int32_t>(tick_ % 4096)),
+               kRecognisePermille);
+    const WatchCause cause = watchCause(recognised, noticed, sack.illicitUnits());
     if (cause == WatchCause::None) {
         return;
     }

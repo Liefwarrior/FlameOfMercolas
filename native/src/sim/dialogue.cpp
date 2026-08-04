@@ -380,6 +380,51 @@ void DialogueDirector::buildTopics() {
         }
     }
 
+    // 4e. S6 -- THE WORK. A broker's own jobs, waiting jobs first so a player
+    //     who came back with a full sack is not scrolling past tomorrow's
+    //     offers to find tonight's. Every label names the good, the number and
+    //     the person who wants it, and every one of those came out of the
+    //     owner's files.
+    if (const ContractBroker* broker = brokerFor(speaker_.notableId); broker != nullptr) {
+        if (!brokerWillTalk(*broker)) {
+            // ASKING IS ALWAYS ALLOWED, and being told no is an answer. A
+            // broker who will not deal with you yet still has to be visibly a
+            // broker, or the guild ladder has nothing at the top of it that a
+            // player can see before they climb.
+            Topic topic;
+            topic.kind = TopicKind::TakeContract;
+            topic.label = "ASK ABOUT WORK";
+            topic.payload = -1;
+            topics_.push_back(std::move(topic));
+        } else {
+            for (const std::int32_t id : board_.takenBy(broker->id)) {
+                const Contract* row = board_.find(id);
+                if (row == nullptr) {
+                    continue;
+                }
+                Topic topic;
+                topic.kind = TopicKind::TurnIn;
+                topic.label = "HAND OVER " + std::to_string(row->units) + " " +
+                              std::string(contrabandLabel(row->good));
+                topic.payload = id;
+                topic.arg = row->offerId;
+                topics_.push_back(std::move(topic));
+            }
+            for (const std::int32_t id : board_.offeredBy(broker->id)) {
+                const Contract* row = board_.find(id);
+                if (row == nullptr) {
+                    continue;
+                }
+                Topic topic;
+                topic.kind = TopicKind::TakeContract;
+                topic.label = row->label;
+                topic.payload = id;
+                topic.arg = row->offerId;
+                topics_.push_back(std::move(topic));
+            }
+        }
+    }
+
     // 5. Shop talk, if they are good enough at anything to have any.
     {
         const std::string key(
@@ -470,52 +515,7 @@ void DialogueDirector::buildTopics() {
         }
     }
 
-    // 10. S6 -- THE WORK. A broker's own jobs, waiting jobs first so a player
-    //     who came back with a full sack is not scrolling past tomorrow's
-    //     offers to find tonight's. Every label names the good, the number and
-    //     the person who wants it, and every one of those came out of the
-    //     owner's files.
-    if (const ContractBroker* broker = brokerFor(speaker_.notableId); broker != nullptr) {
-        if (!brokerWillTalk(*broker)) {
-            // ASKING IS ALWAYS ALLOWED, and being told no is an answer. A
-            // broker who will not deal with you yet still has to be visibly a
-            // broker, or the guild ladder has nothing at the top of it that a
-            // player can see before they climb.
-            Topic topic;
-            topic.kind = TopicKind::TakeContract;
-            topic.label = "ASK ABOUT WORK";
-            topic.payload = -1;
-            topics_.push_back(std::move(topic));
-        } else {
-            for (const std::int32_t id : board_.takenBy(broker->id)) {
-                const Contract* row = board_.find(id);
-                if (row == nullptr) {
-                    continue;
-                }
-                Topic topic;
-                topic.kind = TopicKind::TurnIn;
-                topic.label = "HAND OVER " + std::to_string(row->units) + " " +
-                              std::string(contrabandLabel(row->good));
-                topic.payload = id;
-                topic.arg = row->offerId;
-                topics_.push_back(std::move(topic));
-            }
-            for (const std::int32_t id : board_.offeredBy(broker->id)) {
-                const Contract* row = board_.find(id);
-                if (row == nullptr) {
-                    continue;
-                }
-                Topic topic;
-                topic.kind = TopicKind::TakeContract;
-                topic.label = row->label;
-                topic.payload = id;
-                topic.arg = row->offerId;
-                topics_.push_back(std::move(topic));
-            }
-        }
-    }
-
-    // 11. S6 -- the Flame's mark. DECISIONS.md: the Church "sanctions the
+    // 9b. S6 -- the Flame's mark. DECISIONS.md: the Church "sanctions the
     //     redemption of a scalp". A priest offers it when you are carrying
     //     something that wants signing for and nothing else; a bounty that
     //     needed no conscience under it would not be this setting's bounty.

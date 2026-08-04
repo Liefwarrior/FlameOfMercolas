@@ -315,6 +315,25 @@ public:
         if (ticks_ % 240 == 0) {
             tavern_->dialogue().noteCrime(sim::Crime::RoofRun, false);
         }
+        // S6: AND IT TAKES WORK. The contract board is hashed, and a board
+        // nobody ever takes anything off is four Offered rows that never
+        // change -- which is the same shape of hole S5 found in the faction
+        // rows: perfectly deterministic, and proving nothing. Taking one moves
+        // the state that a save would have to carry and that two runs have to
+        // agree about.
+        //
+        // REPORTED rather than walked, like the roof-run above and for the same
+        // reason: the gate is a headless engine with a player who never moves,
+        // so it cannot cross a taproom to a broker. Said out loud here.
+        if (ticks_ % 300 == 0) {
+            sim::ContractBoard& board = tavern_->dialogue().contracts();
+            for (const sim::Contract& row : board.contracts()) {
+                if (row.state == sim::ContractState::Offered) {
+                    (void)board.take(row.id);
+                    break;
+                }
+            }
+        }
     }
 
     void hash_into(sim::HashSink& sink) const override {
@@ -483,6 +502,11 @@ RunResult run_workload(const WorkloadConfig& config) {
                 // S5: printed as well as hashed, so the report SHOWS the
                 // faction and crime rows moving instead of asserting that they
                 // are compared.
+                out += "  work[day=" +
+                       dec(static_cast<std::uint64_t>(talk.contracts().day())) + " open=" +
+                       dec(static_cast<std::uint64_t>(talk.contracts().contracts().size())) +
+                       " taken=" +
+                       dec(static_cast<std::uint64_t>(talk.contracts().takenCount())) + "]";
                 out += "  roofs[lifts=" +
                        dec(static_cast<std::uint64_t>(talk.crimes().tally(sim::Crime::Lift))) +
                        " heat=" + dec(static_cast<std::uint64_t>(talk.crimes().heat())) +

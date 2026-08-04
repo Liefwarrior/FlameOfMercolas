@@ -87,8 +87,32 @@ inline constexpr std::int32_t kWatchSightTiles = 8;
                                           std::int32_t carrierStreetwise,
                                           std::int32_t watchmanKit) noexcept;
 
-/// Seconds of being looked at before the hands go on. Long enough to get out of
-/// the door, which is the whole counterplay and the reason the roofs exist.
+/// The chance in a thousand that a look CONNECTS THE FACE to the paper.
+///
+/// A warrant is not a beacon. Watchman Cull is off shift with a drink in his
+/// hand; he has not got the file in his pocket and he is not checking faces at
+/// the door. What he does is glance up, and one glance in twenty-two puts a
+/// name to somebody he has been half-watching all evening -- which is exactly
+/// what his own authored line says he is doing ("I have been looking at you for
+/// a while now").
+///
+/// It matters mechanically as well as in fiction, and the number was TUNED
+/// rather than guessed: with paper alone as instant cause, a wanted man cannot
+/// cross the taproom the only door is on, and "wanted" stops meaning "do not be
+/// seen" and starts meaning "the game is over" -- the S6 build's own scripted
+/// Skyrunner line was arrested on its way back from the last delivery and lost
+/// two of nine beats to it. At this rate a man who walks through and out is
+/// usually through, and about two minutes in front of him is a coin flip.
+///
+/// Note what this does NOT soften: a LOAD is noticed on its own terms and far
+/// more readily (noticePermille), because a full sack is a thing you can see
+/// from across a room and a face is not.
+inline constexpr std::int32_t kRecognisePermille = 45;
+
+/// Seconds a watchman will chase before he gives it up and goes back to his
+/// drink. Long enough to be caught standing still, short enough that the door
+/// is a real answer -- which is the whole counterplay and what the roofs are
+/// for.
 inline constexpr std::int32_t kWatchClosingSeconds = 12;
 
 // ---------------------------------------------------------------------------

@@ -325,6 +325,13 @@ struct SmokeRunConfig {
     /// taken, lean on somebody, and run a bale out past the Watch.
     bool skyrun = false;
     std::string skyrunEnd = "talk";
+    /// S6. Play the ward's own bounty end to end: take it off Watchman Cull,
+    /// get the Flame's mark from Father Maell before he goes home, skip to the
+    /// hour the rats are out, hunt them on the taproom floor and hand them back
+    /// across the same table. WHERE is "talk" (the finished conversation) or
+    /// "away" (closed, so the HUD's own sack and job lines are visible).
+    bool contract = false;
+    std::string contractEnd = "talk";
     /// Run the Priest of the Flame line end to end and capture wherever it
     /// finishes: the oath, the night pot, the captain's word, the report, the
     /// teaching, and a crafting composed at the bench. Driven through the same
@@ -356,6 +363,8 @@ struct SmokeRunResult {
     std::int32_t flameStages = 0;
     /// The same for the Skyrunner line.
     std::int32_t skyrunStages = 0;
+    /// How many of the six beats of the bounty run landed.
+    std::int32_t contractBeats = 0;
     /// What a scripted line WANTED to land, and what it did.
     ///
     /// S5 ADDS THESE BECAUSE S4'S CAPTURE PATH LIED. runFlameLine returned a

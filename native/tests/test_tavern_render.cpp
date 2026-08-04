@@ -588,6 +588,10 @@ TEST_CASE("a topic label too long for its column stops at a word, not mid-word")
     // label.resize(room), which cuts wherever the column happens to end.
     CHECK(clipLabel("6 ASK ABOUT THE VANISHED CLERK", 18) == "6 ASK ABOUT THE.");
     CHECK(clipLabel("7 ASK TO BE MADE READY", 18) == "7 ASK TO BE MADE.");
+    // A word boundary is a PREFERENCE, not a law: breaking "6 PICK THEIR
+    // POCKET" after THEIR would throw five usable columns away, so the cut is
+    // where the column ends and the mark is what makes it legible.
+    CHECK(clipLabel("6 PICK THEIR POCKET", 18) == "6 PICK THEIR POCK.");
     // Nothing is cut that fits.
     CHECK(clipLabel("1 LEAVE", 18) == "1 LEAVE");
     CHECK(clipLabel("123456789012345678", 18) == "123456789012345678");
@@ -610,7 +614,10 @@ TEST_CASE("a scripted line sets the clock it needs, and never one that was asked
     // eight in the evening and Finch does not keep the snug until ten.
     SmokeRunConfig skyrun;
     skyrun.skyrun = true;
-    CHECK(scriptedStartHour(skyrun) == 22);
+    // One in the morning: Finch keeps the snug until three and Watchman Cull
+    // went home at one. S6 moved this hour, and moved it for a reason the game
+    // itself made -- see scriptedStartHour.
+    CHECK(scriptedStartHour(skyrun) == 1);
 
     SmokeRunConfig flame;
     flame.flame = true;

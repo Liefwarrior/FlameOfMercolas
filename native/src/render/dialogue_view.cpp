@@ -107,8 +107,18 @@ std::string clipLabel(const std::string& label, std::size_t room) {
     // VANISHED CLERK"), so the FIRST space is furniture rather than a word
     // boundary -- cutting there would print "6." and name nothing.
     const std::size_t firstSpace = label.find(' ');
+    // AND A WORD BOUNDARY IS A PREFERENCE, NOT A LAW. "6 PICK THEIR POCKET" in
+    // eighteen columns breaks after "THEIR" and throws five usable columns
+    // away, which reads worse than the mid-word cut it was meant to fix. So the
+    // boundary wins only when it keeps nearly all the room; otherwise the cut
+    // is where the column ends, and the mark is what makes that legible --
+    // which was the whole finding. S5 had no mark at all, and "THE VANISHED
+    // CLE" with nothing after it reads as a rendering fault rather than as a
+    // label longer than its column.
+    const std::size_t generous = keep >= 3 ? keep - 3 : 0;
     std::string cut;
-    if (space != std::string::npos && space > 0 && space != firstSpace) {
+    if (space != std::string::npos && space > 0 && space != firstSpace &&
+        space >= generous) {
         cut = label.substr(0, space);
     } else {
         cut = label.substr(0, keep);

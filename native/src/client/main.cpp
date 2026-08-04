@@ -141,6 +141,9 @@ void print_usage() {
         "  --skyrun[=WHERE]     play the Skyrunner line -- sign on, two purses, a\n"
         "                       box, the roof, the alley, the fence, a lean and a\n"
         "                       bale past the Watch. WHERE is talk or away\n"
+        "  --contract[=WHERE]   play the ward's own bounty -- take it off the\n"
+        "                       Watch, get the Flame's mark, hunt the taproom\n"
+        "                       and get paid. WHERE is talk or away\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n");
@@ -210,6 +213,13 @@ void print_usage() {
         } else if (starts_with(arg, "--flame=", &value)) {
             options.smoke.flame = true;
             options.smoke.flameEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--contract") == 0) {
+            options.smoke.contract = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--contract=", &value)) {
+            options.smoke.contract = true;
+            options.smoke.contractEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--roofs") == 0) {
             options.smoke.roofs = true;

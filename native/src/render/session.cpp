@@ -1404,6 +1404,125 @@ void comeDownstairs(Session& session) {
 /// into the simulation sideways. Sign on with Finch in the snug, take two
 /// purses, crack a box above the stair, get on the roof, cross the alley, sell
 /// what was taken, lean on somebody, and run a bale out past the Watch.
+/// THE BOUNTY, played the way a player plays it: take it off the Watch, get the
+/// Flame's mark before the priest goes home, wait for the room to quiet, and
+/// bring back what the ward asked for.
+///
+/// Six beats, and every one of them is a Session call a keypress makes -- the
+/// walk is real movement through real collision, the punches are the punch key
+/// and the skinning is the same G that opens a strongbox.
+[[nodiscard]] int runContractLine(Session& session, const std::string& ending) {
+    sim::DialogueDirector& talk = session.tavern().dialogue();
+    int landed = 0;
+    std::int32_t job = -1;
+    std::int32_t wanted = 0;
+
+    // 1. ACCEPT. The ward's bounty is public work: no rung and no oath.
+    if (speakTo(session, "Watchman Cull")) {
+        const std::vector<sim::Topic>& topics = talk.topics();
+        for (std::size_t i = 0; i < topics.size(); ++i) {
+            if (topics[i].kind != sim::TopicKind::TakeContract || topics[i].payload < 0) {
+                continue;
+            }
+            const sim::Contract* row = talk.contracts().find(topics[i].payload);
+            if (row == nullptr || row->good != sim::Contraband::Scalp) {
+                continue;
+            }
+            job = row->id;
+            wanted = row->units;
+            session.chooseTopic(i);
+            break;
+        }
+        session.closeConversation();
+    }
+    if (job >= 0 && talk.contracts().find(job) != nullptr && talk.contracts().find(job)->live()) {
+        ++landed;
+    }
+
+    // 2. THE MARK. A scalp is redeemed under the Flame's own sanction, and the
+    //    priest keeps an evening hour that ends at half past nine.
+    if (speakTo(session, "Father Maell")) {
+        (void)pick(session, sim::TopicKind::Sanction);
+        session.closeConversation();
+    }
+    if (job >= 0 && talk.contracts().find(job) != nullptr &&
+        talk.contracts().find(job)->sanctioned) {
+        ++landed;
+    }
+
+    // 3. THE HOUR. Eleven at night: the late crowd has thinned and the skirting
+    //    is busy.
+    session.skipToHour(23);
+    if (session.tavern().verminPresent() > 0) {
+        ++landed;
+    }
+
+    // 4. THE WORK. A fist, and then a knife.
+    std::int32_t taken = 0;
+    for (int attempt = 0; attempt < 40 && taken < wanted; ++attempt) {
+        std::int32_t ratId = -1;
+        std::int32_t ratX = 0;
+        std::int32_t ratY = 0;
+        for (const sim::Actor& actor : session.tavern().actors()) {
+            if (actor.role() == sim::ActorRole::Vermin && actor.present() &&
+                actor.activity() != sim::Activity::Downed) {
+                ratId = actor.id();
+                ratX = actor.tileX();
+                ratY = actor.tileY();
+                break;
+            }
+        }
+        if (ratId < 0) {
+            break;
+        }
+        walkToTile(session, ratX, ratY);
+        for (int swing = 0; swing < 12; ++swing) {
+            const sim::Actor* still = session.tavern().actorById(ratId);
+            if (still == nullptr || still->activity() == sim::Activity::Downed) {
+                break;
+            }
+            session.punch();
+            session.stepMany(sim::MoveInput{}, 2);
+        }
+        const sim::Actor* down = session.tavern().actorById(ratId);
+        if (down == nullptr || down->activity() != sim::Activity::Downed) {
+            // It moved off before the fist landed. Try the next one.
+            continue;
+        }
+        walkToTile(session, down->tileX(), down->tileY());
+        session.steal();
+        const std::int32_t held = talk.crimes().stash().count(sim::Contraband::Scalp);
+        if (held > taken) {
+            taken = held;
+        }
+    }
+    if (wanted > 0 && taken >= wanted) {
+        ++landed;
+    }
+
+    // 5. GET PAID, over the same table it was taken across.
+    if (speakTo(session, "Watchman Cull")) {
+        (void)pick(session, sim::TopicKind::TurnIn);
+    }
+    if (job >= 0 && talk.contracts().find(job) != nullptr &&
+        talk.contracts().find(job)->state == sim::ContractState::Paid) {
+        ++landed;
+    }
+    // 6. And the ward paid for it.
+    if (talk.contracts().coinEarned() > 0) {
+        ++landed;
+    }
+
+    if (ending == "away") {
+        session.closeConversation();
+    }
+    standBackFrom(session, "Watchman Cull");
+    return landed;
+}
+
+/// How many beats runContractLine tries to land.
+constexpr std::int32_t kContractBeats = 6;
+
 [[nodiscard]] int runSkyrunLine(Session& session, const std::string& ending) {
     const sim::DialogueDirector& talk = session.tavern().dialogue();
     const std::string questId = "skyrunner-tenant";
@@ -1517,15 +1636,34 @@ void comeDownstairs(Session& session) {
 }  // namespace
 
 int scriptedStartHour(const SmokeRunConfig& config) noexcept {
-    // Finch keeps the snug from ten at night; the whole Skyrunner line is sworn
-    // to him and cannot start without him in the room.
+    // ONE IN THE MORNING, and the hour is the point.
+    //
+    // Finch keeps the snug from ten at night, so the line cannot start before
+    // then -- but S6 put the ward's law in the same taproom between nine and
+    // one, and a man who commits all six of the ward's crimes in one evening
+    // with the impound keeper three tables away is a man who loses a hand for
+    // it. That is the game working: the run was arrested on its way back from
+    // the last delivery and lost two of its nine beats, with `sentence=maimed`
+    // printed in its own summary.
+    //
+    // So the scripted burglar does what a burglar does and starts after the
+    // Watch has gone home. Finch is still in the snug until three; Watchman
+    // Cull left at one. Nothing about the line changed -- the hour did, and the
+    // hour is now part of what the line teaches.
     if (config.skyrun) {
-        return 22;
+        return 1;
     }
     // Father Maell takes an evening hour in the Gull between seven and half
     // past nine. Eight is the middle of it, which is also the default.
     if (config.flame) {
         return 20;
+    }
+    // The bounty wants two men in one room: Watchman Cull comes in at nine and
+    // Father Maell leaves at half past. Quarter past is the only quarter of an
+    // hour in the day when the ward will both sell you the work and sign for
+    // it.
+    if (config.contract) {
+        return 21;
     }
     // The roof line needs the door open and nobody in particular.
     return -1;
@@ -1595,6 +1733,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.talking = session.talking();
     }
 
+    if (config.contract) {
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runContractLine(session, config.contractEnd));
+        result.contractBeats = landed;
+        result.scriptedWanted += kContractBeats;
+        result.scriptedLanded += landed;
+        result.talking = session.talking();
+    }
+
     if (config.skyrun) {
         result.skyrunStages = runSkyrunLine(session, config.skyrunEnd);
         result.talking = session.talking();
@@ -1643,7 +1790,28 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " runs=" << talk.crimes().tally(sim::Crime::Smuggle)
                 << " heat=" << talk.crimes().heat()
                 << " warrant=" << (talk.crimes().warrant() ? "yes" : "no")
-                << " skyrunning=" << talk.skills().level(sim::kRoofSkill);
+                << " skyrunning=" << talk.skills().level(sim::kRoofSkill)
+                // S6: and whether the ward took him for any of it. A scripted
+                // line that fell short because a watchman crossed the room is a
+                // very different failure from one that fell short because a
+                // beat is broken, and the summary has to be able to tell them
+                // apart.
+                << " arrests=" << talk.crimes().arrests() << " sentence="
+                << sim::sentenceName(talk.crimes().lastSentence());
+    }
+    if (config.contract) {
+        const sim::DialogueDirector& talk = session.tavern().dialogue();
+        const sim::Stash& sack = talk.crimes().stash();
+        summary << " | work beats=" << result.contractBeats << '/' << kContractBeats
+                << " day=" << talk.contracts().day()
+                << " open=" << talk.contracts().contracts().size()
+                << " taken=" << talk.contracts().takenCount()
+                << " paid=" << talk.contracts().paidCount()
+                << " lost=" << talk.contracts().failedCount()
+                << " earned=" << talk.contracts().coinEarned()
+                << " scalps=" << sack.count(sim::Contraband::Scalp)
+                << " load=" << sack.illicitWeight() << "dr"
+                << " heat=" << talk.crimes().heat();
     }
     if (config.flame) {
         const sim::DialogueDirector& talk = session.tavern().dialogue();
@@ -1678,7 +1846,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // eleven characters of screen is unreadable in a capture.
     if (config.stamp && !result.talking) {
         const int scale = std::max(1, frame.height() / 180);
-        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S5", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
+        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S6", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
                  scale);
     }
 

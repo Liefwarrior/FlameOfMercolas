@@ -18,6 +18,7 @@
 
 #include "granadad/gate/twin_run.hpp"
 #include "granadad/gate/workload.hpp"
+#include "granadad/sim/contract.hpp"
 #include "granadad/sim/docks.hpp"
 
 using namespace granadad::gate;
@@ -220,6 +221,28 @@ TEST_CASE("the gate's workload actually moves a faction number") {
     CHECK(run.report.find("watch=-") != std::string::npos);
 
     // And it is still deterministic with all of that moving.
+    const TwinRunOutcome outcome = twin_run(config);
+    CHECK(outcome.passed);
+}
+
+TEST_CASE("the gate's workload actually takes a contract off the board") {
+    // THE SAME FAILURE CLASS, one sprint later. The contract board is folded
+    // into the world hash, and a board nobody ever takes anything off is four
+    // Offered rows that never move: perfectly deterministic, and proving
+    // nothing about the state a save would have to carry.
+    WorkloadConfig config;
+    config.world = granadad::sim::docks::kWorldName;
+    config.ticks = 700;
+    config.walkers = 8;
+    config.sample_every = 100;
+    config.with_tavern = true;
+    const RunResult run = run_workload(config);
+
+    // Four jobs a night, posted the moment the room exists.
+    CHECK(last_counter(run.report, "open=") == granadad::sim::kOffersPerDay);
+    CHECK(last_counter(run.report, "taken=") > 0);
+
+    // And it is still deterministic with the board moving under it.
     const TwinRunOutcome outcome = twin_run(config);
     CHECK(outcome.passed);
 }
