@@ -79,6 +79,12 @@ WORKDIR /src
 # native/content/CMakeLists.txt resolves ../../content to from /src/native.
 COPY content/maps/baked /src/content/maps/baked
 
+# The custom tile pack, 43 KB, for the same reason: the renderer's tests load
+# the owner's actual sheet and draw an actual frame of the Docks. Without it
+# they would only ever exercise the procedural fallback, which is the one thing
+# that never ships.
+COPY content/art/custom /src/content/art/custom
+
 # Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
 # has no use for either, and the rest of content is read at runtime straight
@@ -120,6 +126,19 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # and would hand back mtimes older than the poisoned objects again.
     find /src -exec touch {} +; \
     \
+    echo "=== the art pack must be in the context ==="; \
+    # 43 KB, and the renderer's tests bind every material to a real region of
+    # it. Without it they silently fall back to procedural tiles and the gate
+    # stops covering the art path entirely.
+    for asset in art-mapping.json tiles.png; do \
+        test -f "/src/content/art/custom/$asset" \
+            || { echo "FATAL: /src/content/art/custom/$asset is missing from the"; \
+                 echo "       build context. .dockerignore must re-admit"; \
+                 echo "       content/art/custom/** or the renderer is only ever"; \
+                 echo "       tested against its procedural fallback."; \
+                 exit 1; }; \
+    done; \
+    \
     echo "=== the baked worlds must be in the context ==="; \
     # The content tests read these. If .dockerignore stops re-admitting
     # content/maps/baked/** the cmake configure below fails anyway, but it
@@ -131,6 +150,10 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  echo "       content/maps/baked/** or the TROJSAV tests cannot run."; \
                  exit 1; }; \
     done; \
+    test -f /src/content/maps/baked/docks_surface.lamps.json \
+        || { echo "FATAL: the baked lamp sidecar is missing. The renderer has no"; \
+             echo "       light sources without it and the district goes dark."; \
+             echo "       Re-derive it with granadad-bake-lamps."; exit 1; }; \
     ls -l /src/content/maps/baked; \
     \
     echo "=== host check: build sim + tests for Linux and actually run them ==="; \
@@ -234,8 +257,13 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # doctest_discover_tests now registers it per case, so the sim suite is
     # visible to this floor for the first time. The remainder is the twin-run
     # gate and the world-hash fingerprint, one entry each.
+    #
+    # S1: 128 -> 183. Movement (angles, tile queries, the body), the lamp bake,
+    # the tile atlas, and the renderer -- which draws real frames of the real
+    # Docks in here, on every build, because the renderer is software and needs
+    # no window.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=128; \
+    GRANADAD_MIN_TESTS=183; \
     test_count="$(ctest --test-dir /build-cache/hostcheck -N \
         | sed -n 's/^Total Tests: *//p')"; \
     echo "ctest knows about ${test_count} tests (floor: ${GRANADAD_MIN_TESTS})"; \
@@ -260,6 +288,21 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         || { echo "FATAL: the case that compares the C++ world hash against the"; \
              echo "       JVM's is not registered. Without it the hasher is only"; \
              echo "       being compared to itself."; exit 1; }; \
+    # S1's two by name. The renderer is software precisely so that a frame of
+    # the real district can be drawn and checked HERE, with no window and no
+    # GPU; and the art case must load the owner's actual sheet rather than the
+    # procedural fallback, which is the one thing that never ships.
+    ctest --test-dir /build-cache/hostcheck -N \
+        | grep -q "the Docks render to a frame with a world in it" \
+        || { echo "FATAL: the case that renders the Docks in first person is not"; \
+             echo "       registered. Every sprint after S1 proves itself with a"; \
+             echo "       captured frame, and this is what keeps that path alive."; \
+             exit 1; }; \
+    ctest --test-dir /build-cache/hostcheck -N \
+        | grep -q "the owner's art pack loads when it is there" \
+        || { echo "FATAL: the case that loads content/art/custom is not"; \
+             echo "       registered, so the renderer is only ever being tested"; \
+             echo "       against its own procedural fallback."; exit 1; }; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \

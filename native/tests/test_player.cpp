@@ -27,9 +27,17 @@ const TileQuery& docksTiles() {
     return tiles;
 }
 
+// The movement cases anchor on a tile of their own rather than on the camera's
+// spawn, and on due north rather than on its facing. The camera's spawn is
+// chosen for what it LOOKS at, and re-framing a screenshot in a later sprint
+// must not be able to break the collision suite -- these coordinates are picked
+// for their geometry: open street ahead, a warehouse wall five tiles south, the
+// harbour four tiles north, nothing to climb in any direction.
+constexpr std::int32_t kWalkTileX = 143;
+constexpr std::int32_t kWalkTileY = 61;
+
 PlayerBody spawned() {
-    return PlayerBody(docksTiles(), docks::kSpawnTileX, docks::kSpawnTileY, docks::kSpawnBand,
-                      docks::kSpawnYaw);
+    return PlayerBody(docksTiles(), kWalkTileX, kWalkTileY, docks::kSpawnBand, kFacingNorth);
 }
 
 MoveInput walkForward() {
@@ -41,12 +49,19 @@ MoveInput walkForward() {
 }  // namespace
 
 TEST_CASE("the authored spawn is a place a body can actually stand") {
+    // The camera's spawn, the one a session and every capture starts from.
+    const PlayerBody camera(docksTiles(), docks::kSpawnTileX, docks::kSpawnTileY,
+                            docks::kSpawnBand, docks::kSpawnYaw);
+    CHECK(camera.spawnedLegally());
+    CHECK(camera.band() == docks::kBandQuayside);
+    CHECK(camera.yaw() == docks::kSpawnYaw);
+
     const PlayerBody body = spawned();
     CHECK(body.spawnedLegally());
-    CHECK(body.tileX() == docks::kSpawnTileX);
-    CHECK(body.tileY() == docks::kSpawnTileY);
+    CHECK(body.tileX() == kWalkTileX);
+    CHECK(body.tileY() == kWalkTileY);
     CHECK(body.band() == docks::kSpawnBand);
-    CHECK(body.yaw() == docks::kSpawnYaw);
+    CHECK(body.yaw() == kFacingNorth);
     // Placed at the exact tile centre, not at its corner.
     CHECK(q8_sub(body.x()) == kSubHalf);
     CHECK(q8_sub(body.y()) == kSubHalf);
@@ -68,8 +83,8 @@ TEST_CASE("movement is continuous and sub-tile, not tile-snapped") {
     // One step at walk speed is 11/256 of a tile: the body has moved, and it
     // has NOT jumped a whole tile.
     CHECK(body.y() == startY - kWalkSpeed);
-    CHECK(body.tileY() == docks::kSpawnTileY);
-    CHECK(body.x() == q8_tile_centre(docks::kSpawnTileX));  // due north is pure -Y
+    CHECK(body.tileY() == kWalkTileY);
+    CHECK(body.x() == q8_tile_centre(kWalkTileX));  // due north is pure -Y
 }
 
 TEST_CASE("running is faster than walking and both are per step, not per frame") {
@@ -81,8 +96,8 @@ TEST_CASE("running is faster than walking and both are per step, not per frame")
         walker.step(walkForward());
         runner.step(run);
     }
-    CHECK(walker.y() == q8_tile_centre(docks::kSpawnTileY) - 10 * kWalkSpeed);
-    CHECK(runner.y() == q8_tile_centre(docks::kSpawnTileY) - 10 * kRunSpeed);
+    CHECK(walker.y() == q8_tile_centre(kWalkTileY) - 10 * kWalkSpeed);
+    CHECK(runner.y() == q8_tile_centre(kWalkTileY) - 10 * kRunSpeed);
     CHECK(runner.stepCount() == 10);
 }
 
@@ -97,8 +112,8 @@ TEST_CASE("a diagonal is not faster than a straight line") {
         diagonal.step(both);
     }
     const auto distance = [](const PlayerBody& body) {
-        const std::int64_t dx = body.x() - q8_tile_centre(docks::kSpawnTileX);
-        const std::int64_t dy = body.y() - q8_tile_centre(docks::kSpawnTileY);
+        const std::int64_t dx = body.x() - q8_tile_centre(kWalkTileX);
+        const std::int64_t dy = body.y() - q8_tile_centre(kWalkTileY);
         return dx * dx + dy * dy;
     };
     // Within 4% of each other; without the 1/sqrt(2) scale the diagonal would
@@ -161,7 +176,7 @@ TEST_CASE("walls stop the body and it never ends up inside one") {
         REQUIRE_FALSE(docksTiles().solid(body.tileX(), body.tileY(), body.band()));
     }
     // It went somewhere and then stopped, short of the wall.
-    CHECK(body.y() > q8_tile_centre(docks::kSpawnTileY));
+    CHECK(body.y() > q8_tile_centre(kWalkTileY));
     CHECK(docksTiles().solid(body.tileX(), body.tileY() + 1, body.band()));
 }
 
@@ -192,12 +207,12 @@ TEST_CASE("a body sliding along a wall keeps its tangential speed") {
         sliding.step(walkForward());
     }
     // Both walked south until something stopped them...
-    CHECK(blocked.tileY() > docks::kSpawnTileY + 1);
-    CHECK(sliding.tileY() > docks::kSpawnTileY + 1);
+    CHECK(blocked.tileY() > kWalkTileY + 1);
+    CHECK(sliding.tileY() > kWalkTileY + 1);
     CHECK(docksTiles().solid(blocked.tileX(), blocked.tileY() + 1, blocked.band()));
     // ...and the one walking straight at the wall has not moved sideways at
     // all, while the one at an angle has kept every bit of its eastward speed.
-    CHECK(blocked.x() == q8_tile_centre(docks::kSpawnTileX));
+    CHECK(blocked.x() == q8_tile_centre(kWalkTileX));
     CHECK(sliding.x() - startX > kSubOne);
 }
 

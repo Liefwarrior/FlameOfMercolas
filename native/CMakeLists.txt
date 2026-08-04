@@ -168,11 +168,50 @@ granadad_apply_determinism(granadad-twin-gate)
 granadad_static_runtime(granadad-twin-gate)
 
 # ---------------------------------------------------------------------------
-# client-observer — the SDL3 window. Floats are legal HERE and only here.
+# granadad-render — the software first-person renderer. Floats are legal here.
+#
+# Built ALWAYS, including in the sim-only configuration the docker host check
+# uses, and deliberately linked against no SDL. That is the whole design:
+# rendering a frame needs a world, an art pack and a camera, and none of those
+# needs a window. Because this library stands alone, `granadad --screenshot`
+# opens no window, and the test suite can render the Docks and assert on the
+# pixels on every build -- which is how each of the nine sprints after this one
+# gets to prove visually that it still works.
+# ---------------------------------------------------------------------------
+add_library(granadad-render STATIC
+    src/render/framebuffer.cpp
+    src/render/atlas.cpp
+    src/render/lamps.cpp
+    src/render/lighting.cpp
+    src/render/world_renderer.cpp
+    src/render/hud.cpp
+    src/render/capture.cpp
+    src/render/session.cpp
+    src/render/stb_impl.cpp
+)
+target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(granadad-render PUBLIC granadad-sim stb::stb)
+target_compile_definitions(granadad-render PUBLIC
+    "GRANADAD_CONTENT_DIR_DEFAULT=\"${GRANADAD_CONTENT_DIR}\"")
+if(MSVC)
+    target_compile_definitions(granadad-render PUBLIC _CRT_SECURE_NO_WARNINGS)
+endif()
+granadad_apply_determinism(granadad-render)
+
+# The lamp baker. Turns a fixture's authored light_source markers into the
+# sidecar the game reads, so the 27 lamps of the Docks are derived from canon
+# rather than transcribed. Run by hand; its output is committed.
+add_executable(granadad-bake-lamps src/tools/bake_lamps.cpp)
+target_link_libraries(granadad-bake-lamps PRIVATE granadad-render)
+granadad_apply_determinism(granadad-bake-lamps)
+granadad_static_runtime(granadad-bake-lamps)
+
+# ---------------------------------------------------------------------------
+# client-observer — the SDL3 window and nothing else.
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_CLIENT)
-    add_executable(granadad src/client/main.cpp src/client/stb_impl.cpp)
-    target_link_libraries(granadad PRIVATE granadad-sim ${GRANADAD_SDL_TARGET} stb::stb)
+    add_executable(granadad src/client/main.cpp)
+    target_link_libraries(granadad PRIVATE granadad-render ${GRANADAD_SDL_TARGET})
     granadad_apply_determinism(granadad)
     # Console subsystem stays on — the sim prints, and we want stdout to work
     # when the game is launched from a terminal on Windows.
@@ -194,8 +233,11 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_angle.cpp
         tests/test_tile_query.cpp
         tests/test_player.cpp
+        tests/test_lamps.cpp
+        tests/test_atlas.cpp
+        tests/test_render.cpp
     )
-    target_link_libraries(granadad-tests PRIVATE granadad-gate doctest::doctest)
+    target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 
     # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
     # granadad-gate's PUBLIC compile definitions. tests/test_world_hash.cpp
@@ -263,3 +305,11 @@ endif()
 # is the determinism proof, and its --fingerprint report is the sim-side half of
 # the cross-toolchain comparison scripts/verify-windows.ps1 completes.
 install(TARGETS granadad-twin-gate RUNTIME DESTINATION .)
+
+# The lamp baker ships for one reason: content/maps/src is not in the build
+# context, so the only place the bake can actually be RE-DERIVED from the
+# authored Tiled source is on the machine that has the repo. Shipping it means
+# `granadad-bake-lamps.exe content/maps/src/docks_surface.tmx <out>` and a diff
+# is the whole verification, rather than a claim about a file nobody can
+# regenerate.
+install(TARGETS granadad-bake-lamps RUNTIME DESTINATION .)

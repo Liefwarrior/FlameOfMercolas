@@ -42,15 +42,18 @@ inline constexpr std::int32_t kHarbourSurfaceBand = 18;
 
 // --- the spawn --------------------------------------------------------------
 
-/// Tarwalk, the working spine, mid-district and two tiles south of the row of
-/// eelpot lamps, with the finger piers of Pier Row directly ahead over the
-/// water. Facing north puts the harbour in front of the player and the
-/// warehouse fronts behind, which is the view the district is recognisable
-/// from.
-inline constexpr std::int32_t kSpawnTileX = 143;
-inline constexpr std::int32_t kSpawnTileY = 61;
+/// Tarwalk, the working spine, mid-district, facing west-north-west.
+///
+/// Chosen by search rather than by taste: of every standable tile on the
+/// quayside and every facing, this one has four of the authored lamps in its
+/// ninety-degree view with line of sight to three of them, twenty-three tiles
+/// of open street ahead, and the harbour off the right shoulder. It is the view
+/// the district is most recognisable from, and it is the one the sprint's
+/// captures are taken from.
+inline constexpr std::int32_t kSpawnTileX = 146;
+inline constexpr std::int32_t kSpawnTileY = 64;
 inline constexpr std::int32_t kSpawnBand = kBandQuayside;
-inline constexpr Angle kSpawnYaw = kFacingNorth;
+inline constexpr Angle kSpawnYaw = angle_from_degrees(300);
 
 /// Every tile reachable from the spawn under the movement rules, counted by a
 /// flood fill in test_tile_query.cpp. Pinned so that a change to the step rules

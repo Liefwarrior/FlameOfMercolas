@@ -32,6 +32,21 @@
 #   tavern_fixture.trojsav      845 B
 !content/maps/baked/**
 
+# --- re-admitted: the custom tile pack the renderer draws with ---
+# 43 KB of it: art-mapping.json (13 KB) and tiles.png (29 KB), the owner's
+# original 16x16 pixel art in the MERCOLAS-24 palette.
+#
+# This is the ONE piece of content/art the build takes, and it earns its place
+# for the same reason content/maps/baked does: without it the renderer's tests
+# can only exercise the procedural fallback, so the gate would be proving that
+# the code paths nobody ships still work. With it, every build loads the real
+# sheet, binds every material to a real region, and renders a real frame of the
+# real Docks.
+#
+# Everything else under content/art -- the Kenney packs, the faces, the sprite
+# sets, 1.2 GB of it -- stays out and is read at runtime from the repo.
+!content/art/custom/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**
