@@ -169,6 +169,10 @@ void print_usage() {
         "  --contract[=WHERE]   play the ward's own bounty -- take it off the\n"
         "                       Watch, get the Flame's mark, hunt the taproom\n"
         "                       and get paid. WHERE is talk or away\n"
+        "  --burgle[=WHERE]     rob the Gilded Gull at four in the morning --\n"
+        "                       crouch, cross a dark taproom unseen, lift a\n"
+        "                       purse, up the stair, wire into a guest's box\n"
+        "                       and empty it. WHERE is box, taproom or street\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --ward[=DAYS]        run the ward's compounds -- courtyard farms,\n"
         "                       ground rents, bonds and the priest's hearings\n"
@@ -274,6 +278,13 @@ void print_usage() {
         } else if (starts_with(arg, "--nemesis=", &value)) {
             options.smoke.nemesis = true;
             options.smoke.nemesisEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--burgle") == 0) {
+            options.smoke.burgle = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--burgle=", &value)) {
+            options.smoke.burgle = true;
+            options.smoke.burgleEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--skyrun") == 0) {
             options.smoke.skyrun = true;
@@ -511,6 +522,34 @@ int run_client(const Options& options) {
                         }
                         break;
                     }
+                    // S9. THE WIRE OWNS THE KEYBOARD WHILE IT IS IN. Same
+                    // shape the conversation and the workbench already use: a
+                    // mode the SIMULATION is in, which the client reads and
+                    // routes for. W and S move the pick, SPACE probes, F puts a
+                    // shoulder to the lid and ESC takes the wire out.
+                    if (session.picking()) {
+                        if (event.key.key == SDLK_UP || event.key.key == SDLK_W) {
+                            session.movePick(1);
+                            break;
+                        }
+                        if (event.key.key == SDLK_DOWN || event.key.key == SDLK_S) {
+                            session.movePick(-1);
+                            break;
+                        }
+                        if (event.key.key == SDLK_SPACE && !event.key.repeat) {
+                            session.probeLock();
+                            break;
+                        }
+                        if (event.key.key == SDLK_F && !event.key.repeat) {
+                            session.forceLock();
+                            break;
+                        }
+                        if (event.key.key == SDLK_ESCAPE) {
+                            session.stopPicking();
+                            break;
+                        }
+                        break;
+                    }
                     if (event.key.key == SDLK_ESCAPE) {
                         running = false;
                     } else if (event.key.key == SDLK_TAB) {
@@ -533,9 +572,19 @@ int run_client(const Options& options) {
                     } else if (event.key.key == SDLK_X && !event.key.repeat) {
                         session.dropDown();
                     } else if (event.key.key == SDLK_G && !event.key.repeat) {
-                        // Hands on whatever is here -- a guest's strongbox, or
-                        // the bale in the snug.
+                        // Hands on whatever is here -- a guest's strongbox, the
+                        // bale in the snug, a rat on the floor, or the wire
+                        // Finch sells his own. S9: a LOCKED box puts the wire in
+                        // rather than opening itself.
                         session.steal();
+                    } else if (event.key.key == SDLK_C && !event.key.repeat) {
+                        // S9. Down on your haunches. Half speed, and worth more
+                        // than twenty levels of skill.
+                        session.toggleCrouch();
+                    } else if (event.key.key == SDLK_T && !event.key.repeat) {
+                        // S9. A hand in the coat of whoever is at your elbow,
+                        // with no conversation open and nobody looking at you.
+                        session.lift();
                     } else if (event.key.key == SDLK_F12) {
                         render::SmokeRunConfig shot = options.smoke;
                         shot.screenshot = "granadad-screenshot.png";
@@ -564,7 +613,8 @@ int run_client(const Options& options) {
         // Held keys move the body — unless somebody is talking to you, in which
         // case W and S are walking the topic list and must not also walk you
         // out of the room.
-        const bool* keys = session.talking() ? nullptr : SDL_GetKeyboardState(nullptr);
+        const bool* keys =
+            (session.talking() || session.picking()) ? nullptr : SDL_GetKeyboardState(nullptr);
         if (keys != nullptr) {
             if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) {
                 held.forward += 1;

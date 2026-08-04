@@ -161,7 +161,52 @@ public:
     void dropDown();
     /// G. Puts hands on whatever is here: the strongbox at a bed-foot, or the
     /// bale in the snug.
+    ///
+    /// S9: and the wire goes in first. A box whose lock is still shut opens the
+    /// lockpicking surface rather than refusing; the box itself is emptied by
+    /// the same key once the lock gives.
     void steal();
+
+    // --- S9: the three verbs of a burglar ------------------------------------
+    //
+    // On Session for the reason all nine before them are: the suite drives the
+    // code a keypress drives, and the client owns no game logic.
+
+    /// C. Down on your haunches, or back up. Halves the walk and is worth more
+    /// than twenty levels of skill -- see sim/stealth.hpp.
+    void toggleCrouch();
+    [[nodiscard]] sim::Stance stance() const noexcept;
+    /// True when nobody present can currently make the player out.
+    [[nodiscard]] bool hidden() const noexcept;
+    /// "HIDDEN  DARK 12  QUIET" or "SEEN  LIT 71  LOUD", or empty when there is
+    /// no room around the player. PUBLIC for the same reason stashLine is: the
+    /// HUD rule is a testable claim, and a case pins what this says.
+    [[nodiscard]] std::string stealthLine() const;
+    /// "LOCK  PINS *-- DEPTH 0........ STRAIN 1/3 PICKS 4", or empty when no
+    /// wire is in anything. PUBLIC for the same reason: the surface a
+    /// lockpicking minigame draws is a claim about the HUD rule, and a case
+    /// pins both what it says and that it stays on its edge.
+    [[nodiscard]] std::string lockLine() const;
+
+    /// T. Lifts from whoever is at your elbow, with no conversation open.
+    void lift();
+
+    /// True while the wire is in a lock and the client should be routing keys
+    /// to the lockpicking surface instead of to movement.
+    [[nodiscard]] bool picking() const noexcept;
+    /// Everything that surface draws.
+    [[nodiscard]] const sim::Lockpicking& lockpicking() const noexcept;
+    /// How many picks are in the roll.
+    [[nodiscard]] int picks() const noexcept;
+    /// W/S while picking: raises and lowers the pick.
+    void movePick(int delta);
+    /// SPACE while picking: one probe at the depth the pick is held at.
+    void probeLock();
+    /// F while picking, or standing at a jammed box: the shoulder, and the
+    /// noise.
+    void forceLock();
+    /// ESC while picking: the wire comes out and the lock relocks.
+    void stopPicking();
 
     /// S8. Puts the player back on their feet after somebody has put them on
     /// the floor: the room revives them and moves the clock on, the body goes
@@ -271,6 +316,10 @@ public:
 
 private:
     void syncTavernToBody();
+    /// Runs the ward's day forward to the tavern's calendar. Called after every
+    /// step and after every jump of the clock -- see the note on the definition
+    /// for why the ward could not previously see a slept night.
+    void syncWardToCalendar();
     void say(std::string line);
     /// Charges a landing to the body: the skill, the guild's teaching, the hit
     /// points and the roof-run tally, in the one place a landing is resolved.
@@ -388,6 +437,13 @@ struct SmokeRunConfig {
     /// "away" (closed, so the HUD's own RIVAL line is visible).
     bool nemesis = false;
     std::string nemesisEnd = "away";
+    /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
+    /// off somebody who does not feel it, up the stair, wire into a guest's
+    /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
+    /// the box you have just opened), "taproom" (back down among the people who
+    /// did not hear you) or "street" (out of the door with it).
+    bool burgle = false;
+    std::string burgleEnd = "box";
     /// Run the Priest of the Flame line end to end and capture wherever it
     /// finishes: the oath, the night pot, the captain's word, the report, the
     /// teaching, and a crafting composed at the bench. Driven through the same
@@ -423,6 +479,8 @@ struct SmokeRunResult {
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.
     std::int32_t nemesisBeats = 0;
+    /// And of the seven beats of the burglary.
+    std::int32_t burgleBeats = 0;
     /// What a scripted line WANTED to land, and what it did.
     ///
     /// S5 ADDS THESE BECAUSE S4'S CAPTURE PATH LIED. runFlameLine returned a

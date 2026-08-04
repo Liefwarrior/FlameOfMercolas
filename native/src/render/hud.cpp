@@ -286,6 +286,15 @@ void drawClock(Framebuffer& target, const HudState& state) {
     if (!state.stashLabel.empty()) {
         drawText(target, target.width() - margin - textWidth(state.stashLabel, scale), y,
                  state.stashLabel, Rgb{0.58F, 0.66F, 0.52F}, 0.84F, scale);
+        y += 9 * scale;
+    }
+    // S9: and whether anybody can see you. Green while the room cannot, amber
+    // the moment it can -- the one line here a burglar reads every second.
+    if (!state.stealthLabel.empty()) {
+        const bool seen = state.stealthLabel.substr(0, 4) == "SEEN";
+        drawText(target, target.width() - margin - textWidth(state.stealthLabel, scale), y,
+                 state.stealthLabel,
+                 seen ? Rgb{0.86F, 0.66F, 0.28F} : Rgb{0.44F, 0.72F, 0.50F}, 0.86F, scale);
     }
 }
 
@@ -316,6 +325,17 @@ void drawRoom(Framebuffer& target, const HudState& state) {
         drawText(target, target.width() - margin - width,
                  target.height() - margin - 15 * scale, state.rivalLabel,
                  hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F}, 0.90F, scale);
+    }
+    // S9: the lock under the wire, one row above the alert and clamped to the
+    // same margins. Bottom EDGE, well below the exclusion zone -- a lockpicking
+    // minigame is exactly the element that would otherwise become a panel in
+    // the middle of the screen, which is the failure this HUD is built against.
+    if (!state.lockLabel.empty()) {
+        const std::string lock = clipToWidth(state.lockLabel, target.width() - 2 * margin, scale);
+        const int width = textWidth(lock, scale);
+        const int x = std::max(margin, (target.width() - width) / 2);
+        drawText(target, x, target.height() - margin - 31 * scale, lock,
+                 Rgb{0.78F, 0.74F, 0.56F}, 0.92F, scale);
     }
     if (!state.alert.empty() && state.showAlert) {
         // CLIPPED HERE, WHICH IS THE ONLY PLACE THAT CAN DO IT HONESTLY.

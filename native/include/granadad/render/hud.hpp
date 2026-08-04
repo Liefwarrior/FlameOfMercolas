@@ -77,6 +77,18 @@ struct HudState {
     /// on the edge. Empty draws nothing, which is the usual case: nobody has
     /// beaten you yet.
     std::string_view rivalLabel;
+    /// S9: whether the room can currently make the player out, how much light
+    /// is falling on them and how much noise they are making -- "HIDDEN CROUCH
+    /// DARK 12  QUIET". Top-right under the sack, still hugging the edge.
+    ///
+    /// It is a LINE ON AN EDGE and not a meter in the middle for the same
+    /// reason the sack is one line: the centre stays empty, and a stealth
+    /// indicator is exactly the kind of element that creeps inwards.
+    std::string_view stealthLabel;
+    /// S9: the lock under the wire -- pins set, where the pick is being held,
+    /// strain on it and how many picks are left. Bottom edge, above the alert
+    /// row, and empty whenever no lock is open.
+    std::string_view lockLabel;
     /// One line about the room the player is standing in. Bottom-right.
     std::string_view roomLabel;
     /// Something said to the player that they need to have heard -- a

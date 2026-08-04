@@ -214,6 +214,20 @@ void Session::steal() {
     }
     syncTavernToBody();
     sim::Tavern::StealResult took = tavern_->crackStrongbox();
+    // S9. THE WIRE GOES IN FIRST. A locked box used to open to this key; it now
+    // refuses with Refused, so the key puts the wire in instead and the player
+    // works the lock. Pressing it again once the lock has given empties the
+    // box, which is what this key always did.
+    //
+    // Refused is ALSO the answer for a room the player rented -- "THAT ONE IS
+    // YOURS" -- and beginPick refuses that room for the same reason, so a
+    // player standing at their own bed-foot is told so once rather than being
+    // handed a wire they cannot use.
+    if (took.result == sim::ServiceResult::Refused && !tavern_->picking().open()) {
+        const sim::Tavern::PickResult started = tavern_->beginPick();
+        say(started.result == sim::ServiceResult::Served ? started.line : took.line);
+        return;
+    }
     if (took.result == sim::ServiceResult::TooFar) {
         // Nothing to open here. The other things hands can be put on are a bale
         // in the snug and, since S6, a rat on the floor -- which is the ward's
@@ -223,7 +237,108 @@ void Session::steal() {
     if (took.result == sim::ServiceResult::TooFar) {
         took = tavern_->takeScalp();
     }
+    if (took.result == sim::ServiceResult::TooFar) {
+        // And the last thing a pair of hands can do standing next to somebody:
+        // buy the wire that opens everything above. Refused for anyone who is
+        // not one of the roofs, which is what the guild's first rung buys.
+        took = tavern_->buyPicks();
+    }
     say(took.line);
+}
+
+// ---------------------------------------------------------------------------
+// S9: crouching, lifting, and the wire
+// ---------------------------------------------------------------------------
+
+void Session::toggleCrouch() {
+    if (talking()) {
+        return;
+    }
+    tavern_->toggleStance();
+    say(tavern_->stance() == sim::Stance::Crouched ? "CROUCHED" : "UPRIGHT");
+}
+
+sim::Stance Session::stance() const noexcept { return tavern_->stance(); }
+
+bool Session::hidden() const noexcept { return tavern_->hidden(); }
+
+std::string Session::stealthLine() const {
+    const sim::Notice worst = tavern_->worstNotice();
+    const std::int32_t light = tavern_->lightOnPlayer();
+    const std::int32_t noise = tavern_->playerNoise();
+    std::string line = worst.seen ? "SEEN" : "HIDDEN";
+    if (tavern_->stance() == sim::Stance::Crouched) {
+        line += " CROUCH";
+    }
+    // The two numbers a player can actually do something about, in the words
+    // they would use. Deliberately short: this is an EDGE line, not a sheet.
+    line += light >= 50 ? "  LIT " : "  DARK ";
+    line += std::to_string(light);
+    if (noise >= sim::kNoiseRunning) {
+        line += "  LOUD";
+    } else if (noise > 0) {
+        line += "  HEARD";
+    } else {
+        line += "  QUIET";
+    }
+    return line;
+}
+
+std::string Session::lockLine() const {
+    const sim::Lockpicking& wire = tavern_->picking();
+    if (!wire.open()) {
+        return {};
+    }
+    // THE WHOLE MINIGAME, IN ONE ROW OF 4x6 GLYPHS. A pin that has dropped is
+    // a star and one still up is a dash; the depth track is nine dots with the
+    // pick standing on one of them. Nothing here needs a panel, and a panel is
+    // what the Java build's first-person view died of.
+    std::string line = "LOCK  PINS ";
+    for (std::int32_t i = 0; i < wire.lock().pins; ++i) {
+        line += i < wire.pinsSet() ? '*' : '-';
+    }
+    line += "  DEPTH ";
+    for (std::int32_t d = 0; d < sim::kPinDepths; ++d) {
+        line += d == wire.depth() ? '#' : '.';
+    }
+    line += "  STRAIN " + std::to_string(wire.strain()) + "/" +
+            std::to_string(wire.strainLimit());
+    line += "  PICKS " + std::to_string(tavern_->picks());
+    return line;
+}
+
+void Session::lift() {
+    if (talking()) {
+        return;
+    }
+    syncTavernToBody();
+    say(tavern_->liftFrom().line);
+}
+
+bool Session::picking() const noexcept { return tavern_->picking().open(); }
+
+const sim::Lockpicking& Session::lockpicking() const noexcept { return tavern_->picking(); }
+
+int Session::picks() const noexcept { return tavern_->picks(); }
+
+void Session::movePick(int delta) { tavern_->movePick(delta); }
+
+void Session::probeLock() {
+    const sim::Tavern::PickResult felt = tavern_->probeLock();
+    say(felt.line);
+}
+
+void Session::forceLock() {
+    syncTavernToBody();
+    say(tavern_->forceLock().line);
+}
+
+void Session::stopPicking() {
+    if (!tavern_->picking().open()) {
+        return;
+    }
+    tavern_->abandonPick();
+    say("WIRE OUT. IT RELOCKS.");
 }
 
 void Session::settleDefeat() {
@@ -252,6 +367,7 @@ void Session::settleDefeat() {
     } else if (!rise.line.empty()) {
         say(rise.line);
     }
+    syncWardToCalendar();
 }
 
 void Session::step(const sim::MoveInput& input) {
@@ -267,7 +383,16 @@ void Session::step(const sim::MoveInput& input) {
     if (shoveX != 0 || shoveY != 0) {
         body_->push(shoveX, shoveY);
     }
-    body_->step(input);
+    // S9. THE STANCE IS THE ROOM'S AND THE BODY OBEYS IT. Crouching is
+    // simulation state -- it decides who sees a crime -- so the tavern owns it
+    // and the body is TOLD, rather than the client keeping a second copy of it
+    // that the hasher cannot see. The room is told back how the body is moving,
+    // which is how footfalls reach the notice rule.
+    sim::MoveInput moved = input;
+    moved.crouch = tavern_->stance() == sim::Stance::Crouched;
+    const bool walking = moved.forward != 0 || moved.strafe != 0;
+    tavern_->setPlayerMotion(walking, moved.run && !moved.crouch);
+    body_->step(moved);
     syncTavernToBody();
 
     // THE WATCH TOOK YOU AND HAS LET YOU GO. The room owns the sentence, the
@@ -314,6 +439,7 @@ void Session::step(const sim::MoveInput& input) {
         timeOfDay_ = tavern_->timeOfDay();
         settings_.timeOfDay = timeOfDay_;
     }
+    syncWardToCalendar();
 }
 
 void Session::stepMany(const sim::MoveInput& input, int steps) {
@@ -609,6 +735,7 @@ void Session::restHere() {
         timeOfDay_ = tavern_->timeOfDay();
         settings_.timeOfDay = timeOfDay_;
         stepsThisSecond_ = 0;
+        syncWardToCalendar();
         say("SLEPT UNTIL MORNING");
         return;
     }
@@ -621,6 +748,27 @@ void Session::skipToHour(int hour) {
     timeOfDay_ = tavern_->timeOfDay();
     settings_.timeOfDay = timeOfDay_;
     stepsThisSecond_ = 0;
+    syncWardToCalendar();
+}
+
+void Session::syncWardToCalendar() {
+    // THE TAVERN'S CALENDAR IS THE WORLD'S CALENDAR, and the ward follows it.
+    //
+    // S7 REVIEW FINDING #8, CLOSED. Ward::tick counts a second per engine tick
+    // and turns a day at 86,400 of them; every skip in this file -- sleeping in
+    // a rented bed, a night in a cell, the blackout after a beating, a scripted
+    // capture reaching a named hour -- moved the TAVERN'S clock and simulated
+    // none of the seconds it jumped, so the ward never heard about any of them.
+    // Ten slept nights left stats().days at zero and the whole compound economy
+    // had never run one day inside the windowed game.
+    //
+    // Tavern::dayNumber() is monotonic across midnight AND across a skip, which
+    // is exactly the clock the ward wants. advanceToDay is idempotent, so this
+    // may be called as often as it likes and the engine's own second counter
+    // cannot double-count against it.
+    if (ward_ != nullptr && tavern_ != nullptr) {
+        ward_->advanceToDay(tavern_->dayNumber());
+    }
 }
 
 Camera Session::camera() const noexcept {
@@ -1061,6 +1209,13 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     const std::string sack = stashLine();
     hud.heatLabel = conversing ? std::string_view{} : std::string_view{heat};
     hud.stashLabel = conversing ? std::string_view{} : std::string_view{sack};
+    // S9. Whether the room can see you, and the lock under the wire. Both on
+    // edges, both empty when they have nothing to say -- the right-hand stack
+    // for the first, the bottom band for the second.
+    const std::string unseen = tavern_->playerInside() ? stealthLine() : std::string();
+    hud.stealthLabel = conversing ? std::string_view{} : std::string_view{unseen};
+    const std::string lock = lockLine();
+    hud.lockLabel = conversing ? std::string_view{} : std::string_view{lock};
     // The rung, and what the line wants next. Bottom-left, over the health bar.
     const std::string guild = guildLine();
     const std::string objective = objectiveLine();
@@ -1748,6 +1903,147 @@ constexpr std::int32_t kContractBeats = 6;
 /// combat screen's seam, a house, and a charge on the roll.
 constexpr std::int32_t kNemesisBeats = 7;
 
+// ---------------------------------------------------------------------------
+// S9: the burglary, played
+// ---------------------------------------------------------------------------
+
+/// How many beats runBurgleLine tries to land: crouch, stand in a dark doorway
+/// unseen, a hand in a coat, up the stair, wire into a guest's box, the lock
+/// open, and the box emptied.
+constexpr std::int32_t kBurgleBeats = 7;
+
+/// Plays a burglary end to end, through the same Session calls a keypress
+/// makes: down on the haunches, across the floor, a hand in a coat, up the
+/// stair, and the wire into a guest's strongbox.
+///
+/// EVERY BEAT IS A KEY. Nothing here reaches into the simulation sideways --
+/// toggleCrouch, lift, climb, steal, movePick and probeLock are exactly what C,
+/// T, SPACE, G, W/S and SPACE do -- which is the only thing that makes a
+/// captured frame evidence rather than a diagram.
+/// Which beats of the last burglary landed, one bit each, in order. Printed in
+/// the summary so a short run says WHICH beat it dropped rather than only how
+/// many -- the S4 review's whole complaint about scripted lines that report a
+/// number and nothing else.
+std::int32_t gBurgleBeatMask = 0;
+
+[[nodiscard]] int runBurgleLine(Session& session, const std::string& ending) {
+    int landed = 0;
+    gBurgleBeatMask = 0;
+    std::int32_t beat = 0;
+    const auto mark = [&](bool ok) {
+        if (ok) {
+            gBurgleBeatMask |= 1 << beat;
+            ++landed;
+        }
+        ++beat;
+    };
+
+    // 1. down on the haunches. Half speed and worth more than twenty levels.
+    session.toggleCrouch();
+    mark(session.stance() == sim::Stance::Crouched);
+
+    // 2. IN AT THE DOOR, AND NOT MADE OUT STANDING IN IT. Crouched, at two in
+    //    the morning, with the doors just barred and the lanterns out: the room
+    //    is dark and nearly empty, which is the whole reason a burglar keeps
+    //    these hours.
+    //
+    //    THE CHECK IS HERE AND NOT LATER, deliberately. A lift that goes wrong
+    //    is an offence, and an offence puts a bouncer across the room at you --
+    //    at which point being seen is the game working rather than the stealth
+    //    failing, and a beat that could not tell those two apart would be a
+    //    beat worth nothing.
+    walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
+    mark(session.hidden());
+
+    // 3. a hand in the coat of whoever is still on a stool.
+    //
+    //    THE BEAT IS THE HAND, NOT THE COIN, and that is stated rather than
+    //    quietly assumed. Whether a lift SUCCEEDS is CRACKSMANSHIP against the
+    //    mark's own STREETWISE (Tavern::liftFrom), and a scripted burglar
+    //    starts at level zero, so against the night staff of a captains' house
+    //    it fails -- correctly, and it still teaches the hands. What this beat
+    //    proves is that the verb is reachable from the keys and reached a body;
+    //    the summary prints which way it went, so a reader is never told a lift
+    //    landed when it did not.
+    const std::int32_t purseBefore = session.tavern().playerCoin();
+    bool handWentIn = false;
+    for (const char* target : {"Kled Tarbeck", "Finch", "Gerta Saltcotte", "Master Venn"}) {
+        const sim::Actor* who = nullptr;
+        for (const sim::Actor& actor : session.tavern().actors()) {
+            if (actor.name() == target && actor.present() && actor.coin() > 0) {
+                who = &actor;
+                break;
+            }
+        }
+        if (who == nullptr) {
+            continue;
+        }
+        walkToTile(session, who->tileX(), who->tileY());
+        const sim::Tavern::StealResult tried = session.tavern().liftFrom();
+        if (tried.result != sim::ServiceResult::TooFar) {
+            handWentIn = true;
+        }
+        if (session.tavern().playerCoin() > purseBefore) {
+            break;
+        }
+    }
+    mark(handWentIn);
+
+    // 4. away across the room to the foot of the stair, and up it.
+    walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+    climbAndLand(session);
+    mark(session.body().band() == sim::gull::kUpperBand);
+
+    // 5. to a bed-foot that is not yours, and the wire in.
+    const sim::gull::GuestRoom& box = sim::gull::kRooms[2];
+    walkToTile(session, box.standX, box.standY);
+    session.steal();
+    mark(session.picking());
+
+    // 6. WORK THE LOCK. Pin by pin, and blind: nothing here looks up where the
+    //    pins are. It searches the depth track the way a player without the
+    //    feel does, and it stops the moment the lock gives or the wire is gone.
+    for (int guard = 0; guard < 400 && session.picking(); ++guard) {
+        const sim::Lockpicking& wire = session.lockpicking();
+        const std::int32_t at = wire.depth();
+        if (at >= sim::kPinDepths - 1) {
+            session.movePick(-(sim::kPinDepths - 1));
+        } else {
+            session.movePick(1);
+        }
+        session.probeLock();
+    }
+    const std::int32_t roomBit = 1 << 2;
+    if ((session.tavern().openedLocks() & roomBit) == 0) {
+        // The wire is gone and the lock is ruined. A burglar with a jammed lock
+        // and a job to do puts a shoulder to it, which always works and is the
+        // loudest thing in the building.
+        session.forceLock();
+    }
+    mark((session.tavern().openedLocks() & roomBit) != 0);
+
+    // 7. and the box, emptied.
+    const std::int32_t before = session.tavern().crackedBoxes();
+    session.steal();
+    mark(session.tavern().crackedBoxes() != before);
+
+    if (ending == "street") {
+        session.dropDown();
+        walkToTile(session, sim::gull::kStreetX, sim::gull::kStreetY);
+    } else if (ending == "taproom") {
+        walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+        session.dropDown();
+        walkToTile(session, sim::gull::kBartenderX, sim::gull::kBarY + 2);
+        session.body().setYaw(sim::kFacingNorth);
+    } else {
+        // Standing over the box that has just been emptied, looking at it.
+        session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
+                                             box.bedX, box.bedY));
+        session.body().setPitch(sim::angle_from_degrees(-14));
+    }
+    return landed;
+}
+
 [[nodiscard]] int runSkyrunLine(Session& session, const std::string& ending) {
     const sim::DialogueDirector& talk = session.tavern().dialogue();
     const std::string questId = "skyrunner-tenant";
@@ -1896,6 +2192,20 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.nemesis) {
         return 20;
     }
+    // TWO IN THE MORNING, and the hour is the whole point of the line.
+    //
+    // The Gull shuts at two: the doors are barred, the lanterns and the table
+    // candles are out (Tavern::houseLights only shows them while isOpen()), the
+    // hearth is banked from three, and the crowd has gone. What is left is a
+    // dark room with a handful of night staff in it -- which is the only state
+    // of this building a burglary is actually possible in, and proving that is
+    // the point of `--burgle`. Later than three and there is nobody left to
+    // creep past at all; earlier than two and the doors are open and the room
+    // is lit. Run it at eight in the evening and it lands fewer beats and says
+    // so, which is the game working.
+    if (config.burgle) {
+        return 2;
+    }
     // The roof line needs the door open and nobody in particular.
     return -1;
 }
@@ -1982,6 +2292,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.talking = session.talking();
     }
 
+    if (config.burgle) {
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runBurgleLine(session, config.burgleEnd));
+        result.burgleBeats = landed;
+        result.scriptedWanted += kBurgleBeats;
+        result.scriptedLanded += landed;
+        result.talking = session.talking();
+    }
+
     if (config.skyrun) {
         result.skyrunStages = runSkyrunLine(session, config.skyrunEnd);
         result.talking = session.talking();
@@ -2022,6 +2341,25 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " sprite px=" << result.stats.spritePixels
             << " actor px=" << result.stats.actorPixels << " luma="
             << result.stats.meanLuma << " colours=" << result.stats.distinctColours;
+    if (config.burgle) {
+        summary << " | burgle beats=" << result.burgleBeats << '/' << kBurgleBeats
+                << " mask=" << gBurgleBeatMask
+                << " lift=" << (session.tavern().dialogue().crimes().tally(sim::Crime::Lift) > 0
+                                    ? "tried"
+                                    : "none")
+                << " light=" << session.tavern().lightOnPlayer()
+                << " noise=" << session.tavern().playerNoise()
+                << " " << (session.hidden() ? "hidden" : "seen")
+                << " picks=" << session.picks()
+                << " locks open=" << session.tavern().openedLocks()
+                << " jammed=" << session.tavern().jammedLocks()
+                << " forced=" << session.tavern().forcedLocks()
+                << " cracked=" << session.tavern().crackedBoxes()
+                << " cracksmanship="
+                << session.tavern().dialogue().skills().level(sim::kThieverySkill)
+                << " skyrunning="
+                << session.tavern().dialogue().skills().level(sim::kRoofSkill);
+    }
     if (config.nemesis) {
         const sim::Nemesis* worst = session.tavern().nemesis().worst();
         summary << " | nemesis beats=" << result.nemesisBeats << '/' << kNemesisBeats;
