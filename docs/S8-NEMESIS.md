@@ -188,6 +188,10 @@ loaded unchanged and a player identity is added beside it.
 
 ### Mutations run against this sprint's own claims
 
+Each was applied to a scratch copy of `native/` built in the same pinned toolchain against the
+repo's real `content/`, and the figure is FAILED ASSERTIONS in the suite. They were run as each
+claim landed rather than all at the tip; nothing committed afterwards touches the mutated paths.
+
 | Mutation | Result |
 |---|---|
 | the winner's guild gains no weight | **3 failed**, exit 1 |
@@ -200,6 +204,11 @@ loaded unchanged and a player identity is added beside it.
 | the lodgers are not turned out (S7 mutation A) | **3 failed**, exit 1 |
 | `Abatement` → `Stay` (S7 mutation D) | **3 failed**, exit 1 |
 | the bond stops moving labour | **6 failed**, exit 1 |
+
+And the gate stamp's own negative control, which is the point of it: append one comment line to
+`native/README.md` and `scriptserify-windows.ps1` goes from
+`stamped 64a007e6… / here 64a007e6… / the published green belongs to these bytes` to
+`here 923e35d2…`, **FAILED**, exit 1.
 
 ---
 
