@@ -44,6 +44,22 @@ struct DialogueViewState {
     std::string attitude;
     /// What they just said. Wrapped by the view, never by the caller.
     std::string line;
+    /// Something the player must not miss that was NOT said by the person in
+    /// front of them -- a bouncer's warning shouted across the room while a
+    /// conversation is open.
+    ///
+    /// IT IS HERE AND NOT ON THE HUD, AND THAT IS A DEFECT REPORT. The HUD drew
+    /// the alert at `height - margin - 23*scale`, which is inside the bottom
+    /// band this file claims at `height - margin - rowStep*6`, and Session draws
+    /// the panel first and the HUD over it -- so the warning overprinted row two
+    /// of the topic grid across all three columns. docs/frames/s7-skyrun.png
+    /// shipped as PROOF of a fix while showing exactly that:
+    /// "2KLEDCTARBECK@GYOU HAVE HAD/THESKONLY WORD0YOURGET.1/THE DOOR."
+    ///
+    /// The bottom band is the topic list's and nothing else may draw in it. The
+    /// top band is sized from what it draws, so the alert simply takes a row of
+    /// it -- above the detail line, because a warning outranks a menu label.
+    std::string alert;
     /// The topic labels, in the order the simulation built them. ALL of them,
     /// never a slice: paging is the view's job and a caller that pre-sliced
     /// would be a caller that can drop one.

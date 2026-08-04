@@ -1005,9 +1005,19 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         hud.alert = std::string_view{message_};
     }
     hud.showHealth = !conversing;
+    // AND THE BOTTOM BAND IS THE TOPIC LIST'S, WHOLE. The alert used to be
+    // drawn over it and S7 shipped the frame that proves it -- see
+    // DialogueViewState::alert. It moves into the conversation's top band while
+    // one is open, which is sized from what it draws, so a warning shouted
+    // across the room is still read and nothing is drawn on top of anything.
+    hud.showAlert = !conversing;
+    DialogueViewState panel = dialogueView();
+    if (conversing && warned) {
+        panel.alert = tavern_->lastWarning();
+    }
     // The panel FIRST, the HUD over it: a bouncer's warning has to survive
     // being told mid-conversation, and it is the one line that outranks a menu.
-    drawDialogue(target, dialogueView());
+    drawDialogue(target, panel);
     drawHud(target, hud);
     return stats;
 }

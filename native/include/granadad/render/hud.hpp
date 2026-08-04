@@ -77,6 +77,18 @@ struct HudState {
     /// bouncer's warning. Bottom edge, centred horizontally but well below the
     /// exclusion zone.
     std::string_view alert;
+    /// Off while a conversation is open, for exactly the reason showHealth is.
+    ///
+    /// S7 SHIPPED THIS AS A DEFECT AND CALLED THE FRAME PROOF. The alert is
+    /// drawn at `height - margin - 23*scale`; the dialogue's bottom band starts
+    /// at `height - margin - rowStep*6` and its rows are drawn from there; the
+    /// HUD is drawn AFTER the panel, so the warning won and row two of the
+    /// topic grid became unreadable sludge in docs/frames/s7-skyrun.png.
+    ///
+    /// The warning is not dropped when this is false -- it moves into the
+    /// conversation's own top band (DialogueViewState::alert), which is sized
+    /// from what it draws. Nothing is lost and nothing overlaps.
+    bool showAlert = true;
 };
 
 /// The fraction of the screen, on each axis, that the HUD may occupy from an

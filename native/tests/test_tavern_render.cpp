@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -741,6 +742,100 @@ TEST_CASE("no HUD line is ever drawn off the edge of the frame it is in") {
     // the clip itself: at 320 wide with a 6-pixel margin there is room for 61
     // glyphs and the warning is 68, so it MUST have been cut.
     CHECK(clipToWidth(longWarning, 320 - 12, 1).size() < longWarning.size());
+}
+
+TEST_CASE("a warning shouted mid-conversation does not land on the topic grid") {
+    // THE S7 REVIEW'S FIRST FINDING, and docs/frames/s7-skyrun.png was shipped
+    // as proof of a DIFFERENT fix while carrying this one:
+    //
+    //   "2KLEDCTARBECK@GYOU HAVE HAD/THESKONLY WORD0YOURGET.1/THE DOOR."
+    //
+    // hud.cpp draws the alert at height - margin - 23*scale. dialogue_view.cpp
+    // claims the bottom band from height - margin - rowStep*6 and draws the
+    // topic grid inside it. Session draws the panel and then the HUD over it,
+    // so the warning won and row two of the grid became sludge across all three
+    // columns.
+    //
+    // The previous case above RENDERED a frame with an alert on it and then
+    // asserted a pure clipToWidth() call -- no pixel of what it drew was ever
+    // examined, which is exactly why this shipped. So this one looks at the
+    // pixels, and it proves the assertion has teeth in the same breath: the
+    // band must be untouched with the rule on, and must CHANGE with it off.
+    const std::string longWarning =
+        "KLED TARBECK: THAT IS YOUR ONE. OUT OF THIS HOUSE, OR I PUT YOU OUT.";
+
+    for (const int height : {180, 360, 720}) {
+        const int width = height * 16 / 9;
+        const int scale = std::max(1, height / 180);
+        const int margin = 5 * scale;
+        const int rowStep = 8 * scale;
+        const CentreRect centre = hudCentreRect(width, height);
+        // The band dialogue_view.cpp itself claims, computed the same way.
+        const int bandTop = std::max(centre.y1 + scale, height - margin - rowStep * 6);
+
+        DialogueViewState panel;
+        panel.open = true;
+        panel.speaker = "FINCH";
+        panel.epithet = "THE QUIET TENANT";
+        panel.attitude = "COLD";
+        panel.line = "You have had the only word you get.";
+        panel.topics = {"SIGN ON: THE SKYRUNNERS", "THE VANISHED CLERK", "SELL WHAT WAS TAKEN",
+                        "LEAN ON HIM",             "ASK ABOUT THE ROOFS", "BUY A DRINK FOR HIM",
+                        "A HAND IN HIS PURSE",     "ASK ABOUT THE WARD",  "LEAVE"};
+        panel.cursor = 0;
+
+        const auto bandOf = [&](const Framebuffer& target) {
+            std::vector<std::uint32_t> band;
+            for (int y = bandTop; y < height; ++y) {
+                for (int x = 0; x < width; ++x) {
+                    band.push_back(target.pixels()[target.index(x, y)]);
+                }
+            }
+            return band;
+        };
+
+        // The grid alone.
+        Framebuffer bare(width, height);
+        bare.clear(Rgb{0.0F, 0.0F, 0.0F});
+        drawDialogue(bare, panel);
+
+        // The grid, with a warning shouted across it, drawn the way Session
+        // draws it: the alert into the conversation's own top band, and the
+        // HUD's copy of it stood down.
+        Framebuffer shouted(width, height);
+        shouted.clear(Rgb{0.0F, 0.0F, 0.0F});
+        DialogueViewState withAlert = panel;
+        withAlert.alert = longWarning;
+        drawDialogue(shouted, withAlert);
+        HudState quiet;
+        quiet.alert = std::string_view{longWarning};
+        quiet.showAlert = false;
+        quiet.showHealth = false;
+        quiet.showCompass = false;
+        drawHud(shouted, quiet);
+
+        INFO(width, "x", height, " band from y=", bandTop);
+        // NOT ONE PIXEL of the topic grid moved.
+        CHECK(bandOf(bare) == bandOf(shouted));
+        // And the warning really was drawn somewhere: the frames differ ABOVE
+        // the band, or this case would pass just as happily against an alert
+        // that was thrown away.
+        CHECK(bare.pixels() != shouted.pixels());
+
+        // THE MUTATION, RUN HERE RATHER THAN DESCRIBED. Let the HUD draw the
+        // alert where S7 drew it and the band must change -- which is what
+        // makes the assertion above a claim and not a coincidence.
+        Framebuffer collided(width, height);
+        collided.clear(Rgb{0.0F, 0.0F, 0.0F});
+        drawDialogue(collided, panel);
+        HudState loud;
+        loud.alert = std::string_view{longWarning};
+        loud.showAlert = true;
+        loud.showHealth = false;
+        loud.showCompass = false;
+        drawHud(collided, loud);
+        CHECK(bandOf(bare) != bandOf(collided));
+    }
 }
 
 TEST_CASE("the picked topic is spelled out in full under the grid, however long it is") {

@@ -207,7 +207,13 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     const std::size_t columns = static_cast<std::size_t>(
         std::max(8, (target.width() - 2 * margin - reservedRight) / glyphAdvance));
     std::vector<std::string> speech = wrapText(state.line, columns);
-    const int maxSpeechRows = std::max(0, (centre.y0 - margin - rowStep * 2) / rowStep);
+    // The alert takes a row of the top band when there is one, so the speech
+    // gives one up rather than the alert being silently dropped off the bottom
+    // of a band that was sized before anybody asked for it. A warning outranks
+    // the fourth line of a greeting.
+    const int alertRows = state.alert.empty() ? 0 : 1;
+    const int maxSpeechRows =
+        std::max(0, (centre.y0 - margin - rowStep * 2) / rowStep - alertRows);
     if (static_cast<int>(speech.size()) > maxSpeechRows) {
         speech.resize(static_cast<std::size_t>(std::max(0, maxSpeechRows)));
     }
@@ -229,9 +235,9 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     // The top band is sized from what it draws, so it simply grows by a row.
     const std::string detail = dialogueDetailLine(state);
     const int detailRows = detail.empty() ? 0 : 1;
-    const int topHeight = std::min(
-        centre.y0 - scale,
-        margin + rowStep * (1 + static_cast<int>(speech.size()) + detailRows));
+    const int topHeight =
+        std::min(centre.y0 - scale, margin + rowStep * (1 + static_cast<int>(speech.size()) +
+                                                        alertRows + detailRows));
     target.fillRect(0, 0, target.width(), topHeight, kPanel, 0.82F);
     target.fillRect(0, topHeight, target.width(), scale, kEdge, 0.55F);
 
@@ -253,8 +259,18 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         drawText(target, margin, margin + rowStep * static_cast<int>(i + 1), speech[i], kSpeechInk,
                  0.94F, scale);
     }
-    if (detailRows > 0) {
+    if (alertRows > 0) {
+        // The bouncer's own colour, so it reads as somebody shouting across the
+        // room rather than as another thing the person in front of you said.
         const int y = margin + rowStep * (static_cast<int>(speech.size()) + 1);
+        if (y + 6 * scale <= topHeight) {
+            drawText(target, margin, y,
+                     clipToWidth(state.alert, target.width() - 2 * margin, scale),
+                     Rgb{0.90F, 0.62F, 0.30F}, 0.95F, scale);
+        }
+    }
+    if (detailRows > 0) {
+        const int y = margin + rowStep * (static_cast<int>(speech.size()) + alertRows + 1);
         if (y + 6 * scale <= topHeight) {
             const std::size_t width = static_cast<std::size_t>(
                 std::max(8, (target.width() - 2 * margin) / glyphAdvance));

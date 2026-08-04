@@ -300,7 +300,7 @@ void drawRoom(Framebuffer& target, const HudState& state) {
                  target.height() - margin - 7 * scale, state.roomLabel,
                  Rgb{0.72F, 0.70F, 0.62F}, 0.88F, scale);
     }
-    if (!state.alert.empty()) {
+    if (!state.alert.empty() && state.showAlert) {
         // CLIPPED HERE, WHICH IS THE ONLY PLACE THAT CAN DO IT HONESTLY.
         //
         // S6 shipped a frame -- docs/frames/s6-skyrun-quiet.png -- reading
