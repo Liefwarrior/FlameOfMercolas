@@ -430,11 +430,30 @@ void ContractBoard::refresh(std::int32_t day, std::uint64_t worldSeed,
     const std::vector<ContractOffer>& templates = raws_->offers();
     for (std::int32_t slot = 0; slot < kOffersPerDay; ++slot) {
         const auto key = static_cast<std::uint64_t>(slot);
+
+        // EVERY BROKER HAS SOMETHING TONIGHT, and the last slot is whoever the
+        // tide favoured. Four jobs drawn freely out of ten templates would
+        // leave the ward with no bounty on two nights in five and no work for
+        // the roofs on nearly as many, which reads as a broken board rather
+        // than as a quiet night -- and it would make the whole board a lottery
+        // a player cannot plan against. The pool is narrowed; nothing else
+        // about the draw changes.
+        std::vector<const ContractOffer*> pool;
+        const std::vector<ContractBroker>& brokers = raws_->brokers();
+        for (const ContractOffer& row : templates) {
+            if (static_cast<std::size_t>(slot) >= brokers.size() ||
+                row.broker == brokers[static_cast<std::size_t>(slot)].id) {
+                pool.push_back(&row);
+            }
+        }
+        if (pool.empty()) {
+            continue;
+        }
         // THE DRAW SCHEDULE. Appended, never inserted -- the same rule the
         // engine's own systems follow, and for the same reason: a new draw put
         // in front of an existing one re-rolls every board of every world.
         const ContractOffer& offer =
-            templates[static_cast<std::size_t>(night.draw(key, 0) % templates.size())];
+            *pool[static_cast<std::size_t>(night.draw(key, 0) % pool.size())];
         const std::string& patron =
             offer.patrons[static_cast<std::size_t>(night.draw(key, 1) % offer.patrons.size())];
         std::string sourceId =

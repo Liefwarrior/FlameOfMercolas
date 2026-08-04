@@ -322,9 +322,13 @@ inline constexpr std::int32_t kBaleUnits = 3;
 inline constexpr std::int32_t kVerminPerNight = 4;
 /// What a rat has. One clean punch.
 inline constexpr std::int32_t kVerminHealth = 4;
-/// The hours the taproom is quiet enough for them. From an hour before the
-/// doors shut until they open again.
-inline constexpr std::int32_t kVerminFrom = hourOfDay(1);
+/// The hours the taproom is quiet enough for them: from eleven at night, when
+/// the late crowd has thinned, until the doors open again at eleven in the
+/// morning. It OVERLAPS Watchman Cull's drink (nine to one) on purpose -- the
+/// man who hands out the ward's bounty and the vermin it is paid for have to be
+/// in the same building for two hours or the bounty is not a thing a player can
+/// do in one night.
+inline constexpr std::int32_t kVerminFrom = hourOfDay(23);
 inline constexpr std::int32_t kVerminUntil = hourOfDay(11);
 
 /// A BRAWL NEVER KILLS. That is what makes it a brawl, and it is why the door

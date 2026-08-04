@@ -263,6 +263,9 @@ if(GRANADAD_BUILD_TESTS)
         # S5 -- the roofs, and the trade that runs on them.
         tests/test_roofrun.cpp
         tests/test_crime.cpp
+        # S6 -- the goods, the radiant work over them, and the law that takes
+        # both away.
+        tests/test_contract.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 

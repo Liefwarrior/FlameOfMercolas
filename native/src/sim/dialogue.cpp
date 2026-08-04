@@ -542,8 +542,14 @@ const ContractBroker* DialogueDirector::brokerFor(std::string_view notableId) co
 }
 
 bool DialogueDirector::wantsSanction() const noexcept {
+    // THE MARK IS FOR THE TAKING, NOT FOR THE SACK. A priest signs before the
+    // knife rather than after it, which is the only reading that a player can
+    // actually act on: Father Maell keeps an evening hour and the rats do not
+    // come out until he has gone home. It is also the more honest reading of
+    // DECISIONS.md -- the Church "sanctions the redemption of a scalp", and a
+    // sanction obtained afterwards would be an absolution.
     for (const Contract& row : board_.contracts()) {
-        if (row.live() && row.needsSanction() && crimes_.stash().count(row.good) > 0) {
+        if (row.live() && row.needsSanction()) {
             return true;
         }
     }
