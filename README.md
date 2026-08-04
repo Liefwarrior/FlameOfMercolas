@@ -20,13 +20,24 @@ The game is being rewritten in C++. **`native/` is the live tree**; read
 docker compose run --rm --build build      # reproducible build -> dist/
 .\dist\granadad.exe                        # the game
 .\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame, no window needed
+.\dist\granadad.exe --nemesis --screenshot=rival.png    # lose three fights, watch him rise
+.\dist\granadad.exe --ward                # the compounds, two years, as text
 .\scripts\verify-windows.ps1               # finishes the cross-toolchain determinism gate
 ```
+
+`granadad.exe --help` lists every scripted line the build plays back with no window:
+`--flame`, `--skyrun`, `--contract`, `--roofs`, `--nemesis`.
 
 You spawn on the Tarwalk six tiles off the door of the Gilded Gull, the captains' tavern.
 Walk in: `E` talks and does business, `F` throws a punch, `R` sleeps in a room you have
 rented. There are fourteen people in there who keep hours, and two of them will put you out
 of the door if you make them.
+
+Lose a fist fight in there and the man who put you on the floor gets something for it: a rung
+on his own guild's ladder, weight in the ward that its rival loses, and -- if you keep going
+back -- a trade house of his own with a permanent cut of what a mug costs you, and his name on
+the compound roll as the Den Duke of the Gullet. You get up on the quay a few hours later. He
+keeps all of it.
 
 The Java tree (`sim-core/`, `client-observer/`, `tools/`, `headless/`) stays in place, untouched,
 as the behavioural reference until the C++ reaches parity. It is not the thing being built.
