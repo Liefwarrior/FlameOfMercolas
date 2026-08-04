@@ -1,6 +1,7 @@
 #pragma once
 
-// One place that knows how to stand in the Docks and look at them.
+// One place that knows how to stand in the Docks, look at them, and let them
+// carry on without you.
 //
 // The client's SDL loop, the `--screenshot` path and the test suite all need
 // the same thing: load the world, place the body, build the renderer, advance
@@ -9,6 +10,14 @@
 // a picture of the game.
 //
 // So it is assembled once, here, with no SDL anywhere in sight.
+//
+// WHAT S2 ADDED: THE WORLD NOW TICKS. S1's session was a diorama -- it stepped
+// the body and nothing else, and the time of day was frozen at construction. It
+// now runs the real PhasedEngine on the real two clocks: sixty movement steps
+// to one simulated second, one engine tick a second, and the clock on the wall
+// moves with it. The Gilded Gull is registered as a system on that engine, so
+// its fourteen actors keep their hours whether the player is in the room or on
+// the other side of the district.
 
 #include <cstdint>
 #include <filesystem>
@@ -22,7 +31,9 @@
 #include "granadad/render/hud.hpp"
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/world_renderer.hpp"
+#include "granadad/sim/engine.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 namespace granadad::render {
@@ -42,10 +53,16 @@ struct SessionConfig {
     /// Internal render resolution, before any window upscale.
     int width = 640;
     int height = 360;
-    /// Seconds since midnight.
+    /// Seconds since midnight AT THE START. It moves from there.
     int timeOfDay = 20 * 3600;
     /// Horizontal field of view in degrees.
     int fovDegrees = 90;
+    /// The only persisted RNG state there is.
+    std::uint64_t worldSeed = 0x4752414E41444144ull;  // "GRANADAD"
+    /// How many simulated seconds pass per simulated second of movement.
+    /// 1 is real time. Raising it is how a capture reaches a different hour
+    /// without running the whole afternoon.
+    int clockScale = 1;
 };
 
 /// A loaded, standing, drawable session.
@@ -64,29 +81,82 @@ public:
     [[nodiscard]] const TileAtlas& atlas() const noexcept { return atlas_; }
     [[nodiscard]] std::size_t lampCount() const noexcept { return renderer_->lamps().size(); }
 
-    /// Advances the body by one movement step.
+    /// The room, and the fourteen people in it.
+    [[nodiscard]] sim::Tavern& tavern() noexcept { return *tavern_; }
+    [[nodiscard]] const sim::Tavern& tavern() const noexcept { return *tavern_; }
+
+    /// Advances the body by one movement step, and the world with it.
     void step(const sim::MoveInput& input);
 
     /// Advances by `steps` movement steps with the same input.
     void stepMany(const sim::MoveInput& input, int steps);
 
+    /// Seconds since midnight, right now.
+    [[nodiscard]] int timeOfDay() const noexcept { return timeOfDay_; }
+    /// Simulated seconds since the session began.
+    [[nodiscard]] std::int64_t elapsedSeconds() const noexcept { return elapsedSeconds_; }
+    /// Jumps the clock, without simulating what happened in between. What
+    /// sleeping in a rented room does, and what a capture at a named hour does.
+    void skipToHour(int hour);
+
     /// The camera the body is currently looking through.
     [[nodiscard]] Camera camera() const noexcept;
 
-    /// Draws the world and the HUD into `target`.
+    /// Draws the world, everybody in it, and the HUD into `target`.
     FrameStats drawFrame(Framebuffer& target) const;
 
-    /// The HUD line under the compass: which band the player is on, in words.
-    [[nodiscard]] std::string bandLabel() const;
+    /// Where the player is, in words the player would use. Derived from x, y
+    /// AND the band — see sim::docks::kPlaces for why that is worth saying.
+    [[nodiscard]] std::string placeLabel() const;
+
+    // --- the three verbs ----------------------------------------------------
+    //
+    // On Session and not in the client, so the test suite drives exactly the
+    // code a keypress does. The client binds E, F and R to these and owns no
+    // game logic of its own.
+
+    /// E. Talks to whoever is in reach, and does business with them if they are
+    /// in a trade: a drink from the bartender, a room from the innkeeper.
+    void interact();
+    /// F. Throws a punch. In a taproom that is an offence, and the house has
+    /// opinions about it.
+    void punch();
+    /// R. Sleeps, if there is a rented room and you are standing in it.
+    void restHere();
+
+    /// The last thing that happened, for the HUD. Fades after a few seconds.
+    [[nodiscard]] const std::string& lastMessage() const noexcept { return message_; }
+
+    /// The lights the tavern is currently showing: its hearth while the fire is
+    /// lit, its table candles while the doors are open. Empty when the house is
+    /// dark. Exposed so a test can assert the room goes dark rather than
+    /// inferring it from pixels.
+    [[nodiscard]] std::vector<Lamp> tavernLights() const;
+
+    /// Every actor in view, as billboards, already shaded by the light where
+    /// they stand.
+    [[nodiscard]] std::vector<SpriteInstance> actorSprites() const;
 
 private:
+    void syncTavernToBody();
+    void say(std::string line);
+
     SessionConfig config_;
     content::World world_;
     std::unique_ptr<sim::TileQuery> tiles_;
     TileAtlas atlas_;
     std::unique_ptr<WorldRenderer> renderer_;
     std::unique_ptr<sim::PlayerBody> body_;
+    std::unique_ptr<sim::PhasedEngine> engine_;
+    /// Owned by the engine; borrowed here.
+    sim::Tavern* tavern_ = nullptr;
     RenderSettings settings_;
+    int timeOfDay_ = 0;
+    std::int64_t elapsedSeconds_ = 0;
+    std::int32_t stepsThisSecond_ = 0;
+    std::string message_;
+    /// Movement steps the message has left to live.
+    std::int32_t messageSteps_ = 0;
 };
 
 /// What a scripted capture run was asked to do.
@@ -100,6 +170,9 @@ struct SmokeRunConfig {
     int captureScale = 2;
     /// A one-line stamp burnt into the corner of the capture.
     bool stamp = true;
+    /// Walk the scripted route forward. Off holds position, which is what a
+    /// capture of a room wants.
+    bool walk = true;
 };
 
 struct SmokeRunResult {
@@ -110,6 +183,8 @@ struct SmokeRunResult {
     std::int32_t endTileX = 0;
     std::int32_t endTileY = 0;
     std::int32_t endBand = 0;
+    /// Who was in the room when the shutter went.
+    std::int32_t actorsInFrame = 0;
 };
 
 /// Runs a scripted session and, optionally, writes a PNG. No window, no GPU,

@@ -75,6 +75,10 @@ struct SpriteInstance {
     Rgb colour{1.0F, 1.0F, 1.0F};
     /// 0 draws as a lit solid; 1 draws as pure additive glow.
     float glow = 0.0F;
+    /// How soft the billboard's edge is. 1 is the flame's smooth falloff; 0 is
+    /// a hard-edged ellipse, which is what a body has to be to read as chunky
+    /// at 320x180 instead of as a smudge.
+    float softness = 1.0F;
 };
 
 struct RenderSettings {
@@ -90,6 +94,9 @@ struct RenderSettings {
     int levelsBelow = 4;
     int levelsAbove = 6;
     bool drawSprites = true;
+    /// Lights that are not in the baked sidecar because they come and go: a
+    /// tavern hearth, the candles on its tables. See dynamicGlowAt().
+    std::vector<Lamp> dynamicLamps;
 };
 
 /// What a frame turned out to be. Cheap to compute, and the only way a test can

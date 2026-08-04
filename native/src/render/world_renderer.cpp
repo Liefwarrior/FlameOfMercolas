@@ -322,7 +322,10 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                     if (voxel.bottom >= camera.z && remainingAbove == 0) {
                         continue;  // entirely above the eye, and the sky is full
                     }
-                    const Rgb lampLight = glow_.at(mapX, mapY, z);
+                    const Rgb baked = glow_.at(mapX, mapY, z);
+                    const Rgb live = dynamicGlowAt(settings.dynamicLamps, mapX, mapY, z);
+                    const Rgb lampLight{std::max(baked.r, live.r), std::max(baked.g, live.g),
+                                        std::max(baked.b, live.b)};
                     const Rgb surfaceLight{sky.ambient.r + lampLight.r, sky.ambient.g + lampLight.g,
                                            sky.ambient.b + lampLight.b};
 
@@ -553,7 +556,11 @@ void WorldRenderer::drawSprite(Framebuffer& target, const Camera& camera,
             if (r2 > 1.0F) {
                 continue;
             }
-            const float falloff = (1.0F - r2) * (1.0F - r2);
+            // softness 1 is the flame's smooth falloff; softness 0 fills the
+            // ellipse flat, which is what makes a body read as a body and not
+            // as a smudge at this resolution.
+            const float smooth = (1.0F - r2) * (1.0F - r2);
+            const float falloff = 1.0F + (smooth - 1.0F) * sprite.softness;
             const float alpha = std::clamp(falloff * (1.0F - fog * 0.8F), 0.0F, 1.0F);
             if (alpha <= 0.004F) {
                 continue;

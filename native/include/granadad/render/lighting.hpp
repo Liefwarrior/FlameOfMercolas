@@ -52,6 +52,22 @@ struct SkyState {
 /// The sky at a time of day, in seconds since midnight.
 [[nodiscard]] SkyState skyAt(int timeOfDaySeconds);
 
+/// Additive glow at one cell from a HANDFUL of lights that are not in the baked
+/// field: a tavern hearth that is banked at three in the morning, the candles
+/// on its tables that only exist while the doors are open.
+///
+/// Evaluated per drawn cell instead of baked, because the whole point of them
+/// is that they change. That is affordable precisely because there are a
+/// handful: the world pass reads light once per drawn VOXEL FACE, not once per
+/// pixel, so a dozen lights cost a dozen distance tests on a few thousand faces.
+/// A hundred of them would not be, and the day there are a hundred is the day
+/// they get a second baked field of their own.
+///
+/// Same radius, peak and falloff as the baked lamps, so a hearth and a street
+/// lantern of equal luminance light a room identically.
+[[nodiscard]] Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
+                                std::int32_t z) noexcept;
+
 /// A dense per-cell glow field over the world, built once from the lamps.
 class LampGlow {
 public:

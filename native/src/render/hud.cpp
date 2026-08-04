@@ -177,11 +177,71 @@ void drawCompass(Framebuffer& target, const HudState& state) {
     }
 }
 
+/// Top-right: the hour, and what is in the purse. Right-aligned against the
+/// edge, because that is the edge it belongs to.
+void drawClock(Framebuffer& target, const HudState& state) {
+    const int scale = std::max(1, target.height() / 180);
+    const int margin = 6 * scale;
+    int y = 5 * scale;
+    if (state.timeOfDaySeconds >= 0) {
+        const int hour = (state.timeOfDaySeconds / 3600) % 24;
+        const int minute = (state.timeOfDaySeconds / 60) % 60;
+        char text[6] = {static_cast<char>('0' + hour / 10), static_cast<char>('0' + hour % 10),
+                        ':', static_cast<char>('0' + minute / 10),
+                        static_cast<char>('0' + minute % 10), '\0'};
+        const std::string_view clock(text);
+        drawText(target, target.width() - margin - textWidth(clock, scale), y, clock, kInk, 0.9F,
+                 scale);
+        y += 9 * scale;
+    }
+    if (state.coin >= 0) {
+        char text[16] = {};
+        int at = 0;
+        int value = std::min(state.coin, 99999);
+        char digits[8] = {};
+        int count = 0;
+        do {
+            digits[count++] = static_cast<char>('0' + value % 10);
+            value /= 10;
+        } while (value > 0 && count < 8);
+        while (count > 0) {
+            text[at++] = digits[--count];
+        }
+        text[at++] = ' ';
+        text[at++] = 'C';
+        text[at] = '\0';
+        const std::string_view purse(text);
+        drawText(target, target.width() - margin - textWidth(purse, scale), y, purse,
+                 Rgb{0.82F, 0.72F, 0.38F}, 0.9F, scale);
+    }
+}
+
+/// Bottom-right: what the room is doing. Bottom edge, centred: what somebody
+/// just said to you.
+void drawRoom(Framebuffer& target, const HudState& state) {
+    const int scale = std::max(1, target.height() / 180);
+    const int margin = 6 * scale;
+    if (!state.roomLabel.empty()) {
+        const int width = textWidth(state.roomLabel, scale);
+        drawText(target, target.width() - margin - width,
+                 target.height() - margin - 7 * scale, state.roomLabel,
+                 Rgb{0.72F, 0.70F, 0.62F}, 0.88F, scale);
+    }
+    if (!state.alert.empty()) {
+        const int width = textWidth(state.alert, scale);
+        const int x = std::max(margin, (target.width() - width) / 2);
+        drawText(target, x, target.height() - margin - 15 * scale, state.alert,
+                 Rgb{0.90F, 0.62F, 0.30F}, 0.95F, scale);
+    }
+}
+
 }  // namespace
 
 void drawHud(Framebuffer& target, const HudState& state) {
     drawHealth(target, state);
     drawCompass(target, state);
+    drawClock(target, state);
+    drawRoom(target, state);
 }
 
 }  // namespace granadad::render

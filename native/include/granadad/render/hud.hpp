@@ -11,9 +11,11 @@
 // centre-clear rectangle and hudCentreIsClear() exists so a test can prove the
 // rule rather than trusting it.
 //
-// S1 ships two elements and no more: health bottom-left, compass top-centre.
-// Later sprints add to the edges; the exclusion zone is what stops them
-// creeping inwards.
+// S1 shipped two elements: health bottom-left, compass top-centre. S2 adds
+// three, all of them ON an edge and none of them anywhere near the middle:
+// the clock and the purse top-right, the room's own line bottom-right, and a
+// bouncer's warning across the very bottom. The exclusion zone is what stops
+// them creeping inwards, and the test that checks it goes red if they do.
 
 #include <cstdint>
 #include <string_view>
@@ -31,6 +33,16 @@ struct HudState {
     std::int32_t yawBam = 0;
     /// Shown under the compass. Empty draws nothing.
     std::string_view locationLabel;
+    /// Seconds since midnight. Drawn top-right as HH:MM. Negative draws nothing.
+    int timeOfDaySeconds = -1;
+    /// The purse, top-right under the clock. Negative draws nothing.
+    int coin = -1;
+    /// One line about the room the player is standing in. Bottom-right.
+    std::string_view roomLabel;
+    /// Something said to the player that they need to have heard -- a
+    /// bouncer's warning. Bottom edge, centred horizontally but well below the
+    /// exclusion zone.
+    std::string_view alert;
 };
 
 /// The fraction of the screen, on each axis, that the HUD may occupy from an

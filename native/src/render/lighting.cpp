@@ -22,7 +22,68 @@ constexpr std::int32_t kVerticalReach = 2;
     return t * t * (3.0F - 2.0F * t);
 }
 
+/// Radius and peak from an authored luminance. ONE definition, used by the
+/// baked field and by the per-cell dynamic path, so a hearth and a street
+/// lantern of equal luminance cannot light a room differently.
+struct LampFalloff {
+    float radius;
+    float peak;
+};
+
+[[nodiscard]] LampFalloff falloffOf(std::int32_t luminance) noexcept {
+    const float lum = static_cast<float>(luminance);
+    return LampFalloff{std::clamp(4.0F + (lum - 8.0F) / 12.0F, 3.5F, 5.5F),
+                       0.55F + 0.45F * lum / 26.0F};
+}
+
+[[nodiscard]] Rgb tintOf(LampWarmth warmth) noexcept {
+    return warmth == LampWarmth::Fire ? kFireColour : kLanternColour;
+}
+
 }  // namespace
+
+Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
+                  std::int32_t z) noexcept {
+    if (lamps.empty()) {
+        return Rgb{};
+    }
+    float intensity = 0.0F;
+    float red = 0.0F;
+    float green = 0.0F;
+    float blue = 0.0F;
+    for (const Lamp& lamp : lamps) {
+        const std::int32_t dz = z - lamp.z;
+        if (dz < -kVerticalReach || dz > kVerticalReach) {
+            continue;
+        }
+        const LampFalloff shape = falloffOf(lamp.luminance);
+        const float fx = static_cast<float>(x - lamp.x);
+        const float fy = static_cast<float>(y - lamp.y);
+        const float fz = static_cast<float>(dz) * kVerticalWeight;
+        const float distance = std::sqrt(fx * fx + fy * fy + fz * fz);
+        if (distance >= shape.radius) {
+            continue;
+        }
+        const float fall = 1.0F - (distance * distance) / (shape.radius * shape.radius);
+        const float value = shape.peak * fall * fall;
+        if (value <= 0.002F) {
+            continue;
+        }
+        const Rgb tint = tintOf(lamp.warmth);
+        red += tint.r * value;
+        green += tint.g * value;
+        blue += tint.b * value;
+        // Saturating union, same as the baked field: two lamps overlapping pool
+        // rather than adding up to white.
+        intensity = std::max(intensity, value);
+    }
+    const float weight = red + green + blue;
+    if (intensity <= 0.0F || weight <= 0.0F) {
+        return Rgb{};
+    }
+    const float norm = 3.0F / weight;
+    return Rgb{red * norm * intensity, green * norm * intensity, blue * norm * intensity};
+}
 
 SkyState skyAt(int timeOfDaySeconds) {
     const int wrapped = ((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay;
@@ -99,10 +160,10 @@ LampGlow LampGlow::build(const sim::TileQuery& tiles, const std::vector<Lamp>& l
     std::vector<float> blue(cells, 0.0F);
 
     for (const Lamp& lamp : lamps) {
-        const float lum = static_cast<float>(lamp.luminance);
-        const float radius = std::clamp(4.0F + (lum - 8.0F) / 12.0F, 3.5F, 5.5F);
-        const float peak = 0.55F + 0.45F * lum / 26.0F;
-        const Rgb tint = lamp.warmth == LampWarmth::Fire ? kFireColour : kLanternColour;
+        const LampFalloff shape = falloffOf(lamp.luminance);
+        const float radius = shape.radius;
+        const float peak = shape.peak;
+        const Rgb tint = tintOf(lamp.warmth);
         const std::int32_t reach = static_cast<std::int32_t>(std::ceil(radius));
 
         for (std::int32_t dz = -kVerticalReach; dz <= kVerticalReach; ++dz) {

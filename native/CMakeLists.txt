@@ -231,6 +231,7 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp
+        tests/test_tavern_render.cpp
         tests/test_step_pump.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)

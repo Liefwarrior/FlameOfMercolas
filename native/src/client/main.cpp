@@ -121,6 +121,8 @@ void print_usage() {
         "  --spawn=X,Y,Z        spawn tile (default the authored Tarwalk spawn)\n"
         "  --yaw=DEG            spawn facing, 0 = north (default 0)\n"
         "  --sensitivity=N      mouse look, BAM per count (default 14)\n"
+        "  --clock=N            simulated seconds per real second (default 1)\n"
+        "  --hold               do not walk during --smoke; let the world move\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n");
@@ -172,6 +174,10 @@ void print_usage() {
             options.smoke.session.spawnYawGiven = true;
         } else if (starts_with(arg, "--sensitivity=", &value)) {
             options.sensitivity = std::clamp(std::atoi(value), 1, 200);
+        } else if (starts_with(arg, "--clock=", &value)) {
+            options.smoke.session.clockScale = std::clamp(std::atoi(value), 1, 3600);
+        } else if (std::strcmp(arg, "--hold") == 0) {
+            options.smoke.walk = false;
         } else if (starts_with(arg, "--world=", &value)) {
             options.smoke.session.world = value;
         } else if (starts_with(arg, "--spawn=", &value)) {
@@ -275,6 +281,16 @@ int run_client(const Options& options) {
                     } else if (event.key.key == SDLK_TAB) {
                         mouseLook = !mouseLook;
                         SDL_SetWindowRelativeMouseMode(window, mouseLook);
+                    } else if (event.key.key == SDLK_E && !event.key.repeat) {
+                        // Talk, buy a drink, take a room — whichever the person
+                        // in front of you is for. All three verbs live on
+                        // Session so the test suite drives the same code a
+                        // keypress does.
+                        session.interact();
+                    } else if (event.key.key == SDLK_F && !event.key.repeat) {
+                        session.punch();
+                    } else if (event.key.key == SDLK_R && !event.key.repeat) {
+                        session.restHere();
                     } else if (event.key.key == SDLK_F12) {
                         render::SmokeRunConfig shot = options.smoke;
                         shot.screenshot = "granadad-screenshot.png";

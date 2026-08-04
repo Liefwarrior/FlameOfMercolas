@@ -89,4 +89,53 @@ inline constexpr std::int32_t kStandableOnQuayside = 11432;
 inline constexpr std::int32_t kStandableOnMidSlope = 7459;
 inline constexpr std::int32_t kStandableOnUpper = 3921;
 
+// --- named places -----------------------------------------------------------
+//
+// ADDED IN S2, because the HUD was printing street names it did not know. S1's
+// bandLabel() took the z-level and NOTHING ELSE, and mapped 19/20/21 to
+// TARWALK / ROPEWYND / SALTGATE RISE. Standing at (200, 100, z21) -- the far
+// east of the district, nowhere near it -- the HUD read SALTGATE RISE. A label
+// that asserts a location it cannot know is worse than no label.
+//
+// Every rectangle below is a real authored footprint, taken from the frect()
+// calls in tools/scripts/gen_docks_surface.py that laid the paving down, with
+// the one-chunk VOID border offset applied (local + 32, local z + 8).
+// test_place.cpp re-derives that these are actually paved in the baked world.
+//
+// Anywhere not in the table gets the band it is on and no street name, which is
+// the honest answer for the two-thirds of the district that is compounds,
+// yards and back lanes nobody has named yet.
+
+struct Place {
+    const char* name;
+    std::int32_t x0;
+    std::int32_t y0;
+    std::int32_t x1;
+    std::int32_t y1;
+    std::int32_t band;
+};
+
+/// Checked in order, so a building inside a street wins over the street.
+inline constexpr Place kPlaces[] = {
+    // K03, and the only interior S2 staffs. Both floors.
+    {"THE GILDED GULL", 146, 66, 160, 79, kBandQuayside},
+    {"THE GILDED GULL - ROOMS", 146, 66, 160, 79, kBandMidSlope},
+    // The working spine, in its three authored reaches.
+    {"TARWALK", 32, 60, 111, 65, kBandQuayside},
+    {"TARWALK", 112, 60, 161, 65, kBandQuayside},
+    {"TARWALK", 162, 62, 195, 67, kBandQuayside},
+    // The lower-middle road, paved reach then where the paving gives out.
+    {"ROPEWYND", 36, 92, 179, 97, kBandQuayside},
+    {"ROPEWYND - THE DIRT END", 180, 92, 209, 97, kBandQuayside},
+    // The N-S spine, one leg per band.
+    {"SALTGATE RISE", 104, 58, 111, 97, kBandQuayside},
+    {"SALTGATE RISE", 104, 129, 111, 147, kBandMidSlope},
+    {"SALTGATE RISE", 104, 149, 111, 159, kBandUpper},
+    {"GALLOWS ROW", 36, 152, 220, 154, kBandUpper},
+    // North of the quay edge the district is finger piers and open water.
+    {"THE LONG PIERS", 32, 32, 223, 57, kBandQuayside},
+};
+
+inline constexpr std::size_t kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]);
+
 }  // namespace granadad::sim::docks
