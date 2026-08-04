@@ -86,6 +86,42 @@ struct RoleLook {
     }
 }
 
+/// THE KEYS, AS A TOPIC LIST.
+///
+/// One row a verb, in the order a player learns them: move, look at the world,
+/// talk to it, and then the four things a burglar does. It pages nine at a time
+/// off the numbers, exactly like a long conversation, so this list can grow to
+/// any length without a row falling off the bottom with nothing on screen
+/// saying so -- which is the bug the S3 review found in the topic grid and the
+/// reason kTopicPageSize is nine.
+///
+/// IT IS HERE AND NOT IN THE CLIENT because the client owns no game logic and
+/// because a keyboard reference that lives beside the SDL bindings drifts from
+/// them the moment somebody rebinds one without looking down. This is drawn
+/// from the same Session verbs the client calls.
+const char* const kKeyRows[] = {
+    "W A S D  WALK",
+    "MOUSE  LOOK",
+    "SHIFT  RUN",
+    "C  CROUCH",
+    "SPACE  UP: MANTLE, LEAP, STAIR",
+    "X  DOWN: STEP OFF AND FALL",
+    "Q  LOOK AT WHAT IS HERE",
+    "J  YOUR CASEBOOK",
+    "E  TALK TO WHOEVER IS THERE",
+    "G  HANDS ON IT: BOX, BALE, PICKS",
+    "T  LIFT FROM WHOEVER IS AT YOUR ELBOW",
+    "F  THROW A PUNCH",
+    "R  SLEEP, IN A ROOM YOU RENTED",
+    "1-9  PICK THE TOPIC BY NUMBER",
+    "0  NEXT PAGE OF A LONG LIST",
+    "ESC  BACK OUT OF ANYTHING",
+    "TAB  RELEASE THE MOUSE",
+    "F12  SCREENSHOT",
+    "IN A LOCK: W S AIM, SPACE PROBE",
+    "IN A LOCK: F SHOULDER IT, ESC OUT",
+};
+
 }  // namespace
 
 Session::Session(const SessionConfig& config)
@@ -125,6 +161,26 @@ Session::Session(const SessionConfig& config)
     // Flame for a vacant charge, and the roll is where that becomes true.
     tavern_->attachRoll(ward_);
     engine_->boot();
+    // S10: AND THE CASE. The bloodletter trail is the reason to be in the
+    // district at all -- see sim/casebook.hpp. The raws are a member because
+    // Casebook borrows them for its whole life, and a missing casebook.json
+    // leaves an empty trail rather than refusing to boot, which is the contract
+    // every raws loader in this build honours.
+    caseRaws_ = sim::CasebookRaws::load(config_.contentDir);
+    casebook_.begin(caseRaws_);
+    // THE FIRST RUN OPENS ON THE HOOK.
+    //
+    // Every sprint before this one dropped the player onto the Tarwalk facing a
+    // door with no idea who they were or what they were for. So a fresh session
+    // starts with the notes up: the case, the body that started it, and the one
+    // lead the ward has given you. Anything the player does closes it -- see
+    // Session::step and the four verbs -- so it costs a keypress at most and
+    // never gets in the way twice.
+    if (config_.openingPage && caseRaws_.loaded()) {
+        casebookOpen_ = true;
+        message_ = "J YOUR NOTES   F1 THE KEYS   Q LOOK AT WHAT IS HERE";
+        messageSteps_ = 60 * 12;
+    }
     syncTavernToBody();
 }
 
@@ -149,6 +205,7 @@ void Session::settleLanding(const sim::RoofResult& move) {
 }
 
 void Session::climb() {
+    dismissOverlays();
     if (talking()) {
         return;
     }
@@ -195,6 +252,7 @@ void Session::climb() {
 }
 
 void Session::dropDown() {
+    dismissOverlays();
     if (talking()) {
         return;
     }
@@ -211,6 +269,7 @@ void Session::dropDown() {
 }
 
 void Session::steal() {
+    dismissOverlays();
     if (talking()) {
         return;
     }
@@ -253,6 +312,7 @@ void Session::steal() {
 // ---------------------------------------------------------------------------
 
 void Session::toggleCrouch() {
+    dismissOverlays();
     if (talking()) {
         return;
     }
@@ -314,11 +374,107 @@ std::string Session::lockLine() const {
 }
 
 void Session::lift() {
+    dismissOverlays();
     if (talking()) {
         return;
     }
     syncTavernToBody();
     say(tavern_->liftFrom().line);
+}
+
+// ---------------------------------------------------------------------------
+// S10: the investigation
+// ---------------------------------------------------------------------------
+
+sim::Legend Session::legend() const {
+    const sim::DialogueDirector& talk = tavern_->dialogue();
+    return sim::legendOf(talk.crimes(), talk.skills(), talk.standings(), talk.contracts(),
+                         casebook_);
+}
+
+void Session::examine() {
+    if (talking() || picking()) {
+        return;
+    }
+    if (casebookOpen_) {
+        // Q closes the notes as well as opening a lead, so a player who has the
+        // book up and presses the look key gets the world back rather than
+        // nothing at all.
+        toggleCasebook();
+        return;
+    }
+    // THE FLAME'S EYE IS THE ONE BOON THAT REACHES THE TRAIL. legend.hpp names
+    // this call site as the only one; a Wielder the ward defers to reads a
+    // scene from the doorway instead of standing over it.
+    const std::int32_t reach = sim::kLookRangeTiles + legend().lookRangeBonus();
+    // The casebook takes a range in tiles and looks for itself, so the bonus is
+    // applied by widening the search here rather than by handing the simulation
+    // a number the surface computed -- which is why look() is asked twice at
+    // most and never asked to trust a caller's arithmetic.
+    const std::int32_t tileX = body_->tileX();
+    const std::int32_t tileY = body_->tileY();
+    const std::int32_t band = body_->band();
+    sim::LookResult saw = casebook_.look(tileX, tileY, band);
+    if (!saw.found && saw.lead < 0 && reach > sim::kLookRangeTiles) {
+        // Nothing within the base reach. Walk outward one ring at a time up to
+        // the bonus, standing the look at each offset -- integer, bounded, and
+        // it cannot see anything a body one tile further along could not.
+        for (std::int32_t ring = 1; ring <= reach - sim::kLookRangeTiles && saw.lead < 0;
+             ++ring) {
+            const std::int32_t offsets[4][2] = {
+                {ring, 0}, {-ring, 0}, {0, ring}, {0, -ring}};
+            for (const auto& offset : offsets) {
+                saw = casebook_.look(tileX + offset[0], tileY + offset[1], band);
+                if (saw.lead >= 0) {
+                    break;
+                }
+            }
+        }
+    }
+    // THE CLUE IS THE MESSAGE. It is what the player walked here for, so it
+    // gets the row whole; how many leads it opened is on the CASE row, which is
+    // permanent and where a count belongs. A DEAD END SAYS SO OUT LOUD, though
+    // -- walking across the district to learn that the sea is the wrong
+    // question is work, and a game that let that read the same as a blank tile
+    // would be a game telling you not to look.
+    const bool cold = saw.found && saw.opened == 0;
+    say(cold ? saw.line + "  (COLD)" : saw.line);
+}
+
+/// PUTS THE NOTES AND THE KEY LIST DOWN. Called by every verb that acts on the
+/// world, so a player who presses a game key with a menu up gets the game and
+/// not a silent refusal -- and so the opening page can never be in the way of
+/// the second thing a new player does.
+void Session::dismissOverlays() noexcept {
+    casebookOpen_ = false;
+    keysOpen_ = false;
+    firstRun_ = false;
+}
+
+void Session::toggleKeys() {
+    if (talking() || picking()) {
+        return;
+    }
+    keysOpen_ = !keysOpen_;
+    if (keysOpen_) {
+        casebookOpen_ = false;
+    }
+    firstRun_ = false;
+    caseCursor_ = 0;
+    casePage_ = 0;
+    caseEntry_ = -1;
+}
+
+void Session::toggleCasebook() {
+    if (talking() || picking()) {
+        return;
+    }
+    keysOpen_ = false;
+    firstRun_ = false;
+    casebookOpen_ = !casebookOpen_;
+    caseCursor_ = 0;
+    casePage_ = 0;
+    caseEntry_ = -1;
 }
 
 bool Session::picking() const noexcept { return tavern_->picking().open(); }
@@ -382,6 +538,17 @@ void Session::step(const sim::MoveInput& input) {
     // deliberate: a bouncer's shove and a player's step in the same movement
     // step both go through PlayerBody, so neither can push the other through a
     // wall.
+    // FIRST STEP CLOSES THE OPENING PAGE. The session boots with the casebook
+    // up so a new player is told what the case is before they are told
+    // anything else; the moment they walk, they have read it and it gets out
+    // of the way. It never reopens itself.
+    if (firstRun_ && (input.forward != 0 || input.strafe != 0)) {
+        firstRun_ = false;
+        casebookOpen_ = false;
+        caseCursor_ = 0;
+        casePage_ = 0;
+        caseEntry_ = -1;
+    }
     syncTavernToBody();
     tavern_->stepMovement();
     const std::int32_t shoveX = tavern_->takePlayerShoveX();
@@ -473,7 +640,15 @@ void Session::say(std::string line) {
     // game runs at. S4 started routing a questline's journal prose through here
     // -- whole sentences out of the raws -- and the first capture of it ran off
     // the right edge mid-word, which looks like a bug because it is one.
-    constexpr std::size_t kAlertColumns = 56;
+    //
+    // S10 RAISED IT FROM 56 TO 92. Fifty-six was the column count of a 320x180
+    // frame, and it was the belt to the HUD's own braces -- drawHud clips the
+    // alert with clipToWidth against the REAL frame width, which is the fix the
+    // S6 review's cut-mid-glyph finding produced. So the guess here was
+    // truncating a clue at 640x360, where the row holds far more, for no reason
+    // but its own age. The HUD still clips; this only stops a runaway string
+    // being carried around.
+    constexpr std::size_t kAlertColumns = 92;
     if (line.size() > kAlertColumns) {
         line.resize(kAlertColumns);
         line += "..";
@@ -493,6 +668,7 @@ bool Session::haggling() const noexcept {
 }
 
 void Session::interact() {
+    dismissOverlays();
     if (talking()) {
         chooseTopic(static_cast<std::size_t>(std::max(0, topicCursor_)));
         return;
@@ -508,6 +684,27 @@ void Session::interact() {
 }
 
 void Session::moveTopicCursor(int delta) {
+    if (keysOpen_) {
+        const int count = static_cast<int>(sizeof(kKeyRows) / sizeof(kKeyRows[0]));
+        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
+        casePage_ = caseCursor_ / kTopicPageSize;
+        return;
+    }
+    if (casebookOpen_) {
+        // THE SAME KEYS, THE SAME PAGING, THE SAME BAND. The casebook is a
+        // conversation with your own notes -- see Session::toggleCasebook on
+        // why it borrows the dialogue surface rather than opening a sheet in
+        // the middle of the screen.
+        const int count = static_cast<int>(casebook_.known().size());
+        if (count <= 0) {
+            caseCursor_ = 0;
+            casePage_ = 0;
+            return;
+        }
+        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
+        casePage_ = caseCursor_ / kTopicPageSize;
+        return;
+    }
     if (!talking()) {
         return;
     }
@@ -526,6 +723,23 @@ void Session::moveTopicCursor(int delta) {
 }
 
 void Session::nextTopicPage() {
+    if (keysOpen_) {
+        const std::size_t rows = sizeof(kKeyRows) / sizeof(kKeyRows[0]);
+        const int pages = topicPageCount(rows);
+        casePage_ = (casePage_ + 1) % pages;
+        caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
+        return;
+    }
+    if (casebookOpen_) {
+        const std::size_t entries = casebook_.known().size();
+        const int pages = topicPageCount(entries);
+        if (pages <= 1) {
+            return;
+        }
+        casePage_ = (casePage_ + 1) % pages;
+        caseCursor_ = std::min(static_cast<int>(entries) - 1, casePage_ * kTopicPageSize);
+        return;
+    }
     if (!talking()) {
         return;
     }
@@ -541,7 +755,28 @@ void Session::nextTopicPage() {
 }
 
 void Session::chooseVisibleTopic(int slot) {
-    if (!talking() || slot < 0 || slot >= kTopicPageSize) {
+    if (slot < 0 || slot >= kTopicPageSize) {
+        return;
+    }
+    if (keysOpen_) {
+        // A key row is a reference, not a choice. The cursor moves and nothing
+        // else happens, which is the honest behaviour for a list you read.
+        const int index = casePage_ * kTopicPageSize + slot;
+        if (index < static_cast<int>(sizeof(kKeyRows) / sizeof(kKeyRows[0]))) {
+            caseCursor_ = index;
+        }
+        return;
+    }
+    if (casebookOpen_) {
+        const int index = casePage_ * kTopicPageSize + slot;
+        if (index >= static_cast<int>(casebook_.known().size())) {
+            return;
+        }
+        caseCursor_ = index;
+        caseEntry_ = index;
+        return;
+    }
+    if (!talking()) {
         return;
     }
     const int index = topicPage_ * kTopicPageSize + slot;
@@ -553,6 +788,17 @@ void Session::chooseVisibleTopic(int slot) {
 }
 
 void Session::chooseTopic(std::size_t index) {
+    if (casebookOpen_) {
+        // Reading an entry of your own notes. Nothing in the simulation moves;
+        // this is the one place in the game where picking a row is pure UI, and
+        // it is pure UI because the trail's state changed when you LOOKED, not
+        // when you read your own handwriting back.
+        if (index < casebook_.known().size()) {
+            caseCursor_ = static_cast<int>(index);
+            caseEntry_ = static_cast<int>(index);
+        }
+        return;
+    }
     if (!talking()) {
         return;
     }
@@ -590,6 +836,19 @@ void Session::chooseTopic(std::size_t index) {
 }
 
 void Session::closeConversation() {
+    if (keysOpen_) {
+        keysOpen_ = false;
+        caseCursor_ = 0;
+        casePage_ = 0;
+        return;
+    }
+    if (casebookOpen_) {
+        casebookOpen_ = false;
+        caseCursor_ = 0;
+        casePage_ = 0;
+        caseEntry_ = -1;
+        return;
+    }
     tavern_->endConversation();
     topicCursor_ = 0;
     topicPage_ = 0;
@@ -673,6 +932,75 @@ void Session::takeAskingPrice() {
 
 DialogueViewState Session::dialogueView() const {
     DialogueViewState view;
+    if (keysOpen_) {
+        view.open = true;
+        view.speaker = "CONTROLS";
+        view.epithet = "GRANADAD: THE DARKSTREETS";
+        view.line =
+            "YOU ARE IN THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS WHETHER YOU "
+            "WATCH IT OR NOT. PRESS F1 AGAIN TO PUT THIS DOWN.";
+        for (const char* row : kKeyRows) {
+            view.topics.emplace_back(row);
+        }
+        view.cursor = caseCursor_;
+        view.page = casePage_;
+        return view;
+    }
+    if (casebookOpen_) {
+        // THE CASEBOOK, DRAWN IN THE CONVERSATION'S SURFACE. Not a new panel
+        // and not a sheet: the HUD rule is that the centre of the screen stays
+        // clear, dialogue_view.hpp already owns a top band and a bottom band
+        // with a case that proves the middle is untouched, and a journal is the
+        // single most likely element in an RPG to break that rule. The Java
+        // build's first-person view broke it exactly here.
+        view.open = true;
+        view.speaker = "THE CASEBOOK";
+        view.epithet = std::string(caseRaws_.title());
+        const std::string_view mood = caseRaws_.dreadLabel(casebook_.dread());
+        view.attitude = std::string(mood);
+        const std::vector<std::int32_t> heard = casebook_.known();
+        const sim::Legend book = legend();
+        if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < heard.size()) {
+            const sim::Lead& lead =
+                caseRaws_.leads()[static_cast<std::size_t>(heard[static_cast<std::size_t>(
+                    caseEntry_)])];
+            const sim::LeadState what =
+                casebook_.state(heard[static_cast<std::size_t>(caseEntry_)]);
+            view.line = what == sim::LeadState::Open
+                            ? lead.place + ". " + lead.what + "."
+                            : lead.found + " " + lead.detail;
+        } else if (heard.empty()) {
+            view.line = std::string(caseRaws_.hook());
+        } else {
+            // The opening page: the hook, and what the ward calls you for the
+            // work so far. One line, because the top band wraps to three and
+            // the fourth would push into the play space.
+            view.line = std::string(caseRaws_.hook()) + "  THEY CALL YOU " +
+                        std::string(book.title()) + ".";
+        }
+        for (const std::int32_t index : heard) {
+            const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
+            std::string row;
+            switch (casebook_.state(index)) {
+                case sim::LeadState::Open:
+                    row = "? ";
+                    break;
+                case sim::LeadState::Cold:
+                    row = "X ";
+                    break;
+                case sim::LeadState::Followed:
+                    row = "* ";
+                    break;
+                default:
+                    row = "  ";
+                    break;
+            }
+            view.topics.push_back(row + lead.place);
+        }
+        view.cursor = caseCursor_;
+        view.page = casePage_;
+        return view;
+    }
     const sim::DialogueDirector& talk = tavern_->dialogue();
     if (!talk.isOpen()) {
         return view;
@@ -714,6 +1042,7 @@ DialogueViewState Session::dialogueView() const {
 }
 
 void Session::punch() {
+    dismissOverlays();
     const sim::Tavern::PunchResult result = tavern_->playerPunchNearest();
     if (!result.swung) {
         say("NOTHING IN REACH");
@@ -736,6 +1065,7 @@ void Session::punch() {
 }
 
 void Session::restHere() {
+    dismissOverlays();
     const sim::ServiceResult slept = tavern_->sleep();
     if (slept == sim::ServiceResult::Served) {
         timeOfDay_ = tavern_->timeOfDay();
@@ -1001,6 +1331,40 @@ std::string Session::guildLine() const {
     return clip(upperAscii(name) + " - " + upperAscii(talk.standings().rankTitle(top)), 34);
 }
 
+std::string Session::caseLine() const {
+    if (!casebook_.active() || !caseRaws_.loaded()) {
+        return {};
+    }
+    const std::vector<std::int32_t> heard = casebook_.known();
+    std::string line = "CASE " + std::to_string(casebook_.readCount()) + "/" +
+                       std::to_string(heard.size());
+    // WHERE TO GO NEXT, ON THE SAME ROW. This is the orientation line: a player
+    // who put the game down for a week and came back to a district of 692
+    // people gets one line telling them where they were walking. Until this
+    // sprint the corner of a new game was empty, which is exactly the "dropped
+    // into a systems demo with no orientation" the demo brief names.
+    const std::int32_t lead = casebook_.nextOpen();
+    if (lead >= 0 && static_cast<std::size_t>(lead) < caseRaws_.leads().size()) {
+        line += " > " + caseRaws_.leads()[static_cast<std::size_t>(lead)].place;
+    } else if (casebook_.closed()) {
+        line += " > " + std::string(caseRaws_.close());
+    } else {
+        const std::string_view mood = caseRaws_.dreadLabel(casebook_.dread());
+        line += "  ";
+        line.append(mood);
+    }
+    return clip(std::move(line), 40);
+}
+
+std::string Session::legendLine() const {
+    const sim::Legend book = legend();
+    if (book.totalRungs() <= 0) {
+        return {};
+    }
+    return clip(std::string(book.title()) + "  " + std::to_string(book.totalRungs()) + " RUNGS",
+                34);
+}
+
 std::string Session::heatLine() const {
     const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
     const sim::Stash& sack = crimes.stash();
@@ -1125,6 +1489,11 @@ std::string Session::objectiveLine() const {
         // a journal rather than in the corner of a frame.
         return clip(line.stages[static_cast<std::size_t>(at)].label, 34);
     }
+    // THE CASE'S OWN DESTINATION IS NOT PUT HERE. It has its own row lower down
+    // the stack -- see caseLine() -- because this one sits at y - 32*scale,
+    // which crosses the exclusion rectangle whenever it is non-empty, and the
+    // orientation a new player needs must not be the thing that breaks the HUD
+    // rule to deliver it.
     return {};
 }
 
@@ -1201,7 +1570,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // While a conversation is open the bottom band belongs to the topic list,
     // so the room line and the running message stand down rather than draw on
     // top of it.
-    const bool conversing = talking();
+    // The casebook and the key list stand the HUD down exactly the way a
+    // conversation does: all three are drawn in the same two bands, and two
+    // things fighting over one row is how the centre-clear rule gets broken by
+    // accident.
+    const bool conversing = talking() || casebookOpen_ || keysOpen_;
     hud.roomLabel = conversing ? std::string_view{} : std::string_view{room};
     // The ward's opinion of you sits under the purse -- unless somebody is in
     // front of you, in which case THEIR opinion is the one that matters and the
@@ -1227,6 +1600,13 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     const std::string objective = objectiveLine();
     hud.guildLabel = conversing ? std::string_view{} : std::string_view{guild};
     hud.objectiveLabel = conversing ? std::string_view{} : std::string_view{objective};
+    // S10. Where the case stands and where it wants you next: ONE row,
+    // bottom-left, in the one slot of that stack provably outside the exclusion
+    // rectangle. What the ward CALLS you for the work is not on the HUD at all
+    // -- it is on the casebook's own page, because a title is something you
+    // look up and not something you need every frame.
+    const std::string investigation = caseLine();
+    hud.caseLabel = conversing ? std::string_view{} : std::string_view{investigation};
     // And who put you on the floor last, which is the one thing on the HUD that
     // is about somebody else rather than about you.
     const std::string rival = rivalLine();
@@ -2054,6 +2434,161 @@ int workTheWire(Session& session, std::int32_t stopAtPins = -1,
     return probes;
 }
 
+// ---------------------------------------------------------------------------
+// S10: --trail, the investigation walked
+// ---------------------------------------------------------------------------
+
+/// THE WHOLE DISTRICT, ONE BAND. kCaptureRegion is the Gilded Gull and the
+/// pavement outside it, which is the right box for a scripted burglary and far
+/// too small for a walk to the Mission. The trail crosses the ward, so it gets
+/// a box that is the ward -- the world's own dimensions, one band deep.
+///
+/// It is still a BOX and still the same exact breadth-first search that
+/// region_path.hpp has run since S2: nothing here is a new pathfinder.
+///
+/// Walks the body across the DISTRICT to a tile, on the band it is already on.
+/// True when it got there -- and a false is a real answer, not a warning: a
+/// lead nobody can walk to is a lead nobody can read.
+[[nodiscard]] bool walkAcrossDistrict(Session& session, std::int32_t tileX,
+                                      std::int32_t tileY) {
+    sim::TileBox box;
+    box.x0 = 0;
+    box.y0 = 0;
+    box.x1 = session.tiles().sizeX() - 1;
+    box.y1 = session.tiles().sizeY() - 1;
+    box.z0 = session.body().band();
+    box.z1 = session.body().band();
+    sim::RegionPath router(session.tiles(), box);
+    std::vector<sim::PathStep> route;
+    const sim::PathStep from{session.body().tileX(), session.body().tileY(),
+                             session.body().band()};
+    const sim::PathStep to{tileX, tileY, session.body().band()};
+    if (!router.find(from, to, route)) {
+        return false;
+    }
+    for (const sim::PathStep& waypoint : route) {
+        const std::int32_t wx = sim::q8_tile_centre(waypoint.x);
+        const std::int32_t wy = sim::q8_tile_centre(waypoint.y);
+        bool arrived = false;
+        // A generous guard: a tile is eight movement steps at a walk and a
+        // corner costs a few more. Sixty is slack, not a licence to wander.
+        for (int guard = 0; guard < 60 && !arrived; ++guard) {
+            arrived = stepToward(session, wx, wy);
+        }
+        if (!arrived) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// How many leads the walked trail READ. Not a fixed beat count: the trail is
+/// authored data and the number of leads is a property of casebook.json, so a
+/// hard-coded target here would be a second source of truth for the same thing.
+std::int32_t gTrailRead = 0;
+std::int32_t gTrailWalked = 0;
+std::int32_t gTrailUnreached = 0;
+
+/// WALKS THE BLOODLETTER TRAIL, through the same two calls a keyboard makes.
+///
+/// Every beat is: find the nearest lead the casebook currently holds OPEN on
+/// this band, walk to it with the district's own breadth-first router, and
+/// press Q. Nothing here reads a clue it has not walked to and nothing here
+/// opens a lead the simulation did not open.
+///
+/// It stops when there is nothing open left that it can reach, which is an
+/// honest end condition: the two leads on the strand plane (z10) are one band
+/// down and this line does not climb, so it leaves them in the book and says so
+/// in the summary rather than pretending the case is finished.
+[[nodiscard]] int runTrailLine(Session& session, const std::string& ending) {
+    gTrailRead = 0;
+    gTrailWalked = 0;
+    gTrailUnreached = 0;
+    const sim::CasebookRaws* raws = session.casebook().raws();
+    if (raws == nullptr) {
+        return 0;
+    }
+    std::int32_t last = -1;
+    for (int guard = 0; guard < 32; ++guard) {
+        // The nearest OPEN lead on this band. Nearest, because that is what a
+        // player does, and because it makes the walk short enough to watch.
+        std::int32_t best = -1;
+        std::int32_t bestDistance = 0;
+        for (const std::int32_t index : session.casebook().known()) {
+            if (session.casebook().state(index) != sim::LeadState::Open) {
+                continue;
+            }
+            const sim::Lead& lead = raws->leads()[static_cast<std::size_t>(index)];
+            if (lead.site.band != session.body().band()) {
+                continue;
+            }
+            const std::int32_t dx = lead.site.x - session.body().tileX();
+            const std::int32_t dy = lead.site.y - session.body().tileY();
+            const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+            if (best < 0 || distance < bestDistance) {
+                best = index;
+                bestDistance = distance;
+            }
+        }
+        if (best < 0) {
+            break;
+        }
+        const sim::Lead& lead = raws->leads()[static_cast<std::size_t>(best)];
+        // Stand a tile short of the anchor: the anchors are counters, flagstones
+        // and sagging floors, and several of them are solid cells by design.
+        // kLookRangeTiles is four, so anywhere in the room will do.
+        bool got = walkAcrossDistrict(session, lead.site.x, lead.site.y);
+        if (!got) {
+            for (const std::int32_t offset : {1, -1, 2, -2}) {
+                got = walkAcrossDistrict(session, lead.site.x + offset, lead.site.y);
+                if (got) {
+                    break;
+                }
+                got = walkAcrossDistrict(session, lead.site.x, lead.site.y + offset);
+                if (got) {
+                    break;
+                }
+            }
+        }
+        ++gTrailWalked;
+        const std::int32_t before = session.casebook().readCount();
+        session.examine();
+        if (session.casebook().readCount() > before) {
+            ++gTrailRead;
+            last = best;
+        } else {
+            // Could not get near enough. Take it out of the running so the loop
+            // cannot spin on it, and count it -- a lead the walk could not reach
+            // is the single most useful thing this run can report.
+            ++gTrailUnreached;
+            (void)session.casebook().look(lead.site.x, lead.site.y, lead.site.band);
+            break;
+        }
+        if (ending == "mission" && lead.id == "mission-backroom") {
+            break;
+        }
+        if (ending == "weighhouse" && lead.id == "weighhouse-ledger") {
+            break;
+        }
+        if (ending == "hold" && lead.id == "drowned-hold") {
+            break;
+        }
+    }
+    // And where the shutter goes.
+    if (ending == "notes") {
+        session.toggleCasebook();
+    } else if (ending == "keys") {
+        session.toggleKeys();
+    } else if (last >= 0) {
+        // Facing the thing that was just written down, so the frame is of the
+        // place and not of the walk away from it.
+        const sim::Lead& lead = raws->leads()[static_cast<std::size_t>(last)];
+        session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
+                                             lead.site.x, lead.site.y));
+    }
+    return gTrailRead;
+}
+
 [[nodiscard]] int runBurgleLine(Session& session, const std::string& ending) {
     int landed = 0;
     gBurgleWatchers = 0;
@@ -2504,6 +3039,19 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.talking = session.talking();
     }
 
+    if (config.trail) {
+        // NOT A FIXED BEAT COUNT. The trail is authored data; how many leads
+        // there are is casebook.json's business, and a target typed in here
+        // would be a second source of truth for it. What the run owes is that
+        // every lead it WALKED TO it also read -- an unreachable lead fails the
+        // run, which is exactly the failure a coordinate drifting would cause.
+        result.trailRead = static_cast<std::int32_t>(runTrailLine(session, config.trailEnd));
+        result.trailWalked = gTrailWalked;
+        result.scriptedWanted += gTrailWalked;
+        result.scriptedLanded += result.trailRead;
+        result.talking = session.talking();
+    }
+
     if (config.burgle) {
         const std::int32_t landed =
             static_cast<std::int32_t>(runBurgleLine(session, config.burgleEnd));
@@ -2557,6 +3105,18 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " sprite px=" << result.stats.spritePixels
             << " actor px=" << result.stats.actorPixels << " luma="
             << result.stats.meanLuma << " colours=" << result.stats.distinctColours;
+    if (config.trail) {
+        const sim::Casebook& notes = session.casebook();
+        summary << " | trail read=" << result.trailRead << '/' << result.trailWalked
+                << " leads=" << notes.known().size()
+                << " cold=" << notes.coldCount()
+                << " unreached=" << gTrailUnreached
+                << " dread=" << notes.dread()
+                << " closed=" << (notes.closed() ? "yes" : "no")
+                << " flame=" << session.legend().row(sim::LegendTrack::Flame).rung
+                << " called=" << session.legend().title()
+                << " notes=" << (session.casebookOpen() ? "open" : "shut");
+    }
     if (config.burgle) {
         summary << " | burgle beats=" << result.burgleBeats << '/' << kBurgleBeats
                 << " mask=" << gBurgleBeatMask

@@ -146,6 +146,13 @@ add_library(granadad-sim STATIC
     # toll on the ward's prices, and a vacant charge taken on the compound
     # roll. Listed AFTER compound.cpp because it reaches into the roll.
     src/sim/nemesis.cpp
+    # S10 -- the reason to be in the district. casebook.cpp is the bloodletter
+    # trail: authored leads at the map's own script_anchor markers, a look verb,
+    # and two dead ends that are the point rather than a defect. legend.cpp is
+    # the long game -- five tracks the ward remembers you by, each rung of which
+    # buys something a player can feel.
+    src/sim/casebook.cpp
+    src/sim/legend.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -299,6 +306,11 @@ if(GRANADAD_BUILD_TESTS)
         # pins are a pure function of the seed.
         tests/test_stealth.cpp
         tests/test_lockpick.cpp
+        # S10 -- the bloodletter trail and the long game. The leads, the two
+        # dead ends, the coordinates checked against the baked world rather
+        # than against a comment, and the five tracks the ward remembers you by.
+        tests/test_casebook.cpp
+        tests/test_firstrun.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 

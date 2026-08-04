@@ -180,8 +180,20 @@ void print_usage() {
         "                       -- for DAYS (default 730) and print what the\n"
         "                       land gave, what the mouths took and who went\n"
         "                       hungry. No window\n"
+        "  --trail[=WHERE]      WALK THE BLOODLETTER TRAIL. The investigation\n"
+        "                       the district is about: the body at the Mission,\n"
+        "                       the erased line in the Weighhouse ledger, the\n"
+        "                       grate corroded shut from OUTSIDE, and what is\n"
+        "                       behind the doors of a warehouse that has been\n"
+        "                       condemned for nine years. WHERE is notes (the\n"
+        "                       casebook open), mission, weighhouse, hold, or\n"
+        "                       keys (the in-game controls page)\n"
         "  --selftest           deterministic primitives only, no window\n"
-        "  --version            print the build banner and exit\n");
+        "  --version            print the build banner and exit\n"
+        "\n"
+        "IN THE GAME: Q looks at what is here, J opens your casebook, F1\n"
+        "lists every key. The keys are IN the game -- this page is a\n"
+        "convenience and not the reference.\n");
 }
 
 [[nodiscard]] Options parse(int argc, char** argv, bool& stop, int& exitCode) {
@@ -280,6 +292,13 @@ void print_usage() {
             options.smoke.nemesis = true;
             options.smoke.nemesisEnd = value;
             options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--trail") == 0) {
+            options.smoke.trail = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--trail=", &value)) {
+            options.smoke.trail = true;
+            options.smoke.trailEnd = value;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--burgle") == 0) {
             options.smoke.burgle = true;
             options.wantsSmoke = true;
@@ -349,7 +368,23 @@ void print_usage() {
 // ---------------------------------------------------------------------------
 
 int run_client(const Options& options) {
-    render::Session session(options.smoke.session);
+    // A NEW GAME OPENS ON THE CASE, AND AT DAWN.
+    //
+    // The window path -- and only the window path. A scripted capture and two
+    // hundred test cases build a Session too and most of them want a frame of
+    // the world rather than a frame of a menu over it; see
+    // SessionConfig::openingPage. And the hour: the gazetteer has the Wielder
+    // arriving at the Docks at dawn with a passport and white garb, which is
+    // also simply the right hour to hand somebody a district -- the ward is at
+    // work, the Weighhouse is open and the Tarwalk is not a black corridor.
+    // `--time` still wins, because an hour the player asked for is an hour they
+    // meant.
+    render::SessionConfig start = options.smoke.session;
+    start.openingPage = true;
+    if (!start.timeOfDayGiven) {
+        start.timeOfDay = 8 * 3600;
+    }
+    render::Session session(start);
     if (!session.body().spawnedLegally()) {
         std::printf("granadad: spawn tile is not standable -- check --spawn\n");
         return 1;
@@ -362,8 +397,8 @@ int run_client(const Options& options) {
         std::printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
-    const int windowW = options.smoke.session.width * options.windowScale;
-    const int windowH = options.smoke.session.height * options.windowScale;
+    const int windowW = start.width * options.windowScale;
+    const int windowH = start.height * options.windowScale;
     SDL_Window* window =
         SDL_CreateWindow("Granadad: The Darkstreets", windowW, windowH, SDL_WINDOW_RESIZABLE);
     if (window == nullptr) {
@@ -422,6 +457,55 @@ int run_client(const Options& options) {
                 // in this file and it needs an input-layer harness, not another
                 // case.
                 case SDL_EVENT_KEY_DOWN:
+                    // S10. THE NOTES AND THE KEY LIST TAKE THE KEYBOARD FIRST,
+                    // and they take it exactly the way a conversation does --
+                    // they are drawn in the same two bands and paged by the
+                    // same numbers, so routing them any other way would be two
+                    // rules for one surface.
+                    //
+                    // F1 and J are checked BEFORE the mode test, so either key
+                    // always closes what it opened, even from inside it.
+                    if (event.key.key == SDLK_F1 && !event.key.repeat) {
+                        session.toggleKeys();
+                        break;
+                    }
+                    if (event.key.key == SDLK_J && !event.key.repeat &&
+                        !session.talking() && !session.picking()) {
+                        session.toggleCasebook();
+                        break;
+                    }
+                    if ((session.casebookOpen() || session.keysOpen()) && !event.key.repeat) {
+                        if (event.key.key == SDLK_ESCAPE) {
+                            session.closeConversation();
+                            break;
+                        }
+                        if (event.key.key == SDLK_UP || event.key.key == SDLK_W) {
+                            session.moveTopicCursor(-1);
+                            break;
+                        }
+                        if (event.key.key == SDLK_DOWN || event.key.key == SDLK_S) {
+                            session.moveTopicCursor(1);
+                            break;
+                        }
+                        if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
+                            session.chooseVisibleTopic(
+                                static_cast<int>(event.key.key - SDLK_1));
+                            break;
+                        }
+                        if (event.key.key == SDLK_0) {
+                            session.nextTopicPage();
+                            break;
+                        }
+                        if (event.key.key == SDLK_RETURN || event.key.key == SDLK_E) {
+                            session.chooseTopic(
+                                static_cast<std::size_t>(session.topicCursor()));
+                            break;
+                        }
+                        // Anything else falls through to the ordinary bindings,
+                        // and every verb down there puts the page away first --
+                        // see Session::dismissOverlays. A player who presses a
+                        // game key with their notes up gets the game.
+                    }
                     // A CONVERSATION TAKES THE KEYBOARD. Everything below is
                     // still Session's — the client owns no game logic — but
                     // while somebody is talking to you, the arrows pick topics
@@ -586,6 +670,12 @@ int run_client(const Options& options) {
                         // S9. A hand in the coat of whoever is at your elbow,
                         // with no conversation open and nobody looking at you.
                         session.lift();
+                    } else if (event.key.key == SDLK_Q && !event.key.repeat) {
+                        // S10. LOOK AT WHAT IS HERE. The investigation verb --
+                        // see Session::examine and sim/casebook.hpp. There is
+                        // no check to pass: the gate is having been told that
+                        // the place matters.
+                        session.examine();
                     } else if (event.key.key == SDLK_F12) {
                         render::SmokeRunConfig shot = options.smoke;
                         shot.screenshot = "granadad-screenshot.png";

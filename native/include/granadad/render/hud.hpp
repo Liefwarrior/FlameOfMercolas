@@ -89,6 +89,30 @@ struct HudState {
     /// strain on it and how many picks are left. Bottom edge, above the alert
     /// row, and empty whenever no lock is open.
     std::string_view lockLabel;
+    /// S10: where the bloodletter trail stands and where it wants you next --
+    /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row, immediately over
+    /// the HP label. Empty only when casebook.json is missing.
+    ///
+    /// AN INVESTIGATION READOUT IS THE ELEMENT MOST LIKELY TO BECOME A PANEL IN
+    /// THE MIDDLE OF THE SCREEN. It gets one row on an edge, the same deal the
+    /// sack and the stealth line got, and the casebook proper opens in the
+    /// conversation's own two bands where the centre is already proven clear.
+    ///
+    /// IT SITS AT y - 16*scale AND THAT IS A MEASUREMENT. The exclusion
+    /// rectangle's lower edge is at 0.78 * height; the bottom-left stack's rows
+    /// at y - 8 and y - 16 are below it at every resolution the game runs at,
+    /// and the rows above that are not -- which drawRoom's own comment has said
+    /// since S8 about the objective row. The one row S10 adds takes a slot that
+    /// is provably outside the rectangle rather than adding a third violation
+    /// to a stack that already had two.
+    ///
+    /// VERIFICATION GAP (S10): the guild row (y - 24) and the objective row
+    /// (y - 32) still cross the rectangle at 320x180 and at 640x360 whenever
+    /// they are non-empty. Pre-existing since S4, already documented at
+    /// drawRoom, and NOT fixed here: the honest fix is a bottom band that spans
+    /// the frame the way Barony's does, which is a layout change and not a
+    /// sprint's tail end. It is why the case row went below them and not above.
+    std::string_view caseLabel;
     /// One line about the room the player is standing in. Bottom-right.
     std::string_view roomLabel;
     /// Something said to the player that they need to have heard -- a

@@ -1,0 +1,166 @@
+{
+  "id": "casebook",
+  "case": {
+    "id": "the-bloodletter",
+    "title": "THE BLOODLETTER",
+    "hook": "A BODY CAME UP AGAINST THE OUTFALL GRATE AT LOW TIDE. THE MISSION TOOK IT IN FOR RITES.",
+    "close": "SOMETHING CROSSED THE SEA INTO TROJIAN TERRITORY.",
+    "provenance": "docs/design/DOCKS-GAZETTEER.md section 5 (THE OPENING INVESTIGATION), scene-level, blessed. Every substantive word below is lifted from that section, from section 4.4 (the Forty Notables) or from section 3 (the establishment roster). Nothing here invents setting: it selects it. The three clue sites are the gazetteer's own numbered three, and the sites carry the tile coordinates of the map's OWN authored script_anchor markers -- clue_c1_mission_backroom, clue_c2_weighhouse_ledger, clue_c3_drowned_hold and their neighbours, in tools/scripts/gen_docks_surface.py -- converted to global tiles by the one documented rule (local + 32, local z + 8).",
+    "dreadBands": [
+      { "at": 0, "label": "THE WARD HAS HEARD NOTHING" },
+      { "at": 18, "label": "THE WARD IS TALKING" },
+      { "at": 40, "label": "THE NIGHT STREETS ARE EMPTYING" },
+      { "at": 66, "label": "NOBODY WALKS THE GULLET ALONE" }
+    ]
+  },
+  "leads": [
+    {
+      "id": "mission-backroom",
+      "place": "MISSION OF THE FLAME",
+      "what": "THE BODY, AND WHOEVER FOUND IT",
+      "who": "onna",
+      "site": { "x": 126, "y": 110, "band": 19 },
+      "anchor": "clue_c1_mission_backroom",
+      "start": true,
+      "dread": 12,
+      "found": "CLAW WOUNDS. BLED PAST WHAT THEY EXPLAIN. THE FACE FIXED IN TERROR.",
+      "detail": "ONNA FOUND IT ON NIGHT ROUNDS AND HAS NOT SLEPT SINCE. SHE SAYS THE BODY WAS ABOVE THE GRATE, INSIDE THE OUTFALL. IT CAME FROM THE SEWER SIDE, NOT THE SEA.",
+      "opens": ["mission-flagstones", "the-outfall", "weighhouse-ledger"]
+    },
+    {
+      "id": "mission-flagstones",
+      "place": "MISSION OF THE FLAME",
+      "what": "THE FLAGSTONES IT LAY ON OVERNIGHT",
+      "who": "maell",
+      "site": { "x": 120, "y": 110, "band": 19 },
+      "anchor": "mission_bunks_anchor",
+      "dread": 14,
+      "found": "A RESIDUE TRACE ON THE FLAGSTONES. BLACK, TACKY ICHOR.",
+      "detail": "FATHER MAELL WROTE THREE UNANSWERED LETTERS TO THE MONASTERY ABOUT SOMETHING WRONG ON THE WATER, BEFORE THE FIRST BODY. THE ICHOR SHOULD NOT BE THERE IF THE VICTIM MERELY DIED.",
+      "opens": ["drowned-name-wall"]
+    },
+    {
+      "id": "the-outfall",
+      "place": "THE OUTFALL",
+      "what": "THE SEWER MOUTH IN THE SEAWALL",
+      "who": "",
+      "site": { "x": 203, "y": 58, "band": 19 },
+      "anchor": "sign_w_outfall",
+      "dread": 6,
+      "deadEnd": true,
+      "found": "THE GRATE IS CORRODED SHUT. FROM OUTSIDE.",
+      "detail": "NOTHING CAME IN THIS WAY. WHATEVER USED THE OUTFALL WAS ALREADY UNDER THE WARD WHEN IT DID. THE SEA IS THE WRONG QUESTION.",
+      "opens": []
+    },
+    {
+      "id": "weighhouse-ledger",
+      "place": "THE WEIGHHOUSE",
+      "what": "THE HARBORMASTER'S LEDGER",
+      "who": "crell",
+      "site": { "x": 100, "y": 69, "band": 19 },
+      "anchor": "clue_c2_weighhouse_ledger",
+      "dread": 10,
+      "found": "ONE ARRIVAL MATCHES. A GRAIN COASTER, BERTHED THREE NIGHTS, SAILED AFTER THE KILLING.",
+      "detail": "CRELL SURRENDERS EVERYTHING, SEETHING, AND MAKES YOU ASK FOR IT ITEM BY ITEM. ONE CARGO LINE WAS STRUCK FROM THE MANIFEST AFTER INSPECTION, INITIALLED BY A CLERK WHO HAS SINCE STOPPED COMING TO WORK.",
+      "opens": ["harls-yard", "kings-bond", "branns-grayledger"]
+    },
+    {
+      "id": "harls-yard",
+      "place": "HARL'S YARD",
+      "what": "THE HULL THAT CAME IN THAT NIGHT",
+      "who": "harl",
+      "site": { "x": 173, "y": 73, "band": 19 },
+      "anchor": "business_k06_harlsyard_anchor",
+      "dread": 12,
+      "found": "SCRATCH-MARKS INSIDE THE REPAIRED HOLD. HE WAS PAID NOT TO MENTION THEM.",
+      "detail": "SOMETHING RODE IN THAT HULL. ENTRY WITHOUT FORCED ENTRY: IT SLIDES THROUGH CRACKS LIKE A SNAKE. THE STRUCK CARGO WENT EAST BY CART, TO A WAREHOUSE THAT IS OFFICIALLY EMPTY.",
+      "opens": ["drowned-hold", "wrackhouse-salvage"]
+    },
+    {
+      "id": "kings-bond",
+      "place": "THE KING'S BOND",
+      "what": "WHERE STRUCK CARGO IS SUPPOSED TO GO",
+      "who": "grieve",
+      "site": { "x": 122, "y": 72, "band": 19 },
+      "anchor": "business_k12_kingsbond_anchor",
+      "dread": 4,
+      "deadEnd": true,
+      "found": "SEALED UNDER ROYAL PADLOCKS. THE STRUCK LINE NEVER CAME HERE.",
+      "detail": "BONDSMAN GRIEVE OPENS THE WHOLE BOND TO THE FLAME AND IS TROUBLED BY THE ERASED LINE MORE THAN HE LETS ON. EVEN THE HARBORMASTER KNOCKS AT THIS DOOR. WHATEVER WAS STRUCK WENT SOMEWHERE WITH NO PADLOCK ON IT.",
+      "opens": []
+    },
+    {
+      "id": "branns-grayledger",
+      "place": "BRANN'S CHANDLERY",
+      "what": "THE GRAY LEDGER",
+      "who": "brann",
+      "site": { "x": 60, "y": 103, "band": 18 },
+      "anchor": "clue_brann_grayledger_anchor",
+      "dread": 8,
+      "found": "NIGHT-OIL, SOLD TO NOBODY HE WILL NAME. HE NAMES IT TO THE FLAME.",
+      "detail": "TWO LEDGERS, AND THE GRAY ONE SHOWS LAMP OIL GOING EAST BY NIGHT FOR NINE WEEKS. A CONDEMNED WAREHOUSE DOES NOT BUY OIL.",
+      "opens": ["drowned-hold"]
+    },
+    {
+      "id": "wrackhouse-salvage",
+      "place": "WRACKHOUSE",
+      "what": "WHAT THE SEA SPAT UP, AND WHO SOLD IT",
+      "who": "dagny",
+      "site": { "x": 202, "y": 72, "band": 19 },
+      "anchor": "clue_wrackhouse_salvage_anchor",
+      "dread": 6,
+      "found": "SHE BOUGHT SOMETHING OFF A CORPSE, NO QUESTIONS. HER SILENCE HAS A WIELDER-SIZED EXCEPTION.",
+      "detail": "THE MUDLARK WHO SOLD IT WAS TARRY JEK. HE HAS NOT BEEN BACK. HE WORKS THE STRAND, AND THE WARD KICKS HIM RATHER THAN HIRES HIM.",
+      "opens": ["tarry-jek"]
+    },
+    {
+      "id": "kennel-row",
+      "place": "KENNEL ROW",
+      "what": "THE DOGS, AND WHAT THEY WILL NOT DO",
+      "who": "cobb",
+      "site": { "x": 197, "y": 86, "band": 19 },
+      "anchor": "kennel_dog_anchor_01",
+      "dread": 10,
+      "found": "THE DOGS WILL NOT PASS THE DROWNED HOLD'S DOOR. HE HAS BEEN DRINKING ABOUT IT.",
+      "detail": "THE MEN THE CITY CALLS WHEN THINGS GNAW. A DOG REFUSING A DOOR IS THIS DISTRICT'S CANARY, AND EVERY DOG ON THE ROW REFUSES THE SAME ONE.",
+      "opens": ["drowned-hold"]
+    },
+    {
+      "id": "drowned-name-wall",
+      "place": "THE DROWNED-NAME WALL",
+      "what": "CANDLE STUBS, AND NAMES SCRATCHED",
+      "who": "",
+      "site": { "x": 127, "y": 59, "band": 19 },
+      "anchor": "shrine_drowned_name_wall_anchor",
+      "dread": 12,
+      "found": "NEW NAMES APPEAR HERE BEFORE BODIES DO. THERE IS A SECOND ONE ALREADY.",
+      "detail": "A SEAWALL NICHE FOR THOSE THE SEA KEPT, TENDED BY NOBODY AND BY EVERYONE. THE SECOND NAME WAS CUT THIS WEEK. NOBODY HAS REPORTED THAT MAN MISSING.",
+      "opens": ["kennel-row"]
+    },
+    {
+      "id": "tarry-jek",
+      "place": "THE BEACHING STRAND",
+      "what": "THE MUDLARK, IF YOU THINK TO HIRE WHAT EVERYONE ELSE KICKS",
+      "who": "jek",
+      "site": { "x": 164, "y": 50, "band": 18 },
+      "anchor": "strand_beaching_anchor",
+      "dread": 14,
+      "found": "MEN CARRIED CRATES IN BY NIGHT. A THIN FELLOW WALKED IN THROUGH A GAP NO MAN FITS.",
+      "detail": "THE WARD'S CHEAPEST AND BEST PAIR OF EYES. HE SOLD WHAT HE TOOK OFF THE BODY TO THE WRACKHOUSE AND HAS BEEN SLEEPING ON THE SHINGLE SINCE, BECAUSE HE WILL NOT SLEEP UNDER A ROOF THAT SIDE OF THE WARD.",
+      "opens": ["drowned-hold"]
+    },
+    {
+      "id": "drowned-hold",
+      "place": "THE DROWNED HOLD",
+      "what": "LAMPLIGHT UNDER THE DOORS OF A CONDEMNED WAREHOUSE",
+      "who": "tolley",
+      "site": { "x": 216, "y": 79, "band": 19 },
+      "anchor": "clue_c3_drowned_hold",
+      "dread": 24,
+      "close": true,
+      "found": "A SECOND BODY, HUNG BY THE FEET. THE FLOOR HAS GONE THROUGH INTO THE UNDERCELLAR.",
+      "detail": "SMUGGLER OCCUPATION, RECENT, ABANDONED IN A HURRY. THE CRATE IS SCRATCHED FROM THE INSIDE. MAD TOLLEY SAW THE LAMPLIGHT AND STOPPED TELLING PEOPLE BECAUSE OF HOW THEY LOOKED AT HIM. THE TRAIL GOES DOWN.",
+      "opens": []
+    }
+  ]
+}

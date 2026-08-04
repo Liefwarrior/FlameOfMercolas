@@ -32,8 +32,10 @@
 #include "granadad/render/hud.hpp"
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/world_renderer.hpp"
+#include "granadad/sim/casebook.hpp"
 #include "granadad/sim/compound.hpp"
 #include "granadad/sim/engine.hpp"
+#include "granadad/sim/legend.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/tavern.hpp"
@@ -66,6 +68,17 @@ struct SessionConfig {
     int fovDegrees = 90;
     /// The only persisted RNG state there is.
     std::uint64_t worldSeed = 0x4752414E41444144ull;  // "GRANADAD"
+    /// OPEN THE CASE ON THE FIRST FRAME. What a new game does: the notes come
+    /// up with the hook on them and the one lead the ward has given you, and
+    /// the first step the player takes puts them away for good.
+    ///
+    /// OFF BY DEFAULT AND ON IN THE CLIENT, deliberately. A Session is built by
+    /// the game, by every scripted capture and by two hundred test cases, and
+    /// most of those want a frame of the world rather than a frame of a menu
+    /// over it. main.cpp sets it; tests/test_firstrun.cpp sets the same flag
+    /// and drives the same code, which is the pattern SmokeRunConfig already
+    /// uses for --talk and --burgle.
+    bool openingPage = false;
     /// How many simulated seconds pass per simulated second of movement.
     /// 1 is real time. Raising it is how a capture reaches a different hour
     /// without running the whole afternoon.
@@ -190,6 +203,60 @@ public:
 
     /// T. Lifts from whoever is at your elbow, with no conversation open.
     void lift();
+
+    // --- S10: the investigation ----------------------------------------------
+    //
+    // On Session for the reason all eleven verbs before them are: the suite
+    // drives the code a keypress drives, and the client owns no game logic.
+
+    /// Q. LOOK AT WHAT IS HERE. The investigation verb, and the only one there
+    /// is: the gazetteer's design law (section 5.3) is that the gate is knowing
+    /// WHERE to ask, never persuasion, so there is no check to pass and no roll
+    /// to lose. Standing at a lead you have been told about gives you what is
+    /// there; standing at one nobody has pointed you at gives you a corner of
+    /// the ward.
+    void examine();
+    /// The player's own notes, and the ward's nerve.
+    [[nodiscard]] sim::Casebook& casebook() noexcept { return casebook_; }
+    [[nodiscard]] const sim::Casebook& casebook() const noexcept { return casebook_; }
+    /// What the counters add up to. Derived on every call and held by nobody --
+    /// see legend.hpp on why that is the design and not a shortcut.
+    [[nodiscard]] sim::Legend legend() const;
+
+    /// J. Opens and closes the casebook.
+    ///
+    /// IT IS DRAWN IN THE CONVERSATION'S OWN SURFACE, deliberately. The HUD
+    /// rule says the centre of the screen stays empty, and a journal is the
+    /// single most likely thing in an RPG to break it -- the Java build's
+    /// first-person view died on exactly this. The dialogue view already owns a
+    /// top band and a bottom band with the middle untouched and a case that
+    /// proves it, so the casebook is a conversation with your own notes: the
+    /// leads are the topic list, the entry you pick is what gets said.
+    void toggleCasebook();
+    [[nodiscard]] bool casebookOpen() const noexcept { return casebookOpen_; }
+    /// "CASE 4/12  COLD 1  THE WARD IS TALKING", or empty before the trail
+    /// starts. Bottom-left, one row, on the edge.
+    [[nodiscard]] std::string caseLine() const;
+    /// "LEGEND CUTPURSE  6 RUNGS", or empty at rung zero across the board.
+    [[nodiscard]] std::string legendLine() const;
+
+    /// F1. The keys, IN THE GAME, where a player who has forgotten one can
+    /// find it without alt-tabbing to a README.
+    ///
+    /// Drawn in the conversation's own two bands for the same reason the
+    /// casebook is: the centre of the screen is not the HUD's to use, and a
+    /// controls overlay is the second most likely thing after a journal to
+    /// take it. It is literally a conversation with the keyboard -- the key
+    /// rows ARE the topic list, so it pages nine at a time off the same
+    /// numbers and cannot drop a row as it grows.
+    void toggleKeys();
+    [[nodiscard]] bool keysOpen() const noexcept { return keysOpen_; }
+
+    /// TRUE UNTIL THE PLAYER HAS DONE ANYTHING AT ALL. A fresh session opens
+    /// with the casebook up and the hook on screen, because "dropped into a
+    /// systems demo with no orientation" is the thing this build has always
+    /// done and the demo is not allowed to.
+    [[nodiscard]] bool firstRun() const noexcept { return firstRun_; }
 
     /// True while the wire is in a lock and the client should be routing keys
     /// to the lockpicking surface instead of to movement.
@@ -316,6 +383,9 @@ public:
 
 private:
     void syncTavernToBody();
+    /// Puts the casebook and the key list down. Every verb that acts on the
+    /// world calls it first.
+    void dismissOverlays() noexcept;
     /// Runs the ward's day forward to the tavern's calendar. Called after every
     /// step and after every jump of the clock -- see the note on the definition
     /// for why the ward could not previously see a slept night.
@@ -370,6 +440,18 @@ private:
     /// the movement step the feet touch -- see the note there.
     sim::RoofResult pendingLanding_;
     bool awaitingLanding_ = false;
+    /// S10. The trail, its authored file, and which page of the notes is open.
+    /// The raws are held because Casebook borrows them for its whole life.
+    sim::CasebookRaws caseRaws_;
+    sim::Casebook casebook_;
+    bool casebookOpen_ = false;
+    bool keysOpen_ = false;
+    bool firstRun_ = true;
+    int caseCursor_ = 0;
+    int casePage_ = 0;
+    /// The entry the player has picked out of their own notes, or -1. Pure UI
+    /// state: the trail itself lives in the simulation.
+    int caseEntry_ = -1;
 };
 
 /// What a scripted capture run was asked to do.
@@ -445,6 +527,17 @@ struct SmokeRunConfig {
     /// people who did not hear you) or "street" (out of the door with it).
     bool burgle = false;
     std::string burgleEnd = "box";
+    /// S10. WALK THE BLOODLETTER TRAIL. Every beat is the same two calls a
+    /// keyboard makes -- the district's own breadth-first router to the site,
+    /// then Q -- and the run reports how many leads it read against how many it
+    /// walked to. Those two differing is a real failure: it means a site in
+    /// casebook.json cannot be got to on foot.
+    ///
+    /// `trailEnd` is where the shutter goes: notes (the casebook open over the
+    /// last place), keys (the in-game controls page), mission, weighhouse or
+    /// hold (stop after that lead), or empty for the whole walk.
+    bool trail = false;
+    std::string trailEnd;
     /// Run the Priest of the Flame line end to end and capture wherever it
     /// finishes: the oath, the night pot, the captain's word, the report, the
     /// teaching, and a crafting composed at the bench. Driven through the same
@@ -480,6 +573,11 @@ struct SmokeRunResult {
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.
     std::int32_t nemesisBeats = 0;
+    /// S10: how many leads the walked trail READ, and how many it walked to.
+    /// The two differ only when a site could not be reached on foot, which is a
+    /// failure and is reported as one.
+    std::int32_t trailRead = 0;
+    std::int32_t trailWalked = 0;
     /// And of the seven beats of the burglary.
     std::int32_t burgleBeats = 0;
     /// WHICH of them landed, one bit each, in order. A count says how many; a

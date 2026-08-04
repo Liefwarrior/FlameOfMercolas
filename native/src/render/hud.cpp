@@ -166,6 +166,19 @@ void drawHealth(Framebuffer& target, const HudState& state) {
         target.fillRect(x + i * segW + 1, y + 1, segW - 1, barH - 2, kHealth, 0.95F);
     }
     drawText(target, x, y - 8 * scale, "HP", kInk, 0.9F, scale);
+    // S10: THE CASE, one row over the HP label and BELOW the exclusion
+    // rectangle at every resolution -- see HudState::caseLabel for the
+    // arithmetic, and for what is still wrong two rows further up.
+    //
+    // IT IS THE COLOUR OF THE WARD'S NERVE, not a fixed one. A player who has
+    // frightened the district enough that nobody walks the Gullet alone should
+    // be able to see that without reading the words.
+    if (!state.caseLabel.empty()) {
+        const bool afraid = state.caseLabel.find("EMPTYING") != std::string_view::npos ||
+                            state.caseLabel.find("ALONE") != std::string_view::npos;
+        drawText(target, x, y - 16 * scale, state.caseLabel,
+                 afraid ? Rgb{0.86F, 0.44F, 0.36F} : Rgb{0.70F, 0.72F, 0.66F}, 0.90F, scale);
+    }
     // The bottom-left cluster, stacked upward: HP, then the rung you hold, then
     // what the line you are on wants next. All of it hugs the corner and none
     // of it reaches the middle of the screen.
