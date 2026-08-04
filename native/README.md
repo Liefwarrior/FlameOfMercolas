@@ -1,7 +1,9 @@
 # Granadad: The Darkstreets — native C++ build
 
-The C++ rewrite of the simulation. The Java build stays in place, untouched, as
-the behavioural reference until this reaches parity.
+The C++ rewrite — the **Mercolas Engine**, which is a marketing name and not a
+directory: nothing in here is called that and nothing should be renamed for it.
+The Java build stays in place, untouched, as the behavioural reference until
+this reaches parity.
 
 There are two ways to build. Use docker when you want a binary you can trust and
 hand to someone; use the CMake presets when you are writing code and want a
@@ -24,7 +26,26 @@ natively:
 ```
 .\dist\granadad.exe --selftest     # no window, just proves the binary works
 .\dist\granadad.exe                # the game
+.\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame, no window
 ```
+
+`--screenshot` opens no window, needs no GPU and needs no display server,
+because the renderer is software. That is the point of it: every sprint has to
+be able to prove visually that it works, and a capture path that needs a
+desktop is a capture path nobody runs. `--help` lists the rest — `--time`,
+`--spawn`, `--yaw`, `--fov`, `--width/--height/--scale`.
+
+### Controls
+
+| | |
+|---|---|
+| `W A S D` | walk and strafe |
+| mouse | look |
+| `Left` / `Right` | keyboard turn, 65 deg/s |
+| `Shift` | run |
+| `Tab` | release the mouse |
+| `F12` | screenshot to `granadad-screenshot.png` |
+| `Esc` | quit |
 
 > **`run`, not `up`.** `docker compose up` exits **0 even when the container
 > inside it exits 1** — it prints `build-1 exited with code 1` and then hands
@@ -70,11 +91,17 @@ build and reproducibility on the cross build.
 
 | | cases | assertions |
 |---|---|---|
-| `granadad-tests` — RNG, wrapping, world hasher, engine, gate | 68 | 14,157 |
+| `granadad-tests` — RNG, wrapping, world hasher, engine, gate, angles, tile queries, the body, lamps, atlas, renderer | 123 | 56,767 |
 | `granadad-content-tests` — TROJSAV reader vs. the real baked worlds | 57 | 902,044 |
 | `granadad-twin-run-gate` | 1 | — |
 | `granadad-content-fingerprint`, `granadad-world-hash-fingerprint` | 2 | — |
-| **ctest total** | **128** | |
+| **ctest total** | **183** | |
+
+Some of those cases **render frames of the real Docks**, inside the container,
+with no window and no GPU — the renderer is software, so a frame is an ordinary
+testable artifact. The build also checks by name that the first-person case and
+the case that loads `content/art/custom` are registered, because a renderer
+silently falling back to procedural tiles would still be green.
 
 The build prints the assertion counts every run, so "tests passed" never has to
 be taken on faith. It also asserts a **floor** on the ctest count and checks by
@@ -167,6 +194,7 @@ missing from `dist/` — but nothing forces you to type it.
 | File | What it is |
 |---|---|
 | `dist/granadad.exe` | The game. Self-contained — no DLLs to ship beside it. |
+| `dist/granadad-bake-lamps.exe` | Re-derives a fixture's baked light sources from its authored `.tmx`. Run by hand; the output is committed beside the world. |
 | `dist/granadad-tests.exe` | The sim suite — RNG, hasher, engine, gate — as a Windows binary. Needs `$env:GRANADAD_CONTENT_DIR`. |
 | `dist/granadad-content-tests.exe` | The TROJSAV reader suite + `--fingerprint`, as a Windows binary. Needs `$env:GRANADAD_CONTENT_DIR`. |
 | `dist/granadad-twin-gate.exe` | The twin-run determinism gate + `--fingerprint`. Needs `$env:GRANADAD_CONTENT_DIR`. |
@@ -259,11 +287,20 @@ native/
     Determinism.cmake         the flags that protect the world hash
     StaticRuntime.cmake       self-contained, timestamp-free Windows exes
     toolchain-mingw-w64.cmake Linux -> Windows cross-compile
-  include/granadad/sim/       public headers
+  content/                    the TROJSAV / world-format reader. links nothing of ours.
+  include/granadad/sim/       simulation headers
+  include/granadad/render/    renderer headers
   src/sim/                    simulation. no floats, no SDL.
-  src/client/                 SDL3 observer. floats legal here and only here.
+  src/render/                 the software first-person renderer. floats legal. no SDL.
+  src/tools/                  bake tools, run by hand
+  src/client/                 the SDL3 window, and nothing else
   tests/
 ```
+
+The dependency arrow only ever points one way: `client -> render -> sim ->
+content`. `granadad-render` links no SDL on purpose, which is what makes
+`--screenshot` and the in-gate frame tests possible; `granadad-sim` links no
+renderer, which is what keeps a float out of the world hash.
 
 ---
 
@@ -337,8 +374,26 @@ All fetched by CMake FetchContent, all pinned to full commit SHAs in
 
 ## Current state
 
-Skeleton. What exists is the build surface and the deterministic primitives it
-compiles: fixed-point math, wrapping arithmetic, build stamping, and a client
-that opens an SDL window and clears it. The simulation itself is not written
-yet. `content/` is read-only canon and is reused verbatim — never retype,
-regenerate or "improve" anything under it.
+**Playable enough to walk around.** `granadad.exe` loads the owner's baked
+Docks, puts a body on Tarwalk and draws the district in first person: walls,
+floors, roofs, the harbour, the sky, the 27 authored lamps, a day/night curve
+and harbour fog. `W A S D` and the mouse move it; walls stop it; ramps and
+stairs take it between the three walk bands.
+
+What is real underneath:
+
+| | |
+|---|---|
+| format reader | TROJSAV container, chunk codec, lanes, overlays. Verified against the shipped bytes on two toolchains. |
+| simulation | counter-based RNG proven bit-equivalent to the JVM, wrapping helpers, world hasher, phased tick loop, twin-run gate. |
+| movement | Q8 sub-tile body, integer trig, axis-separated collision against the real tile geometry, a climb rule that only goes up where a ramp or a stair was authored. |
+| renderer | software voxel-column first person, the owner's own tile art, lamp glow, billboards, a HUD that hugs the edges. |
+| capture | `--smoke=N --screenshot=PATH`, with no window anywhere in it. |
+
+What is NOT here yet: actors, dialogue, items, combat, quests, save/load. Those
+are the sprints after this one.
+
+`content/` is read-only canon and is reused verbatim — never retype, regenerate
+or "improve" anything under it. New files may be added; the baked lamp sidecars
+are the only ones this build has added, and `granadad-bake-lamps` re-derives
+them from the authored Tiled sources on demand.
