@@ -66,10 +66,13 @@ struct RosterEntry {
     /// a job somebody has: four of this cast can put your name on a roll and
     /// the rest are members who cannot.
     ///
-    /// The WATCH has no recruiter here, and that is honest rather than an
-    /// oversight: the garrison is K34 and the watchpost K21, and this build
-    /// simulates one room. Its ladder, its rivalry and its influence all work
-    /// and are proved through the sim API; what is missing is a door.
+    /// VERIFICATION GAP (S4): the WATCH has no recruiter here, so it cannot be
+    /// joined IN PLAY -- the garrison is K34 and the watchpost K21, and this
+    /// build simulates one room. Its ladder, its rivalry and its influence all
+    /// work and are proved through the sim API, and the case that puts a
+    /// Skyrunner and a Watch member in the same taproom joins the Watch through
+    /// the ledger rather than through a conversation. What is missing is a
+    /// door, not a mechanism.
     const char* recruits;
 };
 

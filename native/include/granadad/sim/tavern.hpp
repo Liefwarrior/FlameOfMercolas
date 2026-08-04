@@ -494,11 +494,22 @@ public:
     /// a count of BODIES rather than a mood: a Watch runner who walks into the
     /// Gull at midnight is standing in a room with a Skyrunner in it, and the
     /// Skyrunner knows what the arm-band means.
+    ///
+    /// VERIFICATION GAP (S4): the COUNT has no consumer outside the test suite.
+    /// What the room actually does with a rival present is seed them hostile
+    /// (applyRivalHostility), which is real and proved; a number that says how
+    /// many is a readout waiting for the thing that reads it.
     [[nodiscard]] std::int32_t enemyPresence() const noexcept;
 
     /// Seeds every present rival's opinion of the player to HOSTILE. Called
     /// whenever the player's standing on a ladder changes, because that is the
     /// moment the room learns whose side they are on.
+    ///
+    /// VERIFICATION GAP (S4): it fires on a RANK CHANGE and not on arrival. A
+    /// rival who walks in an hour after you signed the Watch's roll greets you
+    /// as a stranger until something else moves your standing. The right fix is
+    /// a check when an actor becomes present, and it wants a schedule hook this
+    /// room does not have yet.
     void applyRivalHostility();
 
     /// How many seconds of rope the house gives a warned player RIGHT NOW.
