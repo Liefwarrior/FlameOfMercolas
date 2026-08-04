@@ -34,8 +34,9 @@ const QuestBook& book() {
 TEST_CASE("a quest file is read for its shape, and the owner's is left alone") {
     REQUIRE(book().loaded());
     // Exactly the lines this build can actually finish.
-    CHECK(book().size() == 1);
+    CHECK(book().size() == 2);
     CHECK(book().find("flame-disciple") != nullptr);
+    CHECK(book().find("skyrunner-tenant") != nullptr);
     // The owner's own file is in the same directory and is NOT loaded, because
     // it has no top-level `stages` array. Skipping it by name would have been a
     // list of filenames somebody has to maintain.

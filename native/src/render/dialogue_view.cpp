@@ -92,6 +92,40 @@ std::vector<std::string> wrapText(const std::string& text, std::size_t columns) 
     return lines;
 }
 
+std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int page, int cursor,
+                                   int capacity) {
+    const int total = static_cast<int>(topics.size());
+    const int pages = topicPageCount(topics.size());
+    const int shown = std::clamp(page, 0, pages - 1);
+    const int first = shown * kTopicPageSize;
+    const int last = std::min(total, first + kTopicPageSize);
+
+    std::vector<TopicRow> rows;
+    rows.reserve(static_cast<std::size_t>(kTopicPageSize + 1));
+    for (int i = first; i < last; ++i) {
+        rows.push_back(TopicRow{std::to_string(i - first + 1) + " " +
+                                    topics[static_cast<std::size_t>(i)],
+                                i == cursor});
+    }
+    if (pages > 1) {
+        rows.push_back(
+            TopicRow{"0 MORE (" + std::to_string(shown + 1) + "/" + std::to_string(pages) + ")",
+                     false});
+    }
+    // A band too short to print the whole page would otherwise drop rows in
+    // silence, which is the exact failure the paging replaced. It cannot happen
+    // at any resolution this game runs at -- a test pins the capacity at
+    // 320x180 and at 640x360 -- and if it ever did, the MORE row survives so
+    // the list still says out loud that there is more of it.
+    if (capacity >= 1 && static_cast<int>(rows.size()) > capacity) {
+        rows.resize(static_cast<std::size_t>(capacity));
+        rows.back().label =
+            "0 MORE (" + std::to_string(shown + 1) + "/" + std::to_string(pages) + ")";
+        rows.back().picked = false;
+    }
+    return rows;
+}
+
 void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     if (!state.open) {
         return;
@@ -214,42 +248,12 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     const int rows =
         std::clamp((target.height() - bottomTop - 2 * scale) / rowStep, 1, kTopicRows);
 
-    // PAGED, and every printed row carries the key that picks it. See
-    // kTopicPageSize on what this replaced and why.
-    const int total = static_cast<int>(state.topics.size());
-    const int pages = topicPageCount(state.topics.size());
-    const int page = std::clamp(state.page, 0, pages - 1);
-    const int first = page * kTopicPageSize;
-    const int last = std::min(total, first + kTopicPageSize);
-
-    struct Row {
-        std::string label;
-        bool picked;
-    };
-    std::vector<Row> printed;
-    printed.reserve(static_cast<std::size_t>(kTopicPageSize + 1));
-    for (int i = first; i < last; ++i) {
-        printed.push_back(Row{std::to_string(i - first + 1) + " " +
-                                  state.topics[static_cast<std::size_t>(i)],
-                              i == state.cursor});
-    }
-    if (pages > 1) {
-        printed.push_back(Row{"0 MORE (" + std::to_string(page + 1) + "/" +
-                                  std::to_string(pages) + ")",
-                              false});
-    }
-    // A band too short to print the whole page would otherwise drop rows in
-    // silence, which is the exact failure this replaced. It cannot happen at
-    // any resolution this game runs at -- a test pins the capacity at 320x180
-    // and at 640x360 -- and if it ever did, the MORE row survives so the list
-    // still says out loud that there is more of it.
+    // PAGED, and every printed row carries the key that picks it. The rows
+    // themselves are built by topicRowsFor, which is what a test can drive --
+    // see the header on the S4 mutation that shipped green.
     const int capacity = rows * kTopicColumns;
-    if (static_cast<int>(printed.size()) > capacity && capacity >= 1) {
-        printed.resize(static_cast<std::size_t>(capacity));
-        printed.back().label = "0 MORE (" + std::to_string(page + 1) + "/" +
-                               std::to_string(pages) + ")";
-        printed.back().picked = false;
-    }
+    const std::vector<TopicRow> printed =
+        topicRowsFor(state.topics, state.page, state.cursor, capacity);
 
     for (std::size_t i = 0; i < printed.size(); ++i) {
         const int column = static_cast<int>(i) / rows;
@@ -260,8 +264,15 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
             continue;
         }
         std::string label = printed[i].label;
-        // Truncated to the column rather than allowed to run into the next one.
-        const std::size_t room = static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance));
+        // Truncated to the column rather than allowed to run into the next one
+        // -- AND a two-glyph gutter, which S4 did not have. Its own headline
+        // frame shows topic 5 reading "ASK TO BE MADE SHE" with the next
+        // column's "9" jammed against the E: the row is drawn at x + half a
+        // glyph and the next column's cursor arrow at x - half a glyph, so a
+        // label sized to the whole column overruns it by one glyph and collides
+        // with the arrow of the one after. Two back.
+        const std::size_t room =
+            static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance - 2));
         if (label.size() > room) {
             label.resize(room);
         }

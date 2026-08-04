@@ -117,6 +117,8 @@ add_library(granadad-sim STATIC
     src/sim/faction.cpp
     src/sim/questline.cpp
     src/sim/spellforge.cpp
+    # S5 -- the trade the roofs run on.
+    src/sim/crime.cpp
     src/sim/tavern.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")

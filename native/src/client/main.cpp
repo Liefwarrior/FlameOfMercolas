@@ -132,6 +132,12 @@ void print_usage() {
         "                       WHERE is talk (the finished conversation), bench\n"
         "                       (the workshop standing open) or away (closed, so\n"
         "                       the HUD's own rung and objective are visible)\n"
+        "  --roofs[=WHERE]      climb onto the Gilded Gull's roof and look down.\n"
+        "                       WHERE is roof (on the lead), leap (across the\n"
+        "                       alley) or street (the drop back down)\n"
+        "  --skyrun[=WHERE]     play the Skyrunner line -- sign on, two purses, a\n"
+        "                       box, the roof, the alley, the fence, a lean and a\n"
+        "                       bale past the Watch. WHERE is talk or away\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n");
@@ -198,6 +204,20 @@ void print_usage() {
         } else if (starts_with(arg, "--flame=", &value)) {
             options.smoke.flame = true;
             options.smoke.flameEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--roofs") == 0) {
+            options.smoke.roofs = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--roofs=", &value)) {
+            options.smoke.roofs = true;
+            options.smoke.roofsEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--skyrun") == 0) {
+            options.smoke.skyrun = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--skyrun=", &value)) {
+            options.smoke.skyrun = true;
+            options.smoke.skyrunEnd = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--offer=", &value)) {
             options.smoke.offer = std::atoi(value);
@@ -438,6 +458,18 @@ int run_client(const Options& options) {
                         session.punch();
                     } else if (event.key.key == SDLK_R && !event.key.repeat) {
                         session.restHere();
+                    } else if (event.key.key == SDLK_SPACE && !event.key.repeat) {
+                        // UP. One key for the two answers to "get me over
+                        // that": a mantle onto the ledge you are facing, or a
+                        // leap across the gap in front of you. Which one the
+                        // geometry wants is not the player's problem.
+                        session.climb();
+                    } else if (event.key.key == SDLK_X && !event.key.repeat) {
+                        session.dropDown();
+                    } else if (event.key.key == SDLK_G && !event.key.repeat) {
+                        // Hands on whatever is here -- a guest's strongbox, or
+                        // the bale in the snug.
+                        session.steal();
                     } else if (event.key.key == SDLK_F12) {
                         render::SmokeRunConfig shot = options.smoke;
                         shot.screenshot = "granadad-screenshot.png";

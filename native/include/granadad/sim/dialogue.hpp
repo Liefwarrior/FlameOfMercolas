@@ -43,6 +43,7 @@
 
 #include "granadad/sim/barks.hpp"
 #include "granadad/sim/barter.hpp"
+#include "granadad/sim/crime.hpp"
 #include "granadad/sim/faction.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/questline.hpp"
@@ -99,6 +100,18 @@ struct Speaker {
     /// True when this person teaches craftings out of the spell raws, and will
     /// compose one with you once the ladder has opened the workshop.
     bool teaches = false;
+
+    // --- S5: who they are to the roofs ---------------------------------------
+
+    /// True when this person buys property that is not yours to sell. Exactly
+    /// one body in the Gull does, and belonging to the Skyrunners is not
+    /// enough: a cutpurse is not a fence, and the difference is the whole of
+    /// what the guild's second rung is worth.
+    bool buysStolen = false;
+    /// True when leaning on this person is a thing that could work. False for
+    /// the ones who would simply hit you: a bouncer, a watchman, and anybody
+    /// whose job is to be leaned on for a living.
+    bool leanable = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -140,6 +153,13 @@ enum class TopicKind : std::uint8_t {
     Learn = 13,
     /// Open the workbench and compose one.
     Forge = 14,
+    /// Sell them what was not yours to sell. APPENDED, for the reason on Buy:
+    /// the ordinal is folded into which authored row a topic speaks from.
+    Fence = 15,
+    /// Lean on them for coin.
+    Lean = 16,
+    /// Ask your own guild for the one thing a top rung is actually for.
+    Favour = 17,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -194,6 +214,12 @@ struct Reply {
     std::string journalLine;
     /// True when this reply put the player on a rung they were not on.
     bool ranked = false;
+    /// S5. The act the world has to be told about, and whether it happened in
+    /// front of anybody. kCrimeCount means "nothing criminal happened" -- the
+    /// dialogue layer does not know what a taproom is, so whoever owns the room
+    /// decides who saw it and reports back.
+    Crime crime = Crime::Lift;
+    bool criminal = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -231,6 +257,28 @@ public:
     [[nodiscard]] const Spellbook& spellbook() const noexcept { return spellbook_; }
     [[nodiscard]] Grimoire& grimoire() noexcept { return grimoire_; }
     [[nodiscard]] const Grimoire& grimoire() const noexcept { return grimoire_; }
+
+    // --- S5: the trade on the roofs -----------------------------------------
+
+    [[nodiscard]] CrimeLedger& crimes() noexcept { return crimes_; }
+    [[nodiscard]] const CrimeLedger& crimes() const noexcept { return crimes_; }
+
+    /// THE ONE CALL SITE EVERY CRIMINAL ACT GOES THROUGH, wherever it happened
+    /// -- a topic on this list, a box cracked upstairs, a bale carried out of a
+    /// door, a body landing on a roof. It moves all four things an act should
+    /// move and nothing else can move them: the tally, the Watch's heat, the
+    /// roofs' opinion of you and -- by the mirror ranks.json already declares
+    /// -- the garrison's. An act that reached one of those and missed the
+    /// others is the bug this shape exists to make impossible.
+    void noteCrime(Crime crime, bool witnessed);
+
+    /// One more of whatever a counted stage might be counting. Named by string
+    /// because the STAGE names it, in the owner's own raws, and no C++ here
+    /// knows the list.
+    void noteTally(std::string_view counter);
+
+    /// The registry index of the Skyrunners, or -1.
+    [[nodiscard]] std::int32_t roofsIndex() const noexcept;
 
     /// What the world says the player is carrying. Set before choose(), so the
     /// director can refuse a round it cannot pay for. Not hashed here -- the
@@ -328,6 +376,7 @@ private:
     QuestJournal journal_;
     Spellbook spellbook_;
     Grimoire grimoire_;
+    CrimeLedger crimes_;
     ForgeBench bench_;
     /// Which authored line the bench was opened for, and at which stage. Held
     /// across the composition because a bench is a conversation with rounds and

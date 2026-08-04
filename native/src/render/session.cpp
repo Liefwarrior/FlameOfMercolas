@@ -90,6 +90,11 @@ Session::Session(const SessionConfig& config)
                                                 loadLamps(config_.contentDir, config_.world));
     body_ = std::make_unique<sim::PlayerBody>(*tiles_, config_.spawnX, config_.spawnY,
                                               config_.spawnBand, config_.spawnYaw);
+    // S5. The district declares its own floor: everything under the harbour
+    // surface is unbuilt dungeon, and a body that fell into it could not climb
+    // back out. See PlayerBody::setLandingFloor for the shaft this closes.
+    body_->setLandingFloor(sim::docks::kLandingFloor);
+    highestBand_ = body_->band();
     timeOfDay_ = ((config_.timeOfDay % sim::kSecondsPerDay) + sim::kSecondsPerDay) %
                  sim::kSecondsPerDay;
     settings_.timeOfDay = timeOfDay_;
@@ -105,6 +110,115 @@ Session::Session(const SessionConfig& config)
 
 void Session::syncTavernToBody() {
     tavern_->setPlayer(body_->x(), body_->y(), body_->band());
+}
+
+// ---------------------------------------------------------------------------
+// S5: the roof verbs
+// ---------------------------------------------------------------------------
+
+void Session::settleLanding(const sim::RoofResult& move) {
+    sim::DialogueDirector& talk = tavern_->dialogue();
+    // Every climb, leap and fall is a use of the craft it takes.
+    talk.skills().use(sim::kRoofSkill, move.tiles > 1 ? 2 : 1);
+
+    const std::int32_t fell = body_->takeFallBands();
+    const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+    const std::int32_t safe = sim::safeDropBands(talk.skills().level(sim::kRoofSkill),
+                                                 talk.standings().unlocked(roofs, "roof"));
+    if (fell > safe) {
+        // Ten a band past what the legs can take. It floors at the brawl floor
+        // like everything else in this build: nothing kills the player yet, and
+        // pretending a roof does would be the first thing that did.
+        const std::int32_t hurt = (fell - safe) * 12;
+        tavern_->injurePlayer(hurt);
+        roofMove_ += " - " + std::to_string(hurt) + " HURT";
+    }
+
+    // A ROOF-RUN IS AN ARRIVAL, not a step. Counted the first time the body
+    // gets higher than it has ever been, so a player pacing about on the lead
+    // does not farm the guild's regard by walking in circles.
+    if (body_->band() > highestBand_) {
+        highestBand_ = body_->band();
+        if (body_->band() >= sim::gull::kRoofBand) {
+            // Nobody looks up: a roof-run is witnessed by nobody in this build,
+            // which is the whole social point of the roofs and is stated here
+            // rather than implied.
+            talk.noteCrime(sim::Crime::RoofRun, false);
+        }
+    }
+    // The two body verbs the questline counts by name. They are not crimes and
+    // do not raise heat, so they go to the tally directly.
+    if (move.ok()) {
+        talk.noteTally(move.tiles > 1 ? "leaps" : "climbs");
+    }
+}
+
+void Session::climb() {
+    if (talking()) {
+        return;
+    }
+    sim::RoofResult move = body_->mantle();
+    bool leapt = false;
+    if (!move.ok()) {
+        const sim::DialogueDirector& talk = tavern_->dialogue();
+        const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+        move = body_->leap(sim::leapReachTiles(talk.skills().level(sim::kRoofSkill),
+                                               talk.standings().unlocked(roofs, "roof")));
+        leapt = move.ok();
+    }
+    if (!move.ok()) {
+        roofMove_ = std::string("NO WAY UP - ") + std::string(sim::roofMoveName(move.move));
+        say(roofMove_);
+        return;
+    }
+    if (leapt) {
+        // A leap is in the AIR: the body lands when the arc runs out, so the
+        // skill, the fall and the tally are charged then and not now. The steps
+        // that fly it are the client's or the capture script's, exactly like
+        // any other movement.
+        roofMove_ = "OVER " + std::to_string(move.tiles) + " TILES";
+        say(roofMove_);
+        // Force the arc to run here as well as in the caller's loop, so a
+        // scripted capture that calls climb() and then draws gets a body that
+        // has landed rather than one frozen mid-jump.
+        while (body_->airborne()) {
+            step(sim::MoveInput{});
+        }
+    } else {
+        roofMove_ = "UP ONTO THE LEDGE";
+        say(roofMove_);
+    }
+    settleLanding(move);
+    syncTavernToBody();
+}
+
+void Session::dropDown() {
+    if (talking()) {
+        return;
+    }
+    const sim::RoofResult move = body_->dropOff();
+    if (!move.ok()) {
+        roofMove_ = std::string("NOTHING TO DROP TO - ") + std::string(sim::roofMoveName(move.move));
+        say(roofMove_);
+        return;
+    }
+    roofMove_ = "DOWN " + std::to_string(move.bands) + " LEVEL(S)";
+    say(roofMove_);
+    settleLanding(move);
+    syncTavernToBody();
+}
+
+void Session::steal() {
+    if (talking()) {
+        return;
+    }
+    syncTavernToBody();
+    sim::Tavern::StealResult took = tavern_->crackStrongbox();
+    if (took.result == sim::ServiceResult::TooFar) {
+        // Nothing to open here. The other thing hands can be put on is a bale.
+        took = tavern_->handleBale();
+    }
+    say(took.line);
 }
 
 void Session::step(const sim::MoveInput& input) {
@@ -654,6 +768,25 @@ std::string Session::guildLine() const {
     return clip(upperAscii(name) + " - " + upperAscii(talk.standings().rankTitle(top)), 34);
 }
 
+std::string Session::heatLine() const {
+    const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
+    if (crimes.heat() <= 0 && crimes.loot() <= 0 && !crimes.carryingBale()) {
+        return {};
+    }
+    std::string line;
+    if (crimes.warrant()) {
+        line = "WANTED  ";
+    }
+    line += "HEAT " + std::to_string(crimes.heat());
+    if (crimes.loot() > 0) {
+        line += "  LOOT " + std::to_string(crimes.loot());
+    }
+    if (crimes.carryingBale()) {
+        line += "  BALE";
+    }
+    return clip(std::move(line), 34);
+}
+
 std::string Session::objectiveLine() const {
     const sim::DialogueDirector& talk = tavern_->dialogue();
     for (const sim::Questline& line : talk.quests().lines()) {
@@ -752,6 +885,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // panel is already showing it.
     const std::string_view standing = tavern_->dialogue().ledger().reputationLabel();
     hud.standingLabel = conversing ? std::string_view{} : standing;
+    // What the Watch has heard, what is in your coat, and whether you are
+    // carrying somebody's bale. Top right under the purse, hugging the edge --
+    // the centre of the frame stays empty, which is the rule.
+    const std::string heat = heatLine();
+    hud.heatLabel = conversing ? std::string_view{} : std::string_view{heat};
     // The rung, and what the line wants next. Bottom-left, over the health bar.
     const std::string guild = guildLine();
     const std::string objective = objectiveLine();
@@ -777,69 +915,113 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
 
 namespace {
 
-/// Walks the body toward a tile with REAL movement steps -- faced, pushed
-/// forward, collided against the same geometry a player walks into. Axis at a
-/// time, because the taproom is a rectangle with a counter across the middle
-/// and a straight line is not always the way through it.
-///
-/// Gives up rather than spinning: a scripted capture that cannot reach somebody
-/// must produce a frame and a summary that says so, never a hang.
-void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
-    // Greedy, with sidesteps. The taproom has four tables in it and a counter
-    // across the middle, so "east until the x matches, then south" walks into
-    // furniture; when the way it wants to go is blocked it tries the other axis
-    // and then either perpendicular, which is enough to get round a table.
-    //
-    // Deliberately NOT a pathfinder. The room already has one (RegionPath) and
-    // it belongs to the actors; a capture script that reimplemented it would be
-    // a second answer to "how do you cross this room" and the two would drift.
-    // This gives up and returns rather than grinding, and the caller's summary
-    // reports what actually happened.
+/// Steers the body one movement step toward a Q8 point, faced and collided
+/// against exactly the geometry a player walks into. True once it has arrived.
+[[nodiscard]] bool stepToward(Session& session, std::int32_t goalX, std::int32_t goalY) {
+    const std::int32_t dx = goalX - session.body().x();
+    const std::int32_t dy = goalY - session.body().y();
+    // An eighth of a tile of slop, not a half. Half a tile leaves the eye
+    // pressed against the next cell's face, and a capture framed from there is
+    // a photograph of a wall -- which is what the first version of this made.
+    const std::int32_t tolerance = sim::kSubOne / 8;
+    const bool closeX = dx > -tolerance && dx < tolerance;
+    const bool closeY = dy > -tolerance && dy < tolerance;
+    if (closeX && closeY) {
+        return true;
+    }
+    const sim::Angle eastWest = dx > 0 ? sim::kFacingEast : sim::kFacingWest;
+    const sim::Angle northSouth = dy > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+    // The axis with more ground left to cover goes first, then the other, then
+    // either perpendicular -- which is enough to get round one table.
+    const bool xFirst = (dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy);
+    const sim::Angle tries[4] = {
+        xFirst ? eastWest : northSouth,
+        xFirst ? northSouth : eastWest,
+        xFirst ? sim::kFacingNorth : sim::kFacingEast,
+        xFirst ? sim::kFacingSouth : sim::kFacingWest,
+    };
+    for (const sim::Angle facing : tries) {
+        if ((facing == eastWest && closeX) || (facing == northSouth && closeY)) {
+            continue;
+        }
+        session.body().setYaw(facing);
+        const std::int32_t beforeX = session.body().x();
+        const std::int32_t beforeY = session.body().y();
+        sim::MoveInput input;
+        input.forward = 1;
+        session.step(input);
+        if (session.body().x() != beforeX || session.body().y() != beforeY) {
+            return false;
+        }
+    }
+    return false;
+}
+
+/// Greedy, and only the last few Q8 units of a walk. Gives up rather than
+/// grinding.
+void walkStraightTo(Session& session, std::int32_t tileX, std::int32_t tileY) {
     const std::int32_t goalX = sim::q8_tile_centre(tileX);
     const std::int32_t goalY = sim::q8_tile_centre(tileY);
-    for (int guard = 0; guard < 1200; ++guard) {
-        const std::int32_t dx = goalX - session.body().x();
-        const std::int32_t dy = goalY - session.body().y();
-        // An eighth of a tile, not a half. Half a tile of slop leaves the eye
-        // pressed against the next cell's face, and a capture framed from there
-        // is a photograph of a wall -- which is exactly what the first version
-        // of this produced.
-        const std::int32_t tolerance = sim::kSubOne / 8;
-        const bool closeX = dx > -tolerance && dx < tolerance;
-        const bool closeY = dy > -tolerance && dy < tolerance;
-        if (closeX && closeY) {
+    std::int32_t stuckFor = 0;
+    for (int guard = 0; guard < 600; ++guard) {
+        const std::int32_t beforeX = session.body().x();
+        const std::int32_t beforeY = session.body().y();
+        if (stepToward(session, goalX, goalY)) {
             return;
         }
-        const sim::Angle eastWest = dx > 0 ? sim::kFacingEast : sim::kFacingWest;
-        const sim::Angle northSouth = dy > 0 ? sim::kFacingSouth : sim::kFacingNorth;
-        // The axis with more ground left to cover goes first.
-        const bool xFirst = (dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy);
-        const sim::Angle tries[4] = {
-            xFirst ? eastWest : northSouth,
-            xFirst ? northSouth : eastWest,
-            xFirst ? sim::kFacingNorth : sim::kFacingEast,
-            xFirst ? sim::kFacingSouth : sim::kFacingWest,
-        };
-        bool moved = false;
-        for (const sim::Angle facing : tries) {
-            if ((facing == eastWest && closeX) || (facing == northSouth && closeY)) {
-                continue;
+        if (session.body().x() == beforeX && session.body().y() == beforeY) {
+            if (++stuckFor > 4) {
+                return;
             }
-            session.body().setYaw(facing);
-            const std::int32_t beforeX = session.body().x();
-            const std::int32_t beforeY = session.body().y();
-            sim::MoveInput input;
-            input.forward = 1;
-            session.step(input);
-            if (session.body().x() != beforeX || session.body().y() != beforeY) {
-                moved = true;
+        } else {
+            stuckFor = 0;
+        }
+    }
+}
+
+/// Walks the body to a tile with REAL movement steps, along a route THE ROOM'S
+/// OWN PATHFINDER produced.
+///
+/// S5 REPLACED WHAT WAS HERE, and the S4 review is why. The old version was a
+/// greedy step-toward-the-goal walk, and its own comment said it was
+/// "deliberately NOT a pathfinder" because "the room already has one
+/// (RegionPath) and it belongs to the actors". Right instinct, wrong
+/// conclusion: it did not avoid reimplementing RegionPath, it reimplemented a
+/// worse one -- and it could not get from the authored spawn on the Tarwalk
+/// through the Gull's door to Father Maell. So `--flame` worked only from
+/// `--spawn=150,74,19`, already inside the room; run as the README documented
+/// it, it walked into a wall, photographed a conversation with the wrong
+/// person, and exited 0.
+///
+/// It USES the room's pathfinder now. RegionPath is a breadth-first search over
+/// standable tiles inside a box, and gull::kRegion is the building plus the
+/// street in front of it -- every tile a capture of this house needs. The body
+/// still WALKS: each waypoint is steered to with ordinary movement steps
+/// through ordinary collision, so a captured frame is still a picture of a body
+/// that got there on its feet.
+void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
+    sim::RegionPath router(session.tiles(), sim::gull::kRegion);
+    std::vector<sim::PathStep> route;
+    const sim::PathStep from{session.body().tileX(), session.body().tileY(),
+                             session.body().band()};
+    const sim::PathStep to{tileX, tileY, session.body().band()};
+    if (router.find(from, to, route)) {
+        for (const sim::PathStep& waypoint : route) {
+            const std::int32_t wx = sim::q8_tile_centre(waypoint.x);
+            const std::int32_t wy = sim::q8_tile_centre(waypoint.y);
+            bool arrived = false;
+            for (int guard = 0; guard < 120 && !arrived; ++guard) {
+                arrived = stepToward(session, wx, wy);
+            }
+            if (!arrived) {
                 break;
             }
         }
-        if (!moved) {
-            return;
-        }
     }
+    // Whatever the route left, and the whole walk when the router refused --
+    // which is what happens for a goal outside the box, the roof being the
+    // obvious one.
+    walkStraightTo(session, tileX, tileY);
 }
 
 /// The index of the first topic of this kind, or -1.
@@ -998,6 +1180,169 @@ bool pick(Session& session, sim::TopicKind kind) {
     return talk.journal().stagesDone(questId);
 }
 
+/// UP ONTO THE LEAD. In at the door, up the stair, across the guest floor to
+/// the north wall, and over it -- the burglar's own route, and the only one
+/// there is: the Gull is two storeys, the street cannot climb two storeys, and
+/// a body gets onto the roof of the ward's grandest house by renting a bed
+/// under it. Every move here is a Session call a keypress makes.
+///
+/// Returns how many of the four beats landed, so the caller can fail rather
+/// than photograph a body still standing in the taproom.
+[[nodiscard]] int runRoofLine(Session& session, const std::string& ending) {
+    int landed = 0;
+
+    // 1. through the door and to the foot of the stair.
+    walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
+    walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+    if (session.body().tileX() == sim::gull::kStairX &&
+        session.body().tileY() == sim::gull::kStairY) {
+        ++landed;
+    }
+
+    // 2. up it. The stair is authored, so this is an ordinary walk and not a
+    //    climb: pushing north off the stair tile is what takes the band up.
+    for (int guard = 0; guard < 240 && session.body().band() != sim::gull::kUpperBand; ++guard) {
+        session.body().setYaw(sim::kFacingNorth);
+        sim::MoveInput input;
+        input.forward = 1;
+        session.step(input);
+    }
+    if (session.body().band() == sim::gull::kUpperBand) {
+        ++landed;
+    }
+
+    // 3. to the north wall of the guest floor, and over it.
+    walkToTile(session, 150, sim::gull::kFootprintY0 + 1);
+    session.body().setYaw(sim::kFacingNorth);
+    session.climb();
+    if (session.body().band() == sim::gull::kRoofBand) {
+        ++landed;
+    }
+
+    // 4. out onto the lead and turn to look back down the Tarwalk. South-west,
+    //    because that is where the district is: the quay, the frontage opposite
+    //    and the whole run of the street under the eye.
+    walkToTile(session, sim::gull::kFootprintX0 + 2, sim::gull::kFootprintY0 + 2);
+    if (session.body().band() == sim::gull::kRoofBand) {
+        ++landed;
+    }
+
+    if (ending == "leap") {
+        // West, over the two tiles of air between this house and the next.
+        walkToTile(session, sim::gull::kFootprintX0, 70);
+        session.body().setYaw(sim::kFacingWest);
+        session.climb();
+    } else if (ending == "street") {
+        walkToTile(session, sim::gull::kFootprintX0, 70);
+        session.body().setYaw(sim::kFacingWest);
+        session.dropDown();
+    } else {
+        // Looking down at the ward over the north-west corner.
+        session.body().setYaw(sim::angle_from_degrees(250));
+        session.body().setPitch(sim::angle_from_degrees(-16));
+    }
+    return landed;
+}
+
+/// THE SKYRUNNER LINE, played the way a player plays it and nothing reaching
+/// into the simulation sideways. Sign on with Finch in the snug, take two
+/// purses, crack a box above the stair, get on the roof, cross the alley, sell
+/// what was taken, lean on somebody, and run a bale out past the Watch.
+[[nodiscard]] int runSkyrunLine(Session& session, const std::string& ending) {
+    const sim::DialogueDirector& talk = session.tavern().dialogue();
+    const std::string questId = "skyrunner-tenant";
+
+    // 1. the oath. Finch keeps the snug after ten.
+    if (speakTo(session, "Finch")) {
+        pick(session, sim::TopicKind::Join);
+        session.closeConversation();
+    }
+
+    // 2. two purses, off whoever is nearest that is not the fence.
+    for (const char* mark : {"Sella Brinewall", "Tarn Wrenhale", "Wick Hempson",
+                             "Hobbin Mastwright", "Colm Tarbeck"}) {
+        if (talk.journal().counter(questId) >= 2) {
+            break;
+        }
+        if (speakTo(session, mark)) {
+            pick(session, sim::TopicKind::PickPocket);
+            session.closeConversation();
+        }
+    }
+    if (speakTo(session, "Finch")) {
+        pick(session, sim::TopicKind::QuestBeat);
+        session.closeConversation();
+    }
+
+    // 3. a box above the stair. Up the authored stair first.
+    walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+    for (int guard = 0; guard < 240 && session.body().band() != sim::gull::kUpperBand; ++guard) {
+        session.body().setYaw(sim::kFacingNorth);
+        sim::MoveInput input;
+        input.forward = 1;
+        session.step(input);
+    }
+    walkToTile(session, sim::gull::kRooms[1].standX, sim::gull::kRooms[1].standY);
+    session.steal();
+
+    // 4. and 5. the roof, and the alley.
+    walkToTile(session, 150, sim::gull::kFootprintY0 + 1);
+    session.body().setYaw(sim::kFacingNorth);
+    session.climb();
+    walkToTile(session, sim::gull::kFootprintX0, 70);
+    session.body().setYaw(sim::kFacingWest);
+    session.climb();
+    // Back down to the street and in at the door again.
+    walkToTile(session, sim::gull::kFootprintX0 - 3, 70);
+    session.body().setYaw(sim::kFacingSouth);
+    session.dropDown();
+    for (int guard = 0; guard < 6 && session.body().band() != sim::gull::kGroundBand; ++guard) {
+        session.body().setYaw(sim::kFacingWest);
+        session.dropDown();
+    }
+    walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
+
+    // Report the three body beats and take the bale.
+    if (speakTo(session, "Finch")) {
+        pick(session, sim::TopicKind::QuestBeat);   // the box
+        pick(session, sim::TopicKind::QuestBeat);   // the climb
+        pick(session, sim::TopicKind::QuestBeat);   // the leap
+        // 6. sell it.
+        pick(session, sim::TopicKind::Fence);
+        pick(session, sim::TopicKind::QuestBeat);
+        session.closeConversation();
+    }
+
+    // 7. lean on somebody.
+    for (const char* mark : {"Tarn Wrenhale", "Colm Tarbeck", "Sella Brinewall"}) {
+        if (speakTo(session, mark)) {
+            pick(session, sim::TopicKind::Lean);
+            session.closeConversation();
+        }
+    }
+    if (speakTo(session, "Finch")) {
+        pick(session, sim::TopicKind::QuestBeat);
+        session.closeConversation();
+    }
+
+    // 8. the bale, out of the door past the Watch.
+    walkToTile(session, sim::gull::kBaleX, sim::gull::kBaleY);
+    session.steal();
+    walkToTile(session, sim::gull::kDoorX0, sim::gull::kStreetY);
+    walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
+    if (speakTo(session, "Finch")) {
+        pick(session, sim::TopicKind::QuestBeat);
+        // 9. and what a tenant is.
+        pick(session, sim::TopicKind::QuestBeat);
+    }
+
+    if (ending == "away") {
+        session.closeConversation();
+    }
+    standBackFrom(session, "Finch");
+    return talk.journal().stagesDone(questId);
+}
+
 }  // namespace
 
 SmokeRunResult runSmoke(const SmokeRunConfig& config) {
@@ -1041,6 +1386,30 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     if (config.flame) {
         result.flameStages = runFlameLine(session, config.flameEnd);
         result.talking = session.talking();
+        const sim::Questline* line = session.tavern().dialogue().quests().find("flame-disciple");
+        result.scriptedWanted += line == nullptr ? 0 : static_cast<std::int32_t>(
+                                                          line->stages.size());
+        result.scriptedLanded += result.flameStages;
+    }
+
+    if (config.roofs) {
+        // Four beats: the stair, the floor above it, the wall, the lead.
+        constexpr std::int32_t kRoofBeats = 4;
+        const std::int32_t landed = static_cast<std::int32_t>(
+            runRoofLine(session, config.roofsEnd));
+        result.scriptedWanted += kRoofBeats;
+        result.scriptedLanded += landed;
+        result.talking = session.talking();
+    }
+
+    if (config.skyrun) {
+        result.skyrunStages = runSkyrunLine(session, config.skyrunEnd);
+        result.talking = session.talking();
+        const sim::Questline* line =
+            session.tavern().dialogue().quests().find("skyrunner-tenant");
+        result.scriptedWanted += line == nullptr ? 0 : static_cast<std::int32_t>(
+                                                           line->stages.size());
+        result.scriptedLanded += result.skyrunStages;
     }
 
     Framebuffer frame(config.session.width, config.session.height);
@@ -1065,6 +1434,24 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " sprite px=" << result.stats.spritePixels
             << " actor px=" << result.stats.actorPixels << " luma="
             << result.stats.meanLuma << " colours=" << result.stats.distinctColours;
+    if (config.roofs || config.skyrun) {
+        const sim::DialogueDirector& talk = session.tavern().dialogue();
+        const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+        const std::int32_t watch = talk.factions().indexOf("watch");
+        summary << " | roofs stages=" << result.skyrunStages << " rank="
+                << talk.standings().rank(roofs) << ' ' << talk.standings().rankTitle(roofs)
+                << " standing=" << talk.standings().standing(roofs)
+                << " watch=" << talk.standings().standing(watch)
+                << " climbs=" << talk.crimes().tally(sim::Crime::RoofRun)
+                << " lifts=" << talk.crimes().tally(sim::Crime::Lift)
+                << " cracks=" << talk.crimes().tally(sim::Crime::Burgle)
+                << " leans=" << talk.crimes().tally(sim::Crime::Extort)
+                << " fences=" << talk.crimes().tally(sim::Crime::Fence)
+                << " runs=" << talk.crimes().tally(sim::Crime::Smuggle)
+                << " heat=" << talk.crimes().heat()
+                << " warrant=" << (talk.crimes().warrant() ? "yes" : "no")
+                << " skyrunning=" << talk.skills().level(sim::kRoofSkill);
+    }
     if (config.flame) {
         const sim::DialogueDirector& talk = session.tavern().dialogue();
         const std::int32_t temple = talk.factions().indexOf("temple");
@@ -1080,6 +1467,17 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << talk.grimoire().craftedCount()
                 << " linkcraft=" << talk.skills().level(sim::kCraftingSkill);
     }
+    // A SCRIPTED RUN THAT FELL SHORT SAYS SO, AND FAILS.
+    //
+    // S4's did neither: runFlameLine returned a stage count that runSmoke threw
+    // away, and a run that landed ZERO of six stages photographed the wrong
+    // person and exited 0. The S4 review found it. A capture tool that reports
+    // success while photographing the wrong thing will mislabel a future
+    // sprint's evidence, so this is a hard failure and not a warning.
+    if (result.scriptFellShort()) {
+        summary << " | WARNING: scripted run landed " << result.scriptedLanded << " of "
+                << result.scriptedWanted << " beats";
+    }
     result.summary = summary.str();
 
     // The corner stamp, unless somebody is standing in it: while a conversation
@@ -1087,15 +1485,18 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // eleven characters of screen is unreadable in a capture.
     if (config.stamp && !result.talking) {
         const int scale = std::max(1, frame.height() / 180);
-        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S4", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
+        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S5", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
                  scale);
     }
 
-    result.ok = true;
+    result.ok = !result.scriptFellShort();
     if (!config.screenshot.empty()) {
+        // The PNG is still written. A frame of a run that fell short is
+        // evidence OF the shortfall, and deleting it would make the failure
+        // harder to diagnose rather than easier -- but ok stays false.
         const Framebuffer output =
             config.captureScale > 1 ? upscaleNearest(frame, config.captureScale) : frame;
-        result.ok = writePng(output, config.screenshot);
+        result.ok = writePng(output, config.screenshot) && result.ok;
     }
     return result;
 }

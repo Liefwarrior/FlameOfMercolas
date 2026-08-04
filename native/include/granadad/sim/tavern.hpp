@@ -123,6 +123,30 @@ inline constexpr GuestRoom kRooms[kRoomCount] = {
     {156, 76, 155, 76},  // south-east
 };
 
+/// S5. A guest with anything worth keeping keeps it at the foot of the bed, so
+/// the cell a strongbox stands on IS the bed cell -- authored as a solid CLOTH
+/// block, which makes it furniture a body cannot walk into and can reach across
+/// from the one tile beside it. Four rooms, four boxes, and no new geometry:
+/// the burglary happens on tiles the map already has.
+///
+/// A box in a room you RENTED is your own, and cracking your own box is not a
+/// crime; the room refuses to call it one.
+[[nodiscard]] constexpr std::int32_t roomAtStand(std::int32_t tileX,
+                                                 std::int32_t tileY) noexcept {
+    for (std::int32_t i = 0; i < kRoomCount; ++i) {
+        if (kRooms[i].standX == tileX && kRooms[i].standY == tileY) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/// Where a bale of contraband sits between the boat and the buyer: the snug
+/// behind the partition, which is the one corner of the taproom the bar cannot
+/// see into. It is why the Skyrunners' contact drinks there.
+inline constexpr std::int32_t kBaleX = 158;
+inline constexpr std::int32_t kBaleY = 70;
+
 /// Everything a pathfinder inside the Gull may touch: the building, both
 /// floors, and enough of the Tarwalk in front of it to put somebody out on.
 inline constexpr TileBox kRegion{kFootprintX0 - 1, kStreetY - 2, kGroundBand,
@@ -278,6 +302,9 @@ inline constexpr std::int32_t kEjectionShove = 160;
 /// The reserved actor id the player answers to inside this room. Zero, so no
 /// staff or patron can ever collide with it.
 inline constexpr std::int32_t kPlayerActorId = 0;
+
+/// How close a body has to be to a strongbox or a bale to put hands on it, Q8.
+inline constexpr std::int32_t kReachQ8 = 2 * kSubOne;
 
 /// A BRAWL NEVER KILLS. That is what makes it a brawl, and it is why the door
 /// policy can be enforced with fists at all: the worst a taproom fight does to
@@ -455,10 +482,50 @@ public:
     Reply endForge();
     void endConversation();
 
+    // --- S5: the crimes that are an ACT and not a conversation --------------
+    //
+    // Leaning on somebody and selling stolen property happen across a table and
+    // live in the dialogue layer. These happen in the room, so the room owns
+    // them -- and each reports through the same DialogueDirector::noteCrime the
+    // topics do, so a tally, a heat and a faction number can never be moved by
+    // one path and missed by the other.
+
+    /// What an act in the room produced.
+    struct StealResult {
+        ServiceResult result = ServiceResult::NobodyThere;
+        /// Coin taken.
+        std::int32_t coin = 0;
+        /// Pieces of property taken -- the thing a fence exists to buy.
+        std::int32_t loot = 0;
+        /// True when somebody present could see it happen.
+        bool seen = false;
+        /// A short report for the message line.
+        std::string line;
+    };
+
+    /// Cracks the strongbox at the foot of the bed in the guest room the body
+    /// is standing in. Refused for a room the player rented, for a box already
+    /// emptied, and from the wrong floor.
+    StealResult crackStrongbox();
+    /// Which of the four boxes have been emptied, as a bitmask. Hashed.
+    [[nodiscard]] std::int32_t crackedBoxes() const noexcept { return crackedBoxes_; }
+
+    /// Takes the bale in the snug, or puts it back down. The roofs do not hand
+    /// a bale to a stranger, so it wants membership; carrying it OUT of the
+    /// house past somebody who would mind is the run, and the room notices that
+    /// on its own -- see stepMovement.
+    StealResult handleBale();
+
     /// Everybody present who could see it remembers that they saw it. This is
     /// what makes a robbery in a full taproom different from one in an empty
     /// one, and it is what moves the ward's own opinion.
     void spreadWitness(std::int32_t victimId, Deed deed);
+
+    /// How many present actors, other than `exceptId`, can actually see the
+    /// player right now. Same range and same sight rule spreadWitness uses,
+    /// exposed because a CRIME needs the count rather than the side effect:
+    /// heat is what the Watch heard, and nobody heard an empty room.
+    [[nodiscard]] std::int32_t witnessCount(std::int32_t exceptId) const noexcept;
     /// How far across a room a deed carries, in tiles.
     static constexpr std::int32_t kWitnessRangeTiles = 8;
     /// Inside this, you do not need a sight line: you are in arm's reach and
@@ -531,6 +598,10 @@ public:
     /// The player's hit points as this room has been keeping them. Floors at
     /// kPlayerBrawlFloor -- see the constant.
     [[nodiscard]] std::int32_t playerHp() const noexcept { return playerHp_; }
+    /// Hurts the player by `amount`, floored exactly the way a brawl is. S5's
+    /// one caller is a landing off a roof that was higher than the legs allow,
+    /// and it lives here because this is where the player's hit points live.
+    void injurePlayer(std::int32_t amount);
     /// True once a brawl has taken the player to the floor.
     [[nodiscard]] bool playerFloored() const noexcept { return playerFloored_; }
     [[nodiscard]] std::int32_t warningsGiven() const noexcept { return warningsGiven_; }
@@ -644,6 +715,18 @@ private:
     FightClass escalation_ = FightClass::Brawl;
     /// Ids currently swinging at the player, in ascending order.
     std::vector<std::int32_t> brawlers_;
+
+    // --- S5 -----------------------------------------------------------------
+    /// Bit i is set once room i's strongbox has been emptied.
+    std::int32_t crackedBoxes_ = 0;
+    /// Whether the player was inside the walls on the previous movement step.
+    /// A bale is DELIVERED by crossing the threshold with it, and a crossing is
+    /// a transition and not a state.
+    bool wasInside_ = false;
+    /// Simulated seconds this room has been running, INCLUDING the ones a
+    /// skipTo jumped. The clock on the wall wraps at midnight and the Watch's
+    /// memory does not, so heat is charged against this and not timeOfDay_.
+    std::int64_t elapsed_ = 0;
 };
 
 }  // namespace granadad::sim

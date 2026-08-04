@@ -130,6 +130,26 @@ public:
     /// R. Sleeps, if there is a rented room and you are standing in it.
     void restHere();
 
+    // --- S5: the three roof verbs, and the one thieving one ------------------
+    //
+    // On Session for exactly the reason the first three are: the suite drives
+    // the code a keypress drives, and the client owns no game logic.
+
+    /// SPACE. Gets you UP. Tries the mantle first -- a wall in front of you
+    /// with a surface on top of it -- and a leap second, because those are the
+    /// two answers to "get me across or over" and a player pressing one key
+    /// should not have to know which of them the geometry wants.
+    void climb();
+    /// X. Steps off the ledge in front and takes the fall.
+    void dropDown();
+    /// G. Puts hands on whatever is here: the strongbox at a bed-foot, or the
+    /// bale in the snug.
+    void steal();
+
+    /// What the last roof move did, in words. Exposed so a test can assert on
+    /// the REPORT and not only on where the body ended up.
+    [[nodiscard]] const std::string& lastRoofMove() const noexcept { return roofMove_; }
+
     /// The last thing that happened, for the HUD. Fades after a few seconds.
     [[nodiscard]] const std::string& lastMessage() const noexcept { return message_; }
 
@@ -199,8 +219,13 @@ public:
 private:
     void syncTavernToBody();
     void say(std::string line);
+    /// Charges a landing to the body: the skill, the guild's teaching, the hit
+    /// points and the roof-run tally, in the one place a landing is resolved.
+    void settleLanding(const sim::RoofResult& move);
     /// "THE TEMPLE OF THE FLAME - DISCIPLE", or empty when on no rung.
     [[nodiscard]] std::string guildLine() const;
+    /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
+    [[nodiscard]] std::string heatLine() const;
     /// What the questline in progress wants next, in its own short label.
     [[nodiscard]] std::string objectiveLine() const;
 
@@ -232,6 +257,12 @@ private:
     /// itself lives in the simulation; this is only which keyboard mode the
     /// client is in.
     bool forgeOpen_ = false;
+    /// What the last roof move did, for the HUD and for the tests.
+    std::string roofMove_;
+    /// The highest band the body has stood on. A roof-run is counted once per
+    /// ARRIVAL somewhere new and high rather than once per step, and this is
+    /// what tells the two apart.
+    std::int32_t highestBand_ = 0;
 };
 
 /// What a scripted capture run was asked to do.
@@ -263,6 +294,17 @@ struct SmokeRunConfig {
     /// capture shows the SAME person greeting you differently after you have
     /// done something to them -- rob them, then say hello.
     bool again = false;
+    /// S5. Climb onto the Gilded Gull's roof and look down at the ward: in at
+    /// the door, up the stair, out over the north wall, and turn round. WHERE
+    /// is "roof" (standing on the lead), "leap" (across the alley onto the next
+    /// house) or "street" (the drop back down).
+    bool roofs = false;
+    std::string roofsEnd = "roof";
+    /// S5. Play the Skyrunner line: sign on with Finch, take two purses, crack
+    /// a box above the stair, get on the roof, cross the alley, sell what was
+    /// taken, lean on somebody, and run a bale out past the Watch.
+    bool skyrun = false;
+    std::string skyrunEnd = "talk";
     /// Run the Priest of the Flame line end to end and capture wherever it
     /// finishes: the oath, the night pot, the captain's word, the report, the
     /// teaching, and a crafting composed at the bench. Driven through the same
@@ -292,6 +334,21 @@ struct SmokeRunResult {
     /// How many stages of the Priest of the Flame line the scripted
     /// playthrough actually finished. Zero when --flame was not asked for.
     std::int32_t flameStages = 0;
+    /// The same for the Skyrunner line.
+    std::int32_t skyrunStages = 0;
+    /// What a scripted line WANTED to land, and what it did.
+    ///
+    /// S5 ADDS THESE BECAUSE S4'S CAPTURE PATH LIED. runFlameLine returned a
+    /// stage count that runSmoke threw on the floor: a run that landed ZERO of
+    /// six stages, photographed the wrong person and exited 0. The S4 review
+    /// found it. A capture tool that reports success while photographing the
+    /// wrong thing will mislabel a future sprint's evidence, so a short run now
+    /// says so in the summary AND fails the process.
+    std::int32_t scriptedWanted = 0;
+    std::int32_t scriptedLanded = 0;
+    [[nodiscard]] bool scriptFellShort() const noexcept {
+        return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
+    }
 };
 
 /// Runs a scripted session and, optionally, writes a PNG. No window, no GPU,

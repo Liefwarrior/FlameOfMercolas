@@ -243,6 +243,16 @@ void drawClock(Framebuffer& target, const HudState& state) {
     if (!state.standingLabel.empty()) {
         drawText(target, target.width() - margin - textWidth(state.standingLabel, scale), y,
                  state.standingLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.82F, scale);
+        y += 9 * scale;
+    }
+    // S5: and what the WATCH has heard, which is a different number from what
+    // the ward thinks. Red once there is paper out on you, because that is the
+    // one line here a player must not have to read twice to notice.
+    if (!state.heatLabel.empty()) {
+        const bool wanted = state.heatLabel.substr(0, 6) == "WANTED";
+        drawText(target, target.width() - margin - textWidth(state.heatLabel, scale), y,
+                 state.heatLabel,
+                 wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F}, 0.86F, scale);
     }
 }
 

@@ -296,7 +296,7 @@ TEST_CASE("every post in the roster is a tile somebody can stand on") {
     // The failure this prevents is silent: an actor whose post is inside a wall
     // never arrives, never reaches Working, and stands in the doorway forever.
     Tavern tavern(docksTiles(), hourOfDay(20), 1, content::contentDir());
-    REQUIRE(tavern.actors().size() == 15);
+    REQUIRE(tavern.actors().size() == 16);
     for (const Actor& actor : tavern.actors()) {
         for (const ScheduleBlock& block : actor.schedule().blocks()) {
             INFO("post of ", actor.name());
@@ -603,7 +603,7 @@ TEST_CASE("the Skyrunner contact is present and says nothing worth having") {
     Room room(hourOfDay(23), 158, 69);
     room.run(2);
     const TalkResult talk = room.tavern().talkToNearest();
-    CHECK(talk.speaker == "Wisp");
+    CHECK(talk.speaker == "Finch");
     // Present, and guarded. S5's questline is what changes this answer.
     CHECK(talk.result == ServiceResult::Refused);
     CHECK_FALSE(talk.line.empty());

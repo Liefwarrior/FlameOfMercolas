@@ -50,6 +50,10 @@ struct HudState {
     /// What the ward as a whole thinks of the player, top-right under the
     /// purse. Reputation READABLE rather than hidden. Empty draws nothing.
     std::string_view standingLabel;
+    /// S5: what the Watch has heard, what is in your coat, and whether you are
+    /// carrying somebody else's bale. Top-right under the standing, still
+    /// hugging the edge. Empty draws nothing, which is the usual case.
+    std::string_view heatLabel;
     /// The ladder the player is highest on, and the rung: "FLAME - DISCIPLE".
     /// Bottom-left, stacked over the health bar, because that is where a
     /// character's own state lives and the centre stays empty. Drawn only when

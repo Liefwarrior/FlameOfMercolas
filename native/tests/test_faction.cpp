@@ -389,9 +389,12 @@ TEST_CASE("the room knows which guild each of its people belongs to") {
     CHECK(factionNameOf("Father Maell") == "temple");
     CHECK(factionNameOf("Captain Ivo Wake") == "dockhands");
     CHECK(factionNameOf("Bram Marrow") == "dockhands");
-    // Presented identity versus true identity: Wisp greets you as a wastrel and
-    // belongs to the roofs.
-    CHECK(factionNameOf("Wisp") == "skyrunners");
+    // Presented identity versus true identity: Finch greets you as a wastrel
+    // and belongs to the roofs.
+    CHECK(factionNameOf("Finch") == "skyrunners");
+    // And the ward's law drinks in the same room after nine, which is what
+    // makes the mirror something a player can walk into.
+    CHECK(factionNameOf("Watchman Cull") == "watch");
 }
 
 TEST_CASE("a rung on the Row is worth real coin across a real counter") {
@@ -433,10 +436,10 @@ TEST_CASE("the ward's balance of power decides how much rope a house gives") {
 
 TEST_CASE("putting on the Watch's colours makes an enemy of the man at the corner table") {
     Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
-    // Wisp keeps the small hours; at eleven he is in the snug.
+    // Finch keeps the small hours; at eleven he is in the snug.
     const Actor* wisp = nullptr;
     for (const Actor& actor : room.tavern().actors()) {
-        if (actor.name() == "Wisp" && actor.present()) {
+        if (actor.name() == "Finch" && actor.present()) {
             wisp = &actor;
         }
     }
@@ -455,7 +458,7 @@ TEST_CASE("putting on the Watch's colours makes an enemy of the man at the corne
     // greets you like one.
     CHECK(room.tavern().enemyPresence() >= 1);
     CHECK(room.tavern().dialogue().ledger().attitudeOf(wispId) == Attitude::Hostile);
-    REQUIRE(room.standBy("Wisp") != nullptr);
+    REQUIRE(room.standBy("Finch") != nullptr);
     REQUIRE(room.tavern().talkTo());
     CHECK(room.tavern().dialogue().greetingKey() == "greet.wastrel.hostile");
 }

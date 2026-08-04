@@ -62,6 +62,9 @@ StageKind stageKindOf(std::string_view raw) noexcept {
     if (raw == "forge") {
         return StageKind::Forge;
     }
+    if (raw == "tally") {
+        return StageKind::Tally;
+    }
     return StageKind::Unknown;
 }
 
@@ -77,6 +80,8 @@ std::string_view stageKindName(StageKind kind) noexcept {
             return "teach";
         case StageKind::Forge:
             return "forge";
+        case StageKind::Tally:
+            return "tally";
         case StageKind::Unknown:
             break;
     }
@@ -158,6 +163,13 @@ QuestBook QuestBook::load(const std::filesystem::path& contentDir) {
             stage.log = stringField(node, "log");
             stage.barkKey = stringField(node, "barkKey");
             stage.count = std::max(0, intField(node, "count"));
+            stage.counter = stringField(node, "counter");
+            if (stage.counter.empty() && stage.kind == StageKind::Alms) {
+                // The Mission's own line predates the vocabulary and counts the
+                // only thing there was to count. Named here so nothing else has
+                // to special-case it.
+                stage.counter = "drinks";
+            }
             stage.grantsRank = std::max(0, intField(node, "grantsRank"));
             stage.standing = intField(node, "standing");
             stage.terminal = boolField(node, "terminal");

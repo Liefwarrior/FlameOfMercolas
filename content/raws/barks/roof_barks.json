@@ -1,0 +1,159 @@
+{
+  "id": "roof_barks",
+  "tables": [
+    {
+      "key": "quest.skyrunner-tenant",
+      "rows": [
+        "There is a man in the snug who never buys a round and never leaves before three.",
+        "Nobody joins the roofs. People stop being strangers, and then one night they are up there.",
+        "Tenant, they call the first rung. Same word the Duke uses. That is not an accident."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.oath.finch",
+      "rows": [
+        "Sit down. Not there - there, where the partition is between you and the bar. Good. You have been in here four nights and you have looked at the stair every one of them. Nobody joins us. People stop being strangers. You have stopped.",
+        "I am not going to ask your name and you are not going to give me one. What you are now is a tenant. It means what it means downstairs: you pay for a roof you will never own."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.hands.finch",
+      "rows": [
+        "Two purses. In this room, tonight, and I do not care whether you get either of them - I care that you go back to the table afterwards and finish your drink. A man who leaves is a man they remember leaving.",
+        "Watch the eyes first. Not the purse. Everybody watches the purse and everybody gets their wrist held."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.box.finch",
+      "rows": [
+        "Up the stair there are four rooms and four boxes at four bed-feet. One of them is not yours. A box is easier than a purse and worth three of one, and that is exactly why this trade eats people - it gets easier and it gets better and then you are doing it in daylight.",
+        "If somebody is on that floor, come back down. The box will still be there. The witness will not."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.up.finch",
+      "rows": [
+        "You have walked past the way up every night this week. Guest floor, outside wall, hands on the top of it, and pull. That is the whole trick and there is not a second one.",
+        "Nobody looks up. Nine hundred people in this ward and not one of them looks up, because looking up is for the people who live where you are about to stand. That is the guild's entire secret and I have just given it to you."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.across.finch",
+      "rows": [
+        "A roof on its own is a trap with a view. Line the alley up - line it up, do not drift at it - and go over. West of this house there is two tiles of air and then more lead.",
+        "The roofs are the road. The street is a room with the door open. Get that the right way round and you will be alive at forty."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.sell.finch",
+      "rows": [
+        "Coin is coin. Everything else is a thing, and a thing has to be sold to somebody before it is money. I am the somebody. I pay a share, the share goes up with the rung, and that is the only honest wage the roofs have ever paid anybody.",
+        "Do not carry it about. A man with somebody else's brooch in his coat is a man with somebody else's brooch in his coat for as long as he keeps it."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.lean.finch",
+      "rows": [
+        "The cheapest coin in this ward is the coin somebody hands you. It costs nothing but what people think of you, and you have been spending that since the night you sat down here.",
+        "It does not work because of what you say. It works because of what they have heard. If nobody has heard anything, you are just a rude person asking for money."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.bale.finch",
+      "rows": [
+        "There is a bale in the snug and it is not going to walk. Out of the door with it. Cull drinks by the threshold after nine and he has a memory for cargo - it is the only thing he is good at and he is very good at it.",
+        "If he sees you, you still get paid. You just get to find out what the rest of it costs."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.tenant.finch",
+      "rows": [
+        "No. There is nothing after them. There is only doing those things for somebody else, and the roofs will start asking. That is what the next rung is: not a better crime, a shorter leash.",
+        "You wanted a word for what you are. Tenant. Same as the ledger downstairs. You pay for something you will never own, and one quarter you cannot pay, and then you find out who your Duke is."
+      ]
+    },
+    {
+      "key": "quest.skyrunner-tenant.done.finch",
+      "rows": [
+        "You are up there most nights now. Do not get comfortable; the ones who get comfortable come down fast and only once."
+      ]
+    },
+    {
+      "key": "crime.fence",
+      "rows": [
+        "Give it here. Do not tell me where it came from and I will not tell you where it goes.",
+        "Hm. Better than last time. Somebody has been watching eyes.",
+        "That is a share, not a price. A price is what an honest man argues about."
+      ]
+    },
+    {
+      "key": "crime.lean",
+      "rows": [
+        "They pay, and they do not look at you while they do it.",
+        "A hand goes to a pocket the way a hand goes to a wound.",
+        "No argument. That is what having been heard about buys you."
+      ]
+    },
+    {
+      "key": "crime.ground",
+      "rows": [
+        "Up you go. There is a nook on the Gullet deck with a crawl-gap and no door, and you are going to be very bored in it. A week. The ward has the memory of a gull."
+      ]
+    },
+    {
+      "key": "crime.file",
+      "rows": [
+        "Files go missing. Rain gets in, the impound roof leaks, a clerk is a clerk. What the ward saw it still saw - but there is no paper with your name on it now."
+      ]
+    },
+    {
+      "key": "faction.skyrunners.favour",
+      "rows": [
+        "You have the rung. Ask."
+      ]
+    },
+    {
+      "key": "mastery.skyrunning.novice",
+      "rows": [
+        "Do not look at your feet. Look where the feet are going. There is a difference and it is about six inches of lead.",
+        "Everybody falls the first month. The trick is falling one storey instead of two."
+      ]
+    },
+    {
+      "key": "mastery.skyrunning.adept",
+      "rows": [
+        "Thatch takes your weight and then it does not. Tile tells you first. Lead never tells you anything and never lets you down.",
+        "I have crossed this ward twice at night without touching a street. It took an hour and it was the safest hour of my life."
+      ]
+    },
+    {
+      "key": "mastery.skyrunning.master",
+      "rows": [
+        "There is a line from the Gull to the Gullet that never comes below the second storey. Four people alive know it. Two of them are careless.",
+        "You stop counting the gaps. That is when you are good, and it is also when you die, so keep counting the gaps."
+      ]
+    },
+    {
+      "key": "mastery.cracksmanship.novice",
+      "rows": [
+        "A box is a promise the wood makes to the lock. Wood breaks promises.",
+        "Quiet is worth more than quick. Quick is for people who have already been heard."
+      ]
+    },
+    {
+      "key": "mastery.cracksmanship.adept",
+      "rows": [
+        "Hinges. Always the hinges. Everybody in this trade stares at the lock like it owes them something.",
+        "The best box I ever opened had nothing in it. The man who owned it had been pretending for nine years and I was the only one who ever found out."
+      ]
+    },
+    {
+      "key": "mastery.cracksmanship.master",
+      "rows": [
+        "I can tell you what is in a box by how the lid sits. Coin sits flat. Paper does not.",
+        "There is no such thing as a locked room. There is a room, and there is how long you are willing to be in it."
+      ]
+    }
+  ],
+  "notes": "S5 addition. content/raws/barks/barks.json is the owner's authored canon and is UNTOUCHED, and so is S4's flame_barks.json; BarkTables::load merges every *.json in this directory in sorted filename order with the owner's file loaded FIRST and winning every duplicate key, so nothing here can shadow an authored line. Same schema, ASCII only. WHAT IS AUTHORED HERE (and note what is NOT: Watchman Cull joins the Gilded Gull's roster this sprint as the Watch's recruiter and as the eyes a smuggling run has to get past, and he needed no new voice at all -- the owner wrote personal.cull in barks.json already, and a second table under that key would have been dead content the merge discards): the nine-stage Skyrunner line (content/raws/quests/skyrunner_tenant.json), the four crime verbs that speak (fence, lean, go to ground, lose the file), and the mastery bands for the two skills the roofs run on, SKYRUNNING and CRACKSMANSHIP, both of which are already ids in the owner's own content/raws/skills/skills.json and neither of which had a line to speak. CANON RULES OBEYED: (1) DOCKS-GAZETTEER section 2.5 -- rooftops are unseemly for every Trojian except a presented Wielder, and Finch's own lines say so out loud rather than treating the roofs as a neutral shortcut. (2) Section 3.1 K35 -- the Skyrunner's Roost is unmarked and must never appear on any discoverable establishments list; crime.ground names it only as 'a nook on the Gullet deck with a crawl-gap and no door', which is the gazetteer's own wording and is not a location the game will ever mark. (3) Section 2.8 -- the tenure ruling. Finch's first and last lines turn the guild's own rank name back into the ground rent it was borrowed from, because ranks.json says the rung is named for his epithet and DECISIONS.md says a tenant is somebody who owns a house standing on ground they will never own. Nothing here invents a Skyrunner leader, a hierarchy above Finch, or a location outside the ward."
+}

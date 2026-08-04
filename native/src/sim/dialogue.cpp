@@ -61,6 +61,12 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "learn";
         case TopicKind::Forge:
             return "forge";
+        case TopicKind::Fence:
+            return "fence";
+        case TopicKind::Lean:
+            return "lean";
+        case TopicKind::Favour:
+            return "favour";
     }
     return "?";
 }
@@ -271,6 +277,7 @@ void DialogueDirector::buildTopics() {
                 joinOffered = line.faction == speaker_.recruitsFor;
                 break;
             case StageKind::Alms:
+            case StageKind::Tally:
                 topic.kind = TopicKind::QuestBeat;
                 // The count is on the label, so a player never has to guess how
                 // much of a counted stage is behind them.
@@ -385,6 +392,52 @@ void DialogueDirector::buildTopics() {
         topics_.push_back(std::move(topic));
     }
 
+    // 8. S5 -- the two crimes that are a CONVERSATION rather than a hand.
+    //
+    // Leaning on somebody and selling them somebody else's property are the
+    // only acts on the ward's list that happen across a table, which is why
+    // they live here and the other four live in the room. Both are offered
+    // without a rung, and both ANSWER differently once you have one: that is
+    // the difference between a topic being gated and a topic being worth
+    // choosing.
+    if (speaker_.leanable && speaker_.purse > 0) {
+        Topic topic;
+        topic.kind = TopicKind::Lean;
+        topic.label = "LEAN ON THEM";
+        topics_.push_back(std::move(topic));
+    }
+    if (speaker_.buysStolen) {
+        Topic topic;
+        topic.kind = TopicKind::Fence;
+        topic.label = "SELL WHAT YOU TOOK " + std::to_string(crimes_.loot());
+        topics_.push_back(std::move(topic));
+    }
+
+    // 9. S5 -- what a TOP rung is actually for.
+    //
+    // Two tokens, two very different favours, and only the person who speaks
+    // for that guild can be asked. This is the whole of what `lair` and
+    // `warrant` buy, and it is the answer to the S4 review's complaint that
+    // eleven of fourteen unlock tokens had no reader: they now have three
+    // between them, and the ones that still do not are named out loud in
+    // ranks.json rather than implied.
+    if (!speaker_.recruitsFor.empty()) {
+        const std::int32_t index = factions_->indexOf(speaker_.recruitsFor);
+        if (standings_.unlocked(index, "lair")) {
+            Topic topic;
+            topic.kind = TopicKind::Favour;
+            topic.label = "GO TO GROUND";
+            topic.arg = speaker_.recruitsFor;
+            topics_.push_back(std::move(topic));
+        } else if (standings_.unlocked(index, "warrant")) {
+            Topic topic;
+            topic.kind = TopicKind::Favour;
+            topic.label = "LOSE THE FILE";
+            topic.arg = speaker_.recruitsFor;
+            topics_.push_back(std::move(topic));
+        }
+    }
+
     {
         Topic topic;
         topic.kind = TopicKind::Leave;
@@ -472,27 +525,135 @@ Reply DialogueDirector::choose(std::size_t index) {
             // Deterministic, and skill against skill: no roll, because a roll
             // here would consume a draw the twin-run gate has to account for.
             const bool caught = craft < speaker_.awareness;
-            // Every attempt teaches the hands something, caught or not.
-            skills_.use(kThieverySkill, caught ? 1 : 2);
+            // The hands are charged for the attempt by noteCrime, which is now
+            // the one place a criminal act pays for itself. Caught or not.
             if (caught) {
                 recordDeed(Deed::Robbed);
                 out = reply(TopicKind::PickPocket,
                             upper(speaker_.name) + " CATCHES YOUR WRIST.");
                 out.offence = true;
                 out.closes = true;
+                out.crime = Crime::Lift;
+                out.criminal = true;
                 close();
             } else {
                 const std::int32_t lifted =
                     std::min(speaker_.purse, 1 + craft / 8 + speaker_.purse / 4);
                 speaker_.purse -= lifted;
-                out = reply(TopicKind::PickPocket, "LIFTED " + coins(lifted) + ".");
+                // A purse carries something that is not coin, and that
+                // something is what a fence is for.
+                crimes_.takeLoot(1);
+                out = reply(TopicKind::PickPocket,
+                            "LIFTED " + coins(lifted) + " AND A TRINKET.");
                 out.coinDelta = lifted;
+                out.crime = Crime::Lift;
+                out.criminal = true;
             }
             break;
         }
         case TopicKind::Buy: {
             out = reply(TopicKind::Buy, {});
             out.wantsPurchase = true;
+            break;
+        }
+        case TopicKind::Fence: {
+            const std::int32_t index = roofsIndex();
+            if (!standings_.unlocked(index, "fence")) {
+                // A cutpurse is not a fence. Refused in the roofs' own authored
+                // voice, through the same chain every guild verb already uses.
+                out = reply(TopicKind::Fence,
+                            speak(factionChain("skyrunners", "blocked"), TopicKind::Fence, 0));
+                if (out.line.empty()) {
+                    out.line = "NOT TO YOU.";
+                }
+                out.ok = false;
+                break;
+            }
+            if (crimes_.loot() <= 0) {
+                out = reply(TopicKind::Fence, "YOU HAVE NOTHING TO SELL.");
+                out.ok = false;
+                break;
+            }
+            const std::int32_t rate =
+                fenceRatePercent(standings_.rank(index), standings_.standing(index));
+            const std::int32_t pieces = crimes_.loot();
+            const std::int32_t paid = crimes_.sellLoot(pieces, rate);
+            out = reply(TopicKind::Fence,
+                        speak({std::string("crime.fence")}, TopicKind::Fence, rate));
+            if (out.line.empty()) {
+                out.line = "TAKEN.";
+            }
+            out.line += " [" + std::to_string(pieces) + " AT " + std::to_string(rate) +
+                        " PERCENT - " + coins(paid) + "]";
+            out.coinDelta = paid;
+            out.crime = Crime::Fence;
+            out.criminal = true;
+            break;
+        }
+        case TopicKind::Favour: {
+            const std::int32_t index = factions_->indexOf(topic.arg);
+            if (standings_.unlocked(index, "lair")) {
+                // A brotherhood with a roost has somewhere to be for a week.
+                // Heat to nothing and the paper with it.
+                crimes_.lieLow();
+                out = reply(TopicKind::Favour,
+                            speak({std::string("crime.ground")}, TopicKind::Favour, index));
+                if (out.line.empty()) {
+                    out.line = "GONE TO GROUND.";
+                }
+            } else if (standings_.unlocked(index, "warrant")) {
+                // A sergeant can lose his own file. What the ward SAW, it still
+                // saw -- the heat stays exactly where it was.
+                crimes_.quashWarrant();
+                out = reply(TopicKind::Favour,
+                            speak({std::string("crime.file")}, TopicKind::Favour, index));
+                if (out.line.empty()) {
+                    out.line = "THE FILE IS LOST.";
+                }
+            } else {
+                out = reply(TopicKind::Favour,
+                            speak(factionChain(topic.arg, "blocked"), TopicKind::Favour, index));
+                if (out.line.empty()) {
+                    out.line = "NOT SOMETHING YOU CAN ASK FOR.";
+                }
+                out.ok = false;
+            }
+            break;
+        }
+        case TopicKind::Lean: {
+            // Deterministic, and NOT a roll: what leans on somebody is what
+            // they know about you. The rung you hold on the roofs, what the
+            // ward has heard, how hot you are and whether there is paper out on
+            // your name -- against their own nerve, which is their streetwise.
+            const std::int32_t index = roofsIndex();
+            const std::int32_t nerve = speaker_.haggleSkill;
+            const std::int32_t menace = standings_.rank(index) * 7 +
+                                        std::max(0, -ledger_.reputation()) / 2 +
+                                        crimes_.heat() / 8 + (crimes_.warrant() ? 6 : 0);
+            recordDeed(Deed::Robbed);
+            if (menace <= nerve) {
+                out = reply(TopicKind::Lean,
+                            upper(speaker_.name) + " LOOKS AT YOU AND WAITS. [" +
+                                std::to_string(menace) + " AGAINST " + std::to_string(nerve) +
+                                "]");
+                out.offence = true;
+                out.ok = false;
+                out.crime = Crime::Extort;
+                out.criminal = true;
+                break;
+            }
+            const std::int32_t paid = 1 + speaker_.purse / 3;
+            speaker_.purse -= paid;
+            out = reply(TopicKind::Lean,
+                        speak({std::string("crime.lean")}, TopicKind::Lean, menace));
+            if (out.line.empty()) {
+                out.line = "THEY PAY.";
+            }
+            out.line += " [" + coins(paid) + "]";
+            out.coinDelta = paid;
+            out.offence = true;
+            out.crime = Crime::Extort;
+            out.criminal = true;
             break;
         }
         case TopicKind::Leave: {
@@ -641,6 +802,9 @@ Reply DialogueDirector::choose(std::size_t index) {
         case TopicKind::QuestBeat:
         case TopicKind::Learn:
         case TopicKind::Forge:
+        case TopicKind::Fence:
+        case TopicKind::Lean:
+        case TopicKind::Favour:
             if (open_) {
                 buildTopics();
             }
@@ -658,6 +822,13 @@ Reply DialogueDirector::choose(std::size_t index) {
 // ---------------------------------------------------------------------------
 
 void DialogueDirector::noteAlmsGiven() {
+    noteTally("drinks");
+}
+
+void DialogueDirector::noteTally(std::string_view counter) {
+    if (counter.empty()) {
+        return;
+    }
     for (const Questline& line : quests_.lines()) {
         if (!journal_.started(line.id) || journal_.done(line.id)) {
             continue;
@@ -666,9 +837,32 @@ void DialogueDirector::noteAlmsGiven() {
         if (at < 0 || static_cast<std::size_t>(at) >= line.stages.size()) {
             continue;
         }
-        if (line.stages[static_cast<std::size_t>(at)].kind == StageKind::Alms) {
-            journal_.bumpCounter(line.id, 1);
+        const QuestStage& stage = line.stages[static_cast<std::size_t>(at)];
+        if (stage.kind != StageKind::Alms && stage.kind != StageKind::Tally) {
+            continue;
         }
+        if (stage.counter != counter) {
+            continue;
+        }
+        journal_.bumpCounter(line.id, 1);
+    }
+}
+
+std::int32_t DialogueDirector::roofsIndex() const noexcept {
+    return factions_->indexOf("skyrunners");
+}
+
+void DialogueDirector::noteCrime(Crime crime, bool witnessed) {
+    crimes_.commit(crime, witnessed);
+    noteTally(crimeTally(crime));
+    // The roofs warm to it and, through the mirror ranks.json declares, the
+    // garrison cools by half. This is the only thing in the build that MOVES a
+    // faction number without a conversation, which is what makes the mirror
+    // something the player can feel rather than a note in a JSON file.
+    standings_.addStanding(roofsIndex(), crimeStanding(crime));
+    const std::string_view skill = crimeSkill(crime);
+    if (!skill.empty()) {
+        skills_.use(skill, witnessed ? 1 : 2);
     }
 }
 
@@ -872,6 +1066,10 @@ void DialogueDirector::hashInto(HashSink& sink) const {
     standings_.hashInto(sink);
     journal_.hashInto(sink);
     grimoire_.hashInto(sink);
+    // S5. What the player has taken, what they are carrying and what the Watch
+    // has heard. Heat reaches out and changes how the ward behaves, so two runs
+    // that disagreed about it would be two different games.
+    crimes_.hashInto(sink);
     bench_.hashInto(sink);
     sink.put_byte(open_ ? 1U : 0U);
     sink.put_int(static_cast<std::uint32_t>(speaker_.actorId));

@@ -88,11 +88,11 @@ TEST_CASE("a second bark file adds to the ward's voice and can never overwrite i
 TEST_CASE("the owner's bark tables load, all of them") {
     REQUIRE(barks().loaded());
     // 210 tables in the owner's content/raws/barks/barks.json, plus the 32 in
-    // content/raws/barks/flame_barks.json beside it -- S4 added a SECOND file
-    // rather than editing 59KB of canon, and BarkTables::load reads the whole
-    // directory. Pinned: content added should be a visible change here, and
-    // content LOST should be red.
-    CHECK(barks().tableCount() == 242);
+    // content/raws/barks/flame_barks.json (S4) and the 22 in roof_barks.json
+    // (S5) beside it -- each sprint adds a SECOND file rather than editing 59KB
+    // of canon, and BarkTables::load reads the whole directory. Pinned: content
+    // added should be a visible change here, and content LOST should be red.
+    CHECK(barks().tableCount() == 264);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.
@@ -628,8 +628,11 @@ private:
 
 TEST_CASE("the roster knows which of its people the raws actually named") {
     AtTheBar bar;
-    // Three of the fifteen are among the Forty, and the tavern says which by
-    // handing the dialogue layer their notables.json id.
+    // Five of the sixteen are among the Forty, and the tavern says which by
+    // handing the dialogue layer their notables.json id. S5 added two: Finch,
+    // who replaced S2's invented "Wisp" because the owner had already named the
+    // ward's Skyrunner, and Watchman Cull, who gives the garrison a recruiter a
+    // player can actually stand in front of.
     std::vector<std::string> named;
     for (const Actor& actor : bar.tavern().actors()) {
         const Speaker speaker = bar.tavern().speakerFor(actor);
@@ -643,10 +646,12 @@ TEST_CASE("the roster knows which of its people the raws actually named") {
         }
     }
     std::sort(named.begin(), named.end());
-    REQUIRE(named.size() == 3);
-    CHECK(named[0] == "maell");
-    CHECK(named[1] == "venn");
-    CHECK(named[2] == "wake");
+    REQUIRE(named.size() == 5);
+    CHECK(named[0] == "cull");
+    CHECK(named[1] == "finch");
+    CHECK(named[2] == "maell");
+    CHECK(named[3] == "venn");
+    CHECK(named[4] == "wake");
 }
 
 TEST_CASE("an actor's disposition changes what that actor DOES") {

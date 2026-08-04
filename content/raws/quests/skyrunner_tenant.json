@@ -1,0 +1,115 @@
+{
+  "id": "skyrunner-tenant",
+  "title": "The Quiet Tenant",
+  "faction": "skyrunners",
+  "giver": "finch",
+  "stages": [
+    {
+      "key": "oath",
+      "kind": "oath",
+      "party": "finch",
+      "label": "STOP BEING A STRANGER",
+      "objective": "Finch keeps the snug behind the partition after ten. Nobody joins the Skyrunners. Stand in front of him until you have stopped being a stranger.",
+      "log": "Finch did not sign anything and did not ask me to. He said I had stopped being a stranger, and that a tenant is somebody who pays for a roof he does not own.",
+      "barkKey": "quest.skyrunner-tenant.oath.finch",
+      "grantsRank": 1,
+      "standing": 10
+    },
+    {
+      "key": "hands",
+      "kind": "tally",
+      "counter": "lifts",
+      "party": "finch",
+      "count": 2,
+      "label": "PUT YOUR HANDS IN TWO PURSES",
+      "objective": "The first lesson is the cheapest one. Two purses in this room, and come back whether you got them or not.",
+      "log": "Two purses. Finch wanted to know which hand I used and whether I had watched their eyes first. I had not.",
+      "barkKey": "quest.skyrunner-tenant.hands.finch",
+      "standing": 8
+    },
+    {
+      "key": "box",
+      "kind": "tally",
+      "counter": "cracks",
+      "party": "finch",
+      "count": 1,
+      "label": "CRACK A GUEST'S BOX",
+      "objective": "Up the stair there are four rooms and four boxes at four bed-feet. One of them is not yours. Open it.",
+      "log": "Cracked a box above the stair. Finch says a box is easier than a purse and worth three of one, and that this is why the trade eats people.",
+      "barkKey": "quest.skyrunner-tenant.box.finch",
+      "standing": 10
+    },
+    {
+      "key": "up",
+      "kind": "tally",
+      "counter": "climbs",
+      "party": "finch",
+      "count": 1,
+      "label": "GET ON THE ROOF",
+      "objective": "You have been walking past the way up all week. Stand against an outside wall on the guest floor and take the lead over the taproom.",
+      "log": "Stood on the roof of the Gilded Gull. Nobody looked up. Finch says nobody ever does, and that this is the whole of the guild's secret.",
+      "barkKey": "quest.skyrunner-tenant.up.finch",
+      "standing": 10
+    },
+    {
+      "key": "across",
+      "kind": "tally",
+      "counter": "leaps",
+      "party": "finch",
+      "count": 1,
+      "label": "CROSS TO THE NEXT ROOF",
+      "objective": "A roof on its own is a trap. Line the alley up and go over it. The lead runs west from the Gull with two tiles of air in the way.",
+      "log": "Crossed the alley west of the Gull. Finch calls the roofs a road and the street a room, and he is not being clever about it.",
+      "barkKey": "quest.skyrunner-tenant.across.finch",
+      "standing": 12
+    },
+    {
+      "key": "sell",
+      "kind": "tally",
+      "counter": "fences",
+      "party": "finch",
+      "count": 1,
+      "label": "SELL WHAT YOU TOOK",
+      "objective": "Coin is coin and everything else is a thing. A thing has to be sold to somebody, and the somebody is Finch.",
+      "log": "Sold Finch what I had taken. He paid a share of what it is worth and told me the share goes up with the rung, which is the only honest wage the roofs pay.",
+      "barkKey": "quest.skyrunner-tenant.sell.finch",
+      "standing": 10
+    },
+    {
+      "key": "lean",
+      "kind": "tally",
+      "counter": "leans",
+      "party": "finch",
+      "count": 1,
+      "label": "LEAN ON SOMEBODY",
+      "objective": "The cheapest coin in the ward is the coin somebody hands you. It costs nothing but what people think of you, and you have been spending that anyway.",
+      "log": "Leaned on somebody in the taproom. It worked because of what the ward has heard about me and not because of anything I said, which Finch says is the lesson.",
+      "barkKey": "quest.skyrunner-tenant.lean.finch",
+      "standing": 10
+    },
+    {
+      "key": "bale",
+      "kind": "tally",
+      "counter": "runs",
+      "party": "finch",
+      "count": 1,
+      "label": "RUN A BALE PAST THE WATCH",
+      "objective": "There is a bale in the snug. Take it out of the door. Watchman Cull drinks by the threshold after nine and he has a memory for cargo.",
+      "log": "Carried the bale out past Cull. Finch paid without counting it, which he says is the difference between a wage and a share.",
+      "barkKey": "quest.skyrunner-tenant.bale.finch",
+      "standing": 14
+    },
+    {
+      "key": "tenant",
+      "kind": "talk",
+      "party": "finch",
+      "label": "ASK WHAT A TENANT IS",
+      "objective": "You have done every one of the things this ward calls crime. Ask Finch what comes after them.",
+      "log": "Finch says there is nothing after them. There is only doing them for somebody, and that the roofs will start asking. He says the word for what I am is tenant, and that it means the same on a roof as it does in a ledger: I pay for something I will never own.",
+      "barkKey": "quest.skyrunner-tenant.tenant.finch",
+      "standing": 16,
+      "terminal": true
+    }
+  ],
+  "notes": "S5 addition. content/raws/quests/quests.json is the owner's authored canon and is UNTOUCHED; content/raws/quests/flame_disciple.json is S4's and is untouched too. This is a THIRD stages-shaped file in the same directory and it loads for its shape, not its name. WHO: `finch` is the owner's own notable -- content/raws/names/notables.json, 'Finch, the quiet tenant', sited at LAIR_SKYRUNNER -- and content/raws/factions/ranks.json's own note already says the Skyrunners' first rung is called Tenant BECAUSE of that epithet. The line is named for it. WHAT IT TEACHES: every criminal act this build actually simulates, in the order a person would learn them -- a purse, a box, the way up, the way across, the fence, the lean, and a bale carried past the law -- so that a player who finishes it has done each one once and knows where each one lives. THE VOCABULARY: `oath` and `talk` are S4's; `tally` is S5's and is `alms` with its counter named rather than assumed, which is why the Mission's line needed no edit. Every counter string here is one the crime vocabulary itself produces (sim/crime.cpp, crimeTally) or one the body produces (climbs, leaps) -- a stage counting something nothing ever counts would be a stage that cannot be finished, and that is the one thing this schema exists to prevent. NO STAGE IS GATED BY A ROLL, per DECISIONS.md's S3 ruling. CANON: DOCKS-GAZETTEER section 2.5 (rooftops are unseemly for every Trojian except a presented Wielder, which is why the poor live there and why burglars use the rooftop-slum layer as a highway) and section 3.1 K35 (the Skyrunner's Roost is unmarked and must never appear on a discoverable list -- nothing here names or maps it). Finch's own authored micro-history with Gullet Mag (gossip.finch-mag-loyalty) is left where it is and not retold."
+}

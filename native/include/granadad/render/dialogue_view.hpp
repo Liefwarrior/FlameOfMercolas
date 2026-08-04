@@ -115,4 +115,28 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state);
 /// unless the word alone is longer than the column.
 [[nodiscard]] std::vector<std::string> wrapText(const std::string& text, std::size_t columns);
 
+/// One printed row of the topic list: the number the player presses, a space,
+/// and the label -- exactly the string drawText is handed.
+struct TopicRow {
+    std::string label;
+    bool picked = false;
+};
+
+/// THE ROWS THE TOPIC LIST ACTUALLY DRAWS, for a page of a list.
+///
+/// EXTRACTED IN S5, AND THE REASON IS A FINDING. S4 closed "topics past the
+/// ninth were unreachable" with a case over topicPageCount / topicPageOf, which
+/// is pure arithmetic and never touches the drawing code. The S4 review
+/// reinstated the original bug in drawDialogue -- `std::min(total,
+/// kTopicPageSize)` instead of `std::min(total, first + kTopicPageSize)`, which
+/// makes page two and page three draw ZERO topic rows -- and the whole 311-case
+/// gate stayed green, because the neighbouring render case only asserted that
+/// SOME ink was on screen and an empty page still has a speaker header on it.
+///
+/// drawDialogue calls this and prints what it returns. A case over this
+/// function is therefore a case over the drawing path, and the mutation that
+/// shipped green in S4 empties the vector it returns.
+[[nodiscard]] std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int page,
+                                                 int cursor, int capacity);
+
 }  // namespace granadad::render

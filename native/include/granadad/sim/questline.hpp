@@ -60,6 +60,14 @@ enum class StageKind : std::uint8_t {
     Teach = 3,
     Forge = 4,
     Unknown = 5,
+    /// S5. A counted stage over a NAMED tally, and the same machinery `alms`
+    /// already was: `alms` is exactly `tally` with its counter fixed at
+    /// "drinks", and it keeps its own word because the Mission's own line calls
+    /// it that. The Skyrunners count lifts, cracks, runs, fences, leans and
+    /// roofs, and not one line of C++ knows which -- the stage names its
+    /// counter, the crime vocabulary names the same string, and they meet in
+    /// DialogueDirector::noteTally.
+    Tally = 6,
 };
 
 [[nodiscard]] StageKind stageKindOf(std::string_view raw) noexcept;
@@ -81,6 +89,9 @@ struct QuestStage {
     std::string barkKey;
     /// How many times, for a counted stage.
     std::int32_t count = 0;
+    /// WHAT is counted, for a counted stage. Empty on an `alms` stage means
+    /// "drinks", which is what the Mission's own line has always counted.
+    std::string counter;
     /// The rung this stage puts you on, or 0.
     std::int32_t grantsRank = 0;
     /// Standing with the line's faction the stage is worth.

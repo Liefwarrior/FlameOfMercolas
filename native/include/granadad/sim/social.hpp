@@ -190,6 +190,12 @@ private:
 inline constexpr std::string_view kHaggleSkill = "streetwise";
 /// And the one a hand in somebody's purse runs on.
 inline constexpr std::string_view kThieverySkill = "cracksmanship";
+/// And the one the roofs run on. SKYRUNNING is the owner's own id in
+/// content/raws/skills/skills.json -- it has been in the vocabulary since S1
+/// with nothing in the build that used it. Every mantle, leap and landing is a
+/// use of it, which is the Morrowind steer applied to a movement mode: you get
+/// better at the roofs by being on them.
+inline constexpr std::string_view kRoofSkill = "skyrunning";
 
 /// Uses needed to gain one level, at level L. Rises with the level, so the
 /// first ten come quickly and the fortieth does not.

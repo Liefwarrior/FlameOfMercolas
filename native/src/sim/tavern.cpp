@@ -108,8 +108,17 @@ constexpr std::array<RosterEntry, 6> kStaff = {{
      // He speaks for the Mission because DOCKS-GAZETTEER section 3 says the
      // Mission is his: soup, bunks, and a disciple always awake.
      "maell", JobFamily::Clergy, "channeling", 40, 8, "temple"},
-    {"Wisp", "Low-Tide", ActorRole::SkyrunnerContact, 158, 68, hourOfDay(22), hourOfDay(3),
-     Activity::Drinking, 60, "", JobFamily::Wastrel, "skyrunning", 30, 26, "skyrunners"},
+    // S5 RENAMES THIS ONE, and it is a correction rather than a flourish. S2
+    // invented "Wisp Low-Tide" out of the authored wastrel name pools because
+    // the Skyrunners had no line to hang anything on. They do now, and the
+    // owner named him first: content/raws/names/notables.json carries `finch`,
+    // Finch, "the quiet tenant", sited at LAIR_SKYRUNNER -- and ranks.json's
+    // own note says the Skyrunners' first rung is called Tenant BECAUSE of that
+    // epithet. He also has a personal bark table and an authored micro-history
+    // with Gullet Mag, neither of which an invented name can ever reach.
+    {"Finch", "the quiet tenant", ActorRole::SkyrunnerContact, 158, 68, hourOfDay(22),
+     hourOfDay(3), Activity::Drinking, 60, "finch", JobFamily::Wastrel, "skyrunning", 30, 26,
+     "skyrunners"},
 }};
 
 /// The patrons. Two thin hours at midday when the lunch trade is in, and then
@@ -122,7 +131,7 @@ constexpr std::array<RosterEntry, 6> kStaff = {{
 /// prove it, which interests him more than it should", which is a man who wants
 /// to be asked. He is here so at least one of the Forty is a person you can
 /// walk up to, rather than a row in a JSON file.
-constexpr std::array<RosterEntry, 9> kPatrons = {{
+constexpr std::array<RosterEntry, 10> kPatrons = {{
     {"Bram Marrow", "the Steady", ActorRole::Patron, 149, 69, hourOfDay(12), hourOfDay(14),
      Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 11, 8, ""},
     {"Marta Coldquay", "Crane-Eye", ActorRole::Patron, 150, 69, hourOfDay(12), hourOfDay(14),
@@ -140,6 +149,25 @@ constexpr std::array<RosterEntry, 9> kPatrons = {{
      Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fishing", 19, 11, ""},
     {"Colm Tarbeck", "the Willing", ActorRole::Patron, 148, 72, hourOfDay(20), hourOfDay(1),
      Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 8, 5, ""},
+    // S5 puts the ward's LAW in the room, and it closes two things at once.
+    //
+    // The S4 review's finding: one of the five factions could not be joined in
+    // play, because the Watch had no recruiter anywhere a player could stand.
+    // Watchman Cull is canon -- notables.json, `cull`, the impound keeper at
+    // K02 -- and the impound yard is a short walk from the Gull's door. A
+    // watchman having a drink after his shift in the captains' tavern is the
+    // least strained way to put the garrison within reach of a conversation.
+    //
+    // And it makes the mirror VISIBLE. enemyPresence() has counted rivals since
+    // S4 with nothing in the room to count; now the Skyrunners' contact and the
+    // Watch's recruiter drink in the same taproom between ten and one, and a
+    // player who has signed one roll walks into a room with the other in it.
+    // He is also the pair of eyes a bale has to get past.
+    {"Watchman Cull", "the impound keeper", ActorRole::Patron, 152, 68, hourOfDay(21),
+     hourOfDay(1), Activity::Drinking, 30,
+     // notables.json: the impound keeper, and the kit-keeping mastery tables
+     // have adept lines for a man who inventories seized cargo for a living.
+     "cull", JobFamily::Watch, "kit_keeping", 25, 20, "watch"},
     {"Captain Ivo Wake", "of the Kestrel", ActorRole::Patron, 155, 73, hourOfDay(19),
      hourOfDay(1), Activity::Drinking, 45,
      // notables.json: seacraft 35, which the mastery tables have adept lines for.
@@ -350,6 +378,16 @@ void Tavern::setTimeOfDay(std::int32_t secondOfDay) noexcept {
 // S3 note: what it deliberately does NOT touch is the social ledger. Sleeping
 // a night does not make anybody forget you robbed them.
 void Tavern::skipTo(std::int32_t secondOfDay) {
+    // How long the jump actually was, forward round the clock face. Heat cools
+    // for every one of those seconds: a night asleep IS a night the ward had to
+    // forget in, and that is the one thing skipTo has always been allowed to
+    // fake honestly.
+    const std::int32_t wrapped =
+        ((secondOfDay % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay;
+    const std::int32_t forward =
+        wrapped >= timeOfDay_ ? wrapped - timeOfDay_ : kSecondsPerDay - timeOfDay_ + wrapped;
+    elapsed_ += forward;
+    dialogue_.crimes().cool(elapsed_);
     setTimeOfDay(secondOfDay);
     // A night has gone by in one step, so the cellar has been restocked and the
     // room re-seated. Nothing in between is simulated and this is the one place
@@ -502,6 +540,25 @@ void Tavern::stepMovement() {
         }
         actor.step(path_, speedFor(actor));
     }
+
+    // THE RUN LANDS AT THE THRESHOLD, and it is a transition rather than a
+    // state: a bale that is out of the house is out, and standing in the street
+    // holding one is not a second run. Checked every movement step rather than
+    // every second, because a body crosses a doorway in a third of one and a
+    // tick would miss it.
+    const bool inside = playerInside();
+    CrimeLedger& crimes = dialogue_.crimes();
+    if (wasInside_ && !inside && crimes.carryingBale()) {
+        const bool seen = witnessCount(kPlayerActorId) > 0;
+        const std::int32_t pay = crimes.deliverBale();
+        playerCoin_ = wrap_add(playerCoin_, pay);
+        dialogue_.setPlayerCoin(playerCoin_);
+        dialogue_.noteCrime(Crime::Smuggle, seen);
+        if (seen) {
+            spreadWitness(kPlayerActorId, Deed::Robbed);
+        }
+    }
+    wasInside_ = inside;
 }
 
 void Tavern::tick(const TickContext& context) {
@@ -515,6 +572,11 @@ void Tavern::tick(const TickContext& context) {
 
 void Tavern::advanceSecond() {
     timeOfDay_ = (timeOfDay_ + 1) % kSecondsPerDay;
+    ++elapsed_;
+    // The ward forgets, slowly. Charged against elapsed_ and not against the
+    // clock on the wall, because the clock wraps at midnight and a memory that
+    // wrapped with it would hand the Watch a clean sheet every night.
+    dialogue_.crimes().cool(elapsed_);
     if (timeOfDay_ == gull::kOpensAt) {
         drinkStock_ = kOpeningStock;
         rentedRoom_ = -1;
@@ -1144,6 +1206,16 @@ Speaker Tavern::speakerFor(const Actor& actor) const {
     // workbench. Which craftings and which rung are the raws' business, not
     // his role's -- see DialogueDirector::choose.
     speaker.teaches = actor.role() == ActorRole::PriestOfTheFlame;
+    // S5. The one body in the room who buys what is not yours to sell. Being a
+    // Skyrunner is not the test and is not enough: a cutpurse is not a fence,
+    // and the ROLE is what says which of the two is in front of you.
+    speaker.buysStolen = actor.role() == ActorRole::SkyrunnerContact;
+    // And who can be leaned on. Not the two men paid to throw people out, not
+    // the law, and not your own fence -- leaning on the fence is how you stop
+    // having one.
+    speaker.leanable = actor.role() != ActorRole::Bouncer &&
+                       actor.role() != ActorRole::SkyrunnerContact &&
+                       speaker.family != JobFamily::Watch;
     switch (actor.role()) {
         case ActorRole::Bartender:
             speaker.trades = true;
@@ -1316,7 +1388,21 @@ std::int32_t Tavern::graceSecondsForPlayer() const noexcept {
     // Divided by five so the whole 0..100 influence scale is worth twenty
     // seconds of rope either way, and clamped so a house never gives none and
     // never gives all night.
-    const std::int32_t swing = (standings.influence(watch) - standings.influence(roofs)) / 5;
+    std::int32_t swing = (standings.influence(watch) - standings.influence(roofs)) / 5;
+    // S5. `grace` is the Watch's second rung, and until now it was a token with
+    // no reader -- the S4 review found it, and found the trap in it too: the
+    // swing above reads INFLUENCE, the ward's balance of power, which has
+    // nothing to do with the token that happens to share the word. Now the
+    // token means what it says. A house gives a watchman longer to finish his
+    // drink, because the house would rather not explain itself later.
+    if (standings.unlocked(watch, "grace")) {
+        swing += 8;
+    }
+    // And it gives a wanted man none of it: heat is what the ward has HEARD,
+    // and a bouncer hears everything.
+    if (dialogue_.crimes().warrant()) {
+        swing -= 10;
+    }
     return std::clamp(kGraceSeconds + swing, kGraceSecondsFloor, kGraceSecondsCeiling);
 }
 
@@ -1399,9 +1485,139 @@ void Tavern::applyReply(Reply& reply) {
         // there is a room.
         applyRivalHostility();
     }
+    if (reply.criminal) {
+        // WHO SAW IT is the room's business and only the room's: the dialogue
+        // layer still does not know there is a room. A caught hand is seen by
+        // the person whose wrist it is, whatever else is true of the taproom.
+        const bool seen = reply.offence || witnessCount(talkingToId_) > 0;
+        if (reply.kind == TopicKind::Lean && reply.ok) {
+            spreadWitness(talkingToId_, Deed::Robbed);
+        }
+        dialogue_.noteCrime(reply.crime, seen);
+    }
     if (reply.closes) {
         talkingToId_ = -1;
     }
+}
+
+std::int32_t Tavern::witnessCount(std::int32_t exceptId) const noexcept {
+    if (!playerKnown_) {
+        return 0;
+    }
+    const std::int32_t playerTileX = q8_tile(playerX_);
+    const std::int32_t playerTileY = q8_tile(playerY_);
+    std::int32_t seen = 0;
+    for (const Actor& actor : actors_) {
+        if (!actor.present() || actor.id() == exceptId ||
+            actor.activity() == Activity::Downed) {
+            continue;
+        }
+        if (actor.band() != playerBand_) {
+            continue;
+        }
+        const std::int32_t dx = actor.x() - playerX_;
+        const std::int32_t dy = actor.y() - playerY_;
+        const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+        if (distance > kWitnessRangeTiles * kSubOne) {
+            continue;
+        }
+        if (distance > kWitnessReachTiles * kSubOne && tiles_ != nullptr &&
+            !tiles_->lineOfSight(actor.tileX(), actor.tileY(), playerTileX, playerTileY,
+                                 playerBand_)) {
+            continue;
+        }
+        ++seen;
+    }
+    return seen;
+}
+
+void Tavern::injurePlayer(std::int32_t amount) {
+    if (amount <= 0) {
+        return;
+    }
+    playerHp_ = std::max(kPlayerBrawlFloor, playerHp_ - amount);
+    if (playerHp_ <= kPlayerBrawlFloor) {
+        playerFloored_ = true;
+    }
+}
+
+Tavern::StealResult Tavern::crackStrongbox() {
+    StealResult out;
+    if (!playerKnown_ || playerBand_ != gull::kUpperBand) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO OPEN.";
+        return out;
+    }
+    const std::int32_t room = gull::roomAtStand(q8_tile(playerX_), q8_tile(playerY_));
+    if (room < 0) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO OPEN.";
+        return out;
+    }
+    if (room == rentedRoom_) {
+        // Your own box. Not a crime, and the room says so rather than letting a
+        // player farm the tally by renting a bed and robbing themselves.
+        out.result = ServiceResult::Refused;
+        out.line = "THAT ONE IS YOURS.";
+        return out;
+    }
+    const std::int32_t bit = 1 << room;
+    if ((crackedBoxes_ & bit) != 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = "ALREADY EMPTY.";
+        return out;
+    }
+    crackedBoxes_ |= bit;
+    const std::int32_t craft = dialogue_.skills().level(kThieverySkill);
+    out.coin = kStrongboxCoin + craft / 4;
+    out.loot = 1 + craft / 20;
+    out.seen = witnessCount(kPlayerActorId) > 0;
+    playerCoin_ = wrap_add(playerCoin_, out.coin);
+    dialogue_.setPlayerCoin(playerCoin_);
+    dialogue_.crimes().takeLoot(out.loot);
+    dialogue_.noteCrime(Crime::Burgle, out.seen);
+    if (out.seen) {
+        spreadWitness(kPlayerActorId, Deed::Robbed);
+        reportOffence(Offence::Stole);
+    }
+    out.result = ServiceResult::Served;
+    out.line = "CRACKED IT - " + std::to_string(out.coin) + "C AND " +
+               std::to_string(out.loot) + " PIECE" + (out.seen ? ", AND SEEN." : ".");
+    return out;
+}
+
+Tavern::StealResult Tavern::handleBale() {
+    StealResult out;
+    CrimeLedger& crimes = dialogue_.crimes();
+    if (crimes.carryingBale()) {
+        crimes.dropBale();
+        out.result = ServiceResult::Served;
+        out.line = "PUT IT DOWN.";
+        return out;
+    }
+    if (!playerKnown_ || playerBand_ != gull::kGroundBand) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO CARRY.";
+        return out;
+    }
+    const std::int32_t dx = q8_tile_centre(gull::kBaleX) - playerX_;
+    const std::int32_t dy = q8_tile_centre(gull::kBaleY) - playerY_;
+    if ((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) > kReachQ8) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO CARRY.";
+        return out;
+    }
+    const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
+    if (!dialogue_.standings().isMember(roofs)) {
+        // Nobody hands a stranger a bale.
+        out.result = ServiceResult::Refused;
+        out.line = "IT IS NOT YOURS TO PICK UP.";
+        return out;
+    }
+    crimes.takeBale();
+    out.result = ServiceResult::Served;
+    out.line = "THE BALE IS HEAVIER THAN IT LOOKS.";
+    return out;
 }
 
 Reply Tavern::chooseTopic(std::size_t index) {
@@ -1503,6 +1719,11 @@ void Tavern::hash_into(HashSink& sink) const {
     sink.put_int(static_cast<std::uint32_t>(negotiatedDrink_));
     sink.put_int(static_cast<std::uint32_t>(negotiatedRoom_));
     sink.put_int(static_cast<std::uint32_t>(talkingToId_));
+    // S5: which boxes have been emptied, whether the body was inside the walls
+    // on the last step, and how long this room has been running.
+    sink.put_int(static_cast<std::uint32_t>(crackedBoxes_));
+    sink.put_byte(wasInside_ ? 1U : 0U);
+    sink.put_long(static_cast<std::uint64_t>(elapsed_));
     dialogue_.hashInto(sink);
 }
 
