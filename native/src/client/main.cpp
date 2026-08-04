@@ -124,9 +124,11 @@ void print_usage() {
         "  --clock=N            simulated seconds per real second (default 1)\n"
         "  --hold               do not walk during --smoke; let the world move\n"
         "  --talk               open a conversation before the shutter goes\n"
-        "  --topic=N[,N...]     pick these topics once it is open\n"
+        "  --topic=N[,N...]     pick these topics once it is open (1-based, as\n"
+        "                       the numbers printed beside them on screen)\n"
         "  --offer=N            name this number across a counter\n"
         "  --again              close the conversation and open it again\n"
+        "  --flame              run the Priest of the Flame line and capture it\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n");
@@ -187,6 +189,9 @@ void print_usage() {
         } else if (std::strcmp(arg, "--again") == 0) {
             options.smoke.talk = true;
             options.smoke.again = true;
+        } else if (std::strcmp(arg, "--flame") == 0) {
+            options.smoke.flame = true;
+            options.wantsSmoke = true;
         } else if (starts_with(arg, "--offer=", &value)) {
             options.smoke.offer = std::atoi(value);
             options.smoke.talk = true;
@@ -194,7 +199,12 @@ void print_usage() {
             options.smoke.talk = true;
             const char* cursor = value;
             while (*cursor != 0) {
-                options.smoke.topics.push_back(std::atoi(cursor));
+                // ONE-BASED, because the HUD numbers the list from one and the
+                // S3 review caught the mismatch: `--topic=6` picked list item
+                // seven, which would have quietly mislabelled every capture a
+                // later sprint took. The internal index is still zero-based;
+                // the conversion happens exactly here.
+                options.smoke.topics.push_back(std::atoi(cursor) - 1);
                 while (*cursor != 0 && *cursor != ',') {
                     ++cursor;
                 }
@@ -313,6 +323,37 @@ int run_client(const Options& options) {
                     // rather than turning your head, and Escape ends the
                     // conversation rather than the game.
                     if (session.talking() && !event.key.repeat) {
+                        if (session.forging()) {
+                            // The workbench takes the keyboard the way the
+                            // counter does. UP/DOWN walks the five fields,
+                            // LEFT/RIGHT changes the one under the cursor,
+                            // ENTER asks for it, ESC puts the tools down.
+                            if (event.key.key == SDLK_UP || event.key.key == SDLK_W) {
+                                session.moveForgeField(-1);
+                                break;
+                            }
+                            if (event.key.key == SDLK_DOWN || event.key.key == SDLK_S) {
+                                session.moveForgeField(1);
+                                break;
+                            }
+                            if (event.key.key == SDLK_LEFT || event.key.key == SDLK_A) {
+                                session.adjustForge(-1);
+                                break;
+                            }
+                            if (event.key.key == SDLK_RIGHT || event.key.key == SDLK_D) {
+                                session.adjustForge(1);
+                                break;
+                            }
+                            if (event.key.key == SDLK_RETURN || event.key.key == SDLK_E) {
+                                session.commitForge();
+                                break;
+                            }
+                            if (event.key.key == SDLK_ESCAPE) {
+                                session.endForge();
+                                break;
+                            }
+                            break;
+                        }
                         if (session.haggling()) {
                             const int stride =
                                 (SDL_GetModState() & SDL_KMOD_SHIFT) != 0 ? 5 : 1;
@@ -351,8 +392,18 @@ int run_client(const Options& options) {
                             break;
                         }
                         if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
-                            session.chooseTopic(
-                                static_cast<std::size_t>(event.key.key - SDLK_1));
+                            // The number printed BESIDE the topic, which is a
+                            // slot on the visible page and not an index into
+                            // the whole list. On page two, 1 is the tenth
+                            // topic. See kTopicPageSize.
+                            session.chooseVisibleTopic(
+                                static_cast<int>(event.key.key - SDLK_1));
+                            break;
+                        }
+                        if (event.key.key == SDLK_0) {
+                            // The "0 MORE (2/3)" row. Every topic is reachable
+                            // by a printed key, however long the list gets.
+                            session.nextTopicPage();
                             break;
                         }
                         if (event.key.key == SDLK_RETURN || event.key.key == SDLK_E) {

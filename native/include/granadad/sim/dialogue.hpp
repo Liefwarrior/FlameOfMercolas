@@ -36,14 +36,19 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "granadad/sim/barks.hpp"
 #include "granadad/sim/barter.hpp"
+#include "granadad/sim/faction.hpp"
 #include "granadad/sim/notables.hpp"
+#include "granadad/sim/questline.hpp"
 #include "granadad/sim/social.hpp"
+#include "granadad/sim/spellbook.hpp"
+#include "granadad/sim/spellforge.hpp"
 #include "granadad/sim/world_hash.hpp"
 
 namespace granadad::sim {
@@ -80,6 +85,20 @@ struct Speaker {
     /// A mood.* override key when they are in no state for pleasantries --
     /// "mood.downed" for somebody on the floor. Empty for the usual case.
     std::string moodKey;
+
+    // --- S4: who they are to the guilds --------------------------------------
+
+    /// The faction they belong to, or "". DERIVED from the owner's raws -- the
+    /// room knows their job family and factions.json says which faction claims
+    /// that family's jobs. Deeds done to them are heard by this faction.
+    std::string factionId;
+    /// The faction they can sign the player onto, or "". Belonging to one and
+    /// recruiting for it are different facts: every patron in the Gull is a
+    /// dockhand and exactly one of them speaks for the gang.
+    std::string recruitsFor;
+    /// True when this person teaches craftings out of the spell raws, and will
+    /// compose one with you once the ladder has opened the workshop.
+    bool teaches = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -110,6 +129,17 @@ enum class TopicKind : std::uint8_t {
     /// topic speaks from, so inserting in the middle would move every existing
     /// speaker's lines.
     Buy = 9,
+    /// Sign on with a guild -- or take the Mission's oath, which is the same
+    /// verb wearing the questline's own label. APPENDED, for the reason above.
+    Join = 10,
+    /// Ask for the next rung.
+    Advance = 11,
+    /// The beat of a questline this person is the party to.
+    QuestBeat = 12,
+    /// Be taught a crafting out of content/raws/spells/spells.json.
+    Learn = 13,
+    /// Open the workbench and compose one.
+    Forge = 14,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -127,8 +157,13 @@ struct Topic {
     /// The authored barks.json key this topic speaks from. Empty for the verbs,
     /// which do something instead of saying something.
     std::string barkKey;
-    /// History index for TopicKind::History, coin for the verbs that cost it.
+    /// History index for TopicKind::History, coin for the verbs that cost it,
+    /// stage index for the questline beats.
     std::int32_t payload = 0;
+    /// A questline id, or a faction id, or empty. The one string a topic needs
+    /// to know WHICH ladder or WHICH line it is about -- a payload integer
+    /// would have made the topic depend on load order.
+    std::string arg;
 };
 
 /// What choosing a topic produced.
@@ -148,10 +183,17 @@ struct Reply {
     bool closes = false;
     /// True when a haggle is now waiting for a number.
     bool haggling = false;
+    /// True when the workbench is now open and waiting for a composition.
+    bool forging = false;
     /// TopicKind::Buy declares an INTENT and nothing more -- the director does
     /// not know what a cellar is. Whoever owns the counter resolves it and
     /// fills in the line and the coin.
     bool wantsPurchase = false;
+    /// A questline moved. What the journal just wrote, or empty -- so the HUD
+    /// can say "the journal is longer" without reading the journal.
+    std::string journalLine;
+    /// True when this reply put the player on a rung they were not on.
+    bool ranked = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -162,9 +204,12 @@ struct Reply {
 /// and runs one conversation at a time.
 class DialogueDirector {
 public:
-    DialogueDirector() = default;
-    /// Reads barks, notables, histories, rumor domains and the skill
-    /// vocabulary. NEVER throws.
+    /// Attaches an EMPTY faction registry, so a default-constructed director is
+    /// answerable rather than a null dereference waiting to happen.
+    DialogueDirector();
+    /// Reads barks, notables, histories, rumor domains, the skill vocabulary,
+    /// the faction registry and its ladders, every authored questline and the
+    /// spell shelf. NEVER throws.
     [[nodiscard]] static DialogueDirector load(const std::filesystem::path& contentDir);
 
     [[nodiscard]] const BarkTables& barks() const noexcept { return barks_; }
@@ -174,6 +219,18 @@ public:
     [[nodiscard]] SkillTrack& skills() noexcept { return skills_; }
     [[nodiscard]] const SkillTrack& skills() const noexcept { return skills_; }
     [[nodiscard]] const Haggle& haggle() const noexcept { return haggle_; }
+
+    // --- S4: the guilds, the lines and the book -----------------------------
+
+    [[nodiscard]] const FactionRegistry& factions() const noexcept { return *factions_; }
+    [[nodiscard]] FactionLedger& standings() noexcept { return standings_; }
+    [[nodiscard]] const FactionLedger& standings() const noexcept { return standings_; }
+    [[nodiscard]] const QuestBook& quests() const noexcept { return quests_; }
+    [[nodiscard]] QuestJournal& journal() noexcept { return journal_; }
+    [[nodiscard]] const QuestJournal& journal() const noexcept { return journal_; }
+    [[nodiscard]] const Spellbook& spellbook() const noexcept { return spellbook_; }
+    [[nodiscard]] Grimoire& grimoire() noexcept { return grimoire_; }
+    [[nodiscard]] const Grimoire& grimoire() const noexcept { return grimoire_; }
 
     /// What the world says the player is carrying. Set before choose(), so the
     /// director can refuse a round it cannot pay for. Not hashed here -- the
@@ -213,6 +270,24 @@ public:
     /// The player leaves the counter.
     Reply endHaggle();
 
+    // --- the workbench ------------------------------------------------------
+    //
+    // Shaped exactly like the haggle above, and for the same reason: composing
+    // a crafting is a conversation with rounds, not a modal dialog. The bench
+    // is simulation state; the surface only draws it.
+
+    [[nodiscard]] bool isForging() const noexcept { return bench_.active; }
+    [[nodiscard]] const ForgeBench& bench() const noexcept { return bench_; }
+    /// Walks the cursor between MOVES / SHAPE / HOW MUCH / HOW LONG / ACROSS.
+    void moveForgeField(std::int32_t delta);
+    /// Changes the value under the cursor.
+    void adjustForge(std::int32_t delta);
+    /// Says "make it". Refused compositions are refused OUT LOUD, out of the
+    /// authored forge.refused table, and leave the bench open to be fixed.
+    Reply commitForge();
+    /// Puts the tools down.
+    Reply endForge();
+
     void hashInto(HashSink& sink) const;
 
 private:
@@ -223,11 +298,43 @@ private:
     [[nodiscard]] Reply reply(TopicKind kind, std::string line);
     [[nodiscard]] Reply settleHaggle(HaggleOutcome outcome);
 
+    /// Records a deed against the person AND against the guild that claims
+    /// them. One call site, so a deed can never reach one ledger and miss the
+    /// other.
+    void recordDeed(Deed deed);
+    /// The registry index of the speaker's own faction, or -1.
+    [[nodiscard]] std::int32_t speakerFaction() const noexcept;
+    /// The authored chain for a faction verb: faction.<id>.<verb>, then the
+    /// generic faction.<verb>.
+    [[nodiscard]] std::vector<std::string> factionChain(std::string_view factionId,
+                                                        std::string_view verb) const;
+    /// Applies one stage's rewards and moves the journal on.
+    [[nodiscard]] Reply completeStage(const Questline& line, std::int32_t stageIndex,
+                                      TopicKind kind);
+    /// One more person stood a drink. Counts toward any counted stage that is
+    /// currently wanted, and toward none that is not.
+    void noteAlmsGiven();
+
     BarkTables barks_;
     NotableRegistry notables_;
     SocialLedger ledger_;
     SkillTrack skills_;
     Haggle haggle_;
+    /// Shared rather than held, so a copy of the director and its ledger cannot
+    /// end up pointing at two different registries. See FactionLedger::attach.
+    std::shared_ptr<const FactionRegistry> factions_;
+    FactionLedger standings_;
+    QuestBook quests_;
+    QuestJournal journal_;
+    Spellbook spellbook_;
+    Grimoire grimoire_;
+    ForgeBench bench_;
+    /// Which authored line the bench was opened for, and at which stage. Held
+    /// across the composition because a bench is a conversation with rounds and
+    /// the stage it satisfies must not be re-derived from a topic list that has
+    /// been rebuilt underneath it.
+    std::string forgeQuestId_;
+    std::int32_t forgeStage_ = 0;
 
     bool open_ = false;
     Speaker speaker_;

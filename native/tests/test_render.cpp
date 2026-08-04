@@ -484,3 +484,167 @@ TEST_CASE("walking to the water's edge keeps the harbour in front of the eye") {
     CHECK(endDepth > startDepth);
     CHECK(endLower < startLower);
 }
+
+// ===========================================================================
+// THE TOPIC LIST -- the S3 review's second and third findings, closed
+// ===========================================================================
+
+namespace {
+
+/// Draws a surface over a flat frame and answers whether the exclusion
+/// rectangle came out untouched. The same proof the S3 case uses, in a helper,
+/// because S4 has three more surfaces to hold to it.
+[[nodiscard]] bool centreUntouched(const DialogueViewState& view, int width, int height) {
+    Framebuffer bare(width, height);
+    bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+    Framebuffer dressed(width, height);
+    dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+    drawDialogue(dressed, view);
+    const CentreRect centre = hudCentreRect(width, height);
+    for (int y = centre.y0; y < centre.y1; ++y) {
+        for (int x = centre.x0; x < centre.x1; ++x) {
+            if (bare.pixels()[bare.index(x, y)] != dressed.pixels()[dressed.index(x, y)]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/// How many pixels a surface actually changed. Keeps every check above from
+/// passing because nothing drew at all.
+[[nodiscard]] std::size_t inkOf(const DialogueViewState& view, int width, int height) {
+    Framebuffer bare(width, height);
+    bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+    Framebuffer dressed(width, height);
+    dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+    drawDialogue(dressed, view);
+    std::size_t changed = 0;
+    for (std::size_t i = 0; i < bare.pixels().size(); ++i) {
+        changed += bare.pixels()[i] != dressed.pixels()[i] ? 1U : 0U;
+    }
+    return changed;
+}
+
+}  // namespace
+
+TEST_CASE("every topic is reachable by a number printed beside it") {
+    // S3 numbered twelve slots 1-9 and then printed a full stop for the rest,
+    // reachable only by arrow keys with nothing on screen saying so; and the
+    // thirteenth topic would have vanished with no ellipsis at all. Master Venn
+    // already filled all twelve. Both findings are closed by paging.
+    CHECK(topicPageCount(0) == 1);
+    CHECK(topicPageCount(1) == 1);
+    CHECK(topicPageCount(9) == 1);
+    CHECK(topicPageCount(10) == 2);
+    CHECK(topicPageCount(18) == 2);
+    CHECK(topicPageCount(19) == 3);
+    CHECK_FALSE(topicsPaginate(9));
+    CHECK(topicsPaginate(10));
+
+    // NO TOPIC IS EVER DROPPED: every index of a list of any length lands on
+    // exactly one page, in a slot that has a key printed on it.
+    for (int count = 1; count <= 40; ++count) {
+        for (int i = 0; i < count; ++i) {
+            const int page = topicPageOf(i);
+            const int slot = i - page * kTopicPageSize;
+            CHECK(page >= 0);
+            CHECK(page < topicPageCount(static_cast<std::size_t>(count)));
+            CHECK(slot >= 0);
+            CHECK(slot < kTopicPageSize);
+        }
+    }
+
+    // A page and its MORE row fit the grid, so a page is never short of room.
+    CHECK(kTopicPageSize + 1 <= kTopicSlots);
+}
+
+TEST_CASE("a long topic list draws its page, says there is more, and keeps the centre clear") {
+    DialogueViewState view;
+    view.open = true;
+    view.speaker = "MASTER VENN";
+    view.epithet = "LANDLORD OF THE GILDED GULL";
+    view.attitude = "WARM";
+    view.line = "A BED IS TWELVE AND IT COMES WITH THE DOOR BOLTED.";
+    // Twenty topics: three pages, and more than the grid can hold at once.
+    for (int i = 0; i < 20; ++i) {
+        view.topics.push_back("ASK ABOUT SOMETHING NUMBER " + std::to_string(i + 1));
+    }
+
+    for (const int height : {180, 360}) {
+        const int width = height * 16 / 9;
+        view.page = 0;
+        view.cursor = 0;
+        CHECK(centreUntouched(view, width, height));
+        const std::size_t firstInk = inkOf(view, width, height);
+        CHECK(firstInk > 0);
+
+        view.page = 2;
+        view.cursor = 2 * kTopicPageSize;
+        CHECK(centreUntouched(view, width, height));
+        CHECK(inkOf(view, width, height) > 0);
+    }
+
+    // Two different pages of the same list are two different pictures, so the
+    // MORE key is doing something a player can see.
+    Framebuffer first(640, 360);
+    first.clear(Rgb{0.20F, 0.18F, 0.16F});
+    view.page = 0;
+    view.cursor = 0;
+    drawDialogue(first, view);
+    Framebuffer second(640, 360);
+    second.clear(Rgb{0.20F, 0.18F, 0.16F});
+    view.page = 1;
+    view.cursor = kTopicPageSize;
+    drawDialogue(second, view);
+    bool differs = false;
+    for (std::size_t i = 0; i < first.pixels().size(); ++i) {
+        if (first.pixels()[i] != second.pixels()[i]) {
+            differs = true;
+            break;
+        }
+    }
+    CHECK(differs);
+}
+
+TEST_CASE("the workbench draws where a conversation is allowed to be") {
+    DialogueViewState view;
+    view.open = true;
+    view.speaker = "FATHER MAELL";
+    view.epithet = "OF THE MISSION";
+    view.attitude = "FRIEND";
+    view.line = "THE BOOKS STOP WHERE THE MONEY STOPPED. AFTER THAT YOU ARE COMPOSING.";
+    view.forging = true;
+    view.forgeCursor = 2;
+    view.forgeDifficulty = 9;
+    view.forgeCeiling = 21;
+    view.forgeFields = {"MOVES: VITALITY", "SHAPE: INSTANT", "HOW MUCH: -2", "HOW LONG: 0T",
+                        "ACROSS: TOUCH"};
+
+    for (const int height : {180, 360}) {
+        const int width = height * 16 / 9;
+        CHECK(centreUntouched(view, width, height));
+        CHECK(inkOf(view, width, height) > 0);
+    }
+
+    // A refused composition says so on the bench, before the priest has to --
+    // and saying so is visible. Compared PIXEL BY PIXEL rather than by counting
+    // changed pixels: the panel fill already covers every cell the text lands
+    // in, so a count is the same number whatever the words are.
+    Framebuffer hinted(640, 360);
+    hinted.clear(Rgb{0.20F, 0.18F, 0.16F});
+    drawDialogue(hinted, view);
+    view.forgeProblem = "A WOUND IS DELIVERED, NOT HELD.";
+    Framebuffer complained(640, 360);
+    complained.clear(Rgb{0.20F, 0.18F, 0.16F});
+    drawDialogue(complained, view);
+    CHECK(centreUntouched(view, 640, 360));
+    bool saysWhy = false;
+    for (std::size_t i = 0; i < hinted.pixels().size(); ++i) {
+        if (hinted.pixels()[i] != complained.pixels()[i]) {
+            saysWhy = true;
+            break;
+        }
+    }
+    CHECK(saysWhy);
+}

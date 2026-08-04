@@ -110,6 +110,13 @@ add_library(granadad-sim STATIC
     src/sim/social.cpp
     src/sim/barter.cpp
     src/sim/dialogue.cpp
+    # S4 -- the guilds. faction reads the owner's registry and the S4 ladders
+    # hung off it; questline reads any stages-shaped quest file; spellforge is
+    # canon's own cost model plus the composition verb the modular effect
+    # vocabulary was authored for.
+    src/sim/faction.cpp
+    src/sim/questline.cpp
+    src/sim/spellforge.cpp
     src/sim/tavern.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -242,6 +249,9 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_tavern_render.cpp
         tests/test_social.cpp
         tests/test_dialogue.cpp
+        tests/test_faction.cpp
+        tests/test_spellforge.cpp
+        tests/test_questline.cpp
         tests/test_step_pump.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)

@@ -345,3 +345,36 @@ TEST_CASE("stepBand prefers level ground, then a drop, then a climb") {
     REQUIRE(tiles.solid(143, 66, 19));
     CHECK(tiles.stepBand(143, 65, 19, 143, 66) == TileQuery::kNoBand);
 }
+
+TEST_CASE("line of sight stops at masonry and goes through a doorway") {
+    const TileQuery tiles(docksWorld());
+    // The Gilded Gull's north wall, on the Tarwalk frontage. Two tiles of it
+    // are a door and the rest is granite; the map says which, and this asks it
+    // rather than being told.
+    const std::int32_t band = 19;
+    const std::int32_t inside = 70;
+    const std::int32_t outside = 62;
+
+    // Straight through the wall beside the door: blocked.
+    REQUIRE(tiles.solid(150, 66, band));
+    CHECK_FALSE(tiles.lineOfSight(150, inside, 150, outside, band));
+    // Straight through the door leaf itself: not blocked, because a doorway is
+    // a gap in the wall and the S2 headroom correction is what made it one.
+    REQUIRE_FALSE(tiles.solid(153, 66, band));
+    CHECK(tiles.lineOfSight(153, inside, 153, outside, band));
+
+    // Symmetric: two people cannot disagree about whether they can see each
+    // other.
+    CHECK(tiles.lineOfSight(150, outside, 150, inside, band) ==
+          tiles.lineOfSight(150, inside, 150, outside, band));
+    CHECK(tiles.lineOfSight(153, outside, 153, inside, band) ==
+          tiles.lineOfSight(153, inside, 153, outside, band));
+
+    // A tile can always see itself, and a neighbour is never occluded by
+    // anything between two adjacent cells, because there is nothing between.
+    CHECK(tiles.lineOfSight(152, 70, 152, 70, band));
+    CHECK(tiles.lineOfSight(152, 70, 153, 70, band));
+    // The far endpoint is the thing being looked AT, not an obstacle: a wall
+    // can be seen even though it is solid.
+    CHECK(tiles.lineOfSight(150, inside, 150, 66, band));
+}

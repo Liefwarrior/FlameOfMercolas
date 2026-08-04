@@ -261,6 +261,10 @@ inline constexpr std::int32_t kWarnRadius = 2 * kSubOne;
 /// Seconds between being warned and being handled. Long enough to finish a
 /// drink and leave; short enough that "he warned me" is not a licence.
 inline constexpr std::int32_t kGraceSeconds = 20;
+/// What the ward's own balance of power can move that to. A house never gives
+/// no rope at all and never gives all night -- see graceSecondsForPlayer().
+inline constexpr std::int32_t kGraceSecondsFloor = 6;
+inline constexpr std::int32_t kGraceSecondsCeiling = 40;
 /// Seconds you stay barred after being put out.
 inline constexpr std::int32_t kBarredSeconds = 300;
 /// Q8 a single shove moves somebody. Five-eighths of a tile, so being frog-
@@ -440,6 +444,11 @@ public:
     /// Haggling moves, legal only while a haggle is open.
     Reply offerPrice(std::int32_t coins);
     Reply takeAskingPrice();
+    /// Composing moves, legal only while a workbench is open. Routed through
+    /// the room for the same reason the haggle is: the reply may move coin,
+    /// standing or a rung, and the room is what applies those.
+    Reply commitForge();
+    Reply endForge();
     void endConversation();
 
     /// Everybody present who could see it remembers that they saw it. This is
@@ -448,13 +457,58 @@ public:
     void spreadWitness(std::int32_t victimId, Deed deed);
     /// How far across a room a deed carries, in tiles.
     static constexpr std::int32_t kWitnessRangeTiles = 8;
+    /// Inside this, you do not need a sight line: you are in arm's reach and
+    /// there is nothing between you but air.
+    ///
+    /// This is not a softening of the line-of-sight rule, it is what keeps the
+    /// rule from being absurd. The Gull's bar counter is authored as SOLID
+    /// masonry -- correctly, a body cannot walk through it -- so a strict ray
+    /// makes the bartender blind to the hand in her own till, one tile away
+    /// across her own bar. A counter is waist high; a wall is not; the tile
+    /// lanes cannot tell them apart, and two tiles of grace is the honest way
+    /// to say so until they can.
+    static constexpr std::int32_t kWitnessReachTiles = 2;
 
     /// What the priest of the Flame will teach a student at this level of
     /// LINKCRAFT -- the skill the eleven authored spells are actually cast
     /// with -- straight out of the raws. Empty when he is not in the room or
     /// the raws were not found.
     [[nodiscard]] std::vector<const Spell*> priestTeaches(std::int32_t linkcraftLevel) const;
-    [[nodiscard]] const Spellbook& spellbook() const noexcept { return spellbook_; }
+    /// ONE spell shelf, owned by the dialogue layer. The tavern used to load a
+    /// second copy of the same eleven rows; two loaders reading one file is two
+    /// chances to disagree about it.
+    [[nodiscard]] const Spellbook& spellbook() const noexcept { return dialogue_.spellbook(); }
+
+    // --- the guilds ---------------------------------------------------------
+
+    /// Which faction claims an actor, or -1. DERIVED, not tabulated: the room
+    /// knows the actor's job family, and the owner's own factions.json says
+    /// which faction claims that family's jobs. Nobody wrote a second table and
+    /// so nobody can let one drift.
+    [[nodiscard]] std::int32_t factionOf(const Actor& actor) const noexcept;
+
+    /// How many people in this room right now belong to a faction that is the
+    /// declared rival of one the player holds rank in.
+    ///
+    /// THIS IS THE "ENEMY PRESENCE" HALF of the faction requirement, and it is
+    /// a count of BODIES rather than a mood: a Watch runner who walks into the
+    /// Gull at midnight is standing in a room with a Skyrunner in it, and the
+    /// Skyrunner knows what the arm-band means.
+    [[nodiscard]] std::int32_t enemyPresence() const noexcept;
+
+    /// Seeds every present rival's opinion of the player to HOSTILE. Called
+    /// whenever the player's standing on a ladder changes, because that is the
+    /// moment the room learns whose side they are on.
+    void applyRivalHostility();
+
+    /// How many seconds of rope the house gives a warned player RIGHT NOW.
+    ///
+    /// THIS IS THE OTHER HALF, and it is the one that is visible from inside
+    /// this room: when the Watch's influence over the ward falls and the roofs'
+    /// rises, the houses stop waiting for the Watch and handle it themselves.
+    /// A guild's weight in the district is not a number on a sheet -- it is how
+    /// long a bouncer lets you finish your drink.
+    [[nodiscard]] std::int32_t graceSecondsForPlayer() const noexcept;
 
     // --- trouble ------------------------------------------------------------
 
@@ -526,7 +580,6 @@ private:
     SystemId id_;
     const TileQuery* tiles_;
     RegionPath path_;
-    Spellbook spellbook_;
     DialogueDirector dialogue_;
     CounterRandomSource rng_;
     std::int32_t playerActionSeq_ = 0;

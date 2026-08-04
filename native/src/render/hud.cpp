@@ -142,6 +142,17 @@ void drawHealth(Framebuffer& target, const HudState& state) {
         target.fillRect(x + i * segW + 1, y + 1, segW - 1, barH - 2, kHealth, 0.95F);
     }
     drawText(target, x, y - 8 * scale, "HP", kInk, 0.9F, scale);
+    // The bottom-left cluster, stacked upward: HP, then the rung you hold, then
+    // what the line you are on wants next. All of it hugs the corner and none
+    // of it reaches the middle of the screen.
+    if (!state.guildLabel.empty()) {
+        drawText(target, x, y - 16 * scale, state.guildLabel, Rgb{0.86F, 0.74F, 0.44F}, 0.92F,
+                 scale);
+    }
+    if (!state.objectiveLabel.empty()) {
+        drawText(target, x, y - 24 * scale, state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.80F,
+                 scale);
+    }
 }
 
 void drawCompass(Framebuffer& target, const HudState& state) {

@@ -144,12 +144,32 @@ public:
     [[nodiscard]] bool haggling() const noexcept;
     /// Everything the surface draws. Empty and closed when nobody is talking.
     [[nodiscard]] DialogueViewState dialogueView() const;
-    /// Which topic the cursor is on.
+    /// Which topic the cursor is on. An index into the WHOLE list.
     [[nodiscard]] int topicCursor() const noexcept { return topicCursor_; }
+    /// Which page of the list is showing.
+    [[nodiscard]] int topicPage() const noexcept { return topicPage_; }
     void moveTopicCursor(int delta);
-    /// Picks a topic by index. Out of range does nothing.
+    /// Turns to the next page and puts the cursor on its first topic. Bound to
+    /// 0, which is the key the "0 MORE (2/3)" row on screen names.
+    void nextTopicPage();
+    /// Picks the topic printed with this number, 0-based within the visible
+    /// page. THIS is what a number key does -- chooseTopic() takes an index
+    /// into the whole list, and the two are only the same on page one.
+    void chooseVisibleTopic(int slot);
+    /// Picks a topic by index into the whole list. Out of range does nothing.
     void chooseTopic(std::size_t index);
     void closeConversation();
+
+    // --- the workbench ------------------------------------------------------
+
+    /// True when the priest has a composition half-made on the table.
+    [[nodiscard]] bool forging() const noexcept;
+    void moveForgeField(int delta);
+    void adjustForge(int delta);
+    /// Says "make it".
+    void commitForge();
+    /// Puts the tools down without making anything.
+    void endForge();
 
     /// What the player is about to offer, while haggling.
     [[nodiscard]] int haggleOffer() const noexcept { return haggleOffer_; }
@@ -179,6 +199,10 @@ public:
 private:
     void syncTavernToBody();
     void say(std::string line);
+    /// "THE TEMPLE OF THE FLAME - DISCIPLE", or empty when on no rung.
+    [[nodiscard]] std::string guildLine() const;
+    /// What the questline in progress wants next, in its own short label.
+    [[nodiscard]] std::string objectiveLine() const;
 
     SessionConfig config_;
     content::World world_;
@@ -200,7 +224,14 @@ private:
     /// name across a counter. Both are pure UI state -- the standing, the
     /// prices and the memory all live in the simulation.
     int topicCursor_ = 0;
+    /// Which page of a long topic list is showing. Pure UI state: the list
+    /// itself is the simulation's and paging never reorders it.
+    int topicPage_ = 0;
     int haggleOffer_ = 0;
+    /// Whether the client should be routing keys to the workbench. The bench
+    /// itself lives in the simulation; this is only which keyboard mode the
+    /// client is in.
+    bool forgeOpen_ = false;
 };
 
 /// What a scripted capture run was asked to do.
@@ -232,6 +263,13 @@ struct SmokeRunConfig {
     /// capture shows the SAME person greeting you differently after you have
     /// done something to them -- rob them, then say hello.
     bool again = false;
+    /// Run the Priest of the Flame line end to end and capture wherever it
+    /// finishes: the oath, the night pot, the captain's word, the report, the
+    /// teaching, and a crafting composed at the bench. Driven through the same
+    /// Session calls a keypress makes, walking the body with real movement
+    /// steps between parties -- nothing here reaches into the simulation
+    /// sideways, which is the only way a captured frame is evidence.
+    bool flame = false;
 };
 
 struct SmokeRunResult {
@@ -246,6 +284,9 @@ struct SmokeRunResult {
     std::int32_t actorsInFrame = 0;
     /// True when a conversation was open at the moment of capture.
     bool talking = false;
+    /// How many stages of the Priest of the Flame line the scripted
+    /// playthrough actually finished. Zero when --flame was not asked for.
+    std::int32_t flameStages = 0;
 };
 
 /// Runs a scripted session and, optionally, writes a PNG. No window, no GPU,

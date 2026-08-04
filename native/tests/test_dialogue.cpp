@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <filesystem>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -65,11 +66,33 @@ Speaker dockerNamed(std::int32_t id, std::string name) {
 // CONTENT -- the raws, and the keys this code builds against them
 // ===========================================================================
 
+TEST_CASE("a second bark file adds to the ward's voice and can never overwrite it") {
+    // S4 needed the priest to speak and content/raws/barks/barks.json is the
+    // owner's canon, so the loader reads the DIRECTORY: the owner's file first,
+    // everything else after it in sorted order, first file wins a duplicate
+    // key. Not left to alphabetical luck -- a file called "a_barks.json" would
+    // otherwise take the ward's voice over silently.
+    const std::vector<std::filesystem::path> files = barkRawsFiles(content::contentDir());
+    REQUIRE(files.size() >= 2);
+    CHECK(files.front() == barkRawsPath(content::contentDir()));
+    for (std::size_t i = 2; i < files.size(); ++i) {
+        CHECK(files[i - 1] < files[i]);
+    }
+    // Both files' keys are really in the table set.
+    CHECK(barks().has("greet.trade.neutral"));
+    CHECK(barks().has("personal.venn"));
+    CHECK(barks().has("faction.temple.join"));
+    CHECK(barks().has("quest.flame-disciple.oath.maell"));
+}
+
 TEST_CASE("the owner's bark tables load, all of them") {
     REQUIRE(barks().loaded());
-    // 210 tables in content/raws/barks/barks.json. Pinned: content added to the
-    // file should be a visible change here, and content LOST should be red.
-    CHECK(barks().tableCount() == 210);
+    // 210 tables in the owner's content/raws/barks/barks.json, plus the 32 in
+    // content/raws/barks/flame_barks.json beside it -- S4 added a SECOND file
+    // rather than editing 59KB of canon, and BarkTables::load reads the whole
+    // directory. Pinned: content added should be a visible change here, and
+    // content LOST should be red.
+    CHECK(barks().tableCount() == 242);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.
@@ -665,8 +688,17 @@ TEST_CASE("an actor's disposition changes what that actor DOES") {
     CHECK(bar.bartender()->present());
 
     // The room saw it, and the ward heard about it.
+    //
+    // S4 CHANGED HOW MUCH. S3 counted every body in the building as a witness,
+    // through walls and through the bar counter and across floors; S4's
+    // spreadWitness wants the same floor and a sight line, so a quiet room at
+    // eleven has two or three witnesses rather than eleven and the district
+    // hears proportionally less. Asserted against a room where nothing
+    // happened, rather than against a threshold that would move with the hour.
+    AtTheBar untouched(hourOfDay(11));
     CHECK(bar.tavern().dialogue().ledger().reputation() < 0);
-    CHECK(bar.tavern().dialogue().ledger().reputationLabel() != "NOBODY IN PARTICULAR");
+    CHECK(bar.tavern().dialogue().ledger().reputation() <
+          untouched.tavern().dialogue().ledger().reputation());
     // And the house sent somebody.
     CHECK(bar.tavern().playerStanding() != Standing::Welcome);
 
@@ -785,7 +817,11 @@ TEST_CASE("a drawn blade is remembered by everybody who saw it") {
         }
     }
     CHECK(soured >= 3);
-    CHECK(bar.tavern().dialogue().ledger().reputation() <= kHostileAtOrBelow);
+    // Cold, not hostile: S4's witness rule only counts the people who could
+    // actually see it. A knife drawn in a full taproom still gets the ward
+    // talking, and the phrase in the corner of the HUD changes to say so.
+    CHECK(bar.tavern().dialogue().ledger().reputation() <= kColdAtOrBelow);
+    CHECK(bar.tavern().dialogue().ledger().reputationLabel() != "NOBODY IN PARTICULAR");
     CHECK(bar.tavern().playerStanding() != Standing::Welcome);
 
     // Exactly once, however many times the classifier says "lethal": the room

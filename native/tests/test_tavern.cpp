@@ -886,3 +886,114 @@ TEST_CASE("the tavern's state is actually in the hash it produces") {
     troubled.reportOffence(Offence::Stole);
     CHECK(hashOf(troubled) != start);
 }
+
+// ===========================================================================
+// WITNESS -- the S3 review's first finding, closed from both sides
+// ===========================================================================
+
+TEST_CASE("a deed carries eight tiles and no further") {
+    // S3 asserted only that the radius was greater than zero: the review
+    // widened kWitnessRangeTiles to a hundred thousand tiles and the whole
+    // 270-test gate stayed green. Both directions are pinned now.
+    Room bar(hourOfDay(20), gull::kBartenderX, gull::kBarY - 1);
+    const Actor* bartender = nullptr;
+    for (const Actor& actor : bar.tavern().actors()) {
+        if (actor.role() == ActorRole::Bartender && actor.present()) {
+            bartender = &actor;
+        }
+    }
+    REQUIRE(bartender != nullptr);
+    bar.tavern().setPlayer(q8_tile_centre(bartender->tileX()),
+                           q8_tile_centre(bartender->tileY() - 1), gull::kGroundBand);
+    bar.tavern().spreadWitness(-1, Deed::Robbed);
+    // Somebody a tile away, with nothing in between, remembers it.
+    CHECK(bar.tavern().dialogue().ledger().knows(bartender->id()));
+
+    // And from the far corner of the room, EVERY body outside the range must
+    // have no memory of it at all. This is the case that goes red when the
+    // radius is widened.
+    Room corner(hourOfDay(20), gull::kBartenderX, gull::kBarY - 1);
+    const std::int32_t fromX = gull::kFootprintX0 + 1;
+    const std::int32_t fromY = gull::kFootprintY0 + 1;
+    corner.tavern().setPlayer(q8_tile_centre(fromX), q8_tile_centre(fromY), gull::kGroundBand);
+    corner.tavern().spreadWitness(-1, Deed::Robbed);
+    bool anyBeyond = false;
+    for (const Actor& actor : corner.tavern().actors()) {
+        if (!actor.present()) {
+            continue;
+        }
+        const std::int32_t tiles =
+            std::max(std::abs(actor.tileX() - fromX), std::abs(actor.tileY() - fromY));
+        if (tiles > Tavern::kWitnessRangeTiles) {
+            anyBeyond = true;
+            CAPTURE(actor.name());
+            CHECK_FALSE(corner.tavern().dialogue().ledger().knows(actor.id()));
+        }
+    }
+    // Not vacuous: somebody really was out of range.
+    CHECK(anyBeyond);
+}
+
+TEST_CASE("a robbery on the guest floor is not witnessed by the taproom below") {
+    // The second half of the S3 finding: spreadWitness filtered on (x, y) only,
+    // so a sleeper in a room directly above the bar witnessed a robbery through
+    // the floor. Bodies are on the ground band; the player goes upstairs.
+    Room upstairs(hourOfDay(20), gull::kBartenderX, gull::kBarY - 1);
+    REQUIRE(upstairs.tavern().presentCount() > 0);
+    const gull::GuestRoom& bed = gull::kRooms[0];
+    upstairs.tavern().setPlayer(q8_tile_centre(bed.standX), q8_tile_centre(bed.standY),
+                                gull::kUpperBand);
+    upstairs.tavern().spreadWitness(-1, Deed::Robbed);
+    for (const Actor& actor : upstairs.tavern().actors()) {
+        CAPTURE(actor.name());
+        CHECK_FALSE(upstairs.tavern().dialogue().ledger().knows(actor.id()));
+    }
+    // The same deed on the same tiles one floor down IS seen, so the case above
+    // is about the floor and not about the corner of the map.
+    Room downstairs(hourOfDay(20), gull::kBartenderX, gull::kBarY - 1);
+    downstairs.tavern().setPlayer(q8_tile_centre(bed.standX), q8_tile_centre(bed.standY),
+                                  gull::kGroundBand);
+    downstairs.tavern().spreadWitness(-1, Deed::Robbed);
+    std::int32_t seen = 0;
+    for (const Actor& actor : downstairs.tavern().actors()) {
+        if (downstairs.tavern().dialogue().ledger().knows(actor.id())) {
+            ++seen;
+        }
+    }
+    CHECK(seen > 0);
+}
+
+TEST_CASE("nobody witnesses anything through a wall") {
+    // The third clause. Standing on the quay outside the north wall, the room
+    // is full of people within eight tiles of the player and NONE of them can
+    // see the street through masonry -- except through the two door tiles, and
+    // the case picks a spot that is not in line with either.
+    Room outside(hourOfDay(20), gull::kStreetX, gull::kStreetY);
+    const std::int32_t standX = gull::kFootprintX0 + 2;
+    const std::int32_t standY = gull::kFootprintY0 - 2;
+    REQUIRE(standX != gull::kDoorX0);
+    REQUIRE(standX != gull::kDoorX1);
+    outside.tavern().setPlayer(q8_tile_centre(standX), q8_tile_centre(standY),
+                               gull::kGroundBand);
+    bool anyoneClose = false;
+    for (const Actor& actor : outside.tavern().actors()) {
+        if (!actor.present() || actor.band() != gull::kGroundBand) {
+            continue;
+        }
+        const std::int32_t tiles =
+            std::max(std::abs(actor.tileX() - standX), std::abs(actor.tileY() - standY));
+        if (tiles <= Tavern::kWitnessRangeTiles && gull::insideFootprint(actor.tileX(),
+                                                                        actor.tileY())) {
+            anyoneClose = true;
+        }
+    }
+    REQUIRE(anyoneClose);
+    outside.tavern().spreadWitness(-1, Deed::Robbed);
+    for (const Actor& actor : outside.tavern().actors()) {
+        if (!gull::insideFootprint(actor.tileX(), actor.tileY())) {
+            continue;
+        }
+        CAPTURE(actor.name());
+        CHECK_FALSE(outside.tavern().dialogue().ledger().knows(actor.id()));
+    }
+}

@@ -34,6 +34,22 @@ constexpr Rgb kHaggleInk{0.90F, 0.76F, 0.42F};
 
 }  // namespace
 
+int topicPageCount(std::size_t topics) noexcept {
+    if (topics == 0) {
+        return 1;
+    }
+    return static_cast<int>((topics + static_cast<std::size_t>(kTopicPageSize) - 1) /
+                            static_cast<std::size_t>(kTopicPageSize));
+}
+
+int topicPageOf(int index) noexcept {
+    return std::max(0, index) / kTopicPageSize;
+}
+
+bool topicsPaginate(std::size_t topics) noexcept {
+    return topicPageCount(topics) > 1;
+}
+
 std::vector<std::string> wrapText(const std::string& text, std::size_t columns) {
     std::vector<std::string> lines;
     if (columns == 0) {
@@ -150,6 +166,46 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         return;
     }
 
+    if (state.forging) {
+        // The workbench. Canon's own four questions and the link, one per row,
+        // with the price and the verdict under them -- so a player can see a
+        // composition get dearer as they turn it up, and see it refused before
+        // they ask for it.
+        const std::string head = "COMPOSE - COST " + std::to_string(state.forgeDifficulty) +
+                                 " OF " + std::to_string(state.forgeCeiling);
+        drawText(target, margin, bottomTop + scale, head, kSpeechInk, 0.95F, scale);
+        const int columnWidth = (target.width() - 2 * margin) / kTopicColumns;
+        for (std::size_t i = 0; i < state.forgeFields.size(); ++i) {
+            const int index = static_cast<int>(i);
+            const int column = index / 3;
+            const int row = index % 3;
+            const int x = margin + column * columnWidth;
+            const int y = bottomTop + scale + rowStep * (row + 1);
+            if (column >= kTopicColumns || y + 6 * scale > target.height()) {
+                continue;
+            }
+            const bool picked = index == state.forgeCursor;
+            if (picked) {
+                drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, 0.95F, scale);
+            }
+            std::string label = state.forgeFields[i];
+            const std::size_t room =
+                static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance));
+            if (label.size() > room) {
+                label.resize(room);
+            }
+            drawText(target, x + glyphAdvance / 2, y, label, picked ? kTopicPicked : kTopicInk,
+                     picked ? 0.98F : 0.82F, scale);
+        }
+        const std::string foot =
+            state.forgeProblem.empty()
+                ? std::string("UP/DOWN FIELD   LEFT/RIGHT VALUE   ENTER MAKE   ESC STOP")
+                : state.forgeProblem;
+        drawText(target, margin, target.height() - margin - 2 * scale, foot,
+                 state.forgeProblem.empty() ? kTopicInk : kHaggleInk, 0.88F, scale);
+        return;
+    }
+
     // How many rows the band ACTUALLY has, computed rather than assumed. The
     // first version used a fixed six and broke out of the loop the moment a row
     // ran past the bottom edge -- which silently dropped the entire second
@@ -157,9 +213,45 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     const int columnWidth = (target.width() - 2 * margin) / kTopicColumns;
     const int rows =
         std::clamp((target.height() - bottomTop - 2 * scale) / rowStep, 1, kTopicRows);
-    const std::size_t shown =
-        std::min(state.topics.size(), static_cast<std::size_t>(rows * kTopicColumns));
-    for (std::size_t i = 0; i < shown; ++i) {
+
+    // PAGED, and every printed row carries the key that picks it. See
+    // kTopicPageSize on what this replaced and why.
+    const int total = static_cast<int>(state.topics.size());
+    const int pages = topicPageCount(state.topics.size());
+    const int page = std::clamp(state.page, 0, pages - 1);
+    const int first = page * kTopicPageSize;
+    const int last = std::min(total, first + kTopicPageSize);
+
+    struct Row {
+        std::string label;
+        bool picked;
+    };
+    std::vector<Row> printed;
+    printed.reserve(static_cast<std::size_t>(kTopicPageSize + 1));
+    for (int i = first; i < last; ++i) {
+        printed.push_back(Row{std::to_string(i - first + 1) + " " +
+                                  state.topics[static_cast<std::size_t>(i)],
+                              i == state.cursor});
+    }
+    if (pages > 1) {
+        printed.push_back(Row{"0 MORE (" + std::to_string(page + 1) + "/" +
+                                  std::to_string(pages) + ")",
+                              false});
+    }
+    // A band too short to print the whole page would otherwise drop rows in
+    // silence, which is the exact failure this replaced. It cannot happen at
+    // any resolution this game runs at -- a test pins the capacity at 320x180
+    // and at 640x360 -- and if it ever did, the MORE row survives so the list
+    // still says out loud that there is more of it.
+    const int capacity = rows * kTopicColumns;
+    if (static_cast<int>(printed.size()) > capacity && capacity >= 1) {
+        printed.resize(static_cast<std::size_t>(capacity));
+        printed.back().label = "0 MORE (" + std::to_string(page + 1) + "/" +
+                               std::to_string(pages) + ")";
+        printed.back().picked = false;
+    }
+
+    for (std::size_t i = 0; i < printed.size(); ++i) {
         const int column = static_cast<int>(i) / rows;
         const int row = static_cast<int>(i) % rows;
         const int x = margin + column * columnWidth;
@@ -167,19 +259,18 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         if (column >= kTopicColumns || y + 6 * scale > target.height()) {
             continue;
         }
-        const bool picked = static_cast<int>(i) == state.cursor;
-        std::string label = (i < 9 ? std::to_string(i + 1) : std::string(".")) + " " +
-                            state.topics[i];
+        std::string label = printed[i].label;
         // Truncated to the column rather than allowed to run into the next one.
         const std::size_t room = static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance));
         if (label.size() > room) {
             label.resize(room);
         }
-        if (picked) {
+        if (printed[i].picked) {
             drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, 0.95F, scale);
         }
-        drawText(target, x + glyphAdvance / 2, y, label, picked ? kTopicPicked : kTopicInk,
-                 picked ? 0.98F : 0.82F, scale);
+        drawText(target, x + glyphAdvance / 2, y, label,
+                 printed[i].picked ? kTopicPicked : kTopicInk, printed[i].picked ? 0.98F : 0.82F,
+                 scale);
     }
 }
 

@@ -184,10 +184,42 @@ void Session::moveTopicCursor(int delta) {
     const int count = static_cast<int>(tavern_->dialogue().topics().size());
     if (count <= 0) {
         topicCursor_ = 0;
+        topicPage_ = 0;
         return;
     }
     // Wraps, so holding one direction walks the whole list.
     topicCursor_ = ((topicCursor_ + delta) % count + count) % count;
+    // The page FOLLOWS the cursor. Walking off the bottom of a page turns it,
+    // so the arrow keys reach every topic and the numbers on screen are always
+    // the numbers that pick the ones you can see.
+    topicPage_ = topicPageOf(topicCursor_);
+}
+
+void Session::nextTopicPage() {
+    if (!talking()) {
+        return;
+    }
+    const std::size_t count = tavern_->dialogue().topics().size();
+    const int pages = topicPageCount(count);
+    if (pages <= 1) {
+        return;
+    }
+    topicPage_ = (topicPage_ + 1) % pages;
+    // The cursor comes with it, onto the first topic of the new page, so E
+    // never picks something that is not on screen.
+    topicCursor_ = std::min(static_cast<int>(count) - 1, topicPage_ * kTopicPageSize);
+}
+
+void Session::chooseVisibleTopic(int slot) {
+    if (!talking() || slot < 0 || slot >= kTopicPageSize) {
+        return;
+    }
+    const int index = topicPage_ * kTopicPageSize + slot;
+    if (index >= static_cast<int>(tavern_->dialogue().topics().size())) {
+        return;
+    }
+    topicCursor_ = index;
+    chooseTopic(static_cast<std::size_t>(index));
 }
 
 void Session::chooseTopic(std::size_t index) {
@@ -206,20 +238,75 @@ void Session::chooseTopic(std::size_t index) {
     if (!reply.line.empty()) {
         say(tavern_->dialogue().speaker().name + ": " + reply.line);
     }
+    if (reply.forging) {
+        // The bench opens where the simulation put it.
+        forgeOpen_ = true;
+    }
     if (talking()) {
         const int count = static_cast<int>(tavern_->dialogue().topics().size());
         if (count > 0 && topicCursor_ >= count) {
             topicCursor_ = count - 1;
         }
+        topicPage_ = std::min(topicPageOf(topicCursor_), topicPageCount(
+                                                             static_cast<std::size_t>(count)) -
+                                                             1);
     } else {
         topicCursor_ = 0;
+        topicPage_ = 0;
+    }
+    if (!reply.journalLine.empty()) {
+        say(reply.journalLine);
     }
 }
 
 void Session::closeConversation() {
     tavern_->endConversation();
     topicCursor_ = 0;
+    topicPage_ = 0;
     haggleOffer_ = 0;
+    forgeOpen_ = false;
+}
+
+// ---------------------------------------------------------------------------
+// the workbench
+// ---------------------------------------------------------------------------
+
+bool Session::forging() const noexcept {
+    return tavern_->dialogue().isForging();
+}
+
+void Session::moveForgeField(int delta) {
+    tavern_->dialogue().moveForgeField(delta);
+}
+
+void Session::adjustForge(int delta) {
+    tavern_->dialogue().adjustForge(delta);
+}
+
+void Session::commitForge() {
+    if (!forging()) {
+        return;
+    }
+    const std::string who = tavern_->dialogue().speaker().name;
+    const sim::Reply reply = tavern_->commitForge();
+    if (!reply.line.empty()) {
+        say(who + ": " + reply.line);
+    }
+    if (!reply.journalLine.empty()) {
+        say(reply.journalLine);
+    }
+    forgeOpen_ = forging();
+}
+
+void Session::endForge() {
+    if (!forging()) {
+        return;
+    }
+    const sim::Reply reply = tavern_->endForge();
+    if (!reply.line.empty()) {
+        say(reply.line);
+    }
+    forgeOpen_ = false;
 }
 
 void Session::adjustOffer(int delta) {
@@ -266,8 +353,25 @@ DialogueViewState Session::dialogueView() const {
     view.attitude = std::string(sim::attitudeName(talk.attitude()));
     view.line = talk.lastLine();
     view.cursor = topicCursor_;
+    view.page = topicPage_;
     for (const sim::Topic& topic : talk.topics()) {
         view.topics.push_back(topic.label);
+    }
+    if (talk.isForging()) {
+        const sim::ForgeBench& bench = talk.bench();
+        view.forging = true;
+        view.forgeCursor = bench.field;
+        view.forgeDifficulty = bench.difficulty();
+        view.forgeCeiling = sim::forgeCeilingFor(talk.skills().level(sim::kCraftingSkill));
+        const sim::ForgeError problem = bench.error();
+        if (problem != sim::ForgeError::None) {
+            view.forgeProblem = std::string(sim::forgeErrorReason(problem));
+        } else if (view.forgeDifficulty > view.forgeCeiling) {
+            view.forgeProblem = std::string(sim::forgeErrorReason(sim::ForgeError::BeyondSkill));
+        }
+        for (int i = 0; i < sim::kForgeFieldCount; ++i) {
+            view.forgeFields.push_back(bench.fieldLabel(i) + ": " + bench.fieldValue(i));
+        }
     }
     if (talk.isHaggling()) {
         view.haggling = true;
@@ -507,6 +611,58 @@ std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
     return sprites;
 }
 
+namespace {
+
+[[nodiscard]] std::string upperAscii(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        out.push_back(c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c);
+    }
+    return out;
+}
+
+/// Clipped to something the bottom-left corner can hold without walking across
+/// the frame. The HUD hugs its edge; a quest tracker that runs to the middle of
+/// the screen is the exact failure the Java build shipped.
+[[nodiscard]] std::string clip(std::string text, std::size_t columns) {
+    if (text.size() > columns) {
+        text.resize(columns);
+    }
+    return text;
+}
+
+}  // namespace
+
+std::string Session::guildLine() const {
+    const sim::DialogueDirector& talk = tavern_->dialogue();
+    const std::int32_t top = talk.standings().highestRankedFaction();
+    if (top < 0) {
+        return {};
+    }
+    const sim::Faction* faction = talk.factions().at(top);
+    const std::string name = faction == nullptr ? std::string("GUILD") : faction->displayName;
+    return clip(upperAscii(name) + " - " + upperAscii(talk.standings().rankTitle(top)), 34);
+}
+
+std::string Session::objectiveLine() const {
+    const sim::DialogueDirector& talk = tavern_->dialogue();
+    for (const sim::Questline& line : talk.quests().lines()) {
+        if (!talk.journal().started(line.id) || talk.journal().done(line.id)) {
+            continue;
+        }
+        const std::int32_t at = talk.journal().stage(line.id);
+        if (at < 0 || static_cast<std::size_t>(at) >= line.stages.size()) {
+            continue;
+        }
+        // The stage LABEL, not its objective: the label is already short, upper
+        // case menu furniture, and the objective is a paragraph that belongs in
+        // a journal rather than in the corner of a frame.
+        return clip(line.stages[static_cast<std::size_t>(at)].label, 34);
+    }
+    return {};
+}
+
 FrameStats Session::drawFrame(Framebuffer& target) const {
     // The flicker phase is a pure function of the body's step count, so the
     // same scripted session captures the same frame every time.
@@ -587,6 +743,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // panel is already showing it.
     const std::string_view standing = tavern_->dialogue().ledger().reputationLabel();
     hud.standingLabel = conversing ? std::string_view{} : standing;
+    // The rung, and what the line wants next. Bottom-left, over the health bar.
+    const std::string guild = guildLine();
+    const std::string objective = objectiveLine();
+    hud.guildLabel = conversing ? std::string_view{} : std::string_view{guild};
+    hud.objectiveLabel = conversing ? std::string_view{} : std::string_view{objective};
     hud.showCompass = !conversing;
     // A bouncer's warning outranks anything the player did to themselves: it is
     // the one line in this game they must not miss.
@@ -604,6 +765,134 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     drawHud(target, hud);
     return stats;
 }
+
+namespace {
+
+/// Walks the body toward a tile with REAL movement steps -- faced, pushed
+/// forward, collided against the same geometry a player walks into. Axis at a
+/// time, because the taproom is a rectangle with a counter across the middle
+/// and a straight line is not always the way through it.
+///
+/// Gives up rather than spinning: a scripted capture that cannot reach somebody
+/// must produce a frame and a summary that says so, never a hang.
+void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
+    for (int axis = 0; axis < 2; ++axis) {
+        for (int guard = 0; guard < 400; ++guard) {
+            const std::int32_t dx = sim::q8_tile_centre(tileX) - session.body().x();
+            const std::int32_t dy = sim::q8_tile_centre(tileY) - session.body().y();
+            const bool wantX = axis == 0;
+            const std::int32_t want = wantX ? dx : dy;
+            if (want > -sim::kSubOne / 2 && want < sim::kSubOne / 2) {
+                break;
+            }
+            if (wantX) {
+                session.body().setYaw(want > 0 ? sim::kFacingEast : sim::kFacingWest);
+            } else {
+                session.body().setYaw(want > 0 ? sim::kFacingSouth : sim::kFacingNorth);
+            }
+            const std::int32_t beforeX = session.body().x();
+            const std::int32_t beforeY = session.body().y();
+            sim::MoveInput input;
+            input.forward = 1;
+            session.step(input);
+            if (session.body().x() == beforeX && session.body().y() == beforeY) {
+                // Walked into something. Try the other axis rather than grind.
+                break;
+            }
+        }
+    }
+}
+
+/// The index of the first topic of this kind, or -1.
+[[nodiscard]] int topicOfKind(const Session& session, sim::TopicKind kind) {
+    const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
+    for (std::size_t i = 0; i < topics.size(); ++i) {
+        if (topics[i].kind == kind) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+/// Opens a conversation with whoever is at `tile`, walking there first.
+[[nodiscard]] bool speakTo(Session& session, std::int32_t tileX, std::int32_t tileY) {
+    walkToTile(session, tileX, tileY);
+    session.closeConversation();
+    session.interact();
+    return session.talking();
+}
+
+/// Picks the first topic of a kind, if it is on the list.
+bool pick(Session& session, sim::TopicKind kind) {
+    const int at = topicOfKind(session, kind);
+    if (at < 0) {
+        return false;
+    }
+    session.chooseTopic(static_cast<std::size_t>(at));
+    return true;
+}
+
+/// THE SCRIPTED PLAYTHROUGH the sprint is judged on, driven through exactly the
+/// calls a keypress makes: walk to Father Maell, take the oath, stand three
+/// people a drink, turn the night pot in, ask Captain Wake about the water,
+/// bring it back, be taught a crafting, and compose one.
+///
+/// It reports how many stages actually landed rather than asserting anything --
+/// the assertions live in the test suite, where a red is a red. This is the
+/// path that produces a PICTURE of it.
+[[nodiscard]] int runFlameLine(Session& session) {
+    const sim::DialogueDirector& talk = session.tavern().dialogue();
+    const std::string questId = "flame-disciple";
+
+    // 1. the oath, at Maell's evening table
+    if (speakTo(session, 150, 74)) {
+        pick(session, sim::TopicKind::Join);
+    }
+    // 2. the night pot: three drinks out of the player's own purse, then turned
+    //    in to the priest.
+    for (int i = 0; i < 3; ++i) {
+        if (session.talking()) {
+            pick(session, sim::TopicKind::BuyDrinkFor);
+        }
+    }
+    if (session.talking()) {
+        pick(session, sim::TopicKind::QuestBeat);
+    }
+    // 3. the captain, who was out past the fishbone the night of it.
+    if (speakTo(session, 155, 74)) {
+        pick(session, sim::TopicKind::QuestBeat);
+    }
+    // 4. back to the priest with it, 5. be taught, 6. compose.
+    if (speakTo(session, 150, 74)) {
+        pick(session, sim::TopicKind::QuestBeat);
+        pick(session, sim::TopicKind::Learn);
+        // 7. Keep sitting with him. Every crafting off the shallow shelf is
+        //    worth two uses of linkcraft, and the Mission's third rung is
+        //    measured in exactly that: the workshop opens to somebody who has
+        //    learned everything the public edition can teach. Bounded, because
+        //    the topic stays on the list after there is nothing left to hand
+        //    over and answers with the authored teaching.beyond line.
+        for (int i = 0; i < 16; ++i) {
+            if (!pick(session, sim::TopicKind::Learn)) {
+                break;
+            }
+        }
+        for (int i = 0; i < 4; ++i) {
+            if (!pick(session, sim::TopicKind::Advance)) {
+                break;
+            }
+        }
+        if (pick(session, sim::TopicKind::Forge)) {
+            // The smallest legal composition a novice can hold: one point of
+            // vitality across a bridged link, which is the bench's own opening
+            // shape. Committed with the same call the ENTER key makes.
+            session.commitForge();
+        }
+    }
+    return talk.journal().stagesDone(questId);
+}
+
+}  // namespace
 
 SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     SmokeRunResult result;
@@ -643,6 +932,11 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.talking = session.talking();
     }
 
+    if (config.flame) {
+        result.flameStages = runFlameLine(session);
+        result.talking = session.talking();
+    }
+
     Framebuffer frame(config.session.width, config.session.height);
     result.stats = session.drawFrame(frame);
     result.lampCount = session.lampCount();
@@ -665,6 +959,21 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " sprite px=" << result.stats.spritePixels
             << " actor px=" << result.stats.actorPixels << " luma="
             << result.stats.meanLuma << " colours=" << result.stats.distinctColours;
+    if (config.flame) {
+        const sim::DialogueDirector& talk = session.tavern().dialogue();
+        const std::int32_t temple = talk.factions().indexOf("temple");
+        summary << " | flame stages=" << result.flameStages << '/'
+                << (talk.quests().find("flame-disciple") == nullptr
+                        ? 0
+                        : static_cast<int>(talk.quests().find("flame-disciple")->stages.size()))
+                << " rank=" << talk.standings().rank(temple) << ' '
+                << talk.standings().rankTitle(temple)
+                << " standing=" << talk.standings().standing(temple)
+                << " influence=" << talk.standings().influence(temple)
+                << " known=" << talk.grimoire().size() << " forged="
+                << talk.grimoire().craftedCount()
+                << " linkcraft=" << talk.skills().level(sim::kCraftingSkill);
+    }
     result.summary = summary.str();
 
     // The corner stamp, unless somebody is standing in it: while a conversation
@@ -672,7 +981,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // eleven characters of screen is unreadable in a capture.
     if (config.stamp && !result.talking) {
         const int scale = std::max(1, frame.height() / 180);
-        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S3", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
+        drawText(frame, 4 * scale, 4 * scale, "GRANADAD S4", Rgb{0.55F, 0.53F, 0.46F}, 0.7F,
                  scale);
     }
 

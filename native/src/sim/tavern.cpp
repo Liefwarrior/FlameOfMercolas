@@ -59,6 +59,18 @@ struct RosterEntry {
     /// Their streetwise: what a haggle is fought with, and what notices a hand
     /// in a purse.
     std::int32_t streetwise;
+    /// S4. The faction this one SPEAKS FOR, or "". Belonging to a faction is
+    /// derived from the job family through the owner's own factions.json
+    /// (see Tavern::factionOf) -- every patron in this room is a dockhand and
+    /// nobody had to write that down. Recruiting is a different fact, and it is
+    /// a job somebody has: four of this cast can put your name on a roll and
+    /// the rest are members who cannot.
+    ///
+    /// The WATCH has no recruiter here, and that is honest rather than an
+    /// oversight: the garrison is K34 and the watchpost K21, and this build
+    /// simulates one room. Its ladder, its rivalry and its influence all work
+    /// and are proved through the sim API; what is missing is a door.
+    const char* recruits;
 };
 
 // THE CAST OF THE GILDED GULL.
@@ -79,20 +91,22 @@ constexpr std::array<RosterEntry, 6> kStaff = {{
     {"Master Venn", "landlord of the Gilded Gull", ActorRole::Innkeeper, 158, 76,
      hourOfDay(7), hourOfDay(1), Activity::Working, 300,
      // notables.json: streetwise 30, and "each certain the other hears more".
-     "venn", JobFamily::Trade, "streetwise", 30, 30},
+     "venn", JobFamily::Trade, "streetwise", 30, 30, "merchants"},
     {"Gerta Saltcotte", "the Fair-Weight", ActorRole::Bartender, gull::kBartenderX,
      gull::kBartenderY, hourOfDay(10, 30), hourOfDay(2, 30), Activity::Working, 80,
-     "", JobFamily::Trade, "streetwise", 18, 18},
+     "", JobFamily::Trade, "streetwise", 18, 18, ""},
     {"Ox Gullbane", "Slab-Fist", ActorRole::Bouncer, 153, 67, hourOfDay(11), hourOfDay(20),
-     Activity::Watching, 20, "", JobFamily::Serf, "kit_keeping", 12, 10},
+     Activity::Watching, 20, "", JobFamily::Serf, "kit_keeping", 12, 10, ""},
     {"Kled Tarbeck", "the Patient", ActorRole::Bouncer, 154, 75, hourOfDay(18), hourOfDay(3),
-     Activity::Watching, 20, "", JobFamily::Serf, "streetwise", 14, 14},
+     Activity::Watching, 20, "", JobFamily::Serf, "streetwise", 14, 14, ""},
     {"Father Maell", "of the Mission", ActorRole::PriestOfTheFlame, 149, 74, hourOfDay(19),
      hourOfDay(21, 30), Activity::Drinking, 8,
      // notables.json: channeling 40. A master, and the tables have master lines.
-     "maell", JobFamily::Clergy, "channeling", 40, 8},
+     // He speaks for the Mission because DOCKS-GAZETTEER section 3 says the
+     // Mission is his: soup, bunks, and a disciple always awake.
+     "maell", JobFamily::Clergy, "channeling", 40, 8, "temple"},
     {"Wisp", "Low-Tide", ActorRole::SkyrunnerContact, 158, 68, hourOfDay(22), hourOfDay(3),
-     Activity::Drinking, 60, "", JobFamily::Wastrel, "skyrunning", 30, 26},
+     Activity::Drinking, 60, "", JobFamily::Wastrel, "skyrunning", 30, 26, "skyrunners"},
 }};
 
 /// The patrons. Two thin hours at midday when the lunch trade is in, and then
@@ -107,25 +121,28 @@ constexpr std::array<RosterEntry, 6> kStaff = {{
 /// walk up to, rather than a row in a JSON file.
 constexpr std::array<RosterEntry, 9> kPatrons = {{
     {"Bram Marrow", "the Steady", ActorRole::Patron, 149, 69, hourOfDay(12), hourOfDay(14),
-     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 11, 8},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 11, 8, ""},
     {"Marta Coldquay", "Crane-Eye", ActorRole::Patron, 150, 69, hourOfDay(12), hourOfDay(14),
-     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 22, 9},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 22, 9, ""},
     {"Tarn Wrenhale", "Two-Loads", ActorRole::Patron, 151, 70, hourOfDay(18), hourOfDay(1),
-     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 15, 7},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 15, 7, ""},
     {"Sella Brinewall", "the Quiet", ActorRole::Patron, 154, 70, hourOfDay(18), hourOfDay(1),
-     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "streetwise", 12, 12},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "streetwise", 12, 12, ""},
     {"Wick Hempson", "Rope-burned", ActorRole::Patron, 150, 70, hourOfDay(19), hourOfDay(2),
-     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "kit_keeping", 24, 6},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "kit_keeping", 24, 6, ""},
     {"Hobbin Mastwright", "Salt-cracked", ActorRole::Patron, 150, 74, hourOfDay(19),
-     hourOfDay(2), Activity::Drinking, kPatronPurse, "", JobFamily::Maritime, "seacraft", 26, 9},
+     hourOfDay(2), Activity::Drinking, kPatronPurse, "", JobFamily::Maritime, "seacraft", 26, 9,
+     ""},
     {"Edda Pierpont", "the Broad", ActorRole::Patron, 156, 73, hourOfDay(20), hourOfDay(2),
-     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fishing", 19, 11},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fishing", 19, 11, ""},
     {"Colm Tarbeck", "the Willing", ActorRole::Patron, 148, 72, hourOfDay(20), hourOfDay(1),
-     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 8, 5},
+     Activity::Drinking, kPatronPurse, "", JobFamily::Serf, "fieldcraft", 8, 5, ""},
     {"Captain Ivo Wake", "of the Kestrel", ActorRole::Patron, 155, 73, hourOfDay(19),
      hourOfDay(1), Activity::Drinking, 45,
      // notables.json: seacraft 35, which the mastery tables have adept lines for.
-     "wake", JobFamily::Maritime, "seacraft", 35, 16},
+     // He speaks for the gang: maritime.sailor is a dockhands job in the
+     // owner's own factions.json, and a captain is who a docker signs with.
+     "wake", JobFamily::Maritime, "seacraft", 35, 16, "dockhands"},
 }};
 
 }  // namespace
@@ -230,7 +247,6 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
     : id_(SystemId::of("tavern.gilded_gull", "GULL")),
       tiles_(&tiles),
       path_(tiles, gull::kRegion),
-      spellbook_(Spellbook::load(contentDir)),
       dialogue_(DialogueDirector::load(contentDir)),
       rng_(worldSeed, id_.salt()),
       timeOfDay_(((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay) {
@@ -674,7 +690,9 @@ void Tavern::tickBouncers() {
             responder->setDestination(responder->tileX(), responder->tileY(),
                                       responder->band());
             responder->faceToward(playerX_, playerY_);
-            if (tick_ - warnedAtTick_ >= kGraceSeconds) {
+            // The rope is the WARD'S, not a constant: a district whose Watch
+            // has lost its grip is a district whose houses stop waiting.
+            if (tick_ - warnedAtTick_ >= graceSecondsForPlayer()) {
                 // Still here. That is the refusal, and it needs no separate
                 // report from the client.
                 standing_ = Standing::BeingEjected;
@@ -932,6 +950,11 @@ std::int32_t Tavern::drinkPriceForPlayer() const {
     terms.playerSkill = dialogue_.skills().level(kHaggleSkill);
     terms.merchantSkill = kStaff[1].streetwise;
     terms.goods = Goods::Drink;
+    // S4: and what the guild behind the counter is worth to this buyer. THIS IS
+    // THE TRADE HALF of "factions have real impact on the world" -- a mug of
+    // ale costs a different number of coin because of a roll you are on and a
+    // ladder you climbed, with no dialogue open and nobody haggling.
+    terms.guildPercent = guildPricePercent(dialogue_.standings(), factionOf(*bartender));
     return askingPrice(terms);
 }
 
@@ -949,6 +972,7 @@ std::int32_t Tavern::roomPriceForPlayer() const {
     terms.playerSkill = dialogue_.skills().level(kHaggleSkill);
     terms.merchantSkill = kStaff[0].streetwise;
     terms.goods = Goods::Room;
+    terms.guildPercent = guildPricePercent(dialogue_.standings(), factionOf(*innkeeper));
     return askingPrice(terms);
 }
 
@@ -1064,7 +1088,7 @@ TalkResult Tavern::talkToNearest() {
                               : "I have said my piece.";
             break;
         case ActorRole::PriestOfTheFlame:
-            result.line = spellbook_.loaded()
+            result.line = spellbook().loaded()
                               ? "The Flame is taught, not given. Sit, and I will show you one."
                               : "I have nothing to teach tonight.";
             break;
@@ -1108,7 +1132,15 @@ Speaker Tavern::speakerFor(const Actor& actor) const {
         speaker.skillLevel = entry->skillLevel;
         speaker.haggleSkill = entry->streetwise;
         speaker.awareness = entry->streetwise;
+        speaker.recruitsFor = entry->recruits;
     }
+    if (const Faction* faction = dialogue_.factions().at(factionOf(actor)); faction != nullptr) {
+        speaker.factionId = faction->id;
+    }
+    // The one man in the room who teaches, and the one whose ladder can open a
+    // workbench. Which craftings and which rung are the raws' business, not
+    // his role's -- see DialogueDirector::choose.
+    speaker.teaches = actor.role() == ActorRole::PriestOfTheFlame;
     switch (actor.role()) {
         case ActorRole::Bartender:
             speaker.trades = true;
@@ -1158,16 +1190,131 @@ bool Tavern::talkTo() {
 }
 
 void Tavern::spreadWitness(std::int32_t victimId, Deed deed) {
+    // THREE CONDITIONS, and S3 only had one of them.
+    //
+    // The S3 review found that widening kWitnessRangeTiles from 8 to a hundred
+    // thousand kept the whole gate green, and that the filter was 2D: an actor
+    // asleep in a guest room directly above the taproom "saw" a robbery through
+    // the floor, and an actor in the snug behind the partition wall saw one
+    // through masonry. So the rule is now stated in full and every clause of it
+    // has a case that goes red when it is removed:
+    //
+    //   1. WITHIN RANGE   eight tiles, and a test stands somebody just outside
+    //                     it and requires that they remember nothing.
+    //   2. SAME FLOOR     a band comparison. A body on the guest floor is not
+    //                     in the taproom, whatever its (x, y) says.
+    //   3. LINE OF SIGHT  asked of the tiles, through the one function that
+    //                     answers "does this block a ray".
+    if (!playerKnown_) {
+        return;
+    }
     const std::int32_t range = kWitnessRangeTiles * kSubOne;
+    const std::int32_t playerTileX = q8_tile(playerX_);
+    const std::int32_t playerTileY = q8_tile(playerY_);
     for (const Actor& actor : actors_) {
         if (!actor.present() || actor.id() == victimId) {
             continue;
         }
-        if (actor.distanceTo(playerX_, playerY_) > range) {
+        if (actor.band() != playerBand_) {
+            continue;
+        }
+        const std::int32_t distance = actor.distanceTo(playerX_, playerY_);
+        if (distance > range) {
+            continue;
+        }
+        // Arm's reach needs no sight line -- see kWitnessReachTiles on why the
+        // bar counter is the reason that clause exists.
+        if (distance > kWitnessReachTiles * kSubOne && tiles_ != nullptr &&
+            !tiles_->lineOfSight(actor.tileX(), actor.tileY(), playerTileX, playerTileY,
+                                 playerBand_)) {
             continue;
         }
         dialogue_.ledger().witness(actor.id(), deed);
     }
+}
+
+// ---------------------------------------------------------------------------
+// the guilds
+// ---------------------------------------------------------------------------
+
+std::int32_t Tavern::factionOf(const Actor& actor) const noexcept {
+    // The Skyrunner contact is asked by ROLE and everybody else by job family,
+    // and that is not so much a special case as the only place the two differ:
+    // Wisp presents as a wastrel (wastrel.streetlife is deliberately
+    // unaffiliated in the owner's raws) and IS villain.skyrunner. Presented
+    // identity versus true identity, which this project has a ruling about.
+    if (actor.role() == ActorRole::SkyrunnerContact) {
+        return dialogue_.factions().factionForJobPrefix("villain");
+    }
+    const std::size_t index = static_cast<std::size_t>(actor.id() - 1);
+    const RosterEntry* entry = nullptr;
+    if (index < kStaff.size()) {
+        entry = &kStaff[index];
+    } else if (index - kStaff.size() < kPatrons.size()) {
+        entry = &kPatrons[index - kStaff.size()];
+    }
+    if (entry == nullptr) {
+        return -1;
+    }
+    return dialogue_.factions().factionForJobPrefix(jobFamilyKey(entry->family));
+}
+
+std::int32_t Tavern::enemyPresence() const noexcept {
+    const FactionLedger& standings = dialogue_.standings();
+    std::int32_t count = 0;
+    for (const Actor& actor : actors_) {
+        if (!actor.present()) {
+            continue;
+        }
+        const std::int32_t theirs = factionOf(actor);
+        if (theirs < 0) {
+            continue;
+        }
+        for (const std::int32_t rival : dialogue_.factions().rivalsOf(theirs)) {
+            if (standings.rank(rival) > 0) {
+                ++count;
+                break;
+            }
+        }
+    }
+    return count;
+}
+
+void Tavern::applyRivalHostility() {
+    FactionLedger& standings = dialogue_.standings();
+    for (const Actor& actor : actors_) {
+        if (!actor.present()) {
+            continue;
+        }
+        const std::int32_t theirs = factionOf(actor);
+        if (theirs < 0) {
+            continue;
+        }
+        for (const std::int32_t rival : dialogue_.factions().rivalsOf(theirs)) {
+            if (standings.rank(rival) <= 0) {
+                continue;
+            }
+            // seed(), not record(): this is the standing an authored
+            // relationship implies, which is exactly what that call exists for.
+            // Nobody did anything to anybody -- you put on the other colours.
+            dialogue_.ledger().seed(actor.id(), kHostileAtOrBelow);
+            break;
+        }
+    }
+}
+
+std::int32_t Tavern::graceSecondsForPlayer() const noexcept {
+    const FactionLedger& standings = dialogue_.standings();
+    const std::int32_t watch = dialogue_.factions().indexOf("watch");
+    const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
+    if (watch < 0 || roofs < 0) {
+        return kGraceSeconds;
+    }
+    // Divided by five so the whole 0..100 influence scale is worth twenty
+    // seconds of rope either way, and clamped so a house never gives none and
+    // never gives all night.
+    const std::int32_t swing = (standings.influence(watch) - standings.influence(roofs)) / 5;
+    return std::clamp(kGraceSeconds + swing, kGraceSecondsFloor, kGraceSecondsCeiling);
 }
 
 void Tavern::applyReply(Reply& reply) {
@@ -1242,6 +1389,13 @@ void Tavern::applyReply(Reply& reply) {
         playerCoin_ = std::max(0, wrap_add(playerCoin_, reply.coinDelta));
         dialogue_.setPlayerCoin(playerCoin_);
     }
+    if (reply.ranked) {
+        // The moment the room learns whose side you are on. Every rival present
+        // is seeded hostile -- see applyRivalHostility, and note that it is the
+        // ROOM applying it and not the dialogue layer, which still has no idea
+        // there is a room.
+        applyRivalHostility();
+    }
     if (reply.closes) {
         talkingToId_ = -1;
     }
@@ -1268,6 +1422,19 @@ Reply Tavern::takeAskingPrice() {
     return reply;
 }
 
+Reply Tavern::commitForge() {
+    dialogue_.setPlayerCoin(playerCoin_);
+    Reply reply = dialogue_.commitForge();
+    applyReply(reply);
+    return reply;
+}
+
+Reply Tavern::endForge() {
+    Reply reply = dialogue_.endForge();
+    applyReply(reply);
+    return reply;
+}
+
 void Tavern::endConversation() {
     dialogue_.close();
     talkingToId_ = -1;
@@ -1284,7 +1451,7 @@ std::vector<const Spell*> Tavern::priestTeaches(std::int32_t linkcraftLevel) con
     // the Simple Magic seed skill, so linkcraft is what he has to hand over.
     // Asking the raws which skill they need, rather than assuming the teacher's,
     // is the difference between teaching from canon and teaching from a guess.
-    return spellbook_.teachableAt("linkcraft", linkcraftLevel);
+    return spellbook().teachableAt(kCraftingSkill, linkcraftLevel);
 }
 
 // ---------------------------------------------------------------------------

@@ -50,6 +50,14 @@ struct HudState {
     /// What the ward as a whole thinks of the player, top-right under the
     /// purse. Reputation READABLE rather than hidden. Empty draws nothing.
     std::string_view standingLabel;
+    /// The ladder the player is highest on, and the rung: "FLAME - DISCIPLE".
+    /// Bottom-left, stacked over the health bar, because that is where a
+    /// character's own state lives and the centre stays empty. Drawn only when
+    /// the player is on a rung at all.
+    std::string_view guildLabel;
+    /// What the current questline wants next, in the journal's own words.
+    /// Bottom-left under the guild, and clipped to a single line.
+    std::string_view objectiveLabel;
     /// One line about the room the player is standing in. Bottom-right.
     std::string_view roomLabel;
     /// Something said to the player that they need to have heard -- a

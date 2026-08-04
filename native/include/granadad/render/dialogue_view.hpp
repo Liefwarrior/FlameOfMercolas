@@ -44,10 +44,14 @@ struct DialogueViewState {
     std::string attitude;
     /// What they just said. Wrapped by the view, never by the caller.
     std::string line;
-    /// The topic labels, in the order the simulation built them.
+    /// The topic labels, in the order the simulation built them. ALL of them,
+    /// never a slice: paging is the view's job and a caller that pre-sliced
+    /// would be a caller that can drop one.
     std::vector<std::string> topics;
-    /// Which one the cursor is on.
+    /// Which one the cursor is on. An index into `topics`, not into the page.
     int cursor = 0;
+    /// Which page of the list is showing.
+    int page = 0;
 
     // --- haggling -----------------------------------------------------------
     bool haggling = false;
@@ -56,6 +60,20 @@ struct DialogueViewState {
     int offer = 0;
     int patience = 0;
     std::string goods;
+
+    // --- the workbench ------------------------------------------------------
+    bool forging = false;
+    /// The bench's five fields, already worded by the simulation. The view
+    /// prints them and owns none of them.
+    std::vector<std::string> forgeFields;
+    int forgeCursor = 0;
+    /// What the composition would cost to open, and the deepest the student can
+    /// reach. Both integers out of the cost model.
+    int forgeDifficulty = 0;
+    int forgeCeiling = 0;
+    /// Empty when the composition is legal; the refusal in short words when it
+    /// is not, so the bench says WHY before the priest has to.
+    std::string forgeProblem;
 };
 
 /// The topic grid. Four rows is what the bottom band can hold at 640x360
@@ -68,6 +86,26 @@ struct DialogueViewState {
 inline constexpr int kTopicRows = 4;
 inline constexpr int kTopicColumns = 3;
 inline constexpr int kTopicSlots = kTopicRows * kTopicColumns;
+
+/// How many topics one page shows, and it is NINE for a reason that is not
+/// aesthetic: those are the keys 1..9, and every visible topic must be
+/// reachable by the number printed beside it.
+///
+/// S3 shipped twelve slots numbered `1`-`9` and then three rows whose number
+/// was a full stop, reachable only by arrow keys with nothing on screen saying
+/// so -- and Master Venn already filled all twelve, so the next topic added to
+/// him would have vanished with no ellipsis and no warning. The S3 review found
+/// both. The grid still holds twelve; nine of them are the page, the tenth is
+/// "0 MORE (2/3)" and 0 is bound to it, and a list of any length is therefore
+/// completely addressable from the keyboard with no topic ever dropped.
+inline constexpr int kTopicPageSize = 9;
+
+/// How many pages a list of this length needs. Always at least one.
+[[nodiscard]] int topicPageCount(std::size_t topics) noexcept;
+/// Which page a topic index falls on.
+[[nodiscard]] int topicPageOf(int index) noexcept;
+/// True when the list is long enough to need the MORE row at all.
+[[nodiscard]] bool topicsPaginate(std::size_t topics) noexcept;
 
 /// Draws the whole surface over a rendered frame. A closed conversation draws
 /// nothing at all.
