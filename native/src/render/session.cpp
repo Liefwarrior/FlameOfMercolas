@@ -1291,9 +1291,22 @@ std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
             part(0.26F, 0.22F * build, 0.18F * build, look.head);
             continue;
         }
-        part(0.475F, 0.19F * build, 0.475F * build, look.legs);
-        part(1.285F, 0.25F * build, 0.335F * build, look.torso);
-        part(1.750F, 0.11F * build, 0.125F * build, look.head);
+        // THE THREE OVERLAP, and they have to. Each part is an ELLIPSE, so it
+        // tapers to a point at its own top and bottom; stack three of them so
+        // they merely touch and the figure pinches to nothing at the waist and
+        // again at the neck, which at this resolution reads as a snowman rather
+        // than as a body. The half-heights below deliberately run past each
+        // other by about 0.05 of a tile at each joint:
+        //
+        //     legs  0.000 - 0.980      torso 0.925 - 1.645
+        //     torso 0.925 - 1.645      head  1.610 - 1.890
+        //
+        // The old half-height figure got this right by accident, because its
+        // parts were small enough that 0.05 of overlap was a fifth of a limb.
+        // At full height the same 0.05 has to be asked for on purpose.
+        part(0.490F, 0.19F * build, 0.490F * build, look.legs);
+        part(1.285F, 0.25F * build, 0.360F * build, look.torso);
+        part(1.750F, 0.11F * build, 0.140F * build, look.head);
 
         // THE FACE, and the reason it is here.
         //
