@@ -31,6 +31,8 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cstdlib>
+#include <memory>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -93,6 +95,31 @@ struct WardRun {
     return landing != sim::TileQuery::kNoBand && landing == to.band;
 }
 
+/// The nearest piece of the ward's own WALKING ground to a roof bed: the
+/// compound underneath it. Everything on the walking island is joined to
+/// everything else on it, so a route to the nearest piece of it is a route to
+/// the whole district.
+[[nodiscard]] bool groundUnder(const sim::WardPopulation& people, const sim::PathStep& bed,
+                               sim::PathStep& out) {
+    for (std::int32_t r = 1; r <= 12; ++r) {
+        for (std::int32_t db = 0; db >= -3; --db) {
+            for (std::int32_t dy = -r; dy <= r; ++dy) {
+                for (std::int32_t dx = -r; dx <= r; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) {
+                        continue;
+                    }
+                    if (!people.onWalkingGround(bed.x + dx, bed.y + dy, bed.band + db)) {
+                        continue;
+                    }
+                    out = sim::PathStep{bed.x + dx, bed.y + dy, bed.band + db};
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 TEST_CASE("the roof slum has tenants, and they are the people canon puts up there") {
@@ -151,24 +178,32 @@ TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") 
         }
         ++checked;
         const sim::PathStep bed{actor.homeX, actor.homeY, actor.homeBand};
-        const sim::PathStep post{actor.anchorX, actor.anchorY, actor.anchorBand};
+        // NOT THE ACTOR'S OWN POST, and that matters. A thief's post IS its
+        // bed, so routing bed-to-post for one of those would be a search from a
+        // cell to itself -- true for free, and proving nothing about anything.
+        // The reference is the ward's own walking ground under the deck.
+        sim::PathStep ground{0, 0, 0};
         INFO("actor ", actor.id, ' ', sim::wardTypeName(actor.type), " bed ", bed.x, ',', bed.y,
-             ",z", bed.band, " post ", post.x, ',', post.y, ",z", post.band);
+             ",z", bed.band);
+        REQUIRE(groundUnder(*run.people, bed, ground));
+        INFO("ground under it at ", ground.x, ',', ground.y, ",z", ground.band);
+        REQUIRE_FALSE(bed.x == ground.x && bed.y == ground.y && bed.band == ground.band);
 
         // DOWN, which is the direction nothing else in the build checks.
-        REQUIRE(finder.find(bed, post, 0, route, sim::Gait::Climb));
+        REQUIRE(finder.find(bed, ground, 0, route, sim::Gait::Climb));
         sim::PathStep at = bed;
         for (const sim::PathStep& hop : route) {
-            INFO("hop to ", hop.x, ',', hop.y, ",z", hop.band, " from ", at.x, ',', at.y, ",z",
-                 at.band);
+            INFO("down-hop to ", hop.x, ',', hop.y, ",z", hop.band, " from ", at.x, ',', at.y,
+                 ",z", at.band);
             CHECK(legalHop(run.docks.tiles, at, hop));
             at = hop;
         }
         // And up again.
-        REQUIRE(finder.find(post, bed, 0, route, sim::Gait::Climb));
-        at = post;
+        REQUIRE(finder.find(ground, bed, 0, route, sim::Gait::Climb));
+        at = ground;
         for (const sim::PathStep& hop : route) {
-            INFO("hop to ", hop.x, ',', hop.y, ",z", hop.band);
+            INFO("up-hop to ", hop.x, ',', hop.y, ",z", hop.band, " from ", at.x, ',', at.y, ",z",
+                 at.band);
             CHECK(legalHop(run.docks.tiles, at, hop));
             at = hop;
         }
@@ -220,27 +255,26 @@ TEST_CASE("a walker cannot reach the roof-slum plane, and a climber can") {
     // the whole of the movement change stated as one comparison: the walking
     // rule refuses the deck (which is section 2.6's design, and why the plane
     // held zero bodies), and the climb reaches it.
-    Docks docks;
-    sim::PathFinder finder(docks.tiles);
+    WardRun run(8);
+    sim::PathFinder finder(run.docks.tiles);
     std::vector<sim::PathStep> route;
 
-    // A cell on the roof-slum plane that the Gullet's own tenants are homed
-    // on, found the same way the bake finds one.
-    WardRun run(8);
-    sim::PathStep deck{0, 0, 0};
-    sim::PathStep ground{0, 0, 0};
-    bool found = false;
+    std::int32_t decks = 0;
     for (const sim::WardActor& actor : run.people->actors()) {
-        if (actor.homeOnTheRoof && !found) {
-            deck = sim::PathStep{actor.homeX, actor.homeY, actor.homeBand};
-            ground = sim::PathStep{actor.anchorX, actor.anchorY, actor.anchorBand};
-            found = true;
+        if (!actor.homeOnTheRoof) {
+            continue;
         }
+        const sim::PathStep deck{actor.homeX, actor.homeY, actor.homeBand};
+        sim::PathStep ground{0, 0, 0};
+        INFO("deck ", deck.x, ',', deck.y, ",z", deck.band);
+        REQUIRE(groundUnder(*run.people, deck, ground));
+        // The walking rule refuses it -- which is DOCKS-GAZETTEER 2.6's design
+        // and the reason the plane held nobody -- and the climb does not.
+        CHECK_FALSE(finder.find(ground, deck, 0, route, sim::Gait::Walk));
+        CHECK(finder.find(ground, deck, 0, route, sim::Gait::Climb));
+        ++decks;
     }
-    REQUIRE(found);
-
-    CHECK_FALSE(finder.find(ground, deck, 0, route, sim::Gait::Walk));
-    CHECK(finder.find(ground, deck, 0, route, sim::Gait::Climb));
+    CHECK(decks > 0);
 }
 
 TEST_CASE("a climb costs what a climb costs, and open ground is priced the same") {

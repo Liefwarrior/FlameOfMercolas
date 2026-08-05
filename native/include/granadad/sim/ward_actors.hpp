@@ -854,6 +854,17 @@ public:
     /// by the roll" is a structural claim a case should be able to read.
     [[nodiscard]] std::int32_t preyFirst() const noexcept { return preyFirst_; }
     [[nodiscard]] std::int32_t preyEnd() const noexcept { return preyEnd_; }
+    /// Whether this cell is on the ward's own WALKING island -- the ground the
+    /// district lives on, painted once at the bake from the player's own spawn.
+    /// A cell that is standable and answers false is either somewhere you have
+    /// to climb to (a roof deck) or somewhere nobody can reach at all.
+    ///
+    /// Exposed because the difference between the two is the whole of this
+    /// pass, and a case that cannot ask the question can only assert around it.
+    [[nodiscard]] bool onWalkingGround(std::int32_t x, std::int32_t y,
+                                       std::int32_t band) const noexcept {
+        return componentAt(x, y, band) == mainComponent_;
+    }
 
     /// Shoves recorded since the roster was baked, and the worst pile-up seen:
     /// the most bodies ever standing within one tile of each other. Both are

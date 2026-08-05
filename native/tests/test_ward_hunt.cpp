@@ -22,10 +22,26 @@
 // the prey sits in a pocket and contact never lands. One gull was pinned eight
 // thousand ticks against an alcove. The budget, the backoff and the lock drop
 // are all here, and so are the cases that watch them.
+//
+// ---------------------------------------------------------------------------
+// ONE SOAK, READ BY FIVE CASES, AND THAT IS A COST DECISION
+// ---------------------------------------------------------------------------
+// A cat starts full out of the owner's own cat.json and drains a quarter of a
+// point a tick, so the first catch in this district is five hours of ward time
+// away and a caught mouse is off the board for three more. There is no short
+// version of that question: an ecology is a thing you can only see over time.
+//
+// So the district is soaked ONCE, twelve and a half hours, and every claim
+// below reads the same end state and the same running tallies. Five cases at
+// forty-five thousand ticks each would be most of the suite's runtime for one
+// answer repeated five ways -- and the last round's ctest time quadrupling is
+// exactly the thing not to do twice.
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -67,6 +83,91 @@ struct WardRun {
     }
 };
 
+/// Twelve and a half hours of the Docks, from six in the morning, with the
+/// running tallies every claim below is read off.
+struct Soak {
+    std::unique_ptr<WardRun> ward;
+
+    /// The prey roll, and how far the LIVE count fell and climbed back.
+    std::int32_t prey = 0;
+    std::int32_t lowWater = 0;
+    std::int32_t highWaterAfterTheDip = 0;
+    /// Every sample said the roll itself never moved: a caught mouse is off the
+    /// board and never lost.
+    bool rollHeld = true;
+    /// And the ward's loaf ledger balanced at every one of them.
+    bool ledgerHeld = true;
+
+    /// The longest any lock ever ran. Must never exceed the chase budget.
+    std::int32_t worstChase = 0;
+    /// A lock held by a predator that was not hunting this tick, or a lock on
+    /// something that is not a mouse. Both are zero by construction.
+    std::int32_t idleLocks = 0;
+    std::int32_t wrongPrey = 0;
+    /// Predators that were in the hunger band at the end.
+    std::int32_t hungryPredators = 0;
+    /// Predators that ended above the scavenge ceiling and under the hunger
+    /// band -- the state a scrap with no clamp used to park every one of them
+    /// in, and which nothing can now produce.
+    std::int32_t parkedInTheMiddle = 0;
+};
+
+/// Built on first use and read by every case. Deterministic: one seed, one
+/// hour, one tick count, so whichever case asks first gets the same district
+/// every other case then reads.
+const Soak& soak() {
+    static const Soak cached = [] {
+        Soak out;
+        out.ward = std::make_unique<WardRun>(6);
+        const sim::WardPopulation& people = *out.ward->people;
+        out.prey = people.census().prey;
+        out.lowWater = out.prey;
+        bool dipped = false;
+        for (int block = 0; block < 45; ++block) {
+            out.ward->run(1000);
+            const sim::WardCensus roll = people.census();
+            out.lowWater = std::min(out.lowWater, roll.preyUp);
+            dipped = dipped || roll.preyUp < out.prey;
+            if (dipped) {
+                out.highWaterAfterTheDip = std::max(out.highWaterAfterTheDip, roll.preyUp);
+            }
+            out.rollHeld = out.rollHeld && roll.prey == out.prey && roll.preyUp <= out.prey;
+            const sim::WardLedger& ledger = people.ledger();
+            out.ledgerHeld =
+                out.ledgerHeld && ledger.foodMinted - ledger.foodEaten == people.foodHeld();
+            for (const sim::WardActor& actor : people.actors()) {
+                if (!sim::isPredator(actor.type)) {
+                    continue;
+                }
+                out.worstChase = std::max(out.worstChase, actor.huntTicks);
+                if (actor.huntTarget >= 0) {
+                    if (actor.policy != sim::WardPolicy::Hunt) {
+                        ++out.idleLocks;
+                    }
+                    if (actor.huntTarget < people.preyFirst() ||
+                        actor.huntTarget >= people.preyEnd()) {
+                        ++out.wrongPrey;
+                    }
+                }
+            }
+        }
+        for (const sim::WardActor& actor : people.actors()) {
+            if (!sim::isPredator(actor.type)) {
+                continue;
+            }
+            const std::int32_t hunger = actor.need(sim::Need::Hunger);
+            if (hunger < sim::kNeedLow) {
+                ++out.hungryPredators;
+            }
+            if (hunger > sim::kScavengeCeiling && hunger < sim::kNeedLow) {
+                ++out.parkedInTheMiddle;
+            }
+        }
+        return out;
+    }();
+    return cached;
+}
+
 }  // namespace
 
 TEST_CASE("the mice are a contiguous id range, which is what makes the hunt cheap") {
@@ -103,91 +204,16 @@ TEST_CASE("a scrap is not a meal: the ward's cats actually get hungry now") {
     // fire. A scrap now tops a predator up to kScavengeCeiling and no further,
     // which is under kNeedLow -- so a predator that cannot reach prey hovers
     // permanently hungry and permanently looking, and only a catch fills it.
-    //
-    // Five hours of ward time. A cat starts at 8,000 out of the owner's own
-    // cat.json and drains a quarter of a point a tick, so this is about the
-    // moment the first of them reaches the band.
-    WardRun run(9);
-    run.run(20000);
+    const Soak& s = soak();
+    INFO(s.hungryPredators, " of thirteen predators ended in the hunger band");
+    CHECK(s.hungryPredators > 0);
+    // NEVER PARKED IN THE MIDDLE: comfortably above the scavenge ceiling and
+    // still under the band is the state the unclamped nibble produced, and it
+    // is the state nothing can now reach.
+    CHECK(s.parkedInTheMiddle == 0);
 
-    std::int32_t predators = 0;
-    std::int32_t hungry = 0;
-    for (const sim::WardActor& actor : run.people->actors()) {
-        if (!sim::isPredator(actor.type)) {
-            continue;
-        }
-        ++predators;
-        INFO("a ", sim::wardTypeName(actor.type), " at hunger ", actor.need(sim::Need::Hunger));
-        // NEVER PARKED IN THE MIDDLE. A predator is either recently fed (the
-        // catch takes it well past the band) or scavenging at the ceiling. The
-        // one thing it must never be is comfortably above the ceiling and below
-        // the band on a scrap, which is what a nibble with no clamp produced.
-        if (actor.need(sim::Need::Hunger) < sim::kNeedLow) {
-            ++hungry;
-        }
-        // And nothing starved to death for want of a mouse.
-        CHECK_FALSE(actor.dead);
-    }
-    INFO(hungry, " of ", predators, " predators were in the hunger band after five hours");
-    CHECK(predators == 13);
-    CHECK(hungry > 0);
-}
-
-TEST_CASE("the food chain runs: mice are taken, and the den puts more out") {
-    // THE ACCEPTANCE, AND IT IS DELIBERATELY NOT "the hunt code executed".
-    //
-    // A mouse count that only ever rises is not an ecology. So this soaks the
-    // district for most of a day and watches the LIVE prey count move: it has
-    // to fall below the roll (something ate one) and it has to come back up
-    // (the den replaced it). Both, or the thing being measured is a die-off and
-    // not a food chain.
-    WardRun run(6);
-
-    const std::int32_t roll = run.people->census().prey;
-    REQUIRE(roll == 32);
-
-    std::int32_t lowWater = roll;
-    std::int32_t highWaterAfterTheDip = 0;
-    bool dipped = false;
-    // Sixty thousand ticks is sixteen and a half hours: long enough for every
-    // predator to drain into the band, hunt, and be well into its second
-    // hunger, and for the first mice taken to have come back out of the den
-    // (a caught mouse is off the board for an eighth of a day).
-    for (int block = 0; block < 60; ++block) {
-        run.run(1000);
-        const sim::WardCensus roll_now = run.people->census();
-        lowWater = std::min(lowWater, roll_now.preyUp);
-        if (roll_now.preyUp < roll) {
-            dipped = true;
-        }
-        if (dipped) {
-            highWaterAfterTheDip = std::max(highWaterAfterTheDip, roll_now.preyUp);
-        }
-        // AND NOTHING IS EVER LOST. A caught mouse is not killed -- it is off
-        // the board with a countdown on it -- so the roll never shrinks and
-        // nothing ever goes permanently missing.
-        CHECK(roll_now.prey == roll);
-        CHECK(roll_now.preyUp <= roll);
-    }
-
-    INFO("catches=", run.people->catches(), " futile=", run.people->futileChases(),
-         " live mice fell to ", lowWater, " of ", roll, " and recovered to ",
-         highWaterAfterTheDip);
-    // Something actually ate something.
-    CHECK(run.people->catches() > 0);
-    // The population moved, which is the difference between a food chain and a
-    // counter that is incremented.
-    CHECK(lowWater < roll);
-    // And it recovered: the den is a source and not a stock being drawn down.
-    CHECK(highWaterAfterTheDip > lowWater);
-
-    // NOTHING WAS DRIVEN TO EXTINCTION EITHER. Predation that outruns the den
-    // is a die-off, and a district with no rats left in it is exactly as wrong
-    // as a district where nothing eats them.
-    CHECK(lowWater > roll / 3);
-
-    // No beast starved on either side of it.
-    for (const sim::WardActor& actor : run.people->actors()) {
+    // And nothing on either side of the food chain starved to death for it.
+    for (const sim::WardActor& actor : s.ward->people->actors()) {
         if (sim::isPredator(actor.type) || sim::isPrey(actor.type)) {
             INFO("a ", sim::wardTypeName(actor.type), " id ", actor.id);
             CHECK_FALSE(actor.dead);
@@ -195,25 +221,52 @@ TEST_CASE("the food chain runs: mice are taken, and the den puts more out") {
     }
 }
 
+TEST_CASE("the food chain runs: mice are taken, and the den puts more out") {
+    // THE ACCEPTANCE, AND IT IS DELIBERATELY NOT "the hunt code executed".
+    //
+    // A mouse count that only ever rises is not an ecology. So the soak watches
+    // the LIVE prey count move: it has to fall below the roll (something ate
+    // one) and it has to come back up (the den replaced it). Both, or the thing
+    // being measured is a die-off and not a food chain.
+    const Soak& s = soak();
+    INFO("catches=", s.ward->people->catches(), " futile=", s.ward->people->futileChases(),
+         " live mice fell to ", s.lowWater, " of ", s.prey, " and recovered to ",
+         s.highWaterAfterTheDip);
+
+    REQUIRE(s.prey == 32);
+    // Something actually ate something.
+    CHECK(s.ward->people->catches() > 0);
+    // The population moved, which is the difference between a food chain and a
+    // counter that gets incremented.
+    CHECK(s.lowWater < s.prey);
+    // And it recovered: the den is a source, not a stock being drawn down.
+    CHECK(s.highWaterAfterTheDip > s.lowWater);
+    // NOTHING WAS DRIVEN TO EXTINCTION EITHER. Predation that outruns the den
+    // is a die-off, and a district with no rats left in it is exactly as wrong
+    // as a district where nothing eats them.
+    CHECK(s.lowWater > s.prey / 3);
+    // A caught mouse is off the board and never lost: the roll never shrank.
+    CHECK(s.rollHeld);
+}
+
 TEST_CASE("a caught mouse holds no tile and is drawn nowhere") {
     // A body in a stomach must not go on occupying a square: a den mouth or a
     // doorway sealed for three hours of ward time is the one way being eaten
     // could go on hurting a street after the mouse is gone. Same rule a corpse
     // keeps, and visible() is the one place it is answered.
-    WardRun run(6);
-    run.run(30000);
-    REQUIRE(run.people->catches() > 0);
+    const Soak& s = soak();
+    REQUIRE(s.ward->people->catches() > 0);
 
     std::int32_t down = 0;
     std::vector<std::uint64_t> cells;
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : s.ward->people->actors()) {
         if (actor.downedUntil >= 0) {
             ++down;
             CHECK_FALSE(actor.visible());
             CHECK(sim::isPrey(actor.type));
             // It comes back, and at an ABSOLUTE tick rather than off a
             // countdown somebody has to remember to decrement.
-            CHECK(actor.downedUntil > run.people->currentTick());
+            CHECK(actor.downedUntil > s.ward->people->currentTick());
             continue;
         }
         if (!actor.visible()) {
@@ -239,38 +292,22 @@ TEST_CASE("a chase that cannot land is abandoned, and the beast goes back to wan
     // own logs would show a beast "hunting" for eight thousand ticks. So no
     // lock ever outlives its budget, and a lock dropped as futile suppresses
     // acquisition long enough for the wander to change the situation.
-    WardRun run(6);
-    for (int block = 0; block < 30; ++block) {
-        run.run(1000);
-        for (const sim::WardActor& actor : run.people->actors()) {
-            if (!sim::isPredator(actor.type)) {
-                continue;
-            }
-            INFO("a ", sim::wardTypeName(actor.type), " id ", actor.id, " chase ticks ",
-                 actor.huntTicks);
-            CHECK(actor.huntTicks <= sim::kChaseBudgetTicks);
-            // A lock only ever holds a mouse.
-            if (actor.huntTarget >= 0) {
-                CHECK(actor.huntTarget >= run.people->preyFirst());
-                CHECK(actor.huntTarget < run.people->preyEnd());
-                const sim::WardActor& prey =
-                    run.people->actors()[static_cast<std::size_t>(actor.huntTarget)];
-                CHECK(sim::isPrey(prey.type));
-            }
-            // And nobody that is not hunting is holding one, which is what
-            // stops a mouse being invisible to every other predator in the ward
-            // because of a hunt nobody is running.
-            if (actor.policy != sim::WardPolicy::Hunt) {
-                CHECK(actor.huntTarget == -1);
-            }
-        }
-    }
+    const Soak& s = soak();
+    INFO("worst chase seen: ", s.worstChase, " ticks against a budget of ",
+         sim::kChaseBudgetTicks);
+    CHECK(s.worstChase <= sim::kChaseBudgetTicks);
+    // A lock only ever holds a mouse...
+    CHECK(s.wrongPrey == 0);
+    // ...and nobody that is not hunting is holding one, which is what stops a
+    // mouse being invisible to every other predator in the ward because of a
+    // hunt nobody is running.
+    CHECK(s.idleLocks == 0);
     // Futile chases are COUNTED and not asserted away: a district with real
     // geometry in it will have some, and a count that runs away is the
     // chokepoint freeze coming back.
-    INFO("futile chases over eight hours: ", run.people->futileChases(), " against ",
-         run.people->catches(), " catches");
-    CHECK(run.people->futileChases() < 4000);
+    INFO("futile chases over twelve hours: ", s.ward->people->futileChases(), " against ",
+         s.ward->people->catches(), " catches");
+    CHECK(s.ward->people->futileChases() < 6000);
 }
 
 TEST_CASE("the ward's loaf ledger does not move when a cat eats a rat") {
@@ -279,12 +316,9 @@ TEST_CASE("the ward's loaf ledger does not move when a cat eats a rat") {
     // report, because a simulation that can quietly create or destroy a loaf
     // balances its own economy by accident. The catch restores a need and
     // touches no item, and this is where that stays true.
-    WardRun run(6);
-    for (int block = 0; block < 24; ++block) {
-        run.run(1000);
-        const sim::WardLedger& ledger = run.people->ledger();
-        INFO("after ", (block + 1) * 1000, " ticks, ", run.people->catches(), " catches");
-        CHECK(ledger.foodMinted - ledger.foodEaten == run.people->foodHeld());
-    }
-    REQUIRE(run.people->catches() > 0);
+    const Soak& s = soak();
+    REQUIRE(s.ward->people->catches() > 0);
+    CHECK(s.ledgerHeld);
+    const sim::WardLedger& ledger = s.ward->people->ledger();
+    CHECK(ledger.foodMinted - ledger.foodEaten == s.ward->people->foodHeld());
 }

@@ -543,11 +543,20 @@ void WardPopulation::mapWalkComponents() {
     //
     // THE FRONTIER IS RE-WALKED, NOT REBUILT. Every walking cell is already in
     // that vector in a fixed order, so the climb pass starts at index 0 with
-    // the array it needs and offers only the moves the walking rule refused --
-    // four mantles and four drops per cell, never a diagonal, exactly matching
-    // PathFinder's resolveMove. Anything it finds is labelled kClimbIsland and
-    // joins the same frontier, so the closure is complete: a roof reached from
-    // a roof reached from the street is on it.
+    // the array it needs and expands it with BOTH kinds of move.
+    //
+    // BOTH, and it has to be both. The first draft offered only the four climb
+    // moves, on the reasoning that the walk moves had already been taken -- and
+    // that is true of the cells that were already there and false of every cell
+    // the climb pass ADDS. You mantle onto a deck and then you WALK along it;
+    // without the walking half a roof would be labelled one cell at a time, and
+    // only where a wall face happened to stand under each of them. The decks
+    // would have come out almost empty and the roof slum would have stayed
+    // empty for a second, subtler reason than the one this pass is fixing.
+    //
+    // The walk probes over the original cells are all no-ops -- their answers
+    // are already labelled -- so what they cost is one stepBand call apiece,
+    // once per Session, and what they buy is the closure actually closing.
     //
     // WHY A SECOND LABEL AND NOT A SECOND ARRAY. The only question the ward
     // ever asks of this map is which of three answers a cell has -- our ground,
@@ -559,15 +568,24 @@ void WardPopulation::mapWalkComponents() {
         const std::int32_t cx = key % tiles_->sizeX();
         const std::int32_t cy = (key / tiles_->sizeX()) % tiles_->sizeY();
         const std::int32_t cz = key / (tiles_->sizeX() * tiles_->sizeY());
-        for (int n = 0; n < 4; ++n) {
+        for (int n = 0; n < 8; ++n) {
             const std::int32_t nx = cx + dx[n];
             const std::int32_t ny = cy + dy[n];
-            if (tiles_->stepBand(cx, cy, cz, nx, ny) != TileQuery::kNoBand) {
-                continue;  // walking already answers this neighbour
-            }
-            std::int32_t nz = tiles_->mantleBand(cx, cy, cz, nx, ny);
-            if (nz == TileQuery::kNoBand) {
-                nz = tiles_->landingBand(nx, ny, cz - 2, kMaxPathDrop - 2);
+            std::int32_t nz = tiles_->stepBand(cx, cy, cz, nx, ny);
+            if (nz != TileQuery::kNoBand) {
+                // The same no-corner-cut rule the search uses.
+                if (n >= 4 && (tiles_->stepBand(cx, cy, cz, nx, cy) == TileQuery::kNoBand ||
+                               tiles_->stepBand(cx, cy, cz, cx, ny) == TileQuery::kNoBand)) {
+                    continue;
+                }
+            } else if (n < 4) {
+                // NO DIAGONAL CLIMBS, exactly as PathFinder::resolveMove
+                // refuses them -- the map must not promise a move the router
+                // will not plan.
+                nz = tiles_->mantleBand(cx, cy, cz, nx, ny);
+                if (nz == TileQuery::kNoBand) {
+                    nz = tiles_->landingBand(nx, ny, cz - 2, kMaxPathDrop - 2);
+                }
             }
             if (nz == TileQuery::kNoBand || !tiles_->inBounds(nx, ny, nz)) {
                 continue;
