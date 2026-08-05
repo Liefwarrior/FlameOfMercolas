@@ -220,7 +220,7 @@ Session::Session(const SessionConfig& config)
     controls_.sanitise();
     if (config_.openingPage && caseRaws_.loaded()) {
         casebookOpen_ = true;
-        message_ = "J YOUR NOTES   F1 THE KEYS   Q LOOK AT WHAT IS HERE";
+        message_ = "TAB YOUR NOTES  F1 KEYS  F2 OPTIONS  Q LOOK AT IT";
         messageSteps_ = 60 * 12;
     }
     syncTavernToBody();
@@ -299,8 +299,10 @@ void Session::climb() {
         return;
     }
     roofMove_ = "UP ONTO THE LEDGE.";
-    say(roofMove_);
+    // Same order as dropDown, and for the same reason: a mantle onto a LOWER
+    // ledge is a fall too, and the line has to be said after it is charged.
     settleLanding(move);
+    say(roofMove_);
     syncTavernToBody();
 }
 
@@ -317,8 +319,14 @@ void Session::dropDown() {
     }
     roofMove_ =
         "DOWN " + std::to_string(move.bands) + (move.bands == 1 ? " LEVEL." : " LEVELS.");
-    say(roofMove_);
+    // SETTLE FIRST, THEN SAY IT. #77 found this by driving the real window and
+    // stepping off the Gull's lead: the alert read "DOWN 2 LEVELS." and the
+    // health bar quietly halved with nothing on screen connecting the two.
+    // settleLanding appends the height and the injury to roofMove_, so saying
+    // the line before charging the fall throws away the only part of it a player
+    // can act on. What they see now is "DOWN 2 LEVELS. - 5M - 50 HURT".
     settleLanding(move);
+    say(roofMove_);
     syncTavernToBody();
 }
 
@@ -833,8 +841,8 @@ void Session::step(const sim::MoveInput& input) {
     const sim::RoofResult climbed = body_->takeAutoMove();
     if (climbed.ok()) {
         roofMove_ = "UP AND OVER.";
-        say(roofMove_);
         settleLanding(climbed);
+        say(roofMove_);
         syncTavernToBody();
     }
 
@@ -2043,7 +2051,14 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // conversation does: all three are drawn in the same two bands, and two
     // things fighting over one row is how the centre-clear rule gets broken by
     // accident.
-    const bool conversing = talking() || casebookOpen_ || keysOpen_;
+    //
+    // #77 ADDS THE OPTIONS PAGE, and it was found by opening the real window and
+    // pressing F2. Every other surface was on this list; the new one was not, so
+    // the compass strip, the case row, the health bar and the first-run hint all
+    // drew straight over the sliders and the sliders drew straight back, and
+    // both were illegible. Nothing in a `--screenshot` capture would ever have
+    // shown it, because nothing scripted opens this page.
+    const bool conversing = talking() || casebookOpen_ || keysOpen_ || optionsOpen_;
     hud.roomLabel = conversing ? std::string_view{} : std::string_view{room};
     // The ward's opinion of you sits under the purse -- unless somebody is in
     // front of you, in which case THEIR opinion is the one that matters and the

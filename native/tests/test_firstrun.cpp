@@ -55,10 +55,12 @@ TEST_CASE("a new game opens on the case, not on a systems demo") {
     REQUIRE(opening.topics.size() == 1);
 
     // AND THE KEYS ARE ON THE MESSAGE ROW, so the first thing a player reads is
-    // how to put the notes down.
+    // how to put the notes down. #77 moved the journal from J to TAB and added
+    // an options page, so the row names all three.
     INFO(session.lastMessage());
     CHECK(session.lastMessage().find("F1") != std::string::npos);
-    CHECK(session.lastMessage().find("J") != std::string::npos);
+    CHECK(session.lastMessage().find("F2") != std::string::npos);
+    CHECK(session.lastMessage().find("TAB") != std::string::npos);
 
     // WALKING PUTS IT AWAY, AND IT NEVER COMES BACK BY ITSELF.
     MoveInput walk;

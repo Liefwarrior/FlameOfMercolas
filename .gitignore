@@ -36,3 +36,8 @@ replay_pid*
 # 1GB Kenney survey/extract pack — local-only reference, never committed.
 # (The curated, tracked tiles live under content/art/kenney/CityPack/.)
 /content/art/kenney-all-in-1/
+
+# #77. The controls file the game writes beside itself. It is the PLAYER's,
+# not the repo's: rebinding a key must not show up as a working-tree change.
+granadad-controls.cfg
+granadad-screenshot.png
