@@ -41,7 +41,7 @@ prove something about wine.
 
 You are on the **Tarwalk**, the working quay, six tiles from the door of the
 **Gilded Gull**. It is eight in the morning, and the district is at work: six
-hundred and seventy-eight people with beds in the compounds, posts at the
+hundred and sixty-one people with beds in the compounds, posts at the
 warehouses and the sheds, appetites that get worse as the day goes on, and a
 Watch that changes shift at six. They keep those hours whether you watch them
 or not.
@@ -129,7 +129,7 @@ Stand in it and press **`Q`**.
     `--time=20` and the Eel-Pots are lit and the night stalls are the only
     honest light on the road; `--time=2` and there are seven watchmen on the
     Ropewynd, urchins on the bins, and thieves out because the Watch is thin.
-    Six hundred and seventy-eight people keep those hours whether you are
+    Six hundred and sixty-one people keep those hours whether you are
     there or not, and nothing about the district is scripted for your benefit.
 
 ---
@@ -210,8 +210,11 @@ of the HUD, live.
 
 **The district has people in it now, and they keep hours.** This was the
 biggest hole in the build and this file said so: *"There is nobody in the
-district. This is the big one."* Six hundred and seventy-eight bodies live in
-the Docks, on top of the Gilded Gull's own fourteen — the Java build's 692.
+district. This is the big one."* Six hundred and sixty-one bodies live in
+the Docks, on top of the Gilded Gull's own seventeen — 678 against the Java
+build's 692, and the seventeen are the Tavern's and are spawned by nobody in
+the population, so it is one roster with two sources rather than two crowds
+arguing over the same street.
 They have homes in the compounds and the hovels, posts at twenty-eight of the
 thirty-five K-sites, needs that decay, larders that get drawn down and
 restocked, and a day. Walk the Tarwalk at eight and it is a working quay. Walk
@@ -269,7 +272,7 @@ in it at every hour of the day.
 
 The middle hour is good in the Gull and better outside it than it was, because
 the street is now something rather than nothing. There is still no third hour:
-there is nothing under the Drowned Hold, and the six hundred and seventy-eight
+there is nothing under the Drowned Hold, and the six hundred and sixty-one
 people in the ward will not talk to you.
 
 What it needs next, in order: **the ward speaking** (`E` on anybody, and a

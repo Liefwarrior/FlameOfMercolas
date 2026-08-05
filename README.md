@@ -38,8 +38,8 @@ every key. The trail is twelve leads long, two of them dead ends that are the po
 runs from the Mission's back room to the doors of a warehouse that has been condemned for
 nine years.
 
-**The district has people in it.** Six hundred and seventy-eight of them, on top of the
-Gull's own fourteen -- the Java build's 692. They sleep in the compounds and the hovels,
+**The district has people in it.** Six hundred and sixty-one of them, on top of the
+Gull's own seventeen -- against the Java build's 692. They sleep in the compounds and the hovels,
 work twenty-eight of the thirty-five K-sites, get hungry, draw their larders down and eat.
 The Watch changes shift at six: a day beat on the Tarwalk and the quay, and a night roster
 of seven who walk the Ropewynd and the Rise until dawn. Urchins work the bins from seven at

@@ -18,12 +18,24 @@ All four are the same camera: standing on the **Tarwalk** at world tile
     --time=HH --spawn=140,64,19 --yaw=270 --screenshot=out.png
 ```
 
-| Frame | Hour | Ward roll | Drawn in this frame | Within 12 tiles |
-|---|---|---|---|---|
-| `p78-tarwalk-0200.png` | 02:00 | see `ward=` in the capture line | `seen=` | `near=` |
-| `p78-tarwalk-0800.png` | 08:00 | | | |
-| `p78-tarwalk-1400.png` | 14:00 | | | |
-| `p78-tarwalk-2000.png` | 20:00 | | | |
+| Frame | Hour | Ward roll | Drawn in this frame | Within 12 tiles | In the Gull |
+|---|---|---|---|---|---|
+| `p78-tarwalk-0200.png` | 02:00 | 661 | 11 | 18 | 3 |
+| `p78-tarwalk-0800.png` | 08:00 | 661 | 16 | 17 | 1 |
+| `p78-tarwalk-1400.png` | 14:00 | 661 | 22 | 23 | 3 |
+| `p78-tarwalk-2000.png` | 20:00 | 661 | 17 | 24 | 11 |
+
+**What to look at in each.** At 08:00 and 14:00 the Tarwalk is a working quay
+and the figure in the foreground is a labourer at a muster. At 20:00 it is a
+different person in a different coat — the day trades have gone home and the
+evening's are out — and the Eel-Pots are lit down the road. At 02:00 the street
+is genuinely dark: eleven bodies are drawn in that frame and you can barely see
+any of them, because the ward is committed-dark and the only honest light after
+midnight is the night stalls'. That is the correct reading and not a defect.
+
+The last column is the Gilded Gull's own `presentCount()` at that hour, which
+belongs to the Tavern and not to the population. Eleven at eight in the evening
+is the Gull filling up.
 
 The three numbers are printed by the capture itself, on the `granadad:` line:
 
