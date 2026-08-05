@@ -89,7 +89,15 @@ public:
         return done() ? limitSeconds : -1;
     }
 
-    void runWith(int seconds, const MoveInput& input) {
+    void runWith(int seconds, const MoveInput& input) { runScaled(seconds, 1, input); }
+
+    /// The same loop with the world's clock running FASTER than the body's:
+    /// `clockScale` engine ticks to each simulated second of movement. This is
+    /// render::Session's own rule (SessionConfig::clockScale, and the loop at
+    /// the bottom of Session::step), reproduced here because it is the only way
+    /// to ask a question that takes HOURS of room time without paying for
+    /// hours of sub-tile movement.
+    void runScaled(int seconds, int clockScale, const MoveInput& input = MoveInput{}) {
         for (int second = 0; second < seconds; ++second) {
             for (int step = 0; step < kStepsPerSecond; ++step) {
                 tavern_->setPlayer(body_->x(), body_->y(), body_->band());
@@ -102,7 +110,9 @@ public:
                 body_->step(input);
             }
             tavern_->setPlayer(body_->x(), body_->y(), body_->band());
-            engine_->tick();
+            for (int i = 0; i < clockScale; ++i) {
+                engine_->tick();
+            }
         }
     }
 
@@ -505,6 +515,35 @@ TEST_CASE("the room is loud at night and empty at dawn") {
     Tavern lunch(docksTiles(), hourOfDay(13), 1, content::contentDir());
     CHECK(onDuty(lunch) == 1);
     CHECK(onDuty(evening) == 2);
+}
+
+TEST_CASE("the tavern empties itself between closing and dawn") {
+    // Run the room from one in the morning to six, at a hundred and twenty
+    // seconds of world per second of movement, and watch it clear out.
+    //
+    // MOVED HERE FROM tests/test_tavern_render.cpp IN #81, and the four
+    // assertions below are the four it made there, unchanged. It ran through a
+    // full render::Session, which registers the ward's six hundred and
+    // sixty-one people on the same engine, and at one in the morning a ward
+    // tick costs 31 milliseconds against a tavern tick's five microseconds --
+    // so eighteen thousand ticks of a room that empties cost 439 seconds of the
+    // gate's 1,229 and 99.98% of it was people this case never looked at.
+    //
+    // A Tavern on its own engine is what the claim was always about. Nothing is
+    // lost by the move: nobody in the ward is spawned inside the Gull, and every
+    // system draws from its own stream, so the population could not have changed
+    // the count of who is standing in the taproom. The Session half of the old
+    // case -- that a scaled clock reaches the room's clock too -- stayed where it
+    // was, in seconds instead of hours.
+    Room room(hourOfDay(1), gull::kStreetX, gull::kStreetY);
+    REQUIRE(room.tavern().presentCount() > 0);
+
+    room.runScaled(150, 120);  // 150 seconds of movement, five hours of world
+
+    CHECK(room.tavern().timeOfDay() / 3600 >= 5);
+    CHECK(room.tavern().presentCount() == 0);
+    CHECK_FALSE(room.tavern().isOpen());
+    CHECK_FALSE(room.tavern().fireLit());
 }
 
 TEST_CASE("patrons arrive and leave, and the room fills between the two") {

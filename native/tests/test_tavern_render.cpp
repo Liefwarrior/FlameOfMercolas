@@ -426,21 +426,47 @@ TEST_CASE("the world keeps its own time while the player stands still") {
     CHECK(session.tavern().timeOfDay() == session.timeOfDay());
 }
 
-TEST_CASE("the tavern empties itself between closing and dawn") {
-    // Run the room from one in the morning to five, at a hundred seconds of
-    // world per second of movement, and watch it clear out.
+TEST_CASE("a scaled clock carries the room's clock with it, hour for hour") {
+    // WHAT IS LEFT HERE OF "the tavern empties itself between closing and dawn",
+    // and the split is worth stating because the case that used to be here was
+    // THIRTY-SIX PER CENT OF THE ENTIRE GATE -- 439 seconds of 1,229.
+    //
+    // It ran five hours of world at clockScale 120 through a full Session. A
+    // Session stands up three systems: the taproom, the compound roll and the
+    // ward's six hundred and sixty-one people. Measured, in the Debug build the
+    // gate compiles:
+    //
+    //     tavern tick              5 us
+    //     compound roll tick       0 us
+    //     ward population tick    31,000 us   (at one in the morning)
+    //
+    // So 99.98% of that case was six hundred bodies walking the district at
+    // night, in a case that read presentCount(), isOpen() and fireLit() and
+    // nothing else. Nobody in the ward is spawned inside the Gull and no wire
+    // runs from the population to the taproom -- every system draws from its
+    // own stream (see PhasedEngine::Registration) -- so the ward could not have
+    // changed the answer even in principle.
+    //
+    // The emptying claim therefore moved, unchanged, onto the Room fixture in
+    // tests/test_tavern.cpp: same Tavern, same PhasedEngine, same movement
+    // cadence, same five hours, same four assertions. What stays HERE is the
+    // half that genuinely needs a Session -- that the scaled clock the capture
+    // scripts run on carries the room's clock with it -- and it is asked in
+    // seconds instead of hours.
     SessionConfig config = insideTheGull(1);
     config.clockScale = 120;
     Session session(config);
-    REQUIRE(session.tavern().presentCount() > 0);
+    const int start = session.timeOfDay();
 
     sim::MoveInput still;
-    session.stepMany(still, 150 * sim::kStepsPerSecond);  // ~5 simulated hours
+    session.stepMany(still, 10 * sim::kStepsPerSecond);  // ten seconds of movement
 
-    CHECK(session.timeOfDay() / 3600 >= 5);
-    CHECK(session.tavern().presentCount() == 0);
-    CHECK_FALSE(session.tavern().isOpen());
-    CHECK_FALSE(session.tavern().fireLit());
+    // Ten seconds of movement, twenty minutes of world.
+    CHECK(session.elapsedSeconds() == 10 * 120);
+    CHECK(session.timeOfDay() == start + 10 * 120);
+    // And the room is on the same clock, which is the whole claim: a capture
+    // that reaches a named hour by scaling must reach it in the taproom too.
+    CHECK(session.tavern().timeOfDay() == session.timeOfDay());
 }
 
 TEST_CASE("the S2 HUD still hugs the edges and leaves the centre clear") {
