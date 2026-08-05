@@ -49,8 +49,11 @@
 // and not of the machine. Keep it that way when adding a case, or take a
 // privateWard() and pay for it.
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
+#include <string>
 
 #include "granadad/content/content_dir.hpp"
 #include "granadad/content/world_reader.hpp"

@@ -52,6 +52,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -167,6 +168,27 @@ const Soak& soak() {
     return cached;
 }
 
+/// The soak's headline numbers as one line, attached to every verdict below, so
+/// a red case says what the district was DOING and not merely which assertion
+/// failed. Five cases read one soak; a bare "CHECK(s.lowWater < s.prey) failed"
+/// would leave the reader with no way to tell a broken hunt from a broken den.
+[[nodiscard]] std::string soakLine(const Soak& s) {
+    std::string out;
+    const auto add = [&out](const char* label, long long value) {
+        out += label;
+        out += std::to_string(value);
+    };
+    add("catches=", s.ward->people().catches());
+    add(" futile=", s.ward->people().futileChases());
+    add("; live mice fell to ", s.lowWater);
+    add(" of ", s.prey);
+    add(" and climbed back to ", s.highWaterAfterTheDip);
+    add("; ", s.hungryPredators);
+    add(" of thirteen predators ended in the hunger band, ", s.atTheCeiling);
+    add(" of them scavenging at the ceiling, and the fullest held ", s.fullestPredator);
+    return out;
+}
+
 }  // namespace
 
 TEST_CASE("the mice are a contiguous id range, which is what makes the hunt cheap") {
@@ -195,14 +217,10 @@ TEST_CASE("the mice are a contiguous id range, which is what makes the hunt chea
     CHECK_FALSE(sim::isPredator(sim::WardType::Serf));
 }
 
-/// The soak's headline numbers, on every verdict below, so a red case says what
-/// the district was doing and not merely which line failed.
-#define GRANADAD_SOAK_INFO(s)                                                                      INFO("catches=", (s).ward->people().catches(), " futile=",                                          (s).ward->people().futileChases(), "; live mice fell to ", (s).lowWater, " of ",               (s).prey, " and climbed back to ", (s).highWaterAfterTheDip, "; ",                             (s).hungryPredators, " of thirteen predators ended in the hunger band, ",                      (s).atTheCeiling, " of them scavenging at the ceiling, and the fullest held ",                 (s).fullestPredator)
-
 TEST_CASE("the food chain runs: mice are taken, and the den puts more out") {
     // THE ACCEPTANCE. A mouse count that only ever rises is not an ecology.
     const Soak& s = soak();
-    GRANADAD_SOAK_INFO(s);
+    INFO(soakLine(s));
     REQUIRE(s.prey == 32);
     // Something actually ate something.
     CHECK(s.ward->people().catches() > 0);
@@ -227,7 +245,7 @@ TEST_CASE("a scrap is not a meal, and without that clamp nothing was ever hungry
     // entered the hunger band and the hunt could never fire. THE MICE WERE SAFE
     // BECAUSE THE CATS WERE NEVER HUNGRY.
     const Soak& s = soak();
-    GRANADAD_SOAK_INFO(s);
+    INFO(soakLine(s));
     CHECK(s.hungryPredators > 0);
     // At the ceiling and staying there is where a predator with nothing to
     // catch ends up: permanently hungry, permanently looking, never dead.
@@ -242,7 +260,7 @@ TEST_CASE("no chase outlives its budget, and no lock is held by a beast not hunt
     // a predator that stops doing anything else -- one gull was logged "hunting"
     // for eight thousand ticks against a plugged alcove.
     const Soak& s = soak();
-    GRANADAD_SOAK_INFO(s);
+    INFO(soakLine(s));
     CHECK(s.worstChase <= sim::kChaseBudgetTicks);
     CHECK(s.idleLocks == 0);
     CHECK(s.wrongPrey == 0);
@@ -257,7 +275,7 @@ TEST_CASE("a caught mouse holds no tile, and it comes back at an absolute tick")
     // for three hours of ward time is the one way being eaten could go on
     // hurting a street after the mouse is gone. Same rule a corpse keeps.
     const Soak& s = soak();
-    GRANADAD_SOAK_INFO(s);
+    INFO(soakLine(s));
     std::int32_t down = 0;
     std::vector<std::uint64_t> cells;
     for (const sim::WardActor& actor : s.ward->people().actors()) {
@@ -288,7 +306,7 @@ TEST_CASE("a cat eating a rat is not a loaf leaving a larder") {
     // quietly create or destroy a loaf balances its own economy by accident.
     // The catch restores a need and touches no item.
     const Soak& s = soak();
-    GRANADAD_SOAK_INFO(s);
+    INFO(soakLine(s));
     CHECK(s.ledgerHeld);
     const sim::WardLedger& ledger = s.ward->people().ledger();
     CHECK(ledger.foodMinted - ledger.foodEaten == s.ward->people().foodHeld());
