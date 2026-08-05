@@ -493,7 +493,7 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
             // proof behind it is two real router searches -- so the expensive
             // question is asked of a handful of cells and never of a ring.
             bool onDeck = false;
-            for (std::int32_t r = 0; r <= 3 && !onDeck; ++r) {
+            for (std::int32_t r = 0; r <= 6 && !onDeck; ++r) {
                 for (std::int32_t dy = -r; dy <= r && !onDeck; ++dy) {
                     for (std::int32_t dx = -r; dx <= r && !onDeck; ++dx) {
                         if (std::max(std::abs(dx), std::abs(dy)) != r) {

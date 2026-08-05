@@ -154,7 +154,10 @@ TEST_CASE("one body per square, and it holds while six hundred of them walk") {
     run.run(900);
     std::vector<std::uint64_t> cells;
     for (const sim::WardActor& actor : run.people->actors()) {
-        if (actor.dead) {
+        // #80: and a mouse a cat has taken off the board holds no square
+        // either, exactly like a corpse. visible() is the one place that is
+        // answered; see WardActor::visible.
+        if (!actor.visible()) {
             continue;
         }
         cells.push_back((static_cast<std::uint64_t>(actor.band) << 40) |

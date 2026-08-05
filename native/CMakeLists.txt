@@ -354,6 +354,18 @@ if(GRANADAD_BUILD_TESTS)
         # say the same sentence, that a starving body says so, and that a cat is
         # not offered the vanished clerk.
         tests/test_ward_voice.cpp
+        # #80 -- AND WHETHER ANYBODY LIVES ON THE ROOFS. The climb verb, the
+        # roof-slum tenants canon puts on a deck, the Skyrunners in their own
+        # territory, and above all the round trip: a bed you can climb TO and
+        # not FROM is a tenant standing there until it starves, and nothing
+        # about a frame or a census would say so.
+        tests/test_ward_roofs.cpp
+        # #80 -- AND WHETHER ANYTHING EATS THE RATS. The prey range that makes
+        # the hunt cheap, the scrap clamp without which no predator was ever
+        # hungry enough to hunt at all, the chase budget the Java build spent a
+        # sprint arriving at, and a soak that watches the mouse count actually
+        # fall and come back.
+        tests/test_ward_hunt.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 

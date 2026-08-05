@@ -1,0 +1,353 @@
+// SOMEBODY LIVES ON THE ROOFS.
+//
+// The population round shipped six hundred and sixty-one people and said this
+// out loud in its own header: "ward actors have no climb verb, so nobody is
+// homed where they cannot walk; the Gullet's thieves keep ground-level
+// condos." Read against the canon that is a bigger hole than it sounds.
+//
+//   * DOCKS-GAZETTEER section 2.5 puts Trojian housing on a wealth gradient
+//     that runs from courtyard compounds up to ROOFTOP SLUMS -- tents and mud
+//     huts on a walled deck, let by the house-owner beneath. That is where the
+//     poorest of a ward live.
+//   * The same section says rooftops are socially unseemly for every Trojian
+//     except a presented Wielder, which is WHY the poor are up there and WHY
+//     burglars use the deck as a highway. The ward's criminal faction is called
+//     the SKYRUNNERS. K35 The Skyrunner's Roost is an authored site on the
+//     Gullet's roof-slum deck.
+//   * Section 2.6 counts 8,132 standable cells the walking rules cannot reach
+//     and files their isolation as design "until the law/economy layers learn
+//     to climb (S5+)".
+//
+// So the district had a poor tier with nobody in it and a criminal faction
+// whose territory was empty. These cases are about the three claims that fixes:
+// the roofs are inhabited, they are inhabited by the people canon puts there,
+// and every one of those people can get down again.
+//
+// THE LAST ONE IS THE ONE TO WATCH. "Reachable by climbing" is a statement
+// about getting UP. A bed that can be climbed to and not climbed from is a
+// tenant standing on a deck until the day it starves, and nothing about a
+// frame or a census would say so.
+
+#include <doctest/doctest.h>
+
+#include <algorithm>
+#include <vector>
+
+#include "granadad/content/content_dir.hpp"
+#include "granadad/content/world_reader.hpp"
+#include "granadad/sim/docks.hpp"
+#include "granadad/sim/engine.hpp"
+#include "granadad/sim/path_finder.hpp"
+#include "granadad/sim/ward_actors.hpp"
+
+using namespace granadad;
+
+namespace {
+
+struct Docks {
+    content::World world;
+    sim::TileQuery tiles;
+    explicit Docks()
+        : world(content::loadWorldFile(content::bakedMap(sim::docks::kWorldName))), tiles(world) {}
+};
+
+constexpr std::uint64_t kSeed = 0x4752414E41444144ull;  // "GRANADAD"
+
+struct WardRun {
+    Docks docks;
+    sim::PhasedEngine engine;
+    sim::WardPopulation* people = nullptr;
+
+    explicit WardRun(std::int32_t startHour) : engine(kSeed, docks.world) {
+        auto owned = std::make_unique<sim::WardPopulation>(
+            docks.tiles, sim::hourOfDay(startHour), kSeed, content::contentDir());
+        people = owned.get();
+        engine.register_system(std::move(owned));
+        engine.boot();
+    }
+
+    void run(std::int64_t ticks) {
+        for (std::int64_t t = 0; t < ticks; ++t) {
+            engine.tick();
+        }
+    }
+};
+
+/// Whether one step of a planned route is a move the district's own rules
+/// actually permit. Asked of every hop of every roof route below, because a
+/// router that invented a move would produce a beautiful path nobody could
+/// walk -- and the sim commits exactly the cells the route names.
+[[nodiscard]] bool legalHop(const sim::TileQuery& tiles, const sim::PathStep& from,
+                            const sim::PathStep& to) {
+    if (std::max(std::abs(from.x - to.x), std::abs(from.y - to.y)) != 1) {
+        return false;
+    }
+    if (tiles.stepBand(from.x, from.y, from.band, to.x, to.y) == to.band) {
+        return true;  // an ordinary step, including the one-level kerb
+    }
+    if (tiles.mantleBand(from.x, from.y, from.band, to.x, to.y) == to.band) {
+        return true;  // a haul up a wall face
+    }
+    const std::int32_t landing =
+        tiles.landingBand(to.x, to.y, from.band - 2, sim::kMaxPathDrop - 2);
+    return landing != sim::TileQuery::kNoBand && landing == to.band;
+}
+
+}  // namespace
+
+TEST_CASE("the roof slum has tenants, and they are the people canon puts up there") {
+    WardRun run(8);
+    const sim::WardCensus roll = run.people->census();
+
+    // THE HEADLINE NUMBER. Before this pass it was zero, by construction: the
+    // bake's snap came down off every deck to find the compound underneath.
+    INFO("roof-homed: ", roll.roofHomed, " of ", roll.total);
+    CHECK(roll.roofHomed > 0);
+
+    const auto onRoof = [&](sim::WardType type) {
+        return roll.roofHomedByType[static_cast<std::size_t>(type)];
+    };
+    // The three trades the gazetteer puts on a roof deck: the ward's poor, its
+    // children, and the burglars whose whole identity is the deck.
+    CHECK(onRoof(sim::WardType::Thief) > 0);
+    CHECK(onRoof(sim::WardType::Urchin) > 0);
+    CHECK(onRoof(sim::WardType::Wastrel) > 0);
+
+    // AND NOBODY WHO CANNOT CLIMB, which is the failure this would arrive as:
+    // one serf drawn into a roof hut by the household mix is one body that
+    // walks off to work and can never get home again.
+    for (const sim::WardActor& actor : run.people->actors()) {
+        if (!actor.homeOnTheRoof) {
+            continue;
+        }
+        INFO("actor ", actor.id, " is a ", sim::wardTypeName(actor.type), " homed at ",
+             actor.homeX, ',', actor.homeY, ",z", actor.homeBand);
+        CHECK(sim::wardTypeClimbs(actor.type));
+    }
+
+    // Every roof household the roster asked for was placed. A refusal is not a
+    // crash and not a silent drop -- it falls back to the compound underneath
+    // and is counted -- so this is the number that says the roof slum is
+    // populated because the map allows it and not because nobody checked.
+    INFO("roof beds the bake refused as one-way");
+    CHECK(run.people->roofHomesRefused() == 0);
+}
+
+TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") {
+    // THE STRANDING CASE. The component map says a deck can be reached from the
+    // ward's ground BY CLIMBING; it says nothing whatever about coming back,
+    // and the roof moves are not symmetric -- a wall you can mantle up is a
+    // wall you may only be able to come down beside, and a drop has no inverse
+    // at all. So every roof tenant's own route home and back is planned here
+    // with the same router, in the same gait, that the simulation uses.
+    WardRun run(8);
+    sim::PathFinder finder(run.docks.tiles);
+    std::vector<sim::PathStep> route;
+
+    std::int32_t checked = 0;
+    for (const sim::WardActor& actor : run.people->actors()) {
+        if (!actor.homeOnTheRoof) {
+            continue;
+        }
+        ++checked;
+        const sim::PathStep bed{actor.homeX, actor.homeY, actor.homeBand};
+        const sim::PathStep post{actor.anchorX, actor.anchorY, actor.anchorBand};
+        INFO("actor ", actor.id, ' ', sim::wardTypeName(actor.type), " bed ", bed.x, ',', bed.y,
+             ",z", bed.band, " post ", post.x, ',', post.y, ",z", post.band);
+
+        // DOWN, which is the direction nothing else in the build checks.
+        REQUIRE(finder.find(bed, post, 0, route, sim::Gait::Climb));
+        sim::PathStep at = bed;
+        for (const sim::PathStep& hop : route) {
+            INFO("hop to ", hop.x, ',', hop.y, ",z", hop.band, " from ", at.x, ',', at.y, ",z",
+                 at.band);
+            CHECK(legalHop(run.docks.tiles, at, hop));
+            at = hop;
+        }
+        // And up again.
+        REQUIRE(finder.find(post, bed, 0, route, sim::Gait::Climb));
+        at = post;
+        for (const sim::PathStep& hop : route) {
+            INFO("hop to ", hop.x, ',', hop.y, ",z", hop.band);
+            CHECK(legalHop(run.docks.tiles, at, hop));
+            at = hop;
+        }
+    }
+    INFO("roof tenants whose round trip was planned");
+    CHECK(checked > 0);
+}
+
+TEST_CASE("the Skyrunners live in their own territory, on the Gullet's own deck") {
+    // C4 The Gullet is the poorest ground in the district and the one the Watch
+    // does not go into; K35 The Skyrunner's Roost is an unmarked nook on its
+    // roof-slum deck, "reached only through a crawl-gap, not a threshold"
+    // (DOCKS-GAZETTEER section 3.1). Until this pass the Roost had no bed in it
+    // and the Gullet's thieves slept on the ground floor.
+    WardRun run(2);
+    std::int32_t thievesOnTheGulletDeck = 0;
+    for (const sim::WardActor& actor : run.people->actors()) {
+        if (!actor.homeOnTheRoof || actor.type != sim::WardType::Thief) {
+            continue;
+        }
+        // The Gullet's east end, above the quayside band.
+        if (actor.homeX >= 200 && actor.homeBand > sim::docks::kBandMidSlope) {
+            ++thievesOnTheGulletDeck;
+        }
+    }
+    INFO("thieves homed on the Gullet's roof decks");
+    CHECK(thievesOnTheGulletDeck > 0);
+}
+
+TEST_CASE("climbing is a verb the poor have and the Watch does not") {
+    // The exclusion is canon and not convenience -- section 2.5's social rule
+    // is exactly why the roof-slums are outside the law -- so it is asserted
+    // rather than left to a comment. A mutation that hands everybody the climb
+    // turns this red.
+    CHECK(sim::wardTypeClimbs(sim::WardType::Thief));
+    CHECK(sim::wardTypeClimbs(sim::WardType::Urchin));
+    CHECK(sim::wardTypeClimbs(sim::WardType::Wastrel));
+    CHECK(sim::wardTypeClimbs(sim::WardType::Cat));
+    CHECK(sim::wardTypeClimbs(sim::WardType::Stray));
+
+    CHECK_FALSE(sim::wardTypeClimbs(sim::WardType::MilitiaWatch));
+    CHECK_FALSE(sim::wardTypeClimbs(sim::WardType::Serf));
+    CHECK_FALSE(sim::wardTypeClimbs(sim::WardType::Shopkeeper));
+    CHECK_FALSE(sim::wardTypeClimbs(sim::WardType::PriestOfTheFlame));
+}
+
+TEST_CASE("a walker cannot reach the roof-slum plane, and a climber can") {
+    // The two gaits, asked the same question about the same district. This is
+    // the whole of the movement change stated as one comparison: the walking
+    // rule refuses the deck (which is section 2.6's design, and why the plane
+    // held zero bodies), and the climb reaches it.
+    Docks docks;
+    sim::PathFinder finder(docks.tiles);
+    std::vector<sim::PathStep> route;
+
+    // A cell on the roof-slum plane that the Gullet's own tenants are homed
+    // on, found the same way the bake finds one.
+    WardRun run(8);
+    sim::PathStep deck{0, 0, 0};
+    sim::PathStep ground{0, 0, 0};
+    bool found = false;
+    for (const sim::WardActor& actor : run.people->actors()) {
+        if (actor.homeOnTheRoof && !found) {
+            deck = sim::PathStep{actor.homeX, actor.homeY, actor.homeBand};
+            ground = sim::PathStep{actor.anchorX, actor.anchorY, actor.anchorBand};
+            found = true;
+        }
+    }
+    REQUIRE(found);
+
+    CHECK_FALSE(finder.find(ground, deck, 0, route, sim::Gait::Walk));
+    CHECK(finder.find(ground, deck, 0, route, sim::Gait::Climb));
+}
+
+TEST_CASE("a climb costs what a climb costs, and open ground is priced the same") {
+    // TWO CLAIMS, AND THE SECOND IS THE ONE THAT PROTECTS SIX HUNDRED PEOPLE.
+    //
+    // A climb move is only ever offered for a neighbour the walking rule
+    // already refused, so a Climb search over ground with no walls in it must
+    // expand the same cells in the same order at the same costs -- otherwise
+    // handing the ward's poor a climb verb would quietly re-route every walk
+    // any of them ever takes. Same route, tile for tile, is how that is said.
+    Docks docks;
+    sim::PathFinder finder(docks.tiles);
+    std::vector<sim::PathStep> walked;
+    std::vector<sim::PathStep> climbed;
+
+    // The Tarwalk, west to east along the open working spine.
+    const sim::PathStep west{52, 65, sim::docks::kBandQuayside};
+    const sim::PathStep east{128, 65, sim::docks::kBandQuayside};
+    REQUIRE(finder.find(west, east, 7u, walked, sim::Gait::Walk));
+    REQUIRE(finder.find(west, east, 7u, climbed, sim::Gait::Climb));
+    REQUIRE(walked.size() == climbed.size());
+    for (std::size_t i = 0; i < walked.size(); ++i) {
+        INFO("step ", i);
+        CHECK(walked[i].x == climbed[i].x);
+        CHECK(walked[i].y == climbed[i].y);
+        CHECK(walked[i].band == climbed[i].band);
+    }
+
+    // And the price is not nothing. Seven ordinary steps for a haul is what
+    // makes a body walk round a warehouse it could get over -- a free climb
+    // turns the roofs into the shortest path between any two points in the
+    // ward, which is a district where nobody uses the roads.
+    CHECK(sim::kMantleCost >= 7 * sim::kStepCostOrthogonal);
+    CHECK(sim::kDropCostBase > sim::kStepCostDiagonal);
+}
+
+TEST_CASE("the roof fills at night and empties in the morning") {
+    // THE RHYTHM, WHICH IS WHAT MAKES IT A HOME AND NOT A STORAGE SHELF.
+    //
+    // A roof tenant is a person with a job in the street below: a wastrel on a
+    // kerb, a child on the bins, a thief working the dark. At eight in the
+    // morning the deck should be nearly empty and at midnight it should be
+    // full, and both are read off the same counter.
+    WardRun run(8);
+    const std::int32_t morning = run.people->census().onRoofNow;
+    run.people->skipToSecond(sim::hourOfDay(23));
+    const std::int32_t night = run.people->census().onRoofNow;
+
+    INFO("bodies off the walking island at 08:00=", morning, " and at 23:00=", night);
+    CHECK(night > morning);
+    CHECK(night > 0);
+}
+
+TEST_CASE("a roof tenant that went out to work climbs home again on its own legs") {
+    // NOT A SETTLE. skipToSecond teleports the ward to where the hour says it
+    // should be, which proves the schedule and proves nothing at all about
+    // whether a body can make the journey. This one walks it.
+    //
+    // Nine in the evening: the wastrels are still on their kerbs and the
+    // children are still on the bins. Twenty-two hundred is when RETURN_HOME's
+    // night term outscores every job in the band, and from there the roof
+    // tenants have to cross the ward and go up a wall to get to bed.
+    WardRun run(21);
+    std::vector<std::int32_t> outAtDusk;
+    for (const sim::WardActor& actor : run.people->actors()) {
+        if (actor.homeOnTheRoof && !actor.atHome()) {
+            outAtDusk.push_back(actor.id);
+        }
+    }
+    INFO("roof tenants away from their beds at 21:00");
+    REQUIRE_FALSE(outAtDusk.empty());
+    const std::int32_t onTheDeckAtDusk = run.people->census().onRoofNow;
+
+    // 21:00 to 22:30. An hour to finish the shift and half an hour to walk it,
+    // and a body steps a tile a second.
+    run.run(5400);
+
+    // THE MEASURE IS BODIES OFF THE WALKING ISLAND, which is a thing that can
+    // only have happened by climbing: nothing in this run teleports anybody,
+    // and the only route onto a deck is up a wall.
+    const std::int32_t onTheDeckAtBedtime = run.people->census().onRoofNow;
+    std::int32_t cameHome = 0;
+    for (const std::int32_t id : outAtDusk) {
+        const sim::WardActor& actor = run.people->actors()[static_cast<std::size_t>(id)];
+        if (actor.atHome()) {
+            ++cameHome;
+        }
+    }
+    INFO("bodies on a deck: ", onTheDeckAtDusk, " at 21:00 and ", onTheDeckAtBedtime,
+         " at 22:30; of ", outAtDusk.size(), " tenants out at dusk, ", cameHome,
+         " were in their own beds");
+    CHECK(onTheDeckAtBedtime > onTheDeckAtDusk);
+}
+
+TEST_CASE("nobody is homed on ground they cannot reach, climber or not") {
+    // The rule the population round already kept for walkers, restated now
+    // that there are two kinds of body. A walker's bed is on the walking
+    // island. A climber's bed is on the walking island or on the climb closure
+    // hanging off it -- and never anywhere else, which is the -1 the component
+    // map paints on a sealed cellar or a decorative deck with no way onto it.
+    WardRun run(8);
+    for (const sim::WardActor& actor : run.people->actors()) {
+        INFO("actor ", actor.id, ' ', sim::wardTypeName(actor.type), " bed ", actor.homeX, ',',
+             actor.homeY, ",z", actor.homeBand);
+        CHECK(run.docks.tiles.standable(actor.homeX, actor.homeY, actor.homeBand));
+        if (!sim::wardTypeClimbs(actor.type)) {
+            CHECK_FALSE(actor.homeOnTheRoof);
+        }
+    }
+}

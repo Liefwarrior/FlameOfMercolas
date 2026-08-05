@@ -451,7 +451,12 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # and the floor moves with it. It is a FLOOR and not an equality on purpose
     # -- a sprint that adds cases must not have to edit this line -- but a floor
     # that never moves stops being able to notice a module falling out.
-    GRANADAD_MIN_TESTS=502; \
+    # #80: 502 -> 526. The suite is at 541 with the roofs and the food chain in
+    # it -- the climb verb, the roof beds proved both ways, the Skyrunners in
+    # their own territory, the scrap clamp and the soak that watches the mouse
+    # count fall and come back -- and the floor moves with the last number the
+    # gate actually measured.
+    GRANADAD_MIN_TESTS=526; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -851,6 +856,41 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: #79's ward-voice cases are all registered"; \
+    \
+    # #80. THE TWO GAPS THE POPULATION ROUND FLAGGED AND DID NOT CLOSE, both of
+    # which were stated in-code rather than papered over -- the roof slum with
+    # nobody in it, and a district of rats nothing ate.
+    #
+    # THE FIRST THREE ARE THE ONES TO WATCH. "the roof slum has tenants" is the
+    # headline and would be satisfied by a body dumped on a deck; "a roof bed is
+    # a bed you can get out of" is the one that says the tenant is not stranded;
+    # and "the ward's cats actually get hungry now" is the one that says the
+    # hunt is not dead code. All three would be tempting to delete on the day
+    # they go red, and all three are exactly the claim being made.
+    for case in \
+        "the roof slum has tenants, and they are the people canon puts up there" \
+        "a roof bed is a bed you can get out of, and it is proved both ways" \
+        "the Skyrunners live in their own territory, on the Gullet's own deck" \
+        "climbing is a verb the poor have and the Watch does not" \
+        "a walker cannot reach the roof-slum plane, and a climber can" \
+        "a climb costs what a climb costs, and open ground is priced the same" \
+        "the roof fills at night and empties in the morning" \
+        "a roof tenant that went out to work climbs home again on its own legs" \
+        "nobody is homed on ground they cannot reach, climber or not" \
+        "the mice are a contiguous id range, which is what makes the hunt cheap" \
+        "a scrap is not a meal: the ward's cats actually get hungry now" \
+        "the food chain runs: mice are taken, and the den puts more out" \
+        "a caught mouse holds no tile and is drawn nowhere" \
+        "a chase that cannot land is abandoned, and the beast goes back to wandering" \
+        "the ward's loaf ledger does not move when a cat eats a rat"; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what #80 is judged on -- somebody actually"; \
+                 echo "       living on the roofs and able to get down again, and"; \
+                 echo "       a food chain that actually bites."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: #80's roof and food-chain cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \
