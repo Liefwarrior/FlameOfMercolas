@@ -114,8 +114,60 @@ std::int32_t PathFinder::heapPop() {
     return top;
 }
 
+namespace {
+
+/// The vertical half of a neighbour resolution: which band a body ends up on
+/// after moving onto column (nx, ny), and what that move costs on top of the
+/// flat one.
+///
+/// THE ORDER IS THE WHOLE RULE, and it is the same order the player's own
+/// contextual traversal uses: WALK if you can, and only if you cannot, CLIMB.
+/// An ordinary step never becomes a haul because a wall happened to be beside
+/// it, and a body never plans a drop off a ledge it could simply have walked
+/// down (stepBand already permits a one-level step down).
+struct Move {
+    std::int32_t band = TileQuery::kNoBand;
+    std::int32_t extraCost = 0;
+};
+
+[[nodiscard]] Move resolveMove(const TileQuery& tiles, std::int32_t cx, std::int32_t cy,
+                               std::int32_t cz, std::int32_t nx, std::int32_t ny, Gait gait,
+                               bool diagonal) noexcept {
+    Move move;
+    move.band = tiles.stepBand(cx, cy, cz, nx, ny);
+    if (move.band != TileQuery::kNoBand || gait != Gait::Climb) {
+        return move;
+    }
+    // NO DIAGONAL CLIMBS. A mantle onto the corner of a wall and a drop taken
+    // cornerwise are both geometry nobody authored and nothing else in this
+    // build permits -- the player's own mantle faces a wall square on. Refusing
+    // them here also keeps the climb probes to four per cell instead of eight,
+    // which is what makes the component flood affordable.
+    if (diagonal) {
+        return move;
+    }
+    const std::int32_t up = tiles.mantleBand(cx, cy, cz, nx, ny);
+    if (up != TileQuery::kNoBand) {
+        move.band = up;
+        move.extraCost = kMantleCost - kStepCostOrthogonal;
+        return move;
+    }
+    // A DROP, and it starts two levels down on purpose. stepBand has already
+    // said no, which means neither (nx, ny, cz) nor (nx, ny, cz - 1) can be
+    // stood on -- so the first band a fall could possibly land on is cz - 2.
+    const std::int32_t down = tiles.landingBand(nx, ny, cz - 2, kMaxPathDrop - 2);
+    if (down != TileQuery::kNoBand) {
+        move.band = down;
+        move.extraCost =
+            kDropCostBase + kDropCostPerLevel * (cz - down) - kStepCostOrthogonal;
+    }
+    return move;
+}
+
+}  // namespace
+
 bool PathFinder::find(const PathStep& from, const PathStep& to, std::uint32_t salt,
-                      std::vector<PathStep>& out) {
+                      std::vector<PathStep>& out, Gait gait) {
     out.clear();
     expansions_ = 0;
     if (from.x == to.x && from.y == to.y && from.band == to.band) {
@@ -195,11 +247,12 @@ bool PathFinder::find(const PathStep& from, const PathStep& to, std::uint32_t sa
             if (!box.contains(nx, ny, cz)) {
                 continue;
             }
-            const std::int32_t nz = tiles_->stepBand(cx, cy, cz, nx, ny);
+            const bool diagonal = n >= 4;
+            const Move move = resolveMove(*tiles_, cx, cy, cz, nx, ny, gait, diagonal);
+            const std::int32_t nz = move.band;
             if (nz == TileQuery::kNoBand || !box.contains(nx, ny, nz)) {
                 continue;
             }
-            const bool diagonal = n >= 4;
             if (diagonal) {
                 // NEVER CUT A SOLID CORNER. A diagonal is legal only when both
                 // of its orthogonal flanks can also be entered. Without this an
@@ -226,7 +279,7 @@ bool PathFinder::find(const PathStep& from, const PathStep& to, std::uint32_t sa
                           : static_cast<std::int32_t>(
                                 routeJitterHash(salt, static_cast<std::uint32_t>(neighbour)) & 3u);
             const std::int32_t step =
-                (diagonal ? kStepCostDiagonal : kStepCostOrthogonal) + jitter;
+                (diagonal ? kStepCostDiagonal : kStepCostOrthogonal) + jitter + move.extraCost;
             const std::int32_t tentative = g + step;
             if (stamp_[nAt] == generation_ && gScore_[nAt] <= tentative) {
                 continue;

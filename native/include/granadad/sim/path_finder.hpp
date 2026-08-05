@@ -62,6 +62,44 @@ namespace granadad::sim {
 inline constexpr std::int32_t kStepCostOrthogonal = 10;
 inline constexpr std::int32_t kStepCostDiagonal = 14;
 
+/// WHAT A BODY IS ABLE TO DO TO GET SOMEWHERE.
+///
+/// #80. The player has had the three roof moves since S5 (player.hpp: mantle,
+/// leap, drop) and no ward actor had any of them, which is why the roof slum
+/// was empty and why the criminal faction NAMED FOR RUNNING THE ROOFS kept
+/// ground-level condos. This is the sim-side half, and it deliberately reuses
+/// TileQuery's own mantleBand/landingBand rather than inventing a second
+/// opinion about what a wall is -- the same reason walking, sight and the
+/// player's climb are all answered in that one file.
+enum class Gait : std::uint8_t {
+    /// stepBand and nothing else: the district's ordinary walking rule, up only
+    /// where a ramp or a stair was authored. Everybody in a coat of plates.
+    Walk = 0,
+    /// And a mantle up one level, and a drop of up to kMaxPathDrop. What the
+    /// ward's poor and its beasts can do, and what the Watch deliberately
+    /// cannot -- see wardTypeClimbs.
+    Climb = 1,
+};
+
+/// CLIMBING IS NOT FREE, and the number is the whole of that claim.
+///
+/// A mantle costs seven ordinary steps. A route that can go round a wall in
+/// under seven tiles will go round it; a burglar crossing the Gullet's roof
+/// decks -- where going round is forty tiles of street with a watchman on it --
+/// goes over. Priced too low and every actor in the district hauls itself over
+/// every kerb; priced at nothing and the roofs become the shortest path between
+/// any two points in the ward, which is a district where nobody uses the roads.
+inline constexpr std::int32_t kMantleCost = 70;
+/// A drop is cheaper than a climb -- gravity does the work -- and it is not
+/// free either, because a body that treated every ledge as a shortcut would
+/// throw itself off the Long Quay to save two tiles.
+inline constexpr std::int32_t kDropCostBase = 30;
+inline constexpr std::int32_t kDropCostPerLevel = 20;
+/// How far a PLANNED drop may fall. Deliberately short: the player's own drop
+/// is a thing a person chooses to do and can look before doing, and a route
+/// planner has no eyes. Three levels is a two-storey compound to its courtyard.
+inline constexpr std::int32_t kMaxPathDrop = 3;
+
 /// Tiles of slack around the bounding rectangle of the two endpoints. A route
 /// almost never needs to leave that rectangle; when it does -- rounding a
 /// warehouse -- this is how far out of the way it is allowed to go.
@@ -92,8 +130,14 @@ public:
     ///
     /// `salt` is the per-actor jitter key. ZERO MEANS NO JITTER, so an actor
     /// whose id is genuinely 0 must pass id + 1 -- see WardActor::replan.
+    ///
+    /// `gait` says what the body may do. WALKING IS THE DEFAULT and every
+    /// existing caller keeps exactly the route it had: a climb move is only
+    /// ever offered for a neighbour the walking rule already REFUSED, so a
+    /// Climb search over ground with no walls in it expands the same cells in
+    /// the same order at the same costs as a Walk one.
     bool find(const PathStep& from, const PathStep& to, std::uint32_t salt,
-              std::vector<PathStep>& out);
+              std::vector<PathStep>& out, Gait gait = Gait::Walk);
 
     /// How many cells the last search expanded. For tests and for the report:
     /// a pathing change that quietly triples the work is a change worth seeing.

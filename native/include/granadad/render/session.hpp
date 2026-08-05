@@ -762,6 +762,18 @@ struct SmokeRunResult {
     std::int32_t wardRoll = 0;
     std::int32_t wardDrawn = 0;
     std::int32_t wardNear = 0;
+    /// #80. WHO LIVES ON THE ROOFS AND WHO IS UP THERE NOW, and how the food
+    /// chain is doing. `roofHomed` counts beds on a deck -- a bed reached by
+    /// climbing and by nothing else -- and `onRoofNow` counts the bodies
+    /// actually standing off the ward's walking island at the moment of
+    /// capture, which is what a night frame of the Gullet is evidence OF.
+    /// `prey`/`preyUp` is mice on the roll against mice on the board, and
+    /// `catches` is how many the district's cats and strays have taken.
+    std::int32_t roofHomed = 0;
+    std::int32_t onRoofNow = 0;
+    std::int32_t prey = 0;
+    std::int32_t preyUp = 0;
+    std::int64_t catches = 0;
     /// #79. Who a `--street` run actually got hold of, and out of which
     /// authored table. Both printed, because "a conversation happened" is not
     /// evidence that the right person had it in the right voice.

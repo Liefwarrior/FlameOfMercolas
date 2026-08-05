@@ -92,6 +92,7 @@ std::string_view wardPolicyName(WardPolicy policy) noexcept {
         case WardPolicy::ReturnHome: return "return-home";
         case WardPolicy::Pursue: return "pursue";
         case WardPolicy::Loiter: return "loiter";
+        case WardPolicy::Hunt: return "hunt";
     }
     return "loiter";
 }
@@ -506,16 +507,16 @@ void WardPopulation::mapWalkComponents() {
         mainComponent_ = -1;
         return;
     }
-    mainComponent_ = 0;
-    walkComponent_[static_cast<std::size_t>(seed)] = 0;
+    mainComponent_ = kWalkIsland;
+    walkComponent_[static_cast<std::size_t>(seed)] = kWalkIsland;
     frontier.push_back(seed);
+    static constexpr std::int32_t dx[8] = {-1, 1, 0, 0, -1, 1, -1, 1};
+    static constexpr std::int32_t dy[8] = {0, 0, -1, 1, -1, -1, 1, 1};
     for (std::size_t head = 0; head < frontier.size(); ++head) {
         const std::int32_t key = frontier[head];
         const std::int32_t cx = key % tiles_->sizeX();
         const std::int32_t cy = (key / tiles_->sizeX()) % tiles_->sizeY();
         const std::int32_t cz = key / (tiles_->sizeX() * tiles_->sizeY());
-        static constexpr std::int32_t dx[8] = {-1, 1, 0, 0, -1, 1, -1, 1};
-        static constexpr std::int32_t dy[8] = {0, 0, -1, 1, -1, -1, 1, 1};
         for (int n = 0; n < 8; ++n) {
             const std::int32_t nx = cx + dx[n];
             const std::int32_t ny = cy + dy[n];
@@ -533,10 +534,99 @@ void WardPopulation::mapWalkComponents() {
             if (walkComponent_[at] >= 0) {
                 continue;
             }
-            walkComponent_[at] = 0;
+            walkComponent_[at] = kWalkIsland;
             frontier.push_back(static_cast<std::int32_t>(at));
         }
     }
+
+    // --- #80: and then the same flood, with the climb ------------------------
+    //
+    // THE FRONTIER IS RE-WALKED, NOT REBUILT. Every walking cell is already in
+    // that vector in a fixed order, so the climb pass starts at index 0 with
+    // the array it needs and offers only the moves the walking rule refused --
+    // four mantles and four drops per cell, never a diagonal, exactly matching
+    // PathFinder's resolveMove. Anything it finds is labelled kClimbIsland and
+    // joins the same frontier, so the closure is complete: a roof reached from
+    // a roof reached from the street is on it.
+    //
+    // WHY A SECOND LABEL AND NOT A SECOND ARRAY. The only question the ward
+    // ever asks of this map is which of three answers a cell has -- our ground,
+    // ground we would have to climb to, or nowhere -- and one int16 already
+    // holds three answers. A parallel array would be another three megabytes
+    // per Session for a bit of information.
+    for (std::size_t head = 0; head < frontier.size(); ++head) {
+        const std::int32_t key = frontier[head];
+        const std::int32_t cx = key % tiles_->sizeX();
+        const std::int32_t cy = (key / tiles_->sizeX()) % tiles_->sizeY();
+        const std::int32_t cz = key / (tiles_->sizeX() * tiles_->sizeY());
+        for (int n = 0; n < 4; ++n) {
+            const std::int32_t nx = cx + dx[n];
+            const std::int32_t ny = cy + dy[n];
+            if (tiles_->stepBand(cx, cy, cz, nx, ny) != TileQuery::kNoBand) {
+                continue;  // walking already answers this neighbour
+            }
+            std::int32_t nz = tiles_->mantleBand(cx, cy, cz, nx, ny);
+            if (nz == TileQuery::kNoBand) {
+                nz = tiles_->landingBand(nx, ny, cz - 2, kMaxPathDrop - 2);
+            }
+            if (nz == TileQuery::kNoBand || !tiles_->inBounds(nx, ny, nz)) {
+                continue;
+            }
+            const std::size_t at = static_cast<std::size_t>(cellKey(nx, ny, nz));
+            if (walkComponent_[at] >= 0) {
+                continue;
+            }
+            walkComponent_[at] = kClimbIsland;
+            frontier.push_back(static_cast<std::int32_t>(at));
+        }
+    }
+}
+
+bool WardPopulation::roofBedIsSound(std::int32_t x, std::int32_t y, std::int32_t band) const {
+    if (!tiles_->standable(x, y, band) || !climbReaches(x, y, band)) {
+        return false;
+    }
+    // The ward's own ground, as near this bed as it gets: the compound
+    // underneath it. Everything on kWalkIsland is connected to everything else
+    // on kWalkIsland by construction, so proving the round trip to the nearest
+    // piece of it proves the round trip to the whole district.
+    std::int32_t gx = 0;
+    std::int32_t gy = 0;
+    std::int32_t gb = 0;
+    bool found = false;
+    for (std::int32_t r = 1; r <= 12 && !found; ++r) {
+        for (std::int32_t db = 0; db >= -3 && !found; --db) {
+            for (std::int32_t dy = -r; dy <= r && !found; ++dy) {
+                for (std::int32_t dx = -r; dx <= r && !found; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) {
+                        continue;
+                    }
+                    if (componentAt(x + dx, y + dy, band + db) != mainComponent_) {
+                        continue;
+                    }
+                    gx = x + dx;
+                    gy = y + dy;
+                    gb = band + db;
+                    found = true;
+                }
+            }
+        }
+    }
+    if (!found) {
+        return false;
+    }
+    // BOTH WAYS, with the real router in the real gait. Up is what the flood
+    // already promised; DOWN is the one nothing else checks, and a bed that
+    // fails it is a tenant standing on a deck for the rest of the game.
+    return climbRoundTrip(PathStep{gx, gy, gb}, PathStep{x, y, band});
+}
+
+bool WardPopulation::climbRoundTrip(const PathStep& a, const PathStep& b) const {
+    std::vector<PathStep> scratch;
+    if (!finder_.find(a, b, 0, scratch, Gait::Climb)) {
+        return false;
+    }
+    return finder_.find(b, a, 0, scratch, Gait::Climb);
 }
 
 bool WardPopulation::snapToStandable(std::int32_t& x, std::int32_t& y, std::int32_t& band,
@@ -589,7 +679,9 @@ void WardPopulation::rebuildOccupancy() {
     // tile rather than blocking a street for the rest of the game.
     occupancy_.clear();
     for (const WardActor& actor : actors_) {
-        if (!actor.dead) {
+        // #80: and a body that has been eaten holds no square either. visible()
+        // is the one place "on the board" is answered; see its comment.
+        if (actor.visible()) {
             occupancy_.add(cellKey(actor.x, actor.y, actor.band), actor.id);
         }
     }
@@ -724,6 +816,19 @@ WardPolicy WardPopulation::selectPolicy(const WardActor& actor) const {
         const JobParams& params = wardJobParams(actor.job);
         offer(params.priority + (params.inWindow(secondOfDay_) ? params.rhythmBonus : 0),
               WardPolicy::Pursue);
+    }
+
+    // #80. THE BEAST FOOD CHANNEL, and it is acquire-gated on purpose.
+    //
+    // The trap this shape exists to avoid is the one the Java build documented
+    // and then hit anyway: a policy that scores on the HUNGER band alone and
+    // cannot actually feed the body pins it forever -- a hungry beast standing
+    // still, "seeking food" it has no way to obtain. So HUNT is worth nothing
+    // at all unless a lock is already held or the throttled probe found
+    // something real, and a hungry cat with no reachable mouse simply keeps
+    // wandering. That is a structural guarantee and not a tuning choice.
+    if (isPredator(actor.type)) {
+        offer(huntScore(actor), WardPolicy::Hunt);
     }
 
     offer(stats.loiterPriority, WardPolicy::Loiter);
@@ -897,9 +1002,15 @@ bool WardPopulation::stepToward(WardActor& actor, std::int32_t tx, std::int32_t 
     if (!needsPlan) {
         // An adjacency guard: after a shove or a load the cached next hop may
         // no longer touch the body, and following it would be a teleport.
+        //
+        // #80. THE VERTICAL SLACK IS THE GAIT'S. A walker's next hop is always
+        // within one band, and holding a climber to that would tear up the
+        // route on the tile before every planned drop -- the body would replan,
+        // get the same route, and replan again, standing on the ledge.
         const PathStep& next = actor.route[static_cast<std::size_t>(actor.routeIndex)];
+        const std::int32_t vertical = wardTypeClimbs(actor.type) ? kMaxPathDrop : 1;
         if (chebyshev(actor.x, actor.y, next.x, next.y) != 1 ||
-            std::abs(actor.band - next.band) > 1) {
+            std::abs(actor.band - next.band) > vertical) {
             needsPlan = true;
         }
     }
@@ -912,7 +1023,19 @@ bool WardPopulation::stepToward(WardActor& actor, std::int32_t tx, std::int32_t 
         // -- and the component map already knows the answer. See
         // walkComponent_ for the arithmetic of six hundred bodies each asking
         // one impossible question every retry cooldown, forever.
-        if (componentAt(tx, ty, tband) != componentAt(actor.x, actor.y, actor.band)) {
+        //
+        // #80. A CLIMBER ASKS THE SAME QUESTION OF A BIGGER MAP. For a walker
+        // the two cells must be on the same island, which is what it always
+        // was. For a body that can haul itself up a wall the walking island and
+        // the climb closure are one place, so the only impossible destination
+        // is one the ward cannot reach at all -- and the guard has to loosen by
+        // exactly that much and no more, or a thief on the roof-slum deck is
+        // refused the search that would take him home.
+        const bool climbs = wardTypeClimbs(actor.type);
+        const bool routable =
+            climbs ? climbReaches(tx, ty, tband) && climbReaches(actor.x, actor.y, actor.band)
+                   : componentAt(tx, ty, tband) == componentAt(actor.x, actor.y, actor.band);
+        if (!routable) {
             actor.routeRetryUntil = tick_ + kRouteRetryCooldownTicks;
             return false;
         }
@@ -920,7 +1043,8 @@ bool WardPopulation::stepToward(WardActor& actor, std::int32_t tx, std::int32_t 
         // real actor standing on a real street.
         const bool ok = finder_.find(PathStep{actor.x, actor.y, actor.band},
                                      PathStep{tx, ty, tband},
-                                     static_cast<std::uint32_t>(actor.id) + 1u, actor.route);
+                                     static_cast<std::uint32_t>(actor.id) + 1u, actor.route,
+                                     climbs ? Gait::Climb : Gait::Walk);
         actor.routeIndex = 0;
         actor.routeTargetX = tx;
         actor.routeTargetY = ty;
@@ -1063,6 +1187,196 @@ void WardPopulation::actLoiter(WardActor& actor, const TickContext& context) {
     actFlee(actor, context);
 }
 
+// --- #80: the hunt ---------------------------------------------------------
+
+std::int32_t WardPopulation::huntScore(const WardActor& predator) const noexcept {
+    const WardTypeStats& stats = types_[predator.type];
+    const std::int32_t hunger = predator.need(Need::Hunger);
+    // The raws' OWN seekFood pricing, reused rather than re-invented: a starving
+    // beast outranks a scared one at exactly the point a starving person does.
+    // Cat and stray both come out at 655 hungry and 1005 desperate, against
+    // FLEE's 950 and the wander job's 120.
+    const std::int32_t priced =
+        stats.seekFoodPriority +
+        (hunger < kNeedCritical ? stats.needs[0].critBonus : stats.needs[0].lowBonus);
+    // A LIVE LOCK IS NEVER ABANDONED for a scoring reason. A predator that
+    // dropped its chase the moment its hunger ticked back over the band would
+    // spend its life starting hunts.
+    if (predator.huntTarget >= 0) {
+        return priced;
+    }
+    if (hunger >= kNeedLow) {
+        return 0;
+    }
+    if (tick_ < predator.huntBackoffUntil) {
+        return 0;  // the futile-chase backoff: the wander gets a real window
+    }
+    if (tick_ % kSensePeriodTicks != 0) {
+        return 0;  // between sense boundaries nothing is acquired
+    }
+    return senseNearestPrey(predator) >= 0 ? priced : 0;
+}
+
+std::int32_t WardPopulation::senseNearestPrey(const WardActor& predator) const noexcept {
+    std::int32_t best = -1;
+    std::int32_t bestDistance = kSenseRadius + 1;
+    // THE MICE AND NOBODY ELSE. preyFirst_..preyEnd_ is the contiguous range
+    // section 6 of the roster spawns last; this loop is the entire cost of the
+    // ward's food chain and it is thirty-two iterations.
+    for (std::int32_t id = preyFirst_; id < preyEnd_; ++id) {
+        const WardActor& prey = actors_[static_cast<std::size_t>(id)];
+        if (!prey.visible() || prey.band != predator.band) {
+            continue;
+        }
+        const std::int32_t d = chebyshev(predator.x, predator.y, prey.x, prey.y);
+        // STRICTLY NEARER, so a tie goes to the lower id on every machine and
+        // two mice equidistant from one cat never swap between runs.
+        if (d < bestDistance) {
+            bestDistance = d;
+            best = id;
+        }
+    }
+    return best;
+}
+
+void WardPopulation::dropHuntLock(WardActor& predator) const noexcept {
+    predator.huntTarget = -1;
+    predator.huntTicks = 0;
+}
+
+void WardPopulation::actHunt(WardActor& predator) {
+    if (predator.huntTarget < 0) {
+        // Byte-identical to the probe huntScore() ran, so the two can never
+        // disagree about whether there was anything to hunt.
+        predator.huntTarget = senseNearestPrey(predator);
+        predator.huntTicks = 0;
+        if (predator.huntTarget < 0) {
+            return;  // defensive: only reachable if the two probes diverged
+        }
+    }
+    if (predator.huntTarget < preyFirst_ || predator.huntTarget >= preyEnd_) {
+        dropHuntLock(predator);  // defensive: a lock can only ever hold a mouse
+        return;
+    }
+    WardActor& prey = actors_[static_cast<std::size_t>(predator.huntTarget)];
+    if (!prey.visible() || prey.band != predator.band ||
+        chebyshev(predator.x, predator.y, prey.x, prey.y) > kLoseRadius) {
+        // Somebody else got it, or the lock went stale. Close and re-sense.
+        dropHuntLock(predator);
+        return;
+    }
+    const std::int32_t distance = chebyshev(predator.x, predator.y, prey.x, prey.y);
+    if (distance <= kContactRadius) {
+        // THE CATCH. The mouse goes off the board with a revive countdown and
+        // the predator eats.
+        //
+        // NO FOOD ITEM IS MINTED OR SUNK and foodEaten is deliberately NOT
+        // touched: that counter is the ward's LOAF ledger and its conservation
+        // identity is a gate. A cat eating a rat is not a loaf leaving a
+        // larder, and pretending it was would put the identity out by one every
+        // time anything in the district ate anything.
+        prey.downedUntil = tick_ + kPreyReviveSeconds;
+        prey.needs[0] = static_cast<std::int16_t>(kNeedMax);
+        prey.starvingSince = -1;
+        prey.route.clear();
+        prey.routeTargetX = -1;
+        prey.policy = WardPolicy::Loiter;
+        // AND THE TILE IS FREE, exactly as a corpse frees its own -- see
+        // WardActor::visible for why a body in a stomach must not hold a cell.
+        occupancy_.remove(cellKey(prey.x, prey.y, prey.band));
+        predator.needs[0] = static_cast<std::int16_t>(
+            std::min(kNeedMax, predator.need(Need::Hunger) + kEatRestore));
+        predator.starvingSince = -1;
+        ++catches_;
+        dropHuntLock(predator);
+        return;
+    }
+    // THE PREY KNOWS. Driving SAFETY to nothing makes the mouse's own FLEE
+    // score 950 next tick, above its wander job, and safety recovers over about
+    // a hundred and fifty ticks -- so a mouse runs while it is being chased and
+    // settles when it is not, without a second policy or a second need.
+    if (distance <= kPreyPanicRadius) {
+        prey.needs[3] = 0;
+    }
+    if (++predator.huntTicks > kChaseBudgetTicks) {
+        // FUTILE. Both of the Java soak's futility classes end here: the
+        // chokepoint freeze, where the route exists but its first hop is
+        // plugged by bodies that will not move, and the untouchable-prey orbit,
+        // where steps keep committing and contact never lands. The budget
+        // counts TOTAL ticks under the lock and deliberately not only blocked
+        // ones, because the orbit never blocks.
+        predator.targetBand = 0;  // and the wander draws a fresh leg elsewhere
+        predator.huntBackoffUntil = tick_ + kHuntBackoffTicks;
+        ++futileChases_;
+        dropHuntLock(predator);
+        return;
+    }
+    // The chase itself. Leash-ignoring, exactly like SEEK_FOOD's walk: a hunt
+    // legitimately ranges past the roost.
+    //
+    // THE AIM IS STICKY WITHIN TWO TILES, and that is a cost decision with a
+    // number behind it. stepToward replans the moment the target cell changes,
+    // and a mouse moves every tick -- so aiming at its exact cell would run a
+    // fresh A* per predator per tick for the whole chase, which is the ward's
+    // most expensive routine fired at its highest rate. Holding the old aim
+    // while the prey stays within two tiles of it reuses the cached route and
+    // costs nothing in accuracy: contact is adjacency, and a route that ends
+    // two tiles from a mouse ends adjacent to it.
+    std::int32_t aimX = prey.x;
+    std::int32_t aimY = prey.y;
+    std::int32_t aimBand = prey.band;
+    if (predator.routeTargetBand == aimBand &&
+        predator.routeIndex < static_cast<std::int32_t>(predator.route.size()) &&
+        chebyshev(predator.routeTargetX, predator.routeTargetY, aimX, aimY) <= 2) {
+        aimX = predator.routeTargetX;
+        aimY = predator.routeTargetY;
+    }
+    stepToward(predator, aimX, aimY, aimBand);
+    if (predator.route.empty() && tick_ < predator.routeRetryUntil) {
+        // The router said there is no way there. A bounded abandon, backed by
+        // the search cooldown that is already in the actor.
+        dropHuntLock(predator);
+    }
+}
+
+bool WardPopulation::revivePrey(WardActor& prey) {
+    // A FIXED SPIRAL OUT OF THE DEN, ascending, first free standable cell wins.
+    // The mouse that stands up is a fresh mouse out of the den rather than the
+    // one that was eaten -- see kPreyReviveSeconds -- so it comes back where
+    // the den is and not where it died.
+    for (std::int32_t r = 0; r <= 4; ++r) {
+        for (std::int32_t dy = -r; dy <= r; ++dy) {
+            for (std::int32_t dx = -r; dx <= r; ++dx) {
+                if (std::max(std::abs(dx), std::abs(dy)) != r) {
+                    continue;
+                }
+                const std::int32_t nx = prey.anchorX + dx;
+                const std::int32_t ny = prey.anchorY + dy;
+                const std::int32_t nb = prey.anchorBand;
+                if (!tiles_->standable(nx, ny, nb) || occupancy_.at(cellKey(nx, ny, nb)) != 0) {
+                    continue;
+                }
+                prey.x = nx;
+                prey.y = ny;
+                prey.band = nb;
+                prey.prevX = nx;
+                prey.prevY = ny;
+                prey.prevBand = nb;
+                prey.downedUntil = -1;
+                prey.route.clear();
+                prey.routeTargetX = -1;
+                prey.targetBand = 0;
+                prey.moveAccumTicks = 0;
+                prey.goalWorkTicks = 0;
+                prey.legMark = 0;
+                occupancy_.add(cellKey(nx, ny, nb), prey.id);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void WardPopulation::advanceLeg(WardActor& actor, const TickContext& context) {
     const std::int32_t route = actor.id < static_cast<std::int32_t>(routeOf_.size())
                                    ? routeOf_[static_cast<std::size_t>(actor.id)]
@@ -1190,15 +1504,25 @@ void WardPopulation::actPursue(WardActor& actor, const TickContext& context) {
             // scavenge margin, and minting a loaf for a mouse would put the
             // ward's food ledger out by one every time a rat ate.
             //
-            // VERIFICATION GAP (#78): the Java build's predator/prey lock --
-            // the sense probe, the chase budget, the futile-chase backoff and
-            // the prey revive -- is NOT ported. Cats and gulls wander and feed;
-            // they do not hunt the mice. The owner's complaint was about
-            // people, and a half-ported hunt with no backoff is the exact shape
-            // of bug (a gull pinned eight thousand ticks against a plugged
-            // alcove) the Java build spent a sprint finding.
-            actor.needs[0] = static_cast<std::int16_t>(
-                std::min(kNeedMax, actor.need(Need::Hunger) + 1500));
+            // #80 CLOSED THE GAP THIS NOTE USED TO RECORD. The nibble is what
+            // feeds the MOUSE, and it is all a mouse ever had; what a cat or a
+            // stray had was the same nibble and nothing else, which is why the
+            // district's mice were a population nothing ate. The predator's own
+            // channel is WardPolicy::Hunt, with the sense probe, the chase
+            // budget, the futile-chase backoff and the prey revive the Java
+            // build spent a sprint arriving at -- all four, because a
+            // half-ported hunt with no backoff is the exact bug it found (a
+            // gull pinned eight thousand ticks against a plugged alcove).
+            //
+            // The nibble stays for the prey and for the dogs, whose wander is
+            // their whole life and who hunt nothing. FOR A PREDATOR IT IS A
+            // SCRAP AND NOT A MEAL -- see kScavengeCeiling for why that one
+            // clamp is the difference between a food chain and a hunt nothing
+            // ever triggers.
+            const std::int32_t ceiling = isPredator(actor.type) ? kScavengeCeiling : kNeedMax;
+            actor.needs[0] = static_cast<std::int16_t>(std::max(
+                static_cast<std::int32_t>(actor.needs[0]),
+                std::min(ceiling, actor.need(Need::Hunger) + 1500)));
             actor.starvingSince = -1;
         }
         if (params.shape == WardJob::Scavenge || params.shape == WardJob::Thieving) {
@@ -1256,7 +1580,16 @@ void WardPopulation::tickActor(WardActor& actor, const TickContext& context) {
         case WardPolicy::ReturnHome: actReturnHome(actor); break;
         case WardPolicy::Pursue: actPursue(actor, context); break;
         case WardPolicy::Loiter: actLoiter(actor, context); break;
+        case WardPolicy::Hunt: actHunt(actor); break;
         case WardPolicy::Dead: break;
+    }
+    // A HUNT THAT STOPPED BEING THE PLAN LETS GO OF ITS PREY. Without this a
+    // predator that is scared off or dragged home keeps its lock, and the mouse
+    // it was chasing is invisible to every other predator in the ward for as
+    // long as the lock survives -- a hunt nobody is running that blocks the
+    // hunts that would.
+    if (policy != WardPolicy::Hunt && actor.huntTarget >= 0) {
+        dropHuntLock(actor);
     }
     // A blocked step is a shove, and only a shove: a body that could not move
     // because somebody is standing there, and had somewhere legal to be.
@@ -1277,6 +1610,21 @@ void WardPopulation::tick(const TickContext& context) {
         if (actor.dead) {
             continue;
         }
+        // #80. A BODY THAT HAS BEEN EATEN DOES NOT TICK, and it comes back at
+        // an ABSOLUTE tick rather than off a countdown -- the same rule every
+        // other latch in this file keeps, and for the same reason: a countdown
+        // somebody forgets to decrement is a mouse that never stands up again.
+        if (actor.downedUntil >= 0) {
+            if (tick_ < actor.downedUntil) {
+                continue;
+            }
+            if (!revivePrey(actor)) {
+                // The den is full. Wait rather than stack: one body per square
+                // is the owner's rule and a revive is not an exception to it.
+                actor.downedUntil = tick_ + kSensePeriodTicks;
+                continue;
+            }
+        }
         tickActor(actor, context);
     }
     // The worst pile-up seen, measured rather than asserted: the most bodies
@@ -1285,12 +1633,12 @@ void WardPopulation::tick(const TickContext& context) {
     if ((context.tick() % 240) == 0) {
         std::int32_t worst = 0;
         for (const WardActor& actor : actors_) {
-            if (actor.dead || actor.type != WardType::MilitiaWatch) {
+            if (!actor.visible() || actor.type != WardType::MilitiaWatch) {
                 continue;
             }
             std::int32_t near = 0;
             for (const WardActor& other : actors_) {
-                if (!other.dead && other.type == WardType::MilitiaWatch &&
+                if (other.visible() && other.type == WardType::MilitiaWatch &&
                     other.band == actor.band && chebyshev(actor.x, actor.y, other.x, other.y) <= 1) {
                     ++near;
                 }
@@ -1324,7 +1672,11 @@ void WardPopulation::settleToSchedule() {
     // the same ward twice from the same seed.
     occupancy_.clear();
     for (WardActor& actor : actors_) {
-        if (actor.dead) {
+        // A settle puts everybody where the hour says they should be. Nobody
+        // means nobody: not the starved, and not a mouse still in a stomach --
+        // placing a downed body would hand it a tile it is not entitled to and
+        // then revivePrey would hand it a second one.
+        if (!actor.visible()) {
             continue;
         }
         const JobParams& params = wardJobParams(actor.job);
@@ -1478,7 +1830,7 @@ const WardActor* WardPopulation::nearestTo(std::int32_t x, std::int32_t y, std::
     const WardActor* best = nullptr;
     std::int32_t bestDistance = reachTiles + 1;
     for (const WardActor& actor : actors_) {
-        if (actor.dead || actor.band != band) {
+        if (!actor.visible() || actor.band != band) {
             continue;
         }
         const std::int32_t dx = actor.x - x;
@@ -1577,6 +1929,17 @@ WardCensus WardPopulation::census() const {
         if (labouring) {
             ++out.serfs;
         }
+        // #80. THE ROOF ROLL IS COUNTED OFF THE BED AND NOT OFF THE BAND, so it
+        // counts the same people at eight in the morning when they are all down
+        // in the street as it does at midnight when they are all up there.
+        // `onRoofNow` is the other half and is a fact about this instant.
+        if (actor.homeOnTheRoof) {
+            ++out.roofHomed;
+            ++out.roofHomedByType[static_cast<std::size_t>(actor.type)];
+        }
+        if (isPrey(actor.type)) {
+            ++out.prey;
+        }
         if (actor.dead) {
             ++out.starved;
             if (labouring) {
@@ -1585,6 +1948,17 @@ WardCensus WardPopulation::census() const {
             continue;
         }
         ++out.alive;
+        if (actor.downedUntil >= 0) {
+            // Caught, and not yet back out of the den. Alive, on the roll, and
+            // not on the board.
+            continue;
+        }
+        if (isPrey(actor.type)) {
+            ++out.preyUp;
+        }
+        if (componentAt(actor.x, actor.y, actor.band) != mainComponent_) {
+            ++out.onRoofNow;
+        }
         ++out.byPolicy[static_cast<std::size_t>(actor.policy)];
         if (actor.need(Need::Hunger) < kNeedLow) {
             ++out.hungry;
@@ -1604,7 +1978,7 @@ std::int32_t WardPopulation::countIn(std::int32_t x0, std::int32_t y0, std::int3
                                      std::int32_t y1, std::int32_t band) const noexcept {
     std::int32_t n = 0;
     for (const WardActor& actor : actors_) {
-        if (!actor.dead && actor.band == band && actor.x >= x0 && actor.x <= x1 &&
+        if (actor.visible() && actor.band == band && actor.x >= x0 && actor.x <= x1 &&
             actor.y >= y0 && actor.y <= y1) {
             ++n;
         }
@@ -1617,7 +1991,7 @@ std::int32_t WardPopulation::countIn(std::int32_t x0, std::int32_t y0, std::int3
                                      WardType type) const noexcept {
     std::int32_t n = 0;
     for (const WardActor& actor : actors_) {
-        if (!actor.dead && actor.type == type && actor.band == band && actor.x >= x0 &&
+        if (actor.visible() && actor.type == type && actor.band == band && actor.x >= x0 &&
             actor.x <= x1 && actor.y >= y0 && actor.y <= y1) {
             ++n;
         }
@@ -1635,6 +2009,18 @@ std::string WardPopulation::reportLine() const {
     out += " hungry=" + content::dec(static_cast<std::uint64_t>(roll.hungry));
     out += " shoves=" + content::dec(static_cast<std::uint64_t>(shoves_));
     out += " food=" + content::dec(static_cast<std::uint64_t>(foodHeld()));
+    // #80. THE TWO NEW FACTS, printed where every gate and every --selftest can
+    // read them. `roof` is how many beds are on a deck and how many bodies are
+    // standing on one right now; `mice` is how many of the prey are on the
+    // board out of the roll, and `ate` is how many times the ward's cats and
+    // strays have actually caught one. A mouse count that only ever reads 32/32
+    // with ate=0 is a district with no food chain in it, and this line is where
+    // that would be visible without running a test.
+    out += " roof=" + content::dec(static_cast<std::uint64_t>(roll.roofHomed)) + "/" +
+           content::dec(static_cast<std::uint64_t>(roll.onRoofNow));
+    out += " mice=" + content::dec(static_cast<std::uint64_t>(roll.preyUp)) + "/" +
+           content::dec(static_cast<std::uint64_t>(roll.prey));
+    out += " ate=" + content::dec(static_cast<std::uint64_t>(catches_));
     out += " hour=" + content::dec(static_cast<std::uint64_t>(secondOfDay_ / 3600)) + "]";
     return out;
 }
@@ -1688,6 +2074,18 @@ void WardPopulation::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(actor.coin));
         sink.put_long(static_cast<std::uint64_t>(actor.lastPushTick));
         sink.put_long(static_cast<std::uint64_t>(actor.starvingSince));
+        // #80. THE HUNT LOCK AND THE ROOF BED. Every one of these is read by a
+        // policy -- the lock decides whether a predator chases or wanders, the
+        // budget decides when it gives up, the backoff decides when it may
+        // start again, the countdown decides whether a mouse is on the board at
+        // all, and the roof flag is what a bake put in a hut. The rule this
+        // codebase learned the hard way is that a scalar a policy READS and the
+        // hash does not cover is a divergence nothing will ever see.
+        sink.put_int(static_cast<std::uint32_t>(actor.huntTarget));
+        sink.put_int(static_cast<std::uint32_t>(actor.huntTicks));
+        sink.put_long(static_cast<std::uint64_t>(actor.huntBackoffUntil));
+        sink.put_long(static_cast<std::uint64_t>(actor.downedUntil));
+        sink.put_byte(actor.homeOnTheRoof ? 1u : 0u);
     }
     for (const Home& home : homes_) {
         sink.put_int(static_cast<std::uint32_t>(home.larder));
@@ -1698,6 +2096,8 @@ void WardPopulation::hash_into(HashSink& sink) const {
     sink.put_long(static_cast<std::uint64_t>(ledger_.coinMinted));
     sink.put_long(static_cast<std::uint64_t>(ledger_.coinSunk));
     sink.put_long(static_cast<std::uint64_t>(shoves_));
+    sink.put_long(static_cast<std::uint64_t>(catches_));
+    sink.put_long(static_cast<std::uint64_t>(futileChases_));
 }
 
 }  // namespace granadad::sim

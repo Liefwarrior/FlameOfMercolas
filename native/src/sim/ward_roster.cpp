@@ -214,6 +214,20 @@ struct Dwelling {
     std::int32_t households;
     /// What the people who live here mostly are.
     WardType flavour;
+    /// #80. A HUT ON A ROOF DECK, and the flag is what makes it one.
+    ///
+    /// These coordinates were always here and always described as roof huts;
+    /// what they did until now was fall off. The bake's snap came DOWN off the
+    /// deck to find the compound underneath, because a ward actor had no climb
+    /// verb and a body homed up there could never walk to its own bed -- so the
+    /// roof slum was authored, snapped away, and stated in-code as a gap.
+    ///
+    /// With the flag set, the bake keeps the household ON the deck and refuses
+    /// to place it anywhere the router cannot prove a way up AND a way down.
+    /// Everybody who lives here is therefore somebody who climbs
+    /// (wardTypeClimbs) -- which the household mix is forced to below, because
+    /// one serf drawn into a roof hut is one body that never gets home again.
+    bool roof = false;
 };
 
 constexpr Dwelling kDwellings[] = {
@@ -232,8 +246,10 @@ constexpr Dwelling kDwellings[] = {
     {{189, 112, 19}, 4, WardType::Serf},  {{189, 121, 19}, 4, WardType::Serf},
     {{189, 102, 20}, 4, WardType::Serf},  {{189, 112, 20}, 4, WardType::Wastrel},
     {{189, 121, 20}, 4, WardType::Wastrel},
-    {{187, 102, 21}, 2, WardType::Urchin}, {{190, 111, 21}, 2, WardType::Thief},
-    {{187, 120, 21}, 2, WardType::Urchin},
+    // The C2 roof slum, on the deck over the condos. THE FIRST THREE HUTS.
+    {{187, 102, 21}, 2, WardType::Urchin, true},
+    {{190, 111, 21}, 2, WardType::Thief, true},
+    {{187, 120, 21}, 2, WardType::Urchin, true},
     // C3 -- the south compound.
     {{121, 140, 20}, 11, WardType::Shopkeeper},
     {{159, 136, 20}, 4, WardType::Serf},  {{167, 136, 20}, 4, WardType::Serf},
@@ -241,23 +257,35 @@ constexpr Dwelling kDwellings[] = {
     {{155, 143, 20}, 4, WardType::Serf},  {{166, 143, 20}, 4, WardType::Serf},
     {{133, 143, 21}, 4, WardType::Wastrel}, {{144, 143, 21}, 4, WardType::Serf},
     {{155, 143, 21}, 4, WardType::Wastrel}, {{166, 143, 21}, 4, WardType::Serf},
-    {{134, 144, 22}, 2, WardType::Urchin}, {{160, 143, 22}, 2, WardType::Thief},
+    // C3's own roof slum, and it is on the roof-slum PLANE (world z22, local
+    // z14 of DOCKS-GAZETTEER's z-profile) rather than on an upper storey. Before
+    // #80, zero of that plane's 1,706 standable cells held a body.
+    {{134, 144, 22}, 2, WardType::Urchin, true},
+    {{160, 143, 22}, 2, WardType::Thief, true},
     // C4 -- the Gullet. The poorest ground in the district, and the one the
     // Watch does not go into.
-    // THE GULLET'S OWN TRADE, AND WHY IT IS ON THE GROUND. Canon puts the
-    // ward's burglars on the roof-slum deck (DOCKS-GAZETTEER section 2.5:
-    // rooftops are the burglar's highway precisely because they are socially
-    // unseemly) -- but a ward actor has no climb verb, so a body homed up there
-    // could never walk to its own bed. The roof huts are therefore
-    // UNPOPULATED, said plainly, and the Gullet's thieves keep two of its
-    // ground-level condos instead. Give an actor a mantle and they move back up.
+    // THE GULLET'S OWN TRADE, AND IT IS BACK ON THE ROOF.
+    //
+    // Canon puts the ward's burglars on the roof-slum deck: DOCKS-GAZETTEER
+    // section 2.5 rules that rooftops are the burglar's highway precisely
+    // because they are socially unseemly, and section 3.1 files K35 The
+    // Skyrunner's Roost as "a concealed nook on the Gullet Compound's
+    // rooftop-slum deck, reached only through a crawl-gap, not a threshold".
+    //
+    // Until #80 they slept in ground-level condos, because a ward actor had no
+    // climb verb and a body homed on the deck could never walk to its own bed.
+    // A criminal faction called the SKYRUNNERS with an empty territory is not a
+    // small gap. It now has tenants, and the Roost has a Skyrunner in it.
     {{200, 104, 19}, 4, WardType::Wastrel}, {{200, 118, 19}, 4, WardType::Wastrel},
     {{205, 102, 19}, 4, WardType::Thief},   {{217, 102, 19}, 4, WardType::Serf},
     {{219, 116, 19}, 4, WardType::Thief},   {{219, 116, 20}, 4, WardType::Wastrel},
     {{209, 121, 19}, 4, WardType::Urchin},
-    {{217, 111, 21}, 2, WardType::Thief},  {{220, 115, 21}, 2, WardType::Urchin},
-    {{217, 120, 21}, 2, WardType::Wastrel}, {{221, 124, 21}, 2, WardType::Urchin},
-    {{221, 120, 21}, 1, WardType::Thief},  // the Skyrunner's Roost, unmarked
+    {{217, 111, 21}, 2, WardType::Thief, true},
+    {{220, 115, 21}, 2, WardType::Urchin, true},
+    {{217, 120, 21}, 2, WardType::Wastrel, true},
+    {{221, 124, 21}, 2, WardType::Urchin, true},
+    // K35 THE SKYRUNNER'S ROOST, unmarked -- no sign, no door, and now a bed.
+    {{221, 120, 21}, 1, WardType::Thief, true},
     // The forty-five hovels, in their authored order.
     {{116, 87, 19}, 1, WardType::Wastrel},  {{121, 86, 19}, 1, WardType::Serf},
     {{127, 88, 19}, 1, WardType::Serf},     {{42, 125, 19}, 1, WardType::Serf},
@@ -405,6 +433,14 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
             actor.homeY = py;
             actor.homeBand = pb;
         }
+        // #80. DERIVED FROM THE MAP AND NOT FROM THE TABLE. A bed is "on the
+        // roof" when it is not on the ward's walking island -- which is the
+        // property that actually matters to everything downstream, and which
+        // stays true if a future map edit turns a deck into a walkable gallery
+        // or the other way round. The dwelling's own flag says what was ASKED
+        // for; this says what the district gave.
+        actor.homeOnTheRoof = componentAt(actor.homeX, actor.homeY, actor.homeBand) !=
+                              mainComponent_;
         // EVERYBODY STARTS AT HOME, whatever the hour. A roster that spawned
         // its whole day shift standing at its posts would show a district that
         // had already walked to work, and the first thing a player saw at seven
@@ -432,20 +468,64 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
         std::int32_t firstHome;
         std::int32_t homes;
         WardType flavour;
+        /// #80. True when the site actually landed on a deck. NOT the same as
+        /// the dwelling's own flag: a roof hut whose deck the router could not
+        /// prove a way down from falls back to the compound underneath rather
+        /// than stranding four people, and then it is a ground site like any
+        /// other. What is claimed is what happened.
+        bool onTheRoof;
     };
     std::vector<Site> sites;
     sites.reserve(sizeof(kDwellings) / sizeof(kDwellings[0]));
     for (const Dwelling& dwelling : kDwellings) {
-        Site site{static_cast<std::int32_t>(homes_.size()), 0, dwelling.flavour};
+        Site site{static_cast<std::int32_t>(homes_.size()), 0, dwelling.flavour, false};
         std::int32_t ax = dwelling.at.x;
         std::int32_t ay = dwelling.at.y;
         std::int32_t ab = dwelling.at.band;
+        if (dwelling.roof) {
+            // ON THE DECK, ON ITS OWN BAND, AND NOWHERE ELSE. The spiral is
+            // tight and never changes band: coming down off the roof to find
+            // ground is the exact move that emptied the roof slum, and the
+            // whole of this change is refusing to make it.
+            //
+            // The pre-filter is a single array read (kClimbIsland says the
+            // flood found this cell by climbing and not by walking) and the
+            // proof behind it is two real router searches -- so the expensive
+            // question is asked of a handful of cells and never of a ring.
+            bool onDeck = false;
+            for (std::int32_t r = 0; r <= 3 && !onDeck; ++r) {
+                for (std::int32_t dy = -r; dy <= r && !onDeck; ++dy) {
+                    for (std::int32_t dx = -r; dx <= r && !onDeck; ++dx) {
+                        if (std::max(std::abs(dx), std::abs(dy)) != r) {
+                            continue;
+                        }
+                        const std::int32_t cx = dwelling.at.x + dx;
+                        const std::int32_t cy = dwelling.at.y + dy;
+                        if (componentAt(cx, cy, ab) != kClimbIsland ||
+                            !roofBedIsSound(cx, cy, ab)) {
+                            continue;
+                        }
+                        ax = cx;
+                        ay = cy;
+                        onDeck = true;
+                    }
+                }
+            }
+            site.onTheRoof = onDeck;
+            if (!onDeck) {
+                // A deck with no proved way down. COUNTED, not hidden: this is
+                // the number that says whether the roof slum is populated
+                // because the map allows it or because nobody checked.
+                ++roofRefused_;
+            }
+        }
         // TEN AND NOT SIX, because of the roof huts. A rooftop tenant's own
         // anchor is on a plane the walking rules cannot reach, so the snap has
         // to come down off it far enough to find the compound underneath --
         // and a site that still finds nothing is dropped rather than given a
-        // bed nobody can get to.
-        if (!snapToStandable(ax, ay, ab, 10)) {
+        // bed nobody can get to. Only reached now by a site that is NOT on a
+        // deck, which after #80 means a ground site or a refused one.
+        if (!site.onTheRoof && !snapToStandable(ax, ay, ab, 10)) {
             continue;
         }
         // The spiral: ring by ring, and inside a ring in raster order. Fixed,
@@ -458,16 +538,26 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
                     }
                     const std::int32_t hx = ax + dx;
                     const std::int32_t hy = ay + dy;
-                    // Standable AND on the ward's own walking island. The
-                    // roof-slum planes of DOCKS-GAZETTEER section 2.6 are
-                    // standable and reachable only by climbing, and a body
-                    // homed up there could never walk to its own bed -- so its
-                    // household is placed on the compound's ground instead.
-                    // The roof slum itself stays unpopulated until an actor has
-                    // a climb verb, which is a real gap and is stated here
-                    // rather than papered over with a bed nobody can reach.
-                    if (!tiles_->standable(hx, hy, ab) ||
-                        componentAt(hx, hy, ab) != mainComponent_) {
+                    if (!tiles_->standable(hx, hy, ab)) {
+                        continue;
+                    }
+                    if (site.onTheRoof) {
+                        // #80. A ROOF BED, AND IT IS PROVED RATHER THAN
+                        // ASSUMED. On the same deck, reachable only by
+                        // climbing, and joined to the hut's own anchor cell
+                        // both ways -- which chains onto the anchor's already
+                        // proved round trip to the ward's ground, so the whole
+                        // walk from this bed to the street and back is a route
+                        // the router has actually planned.
+                        if (componentAt(hx, hy, ab) != kClimbIsland ||
+                            !climbRoundTrip(PathStep{hx, hy, ab}, PathStep{ax, ay, ab})) {
+                            continue;
+                        }
+                    } else if (componentAt(hx, hy, ab) != mainComponent_) {
+                        // A WALKER'S BED IS ON THE WALKER'S ISLAND. Everything
+                        // else in the district is placed by this clause and it
+                        // is unchanged: a body who cannot climb is never homed
+                        // anywhere it would have to.
                         continue;
                     }
                     // Never inside the Gilded Gull. K03 is the Tavern's
@@ -527,6 +617,18 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
                             break;
                         default: type = WardType::Serf; break;
                     }
+                }
+                // #80. NOBODY WHO CANNOT CLIMB IS BORN ON A ROOF. The mix above
+                // draws a serf into four households in ten, and a serf in a
+                // roof hut is one body that walks off to work in the morning
+                // and can never get home again -- the stranding failure this
+                // pass exists to avoid, arriving through the household draw
+                // rather than through the map. On a deck the ward's poor keep
+                // their own beds: a drawn serf is the roof's own tenantry
+                // instead, which is what the rooftop tier IS (section 2.8 --
+                // "they are not his tenants, they are his tenants' tenants").
+                if (site.onTheRoof && !wardTypeClimbs(type)) {
+                    type = WardType::Wastrel;
                 }
                 const WardJob job = type == WardType::Urchin   ? WardJob::Scavenge
                                     : type == WardType::Thief  ? WardJob::Thieving
@@ -822,11 +924,22 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
     }
     // The mice: two to a bin, which is what a bin in this district actually
     // holds, plus the Gullet's own cluster.
+    //
+    // #80. AND THEIR IDS ARE RECORDED, because the whole cost argument for the
+    // hunt rests on them being the LAST thing spawned and therefore a
+    // contiguous range. A predator's sense probe walks thirty-two ids; an
+    // all-pairs scan over the roll would be six hundred and seventy-eight per
+    // predator per probe, which is the O(n^2) this deliberately is not. If a
+    // later sprint appends a group after this one the range still holds; if it
+    // INSERTS one, the assertion below goes red rather than the ecology going
+    // quietly wrong.
+    preyFirst_ = static_cast<std::int32_t>(actors_.size());
     for (const Anchor& bin : kBins) {
         for (int i = 0; i < 2; ++i) {
             spawn(WardType::Mouse, WardJob::Wander, bin, -1, -1);
         }
     }
+    preyEnd_ = static_cast<std::int32_t>(actors_.size());
 
     // --- 7. and only now, the needs -----------------------------------------
     //

@@ -1768,7 +1768,11 @@ std::vector<SpriteInstance> Session::wardSprites(const Camera& view) const {
         static_cast<float>(stepsThisSecond_) / static_cast<float>(sim::kStepsPerSecond);
     sprites.reserve(people_->actors().size());
     for (const sim::WardActor& actor : people_->actors()) {
-        if (actor.dead) {
+        // #80: not the starved, and not a mouse a cat has just taken off the
+        // board. sim::WardActor::visible answers both in one place, which is
+        // what stops a caught mouse being drawn standing in its own den for
+        // three hours of ward time.
+        if (!actor.visible()) {
             continue;
         }
         // Shaded by the light where they STAND. Without this a figure in an
@@ -3616,7 +3620,7 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
     std::int32_t standX = 0;
     std::int32_t standY = 0;
     for (const sim::WardActor& actor : session.people().actors()) {
-        if (actor.dead || actor.type != wanted) {
+        if (!actor.visible() || actor.type != wanted) {
             continue;
         }
         if (actor.x >= sim::gull::kFootprintX0 - 4 && actor.x <= sim::gull::kFootprintX1 + 4 &&
@@ -3893,10 +3897,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         // within twelve tiles whether or not the camera was pointed at them.
         const sim::WardCensus roll = session.people().census();
         result.wardRoll = roll.alive;
+        result.roofHomed = roll.roofHomed;
+        result.onRoofNow = roll.onRoofNow;
+        result.prey = roll.prey;
+        result.preyUp = roll.preyUp;
+        result.catches = session.people().catches();
         result.wardDrawn = static_cast<std::int32_t>(result.stats.wardActorsDrawn);
         const Camera view = session.camera();
         for (const sim::WardActor& actor : session.people().actors()) {
-            if (actor.dead) {
+            if (!actor.visible()) {
                 continue;
             }
             const float dx = static_cast<float>(actor.x) + 0.5F - view.x;
@@ -3935,6 +3944,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " ward=" << result.wardRoll
             << " seen=" << result.wardDrawn
             << " near=" << result.wardNear
+            // #80. THE TWO THINGS THIS ROUND ADDED, ON THE FRAME'S OWN LINE.
+            // `roof` is beds-on-a-deck / bodies-standing-on-one-right-now, so a
+            // capture at midnight and a capture at noon can be told apart by
+            // reading it. `mice` is prey on the board out of prey on the roll,
+            // and `ate` is how many the ward's cats and strays have caught
+            // since the roster was baked -- which is the difference between a
+            // dock district with a food chain and one with vermin nobody eats.
+            << " roof=" << result.roofHomed << '/' << result.onRoofNow
+            << " mice=" << result.preyUp << '/' << result.prey
+            << " ate=" << result.catches
             << " figures=" << (session.actorSheet().fromAuthoredArt() ? "sheet" : "procedural")
             << " | world px=" << result.stats.worldPixels
             << " sky px=" << result.stats.skyPixels

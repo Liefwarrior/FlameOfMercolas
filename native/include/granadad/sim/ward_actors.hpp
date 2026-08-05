@@ -132,6 +132,45 @@ inline constexpr std::size_t kWardTypeCount = 16;
     return type < WardType::Dog;
 }
 
+/// WHETHER THIS KIND OF BODY WILL GO UP A WALL.
+///
+/// #80, and it is the one thing the population round said it did not have:
+/// "ward actors have no climb verb, so nobody is homed where they cannot walk;
+/// the Gullet's thieves keep ground-level condos." The faction is called the
+/// SKYRUNNERS. Their territory was empty.
+///
+/// NOT EVERYBODY, AND THE EXCLUSION IS CANON RATHER THAN CONVENIENCE.
+/// DOCKS-GAZETTEER section 2.5 rules that rooftops are unseemly for every
+/// Trojian except a presented Wielder -- which is exactly WHY the poor live on
+/// them and why burglars use the roof-slum deck as a highway. Section 2.6 keeps
+/// the roof-slums "outside the law" on the same rule. So the list is the ward's
+/// poor and the ward's beasts, and a watchman in a coat of plates does not go
+/// up the Gullet's wall after a cutpurse. That is not a gap; it is the reason
+/// the Gullet is the Gullet.
+///
+/// A shopkeeper, a priest, a sailor and the Watch all walk. They always did.
+[[nodiscard]] constexpr bool wardTypeClimbs(WardType type) noexcept {
+    return type == WardType::Wastrel || type == WardType::Urchin ||
+           type == WardType::Thief || type == WardType::Cat || type == WardType::Stray;
+}
+
+/// The ward's predators, and its one prey.
+///
+/// #80. The Java build's `feral` row is captioned "Harbor Gull" and this build
+/// wears it on the Stray, because the owner's own art for the `feral` query is
+/// a feral DOG (actor_feral_dog_0, tagged actor/beast/vermin) and the art is
+/// canon where a comment is not -- the note on WardType::Stray records that
+/// correction. There is no bird in content/art/sprites to hang a seventeenth
+/// type on, so the gull's BEHAVIOUR (the long leash of feral.json, radius 24,
+/// and the hunt) lands on the body the district actually draws.
+[[nodiscard]] constexpr bool isPredator(WardType type) noexcept {
+    return type == WardType::Cat || type == WardType::Stray;
+}
+
+[[nodiscard]] constexpr bool isPrey(WardType type) noexcept {
+    return type == WardType::Mouse;
+}
+
 // ---------------------------------------------------------------------------
 // what somebody needs
 // ---------------------------------------------------------------------------
@@ -312,7 +351,19 @@ enum class WardPolicy : std::uint8_t {
     ReturnHome = 3,
     Pursue = 4,
     Loiter = 5,
+    /// #80. THE BEAST FOOD CHANNEL, and it is appended rather than inserted
+    /// because the ordinal is hashed: putting it anywhere else would renumber
+    /// every policy the world hash has ever recorded.
+    ///
+    /// SEEK_FOOD is structurally unusable by a beast -- no larder, no coin, no
+    /// stall will serve a cat -- which is why isPerson() gates it. Before this
+    /// the ward's cats and strays therefore had no food channel at all beyond
+    /// the den nibble their wander leg pays, and the mice were a population
+    /// nothing ate. This is the Java build's BeastHuntPolicy, ported.
+    Hunt = 6,
 };
+
+inline constexpr std::size_t kWardPolicyCount = 7;
 
 [[nodiscard]] std::string_view wardPolicyName(WardPolicy policy) noexcept;
 
@@ -431,6 +482,37 @@ struct WardActor {
     std::int32_t rations = 0;
     std::int32_t coin = 0;
 
+    /// --- #80: the hunt lock ------------------------------------------------
+    ///
+    /// Four scalars, and every one of them is a bug the Java build paid for.
+
+    /// The prey this predator has committed to, or -1. A LOCK and not a
+    /// preference: a hunt is never abandoned mid-chase for a nearer mouse,
+    /// which is what stops two predators trading one prey back and forth.
+    std::int32_t huntTarget = -1;
+    /// Ticks spent under the current lock. THE BUDGET COUNTS TOTAL TICKS and
+    /// deliberately not only blocked ones -- the second futility class the Java
+    /// soak found was a gull ORBITING a mouse in an enclosed pocket, committing
+    /// a step every tick and never reaching contact, which a blocked-tick
+    /// counter reads as a healthy chase forever.
+    std::int32_t huntTicks = 0;
+    /// The tick a predator may acquire a NEW lock on. Without this the very
+    /// next sense cadence re-locks the same doomed prey ten ticks later and the
+    /// wander never gets a window wide enough to change the situation -- which
+    /// starves the beast through a policy that could never feed it.
+    std::int64_t huntBackoffUntil = 0;
+    /// For PREY: the tick this body stands up again, or -1 for a body that is
+    /// up. A caught mouse is not killed, it is taken off the board -- see
+    /// kPreyReviveSeconds for why the revive is a population abstraction and
+    /// not a resurrection.
+    std::int64_t downedUntil = -1;
+
+    /// TRUE WHEN THIS BODY'S BED IS NOT ON THE WARD'S WALKING ISLAND -- a roof
+    /// hut, reached by climbing and by nothing else. Baked once, never written
+    /// again, and it is how "somebody actually lives on the roofs" is a number
+    /// rather than a claim.
+    bool homeOnTheRoof = false;
+
     WardPolicy policy = WardPolicy::Loiter;
     bool dead = false;
 
@@ -446,6 +528,15 @@ struct WardActor {
     [[nodiscard]] std::int32_t need(Need which) const noexcept {
         return needs[static_cast<std::size_t>(which)];
     }
+    /// Whether this body is on the board at all: not starved, and not a mouse
+    /// currently in a predator's stomach.
+    ///
+    /// A DOWNED BODY HOLDS NO TILE, exactly like a corpse -- the same rule and
+    /// for the same reason. A caught mouse that kept its square would seal a
+    /// doorway or a den mouth for three hours of ward time with nothing on it
+    /// for anyone to see, which is the one way being eaten could go on hurting
+    /// a street after the mouse is gone.
+    [[nodiscard]] bool visible() const noexcept { return !dead && downedUntil < 0; }
     /// Home is a ROOM, not a bed, and the difference is load-bearing.
     ///
     /// A household is one to five people and one home cell, and only one body
@@ -536,6 +627,84 @@ inline constexpr std::int32_t kWorkReach = 2;
 inline constexpr std::int32_t kRouteRetryCooldownTicks = 300;
 
 // ---------------------------------------------------------------------------
+// #80: the food chain
+// ---------------------------------------------------------------------------
+//
+// Ported from the Java build's BeastHuntPolicy, whose javadoc is a list of the
+// bugs it exists to prevent. Every number below carries the one it closes.
+//
+// AND IT IS CHEAP ON PURPOSE. Six hundred and seventy-eight bodies already tick
+// every second; an all-pairs predator scan would be half a million comparisons
+// a tick. There are two reasons this is not that. The prey are a CONTIGUOUS ID
+// RANGE -- the mice are spawned last, after every person and every other beast,
+// and section 6 of the roster says so out loud -- so a probe walks thirty-two
+// ids and not six hundred and seventy-eight. And a probe only runs at all for a
+// predator that is hungry, unlocked, off backoff and standing on a sense
+// boundary. The measured worst case is thirteen predators times thirty-two mice
+// once every ten ticks: forty-two comparisons a tick, against the ward's own
+// six hundred and seventy-eight policy evaluations.
+
+/// Sense-probe cadence. A predator acquires only on ticks divisible by this.
+inline constexpr std::int32_t kSensePeriodTicks = 10;
+/// Same-band Chebyshev radius a predator can smell a mouse at.
+inline constexpr std::int32_t kSenseRadius = 24;
+/// Contact distance. ADJACENCY AND NOT THE CELL, because one-per-square means
+/// the predator can never stand where the prey is standing.
+inline constexpr std::int32_t kContactRadius = 1;
+/// A locked prey that got this far away is gone. A defensive bound on a stale
+/// lock, never the ordinary way a chase ends.
+inline constexpr std::int32_t kLoseRadius = 2 * kSenseRadius;
+/// Ticks under one lock before the chase is declared FUTILE and dropped. A real
+/// chase closes from the sense radius in about fifty; a chase that has run this
+/// long is one of the Java soak's two futility classes -- the chokepoint freeze
+/// (the route exists, its first hop is plugged by parked bodies, so the
+/// predator "chases" in place) or the untouchable-prey orbit (the prey sits in
+/// an enclosed pocket, steps keep committing, and contact never lands).
+inline constexpr std::int32_t kChaseBudgetTicks = 100;
+/// And no new lock for this long afterwards, so the wander gets a window wide
+/// enough to walk the beast somewhere else. Without it the next sense cadence
+/// re-locks the same doomed mouse ten ticks later, forever.
+inline constexpr std::int32_t kHuntBackoffTicks = 500;
+/// How long a caught mouse is off the board.
+///
+/// AN EIGHTH OF A DAY, which is the Java's 3,000 of a 24,000-tick day carried
+/// across to this engine's 86,400. The revive is a POPULATION abstraction and
+/// not a resurrection: the mouse that stands up in the den is a fresh mouse out
+/// of the den, which is why it stands up hungry-free and why the den, rather
+/// than the individual, is what the ecology is about.
+inline constexpr std::int64_t kPreyReviveSeconds = kSecondsPerDay / 8;
+/// THE MOST A SCAVENGED SCRAP WILL EVER PUT IN A PREDATOR, and this one
+/// constant is what makes the food chain load-bearing rather than decorative.
+///
+/// The wander leg pays a DEN NIBBLE on every arrival (actPursue) and a leg is
+/// three tiles, so a beast arrives every few seconds and the nibble is worth
+/// hundreds of points a tick against a decay of a quarter of one. Measured
+/// against this engine's clock rather than the Java's, that is a cat which is
+/// permanently full -- and a permanently full cat never hunts, so a hunt shipped
+/// beside it would be dead code that a soak could not tell from a working
+/// ecology. THE MICE WERE SAFE BECAUSE THE CATS WERE NEVER HUNGRY.
+///
+/// So a predator's scrap tops it up only to HERE, which is under kNeedLow. A
+/// predator that cannot reach prey therefore hovers permanently hungry and
+/// permanently looking, and never starves; a predator that catches something
+/// goes to full and is out of the hunt for the seven hours that takes to drain.
+/// The catch is the only thing that FEEDS a predator, and the scrap is the only
+/// thing that keeps one alive when there is nothing to catch.
+///
+/// PREY AND LIVESTOCK ARE UNCHANGED: a mouse lives on bin scraps and a goat on
+/// the pen, and both still fill right up. The bottom of a food chain is not
+/// supposed to be hungry.
+inline constexpr std::int32_t kScavengeCeiling = 2500;
+static_assert(kScavengeCeiling < kNeedLow,
+              "a scrap that lifted a predator out of the hunger band would switch the hunt off");
+
+/// Within this of a live lock a mouse knows about it and runs. Its SAFETY is
+/// driven to nothing, its own FLEE fires at 950 next tick, and it recovers over
+/// about a hundred and fifty ticks -- so a mouse runs while it is being chased
+/// and settles when it is not.
+inline constexpr std::int32_t kPreyPanicRadius = 6;
+
+// ---------------------------------------------------------------------------
 // the system
 // ---------------------------------------------------------------------------
 
@@ -547,7 +716,7 @@ struct WardCensus {
     std::int32_t alive = 0;
     std::int32_t starved = 0;
     std::int32_t byType[kWardTypeCount] = {};
-    std::int32_t byPolicy[6] = {};
+    std::int32_t byPolicy[kWardPolicyCount] = {};
     /// The labouring trades, and how many of them the ward failed to feed.
     /// THE BALANCE BAR IS WRITTEN AGAINST THESE TWO and not against the whole
     /// roll: the Java build's own bar was serf starvation at or below 5%, and a
@@ -561,6 +730,25 @@ struct WardCensus {
     std::int32_t atPost = 0;
     /// Bodies standing on their own home cell.
     std::int32_t atHome = 0;
+
+    /// #80. WHO LIVES ON THE ROOFS, and where they are standing right now.
+    ///
+    /// `roofHomed` counts beds that are not on the ward's walking island --
+    /// a hut you get to by climbing and by nothing else -- broken out by type,
+    /// because "the roof slum is populated" and "the Skyrunners live in their
+    /// own territory" are two different claims and the second one is the whole
+    /// point of the faction. `onRoofNow` is how many bodies are actually up
+    /// there at this instant, which is the number a night frame shows.
+    std::int32_t roofHomed = 0;
+    std::int32_t roofHomedByType[kWardTypeCount] = {};
+    std::int32_t onRoofNow = 0;
+
+    /// #80. The food chain, counted. `prey` is every mouse on the roll,
+    /// `preyUp` is how many of them are on the board right now, and the gap is
+    /// what has been eaten and has not yet come back out of the den. A prey
+    /// count that only ever equals the roll is not an ecology.
+    std::int32_t prey = 0;
+    std::int32_t preyUp = 0;
 };
 
 /// The food and coin ledger. EXACT, and it is a gate rather than a report.
@@ -647,6 +835,26 @@ public:
         return nightRoster_;
     }
 
+    /// #80. Catches since the roster was baked, and chases abandoned as futile.
+    ///
+    /// BOTH, and the second is the interesting one. A hunt that always succeeds
+    /// is a hunt with no geometry in it; a futile count that climbs without
+    /// bound is the chokepoint freeze the Java build spent a sprint finding.
+    /// Counted rather than asserted, so a case can watch the ratio.
+    [[nodiscard]] std::int64_t catches() const noexcept { return catches_; }
+    [[nodiscard]] std::int64_t futileChases() const noexcept { return futileChases_; }
+    /// Roof homes the bake REFUSED because the climb was one-way: up but never
+    /// back down. Zero is the expected answer and it is a number rather than an
+    /// assumption -- a body homed on a deck it cannot descend from is the exact
+    /// failure this pass was warned about.
+    [[nodiscard]] std::int32_t roofHomesRefused() const noexcept { return roofRefused_; }
+    /// The id range the mice occupy. Half-open, and CONTIGUOUS: section 6 of
+    /// the roster spawns them last, after every person and every other beast.
+    /// Exposed because "the predator scan is bounded by the prey count and not
+    /// by the roll" is a structural claim a case should be able to read.
+    [[nodiscard]] std::int32_t preyFirst() const noexcept { return preyFirst_; }
+    [[nodiscard]] std::int32_t preyEnd() const noexcept { return preyEnd_; }
+
     /// Shoves recorded since the roster was baked, and the worst pile-up seen:
     /// the most bodies ever standing within one tile of each other. Both are
     /// how "no guard pile-ups" stops being an opinion.
@@ -713,6 +921,23 @@ private:
     void actPursue(WardActor& actor, const TickContext& context);
     void actLoiter(WardActor& actor, const TickContext& context);
     void actFlee(WardActor& actor, const TickContext& context);
+    void actHunt(WardActor& actor);
+
+    /// The throttled prey probe: an ascending scan of the MICE ONLY -- see
+    /// preyFirst_ -- on the same band, up and not downed, nearest by Chebyshev
+    /// with the lower id breaking ties. Pure, draw-free, and identical between
+    /// the scoring call and the acting one, which is what stops the two
+    /// disagreeing about whether there was anything to hunt.
+    [[nodiscard]] std::int32_t senseNearestPrey(const WardActor& predator) const noexcept;
+    /// What a live or acquirable hunt is worth: the raws' own seekFood pricing,
+    /// so a starving beast outranks a scared one exactly the way a starving
+    /// person does, and no new raws field is invented for it.
+    [[nodiscard]] std::int32_t huntScore(const WardActor& predator) const noexcept;
+    void dropHuntLock(WardActor& predator) const noexcept;
+    /// Stands a caught mouse back up, in its own den, on the first free
+    /// standable cell of a fixed spiral. Answers false when the den is full,
+    /// and the caller then leaves it down a little longer rather than stacking.
+    bool revivePrey(WardActor& prey);
 
     /// One tile toward `target`, along a cached route. Answers whether the body
     /// moved.
@@ -743,6 +968,25 @@ private:
     void mapWalkComponents();
     [[nodiscard]] std::int16_t componentAt(std::int32_t x, std::int32_t y,
                                            std::int32_t band) const noexcept;
+    /// Whether a body that can climb could get to this cell at all: the walking
+    /// island, or anything the climb closure reaches off it.
+    [[nodiscard]] bool climbReaches(std::int32_t x, std::int32_t y,
+                                    std::int32_t band) const noexcept {
+        return componentAt(x, y, band) >= 0;
+    }
+    /// THE ROUND TRIP, AND IT IS THE GUARD THE WHOLE FEATURE RESTS ON.
+    ///
+    /// kClimbIsland says a cell can be reached from the ward's ground BY
+    /// CLIMBING. It does NOT say a body up there can get back down, and the
+    /// difference is a roof full of tenants who will stand on it until they
+    /// starve. So every roof bed is proved both ways with the real router in
+    /// the real gait before anybody is put in it, and a bed that fails is
+    /// refused and counted (roofHomesRefused).
+    [[nodiscard]] bool roofBedIsSound(std::int32_t x, std::int32_t y, std::int32_t band) const;
+    /// A climb route from a to b AND from b to a. Both, because the roof moves
+    /// are not symmetric: a wall you can mantle up is a wall you may only be
+    /// able to come down beside, and a drop is a move with no inverse at all.
+    [[nodiscard]] bool climbRoundTrip(const PathStep& a, const PathStep& b) const;
 
     SystemId id_;
     const TileQuery* tiles_;
@@ -799,6 +1043,17 @@ private:
     /// So the question is asked ONCE, at the bake, and a body is never homed or
     /// posted anywhere it cannot walk to. What the map cannot reach on foot,
     /// nobody in the ward lives on.
+    /// #80. AND A SECOND LABEL ON THE SAME MAP: kClimbIsland, for a cell the
+    /// ward can only reach by hauling itself up a wall. The roof decks and the
+    /// roof-slum planes are that, and they are two thirds of the district's
+    /// standable ground -- docks.hpp's kReachableWithRoofMoves against
+    /// kReachableFromSpawn is the arithmetic.
+    ///
+    /// It is painted by CONTINUING the walk flood rather than by running a
+    /// second one: the walking pass leaves its whole frontier in a vector, and
+    /// the climb pass re-walks it offering only the moves the walking rule
+    /// already refused. So the extra cost is four probes per already-known cell
+    /// plus the new ground, once per Session, and never a second full scan.
     std::vector<std::int16_t> walkComponent_;
     /// The component the district's own spawn is in: the one the ward lives on.
     std::int16_t mainComponent_ = -1;
@@ -808,9 +1063,20 @@ private:
     WardLedger ledger_;
     std::int64_t shoves_ = 0;
     std::int64_t watchShoves_ = 0;
+    std::int64_t catches_ = 0;
+    std::int64_t futileChases_ = 0;
     std::int32_t worstJam_ = 0;
     std::int32_t starved_ = 0;
+    std::int32_t roofRefused_ = 0;
+    /// The mice's contiguous id range, recorded at the bake. See preyFirst().
+    std::int32_t preyFirst_ = 0;
+    std::int32_t preyEnd_ = 0;
 };
+
+/// The two labels walkComponent_ carries. A cell is on the ward's own walking
+/// ground, or it is somewhere the ward can only climb to, or it is nowhere.
+inline constexpr std::int16_t kWalkIsland = 0;
+inline constexpr std::int16_t kClimbIsland = 1;
 
 /// The hour the ward's own acceptance is written against, and the places it
 /// names. Exposed so a test and a capture script agree on what "the Tarwalk at
