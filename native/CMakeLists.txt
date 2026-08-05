@@ -288,8 +288,14 @@ endif()
 # tests
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_TESTS)
-    add_executable(granadad-tests
-        tests/test_main.cpp
+    # THE SUITE'S SOURCES, IN ONE LIST, AND THE LIST IS LOAD-BEARING.
+    #
+    # ctest registers ONE ENTRY PER FILE in this list — see the registration
+    # block below for why, and cmake/CheckTestPartition.cmake for the check that
+    # stops a file dropping out of it. Adding a .cpp to the suite means adding it
+    # HERE and nowhere else: the executable and the ctest entries are both
+    # generated from this variable, so the two cannot drift.
+    set(GRANADAD_TEST_SOURCES
         tests/test_fixed.cpp
         tests/test_wrap.cpp
         tests/test_rng.cpp
@@ -367,6 +373,8 @@ if(GRANADAD_BUILD_TESTS)
         # fall and come back.
         tests/test_ward_hunt.cpp
     )
+
+    add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 
     # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
@@ -380,21 +388,65 @@ if(GRANADAD_BUILD_TESTS)
     granadad_apply_determinism(granadad-tests)
     granadad_static_runtime(granadad-tests)
 
-    # Per-CASE ctest entries, not one entry for the binary.
+    # ONE ctest ENTRY PER TEST FILE. Not per case, and not one for the binary.
     #
-    # This block is why M1's tests are visible to the docker build's test-count
-    # floor at all. granadad-tests was registered with a plain add_test(), so it
-    # counted as exactly ONE test no matter how many cases it held — adding
-    # thirty would have moved the floor by zero and a future collapse of the sim
-    # suite to a single case would have gone unnoticed.
+    # WHAT THIS REPLACED AND WHY. Until #81 this was doctest_discover_tests(),
+    # which registers every TEST_CASE as its own ctest entry — and ctest runs an
+    # entry by LAUNCHING THE BINARY AGAIN with --test-case=. Four hundred and
+    # sixty-three cases meant four hundred and sixty-three processes, each of
+    # which re-did from scratch every expensive thing the suite has: reading the
+    # baked world, parsing the raws, baking a six-hundred-body ward.
     #
-    # The CMAKE_CROSSCOMPILING guard is copied from content/CMakeLists.txt for
-    # the reason recorded there: discovery works by RUNNING the freshly linked
-    # binary, which is impossible for a Windows .exe on the Linux build host and
-    # fails the build rather than the test.
-    if(NOT CMAKE_CROSSCOMPILING AND EXISTS "${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
-        include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
-        doctest_discover_tests(granadad-tests)
+    # That is not a startup cost you can shrug at. It is the reason a
+    # file-static fixture DID NOT WORK: tests/test_ward_hunt.cpp measured it and
+    # wrote it down — five cases reading one ten-hour soak paid for that soak
+    # five times, 307 + 270 + 262 + 260 seconds, and the answer at the time was
+    # to fold five named claims into one case to stop paying for it. That is a
+    # test suite being deformed by its runner.
+    #
+    # A file is the unit because it is the unit a fixture can be shared inside.
+    # tests/support/ward_fixture.hpp loads the district ONCE per process and
+    # bakes a ward ONCE per hour; the cases in a file share both, and no case in
+    # one file can see anything another file did. Crash isolation is kept at file
+    # granularity: a segfault in test_render.cpp takes down that entry and
+    # nothing else.
+    #
+    # THE FLOOR MOVED WITH IT, and got stronger rather than weaker. It used to
+    # count ctest ENTRIES; it now counts DOCTEST CASES, read out of the binary
+    # itself with --list-test-cases (see docker/build.Dockerfile). An entry count
+    # can be inflated by registering entries; a case count cannot.
+    #
+    # AND THE PARTITION IS CHECKED. A per-file entry whose filter matches
+    # nothing is a file that silently stops running — doctest exits 0 having run
+    # no cases. granadad-test-partition-is-complete below adds up the per-file
+    # counts and requires them to equal the binary's own total, so a case can
+    # neither vanish nor be counted twice.
+    #
+    # The CMAKE_CROSSCOMPILING guard is kept for the reason recorded in
+    # content/CMakeLists.txt: nothing here can run a Windows .exe on the Linux
+    # build host. Cross builds register the single-binary entry, which is what
+    # scripts/verify-windows.ps1 runs natively anyway.
+    if(NOT CMAKE_CROSSCOMPILING)
+        foreach(granadad_test_src IN LISTS GRANADAD_TEST_SOURCES)
+            get_filename_component(granadad_test_file "${granadad_test_src}" NAME)
+            # --order-by=file, so the order cases run in is the order they are
+            # written in and is the same on every machine. A shared fixture and
+            # an unstated order together are how you get a flake nobody can
+            # reproduce, and this build cannot afford one.
+            add_test(NAME "suite: ${granadad_test_file}"
+                     COMMAND granadad-tests
+                             "--source-file=*${granadad_test_file}"
+                             --order-by=file)
+        endforeach()
+        # Pipe-separated, not semicolon-separated: a semicolon inside a -D value
+        # is a CMake list separator and would arrive as N arguments instead of
+        # one. The script splits on the pipe.
+        string(REPLACE ";" "|" GRANADAD_TEST_SOURCES_PIPED "${GRANADAD_TEST_SOURCES}")
+        add_test(NAME granadad-test-partition-is-complete
+                 COMMAND ${CMAKE_COMMAND}
+                         "-DGRANADAD_TEST_EXE=$<TARGET_FILE:granadad-tests>"
+                         "-DGRANADAD_TEST_SOURCES=${GRANADAD_TEST_SOURCES_PIPED}"
+                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckTestPartition.cmake")
     else()
         add_test(NAME granadad-tests COMMAND granadad-tests)
     endif()

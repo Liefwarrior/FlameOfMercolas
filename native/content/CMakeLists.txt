@@ -204,15 +204,24 @@ if(GRANADAD_BUILD_TESTS)
             "content/maps/baked/** into the build context.")
     endif()
 
-    add_executable(granadad-content-tests
-        tests/test_main.cpp
-        tests/fingerprint.cpp
+    # One list, because ctest registers an entry per FILE in it — see the
+    # registration block below, and the long version of the reasoning in
+    # native/CMakeLists.txt. fingerprint.cpp is not in it: it holds the
+    # cross-toolchain report writer and no TEST_CASEs, and an entry filtered to
+    # a file with no cases in it is an entry that passes having run nothing.
+    set(GRANADAD_CONTENT_TEST_SOURCES
         tests/test_crc32c.cpp
         tests/test_coords.cpp
         tests/test_chunk_codec.cpp
         tests/test_content_dir.cpp
         tests/test_trojsav.cpp
         tests/test_world_reader.cpp
+    )
+
+    add_executable(granadad-content-tests
+        tests/test_main.cpp
+        tests/fingerprint.cpp
+        ${GRANADAD_CONTENT_TEST_SOURCES}
     )
     # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
     # granadad-content's PUBLIC compile definitions.
@@ -224,24 +233,36 @@ if(GRANADAD_BUILD_TESTS)
         granadad_static_runtime(granadad-content-tests)
     endif()
 
-    # Per-test-case ctest entries when doctest ships its discovery module,
-    # otherwise one entry for the whole binary. Either way `ctest` runs them.
+    # One ctest entry per test FILE, not per case.
     #
-    # Discovery works by RUNNING the freshly linked binary with --list-test-cases
-    # at build time. That is impossible when cross-compiling — the Windows .exe
-    # will not execute on the Linux build host — and the attempt fails the build
-    # rather than the test. Cross builds therefore register the single-binary
-    # entry; the host build, which is the one that actually runs ctest, gets the
-    # per-case breakdown.
+    # This was doctest_discover_tests() until #81, for the reason recorded in
+    # native/CMakeLists.txt: ctest runs a per-case entry by launching the binary
+    # again, and fifty-seven relaunches of a suite whose test_world_reader.cpp
+    # opens all three baked worlds is fifty-seven decodes of the same bytes. The
+    # floor that block used to feed is now computed from --list-test-cases, so
+    # it counts CASES rather than ctest registrations and did not weaken.
     #
-    # Not a precaution taken on faith: with the CMAKE_CROSSCOMPILING clause
-    # removed, the docker build fails at
-    #   FAILED: bin/granadad-content-tests.exe ..._tests-<hash>.cmake
-    #   CMake Error at .../doctest-src/scripts/cmake/doctestAddTests.cmake:45
-    # because ninja links the .exe and immediately tries to execute it.
-    if(NOT CMAKE_CROSSCOMPILING AND EXISTS "${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
-        include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
-        doctest_discover_tests(granadad-content-tests)
+    # The CMAKE_CROSSCOMPILING guard stays for the original reason: nothing here
+    # can run a Windows .exe on the Linux build host. Cross builds get the
+    # single-binary entry, which is what scripts/verify-windows.ps1 runs anyway.
+    if(NOT CMAKE_CROSSCOMPILING)
+        foreach(granadad_content_test_src IN LISTS GRANADAD_CONTENT_TEST_SOURCES)
+            get_filename_component(granadad_content_test_file
+                                   "${granadad_content_test_src}" NAME)
+            add_test(NAME "content suite: ${granadad_content_test_file}"
+                     COMMAND granadad-content-tests
+                             "--source-file=*${granadad_content_test_file}"
+                             --order-by=file)
+        endforeach()
+        # And the same arithmetic guard the sim suite has: a filter that matches
+        # nothing runs nothing and exits 0.
+        string(REPLACE ";" "|" GRANADAD_CONTENT_TEST_SOURCES_PIPED
+               "${GRANADAD_CONTENT_TEST_SOURCES}")
+        add_test(NAME granadad-content-test-partition-is-complete
+                 COMMAND ${CMAKE_COMMAND}
+                         "-DGRANADAD_TEST_EXE=$<TARGET_FILE:granadad-content-tests>"
+                         "-DGRANADAD_TEST_SOURCES=${GRANADAD_CONTENT_TEST_SOURCES_PIPED}"
+                         -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/CheckTestPartition.cmake")
     else()
         add_test(NAME granadad-content-tests COMMAND granadad-content-tests)
     endif()
