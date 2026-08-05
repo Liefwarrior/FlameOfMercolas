@@ -279,8 +279,15 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
             ++atTileCentre;
         }
     }
-    // Legs, torso and head all sit on the body's own position.
-    CHECK(matching >= 3);
+    // The body's billboard sits on the body's own position.
+    //
+    // IT USED TO BE THREE, and the number moving is the whole of what #78 did
+    // to this file: an actor was legs, torso and head stacked, and it is now
+    // ONE drawn figure out of content/art/sprites. What this case is actually
+    // about -- that the renderer reads the Q8 the SIMULATION owns, and that a
+    // mutation replacing it with `tileX() + 0.5F` goes red -- is untouched, and
+    // that is why the assertion below is on the position and not on the count.
+    CHECK(matching >= 1);
     CHECK(atTileCentre == 0);
     // The sub-tile position really is inside its tile and not on its centre.
     CHECK(wantX >= static_cast<float>(walker->tileX()));
@@ -288,10 +295,62 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
     CHECK(wantY >= static_cast<float>(walker->tileY()));
     CHECK(wantY < static_cast<float>(walker->tileY()) + 1.0F);
 
-    // Every billboard a solid, never a glow -- an actor is not a light source.
+    // Every billboard a solid, never a glow -- an actor is not a light source
+    // -- and every one of them a drawn FIGURE rather than an ellipse.
     for (const SpriteInstance& sprite : sprites) {
         CHECK(sprite.glow == 0.0F);
         CHECK(sprite.person);
+        CHECK(sprite.art != nullptr);
+        CHECK(sprite.artSize == 16);
+        CHECK(sprite.artU1 >= sprite.artU0);
+        CHECK(sprite.artV1 >= sprite.artV0);
+    }
+}
+
+TEST_CASE("a person is a figure somebody drew, not an egg with a head on it") {
+    // #78, AND THE OWNER'S WORDS FOR IT. He captured a conversation frame and
+    // said the actor sprites were "plain egg shapes with a round head", which
+    // will not read as polished with hundreds of them on screen. This is the
+    // claim that replaced them: the taproom and the ward are drawn out of the
+    // SAME sheet, so a guard is a guard and a priest is a priest wherever they
+    // are standing, and the art is the owner's own rather than three ellipses
+    // in three browns.
+    Session session(insideTheGull(21, sim::gull::kBartenderX, sim::gull::kBarY - 1, 180));
+
+    // The pack really was found. Without this the case below would pass against
+    // the procedural fallback, which is the exact failure mode every raws
+    // loader in this build has a Dockerfile check for.
+    REQUIRE(session.actorSheet().fromAuthoredArt());
+    // Twenty-five actor figures are authored; a sheet that lost half of them
+    // would still load and would still draw people.
+    CHECK(session.actorSheet().spriteCount() >= 25);
+
+    // And the roles that have to be told apart at a glance are told apart by
+    // DIFFERENT art, not by a tint of the same shape.
+    const ActorSprite& guard = session.actorSheet().forType(sim::WardType::MilitiaWatch, 0);
+    const ActorSprite& priest = session.actorSheet().forType(sim::WardType::PriestOfTheFlame, 0);
+    const ActorSprite& urchin = session.actorSheet().forType(sim::WardType::Urchin, 0);
+    const auto differs = [](const ActorSprite& a, const ActorSprite& b) {
+        for (std::size_t i = 0; i < ActorSprite::kTexels; ++i) {
+            if (a.texels[i] != b.texels[i]) {
+                return true;
+            }
+        }
+        return false;
+    };
+    CHECK(differs(guard, priest));
+    CHECK(differs(guard, urchin));
+    CHECK(differs(priest, urchin));
+
+    // Every figure is measured to its own INK. A sprite drawn short inside its
+    // sixteen-row cell would otherwise stand its own padding off the pavement.
+    for (const sim::WardType type : {sim::WardType::Serf, sim::WardType::MilitiaWatch,
+                                     sim::WardType::PriestOfTheFlame, sim::WardType::Urchin,
+                                     sim::WardType::Mouse}) {
+        const ActorSprite& art = session.actorSheet().forType(type, 0);
+        CHECK(art.firstRow <= art.lastRow);
+        CHECK(art.lastRow < ActorSprite::kPx);
+        CHECK(art.firstCol <= art.lastCol);
     }
 }
 
@@ -316,26 +375,39 @@ TEST_CASE("the facing the simulation has been hashing since S2 is finally drawn"
     Camera behind = infront;
     behind.y = static_cast<float>(bartender->tileY()) + 4.0F;
 
-    const std::size_t seenFromFront = session.actorSprites(infront).size();
-    const std::size_t seenFromBack = session.actorSprites(behind).size();
-    // Same actors, same light, same everything -- only which way the eye is.
-    CHECK(seenFromFront != seenFromBack);
-    // And the difference is specifically the bartender's face: exactly one
-    // billboard sits at his position when the eye is in front of him and does
-    // not when it is behind him.
-    const auto facesAt = [&](const Camera& view) {
-        int count = 0;
+    // #78 CHANGED WHAT THE FACING BUYS, and the change is worth stating.
+    //
+    // S3 spent it on a pale patch stuck to the side of the head, and this case
+    // used to count billboards: one more when the eye was in front of him than
+    // behind. content/art/sprites is drawn FRONT-ON and has no back view, and
+    // inventing one would be this build authoring art. So the facing is spent
+    // on LIGHT instead -- somebody looking your way catches what light there is
+    // and somebody turned away is a silhouette -- which is true, and at eight
+    // tiles in lamplight it is the one thing about a person you need to read.
+    //
+    // The claim under test is unchanged: the eight-point facing the simulation
+    // has been hashing since S2 reaches the frame. Only what it does there has.
+    const auto litnessAt = [&](const Camera& view) {
+        float best = 0.0F;
         for (const SpriteInstance& sprite : session.actorSprites(view)) {
             const float dx = sprite.x - (static_cast<float>(bartender->x()) / 256.0F);
             const float dy = sprite.y - (static_cast<float>(bartender->y()) / 256.0F);
-            // The face is the one part pushed off the body's own axis.
-            if (std::abs(dx) + std::abs(dy) > 0.01F && std::abs(dx) + std::abs(dy) < 0.30F) {
-                ++count;
+            if (std::abs(dx) + std::abs(dy) > 0.01F) {
+                continue;  // somebody else
             }
+            best = std::max(best, sprite.colour.r + sprite.colour.g + sprite.colour.b);
         }
-        return count;
+        return best;
     };
-    CHECK(facesAt(infront) > facesAt(behind));
+    const float front = litnessAt(infront);
+    const float back = litnessAt(behind);
+    REQUIRE(front > 0.0F);
+    REQUIRE(back > 0.0F);
+    // Same actor, same lamps, same hour -- only which way the eye is.
+    CHECK(front > back);
+    // And the difference is the shade the code asks for and not a rounding
+    // error: a mutation that drops the facing term entirely makes these equal.
+    CHECK(back < front * 0.9F);
 }
 
 TEST_CASE("the world keeps its own time while the player stands still") {

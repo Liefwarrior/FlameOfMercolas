@@ -36,53 +36,97 @@ constexpr float kPi = 3.14159265358979323846F;
     return out;
 }
 
-/// What a role looks like in a frame at 320x180. Chunky and readable beats
-/// accurate: the whole visual target is silhouettes in lamplight, and a
-/// bartender you can tell from a bouncer at eight tiles is worth more than a
-/// face nobody can see.
-struct RoleLook {
-    /// Coat and hat.
-    Rgb torso;
-    /// Legs, and whatever the boots are.
-    Rgb legs;
-    Rgb head;
-    /// Scales the whole figure. A bouncer is a bigger shape at ten tiles.
-    float build;
+/// How tall a body of each kind stands, in tiles, and the width its drawing is
+/// scaled to at that height.
+///
+/// A PERSON IS 1.875 TILES SOLE TO CROWN, which is kStandingHeightTilesQ8 out
+/// of sim/vertical_scale.hpp -- the same header the player's own eye height
+/// comes from. At roughly 0.9 m to the tile that is a 1.71 m adult and the
+/// crown lands a hand above the player's 1.70-tile eye, so you look people in
+/// the mouth. That is correct, and it is the cheapest proof the two scales
+/// agree.
+///
+/// The WIDTH is not the drawing's own aspect. The sheet's figures are chunky
+/// -- twelve texels of shoulder in a sixteen-texel cell -- and taken literally
+/// that is a person a tile and a half across, standing in a collision square
+/// 0.7 of a tile wide. So the height is the truth and the width is scaled to
+/// put shoulders at about half a tile, which is a person shaped like a person.
+struct FigureScale {
+    float heightTiles;
+    float widthTiles;
 };
 
-[[nodiscard]] RoleLook lookOf(sim::ActorRole role) noexcept {
+[[nodiscard]] FigureScale figureScaleOf(sim::WardType type) noexcept {
+    switch (type) {
+        case sim::WardType::MilitiaWatch: return {1.95F, 0.86F};
+        case sim::WardType::Urchin: return {1.30F, 0.58F};
+        case sim::WardType::Thief: return {1.80F, 0.72F};
+        case sim::WardType::PriestOfTheFlame: return {1.90F, 0.84F};
+        case sim::WardType::DiscipleOfTheFlame: return {1.82F, 0.80F};
+        case sim::WardType::Dog: return {0.62F, 0.90F};
+        case sim::WardType::Stray: return {0.46F, 0.66F};
+        case sim::WardType::Cat: return {0.42F, 0.62F};
+        case sim::WardType::Mouse: return {0.22F, 0.34F};
+        default: return {1.875F, 0.80F};
+    }
+}
+
+/// How much darker somebody with their back to you is.
+///
+/// THE FACING IS FINALLY WORTH SOMETHING AGAIN. The sheet is drawn front-on --
+/// there is no back view, and inventing one would be this build authoring art
+/// -- so the eight-point facing the simulation has been hashing since S2 is
+/// spent on light instead: a figure looking your way catches what light there
+/// is on its face and a figure turned away is a silhouette. Which is both true
+/// and, at eight tiles in lamplight, the one thing about a person you actually
+/// need to read.
+constexpr float kBackShade = 0.55F;
+
+/// WHICH DRAWN FIGURE A TAVERN ROLE WEARS.
+///
+/// #78 REPLACED THE ELLIPSE STACK, and it is worth recording what it replaced
+/// and why. A tavern actor used to be three stacked ellipses -- legs, torso,
+/// head -- with a pale patch for a face. That was the right first step and its
+/// own header said so: a narrow stack of three reads as a person from across a
+/// room where one blob reads as an egg. What it could not do is survive being
+/// MULTIPLIED. The owner captured a conversation frame, looked at the figure
+/// standing in the Gilded Gull's doorway, and called it what it was: a plain
+/// egg shape with a round head, which will not read as polished with hundreds
+/// of them on a street.
+///
+/// content/art/sprites was already in the repo -- twenty-five 16x16 figures in
+/// the MERCOLAS-24 palette, front-on, with a helmet on the guard, white and red
+/// on the priest, a hood on the vagrant and a hat on the merchant. Those are
+/// silhouettes a player can tell apart at eight tiles in lamplight, which is
+/// the whole visual target, and somebody had already drawn them.
+///
+/// So the taproom's fourteen are drawn out of the same sheet the ward's six
+/// hundred are, and there is ONE look for a person in this game rather than two.
+[[nodiscard]] sim::WardType figureForRole(sim::ActorRole role, std::int32_t id) noexcept {
     switch (role) {
         case sim::ActorRole::Bartender:
-            // Apron pale over the trade's ochre: the brightest figure in the
-            // room, which is what you want the one behind the bar to be.
-            return {Rgb{0.80F, 0.74F, 0.56F}, Rgb{0.34F, 0.27F, 0.20F},
-                    Rgb{0.62F, 0.46F, 0.34F}, 1.00F};
         case sim::ActorRole::Innkeeper:
-            return {Rgb{0.66F, 0.50F, 0.28F}, Rgb{0.30F, 0.24F, 0.18F},
-                    Rgb{0.62F, 0.46F, 0.36F}, 1.02F};
+            return sim::WardType::Shopkeeper;
+        // A bouncer is hired for his shoulders, and the sheet's guard is the
+        // only figure on it built like that.
         case sim::ActorRole::Bouncer:
-            // Bigger, darker, and you can see it coming across a room.
-            return {Rgb{0.30F, 0.27F, 0.26F}, Rgb{0.20F, 0.18F, 0.17F},
-                    Rgb{0.56F, 0.40F, 0.30F}, 1.20F};
+            return sim::WardType::MilitiaWatch;
         case sim::ActorRole::PriestOfTheFlame:
-            // The white garb the ward distrusts (DOCKS-GAZETTEER §4), head to
-            // foot, which is exactly why it is not a welcome sight out here.
-            return {Rgb{0.90F, 0.88F, 0.82F}, Rgb{0.84F, 0.82F, 0.76F},
-                    Rgb{0.64F, 0.48F, 0.36F}, 0.98F};
+            return sim::WardType::PriestOfTheFlame;
+        // Grey on grey, keeping to the corner, hard to pick out. The sheet's
+        // ragged vagrant is exactly that and the Skyrunners dress like it.
         case sim::ActorRole::SkyrunnerContact:
-            // Grey on grey, keeping to the corner, hard to pick out. Deliberate.
-            return {Rgb{0.22F, 0.23F, 0.25F}, Rgb{0.17F, 0.18F, 0.20F},
-                    Rgb{0.40F, 0.33F, 0.29F}, 0.92F};
+            return sim::WardType::Thief;
         case sim::ActorRole::Vermin:
-            // Low, dark and small enough to be missed until it moves. A third
-            // of a person's height is what makes a rat read as a rat at ten
-            // tiles without a single new sprite.
-            return {Rgb{0.19F, 0.17F, 0.16F}, Rgb{0.15F, 0.13F, 0.13F},
-                    Rgb{0.24F, 0.20F, 0.19F}, 0.34F};
+            return sim::WardType::Mouse;
         case sim::ActorRole::Patron:
         default:
-            return {Rgb{0.46F, 0.36F, 0.26F}, Rgb{0.26F, 0.21F, 0.17F},
-                    Rgb{0.58F, 0.43F, 0.32F}, 1.00F};
+            // THE GULL IS THE CAPTAINS' TAVERN -- charts on the walls, factors
+            // doing deals, the good wine (DOCKS-GAZETTEER K03) -- and it is on
+            // a working quay. So the room is a mix and which half a patron is
+            // in is a pure function of his id, because a room where everybody
+            // wears the same coat is the defect this is fixing.
+            return (id & 1) == 0 ? sim::WardType::Shopkeeper : sim::WardType::Serf;
     }
 }
 
@@ -165,6 +209,15 @@ Session::Session(const SessionConfig& config)
     auto ward = std::make_unique<sim::Ward>(config_.worldSeed, config_.contentDir, *who_);
     ward_ = ward.get();
     engine_->register_system(std::move(ward));
+    // #78: AND THE PEOPLE. Registered AFTER the roll and the taproom, so
+    // registration order inside the Actors phase is a stated fact rather than
+    // an accident of which line was typed first, and so the bodies decide
+    // against a ward whose day has already turned.
+    auto people = std::make_unique<sim::WardPopulation>(*tiles_, timeOfDay_, config_.worldSeed,
+                                                        config_.contentDir);
+    people_ = people.get();
+    engine_->register_system(std::move(people));
+    actorSheet_ = ActorSheet::load(config_.contentDir);
     // The one wire between the two: a rival who rises far enough petitions the
     // Flame for a vacant charge, and the roll is where that becomes true.
     tavern_->attachRoll(ward_);
@@ -1144,6 +1197,15 @@ void Session::syncWardToCalendar() {
     if (ward_ != nullptr && tavern_ != nullptr) {
         ward_->advanceToDay(tavern_->dayNumber());
     }
+    // #78: AND THE PEOPLE FOLLOW IT TOO, for the identical reason. A skip that
+    // moved the taproom's clock and not the population's would photograph a
+    // district still keeping the hours of whenever the session booted -- the
+    // Watch on its day beat at two in the morning, and nobody in bed.
+    // skipToSecond is a no-op when the clocks already agree, which they do on
+    // every ordinary step, so this is safe to call as often as it likes.
+    if (people_ != nullptr && tavern_ != nullptr) {
+        people_->skipToSecond(timeOfDay_);
+    }
 }
 
 Camera Session::camera() const noexcept {
@@ -1241,140 +1303,91 @@ std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
         // Clamped near 1: a figure standing in a lamp pool should be LIT, not
         // blown out into a featureless disc, which is what an unclamped
         // multiply does at close range.
-        const Rgb light{std::min(1.15F, sky.ambient.r + std::max(baked.r, dynamic.r)),
-                        std::min(1.15F, sky.ambient.g + std::max(baked.g, dynamic.g)),
-                        std::min(1.15F, sky.ambient.b + std::max(baked.b, dynamic.b))};
+        Rgb light{std::min(1.15F, sky.ambient.r + std::max(baked.r, dynamic.r)),
+                  std::min(1.15F, sky.ambient.g + std::max(baked.g, dynamic.g)),
+                  std::min(1.15F, sky.ambient.b + std::max(baked.b, dynamic.b))};
 
-        const RoleLook look = lookOf(actor.role());
         // Sub-tile Q8 straight out of the simulation. See actor.hpp: the
         // position between two tiles is the sim's, not the renderer's.
         const float px = static_cast<float>(actor.x()) / 256.0F;
         const float py = static_cast<float>(actor.y()) / 256.0F;
         // Through bandSurface(), not straight off the band number. A band is
-        // three tiles of height now (sim/vertical_scale.hpp) and an actor whose
-        // feet were placed at `band` stood a full two storeys below the floor
-        // they were walking on.
+        // three tiles of height (sim/vertical_scale.hpp) and an actor whose
+        // feet were placed at `band` stood two storeys below the floor they
+        // were walking on.
         const float floorZ = bandSurface(actor.band());
         const bool down = actor.activity() == sim::Activity::Downed;
-        const float build = look.build;
 
-        // THREE stacked billboards -- legs, torso, head -- and not one blob.
-        // A single ellipse at this resolution reads as an egg on the floor; a
-        // narrow stack of three reads as a person from across a room, which is
-        // the whole of what a Barony-grade sprite has to do.
-        const auto part = [&](float height, float halfW, float halfH, const Rgb& tint) {
-            SpriteInstance sprite;
-            sprite.x = px;
-            sprite.y = py;
-            sprite.z = floorZ + height;
-            sprite.halfWidth = halfW;
-            sprite.halfHeight = halfH;
-            sprite.colour = Rgb{tint.r * light.r, tint.g * light.g, tint.b * light.b};
-            sprite.glow = 0.0F;
-            // Hard-edged: chunky and readable, per the visual target.
-            sprite.softness = 0.0F;
-            // `person` is what the frame stats count apart from flames, and a
-            // rat is not one. It is drawn, it is lit and it is in the frame --
-            // it is simply not somebody, which is the same distinction
-            // presentCount() makes in the room itself.
-            sprite.person = actor.role() != sim::ActorRole::Vermin;
-            sprites.push_back(sprite);
-        };
-
-        // THE FIGURE IS 1.875 TILES TALL, which is kStandingHeightTilesQ8 (480
-        // Q8) out of sim/vertical_scale.hpp, the same header the player's own
-        // eye height comes from. At roughly 0.9 m to the tile that is a 1.71 m
-        // adult, and the crown lands a hand above the player's 1.70-tile eye —
-        // so you look people in the mouth, which is correct and is the cheapest
-        // proof the two scales agree.
+        // WHICH WAY THEY ARE LOOKING, and the reason it is still here.
         //
-        // THEY DID NOT AGREE BEFORE. Every one of these heights used to be
-        // about half what it is now: legs at 0.20, head at 0.83, a figure 0.93
-        // of a tile from sole to crown. That was in scale with a district whose
-        // storeys were one tile high, and it is why nothing in a frame gave the
-        // eye anything to judge a building against. Tripling the storey without
-        // this block would have left the Docks full of knee-high people.
-        //
-        // The widths grew too, and by less: shoulders at 0.50 of a tile (0.45 m)
-        // inside a collision square 0.70 of a tile across, which is a person
-        // shaped like a person instead of the near-square blob the half-height
-        // version had to be to read at all.
-        if (down) {
-            // Flat out on the boards, and wide instead of tall.
-            part(0.20F, 0.68F * build, 0.22F * build, look.torso);
-            part(0.26F, 0.22F * build, 0.18F * build, look.head);
-            continue;
-        }
-        // THE THREE OVERLAP, and they have to. Each part is an ELLIPSE, so it
-        // tapers to a point at its own top and bottom; stack three of them so
-        // they merely touch and the figure pinches to nothing at the waist and
-        // again at the neck, which at this resolution reads as a snowman rather
-        // than as a body. The half-heights below deliberately run past each
-        // other by about 0.05 of a tile at each joint:
-        //
-        //     legs  0.000 - 0.980      torso 0.925 - 1.645
-        //     torso 0.925 - 1.645      head  1.610 - 1.890
-        //
-        // The old half-height figure got this right by accident, because its
-        // parts were small enough that 0.05 of overlap was a fifth of a limb.
-        // At full height the same 0.05 has to be asked for on purpose.
-        part(0.490F, 0.19F * build, 0.490F * build, look.legs);
-        part(1.285F, 0.25F * build, 0.360F * build, look.torso);
-        part(1.750F, 0.11F * build, 0.140F * build, look.head);
-
-        // THE FACE, and the reason it is here.
-        //
-        // Actor::faceToward() computes an eight-point facing and hashInto()
-        // commits it to world state on every tick -- and until now no renderer
-        // read it. A feature that exists only as data. The S2 review called
-        // that out and it is the cheapest single step from "snowman" toward
-        // the Barony bar: whether somebody is LOOKING AT YOU is the one thing
-        // about a person you need to be able to read across a dark room.
-        //
-        // So: a small pale patch on the head, offset a hair toward whichever
-        // way they are facing, drawn only when that way is roughly toward the
-        // eye. Turn your back on them and it is gone. Purely presentational --
-        // the facing itself belongs to the simulation and is never written here.
-        const float facingRad =
-            static_cast<float>(actor.facing()) * (2.0F * kPi / 65536.0F);
+        // Actor::faceToward computes an eight-point facing and hashInto commits
+        // it to world state on every tick. The S2 review found that no renderer
+        // read it -- a feature that existed only as data -- and S3 spent it on a
+        // pale patch stuck to the side of the head. The sheet is drawn front-on
+        // and has no back view, so it is spent on LIGHT instead: somebody
+        // looking your way catches what light there is and somebody turned away
+        // is a silhouette. Which is true, and at eight tiles in lamplight it is
+        // the one thing about a person you actually need to read.
+        const float facingRad = static_cast<float>(actor.facing()) * (2.0F * kPi / 65536.0F);
         // BAM 0 is north, which is -Y, and increases clockwise (sim/angle.hpp).
         const float faceX = std::sin(facingRad);
         const float faceY = -std::cos(facingRad);
         const float toEyeX = view.x - px;
         const float toEyeY = view.y - py;
         const float span = std::sqrt(toEyeX * toEyeX + toEyeY * toEyeY);
-        if (span < 0.0001F) {
-            continue;
+        if (span > 0.0001F) {
+            const float towards = (faceX * toEyeX + faceY * toEyeY) / span;
+            if (towards <= 0.15F) {
+                light = Rgb{light.r * kBackShade, light.g * kBackShade, light.b * kBackShade};
+            }
         }
-        // Cosine of the angle between where they look and where the eye is.
-        const float towards = (faceX * toEyeX + faceY * toEyeY) / span;
-        if (towards <= 0.15F) {
-            continue;  // turned away; you get the back of a head
+
+        const sim::WardType figure = figureForRole(actor.role(), actor.id());
+        const ActorSprite& art =
+            actorSheet_.forType(figure, static_cast<std::uint32_t>(actor.id()));
+        const FigureScale scale = figureScaleOf(figure);
+        const float inkRows = std::max(1.0F, static_cast<float>(art.lastRow - art.firstRow + 1));
+        const float inkCols = std::max(1.0F, static_cast<float>(art.lastCol - art.firstCol + 1));
+
+        SpriteInstance sprite;
+        sprite.x = px;
+        sprite.y = py;
+        // THE FIGURE IS 1.875 TILES TALL, which is kStandingHeightTilesQ8 (480
+        // Q8) out of sim/vertical_scale.hpp, the same header the player's own
+        // eye height comes from. At roughly 0.9 m to the tile that is a 1.71 m
+        // adult, and the crown lands a hand above the player's 1.70-tile eye --
+        // so you look people in the mouth, which is correct and is the cheapest
+        // proof the two scales agree.
+        sprite.halfHeight = scale.heightTiles * 0.5F;
+        sprite.halfWidth = scale.widthTiles * 0.5F * (inkCols / inkRows);
+        if (down) {
+            // Flat out on the boards: wide instead of tall, and low enough that
+            // somebody standing over them reads as standing over them.
+            sprite.halfHeight = 0.22F;
+            sprite.halfWidth = scale.heightTiles * 0.5F;
         }
-        SpriteInstance face;
-        // Pushed a fraction of a tile out of the head in the direction of gaze,
-        // so a figure at an angle reads as being at an angle.
-        face.x = px + faceX * 0.09F * build;
-        face.y = py + faceY * 0.09F * build;
-        // On the head, which is now centred at 1.750 with a half-height of
-        // 0.125 — so the face patch has to ride at the same height and stay
-        // inside it.
-        face.z = floorZ + 1.775F;
-        face.halfWidth = 0.070F * build;
-        face.halfHeight = 0.068F * build;
-        const float lift = 1.35F;
-        face.colour = Rgb{std::min(1.0F, look.head.r * light.r * lift),
-                          std::min(1.0F, look.head.g * light.g * lift),
-                          std::min(1.0F, look.head.b * light.b * lift)};
-        face.glow = 0.0F;
-        face.softness = 0.0F;
-        face.person = true;
-        sprites.push_back(face);
+        sprite.z = floorZ + sprite.halfHeight;
+        sprite.colour = light;
+        sprite.glow = 0.0F;
+        sprite.softness = 0.0F;
+        // `person` is what the frame stats count apart from flames, and a rat
+        // is not one. It is drawn, it is lit and it is in the frame -- it is
+        // simply not somebody, which is the same distinction presentCount()
+        // makes in the room itself.
+        sprite.person = actor.role() != sim::ActorRole::Vermin;
+        sprite.art = art.texels;
+        sprite.artSize = ActorSprite::kPx;
+        sprite.artU0 = art.firstCol;
+        sprite.artU1 = art.lastCol;
+        sprite.artV0 = art.firstRow;
+        sprite.artV1 = art.lastRow;
+        sprites.push_back(sprite);
     }
     return sprites;
 }
 
 namespace {
+
 
 [[nodiscard]] std::string upperAscii(std::string_view text) {
     std::string out;
@@ -1396,6 +1409,89 @@ namespace {
 }
 
 }  // namespace
+
+std::vector<SpriteInstance> Session::wardSprites() const {
+    return wardSprites(camera());
+}
+
+std::vector<SpriteInstance> Session::wardSprites(const Camera& view) const {
+    std::vector<SpriteInstance> sprites;
+    if (people_ == nullptr) {
+        return sprites;
+    }
+    const SkyState sky = skyAt(timeOfDay_);
+    // WHERE BETWEEN THE TWO TILES. The simulation says which tile a body left
+    // and which one it is on; this says how far along it is THIS FRAME, and it
+    // is the only place that opinion exists. Nothing here is written back --
+    // which is the 2026-07-31 ruling read exactly as written: NPCs are
+    // tile-stepped in the sim and interpolated at draw time.
+    const float slide =
+        static_cast<float>(stepsThisSecond_) / static_cast<float>(sim::kStepsPerSecond);
+    sprites.reserve(people_->actors().size());
+    for (const sim::WardActor& actor : people_->actors()) {
+        if (actor.dead) {
+            continue;
+        }
+        // Shaded by the light where they STAND. Without this a figure in an
+        // unlit alley glows like a lamp, which is the one thing the
+        // committed-dark look cannot survive.
+        const Rgb baked = renderer_->glow().at(actor.x, actor.y, actor.band);
+        Rgb light{std::min(1.15F, sky.ambient.r + baked.r),
+                  std::min(1.15F, sky.ambient.g + baked.g),
+                  std::min(1.15F, sky.ambient.b + baked.b)};
+
+        const float px = static_cast<float>(actor.prevX) +
+                         static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
+        const float py = static_cast<float>(actor.prevY) +
+                         static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        const float floorZ = bandSurface(actor.band);
+
+        // Which way they are looking, against where the eye is. The same
+        // arithmetic the tavern's face patch uses: BAM 0 is north, which is -Y,
+        // and it increases clockwise.
+        const float facingRad = static_cast<float>(actor.facing) * (2.0F * kPi / 65536.0F);
+        const float faceX = std::sin(facingRad);
+        const float faceY = -std::cos(facingRad);
+        const float toEyeX = view.x - px;
+        const float toEyeY = view.y - py;
+        const float span = std::sqrt(toEyeX * toEyeX + toEyeY * toEyeY);
+        if (span > 0.0001F) {
+            const float towards = (faceX * toEyeX + faceY * toEyeY) / span;
+            if (towards <= 0.15F) {
+                light = Rgb{light.r * kBackShade, light.g * kBackShade, light.b * kBackShade};
+            }
+        }
+
+        const ActorSprite& art =
+            actorSheet_.forType(actor.type, static_cast<std::uint32_t>(actor.id));
+        const FigureScale scale = figureScaleOf(actor.type);
+        const float inkRows = std::max(1.0F, static_cast<float>(art.lastRow - art.firstRow + 1));
+        const float inkCols = std::max(1.0F, static_cast<float>(art.lastCol - art.firstCol + 1));
+
+        SpriteInstance sprite;
+        sprite.x = px;
+        sprite.y = py;
+        // Sized to the INK and stood on the pavement: the quad's bottom edge is
+        // the floor, so a figure drawn short inside its own cell does not hover
+        // two texels above the street.
+        sprite.halfHeight = scale.heightTiles * 0.5F;
+        sprite.halfWidth = scale.widthTiles * 0.5F * (inkCols / inkRows);
+        sprite.z = floorZ + sprite.halfHeight;
+        sprite.colour = light;
+        sprite.glow = 0.0F;
+        sprite.softness = 0.0F;
+        sprite.person = sim::isPerson(actor.type);
+        sprite.ward = true;
+        sprite.art = art.texels;
+        sprite.artSize = ActorSprite::kPx;
+        sprite.artU0 = art.firstCol;
+        sprite.artU1 = art.lastCol;
+        sprite.artV0 = art.firstRow;
+        sprite.artV1 = art.lastRow;
+        sprites.push_back(sprite);
+    }
+    return sprites;
+}
 
 std::string Session::guildLine() const {
     // NOTHING WHILE THE WIRE IS IN. The lock row is drawn at
@@ -1649,6 +1745,13 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     const Camera view = camera();
     const std::vector<SpriteInstance> people = actorSprites(view);
     sprites.insert(sprites.end(), people.begin(), people.end());
+    // #78: AND THE REST OF THE DISTRICT. One roster, two sources: the Gilded
+    // Gull's seventeen come out of the Tavern and everybody else out of the
+    // population. They are appended and never merged, because the two systems
+    // own their own bodies and a renderer that stitched them into one list
+    // would be the third place that thinks it knows who is in the ward.
+    const std::vector<SpriteInstance> ward = wardSprites(view);
+    sprites.insert(sprites.end(), ward.begin(), ward.end());
 
     const FrameStats stats = renderer_->renderFrame(target, view, settings, sprites);
 
@@ -3259,6 +3362,29 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     result.endTileY = session.body().tileY();
     result.endBand = session.body().band();
     result.actorsInFrame = session.tavern().presentCount();
+    {
+        // How much of the ward this frame is actually looking at. `seen` comes
+        // out of the renderer itself -- a body counted only when it put a pixel
+        // on screen -- because a figure standing behind a warehouse is
+        // submitted, sorted, projected and drawn nowhere, and counting those
+        // would make "the street is busy" a claim about the roster rather than
+        // about the frame. `near` is a plain radius and says how many were
+        // within twelve tiles whether or not the camera was pointed at them.
+        const sim::WardCensus roll = session.people().census();
+        result.wardRoll = roll.alive;
+        result.wardDrawn = static_cast<std::int32_t>(result.stats.wardActorsDrawn);
+        const Camera view = session.camera();
+        for (const sim::WardActor& actor : session.people().actors()) {
+            if (actor.dead) {
+                continue;
+            }
+            const float dx = static_cast<float>(actor.x) + 0.5F - view.x;
+            const float dy = static_cast<float>(actor.y) + 0.5F - view.y;
+            if (dx * dx + dy * dy <= 144.0F) {
+                ++result.wardNear;
+            }
+        }
+    }
     result.craftLevel = session.tavern().dialogue().skills().level(sim::kThieverySkill);
     result.pinsSet = session.picking() ? session.lockpicking().pinsSet() : 0;
 
@@ -3271,6 +3397,18 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << ' ' << session.placeLabel() << " | lamps=" << result.lampCount
             << " actors=" << result.actorsInFrame
             << " art=" << (session.atlas().fromAuthoredArt() ? "custom" : "procedural")
+            // #78: THE WARD'S OWN ROLL, PRINTED BESIDE THE TAPROOM'S. `ward` is
+            // how many bodies the district holds, `seen` is how many of them
+            // this frame actually drew a pixel of, and `near` is how many stand
+            // within twelve tiles of the camera. The three differing is the
+            // normal case and is exactly what the owner ruled OUT as a gate: a
+            // cellar or a back lane at four in the morning is legitimately
+            // empty, so this is EVIDENCE for a person to read and never a
+            // threshold a build fails on.
+            << " ward=" << result.wardRoll
+            << " seen=" << result.wardDrawn
+            << " near=" << result.wardNear
+            << " figures=" << (session.actorSheet().fromAuthoredArt() ? "sheet" : "procedural")
             << " | world px=" << result.stats.worldPixels
             << " sky px=" << result.stats.skyPixels
             << " sprite px=" << result.stats.spritePixels

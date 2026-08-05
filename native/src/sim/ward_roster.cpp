@@ -152,6 +152,24 @@ constexpr Anchor kCarterRoute[] = {
     {132, 64, 19},  // dock load, east
 };
 
+// --- the commons ------------------------------------------------------------
+//
+// WHERE SOMEBODY WITH NO WORK TODAY STANDS. This is the difference between a
+// district that has poor people in it and a district whose poor people are all
+// indoors: a wastrel's anchor is not its bed, it is the kerb.
+//
+// Every one of these is an authored street cell -- patrol waypoints, market
+// stalls, the Mission's own kerb, the quay muster, the well on Gallows Row --
+// so a loiterer is loitering somewhere the map says is a street.
+constexpr Anchor kCommons[] = {
+    {52, 65, 19},   {77, 65, 19},   {102, 65, 19}, {128, 65, 19},  {154, 65, 19},
+    {77, 62, 19},   {107, 66, 19},  {42, 97, 19},  {67, 97, 19},   {87, 97, 19},
+    {110, 97, 19},  {132, 97, 19},  {154, 97, 19}, {177, 97, 19},  {121, 82, 19},
+    {136, 82, 19},  {151, 82, 19},  {113, 105, 19}, {107, 77, 19}, {107, 104, 19},
+    {107, 122, 19}, {133, 154, 21}, {105, 151, 21}, {51, 103, 19}, {209, 112, 19},
+    {169, 112, 19}, {75, 139, 20},  {143, 136, 20},
+};
+
 // --- the bins ---------------------------------------------------------------
 //
 // Sixteen authored garbage bins across the three bands. They are the urchins'
@@ -200,36 +218,36 @@ struct Dwelling {
 
 constexpr Dwelling kDwellings[] = {
     // C1 -- the west compound, mid-slope and upper.
-    {{51, 138, 20}, 9, WardType::Shopkeeper},
-    {{69, 132, 20}, 3, WardType::Serf},   {{81, 132, 20}, 3, WardType::Serf},
-    {{93, 132, 20}, 3, WardType::Serf},   {{69, 144, 20}, 3, WardType::Serf},
-    {{81, 144, 20}, 3, WardType::Serf},   {{93, 144, 20}, 3, WardType::Serf},
-    {{69, 132, 21}, 3, WardType::Serf},   {{81, 132, 21}, 3, WardType::Serf},
-    {{93, 132, 21}, 3, WardType::Serf},   {{69, 144, 21}, 3, WardType::Serf},
-    {{81, 144, 21}, 3, WardType::Serf},   {{93, 144, 21}, 3, WardType::Wastrel},
+    {{51, 138, 20}, 11, WardType::Shopkeeper},
+    {{69, 132, 20}, 4, WardType::Serf},   {{81, 132, 20}, 4, WardType::Serf},
+    {{93, 132, 20}, 4, WardType::Serf},   {{69, 144, 20}, 4, WardType::Serf},
+    {{81, 144, 20}, 4, WardType::Serf},   {{93, 144, 20}, 4, WardType::Serf},
+    {{69, 132, 21}, 4, WardType::Serf},   {{81, 132, 21}, 4, WardType::Serf},
+    {{93, 132, 21}, 4, WardType::Serf},   {{69, 144, 21}, 4, WardType::Serf},
+    {{81, 144, 21}, 4, WardType::Serf},   {{93, 144, 21}, 4, WardType::Wastrel},
     // C2 -- the east compound, quayside, with a roof slum on top of it.
-    {{153, 111, 19}, 9, WardType::Shopkeeper},
-    {{163, 102, 19}, 3, WardType::Serf},  {{179, 102, 19}, 3, WardType::Serf},
-    {{169, 121, 19}, 3, WardType::Serf},  {{189, 102, 19}, 3, WardType::Serf},
-    {{189, 112, 19}, 3, WardType::Serf},  {{189, 121, 19}, 3, WardType::Serf},
-    {{189, 102, 20}, 3, WardType::Serf},  {{189, 112, 20}, 3, WardType::Wastrel},
-    {{189, 121, 20}, 3, WardType::Wastrel},
+    {{153, 111, 19}, 11, WardType::Shopkeeper},
+    {{163, 102, 19}, 4, WardType::Serf},  {{179, 102, 19}, 4, WardType::Serf},
+    {{169, 121, 19}, 4, WardType::Serf},  {{189, 102, 19}, 4, WardType::Serf},
+    {{189, 112, 19}, 4, WardType::Serf},  {{189, 121, 19}, 4, WardType::Serf},
+    {{189, 102, 20}, 4, WardType::Serf},  {{189, 112, 20}, 4, WardType::Wastrel},
+    {{189, 121, 20}, 4, WardType::Wastrel},
     {{187, 102, 21}, 2, WardType::Urchin}, {{190, 111, 21}, 2, WardType::Thief},
     {{187, 120, 21}, 2, WardType::Urchin},
     // C3 -- the south compound.
-    {{121, 140, 20}, 9, WardType::Shopkeeper},
-    {{159, 136, 20}, 3, WardType::Serf},  {{167, 136, 20}, 3, WardType::Serf},
-    {{133, 143, 20}, 3, WardType::Serf},  {{144, 143, 20}, 3, WardType::Serf},
-    {{155, 143, 20}, 3, WardType::Serf},  {{166, 143, 20}, 3, WardType::Serf},
-    {{133, 143, 21}, 3, WardType::Wastrel}, {{144, 143, 21}, 3, WardType::Serf},
-    {{155, 143, 21}, 3, WardType::Wastrel}, {{166, 143, 21}, 3, WardType::Serf},
+    {{121, 140, 20}, 11, WardType::Shopkeeper},
+    {{159, 136, 20}, 4, WardType::Serf},  {{167, 136, 20}, 4, WardType::Serf},
+    {{133, 143, 20}, 4, WardType::Serf},  {{144, 143, 20}, 4, WardType::Serf},
+    {{155, 143, 20}, 4, WardType::Serf},  {{166, 143, 20}, 4, WardType::Serf},
+    {{133, 143, 21}, 4, WardType::Wastrel}, {{144, 143, 21}, 4, WardType::Serf},
+    {{155, 143, 21}, 4, WardType::Wastrel}, {{166, 143, 21}, 4, WardType::Serf},
     {{134, 144, 22}, 2, WardType::Urchin}, {{160, 143, 22}, 2, WardType::Thief},
     // C4 -- the Gullet. The poorest ground in the district, and the one the
     // Watch does not go into.
-    {{200, 104, 19}, 3, WardType::Wastrel}, {{200, 118, 19}, 3, WardType::Wastrel},
-    {{205, 102, 19}, 3, WardType::Wastrel}, {{217, 102, 19}, 3, WardType::Serf},
-    {{219, 116, 19}, 3, WardType::Wastrel}, {{219, 116, 20}, 3, WardType::Wastrel},
-    {{209, 121, 19}, 3, WardType::Urchin},
+    {{200, 104, 19}, 4, WardType::Wastrel}, {{200, 118, 19}, 4, WardType::Wastrel},
+    {{205, 102, 19}, 4, WardType::Wastrel}, {{217, 102, 19}, 4, WardType::Serf},
+    {{219, 116, 19}, 4, WardType::Wastrel}, {{219, 116, 20}, 4, WardType::Wastrel},
+    {{209, 121, 19}, 4, WardType::Urchin},
     {{217, 111, 21}, 2, WardType::Thief},  {{220, 115, 21}, 2, WardType::Urchin},
     {{217, 120, 21}, 2, WardType::Wastrel}, {{221, 124, 21}, 2, WardType::Urchin},
     {{221, 120, 21}, 1, WardType::Thief},  // the Skyrunner's Roost, unmarked
@@ -278,7 +296,7 @@ constexpr Anchor kCatAnchors[] = {
     {150, 65, 19}, {98, 97, 19}, {86, 76, 19}, {123, 97, 19},
     {121, 64, 19}, {69, 101, 19}, {134, 130, 20}, {107, 152, 21},
 };
-constexpr Anchor kGullAnchors[] = {
+constexpr Anchor kStrayAnchors[] = {
     {77, 62, 19}, {107, 44, 19}, {132, 62, 19}, {200, 65, 19}, {57, 62, 19},
 };
 constexpr Anchor kGoatPen{184, 143, 20};
@@ -603,6 +621,30 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
     for (int i = 0; i < 4; ++i) {
         claim(WardType::Carter, WardJob::Rounds, kCarterRoute[0], cartRound);
     }
+    // The commons, handed out round-robin in id order to everybody the
+    // establishments did not want. A wastrel's post is a kerb, and a wastrel
+    // whose post was its own bed would spend its whole life indoors -- which is
+    // precisely the district the owner complained about.
+    {
+        std::size_t next = 0;
+        for (std::size_t i = 0; i < actors_.size(); ++i) {
+            if (actors_[i].job != WardJob::Streetlife) {
+                continue;
+            }
+            const Anchor& spot = kCommons[next % std::size(kCommons)];
+            ++next;
+            std::int32_t cx = spot.x;
+            std::int32_t cy = spot.y;
+            std::int32_t cb = spot.band;
+            if (!snapToStandable(cx, cy, cb, 5)) {
+                continue;
+            }
+            actors_[i].anchorX = cx;
+            actors_[i].anchorY = cy;
+            actors_[i].anchorBand = cb;
+        }
+    }
+
     for (std::size_t i = 0; i < actors_.size(); ++i) {
         if (actors_[i].type == WardType::Urchin && routeOf_[i] < 0) {
             routeOf_[i] = binRound;
@@ -627,8 +669,8 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
     for (const Anchor& at : kCatAnchors) {
         spawn(WardType::Cat, WardJob::Wander, at, -1, -1);
     }
-    for (const Anchor& at : kGullAnchors) {
-        spawn(WardType::Gull, WardJob::Wander, at, -1, -1);
+    for (const Anchor& at : kStrayAnchors) {
+        spawn(WardType::Stray, WardJob::Wander, at, -1, -1);
     }
     for (const Anchor& at : kKennelDogs) {
         spawn(WardType::Dog, WardJob::Wander, at, -1, -1);

@@ -91,6 +91,12 @@ COPY content/maps/baked /src/content/maps/baked
 # that never ships.
 COPY content/art/custom /src/content/art/custom
 
+# The actor sprites, 30 KB, for the same reason (#78). The ward's six hundred
+# people are drawn out of the owner's own sheet, and ActorSheet::load is
+# deliberately silent about a missing pack -- so without this in the context
+# every case about how they look would pass against the procedural fallback.
+COPY content/art/sprites /src/content/art/sprites
+
 # The spell raws, 11 KB. S2's priest of the Flame teaches out of the owner's
 # actual spells.json rather than out of a table in a .cpp — see .dockerignore.
 COPY content/raws/spells /src/content/raws/spells
@@ -200,6 +206,20 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  echo "       build context. .dockerignore must re-admit"; \
                  echo "       content/art/custom/** or the renderer is only ever"; \
                  echo "       tested against its procedural fallback."; \
+                 exit 1; }; \
+    done; \
+    \
+    echo "=== the actor sprites must be in the context (#78) ==="; \
+    # 30 KB, and the same trap as the tile pack: ActorSheet::load falls back to
+    # procedural silhouettes so a content edit cannot stop the game booting,
+    # which means a build without these files renders a ward of grey lozenges
+    # and every case about how the district LOOKS passes against the fallback.
+    for asset in sprite-index.json sprites.png; do \
+        test -f "/src/content/art/sprites/$asset" \
+            || { echo "FATAL: /src/content/art/sprites/$asset is missing from the"; \
+                 echo "       build context. .dockerignore must re-admit"; \
+                 echo "       content/art/sprites/** or the ward's six hundred"; \
+                 echo "       people are only ever drawn with the fallback."; \
                  exit 1; }; \
     done; \
     \

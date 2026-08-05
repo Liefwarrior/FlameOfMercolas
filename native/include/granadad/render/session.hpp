@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "granadad/content/world.hpp"
+#include "granadad/render/actor_sheet.hpp"
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
@@ -40,6 +41,7 @@
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
+#include "granadad/sim/ward_actors.hpp"
 
 namespace granadad::render {
 
@@ -125,6 +127,17 @@ public:
     /// taking the Gullet's vacant charge.
     [[nodiscard]] sim::Ward& ward() noexcept { return *ward_; }
     [[nodiscard]] const sim::Ward& ward() const noexcept { return *ward_; }
+
+    /// THE DISTRICT'S OWN PEOPLE. #78: the owner played the build and said
+    /// "there were no people, even at night there should be people like guards
+    /// urchins thieves taverns etc", and he was right -- the whole roll of
+    /// bodies in the game was the Gilded Gull's seventeen. This is the ward's
+    /// population, registered on the same engine, and it EXTENDS the taproom
+    /// rather than competing with it: nobody here is spawned inside the Gull.
+    [[nodiscard]] sim::WardPopulation& people() noexcept { return *people_; }
+    [[nodiscard]] const sim::WardPopulation& people() const noexcept { return *people_; }
+    /// The art the ward is drawn with.
+    [[nodiscard]] const ActorSheet& actorSheet() const noexcept { return actorSheet_; }
 
     /// Advances the body by one movement step, and the world with it.
     void step(const sim::MoveInput& input);
@@ -399,6 +412,14 @@ public:
     /// The same, through the body's own eye.
     [[nodiscard]] std::vector<SpriteInstance> actorSprites() const;
 
+    /// THE WARD'S OWN PEOPLE, as billboards. One drawn figure each, out of the
+    /// owner's own sprite sheet, tile-stepped in the simulation and
+    /// interpolated HERE -- the sim owns which two tiles a body is between and
+    /// the renderer owns where between them it is drawn this frame, which is
+    /// the 2026-07-31 ruling read exactly as written.
+    [[nodiscard]] std::vector<SpriteInstance> wardSprites(const Camera& view) const;
+    [[nodiscard]] std::vector<SpriteInstance> wardSprites() const;
+
 private:
     void syncTavernToBody();
     /// Puts the casebook and the key list down. Every verb that acts on the
@@ -426,6 +447,10 @@ private:
     sim::Tavern* tavern_ = nullptr;
     /// The compound roll, also owned by the engine and borrowed here.
     sim::Ward* ward_ = nullptr;
+    /// The district's population, also owned by the engine and borrowed here.
+    sim::WardPopulation* people_ = nullptr;
+    /// The figures the ward is drawn with, read once at boot.
+    ActorSheet actorSheet_;
     /// The notables registry the roll is refused against. Held because Ward
     /// takes it by reference and the reference has to outlive the constructor.
     std::unique_ptr<sim::NotableRegistry> who_;
@@ -576,6 +601,13 @@ struct SmokeRunResult {
     std::int32_t endBand = 0;
     /// Who was in the room when the shutter went.
     std::int32_t actorsInFrame = 0;
+    /// #78. The ward's own roll, how many of it this frame could see, and how
+    /// many stood within twelve tiles of the camera. EVIDENCE, not a gate: the
+    /// owner ruled out "a frame must contain actors" outright, because a cellar
+    /// or a back lane at four in the morning is legitimately empty.
+    std::int32_t wardRoll = 0;
+    std::int32_t wardDrawn = 0;
+    std::int32_t wardNear = 0;
     /// True when a conversation was open at the moment of capture.
     bool talking = false;
     /// How many stages of the Priest of the Flame line the scripted

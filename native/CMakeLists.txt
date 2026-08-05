@@ -246,6 +246,11 @@ add_library(granadad-render STATIC
     src/render/session.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp
+    # #78 -- the people, as pixels the owner drew. content/art/sprites is
+    # twenty-five 16x16 actor figures in the MERCOLAS-24 palette with a tag
+    # vocabulary already authored against the Java actor types; this reads the
+    # ART and none of the Java code that indexed it.
+    src/render/actor_sheet.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.

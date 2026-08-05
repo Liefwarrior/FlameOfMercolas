@@ -113,6 +113,35 @@ struct SpriteInstance {
     /// flag is what lets a frame say how much of it is people, separately from
     /// how much of it is candles.
     bool person = false;
+
+    // --- #78: a figure somebody drew, instead of an ellipse ------------------
+    //
+    // A 16x16 RGBA cutout, or null for the ellipse path. Both paths stay,
+    // deliberately: the lamps are ellipses and always will be, the tavern's
+    // fourteen are ellipses until somebody moves them, and a renderer that
+    // could only draw textured quads would have to fake a flame with one.
+    //
+    // Alpha is a CUTOUT and not a blend. A texel is either the figure or it is
+    // whatever is behind it, which is what keeps a body hard-edged at 320x180
+    // instead of fringed -- the same argument `softness = 0` makes for the
+    // ellipse, one level further down.
+    /// True for a body belonging to the WARD's population rather than to the
+    /// taproom. Both are people and both count toward actorPixels; this is what
+    /// lets a capture report how much of the district's own roll a frame is
+    /// looking at, separately from how many of the Gull's fourteen are in it.
+    bool ward = false;
+
+    const std::uint32_t* art = nullptr;
+    /// Side of the art cell in texels. 16, always, but stated so the sampler
+    /// does not carry the constant.
+    int artSize = 0;
+    /// The sub-rectangle of the cell that actually carries ink, inclusive. A
+    /// figure drawn fourteen rows tall inside a sixteen-row cell floats two
+    /// rows above the pavement if the quad is sized to the cell.
+    int artU0 = 0;
+    int artU1 = 0;
+    int artV0 = 0;
+    int artV1 = 0;
 };
 
 struct RenderSettings {
@@ -142,6 +171,13 @@ struct FrameStats {
     /// The subset of spritePixels contributed by billboards flagged `person`.
     /// See SpriteInstance::person for the defect this exists to catch.
     std::size_t actorPixels = 0;
+    /// #78: how many of the WARD's own bodies actually put a pixel on screen.
+    /// A count of billboards, so it is a count of PEOPLE -- each ward actor is
+    /// exactly one -- and it is what a capture reports as evidence. It is
+    /// evidence and never a gate: the owner ruled out "a frame must contain
+    /// actors" outright, because a cellar or a back lane at four in the morning
+    /// is legitimately empty and a build that failed on that would be lying.
+    std::size_t wardActorsDrawn = 0;
     /// Mean luminance of the whole frame, 0..1.
     float meanLuma = 0.0F;
     /// Distinct packed colours, capped — a solid fill scores 1.

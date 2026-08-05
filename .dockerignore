@@ -47,6 +47,18 @@
 # sets, 1.2 GB of it -- stays out and is read at runtime from the repo.
 !content/art/custom/**
 
+# --- re-admitted: the actor sprites the ward is drawn with (#78) ---
+# 30 KB of it: sprite-index.json (14 KB) and sprites.png (16 KB), the owner's
+# twenty-five 16x16 actor figures in the same MERCOLAS-24 palette, with the tag
+# vocabulary and the per-type queries already authored.
+#
+# It earns its place for exactly the reason art/custom does. ActorSheet::load
+# falls back to procedural silhouettes when the pack is absent -- a content edit
+# must not stop the game booting -- and that fallback is precisely why the real
+# files have to be here: without them every case about how the district's six
+# hundred people LOOK would pass against a fallback that never ships.
+!content/art/sprites/**
+
 # --- re-admitted: the spell raws the priest of the Flame teaches from ---
 # 11 KB, one file. S2's priest offers what the owner actually wrote, and the
 # whole reason that matters is the standing direction on magic: effects have to

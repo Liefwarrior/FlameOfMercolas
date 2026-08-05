@@ -32,7 +32,7 @@ std::string_view wardTypeName(WardType type) noexcept {
         case WardType::DiscipleOfTheFlame: return "disciple";
         case WardType::AnimalKeeper: return "keeper";
         case WardType::Dog: return "dog";
-        case WardType::Gull: return "gull";
+        case WardType::Stray: return "stray";
         case WardType::Cat: return "cat";
         case WardType::Mouse: return "mouse";
     }
@@ -60,7 +60,7 @@ std::string_view wardTypeRawsId(WardType type) noexcept {
         case WardType::DiscipleOfTheFlame: return "disciple_of_the_flame";
         case WardType::AnimalKeeper: return "animal_keeper";
         case WardType::Dog: return "animal";
-        case WardType::Gull: return "feral";
+        case WardType::Stray: return "feral";
         case WardType::Cat: return "cat";
         case WardType::Mouse: return "mouse";
     }
@@ -316,7 +316,7 @@ WardTypeTable WardTypeTable::load(const std::filesystem::path& contentDir) {
     table.rows_[static_cast<std::size_t>(WardType::Urchin)].speedTicksPerStep = 1;
     table.rows_[static_cast<std::size_t>(WardType::Cat)].speedTicksPerStep = 1;
     table.rows_[static_cast<std::size_t>(WardType::Mouse)].speedTicksPerStep = 1;
-    table.rows_[static_cast<std::size_t>(WardType::Gull)].speedTicksPerStep = 1;
+    table.rows_[static_cast<std::size_t>(WardType::Stray)].speedTicksPerStep = 1;
     table.rows_[static_cast<std::size_t>(WardType::Dog)].speedTicksPerStep = 2;
     table.rows_[static_cast<std::size_t>(WardType::PriestOfTheFlame)].speedTicksPerStep = 2;
     return table;
@@ -435,10 +435,15 @@ WardPopulation::WardPopulation(const TileQuery& tiles, std::int32_t startSecond,
     // The clock is DERIVED from the tick and never incremented: an incremented
     // clock drifts the first time a tick is skipped, and skipToSecond exists
     // precisely to skip them.
-    secondsAtBoot_ = secondOfDay_;
+    clockOffset_ = secondOfDay_;
     bakeRoster(contentDir);
     rebuildOccupancy();
     runDailyProvision();
+    // AND THE WARD OPENS AT THE HOUR IT WAS ASKED FOR. A session that boots at
+    // eight in the morning has to boot into a district already at work, not
+    // into six hundred people in bed who will spend the next twenty minutes of
+    // real time walking there in front of the player.
+    settleToSchedule();
 }
 
 std::uint32_t WardPopulation::cellKey(std::int32_t x, std::int32_t y,
@@ -1129,8 +1134,7 @@ void WardPopulation::tickActor(WardActor& actor, const TickContext& context) {
 
 void WardPopulation::tick(const TickContext& context) {
     tick_ = context.tick();
-    secondOfDay_ = static_cast<std::int32_t>(
-        ((context.tick() % kSecondsPerDay) + secondsAtBoot_) % kSecondsPerDay);
+    secondOfDay_ = static_cast<std::int32_t>((tick_ + clockOffset_) % kSecondsPerDay);
     runDailyProvision();
     for (WardActor& actor : actors_) {
         if (actor.dead) {
@@ -1162,16 +1166,103 @@ void WardPopulation::tick(const TickContext& context) {
 
 void WardPopulation::skipToSecond(std::int32_t second) {
     const std::int32_t wanted = ((second % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay;
-    secondsAtBoot_ = (secondsAtBoot_ + wanted - secondOfDay_ + kSecondsPerDay) % kSecondsPerDay;
+    if (wanted == secondOfDay_) {
+        return;  // the clocks already agree, which is every ordinary step
+    }
+    // FORWARD, ALWAYS. Asking for an hour earlier than the current one means
+    // the next such hour, which is what "skip to two in the morning" means when
+    // it is three in the afternoon -- and it is what makes the day number
+    // advance, the larders restock and a slept night cost the ward a day's
+    // food. Winding the clock backwards would be a save-load, not a skip.
+    clockOffset_ += (wanted - secondOfDay_ + kSecondsPerDay) % kSecondsPerDay;
     secondOfDay_ = wanted;
-    lastProvisionDay_ = -1;
     runDailyProvision();
+    settleToSchedule();
+}
+
+void WardPopulation::settleToSchedule() {
+    // ASCENDING ID, and the occupancy index is rebuilt as we go, so whoever has
+    // the lower id gets the tile and the next body takes the next free one.
+    // That is a rule and not an accident, which is what makes the settled ward
+    // the same ward twice from the same seed.
+    occupancy_.clear();
+    for (WardActor& actor : actors_) {
+        if (actor.dead) {
+            continue;
+        }
+        const JobParams& params = wardJobParams(actor.job);
+        const bool working = actor.job != WardJob::None && params.inWindow(secondOfDay_);
+        std::int32_t wx = working ? actor.anchorX : actor.homeX;
+        std::int32_t wy = working ? actor.anchorY : actor.homeY;
+        std::int32_t wb = working ? actor.anchorBand : actor.homeBand;
+        // A BEAT IS A ROUTE AND NOT A POST. Settling every watchman onto the
+        // patrol post it started from puts the whole Tarwalk beat in one heap
+        // at one end of the Tarwalk, which is the opposite of what a beat is
+        // for. Each of them starts on ITS OWN leg -- the legs were staggered by
+        // id at the bake for exactly this -- so a settled district has the
+        // Watch spread along the road rather than standing on each other.
+        const std::int32_t route = actor.id < static_cast<std::int32_t>(routeOf_.size())
+                                       ? routeOf_[static_cast<std::size_t>(actor.id)]
+                                       : -1;
+        if (working && route >= 0) {
+            const Route& r = routes_[static_cast<std::size_t>(route)];
+            if (r.count > 0) {
+                const PathStep& wp =
+                    waypoints_[static_cast<std::size_t>(r.first + (actor.leg % r.count))];
+                wx = wp.x;
+                wy = wp.y;
+                wb = wp.band;
+            }
+        }
+        // The first free standable cell out from where they belong. A crew of
+        // ten sharing one post spreads over the shed's own floor rather than
+        // stacking, which is the same thing kWorkReach buys them while the
+        // simulation is actually running.
+        bool placed = false;
+        for (std::int32_t r = 0; r <= 6 && !placed; ++r) {
+            for (std::int32_t dy = -r; dy <= r && !placed; ++dy) {
+                for (std::int32_t dx = -r; dx <= r && !placed; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) {
+                        continue;
+                    }
+                    if (!tiles_->standable(wx + dx, wy + dy, wb)) {
+                        continue;
+                    }
+                    if (occupancy_.at(cellKey(wx + dx, wy + dy, wb)) != 0) {
+                        continue;
+                    }
+                    actor.x = wx + dx;
+                    actor.y = wy + dy;
+                    actor.band = wb;
+                    placed = true;
+                }
+            }
+        }
+        if (!placed) {
+            actor.x = wx;
+            actor.y = wy;
+            actor.band = wb;
+        }
+        actor.prevX = actor.x;
+        actor.prevY = actor.y;
+        actor.prevBand = actor.band;
+        actor.moveAccumTicks = 0;
+        actor.goalWorkTicks = 0;
+        actor.legMark = 0;
+        actor.routeRetryUntil = 0;
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        actor.routeTargetY = -1;
+        actor.routeTargetBand = -1;
+        actor.targetBand = 0;
+        occupancy_.add(cellKey(actor.x, actor.y, actor.band));
+    }
 }
 
 // --- the food economy ------------------------------------------------------
 
 void WardPopulation::runDailyProvision() {
-    const std::int64_t day = (tick_ + secondsAtBoot_) / kSecondsPerDay;
+    const std::int64_t day = (tick_ + clockOffset_) / kSecondsPerDay;
     if (day == lastProvisionDay_) {
         return;
     }
@@ -1302,6 +1393,13 @@ void WardPopulation::hash_into(HashSink& sink) const {
     // it is a pure function of the three things above it that do.
     sink.put_int(static_cast<std::uint32_t>(actors_.size()));
     sink.put_int(static_cast<std::uint32_t>(secondOfDay_));
+    // The clock's own offset and the day the larders were last filled. Both are
+    // read by behaviour -- the offset decides every window and the day decides
+    // whether anybody eats tomorrow -- so both are hashed. The rule this
+    // codebase learned the hard way is that a scalar a policy READS and the
+    // hash does not cover is a divergence nothing will ever see.
+    sink.put_long(static_cast<std::uint64_t>(clockOffset_));
+    sink.put_long(static_cast<std::uint64_t>(lastProvisionDay_));
     for (const WardActor& actor : actors_) {
         sink.put_byte(static_cast<std::uint32_t>(actor.type));
         sink.put_byte(static_cast<std::uint32_t>(actor.job));

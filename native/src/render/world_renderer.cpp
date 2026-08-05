@@ -528,6 +528,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
     // --- sprites -----------------------------------------------------------
     std::size_t spritePixels = 0;
     std::size_t actorPixels = 0;
+    std::size_t wardDrawn = 0;
     if (settings.drawSprites) {
         // Far to near, so a nearer glow lands on top of a further one.
         std::vector<std::pair<float, const SpriteInstance*>> ordered;
@@ -545,6 +546,14 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
             if (entry.second->person) {
                 actorPixels += spritePixels - before;
             }
+            // A body counts as SEEN when it put at least one pixel on screen --
+            // not when a billboard was submitted for it. A figure standing
+            // behind a warehouse is submitted, sorted, projected and drawn
+            // nowhere, and counting those would make "the street is busy" a
+            // claim about the roster instead of about the frame.
+            if (entry.second->ward && spritePixels > before) {
+                ++wardDrawn;
+            }
         }
     }
 
@@ -553,6 +562,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
     stats.worldPixels = worldPixels;
     stats.spritePixels = spritePixels;
     stats.actorPixels = actorPixels;
+    stats.wardActorsDrawn = wardDrawn;
     stats.skyPixels = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) -
                       worldPixels;
     stats.nearestDepth = std::isfinite(nearest) ? nearest : 0.0F;
@@ -618,6 +628,53 @@ void WorldRenderer::drawSprite(Framebuffer& target, const Camera& camera,
     constexpr float kGlowNearField = 2.5F;
     const float glowNear =
         sprite.glow > 0.0F ? std::clamp(distance / kGlowNearField, 0.22F, 1.0F) : 1.0F;
+
+    // --- #78: the textured path ---------------------------------------------
+    //
+    // A figure somebody drew, sampled nearest-neighbour with a hard alpha
+    // cutout. Nearest and not filtered on purpose: the whole look is 16x16
+    // pixel art at 640x360 and a bilinear tap would turn a guard's helmet into
+    // a grey smear at exactly the range the silhouette has to read at.
+    if (sprite.art != nullptr && sprite.artSize > 0) {
+        const float spanU = static_cast<float>(sprite.artU1 - sprite.artU0 + 1);
+        const float spanV = static_cast<float>(sprite.artV1 - sprite.artV0 + 1);
+        const float left = centreX - pixelHalfW;
+        const float top = centreY - pixelHalfH;
+        const float wide = pixelHalfW * 2.0F;
+        const float tall = pixelHalfH * 2.0F;
+        for (int sy = y0; sy <= y1; ++sy) {
+            for (int sx = x0; sx <= x1; ++sx) {
+                const std::size_t at = target.index(sx, sy);
+                if (target.depth()[at] < distance) {
+                    continue;  // behind world geometry
+                }
+                const int u = sprite.artU0 +
+                              static_cast<int>((static_cast<float>(sx) + 0.5F - left) / wide * spanU);
+                const int v = sprite.artV0 +
+                              static_cast<int>((static_cast<float>(sy) + 0.5F - top) / tall * spanV);
+                if (u < sprite.artU0 || u > sprite.artU1 || v < sprite.artV0 || v > sprite.artV1) {
+                    continue;
+                }
+                const std::uint32_t texel =
+                    sprite.art[static_cast<std::size_t>(v * sprite.artSize + u)];
+                if ((texel >> 24) < 128u) {
+                    continue;  // the street behind them
+                }
+                const float tr = static_cast<float>(texel & 0xFFu) / 255.0F;
+                const float tg = static_cast<float>((texel >> 8) & 0xFFu) / 255.0F;
+                const float tb = static_cast<float>((texel >> 16) & 0xFFu) / 255.0F;
+                // sprite.colour is the LIGHT where they stand, not a tint of
+                // their own -- see Session::wardSprites. A figure in an unlit
+                // corner has to be dark or the committed-dark look dies.
+                Rgb lit{tr * sprite.colour.r, tg * sprite.colour.g, tb * sprite.colour.b};
+                lit = lerp(lit, sky.fog, fog);
+                target.pixels()[at] = packRgb(lit);
+                target.depth()[at] = distance;
+                ++spritePixels;
+            }
+        }
+        return;
+    }
 
     for (int sy = y0; sy <= y1; ++sy) {
         for (int sx = x0; sx <= x1; ++sx) {

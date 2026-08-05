@@ -98,8 +98,14 @@ enum class WardType : std::uint8_t {
     AnimalKeeper = 11,
     /// Owned: a keeper's dog, and the goats in the Gallows Row pen.
     Dog = 12,
-    /// A harbour gull. The district's own predator, and unowned.
-    Gull = 13,
+    /// Unowned, and nobody feeds it. The quay's own stray.
+    ///
+    /// NOT A GULL, and the correction is worth recording: the Java package's
+    /// `feral` type is a bird in its comments and a FERAL DOG in the owner's
+    /// own art (content/art/sprites, `actor_feral_dog_0`, tagged
+    /// actor/beast/vermin, which is exactly what the index's `feral` query
+    /// asks for). The art is canon and the comment was not.
+    Stray = 13,
     /// Eight of them, and they keep the mice down where the Watch does not.
     Cat = 14,
     /// Prey. Bins, dens, and the bottom of the ward's one food chain.
@@ -567,9 +573,22 @@ public:
     [[nodiscard]] std::int32_t worstJam() const noexcept { return worstJam_; }
 
     /// Jumps the clock without simulating the gap -- what a capture at a named
-    /// hour does. Needs decay and larders restock across the jump so the ward
-    /// the shutter sees is the ward that hour would really have.
+    /// hour does, and what sleeping a night in a rented bed does.
+    ///
+    /// It also SETTLES the ward: every body is put where that hour's schedule
+    /// says it should be, with no walk. Without that a capture at two in the
+    /// morning photographs a district standing exactly where the bake left it,
+    /// because a skip simulates none of the seconds it jumps -- and the frame
+    /// that is supposed to prove the Watch is out would show a Watch still in
+    /// bed. The taproom has done this since S2 (Actor::placeAt, "for a schedule
+    /// block starting off-screen"); this is the same move for six hundred more
+    /// people.
     void skipToSecond(std::int32_t second);
+
+    /// Puts everybody where this hour says they should be, immediately. Called
+    /// at boot and across every skip. Deterministic: ascending id, a fixed
+    /// spiral for the free cell, and no draw.
+    void settleToSchedule();
 
     /// The ward's own report line, for the gate and for --selftest.
     [[nodiscard]] std::string reportLine() const;
@@ -626,11 +645,16 @@ private:
     const TileQuery* tiles_;
     std::uint64_t worldSeed_;
     std::int32_t secondOfDay_ = 0;
-    /// The second of the day the engine's tick zero corresponds to. Kept apart
-    /// from secondOfDay_ so the clock is derived from the tick rather than
-    /// incremented -- an incremented clock drifts the moment a tick is skipped,
-    /// and skipToSecond exists precisely to skip ticks.
-    std::int32_t secondsAtBoot_ = 0;
+    /// Seconds the ward's clock stands AHEAD of the engine's tick count. Kept
+    /// apart from secondOfDay_ so the clock is DERIVED from the tick rather
+    /// than incremented -- an incremented clock drifts the first time a tick is
+    /// skipped, and skipToSecond exists precisely to skip them.
+    ///
+    /// MONOTONE, and never reduced modulo a day. Skipping to an hour earlier
+    /// than the current one means the NEXT such hour, so a skip always moves
+    /// time forward -- which is what makes the day number this is divided into
+    /// advance across a slept night and the larders restock because of it.
+    std::int64_t clockOffset_ = 0;
     std::int64_t tick_ = 0;
     std::int64_t lastProvisionDay_ = -1;
 
