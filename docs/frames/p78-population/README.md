@@ -37,6 +37,24 @@ The last column is the Gilded Gull's own `presentCount()` at that hour, which
 belongs to the Tavern and not to the population. Eleven at eight in the evening
 is the Gull filling up.
 
+## And the one that is the whole point
+
+`p78-ropewynd-0200.png` — the **Ropewynd** at two in the morning, looking east
+from (110, 97, z19), `ward=661 seen=7 near=8`.
+
+Two figures standing in a lamp pool in an otherwise black street. The Ropewynd
+is the road every compound gate opens onto and it is where three of the night
+seven walk; the light is the compound's own. This is the frame the complaint
+asked for — *"even at night there should be people like guards urchins thieves
+taverns"* — and it is also the frame that shows why the 02:00 Tarwalk capture
+looks empty at a glance and is not. Seven bodies are drawn in it. You can see
+two of them, because they are the two standing under a lamp.
+
+```
+.\dist\granadad.exe --smoke=30 --hold --width=960 --height=540 --scale=1 \
+    --time=2 --spawn=110,97,19 --yaw=90 --screenshot=out.png
+```
+
 The three numbers are printed by the capture itself, on the `granadad:` line:
 
 * **`ward=`** how many bodies the district holds, alive, right now.
