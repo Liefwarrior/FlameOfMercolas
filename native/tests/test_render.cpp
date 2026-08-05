@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <utility>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -432,6 +433,132 @@ TEST_CASE("the HUD hugs the edges and leaves the centre completely clear") {
         }
     }
     CHECK(changed > 300);
+}
+
+TEST_CASE("every HUD row lit at once still leaves the centre clear") {
+    // THE S10 GAP, CLOSED, AND IT WAS REAL. hud.hpp carried a VERIFICATION GAP
+    // saying the guild row (y - 24*scale) and the objective row (y - 32*scale)
+    // crossed the exclusion rectangle at 320x180 and 640x360 whenever they were
+    // non-empty, and the top-right stack ran six rows deep at nine scale units
+    // each into a rectangle that starts at 39 pixels down. Both were true. The
+    // reason no case caught either is in the two cases above this one: the only
+    // HudStates ever drawn in this suite set four or five fields, and the
+    // defect needs eleven.
+    //
+    // So this one lights EVERY field the struct has, with the longest string
+    // each is clipped to in session.cpp, at all three resolutions the game is
+    // captured at. Rows are allocated out of a slot grid now and a row with no
+    // legal slot is dropped rather than drawn, which is what makes it pass.
+    HudState full;
+    full.health = 61;
+    full.healthMax = 100;
+    full.yawBam = sim::kFacingWest;
+    full.locationLabel = "THE DOCKS - UPPER";
+    full.timeOfDaySeconds = 21 * 3600 + 47 * 60;
+    full.coin = 99999;
+    full.standingLabel = "THE WARD WANTS YOU GONE";
+    full.heatLabel = "CONDEMNED  WANTED  HEAT 84  LOOT 12  BALE";
+    full.stashLabel = "3 FLOWER  2 WIRE  4 DUST  240DR";
+    full.stealthLabel = "SEEN CROUCH  LIT 88  LOUD";
+    full.caseLabel = "CASE 4/6 > THE DROWNED HOLD  EMPTYING";
+    full.guildLabel = "THE SKYRUNNERS - THE WARD'S OWN SHADOW";
+    full.objectiveLabel = "TAKE THE BALE PAST THE WEIGHHOUSE";
+    full.rivalLabel = "RIVAL BRAM MARROW - CRAFTLORD x7  HUNTING";
+    full.lockLabel = "LOCK  PINS ***--  DEPTH ....+....  PICKS 2";
+    full.roomLabel = "THE GULL  14 IN  LOUD";
+    full.alert = "KLED TARBECK: THAT IS YOUR ONE. OUT OF THIS HOUSE, OR I PUT YOU OUT.";
+
+    for (const auto& [width, height] : {std::pair{320, 180}, std::pair{640, 360},
+                                        std::pair{960, 540}}) {
+        Framebuffer bare(width, height);
+        bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+        Framebuffer dressed(width, height);
+        dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(dressed, full);
+
+        const CentreRect centre = hudCentreRect(width, height);
+        std::size_t trespass = 0;
+        for (int y = centre.y0; y < centre.y1; ++y) {
+            for (int x = centre.x0; x < centre.x1; ++x) {
+                trespass +=
+                    bare.pixels()[bare.index(x, y)] != dressed.pixels()[dressed.index(x, y)] ? 1U
+                                                                                            : 0U;
+            }
+        }
+        INFO("at ", width, "x", height, " the HUD put ", trespass,
+             " pixels inside the play space");
+        CHECK(trespass == 0);
+
+        // And it is not vacuous: with sixteen rows asked for, all four edges
+        // drew something.
+        const auto changedIn = [&](int x0, int y0, int x1, int y1) {
+            std::size_t changed = 0;
+            for (int y = y0; y < y1; ++y) {
+                for (int x = x0; x < x1; ++x) {
+                    changed += bare.pixels()[bare.index(x, y)] !=
+                                       dressed.pixels()[dressed.index(x, y)]
+                                   ? 1U
+                                   : 0U;
+                }
+            }
+            return changed;
+        };
+        CHECK(changedIn(0, 0, width, centre.y0) > 200);
+        CHECK(changedIn(0, centre.y1, width, height) > 200);
+    }
+}
+
+TEST_CASE("the HUD costs a fraction of the frame, and the fraction is pinned") {
+    // "I love the vibe of the UI but just be more careful with real estate."
+    //
+    // The vibe is not testable and is not being tested. What the owner was
+    // looking at IS: eleven rows of 4x6 glyphs all drawn at the same size, a
+    // build banner in the top-left of every screenshot, and a two-row block in
+    // the top-centre. On the real scenes, measured with `--nohud` as the
+    // baseline, the interface went from 5.80% of a street frame to 2.91% and
+    // from 6.89% of a rooftop frame to 4.11%.
+    //
+    // WITHOUT A CEILING WRITTEN DOWN, the twelfth row costs nothing to add and
+    // nobody notices until it is the fourteenth. This is that ceiling: ink over
+    // a fully lit HUD -- every field this struct has, at once, which no real
+    // frame ever shows -- counted the same way --nohud counts it. It measures
+    // 5.78% and the bar is at 6.5%, which leaves room for a row and not for
+    // four.
+    //
+    // It is INK and not claimed area on purpose: ink is a diff and cannot be
+    // argued with. The claimed figure -- rows closed up into boxes, which is
+    // the space you actually lose -- went 8.19% to 5.14% on the street frame
+    // and is in docs/HUD-REAL-ESTATE.md with the commands that produce it.
+    HudState full;
+    full.health = 100;
+    full.yawBam = sim::kFacingWest;
+    full.locationLabel = "THE DOCKS - UPPER";
+    full.timeOfDaySeconds = 20 * 3600;
+    full.coin = 4071;
+    full.standingLabel = "THE WARD WANTS YOU GONE";
+    full.heatLabel = "WANTED  HEAT 84  LOOT 12";
+    full.stashLabel = "3 FLOWER  240DR";
+    full.stealthLabel = "HIDDEN CROUCH  DARK 4  QUIET";
+    full.caseLabel = "CASE 4/6 > THE DROWNED HOLD";
+    full.guildLabel = "THE SKYRUNNERS - SKYRUNNER";
+    full.objectiveLabel = "TAKE THE BALE PAST THE WEIGHHOUSE";
+    full.rivalLabel = "RIVAL BRAM MARROW - CRAFTLORD x7";
+    full.roomLabel = "THE GULL  14 IN  LOUD";
+
+    Framebuffer bare(960, 540);
+    bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+    Framebuffer dressed(960, 540);
+    dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+    drawHud(dressed, full);
+    std::size_t ink = 0;
+    for (std::size_t i = 0; i < bare.pixels().size(); ++i) {
+        ink += bare.pixels()[i] != dressed.pixels()[i] ? 1U : 0U;
+    }
+    const double fraction = static_cast<double>(ink) / static_cast<double>(bare.pixels().size());
+    MESSAGE("a fully lit HUD at 960x540 is " << ink << " pixels, " << fraction * 100.0
+                                             << "% of the frame");
+    CHECK(ink > 2000);         // it drew, so the ceiling is not vacuous
+    CHECK(fraction < 0.065);   // and every row it has fits in a sixteenth of the screen
 }
 
 TEST_CASE("the HUD's health bar tracks the number it is given") {

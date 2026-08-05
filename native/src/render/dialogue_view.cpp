@@ -203,7 +203,12 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     // Wrapped clear of the top-right corner, which is the clock's and the
     // purse's and stays theirs: a spoken line running under a two-digit hour is
     // unreadable and looks like a bug.
-    const int reservedRight = 34 * scale;
+    //
+    // ASKED, NOT GUESSED. This was `34 * scale`, a number that had to be
+    // re-checked by hand every time a row was added to that corner or its size
+    // changed -- and polish-1 changed both. The HUD knows how wide its own
+    // stack is.
+    const int reservedRight = hudTopRightReserve(target.height());
     const std::size_t columns = static_cast<std::size_t>(
         std::max(8, (target.width() - 2 * margin - reservedRight) / glyphAdvance));
     std::vector<std::string> speech = wrapText(state.line, columns);
@@ -233,7 +238,28 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     // fifth row. A detail line drawn there would be clipped off the bottom of
     // the frame, which is the same class of bug as the one it exists to fix.
     // The top band is sized from what it draws, so it simply grows by a row.
-    const std::string detail = dialogueDetailLine(state);
+    // AND ONLY WHEN THE COLUMN ACTUALLY CUT IT. This row exists because an
+    // eighteen-glyph column printed "7 SIGN ON: THE." and two contracts as
+    // "8 TAKE 3 SCALPS." -- labels that name nothing. It was then drawn for
+    // EVERY row, including the great majority that fit their column whole, so
+    // a conversation with "1 THEIR BUSINESS" on the cursor spent a full row of
+    // the top band printing "> THEIR BUSINESS" directly above the identical
+    // words already highlighted in the grid. A row that repeats the row under
+    // it is the cheapest real estate in the game to buy back.
+    const int columnWidth = (target.width() - 2 * margin) / kTopicColumns;
+    const std::size_t columnRoom =
+        static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance - 2));
+    std::string detail = dialogueDetailLine(state);
+    if (!detail.empty()) {
+        // The key printed beside the label is part of what has to fit, exactly
+        // as topicRowsFor composes it.
+        const std::string numbered =
+            std::to_string(state.cursor - topicPageOf(state.cursor) * kTopicPageSize + 1) + " " +
+            detail;
+        if (numbered.size() <= columnRoom) {
+            detail.clear();
+        }
+    }
     const int detailRows = detail.empty() ? 0 : 1;
     const int topHeight =
         std::min(centre.y0 - scale, margin + rowStep * (1 + static_cast<int>(speech.size()) +
@@ -280,7 +306,29 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     }
 
     // ---- the bottom band: what you can say --------------------------------
-    const int bottomTop = std::max(centre.y1 + scale, target.height() - margin - rowStep * 6);
+    //
+    // SIZED FROM WHAT IT DRAWS, which is the rule the top band has always had
+    // and this one never did. The band claimed the deepest it could legally go
+    // whether it had twelve topics in it or two, so a doorman with three things
+    // to say still took a fifth of the frame -- and even at four full rows it
+    // took the remainder of a division nobody was spending.
+    //
+    // The haggle counter and the workbench keep the old floor: both draw four
+    // rows AND a foot line pinned to the bottom margin, and shrinking the band
+    // under them would put the foot through the last row.
+    const int deepest = std::max(centre.y1 + scale, target.height() - margin - rowStep * 6);
+    const int maxRows = std::clamp((target.height() - deepest - 2 * scale) / rowStep, 1, kTopicRows);
+    // PAGED, and every printed row carries the key that picks it. The rows
+    // themselves are built by topicRowsFor, which is what a test can drive --
+    // see the header on the S4 mutation that shipped green.
+    const std::vector<TopicRow> printed =
+        topicRowsFor(state.topics, state.page, state.cursor, maxRows * kTopicColumns);
+    const int rows = std::clamp((static_cast<int>(printed.size()) + kTopicColumns - 1) /
+                                    kTopicColumns,
+                                1, maxRows);
+    const int bottomTop = (state.haggling || state.forging)
+                              ? deepest
+                              : target.height() - 2 * scale - rows * rowStep;
     target.fillRect(0, bottomTop, target.width(), target.height() - bottomTop, kPanel, 0.82F);
     target.fillRect(0, bottomTop - scale, target.width(), scale, kEdge, 0.55F);
 
@@ -311,7 +359,6 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         const std::string head = "COMPOSE - COST " + std::to_string(state.forgeDifficulty) +
                                  " OF " + std::to_string(state.forgeCeiling);
         drawText(target, margin, bottomTop + scale, head, kSpeechInk, 0.95F, scale);
-        const int columnWidth = (target.width() - 2 * margin) / kTopicColumns;
         for (std::size_t i = 0; i < state.forgeFields.size(); ++i) {
             const int index = static_cast<int>(i);
             const int column = index / 3;
@@ -343,21 +390,10 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         return;
     }
 
-    // How many rows the band ACTUALLY has, computed rather than assumed. The
+    // The layout is column-major over the rows the band was sized for. The
     // first version used a fixed six and broke out of the loop the moment a row
     // ran past the bottom edge -- which silently dropped the entire second
     // column, so a speaker with seven things to say showed four of them.
-    const int columnWidth = (target.width() - 2 * margin) / kTopicColumns;
-    const int rows =
-        std::clamp((target.height() - bottomTop - 2 * scale) / rowStep, 1, kTopicRows);
-
-    // PAGED, and every printed row carries the key that picks it. The rows
-    // themselves are built by topicRowsFor, which is what a test can drive --
-    // see the header on the S4 mutation that shipped green.
-    const int capacity = rows * kTopicColumns;
-    const std::vector<TopicRow> printed =
-        topicRowsFor(state.topics, state.page, state.cursor, capacity);
-
     for (std::size_t i = 0; i < printed.size(); ++i) {
         const int column = static_cast<int>(i) / rows;
         const int row = static_cast<int>(i) % rows;

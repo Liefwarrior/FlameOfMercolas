@@ -259,7 +259,7 @@ std::string_view SocialLedger::reputationLabel() const noexcept {
     if (reputation_ <= kColdAtOrBelow) {
         return "TALKED ABOUT BADLY";
     }
-    return "NOBODY IN PARTICULAR";
+    return kReputationUnremarkable;
 }
 
 std::vector<std::uint8_t> SocialLedger::encode() const {

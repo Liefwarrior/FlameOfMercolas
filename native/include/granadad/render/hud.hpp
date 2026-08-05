@@ -16,6 +16,46 @@
 // the clock and the purse top-right, the room's own line bottom-right, and a
 // bouncer's warning across the very bottom. The exclusion zone is what stops
 // them creeping inwards, and the test that checks it goes red if they do.
+//
+// ---------------------------------------------------------------------------
+// polish-1: THE SAME HUD, IN LESS OF THE FRAME.
+//
+// Ten sprints added ten rows and every one of them was drawn at the same size
+// as the health bar, so a rooftop frame at 960x540 carried four rows of sky
+// eaten in the top right, a two-row block in the top centre and a build banner
+// in the top left. The look is not the problem and is not being changed: same
+// 4x6 font, same colours, same corners, same rule about the middle. Three
+// things are:
+//
+//   1. TWO SIZES, NOT ONE. hudScale() is the register the player reads at a
+//      glance -- the compass, the hour, the health bar, a shout. Everything
+//      else is reference material they look at deliberately, and it is drawn
+//      at hudMinorScale(), one step down. That is a hierarchy rather than a
+//      shrink: the frame says what to read first.
+//
+//   2. ABSENCE COSTS NOTHING. A row that says nothing happened does not get a
+//      row. "NOBODY IN PARTICULAR" is the ward having no opinion of you, and
+//      it held 20 characters of the top right in every frame of the game.
+//
+//   3. ROWS ARE ALLOCATED, NOT NUMBERED. Every element used to carry its own
+//      hand-computed offset in scale units, which is how S9 shipped the lock
+//      row printed through the guild row and S10 shipped a clue printed
+//      through the case row. The bottom band hands out SLOTS in priority
+//      order now, and the top-right stack drops its least important row rather
+//      than crossing the exclusion rectangle. Two things can no longer be
+//      given the same pixel row by arithmetic that nobody re-checked.
+//
+// Measured, not estimated. `granadad --nohud` draws the same scene with no
+// interface on it at all, so every pixel that differs between the two captures
+// is interface -- see docs/HUD-REAL-ESTATE.md for the commands and the script.
+// At 960x540, interface ink as a fraction of the frame:
+//
+//     street        5.80%  ->  2.91%
+//     rooftops      6.89%  ->  4.11%
+//     conversation 42.96%  -> 36.11%
+//
+// and the area those rows CLAIM -- glyphs closed up into the rows that own
+// them, which is the space actually lost -- 8.19% -> 5.14% on the street.
 
 #include <cstdint>
 #include <string>
@@ -90,28 +130,23 @@ struct HudState {
     /// row, and empty whenever no lock is open.
     std::string_view lockLabel;
     /// S10: where the bloodletter trail stands and where it wants you next --
-    /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row, immediately over
-    /// the HP label. Empty only when casebook.json is missing.
+    /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row. Empty only when
+    /// casebook.json is missing.
     ///
     /// AN INVESTIGATION READOUT IS THE ELEMENT MOST LIKELY TO BECOME A PANEL IN
     /// THE MIDDLE OF THE SCREEN. It gets one row on an edge, the same deal the
     /// sack and the stealth line got, and the casebook proper opens in the
     /// conversation's own two bands where the centre is already proven clear.
     ///
-    /// IT SITS AT y - 16*scale AND THAT IS A MEASUREMENT. The exclusion
-    /// rectangle's lower edge is at 0.78 * height; the bottom-left stack's rows
-    /// at y - 8 and y - 16 are below it at every resolution the game runs at,
-    /// and the rows above that are not -- which drawRoom's own comment has said
-    /// since S8 about the objective row. The one row S10 adds takes a slot that
-    /// is provably outside the rectangle rather than adding a third violation
-    /// to a stack that already had two.
-    ///
-    /// VERIFICATION GAP (S10): the guild row (y - 24) and the objective row
-    /// (y - 32) still cross the rectangle at 320x180 and at 640x360 whenever
-    /// they are non-empty. Pre-existing since S4, already documented at
-    /// drawRoom, and NOT fixed here: the honest fix is a bottom band that spans
-    /// the frame the way Barony's does, which is a layout change and not a
-    /// sprint's tail end. It is why the case row went below them and not above.
+    /// polish-1 CLOSED THE S10 GAP THIS COMMENT USED TO CARRY. The guild and
+    /// objective rows were drawn at hand-written offsets of y - 24 and y - 32
+    /// scale units and crossed the exclusion rectangle at 320x180 and 640x360
+    /// whenever they were non-empty -- a defect nothing tested, because no case
+    /// ever populated them. They are allocated out of the bottom band's slot
+    /// grid now, every slot in it is proven below the rectangle before anything
+    /// is drawn in it, and a row that has no legal slot is DROPPED rather than
+    /// drawn in the play space. The test that proves it lights every field in
+    /// this struct at once at three resolutions.
     std::string_view caseLabel;
     /// One line about the room the player is standing in. Bottom-right.
     std::string_view roomLabel;
@@ -132,6 +167,29 @@ struct HudState {
     /// from what it draws. Nothing is lost and nothing overlaps.
     bool showAlert = true;
 };
+
+/// The size the HUD's own register is drawn at: the compass, the hour, the
+/// health bar, a shout. Scaled off the frame HEIGHT so the chunky 4x6 font
+/// keeps the same apparent size at every resolution.
+[[nodiscard]] int hudScale(int height) noexcept;
+
+/// One step down, and the size everything the player looks at DELIBERATELY is
+/// drawn at: the place name, the purse, standing, heat, the sack, the stealth
+/// line, the case, the rung, the objective, the rival, the room.
+///
+/// It is a hierarchy and not a shrink. Ten sprints put ten rows on this HUD and
+/// drew every one of them at the size of the health bar, so the frame had no
+/// way to say what to read first and the rows that said the least were as loud
+/// as the ones that said the most. At 960x540 this is an 8x12 glyph, which is
+/// the size the whole HUD is at 640x360 -- a resolution the game already calls
+/// legible -- and at 320x180 it is the same as hudScale(), because there is
+/// nothing below a 4x6 font to step down to.
+[[nodiscard]] int hudMinorScale(int height) noexcept;
+
+/// How wide the top-right stack is at its widest, so the conversation surface
+/// can wrap clear of it instead of guessing. A spoken line running under the
+/// hour is unreadable and looks like a bug.
+[[nodiscard]] int hudTopRightReserve(int height) noexcept;
 
 /// The fraction of the screen, on each axis, that the HUD may occupy from an
 /// edge. Anything between these on both axes is play space and must stay clear.

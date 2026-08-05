@@ -189,6 +189,12 @@ void print_usage() {
         "                       casebook open), start (the opening page of a\n"
         "                       new game), mission, weighhouse, hold, or keys\n"
         "                       (the in-game controls page)\n"
+        "  --nohud              draw the world and NOTHING over it -- no HUD,\n"
+        "                       no conversation surface, no build stamp. It is\n"
+        "                       a ruler: capture a scene twice, once with it\n"
+        "                       and once without, and every pixel that differs\n"
+        "                       is interface. That is how the numbers in\n"
+        "                       docs/HUD-REAL-ESTATE.md were measured\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n"
         "\n"
@@ -260,6 +266,9 @@ void print_usage() {
             options.smoke.session.clockScale = std::clamp(std::atoi(value), 1, 3600);
         } else if (std::strcmp(arg, "--hold") == 0) {
             options.smoke.walk = false;
+        } else if (std::strcmp(arg, "--nohud") == 0) {
+            options.smoke.session.hud = false;
+            options.smoke.stamp = false;
         } else if (std::strcmp(arg, "--talk") == 0) {
             options.smoke.talk = true;
         } else if (std::strcmp(arg, "--again") == 0) {

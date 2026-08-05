@@ -83,6 +83,16 @@ struct SessionConfig {
     /// 1 is real time. Raising it is how a capture reaches a different hour
     /// without running the whole afternoon.
     int clockScale = 1;
+    /// Draw the HUD and the conversation surface at all. --nohud turns it off.
+    ///
+    /// THIS IS THE MEASURING INSTRUMENT AND IT IS THE WHOLE REASON IT EXISTS.
+    /// "The HUD takes up too much room" is an opinion until somebody can put a
+    /// number on it, and the only honest number is the difference between the
+    /// same frame with the interface and without it. Capture a scene twice,
+    /// once with this false and once with it true, and every pixel that differs
+    /// is interface -- no estimating, no counting glyphs by hand, and the
+    /// answer is checkable by anybody who runs the two commands.
+    bool hud = true;
 };
 
 /// A loaded, standing, drawable session.

@@ -943,7 +943,12 @@ DialogueViewState Session::dialogueView() const {
     if (keysOpen_) {
         view.open = true;
         view.speaker = "CONTROLS";
-        view.epithet = "GRANADAD: THE DARKSTREETS";
+        // AND THE BUILD, HERE, WHERE A PLAYER GOES LOOKING FOR IT. The version
+        // used to be burnt into the top-left corner of every captured frame at
+        // full HUD scale, which is prime screen real estate spent on something
+        // nobody needs more than once. F1 is the page you open when you want to
+        // know how this works; what build it is belongs on it.
+        view.epithet = "GRANADAD: THE DARKSTREETS  " + std::string(sim::build_info().version);
         // THREE LINES IS WHAT THE TOP BAND WRAPS TO, so this is written to fit
         // in two. The first version ran to four and lost its own last sentence.
         view.line =
@@ -1674,8 +1679,15 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // The ward's opinion of you sits under the purse -- unless somebody is in
     // front of you, in which case THEIR opinion is the one that matters and the
     // panel is already showing it.
+    //
+    // ABSENCE DOES NOT COST A ROW. "NOBODY IN PARTICULAR" is the ward having no
+    // opinion of you at all, and it held twenty characters of the top right in
+    // every frame this game has ever produced, saying that nothing had
+    // happened. The row appears the moment the ward HAS an opinion, which is
+    // the only moment it is worth the sky it stands in.
     const std::string_view standing = tavern_->dialogue().ledger().reputationLabel();
-    hud.standingLabel = conversing ? std::string_view{} : standing;
+    const bool noticed = standing != sim::kReputationUnremarkable;
+    hud.standingLabel = (conversing || !noticed) ? std::string_view{} : standing;
     // What the Watch has heard, what is in your coat, and whether you are
     // carrying somebody's bale. Top right under the purse, hugging the edge --
     // the centre of the frame stays empty, which is the rule.
@@ -1701,16 +1713,16 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // -- it is on the casebook's own page, because a title is something you
     // look up and not something you need every frame.
     const std::string investigation = caseLine();
-    // ONE SLOT, TWO TENANTS, AND THE MESSAGE WINS.
+    // ONE SLOT, TWO TENANTS -- AND polish-1 GAVE THEM A SLOT EACH.
     //
-    // The case row sits at y - 16*scale off the health bar, which IS
-    // height - margin - 23*scale -- the same pixel row the alert has used since
-    // S6. The first S10 capture shipped a clue printed straight through
-    // "CASE 1/4 > ...". They are not moved apart, because at 320x180 that row
-    // is the only one left in the bottom-left stack that is outside the
-    // exclusion rectangle: there is nowhere to move to. So the alert takes it
-    // while it is up, and the case row comes back six seconds later, which is
-    // the behaviour a player wants anyway.
+    // The case row used to sit at y - 16*scale off the health bar, which IS
+    // height - margin - 23*scale, the same pixel row the alert has used since
+    // S6; the first S10 capture shipped a clue printed straight through "CASE
+    // 1/4 > ...", and the fix was to suppress the case row for the six seconds
+    // a message is up. The bottom band hands out slots now (see BottomBand in
+    // hud.cpp), the alert takes one before the case is offered one, and the two
+    // of them can no longer be given the same pixels by arithmetic. So the
+    // suppression is gone and both are shown.
     // And who put you on the floor last, which is the one thing on the HUD that
     // is about somebody else rather than about you.
     const std::string rival = rivalLine();
@@ -1725,14 +1737,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     } else if (!conversing) {
         hud.alert = std::string_view{message_};
     }
-    // AND ONLY NOW THE CASE ROW, because it shares a pixel row with the alert
-    // and has to be able to see whether one is showing. Set any earlier and
-    // `hud.alert` is still empty -- which is exactly the bug the first S10
-    // capture of the Mission shipped, with a clue printed straight through
-    // "CASE 1/4 > MISSION OF THE FLAME".
-    const bool messaging = !hud.alert.empty() && hud.showAlert;
-    hud.caseLabel =
-        (conversing || messaging) ? std::string_view{} : std::string_view{investigation};
+    hud.caseLabel = conversing ? std::string_view{} : std::string_view{investigation};
     hud.showHealth = !conversing;
     // AND THE BOTTOM BAND IS THE TOPIC LIST'S, WHOLE. The alert used to be
     // drawn over it and S7 shipped the frame that proves it -- see
@@ -1746,8 +1751,10 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     }
     // The panel FIRST, the HUD over it: a bouncer's warning has to survive
     // being told mid-conversation, and it is the one line that outranks a menu.
-    drawDialogue(target, panel);
-    drawHud(target, hud);
+    if (config_.hud) {
+        drawDialogue(target, panel);
+        drawHud(target, hud);
+    }
     return stats;
 }
 
@@ -3409,17 +3416,25 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // The first S10 capture shipped "GRANADAD 0.10.0" printed straight through
     // "THE CASEBOOK" because this test only knew about the third of them.
     if (config.stamp && !result.talking && !session.casebookOpen() && !session.keysOpen()) {
-        const int scale = std::max(1, frame.height() / 180);
         // DERIVED, NOT TYPED. S9's read "GRANADAD S6" -- a literal three sprints
         // out of date, burnt into the top-left of every capture including all
         // four of S9's own, and found by the review in a PNG rather than in the
         // source. It reads the project version now, which CMake sets in one
         // place and build_info() carries, so there is nothing here left to
         // forget to update.
+        //
+        // AND IT IS DRAWN AT 1:1, WHICH IS METADATA-SIZED. This is a capture
+        // stamp and not a HUD element -- the windowed game has never drawn it,
+        // as `--version` and the F1 keys page have always been where a player
+        // is told what build they are on. It was drawn at the full HUD scale
+        // anyway, so every screenshot this project has ever produced carried
+        // "GRANADAD 0.10.0" in 222 by 21 pixels of the top-left corner, and
+        // that corner is the first thing anybody looks at. Provenance is still
+        // burnt into every frame; it costs a ninth of what it did.
         const sim::BuildInfo info = sim::build_info();
         std::string stamp = "GRANADAD ";
         stamp.append(info.version);
-        drawText(frame, 4 * scale, 4 * scale, stamp, Rgb{0.55F, 0.53F, 0.46F}, 0.7F, scale);
+        drawText(frame, 3, 3, stamp, Rgb{0.55F, 0.53F, 0.46F}, 0.55F, 1);
     }
 
     result.ok = !result.scriptFellShort();

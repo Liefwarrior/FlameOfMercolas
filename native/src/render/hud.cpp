@@ -76,6 +76,85 @@ constexpr Rgb kHealth{0.72F, 0.16F, 0.14F};
 constexpr Rgb kHealthBack{0.10F, 0.06F, 0.06F};
 constexpr Rgb kFrame{0.55F, 0.50F, 0.40F};
 
+/// A drawn row is six glyph rows plus the one-pixel drop shadow under them.
+[[nodiscard]] constexpr int rowHeight(int scale) noexcept { return (kGlyphH + 1) * scale; }
+
+}  // namespace
+
+int hudScale(int height) noexcept { return std::max(1, height / 180); }
+
+int hudMinorScale(int height) noexcept { return std::max(1, hudScale(height) - 1); }
+
+int hudTopRightReserve(int height) noexcept {
+    const int scale = hudScale(height);
+    const int minor = hudMinorScale(height);
+    // WHAT IS STILL DRAWN THERE WHILE SOMEBODY IS TALKING, and nothing else.
+    // Standing, heat, the sack and the stealth line all stand down for the
+    // length of a conversation -- Session sets them empty -- so the corner is
+    // the hour at the full size and a purse of at most five figures under it at
+    // the minor one. Reserving for the whole stack would cost the speech four
+    // columns of every line for rows that are not there.
+    return std::max(textWidth("00:00", scale), textWidth("99999 C", minor)) +
+           kGlyphAdvance * scale;
+}
+
+namespace {
+
+/// THE BOTTOM BAND IS A GRID OF SLOTS AND EVERY SLOT IS PROVEN CLEAR.
+///
+/// Every row down here used to carry its own offset written by hand in scale
+/// units -- the alert at 23, the lock at 31, the case at 16, the guild at 24 --
+/// and the two defects that produced are both in the git log: S9 drew the lock
+/// row through the guild row ("THE 1OCKUNPINS -TENADEPTH ....+...."), S10 drew
+/// a clue through the case row. Both were found in a PNG. Neither could be
+/// found by a test, because a collision between two hand-written constants is
+/// not a thing a test knows to look for.
+///
+/// Rows are handed slots now, in priority order, and a row that has no legal
+/// slot left is dropped. Two rows cannot land on the same pixels because no
+/// slot is ever handed out twice, and no row lands in the play space because
+/// the allocator refuses a slot that crosses the exclusion rectangle.
+class BottomBand {
+  public:
+    BottomBand(int width, int height) noexcept
+        : scale_(hudScale(height)),
+          minor_(hudMinorScale(height)),
+          step_(rowHeight(hudMinorScale(height)) + hudMinorScale(height)),
+          margin_(6 * hudScale(height)),
+          floor_(hudCentreRect(width, height).y1) {
+        // Slot 1 is the row directly above the health bar's frame.
+        base_ = height - margin_ - barHeight() - scale_;
+    }
+
+    [[nodiscard]] int scale() const noexcept { return scale_; }
+    [[nodiscard]] int minor() const noexcept { return minor_; }
+    [[nodiscard]] int margin() const noexcept { return margin_; }
+    [[nodiscard]] int barWidth() const noexcept { return 48 * scale_; }
+    [[nodiscard]] int barHeight() const noexcept { return 6 * scale_; }
+
+    /// Takes the next free slot tall enough for a row drawn at `scale`, and
+    /// answers the y it should be drawn at. -1 when the band is full: the row
+    /// is dropped rather than drawn over the play space.
+    [[nodiscard]] int take(int scale) noexcept {
+        const int span = std::max(1, (rowHeight(scale) + step_ - 1) / step_);
+        const int top = base_ - (taken_ + span) * step_;
+        if (top < floor_) {
+            return -1;
+        }
+        taken_ += span;
+        return top;
+    }
+
+  private:
+    int scale_;
+    int minor_;
+    int step_;
+    int margin_;
+    int floor_;
+    int base_ = 0;
+    int taken_ = 0;
+};
+
 }  // namespace
 
 CentreRect hudCentreRect(int width, int height) noexcept {
@@ -144,13 +223,22 @@ int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb
 
 namespace {
 
-void drawHealth(Framebuffer& target, const HudState& state) {
-    const int scale = std::max(1, target.height() / 180);
-    const int margin = 6 * scale;
-    const int barW = 62 * scale;
-    const int barH = 7 * scale;
-    const int x = margin;
-    const int y = target.height() - margin - barH;
+/// The health bar, bottom-left, and the only thing down here still drawn at
+/// full size.
+///
+/// THE WORD "HP" IS GONE, AND THAT IS THE POINT OF THIS PASS IN ONE ELEMENT. A
+/// red segmented bar in the bottom-left corner of a first-person game is not
+/// ambiguous -- Barony has never labelled its own -- and the label cost a whole
+/// row of a band that is only three rows deep at 320x180. The bar lost a
+/// quarter of its width and a seventh of its height with it: 48 scale units
+/// divide by sixteen segments EXACTLY, where 62 left ten units of dead track on
+/// the end of every full bar.
+void drawHealth(Framebuffer& target, const HudState& state, const BottomBand& band) {
+    const int scale = band.scale();
+    const int barW = band.barWidth();
+    const int barH = band.barHeight();
+    const int x = band.margin();
+    const int y = target.height() - band.margin() - barH;
 
     target.fillRect(x - scale, y - scale, barW + 2 * scale, barH + 2 * scale, kFrame, 0.55F);
     target.fillRect(x, y, barW, barH, kHealthBack, 0.85F);
@@ -165,39 +253,20 @@ void drawHealth(Framebuffer& target, const HudState& state) {
     for (int i = 0; i < filled; ++i) {
         target.fillRect(x + i * segW + 1, y + 1, segW - 1, barH - 2, kHealth, 0.95F);
     }
-    drawText(target, x, y - 8 * scale, "HP", kInk, 0.9F, scale);
-    // S10: THE CASE, one row over the HP label and BELOW the exclusion
-    // rectangle at every resolution -- see HudState::caseLabel for the
-    // arithmetic, and for what is still wrong two rows further up.
-    //
-    // IT IS THE COLOUR OF THE WARD'S NERVE, not a fixed one. A player who has
-    // frightened the district enough that nobody walks the Gullet alone should
-    // be able to see that without reading the words.
-    if (!state.caseLabel.empty()) {
-        const bool afraid = state.caseLabel.find("EMPTYING") != std::string_view::npos ||
-                            state.caseLabel.find("ALONE") != std::string_view::npos;
-        drawText(target, x, y - 16 * scale, state.caseLabel,
-                 afraid ? Rgb{0.86F, 0.44F, 0.36F} : Rgb{0.70F, 0.72F, 0.66F}, 0.90F, scale);
-    }
-    // The bottom-left cluster, stacked upward: HP, then the rung you hold, then
-    // what the line you are on wants next. All of it hugs the corner and none
-    // of it reaches the middle of the screen.
-    if (!state.guildLabel.empty()) {
-        drawText(target, x, y - 24 * scale, state.guildLabel, Rgb{0.86F, 0.74F, 0.44F}, 0.92F,
-                 scale);
-    }
-    if (!state.objectiveLabel.empty()) {
-        drawText(target, x, y - 32 * scale, state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.80F,
-                 scale);
-    }
 }
 
 void drawCompass(Framebuffer& target, const HudState& state) {
-    const int scale = std::max(1, target.height() / 180);
-    const int stripW = std::min(target.width() / 3, 140 * scale);
-    const int stripH = 9 * scale;
+    const int scale = hudScale(target.height());
+    const int minor = hudMinorScale(target.height());
+    // NARROWER, SHALLOWER, AND HARD AGAINST THE EDGE. The ribbon took a third
+    // of the frame width and started five scale units down from the top, which
+    // at 960x540 is a 320x27 black block hanging in the middle of the sky with
+    // a place name under it. A quarter of the width still shows a hundred and
+    // eighty degrees of arc with every point on it legible.
+    const int stripW = std::min(target.width() / 4, 120 * scale);
+    const int stripH = rowHeight(scale) + scale;
     const int x = (target.width() - stripW) / 2;
-    const int y = 5 * scale;
+    const int y = 3 * scale;
 
     target.fillRect(x - scale, y - scale, stripW + 2 * scale, stripH + 2 * scale, kFrame, 0.45F);
     target.fillRect(x, y, stripW, stripH, Rgb{0.05F, 0.05F, 0.07F}, 0.70F);
@@ -223,147 +292,141 @@ void drawCompass(Framebuffer& target, const HudState& state) {
             continue;
         }
         const bool cardinal = (point.bam & 16383) == 0;
-        drawText(target, px - labelWidth / 2, y + 2 * scale, point.label,
+        drawText(target, px - labelWidth / 2, y + scale, point.label,
                  cardinal ? kInk : Rgb{0.62F, 0.60F, 0.54F}, cardinal ? 0.95F : 0.7F, scale);
     }
     // The fixed mark. One pixel column, at the very top edge of the strip, so
     // it never encroaches on the view.
     target.fillRect(x + stripW / 2, y, scale, 2 * scale, Rgb{0.95F, 0.80F, 0.35F}, 1.0F);
 
+    // The place name is REFERENCE, not register: you read it when you arrive
+    // and never again until you arrive somewhere else. It is the sub-label of
+    // the ribbon now rather than a second line the same size as it, which is
+    // what a hierarchy looks like when it is doing its job.
     if (!state.locationLabel.empty()) {
-        const int width = textWidth(state.locationLabel, scale);
-        drawText(target, (target.width() - width) / 2, y + stripH + 3 * scale,
-                 state.locationLabel, Rgb{0.70F, 0.68F, 0.60F}, 0.85F, scale);
+        const int width = textWidth(state.locationLabel, minor);
+        drawText(target, (target.width() - width) / 2, y + stripH + scale, state.locationLabel,
+                 Rgb{0.70F, 0.68F, 0.60F}, 0.85F, minor);
     }
 }
 
-/// Top-right: the hour, and what is in the purse. Right-aligned against the
-/// edge, because that is the edge it belongs to.
-void drawClock(Framebuffer& target, const HudState& state) {
-    const int scale = std::max(1, target.height() / 180);
+/// Top-right: the hour, and then everything the ward, the Watch, your pockets
+/// and the dark have to say about you. Right-aligned against the edge, because
+/// that is the edge it belongs to.
+///
+/// THE STACK DROPS ITS DEAREST ROW RATHER THAN CROSSING THE RECTANGLE. Six rows
+/// at nine scale units each is 54 units of sky and the exclusion rectangle
+/// starts at 39 of them at 320x180 -- so the old stack ran straight through the
+/// play space the moment the Watch had heard about you and there was something
+/// in your sack. Nothing caught it, because no case ever filled more than three
+/// of the six rows at once.
+void drawTopRight(Framebuffer& target, const HudState& state) {
+    const int scale = hudScale(target.height());
+    const int minor = hudMinorScale(target.height());
     const int margin = 6 * scale;
-    int y = 5 * scale;
-    if (state.timeOfDaySeconds >= 0) {
+    const int ceiling = hudCentreRect(target.width(), target.height()).y0;
+    int y = 4 * scale;
+
+    if (state.timeOfDaySeconds >= 0 && y + rowHeight(scale) <= ceiling) {
         const int hour = (state.timeOfDaySeconds / 3600) % 24;
         const int minute = (state.timeOfDaySeconds / 60) % 60;
-        char text[6] = {static_cast<char>('0' + hour / 10), static_cast<char>('0' + hour % 10),
-                        ':', static_cast<char>('0' + minute / 10),
-                        static_cast<char>('0' + minute % 10), '\0'};
+        const char text[6] = {static_cast<char>(48 + hour / 10),
+                              static_cast<char>(48 + hour % 10),
+                              ':',
+                              static_cast<char>(48 + minute / 10),
+                              static_cast<char>(48 + minute % 10),
+                              0};
         const std::string_view clock(text);
         drawText(target, target.width() - margin - textWidth(clock, scale), y, clock, kInk, 0.9F,
                  scale);
-        y += 9 * scale;
+        y += rowHeight(scale) + minor;
     }
-    if (state.coin >= 0) {
-        char text[16] = {};
-        int at = 0;
-        int value = std::min(state.coin, 99999);
-        char digits[8] = {};
-        int count = 0;
-        do {
-            digits[count++] = static_cast<char>('0' + value % 10);
-            value /= 10;
-        } while (value > 0 && count < 8);
-        while (count > 0) {
-            text[at++] = digits[--count];
+
+    // Every remaining row, in the order they have always been drawn in, each
+    // carrying what it would cost to lose it. When the stack runs out of room
+    // above the rectangle the DEAREST row goes and not the last one: a burglar
+    // reads the stealth line every second and the ward's opinion of him once a
+    // week.
+    struct Row {
+        std::string_view text;
+        Rgb ink;
+        float alpha;
+        int cost;
+    };
+    std::array<Row, 5> rows{};
+    std::size_t count = 0;
+    const auto add = [&](std::string_view text, const Rgb& ink, float alpha, int cost) {
+        if (!text.empty() && count < rows.size()) {
+            rows[count++] = Row{text, ink, alpha, cost};
         }
-        text[at++] = ' ';
-        text[at++] = 'C';
-        text[at] = '\0';
-        const std::string_view purse(text);
-        drawText(target, target.width() - margin - textWidth(purse, scale), y, purse,
-                 Rgb{0.82F, 0.72F, 0.38F}, 0.9F, scale);
-        y += 9 * scale;
+    };
+    std::string purse;
+    if (state.coin >= 0) {
+        purse = std::to_string(std::min(state.coin, 99999)) + " C";
+        add(purse, Rgb{0.82F, 0.72F, 0.38F}, 0.9F, 3);
     }
-    // S3: reputation, readable, in the corner where the numbers live. The ward
-    // has an opinion about you and it is not a hidden statistic.
-    if (!state.standingLabel.empty()) {
-        drawText(target, target.width() - margin - textWidth(state.standingLabel, scale), y,
-                 state.standingLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.82F, scale);
-        y += 9 * scale;
+    add(state.standingLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.82F, 5);
+    // Red for anything the ward has decided about you -- a warrant, a hand
+    // taken, a rope waiting -- and ash for the rest.
+    const bool wanted = state.heatLabel.find("WANTED") != std::string_view::npos ||
+                        state.heatLabel.find("MAIMED") != std::string_view::npos ||
+                        state.heatLabel.find("CONDEMNED") != std::string_view::npos;
+    add(state.heatLabel, wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F}, 0.86F, 2);
+    add(state.stashLabel, Rgb{0.58F, 0.66F, 0.52F}, 0.84F, 4);
+    // Green while the room cannot see you, amber the moment it can.
+    const bool seen = state.stealthLabel.substr(0, 4) == "SEEN";
+    add(state.stealthLabel, seen ? Rgb{0.86F, 0.66F, 0.28F} : Rgb{0.44F, 0.72F, 0.50F}, 0.86F, 1);
+
+    const int step = rowHeight(minor) + minor;
+    std::size_t room = 0;
+    while (y + static_cast<int>(room) * step + rowHeight(minor) <= ceiling) {
+        ++room;
     }
-    // S5: and what the WATCH has heard, which is a different number from what
-    // the ward thinks. Red once there is paper out on you, because that is the
-    // one line here a player must not have to read twice to notice.
-    if (!state.heatLabel.empty()) {
-        // Red for anything the ward has decided about you -- a warrant, a hand
-        // taken, a rope waiting -- and ash for the rest.
-        const bool wanted = state.heatLabel.find("WANTED") != std::string_view::npos ||
-                            state.heatLabel.find("MAIMED") != std::string_view::npos ||
-                            state.heatLabel.find("CONDEMNED") != std::string_view::npos;
-        drawText(target, target.width() - margin - textWidth(state.heatLabel, scale), y,
-                 state.heatLabel,
-                 wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F}, 0.86F, scale);
-        y += 9 * scale;
+    while (count > room) {
+        std::size_t dearest = 0;
+        for (std::size_t i = 1; i < count; ++i) {
+            if (rows[i].cost > rows[dearest].cost) {
+                dearest = i;
+            }
+        }
+        for (std::size_t i = dearest + 1; i < count; ++i) {
+            rows[i - 1] = rows[i];
+        }
+        --count;
     }
-    if (!state.stashLabel.empty()) {
-        drawText(target, target.width() - margin - textWidth(state.stashLabel, scale), y,
-                 state.stashLabel, Rgb{0.58F, 0.66F, 0.52F}, 0.84F, scale);
-        y += 9 * scale;
-    }
-    // S9: and whether anybody can see you. Green while the room cannot, amber
-    // the moment it can -- the one line here a burglar reads every second.
-    if (!state.stealthLabel.empty()) {
-        const bool seen = state.stealthLabel.substr(0, 4) == "SEEN";
-        drawText(target, target.width() - margin - textWidth(state.stealthLabel, scale), y,
-                 state.stealthLabel,
-                 seen ? Rgb{0.86F, 0.66F, 0.28F} : Rgb{0.44F, 0.72F, 0.50F}, 0.86F, scale);
+    for (std::size_t i = 0; i < count; ++i) {
+        drawText(target, target.width() - margin - textWidth(rows[i].text, minor), y, rows[i].text,
+                 rows[i].ink, rows[i].alpha, minor);
+        y += step;
     }
 }
 
-/// Bottom-right: what the room is doing. Bottom edge, centred: what somebody
-/// just said to you.
-void drawRoom(Framebuffer& target, const HudState& state) {
-    const int scale = std::max(1, target.height() / 180);
-    const int margin = 6 * scale;
+/// The bottom band: the room you are standing in, and then every row that is
+/// about you, each one handed a slot out of the space between the health bar
+/// and the exclusion rectangle.
+void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band) {
+    const int scale = band.scale();
+    const int minor = band.minor();
+    const int margin = band.margin();
+    const int width = target.width();
+
+    // The room line shares the bottom row with the health bar. It is
+    // right-anchored, the bar is 48 scale units of the left edge, and the clip
+    // is what PROVES they cannot meet in the middle rather than a hope that
+    // they will not.
     if (!state.roomLabel.empty()) {
-        const int width = textWidth(state.roomLabel, scale);
-        drawText(target, target.width() - margin - width,
-                 target.height() - margin - 7 * scale, state.roomLabel,
-                 Rgb{0.72F, 0.70F, 0.62F}, 0.88F, scale);
+        const int room = width - 2 * margin - band.barWidth() - kGlyphAdvance * minor;
+        const std::string line = clipToWidth(state.roomLabel, room, minor);
+        drawText(target, width - margin - textWidth(line, minor),
+                 target.height() - margin - rowHeight(minor), line, Rgb{0.72F, 0.70F, 0.62F},
+                 0.88F, minor);
     }
-    // S8: the man who put you here, one row above the room line and anchored to
-    // the same edge.
-    //
-    // BOTTOM-RIGHT AND NOT BOTTOM-LEFT, and that is a measurement rather than a
-    // taste. The bottom-left stack already reaches y - 32*scale for the
-    // objective, which at 320x180 is inside the exclusion rectangle's rows; one
-    // more row up would be further in. This edge has two rows of clear space
-    // under the rectangle at every resolution the game runs at. The centre stays
-    // empty, which is the rule.
-    if (!state.rivalLabel.empty()) {
-        const int width = textWidth(state.rivalLabel, scale);
-        // A hunted man should not have to read the line to notice it.
-        const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
-        drawText(target, target.width() - margin - width,
-                 target.height() - margin - 15 * scale, state.rivalLabel,
-                 hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F}, 0.90F, scale);
-    }
-    // S9: the lock under the wire, one row above the alert and clamped to the
-    // same margins. Bottom EDGE, well below the exclusion zone -- a lockpicking
-    // minigame is exactly the element that would otherwise become a panel in
-    // the middle of the screen, which is the failure this HUD is built against.
-    if (!state.lockLabel.empty()) {
-        const std::string lock = clipToWidth(state.lockLabel, target.width() - 2 * margin, scale);
-        const int width = textWidth(lock, scale);
-        const int x = std::max(margin, (target.width() - width) / 2);
-        drawText(target, x, target.height() - margin - 31 * scale, lock,
-                 Rgb{0.78F, 0.74F, 0.56F}, 0.92F, scale);
-    }
+
+    // PRIORITY ORDER, AND IT IS AN ARGUMENT. A shout outranks a lock, a lock
+    // outranks the case, the case outranks the man hunting you, and the rung
+    // you hold and the errand you are on are the two things a player can go and
+    // look up at leisure. At 640x360 all six fit and none of this ever fires.
     if (!state.alert.empty() && state.showAlert) {
-        // CLIPPED HERE, WHICH IS THE ONLY PLACE THAT CAN DO IT HONESTLY.
-        //
-        // S6 shipped a frame -- docs/frames/s6-skyrun-quiet.png -- reading
-        // "KLED TARBECK: THAT IS YOUR ONE. OUT OF THIS HOUSE, OR I PUT YOU"
-        // with the last two words off the right edge, cut mid-glyph. Session
-        // clips what it composes itself to 56 columns in say(), but the
-        // bouncer's warning is assigned into hud.alert straight off the tavern
-        // and never went through it, and the warning is 68 characters.
-        //
-        // A caller-side column count is a guess about a frame it cannot see.
-        // The frame is here. Clip to the width that actually exists, so every
-        // alert from every source is safe by construction and no future caller
-        // has to remember a number.
         // AND DRAWN SMALLER RATHER THAN CUT.
         //
         // S10: clipping is the last resort and it used to be the first. The 4x6
@@ -374,35 +437,87 @@ void drawRoom(Framebuffer& target, const HudState& state) {
         // smaller; a line nobody can finish is worth nothing. So take the
         // largest scale it fits at, down to 1, and only then clip.
         int alertScale = scale;
-        while (alertScale > 1 &&
-               textWidth(state.alert, alertScale) > target.width() - 2 * margin) {
+        while (alertScale > 1 && textWidth(state.alert, alertScale) > width - 2 * margin) {
             --alertScale;
         }
-        const std::string alert =
-            clipToWidth(state.alert, target.width() - 2 * margin, alertScale);
-        const int width = textWidth(alert, alertScale);
-        const int x = std::max(margin, (target.width() - width) / 2);
-        // One row higher than it used to sit. A long alert is clamped to the
-        // left margin, and at 15 rows up that is exactly where the "HP" label
-        // is -- so a full-width line printed "HPSOMEBODY SAID SOMETHING". The
-        // bottom-left is a stack now (bar, HP, alert, rung, objective) and every
-        // row in it has its own.
-        drawText(target, x, target.height() - margin - 23 * scale, alert,
-                 Rgb{0.90F, 0.62F, 0.30F}, 0.95F, alertScale);
+        // CLIPPED HERE, WHICH IS THE ONLY PLACE THAT CAN DO IT HONESTLY. S6
+        // shipped docs/frames/s6-skyrun-quiet.png reading "KLED TARBECK: THAT
+        // IS YOUR ONE. OUT OF THIS HOUSE, OR I PUT YOU" with the last two words
+        // drawn off the right edge, cut mid-glyph, because Session clipped what
+        // it composed itself to a guessed 56 columns and the bouncer's warning
+        // never went through it. A caller-side column count is a guess about a
+        // frame it cannot see. The frame is here.
+        const std::string alert = clipToWidth(state.alert, width - 2 * margin, alertScale);
+        const int y = band.take(alertScale);
+        if (y >= 0) {
+            const int drawn = textWidth(alert, alertScale);
+            drawText(target, std::max(margin, (width - drawn) / 2), y, alert,
+                     Rgb{0.90F, 0.62F, 0.30F}, 0.95F, alertScale);
+        }
+    }
+    // The lock under the wire. A lockpicking minigame is exactly the element
+    // that would otherwise become a panel in the middle of the screen, which is
+    // the failure this HUD is built against; it gets one row on an edge.
+    if (!state.lockLabel.empty()) {
+        const std::string lock = clipToWidth(state.lockLabel, width - 2 * margin, minor);
+        const int y = band.take(minor);
+        if (y >= 0) {
+            const int drawn = textWidth(lock, minor);
+            drawText(target, std::max(margin, (width - drawn) / 2), y, lock,
+                     Rgb{0.78F, 0.74F, 0.56F}, 0.92F, minor);
+        }
+    }
+    // The case. IT IS THE COLOUR OF THE WARD'S NERVE and not a fixed one: a
+    // player who has frightened the district enough that nobody walks the
+    // Gullet alone should see that without reading the words.
+    if (!state.caseLabel.empty()) {
+        const int y = band.take(minor);
+        if (y >= 0) {
+            const bool afraid = state.caseLabel.find("EMPTYING") != std::string_view::npos ||
+                                state.caseLabel.find("ALONE") != std::string_view::npos;
+            drawText(target, margin, y, state.caseLabel,
+                     afraid ? Rgb{0.86F, 0.44F, 0.36F} : Rgb{0.70F, 0.72F, 0.66F}, 0.90F, minor);
+        }
+    }
+    // The man who put you here, anchored to the right edge so a long name
+    // cannot run off the frame the way S6 alert did.
+    if (!state.rivalLabel.empty()) {
+        const int y = band.take(minor);
+        if (y >= 0) {
+            // A hunted man should not have to read the line to notice it.
+            const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
+            drawText(target, width - margin - textWidth(state.rivalLabel, minor), y,
+                     state.rivalLabel,
+                     hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F}, 0.90F, minor);
+        }
+    }
+    if (!state.guildLabel.empty()) {
+        const int y = band.take(minor);
+        if (y >= 0) {
+            drawText(target, margin, y, state.guildLabel, Rgb{0.86F, 0.74F, 0.44F}, 0.92F, minor);
+        }
+    }
+    if (!state.objectiveLabel.empty()) {
+        const int y = band.take(minor);
+        if (y >= 0) {
+            drawText(target, margin, y, state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.80F,
+                     minor);
+        }
     }
 }
 
 }  // namespace
 
 void drawHud(Framebuffer& target, const HudState& state) {
+    BottomBand band(target.width(), target.height());
     if (state.showHealth) {
-        drawHealth(target, state);
+        drawHealth(target, state, band);
     }
     if (state.showCompass) {
         drawCompass(target, state);
     }
-    drawClock(target, state);
-    drawRoom(target, state);
+    drawTopRight(target, state);
+    drawBottomBand(target, state, band);
 }
 
 }  // namespace granadad::render

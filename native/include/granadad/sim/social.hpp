@@ -104,6 +104,15 @@ inline constexpr std::int32_t kKinAtOrAbove = 85;
 /// Everything above it costs coin, a favour, or trouble avoided.
 inline constexpr std::int32_t kTalkCeiling = kWarmAtOrAbove - 1;
 
+/// What reputationLabel() says when the ward has no opinion of you, which is
+/// the state every new game starts in and most games stay in.
+///
+/// IT IS A NAMED CONSTANT BECAUSE THE HUD HAS TO RECOGNISE IT. A row that says
+/// nothing happened does not get a row -- polish-1's rule -- and the way the
+/// HUD knows this row says nothing is by comparing against this, not against a
+/// second copy of the string typed into the renderer.
+inline constexpr std::string_view kReputationUnremarkable = "NOBODY IN PARTICULAR";
+
 [[nodiscard]] Attitude attitudeFor(std::int32_t disposition) noexcept;
 
 /// What an actor remembers about the player. One per actor who has ever
@@ -160,6 +169,7 @@ public:
     [[nodiscard]] std::string_view reputationLabel() const noexcept;
 
     [[nodiscard]] std::int32_t deedsDone() const noexcept { return deedsDone_; }
+
 
     // --- persistence -------------------------------------------------------
 
