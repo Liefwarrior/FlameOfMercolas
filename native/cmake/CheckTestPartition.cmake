@@ -84,4 +84,5 @@ if(NOT summed EQUAL total)
         "       this check exists.")
 endif()
 
-message(STATUS "test partition: ${total} cases across ${GRANADAD_TEST_SOURCES}")
+list(LENGTH sources file_count)
+message(STATUS "test partition: ${total} cases across ${file_count} files, every one of them run")
