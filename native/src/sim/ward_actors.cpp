@@ -1788,8 +1788,17 @@ void WardPopulation::settleToSchedule() {
         // ten sharing one post spreads over the shed's own floor rather than
         // stacking, which is the same thing kWorkReach buys them while the
         // simulation is actually running.
+        // TWELVE AND NOT SIX, and the extra six are for the decks.
+        //
+        // ONE BODY PER SQUARE is the owner's rule and this loop is the one
+        // place a settle could break it: the fallback below puts a body on its
+        // own home cell whether or not somebody is already standing there. On
+        // the street that never fires -- a compound floor has free tiles in
+        // every direction -- and on a roof-slum plane, where the reachable
+        // ground is a handful of cells and the huts sit on top of each other,
+        // it fired immediately.
         bool placed = false;
-        for (std::int32_t r = 0; r <= 6 && !placed; ++r) {
+        for (std::int32_t r = 0; r <= 12 && !placed; ++r) {
             for (std::int32_t dy = -r; dy <= r && !placed; ++dy) {
                 for (std::int32_t dx = -r; dx <= r && !placed; ++dx) {
                     if (std::max(std::abs(dx), std::abs(dy)) != r) {

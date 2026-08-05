@@ -598,6 +598,21 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
             derive_draw(worldSeed_, 0, stream_salt("ward.household"), h, 0);
         residentsOf[h] = static_cast<std::int32_t>(
             weighted_pick(roll, kHouseholdSizeWeights, 5) + 1);
+        // #80. A ROOF HUT IS A HUT. DOCKS-GAZETTEER section 2.5 describes the
+        // rooftop tier as "tents/mud huts, cheap and flammable" -- not the
+        // condo underneath it -- so the canon weights, which run to five, are
+        // capped at two up here.
+        //
+        // AND IT IS A ONE-PER-SQUARE PROBLEM AS WELL AS A CANON ONE. A
+        // household shares ONE home cell and the settle spreads it over the
+        // neighbouring floor; a deck is small and mostly unreachable, so five
+        // people in one hut is five bodies looking for free standable cells on
+        // a plane that may hold six. The build found it exactly there: "one
+        // body per square, and it holds while six hundred of them walk" went
+        // red on a roof.
+        if (componentAt(homes_[h].x, homes_[h].y, homes_[h].band) != mainComponent_) {
+            residentsOf[h] = std::min(residentsOf[h], 2);
+        }
         homes_[h].residents = residentsOf[h];
     }
 

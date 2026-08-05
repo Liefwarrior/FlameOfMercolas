@@ -275,6 +275,24 @@ They are drawn out of your own sprite sheet rather than as three ellipses in
 three browns, so a guard is a guard and a priest is a priest at eight tiles in
 lamplight.
 
+**And some of them live on the roofs.** The rooftop tier of a Trojian compound
+is the poorest housing there is — tents and mud huts on a walled deck, let by
+the house-owner beneath — and until #80 it was empty, because a ward actor had
+no climb verb and a body homed up there could never walk to its own bed. The
+Skyrunners, a criminal faction *named for running the roofs*, kept ground-level
+condos. They do not any more: the ward's poor and its beasts can mantle a wall
+and drop off one, every roof bed is proved reachable **both ways** before
+anybody is put in it, and K35 The Skyrunner's Roost has a Skyrunner in it. The
+Watch still cannot climb, which is exactly why the roof-slums are outside the
+law.
+
+**And something eats the rats.** The district's thirty-two mice used to be a
+population nothing touched. The wharf cats and the quay strays hunt them now —
+sense, chase, catch, and a den that puts another one out a few hours later — so
+the mouse count on the ward's own report line goes down and comes back up
+instead of only ever reading 32 of 32. `granadad.exe --people=6,10` prints all
+of it: the roll by trade, who sleeps on a deck, and what the food chain did.
+
 **What they do not do yet:** they do not talk. `E` reaches the Gull's fourteen
 and nobody else — the ward walks past you. They do not witness a crime, they
 are not pickpocketable, and stealth still only means anything inside the Gull.

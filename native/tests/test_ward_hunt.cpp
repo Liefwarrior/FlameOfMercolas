@@ -89,6 +89,13 @@ struct Soak {
     std::unique_ptr<WardRun> ward;
 
     /// The prey roll, and how far the LIVE count fell and climbed back.
+    ///
+    /// THE RECOVERY IS MEASURED FROM THE BOTTOM, and the first draft measured
+    /// it from the first dip -- which is not a claim at all. A count that fell
+    /// 32, 31, 30, 29 and never rose again would satisfy "the highest reading
+    /// after the first dip beats the lowest reading" trivially, with 31 against
+    /// 29, while describing a die-off. So the high water is only the readings
+    /// that came AFTER the lowest one.
     std::int32_t prey = 0;
     std::int32_t lowWater = 0;
     std::int32_t highWaterAfterTheDip = 0;
@@ -106,10 +113,14 @@ struct Soak {
     std::int32_t wrongPrey = 0;
     /// Predators that were in the hunger band at the end.
     std::int32_t hungryPredators = 0;
-    /// Predators that ended above the scavenge ceiling and under the hunger
-    /// band -- the state a scrap with no clamp used to park every one of them
-    /// in, and which nothing can now produce.
-    std::int32_t parkedInTheMiddle = 0;
+    /// Predators sitting AT OR UNDER the scavenge ceiling -- which is where a
+    /// predator with nothing to catch ends up and stays. Under the unclamped
+    /// nibble this was structurally impossible: a scrap put a beast back at
+    /// full every few seconds and nothing was ever hungry at all.
+    std::int32_t atTheCeiling = 0;
+    /// The most hunger any predator held. A number rather than a threshold: it
+    /// is what says a catch is worth a great deal more than a scrap.
+    std::int32_t fullestPredator = 0;
 };
 
 /// Built on first use and read by every case. Deterministic: one seed, one
@@ -122,13 +133,16 @@ const Soak& soak() {
         const sim::WardPopulation& people = *out.ward->people;
         out.prey = people.census().prey;
         out.lowWater = out.prey;
-        bool dipped = false;
         for (int block = 0; block < 36; ++block) {
             out.ward->run(1000);
             const sim::WardCensus roll = people.census();
-            out.lowWater = std::min(out.lowWater, roll.preyUp);
-            dipped = dipped || roll.preyUp < out.prey;
-            if (dipped) {
+            if (roll.preyUp < out.lowWater) {
+                // A new bottom RESTARTS the recovery measurement, so what the
+                // case reads is always "how far it climbed back from the worst
+                // it ever got" and never "how high it was before it fell".
+                out.lowWater = roll.preyUp;
+                out.highWaterAfterTheDip = roll.preyUp;
+            } else {
                 out.highWaterAfterTheDip = std::max(out.highWaterAfterTheDip, roll.preyUp);
             }
             out.rollHeld = out.rollHeld && roll.prey == out.prey && roll.preyUp <= out.prey;
@@ -159,9 +173,10 @@ const Soak& soak() {
             if (hunger < sim::kNeedLow) {
                 ++out.hungryPredators;
             }
-            if (hunger > sim::kScavengeCeiling && hunger < sim::kNeedLow) {
-                ++out.parkedInTheMiddle;
+            if (hunger <= sim::kScavengeCeiling) {
+                ++out.atTheCeiling;
             }
+            out.fullestPredator = std::max(out.fullestPredator, hunger);
         }
         return out;
     }();
@@ -205,12 +220,15 @@ TEST_CASE("a scrap is not a meal: the ward's cats actually get hungry now") {
     // which is under kNeedLow -- so a predator that cannot reach prey hovers
     // permanently hungry and permanently looking, and only a catch fills it.
     const Soak& s = soak();
-    INFO(s.hungryPredators, " of thirteen predators ended in the hunger band");
+    INFO(s.hungryPredators, " of thirteen predators ended in the hunger band, ", s.atTheCeiling,
+         " of them scavenging at the ceiling; the fullest held ", s.fullestPredator);
     CHECK(s.hungryPredators > 0);
-    // NEVER PARKED IN THE MIDDLE: comfortably above the scavenge ceiling and
-    // still under the band is the state the unclamped nibble produced, and it
-    // is the state nothing can now reach.
-    CHECK(s.parkedInTheMiddle == 0);
+    // AT THE CEILING AND STAYING THERE is where a predator with nothing to
+    // catch ends up: permanently hungry, permanently looking, never dead. Under
+    // the unclamped nibble it was structurally impossible to be here at all.
+    CHECK(s.atTheCeiling > 0);
+    // AND A CATCH IS WORTH A GREAT DEAL MORE THAN A SCRAP. Somebody ate.
+    CHECK(s.fullestPredator > sim::kScavengeCeiling);
 
     // And nothing on either side of the food chain starved to death for it.
     for (const sim::WardActor& actor : s.ward->people->actors()) {
