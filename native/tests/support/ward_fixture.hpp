@@ -32,22 +32,31 @@
 // wrong.
 //
 // ---------------------------------------------------------------------------
-// wardAt(hour, ticks) IS MONOTONE, AND THAT IS DELIBERATE
+// wardAt(hour, ticks) ANSWERS THE QUESTION IT WAS ASKED, WHATEVER RAN BEFORE
 // ---------------------------------------------------------------------------
 // Three cases at two in the morning used to bake three wards and tick them 600,
 // 900 and 1,200 times: 2,700 ticks to answer three questions about the same
 // district, and a ward tick at two in the morning costs thirty-one milliseconds.
 //
-// So there is ONE ward per hour and it is ticked FORWARD. Asking for 1,200 after
-// somebody asked for 600 runs the 600 that are missing and no more. Asking for
-// 600 after somebody asked for 1,200 is not silently answered with the wrong
-// district -- it THROWS, naming the file and the fix. There is no reading here
-// that can be quietly wrong; there is a reading that stops the build.
+// So there is ONE ward per hour and it is ticked FORWARD when the next reading
+// is later. Asking for 1,200 after somebody asked for 600 runs the 600 that are
+// missing and no more.
 //
-// The order cases run in is fixed by --order-by=file in the ctest registration,
-// so "the tick counts in a file ascend, per hour" is a property of the source
-// and not of the machine. Keep it that way when adding a case, or take a
-// privateWard() and pay for it.
+// AND WHEN THE NEXT READING IS EARLIER, THE WARD IS REBUILT. This is the whole
+// correctness argument and it was learned the hard way: the first version threw
+// instead, on the reasoning that ctest runs each file in --order-by=file order
+// so "the tick counts in a file ascend" is a property of the source. That is
+// true of a FILE and the cache is per PROCESS. Run the whole binary in one go
+// -- which is exactly what scripts/verify-windows.ps1 does, and what anybody
+// typing ./granadad-tests does -- and the files interleave: test_ward_actors.cpp
+// leaves hour eight at 600 ticks and test_ward_hunt.cpp then asks for it at
+// zero. Six cases threw.
+//
+// A rebuild costs a bake and the ticks. It is never paid under ctest, where a
+// file has the cache to itself; it is paid a handful of times in a whole-binary
+// run, and it is the right price for a fixture that cannot be wrong. What
+// wardAt() returns is ALWAYS "hour H, baked, ticked N" -- a pure function of its
+// two arguments and nothing else. No order in this file is load-bearing.
 
 #include <cstddef>
 #include <cstdint>
@@ -137,28 +146,29 @@ private:
 
 /// THE SHARED WARD AT `hour`, TICKED TO `ticks`, READ-ONLY.
 ///
-/// One per hour per process, ticked forward and never backward. Throws if a
-/// case asks for a district younger than one already handed out, because the
-/// alternative is answering with a district nobody asked for.
+/// A PURE FUNCTION OF ITS TWO ARGUMENTS. What comes back is the district that
+/// hour bakes, ticked exactly that many times, no matter which case asked
+/// before or in what order. The cache underneath is an optimisation and never
+/// a semantic: a later reading ticks the held ward forward, an earlier one
+/// throws it away and bakes again.
+///
+/// Const, because the whole safety argument is that no case can change what
+/// another case reads. Take privateWard() to mutate.
 [[nodiscard]] inline const sim::WardPopulation& wardAt(std::int32_t hour, std::int64_t ticks) {
     // Twenty-four slots, indexed by the hour, so there is no map and no
     // iteration order anywhere near this.
     static std::unique_ptr<WardRun> byHour[24];
     const auto slot = static_cast<std::size_t>(((hour % 24) + 24) % 24);
+    if (byHour[slot] && ticks < byHour[slot]->ticksRun()) {
+        // Somebody has already read this hour LATER than we want it. There is
+        // no rewinding a simulation, so the answer is a new one. See the header:
+        // this is the case ctest never reaches and a whole-binary run does.
+        byHour[slot].reset();
+    }
     if (!byHour[slot]) {
         byHour[slot] = std::make_unique<WardRun>(hour);
     }
     WardRun& run = *byHour[slot];
-    if (ticks < run.ticksRun()) {
-        throw std::runtime_error(
-            "wardAt(" + std::to_string(hour) + ", " + std::to_string(ticks) +
-            ") wants a district younger than the " + std::to_string(run.ticksRun()) +
-            " ticks already run at that hour.\n"
-            "The shared ward only moves forward. Either move this case above the "
-            "longer one in its file -- ctest runs a file in --order-by=file order, "
-            "so that is a decision the source makes -- or give it a privateWard(" +
-            std::to_string(hour) + ") and pay for its own bake.");
-    }
     run.runTo(ticks);
     return run.people();
 }

@@ -35,21 +35,23 @@
 #include "support/ward_fixture.hpp"
 
 using namespace granadad;
+using granadad::testfix::privateWard;
 using granadad::testfix::sharedTiles;
 using granadad::testfix::wardAt;
 
 // ---------------------------------------------------------------------------
-// THE TICK COUNTS IN THIS FILE ASCEND, PER HOUR, AND THAT IS LOAD-BEARING
+// THE TICK COUNTS IN THIS FILE ASCEND, PER HOUR -- AS A SAVING, NOT AS A RULE
 // ---------------------------------------------------------------------------
 // wardAt(hour, ticks) hands out ONE ward per hour and ticks it forward. Three
 // cases used to bake three wards at two in the morning and tick them 600, 900
 // and 1,200 times -- 2,700 ticks of the most expensive hour in the day (31 ms a
 // tick, measured) to ask three questions about the same district.
 //
-// They now read one ward, and the file is written so the shorter reading comes
-// first. Asking for less than has already run throws rather than answering with
-// the wrong district; see support/ward_fixture.hpp. A case that MUTATES takes a
-// privateWard() and pays for its own bake.
+// They now read one ward. Writing the shorter reading first is what makes that
+// a saving; wardAt is a pure function of (hour, ticks) either way and rebuilds
+// rather than answering with a district nobody asked for, so nothing here is
+// order-dependent. A case that MUTATES takes a privateWard() and pays for its
+// own bake.
 //
 //   hour  1   1200
 //   hour  2    600 -> 600 -> 900
@@ -558,4 +560,68 @@ TEST_CASE("the population is registered in the windowed game and keeps the hour"
         CHECK(sprite.ward);
         CHECK(sprite.glow == 0.0F);
     }
+}
+
+// ---------------------------------------------------------------------------
+// AND THE FIXTURE ITSELF, BECAUSE IT GOT THIS WRONG ONCE
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the shared ward is a pure function of its hour and its tick count") {
+    // A CASE ABOUT tests/support/ward_fixture.hpp, and it exists because the
+    // first version of wardAt() was not this.
+    //
+    // That version threw when asked for a district younger than one it had
+    // already handed out, reasoning that ctest runs a file in --order-by=file
+    // order so "the tick counts in a file ascend" is a property of the source.
+    // Which is true of a FILE, and the cache is per PROCESS. Run the whole
+    // binary in one go -- scripts/verify-windows.ps1 does exactly that -- and
+    // the files interleave: this file leaves hour eight at 600 ticks and
+    // test_ward_hunt.cpp then asks for it at zero. SIX CASES THREW, on Windows,
+    // after the Linux half of the gate had gone green.
+    //
+    // A shared fixture that is order-dependent is the exact failure this whole
+    // round was warned about, so the fixture is not order-dependent: it rebuilds
+    // rather than rewinding, and what it returns depends on its two arguments
+    // and on nothing else. This is the case that says so, and it does the
+    // interleaving on purpose.
+    const auto signature = [](const sim::WardPopulation& ward) {
+        // FNV-1a over where everybody is, what they are doing and what they
+        // hold. Not the world hash -- this is a test comparing two districts to
+        // each other, and it wants to be sensitive to a single body having
+        // taken one different step.
+        std::uint64_t h = 1469598103934665603ull;
+        const auto mix = [&h](std::int32_t value) {
+            h = (h ^ static_cast<std::uint64_t>(static_cast<std::uint32_t>(value))) *
+                1099511628211ull;
+        };
+        for (const sim::WardActor& actor : ward.actors()) {
+            mix(actor.x);
+            mix(actor.y);
+            mix(actor.band);
+            mix(actor.coin);
+            mix(static_cast<std::int32_t>(actor.policy));
+            mix(actor.need(sim::Need::Hunger));
+        }
+        return h;
+    };
+
+    // Eight in the morning, which is the cheapest hour the ward has.
+    const std::uint64_t atSixty = signature(wardAt(8, 60));
+
+    // Read the SAME hour later, which ticks the held ward forward...
+    const std::uint64_t atThreeHundred = signature(wardAt(8, 300));
+    CHECK(atThreeHundred != atSixty);  // or the ward is not running at all
+
+    // ...and then earlier again, which cannot be answered by rewinding.
+    CHECK(signature(wardAt(8, 60)) == atSixty);
+    CHECK(signature(wardAt(8, 300)) == atThreeHundred);
+
+    // And a privately baked ward, which shares nothing with the cache at all,
+    // agrees with both. That is what makes the two readings above a claim about
+    // the DISTRICT rather than a claim about the cache agreeing with itself.
+    const std::unique_ptr<testfix::WardRun> own = privateWard(8);
+    own->run(60);
+    CHECK(signature(own->people()) == atSixty);
+    own->run(240);
+    CHECK(signature(own->people()) == atThreeHundred);
 }

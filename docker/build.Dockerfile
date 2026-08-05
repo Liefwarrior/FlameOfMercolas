@@ -537,9 +537,10 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # Every case name is now looked for in the two suites' OWN listings rather
     # than in ctest's, because ctest no longer knows the names. Same strings,
     # same glob match, and it is asking the binary that holds them.
-    ctest_list="${ctest_list}
-${sim_cases}
-${content_cases}"; \
+    # printf and not a here-string with real newlines in it: a literal newline
+    # inside a RUN ends the instruction as far as the Dockerfile parser is
+    # concerned, and it says so as "unknown instruction: ${sim_cases}".
+    ctest_list="$(printf '%s\n%s\n%s\n' "$ctest_list" "$sim_cases" "$content_cases")"; \
     # WHY A SHELL `case` AND NOT `printf | grep -qF`. S9 found this the hard
     # way: every one of the checks below used to be a pipeline, and `grep -q`
     # EXITS THE MOMENT IT MATCHES. With `set -o pipefail` on and a test list
