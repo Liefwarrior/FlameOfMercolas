@@ -492,17 +492,29 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
             // flood found this cell by climbing and not by walking) and the
             // proof behind it is two real router searches -- so the expensive
             // question is asked of a handful of cells and never of a ring.
+            // AND A BUDGET ON THE EXPENSIVE HALF. A failed A* is the most
+            // expensive search there is -- it burns the whole node budget
+            // before answering no -- so a deck that is genuinely one-way must
+            // not cost a hundred and sixty-nine of them times two, once per
+            // Session, for a suite that builds a couple of hundred Sessions.
+            // Twelve probes is a hut's own footprint and its neighbours; a deck
+            // whose first twelve climbable cells all refuse the round trip is a
+            // deck this bake declines to use.
             bool onDeck = false;
-            for (std::int32_t r = 0; r <= 6 && !onDeck; ++r) {
-                for (std::int32_t dy = -r; dy <= r && !onDeck; ++dy) {
-                    for (std::int32_t dx = -r; dx <= r && !onDeck; ++dx) {
+            std::int32_t probes = 0;
+            for (std::int32_t r = 0; r <= 6 && !onDeck && probes < 12; ++r) {
+                for (std::int32_t dy = -r; dy <= r && !onDeck && probes < 12; ++dy) {
+                    for (std::int32_t dx = -r; dx <= r && !onDeck && probes < 12; ++dx) {
                         if (std::max(std::abs(dx), std::abs(dy)) != r) {
                             continue;
                         }
                         const std::int32_t cx = dwelling.at.x + dx;
                         const std::int32_t cy = dwelling.at.y + dy;
-                        if (componentAt(cx, cy, ab) != kClimbIsland ||
-                            !roofBedIsSound(cx, cy, ab)) {
+                        if (componentAt(cx, cy, ab) != kClimbIsland) {
+                            continue;
+                        }
+                        ++probes;
+                        if (!roofBedIsSound(cx, cy, ab)) {
                             continue;
                         }
                         ax = cx;
@@ -662,7 +674,25 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
         for (std::size_t pass = 0; pass < 2; ++pass) {
             for (std::size_t i = 0; i < actors_.size(); ++i) {
                 const std::size_t at = (cursor + i) % actors_.size();
-                if (claimed[at] || actors_[at].type == WardType::Thief) {
+                // #80. AND NOBODY WHOSE BED IS ON A ROOF, and it is two rules
+                // at once.
+                //
+                // The mechanical one: claiming REWRITES the type -- a spare
+                // wastrel becomes the serf who keeps the Slop-Chest -- and a
+                // serf cannot climb. One roof tenant hired into a warehouse
+                // crew is one body that walks off to work in the morning and
+                // can never get home again. The stranding failure this pass
+                // exists to avoid, arriving through the hiring loop rather than
+                // through the map or the household draw.
+                //
+                // The canon one says the same thing: the rooftop tier rents
+                // from the house-owner beneath, not from the plot's Den Duke --
+                // "they are not his tenants, they are his tenants' tenants"
+                // (DOCKS-GAZETTEER section 2.8). The roof people are not the
+                // pool the ward's establishments hire out of. They keep the
+                // kerb, the bins and the dark, which is what they were homed as.
+                if (claimed[at] || actors_[at].type == WardType::Thief ||
+                    actors_[at].homeOnTheRoof) {
                     continue;
                 }
                 // First pass takes the trade that fits; the second takes spare

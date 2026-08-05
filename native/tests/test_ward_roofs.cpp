@@ -187,7 +187,12 @@ TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") 
              ",z", bed.band);
         REQUIRE(groundUnder(*run.people, bed, ground));
         INFO("ground under it at ", ground.x, ',', ground.y, ",z", ground.band);
-        REQUIRE_FALSE(bed.x == ground.x && bed.y == ground.y && bed.band == ground.band);
+        // Folded to one bool on purpose: doctest decomposes the expression
+        // inside a CHECK into a binary comparison and static_asserts on
+        // anything more complicated than that.
+        const bool sameCell =
+            bed.x == ground.x && bed.y == ground.y && bed.band == ground.band;
+        REQUIRE_FALSE(sameCell);
 
         // DOWN, which is the direction nothing else in the build checks.
         REQUIRE(finder.find(bed, ground, 0, route, sim::Gait::Climb));

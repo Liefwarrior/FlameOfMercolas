@@ -1430,7 +1430,29 @@ void WardPopulation::advanceLeg(WardActor& actor, const TickContext& context) {
         // stands is paid the same tick it is picked, and the tick after, and
         // the tick after that -- a beast dwelling in place would refill its own
         // hunger every second and never die of anything.
-        if (snapToStandable(cx, cy, cb, 2) && legDistance(actor, cx, cy, cb) >= 3) {
+        bool ok = snapToStandable(cx, cy, cb, 2);
+        if (!ok && wardTypeClimbs(actor.type)) {
+            // #80. A CLIMBER'S BEAT IS THE DECK AS WELL AS THE STREET.
+            //
+            // The snap above insists on the ward's WALKING island, which is the
+            // right answer for a body that can only walk and the wrong one for
+            // a Skyrunner: DOCKS-GAZETTEER section 2.5 has burglars using the
+            // roof-slum layer as a highway, "fleeing across compound roofs
+            // after breaking in through a ceiling". A thief whose corners were
+            // all dragged down to the street would sleep on a roof it never
+            // worked. So a climber gets a second ask that will take a deck --
+            // and still refuses a cell the ward cannot reach at all, which is
+            // what the component check is for.
+            cx = actor.anchorX +
+                 static_cast<std::int32_t>(roll % static_cast<std::uint64_t>(2 * span + 1)) - span;
+            cy = actor.anchorY +
+                 static_cast<std::int32_t>((roll >> 20) % static_cast<std::uint64_t>(2 * span + 1)) -
+                 span;
+            cb = actor.anchorBand;
+            ok = snapToStandable(cx, cy, cb, 2, /*wantWalkable=*/false) &&
+                 componentAt(cx, cy, cb) >= 0;
+        }
+        if (ok && legDistance(actor, cx, cy, cb) >= 3) {
             actor.targetX = cx;
             actor.targetY = cy;
             actor.targetBand = cb;
