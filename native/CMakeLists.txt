@@ -153,6 +153,16 @@ add_library(granadad-sim STATIC
     # buys something a player can feel.
     src/sim/casebook.cpp
     src/sim/legend.cpp
+    # #78 -- THE WARD, WITH PEOPLE IN IT. path_finder.cpp is the bounded
+    # deterministic A* a district-sized walk needs (region_path.cpp's exhaustive
+    # frontier is right for a room and useless across the Docks);
+    # ward_actors.cpp is the needs/jobs/schedule/occupancy machine;
+    # ward_roster.cpp is who is actually here, at the map's own authored
+    # anchors. Listed AFTER tavern.cpp and compound.cpp because the population
+    # extends both and spawns nobody inside the Gilded Gull.
+    src/sim/path_finder.cpp
+    src/sim/ward_actors.cpp
+    src/sim/ward_roster.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
