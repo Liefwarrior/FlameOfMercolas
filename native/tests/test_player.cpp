@@ -80,25 +80,36 @@ TEST_CASE("movement is continuous and sub-tile, not tile-snapped") {
     PlayerBody body = spawned();
     const std::int32_t startY = body.y();
     body.step(walkForward());
-    // One step at walk speed is 11/256 of a tile: the body has moved, and it
-    // has NOT jumped a whole tile.
-    CHECK(body.y() == startY - kWalkSpeed);
+    // #77: the DEFAULT gait is a jog, not a walk. One step is kJogSpeed/256 of
+    // a tile: the body has moved, and it has NOT jumped a whole tile.
+    CHECK(body.y() == startY - kJogSpeed);
     CHECK(body.tileY() == kWalkTileY);
     CHECK(body.x() == q8_tile_centre(kWalkTileX));  // due north is pure -Y
 }
 
-TEST_CASE("running is faster than walking and both are per step, not per frame") {
+TEST_CASE("the three gaits are ordered and all of them are per step, not per frame") {
     PlayerBody walker = spawned();
-    PlayerBody runner = spawned();
-    MoveInput run = walkForward();
-    run.run = true;
+    PlayerBody jogger = spawned();
+    PlayerBody sprinter = spawned();
+    MoveInput slow = walkForward();
+    slow.walk = true;
+    MoveInput fast = walkForward();
+    fast.sprint = true;
     for (int i = 0; i < 10; ++i) {
-        walker.step(walkForward());
-        runner.step(run);
+        walker.step(slow);
+        jogger.step(walkForward());
+        sprinter.step(fast);
     }
     CHECK(walker.y() == q8_tile_centre(kWalkTileY) - 10 * kWalkSpeed);
-    CHECK(runner.y() == q8_tile_centre(kWalkTileY) - 10 * kRunSpeed);
-    CHECK(runner.stepCount() == 10);
+    CHECK(jogger.y() == q8_tile_centre(kWalkTileY) - 10 * kJogSpeed);
+    CHECK(sprinter.y() == q8_tile_centre(kWalkTileY) - 10 * kSprintSpeed);
+    CHECK(sprinter.stepCount() == 10);
+    // NEITHER MODIFIER IS THE FAST ONE. The whole of #77's movement complaint in
+    // one assertion: the key you are not pressing is a jog, walking is what the
+    // brake does, and a game where the default gait is the slow one reads
+    // archaic however good the rest of it is.
+    CHECK(jogger.y() < walker.y());
+    CHECK(sprinter.y() < jogger.y());
 }
 
 TEST_CASE("a diagonal is not faster than a straight line") {
@@ -107,10 +118,22 @@ TEST_CASE("a diagonal is not faster than a straight line") {
     MoveInput both = walkForward();
     both.strafe = 1;
 
-    for (int i = 0; i < 60; ++i) {
+    // TWENTY STEPS, NOT SIXTY, and #77 is why. The default gait is a jog now --
+    // 24/256 of a tile a step against the old 11 -- so sixty steps carries the
+    // body five and a half tiles, and the case's own header says the harbour is
+    // four tiles north of this tile. The straight walker was arriving at the
+    // quay lip and stopping there, which made the blocked body the SHORTER of
+    // the two and turned a real invariant into a measurement of the coastline.
+    constexpr int kSteps = 20;
+    for (int i = 0; i < kSteps; ++i) {
         straight.step(walkForward());
         diagonal.step(both);
     }
+    // Neither of them hit anything: the whole comparison is meaningless if one
+    // of them stopped, and this is the assertion that says so out loud rather
+    // than leaving the next reader to work out why the numbers moved.
+    REQUIRE(straight.y() == q8_tile_centre(kWalkTileY) - kSteps * kJogSpeed);
+
     const auto distance = [](const PlayerBody& body) {
         const std::int64_t dx = body.x() - q8_tile_centre(kWalkTileX);
         const std::int64_t dy = body.y() - q8_tile_centre(kWalkTileY);
@@ -124,7 +147,7 @@ TEST_CASE("a diagonal is not faster than a straight line") {
     CHECK(diagonalDistance * 100 > straightDistance * 92);
 }
 
-TEST_CASE("keyboard turn is Barony-weighty, not the Java build's twitch") {
+TEST_CASE("the keyboard turn is an accessibility fallback, and it does not set the feel") {
     PlayerBody body = spawned();
     MoveInput turn;
     turn.turn = 1;
@@ -132,11 +155,76 @@ TEST_CASE("keyboard turn is Barony-weighty, not the Java build's twitch") {
         body.step(turn);
     }
     const Angle afterOneSecond = body.yaw();
-    // 60-70 deg/s is the measured Barony band (COMBAT-FEEL-REFERENCE.md s2).
-    CHECK(afterOneSecond >= angle_from_degrees(60));
-    CHECK(afterOneSecond <= angle_from_degrees(70));
-    // And emphatically not 165 deg/s.
-    CHECK(afterOneSecond < angle_from_degrees(100));
+    // 140 deg/s, which is where keyboard turning sits in games people play now.
+    //
+    // WHAT THIS CASE USED TO ASSERT was 60-70 deg/s, "the measured Barony band
+    // (COMBAT-FEEL-REFERENCE.md s2)". That measurement is real and it is a
+    // measurement of a 2015 roguelike's KEYBOARD FALLBACK -- the same bullet of
+    // the same document says mouse-look "was not measurable". Pinning the whole
+    // game's turn rate to it made turning round take five and a half seconds,
+    // which is a large part of what Eli meant by archaic. The reference doc now
+    // marks the number keyboard-only on the line itself.
+    CHECK(afterOneSecond >= angle_from_degrees(130));
+    CHECK(afterOneSecond <= angle_from_degrees(150));
+}
+
+TEST_CASE("mouse look is raw: no smoothing, no acceleration, no rate cap") {
+    // THE PRIMARY AIM PATH IS NOT RATE-LIMITED BY ANYTHING. A single step
+    // carrying a whole frame's worth of a fast flick has to arrive whole --
+    // clamping it to a per-step maximum is the same bug as smoothing it, and it
+    // is the one that would quietly reintroduce the keyboard's number as the
+    // ceiling on the mouse's.
+    PlayerBody body = spawned();
+    MoveInput flick;
+    flick.yawDelta = kTurnQuarter;  // ninety degrees, in one step
+    body.step(flick);
+    CHECK(body.yaw() == (kFacingNorth + kTurnQuarter));
+    // Which is more than the KEYBOARD could turn in twenty-three steps.
+    CHECK(kTurnQuarter > 23 * kTurnRate);
+
+    // And it is linear: twice the delta is exactly twice the angle, with no
+    // curve applied anywhere between the mouse and the head.
+    PlayerBody one = spawned();
+    PlayerBody two = spawned();
+    MoveInput small;
+    small.yawDelta = 137;
+    MoveInput big;
+    big.yawDelta = 274;
+    one.step(small);
+    one.step(small);
+    two.step(big);
+    CHECK(one.yaw() == two.yaw());
+}
+
+TEST_CASE("a standing jump clears half a metre and gets you onto nothing") {
+    PlayerBody body = spawned();
+    const std::int32_t ground = body.feetZ();
+    REQUIRE(body.jump());
+    CHECK_FALSE(body.jump());  // no double jump, and no pogo from a held key
+
+    std::int32_t apex = ground;
+    int inTheAir = 0;
+    for (int i = 0; i < 4 * kJumpSteps; ++i) {
+        body.step(MoveInput{});
+        if (body.jumping()) {
+            ++inTheAir;
+        }
+        apex = body.feetZ() > apex ? body.feetZ() : apex;
+    }
+    // Back on the deck, on the band it left, having risen kJumpRiseMm and not
+    // one storey. A jump that could clear a band would be the archaic climb key
+    // wearing a modern binding.
+    CHECK(body.feetZ() == ground);
+    CHECK(body.band() == docks::kSpawnBand);
+    CHECK(inTheAir == kJumpSteps - 1);
+    const std::int32_t rose = apex - ground;
+    CHECK(rose > 0);
+    CHECK(rose <= kJumpRiseQ8);
+    // In millimetres, against a person: half a metre give or take the integer
+    // parabola's own apex, and a very long way under a 2,700 mm storey.
+    CHECK(mmFromBandQ8(rose) >= 400);
+    CHECK(mmFromBandQ8(rose) <= kJumpRiseMm);
+    CHECK(mmFromBandQ8(rose) < kMillimetresPerBand / 4);
 }
 
 TEST_CASE("yaw wraps and pitch clamps") {
@@ -221,7 +309,7 @@ TEST_CASE("the body cannot walk off the quay onto the water") {
     // It walked all the way to the lip -- within one step's travel of the tile
     // boundary -- rather than stopping a comfortable tile short.
     CHECK(body.y() - q8_of_tile(kLastQuayRow) >= 0);
-    CHECK(body.y() - q8_of_tile(kLastQuayRow) < kWalkSpeed);
+    CHECK(body.y() - q8_of_tile(kLastQuayRow) < kJogSpeed);
     // The collision square DOES hang out over the water, and that is deliberate:
     // OPEN is not solid, so leaning over a quay edge is legal. What is not legal
     // is putting the body's CENTRE -- its feet, and the tile every other system
@@ -364,7 +452,9 @@ TEST_CASE("the same input sequence replays to the same body, bit for bit") {
             input.turn = phase % 3 == 0 ? 1 : (phase % 5 == 0 ? -1 : 0);
             input.yawDelta = (i % 17) * 13 - 100;
             input.pitchDelta = (i % 23) * 7 - 70;
-            input.run = (i % 4) == 0;
+            input.sprint = (i % 4) == 0;
+            input.walk = (i % 9) == 0;
+            input.jump = (i % 137) == 0;
             body.step(input);
         }
         return body;
@@ -387,6 +477,6 @@ TEST_CASE("nothing tunnels, whatever the speed constants become") {
     // kMaxStepQ8 caps a single resolved displacement well below the body's
     // own radius, so a wall can never be crossed between two collision checks.
     CHECK(kMaxStepQ8 < kBodyRadius);
-    CHECK(kRunSpeed < kMaxStepQ8);
+    CHECK(kSprintSpeed < kMaxStepQ8);
     CHECK(kBodyRadius * 2 < kSubOne);  // and the body fits a one-tile doorway
 }

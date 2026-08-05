@@ -258,9 +258,16 @@ void Session::settleLanding(const sim::RoofResult& move) {
     // hit points, the roof-run, the counted verb -- is simulation state, and it
     // moved out of this file in S6 so the simulation suite can drive it and a
     // mutation to any clause of it can go red. See Tavern::settleLanding.
-    const sim::Tavern::LandingResult charged =
-        tavern_->settleLanding(move, body_->takeFallBands(), body_->band());
+    const sim::Tavern::LandingResult charged = tavern_->settleLanding(
+        move, body_->takeFallBands(), body_->band(), body_->tileX(), body_->tileY());
     if (charged.hurt > 0) {
+        // IN METRES, because the fall curve is in metres now and a player who is
+        // told "50 HURT" learns nothing they can act on. "5M - 50 HURT" tells
+        // them the roof they are standing on is the last one they can come off.
+        roofMove_ += " - " + std::to_string(charged.fellMm / 1000) + "M";
+        if (charged.softLanding) {
+            roofMove_ += " INTO WATER";
+        }
         roofMove_ += " - " + std::to_string(charged.hurt) + " HURT";
     }
 }
@@ -630,9 +637,23 @@ void Session::step(const sim::MoveInput& input) {
     sim::MoveInput moved = input;
     moved.crouch = tavern_->stance() == sim::Stance::Crouched;
     const bool walking = moved.forward != 0 || moved.strafe != 0;
-    tavern_->setPlayerMotion(walking, moved.run && !moved.crouch);
+    tavern_->setPlayerMotion(walking, moved.sprint && !moved.crouch);
     body_->step(moved);
     syncTavernToBody();
+
+    // #77. A CLIMB NOBODY PRESSED A KEY FOR IS STILL A CLIMB, and the room
+    // charges it exactly as it charges one that was asked for: the craft, the
+    // Skyrunners' regard, the roof-run the ward would have minded, and the fall
+    // if the far side turned out to be lower. Routing the automatic path through
+    // a different settlement than the explicit one is how the two quietly stop
+    // agreeing about what a roof-run is.
+    const sim::RoofResult climbed = body_->takeAutoMove();
+    if (climbed.ok()) {
+        roofMove_ = "UP AND OVER.";
+        say(roofMove_);
+        settleLanding(climbed);
+        syncTavernToBody();
+    }
 
     // THE WATCH TOOK YOU AND HAS LET YOU GO. The room owns the sentence, the
     // seizure and the clock; the BODY is this file's, so the walk to the
@@ -690,11 +711,19 @@ void Session::stepMany(const sim::MoveInput& input, int steps) {
 int Session::flyOutLeap() {
     int steps = 0;
     // Bounded by construction -- kLeapStepsPerTile * the longest reach any
-    // teaching buys -- but bounded HERE as well, because a loop whose exit
-    // depends on simulation state is a loop that hangs a build the day that
-    // state is wrong.
-    constexpr int kCeiling = 4 * sim::kLeapStepsPerTile * sim::kLeapReachTiles;
-    while (body_->airborne() && steps < kCeiling) {
+    // teaching buys, or the haul -- but bounded HERE as well, because a loop
+    // whose exit depends on simulation state is a loop that hangs a build the
+    // day that state is wrong.
+    //
+    // #77 ADDS THE HAUL, and leaving it out cost four scripted lines their
+    // beats before the gate caught it. A mantle is no longer instantaneous: the
+    // band changes at once but the legs are locked for kHaulSteps while the eye
+    // rises, because a 2.7 m wall is a climb and not a hop. A capture script
+    // that drained only the LEAP walked away from the ledge on the very next
+    // call, found the body would not move, counted four stuck steps and gave up
+    // -- so `--skyrun` and the burglary both stopped on the roof.
+    constexpr int kCeiling = 4 * sim::kLeapStepsPerTile * sim::kLeapReachTiles + sim::kHaulSteps;
+    while ((body_->airborne() || body_->hauling()) && steps < kCeiling) {
         step(sim::MoveInput{});
         ++steps;
     }
@@ -1906,6 +1935,13 @@ namespace {
         const std::int32_t beforeY = session.body().y();
         sim::MoveInput input;
         input.forward = 1;
+        // #77. THE CAPTURE SCRIPT MUST NOT CLIMB. This walker STEERS BY WALKING
+        // INTO WALLS -- it tries each compass direction in turn and reads "did
+        // the body move" as "was that way open" -- so with contextual traversal
+        // on it would haul itself up the first warehouse it probed and
+        // photograph the wrong district from the wrong height. A player walking
+        // at a ledge means "get me up there"; this loop means "is there a wall".
+        input.autoTraverse = false;
         session.step(input);
         if (session.body().x() != beforeX || session.body().y() != beforeY) {
             return false;

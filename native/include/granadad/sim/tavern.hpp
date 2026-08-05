@@ -759,8 +759,17 @@ public:
 
     /// What a landing off the roofs cost.
     struct LandingResult {
-        /// Hit points the fall took, or 0.
+        /// Hit points the fall took, or 0. See human_scale.hpp's fallInjury:
+        /// this is the square of how much faster than you can take it you were
+        /// going when you arrived, and it comes out of gravity rather than out
+        /// of a table.
         std::int32_t hurt = 0;
+        /// How far the body actually fell, millimetres. Handed back so a HUD, a
+        /// case or a report can say "you fell five metres" rather than "you
+        /// fell two of the units the map is made of".
+        std::int32_t fellMm = 0;
+        /// True when there was water or deep mud where the body came down.
+        bool softLanding = false;
         /// True when this landing was the first arrival somewhere new and high,
         /// and therefore a roof-run the ward could have minded.
         bool roofRun = false;
@@ -782,8 +791,16 @@ public:
     /// It is simulation state -- hit points, a tally, heat, two faction numbers
     /// -- so it belongs in the room that owns them. Session now hands the room
     /// the fall the body reported and draws whatever comes back.
+    ///
+    /// #77 ADDS THE LANDING TILE, defaulted so the twenty existing call sites
+    /// still compile. It is optional because the SURFACE softens a fall -- eight
+    /// metres into the harbour is a very different afternoon from eight metres
+    /// onto the Long Quay -- and a caller that does not say where the body came
+    /// down gets the hard answer, which is the safe one to be wrong about.
     LandingResult settleLanding(const RoofResult& move, std::int32_t fellBands,
-                                std::int32_t landedBand);
+                                std::int32_t landedBand,
+                                std::int32_t landedX = INT32_MIN,
+                                std::int32_t landedY = INT32_MIN);
     /// The highest band the player has ever stood on in this room's memory. A
     /// roof-run is counted once per ARRIVAL somewhere new and high rather than
     /// once per step, and this is what tells the two apart.

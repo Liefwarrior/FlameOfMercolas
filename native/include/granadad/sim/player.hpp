@@ -38,6 +38,12 @@
 #include <string_view>
 
 #include "granadad/sim/angle.hpp"
+// EVERY NUMBER IN THIS FILE THAT IS A FACT ABOUT PEOPLE COMES FROM HERE. Walk,
+// jog, sprint, jump height, hang time, mantle reach and the fall curve are all
+// quoted in millimetres of real human performance in sim/human_scale.hpp and
+// converted through one metres-per-tile constant. kStepsPerSecond lives there
+// too, because half of every speed conversion is the clock.
+#include "granadad/sim/human_scale.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/vertical_scale.hpp"
 
@@ -46,9 +52,6 @@ namespace granadad::sim {
 // ---------------------------------------------------------------------------
 // the numbers, all integers, all per movement step
 // ---------------------------------------------------------------------------
-
-/// Movement steps per simulated second.
-inline constexpr std::int32_t kStepsPerSecond = 60;
 
 /// Half-extent of the body's collision square, Q8. 90/256 of a tile, so the
 /// body is 0.70 of a tile across: it fits a one-tile doorway with room either
@@ -70,17 +73,33 @@ inline constexpr std::int32_t kEyeHeight = kEyeHeightTilesQ8 / kTilesPerBand;
 static_assert(kEyeHeight * kTilesPerBand == kEyeHeightTilesQ8,
               "the eye must sit at the same height whichever axis you ask on");
 
-/// Walk and run speed, Q8 per step. 11 -> 660 Q8/s -> 2.58 tiles a second;
-/// 18 -> 4.22 tiles a second. Deliberately unhurried: a warehouse front is
-/// twelve tiles and should take four seconds to walk past.
-inline constexpr std::int32_t kWalkSpeed = 11;
-inline constexpr std::int32_t kRunSpeed = 18;
+// THE THREE GAITS ARE IN sim/human_scale.hpp -- kWalkSpeed (1.5 m/s),
+// kJogSpeed (5.1 m/s, the DEFAULT) and kSprintSpeed (7.0 m/s) -- because they
+// are facts about a human body and not facts about this class. What used to be
+// here was `kWalkSpeed = 11; kRunSpeed = 18;`: 2.3 m/s by default with a 3.8 m/s
+// run, described in its own comment as "deliberately unhurried". It was, and
+// that is what Eli meant by archaic. A player holding forward is going
+// somewhere.
 
-/// Keyboard turn, BAM per step. 197 * 60 = 11820 BAM/s = 64.9 degrees a second.
+/// KEYBOARD turn, BAM per step. 425 * 60 = 25500 BAM/s = 140 degrees a second.
 ///
-/// Measured Barony is 60-70 deg/s and reads weighty; the Java build's 165 deg/s
-/// read as twitchy (COMBAT-FEEL-REFERENCE.md section 2). This is the former.
-inline constexpr Angle kTurnRate = 197;
+/// READ THE WORD KEYBOARD. This rate has NOTHING to do with how fast the camera
+/// turns in normal play -- mouse look is the aim path, it applies raw relative
+/// deltas through MoveInput::yawDelta with no rate limit of any kind, and it
+/// must never inherit a number measured off a keyboard.
+///
+/// THE MISTAKE THIS COMMENT EXISTS TO UNDO. This was 197 BAM (64.9 deg/s),
+/// sourced from docs/design/COMBAT-FEEL-REFERENCE.md's measurement of Barony at
+/// "60-70 deg/s". That measurement is real, and it is a measurement of a 2015
+/// roguelike's KEYBOARD FALLBACK -- the same document says in the same bullet
+/// that mouse-look "was not measurable". Letting it set the feel generally made
+/// turning round in the Docks take five and a half seconds. The reference doc
+/// now says keyboard-only on the line itself so nobody generalises it again.
+///
+/// 140 deg/s is where modern keyboard turning sits, and arrow-key turning is
+/// what it now is: an ACCESSIBILITY FALLBACK for playing without a mouse, not a
+/// design statement.
+inline constexpr Angle kTurnRate = 425;
 
 /// How far the eye climbs or falls toward the surface of a new band per step,
 /// band-relative Q8.
@@ -191,6 +210,26 @@ inline constexpr std::int32_t kLeapStepsPerTile = 8;
 /// roof actually looks like. The scale change fixed this constant for free.
 inline constexpr std::int32_t kLeapArcQ8 = 56;
 
+/// MOVEMENT STEPS A MANTLE COSTS, standing still, with the eye rising.
+///
+/// A MANTLE IN THIS BUILD IS A CLIMB, and the geometry is why. human_scale.hpp's
+/// kVaultReachMm is 1,350 mm -- chest height, one hand and a knee, and instant.
+/// A band is 2,700 mm. There is no such thing in this district as a wall you can
+/// vault; every one of them is twice a vault, and a 2.7 m wall takes a fit
+/// person about a second and both hands.
+///
+/// So the band change resolves at once -- the simulation is never in a state
+/// where the body is half inside a wall -- and the LEGS are locked for this long
+/// afterwards while kEyeEaseRate carries the eye up. 32 steps is the ease's own
+/// length (256/8) and matching it exactly means the haul ends on the step the
+/// view arrives, rather than freeing the player mid-rise or holding them after
+/// it. Just over half a second.
+///
+/// It also stops the automatic version being a lift. Walking into a stack of
+/// ledges with a held forward key fires one climb, not four in a tenth of a
+/// second.
+inline constexpr std::int32_t kHaulSteps = 256 / kEyeEaseRate;
+
 /// What a roof move did, or why it did not.
 enum class RoofMove : std::uint8_t {
     /// It happened.
@@ -252,18 +291,43 @@ struct MoveInput {
     std::int32_t forward = 0;
     /// -1 left, 0, +1 right. Strafe, not turn.
     std::int32_t strafe = 0;
-    /// -1 left, 0, +1 right. Keyboard turn, at kTurnRate.
+    /// -1 left, 0, +1 right. Keyboard turn, at kTurnRate. ACCESSIBILITY ONLY --
+    /// see the constant. Nothing about the game's feel is allowed to depend on
+    /// it.
     std::int32_t turn = 0;
-    /// Mouse look for this step, in BAM, already scaled by sensitivity.
+    /// Mouse look for this step, in BAM, already scaled by sensitivity. RAW: no
+    /// smoothing, no acceleration, no per-step rate cap. What the mouse did is
+    /// what the head does.
     Angle yawDelta = 0;
     Angle pitchDelta = 0;
-    /// Hold to run.
-    bool run = false;
-    /// S9. Down on the haunches. Halves the walk (kCrouchSpeedPercent, in
-    /// sim/stealth.hpp, which is where every stealth number lives) and refuses
-    /// to be a run at the same time -- crouch-running is a thing this game does
-    /// not have and is the cheapest way to make crouching free.
+    /// Hold to sprint. kSprintSpeed, 7 m/s.
+    bool sprint = false;
+    /// Hold to slow to a deliberate kWalkSpeed walk, 1.5 m/s. The DEFAULT gait
+    /// with neither modifier held is kJogSpeed -- this is the brake, not the
+    /// accelerator, which is the way round every game made this decade has it.
+    bool walk = false;
+    /// S9. Down on the haunches. kCrouchSpeed, 1.3 m/s, and it beats both other
+    /// modifiers -- crouch-sprinting is a thing this game does not have and is
+    /// the cheapest way to make crouching free. What being unseen costs in a
+    /// first-person game is TIME.
     bool crouch = false;
+    /// A jump was asked for THIS STEP. Edge, not level: the client sends it once
+    /// per press, so holding the key does not pogo.
+    ///
+    /// It is a JUMP and not a climb. kJumpRiseMm is half a metre; the shortest
+    /// thing in the district is a 2.7 m storey. Nothing can be jumped onto, on
+    /// purpose. Getting up is what walking into the wall does -- see
+    /// `autoTraverse`.
+    bool jump = false;
+    /// Whether the body may haul itself onto a ledge it walks into. On by
+    /// default because CONTEXTUAL TRAVERSAL IS THE PRIMARY PATH: you get onto
+    /// things by trying to go there, not by learning a verb key.
+    ///
+    /// The flag exists because two callers want it off. A scripted capture
+    /// steers by pressing forward into walls to slide along them and must not
+    /// start climbing the warehouse it is sliding past, and a case that is
+    /// testing collision wants collision.
+    bool autoTraverse = true;
 };
 
 // ---------------------------------------------------------------------------
@@ -300,6 +364,39 @@ public:
     /// step() flies it along the arc and lands it, so a leap is something the
     /// player watches happen rather than a teleport with a sound effect.
     RoofResult leap(std::int32_t reachTiles) noexcept;
+
+    // --- the ordinary jump --------------------------------------------------
+
+    /// A STANDING JUMP. Half a metre up and back down in 38 steps, and it gets
+    /// you onto exactly nothing.
+    ///
+    /// That is not a limitation, it is the point. human_scale.hpp's kJumpRiseMm
+    /// is what a person clears; the shortest vertical feature in the baked
+    /// district is a whole 2.7 m storey. A jump key that cleared a storey would
+    /// be the archaic thing wearing a modern binding. The player keeps walking
+    /// and steering while airborne (air control is what makes a jump feel like a
+    /// jump rather than a cutscene), the arc is the same integer parabola a leap
+    /// uses, and landing on the band you left costs nothing.
+    ///
+    /// Returns false if the body is already off the ground.
+    bool jump() noexcept;
+
+    /// True while a standing jump is still in the air.
+    [[nodiscard]] bool jumping() const noexcept { return jumpStepsLeft_ > 0; }
+
+    /// True while the legs are locked hauling the body over a ledge. See
+    /// kHaulSteps: a 2.7 m wall is a climb, and a climb takes a second.
+    [[nodiscard]] bool hauling() const noexcept { return haulStepsLeft_ > 0; }
+
+    /// The traversal the last step took by itself, cleared by reading it.
+    ///
+    /// CONTEXTUAL TRAVERSAL IS THE PRIMARY PATH and this is how the rest of the
+    /// game hears about it. Walk forward into a ledge you can reach and the body
+    /// climbs it: no verb, no key, no prompt. The room still charges the climb,
+    /// counts it toward the Skyrunners' regard and bills the fall if the far
+    /// side was lower, because it reads the result out of here on the step it
+    /// happened -- exactly the same path an explicit press goes down.
+    [[nodiscard]] RoofResult takeAutoMove() noexcept;
 
     /// True while a leap is still in the air.
     [[nodiscard]] bool airborne() const noexcept { return leapStepsLeft_ > 0; }
@@ -393,6 +490,14 @@ private:
     void settleFeet() noexcept;
     /// Advances one step of a leap already in the air.
     void flyLeapStep() noexcept;
+    /// Advances one step of a standing jump, and lands it on the last one.
+    void flyJumpStep() noexcept;
+    /// Hauls onto the ledge lying in direction `dir`. mantle() is this with the
+    /// facing snapped to the compass; the automatic path is this with the
+    /// direction the legs were actually pushing.
+    RoofResult mantleToward(const TileStep& dir) noexcept;
+    /// Starts the kHaulSteps leg-lock, but only for a climb that happened.
+    RoofResult startHaul(const RoofResult& climbed) noexcept;
     /// Commits the body to an arc between here and a validated landing.
     RoofResult armLeap(std::int32_t tileX, std::int32_t tileY, std::int32_t toBand,
                        std::int32_t tiles) noexcept;
@@ -430,6 +535,19 @@ private:
     /// See setLandingFloor. INT32_MIN is "no floor at all", which is what a
     /// synthetic test world wants and what the shipped district must not have.
     std::int32_t landingFloor_ = INT32_MIN;
+
+    // --- #77: the jump, the haul and the climb nobody pressed a key for ------
+    //
+    // Integer and in the digest, for the same reason the leap's fields are: a
+    // body caught mid-hop or mid-haul when a fingerprint is taken is a body two
+    // runs have to agree about.
+    std::int32_t jumpStepsLeft_ = 0;
+    std::int32_t jumpStepsTotal_ = 0;
+    /// Steps of the mantle's haul still to run. Non-zero locks the legs.
+    std::int32_t haulStepsLeft_ = 0;
+    /// The traversal the body took on its own, waiting to be read by whoever
+    /// charges for one. See takeAutoMove.
+    RoofResult autoMove_{};
 };
 
 }  // namespace granadad::sim

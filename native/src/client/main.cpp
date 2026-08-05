@@ -737,7 +737,7 @@ int run_client(const Options& options) {
             if (keys[SDL_SCANCODE_LEFT]) {
                 held.turn -= 1;
             }
-            held.run = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
+            held.sprint = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
         }
 
         const Clock::time_point now = Clock::now();

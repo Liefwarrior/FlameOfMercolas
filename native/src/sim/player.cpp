@@ -180,6 +180,12 @@ void PlayerBody::step(const MoveInput& input) noexcept {
     ++steps_;
 
     // --- look ---------------------------------------------------------------
+    //
+    // RAW, AND IT MUST STAY RAW. The mouse delta goes on the yaw with nothing
+    // between them -- no smoothing filter, no acceleration curve, no per-step
+    // clamp. Everything a player can tune about aiming (sensitivity, invert)
+    // happens once, in the client, before the number arrives here, so the
+    // simulation sees an angle and never a preference.
     yaw_ = wrap_add(yaw_, wrap_mul(input.turn, kTurnRate));
     yaw_ = wrap_add(yaw_, input.yawDelta);
     yaw_ &= (kTurnFull - 1);
@@ -187,21 +193,46 @@ void PlayerBody::step(const MoveInput& input) noexcept {
 
     // --- fly ----------------------------------------------------------------
     //
-    // A body in the air is not steering. The look above still runs, because
+    // A body in a LEAP is not steering. The look above still runs, because
     // turning your head mid-jump is free and looking down at the street you are
-    // crossing is the whole point of a leap; the legs are not.
+    // crossing is the whole point of a leap; the legs are not. A leap is a
+    // committed move between two validated endpoints and steering it would let
+    // a player steer into a wall.
     if (leapStepsLeft_ > 0) {
         flyLeapStep();
         return;
     }
 
+    // --- haul ---------------------------------------------------------------
+    //
+    // A 2.7 m wall takes a second and both hands. The band changed the instant
+    // the climb started -- the simulation is never half inside a wall -- and the
+    // legs are locked until the eye catches up. See kHaulSteps.
+    if (haulStepsLeft_ > 0) {
+        --haulStepsLeft_;
+        settleFeet();
+        return;
+    }
+
     // --- walk ---------------------------------------------------------------
     //
-    // S9: crouching halves it, and it beats running. What being unseen costs
-    // in a first-person game is TIME, and this is where the bill is paid.
-    std::int32_t speed = input.run && !input.crouch ? kRunSpeed : kWalkSpeed;
+    // THE DEFAULT IS A JOG. Neither modifier is 5 m/s; sprint is the accelerator
+    // and walk is the brake. S9: crouching halves the WALK and beats sprinting.
+    // What being unseen costs in a first-person game is TIME, and this is where
+    // the bill is paid.
+    std::int32_t speed = kJogSpeed;
     if (input.crouch) {
-        speed = (speed * kCrouchSpeedPercent) / 100;
+        speed = kCrouchSpeed;
+    } else if (input.walk) {
+        speed = kWalkSpeed;
+    } else if (input.sprint) {
+        speed = kSprintSpeed;
+    }
+    // A body in the air keeps the speed it had; there is no sprinting off a
+    // ledge into a faster jump.
+    if (input.jump && jumpStepsLeft_ == 0) {
+        jumpStepsLeft_ = kJumpSteps;
+        jumpStepsTotal_ = kJumpSteps;
     }
     if (input.forward != 0 || input.strafe != 0) {
         // Direction in Q16, intent in {-1,0,1}, speed in Q8-per-step. The
@@ -228,12 +259,85 @@ void PlayerBody::step(const MoveInput& input) noexcept {
 
         // One axis at a time: a body sliding along a warehouse front keeps its
         // tangential speed instead of stopping dead on the corner.
+        const std::int32_t wasX = x_;
+        const std::int32_t wasY = y_;
         moveAxis(moveX, 0);
         moveAxis(0, moveY);
+
+        // --- CONTEXTUAL TRAVERSAL -------------------------------------------
+        //
+        // THIS IS THE ARCHAIC THING, FIXED. Until now the only way onto anything
+        // was to stop, line the wall up by eye and press a verb key that no
+        // other game has bound; a player who simply walked at a ledge got a body
+        // stuck against masonry and no indication that climbing existed at all.
+        //
+        // The rule is the one every game made this decade uses, and it is short:
+        // YOU WALKED FORWARD AND YOU DID NOT MOVE, so try to get over whatever
+        // stopped you. Nothing else. It cannot fire while strafing (climbing
+        // sideways is not a thing), while crouched (you are hiding, not
+        // vaulting), while in the air, or while already hauling.
+        //
+        // The wall itself decides whether there is a climb here: mantleToward
+        // wants a solid face at the body's own band, a standable top exactly one
+        // band up and headroom to rise into. A warehouse wall two storeys high
+        // fails the second clause and the body just stops, which is what a wall
+        // is for. The explicit verb key is still bound and still works -- it is
+        // the fallback now rather than the only path.
+        if (input.autoTraverse && input.forward > 0 && !input.crouch && x_ == wasX && y_ == wasY) {
+            const RoofResult climbed = mantleToward(facing_step(yaw_));
+            if (climbed.ok()) {
+                autoMove_ = climbed;
+            }
+        }
+    }
+
+    // --- the jump -----------------------------------------------------------
+    //
+    // AFTER the walk, deliberately: air control is what makes a jump feel like a
+    // jump, so the legs run first and the arc is laid over wherever they got to.
+    if (jumpStepsLeft_ > 0) {
+        flyJumpStep();
+        return;
     }
 
     // --- settle onto the band's surface -------------------------------------
     settleFeet();
+}
+
+bool PlayerBody::jump() noexcept {
+    if (leapStepsLeft_ > 0 || jumpStepsLeft_ > 0 || haulStepsLeft_ > 0) {
+        return false;
+    }
+    jumpStepsLeft_ = kJumpSteps;
+    jumpStepsTotal_ = kJumpSteps;
+    return true;
+}
+
+void PlayerBody::flyJumpStep() noexcept {
+    --jumpStepsLeft_;
+    if (jumpStepsLeft_ <= 0) {
+        jumpStepsTotal_ = 0;
+        settleFeet();
+        return;
+    }
+    // The same integer parabola a leap flies: 4*a*t*(1-t), with the multiply
+    // before the divide so nothing rounds twice. Measured against the band the
+    // jump LEFT rather than the one under the feet now, so walking off a kerb
+    // mid-hop does not teleport the arc.
+    const std::int32_t done = jumpStepsTotal_ - jumpStepsLeft_;
+    // Against the band the feet are OVER, not the one the jump left: air control
+    // can walk a body off a kerb mid-hop and the arc should follow the ground it
+    // is going to come down on rather than the one it left.
+    const std::int32_t floorZ = q8_of_tile(band_);
+    const std::int32_t rise = 4 * kJumpRiseQ8 * done * (jumpStepsTotal_ - done) /
+                              (jumpStepsTotal_ * jumpStepsTotal_);
+    feetZ_ = floorZ + rise;
+}
+
+RoofResult PlayerBody::takeAutoMove() noexcept {
+    const RoofResult out = autoMove_;
+    autoMove_ = RoofResult{};
+    return out;
 }
 
 void PlayerBody::push(std::int32_t dxQ8, std::int32_t dyQ8) noexcept {
@@ -290,11 +394,25 @@ void PlayerBody::placeAt(std::int32_t tileX, std::int32_t tileY, std::int32_t ba
     leapStepsLeft_ = 0;
     leapStepsTotal_ = 0;
     fallBands_ = 0;
+    // #77: and neither is the hop or the haul. A body the Watch has carried to
+    // the impound gate is not still half way up a wall three streets away.
+    jumpStepsLeft_ = 0;
+    jumpStepsTotal_ = 0;
+    haulStepsLeft_ = 0;
+    autoMove_ = RoofResult{};
     feetZ_ = q8_of_tile(band_);
 }
 
-RoofResult PlayerBody::mantle() noexcept {
-    if (leapStepsLeft_ > 0) {
+RoofResult PlayerBody::mantle() noexcept { return mantleToward(facing_step(yaw_)); }
+
+RoofResult PlayerBody::mantleToward(const TileStep& facing) noexcept {
+    if (leapStepsLeft_ > 0 || jumpStepsLeft_ > 0) {
+        return RoofResult{RoofMove::Airborne, 0, 0};
+    }
+    if (haulStepsLeft_ > 0) {
+        // Already climbing. Silently, because the automatic path calls this
+        // every step a held forward key is pressed against a wall and a refusal
+        // line on the HUD sixty times a second is not a message, it is a strobe.
         return RoofResult{RoofMove::Airborne, 0, 0};
     }
 
@@ -322,10 +440,9 @@ RoofResult PlayerBody::mantle() noexcept {
     // dropOff() comes back down the same way.
     if (tiles_->climbable(tileX(), tileY(), band_) &&
         tiles_->standable(tileX(), tileY(), band_ + 1)) {
-        return land(tileX(), tileY(), band_, band_ + 1, 0);
+        return startHaul(land(tileX(), tileY(), band_, band_ + 1, 0));
     }
 
-    const TileStep facing = facing_step(yaw_);
     const std::int32_t ahead = tileX() + facing.dx;
     const std::int32_t asideY = tileY() + facing.dy;
     if (tiles_->solid(tileX(), tileY(), band_ + 1)) {
@@ -335,7 +452,17 @@ RoofResult PlayerBody::mantle() noexcept {
     if (top == TileQuery::kNoBand) {
         return RoofResult{RoofMove::NoLedge, 0, 0};
     }
-    return land(ahead, asideY, band_, top, 1);
+    return startHaul(land(ahead, asideY, band_, top, 1));
+}
+
+/// A CLIMB THAT WENT COSTS TIME. Only a real one -- a refusal leaves the legs
+/// alone, so walking at a wall that has no top does not freeze the player for
+/// half a second every step they hold forward.
+RoofResult PlayerBody::startHaul(const RoofResult& climbed) noexcept {
+    if (climbed.ok()) {
+        haulStepsLeft_ = kHaulSteps;
+    }
+    return climbed;
 }
 
 RoofResult PlayerBody::dropOff() noexcept {
@@ -513,6 +640,11 @@ std::uint64_t PlayerBody::digest() const noexcept {
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(leapToY_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(leapToBand_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(fallBands_)));
+    // #77. A hop and a haul are both several steps long, so a fingerprint taken
+    // during either is a fingerprint of a body two runs have to agree about --
+    // the same argument the leap's fields are folded in for.
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(jumpStepsLeft_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(haulStepsLeft_)));
     return mix64(h + static_cast<std::uint64_t>(steps_));
 }
 

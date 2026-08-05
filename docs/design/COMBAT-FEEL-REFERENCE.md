@@ -61,10 +61,26 @@ one of these is presentation, driven off an existing combat event.
   NPCs stay tile-stepped in the sim and interpolated at draw time (the existing stride-easing
   path); only the player gets sub-tile authority to begin with. Widening it to NPCs later is a
   resolution change, not an architecture change, which is the point of choosing fixed-point now.
-- **Keyboard turn measured at ~60–70°/sec.** Deliberate and weighty. Our `FirstPersonInput`
-  currently turns at 165°/sec, roughly 2.5× faster, which will read as twitchy beside it.
-  (Mouse-look was not measurable — the game reads raw relative deltas that injected input does
-  not produce.)
+- **KEYBOARD turn measured at ~60–70°/sec. THIS NUMBER IS ABOUT KEYBOARDS AND NOTHING ELSE.**
+  Deliberate and weighty on the arrow keys. Mouse-look was **not measurable** — the game reads raw
+  relative deltas that injected input does not produce — so this capture says *nothing whatever*
+  about how fast the camera should turn in normal play.
+
+  > **DO NOT GENERALISE THIS NUMBER. It has been generalised once already and it cost a sprint.**
+  >
+  > S5 read "60–70°/sec" as the reference turn rate for the game and set `sim::kTurnRate` to
+  > 197 BAM (64.9°/sec). That is a 2015 roguelike's *keyboard fallback* — a control path most
+  > Barony players never touch — promoted to a design statement for a first-person game whose
+  > primary aim path is a mouse. Turning round in the Docks took five and a half seconds, and
+  > when Eli played the build the verdict was "unnecessarily archaic".
+  >
+  > Task #77 fixed it. Mouse look is raw relative input with **no rate limit of any kind** and
+  > never inherits anything from this line. Arrow-key turning is an **accessibility fallback**
+  > and now runs at 140°/sec, where modern keyboard turning sits.
+
+  (The original note about the Java build's 165°/sec reading as twitchy applied to *keyboard*
+  turning too, and that comparison stands. 165°/sec on a keyboard is fast; 165°/sec on a mouse
+  is a slow flick.)
 - **No tile snapping, no arrival easing.** Our `STEP_ARRIVAL_FRACTION` / `strideEase` machinery
   exists to smooth discrete tile steps. If movement goes continuous, that machinery is replaced
   rather than tuned.

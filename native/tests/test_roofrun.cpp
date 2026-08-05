@@ -674,13 +674,88 @@ TEST_CASE("the room charges a landing: the craft, the fall, the roof and the tal
     CHECK(again.counted == "leaps");
     CHECK(talk.crimes().tally(Crime::RoofRun) == 1);
 
-    // And a fall past what untaught legs can take costs hit points. Two bands
-    // fallen, one of them free -- and a band is three tiles now, so the one
-    // band over is 2.7 m further than the legs can take and costs 24 rather
-    // than the 12 it cost when a band was a kerb.
+    // And a fall costs what GRAVITY costs. Two bands is 5.4 m; a body arrives at
+    // 10.3 m/s and untaught legs absorb the first 5.4 m/s of it, so the excess
+    // squared comes to fifty of a hundred hit points. A serious injury, which is
+    // what falling two storeys is.
+    //
+    // #77 REPLACED A STAIRCASE HERE. The old rule was
+    // `(fellBands - safeBands) * 24` -- a flat slab per storey past a threshold,
+    // with no height in it anywhere, which is why the only available fix when
+    // the storey tripled was to double the literal from 12 to 24.
     REQUIRE(safeDropBands(talk.skills().level(kRoofSkill), false) == kSafeDropBands);
     const Tavern::LandingResult down =
         gull.settleLanding(RoofResult{RoofMove::Done, 2, 0}, 2, gull::kGroundBand);
-    CHECK(down.hurt == 24);
-    CHECK(gull.playerHp() == hpBefore - 24);
+    CHECK(down.fellMm == 2 * kMillimetresPerBand);
+    CHECK_FALSE(down.softLanding);
+    CHECK(down.hurt == 50);
+    CHECK(gull.playerHp() == hpBefore - 50);
+}
+
+TEST_CASE("the fall curve reads as gravity: a knock, an injury, and a death") {
+    // THE THREE HEIGHTS THE DISTRICT ACTUALLY CONTAINS, against a hundred hit
+    // points, with nothing learnt and nothing soft underfoot. This is the brief
+    // Eli set for #77 stated as three numbers.
+    const std::int32_t oneStorey = fallInjury(kMillimetresPerBand, kFreeFallMm);
+    const std::int32_t twoStoreys = fallInjury(2 * kMillimetresPerBand, kFreeFallMm);
+    const std::int32_t threeStoreys = fallInjury(3 * kMillimetresPerBand, kFreeFallMm);
+
+    // ~2.7 m: survivable with a knock.
+    CHECK(oneStorey > 0);
+    CHECK(oneStorey <= 15);
+    // ~5.4 m: a serious injury, half of what a person has.
+    CHECK(twoStoreys >= 35);
+    CHECK(twoStoreys <= 65);
+    // ~8.1 m: more than a person has. The build still floors at
+    // kPlayerBrawlFloor because nothing kills the player yet -- but the number
+    // is honest, so the day they can die the roofs will kill them without this
+    // being retuned.
+    CHECK(threeStoreys > 100);
+
+    // IT IS A CURVE AND NOT A STAIRCASE. The old rule cost the same for every
+    // storey past the line; this one costs more for each one, because energy is
+    // the square of the speed and the speed is the square root of the height.
+    CHECK(twoStoreys - oneStorey > oneStorey);
+    CHECK(threeStoreys - twoStoreys > twoStoreys - oneStorey);
+
+    // A drop shorter than the free allowance is free, and it is free because it
+    // is SHORT, not because a band counter has not ticked over yet.
+    CHECK(fallInjury(kFreeFallMm, kFreeFallMm) == 0);
+    CHECK(fallInjury(kFreeFallMm - 1, kFreeFallMm) == 0);
+    CHECK(fallInjury(0, kFreeFallMm) == 0);
+
+    // Every extra millimetre of fall is worth at least as much as the last: the
+    // curve never goes backwards, which a piecewise table can quietly do.
+    std::int32_t last = 0;
+    for (std::int32_t mm = 0; mm <= 4 * kMillimetresPerBand; mm += 25) {
+        const std::int32_t hurt = fallInjury(mm, kFreeFallMm);
+        REQUIRE(hurt >= last);
+        last = hurt;
+    }
+}
+
+TEST_CASE("skill and a soft landing shift the fall curve without flattening it") {
+    // THE ROOFS' TEACHING IS WORTH A HEIGHT, not an exemption. A fully taught
+    // skyrunner walks off one storey for nothing and is still broken by three,
+    // which is the difference between a skill and a cheat -- the same rule
+    // kMaxSafeDropBands states in bands, stated here in metres.
+    const std::int32_t taught =
+        kFreeFallMm + (safeDropBands(40, true) - kSafeDropBands) * kTaughtLandingMm;
+    CHECK(fallInjury(kMillimetresPerBand, taught) == 0);
+    CHECK(fallInjury(2 * kMillimetresPerBand, taught) > 0);
+    CHECK(fallInjury(3 * kMillimetresPerBand, taught) > 0);
+    // And it is still worse than two storeys was for a novice would have been
+    // survivable: the best roof-runner alive takes real damage off the Gull.
+    CHECK(fallInjury(3 * kMillimetresPerBand, taught) <
+          fallInjury(3 * kMillimetresPerBand, kFreeFallMm));
+
+    // WATER UNDER YOU IS WORTH MORE THAN ANY AMOUNT OF SKILL, and it should be:
+    // going off a quay into the harbour is how people actually survive these.
+    const std::int32_t wet = kFreeFallMm + kSoftLandingMm;
+    CHECK(fallInjury(3 * kMillimetresPerBand, wet) <
+          fallInjury(3 * kMillimetresPerBand, taught));
+    // Not infinite, though. Eight metres into two feet of dock water still
+    // hurts, and a cushion that made the deepest drop in the district free would
+    // be the same cheat in a different costume.
+    CHECK(fallInjury(3 * kMillimetresPerBand, wet) > 0);
 }

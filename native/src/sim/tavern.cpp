@@ -2923,40 +2923,64 @@ Tavern::StealResult Tavern::takeScalp() {
 }
 
 Tavern::LandingResult Tavern::settleLanding(const RoofResult& move, std::int32_t fellBands,
-                                            std::int32_t landedBand) {
+                                            std::int32_t landedBand, std::int32_t landedX,
+                                            std::int32_t landedY) {
     LandingResult out;
     // Every climb, leap and fall is a use of the craft it takes.
     dialogue_.skills().use(kRoofSkill, move.tiles > 1 ? 2 : 1);
 
+    // WHAT THE FALL WAS, IN METRES, BEFORE ANYTHING IS CHARGED FOR IT.
+    //
+    // #77 REPLACED A STAIRCASE WITH GRAVITY. What was here was
+    // `(fellBands - safeBands) * 24`: a flat slab of hit points per storey past
+    // a threshold, so a fall was worth nothing at all right up to a line and
+    // then worth a fixed lump. It had no height in it anywhere -- change the
+    // storey height and the number would not move, which is exactly what
+    // happened when the storey tripled and the only fix was to double the
+    // literal.
+    //
+    // The model now is the one the body experiences. You are hurt by the speed
+    // you arrive at, v = sqrt(2gh), and by the square of how much of it your legs
+    // cannot absorb. Every input is a length in millimetres and the only chosen
+    // number in the whole chain is one divisor. See sim/human_scale.hpp.
+    out.fellMm = fellBands * kMillimetresPerBand;
+
+    // WHAT SOFTENS IT. Two things, and they are additive because they are both
+    // simply "how far you can fall before it starts costing".
+    //
+    //   the roofs' teaching -- a journeyman skyrunner and a guild that has shown
+    //   you where to put your feet are worth kTaughtLandingMm each, and
+    //   safeDropBands is still the one place that rule lives.
+    //
+    //   what is underneath -- water or deep mud. Real, and the reason people
+    //   survive going off quays.
     const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
-    const std::int32_t safe = safeDropBands(dialogue_.skills().level(kRoofSkill),
-                                            dialogue_.standings().unlocked(roofs, "roof"));
-    if (fellBands > safe) {
-        // VERIFICATION GAP (S5, still open in S6): fall damage lands on the
-        // TAVERN'S copy of the player's hit points, because that is the only
-        // place hit points exist in this build -- so a body that falls off a
-        // roof three streets away is hurt by the Gilded Gull's bookkeeping. It
+    const std::int32_t safeBands = safeDropBands(dialogue_.skills().level(kRoofSkill),
+                                                 dialogue_.standings().unlocked(roofs, "roof"));
+    std::int32_t cushionMm = kFreeFallMm + (safeBands - kSafeDropBands) * kTaughtLandingMm;
+    if (tiles_ != nullptr && landedX != INT32_MIN && landedY != INT32_MIN &&
+        tiles_->fluidDepth(landedX, landedY, landedBand) > 0) {
+        out.softLanding = true;
+        cushionMm += kSoftLandingMm;
+    }
+
+    if (out.fellMm > 0) {
+        // VERIFICATION GAP (S5, still open in S6 and in #77): fall damage lands
+        // on the TAVERN'S copy of the player's hit points, because that is the
+        // only place hit points exist in this build -- so a body that falls off
+        // a roof three streets away is hurt by the Gilded Gull's bookkeeping. It
         // is the right number in the wrong owner, and it moves when the player
         // has a body of their own rather than a room that keeps score for them.
         //
-        // TWENTY-FOUR a band past what the legs can take, doubled from twelve
-        // when the storey grew. The number of bands did not change; what a band
-        // is worth did. sim/vertical_scale.hpp makes one band three tiles, call
-        // it 2.7 m, so the excess this multiplies is now:
-        //
-        //     1 band over  ~2.7 m further than you can take  ->  24
-        //     2 bands over ~5.5 m further                    ->  48
-        //
-        // and two over is the worst the district can do to you, because
-        // kMaxDropBands is three and kSafeDropBands is one. Half your health
-        // for falling off the Gull into the alley reads right; twelve read as
-        // a stubbed toe once the alley was three storeys deep.
-        //
-        // It still floors at the brawl floor like everything else in this
-        // build: nothing kills the player yet, and pretending a roof does would
-        // be the first thing that did.
-        out.hurt = (fellBands - safe) * 24;
-        injurePlayer(out.hurt);
+        // It still floors at the brawl floor like everything else in this build:
+        // nothing kills the player yet. What changed is that the NUMBER is now
+        // honest about what happened -- a three-storey fall bills 109 of a
+        // hundred hit points -- so the day the player can die, the roofs will
+        // kill them without this line being retuned.
+        out.hurt = fallInjury(out.fellMm, cushionMm);
+        if (out.hurt > 0) {
+            injurePlayer(out.hurt);
+        }
     }
 
     // A ROOF-RUN IS AN ARRIVAL, not a step. Counted the first time the body

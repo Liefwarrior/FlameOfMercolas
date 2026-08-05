@@ -762,7 +762,7 @@ TEST_CASE("taking the warning and leaving ends it with no hands on anybody") {
     room.body().setYaw(angle_from_degrees(25));
     MoveInput out;
     out.forward = 1;
-    out.run = true;
+    out.sprint = true;
     for (int second = 0; second < 20 && tavern.playerInside(); ++second) {
         room.runWith(1, out);
     }
