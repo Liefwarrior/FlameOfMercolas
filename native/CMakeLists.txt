@@ -240,6 +240,7 @@ add_library(granadad-render STATIC
     src/render/lamps.cpp
     src/render/lighting.cpp
     src/render/world_renderer.cpp
+    src/render/controls.cpp
     src/render/hud.cpp
     src/render/dialogue_view.cpp
     src/render/capture.cpp
@@ -303,6 +304,7 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_spellforge.cpp
         tests/test_questline.cpp
         tests/test_step_pump.cpp
+        tests/test_controls.cpp
         # S5 -- the roofs, and the trade that runs on them.
         tests/test_roofrun.cpp
         tests/test_crime.cpp

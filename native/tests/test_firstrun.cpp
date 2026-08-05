@@ -136,12 +136,48 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
         }
         return false;
     };
-    for (const char* key : {"W A S D", "SHIFT", "C  CROUCH", "SPACE", "X  DOWN", "Q  LOOK",
-                            "J  CASEBOOK", "E  TALK", "G  HANDS", "T  PICK", "F  PUNCH",
-                            "R  SLEEP", "ESC", "TAB", "F12", "LOCK:"}) {
-        INFO("missing key row: " << key);
-        CHECK(mentions(key));
+    // #77 CHECKS WHOLE ROWS, NOT FRAGMENTS. The page is GENERATED from the live
+    // binding table now (Session::keyRows), so the interesting failure is no
+    // longer "a row went missing" -- it is "a row and its key disagree", and a
+    // fragment match cannot see that. These are the exact strings the shipped
+    // layout produces.
+    for (const char* row : {"MOUSE  LOOK", "W  FORWARD", "S  BACK", "A  STEP LEFT",
+                            "D  STEP RIGHT", "LSHIFT  SPRINT", "LCTRL  CROUCH",
+                            "SPACE  JUMP", "LALT  WALK", "E  TALK", "Q  LOOK AT IT",
+                            "G  HANDS ON IT", "T  PICK A PURSE", "F  PUNCH", "R  SLEEP",
+                            "V  CLIMB", "X  DOWN", "TAB  CASEBOOK", "F1  THIS LIST",
+                            "ESC  BACK OUT", "F2  OPTIONS", "1-0  QUICK BAR",
+                            "F12  SCREENSHOT", "LOCK:"}) {
+        INFO("missing key row: " << row);
+        CHECK(mentions(row));
     }
+
+    // AND THE ONE THING ON THIS PAGE THAT IS NOT A KEY AT ALL. Contextual
+    // traversal has no binding to print, which is the entire point of it, so the
+    // page has to say so in words or a player will never find out that walking
+    // at a wall is how you get on top of it.
+    CHECK(mentions("WALK AT A LEDGE"));
+
+    // A REBINDING SHOWS UP HERE, BY CONSTRUCTION. This page used to be a static
+    // array of strings a hundred lines from the client's switch statement, with
+    // a comment claiming it could not drift from the bindings. Nothing connected
+    // the two, so it could not help drifting. Now it IS the binding table read
+    // out loud, and this is the assertion that says so.
+    render::ControlSettings rebound = session.controls();
+    rebound.bind(render::Action::Jump, render::Key::MouseX1);
+    session.setControls(rebound);
+    const render::DialogueViewState after = session.dialogueView();
+    const auto mentionsAfter = [&after](const char* fragment) {
+        for (const std::string& row : after.topics) {
+            if (row.find(fragment) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    };
+    CHECK(mentionsAfter("MOUSE4  JUMP"));
+    CHECK_FALSE(mentionsAfter("SPACE  JUMP"));
+    session.setControls(render::ControlSettings::defaults());
 
     // AND EVERY ROW FITS THE COLUMN IT IS DRAWN IN. Sixteen characters is what
     // a third of the bottom band holds at 640x360; the first S10 capture of

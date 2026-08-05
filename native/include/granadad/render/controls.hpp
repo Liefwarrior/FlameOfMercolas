@@ -1,0 +1,364 @@
+#pragma once
+
+// THE KEYS, AND EVERY PREFERENCE ABOUT HOW THE GAME IS DRIVEN.
+//
+// WHY THIS IS A LIBRARY AND NOT A SWITCH STATEMENT IN main.cpp
+//
+// It used to be a switch statement in main.cpp, and src/client/main.cpp said so
+// out loud:
+//
+//     // VERIFICATION GAP (S3): NOTHING TESTS THIS SWITCH. Every branch below
+//     // calls a Session method the suite drives directly, so the behaviour is
+//     // covered and the BINDING is not -- a key wired to the wrong verb, or a
+//     // conversation that fails to capture the keyboard, would ship green.
+//
+// Three sprints of controls work happened over that comment. This file closes
+// it: the binding table, the hold-or-toggle modifiers, the stick deadzones and
+// the settings file are all ordinary testable objects in granadad-render, and
+// the client is left holding SDL and nothing else. What main.cpp keeps is the
+// translation from SDL_Scancode to Key and the calls that follow -- which is
+// still untested, but it is now twenty lines of table instead of three hundred
+// lines of game.
+//
+// NO SDL IN HERE. Not one include, deliberately. granadad-render draws frames
+// with no window at all (that is how --screenshot and two hundred cases work),
+// and the moment this file knows what SDL_SCANCODE_W is, none of it can be
+// built or tested without a windowing library.
+//
+// NO FLOATS EITHER, even though this is render and floats are legal here.
+// Everything below feeds MoveInput, which feeds the simulation, and integers
+// all the way to the boundary means a settings file cannot make two machines
+// disagree about where a body ended up.
+
+#include <cstdint>
+#include <filesystem>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "granadad/sim/angle.hpp"
+
+namespace granadad::render {
+
+// ---------------------------------------------------------------------------
+// what the player can ask for
+// ---------------------------------------------------------------------------
+
+/// Every verb a key can be bound to. ORDER IS THE SETTINGS FILE'S ORDER and the
+/// keys page's order, so new actions go on the END -- an insertion in the middle
+/// silently rebinds somebody's saved controls.
+enum class Action : std::uint8_t {
+    Forward = 0,
+    Back,
+    StrafeLeft,
+    StrafeRight,
+    /// Arrow-key turning. An ACCESSIBILITY FALLBACK for playing without a
+    /// mouse; sim::kTurnRate says at length why it is not allowed to define the
+    /// feel of anything.
+    TurnLeft,
+    TurnRight,
+    Sprint,
+    Walk,
+    Crouch,
+    Jump,
+    Interact,
+    Examine,
+    Steal,
+    Lift,
+    Punch,
+    Rest,
+    /// The S5 climb/leap verb. STILL BOUND, and it is a fallback now rather than
+    /// the way up: walking into a ledge climbs it. See sim::MoveInput's
+    /// autoTraverse.
+    Traverse,
+    DropDown,
+    Journal,
+    Keys,
+    Menu,
+    Options,
+    QuickSlot1,
+    QuickSlot2,
+    QuickSlot3,
+    QuickSlot4,
+    QuickSlot5,
+    QuickSlot6,
+    QuickSlot7,
+    QuickSlot8,
+    QuickSlot9,
+    QuickSlot0,
+    QuickNext,
+    QuickPrev,
+    Screenshot,
+    Count
+};
+
+inline constexpr std::size_t kActionCount = static_cast<std::size_t>(Action::Count);
+
+/// The stable name an action is written under in the settings file. Never
+/// translated, never prettified: this is a file format.
+[[nodiscard]] std::string_view actionKey(Action action) noexcept;
+
+/// What the keys page calls it. Short, because it shares a row with a key name.
+[[nodiscard]] std::string_view actionLabel(Action action) noexcept;
+
+/// Parses `actionKey`. Action::Count for anything unrecognised, so an old
+/// settings file with a dropped action is ignored rather than fatal.
+[[nodiscard]] Action actionFromKey(std::string_view name) noexcept;
+
+// ---------------------------------------------------------------------------
+// what a key is
+// ---------------------------------------------------------------------------
+
+/// A physical key or mouse control, in this game's own vocabulary.
+///
+/// NOT AN SDL SCANCODE. The client translates; see the file header. The numbers
+/// are arbitrary but STABLE -- they are what a saved binding file resolves
+/// through by NAME, so reordering is harmless and renaming is not.
+enum class Key : std::int32_t {
+    None = 0,
+
+    A, B, C, D, E, F, G, H, I, J, K, L, M,
+    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+
+    Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
+
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+
+    Up, Down, Left, Right,
+    Space, Enter, Escape, Tab, Backspace,
+    LeftShift, RightShift, LeftCtrl, RightCtrl, LeftAlt, RightAlt,
+    Minus, Equals, Comma, Period, Slash, Semicolon, Apostrophe,
+    LeftBracket, RightBracket, Backslash, Grave,
+
+    /// The mouse, which is a perfectly good place to bind a verb and which no
+    /// build before this one would let you use for one.
+    MouseLeft, MouseRight, MouseMiddle, MouseX1, MouseX2,
+    WheelUp, WheelDown,
+
+    /// A gamepad, in the face-button names everyone actually says.
+    PadSouth, PadEast, PadWest, PadNorth,
+    PadLeftBumper, PadRightBumper,
+    PadLeftTrigger, PadRightTrigger,
+    PadLeftStick, PadRightStick,
+    PadStart, PadBack,
+    PadUp, PadDown, PadLeft, PadRight,
+
+    Count
+};
+
+/// The name a key is written under, and read back by. "W", "LSHIFT", "WHEELUP".
+[[nodiscard]] std::string_view keyName(Key key) noexcept;
+/// Parses `keyName`, case-insensitively. Key::None for anything unrecognised.
+[[nodiscard]] Key keyFromName(std::string_view name) noexcept;
+
+// ---------------------------------------------------------------------------
+// hold AND toggle, which is two features and one control
+// ---------------------------------------------------------------------------
+
+/// A modifier that is BOTH a hold and a toggle, because players disagree about
+/// which one sprint and crouch should be and the argument has no winner.
+///
+/// TAP IT and it latches on; tap it again and it latches off. HOLD IT and it is
+/// on for as long as you hold it and off the moment you let go. The two do not
+/// fight: a tap is a press shorter than kTapSteps, and anything longer is a
+/// hold, so the same key does both without a setting to choose between them.
+///
+/// It counts MOVEMENT STEPS and not milliseconds, so it behaves identically at
+/// 30 and 300 frames a second -- which is the same reason StepPump exists.
+class HoldToggle {
+public:
+    /// Longest press still counted as a tap. 15 steps is a quarter of a second:
+    /// comfortably longer than any deliberate tap and comfortably shorter than
+    /// the shortest press anybody makes when they mean to hold something.
+    static constexpr std::int64_t kTapSteps = 15;
+
+    void press(std::int64_t stepNow) noexcept;
+    void release(std::int64_t stepNow) noexcept;
+    /// Held down, or latched on. See activeNow in the .cpp for the one clause
+    /// that is not obvious: a press that turned a latch OFF is not "on" while
+    /// you keep holding it.
+    [[nodiscard]] bool active() const noexcept { return activeNow(); }
+    [[nodiscard]] bool latched() const noexcept { return latched_; }
+    /// Drops both. For a mode change -- a conversation opening, a menu -- where
+    /// leaving a key latched from before would be a surprise afterwards.
+    void clear() noexcept;
+
+private:
+    [[nodiscard]] bool activeNow() const noexcept;
+
+    bool held_ = false;
+    bool latched_ = false;
+    /// True when the press that is currently down began by cancelling a latch,
+    /// so releasing it must not immediately latch again.
+    bool cancelledLatch_ = false;
+    std::int64_t pressedAt_ = 0;
+};
+
+// ---------------------------------------------------------------------------
+// the mouse
+// ---------------------------------------------------------------------------
+
+/// THE PRIMARY AIM PATH, and the two knobs a player expects to find for it.
+struct MouseSettings {
+    /// BAM per mouse count. 14 is roughly 0.077 degrees a count, which puts a
+    /// 400 CPI mouse at about 31 cm for a full turn -- a middling sensitivity
+    /// that most people will move.
+    std::int32_t sensitivity = 14;
+    /// Down is up. A real preference held by real people and free to support.
+    bool invertY = false;
+    /// NO SMOOTHING AND NO ACCELERATION, and there is deliberately no setting
+    /// for either. Raw relative deltas straight onto the yaw is the correct
+    /// default and the only one this build offers; a filter here would be the
+    /// archaic feel arriving by a different door.
+    static constexpr bool kRawAlways = true;
+
+    /// Applies sensitivity and invert to one frame's motion. The ONE place
+    /// either preference is read.
+    [[nodiscard]] sim::Angle yawFor(std::int32_t countsX) const noexcept;
+    [[nodiscard]] sim::Angle pitchFor(std::int32_t countsY) const noexcept;
+};
+
+/// Bounds the sensitivity slider. 1 is unusably slow and 200 is unusably fast;
+/// both are reachable, because somebody's hand is not yours.
+inline constexpr std::int32_t kMinSensitivity = 1;
+inline constexpr std::int32_t kMaxSensitivity = 200;
+inline constexpr std::int32_t kSensitivityStep = 2;
+
+/// Bounds the field of view, in horizontal degrees. 90 is the default; 65 is
+/// cinematic and 130 is a fishbowl, and both are legitimate things to want.
+inline constexpr std::int32_t kMinFov = 60;
+inline constexpr std::int32_t kMaxFov = 130;
+inline constexpr std::int32_t kFovStep = 5;
+
+// ---------------------------------------------------------------------------
+// the gamepad
+// ---------------------------------------------------------------------------
+
+/// A stick, in the raw signed range every gamepad API reports.
+struct Stick {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+};
+
+inline constexpr std::int32_t kStickMax = 32767;
+
+/// REAL DEADZONES, which means RADIAL ones.
+///
+/// The cheap version is per-axis -- ignore x under a threshold, ignore y under a
+/// threshold -- and it is why so many games feel like the stick snaps to the
+/// compass: near the centre one axis clears the bar while the other does not, so
+/// every small push comes out as pure north or pure east. A radial deadzone
+/// measures the LENGTH of the stick vector and either takes the whole thing or
+/// none of it, so a gentle push in any direction is a gentle push in that
+/// direction.
+///
+/// And the outer edge is rescaled. Sticks do not physically reach 32767 in the
+/// diagonals; without saturation, full deflection north-east is slower than full
+/// deflection north, which reads as the pad being broken.
+struct PadSettings {
+    /// Percent of full deflection ignored at the centre.
+    std::int32_t deadzonePercent = 18;
+    /// Percent of full deflection treated as maximum.
+    std::int32_t saturationPercent = 95;
+    /// How fast the look stick turns at full deflection, BAM per second. 40000
+    /// is about 220 degrees a second, which is where a pad shooter sits.
+    std::int32_t lookBamPerSecond = 40000;
+    /// Trigger travel ignored before a trigger counts as pressed, percent.
+    std::int32_t triggerDeadzonePercent = 12;
+};
+
+/// The stick with its deadzone removed and its outer edge rescaled, still in
+/// -kStickMax..kStickMax. A stick inside the deadzone comes back exactly zero.
+[[nodiscard]] Stick applyDeadzone(Stick raw, const PadSettings& pad) noexcept;
+
+/// How far the stick is pushed, 0..kStickMax. The RADIAL length, which is the
+/// number a gait threshold has to be read off -- a diagonal push is a full push.
+[[nodiscard]] std::int32_t stickMagnitude(Stick stick) noexcept;
+
+/// One axis of a processed stick as a movement intent in {-1, 0, +1}.
+///
+/// TILE-STEPPED INTENT, and that is a real limitation stated rather than hidden:
+/// sim::MoveInput carries a direction and a gait, not an analogue magnitude, so
+/// a pad cannot currently walk at three-quarter speed. What it CAN do is pick a
+/// gait -- push past kAnalogueWalkPercent for a jog, past kAnalogueSprintPercent
+/// for a sprint -- which is where most of the value of an analogue stick
+/// actually is.
+[[nodiscard]] std::int32_t stickIntent(std::int32_t axis) noexcept;
+
+/// Percent of full deflection at which a stick stops being a walk and becomes a
+/// jog, and at which it becomes a sprint.
+inline constexpr std::int32_t kAnalogueWalkPercent = 55;
+inline constexpr std::int32_t kAnalogueSprintPercent = 92;
+
+/// How far a look stick turns the head in one frame, BAM.
+///
+/// CUBED, and that is the response curve every pad shooter uses: a small push
+/// gives a very small turn (which is what aiming needs) and a full push gives
+/// the whole rate (which is what turning round needs). A linear stick can do one
+/// or the other and never both.
+[[nodiscard]] sim::Angle padLook(std::int32_t axis, std::int32_t bamPerSecond,
+                                 std::int32_t steps) noexcept;
+
+// ---------------------------------------------------------------------------
+// the whole of it, on disk
+// ---------------------------------------------------------------------------
+
+/// Every binding and every preference, and it survives the process.
+struct ControlSettings {
+    /// Two keys per action, because everybody wants arrows AND WASD, or a
+    /// keyboard binding AND a pad button. Key::None means unbound.
+    Key primary[kActionCount] = {};
+    Key secondary[kActionCount] = {};
+
+    MouseSettings mouse{};
+    PadSettings pad{};
+    /// Horizontal field of view, degrees.
+    std::int32_t fovDegrees = 90;
+
+    /// The shipped bindings. WASD, Shift, Ctrl, Space, E, Tab, Escape, and the
+    /// number row on the quick slots -- which is to say, the layout somebody who
+    /// has played any first-person game in the last twenty years already knows.
+    [[nodiscard]] static ControlSettings defaults() noexcept;
+
+    /// The action this key drives, or Action::Count. First match wins, primary
+    /// before secondary, which is also the order the keys page prints them.
+    [[nodiscard]] Action actionFor(Key key) const noexcept;
+    /// True when this key drives that action either way round.
+    [[nodiscard]] bool bound(Action action, Key key) const noexcept;
+
+    /// Binds a key, taking it off whatever else had it.
+    ///
+    /// STEALING IS THE POINT. A rebinding screen that lets two verbs share a key
+    /// produces a game where one of them silently stops working, and the player
+    /// has no way to find out which. Binding W to Jump un-binds W from Forward,
+    /// visibly, and the keys page shows Forward as unbound until it is given
+    /// something.
+    void bind(Action action, Key key, bool asSecondary = false) noexcept;
+
+    /// Clamps every slider into range. Called after loading, so a hand-edited
+    /// file cannot produce an unplayable game.
+    void sanitise() noexcept;
+
+    /// The settings file, as text. One `action key key` line per action and one
+    /// `set name value` line per preference -- readable, diffable, and editable
+    /// by hand, which is a feature and not an accident.
+    [[nodiscard]] std::string toText() const;
+    /// Reads what toText wrote. UNKNOWN LINES ARE SKIPPED, not fatal: a file
+    /// written by a later build has to leave an earlier one playable.
+    static ControlSettings fromText(std::string_view text);
+};
+
+/// Where the settings live. Beside the executable, because this game has no
+/// installer, no launcher and no user-profile directory yet, and a file the
+/// player can see and delete is better than one they cannot find.
+inline constexpr std::string_view kControlsFileName = "granadad-controls.cfg";
+
+/// Reads the file, or the defaults if it is missing or unreadable. NEVER
+/// throws: unplayable controls because a config file went bad is the worst
+/// possible failure mode for a config file.
+[[nodiscard]] ControlSettings loadControls(const std::filesystem::path& file);
+/// Writes it. False on any failure, and the caller carries on -- losing a
+/// rebinding is annoying and crashing is worse.
+bool saveControls(const ControlSettings& settings, const std::filesystem::path& file);
+
+}  // namespace granadad::render

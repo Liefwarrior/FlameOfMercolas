@@ -130,44 +130,20 @@ constexpr float kBackShade = 0.55F;
     }
 }
 
-/// THE KEYS, AS A TOPIC LIST.
+/// THE ROWS THE KEYS PAGE ADDS TO THE BINDINGS, and the only ones it still
+/// hard-codes.
 ///
-/// One row a verb, in the order a player learns them: move, look at the world,
-/// talk to it, and then the four things a burglar does. It pages nine at a time
-/// off the numbers, exactly like a long conversation, so this list can grow to
-/// any length without a row falling off the bottom with nothing on screen
-/// saying so -- which is the bug the S3 review found in the topic grid and the
-/// reason kTopicPageSize is nine.
+/// Everything a key is BOUND to is generated from ControlSettings by
+/// Session::keyRows -- see the note there. These four are not bindings: they are
+/// what W, S, SPACE and F while a WIRE IS IN A LOCK do, which is a mode the
+/// simulation is in rather than a verb with a key of its own.
 ///
-/// IT IS HERE AND NOT IN THE CLIENT because the client owns no game logic and
-/// because a keyboard reference that lives beside the SDL bindings drifts from
-/// them the moment somebody rebinds one without looking down. This is drawn
-/// from the same Session verbs the client calls.
-///
-/// AND EVERY ROW FITS ITS COLUMN. The grid is three columns of about sixteen
-/// characters -- Master Venn's twelve topics are what sized it -- and the first
-/// S10 capture of this page shipped "SPACE  UP: MANT." and "E  TALK TO WHOE.".
-/// A controls page that arrives truncated is worse than none, because a player
-/// reads the truncation as the binding.
-const char* const kKeyRows[] = {
-    "W A S D  WALK",
-    "MOUSE  LOOK",
-    "SHIFT  RUN",
-    "C  CROUCH",
-    "SPACE  UP",
-    "X  DOWN",
-    "Q  LOOK AT IT",
-    "J  CASEBOOK",
-    "E  TALK",
-    "G  HANDS ON IT",
-    "T  PICK A PURSE",
-    "F  PUNCH",
-    "R  SLEEP",
-    "1-9  PICK ROW",
-    "0  NEXT PAGE",
-    "ESC  BACK OUT",
-    "TAB  FREE MOUSE",
-    "F12  SCREENSHOT",
+/// AND EVERY ROW FITS ITS COLUMN. The grid is three columns of eighteen glyphs
+/// (render/dialogue_view.hpp) and the first S10 capture of this page shipped
+/// "SPACE  UP: MANT." and "E  TALK TO WHOE.". A controls page that arrives
+/// truncated is worse than none, because a player reads the truncation as the
+/// binding.
+const char* const kLockRows[] = {
     "LOCK: W S  AIM",
     "LOCK: SPACE TRY",
     "LOCK: F  FORCE",
@@ -237,6 +213,11 @@ Session::Session(const SessionConfig& config)
     // lead the ward has given you. Anything the player does closes it -- see
     // Session::step and the four verbs -- so it costs a keypress at most and
     // never gets in the way twice.
+    // #77. The field of view the session was ASKED for becomes the field of
+    // view the options slider starts on, so --fov and the in-game slider are the
+    // same number rather than two that disagree.
+    controls_.fovDegrees = config_.fovDegrees;
+    controls_.sanitise();
     if (config_.openingPage && caseRaws_.loaded()) {
         casebookOpen_ = true;
         message_ = "J YOUR NOTES   F1 THE KEYS   Q LOOK AT WHAT IS HERE";
@@ -521,7 +502,209 @@ void Session::examine() {
 void Session::dismissOverlays() noexcept {
     casebookOpen_ = false;
     keysOpen_ = false;
+    optionsOpen_ = false;
+    awaitingKey_ = false;
     firstRun_ = false;
+}
+
+// ---------------------------------------------------------------------------
+// #77: the controls, and the page that changes them
+// ---------------------------------------------------------------------------
+
+void Session::setControls(const ControlSettings& settings) {
+    controls_ = settings;
+    controls_.sanitise();
+    // The camera reads the field of view every frame off controls_, so a
+    // settings file with an FOV in it is applied by the act of loading it and
+    // there is no second copy to forget to update.
+}
+
+void Session::setFov(int degrees) {
+    controls_.fovDegrees = degrees < kMinFov ? kMinFov : (degrees > kMaxFov ? kMaxFov : degrees);
+}
+
+std::vector<std::string> Session::keyRows() const {
+    // GENERATED FROM THE LIVE BINDINGS, and that is the whole point of the
+    // change. This page used to be a static array of strings sitting a hundred
+    // lines away from a switch statement in the client, and its own comment
+    // said it lived here so it "does not drift from them the moment somebody
+    // rebinds one without looking down". It could not help drifting: nothing
+    // connected the two. Now a rebinding shows up here by construction, because
+    // this IS the binding table read out loud.
+    std::vector<std::string> rows;
+    rows.reserve(kActionCount + 8);
+    rows.emplace_back("MOUSE  LOOK");
+    for (std::size_t i = 0; i < kActionCount; ++i) {
+        const Action action = static_cast<Action>(i);
+        // THE QUICK BAR IS ONE ROW, NOT TEN. Ten near-identical rows would push
+        // everything a player is actually looking for onto page four. The
+        // OPTIONS page still lists all ten, because that is where you go to
+        // change one.
+        if (action >= Action::QuickSlot2 && action <= Action::QuickSlot0) {
+            continue;
+        }
+        std::string row;
+        if (action == Action::QuickSlot1) {
+            row = std::string(keyName(controls_.primary[i])) + "-" +
+                  std::string(keyName(controls_.primary[static_cast<std::size_t>(
+                      Action::QuickSlot0)])) +
+                  "  QUICK BAR";
+        } else {
+            row = std::string(keyName(controls_.primary[i])) + "  " +
+                  std::string(actionLabel(action));
+        }
+        rows.push_back(row);
+    }
+    rows.emplace_back("WALK AT A LEDGE");
+    rows.emplace_back("  TO CLIMB IT");
+    for (const char* row : kLockRows) {
+        rows.emplace_back(row);
+    }
+    return rows;
+}
+
+std::vector<std::string> Session::optionRows() const {
+    std::vector<std::string> rows;
+    rows.reserve(kSliderRows + kActionCount);
+    // THE FOUR SLIDERS, in the order somebody looking for them expects.
+    rows.push_back("SENSITIVITY  " + std::to_string(controls_.mouse.sensitivity));
+    rows.push_back(std::string("INVERT Y  ") + (controls_.mouse.invertY ? "ON" : "OFF"));
+    rows.push_back("VIEW ANGLE  " + std::to_string(controls_.fovDegrees));
+    rows.push_back("PAD DEADZONE " + std::to_string(controls_.pad.deadzonePercent));
+    static_assert(Session::kSliderRows == 4, "the slider rows and adjustOption must agree");
+    for (std::size_t i = 0; i < kActionCount; ++i) {
+        std::string row(actionLabel(static_cast<Action>(i)));
+        row += "  ";
+        // The row the page is waiting on says so in place of a key, so there is
+        // never a moment where the game is listening and nothing on screen says
+        // it is.
+        const bool listening =
+            awaitingKey_ && optionCursor_ == static_cast<int>(kSliderRows + i);
+        row += listening ? "..." : std::string(keyName(controls_.primary[i]));
+        rows.push_back(row);
+    }
+    return rows;
+}
+
+void Session::toggleOptions() {
+    if (talking() || picking()) {
+        return;
+    }
+    optionsOpen_ = !optionsOpen_;
+    if (optionsOpen_) {
+        casebookOpen_ = false;
+        keysOpen_ = false;
+    }
+    awaitingKey_ = false;
+    firstRun_ = false;
+    optionCursor_ = 0;
+    optionPage_ = 0;
+}
+
+void Session::moveOptionCursor(int delta) {
+    if (!optionsOpen_ || awaitingKey_) {
+        return;
+    }
+    const int count = static_cast<int>(optionRows().size());
+    if (count <= 0) {
+        return;
+    }
+    optionCursor_ = ((optionCursor_ + delta) % count + count) % count;
+    optionPage_ = optionCursor_ / kTopicPageSize;
+}
+
+void Session::adjustOption(int delta) {
+    if (!optionsOpen_ || awaitingKey_ || delta == 0) {
+        return;
+    }
+    switch (optionCursor_) {
+        case 0:
+            controls_.mouse.sensitivity += delta * kSensitivityStep;
+            break;
+        case 1:
+            controls_.mouse.invertY = !controls_.mouse.invertY;
+            break;
+        case 2:
+            controls_.fovDegrees += delta * kFovStep;
+            break;
+        case 3:
+            controls_.pad.deadzonePercent += delta;
+            break;
+        default:
+            // A BINDING ROW IS NOT A SLIDER. Nudging left on one is a player
+            // looking for a value that is not there, and doing nothing is the
+            // honest answer -- silently rebinding it would be worse.
+            return;
+    }
+    controls_.sanitise();
+}
+
+void Session::chooseOption() {
+    if (!optionsOpen_ || awaitingKey_) {
+        return;
+    }
+    if (optionCursor_ < kSliderRows) {
+        // ENTER ALWAYS DOES SOMETHING. On a slider it is a nudge up, so a player
+        // who has learnt ENTER on the conversation surface is not met with a
+        // key that silently refuses on half the rows of this one.
+        adjustOption(1);
+        return;
+    }
+    awaitingKey_ = true;
+}
+
+void Session::bindAwaited(Key key) {
+    if (!optionsOpen_ || !awaitingKey_) {
+        return;
+    }
+    awaitingKey_ = false;
+    if (key == Key::None) {
+        return;
+    }
+    const int index = optionCursor_ - kSliderRows;
+    if (index < 0 || index >= static_cast<int>(kActionCount)) {
+        return;
+    }
+    // STEALS, VISIBLY. See ControlSettings::bind: two verbs sharing a key is a
+    // game where one of them stops working and the player cannot find out
+    // which. The row it was taken from shows "--" on this very page.
+    controls_.bind(static_cast<Action>(index), key);
+}
+
+void Session::setCrouched(bool crouched) {
+    dismissOverlays();
+    if (talking()) {
+        return;
+    }
+    if ((tavern_->stance() == sim::Stance::Crouched) == crouched) {
+        return;
+    }
+    tavern_->toggleStance();
+    say(crouched ? "CROUCHED" : "UPRIGHT");
+}
+
+void Session::selectQuickSlot(int slot) {
+    if (slot < 0 || slot > 9) {
+        return;
+    }
+    quickSlot_ = slot;
+    // WHAT IT HONESTLY IS. See the header: the binding is real and the slot is
+    // empty, and a line that said "READY: SOMETHING" would be a lie told to a
+    // player who is about to find out.
+    say("SLOT " + std::to_string(slot + 1) + " -- NOTHING IN IT YET.");
+}
+
+void Session::jump() {
+    dismissOverlays();
+    if (talking() || picking()) {
+        return;
+    }
+    if (!body_->jump()) {
+        return;
+    }
+    // NOTHING IS SAID. A jump that announced itself on the alert row every time
+    // would be the noisiest thing in the game, and the player can see it.
+    tavern_->setPlayerMotion(true, true);
 }
 
 void Session::toggleKeys() {
@@ -783,7 +966,7 @@ void Session::interact() {
 
 void Session::moveTopicCursor(int delta) {
     if (keysOpen_) {
-        const int count = static_cast<int>(sizeof(kKeyRows) / sizeof(kKeyRows[0]));
+        const int count = static_cast<int>(keyRows().size());
         caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
         casePage_ = caseCursor_ / kTopicPageSize;
         return;
@@ -821,8 +1004,15 @@ void Session::moveTopicCursor(int delta) {
 }
 
 void Session::nextTopicPage() {
+    if (optionsOpen_) {
+        const int pages = topicPageCount(optionRows().size());
+        optionPage_ = (optionPage_ + 1) % pages;
+        optionCursor_ = std::min(static_cast<int>(optionRows().size()) - 1,
+                                 optionPage_ * kTopicPageSize);
+        return;
+    }
     if (keysOpen_) {
-        const std::size_t rows = sizeof(kKeyRows) / sizeof(kKeyRows[0]);
+        const std::size_t rows = keyRows().size();
         const int pages = topicPageCount(rows);
         casePage_ = (casePage_ + 1) % pages;
         caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
@@ -856,11 +1046,18 @@ void Session::chooseVisibleTopic(int slot) {
     if (slot < 0 || slot >= kTopicPageSize) {
         return;
     }
+    if (optionsOpen_) {
+        const int index = optionPage_ * kTopicPageSize + slot;
+        if (index < static_cast<int>(optionRows().size())) {
+            optionCursor_ = index;
+        }
+        return;
+    }
     if (keysOpen_) {
         // A key row is a reference, not a choice. The cursor moves and nothing
         // else happens, which is the honest behaviour for a list you read.
         const int index = casePage_ * kTopicPageSize + slot;
-        if (index < static_cast<int>(sizeof(kKeyRows) / sizeof(kKeyRows[0]))) {
+        if (index < static_cast<int>(keyRows().size())) {
             caseCursor_ = index;
         }
         return;
@@ -934,6 +1131,19 @@ void Session::chooseTopic(std::size_t index) {
 }
 
 void Session::closeConversation() {
+    if (optionsOpen_) {
+        // ESC out of a rebinding first, and out of the page second. A player
+        // who opened "press a key" by accident has to be able to get out of it
+        // without binding escape to something.
+        if (awaitingKey_) {
+            awaitingKey_ = false;
+            return;
+        }
+        optionsOpen_ = false;
+        optionCursor_ = 0;
+        optionPage_ = 0;
+        return;
+    }
     if (keysOpen_) {
         keysOpen_ = false;
         caseCursor_ = 0;
@@ -1044,11 +1254,25 @@ DialogueViewState Session::dialogueView() const {
         view.line =
             "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS WHETHER YOU WATCH IT "
             "OR NOT. F1 PUTS THIS DOWN.";
-        for (const char* row : kKeyRows) {
-            view.topics.emplace_back(row);
+        for (const std::string& row : keyRows()) {
+            view.topics.push_back(row);
         }
         view.cursor = caseCursor_;
         view.page = casePage_;
+        return view;
+    }
+    if (optionsOpen_) {
+        view.open = true;
+        view.speaker = "OPTIONS";
+        view.epithet = awaitingKey_ ? "PRESS A KEY  (ESC CANCELS)" : "LEFT RIGHT CHANGE  ENTER REBIND";
+        view.line =
+            "MOUSE LOOK IS RAW -- NO SMOOTHING AND NO ACCELERATION. A KEY YOU BIND IS TAKEN "
+            "OFF WHATEVER HAD IT. F2 PUTS THIS DOWN.";
+        for (const std::string& row : optionRows()) {
+            view.topics.push_back(row);
+        }
+        view.cursor = optionCursor_;
+        view.page = optionPage_;
         return view;
     }
     if (casebookOpen_) {
@@ -1238,7 +1462,11 @@ void Session::syncWardToCalendar() {
 }
 
 Camera Session::camera() const noexcept {
-    const float half = static_cast<float>(config_.fovDegrees) * 0.5F * kPi / 180.0F;
+    // FROM THE LIVE SETTINGS, not from the config the session was built with.
+    // #77 puts a field-of-view slider on the options page and the camera has to
+    // read it every frame or the slider is decoration; the constructor seeds
+    // controls_.fovDegrees from config_ so --fov still works.
+    const float half = static_cast<float>(controls_.fovDegrees) * 0.5F * kPi / 180.0F;
     return Camera::fromBody(body_->x(), body_->y(), body_->eyeZ(), body_->yaw(), body_->pitch(),
                             std::tan(half));
 }

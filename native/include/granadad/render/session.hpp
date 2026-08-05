@@ -28,6 +28,7 @@
 #include "granadad/content/world.hpp"
 #include "granadad/render/actor_sheet.hpp"
 #include "granadad/render/atlas.hpp"
+#include "granadad/render/controls.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
@@ -275,6 +276,73 @@ public:
     void toggleKeys();
     [[nodiscard]] bool keysOpen() const noexcept { return keysOpen_; }
 
+    // --- #77: the controls, and the page that changes them -------------------
+
+    /// The live bindings and preferences. The keys page is DRAWN FROM THESE, so
+    /// a rebinding shows up on the reference page by construction and the two
+    /// cannot drift -- which is the failure the old page had by being a static
+    /// array of strings beside a switch statement in the client.
+    [[nodiscard]] const ControlSettings& controls() const noexcept { return controls_; }
+    void setControls(const ControlSettings& settings);
+
+    /// The keys page, one row a verb, built from the live bindings.
+    [[nodiscard]] std::vector<std::string> keyRows() const;
+
+    /// THE OPTIONS PAGE. Sensitivity, invert-Y, field of view and the pad's
+    /// deadzone on the first rows; every verb in the game, rebindable, under
+    /// them. Same surface, same paging and same keys as a conversation, for the
+    /// same reason the casebook borrows it: one list widget, proved once.
+    void toggleOptions();
+    [[nodiscard]] bool optionsOpen() const noexcept { return optionsOpen_; }
+    [[nodiscard]] std::vector<std::string> optionRows() const;
+    void moveOptionCursor(int delta);
+    /// LEFT and RIGHT on a slider row. Does nothing on a binding row.
+    void adjustOption(int delta);
+    /// ENTER on a binding row: the next key pressed takes it. On a slider row,
+    /// nudges it up, so ENTER always does something.
+    void chooseOption();
+    /// True while the page is waiting for a key to bind.
+    [[nodiscard]] bool awaitingKey() const noexcept { return awaitingKey_; }
+    /// Binds the key the page was waiting for. Key::None cancels.
+    void bindAwaited(Key key);
+    [[nodiscard]] int optionCursor() const noexcept { return optionCursor_; }
+
+    /// How many rows of the options page are sliders rather than bindings.
+    static constexpr int kSliderRows = 4;
+
+    /// Field of view, degrees, clamped to kMinFov..kMaxFov. Live: the camera
+    /// reads it every frame, so the slider moves the view while you watch.
+    void setFov(int degrees);
+    [[nodiscard]] int fovDegrees() const noexcept { return controls_.fovDegrees; }
+
+    /// A STANDING JUMP. Half a metre, and it gets you onto nothing -- see
+    /// sim::PlayerBody::jump. Bound to space, which is where a jump goes.
+    ///
+    /// IT IS NOT THE CLIMB KEY. S5 put the mantle on space and a player who
+    /// pressed it expecting a jump got a climb. Walking into a ledge climbs it
+    /// now; this jumps.
+    void jump();
+
+    /// Sets the stance directly rather than flipping it.
+    ///
+    /// WHY BOTH EXIST. toggleCrouch is what a TAP does; this is what a HOLD
+    /// does, and a hold that had to be expressed as a toggle would desynchronise
+    /// the moment a key-up event went missing behind an alt-tab. See
+    /// render::HoldToggle, which owns the rule that decides which one a press
+    /// was.
+    void setCrouched(bool crouched);
+
+    /// THE QUICK BAR. Ten slots off the number row, and the wheel walks them.
+    ///
+    /// VERIFICATION GAP (#77): THERE IS NOTHING IN THEM. This build has a purse,
+    /// a stash of contraband and a set of picks, and no inventory model that a
+    /// slot could hold -- so what the number row does today is select a slot and
+    /// say which one. The BINDING is real, rebindable and persisted; the
+    /// CONTENTS are not built. Stated here rather than left for a player to
+    /// discover by pressing 3 and watching nothing happen.
+    void selectQuickSlot(int slot);
+    [[nodiscard]] int quickSlot() const noexcept { return quickSlot_; }
+
     /// TRUE UNTIL THE PLAYER HAS DONE ANYTHING AT ALL. A fresh session opens
     /// with the casebook up and the hook on screen, because "dropped into a
     /// systems demo with no orientation" is the thing this build has always
@@ -491,6 +559,13 @@ private:
     /// The entry the player has picked out of their own notes, or -1. Pure UI
     /// state: the trail itself lives in the simulation.
     int caseEntry_ = -1;
+    /// #77. The live bindings, the options page and the row it is on.
+    ControlSettings controls_ = ControlSettings::defaults();
+    bool optionsOpen_ = false;
+    int optionCursor_ = 0;
+    int optionPage_ = 0;
+    bool awaitingKey_ = false;
+    int quickSlot_ = 0;
 };
 
 /// What a scripted capture run was asked to do.

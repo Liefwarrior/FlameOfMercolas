@@ -55,13 +55,35 @@ The notes are open on your first frame. They say:
 
 **Walk, and the notes put themselves away.** They never open again on their own.
 
-Three keys are the whole game:
+It moves like a game made this decade. **WASD**, the **mouse** looks, **shift**
+sprints, **ctrl** crouches, **space** jumps, **E** talks. Both modifiers work
+either way round: tap shift to latch a sprint on, or hold it. The default gait
+is a jog at 5 m/s, sprint is 7, and holding **alt** slows you to a real 1.5 m/s
+walk when you want to look at something.
+
+**There is no climb key. Walk into a ledge and you climb it.** That is the one
+thing worth reading this file for. A 2.7 m wall takes about half a second of
+hauling with your hands full, so you stand still while it happens; it is a
+climb, not a hop. `V` still lines a climb or a leap up deliberately if you would
+rather.
+
+**`SPACE` is a jump, and it gets you onto nothing.** Half a metre, which is what
+a person clears. Every wall in the Docks is a storey, and a storey is 2.7 m.
+
+Three keys are the rest of the game:
 
 | | |
 |---|---|
 | **`Q`** | **look at what is here.** The investigation verb. |
-| **`J`** | **your casebook.** Everything you have been told, and where to go. |
+| **`J`** or **`TAB`** | **your casebook.** Everything you have been told, and where to go. |
 | **`F1`** | **the keys.** All of them, in the game, paged nine at a time. |
+
+**`F2` rebinds any of them**, and what you change is still changed tomorrow —
+it lives in `granadad-controls.cfg` beside the exe, which you can also edit by
+hand. The same page has sliders for mouse sensitivity, invert-Y, field of view
+and a gamepad deadzone. A gamepad that is plugged in just works: real radial
+deadzones, a cubed look curve, and the left stick picks a gait by how far you
+push it.
 
 Everything else is on `F1`. You do not need this file.
 
@@ -105,16 +127,24 @@ Stand in it and press **`Q`**.
    it, the docker will not speak civilly to you again, and the ward hears about
    it — top-right corner.
 
-7. **Come back at two in the morning and rob the place properly.** `C` to
+7. **Come back at two in the morning and rob the place properly.** `CTRL` to
    crouch, and watch the top-right row change from `SEEN` to `HIDDEN`. Up the
-   stair with `SPACE`, stand at a bed-foot that is not yours and press `G`. The
+   stair with `V`, stand at a bed-foot that is not yours and press `G`. The
    wire goes into a strongbox and **the keyboard belongs to the lock**: `W`/`S`
    aim, `SPACE` probes, `F` puts a shoulder to it.
    Your first box will probably cost you every pick you own — see §5.
 
-8. **Get on the roofs.** `SPACE` mantles onto a wall you are facing; over the
-   Gull's north wall is the guest floor, then the lead. `X` steps off and takes
-   the fall. Two thirds of the district is only reachable up there.
+8. **Get on the roofs by walking at them.** Face the Gull's north wall, hold
+   forward, and you haul yourself onto the guest floor and then the lead — no
+   key. Two thirds of the district is only reachable up there.
+
+   **Then walk off it and look at what that costs.** `X` steps off a ledge
+   deliberately. One storey (2.7 m) is a knock, 7 of your 100. Two storeys
+   (5.4 m) is a serious injury at 50. Three (8.1 m) bills 109, which is more
+   than a person has — nothing in this build can kill you yet, so it floors at
+   1, but the number is honest and the alert says how far you fell. Sign on
+   with the Skyrunners and the same drops cost you less, because you have been
+   shown where to land. Land in the harbour and they cost less still.
 
 9. **Sign on with the Skyrunners.** Finch, in the snug, after ten. Then look at
    what `J` says the ward calls you. It changes.
