@@ -97,8 +97,80 @@ hunt) lands on the body the district actually draws. **I did not add a gull.**
 
 ## The numbers
 
-<!-- FILLED IN FROM THE GREEN BUILD -->
+All read off the **shipped `dist\granadad.exe`** (`p80-g-1785958400`) on this
+Windows host, with the new `--people[=HOUR[,HOURS]]` flag.
+
+### Who lives on the roofs — `granadad.exe --people=8,0`
+
+```
+  roll 656  alive 656  people 603  beasts 53  starved 0
+
+  trade          roll roofed
+  wastrel          95      3   (climbs)
+  urchin           77      3   (climbs)
+  thief            13      2   (climbs)
+  serf            298      0
+  watch            31      0            <- and never will
+  ...
+
+  ON THE ROOFS: 8 beds on a deck, 8 bodies standing on one right now.
+  roof beds the bake refused as one-way: 4
+    bed (128,148,z22)  urchin      now at (128,148,z22)
+    bed (127,148,z22)  urchin      now at (126,148,z22)
+    bed (155,148,z22)  thief       now at (155,148,z22)
+    bed (154,148,z22)  thief       now at (153,148,z22)
+```
+
+**Eight beds on world z22 — the roof-slum plane, which held nothing before.**
+docks.hpp records 1,706 standable cells up there and, under the walking rule,
+*zero* of them reachable. Three trades: the ward's poor, its children and its
+burglars, which is what §2.5's rooftop tier is made of. No serf, no watchman,
+nobody who cannot climb.
+
+**Four huts were refused** — the map does not give a sound, round-trippable deck
+cell for all ten. Their households fell back to the compound underneath. That is
+the guard working, and it is why the count is printed rather than asserted to
+zero: a bed on a plane its tenant cannot leave is the one outcome this pass
+exists to prevent.
+
+The roll fell 661 → 656 because a roof household is capped at two (§2.5: *tents
+and mud huts*), which is also what stopped five people in one hut fighting over
+four tiles — the gate caught that as "one body per square" going red on a roof.
+
+### The rhythm — the same deck, three hours
+
+| hour | `roof=` | what is up there |
+|---|---|---|
+| 06:00 | **8/8** | everybody home; the wastrel's shift starts at nine and the child's at seven at night |
+| 08:00 | **8/8** | still home |
+| 19:00 | **8/2** | the kerb and the bins have taken six of them |
+| 02:00 | **8/3** | the children are out on the bins; the deck is unlit |
+
+### The food chain — `granadad.exe --people=6,N`
+
+| ward hours run | mice on the board | caught | futile chases |
+|---|---|---|---|
+| 0 | 32 / 32 | 0 | 0 |
+| 12 | **24 / 32** | **20** | 2 |
+| 24 | **32 / 32** | **36** | 4 |
+
+**It falls and it comes back.** Twenty mice taken in the first twelve hours takes
+the live count to 24; by the end of the day the den has put every one of them
+back out and the predators have taken thirty-six. Four chases were abandoned as
+futile against thirty-six catches, which is a district with real geometry in it
+rather than a chokepoint freeze. Nothing on either side starved.
 
 ## The frames
 
-<!-- FILLED IN FROM THE GREEN BUILD -->
+| frame | what it is |
+|---|---|
+| `p80-slum-0600.png` | the roof-slum plane at dawn, `roof=8/8` — three tenants outside their huts, the district's roofs running away into a red sunrise |
+| `p80-slum-east-0600.png` | the same plane from the east cluster, two of the ward's thieves standing on it |
+| `p80-slum-0800.png` | breakfast, `roof=8/8`, the deck full |
+| `p80-slum-1900.png` | **the same camera at seven in the evening**, `roof=8/2` — the deck empty, because its people are down on the kerb and the bins |
+| `p80-slum-0200.png` | two in the morning, `roof=8/3`. Nearly black: a slum has no lamps, and this is what that honestly looks like |
+| `p80-tarwalk-2000.png` | the opening shot, unchanged, with the new counters on the diagnostic line — and a **cat and a mouse** standing four tiles apart in the middle of it |
+| `p80-tarwalk-0200.png` | the same street at two, the Gull's door lamp, a stray, and the cat still on the mouse |
+
+The 08:00/19:00 pair is the one to read: same camera, same deck, tenants and
+then nobody.
