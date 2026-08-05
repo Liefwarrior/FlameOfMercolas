@@ -458,21 +458,88 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # the food-chain cases were folded into one because ctest launches the
     # binary per case and each of them was paying for the same ten-hour soak
     # again. The floor sits under the lower number.
-    GRANADAD_MIN_TESTS=526; \
+    # #81: 526 -> 537, AND THE NUMBER NOW COUNTS SOMETHING STRONGER.
+    #
+    # It used to count ctest ENTRIES, because doctest_discover_tests registered
+    # one per TEST_CASE. #81 stopped doing that -- ctest ran an entry by
+    # launching the binary again, five hundred and twenty relaunches to run five
+    # hundred and twenty tests, and a shared fixture could not exist because a
+    # static was built once per case. The entry is now the test FILE.
+    #
+    # So the floor asks the BINARIES how many cases they hold, with
+    # --list-test-cases, and adds the standalone gate entries ctest still owns
+    # (the twin-run gate, the soak, the two fingerprint writers). The number
+    # means the same thing it always meant and is harder to fake: a ctest entry
+    # count can be inflated by registering entries, a doctest case count cannot.
+    #
+    # THE SAME ARITHMETIC OVER THE OLD SUITE GIVES 537, WHICH IS WHAT CTEST SAID
+    # IT WAS: 463 sim cases + 65 content cases + 9 standalone entries. So this is
+    # not a rebased number that quietly forgives a shrink -- it is the same
+    # count, taken from a place that cannot be padded, and the floor moves to
+    # the previous round's size exactly as it always has.
+    #
+    # The suite went UP to 542 on the way through, and that is worth recording:
+    # #80 had to fold five food-chain claims into one TEST_CASE to stop paying
+    # for the same ten-hour soak five times, and the tavern's five-hour emptying
+    # split off the Session clock claim it was carrying. With one process per
+    # file the fold is undone and the claims have their own names back.
+    GRANADAD_MIN_TESTS=537; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
     # It went red exactly that way the first time pipefail was turned on.
     ctest_list="$(ctest --test-dir /build-cache/hostcheck -N)"; \
-    test_count="$(printf '%s\n' "$ctest_list" | sed -n 's/^Total Tests: *//p')"; \
-    echo "ctest knows about ${test_count} tests (floor: ${GRANADAD_MIN_TESTS})"; \
-    if [ -z "$test_count" ] || [ "$test_count" -lt "$GRANADAD_MIN_TESTS" ]; then \
+    sim_cases="$(/build-cache/hostcheck/bin/granadad-tests --list-test-cases)"; \
+    content_cases="$(/build-cache/hostcheck/bin/granadad-content-tests --list-test-cases)"; \
+    # The two suites' own counts, out of doctest's own trailer line.
+    doctest_count() { \
+        printf '%s\n' "$1" \
+            | sed -n 's/^\[doctest\] unskipped test cases passing the current filters: *//p'; \
+    }; \
+    sim_count="$(doctest_count "$sim_cases")"; \
+    content_count="$(doctest_count "$content_cases")"; \
+    # Everything ctest runs that is NOT one of the per-file suite entries: the
+    # twin-run gate in its four shapes, the ward soak, the two fingerprint
+    # writers and the two partition checks. Counted rather than listed, so
+    # adding one moves the floor by one exactly as adding a case does.
+    gate_entries="$(printf '%s\n' "$ctest_list" \
+        | sed -n 's/^ *Test *#[0-9]*: *//p' \
+        | grep -cv '^\(content \)\?suite: ' || true)"; \
+    test_count=$(( ${sim_count:-0} + ${content_count:-0} + ${gate_entries:-0} )); \
+    echo "the gate holds ${test_count} tests (floor: ${GRANADAD_MIN_TESTS})"; \
+    echo "  ${sim_count} sim cases + ${content_count} content cases" \
+         "+ ${gate_entries} standalone ctest entries"; \
+    if [ -z "$sim_count" ] || [ -z "$content_count" ] || [ "${gate_entries:-0}" -eq 0 ] \
+       || [ "$test_count" -lt "$GRANADAD_MIN_TESTS" ]; then \
         echo "FATAL: the test gate has shrunk to ${test_count:-0} tests, below the"; \
         echo "       floor of ${GRANADAD_MIN_TESTS}. Something stopped being built."; \
         echo "       Check add_subdirectory(content) in native/CMakeLists.txt and"; \
         echo "       that content/maps/baked reached the build context."; \
         exit 1; \
     fi; \
+    # AND THE CASES ARE ACTUALLY RUN, not merely present in a binary.
+    #
+    # This is the hole the per-file entries opened and it has to be closed here
+    # as well as in ctest. A count read out of the binary says what was
+    # COMPILED; a per-file ctest entry whose --source-file filter matches
+    # nothing runs nothing and exits 0. granadad-test-partition-is-complete adds
+    # the per-file counts up and requires them to equal the binary's own total.
+    # If it ever stops being registered, the floor above is measuring a binary
+    # nobody executes in full.
+    for partition in granadad-test-partition-is-complete \
+                     granadad-content-test-partition-is-complete; do \
+        case "$ctest_list" in *"$partition"*) ;; *) false;; esac \
+            || { echo "FATAL: ${partition} is not registered. Without it a per-file"; \
+                 echo "       ctest entry whose filter matches nothing would pass"; \
+                 echo "       having run no cases at all, and the floor above would"; \
+                 echo "       be counting cases nobody executes."; exit 1; }; \
+    done; \
+    # Every case name is now looked for in the two suites' OWN listings rather
+    # than in ctest's, because ctest no longer knows the names. Same strings,
+    # same glob match, and it is asking the binary that holds them.
+    ctest_list="${ctest_list}
+${sim_cases}
+${content_cases}"; \
     # WHY A SHELL `case` AND NOT `printf | grep -qF`. S9 found this the hard
     # way: every one of the checks below used to be a pipeline, and `grep -q`
     # EXITS THE MOMENT IT MATCHES. With `set -o pipefail` on and a test list
@@ -895,15 +962,53 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: #80's roof and food-chain cases are all registered"; \
     \
-    ctest --test-dir /build-cache/hostcheck --output-on-failure; \
+    # ---------------------------------------------------------------------
+    # AND THE SUITE RUNS IN PARALLEL, WHICH IS NOT A SUBSTITUTE FOR ANYTHING.
+    # ---------------------------------------------------------------------
+    # The waste was fixed first (#81: 439 seconds of one case was a ward nobody
+    # in it looked at; three wards at two in the morning became one). This is
+    # what is left over: forty-odd independent entries, of which one -- the
+    # ten-hour food-chain soak -- is 238 seconds all by itself. No amount of
+    # tidying makes that shorter, and running the other thirty-nine beside it
+    # instead of after it costs nothing.
+    #
+    # SAFE HERE, AND THE REASON IS SPECIFIC RATHER THAN GENERAL. Every ctest
+    # entry is its own PROCESS. They share the baked worlds, which are opened
+    # read-only, and nothing else: the two fingerprint writers name different
+    # output files, no case reads a clock, and the simulation is single-threaded
+    # and seeded, so what a case computes cannot depend on what else is running.
+    # Concurrency is a property of the harness here and never of the answer.
+    #
+    # -j 8 AND NOT -j $(nproc). Four is already enough to reach the critical
+    # path (the soak), eight leaves headroom on a bigger machine, and an
+    # unbounded fan-out on a 32-thread host would put thirty-two decoded
+    # districts in memory at once for no gain at all.
+    ctest_jobs="$(nproc)"; \
+    if [ "$ctest_jobs" -gt 8 ]; then ctest_jobs=8; fi; \
+    echo "=== ctest, ${ctest_jobs} at a time ==="; \
+    ctest --test-dir /build-cache/hostcheck --output-on-failure -j "$ctest_jobs"; \
     \
-    # ctest reports per-case pass/fail; it never says how many assertions were
-    # behind them. Run the two suites once more, directly, so the build log
-    # states plainly what the green badge is worth. Half a second, and it means
-    # nobody has to take "tests passed" on faith.
+    # ctest reports per-entry pass/fail; it never says how many assertions were
+    # behind them, and "tests passed" is not a number anybody can weigh.
+    #
+    # IT USED TO SAY SO BY RUNNING BOTH SUITES AGAIN. The comment claimed "half
+    # a second", and that was true in M1 when the suite was 128 cases of integer
+    # arithmetic. By #80 it was the whole sim suite a second time -- the ten-hour
+    # food-chain soak, the ward at one in the morning, all of it -- and the gate
+    # was quietly paying for its test run twice.
+    #
+    # ctest already wrote every one of those trailers into its own log. Adding
+    # them up costs nothing and is the same number.
     echo "=== what the gate actually proved ==="; \
-    /build-cache/hostcheck/bin/granadad-tests | tail -3; \
-    /build-cache/hostcheck/bin/granadad-content-tests | tail -3; \
+    awk '/^\[doctest\] assertions:/ { total += $3; passed += $5; failed += $8 } \
+         END { printf "assertions: %d | %d passed | %d failed\n", total, passed, failed; \
+               if (total == 0 || failed != 0) { exit 1 } }' \
+        /build-cache/hostcheck/Testing/Temporary/LastTest.log \
+        || { echo "FATAL: ctest's log carries no doctest assertion trailer, or it"; \
+             echo "       carries a failed one. Either the suites did not run at"; \
+             echo "       all or this build is green over a red assertion."; \
+             exit 1; }; \
+    echo "  across ${sim_count} sim cases and ${content_count} content cases"; \
     \
     # ----------------------------------------------------------------------
     # The twin-run gate, at length, with its output in the build log.
