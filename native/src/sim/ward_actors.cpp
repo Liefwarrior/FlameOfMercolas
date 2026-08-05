@@ -1498,6 +1498,10 @@ void WardPopulation::advanceLeg(WardActor& actor, const TickContext& context) {
     actor.targetX = 0;
     actor.targetY = 0;
     actor.targetBand = 0;
+    // AND IT DOES NOT ASK AGAIN THIS SECOND. Eight attempts is eight snaps over
+    // seventy-five cells apiece; a body that can never be given a leg was
+    // paying that every tick of its life. See WardActor::legRetryUntil.
+    actor.legRetryUntil = tick_ + kLegRetryCooldownTicks;
 }
 
 void WardPopulation::actPursue(WardActor& actor, const TickContext& context) {
@@ -1564,10 +1568,13 @@ void WardPopulation::actPursue(WardActor& actor, const TickContext& context) {
 
     // Everything else walks a leg to a target and takes the unit on ARRIVAL.
     if (actor.targetBand == 0) {
+        if (tick_ < actor.legRetryUntil) {
+            return;  // asked a moment ago and there was nothing to be had
+        }
         advanceLeg(actor, context);
         if (actor.targetBand == 0) {
-            // No leg to be had from here this tick -- see advanceLeg's last
-            // resort. Stand still and ask again next tick, on a different draw.
+            // No leg to be had from here -- see advanceLeg's last resort.
+            // Stand still and ask again after the cooldown, on a fresh draw.
             return;
         }
     }
@@ -1838,6 +1845,7 @@ void WardPopulation::settleToSchedule() {
         actor.goalWorkTicks = 0;
         actor.legMark = 0;
         actor.routeRetryUntil = 0;
+        actor.legRetryUntil = 0;
         actor.route.clear();
         actor.routeTargetX = -1;
         actor.routeTargetY = -1;
@@ -2183,6 +2191,7 @@ void WardPopulation::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(actor.huntTarget));
         sink.put_int(static_cast<std::uint32_t>(actor.huntTicks));
         sink.put_long(static_cast<std::uint64_t>(actor.huntBackoffUntil));
+        sink.put_long(static_cast<std::uint64_t>(actor.legRetryUntil));
         sink.put_long(static_cast<std::uint64_t>(actor.downedUntil));
         sink.put_byte(actor.homeOnTheRoof ? 1u : 0u);
     }

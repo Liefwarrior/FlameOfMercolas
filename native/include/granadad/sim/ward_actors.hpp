@@ -474,6 +474,17 @@ struct WardActor {
     std::int32_t moveAccumTicks = 0;
     /// The tick a failed route search may be retried on.
     std::int64_t routeRetryUntil = 0;
+    /// And the tick a failed LEG DRAW may be retried on, which is a different
+    /// failure with the same shape.
+    ///
+    /// advanceLeg asks for a corner up to eight times and every ask is a
+    /// snapToStandable over seventy-five cells. A body that cannot be given a
+    /// leg at all -- a thief standing on its own roof anchor, whose drawn
+    /// corners all land on ground the snap refuses -- was asking that question
+    /// six hundred times a second, every second, forever. Measured: the case
+    /// that ticks the ward for twenty minutes at one in the morning went from
+    /// seconds to fifty of them.
+    std::int64_t legRetryUntil = 0;
     std::int64_t lastPushTick = -1000000;
     /// The tick the body first read zero hunger, or -1.
     std::int64_t starvingSince = -1;
@@ -625,6 +636,12 @@ inline constexpr std::int32_t kWorkReach = 2;
 /// Ticks a failed route search waits before being tried again. A body that
 /// cannot get somewhere must not re-run an expensive failed search every tick.
 inline constexpr std::int32_t kRouteRetryCooldownTicks = 300;
+
+/// And ticks a failed LEG DRAW waits. Shorter than the route cooldown because
+/// the draws are keyed on the tick, so a minute later is a genuinely different
+/// question rather than the same one asked again. See WardActor::legRetryUntil
+/// for the fifty seconds this is worth.
+inline constexpr std::int32_t kLegRetryCooldownTicks = 60;
 
 // ---------------------------------------------------------------------------
 // #80: the food chain

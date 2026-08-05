@@ -497,14 +497,15 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
             // before answering no -- so a deck that is genuinely one-way must
             // not cost a hundred and sixty-nine of them times two, once per
             // Session, for a suite that builds a couple of hundred Sessions.
-            // Twelve probes is a hut's own footprint and its neighbours; a deck
-            // whose first twelve climbable cells all refuse the round trip is a
-            // deck this bake declines to use.
+            // Twenty-four probes is a hut's own footprint and the deck around
+            // it; a plane whose first two dozen climbable cells all refuse the
+            // round trip is a plane this bake declines to use, and the
+            // household falls back to the compound underneath.
             bool onDeck = false;
             std::int32_t probes = 0;
-            for (std::int32_t r = 0; r <= 6 && !onDeck && probes < 12; ++r) {
-                for (std::int32_t dy = -r; dy <= r && !onDeck && probes < 12; ++dy) {
-                    for (std::int32_t dx = -r; dx <= r && !onDeck && probes < 12; ++dx) {
+            for (std::int32_t r = 0; r <= 8 && !onDeck && probes < 24; ++r) {
+                for (std::int32_t dy = -r; dy <= r && !onDeck && probes < 24; ++dy) {
+                    for (std::int32_t dx = -r; dx <= r && !onDeck && probes < 24; ++dx) {
                         if (std::max(std::abs(dx), std::abs(dy)) != r) {
                             continue;
                         }
