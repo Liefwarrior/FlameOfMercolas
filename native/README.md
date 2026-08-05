@@ -309,7 +309,10 @@ the case that loads `content/art/custom` are registered, because a renderer
 silently falling back to procedural tiles would still be green.
 
 The build prints the assertion counts every run, so "tests passed" never has to
-be taken on faith. It also asserts a **floor** on the ctest count and checks by
+be taken on faith. It reads them out of ctest's own log rather than running both
+suites a second time — that duplicate run was described in a comment as "half a
+second", which was true in M1 and had become the whole sim suite twice by #80.
+It also asserts a **floor** on the case count and checks by
 name that four things are registered: the cases which load
 `docks_surface.trojsav`, the case that compares the C++ world hash against the
 JVM's, and the twin-run gate. The suite used to be one test (fixed.hpp) while
@@ -318,8 +321,58 @@ to shrink back there quietly.
 
 Note the shape of the M1 jump from 58 to 128: `granadad-tests` was registered
 with a plain `add_test()`, so it counted as **one** entry no matter how many
-cases it held — adding thirty would have moved the floor by zero. It is
-`doctest_discover_tests`-ed per case now, like the content suite.
+cases it held — adding thirty would have moved the floor by zero. It was
+`doctest_discover_tests`-ed per case after that, and per **file** since #81.
+
+### One ctest entry per test FILE, and where the time goes (#81)
+
+`doctest_discover_tests` registers a ctest entry per `TEST_CASE`, and ctest runs
+an entry by **launching the binary again** with `--test-case=`. 520 cases meant
+520 processes, each re-reading the baked world, re-parsing the raws and
+re-baking a 661-body ward. Worse, it made a shared fixture impossible — a
+file-static is built once per *process*, so five cases reading one soak paid for
+that soak five times, and #80 had to fold five named claims into one case to
+stop paying.
+
+The entry is now the test file: `--source-file=*test_x.cpp --order-by=file`,
+36 sim entries and 6 content ones. Cases in a file share one process (which is
+what `tests/support/ward_fixture.hpp` is for); a crash still only takes down its
+own file; the order cases run in is the order they are written in.
+
+Two things move with it:
+
+* **the floor counts doctest CASES, not ctest entries.** `--list-test-cases`
+  out of each binary, plus the standalone entries ctest still owns. The same
+  arithmetic over the old suite gives 537, which is what ctest said it was — an
+  entry count can be inflated by registering entries, a case count cannot.
+* **`granadad-test-partition-is-complete`** adds up what every per-file entry
+  actually matches and requires it to equal the binary's own total. A filter
+  that matches nothing runs nothing and exits 0; that is now arithmetic instead
+  of trust.
+
+Measured on the Debug host build the gate compiles, `ctest` serial:
+
+| | before | after |
+|---|---|---|
+| `ctest` wall clock | 1,229 s | 700 s serial / ~245 s at `-j 8` |
+| the single most expensive case | 439.6 s | 5.2 s for the whole file it moved into |
+
+Where the remaining time goes, and it is nearly all one thing: **a ward tick
+costs what the hour costs.** Measured, /600 ticks, Debug: 1.2 ms at 08:00,
+6.2 ms at noon, 12.4 ms at 20:00, **31 ms between 22:00 and 04:00** — and it
+tracks A\* expansions per tick exactly (420 at 08:00, 11,884 at 01:00, with a
+0.3% search-failure rate, so it is work and not thrashing). A tavern tick is
+5 µs and a compound-roll tick rounds to zero. Anything expensive in this suite
+is the ward, at night.
+
+That is why `the tavern empties itself between closing and dawn` was 36% of the
+entire gate: it ran five hours of world at 01:00 through a `render::Session`,
+which registers the ward, for four assertions about a taproom. It runs on a
+`Tavern` on its own engine now — same objects, same hours, same assertions.
+
+What is left is honest cost: the ten-hour food-chain soak (238 s) and the
+ward-behaviour cases that have to run the district for real. **A case whose
+subject is not the hour should buy the cheapest hour there is.**
 
 It greps all of `native/` for `std::unordered_map` and friends and fails on a
 hit. That ban cannot be enforced by the twin-run gate: an unordered container's
