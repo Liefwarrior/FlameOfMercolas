@@ -707,8 +707,14 @@ Reply DialogueDirector::choose(std::size_t index) {
             if (out.line.empty()) {
                 out.line = "TAKEN.";
             }
-            out.line += " [" + std::to_string(pieces) + " AT " + std::to_string(rate) +
-                        " PERCENT - " + coins(paid) + "]";
+            // PARENTHESES, NOT BRACKETS, HERE AND EVERYWHERE BELOW. The 4x6
+            // font has glyphs for '(' and ')' and none for '[' and ']' -- see
+            // the table in hud.cpp, which lists exactly the characters the
+            // authored barks use. Every receipt in this file was framed in
+            // brackets, so every one of them drew two holes in a line the
+            // player reads on the same keypress that takes their money.
+            out.line += " (" + std::to_string(pieces) + " AT " + std::to_string(rate) +
+                        " PERCENT - " + coins(paid) + ")";
             out.coinDelta = paid;
             out.crime = Crime::Fence;
             out.criminal = true;
@@ -797,7 +803,7 @@ Reply DialogueDirector::choose(std::size_t index) {
             if (out.line.empty()) {
                 out.line = "COUNTED.";
             }
-            out.line += " [" + coins(settled.pay) + "]";
+            out.line += " (" + coins(settled.pay) + ")";
             out.coinDelta = settled.pay;
             out.contractId = topic.payload;
             (void)pay;
@@ -894,9 +900,9 @@ Reply DialogueDirector::choose(std::size_t index) {
             recordDeed(Deed::Robbed);
             if (menace <= nerve) {
                 out = reply(TopicKind::Lean,
-                            upper(speaker_.name) + " LOOKS AT YOU AND WAITS. [" +
+                            upper(speaker_.name) + " LOOKS AT YOU AND WAITS. (" +
                                 std::to_string(menace) + " AGAINST " + std::to_string(nerve) +
-                                "]");
+                                ")");
                 out.offence = true;
                 out.ok = false;
                 out.crime = Crime::Extort;
@@ -910,7 +916,7 @@ Reply DialogueDirector::choose(std::size_t index) {
             if (out.line.empty()) {
                 out.line = "THEY PAY.";
             }
-            out.line += " [" + coins(paid) + "]";
+            out.line += " (" + coins(paid) + ")";
             out.coinDelta = paid;
             out.offence = true;
             out.crime = Crime::Extort;
@@ -1026,9 +1032,9 @@ Reply DialogueDirector::choose(std::size_t index) {
             if (out.line.empty()) {
                 out.line = "LEARNED.";
             }
-            // The authored voice, then a bracketed note of WHAT was handed
-            // over. The bracket is menu furniture and reads as one.
-            out.line += " [" + upper(pick->displayName) + "]";
+            // The authored voice, then a note of WHAT was handed over. The
+            // parentheses are menu furniture and read as one.
+            out.line += " (" + upper(pick->displayName) + ")";
             break;
         }
         case TopicKind::Forge: {
@@ -1204,16 +1210,23 @@ Reply DialogueDirector::commitForge() {
     const std::int32_t before = ledger_.dispositionOf(speaker_.actorId);
     const ForgeResult result = forgeSpell(bench_.request(), skills_.level(kCraftingSkill));
     if (!result.ok) {
-        // Refused OUT LOUD, in the priest's own authored voice, with the
-        // machine reason bracketed after it -- and the bench stays open, so a
-        // refusal is a lesson rather than a dead end.
+        // Refused OUT LOUD, in the priest's own authored voice -- and the bench
+        // stays open, so a refusal is a lesson rather than a dead end.
+        //
+        // WHAT USED TO BE HERE was the ForgeError's own identifier, upper-cased
+        // and bracketed onto the end: "HEAT AND TUNING ARE HELD, NOT DELIVERED.
+        // [HELD AXIS NEEDS A HOLD]". That is the same sentence twice, once as
+        // the priest says it and once as the enum spells it, and the second
+        // copy is the machine's name for the fault rather than anybody's word
+        // for it. forgeErrorReason is the player's answer and is authored for
+        // all thirteen refusals; forgeErrorName stays where it belongs, in
+        // diagnostics and in the cases that assert on it.
         Reply out = reply(TopicKind::Forge,
                           speak({std::string("forge.refused")}, TopicKind::Forge,
                                 static_cast<std::int32_t>(result.error)));
         if (out.line.empty()) {
             out.line = std::string(forgeErrorReason(result.error));
         }
-        out.line += " [" + upper(std::string(forgeErrorName(result.error))) + "]";
         out.ok = false;
         out.forging = true;
         out.dispositionBefore = before;
@@ -1236,7 +1249,7 @@ Reply DialogueDirector::commitForge() {
     if (out.line.empty()) {
         out.line = "MADE.";
     }
-    out.line += " [COST " + std::to_string(result.difficulty) + "]";
+    out.line += " (COST " + std::to_string(result.difficulty) + ")";
     out.dispositionBefore = before;
     if (open_) {
         buildTopics();

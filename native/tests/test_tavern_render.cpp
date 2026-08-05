@@ -460,7 +460,13 @@ TEST_CASE("the three verbs do what the keys say they do") {
     SUBCASE("R refuses when there is no room rented") {
         Session session(insideTheGull(21));
         session.restHere();
-        CHECK(session.lastMessage().rfind("CANNOT REST", 0) == 0);
+        // IN A SENTENCE, NOT IN THE ENUM'S NAME. This used to be "CANNOT REST
+        // HERE - " with serviceResultName welded onto it, so a player who
+        // pressed R without a bed was answered "nobody there" -- which is not
+        // even what Tavern::sleep means by NobodyThere. It means none of the
+        // beds is yours.
+        CHECK(session.lastMessage() == "NO BED HERE IS YOURS.");
+        CHECK(session.lastMessage().find("nobody") == std::string::npos);
         CHECK(session.timeOfDay() == 21 * 3600);
     }
     SUBCASE("a message fades on its own") {
@@ -475,7 +481,7 @@ TEST_CASE("the three verbs do what the keys say they do") {
         REQUIRE(session.tavern().presentCount() == 0);
         session.interact();
         CHECK_FALSE(session.talking());
-        CHECK(session.lastMessage() == "NOBODY WITHIN REACH");
+        CHECK(session.lastMessage() == "NOBODY WITHIN REACH.");
     }
 }
 
@@ -495,7 +501,7 @@ TEST_CASE("the conversation surface leaves the centre of the screen alone") {
 
         DialogueViewState view;
         view.open = true;
-        view.speaker = "HARBOURMASTER OTTAVAN CRELL";
+        view.speaker = "HARBORMASTER OTTAVAN CRELL";
         view.epithet = "OF THE WEIGHHOUSE AND THE IMPOUND YARD";
         view.attitude = "HOSTILE";
         view.line =

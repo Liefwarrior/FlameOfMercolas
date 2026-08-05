@@ -99,6 +99,33 @@ enum class TargetShape : std::uint8_t {
 [[nodiscard]] std::string_view effectModeKey(EffectMode mode) noexcept;
 [[nodiscard]] std::string_view targetShapeKey(TargetShape target) noexcept;
 
+// --- the same vocabulary, in words a player is allowed to see ---------------
+//
+// THE KEYS ABOVE ARE DATA AND MUST NEVER BE DRAWN. They are spells.json's own
+// spelling, they are what a forged component is serialised back out as, and
+// two of them -- OVER_TIME and WHILE_ACTIVE -- carry an underscore, which the
+// 4x6 HUD font has no glyph for. Until this pass ForgeBench::fieldValue handed
+// those keys straight to the workbench surface, so a player composing a
+// crafting read "SHAPE: OVER TIME" with a hole punched through the middle of
+// it, and read an enum identifier either way.
+//
+// These are the words MAGIC-CANON.md itself uses for the same three axes and
+// three time-shapes -- heat, a wound, tuning; a one-off, a trickle, a hold --
+// and they are what forgeErrorReason already says out loud to the player two
+// lines further down the same panel ("HEAT AND TUNING ARE HELD, NOT
+// DELIVERED", "A WOUND IS DELIVERED, NOT HELD"). The bench and the refusal now
+// speak the same language.
+[[nodiscard]] std::string_view effectKindWord(EffectKind kind) noexcept;
+[[nodiscard]] std::string_view effectModeWord(EffectMode mode) noexcept;
+[[nodiscard]] std::string_view targetShapeWord(TargetShape target) noexcept;
+
+/// A duration in the clock a player keeps, not in the clock the engine keeps.
+/// One tick is one second of simulated time (engine.hpp), and the bench used to
+/// print the raw count with a "T" welded to it -- "HOW LONG: 600T". Seconds
+/// under a minute, minutes and seconds above it, and "AT ONCE" for no time at
+/// all, which is the only thing a one-off can honestly answer.
+[[nodiscard]] std::string durationWords(std::int32_t seconds);
+
 /// True for the axes a body HOLDS rather than receives.
 [[nodiscard]] bool isHeldAxis(EffectKind kind) noexcept;
 

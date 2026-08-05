@@ -193,6 +193,8 @@ std::string clipToWidth(std::string_view text, int pixels, int scale) {
     return out;
 }
 
+bool isDrawableGlyph(char c) noexcept { return glyphFor(c) != nullptr; }
+
 int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
              float alpha, int scale) {
     const int step = kGlyphAdvance * scale;

@@ -266,7 +266,27 @@ enum class ServiceResult : std::uint8_t {
     Refused = 7,
 };
 
+/// The DIAGNOSTIC name of a result: "no coin", "out of stock", "?". For logs,
+/// for the twin-run report and for the cases that assert on it.
+///
+/// NOT FOR THE PLAYER, and it used to be. Tavern::applyReply put this straight
+/// into the sentence a landlord says across his own counter, so asking Master
+/// Venn for a bed you cannot afford was answered with the word "no coin", and
+/// asking after the barrels ran dry was answered with "out of stock" -- an
+/// inventory term, out of a shop that does not exist, from a man who has three
+/// authored lines about his own cellar two hundred lines further up this file.
+/// The `?` arm could reach the screen too. Use counterRefusal/restRefusal.
 [[nodiscard]] std::string_view serviceResultName(ServiceResult result) noexcept;
+
+/// What the person behind the counter SAYS when the answer is no. `goods` is
+/// what was asked for, because "the barrels are dry" and "every bed is let" are
+/// the same ServiceResult and are not the same sentence.
+[[nodiscard]] std::string_view counterRefusal(ServiceResult result, Goods goods) noexcept;
+
+/// The same, for a player trying to sleep. Tavern::sleep answers NobodyThere
+/// when no room has been taken and TooFar when the player is not at its
+/// bed-foot, so the counter's wording would be wrong twice over.
+[[nodiscard]] std::string_view restRefusal(ServiceResult result) noexcept;
 
 /// What the player did that the house minds.
 enum class Offence : std::uint8_t {

@@ -315,6 +315,10 @@ if(GRANADAD_BUILD_TESTS)
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.
         tests/test_scripted_lines.cpp
+        # And every word the player can read: that the 4x6 font can draw all of
+        # it, and that none of it is a diagnostic identifier that reached the
+        # screen because a sentence was wanted and an enum name was to hand.
+        tests/test_copy.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 

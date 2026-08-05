@@ -41,6 +41,26 @@ std::string_view roofMoveName(RoofMove move) noexcept {
     return "?";
 }
 
+std::string_view roofRefusal(RoofMove move) noexcept {
+    switch (move) {
+        case RoofMove::Done:
+            return "";
+        case RoofMove::NoLedge:
+            return "NOTHING HERE TO GET A HAND ON.";
+        case RoofMove::NoHeadroom:
+            return "THERE IS A FLOOR OVER YOUR HEAD.";
+        case RoofMove::NoGap:
+            return "THAT IS A STEP, NOT A LEAP.";
+        case RoofMove::NoLanding:
+            return "NOTHING TO COME DOWN ON.";
+        case RoofMove::Airborne:
+            return "YOUR FEET ARE ALREADY OFF THE LEAD.";
+        case RoofMove::Blocked:
+            return "NO ROOM TO PUT A BODY DOWN THERE.";
+    }
+    return "";
+}
+
 std::int32_t safeDropBands(std::int32_t skyrunningLevel, bool taughtByTheRoofs) noexcept {
     // One band free to anybody, a second at journeyman skyrunning, and a third
     // only to somebody the roofs have shown where to land.

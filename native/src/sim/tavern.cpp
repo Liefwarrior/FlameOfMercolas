@@ -276,6 +276,58 @@ std::string_view serviceResultName(ServiceResult result) noexcept {
     return "?";
 }
 
+std::string_view counterRefusal(ServiceResult result, Goods goods) noexcept {
+    const bool drink = goods == Goods::Drink;
+    switch (result) {
+        case ServiceResult::Served:
+            return "";
+        case ServiceResult::NobodyThere:
+            return drink ? "THERE IS NOBODY BEHIND THE BAR."
+                         : "THERE IS NOBODY AT THE STAIR TO ASK.";
+        case ServiceResult::Closed:
+            return "THE DOORS ARE SHUT.";
+        case ServiceResult::NoCoin:
+            return "YOUR PURSE WILL NOT COVER IT.";
+        case ServiceResult::OutOfStock:
+            // Gerta's own words for it, and the innkeeper's. Compare the
+            // authored greetings in Tavern::talkToNearest.
+            return drink ? "THE BARRELS ARE DRY UNTIL THE DOORS OPEN AGAIN."
+                         : "EVERY BED IN THE HOUSE IS LET.";
+        case ServiceResult::TooFar:
+            return "TOO FAR OFF TO BE HEARD.";
+        case ServiceResult::Barred:
+            return "YOU HAVE BEEN PUT OUT OF THIS HOUSE.";
+        case ServiceResult::Refused:
+            return "NOT FOR YOU, NOT TONIGHT.";
+    }
+    return "";
+}
+
+std::string_view restRefusal(ServiceResult result) noexcept {
+    switch (result) {
+        case ServiceResult::Served:
+            return "";
+        case ServiceResult::NobodyThere:
+            // Nothing to do with anybody being absent: sleep() answers this
+            // when no room has been taken. The player is standing in a house
+            // where none of the beds is theirs.
+            return "NO BED HERE IS YOURS.";
+        case ServiceResult::TooFar:
+            return "NOT AT YOUR OWN BED-FOOT.";
+        case ServiceResult::Closed:
+            return "THE DOORS ARE SHUT.";
+        case ServiceResult::NoCoin:
+            return "YOUR PURSE WILL NOT COVER IT.";
+        case ServiceResult::OutOfStock:
+            return "EVERY BED IN THE HOUSE IS LET.";
+        case ServiceResult::Barred:
+            return "YOU HAVE BEEN PUT OUT OF THIS HOUSE.";
+        case ServiceResult::Refused:
+            return "NOT FOR YOU, NOT TONIGHT.";
+    }
+    return "";
+}
+
 std::string_view offenceName(Offence offence) noexcept {
     switch (offence) {
         case Offence::Brawled:
@@ -1863,7 +1915,9 @@ void Tavern::applyReply(Reply& reply) {
             if (served == ServiceResult::Served) {
                 reply.line = "PAID " + std::to_string(before - playerCoin_) + "C.";
             } else {
-                reply.line = std::string(serviceResultName(served));
+                // The refusal a person would say, not the enum's name for it.
+                reply.line = std::string(
+                    counterRefusal(served, drink ? Goods::Drink : Goods::Room));
                 reply.ok = false;
             }
             dialogue_.setPlayerCoin(playerCoin_);
@@ -2204,8 +2258,13 @@ Tavern::StealResult Tavern::crackStrongbox() {
         reportOffence(Offence::Stole);
     }
     out.result = ServiceResult::Served;
+    // out.loot is (1 + cracksmanship/20) scaled by what hands the player still
+    // has, so it is 2 at level 20 and 3 at level 40 -- and until this pass a
+    // cracksman good enough to take three of anything was told he had taken
+    // "3 PIECE".
     out.line = "CRACKED IT - " + std::to_string(out.coin) + "C AND " +
-               std::to_string(out.loot) + " PIECE" + (out.seen ? ", AND SEEN." : ".");
+               std::to_string(out.loot) + (out.loot == 1 ? " PIECE" : " PIECES") +
+               (out.seen ? ", AND SEEN." : ".");
     if (wanted != nullptr && !wanted->thing.empty()) {
         // THE OWNER'S OWN WORDS, upper-cased for the 4x6 font and nothing else
         // done to them. No programmer named this object.
@@ -2291,8 +2350,12 @@ Tavern::PickResult Tavern::beginPick() {
     picking_.begin(strongboxLock(room), worldSeed_, dialogue_.skills().level(kThieverySkill));
     pickingRoom_ = room;
     out.result = ServiceResult::Served;
-    out.line = "WIRE IN. " + std::to_string(picking_.lock().pins) + " PINS, " +
-               std::to_string(picks_) + " PICKS.";
+    // picks_ is at least one here -- the arm above refuses an empty roll -- and
+    // one is exactly the case a player hits on their last wire, which is when
+    // this line matters most and when it used to read "1 PICKS".
+    const std::int32_t pins = picking_.lock().pins;
+    out.line = "WIRE IN. " + std::to_string(pins) + (pins == 1 ? " PIN, " : " PINS, ") +
+               std::to_string(picks_) + (picks_ == 1 ? " PICK." : " PICKS.");
     return out;
 }
 
@@ -2969,8 +3032,11 @@ Tavern::StealResult Tavern::handleBale() {
     crimes.takeBale(good, kBaleUnits);
     out.result = ServiceResult::Served;
     out.loot = kBaleUnits;
+    // "N IN IT", not "N OF IT": contrabandLabel is plural for three of the five
+    // goods -- SCALPS, PIECES -- and "A BALE OF SCALPS - 3 OF IT" does not
+    // agree with any of them.
     out.line = "A BALE OF " + std::string(contrabandLabel(good)) + " - " +
-               std::to_string(kBaleUnits) + " OF IT.";
+               std::to_string(kBaleUnits) + " IN IT.";
     return out;
 }
 

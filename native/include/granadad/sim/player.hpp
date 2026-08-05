@@ -210,7 +210,14 @@ enum class RoofMove : std::uint8_t {
     Blocked = 6,
 };
 
+/// The DIAGNOSTIC name of a move: "no ledge", "no gap". Logs and cases only.
 [[nodiscard]] std::string_view roofMoveName(RoofMove move) noexcept;
+
+/// WHY THE BODY DID NOT GO, as a whole sentence. The client used to weld the
+/// diagnostic name onto a prefix -- "NO WAY UP - NO LEDGE", "NOTHING TO DROP TO
+/// - NO LANDING" -- which reads as a fault code twice over and, in the second
+/// case, says the same thing twice. Each of these answers the press on its own.
+[[nodiscard]] std::string_view roofRefusal(RoofMove move) noexcept;
 
 /// What a roof move cost.
 struct RoofResult {

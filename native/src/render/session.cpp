@@ -227,7 +227,7 @@ void Session::climb() {
         leapt = move.ok();
     }
     if (!move.ok()) {
-        roofMove_ = std::string("NO WAY UP - ") + std::string(sim::roofMoveName(move.move));
+        roofMove_ = std::string(sim::roofRefusal(move.move));
         say(roofMove_);
         return;
     }
@@ -246,14 +246,18 @@ void Session::climb() {
         // -- the client's, a capture script's, a test's -- flies it, and the
         // landing is settled in step() at the moment the feet touch, which is
         // also the only moment takeFallBands() has anything to report.
-        roofMove_ = "OVER " + std::to_string(move.tiles) + " TILES";
+        // A leap down onto a roof one tile away is a real move -- PlayerBody's
+        // second pass allows it -- and it used to announce itself as "OVER 1
+        // TILES".
+        roofMove_ =
+            "OVER " + std::to_string(move.tiles) + (move.tiles == 1 ? " TILE." : " TILES.");
         say(roofMove_);
         pendingLanding_ = move;
         awaitingLanding_ = true;
         syncTavernToBody();
         return;
     }
-    roofMove_ = "UP ONTO THE LEDGE";
+    roofMove_ = "UP ONTO THE LEDGE.";
     say(roofMove_);
     settleLanding(move);
     syncTavernToBody();
@@ -266,11 +270,12 @@ void Session::dropDown() {
     }
     const sim::RoofResult move = body_->dropOff();
     if (!move.ok()) {
-        roofMove_ = std::string("NOTHING TO DROP TO - ") + std::string(sim::roofMoveName(move.move));
+        roofMove_ = std::string(sim::roofRefusal(move.move));
         say(roofMove_);
         return;
     }
-    roofMove_ = "DOWN " + std::to_string(move.bands) + " LEVEL(S)";
+    roofMove_ =
+        "DOWN " + std::to_string(move.bands) + (move.bands == 1 ? " LEVEL." : " LEVELS.");
     say(roofMove_);
     settleLanding(move);
     syncTavernToBody();
@@ -682,7 +687,10 @@ void Session::interact() {
         return;
     }
     if (!tavern_->talkTo()) {
-        say("NOBODY WITHIN REACH");
+        // The same sentence Tavern::pickPocket answers with, spelled the same
+        // way. These two were "NOBODY WITHIN REACH" and "NOBODY WITHIN REACH."
+        // -- one string, two spellings, depending on which key you pressed.
+        say("NOBODY WITHIN REACH.");
         return;
     }
     topicCursor_ = 0;
@@ -1075,22 +1083,23 @@ void Session::punch() {
     dismissOverlays();
     const sim::Tavern::PunchResult result = tavern_->playerPunchNearest();
     if (!result.swung) {
-        say("NOTHING IN REACH");
+        // A punch is thrown at a person, not at a thing.
+        say("NOBODY IN REACH.");
         return;
     }
     if (!sim::resolvesInWorld(result.fight)) {
         // The one transition this game has, and S2 does not have the screen it
         // transitions to. Saying so out loud is better than resolving a knife
         // fight with fist rules and hoping nobody notices.
-        say("BLADE OUT - THIS IS NOT A BRAWL");
+        say("BLADE OUT - THIS IS NOT A BRAWL.");
         return;
     }
     if (result.blow.downed) {
-        say(result.targetName + " GOES DOWN");
+        say(result.targetName + " GOES DOWN.");
     } else if (result.blow.landed) {
-        say("HIT " + result.targetName + " FOR " + std::to_string(result.blow.damage));
+        say("HIT " + result.targetName + " FOR " + std::to_string(result.blow.damage) + ".");
     } else {
-        say("MISSED " + result.targetName);
+        say("MISSED " + result.targetName + ".");
     }
 }
 
@@ -1102,10 +1111,10 @@ void Session::restHere() {
         settings_.timeOfDay = timeOfDay_;
         stepsThisSecond_ = 0;
         syncWardToCalendar();
-        say("SLEPT UNTIL MORNING");
+        say("SLEPT UNTIL MORNING.");
         return;
     }
-    say(std::string("CANNOT REST HERE - ") + std::string(sim::serviceResultName(slept)));
+    say(std::string(sim::restRefusal(slept)));
 }
 
 void Session::skipToHour(int hour) {

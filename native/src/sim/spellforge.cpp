@@ -115,6 +115,78 @@ std::string_view targetShapeKey(TargetShape target) noexcept {
     return "?";
 }
 
+// --- the same three vocabularies, in words -----------------------------------
+//
+// Every one of these is MAGIC-CANON.md's own noun for the thing. Nothing here
+// is drawn from the raws' spelling, and nothing here is fed back into the raws:
+// see the header on why the keys and the words are two different functions.
+
+std::string_view effectKindWord(EffectKind kind) noexcept {
+    switch (kind) {
+        case EffectKind::Temperature:
+            return "HEAT";
+        case EffectKind::Vitality:
+            return "A WOUND";
+        case EffectKind::Attribute:
+            return "TUNING";
+        case EffectKind::Unknown:
+            break;
+    }
+    return "NOTHING";
+}
+
+std::string_view effectModeWord(EffectMode mode) noexcept {
+    switch (mode) {
+        case EffectMode::Instant:
+            return "AT ONCE";
+        case EffectMode::OverTime:
+            return "A TRICKLE";
+        case EffectMode::WhileActive:
+            return "A HOLD";
+        case EffectMode::Unknown:
+            break;
+    }
+    return "NOTHING";
+}
+
+std::string_view targetShapeWord(TargetShape target) noexcept {
+    switch (target) {
+        case TargetShape::Self:
+            return "YOURSELF";
+        case TargetShape::Touch:
+            return "A TOUCH";
+        case TargetShape::Ranged:
+            // Canon's word for a link with no bridge under it. "RANGED" is the
+            // raws' key and stays in the raws.
+            return "OPEN AIR";
+        case TargetShape::Unknown:
+            break;
+    }
+    return "NOWHERE";
+}
+
+std::string durationWords(std::int32_t seconds) {
+    if (seconds <= 0) {
+        return "AT ONCE";
+    }
+    const std::int32_t minutes = seconds / 60;
+    const std::int32_t rest = seconds % 60;
+    // THE COLUMN IS TWENTY GLYPHS WIDE AT EVERY RESOLUTION THIS GAME RUNS AT --
+    // dialogue_view.cpp sizes it from the frame width and the font scales with
+    // the height, so (width - 2*margin) / 3 / advance comes out 20 at 320x180,
+    // 640x360, 960x540 and 1280x720 alike, and drawDialogue TRUNCATES past it.
+    // "LASTS: " spends seven of those, so a value has thirteen. Standing values
+    // are spelled out; only the compound needs shortening to fit, and the
+    // longest one it can produce -- "14 MIN 50 SEC" -- is exactly thirteen.
+    if (minutes == 0) {
+        return std::to_string(rest) + " SECONDS";
+    }
+    if (rest == 0) {
+        return std::to_string(minutes) + (minutes == 1 ? " MINUTE" : " MINUTES");
+    }
+    return std::to_string(minutes) + " MIN " + std::to_string(rest) + " SEC";
+}
+
 bool isHeldAxis(EffectKind kind) noexcept {
     // Heat and the body's own tuning are held; a wound is delivered. See the
     // header on why that is a statement about what code reads, not a taste.
@@ -505,7 +577,11 @@ std::string ForgeBench::fieldLabel(std::int32_t index) const {
         case 2:
             return "HOW MUCH";
         case 3:
-            return "HOW LONG";
+            // Canon's question is "how long"; the bench asks it in the verb so
+            // the answer has room to be words instead of a tick count. The
+            // labels have always paraphrased -- canon's "how far" is ACROSS --
+            // and the priest still asks all four in full in his own lines.
+            return "LASTS";
         case 4:
             return "ACROSS";
         default:
@@ -515,17 +591,20 @@ std::string ForgeBench::fieldLabel(std::int32_t index) const {
 }
 
 std::string ForgeBench::fieldValue(std::int32_t index) const {
+    // WORDS, NOT KEYS. Every row of this panel used to be the raws' own
+    // identifier -- "OVER_TIME", "WHILE_ACTIVE", "RANGED" -- and a duration
+    // printed as engine ticks with a T on the end. See the header.
     switch (index) {
         case 0:
-            return std::string(effectKindKey(axis));
+            return std::string(effectKindWord(axis));
         case 1:
-            return std::string(effectModeKey(mode));
+            return std::string(effectModeWord(mode));
         case 2:
             return std::to_string(magnitude);
         case 3:
-            return std::to_string(durationTicks) + "T";
+            return durationWords(durationTicks);
         case 4:
-            return std::string(targetShapeKey(target));
+            return std::string(targetShapeWord(target));
         default:
             break;
     }

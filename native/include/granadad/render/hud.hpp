@@ -216,6 +216,22 @@ int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb
 /// Width in pixels a string would occupy at a scale.
 [[nodiscard]] int textWidth(std::string_view text, int scale) noexcept;
 
+/// True when the 4x6 font has a glyph for this character. Lowercase is drawn
+/// as uppercase, so it answers for both.
+///
+/// A CHARACTER WITH NO GLYPH IS A HOLE, NOT AN ERROR. drawText advances the
+/// cursor for it and draws nothing, so text with one in it comes out looking
+/// like a rendering glitch rather than like the copy defect it is, and nothing
+/// goes red. The font carries exactly the characters the authored barks use --
+/// see the table in hud.cpp -- which does NOT include '[', ']' or '_', and
+/// every one of those had found its way into a line the player reads: seven
+/// bracketed receipts in dialogue.cpp, and the spell workbench printing the
+/// raws' own OVER_TIME and WHILE_ACTIVE keys straight onto the panel.
+///
+/// Public so that test_copy.cpp can walk every player-facing surface in the
+/// game and assert this of all of it.
+[[nodiscard]] bool isDrawableGlyph(char c) noexcept;
+
 /// Cuts a string to what fits in `pixels` at this scale, and marks the cut.
 ///
 /// EVERY HUD LINE THAT IS NOT ANCHORED TO AN EDGE GOES THROUGH THIS. A line
