@@ -21,9 +21,12 @@
 #include <exception>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <string>
+#include <string_view>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/content/world_reader.hpp"
 #include "granadad/sim/compound.hpp"
 #include "granadad/render/capture.hpp"
 #include "granadad/render/controls.hpp"
@@ -33,8 +36,11 @@
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
+#include "granadad/sim/engine.hpp"
 #include "granadad/sim/fixed.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/tile_query.hpp"
+#include "granadad/sim/ward_actors.hpp"
 
 namespace {
 
@@ -64,6 +70,79 @@ int run_ward(std::int64_t days) {
         return 1;
     }
     std::printf("\n  the ward fed itself for %lld days.\n", static_cast<long long>(soak.days));
+    return 0;
+}
+
+/// #80. THE DISTRICT'S ROLL, BROKEN OUT, AND WHO SLEEPS ON A ROOF.
+///
+/// NO WINDOW. The two things this round is judged on are population facts, not
+/// pixels: how many bodies are homed on a deck (and of which trades), and
+/// whether the mouse count actually moves when something eats one. A frame can
+/// show you a figure on a roof; it cannot tell you that thirteen of them live
+/// there and that the Skyrunners are among them.
+///
+/// `hours` is how long to run before printing, so the same command answers both
+/// questions -- 0 for the bake, and long enough for a cat to get hungry for the
+/// food chain.
+int run_people(std::int32_t startHour, std::int64_t hours) {
+    granadad::content::World world =
+        granadad::content::loadWorldFile(granadad::content::bakedMap(sim::docks::kWorldName));
+    const sim::TileQuery tiles(world);
+    sim::PhasedEngine engine(0x4752414E41444144ull, world);
+    auto owned = std::make_unique<sim::WardPopulation>(
+        tiles, sim::hourOfDay(startHour), 0x4752414E41444144ull,
+        granadad::content::contentDir());
+    const sim::WardPopulation* people = owned.get();
+    engine.register_system(std::move(owned));
+    engine.boot();
+    for (std::int64_t t = 0; t < hours * 3600; ++t) {
+        engine.tick();
+    }
+
+    const sim::WardCensus roll = people->census();
+    std::printf("the ward at %02d:00 after %lld hour(s)\n\n", people->secondOfDay() / 3600,
+                static_cast<long long>(hours));
+    std::printf("  roll %d  alive %d  people %d  beasts %d  starved %d\n", roll.total, roll.alive,
+                roll.people, roll.beasts, roll.starved);
+    std::printf("  at a post %d   at home %d   hungry %d\n\n", roll.atPost, roll.atHome,
+                roll.hungry);
+
+    std::printf("  %-12s %6s %6s\n", "trade", "roll", "roofed");
+    for (std::size_t i = 0; i < sim::kWardTypeCount; ++i) {
+        const sim::WardType type = static_cast<sim::WardType>(i);
+        const std::string_view name = sim::wardTypeName(type);
+        std::printf("  %-12.*s %6d %6d%s\n", static_cast<int>(name.size()), name.data(),
+                    roll.byType[i], roll.roofHomedByType[i],
+                    sim::wardTypeClimbs(type) ? "   (climbs)" : "");
+    }
+    std::printf("\n  ON THE ROOFS: %d beds on a deck, %d bodies standing on one right now.\n",
+                roll.roofHomed, roll.onRoofNow);
+    std::printf("  roof beds the bake refused as one-way: %d\n", people->roofHomesRefused());
+    // AND WHERE THEY ARE, so a capture can be aimed at a hut rather than at a
+    // guess. One line per deck cell, first occupant only.
+    std::int32_t printed = 0;
+    std::int32_t lastX = -1;
+    std::int32_t lastY = -1;
+    for (const sim::WardActor& actor : people->actors()) {
+        if (!actor.homeOnTheRoof || printed >= 16) {
+            continue;
+        }
+        if (actor.homeX == lastX && actor.homeY == lastY) {
+            continue;
+        }
+        lastX = actor.homeX;
+        lastY = actor.homeY;
+        const std::string_view name = sim::wardTypeName(actor.type);
+        std::printf("    bed (%3d,%3d,z%d)  %-10.*s  now at (%3d,%3d,z%d)\n", actor.homeX,
+                    actor.homeY, actor.homeBand, static_cast<int>(name.size()), name.data(),
+                    actor.x, actor.y, actor.band);
+        ++printed;
+    }
+    std::printf("\n  THE FOOD CHAIN: %d of %d mice on the board, %lld caught, %lld chases "
+                "abandoned as futile.\n",
+                roll.preyUp, roll.prey, static_cast<long long>(people->catches()),
+                static_cast<long long>(people->futileChases()));
+    std::printf("\n  %s\n", people->reportLine().c_str());
     return 0;
 }
 
@@ -222,6 +301,13 @@ void print_usage() {
         "                       and once without, and every pixel that differs\n"
         "                       is interface. That is how the numbers in\n"
         "                       docs/HUD-REAL-ESTATE.md were measured\n"
+        "  --people[=H[,N]]     print the district's roll: every trade, how\n"
+        "                       many of each sleep on a ROOF DECK, who is up\n"
+        "                       there right now, and how the food chain is\n"
+        "                       doing (mice on the board, mice caught). H is\n"
+        "                       the hour to bake at and N how many hours to\n"
+        "                       run first -- a cat takes about five to get\n"
+        "                       hungry enough to hunt. No window\n"
         "  --selftest           deterministic primitives only, no window\n"
         "  --version            print the build banner and exit\n"
         "\n"
@@ -252,6 +338,28 @@ void print_usage() {
         if (starts_with(arg, "--ward=", &value)) {
             stop = true;
             exitCode = run_ward(std::atoi(value));
+            return options;
+        }
+        if (std::strcmp(arg, "--people") == 0) {
+            stop = true;
+            exitCode = run_people(8, 0);
+            return options;
+        }
+        if (starts_with(arg, "--people=", &value)) {
+            // HOUR,HOURS -- the clock to bake at, and how long to run before
+            // printing. `--people=6,13` is the district at six in the morning
+            // soaked until the evening, which is what it takes to see the food
+            // chain move.
+            int hour = 8;
+            int hours = 0;
+            if (std::sscanf(value, "%d,%d", &hour, &hours) < 1) {
+                std::printf("granadad: --people wants HOUR[,HOURS]\n");
+                stop = true;
+                exitCode = 2;
+                return options;
+            }
+            stop = true;
+            exitCode = run_people(hour, hours);
             return options;
         }
         if (std::strcmp(arg, "--selftest") == 0) {

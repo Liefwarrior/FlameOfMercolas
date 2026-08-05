@@ -1437,9 +1437,31 @@ void WardPopulation::advanceLeg(WardActor& actor, const TickContext& context) {
             return;
         }
     }
-    actor.targetX = actor.anchorX;
-    actor.targetY = actor.anchorY;
-    actor.targetBand = actor.anchorBand;
+    // THE LAST RESORT, AND IT REFUSES A LEG THAT GOES NOWHERE.
+    //
+    // A leg is paid ON ARRIVAL, and arrival is adjacency -- so a leg whose
+    // target is the cell the body is already standing on is paid the tick it is
+    // picked, and the tick after, and forever. That is not a theory: a thief's
+    // post IS its own bed, and a settle inside the thieving window puts it
+    // exactly there with no leg yet. Eight failed draws would then have handed
+    // it the anchor it was standing on and minted it two royals a second for
+    // the rest of the game.
+    //
+    // So the fallback is taken only when the anchor is somewhere else. When it
+    // is not, the leg stays UNSET (band zero is the sentinel; band zero is the
+    // world's own VOID border and nobody can stand on it) and actPursue does
+    // nothing this tick. The draws are keyed on the tick, so next tick asks a
+    // different question -- which is what makes waiting a fix rather than a
+    // deadlock.
+    if (legDistance(actor, actor.anchorX, actor.anchorY, actor.anchorBand) >= 3) {
+        actor.targetX = actor.anchorX;
+        actor.targetY = actor.anchorY;
+        actor.targetBand = actor.anchorBand;
+        return;
+    }
+    actor.targetX = 0;
+    actor.targetY = 0;
+    actor.targetBand = 0;
 }
 
 void WardPopulation::actPursue(WardActor& actor, const TickContext& context) {
@@ -1507,6 +1529,11 @@ void WardPopulation::actPursue(WardActor& actor, const TickContext& context) {
     // Everything else walks a leg to a target and takes the unit on ARRIVAL.
     if (actor.targetBand == 0) {
         advanceLeg(actor, context);
+        if (actor.targetBand == 0) {
+            // No leg to be had from here this tick -- see advanceLeg's last
+            // resort. Stand still and ask again next tick, on a different draw.
+            return;
+        }
     }
     const std::int32_t before = legDistance(actor, actor.targetX, actor.targetY, actor.targetBand);
     // ARRIVAL IS ADJACENCY, not the cell itself. Under one-per-square the
@@ -1733,6 +1760,15 @@ void WardPopulation::settleToSchedule() {
                         continue;
                     }
                     if (!tiles_->standable(wx + dx, wy + dy, wb)) {
+                        continue;
+                    }
+                    // #80: AND SOMEWHERE THE WARD CAN ACTUALLY REACH. A settle
+                    // that put a body on a standable cell nobody can get to
+                    // would strand it exactly as surely as a bed on a sealed
+                    // deck -- and on a roof deck, where a hut's own tile has
+                    // unreachable neighbours a tile away, that stopped being
+                    // hypothetical. -1 is "nowhere"; both islands are fine.
+                    if (componentAt(wx + dx, wy + dy, wb) < 0) {
                         continue;
                     }
                     if (occupancy_.at(cellKey(wx + dx, wy + dy, wb)) != 0) {
