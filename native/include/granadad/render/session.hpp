@@ -43,6 +43,7 @@
 #include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
+#include "granadad/sim/ward_voice.hpp"
 
 namespace granadad::render {
 
@@ -443,6 +444,14 @@ public:
     /// Picks a topic by index into the whole list. Out of range does nothing.
     void chooseTopic(std::size_t index);
     void closeConversation();
+    /// Who in the WARD is being spoken to, or -1. The Gilded Gull's own
+    /// fourteen are Tavern::talkingTo()'s business and never appear here.
+    ///
+    /// Exposed so a case can assert WHICH body a conversation opened on. #79's
+    /// whole failure mode is a menu built by a machine that was not looking at
+    /// what it was talking to, and "somebody answered" is not evidence against
+    /// it.
+    [[nodiscard]] std::int32_t wardTalkingTo() const noexcept { return wardTalkId_; }
 
     // --- the workbench ------------------------------------------------------
 
@@ -489,7 +498,23 @@ public:
     [[nodiscard]] std::vector<SpriteInstance> wardSprites() const;
 
 private:
+    /// How close you have to be to address somebody on the street. Two tiles,
+    /// which is the same reach Tavern::talkTo uses across a taproom -- one rule
+    /// for "within arm's length and a word", not two.
+    static constexpr std::int32_t kWardTalkReachTiles = 2;
+    /// And how far a crime carries on an open street. The taproom's own witness
+    /// range is eight tiles; a quay has no walls to shorten it and no reason to
+    /// lengthen it.
+    static constexpr std::int32_t kWardWitnessTiles = 8;
+
     void syncTavernToBody();
+    /// Opens a conversation with the nearest body in the WARD, or answers
+    /// false. Tried only after the taproom's own roster has said no.
+    bool talkToWard();
+    /// The ward's settlement of a chosen topic: the purse, the coin and whether
+    /// the street saw it. Everything a taproom would also do -- a drink off the
+    /// bar, a bouncer sent over, a room rented -- has nobody out here to do it.
+    sim::Reply chooseWardTopic(std::size_t index);
     /// Puts the casebook and the key list down. Every verb that acts on the
     /// world calls it first.
     void dismissOverlays() noexcept;
@@ -537,6 +562,13 @@ private:
     /// itself is the simulation's and paging never reorders it.
     int topicPage_ = 0;
     int haggleOffer_ = 0;
+    /// Which body in the WARD the open conversation is with, or -1 for none --
+    /// which includes every conversation held inside the Gilded Gull, because
+    /// the taproom keeps its own. NOT simulation state and deliberately not
+    /// hashed: it decides which of two settlements a reply is routed through
+    /// and nothing about the world. The director's own `open` flag is the fact
+    /// that a conversation exists, and the twin-run gate already covers that.
+    std::int32_t wardTalkId_ = -1;
     /// Whether the client should be routing keys to the workbench. The bench
     /// itself lives in the simulation; this is only which keyboard mode the
     /// client is in.
@@ -664,6 +696,44 @@ struct SmokeRunConfig {
     /// workbench, "away" closes the conversation so the HUD's own guild line
     /// and objective are visible. Only read when `flame` is set.
     std::string flameEnd = "talk";
+
+    /// #79. STAND NEXT TO SOMEBODY IN THE WARD AND TALK TO THEM.
+    ///
+    /// `streetWho` is a trade -- hand, watch, priest, keeper, fisher, sailor,
+    /// wastrel, urchin, carter, keeper of beasts, cat -- and the run finds the
+    /// first living body of it out in the open district, stands the player on
+    /// the tile beside them and presses the talk key.
+    ///
+    /// WHY IT EXISTS. Every other scripted line in this list plays out inside
+    /// one building, and the capture harness's router (kCaptureRegion) is that
+    /// building plus the street in front of it. "Talk to a goatherd on Gallows
+    /// Row" is a walk of a hundred and thirty tiles across three bands, and a
+    /// capture flag that spent thirty seconds of simulated time walking there
+    /// would be photographing the pathfinder rather than the conversation.
+    ///
+    /// SO IT PLACES THE BODY, and says so out loud rather than implying a walk
+    /// it did not take. It is the same PlayerBody::placeAt that `--spawn`
+    /// uses -- one landing on a standable cell, checked -- and everything after
+    /// it is the real thing: the real Session::interact(), the real director,
+    /// the real authored tables.
+    bool street = false;
+    std::string streetWho = "hand";
+    /// Which topic to pick once the street conversation is open, 1-based as the
+    /// numbers on screen. Zero picks nothing and photographs the greeting.
+    int streetTopic = 0;
+};
+
+/// What a `--street` run actually found and said. Returned so a case can
+/// assert the conversation happened rather than reading it out of pixels.
+struct StreetLineResult {
+    bool found = false;
+    bool opened = false;
+    /// The ward actor id spoken to, or -1.
+    std::int32_t actorId = -1;
+    std::string name;
+    /// The authored barks.json key the greeting came out of.
+    std::string barkKey;
+    std::string line;
 };
 
 struct SmokeRunResult {
@@ -674,8 +744,17 @@ struct SmokeRunResult {
     std::int32_t endTileX = 0;
     std::int32_t endTileY = 0;
     std::int32_t endBand = 0;
-    /// Who was in the room when the shutter went.
-    std::int32_t actorsInFrame = 0;
+    /// How many of the Gilded Gull's own seventeen were inside K03 when the
+    /// shutter went.
+    ///
+    /// RENAMED IN #79, and the old name was the whole defect. It was
+    /// `actorsInFrame` and it printed as `actors=`, beside `ward=661` -- two
+    /// counters of people, one of them reading 1, and neither name saying that
+    /// the small one counts a DIFFERENT population in a DIFFERENT building and
+    /// is not a subset of the large one. `actors=1  ward=661` reads as "one
+    /// actor is on screen out of six hundred", which is not what either number
+    /// means: this one never had anything to do with the frame.
+    std::int32_t gullPresent = 0;
     /// #78. The ward's own roll, how many of it this frame could see, and how
     /// many stood within twelve tiles of the camera. EVIDENCE, not a gate: the
     /// owner ruled out "a frame must contain actors" outright, because a cellar
@@ -683,6 +762,11 @@ struct SmokeRunResult {
     std::int32_t wardRoll = 0;
     std::int32_t wardDrawn = 0;
     std::int32_t wardNear = 0;
+    /// #79. Who a `--street` run actually got hold of, and out of which
+    /// authored table. Both printed, because "a conversation happened" is not
+    /// evidence that the right person had it in the right voice.
+    std::string streetSpeaker;
+    std::string streetKey;
     /// True when a conversation was open at the moment of capture.
     bool talking = false;
     /// How many stages of the Priest of the Flame line the scripted
@@ -748,5 +832,12 @@ struct SmokeRunResult {
 /// Runs a scripted session and, optionally, writes a PNG. No window, no GPU,
 /// no display server: this is the path every later sprint proves itself with.
 [[nodiscard]] SmokeRunResult runSmoke(const SmokeRunConfig& config);
+
+/// #79. Stands the body beside a body of the named trade out in the ward and
+/// opens a conversation. Exposed rather than buried in runSmoke so a case can
+/// drive it and assert WHO answered and out of WHICH authored table -- the
+/// evidence for "a dockhand and a watchman do not sound alike" is a key and a
+/// sentence, not a screenshot.
+StreetLineResult runStreetLine(Session& session, const std::string& who, int topic);
 
 }  // namespace granadad::render

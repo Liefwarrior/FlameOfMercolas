@@ -213,6 +213,22 @@ std::string DialogueDirector::speak(const std::vector<std::string>& chain, Topic
 void DialogueDirector::buildTopics() {
     topics_.clear();
 
+    // 0. #79 -- WHAT HAS NO WORDS GETS NO LIST.
+    //
+    // A beast has already answered, out of greet.beast, and that answer is the
+    // whole of what it has. Everything below assumes somebody who can be asked
+    // a question: a cat offered THE VANISHED CLERK and PICK THEIR POCKET is a
+    // menu built by a machine that was not looking at what it was talking to.
+    // Only the way out is left, so the surface still opens, still says what it
+    // said, and still closes on the same key as every other conversation.
+    if (speaker_.beast) {
+        Topic away;
+        away.kind = TopicKind::Leave;
+        away.label = "LEAVE IT BE";
+        topics_.push_back(std::move(away));
+        return;
+    }
+
     // 1. Their own business.
     const std::vector<std::string> personal = personalChain(speaker_.notableId);
     if (!barks_.resolve(personal).empty()) {

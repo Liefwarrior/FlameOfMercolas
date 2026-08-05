@@ -31,9 +31,13 @@ docker compose run --rm --build build      # reproducible build -> dist/
 **Start here: [`PLAY.md`](PLAY.md)** -- how to launch it, what to try in the first ten
 minutes, and an honest account of what is and is not fun yet.
 
-You spawn on the Tarwalk six tiles off the door of the Gilded Gull, the captains' tavern, at
-eight in the morning, with a case open and one lead in it: a body came up against the outfall
-grate at low tide. `Q` looks at what is in front of you, `TAB` opens your casebook, `F1` lists
+You spawn on the Tarwalk looking west down the working quay, with the frontage and door lamp
+of the Gilded Gull -- the captains' tavern -- filling the left of the frame and the harbour
+open on the right. It is eight in the morning and the street has people on it: between
+eighteen and thirty of the ward's six hundred and sixty-one are drawn in that first frame,
+depending on the hour. You have a case open and one lead in it: a body came up against the
+outfall grate at low tide. `E` talks to anybody standing in front of you, in the street or in
+the taproom. `Q` looks at what is in front of you, `TAB` opens your casebook, `F1` lists
 every key and `F2` rebinds them. The trail is twelve leads long, two of them dead ends that
 are the point, and it runs from the Mission's back room to the doors of a warehouse that has
 been condemned for nine years.

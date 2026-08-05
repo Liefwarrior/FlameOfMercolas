@@ -461,6 +461,33 @@ struct WardActor {
 };
 
 // ---------------------------------------------------------------------------
+// who somebody is
+// ---------------------------------------------------------------------------
+
+/// A name, and whether the owner's raws already wrote it.
+///
+/// #79. THE WARD HAD NO NAMES, and that is why `E` reached fourteen people.
+/// A body with a job, a bed and a shift is still not somebody you can talk to
+/// until it has a name to put over the conversation -- and the district already
+/// had six hundred and sixty-one of the first and none of the second.
+///
+/// KEPT OUT OF WardActor ON PURPOSE. Everything in that struct is read by a
+/// policy every tick and is folded into the world hash; three std::strings per
+/// body would sit in the hot loop being copied by nothing. An identity is baked
+/// once, never changes, and is read only when somebody is spoken to.
+struct WardIdentity {
+    /// A content/raws/names/notables.json id, or empty. Twenty-nine of the
+    /// Forty land here: the roster already claims a keeper for their authored
+    /// site, so Crell IS the body standing in the Weighhouse rather than a
+    /// second Crell invented beside him.
+    std::string notableId;
+    /// What goes over the conversation. Drawn from the authored pools in
+    /// content/raws/names/names.json for everybody the raws never named.
+    std::string name;
+    std::string epithet;
+};
+
+// ---------------------------------------------------------------------------
 // the ward's own numbers
 // ---------------------------------------------------------------------------
 
@@ -561,6 +588,38 @@ public:
     void hash_into(HashSink& sink) const override;
 
     [[nodiscard]] const std::vector<WardActor>& actors() const noexcept { return actors_; }
+    /// Parallel to actors(), in the same index order, which IS id order. Baked
+    /// once and never written again.
+    [[nodiscard]] const std::vector<WardIdentity>& identities() const noexcept {
+        return identities_;
+    }
+    /// Who this body is, or an empty identity for an id nobody baked. Answering
+    /// with a blank rather than throwing is deliberate: a missing names.json
+    /// must leave the ward mute, not stop the game.
+    [[nodiscard]] const WardIdentity& identity(std::int32_t actorId) const noexcept;
+    /// The body standing within `reachTiles` of (x, y) on `band`, nearest
+    /// first, or nullptr. What pressing E on a street corner asks.
+    ///
+    /// CHEBYSHEV AND SAME-BAND, which is the same reach rule the taproom uses
+    /// (Tavern::nearestTo) and the same band rule its witness filter learned the
+    /// hard way: somebody asleep on the floor above is not somebody you are
+    /// standing next to, whatever their (x, y) says.
+    [[nodiscard]] const WardActor* nearestTo(std::int32_t x, std::int32_t y, std::int32_t band,
+                                             std::int32_t reachTiles) const noexcept;
+    /// The body with this id, or nullptr. Ids are dense and assigned in bake
+    /// order, so this is an index check and not a search.
+    [[nodiscard]] const WardActor* byId(std::int32_t actorId) const noexcept;
+    /// Takes coin off somebody. Answers what actually came out, which is never
+    /// more than they had.
+    [[nodiscard]] std::int32_t takeCoinFrom(std::int32_t actorId, std::int32_t coin) noexcept;
+    /// Turns a body to look at a point. They look at you while you talk to
+    /// them, which is the whole difference between a person and a prop.
+    void faceToward(std::int32_t actorId, std::int32_t x, std::int32_t y) noexcept;
+    /// How many OTHER living people stand within `reachTiles` on the same band.
+    /// What "did anybody see that" is asked of on a street with no walls in it.
+    [[nodiscard]] std::int32_t witnessesAround(std::int32_t actorId,
+                                               std::int32_t reachTiles) const noexcept;
+
     [[nodiscard]] std::int32_t secondOfDay() const noexcept { return secondOfDay_; }
     [[nodiscard]] std::int64_t currentTick() const noexcept { return tick_; }
 
@@ -639,6 +698,12 @@ private:
     };
 
     void bakeRoster(const std::filesystem::path& contentDir);
+    /// Turns the notable bindings the roster made into names, and gives
+    /// everybody else one out of the authored pools. Runs LAST, after every
+    /// post is claimed, because claiming a post changes what somebody IS: the
+    /// spare hand who ends up keeping the Slop-Chest is a shopkeeper by the
+    /// time the ward opens and must be named out of the shopkeepers' pool.
+    void bakeIdentities(const std::filesystem::path& contentDir);
     void tickActor(WardActor& actor, const TickContext& context);
     void decayNeeds(WardActor& actor);
     bool auditStarvation(WardActor& actor);
@@ -698,6 +763,8 @@ private:
 
     WardTypeTable types_;
     std::vector<WardActor> actors_;
+    /// Parallel to actors_. See WardIdentity on why it is not a member of it.
+    std::vector<WardIdentity> identities_;
     std::vector<Home> homes_;
     /// Which home each actor sleeps in, or -1 for somebody sleeping rough.
     std::vector<std::int32_t> homeOf_;

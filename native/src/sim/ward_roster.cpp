@@ -310,13 +310,70 @@ constexpr Anchor kGoatPen{184, 143, 20};
 constexpr Anchor kKennelDogs[] = {{197, 86, 19}, {203, 82, 19}, {203, 85, 19}};
 constexpr Anchor kImpoundDog{92, 89, 19};
 
+// --- who the Forty already are ----------------------------------------------
+//
+// #79. TWENTY-NINE OF THE FORTY WERE ALREADY STANDING HERE AND NOBODY HAD SAID
+// SO. content/raws/names/notables.json binds each of them to an authored map
+// site -- Ottavan Crell to K01_WEIGHHOUSE, Redda to K04_BILGE, Mother Sethra to
+// K05_LANTERN_ROOM -- and section 4 of this file has been claiming a keeper for
+// every one of those sites since #78. The two facts had never been introduced,
+// so the district's harbourmaster was an anonymous shopkeeper standing in the
+// Weighhouse and the owner's forty-two bios, fifteen micro-histories and whole
+// rumor domain reached exactly one building.
+//
+// Binding them costs nothing at run time and changes no id, no draw and no
+// anchor: the roster claims the same body it always claimed and now records
+// what the raws already called it.
+//
+// WHAT IS DELIBERATELY ABSENT. venn and finch keep the Gilded Gull, which is
+// the Tavern's building and whose people are the Tavern's -- naming a second
+// Master Venn out here would put two of him in the district. herdis (PEN_GOATS)
+// and the C1/C2/C3 mansion heads have no body in this roster to be: the pen
+// holds goats and no keeper, and a compound's head of house is a row on the
+// compound roll rather than a walker. Both are gaps, and they are named here
+// rather than papered over by binding a name to whoever happened to be nearest.
+struct Keeper {
+    /// The establishment, spelled exactly as kEstablishments spells it.
+    const char* site;
+    /// The notable who keeps it, or "" -- a site the raws never named.
+    const char* keeper;
+    /// The notable who is the site's FIRST HAND, or "". Two sites have one:
+    /// Onna is Father Maell's night-soup disciple, and Watchman Cull is the
+    /// impound's beast-keeper under a militia post he does not hold.
+    const char* firstHand;
+};
+
+constexpr Keeper kKeepers[] = {
+    {"weighhouse", "crell", ""},      {"impound", "", "cull"},
+    {"the-bilge", "redda", ""},       {"lantern-room", "sethra", ""},
+    {"harls-yard", "harl", ""},       {"ropewalk", "hemp", ""},
+    {"branns", "brann", ""},          {"pitchfield", "ulwer", ""},
+    {"dawnstalls", "", ""},           {"salt-row", "salla", ""},
+    {"kings-bond", "grieve", ""},     {"wrackhouse", "dagny", ""},
+    {"fenners", "fenner", ""},        {"mission", "maell", "onna"},
+    {"bathhouse", "squall", ""},      {"the-rows", "vetch", ""},
+    {"merles-boats", "merle", ""},    {"netmenders", "withy", ""},
+    {"coopers", "stave", ""},         {"eel-pots", "", ""},
+    {"kennel-row", "cobb", ""},       {"sailmaker", "luff", ""},
+    {"hardtack-oven", "crumb", ""},   {"slop-chest", "neddry", ""},
+    {"long-store", "dray", ""},       {"bank", "gilt", ""},
+    {"timber-yard", "", ""},          {"west-garden", "", ""},
+};
+static_assert(std::size(kKeepers) == std::size(kEstablishments),
+              "one row per establishment, in the same order -- the bake walks them together");
+
+/// The three deep-water hulls, and the captain who sleeps aboard each. Same
+/// order as kHulls, and notables.json binds each of them by SHIP.
+constexpr const char* kCaptains[] = {"wake", "bregga", "vane"};
+static_assert(std::size(kCaptains) == std::size(kHulls));
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
 // the bake
 // ---------------------------------------------------------------------------
 
-void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
+void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
     // THE ORDER OF THIS FUNCTION IS THE ID ASSIGNMENT and therefore part of the
     // world hash. Adding a group in the middle renumbers everybody after it and
     // re-rolls every draw keyed on an actor id. Append; do not insert.
@@ -531,11 +588,35 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
         return -1;
     };
 
-    for (const Establishment& site : kEstablishments) {
+    // #79. Records who the raws already called the body that took the post. The
+    // roster is not changed by this in any way -- same claim, same id, same
+    // anchor -- so the ward's whole behavioural bake is bit-identical and only
+    // the name over a conversation is new.
+    const auto nameThem = [&](std::int32_t who, const char* notableId) {
+        if (who < 0 || notableId == nullptr || notableId[0] == '\0') {
+            return;
+        }
+        // Grown rather than pre-sized: the beasts are spawned after this block
+        // and bakeIdentities() extends the vector to the final roll. Claiming
+        // only ever touches a body that already exists, so this can only ever
+        // reach backwards.
+        if (identities_.size() <= static_cast<std::size_t>(who)) {
+            identities_.resize(static_cast<std::size_t>(who) + 1);
+        }
+        identities_[static_cast<std::size_t>(who)].notableId = notableId;
+    };
+
+    for (std::size_t s = 0; s < std::size(kEstablishments); ++s) {
+        const Establishment& site = kEstablishments[s];
+        const Keeper& named = kKeepers[s];
         const bool nightHouse = site.post.x == 129 && site.post.y == 63;  // the Eel-Pots
-        claim(site.keeper, WardJob::Anchor, site.post, -1);
+        nameThem(claim(site.keeper, WardJob::Anchor, site.post, -1), named.keeper);
         for (std::int32_t i = 0; i < site.hands; ++i) {
-            claim(site.hand, nightHouse ? WardJob::Scavenge : WardJob::Anchor, site.post, -1);
+            const std::int32_t hand =
+                claim(site.hand, nightHouse ? WardJob::Scavenge : WardJob::Anchor, site.post, -1);
+            if (i == 0) {
+                nameThem(hand, named.firstHand);
+            }
         }
         if (site.hasGuard) {
             claim(WardType::MilitiaWatch, WardJob::Anchor, site.guard, -1);
@@ -553,9 +634,14 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
             marketStalls_.push_back(PathStep{sx, sy, sb});
         }
     }
-    for (const Anchor& stand : kFisherStands) {
+    for (std::size_t f = 0; f < std::size(kFisherStands); ++f) {
         for (int i = 0; i < 2; ++i) {
-            claim(WardType::Fisher, WardJob::Fish, stand, -1);
+            const std::int32_t who = claim(WardType::Fisher, WardJob::Fish, kFisherStands[f], -1);
+            // FISHBONE_FINGER_03: Haddie Longline works the third finger, and
+            // the raws say which one.
+            if (f == 2 && i == 0) {
+                nameThem(who, "haddie");
+            }
         }
     }
     for (const Anchor& berth : kBerths) {
@@ -563,9 +649,13 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
             claim(WardType::Sailor, WardJob::Anchor, berth, -1);
         }
     }
-    for (const Anchor& hull : kHulls) {
+    for (std::size_t h = 0; h < std::size(kHulls); ++h) {
         for (int i = 0; i < 4; ++i) {
-            claim(WardType::Sailor, WardJob::Anchor, hull, -1);
+            const std::int32_t who = claim(WardType::Sailor, WardJob::Anchor, kHulls[h], -1);
+            // The captain sleeps aboard, and is the first hand off each hull.
+            if (i == 0) {
+                nameThem(who, kCaptains[h]);
+            }
         }
     }
 
@@ -608,9 +698,12 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
     claim(WardType::MilitiaWatch, WardJob::Patrol, kPatrolPosts[2], saltgateBeat);
     claim(WardType::MilitiaWatch, WardJob::Patrol, kPatrolPosts[3], ropewyndBeat);
     claim(WardType::MilitiaWatch, WardJob::Patrol, kPatrolPosts[2], ropewyndBeat);
+    // WATCHPOST_K21 and K34_GUARDHOUSE, which notables.json binds by name:
+    // Sergeant Vess quarters at the head of Saltgate Rise and Sergeant Brakk at
+    // the guardhouse at its foot. Both are the first body to hold their post.
+    nameThem(claim(WardType::MilitiaWatch, WardJob::Anchor, kWatchPostHead, -1), "vess");
     claim(WardType::MilitiaWatch, WardJob::Anchor, kWatchPostHead, -1);
-    claim(WardType::MilitiaWatch, WardJob::Anchor, kWatchPostHead, -1);
-    claim(WardType::MilitiaWatch, WardJob::Anchor, kWatchPostFoot, -1);
+    nameThem(claim(WardType::MilitiaWatch, WardJob::Anchor, kWatchPostFoot, -1), "brakk");
     claim(WardType::MilitiaWatch, WardJob::Anchor, kWatchPostFoot, -1);
     claim(WardType::MilitiaWatch, WardJob::Anchor, kWatchPostFoot, -1);
     claim(WardType::MilitiaWatch, WardJob::Anchor, kWatchPostHead, -1);
@@ -638,9 +731,14 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
         }
     }
 
-    // The carters, and the children who work the bins.
+    // The carters, and the children who work the bins. CARTER_STAND is Carter
+    // Weyland's own post in notables.json, and he is the first man on the round.
     for (int i = 0; i < 4; ++i) {
-        claim(WardType::Carter, WardJob::Rounds, kCarterRoute[0], cartRound);
+        const std::int32_t who =
+            claim(WardType::Carter, WardJob::Rounds, kCarterRoute[0], cartRound);
+        if (i == 0) {
+            nameThem(who, "weyland");
+        }
     }
     // THE COMMONS, AND THE MUSTER, handed out round-robin in id order to
     // everybody the establishments did not want.
@@ -746,6 +844,13 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
         ledger_.foodMinted += actor.rations;
         ledger_.coinMinted += actor.coin;
     }
+
+    // --- 8. and the names ---------------------------------------------------
+    //
+    // LAST, and after the needs, for the same reason the needs are last:
+    // claiming a post changes what somebody IS, and a body is named out of the
+    // pool of the trade it will actually be doing when the ward opens.
+    bakeIdentities(contentDir);
 }
 
 }  // namespace granadad::sim

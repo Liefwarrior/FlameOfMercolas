@@ -1439,6 +1439,127 @@ std::int64_t WardPopulation::foodHeld() const noexcept {
     return held;
 }
 
+// --- being spoken to -------------------------------------------------------
+//
+// #79. Everything in this block exists so that pressing E on a street corner
+// reaches the body standing on it. None of it decides anything: no policy reads
+// a name, and nothing here is in the tick loop.
+
+namespace {
+
+/// The empty answer for an id nobody baked. Static so the accessor can return a
+/// reference and callers never have to null-check a name.
+const WardIdentity& nobody() {
+    static const WardIdentity kNobody;
+    return kNobody;
+}
+
+}  // namespace
+
+const WardIdentity& WardPopulation::identity(std::int32_t actorId) const noexcept {
+    if (actorId < 0 || static_cast<std::size_t>(actorId) >= identities_.size()) {
+        return nobody();
+    }
+    return identities_[static_cast<std::size_t>(actorId)];
+}
+
+const WardActor* WardPopulation::byId(std::int32_t actorId) const noexcept {
+    // Ids are assigned 0..N-1 in bake order and actors_ is never reordered, so
+    // the id IS the index. Guarded anyway: an id from outside would otherwise
+    // read off the end of the roster.
+    if (actorId < 0 || static_cast<std::size_t>(actorId) >= actors_.size()) {
+        return nullptr;
+    }
+    return &actors_[static_cast<std::size_t>(actorId)];
+}
+
+const WardActor* WardPopulation::nearestTo(std::int32_t x, std::int32_t y, std::int32_t band,
+                                           std::int32_t reachTiles) const noexcept {
+    const WardActor* best = nullptr;
+    std::int32_t bestDistance = reachTiles + 1;
+    for (const WardActor& actor : actors_) {
+        if (actor.dead || actor.band != band) {
+            continue;
+        }
+        const std::int32_t dx = actor.x - x;
+        const std::int32_t dy = actor.y - y;
+        const std::int32_t distance = std::max(std::abs(dx), std::abs(dy));
+        // STRICTLY NEARER, so a tie resolves to the lower id on every machine
+        // and two bodies one tile apart never swap which one you are talking to
+        // between one run and the next.
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = &actor;
+        }
+    }
+    return best;
+}
+
+std::int32_t WardPopulation::takeCoinFrom(std::int32_t actorId, std::int32_t coin) noexcept {
+    if (actorId < 0 || static_cast<std::size_t>(actorId) >= actors_.size() || coin <= 0) {
+        return 0;
+    }
+    WardActor& actor = actors_[static_cast<std::size_t>(actorId)];
+    const std::int32_t taken = std::min(coin, actor.coin);
+    actor.coin -= taken;
+    // AND IT IS SUNK, because it has left the ward.
+    //
+    // The ledger's identity is `coinMinted - coinSunk == what the ward's purses
+    // hold`, checked every three hundred ticks, and it is a GATE rather than a
+    // report: an economy that can quietly create or destroy a royal balances
+    // itself by accident. The player's purse is not one of the ward's -- it
+    // belongs to the Tavern and is hashed there -- so a hand in a dockhand's
+    // pocket moves coin ACROSS that boundary, and a robbery that did not say so
+    // would break the identity the first time anybody committed one.
+    ledger_.coinSunk += taken;
+    return taken;
+}
+
+void WardPopulation::faceToward(std::int32_t actorId, std::int32_t x, std::int32_t y) noexcept {
+    if (actorId < 0 || static_cast<std::size_t>(actorId) >= actors_.size()) {
+        return;
+    }
+    WardActor& actor = actors_[static_cast<std::size_t>(actorId)];
+    const std::int32_t dx = x - actor.x;
+    const std::int32_t dy = y - actor.y;
+    if (dx == 0 && dy == 0) {
+        return;
+    }
+    // The four-point facing the renderer draws from, picked by which axis is
+    // further. Integer only: a body's heading is simulation state and an
+    // atan2 here would put a double in the middle of it.
+    if (std::abs(dx) >= std::abs(dy)) {
+        actor.facing = dx > 0 ? kFacingEast : kFacingWest;
+    } else {
+        actor.facing = dy > 0 ? kFacingSouth : kFacingNorth;
+    }
+}
+
+std::int32_t WardPopulation::witnessesAround(std::int32_t actorId,
+                                             std::int32_t reachTiles) const noexcept {
+    const WardActor* victim = byId(actorId);
+    if (victim == nullptr) {
+        return 0;
+    }
+    std::int32_t seen = 0;
+    for (const WardActor& actor : actors_) {
+        if (actor.id == actorId || actor.dead || !isPerson(actor.type)) {
+            continue;
+        }
+        if (actor.band != victim->band) {
+            // The taproom's witness filter learned this the hard way: a body
+            // asleep one floor up is not in the room, whatever its (x, y) says.
+            continue;
+        }
+        const std::int32_t dx = actor.x - victim->x;
+        const std::int32_t dy = actor.y - victim->y;
+        if (std::max(std::abs(dx), std::abs(dy)) <= reachTiles) {
+            ++seen;
+        }
+    }
+    return seen;
+}
+
 // --- reporting -------------------------------------------------------------
 
 WardCensus WardPopulation::census() const {

@@ -39,12 +39,19 @@ prove something about wine.
 
 ## 2. The first ten minutes
 
-You are on the **Tarwalk**, the working quay, six tiles from the door of the
-**Gilded Gull**. It is eight in the morning, and the district is at work: six
-hundred and sixty-one people with beds in the compounds, posts at the
-warehouses and the sheds, appetites that get worse as the day goes on, and a
-Watch that changes shift at six. They keep those hours whether you watch them
-or not.
+You are on the **Tarwalk**, the working quay, looking west along it. The
+granite frontage of the **Gilded Gull** and its door lamp fill the left of the
+frame, the harbour and the finger piers are open on the right, and the street
+runs away in front of you with people on it. It is eight in the morning, and
+the district is at work: six hundred and sixty-one people with beds in the
+compounds, posts at the warehouses and the sheds, appetites that get worse as
+the day goes on, and a Watch that changes shift at six. They keep those hours
+whether you watch them or not.
+
+**Every one of them will talk to you.** Not just the Gull's fourteen: `E` on
+anybody standing in front of you, anywhere in the district. They answer as
+themselves — their trade, the hour, what they think of you, and whether they
+have eaten today.
 
 The notes are open on your first frame. They say:
 
@@ -118,6 +125,19 @@ Stand in it and press **`Q`**.
    overlapping rota, Father Maell for an hour in the evening, Captain Wake from
    seven, Watchman Cull off duty from nine, Finch in the snug after ten. Every
    word any of them says was written by you, in `content/raws/barks/barks.json`.
+
+4b. **Then walk back out and talk to the street.** `E` reaches the whole ward
+   now. Stand next to a rope-hand at the muster, a watchman on the Ropewynd at
+   two in the morning, and Father Maell at the Mission, and you get three
+   different sentences out of three different authored tables — nine job
+   families by six attitudes by four times of day, all of it already in
+   `barks.json` and none of it previously reachable. **Twenty-nine of the Forty
+   Notables are out there**, standing at the sites `notables.json` binds them
+   to: Ottavan Crell in the Weighhouse, Mother Sethra at the Lantern Room,
+   Sergeant Vess at the head of Saltgate Rise, Grandmother Withy in the Arcade.
+   They bring their own personal tables and their own micro-histories with them.
+   Everybody else is named out of the pools in `names.json` and answers with
+   their trade's voice — and if they have not eaten today, they say so.
 
 5. **Buy a drink, then haggle for a bed.** `E`, pick the topic. How far the
    landlord comes down is your STREETWISE against his, and haggling is how

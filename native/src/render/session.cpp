@@ -953,13 +953,40 @@ bool Session::haggling() const noexcept {
     return tavern_->dialogue().isHaggling();
 }
 
+bool Session::talkToWard() {
+    // #79. THE OTHER SIX HUNDRED AND FORTY-SEVEN.
+    //
+    // The Gull's fourteen are asked for first, above, because inside K03 the
+    // taproom owns the room and its people carry a roster, a mood and a stock;
+    // out here nobody does. Everything below is the SAME director, the same
+    // authored tables and the same fallback chain -- only the Speaker is built
+    // from a body in the street instead of from a body on a stool.
+    const sim::WardActor* who = people_->nearestTo(body_->tileX(), body_->tileY(),
+                                                   body_->band(), kWardTalkReachTiles);
+    if (who == nullptr) {
+        return false;
+    }
+    sim::DialogueDirector& talk = tavern_->dialogue();
+    talk.setPlayerCoin(tavern_->playerCoin());
+    const sim::Speaker speaker = sim::wardSpeakerFor(
+        *who, people_->identity(who->id), talk.notables(), talk.factions(), talk.barks());
+    if (!talk.open(speaker, tavern_->timeOfDay())) {
+        return false;
+    }
+    wardTalkId_ = who->id;
+    // They look at you while you talk to them, exactly as the taproom's do.
+    people_->faceToward(wardTalkId_, body_->tileX(), body_->tileY());
+    return true;
+}
+
 void Session::interact() {
     dismissOverlays();
     if (talking()) {
         chooseTopic(static_cast<std::size_t>(std::max(0, topicCursor_)));
         return;
     }
-    if (!tavern_->talkTo()) {
+    wardTalkId_ = -1;
+    if (!tavern_->talkTo() && !talkToWard()) {
         // The same sentence Tavern::pickPocket answers with, spelled the same
         // way. These two were "NOBODY WITHIN REACH" and "NOBODY WITHIN REACH."
         // -- one string, two spellings, depending on which key you pressed.
@@ -1105,7 +1132,13 @@ void Session::chooseTopic(std::size_t index) {
     if (!talking()) {
         return;
     }
-    const sim::Reply reply = tavern_->chooseTopic(index);
+    // #79. WHICH ROOM OWNS THE CONSEQUENCE. The director decides what was SAID
+    // and what the world now owes; whoever owns the body applies it. Inside the
+    // Gull that is the Tavern, which has a bar to take a drink off and a
+    // bouncer to send over. On the street it is the ward, which has neither --
+    // so the ward has its own, much shorter, settlement.
+    const sim::Reply reply =
+        wardTalkId_ >= 0 ? chooseWardTopic(index) : tavern_->chooseTopic(index);
     if (!reply.ok && reply.line.empty()) {
         return;
     }
@@ -1166,10 +1199,51 @@ void Session::closeConversation() {
         return;
     }
     tavern_->endConversation();
+    wardTalkId_ = -1;
     topicCursor_ = 0;
     topicPage_ = 0;
     haggleOffer_ = 0;
     forgeOpen_ = false;
+}
+
+sim::Reply Session::chooseWardTopic(std::size_t index) {
+    sim::DialogueDirector& talk = tavern_->dialogue();
+    talk.setPlayerCoin(tavern_->playerCoin());
+    sim::Reply reply = talk.choose(index);
+    if (!reply.ok) {
+        if (reply.closes || !talk.isOpen()) {
+            wardTalkId_ = -1;
+        }
+        return reply;
+    }
+
+    // A hand in a purse takes coin off a REAL body, and the coin the ward loses
+    // is the coin the player gains. Nothing is minted: the ledger's identity is
+    // about creation, and a robbery creates nothing.
+    if (reply.kind == sim::TopicKind::PickPocket && !reply.offence && reply.coinDelta > 0) {
+        reply.coinDelta = people_->takeCoinFrom(wardTalkId_, reply.coinDelta);
+        if (reply.coinDelta <= 0) {
+            reply.line = "THEIR PURSE IS EMPTY.";
+        }
+    }
+    if (reply.coinDelta != 0) {
+        tavern_->setPlayerCoin(std::max(0, tavern_->playerCoin() + reply.coinDelta));
+        talk.setPlayerCoin(tavern_->playerCoin());
+    }
+    // WHETHER ANYBODY SAW IT is a question about the street, and the street has
+    // no walls, no bouncer and no door policy. So it is asked the only way it
+    // honestly can be out here: were there other living people standing close
+    // enough on the same band. The Watch's heat, the roofs' opinion and the
+    // guilds' all move through the one call site every criminal act in this
+    // build goes through, whether it happened in a taproom or on the Tarwalk.
+    if (reply.criminal) {
+        const bool watched = people_->witnessesAround(wardTalkId_, kWardWitnessTiles) > 0;
+        talk.noteCrime(reply.crime, watched || reply.offence);
+    }
+    if (reply.closes || !talk.isOpen()) {
+        wardTalkId_ = -1;
+    }
+    return reply;
 }
 
 // ---------------------------------------------------------------------------
@@ -2257,15 +2331,30 @@ void climbAndLand(Session& session) {
 /// The box the capture harness routes inside: the Gull, both its floors, and
 /// enough of the Tarwalk to contain the AUTHORED SPAWN.
 ///
-/// gull::kRegion stops at kStreetY - 2, which is y=61, and the spawn is at
+/// gull::kRegion stops at kStreetY - 2, which is y=61, and the S2 spawn was at
 /// y=60. One tile short. A router whose box does not contain the body's own
 /// cell refuses outright, so every walk that began at the spawn fell through to
 /// the greedy fallback -- which is the S4 behaviour this was supposed to
 /// replace, and it is why `--skyrun` reached every patron in the room and never
 /// once reached the man in the snug.
+///
+/// #79 MOVED THE SPAWN AGAIN, so the bound is a min() rather than a subtraction
+/// off it. `kSpawnTileY - 2` happened to be right while the spawn was north of
+/// the street; it is arithmetic that only works in one direction, and a spawn
+/// SOUTH of kStreetY would have quietly cropped the street back out of the box.
+/// Both ends are named, so the box contains the frontage and the body wherever
+/// the opening shot is aimed next.
 constexpr sim::TileBox kCaptureRegion{
-    sim::gull::kFootprintX0 - 2, sim::docks::kSpawnTileY - 2, sim::gull::kGroundBand,
+    sim::gull::kFootprintX0 - 2,
+    std::min(sim::gull::kStreetY - 2, sim::docks::kSpawnTileY - 1),
+    sim::gull::kGroundBand,
     sim::gull::kFootprintX1 + 2, sim::gull::kFootprintY1 + 1, sim::gull::kUpperBand};
+static_assert(kCaptureRegion.x0 <= sim::docks::kSpawnTileX &&
+                  sim::docks::kSpawnTileX <= kCaptureRegion.x1 &&
+                  kCaptureRegion.y0 <= sim::docks::kSpawnTileY &&
+                  sim::docks::kSpawnTileY <= kCaptureRegion.y1,
+              "the capture router's box must contain the spawn, or every scripted "
+              "line falls through to the greedy fallback -- see the note above");
 
 void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
     sim::RegionPath router(session.tiles(), kCaptureRegion);
@@ -3465,6 +3554,136 @@ std::int32_t gTrailUnreached = 0;
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// #79 -- the street
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The trades a `--street` run knows how to ask for. Named the way a person
+/// would say them out loud, not the way the enum spells them: "watch", not
+/// "MilitiaWatch", and "hand" for the six hundred rope-and-crate bodies the
+/// district actually runs on.
+struct StreetTrade {
+    const char* word;
+    sim::WardType type;
+};
+
+/// The same two tiles Session::kWardTalkReachTiles is, named again here because
+/// this file's anonymous namespace cannot see a private static member. Pinned
+/// to it by a case: a search that confirmed its candidate against a DIFFERENT
+/// reach than the key uses would confirm nothing.
+constexpr std::int32_t kStreetReachTiles = 2;
+
+constexpr StreetTrade kStreetTrades[] = {
+    {"hand", sim::WardType::Serf},        {"watch", sim::WardType::MilitiaWatch},
+    {"priest", sim::WardType::PriestOfTheFlame},
+    {"disciple", sim::WardType::DiscipleOfTheFlame},
+    {"keeper", sim::WardType::Shopkeeper}, {"fisher", sim::WardType::Fisher},
+    {"sailor", sim::WardType::Sailor},    {"carter", sim::WardType::Carter},
+    {"wastrel", sim::WardType::Wastrel},  {"urchin", sim::WardType::Urchin},
+    {"thief", sim::WardType::Thief},      {"drover", sim::WardType::AnimalKeeper},
+    {"cat", sim::WardType::Cat},          {"dog", sim::WardType::Dog},
+};
+
+}  // namespace
+
+StreetLineResult runStreetLine(Session& session, const std::string& who, int topic) {
+    StreetLineResult out;
+
+    sim::WardType wanted = sim::WardType::Serf;
+    for (const StreetTrade& trade : kStreetTrades) {
+        if (who == trade.word) {
+            wanted = trade.type;
+        }
+    }
+
+    // The first body of that trade you can stand beside AND BE TALKING TO.
+    //
+    // The second half of that is the whole of the search, and the first attempt
+    // did not have it: it took the first free tile next to the first body of
+    // the trade, and at a muster where fourteen spare hands share one commons
+    // the key reached whichever of them the reach rule picked -- a body of the
+    // right trade, chosen by nobody, and sometimes a different one. So the
+    // candidate is confirmed against the SAME question Session::interact asks
+    // before the body is moved: "who would answer from here". If the answer is
+    // not this person, this is not the tile.
+    //
+    // Clear of the Gilded Gull as well, because the taproom's own roster is
+    // asked first and reaches two tiles: a capture that stood outside K03's
+    // door would photograph a bouncer and call it the ward.
+    const sim::WardActor* target = nullptr;
+    std::int32_t standX = 0;
+    std::int32_t standY = 0;
+    for (const sim::WardActor& actor : session.people().actors()) {
+        if (actor.dead || actor.type != wanted) {
+            continue;
+        }
+        if (actor.x >= sim::gull::kFootprintX0 - 4 && actor.x <= sim::gull::kFootprintX1 + 4 &&
+            actor.y >= sim::gull::kFootprintY0 - 6 && actor.y <= sim::gull::kFootprintY1 + 4) {
+            continue;
+        }
+        static constexpr std::int32_t dx[4] = {1, -1, 0, 0};
+        static constexpr std::int32_t dy[4] = {0, 0, 1, -1};
+        for (int n = 0; n < 4 && target == nullptr; ++n) {
+            const std::int32_t sx = actor.x + dx[n];
+            const std::int32_t sy = actor.y + dy[n];
+            if (!session.tiles().standable(sx, sy, actor.band)) {
+                continue;
+            }
+            const sim::WardActor* answers =
+                session.people().nearestTo(sx, sy, actor.band, kStreetReachTiles);
+            if (answers != nullptr && answers->id == actor.id) {
+                target = &actor;
+                standX = sx;
+                standY = sy;
+            }
+        }
+        if (target != nullptr) {
+            break;
+        }
+    }
+    if (target == nullptr) {
+        return out;
+    }
+    out.found = true;
+    out.actorId = target->id;
+
+    // THE ONE PLACEMENT, and see SmokeRunConfig::street on why it is a placement
+    // and not a walk. Everything after this line is the game.
+    session.body().placeAt(standX, standY, target->band);
+    {
+        // Facing them, so the frame is a picture of a conversation. Four-point
+        // and integer: a heading is simulation state, and an atan2 here would
+        // put a double in the middle of one.
+        const std::int32_t toX = target->x - standX;
+        const std::int32_t toY = target->y - standY;
+        sim::Angle look = sim::kFacingNorth;
+        if (std::abs(toX) >= std::abs(toY)) {
+            look = toX > 0 ? sim::kFacingEast : sim::kFacingWest;
+        } else {
+            look = toY > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+        }
+        session.body().setYaw(look);
+    }
+    // One movement step, so the room's own idea of where the player is standing
+    // catches up with the body before the key is pressed.
+    session.stepMany(sim::MoveInput{}, 1);
+    session.interact();
+    out.opened = session.talking() && session.wardTalkingTo() == out.actorId;
+    if (!out.opened) {
+        return out;
+    }
+    if (topic > 0) {
+        session.chooseTopic(static_cast<std::size_t>(topic - 1));
+    }
+    const sim::DialogueDirector& talk = session.tavern().dialogue();
+    out.name = talk.speaker().name;
+    out.barkKey = talk.greetingKey();
+    out.line = talk.lastLine();
+    return out;
+}
+
 int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     // ONE IN THE MORNING, and the hour is the point.
     //
@@ -3564,6 +3783,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.talking = session.talking();
     }
 
+    if (config.street) {
+        const StreetLineResult street = runStreetLine(session, config.streetWho,
+                                                      config.streetTopic);
+        result.talking = session.talking();
+        // ONE BEAT, AND IT EITHER LANDED OR IT DID NOT. The whole claim of #79
+        // is that a body in the open district answers, so the run reports it
+        // the same way every other scripted line reports its beats and a
+        // capture that photographed nobody cannot pass as one that did.
+        result.scriptedWanted += 1;
+        result.scriptedLanded += street.opened ? 1 : 0;
+        result.streetSpeaker = street.name;
+        result.streetKey = street.barkKey;
+    }
+
     if (config.flame) {
         result.flameStages = runFlameLine(session, config.flameEnd);
         result.talking = session.talking();
@@ -3649,7 +3882,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     result.endTileX = session.body().tileX();
     result.endTileY = session.body().tileY();
     result.endBand = session.body().band();
-    result.actorsInFrame = session.tavern().presentCount();
+    result.gullPresent = session.tavern().presentCount();
     {
         // How much of the ward this frame is actually looking at. `seen` comes
         // out of the renderer itself -- a body counted only when it put a pixel
@@ -3683,7 +3916,13 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << ",z" << result.endBand << ") facing " << sim::compass_point(session.body().yaw())
             << " | " << (hour < 10 ? "0" : "") << hour << ':' << (minute < 10 ? "0" : "") << minute
             << ' ' << session.placeLabel() << " | lamps=" << result.lampCount
-            << " actors=" << result.actorsInFrame
+            // #79: `gull=`, and it used to say `actors=`. Printed one space from
+            // `ward=661` it read as "one of the six hundred is on screen", which
+            // it never was: it is how many of the Gilded Gull's own seventeen
+            // are inside K03, a different population in a different building,
+            // and it has no relationship to the frame at all. The HUD has always
+            // called it "THE GULL n IN"; so does this now.
+            << " gull=" << result.gullPresent
             << " art=" << (session.atlas().fromAuthoredArt() ? "custom" : "procedural")
             // #78: THE WARD'S OWN ROLL, PRINTED BESIDE THE TAPROOM'S. `ward` is
             // how many bodies the district holds, `seen` is how many of them
@@ -3702,6 +3941,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " sprite px=" << result.stats.spritePixels
             << " actor px=" << result.stats.actorPixels << " luma="
             << result.stats.meanLuma << " colours=" << result.stats.distinctColours;
+    if (config.street) {
+        // WHO ANSWERED AND OUT OF WHICH TABLE, printed beside the frame. A
+        // capture that says only "a conversation is open" cannot tell a
+        // dockhand from a watchman, which is the entire claim being made.
+        summary << " | street who=" << config.streetWho
+                << " speaker=\"" << result.streetSpeaker << "\""
+                << " key=" << (result.streetKey.empty() ? "-" : result.streetKey)
+                << " talking=" << (result.talking ? "yes" : "no");
+    }
     if (config.trail) {
         const sim::Casebook& notes = session.casebook();
         summary << " | trail read=" << result.trailRead << '/' << result.trailWalked

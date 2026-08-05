@@ -168,6 +168,16 @@ void print_usage() {
         "  --cursor=N           put the topic cursor on row N without picking\n"
         "                       it, so a frame can be taken OF a long label\n"
         "  --again              close the conversation and open it again\n"
+        "  --street[=WHO]       stand next to somebody out in the WARD and talk\n"
+        "                       to them. WHO is hand, watch, priest, disciple,\n"
+        "                       keeper, fisher, sailor, carter, wastrel, urchin,\n"
+        "                       thief, drover, cat or dog (default hand). The\n"
+        "                       body is PLACED beside them -- the same landing\n"
+        "                       --spawn makes -- and everything after that is\n"
+        "                       the game: the real key, the real director and\n"
+        "                       the owner's own tables\n"
+        "  --streettopic=N      pick topic N of that conversation, 1-based, as\n"
+        "                       the numbers printed beside them on screen\n"
         "  --flame[=WHERE]      run the Priest of the Flame line and capture it.\n"
         "                       WHERE is talk (the finished conversation), bench\n"
         "                       (the workshop standing open) or away (closed, so\n"
@@ -302,6 +312,15 @@ void print_usage() {
         } else if (std::strcmp(arg, "--again") == 0) {
             options.smoke.talk = true;
             options.smoke.again = true;
+        } else if (std::strcmp(arg, "--street") == 0) {
+            options.smoke.street = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--street=", &value)) {
+            options.smoke.street = true;
+            options.smoke.streetWho = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--streettopic=", &value)) {
+            options.smoke.streetTopic = std::max(0, std::atoi(value));
         } else if (std::strcmp(arg, "--flame") == 0) {
             options.smoke.flame = true;
             options.wantsSmoke = true;

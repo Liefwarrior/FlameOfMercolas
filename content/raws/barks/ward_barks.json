@@ -1,0 +1,161 @@
+{
+  "id": "ward_barks",
+  "_note": "ADDED for #79, when the whole ward became addressable. barks.json is the owner's canon and is not edited; barkRawsFiles() loads the owner's file FIRST and it wins every duplicate key, so nothing here can shadow anything authored. These tables cover the one thing 210 authored tables could not: what a body's own SIMULATED STATE sounds like. The ward tracks hunger, rest and the walk home per person, and until now a starving rope-hand greeted you with a remark about the weather. Every table is keyed <state> or <state>.<family>, most specific first, so a hungry watchman and a hungry priest are two different sentences.",
+
+  "tables": [
+
+    { "key": "ward.hungry",
+      "rows": [
+        "Talk if you like. I am thinking about bread.",
+        "On my feet since the bell with nothing in me but tea.",
+        "You are not carrying food, are you. No. Nobody ever is.",
+        "My belly is louder than you are. Say it quickly."
+      ] },
+    { "key": "ward.hungry.serf",
+      "rows": [
+        "Half a shift left and the crib empty. That is the day.",
+        "A man hauls better fed. Nobody has ever agreed with me on that.",
+        "Ask me at supper. I am kinder at supper."
+      ] },
+    { "key": "ward.hungry.watch",
+      "rows": [
+        "Move along. I am hungry, and that makes me thorough.",
+        "Post till dark and the pot gone cold at the guardhouse. Your business, quickly.",
+        "Do not stand in front of a hungry spear. It is a poor habit."
+      ] },
+    { "key": "ward.hungry.clergy",
+      "rows": [
+        "I gave my share to the bunkroom. The right sum, the wrong hour.",
+        "Hunger is honest company. Speak, and I will ignore it.",
+        "The Mission eats last, and today the Mission eats late."
+      ] },
+    { "key": "ward.hungry.trade",
+      "rows": [
+        "Shelves full, purse thin, and I have not sat since dawn.",
+        "I will sell you anything but my dinner, and I have not had that either.",
+        "Be quick. The moment this queue thins I am going to eat."
+      ] },
+    { "key": "ward.hungry.maritime",
+      "rows": [
+        "Ship's biscuit twice and nothing since. Say your piece.",
+        "Salt does not fill a man. Somebody should have told me at fifteen.",
+        "There is a pot at the Bilge with my name on it and no coin under it."
+      ] },
+    { "key": "ward.hungry.wastrel",
+      "rows": [
+        "You buying? No. Nobody is ever buying.",
+        "Two days on tide-wrack and rainwater. I will talk for a crust.",
+        "Look at me and guess what I want. You will have it first go."
+      ] },
+    { "key": "ward.hungry.husbandry",
+      "rows": [
+        "Beasts fed. Me, not yet. That is the order it goes in.",
+        "The goats eat before I do, and they know it.",
+        "Feed-bag is empty both ends of it today."
+      ] },
+
+    { "key": "ward.starving",
+      "rows": [
+        "I have not eaten in days. Say what you came to say.",
+        "There is a ringing in my ears and it is not the bell.",
+        "Ask me for nothing. I have nothing left to give anyone.",
+        "(the words come slowly, and cost something)"
+      ] },
+    { "key": "ward.starving.wastrel",
+      "rows": [
+        "Days now. The gulls eat better on this quay and they know it.",
+        "I would take bread off a dead man. I tell you so you know what I am.",
+        "(he does not look up)"
+      ] },
+    { "key": "ward.starving.clergy",
+      "rows": [
+        "The Flame is warmest to those with nothing. I am testing that.",
+        "I gave the last of it away. I would do it again, and it frightens me.",
+        "Do not tell the bunkroom. They would only share theirs."
+      ] },
+    { "key": "ward.starving.watch",
+      "rows": [
+        "The wage is three weeks late and the pot has been empty for two.",
+        "I am past hungry and into something quieter. State your business."
+      ] },
+
+    { "key": "ward.weary",
+      "rows": [
+        "I have been awake a long while. Be brief and I will thank you.",
+        "Say it twice. The first will not reach me.",
+        "I am standing out of habit, not strength.",
+        "There is a bed with my name on it and I cannot recall where."
+      ] },
+    { "key": "ward.weary.watch",
+      "rows": [
+        "Fourteen hours on this stone. Ask, and ask plainly.",
+        "I am too tired to be careful with you. Consider that.",
+        "Night beat and no relief. Do not be interesting."
+      ] },
+    { "key": "ward.weary.maritime",
+      "rows": [
+        "Two watches end to end, and the tide does not care.",
+        "I can sleep standing. I have done it in worse weather.",
+        "Talk. If I shut my eyes it is not rudeness."
+      ] },
+    { "key": "ward.weary.serf",
+      "rows": [
+        "Rope all day and the crane after. These arms are somebody else's.",
+        "Third double this week. Say it and let me sit.",
+        "I have stopped feeling my hands. That is usually a Tuesday."
+      ] },
+    { "key": "ward.weary.clergy",
+      "rows": [
+        "The night office runs long and the ward wakes early. Both are true.",
+        "I will hear you. I may not remember it.",
+        "Sleep is a mercy I keep recommending and never taking."
+      ] },
+    { "key": "ward.weary.wastrel",
+      "rows": [
+        "Slept an hour under a hull and got moved on twice.",
+        "You try resting where every boot in the ward walks."
+      ] },
+
+    { "key": "ward.homebound",
+      "rows": [
+        "Walking home. Walk with me or say it here.",
+        "Shift is done. Whatever it is, it can be short.",
+        "I am for my own door, and a shut one at that."
+      ] },
+    { "key": "ward.homebound.serf",
+      "rows": [
+        "Done for the day and glad of it. Quickly, then.",
+        "Home, supper, and no more rope until the bell.",
+        "Whatever it is, it will keep till the muster."
+      ] },
+    { "key": "ward.homebound.watch",
+      "rows": [
+        "Relieved, and off the clock. Try the post at the Rise.",
+        "Not my hour any more. Go and be somebody else's trouble.",
+        "Off duty. That means the spear is, too."
+      ] },
+    { "key": "ward.homebound.trade",
+      "rows": [
+        "Shutters up and the till counted. Tomorrow.",
+        "Shut. I would say come back, and I mean it, but not tonight.",
+        "The day rate ended with the day."
+      ] },
+    { "key": "ward.homebound.wastrel",
+      "rows": [
+        "Off to find a dry arch before somebody better at it does.",
+        "My bed is a doorway on the Ropewynd. Do not follow me to it.",
+        "Going where the wind is not. Do not make it a conversation."
+      ] },
+    { "key": "ward.homebound.maritime",
+      "rows": [
+        "Back to the hull before the watch changes.",
+        "Ashore an hour and I have spent it walking. Say on."
+      ] },
+    { "key": "ward.homebound.clergy",
+      "rows": [
+        "To the bunks. The Flame keeps its own hours and so, tonight, do I.",
+        "I am going in. Knock at the Mission and somebody will answer."
+      ] }
+
+  ]
+}

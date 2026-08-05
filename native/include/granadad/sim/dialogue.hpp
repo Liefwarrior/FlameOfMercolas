@@ -123,6 +123,19 @@ struct Speaker {
     std::string rivalTitle;
     /// The trade house he founded over the player's body, or "".
     std::string rivalHouse;
+
+    // --- #79: what does not have words ----------------------------------------
+
+    /// True for a body that answers in stage directions rather than sentences.
+    ///
+    /// ADDED WHEN THE WHOLE WARD BECAME ADDRESSABLE. The Docks holds cats,
+    /// dogs, strays and mice as well as people, and greet.beast is authored in
+    /// the owner's own barks.json for exactly that -- "(it watches you
+    /// sidelong)". What is NOT authored, and would be absurd, is a cat with an
+    /// opinion about the harbourmaster's ledger: every other topic on the list
+    /// assumes somebody who can hold a conversation. So a beast greets, and the
+    /// only thing you may do next is stop bothering it.
+    bool beast = false;
 };
 
 // ---------------------------------------------------------------------------

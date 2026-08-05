@@ -163,6 +163,12 @@ add_library(granadad-sim STATIC
     src/sim/path_finder.cpp
     src/sim/ward_actors.cpp
     src/sim/ward_roster.cpp
+    # #79 -- THE WARD CAN BE SPOKEN TO. Not a second dialogue system: it builds
+    # the flat Speaker sim/dialogue.hpp already runs a conversation from, out of
+    # the owner's own name pools and the twenty-nine of the Forty the roster was
+    # already standing at their authored sites. Listed AFTER ward_roster.cpp
+    # because it implements that file's last bake step.
+    src/sim/ward_voice.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -342,6 +348,12 @@ if(GRANADAD_BUILD_TESTS)
         # the off-shift branch, and a small set of expectations each naming a
         # place, an hour and a reason.
         tests/test_ward_actors.cpp
+        # #79 -- AND WHETHER THE WARD CAN BE SPOKEN TO. Who the roster is
+        # standing at the owner's authored sites, that the name over a
+        # conversation came out of the owner's pools, that three trades do not
+        # say the same sentence, that a starving body says so, and that a cat is
+        # not offered the vanished clerk.
+        tests/test_ward_voice.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 

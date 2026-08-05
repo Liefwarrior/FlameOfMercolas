@@ -446,7 +446,12 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # claim in its own name, and the burglary's stealth beat needing
     # somebody awake in the room to miss it.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=490; \
+    # #79: 490 -> 502. The suite is at 525 with the ward's voice in it (the
+    # opening shot, the names, the moods, and the key that reaches the street),
+    # and the floor moves with it. It is a FLOOR and not an equality on purpose
+    # -- a sprint that adds cases must not have to edit this line -- but a floor
+    # that never moves stops being able to notice a module falling out.
+    GRANADAD_MIN_TESTS=502; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -823,6 +828,29 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: #78's population cases are all registered"; \
+    \
+    for case in \
+        "the owner's notables are the bodies keeping their own authored sites" \
+        "every name in the ward is a row of the owner's own raws" \
+        "the ward's poor go by one name, and its trades carry two" \
+        "a dockhand, a watchman and a priest greet you with three different sentences" \
+        "the same trade at four in the morning is not the same trade at noon" \
+        "a starving body says so, and says it in its own trade's voice" \
+        "the mood a body is in replaces the greeting it would have given" \
+        "a cat answers, and is not asked about the vanished clerk" \
+        "a ward speaker cannot be confused with one of the Gull's" \
+        "the ward's trades talk shop about their own trade" \
+        "pressing the talk key on a street corner reaches the body standing on it" \
+        "the street line reaches three trades and gets three different voices" \
+        "a hand in a ward purse takes the coin off a real body"; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what #79 is judged on -- the whole ward being"; \
+                 echo "       addressable, in the owner's own authored voice, with"; \
+                 echo "       a name over it that came out of his own raws."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: #79's ward-voice cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \
