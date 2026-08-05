@@ -46,6 +46,16 @@ MoveInput walkForward() {
     return input;
 }
 
+/// Forward with the legs' own ramp switched off, so a case that is measuring a
+/// SPEED measures a speed rather than an acceleration. See
+/// MoveInput::snapVelocity: this is what the capture script uses and it is the
+/// pre-#77 behaviour exactly.
+MoveInput walkForwardAtSpeed() {
+    MoveInput input = walkForward();
+    input.snapVelocity = true;
+    return input;
+}
+
 }  // namespace
 
 TEST_CASE("the authored spawn is a place a body can actually stand") {
@@ -79,9 +89,11 @@ TEST_CASE("spawning inside geometry is reported rather than tolerated") {
 TEST_CASE("movement is continuous and sub-tile, not tile-snapped") {
     PlayerBody body = spawned();
     const std::int32_t startY = body.y();
-    body.step(walkForward());
+    body.step(walkForwardAtSpeed());
     // #77: the DEFAULT gait is a jog, not a walk. One step is kJogSpeed/256 of
-    // a tile: the body has moved, and it has NOT jumped a whole tile.
+    // a tile: the body has moved, and it has NOT jumped a whole tile. At SPEED,
+    // deliberately -- the legs have a ramp now and this case is about the grid,
+    // not about the ramp.
     CHECK(body.y() == startY - kJogSpeed);
     CHECK(body.tileY() == kWalkTileY);
     CHECK(body.x() == q8_tile_centre(kWalkTileX));  // due north is pure -Y
@@ -91,13 +103,13 @@ TEST_CASE("the three gaits are ordered and all of them are per step, not per fra
     PlayerBody walker = spawned();
     PlayerBody jogger = spawned();
     PlayerBody sprinter = spawned();
-    MoveInput slow = walkForward();
+    MoveInput slow = walkForwardAtSpeed();
     slow.walk = true;
-    MoveInput fast = walkForward();
+    MoveInput fast = walkForwardAtSpeed();
     fast.sprint = true;
     for (int i = 0; i < 10; ++i) {
         walker.step(slow);
-        jogger.step(walkForward());
+        jogger.step(walkForwardAtSpeed());
         sprinter.step(fast);
     }
     CHECK(walker.y() == q8_tile_centre(kWalkTileY) - 10 * kWalkSpeed);
@@ -112,10 +124,62 @@ TEST_CASE("the three gaits are ordered and all of them are per step, not per fra
     CHECK(sprinter.y() < jogger.y());
 }
 
+TEST_CASE("the legs have mass: a ramp up, a heel to stop, and air control") {
+    // A BODY IS NOT A SWITCH. Before #77 the step you pressed forward you were
+    // at full speed and the step you let go you were stopped, which reads as a
+    // camera on rails. See human_scale.hpp on kAccelSteps and kBrakeSteps.
+    PlayerBody body = spawned();
+    const std::int32_t start = body.y();
+
+    // THE FIRST STEP IS NOT THE FULL STEP.
+    body.step(walkForward());
+    const std::int32_t first = start - body.y();
+    CHECK(first > 0);
+    CHECK(first < kJogSpeed);
+    CHECK(first <= kGroundAccelQ8);
+
+    // AND IT GETS THERE, inside the advertised ramp.
+    std::int32_t previous = first;
+    for (int i = 1; i < kAccelSteps; ++i) {
+        const std::int32_t before = body.y();
+        body.step(walkForward());
+        const std::int32_t moved = before - body.y();
+        REQUIRE(moved >= previous);  // monotonic: no stutter on the way up
+        previous = moved;
+    }
+    CHECK(previous == kJogSpeed);
+
+    // STOPPING IS FASTER THAN STARTING, because it is a heel and not a shove.
+    int coasting = 0;
+    for (int i = 0; i < 4 * kAccelSteps; ++i) {
+        const std::int32_t before = body.y();
+        body.step(MoveInput{});
+        if (before != body.y()) {
+            ++coasting;
+        }
+    }
+    CHECK(coasting > 0);
+    CHECK(coasting <= kBrakeSteps);
+    CHECK(coasting < kAccelSteps);
+
+    // AIR CONTROL IS A FRACTION, not all and not nothing. A jump you cannot
+    // steer is a cutscene and one you can steer completely is a hovercraft.
+    PlayerBody hopper = spawned();
+    REQUIRE(hopper.jump());
+    const std::int32_t airBefore = hopper.y();
+    hopper.step(walkForward());
+    const std::int32_t inAir = airBefore - hopper.y();
+    PlayerBody grounded = spawned();
+    grounded.step(walkForward());
+    const std::int32_t onFoot = grounded.y() == spawned().y() ? 0 : (spawned().y() - grounded.y());
+    CHECK(inAir > 0);
+    CHECK(inAir < onFoot);
+}
+
 TEST_CASE("a diagonal is not faster than a straight line") {
     PlayerBody straight = spawned();
     PlayerBody diagonal = spawned();
-    MoveInput both = walkForward();
+    MoveInput both = walkForwardAtSpeed();
     both.strafe = 1;
 
     // TWENTY STEPS, NOT SIXTY, and #77 is why. The default gait is a jog now --
@@ -126,7 +190,7 @@ TEST_CASE("a diagonal is not faster than a straight line") {
     // the two and turned a real invariant into a measurement of the coastline.
     constexpr int kSteps = 20;
     for (int i = 0; i < kSteps; ++i) {
-        straight.step(walkForward());
+        straight.step(walkForwardAtSpeed());
         diagonal.step(both);
     }
     // Neither of them hit anything: the whole comparison is meaningless if one
@@ -301,7 +365,7 @@ TEST_CASE("the body cannot walk off the quay onto the water") {
     // it has, so it must arrive at the edge and stop dead on the last row.
     PlayerBody body = spawned();
     for (int i = 0; i < 20 * kStepsPerSecond; ++i) {
-        body.step(walkForward());
+        body.step(walkForwardAtSpeed());
     }
     CHECK(body.tileY() == kLastQuayRow);
     CHECK(body.tileX() == kWalkTileX);

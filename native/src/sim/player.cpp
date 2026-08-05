@@ -234,6 +234,9 @@ void PlayerBody::step(const MoveInput& input) noexcept {
         jumpStepsLeft_ = kJumpSteps;
         jumpStepsTotal_ = kJumpSteps;
     }
+    // --- what the legs were ASKED for, before what they are DOING ----------
+    std::int32_t wantX = 0;
+    std::int32_t wantY = 0;
     if (input.forward != 0 || input.strafe != 0) {
         // Direction in Q16, intent in {-1,0,1}, speed in Q8-per-step. The
         // product is Q16*Q8 and comes back to Q8 with one shift, in 64 bits so
@@ -254,15 +257,49 @@ void PlayerBody::step(const MoveInput& input) noexcept {
             scale = 46341;
         }
 
-        const std::int32_t moveX = static_cast<std::int32_t>((dirX * speed * scale) >> 32);
-        const std::int32_t moveY = static_cast<std::int32_t>((dirY * speed * scale) >> 32);
+        wantX = static_cast<std::int32_t>((dirX * speed * scale) >> 32);
+        wantY = static_cast<std::int32_t>((dirY * speed * scale) >> 32);
+    }
 
+    // --- and what they are doing -------------------------------------------
+    //
+    // A BODY HAS MASS. The legs approach the gait they were asked for over
+    // kAccelSteps and drop it over kBrakeSteps, so starting is a shove and
+    // stopping is a heel -- see human_scale.hpp. In the air it is a third of
+    // both, which is enough to steer a jump and not enough to fly one.
+    if (input.snapVelocity) {
+        // No legs. See MoveInput::snapVelocity -- this is the capture script,
+        // and it is the pre-#77 behaviour preserved exactly.
+        velX_ = wantX;
+        velY_ = wantY;
+    } else {
+        const bool airborne = jumpStepsLeft_ > 0;
+        const std::int32_t accel =
+            airborne ? (kGroundAccelQ8 * kAirControlPercent) / 100 : kGroundAccelQ8;
+        const std::int32_t brake =
+            airborne ? (kGroundBrakeQ8 * kAirControlPercent) / 100 : kGroundBrakeQ8;
+        velX_ = approach(velX_, wantX, accel, brake);
+        velY_ = approach(velY_, wantY, accel, brake);
+    }
+
+    if (velX_ != 0 || velY_ != 0) {
         // One axis at a time: a body sliding along a warehouse front keeps its
         // tangential speed instead of stopping dead on the corner.
         const std::int32_t wasX = x_;
         const std::int32_t wasY = y_;
-        moveAxis(moveX, 0);
-        moveAxis(0, moveY);
+        moveAxis(velX_, 0);
+        if (x_ == wasX && velX_ != 0) {
+            // INTO A WALL IS STOPPED, and the velocity has to know. Leaving it
+            // banked means a body that has been pressed against a warehouse for
+            // three seconds shoots sideways at full speed the instant it turns
+            // away, which is a very old bug in a very recognisable costume.
+            velX_ = 0;
+        }
+        const std::int32_t midY = y_;
+        moveAxis(0, velY_);
+        if (y_ == midY && velY_ != 0) {
+            velY_ = 0;
+        }
 
         // --- CONTEXTUAL TRAVERSAL -------------------------------------------
         //
@@ -283,7 +320,8 @@ void PlayerBody::step(const MoveInput& input) noexcept {
         // fails the second clause and the body just stops, which is what a wall
         // is for. The explicit verb key is still bound and still works -- it is
         // the fallback now rather than the only path.
-        if (input.autoTraverse && input.forward > 0 && !input.crouch && x_ == wasX && y_ == wasY) {
+        if (input.autoTraverse && input.forward > 0 && !input.crouch && x_ == wasX &&
+            y_ == wasY) {
             const RoofResult climbed = mantleToward(facing_step(yaw_));
             if (climbed.ok()) {
                 autoMove_ = climbed;
@@ -332,6 +370,27 @@ void PlayerBody::flyJumpStep() noexcept {
     const std::int32_t rise = 4 * kJumpRiseQ8 * done * (jumpStepsTotal_ - done) /
                               (jumpStepsTotal_ * jumpStepsTotal_);
     feetZ_ = floorZ + rise;
+}
+
+std::int32_t PlayerBody::approach(std::int32_t have, std::int32_t want, std::int32_t accel,
+                                  std::int32_t brake) noexcept {
+    if (have == want) {
+        return want;
+    }
+    // SPEEDING UP means the same direction and more of it. Everything else --
+    // slowing, stopping, and above all REVERSING -- is braking, which is why a
+    // body that turns round does it on a planted foot and not on a slide.
+    const bool sameWay = (want > 0 && have >= 0) || (want < 0 && have <= 0);
+    const std::int32_t magnitudeHave = have < 0 ? -have : have;
+    const std::int32_t magnitudeWant = want < 0 ? -want : want;
+    const std::int32_t rate =
+        (want != 0 && sameWay && magnitudeWant > magnitudeHave) ? accel : brake;
+    if (want > have) {
+        const std::int32_t next = have + rate;
+        return next > want ? want : next;
+    }
+    const std::int32_t next = have - rate;
+    return next < want ? want : next;
 }
 
 RoofResult PlayerBody::takeAutoMove() noexcept {
@@ -399,6 +458,8 @@ void PlayerBody::placeAt(std::int32_t tileX, std::int32_t tileY, std::int32_t ba
     jumpStepsLeft_ = 0;
     jumpStepsTotal_ = 0;
     haulStepsLeft_ = 0;
+    velX_ = 0;
+    velY_ = 0;
     autoMove_ = RoofResult{};
     feetZ_ = q8_of_tile(band_);
 }
@@ -645,6 +706,8 @@ std::uint64_t PlayerBody::digest() const noexcept {
     // the same argument the leap's fields are folded in for.
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(jumpStepsLeft_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(haulStepsLeft_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(velX_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(velY_)));
     return mix64(h + static_cast<std::uint64_t>(steps_));
 }
 

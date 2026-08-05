@@ -33,10 +33,18 @@ minutes, and an honest account of what is and is not fun yet.
 
 You spawn on the Tarwalk six tiles off the door of the Gilded Gull, the captains' tavern, at
 eight in the morning, with a case open and one lead in it: a body came up against the outfall
-grate at low tide. `Q` looks at what is in front of you, `J` opens your casebook, `F1` lists
-every key. The trail is twelve leads long, two of them dead ends that are the point, and it
-runs from the Mission's back room to the doors of a warehouse that has been condemned for
-nine years.
+grate at low tide. `Q` looks at what is in front of you, `TAB` opens your casebook, `F1` lists
+every key and `F2` rebinds them. The trail is twelve leads long, two of them dead ends that
+are the point, and it runs from the Mission's back room to the doors of a warehouse that has
+been condemned for nine years.
+
+**It moves like a game made this decade.** WASD and the mouse, shift to sprint and ctrl to
+crouch (both work as a hold *or* a tap), space to jump, a gamepad if one is plugged in, and
+every key rebindable and remembered between runs. **There is no climb key: walk into a ledge
+and you climb it.** The physical numbers are anchored to a real human being through one
+metres-per-tile constant -- 5 m/s at a jog, 7 sprinting, a half-metre jump that gets you onto
+nothing, and a fall curve that is `sqrt(2gh)` rather than a table, so one storey is a knock,
+two is a serious injury and three is more than a person has.
 
 **The district has people in it.** Six hundred and sixty-one of them, on top of the
 Gull's own seventeen -- against the Java build's 692. They sleep in the compounds and the hovels,

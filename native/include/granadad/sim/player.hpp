@@ -328,6 +328,22 @@ struct MoveInput {
     /// start climbing the warehouse it is sliding past, and a case that is
     /// testing collision wants collision.
     bool autoTraverse = true;
+    /// Whether the legs skip their own ramp and are simply AT the gait they
+    /// were asked for this step.
+    ///
+    /// FALSE FOR THE PLAYER, ALWAYS. A body has mass; see kAccelSteps.
+    ///
+    /// TRUE FOR THE CAPTURE SCRIPT, and this flag exists because the first
+    /// version of acceleration cost six scripted lines their beats. That walker
+    /// (render/session.cpp, stepToward) steers by pressing forward one step at a
+    /// time along a compass direction and reading "did the body move" as "is
+    /// that way open" -- so momentum carried from the PREVIOUS direction reads
+    /// to it as the CURRENT direction being clear, and a walker that believes a
+    /// wall is a corridor never arrives. It is a test harness with a stopwatch,
+    /// not a person, and it does not get legs.
+    ///
+    /// Nothing a player can press reaches this.
+    bool snapVelocity = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -492,6 +508,11 @@ private:
     void flyLeapStep() noexcept;
     /// Advances one step of a standing jump, and lands it on the last one.
     void flyJumpStep() noexcept;
+    /// Moves one axis of the velocity toward what the legs were asked for.
+    /// Speeding up uses `accel`; slowing, stopping and reversing use `brake`.
+    [[nodiscard]] static std::int32_t approach(std::int32_t have, std::int32_t want,
+                                               std::int32_t accel,
+                                               std::int32_t brake) noexcept;
     /// Hauls onto the ledge lying in direction `dir`. mantle() is this with the
     /// facing snapped to the compass; the automatic path is this with the
     /// direction the legs were actually pushing.
@@ -543,6 +564,14 @@ private:
     // runs have to agree about.
     std::int32_t jumpStepsLeft_ = 0;
     std::int32_t jumpStepsTotal_ = 0;
+    /// What the legs are actually doing, Q8 per step, per axis.
+    ///
+    /// SIMULATION STATE, and integer, for exactly the reason the position is:
+    /// two runs of the same input have to end up in the same place, and a
+    /// velocity that lived in the client would be a second opinion about where
+    /// the body is going. In the digest with everything else.
+    std::int32_t velX_ = 0;
+    std::int32_t velY_ = 0;
     /// Steps of the mantle's haul still to run. Non-zero locks the legs.
     std::int32_t haulStepsLeft_ = 0;
     /// The traversal the body took on its own, waiting to be read by whoever

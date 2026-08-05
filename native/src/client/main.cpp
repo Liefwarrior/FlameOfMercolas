@@ -19,12 +19,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <limits>
 #include <string>
 
 #include "granadad/content/content_dir.hpp"
 #include "granadad/sim/compound.hpp"
 #include "granadad/render/capture.hpp"
+#include "granadad/render/controls.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/step_pump.hpp"
@@ -113,8 +115,15 @@ struct Options {
     bool wantsSmoke = false;
     bool wantsWindow = true;
     int windowScale = 2;
-    /// Mouse look sensitivity, BAM per mouse count.
+    /// Mouse look sensitivity, BAM per mouse count. Only used when NAMED: the
+    /// settings file is the source of truth, and a command line that always
+    /// overrode it would silently undo the options page on every launch.
     int sensitivity = 14;
+    bool sensitivityGiven = false;
+    bool invertY = false;
+    /// Where the bindings live. Overridable so a capture, a case or a second
+    /// player on the same machine can have their own.
+    std::filesystem::path controlsFile;
 };
 
 [[nodiscard]] bool starts_with(const char* text, const char* prefix, const char** rest) {
@@ -274,7 +283,13 @@ void print_usage() {
             options.smoke.session.spawnYaw = sim::angle_from_degrees(std::atoi(value));
             options.smoke.session.spawnYawGiven = true;
         } else if (starts_with(arg, "--sensitivity=", &value)) {
-            options.sensitivity = std::clamp(std::atoi(value), 1, 200);
+            options.sensitivity =
+                std::clamp(std::atoi(value), render::kMinSensitivity, render::kMaxSensitivity);
+            options.sensitivityGiven = true;
+        } else if (std::strcmp(arg, "--invert-y") == 0) {
+            options.invertY = true;
+        } else if (starts_with(arg, "--controls=", &value)) {
+            options.controlsFile = value;
         } else if (starts_with(arg, "--clock=", &value)) {
             options.smoke.session.clockScale = std::clamp(std::atoi(value), 1, 3600);
         } else if (std::strcmp(arg, "--hold") == 0) {
@@ -1105,7 +1120,14 @@ int run_client(const Options& options) {
                     // see the keys page. A player who wants their cursor back
                     // is almost always a player who wants to alt-tab, and
                     // alt-tab already works.
-                    if (key == render::Key::F3) {
+                    //
+                    // AND IT YIELDS TO A BINDING. F3 is unbound by default, so
+                    // this is free; the moment somebody binds a verb to it, the
+                    // verb wins and the window keeps the mouse. A hard-coded key
+                    // that quietly outranks the rebinding screen is the exact
+                    // shape of bug the rest of this task was about.
+                    if (key == render::Key::F3 &&
+                        session.controls().actionFor(key) == render::Action::Count) {
                         mouseLook = !mouseLook;
                         SDL_SetWindowRelativeMouseMode(window, mouseLook);
                         break;
@@ -1212,7 +1234,7 @@ int run_client(const Options& options) {
             if (move.x != 0 || move.y != 0) {
                 held.strafe += render::stickIntent(move.x);
                 held.forward -= render::stickIntent(move.y);  // stick +y is down
-                const std::int64_t magnitude = render::isqrtMagnitude(move.x, move.y);
+                const std::int64_t magnitude = render::stickMagnitude(move);
                 const std::int64_t percent = magnitude * 100 / render::kStickMax;
                 if (percent >= render::kAnalogueSprintPercent) {
                     held.sprint = true;

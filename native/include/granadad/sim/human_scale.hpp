@@ -334,6 +334,42 @@ static_assert(kCrouchSpeed < kWalkSpeed && kWalkSpeed < kJogSpeed &&
 static_assert(kCrouchSpeed * 2 <= kJogSpeed,
               "crouching has to cost at least half your speed or it is free");
 
+// --- getting up to speed, and stopping ---------------------------------------
+//
+// A BODY HAS MASS. Until #77 the legs were a switch: the step you pressed
+// forward you were at full speed, and the step you let go you were stopped. That
+// reads as a camera on rails rather than as a person, and it is half of what
+// people mean when they say movement feels "floaty" or "robotic" -- the other
+// half being that it never stops feeling identical however fast you are going.
+//
+// ACCELERATION IS SLOWER THAN BRAKING, deliberately, and that is not a
+// compromise -- it is what bodies do. Getting a body up to 7 m/s takes work;
+// stopping one takes a heel. Making them symmetric is the classic way to end up
+// with movement that skates.
+//
+// BOTH ARE SHORT. A tenth of a second up and a twentieth down. Long ramps are
+// how a game ends up feeling like it is played through treacle, and the
+// complaint that started this task was that the game felt archaic.
+
+/// Movement steps to reach the gait that was asked for, from a standing start.
+/// 7 at 60 Hz is a shade under a tenth of a second.
+inline constexpr std::int32_t kAccelSteps = 7;
+
+/// Movement steps to stop, or to reverse. Two: you plant a foot.
+inline constexpr std::int32_t kBrakeSteps = 2;
+
+/// Q8 per step per step. Quoted off the SPRINT, so every gait takes the same
+/// share of the same ramp and changing gait does not change how the legs feel.
+inline constexpr std::int32_t kGroundAccelQ8 = (kSprintSpeed + kAccelSteps - 1) / kAccelSteps;
+inline constexpr std::int32_t kGroundBrakeQ8 = (kSprintSpeed + kBrakeSteps - 1) / kBrakeSteps;
+static_assert(kGroundBrakeQ8 > kGroundAccelQ8,
+              "a body that stops slower than it starts is a body on ice");
+
+/// What share of that a body in the air gets. AIR CONTROL, and there has to be
+/// some: a jump you cannot steer at all is a cutscene, and one you can steer
+/// completely is a hovercraft. A third is where most games sit.
+inline constexpr std::int32_t kAirControlPercent = 35;
+
 /// The jump, in the BAND-RELATIVE Q8 the feet are measured on, and how many
 /// movement steps it is in the air. 500 mm is 47/256 of a band; the hang time is
 /// gravity's and comes to 38 steps, a shade under two thirds of a second.

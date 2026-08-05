@@ -338,6 +338,128 @@ TEST_CASE("the body climbs onto the Gull's roof and the frame goes up with it") 
     CHECK(body.takeFallBands() == 0);
 }
 
+TEST_CASE("walking into the ledge climbs it, with nobody pressing a verb key") {
+    // THE HEADLINE OF #77. Eli played the build and said the movement was
+    // "unnecessarily archaic"; the single most archaic thing in it was that the
+    // only way onto anything was to stop, line the wall up by eye, and press a
+    // key no other game binds. A player who simply walked at a ledge got a body
+    // stuck against masonry and no indication that climbing existed.
+    //
+    // Same spot the explicit case above uses: the Gull's guest floor, facing the
+    // north wall, with the lead one band over it.
+    const TileQuery tiles(docksWorld());
+    PlayerBody body(tiles, 150, 67, gull::kUpperBand, kFacingNorth);
+    REQUIRE(body.spawnedLegally());
+
+    MoveInput forward;
+    forward.forward = 1;
+    // IT HAPPENS WHILE YOU ARE STILL WALKING, and that is the assertion. The
+    // body starts at the centre of its tile, so the legs have to carry it to the
+    // wall before there is anything to grip -- with the ramp in
+    // human_scale.hpp that is a handful of steps, well under a fifth of a
+    // second. What must NOT happen is that it takes a key, or that it takes so
+    // long the player has stopped and gone looking for one.
+    RoofResult again;
+    int steps = 0;
+    while (steps < kStepsPerSecond / 4 && !again.ok()) {
+        body.step(forward);
+        ++steps;
+        again = body.takeAutoMove();
+    }
+    INFO("steps of walking before the climb: " << steps);
+
+    REQUIRE(again.ok());
+    CHECK(again.bands == 1);
+    CHECK(body.band() == gull::kRoofBand);
+    CHECK(body.tileY() == gull::kFootprintY0);
+    CHECK(body.takeFallBands() == 0);
+    // READ ONCE. Whoever charges the climb reads it on the step it happened and
+    // it is gone; a result that stayed would be charged again every frame.
+    CHECK_FALSE(body.takeAutoMove().ok());
+}
+
+TEST_CASE("a climb is a climb: it costs time, and it does not become a lift") {
+    const TileQuery tiles(docksWorld());
+    PlayerBody body(tiles, 150, 67, gull::kUpperBand, kFacingNorth);
+    REQUIRE(body.mantle().ok());
+
+    // A 2.7 m WALL TAKES A SECOND AND BOTH HANDS. human_scale.hpp's
+    // kVaultReachMm is 1,350 -- chest height, one hand and a knee, instant --
+    // and a band is twice that. So the band changes at once (the simulation is
+    // never half inside a wall) and the LEGS are locked while the eye rises.
+    CHECK(body.hauling());
+    MoveInput forward;
+    forward.forward = 1;
+    const std::int32_t heldAt = body.y();
+    for (int i = 0; i < kHaulSteps - 1; ++i) {
+        body.step(forward);
+        REQUIRE(body.hauling());
+    }
+    CHECK(body.y() == heldAt);  // not one Q8 of walking during the haul
+    body.step(forward);
+    CHECK_FALSE(body.hauling());
+    // And the eye has arrived: the haul is exactly as long as the ease.
+    CHECK(body.feetZ() == q8_of_tile(body.band()));
+
+    // A SECOND CLIMB CANNOT START INSIDE THE FIRST. Without this an automatic
+    // climb against a stack of ledges would fire four times in a tenth of a
+    // second and read as a lift shaft.
+    PlayerBody stack(tiles, 150, 67, gull::kUpperBand, kFacingNorth);
+    REQUIRE(stack.mantle().ok());
+    CHECK_FALSE(stack.mantle().ok());
+}
+
+TEST_CASE("contextual traversal does not fire on anything a player did not mean") {
+    const TileQuery tiles(docksWorld());
+    MoveInput forward;
+    forward.forward = 1;
+
+    // NOT WHEN STRAFING INTO IT. Climbing sideways is not a thing.
+    {
+        PlayerBody body(tiles, 150, 67, gull::kUpperBand, kFacingNorth);
+        MoveInput sideways;
+        sideways.strafe = 1;
+        for (int i = 0; i < 8; ++i) {
+            body.step(sideways);
+        }
+        CHECK(body.band() == gull::kUpperBand);
+    }
+    // NOT WHEN CROUCHED. You are hiding, not vaulting.
+    {
+        PlayerBody body(tiles, 150, 67, gull::kUpperBand, kFacingNorth);
+        MoveInput sneaking = forward;
+        sneaking.crouch = true;
+        for (int i = 0; i < 20; ++i) {
+            body.step(sneaking);
+        }
+        CHECK(body.band() == gull::kUpperBand);
+    }
+    // NOT WHEN THE CALLER SAID NOT TO. The capture script steers by walking
+    // into walls to find out where they are; it must not climb the warehouse it
+    // is probing.
+    {
+        PlayerBody body(tiles, 150, 67, gull::kUpperBand, kFacingNorth);
+        MoveInput probing = forward;
+        probing.autoTraverse = false;
+        for (int i = 0; i < 20; ++i) {
+            body.step(probing);
+        }
+        CHECK(body.band() == gull::kUpperBand);
+    }
+    // AND NOT UP A WALL WITH NO TOP. A two-storey warehouse front is a wall,
+    // and walking at it has to stay walking at a wall -- otherwise contextual
+    // traversal is just flying with extra steps.
+    {
+        // Inside the taproom, facing the open room: nothing to grip at all.
+        PlayerBody body(tiles, 152, 69, gull::kGroundBand, kFacingNorth);
+        REQUIRE(body.spawnedLegally());
+        for (int i = 0; i < 40; ++i) {
+            body.step(forward);
+        }
+        CHECK(body.band() == gull::kGroundBand);
+    }
+}
+
 TEST_CASE("a body facing nothing to climb is told which clause refused it") {
     const TileQuery tiles(docksWorld());
 

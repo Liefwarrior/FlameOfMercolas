@@ -2134,9 +2134,13 @@ namespace {
 [[nodiscard]] bool stepToward(Session& session, std::int32_t goalX, std::int32_t goalY) {
     const std::int32_t dx = goalX - session.body().x();
     const std::int32_t dy = goalY - session.body().y();
-    // An eighth of a tile of slop, not a half. Half a tile leaves the eye
+    // A QUARTER of a tile of slop, not a half. Half a tile leaves the eye
     // pressed against the next cell's face, and a capture framed from there is
     // a photograph of a wall -- which is what the first version of this made.
+    //
+    // AN EIGHTH, still: this walker sets MoveInput::snapVelocity, so it has no
+    // momentum to glide past its own goal on and the S5 framing argument above
+    // stands unchanged.
     const std::int32_t tolerance = sim::kSubOne / 8;
     const bool closeX = dx > -tolerance && dx < tolerance;
     const bool closeY = dy > -tolerance && dy < tolerance;
@@ -2170,6 +2174,11 @@ namespace {
         // photograph the wrong district from the wrong height. A player walking
         // at a ledge means "get me up there"; this loop means "is there a wall".
         input.autoTraverse = false;
+        // AND IT HAS NO LEGS EITHER. Same reason and the same sentence: this
+        // loop reads "did the body move" as "is that way open", and momentum
+        // from the last direction would answer for the next one. See
+        // MoveInput::snapVelocity.
+        input.snapVelocity = true;
         session.step(input);
         if (session.body().x() != beforeX || session.body().y() != beforeY) {
             return false;
