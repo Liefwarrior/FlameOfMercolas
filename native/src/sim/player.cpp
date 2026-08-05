@@ -43,9 +43,14 @@ std::string_view roofMoveName(RoofMove move) noexcept {
 
 std::int32_t safeDropBands(std::int32_t skyrunningLevel, bool taughtByTheRoofs) noexcept {
     // One band free to anybody, a second at journeyman skyrunning, and a third
-    // only to somebody the roofs have shown where to land. Capped at the
-    // deepest fall the geometry allows, so "safe" can never mean "no fall is a
-    // fall".
+    // only to somebody the roofs have shown where to land.
+    //
+    // CAPPED AT kMaxSafeDropBands, NOT kMaxDropBands. The old cap was the
+    // deepest fall the geometry allows, which was harmless when a band was one
+    // tile and is not now: three bands is 8.2 m, and a rule that hands the best
+    // roof-runner an 8.2 m drop for nothing has stopped being a skill. Two
+    // bands is the ceiling, so the deepest drop in the district costs
+    // everybody something. See player.hpp on both constants.
     std::int32_t bands = kSafeDropBands;
     if (skyrunningLevel >= 10) {
         bands += 1;
@@ -53,7 +58,7 @@ std::int32_t safeDropBands(std::int32_t skyrunningLevel, bool taughtByTheRoofs) 
     if (taughtByTheRoofs) {
         bands += 1;
     }
-    return bands > kMaxDropBands ? kMaxDropBands : bands;
+    return bands > kMaxSafeDropBands ? kMaxSafeDropBands : bands;
 }
 
 std::int32_t leapReachTiles(std::int32_t skyrunningLevel, bool taughtByTheRoofs) noexcept {

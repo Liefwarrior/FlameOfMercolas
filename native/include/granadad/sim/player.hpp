@@ -39,6 +39,7 @@
 
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/tile_query.hpp"
+#include "granadad/sim/vertical_scale.hpp"
 
 namespace granadad::sim {
 
@@ -54,8 +55,20 @@ inline constexpr std::int32_t kStepsPerSecond = 60;
 /// side and cannot squeeze a diagonal gap between two wall corners.
 inline constexpr std::int32_t kBodyRadius = 90;
 
-/// Eye height above the surface the body stands on, Q8.
-inline constexpr std::int32_t kEyeHeight = 205;
+/// Eye height above the surface the body stands on, in the BAND-RELATIVE Q8 of
+/// this file's z axis: 256 here is one whole band, not one tile.
+///
+/// DERIVED, NEVER TYPED. The height of a person is a fact about people and it
+/// is stated once, in tiles, in sim/vertical_scale.hpp. This is that fact
+/// converted into the axis feetZ_ happens to be measured on, and the conversion
+/// is exact: 435 / 3 == 145, and 145 * 3 == 435 back again.
+///
+/// IT USED TO BE 205 and that was the whole of Eli's complaint. 205/256 is 0.80
+/// of a band, and a band was being drawn one tile tall, so the eye stood 0.72 m
+/// off the ground and looked DOWN on the parapet of a two-storey warehouse.
+inline constexpr std::int32_t kEyeHeight = kEyeHeightTilesQ8 / kTilesPerBand;
+static_assert(kEyeHeight * kTilesPerBand == kEyeHeightTilesQ8,
+              "the eye must sit at the same height whichever axis you ask on");
 
 /// Walk and run speed, Q8 per step. 11 -> 660 Q8/s -> 2.58 tiles a second;
 /// 18 -> 4.22 tiles a second. Deliberately unhurried: a warehouse front is
@@ -70,10 +83,20 @@ inline constexpr std::int32_t kRunSpeed = 18;
 inline constexpr Angle kTurnRate = 197;
 
 /// How far the eye climbs or falls toward the surface of a new band per step,
-/// Q8. A band change is a whole tile of height; at 16 per step that is a
-/// sixteenth of a second of smoothing — enough that a kerb does not snap, not
-/// enough to feel like an elevator.
-inline constexpr std::int32_t kEyeEaseRate = 16;
+/// band-relative Q8.
+///
+/// HALVED WHEN THE STOREY GREW. This used to be 16, which crossed a band in 16
+/// steps — a quarter of a second, and fine when a band was one tile. A band is
+/// three tiles now (vertical_scale.hpp), so the old rate would lift the eye
+/// ELEVEN TILES A SECOND, four times as fast as the body walks. Every ramp on
+/// Saltgate Rise would have read as a lift shaft.
+///
+/// At 8 a band takes 32 steps, just over half a second: 5.6 tiles a second, a
+/// brisk flight of stairs. There is no getting away from a band change being a
+/// whole storey — the map authors one stair cell per storey and the walking
+/// rule steps one band at a time — so the honest thing is to make it look like
+/// a climb rather than to pretend it is a kerb.
+inline constexpr std::int32_t kEyeEaseRate = 8;
 
 /// Longest single-axis displacement resolved without substepping, Q8. Anything
 /// larger is split, so tunnelling is impossible by construction rather than by
@@ -108,12 +131,44 @@ inline constexpr Angle kMaxPitch = kTurnQuarter - 512;
 // step does, and none of them rolls a die: what a skill buys is REACH and a
 // SAFE HEIGHT, never a chance.
 
+// WHAT A BAND IS WORTH IN METRES, restated here because these three constants
+// are counted in BANDS and a band stopped being a kerb.
+//
+// vertical_scale.hpp makes a band three tiles, and a tile about 0.9 m, so:
+//
+//     1 band  =  ~2.7 m  — off a shed roof, land on your feet
+//     2 bands =  ~5.5 m  — off a first-floor window, land badly
+//     3 bands =  ~8.2 m  — off the Gull's roof into the alley
+//
+// None of the GEOMETRY below moved when the storey grew: the map is the same
+// map, the fill in test_roofrun.cpp counts the same cells, and the pinned
+// reachability numbers in docks.hpp are untouched on purpose. What moved is
+// what a fall COSTS, because the same three bands now describe a fall three
+// times as long.
+
 /// Levels a body may fall in one drop before there is simply nothing under it.
+/// Three, and deliberately unchanged: it is the reach of the landingBand search
+/// that decides which roofs join up, and every reachability count in docks.hpp
+/// is derived from it.
 inline constexpr std::int32_t kMaxDropBands = 3;
 
 /// Levels a body may fall without being hurt, before any guild has shown it
-/// where to put its feet. One: a kerb is free, a storey is not.
+/// where to put its feet. One, and it is no longer free money: one band is
+/// 2.7 m, which is a drop you take on your feet with your knees bent and not a
+/// step off a kerb.
 inline constexpr std::int32_t kSafeDropBands = 1;
+
+/// The most bands ANY body may fall unhurt, however good it is on the roofs.
+///
+/// NEW WHEN THE STOREY GREW, and it is the correction that matters most. The
+/// old cap was kMaxDropBands, so a skyrunner at level 10 whom the roofs had
+/// taught walked away from a three-band drop for nothing — 8.2 m, which is a
+/// fall that breaks people. Two bands (5.5 m) is the ceiling now: the deepest
+/// drop the geometry allows always hurts somebody, which is the difference
+/// between a skill and a cheat.
+inline constexpr std::int32_t kMaxSafeDropBands = 2;
+static_assert(kMaxSafeDropBands < kMaxDropBands,
+              "the deepest fall in the district must never be free");
 
 /// How far a running leap carries, in tiles, before any guild teaching. Three
 /// is measured, not guessed: the alley between the Gilded Gull's roof and its
@@ -126,9 +181,14 @@ inline constexpr std::int32_t kLeapReachTiles = 3;
 /// jump, slow enough to see the street go past underneath.
 inline constexpr std::int32_t kLeapStepsPerTile = 8;
 
-/// How high the arc of a leap lifts the feet at its top, Q8. Cosmetic in the
-/// sense that nothing collides against it, simulation state in the sense that
-/// it is integer and it is in the digest.
+/// How high the arc of a leap lifts the feet at its top, band-relative Q8.
+/// Cosmetic in the sense that nothing collides against it, simulation state in
+/// the sense that it is integer and it is in the digest.
+///
+/// LEFT ALONE WHEN THE STOREY GREW, and that is a decision rather than an
+/// oversight: 56/256 of a band was a 0.20 m hop when a band was one tile, and
+/// the same number is a 0.60 m lift now, which is what a running jump off a
+/// roof actually looks like. The scale change fixed this constant for free.
 inline constexpr std::int32_t kLeapArcQ8 = 56;
 
 /// What a roof move did, or why it did not.

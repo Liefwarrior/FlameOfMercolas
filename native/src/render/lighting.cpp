@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "granadad/sim/vertical_scale.hpp"
+
 namespace granadad::render {
 
 namespace {
@@ -14,7 +16,22 @@ constexpr Rgb kLanternColour{1.00F, 0.82F, 0.58F};
 /// A lamp lights the level it sits on and its immediate neighbours; vertical
 /// distance counts for more than horizontal so a lamp does not shine through
 /// two floors.
-constexpr float kVerticalWeight = 2.2F;
+///
+/// THE WEIGHT IS NOW THE TRUTH RATHER THAN A FUDGE. It was 2.2 — a made-up
+/// number whose only job was to stop a lamp bleeding through a ceiling back
+/// when a level was drawn one tile tall and honest geometry would have said
+/// 1.0. A level is three tiles now (sim/vertical_scale.hpp), so the distance
+/// from a lamp to the cell above it really is three tiles, and saying so is
+/// both simpler and stricter than the fudge was.
+///
+/// What it costs: the glow no longer carries two levels. A lamp's own falloff
+/// radius tops out at 5.5 tiles (falloffOf), so dz = 2 is 6.0 tiles away and
+/// drops out entirely, and dz = 1 keeps about 4.6 tiles of horizontal spread.
+/// That is the right answer — a lantern on the quay should light the wall it
+/// hangs on and the first floor above it, and should NOT light the roof slum
+/// two storeys up. kVerticalReach stays at 2 because it is the loop bound the
+/// falloff is evaluated inside, not a claim that the light gets there.
+constexpr float kVerticalWeight = static_cast<float>(sim::kTilesPerBand);
 constexpr std::int32_t kVerticalReach = 2;
 
 [[nodiscard]] float smoothstep(float edge0, float edge1, float x) {

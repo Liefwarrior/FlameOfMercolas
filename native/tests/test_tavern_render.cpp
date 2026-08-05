@@ -178,7 +178,7 @@ TEST_CASE("sprite pixels and people are counted apart") {
         SpriteInstance flame;
         flame.x = static_cast<float>(light.x) + 0.5F;
         flame.y = static_cast<float>(light.y) + 0.5F;
-        flame.z = static_cast<float>(light.z) + 0.5F;
+        flame.z = bandSurface(light.z) + 1.20F;
         flame.halfWidth = 0.18F;
         flame.halfHeight = 0.24F;
         flame.colour = Rgb{1.0F, 0.6F, 0.25F};

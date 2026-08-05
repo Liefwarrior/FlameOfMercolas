@@ -462,11 +462,19 @@ TEST_CASE("what a skill and a guild buy is reach and a safe height, never a chan
     CHECK(safeDropBands(0, false) == kSafeDropBands);
     CHECK(safeDropBands(10, false) == kSafeDropBands + 1);
     CHECK(safeDropBands(0, true) == kSafeDropBands + 1);
-    CHECK(safeDropBands(40, true) == kMaxDropBands);
-    // Monotonic, and never past what the geometry allows.
+    // The best roof-runner alive stops at kMaxSafeDropBands, which is STRICTLY
+    // SHORTER than the deepest drop the geometry allows. That gap is the point:
+    // a band is 2.7 m now, so a three-band fall is 8.2 m, and a rule that
+    // handed anybody an 8.2 m drop for free would have stopped being a skill.
+    CHECK(safeDropBands(40, true) == kMaxSafeDropBands);
+    // Monotonic, and never past what any pair of legs can take.
     for (std::int32_t level = 0; level <= 100; ++level) {
         REQUIRE(safeDropBands(level, false) <= safeDropBands(level, true));
-        REQUIRE(safeDropBands(level, true) <= kMaxDropBands);
+        REQUIRE(safeDropBands(level, true) <= kMaxSafeDropBands);
+    }
+    // The deepest fall in the district is never free, for anybody, ever.
+    for (std::int32_t level = 0; level <= 100; ++level) {
+        REQUIRE(safeDropBands(level, true) < kMaxDropBands);
     }
     CHECK(leapReachTiles(0, false) == kLeapReachTiles);
     CHECK(leapReachTiles(0, true) == kLeapReachTiles + 1);
@@ -667,10 +675,12 @@ TEST_CASE("the room charges a landing: the craft, the fall, the roof and the tal
     CHECK(talk.crimes().tally(Crime::RoofRun) == 1);
 
     // And a fall past what untaught legs can take costs hit points. Two bands
-    // fallen, one of them free.
+    // fallen, one of them free -- and a band is three tiles now, so the one
+    // band over is 2.7 m further than the legs can take and costs 24 rather
+    // than the 12 it cost when a band was a kerb.
     REQUIRE(safeDropBands(talk.skills().level(kRoofSkill), false) == kSafeDropBands);
     const Tavern::LandingResult down =
         gull.settleLanding(RoofResult{RoofMove::Done, 2, 0}, 2, gull::kGroundBand);
-    CHECK(down.hurt == 12);
-    CHECK(gull.playerHp() == hpBefore - 12);
+    CHECK(down.hurt == 24);
+    CHECK(gull.playerHp() == hpBefore - 24);
 }

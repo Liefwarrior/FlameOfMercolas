@@ -121,14 +121,30 @@ TEST_CASE("the Docks render to a frame with a world in it") {
     Framebuffer frame(320, 180);
     const FrameStats stats = session.drawFrame(frame);
 
-    // Something was drawn, and it was not the whole screen or none of it: from
-    // Tarwalk facing north you see the quay and the piers below the horizon and
-    // open sky above.
+    // Something was drawn.
     CHECK(stats.worldPixels > 8000);
-    CHECK(stats.skyPixels > 3000);
     // (S1 also asserted worldPixels + skyPixels == w*h here. That is an
     // identity -- world_renderer.cpp defines skyPixels as w*h - worldPixels --
     // so it could not fail. Removed rather than kept as decoration.)
+    //
+    // THE SKY MOVED OUT OF THIS FRAME IN polish-1 AND THAT IS THE FIX WORKING.
+    //
+    // This case used to assert skyPixels > 3000 and `the top twelve rows are
+    // under 5% world` from the authored spawn, and both passed for a bad
+    // reason: a storey was one tile tall, so the Gilded Gull's frontage six
+    // tiles across the Tarwalk topped out BELOW the eye line and you could see
+    // over the whole district from the pavement.
+    //
+    // A storey is three tiles now (sim/vertical_scale.hpp). That frontage is
+    // three storeys and a roof-slum plane above it, so it stands about 9 tiles
+    // -- 8 m -- out of a street 5.5 m wide, and the top of it is 50 degrees up
+    // from an eye with a 29-degree half-frame. It fills the view, the way the
+    // wall of a real warehouse fills the view when you stand under it. A test
+    // that demands sky from that spot is a test demanding the bug back.
+    //
+    // So the two halves of the original claim are now asked of the two frames
+    // that can honestly answer them: the level frame still owes us ground under
+    // our feet, and a frame that LOOKS UP still owes us sky.
 
     // It is a lit scene with depth, not a flat fill.
     CHECK(stats.distinctColours > 200);
@@ -153,10 +169,9 @@ TEST_CASE("the Docks render to a frame with a world in it") {
                static_cast<float>(frame.width() * (y1 - y0));
     };
     // Standing on a street with the eye level: the deck fills the bottom of the
-    // frame and there is nothing but sky at the very top.
+    // frame. Whatever else changes about the district's height, the paving
+    // under your own boots does not go anywhere.
     CHECK(worldFraction(150, 180) > 0.99F);
-    CHECK(worldFraction(0, 12) < 0.05F);
-    CHECK(worldFraction(150, 180) > worldFraction(0, 12));
 
     // Every pixel that is world has a finite depth; every sky pixel does not.
     std::size_t finite = 0;
@@ -166,6 +181,88 @@ TEST_CASE("the Docks render to a frame with a world in it") {
         }
     }
     CHECK(finite == stats.worldPixels);
+
+    // THE PROJECTION IS THE RIGHT WAY UP, checked on the ground rather than on
+    // the sky, so that it stays a fact about the projection and not a fact
+    // about how tall the buildings happen to be. Paving runs AWAY from you as
+    // your eye climbs the frame: the pixel at your boots is nearer than the
+    // pixel most of the way up toward the horizon. A flipped frame reverses it.
+    const float atBoots = frame.depth()[frame.index(160, 178)];
+    const float towardHorizon = frame.depth()[frame.index(160, 100)];
+    REQUIRE(std::isfinite(atBoots));
+    REQUIRE(std::isfinite(towardHorizon));
+    CHECK(atBoots < towardHorizon);
+
+    // AND NOW LOOK UP. Seventy degrees of pitch clears anything the Docks has:
+    // the tallest thing in the baked district is the roof-slum plane four bands
+    // over the quay, twelve tiles, and a frontage six tiles away would have to
+    // stand sixteen tiles proud of the eye to reach the top of this frame. So
+    // the sky is up there, and this is the half of the original claim that
+    // survives -- asked of a camera that can honestly answer it.
+    session.body().setPitch(sim::angle_from_degrees(70));
+    Framebuffer looking(320, 180);
+    const FrameStats up = session.drawFrame(looking);
+    CHECK(up.skyPixels > 3000);
+
+    std::size_t skyAtTop = 0;
+    for (int y = 0; y < 12; ++y) {
+        for (int x = 0; x < looking.width(); ++x) {
+            if (!std::isfinite(looking.depth()[looking.index(x, y)])) {
+                ++skyAtTop;
+            }
+        }
+    }
+    CHECK(skyAtTop > static_cast<std::size_t>(looking.width() * 12) * 9 / 10);
+}
+
+TEST_CASE("a storey is three tiles tall and the eye is a person's eye inside it") {
+    // THE CASE ELI'S COMPLAINT DESERVED. "All buildings only appear to be one
+    // tile high" was true and nothing in 469 tests said so, because every
+    // height in the build was a level number cast to a float and the projection
+    // agreed with itself all the way down.
+    //
+    // These are the numbers that make a district read as a city. They are
+    // arithmetic, not pixels, so they cannot rot the way a screenshot does.
+    CHECK(sim::kTilesPerBand == 3);
+    CHECK(kBandHeight == doctest::Approx(3.0F));
+
+    // A level's walking surface is three tiles above the one below it, so the
+    // WALL that spans a level is three tiles of side face. One tile was the
+    // crawlspace.
+    CHECK(bandSurface(20) - bandSurface(19) == doctest::Approx(3.0F));
+
+    // The body's z axis counts BANDS in Q8 and the renderer's counts TILES, and
+    // the eye has to be at the same height on both. 435/256 = 1.70 tiles.
+    CHECK(sim::kEyeHeight * sim::kTilesPerBand == sim::kEyeHeightTilesQ8);
+    Session session(docksAt(20));
+    const Camera view = session.camera();
+    const float feet = bandSurface(session.body().band());
+    CHECK(view.z - feet == doctest::Approx(1.70F).epsilon(0.01));
+
+    // AND THE WHOLE POINT: the eye stands well under the top of the single
+    // storey it is inside. It used to stand 0.80 of the way up it, which is why
+    // a two-storey warehouse read as a garden wall.
+    CHECK(view.z < bandSurface(session.body().band() + 1));
+    CHECK(bandSurface(session.body().band() + 1) - view.z > 1.0F);
+
+    // People are people-sized against the same scale. The tallest billboard an
+    // actor is made of must reach near the player's own eye -- a district of
+    // knee-high figures would have made the buildings look right and everything
+    // else look like a diorama.
+    const std::vector<SpriteInstance> people = session.actorSprites();
+    if (!people.empty()) {
+        // Each part measured against the floor of the level it is standing on,
+        // not against the player's -- the Gull's people are spread over the
+        // taproom and the guest floor above it, and a head three tiles higher
+        // than the eye is a person upstairs, not a giant.
+        float crown = 0.0F;
+        for (const SpriteInstance& part : people) {
+            const auto level = static_cast<std::int32_t>(std::floor(part.z / kBandHeight));
+            crown = std::max(crown, part.z + part.halfHeight - bandSurface(level));
+        }
+        CHECK(crown > 1.5F);
+        CHECK(crown < 2.3F);
+    }
 }
 
 TEST_CASE("noon is brighter than midnight, on the same geometry") {
@@ -210,7 +307,9 @@ TEST_CASE("a lamp in view draws a flame, and a lamp behind you does not") {
     SpriteInstance flame;
     flame.x = static_cast<float>(target->x) + 0.5F;
     flame.y = static_cast<float>(target->y) + 0.5F;
-    flame.z = static_cast<float>(target->z) + 0.62F;
+    // bandSurface(), like every other height in the build: a level is
+    // kBandHeight tiles tall and `target->z` is a level number, not a height.
+    flame.z = bandSurface(target->z) + 1.90F;
     flame.colour = Rgb{1.0F, 0.85F, 0.6F};
     flame.glow = 1.0F;
     const std::vector<SpriteInstance> one{flame};

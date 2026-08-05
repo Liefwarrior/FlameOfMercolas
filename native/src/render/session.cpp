@@ -1236,7 +1236,11 @@ std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
         // position between two tiles is the sim's, not the renderer's.
         const float px = static_cast<float>(actor.x()) / 256.0F;
         const float py = static_cast<float>(actor.y()) / 256.0F;
-        const float floorZ = static_cast<float>(actor.band());
+        // Through bandSurface(), not straight off the band number. A band is
+        // three tiles of height now (sim/vertical_scale.hpp) and an actor whose
+        // feet were placed at `band` stood a full two storeys below the floor
+        // they were walking on.
+        const float floorZ = bandSurface(actor.band());
         const bool down = actor.activity() == sim::Activity::Downed;
         const float build = look.build;
 
@@ -1263,15 +1267,33 @@ std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
             sprites.push_back(sprite);
         };
 
+        // THE FIGURE IS 1.875 TILES TALL, which is kStandingHeightTilesQ8 (480
+        // Q8) out of sim/vertical_scale.hpp, the same header the player's own
+        // eye height comes from. At roughly 0.9 m to the tile that is a 1.71 m
+        // adult, and the crown lands a hand above the player's 1.70-tile eye —
+        // so you look people in the mouth, which is correct and is the cheapest
+        // proof the two scales agree.
+        //
+        // THEY DID NOT AGREE BEFORE. Every one of these heights used to be
+        // about half what it is now: legs at 0.20, head at 0.83, a figure 0.93
+        // of a tile from sole to crown. That was in scale with a district whose
+        // storeys were one tile high, and it is why nothing in a frame gave the
+        // eye anything to judge a building against. Tripling the storey without
+        // this block would have left the Docks full of knee-high people.
+        //
+        // The widths grew too, and by less: shoulders at 0.50 of a tile (0.45 m)
+        // inside a collision square 0.70 of a tile across, which is a person
+        // shaped like a person instead of the near-square blob the half-height
+        // version had to be to read at all.
         if (down) {
             // Flat out on the boards, and wide instead of tall.
-            part(0.10F, 0.34F * build, 0.11F * build, look.torso);
-            part(0.13F, 0.11F * build, 0.09F * build, look.head);
+            part(0.20F, 0.68F * build, 0.22F * build, look.torso);
+            part(0.26F, 0.22F * build, 0.18F * build, look.head);
             continue;
         }
-        part(0.20F, 0.17F * build, 0.20F * build, look.legs);
-        part(0.55F, 0.21F * build, 0.20F * build, look.torso);
-        part(0.83F, 0.12F * build, 0.10F * build, look.head);
+        part(0.475F, 0.19F * build, 0.475F * build, look.legs);
+        part(1.285F, 0.25F * build, 0.335F * build, look.torso);
+        part(1.750F, 0.11F * build, 0.125F * build, look.head);
 
         // THE FACE, and the reason it is here.
         //
@@ -1307,9 +1329,12 @@ std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
         // so a figure at an angle reads as being at an angle.
         face.x = px + faceX * 0.09F * build;
         face.y = py + faceY * 0.09F * build;
-        face.z = floorZ + 0.85F;
-        face.halfWidth = 0.075F * build;
-        face.halfHeight = 0.055F * build;
+        // On the head, which is now centred at 1.750 with a half-height of
+        // 0.125 — so the face patch has to ride at the same height and stay
+        // inside it.
+        face.z = floorZ + 1.775F;
+        face.halfWidth = 0.070F * build;
+        face.halfHeight = 0.068F * build;
         const float lift = 1.35F;
         face.colour = Rgb{std::min(1.0F, look.head.r * light.r * lift),
                           std::min(1.0F, look.head.g * light.g * lift),
@@ -1569,8 +1594,21 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         // Pulled a little out of the wall the hearth is set into, so the flame
         // sits in the mouth of it rather than inside the masonry.
         flame.y = static_cast<float>(light.y) + (isHearth ? -0.05F : 0.5F);
-        // A hearth burns at the floor, a candle on a table, a lantern hangs.
-        flame.z = static_cast<float>(light.z) + (isHearth ? 0.30F : (isLantern ? 0.82F : 0.55F));
+        // A hearth burns at the floor, a candle on a table, a lantern hangs —
+        // and now that a storey is three tiles those are three genuinely
+        // different heights instead of three points inside one tile. ABSOLUTE
+        // tile heights above the floor of the cell, not fractions of the
+        // storey: raising a ceiling does not raise a tabletop.
+        //
+        //   0.35  in the mouth of the fireplace, on the hearthstone
+        //   0.95  a candle on a table, about 0.86 m
+        //   2.30  a lantern on its hook, well over head height
+        constexpr float kHearthFlameHeight = 0.35F;
+        constexpr float kTableCandleHeight = 0.95F;
+        constexpr float kHangingLanternHeight = 2.30F;
+        flame.z = bandSurface(light.z) +
+                  (isHearth ? kHearthFlameHeight
+                            : (isLantern ? kHangingLanternHeight : kTableCandleHeight));
         const float flicker =
             0.85F + 0.15F * std::sin(phase * 4.3F + static_cast<float>(light.x));
         const float scale = 0.10F + 0.008F * static_cast<float>(light.luminance);

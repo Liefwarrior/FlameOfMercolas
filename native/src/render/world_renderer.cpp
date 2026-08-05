@@ -7,29 +7,44 @@
 #include <map>
 #include <utility>
 
+#include "granadad/sim/vertical_scale.hpp"
+
 namespace granadad::render {
 
 namespace {
 
 constexpr float kPi = 3.14159265358979323846F;
 
+// kBandHeight and bandSurface() are in world_renderer.hpp: session.cpp places
+// billboards against the same scale and there must be exactly one of it.
+
 /// How far a FLOOR / RAMP / STAIR slab hangs below the level it is the surface
 /// of. The walking surface is exactly at the level's own height, so the slab
 /// has to be underneath it — which is also why a pier deck is visibly a plank
 /// with air under it when you stand at the water's edge.
+///
+/// ABSOLUTE TILE THICKNESSES, not fractions of a storey, and that distinction
+/// is the reason they did not change when the storey tripled. A deck plank is
+/// 0.22 of a tile — call it 0.20 m — of timber whether the room under it is one
+/// tile high or three. Scaling these with the band would have given the Long
+/// Quay a 0.60 m slab of decking, which is a bridge, not a pier.
 constexpr float kFloorSlab = 0.22F;
 constexpr float kRampSlab = 0.30F;
 constexpr float kStairSlab = 0.36F;
 
-/// Water surface height inside its level, from FLUID-lane depth 1..7.
+/// Water surface height above its level's own floor, in tiles, from FLUID-lane
+/// depth 1..7. A FRACTION OF THE BAND: a cell filled to the brim holds a band's
+/// worth of water, so this one scales where the slabs above do not.
 ///
-/// Depth 7 comes out at 0.70 rather than 1.0, deliberately: the harbour fills
-/// z=17 and z=18 at full depth and the quay deck's slab hangs from 19.0 down to
-/// 18.78, so a surface at 19.0 would z-fight the deck along the entire
-/// waterfront. At 0.70 the waterline sits a third of a level below the deck,
-/// which is both artifact-free and the tidal drop the gazetteer describes.
+/// Depth 7 comes out at 0.70 of a band rather than 1.0, deliberately. The
+/// harbour fills z=17 and z=18 at full depth and the quay deck's slab hangs
+/// from 57.0 down to 56.78; a surface at the full 57.0 would z-fight the deck
+/// along the entire waterfront. At 0.70 the waterline stands at 56.10, which is
+/// 0.90 of a tile — about 0.8 m — below the deck: artifact-free, and now an
+/// actual tidal drop you can see from the quay edge rather than the 0.3 of a
+/// tile it used to be.
 [[nodiscard]] float waterSurface(int depth) noexcept {
-    return static_cast<float>(depth) * 0.10F;
+    return static_cast<float>(depth) * 0.10F * kBandHeight;
 }
 
 /// Screen-row conversion that cannot hand an out-of-range or NaN float to a
@@ -79,7 +94,12 @@ Camera Camera::fromBody(std::int32_t xQ8, std::int32_t yQ8, std::int32_t eyeZQ8,
     Camera camera;
     camera.x = static_cast<float>(xQ8) / 256.0F;
     camera.y = static_cast<float>(yQ8) / 256.0F;
-    camera.z = static_cast<float>(eyeZQ8) / 256.0F;
+    // THE ONE ASYMMETRY IN THIS FUNCTION, and it is not a typo. x and y arrive
+    // in Q8 TILES; eyeZQ8 arrives in Q8 BANDS, because the body's vertical axis
+    // counts bands (sim/player.hpp: feetZ_ is `band << 8`). Multiplying by
+    // kBandHeight is what puts all three in the same space, and forgetting to
+    // is what buried the eye 1.9 tiles inside the ground floor.
+    camera.z = static_cast<float>(eyeZQ8) * kBandHeight / 256.0F;
     camera.yaw = static_cast<float>(yawBam) * (2.0F * kPi / 65536.0F);
     camera.pitch = static_cast<float>(pitchBam) * (2.0F * kPi / 65536.0F);
     camera.hfovTan = hfovTan;
@@ -132,8 +152,8 @@ bool WorldRenderer::voxelAt(std::int32_t x, std::int32_t y, std::int32_t z,
     // standing on and leave them apparently walking on the sea.
     if (form == content::TileForm::Open || form == content::TileForm::Void) {
         if (depth > 0 && tiles_->fluidDepth(x, y, z + 1) == 0) {
-            out.bottom = static_cast<float>(z);
-            out.top = static_cast<float>(z) + waterSurface(depth);
+            out.bottom = bandSurface(z);
+            out.top = bandSurface(z) + waterSurface(depth);
             out.topFace = FaceKind::Water;
             out.material = 0;
             out.wetness = depth;
@@ -145,28 +165,40 @@ bool WorldRenderer::voxelAt(std::int32_t x, std::int32_t y, std::int32_t z,
     }
 
     switch (form) {
+        // THE WALL IS THE STOREY. It rises from its own level's walking surface
+        // to the next one's, so its side face is kBandHeight tiles tall — three
+        // now, one before, and that single line is the whole of what Eli was
+        // looking at when he said every building appears to be one tile high.
         case content::TileForm::Wall:
-            out.bottom = static_cast<float>(z);
-            out.top = static_cast<float>(z) + 1.0F;
+            out.bottom = bandSurface(z);
+            out.top = bandSurface(z) + kBandHeight;
             out.topFace = FaceKind::BlockTop;
             break;
         case content::TileForm::Floor:
-            out.bottom = static_cast<float>(z) - kFloorSlab;
-            out.top = static_cast<float>(z);
+            out.bottom = bandSurface(z) - kFloorSlab;
+            out.top = bandSurface(z);
             out.topFace = FaceKind::FloorTop;
             break;
-        // VERIFICATION GAP (S2): a RAMP is drawn as a thinner flat slab, not as
-        // a slope. Walking one looks like stepping onto a low kerb rather than
-        // climbing. The movement rule is right (stepBand authorises the climb);
-        // it is the picture that is wrong, and nothing tests the picture.
+        // VERIFICATION GAP (S2, and WORSE after polish-1): a RAMP is drawn as a
+        // thinner flat slab, not as a slope. The movement rule is right
+        // (stepBand authorises the climb); it is the picture that is wrong, and
+        // nothing tests the picture.
+        //
+        // Tripling the storey made this gap bigger rather than smaller. Walking
+        // a ramp used to look like stepping onto a low kerb; it now lifts the
+        // body a full 2.7 m up a slab drawn 0.30 of a tile thick, so the eye
+        // rises past a face that is not there. kEyeEaseRate was halved to make
+        // the rise read as a climb (sim/player.hpp), which buys time but does
+        // not draw the slope. Drawing the actual wedge is the fix and it is not
+        // in this change.
         case content::TileForm::Ramp:
-            out.bottom = static_cast<float>(z) - kRampSlab;
-            out.top = static_cast<float>(z);
+            out.bottom = bandSurface(z) - kRampSlab;
+            out.top = bandSurface(z);
             out.topFace = FaceKind::RampTop;
             break;
         case content::TileForm::Stair:
-            out.bottom = static_cast<float>(z) - kStairSlab;
-            out.top = static_cast<float>(z);
+            out.bottom = bandSurface(z) - kStairSlab;
+            out.top = bandSurface(z);
             out.topFace = FaceKind::StairTop;
             break;
         case content::TileForm::Void:
@@ -195,7 +227,14 @@ std::vector<SpriteInstance> WorldRenderer::lampSprites(float phase) const {
         SpriteInstance sprite;
         sprite.x = static_cast<float>(lamp.x) + 0.5F;
         sprite.y = static_cast<float>(lamp.y) + 0.5F;
-        sprite.z = static_cast<float>(lamp.z) + 0.62F;
+        // A BRACKET LAMP, hung above head height on the wall of the cell it was
+        // authored in. 1.90 tiles is about 1.7 m — a hand over the eye line,
+        // which is where a lamp you walk under belongs and is the first thing
+        // that reads wrong if you leave a light at 0.62 of a tile and call it
+        // street lighting. An ABSOLUTE height in tiles, not a fraction of the
+        // storey: raising the ceiling does not raise the lamp bracket.
+        constexpr float kLampBracketHeight = 1.90F;
+        sprite.z = bandSurface(lamp.z) + kLampBracketHeight;
         sprite.halfWidth = scale * flicker;
         sprite.halfHeight = scale * flicker * 1.25F;
         sprite.colour = lamp.warmth == LampWarmth::Fire ? Rgb{1.0F, 0.62F, 0.26F}
@@ -225,7 +264,17 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
     const float rightX = std::cos(camera.yaw);
     const float rightY = std::sin(camera.yaw);
 
-    const std::int32_t eyeLevel = static_cast<std::int32_t>(std::floor(camera.z));
+    // WHICH LEVEL THE EYE IS ON, and it is a DIVISION now, not a floor.
+    //
+    // camera.z is in tiles and a level is kBandHeight of them, so flooring
+    // camera.z straight to an int used to be right only because the two units
+    // happened to be the same size. Standing on the quay at z19 that read the
+    // eye's level as 58 the moment the storey grew, the z-window came out as
+    // levels 54..64, the mask matched nothing that exists, and the whole
+    // district rendered as empty sky. Same trap as everywhere else in this
+    // change: a unit that was invisible while the conversion factor was one.
+    const std::int32_t eyeLevel =
+        static_cast<std::int32_t>(std::floor(camera.z / kBandHeight));
     const std::int32_t zLo = std::max(0, eyeLevel - settings.levelsBelow);
     const std::int32_t zHi = std::min(tiles_->sizeZ() - 1, eyeLevel + settings.levelsAbove);
     std::uint32_t windowMask = 0U;

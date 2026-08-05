@@ -2876,10 +2876,23 @@ Tavern::LandingResult Tavern::settleLanding(const RoofResult& move, std::int32_t
         // is the right number in the wrong owner, and it moves when the player
         // has a body of their own rather than a room that keeps score for them.
         //
-        // Twelve a band past what the legs can take. It floors at the brawl
-        // floor like everything else in this build: nothing kills the player
-        // yet, and pretending a roof does would be the first thing that did.
-        out.hurt = (fellBands - safe) * 12;
+        // TWENTY-FOUR a band past what the legs can take, doubled from twelve
+        // when the storey grew. The number of bands did not change; what a band
+        // is worth did. sim/vertical_scale.hpp makes one band three tiles, call
+        // it 2.7 m, so the excess this multiplies is now:
+        //
+        //     1 band over  ~2.7 m further than you can take  ->  24
+        //     2 bands over ~5.5 m further                    ->  48
+        //
+        // and two over is the worst the district can do to you, because
+        // kMaxDropBands is three and kSafeDropBands is one. Half your health
+        // for falling off the Gull into the alley reads right; twelve read as
+        // a stubbed toe once the alley was three storeys deep.
+        //
+        // It still floors at the brawl floor like everything else in this
+        // build: nothing kills the player yet, and pretending a roof does would
+        // be the first thing that did.
+        out.hurt = (fellBands - safe) * 24;
         injurePlayer(out.hurt);
     }
 
