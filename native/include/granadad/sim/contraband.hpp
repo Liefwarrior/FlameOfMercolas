@@ -81,7 +81,17 @@ inline constexpr std::size_t kContrabandCount = 5;
 /// `"good": "moonshine"` and this is what resolves it.
 [[nodiscard]] std::string_view contrabandSymbol(Contraband good) noexcept;
 /// What the HUD calls it. ASCII, upper case, short enough for a corner.
+///
+/// PLURAL, and two of the five are count nouns. Use contrabandLabelFor wherever
+/// a NUMBER stands in front of it: this one answers SCALPS and PIECES whatever
+/// the count, so the sack row read "1 PIECES" and the contract board offered
+/// "FENNER - 1 PIECES" -- and a one-piece recovery job is the commonest kind
+/// the board deals.
 [[nodiscard]] std::string_view contrabandLabel(Contraband good) noexcept;
+
+/// The same label, agreeing with a count. DUST, QUAYFIRE and FLOWER are mass
+/// nouns and never change; SCALPS and PIECES lose the S at one.
+[[nodiscard]] std::string_view contrabandLabelFor(Contraband good, std::int32_t count) noexcept;
 /// The kind a raws symbol names, or false when nothing does.
 [[nodiscard]] bool contrabandFromSymbol(std::string_view symbol, Contraband& out) noexcept;
 

@@ -407,7 +407,7 @@ void DialogueDirector::buildTopics() {
                 Topic topic;
                 topic.kind = TopicKind::TurnIn;
                 topic.label = "HAND OVER " + std::to_string(row->units) + " " +
-                              std::string(contrabandLabel(row->good));
+                              std::string(contrabandLabelFor(row->good, row->units));
                 topic.payload = id;
                 topic.arg = row->offerId;
                 topics_.push_back(std::move(topic));

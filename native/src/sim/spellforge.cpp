@@ -167,7 +167,12 @@ std::string_view targetShapeWord(TargetShape target) noexcept {
 
 std::string durationWords(std::int32_t seconds) {
     if (seconds <= 0) {
-        return "AT ONCE";
+        // "NO TIME", not "AT ONCE", and the frame is what said so. A one-off
+        // forces the clock to zero, so the panel drew SHAPE and LASTS with the
+        // same two words one above the other and looked like it had repeated
+        // itself. They are answers to two different questions and now read as
+        // two: the shape is AT ONCE, and what it lasts is NO TIME.
+        return "NO TIME";
     }
     const std::int32_t minutes = seconds / 60;
     const std::int32_t rest = seconds % 60;

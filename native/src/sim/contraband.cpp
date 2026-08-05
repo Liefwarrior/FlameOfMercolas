@@ -84,6 +84,25 @@ std::string_view contrabandLabel(Contraband good) noexcept {
     return "?";
 }
 
+std::string_view contrabandLabelFor(Contraband good, std::int32_t count) noexcept {
+    if (count != 1) {
+        return contrabandLabel(good);
+    }
+    switch (good) {
+        case Contraband::Scalp:
+            return "SCALP";
+        case Contraband::Artifact:
+            return "PIECE";
+        // Dust, quayfire and flower are measured, not counted. "1 DUST" is the
+        // same English as "3 DUST" and neither takes an S.
+        case Contraband::Dust:
+        case Contraband::Moonshine:
+        case Contraband::Flower:
+            break;
+    }
+    return contrabandLabel(good);
+}
+
 bool contrabandFromSymbol(std::string_view symbol, Contraband& out) noexcept {
     for (std::size_t i = 0; i < kContrabandCount; ++i) {
         const Contraband good = static_cast<Contraband>(i);

@@ -108,7 +108,9 @@ TEST_CASE("the spell workbench prints words, not the raws' own keys") {
 }
 
 TEST_CASE("a duration is told in the clock the player keeps") {
-    CHECK(durationWords(0) == "AT ONCE");
+    // Distinct from the SHAPE row's "AT ONCE": see the note in durationWords.
+    CHECK(durationWords(0) == "NO TIME");
+    CHECK(durationWords(0) != effectModeWord(EffectMode::Instant));
     CHECK(durationWords(10) == "10 SECONDS");
     CHECK(durationWords(50) == "50 SECONDS");
     CHECK(durationWords(60) == "1 MINUTE");
@@ -190,6 +192,33 @@ TEST_CASE("every refusal a player can be given is a sentence") {
         mustDraw("forgeErrorReason", reason);
         mustNotBeAnIdentifier("forgeErrorReason", reason);
         CHECK(reason != forgeErrorName(error));
+    }
+}
+
+TEST_CASE("a count and its noun agree") {
+    // "1 PIECES" was on the HUD's sack row, on the contract board's own label
+    // and on the topic that hands a job in -- and a one-piece recovery is the
+    // commonest job the board deals. Found by looking at a frame.
+    CHECK(contrabandLabelFor(Contraband::Artifact, 1) == "PIECE");
+    CHECK(contrabandLabelFor(Contraband::Artifact, 2) == "PIECES");
+    CHECK(contrabandLabelFor(Contraband::Scalp, 1) == "SCALP");
+    CHECK(contrabandLabelFor(Contraband::Scalp, 4) == "SCALPS");
+    // Measured, not counted: these do not inflect at all.
+    for (const Contraband mass : {Contraband::Dust, Contraband::Moonshine, Contraband::Flower}) {
+        CHECK(contrabandLabelFor(mass, 1) == contrabandLabel(mass));
+        CHECK(contrabandLabelFor(mass, 5) == contrabandLabel(mass));
+    }
+    // No count in the ward's economy ever meets a label that disagrees with it.
+    for (std::size_t g = 0; g < kContrabandCount; ++g) {
+        const Contraband good = static_cast<Contraband>(g);
+        for (std::int32_t n = 0; n <= 12; ++n) {
+            const std::string_view label = contrabandLabelFor(good, n);
+            INFO(n, " ", label);
+            mustDraw("contrabandLabelFor", label);
+            const bool plural = label.back() == 'S' && label != "DUST";
+            CHECK(plural == (n != 1 && (good == Contraband::Scalp ||
+                                        good == Contraband::Artifact)));
+        }
     }
 }
 

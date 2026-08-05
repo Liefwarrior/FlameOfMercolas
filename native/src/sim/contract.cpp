@@ -539,7 +539,8 @@ void ContractBoard::refresh(std::int32_t day, std::uint64_t worldSeed,
         // shows once it is picked, and the full label is on the detail line
         // under the grid either way (dialogueDetailLine).
         row.label = (wants == nullptr ? std::string("THE WARD") : shortName(wants->name)) + " - " +
-                    std::to_string(units) + " " + std::string(contrabandLabel(offer.good));
+                    std::to_string(units) + " " +
+                    std::string(contrabandLabelFor(offer.good, units));
         row.thing = thing;
         row.brief = offer.brief;
         substitute(row.brief, "{patron}", wants == nullptr ? "somebody" : wants->name);

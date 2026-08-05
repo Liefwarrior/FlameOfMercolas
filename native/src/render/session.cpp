@@ -1527,7 +1527,7 @@ std::string Session::stashLine() const {
         if (!line.empty()) {
             line += "  ";
         }
-        line += std::to_string(held) + " " + std::string(sim::contrabandLabel(good));
+        line += std::to_string(held) + " " + std::string(sim::contrabandLabelFor(good, held));
     }
     if (sack.illicitWeight() > 0) {
         line += "  " + std::to_string(sack.illicitWeight()) + "DR";
