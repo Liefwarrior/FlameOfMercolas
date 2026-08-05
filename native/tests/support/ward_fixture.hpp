@@ -56,13 +56,17 @@
 // file has the cache to itself; it is paid a handful of times in a whole-binary
 // run, and it is the right price for a fixture that cannot be wrong. What
 // wardAt() returns is ALWAYS "hour H, baked, ticked N" -- a pure function of its
-// two arguments and nothing else. No order in this file is load-bearing.
+// two arguments and nothing else. No order anywhere is load-bearing.
+//
+// tests/test_ward_actors.cpp has a case about that, and it does the
+// interleaving on purpose: read an hour at 60 ticks, then at 300, then at 60
+// again, and require the first and third to be the same district -- then
+// require a privateWard(), which shares nothing with the cache, to agree with
+// both.
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <stdexcept>
-#include <string>
 
 #include "granadad/content/content_dir.hpp"
 #include "granadad/content/world_reader.hpp"
@@ -138,8 +142,9 @@ private:
 };
 
 /// A ward of this case's very own, at `startHour`. For a case that MUTATES --
-/// lifts coin off somebody, turns a body, skips the clock -- or that needs a
-/// tick count out of order with the rest of its file.
+/// lifts coin off somebody, turns a body, skips the clock -- and for a case
+/// that wants to compare the shared one against something the cache has never
+/// touched.
 [[nodiscard]] inline std::unique_ptr<WardRun> privateWard(std::int32_t startHour) {
     return std::make_unique<WardRun>(startHour);
 }
