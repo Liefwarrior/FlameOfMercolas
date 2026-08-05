@@ -44,8 +44,8 @@ shadow at 960x540. They scale with the capture.)
 
 | scene | ink before | ink after | claimed before | claimed after |
 |---|---|---|---|---|
-| street (`--smoke=30`)      | 30,063 (5.80%)   | 15,111 (2.91%)  | 42,474 (8.19%)  | 26,644 (5.14%)  |
-| rooftops (`--roofs=roof`)  | 35,706 (6.89%)   | 21,324 (4.11%)  | 50,745 (9.79%)  | 31,650 (6.11%)  |
+| street (`--smoke=30`)      | 30,063 (5.80%)   | 15,111 (2.91%)  | 42,474 (8.19%)  | 26,569 (5.13%)  |
+| rooftops (`--roofs=roof`)  | 35,706 (6.89%)   | 21,324 (4.11%)  | 50,745 (9.79%)  | 31,500 (6.08%)  |
 | conversation (`--skyrun=talk`) | 222,720 (42.96%) | 187,200 (36.11%) | same | same |
 
 The conversation's two figures are equal because the surface is a filled panel:
@@ -76,7 +76,7 @@ about the middle of the screen (`hudCentreRect`, and the test that proves it).
    shipped the lock row printed through the guild row and S10 shipped a clue
    printed through the case row. `BottomBand` hands out slots in priority order
    and refuses one that crosses the exclusion rectangle. The top-right stack
-   drops its dearest row rather than running into it.
+   drops its least important row rather than running into it.
 
 4. **The health bar loses the word HP** (a red segmented bar bottom-left is not
    ambiguous) and a quarter of its width. 48 scale units divide by sixteen

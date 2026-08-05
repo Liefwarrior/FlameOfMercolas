@@ -314,7 +314,8 @@ void drawCompass(Framebuffer& target, const HudState& state) {
 /// and the dark have to say about you. Right-aligned against the edge, because
 /// that is the edge it belongs to.
 ///
-/// THE STACK DROPS ITS DEAREST ROW RATHER THAN CROSSING THE RECTANGLE. Six rows
+/// THE STACK DROPS ITS LEAST IMPORTANT ROW RATHER THAN CROSSING THE
+/// RECTANGLE. Six rows
 /// at nine scale units each is 54 units of sky and the exclusion rectangle
 /// starts at 39 of them at 320x180 -- so the old stack ran straight through the
 /// play space the moment the Watch had heard about you and there was something
@@ -325,7 +326,9 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
     const int minor = hudMinorScale(target.height());
     const int margin = 6 * scale;
     const int ceiling = hudCentreRect(target.width(), target.height()).y0;
-    int y = 4 * scale;
+    // The same three scale units from the edge the compass ribbon starts at, so
+    // the two top blocks share a line.
+    int y = 3 * scale;
 
     if (state.timeOfDaySeconds >= 0 && y + rowHeight(scale) <= ceiling) {
         const int hour = (state.timeOfDaySeconds / 3600) % 24;
@@ -339,25 +342,25 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
         const std::string_view clock(text);
         drawText(target, target.width() - margin - textWidth(clock, scale), y, clock, kInk, 0.9F,
                  scale);
-        y += rowHeight(scale) + minor;
+        y += rowHeight(scale) + 1;
     }
 
     // Every remaining row, in the order they have always been drawn in, each
-    // carrying what it would cost to lose it. When the stack runs out of room
-    // above the rectangle the DEAREST row goes and not the last one: a burglar
-    // reads the stealth line every second and the ward's opinion of him once a
-    // week.
+    // carrying its place in the queue -- 1 is the last row this stack would ever
+    // give up. When it runs out of room above the rectangle the row with the
+    // HIGHEST number goes, not the one at the bottom: a burglar reads the
+    // stealth line every second and the ward's opinion of him once a week.
     struct Row {
         std::string_view text;
         Rgb ink;
         float alpha;
-        int cost;
+        int rank;
     };
     std::array<Row, 5> rows{};
     std::size_t count = 0;
-    const auto add = [&](std::string_view text, const Rgb& ink, float alpha, int cost) {
+    const auto add = [&](std::string_view text, const Rgb& ink, float alpha, int rank) {
         if (!text.empty() && count < rows.size()) {
-            rows[count++] = Row{text, ink, alpha, cost};
+            rows[count++] = Row{text, ink, alpha, rank};
         }
     };
     std::string purse;
@@ -377,19 +380,24 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
     const bool seen = state.stealthLabel.substr(0, 4) == "SEEN";
     add(state.stealthLabel, seen ? Rgb{0.86F, 0.66F, 0.28F} : Rgb{0.44F, 0.72F, 0.50F}, 0.86F, 1);
 
-    const int step = rowHeight(minor) + minor;
+    // THE GAP IS ONE PIXEL SHORT OF THE OBVIOUS ONE, AND THAT BOUGHT A ROW.
+    // rowHeight already carries the drop shadow, so the visible gap between
+    // rows is this on top of it. At 1280x720 a gap of `minor` put the fifth row
+    // two pixels past the exclusion rectangle and the stack dropped the ward's
+    // opinion of the player on the one resolution with the most sky to spare.
+    const int step = rowHeight(minor) + std::max(1, minor - 1);
     std::size_t room = 0;
     while (y + static_cast<int>(room) * step + rowHeight(minor) <= ceiling) {
         ++room;
     }
     while (count > room) {
-        std::size_t dearest = 0;
+        std::size_t last = 0;
         for (std::size_t i = 1; i < count; ++i) {
-            if (rows[i].cost > rows[dearest].cost) {
-                dearest = i;
+            if (rows[i].rank > rows[last].rank) {
+                last = i;
             }
         }
-        for (std::size_t i = dearest + 1; i < count; ++i) {
+        for (std::size_t i = last + 1; i < count; ++i) {
             rows[i - 1] = rows[i];
         }
         --count;

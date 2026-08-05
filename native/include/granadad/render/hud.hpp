@@ -55,7 +55,7 @@
 //     conversation 42.96%  -> 36.11%
 //
 // and the area those rows CLAIM -- glyphs closed up into the rows that own
-// them, which is the space actually lost -- 8.19% -> 5.14% on the street.
+// them, which is the space actually lost -- 8.19% -> 5.13% on the street.
 
 #include <cstdint>
 #include <string>

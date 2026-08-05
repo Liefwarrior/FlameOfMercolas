@@ -527,7 +527,7 @@ TEST_CASE("the HUD costs a fraction of the frame, and the fraction is pinned") {
     //
     // It is INK and not claimed area on purpose: ink is a diff and cannot be
     // argued with. The claimed figure -- rows closed up into boxes, which is
-    // the space you actually lose -- went 8.19% to 5.14% on the street frame
+    // the space you actually lose -- went 8.19% to 5.13% on the street frame
     // and is in docs/HUD-REAL-ESTATE.md with the commands that produce it.
     HudState full;
     full.health = 100;
