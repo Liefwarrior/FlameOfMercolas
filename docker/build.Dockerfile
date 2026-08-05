@@ -870,7 +870,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     for case in \
         "the roof slum has tenants, and they are the people canon puts up there" \
         "a roof bed is a bed you can get out of, and it is proved both ways" \
-        "the Skyrunners live in their own territory, on the Gullet's own deck" \
+        "the Skyrunners live on a deck, not in a ground condo" \
         "climbing is a verb the poor have and the Watch does not" \
         "a walker cannot reach the roof-slum plane, and a climber can" \
         "a climb costs what a climb costs, and open ground is priced the same" \

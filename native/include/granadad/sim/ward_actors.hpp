@@ -848,6 +848,17 @@ public:
     /// assumption -- a body homed on a deck it cannot descend from is the exact
     /// failure this pass was warned about.
     [[nodiscard]] std::int32_t roofHomesRefused() const noexcept { return roofRefused_; }
+    /// Roof huts standing on a deck the ward can WALK onto -- reached by an
+    /// authored stair rather than by a climb.
+    ///
+    /// THE DISTRICT HAS BOTH KINDS AND THEY ARE COUNTED APART. Section 2.6's S4
+    /// vertical pass re-connected the Gullet's roof decks to their own condo,
+    /// so several of these huts have had tenants since the roster was written
+    /// and this round leaves them exactly where they were. The gap this round
+    /// closes is the roof-slum PLANE -- world z22, 1,706 standable cells and,
+    /// before it, no bodies at all. Reporting the two as one number would let
+    /// a stair-served hut stand in as evidence for a climb nobody made.
+    [[nodiscard]] std::int32_t roofHomesOnStairs() const noexcept { return roofOnStairs_; }
     /// The id range the mice occupy. Half-open, and CONTIGUOUS: section 6 of
     /// the roster spawns them last, after every person and every other beast.
     /// Exposed because "the predator scan is bounded by the prey count and not
@@ -1079,6 +1090,7 @@ private:
     std::int32_t worstJam_ = 0;
     std::int32_t starved_ = 0;
     std::int32_t roofRefused_ = 0;
+    std::int32_t roofOnStairs_ = 0;
     /// The mice's contiguous id range, recorded at the bake. See preyFirst().
     std::int32_t preyFirst_ = 0;
     std::int32_t preyEnd_ = 0;

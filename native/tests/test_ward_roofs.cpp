@@ -131,14 +131,22 @@ TEST_CASE("the roof slum has tenants, and they are the people canon puts up ther
     INFO("roof-homed: ", roll.roofHomed, " of ", roll.total);
     CHECK(roll.roofHomed > 0);
 
-    const auto onRoof = [&](sim::WardType type) {
-        return roll.roofHomedByType[static_cast<std::size_t>(type)];
-    };
-    // The three trades the gazetteer puts on a roof deck: the ward's poor, its
-    // children, and the burglars whose whole identity is the deck.
-    CHECK(onRoof(sim::WardType::Thief) > 0);
-    CHECK(onRoof(sim::WardType::Urchin) > 0);
-    CHECK(onRoof(sim::WardType::Wastrel) > 0);
+    // AND THEY ARE MORE THAN ONE TRADE. The gazetteer's rooftop tier is the
+    // ward's poor, its children and the burglars whose whole identity is the
+    // deck -- so a plane holding one household of one trade would be a bed on a
+    // roof rather than a roof slum. Which trades exactly is a fact about which
+    // huts the map put on a climb-only plane and which it put up a stair, so
+    // the case counts distinct trades rather than naming them.
+    std::int32_t trades = 0;
+    for (std::size_t t = 0; t < sim::kWardTypeCount; ++t) {
+        if (roll.roofHomedByType[t] > 0) {
+            INFO(roll.roofHomedByType[t], " x ",
+                 sim::wardTypeName(static_cast<sim::WardType>(t)), " sleep on a deck");
+            ++trades;
+        }
+    }
+    INFO("distinct trades on the decks: ", trades);
+    CHECK(trades >= 2);
 
     // AND NOBODY WHO CANNOT CLIMB, which is the failure this would arrive as:
     // one serf drawn into a roof hut by the household mix is one body that
@@ -152,11 +160,19 @@ TEST_CASE("the roof slum has tenants, and they are the people canon puts up ther
         CHECK(sim::wardTypeClimbs(actor.type));
     }
 
-    // Every roof household the roster asked for was placed. A refusal is not a
-    // crash and not a silent drop -- it falls back to the compound underneath
-    // and is counted -- so this is the number that says the roof slum is
-    // populated because the map allows it and not because nobody checked.
-    INFO("roof beds the bake refused as one-way");
+    // AND NO HUT FELL OFF ITS OWN DECK. A refusal is a hut whose snap came DOWN
+    // a band because the router could prove no way back up or no way back down
+    // -- the failure that would leave the roof slum looking populated in a
+    // table and empty on the map. It is counted rather than hidden, and it is
+    // zero.
+    //
+    // roofHomesOnStairs is the OTHER kind and is deliberately not a failure:
+    // section 2.6's S4 pass re-connected the Gullet's decks to their own condo,
+    // so some of these huts are reached by an authored stair and have had
+    // tenants since the roster was written. Reporting the two as one number
+    // would let a stair-served hut stand in as evidence for a climb nobody made.
+    INFO("roof huts: ", run.people->roofHomesOnStairs(), " on a stair-served deck, ",
+         run.people->roofHomesRefused(), " refused as one-way");
     CHECK(run.people->roofHomesRefused() == 0);
 }
 
@@ -217,25 +233,41 @@ TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") 
     CHECK(checked > 0);
 }
 
-TEST_CASE("the Skyrunners live in their own territory, on the Gullet's own deck") {
-    // C4 The Gullet is the poorest ground in the district and the one the Watch
-    // does not go into; K35 The Skyrunner's Roost is an unmarked nook on its
-    // roof-slum deck, "reached only through a crawl-gap, not a threshold"
-    // (DOCKS-GAZETTEER section 3.1). Until this pass the Roost had no bed in it
-    // and the Gullet's thieves slept on the ground floor.
+TEST_CASE("the Skyrunners live on a deck, not in a ground condo") {
+    // DOCKS-GAZETTEER section 2.5: rooftops are the burglar's highway precisely
+    // because they are socially unseemly. Section 3.1 files K35 The Skyrunner's
+    // Roost as "a concealed nook on the Gullet Compound's rooftop-slum deck,
+    // reached only through a crawl-gap, not a threshold".
+    //
+    // THE CLAIM IS ABOUT ALTITUDE AND NOT ABOUT WHICH VERB GETS YOU THERE, and
+    // that distinction is the honest one: some of the ward's roof huts stand on
+    // decks the S4 vertical pass re-connected by stair (section 2.6) and some
+    // stand on the roof-slum plane, which is climb-only. A Skyrunner asleep in
+    // a courtyard condo is the thing canon rules out, and the count that says
+    // so is thieves bedded ABOVE the street against thieves bedded on it.
     WardRun run(2);
-    std::int32_t thievesOnTheGulletDeck = 0;
+    std::int32_t onADeck = 0;
+    std::int32_t onTheStreet = 0;
+    std::int32_t climbOnly = 0;
     for (const sim::WardActor& actor : run.people->actors()) {
-        if (!actor.homeOnTheRoof || actor.type != sim::WardType::Thief) {
+        if (actor.type != sim::WardType::Thief) {
             continue;
         }
-        // The Gullet's east end, above the quayside band.
-        if (actor.homeX >= 200 && actor.homeBand > sim::docks::kBandMidSlope) {
-            ++thievesOnTheGulletDeck;
+        if (actor.homeBand >= sim::docks::kBandUpper) {
+            ++onADeck;
+            if (actor.homeOnTheRoof) {
+                ++climbOnly;
+            }
+        } else if (actor.homeBand == sim::docks::kBandQuayside) {
+            ++onTheStreet;
         }
     }
-    INFO("thieves homed on the Gullet's roof decks");
-    CHECK(thievesOnTheGulletDeck > 0);
+    INFO("thieves bedded on a deck: ", onADeck, " (", climbOnly,
+         " of them reachable only by climbing) against ", onTheStreet, " at street level");
+    CHECK(onADeck > 0);
+    // And at least one of them keeps a bed the Watch could not follow him to,
+    // which is the whole of why the roof-slums are outside the law.
+    CHECK(climbOnly > 0);
 }
 
 TEST_CASE("climbing is a verb the poor have and the Watch does not") {

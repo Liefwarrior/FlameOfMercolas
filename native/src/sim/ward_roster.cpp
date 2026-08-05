@@ -524,21 +524,39 @@ void WardPopulation::bakeRoster(const std::filesystem::path& contentDir) {
                 }
             }
             site.onTheRoof = onDeck;
-            if (!onDeck) {
-                // A deck with no proved way down. COUNTED, not hidden: this is
-                // the number that says whether the roof slum is populated
-                // because the map allows it or because nobody checked.
-                ++roofRefused_;
-            }
         }
         // TEN AND NOT SIX, because of the roof huts. A rooftop tenant's own
         // anchor is on a plane the walking rules cannot reach, so the snap has
         // to come down off it far enough to find the compound underneath --
         // and a site that still finds nothing is dropped rather than given a
         // bed nobody can get to. Only reached now by a site that is NOT on a
-        // deck, which after #80 means a ground site or a refused one.
+        // climb-only deck.
         if (!site.onTheRoof && !snapToStandable(ax, ay, ab, 10)) {
             continue;
+        }
+        if (dwelling.roof && !site.onTheRoof) {
+            // A ROOF HUT THAT DID NOT NEED A CLIMB, and the district has both
+            // kinds. DOCKS-GAZETTEER section 2.6's S4 vertical pass records
+            // the Gullet's own decks being re-connected to their condo -- "the
+            // stair moved one cell clear ... the Gullet's roof decks connect to
+            // their own condo again (the Roost keeps its crawl-gap)" -- so
+            // several of these huts stand on a deck the ward can WALK onto.
+            // Those were never the gap; they have had tenants since the roster
+            // was written, and this pass leaves them exactly where they were.
+            //
+            // The gap was the roof-slum PLANE: world z22, 1,706 standable cells
+            // and, before this, zero bodies on any of them.
+            //
+            // The two are counted apart, because "the roof slum has people on
+            // it" and "some huts happen to be up a flight of stairs" are
+            // different claims and only one of them was ever in doubt. A hut
+            // whose snap came DOWN off its own band is the real failure and is
+            // the only thing roofRefused_ counts.
+            if (ab == dwelling.at.band) {
+                ++roofOnStairs_;
+            } else {
+                ++roofRefused_;
+            }
         }
         // The spiral: ring by ring, and inside a ring in raster order. Fixed,
         // so which cells become homes is a fact about the map.
