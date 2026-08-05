@@ -1057,12 +1057,26 @@ bool WardPopulation::stepToward(WardActor& actor, std::int32_t tx, std::int32_t 
             actor.routeRetryUntil = tick_ + kRouteRetryCooldownTicks;
             return false;
         }
+        // AND THE CLIMB IS ONLY ASKED FOR WHEN THE CLIMB IS THE POINT.
+        //
+        // A hundred of the ward's bodies can climb, and almost every walk any
+        // of them takes is street to street. Running those in the climbing gait
+        // would pay for four extra geometry probes on every refused neighbour
+        // of every search, for a route that is going to come out along the road
+        // anyway -- so a body on the ward's own ground, walking to somewhere
+        // else on the ward's own ground, walks exactly the way it always did
+        // and costs exactly what it always cost. The gait is raised only when
+        // one end of the journey is off the walking island, which is the only
+        // time a wall has to be got over.
+        const bool crossesTheClimb =
+            climbs && (componentAt(tx, ty, tband) != mainComponent_ ||
+                       componentAt(actor.x, actor.y, actor.band) != mainComponent_);
         // salt is id + 1 because zero means NO JITTER and actor id zero is a
         // real actor standing on a real street.
         const bool ok = finder_.find(PathStep{actor.x, actor.y, actor.band},
                                      PathStep{tx, ty, tband},
                                      static_cast<std::uint32_t>(actor.id) + 1u, actor.route,
-                                     climbs ? Gait::Climb : Gait::Walk);
+                                     crossesTheClimb ? Gait::Climb : Gait::Walk);
         actor.routeIndex = 0;
         actor.routeTargetX = tx;
         actor.routeTargetY = ty;

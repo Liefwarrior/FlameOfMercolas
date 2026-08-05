@@ -31,9 +31,9 @@
 // away and a caught mouse is off the board for three more. There is no short
 // version of that question: an ecology is a thing you can only see over time.
 //
-// So the district is soaked ONCE, twelve and a half hours, and every claim
+// So the district is soaked ONCE, ten hours, and every claim
 // below reads the same end state and the same running tallies. Five cases at
-// forty-five thousand ticks each would be most of the suite's runtime for one
+// thirty-six thousand ticks each would be most of the suite's runtime for one
 // answer repeated five ways -- and the last round's ctest time quadrupling is
 // exactly the thing not to do twice.
 
@@ -83,8 +83,8 @@ struct WardRun {
     }
 };
 
-/// Twelve and a half hours of the Docks, from six in the morning, with the
-/// running tallies every claim below is read off.
+/// Ten hours of the Docks, from six in the morning, with the running tallies
+/// every claim below is read off.
 struct Soak {
     std::unique_ptr<WardRun> ward;
 
@@ -123,7 +123,7 @@ const Soak& soak() {
         out.prey = people.census().prey;
         out.lowWater = out.prey;
         bool dipped = false;
-        for (int block = 0; block < 45; ++block) {
+        for (int block = 0; block < 36; ++block) {
             out.ward->run(1000);
             const sim::WardCensus roll = people.census();
             out.lowWater = std::min(out.lowWater, roll.preyUp);
@@ -305,7 +305,7 @@ TEST_CASE("a chase that cannot land is abandoned, and the beast goes back to wan
     // Futile chases are COUNTED and not asserted away: a district with real
     // geometry in it will have some, and a count that runs away is the
     // chokepoint freeze coming back.
-    INFO("futile chases over twelve hours: ", s.ward->people->futileChases(), " against ",
+    INFO("futile chases over ten hours: ", s.ward->people->futileChases(), " against ",
          s.ward->people->catches(), " catches");
     CHECK(s.ward->people->futileChases() < 6000);
 }

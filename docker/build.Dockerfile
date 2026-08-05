@@ -874,7 +874,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "climbing is a verb the poor have and the Watch does not" \
         "a walker cannot reach the roof-slum plane, and a climber can" \
         "a climb costs what a climb costs, and open ground is priced the same" \
-        "the roof fills at night and empties in the morning" \
+        "the roof empties when its tenants go out to work, and fills when they are back" \
         "a roof tenant that went out to work climbs home again on its own legs" \
         "nobody is homed on ground they cannot reach, climber or not" \
         "the mice are a contiguous id range, which is what makes the hunt cheap" \

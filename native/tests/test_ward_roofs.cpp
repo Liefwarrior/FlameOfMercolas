@@ -316,21 +316,25 @@ TEST_CASE("a climb costs what a climb costs, and open ground is priced the same"
     CHECK(sim::kDropCostBase > sim::kStepCostDiagonal);
 }
 
-TEST_CASE("the roof fills at night and empties in the morning") {
+TEST_CASE("the roof empties when its tenants go out to work, and fills when they are back") {
     // THE RHYTHM, WHICH IS WHAT MAKES IT A HOME AND NOT A STORAGE SHELF.
     //
-    // A roof tenant is a person with a job in the street below: a wastrel on a
-    // kerb, a child on the bins, a thief working the dark. At eight in the
-    // morning the deck should be nearly empty and at midnight it should be
-    // full, and both are read off the same counter.
+    // AND THE HOURS ARE THE POOR'S HOURS, not a townhouse's. The roof slum's
+    // people are the ward's kerb and its bins: a wastrel's Streetlife window is
+    // nine in the morning to ten at night and a child's Scavenge window is
+    // seven at night to four in the morning. So the deck is at its emptiest in
+    // the EVENING, when both of those are out working, and at its fullest at
+    // breakfast, when both are asleep. Writing the case the other way round --
+    // "full at night" -- would be asserting a middle-class day the authored job
+    // windows do not describe.
     WardRun run(8);
-    const std::int32_t morning = run.people->census().onRoofNow;
-    run.people->skipToSecond(sim::hourOfDay(23));
-    const std::int32_t night = run.people->census().onRoofNow;
+    const std::int32_t breakfast = run.people->census().onRoofNow;
+    run.people->skipToSecond(sim::hourOfDay(20));
+    const std::int32_t evening = run.people->census().onRoofNow;
 
-    INFO("bodies off the walking island at 08:00=", morning, " and at 23:00=", night);
-    CHECK(night > morning);
-    CHECK(night > 0);
+    INFO("bodies off the walking island at 08:00=", breakfast, " and at 20:00=", evening);
+    CHECK(breakfast > evening);
+    CHECK(breakfast > 0);
 }
 
 TEST_CASE("a roof tenant that went out to work climbs home again on its own legs") {
