@@ -333,6 +333,7 @@ void OccupancyIndex::reset(std::size_t capacity) {
     }
     keys_.assign(power, kEmpty);
     counts_.assign(power, 0);
+    owners_.assign(power, -1);
     mask_ = power - 1;
     count_ = 0;
 }
@@ -340,6 +341,7 @@ void OccupancyIndex::reset(std::size_t capacity) {
 void OccupancyIndex::clear() noexcept {
     std::fill(keys_.begin(), keys_.end(), kEmpty);
     std::fill(counts_.begin(), counts_.end(), 0);
+    std::fill(owners_.begin(), owners_.end(), -1);
     count_ = 0;
 }
 
@@ -358,9 +360,15 @@ std::int32_t OccupancyIndex::at(std::uint32_t cell) const noexcept {
     return keys_[slot] == cell ? counts_[slot] : 0;
 }
 
+std::int32_t OccupancyIndex::occupantAt(std::uint32_t cell) const noexcept {
+    const std::size_t slot = slotOf(cell);
+    return keys_[slot] == cell ? owners_[slot] : -1;
+}
+
 void OccupancyIndex::grow() {
     const std::vector<std::uint32_t> oldKeys = keys_;
     const std::vector<std::int16_t> oldCounts = counts_;
+    const std::vector<std::int32_t> oldOwners = owners_;
     reset(oldKeys.size());
     for (std::size_t i = 0; i < oldKeys.size(); ++i) {
         if (oldKeys[i] == kEmpty) {
@@ -369,11 +377,12 @@ void OccupancyIndex::grow() {
         const std::size_t slot = slotOf(oldKeys[i]);
         keys_[slot] = oldKeys[i];
         counts_[slot] = oldCounts[i];
+        owners_[slot] = oldOwners[i];
         ++count_;
     }
 }
 
-void OccupancyIndex::add(std::uint32_t cell) {
+void OccupancyIndex::add(std::uint32_t cell, std::int32_t actorId) {
     if ((count_ + 1) * 4 > keys_.size() * 3) {
         grow();
     }
@@ -381,9 +390,17 @@ void OccupancyIndex::add(std::uint32_t cell) {
     if (keys_[slot] == kEmpty) {
         keys_[slot] = cell;
         counts_[slot] = 0;
+        owners_[slot] = -1;
         ++count_;
     }
     ++counts_[slot];
+    // The LOWEST id present, so two bodies arriving on one cell in one tick
+    // resolve the same way twice. Under the one-per-cell cap this is always the
+    // only occupant; the min is what keeps it correct if the cap is ever
+    // raised, and costs a comparison.
+    if (owners_[slot] < 0 || actorId < owners_[slot]) {
+        owners_[slot] = actorId;
+    }
 }
 
 void OccupancyIndex::remove(std::uint32_t cell) noexcept {
@@ -400,6 +417,7 @@ void OccupancyIndex::remove(std::uint32_t cell) noexcept {
     // seed disagree.
     keys_[slot] = kEmpty;
     counts_[slot] = 0;
+    owners_[slot] = -1;
     --count_;
     std::size_t hole = slot;
     std::size_t probe = (slot + 1) & mask_;
@@ -411,8 +429,10 @@ void OccupancyIndex::remove(std::uint32_t cell) noexcept {
         if (distFromIdeal >= distFromHole) {
             keys_[hole] = keys_[probe];
             counts_[hole] = counts_[probe];
+            owners_[hole] = owners_[probe];
             keys_[probe] = kEmpty;
             counts_[probe] = 0;
+            owners_[probe] = -1;
             hole = probe;
         }
         probe = (probe + 1) & mask_;
@@ -436,6 +456,10 @@ WardPopulation::WardPopulation(const TileQuery& tiles, std::int32_t startSecond,
     // clock drifts the first time a tick is skipped, and skipToSecond exists
     // precisely to skip them.
     clockOffset_ = secondOfDay_;
+    // THE MAP OF WHAT CAN BE WALKED TO, FIRST. Every home, post and waypoint
+    // the bake places is checked against it, so the ward never contains a body
+    // whose own bed it cannot reach on foot.
+    mapWalkComponents();
     bakeRoster(contentDir);
     rebuildOccupancy();
     runDailyProvision();
@@ -451,9 +475,79 @@ std::uint32_t WardPopulation::cellKey(std::int32_t x, std::int32_t y,
     return static_cast<std::uint32_t>((band * tiles_->sizeY() + y) * tiles_->sizeX() + x);
 }
 
+std::int16_t WardPopulation::componentAt(std::int32_t x, std::int32_t y,
+                                         std::int32_t band) const noexcept {
+    if (!tiles_->inBounds(x, y, band) || walkComponent_.empty()) {
+        return -1;
+    }
+    return walkComponent_[static_cast<std::size_t>(cellKey(x, y, band))];
+}
+
+void WardPopulation::mapWalkComponents() {
+    const std::size_t cells = static_cast<std::size_t>(tiles_->sizeX()) *
+                              static_cast<std::size_t>(tiles_->sizeY()) *
+                              static_cast<std::size_t>(tiles_->sizeZ());
+    walkComponent_.assign(cells, -1);
+
+    // ONE FLOOD, FROM THE DISTRICT'S OWN SPAWN, AND NOTHING ELSE.
+    //
+    // Labelling every island would mean asking standable() of all one and a
+    // half million cells of the world -- and this runs once per Session, of
+    // which the test suite builds a couple of hundred. The only question the
+    // ward ever asks is "is this the ground the ward lives on", so the only
+    // answer computed is that one: component 0 is what the player can walk to
+    // from where the player arrives, and everything else is -1, which reads as
+    // "not our ground" whether it is a roof plane, a sealed cellar or a wall.
+    std::vector<std::int32_t> frontier;
+    frontier.reserve(32768);
+    const std::int32_t seed = static_cast<std::int32_t>(
+        cellKey(docks::kSpawnTileX, docks::kSpawnTileY, docks::kSpawnBand));
+    if (!tiles_->standable(docks::kSpawnTileX, docks::kSpawnTileY, docks::kSpawnBand)) {
+        mainComponent_ = -1;
+        return;
+    }
+    mainComponent_ = 0;
+    walkComponent_[static_cast<std::size_t>(seed)] = 0;
+    frontier.push_back(seed);
+    for (std::size_t head = 0; head < frontier.size(); ++head) {
+        const std::int32_t key = frontier[head];
+        const std::int32_t cx = key % tiles_->sizeX();
+        const std::int32_t cy = (key / tiles_->sizeX()) % tiles_->sizeY();
+        const std::int32_t cz = key / (tiles_->sizeX() * tiles_->sizeY());
+        static constexpr std::int32_t dx[8] = {-1, 1, 0, 0, -1, 1, -1, 1};
+        static constexpr std::int32_t dy[8] = {0, 0, -1, 1, -1, -1, 1, 1};
+        for (int n = 0; n < 8; ++n) {
+            const std::int32_t nx = cx + dx[n];
+            const std::int32_t ny = cy + dy[n];
+            const std::int32_t nz = tiles_->stepBand(cx, cy, cz, nx, ny);
+            if (nz == TileQuery::kNoBand) {
+                continue;
+            }
+            // The same no-corner-cut rule the search uses, or the map would
+            // promise routes the router refuses to plan.
+            if (n >= 4 && (tiles_->stepBand(cx, cy, cz, nx, cy) == TileQuery::kNoBand ||
+                           tiles_->stepBand(cx, cy, cz, cx, ny) == TileQuery::kNoBand)) {
+                continue;
+            }
+            const std::size_t at = static_cast<std::size_t>(cellKey(nx, ny, nz));
+            if (walkComponent_[at] >= 0) {
+                continue;
+            }
+            walkComponent_[at] = 0;
+            frontier.push_back(static_cast<std::int32_t>(at));
+        }
+    }
+}
+
 bool WardPopulation::snapToStandable(std::int32_t& x, std::int32_t& y, std::int32_t& band,
-                                     std::int32_t radius) const {
-    if (tiles_->standable(x, y, band)) {
+                                     std::int32_t radius, bool wantWalkable) const {
+    const auto ok = [&](std::int32_t cx, std::int32_t cy, std::int32_t cz) {
+        if (!tiles_->standable(cx, cy, cz)) {
+            return false;
+        }
+        return !wantWalkable || mainComponent_ < 0 || componentAt(cx, cy, cz) == mainComponent_;
+    };
+    if (ok(x, y, band)) {
         return true;
     }
     // A fixed spiral: same ring order, same band order, every time. An authored
@@ -471,7 +565,7 @@ bool WardPopulation::snapToStandable(std::int32_t& x, std::int32_t& y, std::int3
                     if (std::max(std::abs(dx), std::abs(dy)) != r) {
                         continue;
                     }
-                    if (tiles_->standable(x + dx, y + dy, bz)) {
+                    if (ok(x + dx, y + dy, bz)) {
                         x += dx;
                         y += dy;
                         band = bz;
@@ -485,14 +579,18 @@ bool WardPopulation::snapToStandable(std::int32_t& x, std::int32_t& y, std::int3
 }
 
 void WardPopulation::rebuildOccupancy() {
-    // A FULL CLEAR AND RE-ADD, every tick. O(N) over a few hundred bodies, and
-    // it is robust to a spawn, a load, a teleport and a death -- the DEAD are
-    // never counted, so a corpse vacates its tile rather than blocking a street
-    // for the rest of the game.
+    // A FULL CLEAR AND RE-ADD, and it runs at the bake and after every settle
+    // rather than every tick: every position change in between goes through
+    // tryEnter, tryPush or a death, and each of those keeps the index straight
+    // itself. Rebuilding six hundred and seventy-eight entries a second to
+    // re-derive something already correct is work nobody reads.
+    //
+    // The DEAD are never counted, here or anywhere, so a corpse vacates its
+    // tile rather than blocking a street for the rest of the game.
     occupancy_.clear();
     for (const WardActor& actor : actors_) {
         if (!actor.dead) {
-            occupancy_.add(cellKey(actor.x, actor.y, actor.band));
+            occupancy_.add(cellKey(actor.x, actor.y, actor.band), actor.id);
         }
     }
 }
@@ -540,6 +638,11 @@ bool WardPopulation::auditStarvation(WardActor& actor) {
     }
     actor.dead = true;
     actor.policy = WardPolicy::Dead;
+    // AND THE TILE IS FREE. A corpse that kept its square would block a street,
+    // a doorway or somebody's own bed for the rest of the game -- which is the
+    // one way a death can go on hurting a district that has already lost the
+    // person.
+    occupancy_.remove(cellKey(actor.x, actor.y, actor.band));
     ++starved_;
     return true;
 }
@@ -638,7 +741,7 @@ bool WardPopulation::tryEnter(WardActor& actor, std::int32_t nx, std::int32_t ny
     actor.x = nx;
     actor.y = ny;
     actor.band = nband;
-    occupancy_.add(cellKey(nx, ny, nband));
+    occupancy_.add(cellKey(nx, ny, nband), actor.id);
     return true;
 }
 
@@ -647,16 +750,16 @@ bool WardPopulation::tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy
     if (tick_ - pusher.lastPushTick < kPushCooldownTicks) {
         return false;
     }
-    // The lowest-id LIVING body on the cell. Ascending id, so two people
-    // arriving at the same tile in the same tick resolve the same way twice.
-    WardActor* occupant = nullptr;
-    for (WardActor& other : actors_) {
-        if (!other.dead && other.x == cx && other.y == cy && other.band == cband) {
-            occupant = &other;
-            break;
-        }
+    // The lowest-id living body on the cell, straight out of the index. Walking
+    // the roster to find it would be O(N) inside a step every body takes every
+    // tick -- see OccupancyIndex::occupantAt for the number that makes.
+    const std::int32_t occupantId = occupancy_.occupantAt(cellKey(cx, cy, cband));
+    if (occupantId < 0 || occupantId == pusher.id ||
+        occupantId >= static_cast<std::int32_t>(actors_.size())) {
+        return false;
     }
-    if (occupant == nullptr || occupant->id == pusher.id) {
+    WardActor* occupant = &actors_[static_cast<std::size_t>(occupantId)];
+    if (occupant->dead) {
         return false;
     }
     // A GUARD DOES NOT SHOVE A GUARD ON DUTY. Checked before any draw, so a
@@ -665,6 +768,12 @@ bool WardPopulation::tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy
     // watchmen wrestling in a doorway for the rest of the night.
     if (pusher.type == WardType::MilitiaWatch && occupant->type == WardType::MilitiaWatch) {
         return false;
+    }
+    // Counted AFTER the gate, so it can only ever be non-zero if the gate above
+    // stops working. A rule nobody can watch break is a rule nobody knows they
+    // broke.
+    if (pusher.type == WardType::MilitiaWatch && occupant->type == WardType::MilitiaWatch) {
+        ++watchShoves_;
     }
     // A CONTEST, not a right of way. Losing burns no cooldown: the blocked step
     // retries next tick, so a deadlock's dissolution is delayed a tick or two
@@ -696,7 +805,7 @@ bool WardPopulation::tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy
         occupant->x = tx;
         occupant->y = ty;
         occupant->band = tz;
-        occupancy_.add(cellKey(tx, ty, tz));
+        occupancy_.add(cellKey(tx, ty, tz), occupant->id);
         occupant->route.clear();
         occupant->routeTargetX = -1;
         // The stagger, encoded by BACK-DATING the pushee's own clock rather
@@ -723,8 +832,8 @@ bool WardPopulation::tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy
     pusher.x = cx;
     pusher.y = cy;
     pusher.band = cband;
-    occupancy_.add(here);
-    occupancy_.add(there);
+    occupancy_.add(here, occupant->id);
+    occupancy_.add(there, pusher.id);
     occupant->route.clear();
     occupant->routeTargetX = -1;
     occupant->lastPushTick =
@@ -798,6 +907,15 @@ bool WardPopulation::stepToward(WardActor& actor, std::int32_t tx, std::int32_t 
         if (tick_ < actor.routeRetryUntil) {
             return false;
         }
+        // A SEARCH THAT CANNOT SUCCEED IS NEVER RUN. It is the most expensive
+        // search there is -- it burns the whole node budget before answering no
+        // -- and the component map already knows the answer. See
+        // walkComponent_ for the arithmetic of six hundred bodies each asking
+        // one impossible question every retry cooldown, forever.
+        if (componentAt(tx, ty, tband) != componentAt(actor.x, actor.y, actor.band)) {
+            actor.routeRetryUntil = tick_ + kRouteRetryCooldownTicks;
+            return false;
+        }
         // salt is id + 1 because zero means NO JITTER and actor id zero is a
         // real actor standing on a real street.
         const bool ok = finder_.find(PathStep{actor.x, actor.y, actor.band},
@@ -852,8 +970,10 @@ void WardPopulation::actSeekFood(WardActor& actor) {
     const std::int32_t home = actor.id < static_cast<std::int32_t>(homeOf_.size())
                                   ? homeOf_[static_cast<std::size_t>(actor.id)]
                                   : -1;
-    // 2. Take from the larder, standing in the kitchen.
+    // 2. Take from the larder, standing in the room it is in.
     if (home >= 0 && actor.atHome() && homes_[static_cast<std::size_t>(home)].larder > 0) {
+        // WardActor::atHome is the ROOM and not the bed -- see its comment.
+        // Anything stricter starves four fifths of every household.
         --homes_[static_cast<std::size_t>(home)].larder;
         ++actor.rations;
         return;
@@ -973,7 +1093,12 @@ void WardPopulation::advanceLeg(WardActor& actor, const TickContext& context) {
             actor.anchorY +
             static_cast<std::int32_t>((roll >> 20) % static_cast<std::uint64_t>(2 * span + 1)) - span;
         std::int32_t cb = actor.anchorBand;
-        if (snapToStandable(cx, cy, cb, 2)) {
+        // AT LEAST A FEW TILES AWAY, and it is not fussiness. A leg is paid on
+        // ARRIVAL, so a drawn corner that lands next to where the body already
+        // stands is paid the same tick it is picked, and the tick after, and
+        // the tick after that -- a beast dwelling in place would refill its own
+        // hunger every second and never die of anything.
+        if (snapToStandable(cx, cy, cb, 2) && legDistance(actor, cx, cy, cb) >= 3) {
             actor.targetX = cx;
             actor.targetY = cy;
             actor.targetBand = cb;
@@ -1001,14 +1126,26 @@ void WardPopulation::actPursue(WardActor& actor, const TickContext& context) {
         // home or when ground was made, incremented on a genuinely failed step,
         // never zeroed unconditionally -- which would launder a body stuck all
         // night out of the stall metric.
-        actor.targetX = actor.homeX;
-        actor.targetY = actor.homeY;
-        actor.targetBand = actor.homeBand;
+        // CLEARED, and this line is the whole of the dawn free-duty fix.
+        //
+        // The first draft of this parked the home cell in the goal target, and
+        // that one line paid a guard for sleeping: at the dawn tick the in-window
+        // branch below sees a target already set, SKIPS advanceLeg, adopts the
+        // bed as this leg's waypoint, finds itself standing on it, and awards a
+        // full unit of duty. A body that spent the night in bed came on shift
+        // with a night's work already banked. targetBand == 0 is the sentinel
+        // for "no leg yet" -- band zero is the world's own VOID border and
+        // nobody can stand on it.
+        actor.targetX = 0;
+        actor.targetY = 0;
+        actor.targetBand = 0;
         actor.legMark = 0;
         if (actor.atHome()) {
             actor.goalWorkTicks = 0;
             return;
         }
+        // The walk home is CROSS-BAND and ignores the post's leash, because a
+        // home routinely sits outside the leash of the shed somebody works in.
         const bool moved = stepToward(actor, actor.homeX, actor.homeY, actor.homeBand);
         actor.goalWorkTicks = moved ? 0 : actor.goalWorkTicks + 1;
         return;
@@ -1255,7 +1392,7 @@ void WardPopulation::settleToSchedule() {
         actor.routeTargetY = -1;
         actor.routeTargetBand = -1;
         actor.targetBand = 0;
-        occupancy_.add(cellKey(actor.x, actor.y, actor.band));
+        occupancy_.add(cellKey(actor.x, actor.y, actor.band), actor.id);
     }
 }
 

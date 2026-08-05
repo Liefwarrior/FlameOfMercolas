@@ -65,6 +65,32 @@ struct WorkloadConfig {
     /// and would compare an untouched roll. The entry that runs this uses
     /// enough ticks to cross a day boundary; see the CMakeLists comment on it.
     bool with_ward = false;
+
+    /// #78. Registers the district's POPULATION -- six hundred and seventy-eight
+    /// bodies with needs, homes, jobs, hours and a night roster -- as another
+    /// system. Forces `world` to docks_surface for the same reason the two
+    /// above do.
+    ///
+    /// THIS IS THE REAL DETERMINISM TEST OF THE PORT and it is worth saying
+    /// why. The tavern's fourteen and the ward's roll are both small and both
+    /// mostly bookkeeping; the population is hundreds of bodies running a
+    /// bounded A* with per-actor jitter, an open-addressing occupancy index
+    /// with backward-shift deletion, a shove that draws against a named stream,
+    /// and a policy stack whose ties are broken by stack position. Every one of
+    /// those is a place where an iteration order or a hash bucket could leak
+    /// into state. If this leg is green, the port kept determinism.
+    ///
+    /// OFF by default and with its own ctest entry, for the same reason the
+    /// other two are: the published cross-toolchain report is compared byte for
+    /// byte between Linux and Windows and the baseline workload stays frozen.
+    bool with_population = false;
+
+    /// The hour the population's day starts at, in seconds since midnight. The
+    /// gate entry runs it across the evening so the twin run compares a
+    /// district that has gone off shift, gone home, eaten and put a night
+    /// roster on the street -- rather than one that spent the whole run
+    /// standing at the same posts.
+    std::int32_t population_start_second = 16 * 3600;
 };
 
 /// What one run produced.

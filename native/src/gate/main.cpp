@@ -179,6 +179,17 @@ int main(int argc, char** argv) {
             // it already compares the taproom.
             config.with_ward = true;
             config.world = "docks_surface";
+        } else if (arg == "--population") {
+            // #78. The district's own people registered and ticked, so the twin
+            // run compares six hundred and seventy-eight bodies deciding,
+            // walking, shoving, eating and going to bed. It is the only check
+            // in this build that can catch the port having lost DETERMINISM
+            // rather than having lost correctness.
+            config.with_population = true;
+            config.world = "docks_surface";
+        } else if (arg == "--population-hour" && i + 1 < argc) {
+            config.population_start_second =
+                static_cast<std::int32_t>(parse_int(argv[++i], 16) * 3600);
         } else if (arg == "--tavern") {
             // Registers the Gilded Gull and drives its movement clock. Forces
             // the world to docks_surface; see WorkloadConfig::with_tavern for
@@ -190,6 +201,7 @@ int main(int argc, char** argv) {
             std::fprintf(stderr,
                          "usage: granadad-twin-gate [--ticks N] [--walkers N] [--world NAME]\n"
                          "       granadad-twin-gate [--tavern] [--ward]\n"
+                         "       granadad-twin-gate [--population] [--population-hour H]\n"
                          "       granadad-twin-gate --ward-soak [DAYS]\n"
                          "       granadad-twin-gate --fingerprint FILE\n");
             return 2;

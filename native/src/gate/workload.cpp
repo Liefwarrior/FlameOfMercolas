@@ -24,6 +24,7 @@
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/rng.hpp"
 #include "granadad/sim/tavern.hpp"
+#include "granadad/sim/ward_actors.hpp"
 #include "granadad/sim/world_hash.hpp"
 
 namespace granadad::gate {
@@ -445,9 +446,10 @@ RunResult run_workload(const WorkloadConfig& config) {
         throw sim::EngineError("sample_every must be at least 1");
     }
 
-    const std::string world_name = (config.with_tavern || config.with_ward)
-                                       ? std::string(sim::docks::kWorldName)
-                                       : config.world;
+    const std::string world_name =
+        (config.with_tavern || config.with_ward || config.with_population)
+            ? std::string(sim::docks::kWorldName)
+            : config.world;
     content::World world = content::loadWorldFile(content::bakedMap(world_name));
 
     // Declared before the engine so it outlives it: the Tavern borrows this
@@ -455,7 +457,7 @@ RunResult run_workload(const WorkloadConfig& config) {
     // order, so the engine goes first and the query is still alive while it
     // does.
     std::unique_ptr<sim::TileQuery> tiles;
-    if (config.with_tavern) {
+    if (config.with_tavern || config.with_population) {
         tiles = std::make_unique<sim::TileQuery>(world);
     }
 
@@ -481,6 +483,17 @@ RunResult run_workload(const WorkloadConfig& config) {
         engine.register_system(std::make_unique<sim::Ward>(
             config.seed, content::contentDir(),
             sim::NotableRegistry::load(content::contentDir())));
+    }
+
+    // #78. THE PEOPLE, registered after the roll and before the taproom, so
+    // registration order inside the Actors phase stays a stated fact rather
+    // than an accident of which flag was typed first.
+    const sim::WardPopulation* people_view = nullptr;
+    if (config.with_population) {
+        auto people = std::make_unique<sim::WardPopulation>(
+            *tiles, config.population_start_second, config.seed, content::contentDir());
+        people_view = people.get();
+        engine.register_system(std::move(people));
     }
 
     const sim::Tavern* tavern_view = nullptr;
@@ -526,6 +539,14 @@ RunResult run_workload(const WorkloadConfig& config) {
                    + "  blocked=" + padLeft(dec(drift_view->blocked()), 8) + "  chatter="
                    + padLeft(dec(drift_view->chatter()), 8) + "  ledger[" + ledger_view->render()
                    + "]";
+            if (people_view != nullptr) {
+                // PRINTED AS WELL AS HASHED. A report that SHOWS the ward
+                // moving -- somebody going off shift, somebody going home,
+                // somebody eating -- is worth more than an assertion that it is
+                // compared, because a population that silently froze on its
+                // first tick would hash identically twice and pass.
+                out += "  " + people_view->reportLine();
+            }
             if (tavern_view != nullptr) {
                 const sim::DialogueDirector& talk = tavern_view->dialogue();
                 const std::int32_t roofs = talk.factions().indexOf("skyrunners");

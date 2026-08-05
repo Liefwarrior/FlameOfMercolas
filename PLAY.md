@@ -40,8 +40,11 @@ prove something about wine.
 ## 2. The first ten minutes
 
 You are on the **Tarwalk**, the working quay, six tiles from the door of the
-**Gilded Gull**. It is dawn. The district is at work and it will keep working
-whether you watch it or not.
+**Gilded Gull**. It is eight in the morning, and the district is at work: six
+hundred and seventy-eight people with beds in the compounds, posts at the
+warehouses and the sheds, appetites that get worse as the day goes on, and a
+Watch that changes shift at six. They keep those hours whether you watch them
+or not.
 
 The notes are open on your first frame. They say:
 
@@ -121,6 +124,14 @@ Stand in it and press **`Q`**.
     a rung, a trade house with real members, a permanent cut of every price in
     the district. He does it whether or not you ever come back.
 
+11. **Walk the same street at four different hours.** `--time=8` and the
+    Tarwalk is a working quay; `--time=14` and the market row is open;
+    `--time=20` and the Eel-Pots are lit and the night stalls are the only
+    honest light on the road; `--time=2` and there are seven watchmen on the
+    Ropewynd, urchins on the bins, and thieves out because the Watch is thin.
+    Six hundred and seventy-eight people keep those hours whether you are
+    there or not, and nothing about the district is scripted for your benefit.
+
 ---
 
 ## 4. What the corners of the screen mean
@@ -197,19 +208,27 @@ arc, and it is taught rather than explained.
 **Crouching in the dark actually works and you can watch it work**, in one row
 of the HUD, live.
 
+**The district has people in it now, and they keep hours.** This was the
+biggest hole in the build and this file said so: *"There is nobody in the
+district. This is the big one."* Six hundred and seventy-eight bodies live in
+the Docks, on top of the Gilded Gull's own fourteen — the Java build's 692.
+They have homes in the compounds and the hovels, posts at twenty-eight of the
+thirty-five K-sites, needs that decay, larders that get drawn down and
+restocked, and a day. Walk the Tarwalk at eight and it is a working quay. Walk
+the Ropewynd at two in the morning and there are seven watchmen on the night
+roster, urchins working the bins, and thieves out because the Watch is thin.
+
+They are drawn out of your own sprite sheet rather than as three ellipses in
+three browns, so a guard is a guard and a priest is a priest at eight tiles in
+lamplight.
+
+**What they do not do yet:** they do not talk. `E` reaches the Gull's fourteen
+and nobody else — the ward walks past you. They do not witness a crime, they
+are not pickpocketable, and stealth still only means anything inside the Gull.
+They are a living city to look at and to move through, and not yet a living
+city to interact with.
+
 ### What is thin
-
-**There is nobody in the district.** This is the big one. The Docks have 692
-actors with jobs, homes and relationships — and they live in an economic roll
-that ticks in the background with no position on the map. The only bodies you
-can walk up to are the Gilded Gull's sixteen. So the trail is walked through a
-beautifully authored ward that is, physically, empty. The clue sites read as
-places rather than as people: you find Harl's scratch-marks, you do not meet
-Harl.
-
-**Stealth only exists inside the Gull**, for exactly that reason: there is
-nobody outside it to hide from. The HUD's stealth row does not draw in the
-street, which is correct and also tells you what is missing.
 
 **The interiors are brown boxes.** The renderer draws the real baked geometry
 and the geometry is honest, but a shop interior is a dim rectangle. The
@@ -245,9 +264,13 @@ reason to play a fourth hour.
 
 The first fifteen minutes are good. You arrive somewhere with a name, you are
 told one thing, and following it takes you across a district that was designed
-by somebody who cared. The middle hour is good in the Gull and thin outside it.
-There is no third hour yet, because there is nothing under the Drowned Hold and
-nobody in the streets.
+by somebody who cared — and, since #78, a district with people walking about
+in it at every hour of the day.
 
-What it needs next, in order: **bodies in the district**, then **the combat
-screen**, then **the cellars**.
+The middle hour is good in the Gull and better outside it than it was, because
+the street is now something rather than nothing. There is still no third hour:
+there is nothing under the Drowned Hold, and the six hundred and seventy-eight
+people in the ward will not talk to you.
+
+What it needs next, in order: **the ward speaking** (`E` on anybody, and a
+witness who remembers), then **the combat screen**, then **the cellars**.

@@ -334,6 +334,12 @@ if(GRANADAD_BUILD_TESTS)
         # it, and that none of it is a diagnostic identifier that reached the
         # screen because a sentence was wanted and an enum name was to hand.
         tests/test_copy.cpp
+        # #78 -- THE WARD, AND WHETHER IT IS ACTUALLY ALIVE. The roll, the
+        # per-type counts, the Java build's own behavioural bars (serf
+        # starvation under 5%, no guard pile-ups, exact per-kind conservation),
+        # the off-shift branch, and a small set of expectations each naming a
+        # place, an hour and a reason.
+        tests/test_ward_actors.cpp
     )
     target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
 
@@ -408,6 +414,33 @@ if(GRANADAD_BUILD_TESTS)
         # surplus with nothing scarce in it. A balance claim nobody can fail is
         # a balance claim nobody has made.
         add_test(NAME granadad-ward-soak COMMAND granadad-twin-gate --ward-soak 730)
+        # #78: THE SAME GATE OVER THE DISTRICT'S OWN PEOPLE, and this is the
+        # real determinism test of the port.
+        #
+        # The tavern's fourteen and the compound roll are both small and both
+        # mostly bookkeeping. The population is six hundred and seventy-eight
+        # bodies running a bounded A* with per-actor jitter, an open-addressing
+        # occupancy index with backward-shift deletion, a shove that draws
+        # against a named stream, and a policy stack whose ties are broken by
+        # position. Every one of those is a place where an iteration order or a
+        # hash bucket could leak into state, and none of them can be caught by
+        # anything except running the whole thing twice and comparing.
+        #
+        # STARTED AT FOUR IN THE AFTERNOON AND RUN FOR SIX HOURS OF WARD TIME,
+        # which is the number that matters. A run inside one shift compares a
+        # district that stood at the same posts throughout; this one crosses the
+        # end of the day trades at six, the night roster coming on at six, the
+        # ward going home, eating, and the thieves' window opening at ten.
+        # 7,200 TICKS, WHICH IS TWO HOURS OF WARD TIME, and the number is a
+        # trade the gate has to make out loud. The Docker host check compiles
+        # -DCMAKE_BUILD_TYPE=Debug, and this runs six hundred and seventy-eight
+        # bodies TWICE; a whole day here would be minutes of every build, which
+        # is how a gate stops being a gate somebody runs. Two hours starting at
+        # four in the afternoon still crosses the thing that matters: the day
+        # trades end at six, the night roster comes on at six, and the ward
+        # walks home in between.
+        add_test(NAME granadad-twin-run-gate-population
+            COMMAND granadad-twin-gate --population --population-hour 16 --ticks 7200)
     endif()
 endif()
 

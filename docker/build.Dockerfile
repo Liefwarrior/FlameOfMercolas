@@ -446,7 +446,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # claim in its own name, and the burglary's stealth beat needing
     # somebody awake in the room to miss it.
     echo "=== the gate must cover more than one test ==="; \
-    GRANADAD_MIN_TESTS=469; \
+    GRANADAD_MIN_TESTS=490; \
     # Listed ONCE into a variable, and grepped from there. `ctest -N | grep -q`
     # is racy under `set -o pipefail`: grep -q exits the moment it matches, ctest
     # dies of SIGPIPE, and the pipeline reports failure for a check that PASSED.
@@ -797,6 +797,32 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
                  exit 1; }; \
     done; \
     echo "ok: S10's trail, legend and first-run cases are all registered"; \
+    \
+    for case in \
+        "the ward has a roll, and it is the size the Java build's was" \
+        "every kind of person the owner named is actually in the ward" \
+        "everybody in the ward is standing somewhere a body can stand" \
+        "one body per square, and it holds while six hundred of them walk" \
+        "no guard pile-ups: a watchman never shoves a watchman on duty" \
+        "per-kind item conservation is exact, tick after tick" \
+        "the ward feeds itself: nobody is on the road to starving after a day" \
+        "the ward keeps its hours: everybody is somewhere for a reason" \
+        "a rostered guard on the night beat does not oscillate on its own bunk" \
+        "the ward's needs come out of the owner's raws, not out of a table here" \
+        "no job in the ward can outscore going to bed" \
+        "a route never cuts a solid corner, and never comes back partial" \
+        "two actors asking the same question walk it differently" \
+        "the population is registered in the windowed game and keeps the hour" \
+        "a person is a figure somebody drew, not an egg with a head on it" \
+        "granadad-twin-run-gate-population"; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is one of the things #78 is judged on -- the ward"; \
+                 echo "       having people in it, at the right places at the right"; \
+                 echo "       hours, drawn as figures somebody actually drew."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: #78's population cases are all registered"; \
     \
     ctest --test-dir /build-cache/hostcheck --output-on-failure; \
     \

@@ -55,6 +55,20 @@ struct PathStep {
     std::int32_t x = 0;
     std::int32_t y = 0;
     std::int32_t band = 0;
+
+    /// Two steps are the same step when they are the same tile. Written out
+    /// rather than defaulted because a route is compared in tests -- "the same
+    /// actor asked twice gets the same answer" is the whole claim behind the
+    /// per-actor route jitter -- and an aggregate with no equality makes that
+    /// claim unassertable.
+    [[nodiscard]] friend constexpr bool operator==(const PathStep& a,
+                                                   const PathStep& b) noexcept {
+        return a.x == b.x && a.y == b.y && a.band == b.band;
+    }
+    [[nodiscard]] friend constexpr bool operator!=(const PathStep& a,
+                                                   const PathStep& b) noexcept {
+        return !(a == b);
+    }
 };
 
 /// A search over one box. Holds its own scratch so repeated searches over the

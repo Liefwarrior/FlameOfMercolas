@@ -244,9 +244,16 @@ constexpr Dwelling kDwellings[] = {
     {{134, 144, 22}, 2, WardType::Urchin}, {{160, 143, 22}, 2, WardType::Thief},
     // C4 -- the Gullet. The poorest ground in the district, and the one the
     // Watch does not go into.
+    // THE GULLET'S OWN TRADE, AND WHY IT IS ON THE GROUND. Canon puts the
+    // ward's burglars on the roof-slum deck (DOCKS-GAZETTEER section 2.5:
+    // rooftops are the burglar's highway precisely because they are socially
+    // unseemly) -- but a ward actor has no climb verb, so a body homed up there
+    // could never walk to its own bed. The roof huts are therefore
+    // UNPOPULATED, said plainly, and the Gullet's thieves keep two of its
+    // ground-level condos instead. Give an actor a mantle and they move back up.
     {{200, 104, 19}, 4, WardType::Wastrel}, {{200, 118, 19}, 4, WardType::Wastrel},
-    {{205, 102, 19}, 4, WardType::Wastrel}, {{217, 102, 19}, 4, WardType::Serf},
-    {{219, 116, 19}, 4, WardType::Wastrel}, {{219, 116, 20}, 4, WardType::Wastrel},
+    {{205, 102, 19}, 4, WardType::Thief},   {{217, 102, 19}, 4, WardType::Serf},
+    {{219, 116, 19}, 4, WardType::Thief},   {{219, 116, 20}, 4, WardType::Wastrel},
     {{209, 121, 19}, 4, WardType::Urchin},
     {{217, 111, 21}, 2, WardType::Thief},  {{220, 115, 21}, 2, WardType::Urchin},
     {{217, 120, 21}, 2, WardType::Wastrel}, {{221, 124, 21}, 2, WardType::Urchin},
@@ -376,7 +383,12 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
         std::int32_t ax = dwelling.at.x;
         std::int32_t ay = dwelling.at.y;
         std::int32_t ab = dwelling.at.band;
-        if (!snapToStandable(ax, ay, ab, 6)) {
+        // TEN AND NOT SIX, because of the roof huts. A rooftop tenant's own
+        // anchor is on a plane the walking rules cannot reach, so the snap has
+        // to come down off it far enough to find the compound underneath --
+        // and a site that still finds nothing is dropped rather than given a
+        // bed nobody can get to.
+        if (!snapToStandable(ax, ay, ab, 10)) {
             continue;
         }
         // The spiral: ring by ring, and inside a ring in raster order. Fixed,
@@ -389,7 +401,16 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
                     }
                     const std::int32_t hx = ax + dx;
                     const std::int32_t hy = ay + dy;
-                    if (!tiles_->standable(hx, hy, ab)) {
+                    // Standable AND on the ward's own walking island. The
+                    // roof-slum planes of DOCKS-GAZETTEER section 2.6 are
+                    // standable and reachable only by climbing, and a body
+                    // homed up there could never walk to its own bed -- so its
+                    // household is placed on the compound's ground instead.
+                    // The roof slum itself stays unpopulated until an actor has
+                    // a climb verb, which is a real gap and is stated here
+                    // rather than papered over with a bed nobody can reach.
+                    if (!tiles_->standable(hx, hy, ab) ||
+                        componentAt(hx, hy, ab) != mainComponent_) {
                         continue;
                     }
                     // Never inside the Gilded Gull. K03 is the Tavern's
@@ -621,19 +642,41 @@ void WardPopulation::bakeRoster(const std::filesystem::path& /*contentDir*/) {
     for (int i = 0; i < 4; ++i) {
         claim(WardType::Carter, WardJob::Rounds, kCarterRoute[0], cartRound);
     }
-    // The commons, handed out round-robin in id order to everybody the
-    // establishments did not want. A wastrel's post is a kerb, and a wastrel
-    // whose post was its own bed would spend its whole life indoors -- which is
-    // precisely the district the owner complained about.
+    // THE COMMONS, AND THE MUSTER, handed out round-robin in id order to
+    // everybody the establishments did not want.
+    //
+    // TWO GROUPS AND ONE REASON. A wastrel's post is a kerb; a wastrel whose
+    // post was its own bed would spend its whole life indoors, which is
+    // precisely the district the owner complained about. And an unclaimed
+    // LABOURER is not unemployed, it is casual labour -- DOCKS-GAZETTEER's own
+    // reading of K17, "the almshouse pool is the ward's casual-labor pool now,
+    // as K17's canon always said" -- so its post is the muster it stands at
+    // waiting for a day's work, not the room it slept in.
+    //
+    // Without this the day shift is four hundred people working at home with
+    // the doors shut, and the street at noon is emptier than the street at
+    // midnight.
     {
         std::size_t next = 0;
         for (std::size_t i = 0; i < actors_.size(); ++i) {
-            if (actors_[i].job != WardJob::Streetlife) {
+            const bool loiterer = actors_[i].job == WardJob::Streetlife;
+            const bool unhired = !claimed[i] && actors_[i].job == WardJob::Anchor &&
+                                 isPerson(actors_[i].type);
+            if (!loiterer && !unhired) {
                 continue;
             }
-            const Anchor& spot = kCommons[next % std::size(kCommons)];
-            ++next;
-            std::int32_t cx = spot.x;
+            const std::size_t slot = next++;
+            const Anchor& spot = kCommons[slot % std::size(kCommons)];
+            // FANNED OUT ALONG THE ROAD, not heaped on the marker. Four hundred
+            // spare hands over twenty-eight commons is fourteen apiece, and
+            // fourteen bodies inside one post's two-tile reach is a scrum the
+            // shove would spend all day untangling. Each time round the list
+            // the muster steps a few tiles further along the street it is on,
+            // so a road reads as a road with people on it rather than as
+            // twenty-eight knots.
+            const std::int32_t ring = static_cast<std::int32_t>(slot / std::size(kCommons));
+            const std::int32_t drift = (ring / 2 + 1) * 3;
+            std::int32_t cx = spot.x + ((ring % 2 == 0) ? drift : -drift);
             std::int32_t cy = spot.y;
             std::int32_t cb = spot.band;
             if (!snapToStandable(cx, cy, cb, 5)) {

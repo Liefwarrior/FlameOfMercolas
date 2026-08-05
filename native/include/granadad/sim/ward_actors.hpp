@@ -338,7 +338,19 @@ public:
 
     void clear() noexcept;
     [[nodiscard]] std::int32_t at(std::uint32_t cell) const noexcept;
-    void add(std::uint32_t cell);
+
+    /// WHO is standing there, or -1.
+    ///
+    /// The index carries the occupant and not only the count, and it is worth
+    /// saying why: the shove needs to know who it is shoving, and looking that
+    /// up by walking the roster is O(N) inside a step that already happens once
+    /// per body per tick. Six hundred and seventy-eight bodies is four hundred
+    /// and sixty thousand comparisons a tick, which turns a build somebody runs
+    /// into a build somebody starts and goes away from. Under the one-per-cell
+    /// cap there is exactly one occupant, so this is a field and not a list.
+    [[nodiscard]] std::int32_t occupantAt(std::uint32_t cell) const noexcept;
+
+    void add(std::uint32_t cell, std::int32_t actorId);
     void remove(std::uint32_t cell) noexcept;
     [[nodiscard]] std::size_t size() const noexcept { return count_; }
 
@@ -349,6 +361,7 @@ private:
 
     std::vector<std::uint32_t> keys_;
     std::vector<std::int16_t> counts_;
+    std::vector<std::int32_t> owners_;
     std::size_t mask_ = 0;
     std::size_t count_ = 0;
     static constexpr std::uint32_t kEmpty = 0xFFFFFFFFu;
@@ -433,8 +446,17 @@ struct WardActor {
     [[nodiscard]] std::int32_t need(Need which) const noexcept {
         return needs[static_cast<std::size_t>(which)];
     }
+    /// Home is a ROOM, not a bed, and the difference is load-bearing.
+    ///
+    /// A household is one to five people and one home cell, and only one body
+    /// can stand on a cell. Asking for the exact tile would mean that in a
+    /// family of five, four of them never recover a point of rest, never reach
+    /// the larder, and spend every night of their lives one tile from their own
+    /// door with RETURN_HOME winning at 385 -- a ward permanently walking home
+    /// and never arriving. One tile out, on the same storey, is the room.
     [[nodiscard]] bool atHome() const noexcept {
-        return x == homeX && y == homeY && band == homeBand;
+        return band == homeBand && (x - homeX <= 1) && (homeX - x <= 1) && (y - homeY <= 1) &&
+               (homeY - y <= 1);
     }
 };
 
@@ -571,6 +593,12 @@ public:
     /// how "no guard pile-ups" stops being an opinion.
     [[nodiscard]] std::int64_t shoves() const noexcept { return shoves_; }
     [[nodiscard]] std::int32_t worstJam() const noexcept { return worstJam_; }
+    /// Times a watchman has laid hands on another watchman. ZERO, always: the
+    /// etiquette gate refuses it before any draw is made, which is what makes
+    /// the beat's own corner yield the resolution mechanism instead of two
+    /// watchmen wrestling in a doorway for the rest of the night. It is counted
+    /// rather than asserted so that deleting the gate turns a case red.
+    [[nodiscard]] std::int64_t watchOnWatchShoves() const noexcept { return watchShoves_; }
 
     /// Jumps the clock without simulating the gap -- what a capture at a named
     /// hour does, and what sleeping a night in a rented bed does.
@@ -638,8 +666,18 @@ private:
     /// The nearest standable cell to (x, y, band), searched outward in a fixed
     /// order. An authored anchor is a marker on a map and a marker can sit on a
     /// counter; a body has to stand somewhere real.
+    ///
+    /// `wantWalkable` additionally requires the cell to be in the district's
+    /// MAIN walking component -- see walkComponent_ for why that matters more
+    /// than it sounds.
     [[nodiscard]] bool snapToStandable(std::int32_t& x, std::int32_t& y, std::int32_t& band,
-                                       std::int32_t radius) const;
+                                       std::int32_t radius, bool wantWalkable = true) const;
+
+    /// Paints every standable cell with the id of the walk component it is in.
+    /// Run once at the bake, before anybody is placed.
+    void mapWalkComponents();
+    [[nodiscard]] std::int16_t componentAt(std::int32_t x, std::int32_t y,
+                                           std::int32_t band) const noexcept;
 
     SystemId id_;
     const TileQuery* tiles_;
@@ -678,10 +716,31 @@ private:
     /// The market's own stock, drawn on by anybody with coin and no larder.
     std::int32_t marketStock_ = 0;
 
+    /// WHICH ISLAND OF THE DISTRICT EACH CELL IS ON, or -1 for a cell nobody
+    /// can stand on. Painted once at the bake by a flood fill over
+    /// TileQuery::stepBand -- the walking rule, exactly, with no roof moves.
+    ///
+    /// IT EXISTS FOR SPEED AND IT PAYS FOR ITSELF IN CORRECTNESS. An A* that
+    /// CANNOT succeed is the most expensive search there is: it burns the whole
+    /// four-thousand-node budget before answering no, and it answers no again
+    /// every time the retry cooldown lapses, forever. Six hundred bodies each
+    /// asking one impossible question is not a slow simulation, it is a stopped
+    /// one -- and the Docks has genuinely unreachable ground in it, because
+    /// DOCKS-GAZETTEER section 2.6 files the roof-slum planes' isolation as
+    /// design.
+    ///
+    /// So the question is asked ONCE, at the bake, and a body is never homed or
+    /// posted anywhere it cannot walk to. What the map cannot reach on foot,
+    /// nobody in the ward lives on.
+    std::vector<std::int16_t> walkComponent_;
+    /// The component the district's own spawn is in: the one the ward lives on.
+    std::int16_t mainComponent_ = -1;
+
     OccupancyIndex occupancy_;
     mutable PathFinder finder_;
     WardLedger ledger_;
     std::int64_t shoves_ = 0;
+    std::int64_t watchShoves_ = 0;
     std::int32_t worstJam_ = 0;
     std::int32_t starved_ = 0;
 };
