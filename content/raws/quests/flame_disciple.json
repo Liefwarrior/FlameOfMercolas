@@ -32,7 +32,7 @@
       "party": "wake",
       "label": "ASK THE CAPTAIN ABOUT THE WATER",
       "objective": "Maell wrote three letters to the monastery about something wrong on the water and nobody answered. Find a seaman who was out there. Captain Ivo Wake of the Kestrel drinks here.",
-      "log": "Wake says the harbour runs warm out of the outfall on the ebb, in this month, three nights together. He keeps an honest log and wishes he did not.",
+      "log": "Wake says the harbor runs warm out of the outfall on the ebb, in this month, three nights together. He keeps an honest log and wishes he did not.",
       "barkKey": "quest.flame-disciple.water.wake",
       "standing": 16
     },
