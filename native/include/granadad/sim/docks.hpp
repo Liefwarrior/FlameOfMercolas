@@ -61,6 +61,27 @@ inline constexpr std::int32_t kHarbourSurfaceBand = 18;
 /// Same connected component as the old spawn -- both stand on the Tarwalk quay
 /// apron -- so every reachability count below is unchanged, and
 /// test_tile_query.cpp re-derives all five from the baked bytes to prove it.
+///
+/// THE "32% SKY" ABOVE IS NO LONGER TRUE, and saying so is the honest thing to
+/// do rather than quietly deleting the sentence. polish-1 made a storey three
+/// tiles instead of one (sim/vertical_scale.hpp), and the Gull's frontage six
+/// tiles across the Tarwalk went from something you looked over to something
+/// 8 m tall. Measured at 960x540, 13:00: the same frame is now 1.3% sky.
+///
+/// It is a better picture -- a lit doorway with somebody standing in it, under
+/// three storeys of granite and timber, which is what the district is supposed
+/// to be -- but it is a DIFFERENT picture from the one this comment argued for,
+/// and the argument was partly about the sky. Whether the spawn should move
+/// back a few tiles to put a roofline against the sky again is a question for
+/// the owner, not a thing to change under cover of a scale fix: the spawn is
+/// load-bearing for five pinned reachability counts and for every screenshot
+/// comparison in the suite.
+///
+/// VERIFICATION GAP (polish-1): nothing tests the sky fraction of this frame,
+/// which is exactly why the claim above could go stale without a build going
+/// red. test_render.cpp asserts ground under the boots and sky above a
+/// pitched-up camera; neither of them would notice this spawn walling itself in
+/// completely.
 inline constexpr std::int32_t kSpawnTileX = 152;
 inline constexpr std::int32_t kSpawnTileY = 60;
 inline constexpr std::int32_t kSpawnBand = kBandQuayside;
