@@ -934,6 +934,42 @@ TEST_CASE("a long topic list draws its page, says there is more, and keeps the c
     CHECK(differs);
 }
 
+TEST_CASE("the topic band is as deep as the list it holds and no deeper") {
+    // polish-1. The bottom band claimed the deepest it could legally go
+    // whichever speaker was in front of you, so a doorman with two things to
+    // say took the same fifth of the frame as Master Venn with twelve. The top
+    // band has been sized from what it draws since S3; this one never was.
+    const auto bandTop = [](int topics) {
+        DialogueViewState view;
+        view.open = true;
+        view.speaker = "GERTA";
+        view.line = "WHAT.";
+        for (int i = 0; i < topics; ++i) {
+            view.topics.push_back("A THING " + std::to_string(i + 1));
+        }
+        Framebuffer bare(960, 540);
+        bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+        Framebuffer dressed(960, 540);
+        dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawDialogue(dressed, view);
+        const CentreRect centre = hudCentreRect(960, 540);
+        for (int y = centre.y1; y < 540; ++y) {
+            for (int x = 0; x < 960; ++x) {
+                if (bare.pixels()[bare.index(x, y)] != dressed.pixels()[dressed.index(x, y)]) {
+                    return y;
+                }
+            }
+        }
+        return 540;
+    };
+    const int shortList = bandTop(2);
+    const int fullList = bandTop(20);
+    INFO("two topics start the band at ", shortList, ", twenty at ", fullList);
+    CHECK(shortList > fullList);
+    // And the deep one still stops at the rectangle rather than inside it.
+    CHECK(fullList >= hudCentreRect(960, 540).y1);
+}
+
 TEST_CASE("the workbench draws where a conversation is allowed to be") {
     DialogueViewState view;
     view.open = true;
