@@ -151,8 +151,24 @@ TEST_CASE("the Docks render to a frame with a world in it") {
     CHECK(stats.distinctColours > 200);
     CHECK(stats.meanLuma > 0.01F);
     CHECK(stats.meanLuma < 0.7F);
-    CHECK(stats.nearestDepth < 3.0F);
+    // THE NEAR BOUND WAS MEASURING A WALL, AND #79 TOOK THE WALL AWAY.
+    //
+    // `nearestDepth < 3.0` passed from the S2 spawn because that spawn stood in
+    // a slot between two warehouses with masonry about a tile from the eye --
+    // which is the same fact that made its `seen=` zero and got the shot
+    // re-aimed. From an open street the nearest surface in the frame is the
+    // PAVING at the bottom edge, and where that lands is arithmetic rather than
+    // taste: a 1.70-tile eye over a frame whose lower half subtends 29.4
+    // degrees puts the bottom row of pavement 1.70 / tan(29.4) = 3.0 tiles out.
+    // The old bound sat exactly on that number, so on an open street it was a
+    // coin toss.
+    //
+    // What the case actually wants to say is that the frame has RANGE -- near
+    // geometry and far geometry in one picture, rather than a flat fill -- so
+    // it says that, in a form no spawn can make vacuous.
+    CHECK(stats.nearestDepth < 5.0F);
     CHECK(stats.furthestDepth > 12.0F);
+    CHECK(stats.furthestDepth > 3.0F * stats.nearestDepth);
 
     // The bottom of the frame is GROUND and the top is SKY, stated as the
     // direction it actually is. S1 checked `groundLuma != skyLuma`, which is
@@ -174,14 +190,31 @@ TEST_CASE("the Docks render to a frame with a world in it") {
     // under your own boots does not go anywhere.
     CHECK(worldFraction(150, 180) > 0.99F);
 
-    // Every pixel that is world has a finite depth; every sky pixel does not.
+    // Every pixel of geometry has a finite depth, and the sky behind all of it
+    // does not.
+    //
+    // THIS USED TO BE AN EQUALITY AND #79 MADE IT AN INTERVAL, for a reason
+    // worth writing down rather than relaxing quietly. `worldPixels` counts
+    // what the raycaster wrote -- walls, floors, roofs. Billboards are drawn
+    // AFTER it and write depth of their own, so a figure standing against the
+    // sky is a finite-depth pixel that is not a world pixel. That is correct:
+    // a body has to occlude, and a body silhouetted on the skyline is the shape
+    // of a person and not a hole in the sky.
+    //
+    // The equality only held before because the old spawn was walled in and
+    // drew NOBODY -- `seen=0` at eight in the morning, which is the defect #79
+    // exists to fix. The first frame after the re-aim put fifteen pixels of
+    // dockhand against the sky and turned this red. So the claim is now stated
+    // as what it always meant: no finite pixel that is neither.
     std::size_t finite = 0;
     for (const float d : frame.depth()) {
         if (std::isfinite(d)) {
             ++finite;
         }
     }
-    CHECK(finite == stats.worldPixels);
+    CHECK(finite >= stats.worldPixels);
+    CHECK(finite <= stats.worldPixels + stats.spritePixels);
+    CHECK(finite + stats.skyPixels >= frame.pixels().size());
 
     // THE PROJECTION IS THE RIGHT WAY UP, checked on the ground rather than on
     // the sky, so that it stays a fact about the projection and not a fact
@@ -671,7 +704,17 @@ TEST_CASE("walking to the water's edge keeps the harbour in front of the eye") {
     // recedes and darkens -- water is the darkest thing in the district at
     // dusk. S1 checked only that the two numbers DIFFERED, under a comment that
     // promised a direction.
-    Session session(docksAt(20));
+    //
+    // IT STARTS FROM ITS OWN TILE AND NOT FROM THE SPAWN (#79). This is a claim
+    // about the renderer; hanging it off kSpawnTileY made it a claim about the
+    // opening shot too, so re-aiming the opening shot would have turned it red
+    // for a reason that has nothing to do with water. docks::kQuayApproach is
+    // the open apron this walk needs, named where the spawn is named.
+    SessionConfig config = docksAt(20);
+    config.spawnX = sim::docks::kQuayApproachX;
+    config.spawnY = sim::docks::kQuayApproachY;
+    config.spawnBand = sim::docks::kBandQuayside;
+    Session session(config);
     session.body().setYaw(sim::kFacingNorth);
     Framebuffer before(320, 180);
     session.drawFrame(before);
@@ -703,7 +746,7 @@ TEST_CASE("walking to the water's edge keeps the harbour in front of the eye") {
     const float endDepth = meanLowerDepth(after);
 
     // It walked, and it stopped at the lip rather than in the water.
-    CHECK(session.body().tileY() < sim::docks::kSpawnTileY);
+    CHECK(session.body().tileY() < sim::docks::kQuayApproachY);
     CHECK(session.body().band() == sim::docks::kBandQuayside);
     // ...and the view below the horizon is now the harbour: further away, and
     // darker than the lamplit deck it replaced.

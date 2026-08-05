@@ -42,50 +42,69 @@ inline constexpr std::int32_t kHarbourSurfaceBand = 18;
 
 // --- the spawn --------------------------------------------------------------
 
-/// Tarwalk, six tiles off the Gilded Gull's door, facing the frontage.
+/// Tarwalk, three tiles off the Gilded Gull's frontage, looking west down the
+/// working spine with the door lamp over your left shoulder and the harbour
+/// over your right.
 ///
-/// MOVED IN S2, and the old one is worth recording. S1 spawned at (146, 64)
-/// facing 300 degrees and its header called that "the view the district is most
-/// recognisable from". It was not: the frame is 48% empty sky over a one-tile
-/// wall, and it is the weakest picture the renderer produces. The S1 review
-/// found the same frame at yaw 120 sold the visual target and the authored
-/// default did not.
+/// THIS IS A SHOT, NOT A COORDINATE, and it is the third attempt at it.
 ///
-/// This one is picked for what the game is: you arrive on the working quay with
-/// the whole granite frontage of the Gilded Gull (K03, DOCKS-GAZETTEER §3)
-/// across the street, its door lamp burning in the gap, a warehouse shoulder to
-/// the right and the Tarwalk running away to the left. 32% sky, and the sky is
-/// doing work. It is also where S2's tavern is, so the first thing a player can
-/// walk into is a room with people in it.
+/// S1 spawned at (146, 64) facing 300 and called that "the view the district is
+/// most recognisable from": 48% empty sky over a one-tile wall. S2 moved it to
+/// (152, 60) facing 165 to put the Gull's granite frontage across the street --
+/// correct at the time, and then polish-1 made a storey three tiles instead of
+/// one and the frontage stopped being something you looked over. What the S2
+/// spawn ACTUALLY shipped, measured off the built .exe at 960x540:
 ///
-/// Same connected component as the old spawn -- both stand on the Tarwalk quay
-/// apron -- so every reachability count below is unchanged, and
+///     08:00  ward=661  near=7   seen=0   sky px=6712   luma=0.18
+///     20:00  ward=661  near=14  seen=3   sky px=6712   luma=0.13
+///
+/// Seven people within twelve tiles and none of them on screen at eight in the
+/// morning. The frame is a dark slot between two warehouse walls; walk the
+/// thirty steps the capture harness walks and it seals completely (sky px=0,
+/// seen=0). The owner played it and reported "there were no people". The
+/// population was 661 and correct. The SHOT was wrong.
+///
+/// #79 re-aimed it by measuring rather than by argument: a grid of 400 stands
+/// across the Tarwalk reach either side of the Gull, four hours each, ranked by
+/// how many of the ward the frame actually DRAWS. This stand won it, and then
+/// won the eye test as well. What is in the frame, and why each of the three
+/// is there:
+///
+///   THE STREET      the Tarwalk runs away west for sixty tiles with nothing
+///                   across it, so the ward's own traffic is in shot instead of
+///                   behind a wall. seen= goes 20 / 18 / 28 / 30 at
+///                   02 / 08 / 14 / 20 against the old spawn's 3 / 3 / 1 / 3.
+///   THE GULL        its north frontage fills the left of the frame and the
+///                   door lamp at (153,66) burns at bearing 221 -- about 20
+///                   degrees left of centre, in shot at every hour the doors
+///                   are open and the brightest thing in the 02:00 frame.
+///   THE HARBOUR     open water and the finger piers read at the right of the
+///                   frame, because at this heading the frustum's right edge
+///                   clears the warehouse line north of the street.
+///
+/// 22% sky, and walking forward walks you down the street rather than into a
+/// wall. The Gull is still four seconds away, so the first thing a player can
+/// walk into is still a room with people in it.
+///
+/// Same connected component as both older spawns -- all three stand on the
+/// Tarwalk quay apron -- so every reachability count below is unchanged, and
 /// test_tile_query.cpp re-derives all five from the baked bytes to prove it.
-///
-/// THE "32% SKY" ABOVE IS NO LONGER TRUE, and saying so is the honest thing to
-/// do rather than quietly deleting the sentence. polish-1 made a storey three
-/// tiles instead of one (sim/vertical_scale.hpp), and the Gull's frontage six
-/// tiles across the Tarwalk went from something you looked over to something
-/// 8 m tall. Measured at 960x540, 13:00: the same frame is now 1.3% sky.
-///
-/// It is a better picture -- a lit doorway with somebody standing in it, under
-/// three storeys of granite and timber, which is what the district is supposed
-/// to be -- but it is a DIFFERENT picture from the one this comment argued for,
-/// and the argument was partly about the sky. Whether the spawn should move
-/// back a few tiles to put a roofline against the sky again is a question for
-/// the owner, not a thing to change under cover of a scale fix: the spawn is
-/// load-bearing for five pinned reachability counts and for every screenshot
-/// comparison in the suite.
-///
-/// VERIFICATION GAP (polish-1): nothing tests the sky fraction of this frame,
-/// which is exactly why the claim above could go stale without a build going
-/// red. test_render.cpp asserts ground under the boots and sky above a
-/// pitched-up camera; neither of them would notice this spawn walling itself in
-/// completely.
-inline constexpr std::int32_t kSpawnTileX = 152;
-inline constexpr std::int32_t kSpawnTileY = 60;
+inline constexpr std::int32_t kSpawnTileX = 156;
+inline constexpr std::int32_t kSpawnTileY = 63;
 inline constexpr std::int32_t kSpawnBand = kBandQuayside;
-inline constexpr Angle kSpawnYaw = angle_from_degrees(165);
+inline constexpr Angle kSpawnYaw = angle_from_degrees(265);
+
+/// The tile the harbour-walk case starts from, and it is NOT the spawn.
+///
+/// test_render.cpp walks north off the Tarwalk to the quay lip and requires the
+/// lower half of the frame to recede and darken into open water. That is a
+/// claim about the RENDERER, and hanging it off kSpawnTileY made it a claim
+/// about the spawn as well: re-aiming the opening shot in #79 would have turned
+/// it red for a reason that has nothing to do with what it tests. So the walk
+/// has its own named start, on the open apron where the quay edge is four tiles
+/// north and nothing is in the way.
+inline constexpr std::int32_t kQuayApproachX = 152;
+inline constexpr std::int32_t kQuayApproachY = 60;
 
 /// Every tile reachable from the spawn under the movement rules, counted by a
 /// flood fill in test_tile_query.cpp. Pinned so that a change to the step rules
