@@ -41,39 +41,14 @@
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/path_finder.hpp"
 #include "granadad/sim/ward_actors.hpp"
+#include "support/ward_fixture.hpp"
 
 using namespace granadad;
+using granadad::testfix::privateWard;
+using granadad::testfix::sharedTiles;
+using granadad::testfix::wardAt;
 
 namespace {
-
-struct Docks {
-    content::World world;
-    sim::TileQuery tiles;
-    explicit Docks()
-        : world(content::loadWorldFile(content::bakedMap(sim::docks::kWorldName))), tiles(world) {}
-};
-
-constexpr std::uint64_t kSeed = 0x4752414E41444144ull;  // "GRANADAD"
-
-struct WardRun {
-    Docks docks;
-    sim::PhasedEngine engine;
-    sim::WardPopulation* people = nullptr;
-
-    explicit WardRun(std::int32_t startHour) : engine(kSeed, docks.world) {
-        auto owned = std::make_unique<sim::WardPopulation>(
-            docks.tiles, sim::hourOfDay(startHour), kSeed, content::contentDir());
-        people = owned.get();
-        engine.register_system(std::move(owned));
-        engine.boot();
-    }
-
-    void run(std::int64_t ticks) {
-        for (std::int64_t t = 0; t < ticks; ++t) {
-            engine.tick();
-        }
-    }
-};
 
 /// Whether one step of a planned route is a move the district's own rules
 /// actually permit. Asked of every hop of every roof route below, because a
@@ -123,8 +98,8 @@ struct WardRun {
 }  // namespace
 
 TEST_CASE("the roof slum has tenants, and they are the people canon puts up there") {
-    WardRun run(8);
-    const sim::WardCensus roll = run.people->census();
+    const sim::WardPopulation& run = wardAt(8, 0);
+    const sim::WardCensus roll = run.census();
 
     // THE HEADLINE NUMBER. Before this pass it was zero, by construction: the
     // bake's snap came down off every deck to find the compound underneath.
@@ -151,7 +126,7 @@ TEST_CASE("the roof slum has tenants, and they are the people canon puts up ther
     // AND NOBODY WHO CANNOT CLIMB, which is the failure this would arrive as:
     // one serf drawn into a roof hut by the household mix is one body that
     // walks off to work and can never get home again.
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : run.actors()) {
         if (!actor.homeOnTheRoof) {
             continue;
         }
@@ -175,8 +150,8 @@ TEST_CASE("the roof slum has tenants, and they are the people canon puts up ther
     // on ground they cannot reach" holds it for the whole roll. A build where
     // every hut was refused would fail the roofHomed check above, which is the
     // regression this actually needs to catch.
-    INFO("roof huts: ", run.people->roofHomesOnStairs(), " on a stair-served deck, ",
-         run.people->roofHomesRefused(), " refused for want of a sound deck cell");
+    INFO("roof huts: ", run.roofHomesOnStairs(), " on a stair-served deck, ",
+         run.roofHomesRefused(), " refused for want of a sound deck cell");
 }
 
 TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") {
@@ -186,12 +161,12 @@ TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") 
     // wall you may only be able to come down beside, and a drop has no inverse
     // at all. So every roof tenant's own route home and back is planned here
     // with the same router, in the same gait, that the simulation uses.
-    WardRun run(8);
-    sim::PathFinder finder(run.docks.tiles);
+    const sim::WardPopulation& run = wardAt(8, 0);
+    sim::PathFinder finder(sharedTiles());
     std::vector<sim::PathStep> route;
 
     std::int32_t checked = 0;
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : run.actors()) {
         if (!actor.homeOnTheRoof) {
             continue;
         }
@@ -204,7 +179,7 @@ TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") 
         sim::PathStep ground{0, 0, 0};
         INFO("actor ", actor.id, ' ', sim::wardTypeName(actor.type), " bed ", bed.x, ',', bed.y,
              ",z", bed.band);
-        REQUIRE(groundUnder(*run.people, bed, ground));
+        REQUIRE(groundUnder(run, bed, ground));
         INFO("ground under it at ", ground.x, ',', ground.y, ",z", ground.band);
         // Folded to one bool on purpose: doctest decomposes the expression
         // inside a CHECK into a binary comparison and static_asserts on
@@ -219,7 +194,7 @@ TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") 
         for (const sim::PathStep& hop : route) {
             INFO("down-hop to ", hop.x, ',', hop.y, ",z", hop.band, " from ", at.x, ',', at.y,
                  ",z", at.band);
-            CHECK(legalHop(run.docks.tiles, at, hop));
+            CHECK(legalHop(sharedTiles(), at, hop));
             at = hop;
         }
         // And up again.
@@ -228,7 +203,7 @@ TEST_CASE("a roof bed is a bed you can get out of, and it is proved both ways") 
         for (const sim::PathStep& hop : route) {
             INFO("up-hop to ", hop.x, ',', hop.y, ",z", hop.band, " from ", at.x, ',', at.y, ",z",
                  at.band);
-            CHECK(legalHop(run.docks.tiles, at, hop));
+            CHECK(legalHop(sharedTiles(), at, hop));
             at = hop;
         }
     }
@@ -248,11 +223,11 @@ TEST_CASE("the Skyrunners live on a deck, not in a ground condo") {
     // stand on the roof-slum plane, which is climb-only. A Skyrunner asleep in
     // a courtyard condo is the thing canon rules out, and the count that says
     // so is thieves bedded ABOVE the street against thieves bedded on it.
-    WardRun run(2);
+    const sim::WardPopulation& run = wardAt(2, 0);
     std::int32_t onADeck = 0;
     std::int32_t onTheStreet = 0;
     std::int32_t climbOnly = 0;
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : run.actors()) {
         if (actor.type != sim::WardType::Thief) {
             continue;
         }
@@ -295,19 +270,19 @@ TEST_CASE("a walker cannot reach the roof-slum plane, and a climber can") {
     // the whole of the movement change stated as one comparison: the walking
     // rule refuses the deck (which is section 2.6's design, and why the plane
     // held zero bodies), and the climb reaches it.
-    WardRun run(8);
-    sim::PathFinder finder(run.docks.tiles);
+    const sim::WardPopulation& run = wardAt(8, 0);
+    sim::PathFinder finder(sharedTiles());
     std::vector<sim::PathStep> route;
 
     std::int32_t decks = 0;
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : run.actors()) {
         if (!actor.homeOnTheRoof) {
             continue;
         }
         const sim::PathStep deck{actor.homeX, actor.homeY, actor.homeBand};
         sim::PathStep ground{0, 0, 0};
         INFO("deck ", deck.x, ',', deck.y, ",z", deck.band);
-        REQUIRE(groundUnder(*run.people, deck, ground));
+        REQUIRE(groundUnder(run, deck, ground));
         // The walking rule refuses it -- which is DOCKS-GAZETTEER 2.6's design
         // and the reason the plane held nobody -- and the climb does not.
         CHECK_FALSE(finder.find(ground, deck, 0, route, sim::Gait::Walk));
@@ -325,8 +300,7 @@ TEST_CASE("a climb costs what a climb costs, and open ground is priced the same"
     // expand the same cells in the same order at the same costs -- otherwise
     // handing the ward's poor a climb verb would quietly re-route every walk
     // any of them ever takes. Same route, tile for tile, is how that is said.
-    Docks docks;
-    sim::PathFinder finder(docks.tiles);
+    sim::PathFinder finder(sharedTiles());
     std::vector<sim::PathStep> walked;
     std::vector<sim::PathStep> climbed;
 
@@ -362,10 +336,15 @@ TEST_CASE("the roof empties when its tenants go out to work, and fills when they
     // breakfast, when both are asleep. Writing the case the other way round --
     // "full at night" -- would be asserting a middle-class day the authored job
     // windows do not describe.
-    WardRun run(8);
-    const std::int32_t breakfast = run.people->census().onRoofNow;
-    run.people->skipToSecond(sim::hourOfDay(20));
-    const std::int32_t evening = run.people->census().onRoofNow;
+    // A PRIVATE WARD, because this case SKIPS THE CLOCK -- skipToSecond writes
+    // to the roster and settles every body to the new hour. Everything wardAt()
+    // hands out is const for exactly this reason; a case that changes a district
+    // bakes its own. See tests/support/ward_fixture.hpp.
+    const std::unique_ptr<testfix::WardRun> owned = privateWard(8);
+    sim::WardPopulation& run = owned->people();
+    const std::int32_t breakfast = run.census().onRoofNow;
+    run.skipToSecond(sim::hourOfDay(20));
+    const std::int32_t evening = run.census().onRoofNow;
 
     INFO("bodies off the walking island at 08:00=", breakfast, " and at 20:00=", evening);
     CHECK(breakfast > evening);
@@ -381,28 +360,33 @@ TEST_CASE("a roof tenant that went out to work climbs home again on its own legs
     // children are still on the bins. Twenty-two hundred is when RETURN_HOME's
     // night term outscores every job in the band, and from there the roof
     // tenants have to cross the ward and go up a wall to get to bed.
-    WardRun run(21);
+    const sim::WardPopulation& run = wardAt(21, 0);
     std::vector<std::int32_t> outAtDusk;
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : run.actors()) {
         if (actor.homeOnTheRoof && !actor.atHome()) {
             outAtDusk.push_back(actor.id);
         }
     }
     INFO("roof tenants away from their beds at 21:00");
     REQUIRE_FALSE(outAtDusk.empty());
-    const std::int32_t onTheDeckAtDusk = run.people->census().onRoofNow;
+    const std::int32_t onTheDeckAtDusk = run.census().onRoofNow;
 
     // 21:00 to 22:30. An hour to finish the shift and half an hour to walk it,
     // and a body steps a tile a second.
-    run.run(5400);
+    //
+    // The same object `run` already refers to, ticked forward: wardAt() holds
+    // one ward per hour for the life of the process and hands back a reference
+    // into it, so this advances the district the reading above was taken from
+    // rather than building a second one.
+    (void)wardAt(21, 5400);
 
     // THE MEASURE IS BODIES OFF THE WALKING ISLAND, which is a thing that can
     // only have happened by climbing: nothing in this run teleports anybody,
     // and the only route onto a deck is up a wall.
-    const std::int32_t onTheDeckAtBedtime = run.people->census().onRoofNow;
+    const std::int32_t onTheDeckAtBedtime = run.census().onRoofNow;
     std::int32_t cameHome = 0;
     for (const std::int32_t id : outAtDusk) {
-        const sim::WardActor& actor = run.people->actors()[static_cast<std::size_t>(id)];
+        const sim::WardActor& actor = run.actors()[static_cast<std::size_t>(id)];
         if (actor.atHome()) {
             ++cameHome;
         }
@@ -419,11 +403,11 @@ TEST_CASE("nobody is homed on ground they cannot reach, climber or not") {
     // island. A climber's bed is on the walking island or on the climb closure
     // hanging off it -- and never anywhere else, which is the -1 the component
     // map paints on a sealed cellar or a decorative deck with no way onto it.
-    WardRun run(8);
-    for (const sim::WardActor& actor : run.people->actors()) {
+    const sim::WardPopulation& run = wardAt(8, 0);
+    for (const sim::WardActor& actor : run.actors()) {
         INFO("actor ", actor.id, ' ', sim::wardTypeName(actor.type), " bed ", actor.homeX, ',',
              actor.homeY, ",z", actor.homeBand);
-        CHECK(run.docks.tiles.standable(actor.homeX, actor.homeY, actor.homeBand));
+        CHECK(sharedTiles().standable(actor.homeX, actor.homeY, actor.homeBand));
         if (!sim::wardTypeClimbs(actor.type)) {
             CHECK_FALSE(actor.homeOnTheRoof);
         }

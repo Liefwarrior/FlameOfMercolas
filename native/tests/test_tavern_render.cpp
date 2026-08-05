@@ -453,17 +453,24 @@ TEST_CASE("a scaled clock carries the room's clock with it, hour for hour") {
     // half that genuinely needs a Session -- that the scaled clock the capture
     // scripts run on carries the room's clock with it -- and it is asked in
     // seconds instead of hours.
-    SessionConfig config = insideTheGull(1);
+    // EIGHT IN THE MORNING AND NOT ONE, and the hour is a cost and not a
+    // scenario. Every engine tick a Session takes is a ward tick, and a ward
+    // tick costs what the ward is doing: 1.2 ms at eight, 6 ms at noon, 12 ms
+    // at eight in the evening, 31 ms between ten at night and four in the
+    // morning (measured, Debug, /600 ticks). A case whose subject is arithmetic
+    // on a clock should buy the cheapest hour there is. A case whose subject IS
+    // the hour pays for it and says so.
+    SessionConfig config = insideTheGull(8);
     config.clockScale = 120;
     Session session(config);
     const int start = session.timeOfDay();
 
     sim::MoveInput still;
-    session.stepMany(still, 10 * sim::kStepsPerSecond);  // ten seconds of movement
+    session.stepMany(still, 2 * sim::kStepsPerSecond);  // two seconds of movement
 
-    // Ten seconds of movement, twenty minutes of world.
-    CHECK(session.elapsedSeconds() == 10 * 120);
-    CHECK(session.timeOfDay() == start + 10 * 120);
+    // Two seconds of movement, four minutes of world.
+    CHECK(session.elapsedSeconds() == 2 * 120);
+    CHECK(session.timeOfDay() == start + 2 * 120);
     // And the room is on the same clock, which is the whole claim: a capture
     // that reaches a named hour by scaling must reach it in the taproom too.
     CHECK(session.tavern().timeOfDay() == session.timeOfDay());

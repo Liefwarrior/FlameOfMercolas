@@ -24,28 +24,28 @@
 // are all here, and so are the cases that watch them.
 //
 // ---------------------------------------------------------------------------
-// ONE SOAK, READ BY FIVE CASES, AND THAT IS A COST DECISION
+// ONE SOAK, READ BY FIVE CASES -- AND IT IS FIVE CASES AGAIN
 // ---------------------------------------------------------------------------
 // A cat starts full out of the owner's own cat.json and drains a quarter of a
 // point a tick, so the first catch in this district is five hours of ward time
 // away and a caught mouse is off the board for three more. There is no short
 // version of that question: an ecology is a thing you can only see over time.
 //
-// So the district is soaked ONCE, ten hours, and every claim about it is made
-// inside ONE case.
+// So the district is soaked ONCE, ten hours, and every claim about it reads
+// that one soak.
 //
-// ONE CASE AND NOT FIVE, AND THE REASON IS MEASURED. The first draft put each
-// claim in its own TEST_CASE reading a shared file-static soak, on the
-// reasonable assumption that a static is built once per binary. It is not:
-// doctest_discover_tests registers every case as its own ctest entry, and ctest
-// runs each of those by launching the binary again with --test-case=. Five
-// cases therefore meant five processes and FIVE SOAKS -- the gate measured it,
-// 307 + 270 + 262 + 260 seconds against one soak's 300. Twenty-two minutes of
-// every build for one answer repeated five ways, and the last round's ctest
-// time quadrupling is exactly the thing not to do twice.
+// #80 HAD TO FOLD THE FIVE CLAIMS INTO ONE CASE, and wrote down why: a static
+// is built once per PROCESS, and ctest used to register a ctest entry per
+// TEST_CASE and run each by launching the binary again. Five cases meant five
+// processes and FIVE SOAKS -- measured, 307 + 270 + 262 + 260 seconds against
+// one soak's 300. Twenty-two minutes of every build for one answer told five
+// ways. The answer at the time was to put five claims under one name, which is
+// a suite being deformed by its runner.
 //
-// So the five claims are five commented blocks under one name. Each is still a
-// separate assertion with its own INFO, so a failure still says which one.
+// #81 made the ctest entry the FILE. The cases in this file now share one
+// process, the static is a static, and the fold is undone: five names, five
+// verdicts, one soak. The soak's cost did not change -- it is 246 seconds of
+// the gate and it is the honest price of asking whether an ecology works.
 
 #include <doctest/doctest.h>
 
@@ -59,39 +59,13 @@
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/ward_actors.hpp"
+#include "support/ward_fixture.hpp"
 
 using namespace granadad;
+using granadad::testfix::wardAt;
+using granadad::testfix::WardRun;
 
 namespace {
-
-struct Docks {
-    content::World world;
-    sim::TileQuery tiles;
-    explicit Docks()
-        : world(content::loadWorldFile(content::bakedMap(sim::docks::kWorldName))), tiles(world) {}
-};
-
-constexpr std::uint64_t kSeed = 0x4752414E41444144ull;  // "GRANADAD"
-
-struct WardRun {
-    Docks docks;
-    sim::PhasedEngine engine;
-    sim::WardPopulation* people = nullptr;
-
-    explicit WardRun(std::int32_t startHour) : engine(kSeed, docks.world) {
-        auto owned = std::make_unique<sim::WardPopulation>(
-            docks.tiles, sim::hourOfDay(startHour), kSeed, content::contentDir());
-        people = owned.get();
-        engine.register_system(std::move(owned));
-        engine.boot();
-    }
-
-    void run(std::int64_t ticks) {
-        for (std::int64_t t = 0; t < ticks; ++t) {
-            engine.tick();
-        }
-    }
-};
 
 /// Ten hours of the Docks, from six in the morning, with the running tallies
 /// every claim below is read off.
@@ -140,7 +114,7 @@ const Soak& soak() {
     static const Soak cached = [] {
         Soak out;
         out.ward = std::make_unique<WardRun>(6);
-        const sim::WardPopulation& people = *out.ward->people;
+        const sim::WardPopulation& people = out.ward->people();
         out.prey = people.census().prey;
         out.lowWater = out.prey;
         for (int block = 0; block < 36; ++block) {
@@ -200,14 +174,14 @@ TEST_CASE("the mice are a contiguous id range, which is what makes the hunt chea
     // preyFirst..preyEnd and nothing else; if the mice ever stop being the last
     // thing the roster spawns, that probe silently starts missing prey and the
     // ecology goes quietly wrong instead of loudly red.
-    WardRun run(8);
-    const std::int32_t first = run.people->preyFirst();
-    const std::int32_t end = run.people->preyEnd();
+    const sim::WardPopulation& run = wardAt(8, 0);
+    const std::int32_t first = run.preyFirst();
+    const std::int32_t end = run.preyEnd();
     REQUIRE(end > first);
     CHECK(end - first == 32);
-    CHECK(end == static_cast<std::int32_t>(run.people->actors().size()));
+    CHECK(end == static_cast<std::int32_t>(run.actors().size()));
 
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : run.actors()) {
         const bool inRange = actor.id >= first && actor.id < end;
         INFO("actor ", actor.id, " is a ", sim::wardTypeName(actor.type));
         CHECK(inRange == sim::isPrey(actor.type));
@@ -221,22 +195,17 @@ TEST_CASE("the mice are a contiguous id range, which is what makes the hunt chea
     CHECK_FALSE(sim::isPredator(sim::WardType::Serf));
 }
 
-TEST_CASE("the food chain runs: mice are taken, and the den puts more out") {
-    // TEN HOURS OF THE DOCKS, AND FIVE CLAIMS OFF ONE RUN. See the file header
-    // for why they are not five cases.
-    const Soak& s = soak();
-    INFO("catches=", s.ward->people->catches(), " futile=", s.ward->people->futileChases(),
-         "; live mice fell to ", s.lowWater, " of ", s.prey, " and climbed back to ",
-         s.highWaterAfterTheDip, "; ", s.hungryPredators,
-         " of thirteen predators ended in the hunger band, ", s.atTheCeiling,
-         " of them scavenging at the ceiling, and the fullest held ", s.fullestPredator);
+/// The soak's headline numbers, on every verdict below, so a red case says what
+/// the district was doing and not merely which line failed.
+#define GRANADAD_SOAK_INFO(s)                                                                      INFO("catches=", (s).ward->people().catches(), " futile=",                                          (s).ward->people().futileChases(), "; live mice fell to ", (s).lowWater, " of ",               (s).prey, " and climbed back to ", (s).highWaterAfterTheDip, "; ",                             (s).hungryPredators, " of thirteen predators ended in the hunger band, ",                      (s).atTheCeiling, " of them scavenging at the ceiling, and the fullest held ",                 (s).fullestPredator)
 
-    // ---------------------------------------------------------------------
-    // 1. THE ACCEPTANCE. A mouse count that only ever rises is not an ecology.
-    // ---------------------------------------------------------------------
+TEST_CASE("the food chain runs: mice are taken, and the den puts more out") {
+    // THE ACCEPTANCE. A mouse count that only ever rises is not an ecology.
+    const Soak& s = soak();
+    GRANADAD_SOAK_INFO(s);
     REQUIRE(s.prey == 32);
     // Something actually ate something.
-    CHECK(s.ward->people->catches() > 0);
+    CHECK(s.ward->people().catches() > 0);
     // The population MOVED, which is the difference between a food chain and a
     // counter that gets incremented.
     CHECK(s.lowWater < s.prey);
@@ -250,53 +219,55 @@ TEST_CASE("the food chain runs: mice are taken, and the den puts more out") {
     CHECK(s.lowWater > s.prey / 3);
     // A caught mouse is off the board and never lost: the roll never shrank.
     CHECK(s.rollHeld);
+}
 
-    // ---------------------------------------------------------------------
-    // 2. A SCRAP IS NOT A MEAL -- the bug that would have made all of the
-    //    above dead code. The den nibble refilled a predator faster than any
-    //    decay could drain it, so no predator ever entered the hunger band and
-    //    the hunt could never fire. THE MICE WERE SAFE BECAUSE THE CATS WERE
-    //    NEVER HUNGRY.
-    // ---------------------------------------------------------------------
+TEST_CASE("a scrap is not a meal, and without that clamp nothing was ever hungry") {
+    // THE BUG THAT WOULD HAVE MADE THE HUNT DEAD CODE. The den nibble refilled
+    // a predator faster than any decay could drain it, so no predator ever
+    // entered the hunger band and the hunt could never fire. THE MICE WERE SAFE
+    // BECAUSE THE CATS WERE NEVER HUNGRY.
+    const Soak& s = soak();
+    GRANADAD_SOAK_INFO(s);
     CHECK(s.hungryPredators > 0);
     // At the ceiling and staying there is where a predator with nothing to
     // catch ends up: permanently hungry, permanently looking, never dead.
     CHECK(s.atTheCeiling > 0);
     // And a catch is worth a great deal more than a scrap. Somebody ate.
     CHECK(s.fullestPredator > sim::kScavengeCeiling);
+}
 
-    // ---------------------------------------------------------------------
-    // 3. THE FUTILITY BUDGET, which is the part the Java build paid for. A
-    //    predator pinned on an unreachable mouse is not a predator that fails
-    //    to eat, it is a predator that stops doing anything else -- one gull
-    //    was logged "hunting" for eight thousand ticks against a plugged
-    //    alcove. No lock outlives its budget; none is held by a beast that is
-    //    not hunting; none ever holds anything but a mouse.
-    // ---------------------------------------------------------------------
+TEST_CASE("no chase outlives its budget, and no lock is held by a beast not hunting") {
+    // THE FUTILITY BUDGET, which is the part the Java build paid for. A predator
+    // pinned on an unreachable mouse is not a predator that fails to eat, it is
+    // a predator that stops doing anything else -- one gull was logged "hunting"
+    // for eight thousand ticks against a plugged alcove.
+    const Soak& s = soak();
+    GRANADAD_SOAK_INFO(s);
     CHECK(s.worstChase <= sim::kChaseBudgetTicks);
     CHECK(s.idleLocks == 0);
     CHECK(s.wrongPrey == 0);
     // Futile chases are COUNTED and not asserted away: a district with real
     // geometry in it will have some, and a count that runs away is the
     // chokepoint freeze coming back.
-    CHECK(s.ward->people->futileChases() < 6000);
+    CHECK(s.ward->people().futileChases() < 6000);
+}
 
-    // ---------------------------------------------------------------------
-    // 4. A CAUGHT MOUSE HOLDS NO TILE. A body in a stomach must not go on
-    //    occupying a square: a den mouth sealed for three hours of ward time
-    //    is the one way being eaten could go on hurting a street after the
-    //    mouse is gone. Same rule a corpse keeps.
-    // ---------------------------------------------------------------------
+TEST_CASE("a caught mouse holds no tile, and it comes back at an absolute tick") {
+    // A body in a stomach must not go on occupying a square: a den mouth sealed
+    // for three hours of ward time is the one way being eaten could go on
+    // hurting a street after the mouse is gone. Same rule a corpse keeps.
+    const Soak& s = soak();
+    GRANADAD_SOAK_INFO(s);
     std::int32_t down = 0;
     std::vector<std::uint64_t> cells;
-    for (const sim::WardActor& actor : s.ward->people->actors()) {
+    for (const sim::WardActor& actor : s.ward->people().actors()) {
         if (actor.downedUntil >= 0) {
             ++down;
             CHECK_FALSE(actor.visible());
             CHECK(sim::isPrey(actor.type));
             // It comes back, and at an ABSOLUTE tick rather than off a
             // countdown somebody has to remember to decrement.
-            CHECK(actor.downedUntil > s.ward->people->currentTick());
+            CHECK(actor.downedUntil > s.ward->people().currentTick());
             continue;
         }
         if (!actor.visible()) {
@@ -309,20 +280,21 @@ TEST_CASE("the food chain runs: mice are taken, and the den puts more out") {
     std::sort(cells.begin(), cells.end());
     INFO(down, " mice were off the board at the end of the soak");
     CHECK(std::adjacent_find(cells.begin(), cells.end()) == cells.end());
+}
 
-    // ---------------------------------------------------------------------
-    // 5. AND THE LOAF LEDGER DID NOT MOVE. A cat eating a rat is not a loaf
-    //    leaving a larder. The ledger's identity -- minted minus eaten equals
-    //    held -- is a gate rather than a report, because a simulation that can
-    //    quietly create or destroy a loaf balances its own economy by
-    //    accident. The catch restores a need and touches no item.
-    // ---------------------------------------------------------------------
+TEST_CASE("a cat eating a rat is not a loaf leaving a larder") {
+    // THE LOAF LEDGER DID NOT MOVE. Its identity -- minted minus eaten equals
+    // held -- is a gate rather than a report, because a simulation that can
+    // quietly create or destroy a loaf balances its own economy by accident.
+    // The catch restores a need and touches no item.
+    const Soak& s = soak();
+    GRANADAD_SOAK_INFO(s);
     CHECK(s.ledgerHeld);
-    const sim::WardLedger& ledger = s.ward->people->ledger();
-    CHECK(ledger.foodMinted - ledger.foodEaten == s.ward->people->foodHeld());
+    const sim::WardLedger& ledger = s.ward->people().ledger();
+    CHECK(ledger.foodMinted - ledger.foodEaten == s.ward->people().foodHeld());
 
     // And nothing on either side of the chain starved to death for it.
-    for (const sim::WardActor& actor : s.ward->people->actors()) {
+    for (const sim::WardActor& actor : s.ward->people().actors()) {
         if (sim::isPredator(actor.type) || sim::isPrey(actor.type)) {
             INFO("a ", sim::wardTypeName(actor.type), " id ", actor.id);
             CHECK_FALSE(actor.dead);

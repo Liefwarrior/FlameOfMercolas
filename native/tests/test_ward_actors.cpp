@@ -32,47 +32,37 @@
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/path_finder.hpp"
 #include "granadad/sim/ward_actors.hpp"
+#include "support/ward_fixture.hpp"
 
 using namespace granadad;
+using granadad::testfix::sharedTiles;
+using granadad::testfix::wardAt;
 
-namespace {
-
-/// The district, loaded once per case. Cheap enough at 17 KB of baked bytes.
-struct Docks {
-    content::World world;
-    sim::TileQuery tiles;
-    explicit Docks()
-        : world(content::loadWorldFile(content::bakedMap(sim::docks::kWorldName))), tiles(world) {}
-};
-
-constexpr std::uint64_t kSeed = 0x4752414E41444144ull;  // "GRANADAD"
-
-/// A population on its own engine, so a case can tick it without a renderer.
-struct WardRun {
-    Docks docks;
-    sim::PhasedEngine engine;
-    sim::WardPopulation* people = nullptr;
-
-    explicit WardRun(std::int32_t startHour) : engine(kSeed, docks.world) {
-        auto owned = std::make_unique<sim::WardPopulation>(
-            docks.tiles, sim::hourOfDay(startHour), kSeed, content::contentDir());
-        people = owned.get();
-        engine.register_system(std::move(owned));
-        engine.boot();
-    }
-
-    void run(std::int64_t ticks) {
-        for (std::int64_t t = 0; t < ticks; ++t) {
-            engine.tick();
-        }
-    }
-};
-
-}  // namespace
+// ---------------------------------------------------------------------------
+// THE TICK COUNTS IN THIS FILE ASCEND, PER HOUR, AND THAT IS LOAD-BEARING
+// ---------------------------------------------------------------------------
+// wardAt(hour, ticks) hands out ONE ward per hour and ticks it forward. Three
+// cases used to bake three wards at two in the morning and tick them 600, 900
+// and 1,200 times -- 2,700 ticks of the most expensive hour in the day (31 ms a
+// tick, measured) to ask three questions about the same district.
+//
+// They now read one ward, and the file is written so the shorter reading comes
+// first. Asking for less than has already run throws rather than answering with
+// the wrong district; see support/ward_fixture.hpp. A case that MUTATES takes a
+// privateWard() and pays for its own bake.
+//
+//   hour  1   1200
+//   hour  2    600 -> 600 -> 900
+//   hour  6    300, 600 ... 3600 -> 14400
+//   hour  7    900
+//   hour  8      0 ->   0 ->   0 -> 600 -> 600
+//   hour 12   1200
+//   hour 14    600
+//   hour 20    600
 
 TEST_CASE("the ward has a roll, and it is the size the Java build's was") {
-    WardRun run(8);
-    const sim::WardCensus roll = run.people->census();
+    const sim::WardPopulation& run = wardAt(8, 0);
+    const sim::WardCensus roll = run.census();
 
     // 692 IS THE NUMBER, and it comes from the Java build's own baseline:
     // docs/BASELINE-WORLD-HASH.md line 11 reads `souls: 692`. This build splits
@@ -95,8 +85,8 @@ TEST_CASE("every kind of person the owner named is actually in the ward") {
     // The complaint was specific: "there should be people like guards urchins
     // thieves taverns etc". Each of those is a count here, so a bake that
     // quietly stops producing one of them is a red build and not a shrug.
-    WardRun run(8);
-    const sim::WardCensus roll = run.people->census();
+    const sim::WardPopulation& run = wardAt(8, 0);
+    const sim::WardCensus roll = run.census();
     const auto count = [&](sim::WardType type) {
         return roll.byType[static_cast<std::size_t>(type)];
     };
@@ -121,9 +111,9 @@ TEST_CASE("every kind of person the owner named is actually in the ward") {
     CHECK(count(sim::WardType::Dog) == 8);
 
     // The night roster is exactly seven and every one of them works the dark.
-    REQUIRE(run.people->nightRoster().size() == 7);
-    for (const std::int32_t id : run.people->nightRoster()) {
-        const sim::WardActor& guard = run.people->actors()[static_cast<std::size_t>(id)];
+    REQUIRE(run.nightRoster().size() == 7);
+    for (const std::int32_t id : run.nightRoster()) {
+        const sim::WardActor& guard = run.actors()[static_cast<std::size_t>(id)];
         CHECK(guard.type == sim::WardType::MilitiaWatch);
         CHECK(guard.job == sim::WardJob::NightWatch);
         CHECK(sim::wardJobParams(guard.job).worksThroughTheNight);
@@ -136,13 +126,13 @@ TEST_CASE("everybody in the ward is standing somewhere a body can stand") {
     // real ground at the bake -- and this is what makes a future edit to
     // docks_surface.tmx that seals a shed a red build instead of a shopkeeper
     // standing in the harbour.
-    WardRun run(8);
-    for (const sim::WardActor& actor : run.people->actors()) {
+    const sim::WardPopulation& run = wardAt(8, 0);
+    for (const sim::WardActor& actor : run.actors()) {
         INFO("actor ", actor.id, " type ", sim::wardTypeName(actor.type), " at ", actor.x, ',',
              actor.y, ",z", actor.band);
-        CHECK(run.docks.tiles.standable(actor.x, actor.y, actor.band));
-        CHECK(run.docks.tiles.standable(actor.homeX, actor.homeY, actor.homeBand));
-        CHECK(run.docks.tiles.standable(actor.anchorX, actor.anchorY, actor.anchorBand));
+        CHECK(sharedTiles().standable(actor.x, actor.y, actor.band));
+        CHECK(sharedTiles().standable(actor.homeX, actor.homeY, actor.homeBand));
+        CHECK(sharedTiles().standable(actor.anchorX, actor.anchorY, actor.anchorBand));
     }
 }
 
@@ -150,10 +140,9 @@ TEST_CASE("one body per square, and it holds while six hundred of them walk") {
     // The owner's rule, verbatim: "no more stacking actors, only one per
     // square". It is enforced at the movement commit exactly like a wall, and
     // the shove is what dissolves the deadlocks that produces.
-    WardRun run(7);
-    run.run(900);
+    const sim::WardPopulation& run = wardAt(7, 900);
     std::vector<std::uint64_t> cells;
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : run.actors()) {
         // #80: and a mouse a cat has taken off the board holds no square
         // either, exactly like a corpse. visible() is the one place that is
         // answered; see WardActor::visible.
@@ -180,29 +169,27 @@ TEST_CASE("no guard pile-ups: a watchman never shoves a watchman on duty") {
     // What a pile-up actually is, is guards laying hands on each other, and
     // that is counted directly. It is zero by construction; deleting the gate
     // in tryPush makes it non-zero and turns this red.
-    WardRun run(1);  // one in the morning: the night roster is out
-    run.run(1200);
-    CHECK(run.people->watchOnWatchShoves() == 0);
+    const sim::WardPopulation& run = wardAt(1, 1200);  // the night roster is out
+    CHECK(run.watchOnWatchShoves() == 0);
     // And the crowd is still measured, at a bar a bunkroom can meet and a
     // wrestling match cannot: a whole 3x3 of watchmen and nothing worse.
     INFO("worst watch crowd over twenty minutes of ward time");
-    CHECK(run.people->worstJam() <= 9);
+    CHECK(run.worstJam() <= 9);
 }
 
 TEST_CASE("per-kind item conservation is exact, tick after tick") {
     // MINTED MINUS CONSUMED EQUALS HELD, per kind, at every tick. A simulation
     // that can quietly create or destroy a loaf will balance its own economy by
     // accident and the balance will mean nothing.
-    WardRun run(6);
     for (int block = 0; block < 12; ++block) {
-        run.run(300);
-        const sim::WardLedger& ledger = run.people->ledger();
+        const sim::WardPopulation& run = wardAt(6, (block + 1) * 300);
+        const sim::WardLedger& ledger = run.ledger();
         INFO("after ", (block + 1) * 300, " ticks");
-        CHECK(ledger.foodMinted - ledger.foodEaten == run.people->foodHeld());
+        CHECK(ledger.foodMinted - ledger.foodEaten == run.foodHeld());
         // And the same for coin: every royal in a purse was minted by a day's
         // work and every one spent went across a counter.
         std::int64_t purses = 0;
-        for (const sim::WardActor& actor : run.people->actors()) {
+        for (const sim::WardActor& actor : run.actors()) {
             purses += actor.coin;
         }
         CHECK(ledger.coinMinted - ledger.coinSunk == purses);
@@ -232,9 +219,8 @@ TEST_CASE("the ward feeds itself: nobody is on the road to starving after a day"
     // check compiles with -DCMAKE_BUILD_TYPE=Debug and six hundred and
     // seventy-eight bodies is not a number you can tick a whole day of there
     // and still have a build somebody will run.
-    WardRun run(6);
-    run.run(4 * 3600);
-    const sim::WardCensus roll = run.people->census();
+    const sim::WardPopulation& run = wardAt(6, 4 * 3600);
+    const sim::WardCensus roll = run.census();
     REQUIRE(roll.serfs > 200);
 
     // Nobody has died yet, because nobody can have.
@@ -242,7 +228,7 @@ TEST_CASE("the ward feeds itself: nobody is on the road to starving after a day"
 
     std::int32_t empty = 0;
     std::int32_t labouring = 0;
-    for (const sim::WardActor& actor : run.people->actors()) {
+    for (const sim::WardActor& actor : run.actors()) {
         if (!sim::isPerson(actor.type)) {
             continue;
         }
@@ -258,8 +244,8 @@ TEST_CASE("the ward feeds itself: nobody is on the road to starving after a day"
 
     // And the ward is not surviving on a mountain of surplus either: an economy
     // with nothing scarce in it is not balanced, it is switched off.
-    CHECK(run.people->ledger().foodEaten > 100);
-    CHECK(run.people->ledger().foodMinted > run.people->ledger().foodEaten);
+    CHECK(run.ledger().foodEaten > 100);
+    CHECK(run.ledger().foodMinted > run.ledger().foodEaten);
 }
 
 TEST_CASE("the ward keeps its hours: everybody is somewhere for a reason") {
@@ -268,19 +254,17 @@ TEST_CASE("the ward keeps its hours: everybody is somewhere for a reason") {
     using namespace granadad::sim::wardplaces;
 
     SUBCASE("the Tarwalk is walked at eight, because the day trades start at seven") {
-        WardRun run(8);
-        run.run(600);
-        const std::int32_t onTheRoad = run.people->countIn(
+        const sim::WardPopulation& run = wardAt(8, 600);
+        const std::int32_t onTheRoad = run.countIn(
             kTarwalkX0, kTarwalkY0, kTarwalkX1, kTarwalkY1, sim::docks::kBandQuayside);
         INFO("bodies on the Tarwalk at 08:00: ", onTheRoad);
         CHECK(onTheRoad >= 8);
     }
 
     SUBCASE("the Watch is on the Ropewynd at two, because the night roster runs six to six") {
-        WardRun run(2);
-        run.run(600);
+        const sim::WardPopulation& run = wardAt(2, 600);
         const std::int32_t guards =
-            run.people->countIn(kRopewyndX0, kRopewyndY0, kRopewyndX1, kRopewyndY1,
+            run.countIn(kRopewyndX0, kRopewyndY0, kRopewyndX1, kRopewyndY1,
                                 sim::docks::kBandQuayside, sim::WardType::MilitiaWatch);
         INFO("watchmen on the Ropewynd at 02:00: ", guards);
         CHECK(guards >= 1);
@@ -296,7 +280,7 @@ TEST_CASE("the ward keeps its hours: everybody is somewhere for a reason") {
         // were home and not on their bed. Two tiles is the room.
         std::int32_t dayBeatIndoors = 0;
         std::int32_t dayBeatTotal = 0;
-        for (const sim::WardActor& actor : run.people->actors()) {
+        for (const sim::WardActor& actor : run.actors()) {
             if (actor.type != sim::WardType::MilitiaWatch || actor.job == sim::WardJob::NightWatch) {
                 continue;
             }
@@ -340,10 +324,16 @@ TEST_CASE("the ward keeps its hours: everybody is somewhere for a reason") {
         // At every one of the four hours the acceptance names, somebody is
         // outdoors on the quayside band. This is the closest thing to "the
         // street is not dead" that can be stated without asserting pixels.
+        //
+        // TEN MINUTES OF WARD TIME AND NOT FIVE. It read at 300 ticks before
+        // #81; two and eight are read at 600 by the subcases above, and the
+        // shared ward only moves forward, so reading all four at the same 600
+        // costs two hours of the day nothing at all. It is the same claim with
+        // longer for the district to disperse into it, which if anything is the
+        // harder version.
         for (const std::int32_t hour : {2, 8, 14, 20}) {
-            WardRun run(hour);
-            run.run(300);
-            const std::int32_t out = run.people->countIn(
+            const sim::WardPopulation& run = wardAt(hour, 600);
+            const std::int32_t out = run.countIn(
                 kDistrictX0, kDistrictY0, kDistrictX1, kDistrictY1, sim::docks::kBandQuayside);
             INFO("bodies on the quayside band at ", hour, ":00 -- ", out);
             CHECK(out >= 40);
@@ -361,12 +351,11 @@ TEST_CASE("a rostered guard on the night beat does not oscillate on its own bunk
     // 3,000-tick night window before worksThroughTheNight existed.
     //
     // So: at two in the morning the roster is PURSUING and not flipping.
-    WardRun run(2);
-    run.run(900);
+    const sim::WardPopulation& run = wardAt(2, 900);
     std::int32_t pursuing = 0;
     std::int32_t goingHome = 0;
-    for (const std::int32_t id : run.people->nightRoster()) {
-        const sim::WardActor& guard = run.people->actors()[static_cast<std::size_t>(id)];
+    for (const std::int32_t id : run.nightRoster()) {
+        const sim::WardActor& guard = run.actors()[static_cast<std::size_t>(id)];
         if (guard.policy == sim::WardPolicy::Pursue) {
             ++pursuing;
         }
@@ -387,11 +376,10 @@ TEST_CASE("a rostered guard on the night beat does not oscillate on its own bunk
     // handing the problem to RETURN_HOME and letting the two argue about it
     // every tick. What matters is that the guard ends up at its bunk and not on
     // its beat, and that it is not paid for the walk.
-    WardRun day(12);
-    day.run(1200);
+    const sim::WardPopulation& day = wardAt(12, 1200);
     std::int32_t home = 0;
-    for (const std::int32_t id : day.people->nightRoster()) {
-        const sim::WardActor& guard = day.people->actors()[static_cast<std::size_t>(id)];
+    for (const std::int32_t id : day.nightRoster()) {
+        const sim::WardActor& guard = day.actors()[static_cast<std::size_t>(id)];
         INFO("rostered guard ", id, " at noon, at ", guard.x, ',', guard.y, " home ", guard.homeX,
              ',', guard.homeY);
         // Off shift the goal target is CLEARED and never set to the bed. The
@@ -474,8 +462,7 @@ TEST_CASE("a route never cuts a solid corner, and never comes back partial") {
     // the Java build, a greedy step could squeeze diagonally between two wall
     // corners into a pocket whose every A* exit needs the cut A* refuses, and
     // the body was sealed in for good.
-    Docks docks;
-    sim::PathFinder finder(docks.tiles);
+    sim::PathFinder finder(sharedTiles());
     std::vector<sim::PathStep> route;
 
     // A real walk across the district: the Tarwalk's west end to its east.
@@ -495,11 +482,11 @@ TEST_CASE("a route never cuts a solid corner, and never comes back partial") {
              step.band);
         CHECK(std::max(std::abs(dx), std::abs(dy)) == 1);
         CHECK(std::abs(step.band - at.band) <= 1);
-        CHECK(docks.tiles.standable(step.x, step.y, step.band));
+        CHECK(sharedTiles().standable(step.x, step.y, step.band));
         if (dx != 0 && dy != 0) {
-            CHECK(docks.tiles.stepBand(at.x, at.y, at.band, step.x, at.y) !=
+            CHECK(sharedTiles().stepBand(at.x, at.y, at.band, step.x, at.y) !=
                   sim::TileQuery::kNoBand);
-            CHECK(docks.tiles.stepBand(at.x, at.y, at.band, at.x, step.y) !=
+            CHECK(sharedTiles().stepBand(at.x, at.y, at.band, at.x, step.y) !=
                   sim::TileQuery::kNoBand);
         }
         at = step;
@@ -520,8 +507,7 @@ TEST_CASE("two actors asking the same question walk it differently") {
     // per actor and the routes fan out -- and because it is a pure avalanche
     // over (salt, cell), the same actor asked twice gets the same answer and no
     // RNG stream is touched.
-    Docks docks;
-    sim::PathFinder finder(docks.tiles);
+    sim::PathFinder finder(sharedTiles());
     std::vector<sim::PathStep> a;
     std::vector<sim::PathStep> b;
     std::vector<sim::PathStep> again;
