@@ -57,7 +57,7 @@ namespace granadad::render {
 ///
 /// THE SHAPE OF IT IS OBLIVION'S OWN, PER ELI'S BRIEF, VERBATIM: "a button to
 /// swing, a button to 'interact (pickpocket if sneaking)'... only 10-12
-/// buttons that need mapped for all the controls." Eleven Actions below are
+/// buttons that need mapped for all the controls." Ten Actions below are
 /// marked CORE -- the ones a player actually has to map, movement axes and
 /// the accessibility turn keys excluded, Screenshot excluded (it is a
 /// dev/capture utility, not a Steam-Input-style gameplay action). Six verbs

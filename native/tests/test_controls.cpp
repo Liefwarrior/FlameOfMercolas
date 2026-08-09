@@ -469,3 +469,69 @@ TEST_CASE("every action and key name round trips, because the file format depend
     CHECK(keyFromName("") == Key::None);
     CHECK(actionFromKey("") == Action::Count);
 }
+
+TEST_CASE("#85 regression: an old-format save cannot make Pause unreachable") {
+    // PRE-#85, "menu" WAS PAUSE. git show 45afdda^ has the old table:
+    // {Action::Menu, "menu", "PAUSE"} with a shipped default of Escape +
+    // PadStart. Post-#85, "menu" is still a recognised key -- it now names
+    // the NEW journal/inventory screen (Action::Menu), and the renamed pause
+    // action (Action::Pause) kept Escape as ITS OWN default too. A save file
+    // written by the old build says exactly this line:
+    const std::string_view oldSaveLine = "bind menu ESC PAD_START\n";
+
+    // fromText() writes a parsed bind straight into the slots (see its own
+    // comment on why -- bind() steals, and a whole file applied through it
+    // would have each line un-bind the one before it whenever two lines name
+    // the same key). Without a cross-line collision guard, that line puts
+    // Escape on Menu's primary slot while Pause's own default (also Escape,
+    // untouched because this file never mentions "pause") is still sitting
+    // there too -- and actionFor() returns the FIRST match by enum index,
+    // which is Menu (11) before Pause (14). Pause -- the actual system panic
+    // screen this old file meant to bind -- goes silently unreachable by
+    // keyboard.
+    const ControlSettings loaded = ControlSettings::fromText(oldSaveLine);
+
+    // THE ACTUAL REQUIREMENT: Pause is reachable by SOME input after loading
+    // ANY file, old-format or current. Checked by resolved binding, not by
+    // "it didn't crash" -- actionFor(Escape) must still be able to say
+    // Action::Pause is one of the things Escape can mean, or the pad default
+    // must still stand so a controller player is not stranded either.
+    const std::size_t pauseIndex = static_cast<std::size_t>(Action::Pause);
+    const bool pauseHasAnyKey =
+        loaded.primary[pauseIndex] != Key::None || loaded.secondary[pauseIndex] != Key::None;
+    CHECK(pauseHasAnyKey);
+    // Escape itself must still resolve to SOMETHING that can open the pause
+    // screen -- either Escape stayed on Pause, or Pause fell back to a key
+    // that is not shared with the incoming Menu bind.
+    const Key pausePrimary = loaded.primary[pauseIndex];
+    const Key pauseSecondary = loaded.secondary[pauseIndex];
+    const bool pauseReachableByKeyboard =
+        (pausePrimary != Key::None && loaded.actionFor(pausePrimary) == Action::Pause) ||
+        (pauseSecondary != Key::None && loaded.actionFor(pauseSecondary) == Action::Pause);
+    CHECK(pauseReachableByKeyboard);
+
+    // And the pad fallback (PadStart) must still actually resolve to Pause,
+    // not have been silently stolen by the same collision from the other
+    // direction -- the old line's second key is also PAD_START, on Menu now.
+    CHECK(loaded.actionFor(Key::PadStart) == Action::Pause);
+}
+
+TEST_CASE("the collision guard does not block a legitimate two-action key swap") {
+    // THE ADVERSARIAL CASE FOR THE GUARD ITSELF (acceptance criterion e): a
+    // file that deliberately swaps two actions' keyboard keys is NOT the same
+    // shape as the #85-migration bug above. BOTH actions are named, on
+    // purpose, in the SAME file -- the guard must resolve this as a real
+    // swap, not refuse it as an unsafe strand, or a legitimate rebind a
+    // player actually wants becomes impossible to save.
+    const ControlSettings swapped = ControlSettings::fromText(
+        "bind menu ESC PAD_BACK\n"
+        "bind pause TAB PAD_START\n");
+    CHECK(swapped.bound(Action::Menu, Key::Escape));
+    CHECK(swapped.bound(Action::Pause, Key::Tab));
+    CHECK(swapped.actionFor(Key::Escape) == Action::Menu);
+    CHECK(swapped.actionFor(Key::Tab) == Action::Pause);
+    // Neither pad default was part of the swap, so both stay put -- proving
+    // the guard did not reach for a fallback it did not need.
+    CHECK(swapped.bound(Action::Menu, Key::PadBack));
+    CHECK(swapped.bound(Action::Pause, Key::PadStart));
+}

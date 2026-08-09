@@ -429,6 +429,34 @@ void ControlSettings::bind(Action action, Key key, bool asSecondary) noexcept {
         return;
     }
     if (key != Key::None) {
+        // THE COLLISION GUARD. Stealing is still the point -- see the header --
+        // but stealing a key from an action that has NO OTHER key leaves that
+        // action reachable by nothing at all, on any device, and nothing about
+        // that is visible: its row still prints the old key, right up until
+        // somebody presses it and nothing happens. #85's control-consolidation
+        // migration bug was exactly this, one level removed -- an old save's
+        // "bind menu ESC" line (menu WAS pause, pre-#85) landed Escape on the
+        // new Menu action while Pause's own still-Escape default sat there
+        // unmentioned, and actionFor() silently preferred Menu, the lower enum
+        // index. REFUSE rather than strand: if taking `key` would leave some
+        // OTHER action with nothing on either slot, this bind is a no-op --
+        // the same outcome an unrecognised settings-file line already has --
+        // and the key stays exactly where it was.
+        const std::size_t askingIndex = static_cast<std::size_t>(action);
+        for (std::size_t i = 0; i < kActionCount; ++i) {
+            if (i == askingIndex) {
+                continue;  // trading a key between your OWN two slots is fine
+            }
+            const bool holdsPrimary = primary[i] == key;
+            const bool holdsSecondary = secondary[i] == key;
+            if (!holdsPrimary && !holdsSecondary) {
+                continue;
+            }
+            const Key otherSlot = holdsPrimary ? secondary[i] : primary[i];
+            if (otherSlot == Key::None) {
+                return;
+            }
+        }
         // STOLEN, VISIBLY. See the header: two verbs sharing a key is a game
         // where one of them silently stops working.
         for (std::size_t i = 0; i < kActionCount; ++i) {
@@ -514,13 +542,27 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
             if (action == Action::Count) {
                 continue;
             }
-            const std::size_t index = static_cast<std::size_t>(action);
-            // Written straight into the slots rather than through bind(), on
-            // purpose: bind() steals, and a whole file applied through it would
-            // have each line un-bind the line before whenever two share a key.
-            out.primary[index] = keyFromName(first);
+            // ROUTED THROUGH bind(), not written straight into the slots. This
+            // USED to be a direct write, on the stated theory that bind()
+            // steals and "a whole file applied through it would have each line
+            // un-bind the line before it whenever two share a key" -- true of
+            // two EXPLICIT lines in the same file colliding, and bind()'s own
+            // collision guard (see its header) now covers exactly that case,
+            // the same way a live rebind already would. What a direct write
+            // could never catch is a line colliding with an action THIS FILE
+            // NEVER MENTIONS AT ALL -- its ordinary, untouched default -- and
+            // that gap was real: an old file's "bind menu ESC" line (menu WAS
+            // pause, pre-#85) wrote Escape onto the NEW Menu action while
+            // Pause's own still-Escape default sat there unmentioned, and
+            // actionFor() silently preferred whichever action has the lower
+            // enum index. Routed through bind(), that collision is resolved
+            // the same way any other duplicate key is -- the loser is stolen
+            // from, and the guard refuses the steal outright rather than leave
+            // the loser with no key on any device.
             std::string second;
-            out.secondary[index] = (fields >> second) ? keyFromName(second) : Key::None;
+            const bool hasSecond = static_cast<bool>(fields >> second);
+            out.bind(action, keyFromName(first), /*asSecondary=*/false);
+            out.bind(action, hasSecond ? keyFromName(second) : Key::None, /*asSecondary=*/true);
         } else if (verb == "set") {
             std::string name;
             std::string value;
