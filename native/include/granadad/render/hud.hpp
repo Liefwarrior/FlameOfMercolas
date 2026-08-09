@@ -129,6 +129,15 @@ struct HudState {
     /// strain on it and how many picks are left. Bottom edge, above the alert
     /// row, and empty whenever no lock is open.
     std::string_view lockLabel;
+    /// #85. THE RESOLVED VERB Interact is about to run -- "[E] TALK" changing
+    /// to "[E] PICKPOCKET" the instant the player crouches facing somebody.
+    /// Bottom edge, above the alert row: the element the whole consolidation
+    /// exists to make honest, so it sits where the alert (the loudest thing
+    /// on this edge besides a bouncer's warning) already trains the eye to
+    /// look. Empty draws nothing -- see Session::interactPrompt() for when
+    /// that is (a page already owns the keyboard, or nothing at all resolves
+    /// within reach, which cannot happen: LOOK is always the floor).
+    std::string_view interactLabel;
     /// S10: where the bloodletter trail stands and where it wants you next --
     /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row. Empty only when
     /// casebook.json is missing.

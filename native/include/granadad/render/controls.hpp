@@ -44,41 +44,115 @@ namespace granadad::render {
 // what the player can ask for
 // ---------------------------------------------------------------------------
 
-/// Every verb a key can be bound to. ORDER IS THE SETTINGS FILE'S ORDER and the
-/// keys page's order, so new actions go on the END -- an insertion in the middle
-/// silently rebinds somebody's saved controls.
+/// Every verb a key can be bound to.
+///
+/// #85 REBUILT THIS ENUM FROM SCRATCH, and that is a deliberate, one-time
+/// exception to the insert-only rule every earlier version of this comment
+/// stated. THE RULE HELD BECAUSE OF SAVED SETTINGS FILES, and there are none
+/// to protect: this game is unreleased, `granadad-controls.cfg` lives beside
+/// an executable nobody outside this repo has run, and the old 38-action
+/// table is not worth preserving byte-for-byte just to avoid a diff. See
+/// controls.cpp's own header on the migration stance this took instead of
+/// silently corrupting an old file: a clean break, stated once, here.
+///
+/// THE SHAPE OF IT IS OBLIVION'S OWN, PER ELI'S BRIEF, VERBATIM: "a button to
+/// swing, a button to 'interact (pickpocket if sneaking)'... only 10-12
+/// buttons that need mapped for all the controls." Eleven Actions below are
+/// marked CORE -- the ones a player actually has to map, movement axes and
+/// the accessibility turn keys excluded, Screenshot excluded (it is a
+/// dev/capture utility, not a Steam-Input-style gameplay action). Six verbs
+/// that used to be six keys (Interact, Examine, Steal, Lift, Rest, and the
+/// lockpick verb) now resolve out of ONE Interact press, by stance and by
+/// what is faced -- see render::Session::interact()'s own header, which is
+/// the actual resolution rule this consolidation exists to state. Six more
+/// (Jump, Traverse, DropDown) fold into Vertical the same way. Six MENU
+/// pages (Journal, Keys, Character, Map, Letters, Options) fold into ONE
+/// Menu action with PagePrev/PageNext flipping between them -- Oblivion and
+/// Skyrim's own tabbed inventory screen, not a new pattern.
+///
+/// ORDER IS STILL THE SETTINGS FILE'S ORDER AND THE KEYS PAGE'S ORDER, and
+/// FROM THIS POINT ON new actions go on the END again -- the insert-only
+/// rule resumes the moment this list ships, because THEN it will be
+/// protecting something.
 enum class Action : std::uint8_t {
+    // --- movement axes: always separate sticks/keys, never one of the ~10 --
     Forward = 0,
     Back,
     StrafeLeft,
     StrafeRight,
     /// Arrow-key turning. An ACCESSIBILITY FALLBACK for playing without a
-    /// mouse; sim::kTurnRate says at length why it is not allowed to define the
-    /// feel of anything.
+    /// mouse; sim::kTurnRate says at length why it is not allowed to define
+    /// the feel of anything. Not counted among the core buttons: nobody maps
+    /// this on a pad, which already turns with the right stick.
     TurnLeft,
     TurnRight,
-    Sprint,
-    Walk,
-    Crouch,
-    Jump,
+
+    // --- the ~10 core gameplay buttons (#85) --------------------------------
+
+    /// CORE. Was Punch. One button swings whatever is in the hand -- a fist
+    /// today, a weapon once armed combat exists. See render::Session::punch().
+    Attack,
+    /// CORE. Was Interact + Examine + Steal + Lift + Rest, and the lockpick
+    /// verb Steal used to reach contextually. ONE button, resolved by stance
+    /// and by what is faced -- render::Session::interact() is the whole rule,
+    /// and render::Session::interactPrompt() is the same rule read for the
+    /// HUD instead of acted on, so the label on screen can never say
+    /// something this key would not actually do.
     Interact,
-    Examine,
-    Steal,
-    Lift,
-    Punch,
-    Rest,
-    /// The S5 climb/leap verb. STILL BOUND, and it is a fallback now rather than
-    /// the way up: walking into a ledge climbs it. See sim::MoveInput's
-    /// autoTraverse.
-    Traverse,
-    DropDown,
-    Journal,
-    Keys,
+    /// CORE. The stance every other resolution keys off -- see stealth.hpp.
+    /// Unchanged: still a render::HoldToggle, tap latches, hold holds.
+    Crouch,
+    /// CORE. Was Jump + Traverse + DropDown. Resolved by what is directly
+    /// ahead or below -- render::Session::vertical() is the rule, and see its
+    /// header on why the mantle half of Traverse almost never fires from a
+    /// keypress at all: MoveInput::autoTraverse already hauls a body over a
+    /// ledge it walks into, every ordinary step.
+    Vertical,
+    /// CORE. Was Sprint + Walk, folded into one HoldToggle: HOLD IT for a
+    /// sprint, TAP IT to toggle a persistent walk, hold it again from a
+    /// walk-toggle to cancel back to the ordinary jog. See main.cpp's own
+    /// comment where `held.sprint`/`held.walk` are derived -- HoldToggle's
+    /// existing latch-cancel rule (a press that cancels a latch does not
+    /// re-read as "held" for that press) already makes sprint and walk
+    /// mutually exclusive with no new code in controls.cpp/hpp at all.
+    Sprint,
+    /// CORE. Was Journal + Keys + Character + Map + Letters + Options. ONE
+    /// screen, PAGES -- render::Session::toggleMenu()/menuPageNext()/
+    /// menuPagePrev() orchestrate the six pre-existing toggle*() methods,
+    /// which are UNCHANGED: this is a thin router in front of them, not a
+    /// rewrite of any one page.
     Menu,
-    Options,
-    /// The character sheet: the five Legend tracks, the skills actually wired
-    /// to a verb, and what the ward and the purse currently say.
-    Character,
+    /// CORE. Flips the Menu's pages backward -- LB on a pad, `[` on a
+    /// keyboard (Q and E are Interact's and Attack's near neighbours and
+    /// stay clear of them; brackets are free and sit together).
+    PagePrev,
+    /// CORE. Flips the Menu's pages forward -- RB on a pad, `]` on a
+    /// keyboard.
+    PageNext,
+    /// CORE. Was named Menu. RENAMED to say what it always was: the system
+    /// panic/save/quit screen (RESUME/SETTINGS/QUIT), kept deliberately
+    /// separate from the new Menu above -- Eli's own brief, point 7: "don't
+    /// leave [Options] reachable from both in a way that reads as two
+    /// systems." It reads as ONE system here: Pause's SETTINGS row and the
+    /// new Menu's Options page are the same optionsOpen_ state, reached two
+    /// ways, the way a real pause screen's own shortcuts usually are --
+    /// never two copies of the rebinding screen that could drift apart.
+    Pause,
+    /// CORE. Was QuickSlot1-0 + QuickNext + QuickPrev on a pad: HOLD to open,
+    /// the D-pad steps the bar while it is held, release leaves the pick
+    /// live. See controls.cpp's defaults for why this is a STEPPER and not a
+    /// true radial: render::stickIntent only ever returns a direction's
+    /// SIGN, never an angle, so there is no analogue wheel to build without
+    /// new plumbing this task did not need to take on -- the D-pad is
+    /// already four wired, discrete buttons (main.cpp's kPadTable), which is
+    /// what the brief asked for when a stick angle is not readable.
+    QuickWheel,
+
+    // --- kept, but NOT one of the ~10: the keyboard's plurality of input,
+    // not the controller's scarcity of it. A mouse and a full keyboard can
+    // afford instant direct shortcuts a pad cannot; QuickWheel is the one
+    // button story a controller needs and these are the desktop bonus on
+    // top of it, never the other way round. ---------------------------------
     QuickSlot1,
     QuickSlot2,
     QuickSlot3,
@@ -89,19 +163,17 @@ enum class Action : std::uint8_t {
     QuickSlot8,
     QuickSlot9,
     QuickSlot0,
+    /// Mouse-wheel quick-bar stepping. Still real, still rebindable, just not
+    /// a pad button any more -- QuickWheel's D-pad already steps the bar on
+    /// a controller, so binding these to bumpers as well would be two
+    /// controls doing the same job.
     QuickNext,
     QuickPrev,
+
+    /// NOT A GAMEPLAY CONTROL. A dev/capture utility, always F12, excluded
+    /// from the ~10-12 count the way Eli's brief asked -- "not part of the
+    /// Steam Input action set."
     Screenshot,
-    /// #82. THE DISTRICT MAP: known ground, open leads and who will talk to
-    /// you, each reckoned from where the player is standing right now. ON THE
-    /// END, per this enum's own rule above -- an insertion in the middle
-    /// silently rebinds somebody's saved controls -- rather than beside
-    /// Character, where it reads.
-    Map,
-    /// #82. THE LETTERS: authored documents a lead has unlocked, read on
-    /// their own parchment-toned page. ON THE END for the identical reason
-    /// Map is.
-    Letters,
     Count
 };
 

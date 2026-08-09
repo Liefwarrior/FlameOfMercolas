@@ -55,12 +55,13 @@ TEST_CASE("a new game opens on the case, not on a systems demo") {
     REQUIRE(opening.topics.size() == 1);
 
     // AND THE KEYS ARE ON THE MESSAGE ROW, so the first thing a player reads is
-    // how to put the notes down. #77 moved the journal from J to TAB and added
-    // an options page, so the row names all three.
+    // how to put the notes down. #85 folded Keys and Options into Menu's own
+    // pages, flipped with brackets, so the row names Menu and the page-flip
+    // rather than F1/F2, which no longer open anything on their own.
     INFO(session.lastMessage());
-    CHECK(session.lastMessage().find("F1") != std::string::npos);
-    CHECK(session.lastMessage().find("F2") != std::string::npos);
     CHECK(session.lastMessage().find("TAB") != std::string::npos);
+    CHECK(session.lastMessage().find("<") != std::string::npos);
+    CHECK(session.lastMessage().find(">") != std::string::npos);
 
     // WALKING PUTS IT AWAY, AND IT NEVER COMES BACK BY ITSELF.
     MoveInput walk;
@@ -143,13 +144,18 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
     // longer "a row went missing" -- it is "a row and its key disagree", and a
     // fragment match cannot see that. These are the exact strings the shipped
     // layout produces.
+    //
+    // #85: TEN CORE ROWS, NOT SEVENTEEN. Examine/Steal/Lift/Rest/Traverse/
+    // DropDown/Journal/Keys/Options/Character/Map/Letters/Walk no longer have
+    // rows of their own -- they are folded into Interact, Vertical, Menu and
+    // Sprint, which is the whole point of the consolidation this list is
+    // proving.
     for (const char* row : {"MOUSE  LOOK", "W  FORWARD", "S  BACK", "A  STEP LEFT",
-                            "D  STEP RIGHT", "LSHIFT  SPRINT", "LCTRL  CROUCH",
-                            "SPACE  JUMP", "LALT  WALK", "E  TALK", "Q  LOOK AT IT",
-                            "G  HANDS ON IT", "T  PICK A PURSE", "F  PUNCH", "R  SLEEP",
-                            "V  CLIMB", "X  DOWN", "TAB  CASEBOOK", "F1  THIS LIST",
-                            "ESC  PAUSE", "F2  OPTIONS", "1-0  QUICK BAR",
-                            "F12  SCREENSHOT", "LOCK:"}) {
+                            "D  STEP RIGHT", "MOUSE1  ATTACK", "E  USE", "LCTRL  SNEAK",
+                            "SPACE  JUMP", "LSHIFT  RUN", "TAB  MENU",
+                            "LBRACKET  PAGE <", "RBRACKET  PAGE >", "ESC  PAUSE",
+                            "Q  QUICK WHEEL", "1-0  QUICK BAR", "F12  SCREENSHOT",
+                            "LOCK:"}) {
         INFO("missing key row: " << row);
         CHECK(mentions(row));
     }
@@ -166,7 +172,7 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
     // the two, so it could not help drifting. Now it IS the binding table read
     // out loud, and this is the assertion that says so.
     render::ControlSettings rebound = session.controls();
-    rebound.bind(render::Action::Jump, render::Key::MouseX1);
+    rebound.bind(render::Action::Vertical, render::Key::MouseX1);
     session.setControls(rebound);
     const render::DialogueViewState after = session.dialogueView();
     const auto mentionsAfter = [&after](const char* fragment) {

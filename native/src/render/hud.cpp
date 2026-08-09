@@ -488,6 +488,20 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                      alertScale);
         }
     }
+    // #85. THE RESOLVED INTERACT VERB. Right after the alert, ahead of the
+    // lock -- the two never draw together (interactLabel is empty exactly
+    // while a lock is open, Session::interactPrompt() stands down for
+    // picking() the same way it does for talking()), but the alert (a
+    // bouncer's own warning) still outranks everything on this edge.
+    if (!state.interactLabel.empty()) {
+        const std::string prompt = clipToWidth(state.interactLabel, width - 2 * margin, minor);
+        const int y = band.take(minor);
+        if (y >= 0) {
+            const int drawn = textWidth(prompt, minor);
+            drawText(target, std::max(margin, (width - drawn) / 2), y, prompt,
+                     Rgb{0.85F, 0.80F, 0.60F}, 0.92F, minor);
+        }
+    }
     // The lock under the wire. A lockpicking minigame is exactly the element
     // that would otherwise become a panel in the middle of the screen, which is
     // the failure this HUD is built against; it gets one row on an edge.

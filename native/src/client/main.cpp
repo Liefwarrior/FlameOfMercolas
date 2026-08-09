@@ -706,11 +706,14 @@ void print_usage() {
             session.movePick(-1);
             return true;
         }
-        if (key == render::Key::Space || action == render::Action::Jump) {
+        // #85. Jump and Punch RETIRED into Vertical and Attack -- the wire
+        // still reuses whichever key opens the lock and whichever one forces
+        // it, unchanged in feel, under the new names.
+        if (key == render::Key::Space || action == render::Action::Vertical) {
             session.probeLock();
             return true;
         }
-        if (action == render::Action::Punch) {
+        if (action == render::Action::Attack) {
             session.forceLock();
             return true;
         }
@@ -762,7 +765,15 @@ void print_usage() {
                 session.makeOffer();
                 return true;
             }
-            if (action == render::Action::Lift) {
+            // #85. Lift RETIRED into Interact, which this branch already
+            // spends on `confirm` (making YOUR OWN offer) -- the two cannot
+            // share a key inside one haggle. PageNext is free here (nothing
+            // in a haggle pages anything) and reused for "take the number on
+            // the table", the same "a verb wearing a different mode's
+            // clothes" pattern route_menu_key already uses throughout --
+            // Forward/Back become movePick in the lockpicking branch above,
+            // for instance.
+            if (action == render::Action::PageNext) {
                 session.takeAskingPrice();
                 return true;
             }
@@ -1425,6 +1436,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     render::HoldToggle crouch;
     std::int64_t stepClock = 0;
     int quickSlot = 0;
+    // #85. THE QUICK WHEEL. Plain held-down state, not a HoldToggle: there is
+    // no tap-vs-hold ambiguity to resolve here the way Sprint/Crouch have --
+    // it is open for exactly as long as QuickWheel is down and never latches.
+    bool quickWheelOpen = false;
 
     bool running = true;
     std::int64_t frames = 0;
@@ -1448,62 +1463,74 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 }
                 return;
             }
+            // #85. THE QUICK WHEEL'S OWN DIRECTIONS, AHEAD OF THE ORDINARY
+            // BINDING LOOKUP -- the same reason route_menu_key's up/downward/
+            // etc. read raw keys as well as actions: while the wheel is open
+            // the D-pad (or arrows, on a keyboard) IS the wheel, whatever
+            // either one happens to be bound to otherwise. See controls.hpp's
+            // own note on why this is a STEPPER and not a true radial: no
+            // stick-angle primitive exists to build one off, and the D-pad is
+            // the direction source that is already wired as four discrete
+            // buttons.
+            if (quickWheelOpen) {
+                if (key == render::Key::PadUp || key == render::Key::Up ||
+                    key == render::Key::PadRight || key == render::Key::Right) {
+                    quickSlot = (quickSlot + 1) % 10;
+                    session.selectQuickSlot(quickSlot);
+                    return;
+                }
+                if (key == render::Key::PadDown || key == render::Key::Down ||
+                    key == render::Key::PadLeft || key == render::Key::Left) {
+                    quickSlot = (quickSlot + 9) % 10;
+                    session.selectQuickSlot(quickSlot);
+                    return;
+                }
+            }
             const render::Action action = session.controls().actionFor(key);
             switch (action) {
+                // #85. ONE BUTTON, CONTEXT-RESOLVED. session.interact() is the
+                // WHOLE rule (stance, then who/what is faced) -- see its own
+                // header. Was Interact + Examine + Steal + Lift + Rest.
                 case render::Action::Interact:
                     session.interact();
                     return;
-                case render::Action::Examine:
-                    session.examine();
-                    return;
-                case render::Action::Punch:
+                // #85. Was Punch, renamed to say what it will still be doing
+                // once armed combat exists: swinging whatever is in the hand.
+                case render::Action::Attack:
                     session.punch();
                     return;
-                case render::Action::Rest:
-                    session.restHere();
-                    return;
-                case render::Action::Steal:
-                    session.steal();
-                    return;
-                case render::Action::Lift:
-                    session.lift();
-                    return;
-                case render::Action::Jump:
-                    session.jump();
-                    return;
-                case render::Action::Traverse:
-                    // STILL BOUND, AND IT IS THE FALLBACK. Walking into a ledge
-                    // climbs it now; this is for lining up a leap deliberately
-                    // and for a gap the legs would not have tried on their own.
-                    session.climb();
-                    return;
-                case render::Action::DropDown:
-                    session.dropDown();
-                    return;
-                case render::Action::Journal:
-                    session.toggleCasebook();
-                    return;
-                case render::Action::Keys:
-                    session.toggleKeys();
-                    return;
-                case render::Action::Options:
-                    session.toggleOptions();
-                    return;
-                case render::Action::Character:
-                    session.toggleCharacter();
-                    return;
-                case render::Action::Map:
-                    session.toggleMap();
-                    return;
-                case render::Action::Letters:
-                    session.toggleLetters();
+                // #85. Was Jump + Traverse + DropDown. session.vertical() is
+                // the rule: climb (mantle-or-leap) first, a drop if there is
+                // a ledge to step off, an ordinary hop if neither.
+                case render::Action::Vertical:
+                    session.vertical();
                     return;
                 case render::Action::Crouch:
                     crouch.press(stepClock);
                     session.setCrouched(crouch.active());
                     return;
+                // #85. Was Sprint + Walk, one HoldToggle now -- see
+                // controls.hpp's own note and the `held.sprint`/`held.walk`
+                // derivation below, where the two are read back apart.
                 case render::Action::Sprint:
                     sprint.press(stepClock);
+                    return;
+                // #85. ONE SCREEN, PAGES. Was Journal + Keys + Character +
+                // Map + Letters + Options.
+                case render::Action::Menu:
+                    session.toggleMenu();
+                    return;
+                case render::Action::PagePrev:
+                    session.menuPagePrev();
+                    return;
+                case render::Action::PageNext:
+                    session.menuPageNext();
+                    return;
+                // #85. HELD. The D-pad/arrow interception that steps the
+                // quick bar while this is down lives ABOVE this switch, in
+                // `pressed`'s own early return -- see the comment there.
+                case render::Action::QuickWheel:
+                    quickWheelOpen = true;
                     return;
                 case render::Action::QuickNext:
                     quickSlot = (quickSlot + 1) % 10;
@@ -1521,7 +1548,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     }
                     return;
                 }
-                case render::Action::Menu:
+                // #85. RENAMED FROM Menu, unchanged body: the system panic/
+                // save/quit screen, deliberately apart from the new Menu
+                // above -- see controls.hpp's own note on why that reads as
+                // one system and not two.
+                case render::Action::Pause:
                     // ESCAPE BACKS OUT OF WHATEVER IS OPEN, and opens the pause
                     // menu when nothing is. IT USED TO QUIT THE GAME OUTRIGHT
                     // ON THAT SECOND BRANCH -- no confirmation, no way back if
@@ -1530,9 +1561,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     // already warned about for every OTHER key. ESC gets the
                     // same warning applied to itself now: the pause menu is
                     // what opens, and only QUIT, chosen twice, closes anything.
-                    if (session.talking() || session.picking() || session.casebookOpen() ||
-                        session.keysOpen() || session.optionsOpen() || session.pauseOpen() ||
-                        session.characterOpen() || session.mapOpen() || session.lettersOpen()) {
+                    // #85: session.menuOpen() replaces six named flags with
+                    // the one predicate that also drives the Menu action now.
+                    if (session.talking() || session.picking() || session.menuOpen() ||
+                        session.pauseOpen()) {
                         if (session.picking()) {
                             session.stopPicking();
                         } else {
@@ -1561,6 +1593,12 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 session.setCrouched(crouch.active());
             } else if (action == render::Action::Sprint) {
                 sprint.release(stepClock);
+            } else if (action == render::Action::QuickWheel) {
+                // #85. CLOSES THE WHEEL. Nothing else to do: selectQuickSlot
+                // already committed live as the D-pad stepped it, the same
+                // way QuickNext/QuickPrev always applied immediately -- there
+                // is no separate "confirm" beyond letting go.
+                quickWheelOpen = false;
             }
         };
 
@@ -1585,6 +1623,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         pad = nullptr;
                         sprint.clear();
                         crouch.clear();
+                        quickWheelOpen = false;
                     }
                     break;
                 case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
@@ -1675,8 +1714,21 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // Held keys move the body — unless somebody is talking to you, in which
         // case the movement keys are walking a list and must not also walk you
         // out of the room.
+        //
+        // #85 CLOSES A GAP THE SURVEY FOUND: this used to check talking() ||
+        // picking() || optionsOpen() || pauseOpen() and NOT the casebook, the
+        // keys page, the character sheet, the map or the letters -- so
+        // holding W with any of those five open did not walk the topic
+        // cursor a second time (route_menu_key already eats that discrete
+        // press) but DID keep walking the player's own body underneath the
+        // page, silently, every step. session.menuOpen() is the one
+        // predicate that now answers "is a page currently eating the
+        // keyboard" for all six of them, so this and route_menu_key's own
+        // per-page checks and every toggle*()'s own exclusivity block read
+        // off the same six flags instead of three hand-kept copies of the
+        // list.
         const bool listening =
-            session.talking() || session.picking() || session.optionsOpen() ||
+            session.talking() || session.picking() || session.menuOpen() ||
             session.pauseOpen();
         const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
         const Uint32 mouseButtons = listening ? 0U : SDL_GetMouseState(nullptr, nullptr);
@@ -1704,9 +1756,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             if (down(render::Action::TurnLeft)) {
                 held.turn -= 1;
             }
-            held.walk = down(render::Action::Walk);
-            // LATCHED OR HELD. HoldToggle::active is either.
-            held.sprint = sprint.active() || down(render::Action::Sprint);
+            // #85. PACE, OFF ONE HoldToggle NOW -- was Sprint + Walk, two
+            // separate actions. latched() is the tap-toggled WALK; active()
+            // that is NOT latched is the momentary SPRINT -- and the two can
+            // never both read true, by construction: HoldToggle::press()
+            // cancels a latch the instant a new press starts (see its own
+            // header), so the very press that would otherwise make both true
+            // in the same step is the one press activeNow() reports as NOT
+            // held for. See controls.hpp's Sprint entry for the fuller
+            // version of this note.
+            held.walk = sprint.latched();
+            held.sprint = sprint.active() && !sprint.latched();
         }
 
         // --- the pad --------------------------------------------------------

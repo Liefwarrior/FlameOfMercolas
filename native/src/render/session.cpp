@@ -261,7 +261,21 @@ Session::Session(const SessionConfig& config)
     controls_.sanitise();
     if (config_.openingPage && caseRaws_.loaded()) {
         casebookOpen_ = true;
-        message_ = "TAB YOUR NOTES  F1 KEYS  F2 OPTIONS  Q LOOK AT IT";
+        // #85. UPDATED FOR THE CONSOLIDATED SCHEME: Keys and Options are pages
+        // inside Menu now rather than their own F1/F2, and Examine is folded
+        // into Interact. VERIFICATION GAP (S3, still open): this is still a
+        // hand-written string rather than one built from actionLabel()/
+        // keyName(), so a player who rebinds Menu off Tab still gets a stale
+        // prompt -- the same gap the keys page itself closed by generating
+        // its rows from controls_ instead of a static array. Not closed here;
+        // stated rather than left for somebody to find by rebinding Tab and
+        // reading this line.
+        // NOT '[' / ']' -- hud.cpp's 4x6 font has no glyph for either (see its
+        // own header on why: it carries only the characters the authored
+        // barks actually use). '<'/'>' are in the table and are the same
+        // glyphs the keys page prints for PagePrev/PageNext (kActions'
+        // "PAGE <"/"PAGE >" labels), so this reads consistently with them.
+        message_ = "TAB YOUR NOTES  < > MORE PAGES  E USE";
         messageSteps_ = 60 * 12;
     }
     // TASK #83. SNAPPED, NOT EASED. Nobody pressed a key to reach whichever of
@@ -300,11 +314,7 @@ void Session::settleLanding(const sim::RoofResult& move) {
     }
 }
 
-void Session::climb() {
-    dismissOverlays();
-    if (talking()) {
-        return;
-    }
+sim::RoofResult Session::tryClimb() {
     sim::RoofResult move = body_->mantle();
     bool leapt = false;
     if (!move.ok()) {
@@ -315,9 +325,9 @@ void Session::climb() {
         leapt = move.ok();
     }
     if (!move.ok()) {
-        roofMove_ = std::string(sim::roofRefusal(move.move));
-        say(roofMove_);
-        return;
+        // NOTHING SAID. The caller decides what a failed climb means: climb()
+        // itself reports the refusal, vertical() moves on to tryDropDown().
+        return move;
     }
     if (leapt) {
         // A LEAP IS WATCHED, NOT TELEPORTED, and this is the S5 review's second
@@ -343,7 +353,7 @@ void Session::climb() {
         pendingLanding_ = move;
         awaitingLanding_ = true;
         syncTavernToBody();
-        return;
+        return move;
     }
     roofMove_ = "UP ONTO THE LEDGE.";
     // Same order as dropDown, and for the same reason: a mantle onto a LOWER
@@ -351,18 +361,25 @@ void Session::climb() {
     settleLanding(move);
     say(roofMove_);
     syncTavernToBody();
+    return move;
 }
 
-void Session::dropDown() {
+void Session::climb() {
     dismissOverlays();
     if (talking()) {
         return;
     }
-    const sim::RoofResult move = body_->dropOff();
+    const sim::RoofResult move = tryClimb();
     if (!move.ok()) {
         roofMove_ = std::string(sim::roofRefusal(move.move));
         say(roofMove_);
-        return;
+    }
+}
+
+sim::RoofResult Session::tryDropDown() {
+    const sim::RoofResult move = body_->dropOff();
+    if (!move.ok()) {
+        return move;
     }
     roofMove_ =
         "DOWN " + std::to_string(move.bands) + (move.bands == 1 ? " LEVEL." : " LEVELS.");
@@ -375,14 +392,48 @@ void Session::dropDown() {
     settleLanding(move);
     say(roofMove_);
     syncTavernToBody();
+    return move;
 }
 
-void Session::steal() {
+void Session::dropDown() {
     dismissOverlays();
     if (talking()) {
         return;
     }
-    syncTavernToBody();
+    const sim::RoofResult move = tryDropDown();
+    if (!move.ok()) {
+        roofMove_ = std::string(sim::roofRefusal(move.move));
+        say(roofMove_);
+    }
+}
+
+void Session::vertical() {
+    dismissOverlays();
+    if (talking() || picking()) {
+        return;
+    }
+    // #85. ONE BUTTON, RESOLVED BY WHAT IS DIRECTLY AHEAD OR BELOW: climb
+    // (mantle, or the leap it falls back to) first, a drop if there is a
+    // ledge to step off, an ordinary standing jump when neither is there.
+    // Each of the first two already refuses cleanly on ground that is
+    // neither -- RoofMove::NoLedge/NoGap for a climb, "the tile ahead is
+    // walkable" for a drop -- so trying them first costs nothing on flat
+    // ground, which is where this actually resolves to a jump.
+    if (tryClimb().ok()) {
+        return;
+    }
+    if (tryDropDown().ok()) {
+        return;
+    }
+    if (!body_->jump()) {
+        return;
+    }
+    // NOTHING IS SAID -- see jump()'s own note: a jump that announced itself
+    // on the alert row every time would be the noisiest thing in the game.
+    tavern_->setPlayerMotion(true, true);
+}
+
+bool Session::stealNearestThing() {
     sim::Tavern::StealResult took = tavern_->crackStrongbox();
     // S9. THE WIRE GOES IN FIRST. A locked box used to open to this key; it now
     // refuses with Refused, so the key puts the wire in instead and the player
@@ -396,7 +447,7 @@ void Session::steal() {
     if (took.result == sim::ServiceResult::Refused && !tavern_->picking().open()) {
         const sim::Tavern::PickResult started = tavern_->beginPick();
         say(started.result == sim::ServiceResult::Served ? started.line : took.line);
-        return;
+        return true;
     }
     if (took.result == sim::ServiceResult::TooFar) {
         // Nothing to open here. The other things hands can be put on are a bale
@@ -414,6 +465,16 @@ void Session::steal() {
         took = tavern_->buyPicks();
     }
     say(took.line);
+    return took.result != sim::ServiceResult::TooFar;
+}
+
+void Session::steal() {
+    dismissOverlays();
+    if (talking()) {
+        return;
+    }
+    syncTavernToBody();
+    stealNearestThing();
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,6 +1064,149 @@ void Session::toggleLetters() {
     syncPanelAnim();
 }
 
+// ---------------------------------------------------------------------------
+// #85: one Menu, six pages
+// ---------------------------------------------------------------------------
+
+bool Session::menuOpen() const noexcept {
+    return casebookOpen_ || characterOpen_ || mapOpen_ || lettersOpen_ || keysOpen_ ||
+           optionsOpen_;
+}
+
+int Session::menuPageIndex() const noexcept {
+    // A FIXED CYCLE ORDER: Journal, Character, Map, Letters, Keys, Options --
+    // the player's own notes and standing first, reference material (the
+    // key list, the rebinding screen) last, the same "read this, then look
+    // this up if you need to" ordering the pause menu's own SETTINGS-last
+    // row already implies.
+    if (casebookOpen_) {
+        return 0;
+    }
+    if (characterOpen_) {
+        return 1;
+    }
+    if (mapOpen_) {
+        return 2;
+    }
+    if (lettersOpen_) {
+        return 3;
+    }
+    if (keysOpen_) {
+        return 4;
+    }
+    if (optionsOpen_) {
+        return 5;
+    }
+    return -1;
+}
+
+void Session::openMenuPage(int index) {
+    // NEVER WRITES AN xOpen_ FLAG DIRECTLY. Each of the six toggle*() methods
+    // already carries its own exclusivity block and its own syncPanelAnim()
+    // call -- see toggleOptions' own comment on why an overlay that opens
+    // without putting the others down is a page on screen that is not the
+    // page reading the keyboard. Calling the toggle only when the target page
+    // is NOT already open keeps this idempotent: pressing PageNext twice on
+    // an index that maps to the same page (it never does today, but a future
+    // page count that is not a clean divisor of the cycle could) will not
+    // flip a page closed by mistake.
+    switch (((index % 6) + 6) % 6) {
+        case 0:
+            if (!casebookOpen_) {
+                toggleCasebook();
+            }
+            break;
+        case 1:
+            if (!characterOpen_) {
+                toggleCharacter();
+            }
+            break;
+        case 2:
+            if (!mapOpen_) {
+                toggleMap();
+            }
+            break;
+        case 3:
+            if (!lettersOpen_) {
+                toggleLetters();
+            }
+            break;
+        case 4:
+            if (!keysOpen_) {
+                toggleKeys();
+            }
+            break;
+        case 5:
+            if (!optionsOpen_) {
+                toggleOptions();
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void Session::toggleMenu() {
+    if (menuOpen()) {
+        // THE KEY THAT OPENED IT CLOSES IT -- the same rule every one of the
+        // six pages already has on its own. Closing means calling the OPEN
+        // page's own toggle a second time, not writing its flag to false
+        // directly, for the identical reason openMenuPage() above never
+        // writes one either.
+        switch (menuPageIndex()) {
+            case 0:
+                toggleCasebook();
+                break;
+            case 1:
+                toggleCharacter();
+                break;
+            case 2:
+                toggleMap();
+                break;
+            case 3:
+                toggleLetters();
+                break;
+            case 4:
+                toggleKeys();
+                break;
+            case 5:
+                toggleOptions();
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+    // OPENS ON THE CASEBOOK -- Journal was always the traditional "first tab"
+    // on the tabbed inventory screens this design is grounded in, and it is
+    // the page a fresh session already opens on (see the constructor's own
+    // firstRun_ handling), so Menu landing there first is consistent rather
+    // than arbitrary. Each of the six toggle*() methods already refuses while
+    // talking()/picking(), and toggleCasebook() additionally stands the pause
+    // menu down the same way every overlay already does -- nothing extra to
+    // check here.
+    openMenuPage(0);
+}
+
+void Session::menuPageNext() {
+    const int index = menuPageIndex();
+    if (index < 0) {
+        // NOT OPEN: A BUMPER PRESS WITH NOTHING OPEN IS NOT WHAT OPENS MENU.
+        // That is what the Menu action itself is for; PagePrev/PageNext only
+        // flip pages that already exist.
+        return;
+    }
+    openMenuPage(index + 1);
+}
+
+void Session::menuPagePrev() {
+    const int index = menuPageIndex();
+    if (index < 0) {
+        return;
+    }
+    openMenuPage(index + 5);
+}
+
 std::vector<std::int32_t> Session::unlockedLetters() const {
     std::vector<std::int32_t> out;
     // A LETTER'S GATE IS THE SAME GATE ITS LEAD ALREADY HAS -- Cold or
@@ -1318,22 +1522,134 @@ bool Session::talkToWard() {
 
 void Session::interact() {
     dismissOverlays();
+    if (picking()) {
+        // Not this key's mode to answer for -- main.cpp's route_menu_key
+        // intercepts Space/Attack/Menu while the wire is in, and Interact
+        // was never one of the three it reinterprets. Refusing quietly here
+        // is safer now than it was before #85: this key does a great deal
+        // more than it used to, and none of it belongs mid-pick.
+        return;
+    }
     if (talking()) {
         chooseTopic(static_cast<std::size_t>(std::max(0, topicCursor_)));
         return;
     }
+    syncTavernToBody();
+    const bool sneaking = stance() == sim::Stance::Crouched;
+
+    // #85. THE WHOLE RESOLUTION RULE. See this method's own header in
+    // session.hpp for the numbered order in prose; interactPrompt() below
+    // walks the identical order on read-only queries.
+
+    // 1. NOT SNEAKING + AT YOUR OWN BED = REST. Checked first: it is the one
+    // exact-tile trigger nothing else here could also mean.
+    if (!sneaking) {
+        const sim::ServiceResult slept = tavern_->sleep();
+        if (slept == sim::ServiceResult::Served) {
+            settleSleep();
+            return;
+        }
+        // NobodyThere (no room ever rented) or TooFar (not at the bed) --
+        // sleep() has no third answer, so anything else falls through.
+    }
+
+    // 2. PERSON IN REACH: TALK upright, PICKPOCKET sneaking.
     wardTalkId_ = -1;
-    if (!tavern_->talkTo() && !talkToWard()) {
-        // The same sentence Tavern::pickPocket answers with, spelled the same
-        // way. These two were "NOBODY WITHIN REACH" and "NOBODY WITHIN REACH."
-        // -- one string, two spellings, depending on which key you pressed.
-        say("NOBODY WITHIN REACH.");
+    if (!sneaking) {
+        if (tavern_->talkTo() || talkToWard()) {
+            topicCursor_ = 0;
+            haggleOffer_ = 0;
+            const sim::DialogueDirector& talk = tavern_->dialogue();
+            say(talk.speaker().name + ": " + talk.greeting());
+            return;
+        }
+    } else {
+        const sim::Tavern::StealResult lifted = tavern_->liftFrom();
+        if (lifted.result != sim::ServiceResult::TooFar) {
+            say(lifted.line);
+            return;
+        }
+    }
+
+    // 3. ITEM/FIXTURE: the box (or its lock), the bale, the rat, the wire
+    // that buys more picks -- the same chain steal() always tried. Stance
+    // changes what the NOTICE rule does with this (stealth.hpp), never which
+    // function answers, so "facing a lock picks it, sneaking or not" is
+    // already true with no branch here.
+    if (stealNearestThing()) {
         return;
     }
-    topicCursor_ = 0;
-    haggleOffer_ = 0;
-    const sim::DialogueDirector& talk = tavern_->dialogue();
-    say(talk.speaker().name + ": " + talk.greeting());
+
+    // 4. NOTHING RESOLVED: the investigation look, which never refuses.
+    // examine() re-checks talking()/picking()/casebookOpen_ on its own, all
+    // of which dismissOverlays() above already settled, so this is safe to
+    // call unconditionally.
+    examine();
+}
+
+std::string Session::interactPrompt() const {
+    // #85. THE LABEL Interact IS ABOUT TO RESOLVE TO -- see this method's own
+    // header in session.hpp for the verification gap (the bale, the rat and
+    // buyPicks() are not previewed) and for why the order below has to track
+    // interact()'s own order exactly.
+    if (talking() || picking() || pauseOpen() || optionsOpen() || awaitingKey_) {
+        // The topic list / options page already shows what Interact (or
+        // ENTER) does on this row; a second label would say the same thing
+        // twice in two different places on the same frame.
+        return {};
+    }
+    const bool sneaking = stance() == sim::Stance::Crouched;
+
+    // 1. REST. Tile-exact rather than sleep()'s own Q8 Chebyshev distance --
+    // close enough for a label, and body_ has no reason to expose Q8 here
+    // when the tile the body is standing on already answers it.
+    if (!sneaking && tavern_->rentedRoom() >= 0 && body_->band() == sim::gull::kUpperBand) {
+        const sim::gull::GuestRoom& room = sim::gull::kRooms[tavern_->rentedRoom()];
+        if (body_->tileX() == room.standX && body_->tileY() == room.standY) {
+            return "REST";
+        }
+    }
+
+    // 2. PERSON. The identical reach each verb would actually use --
+    // sim::kReachQ8 is talkTo()'s own 2*kSubOne, sim::kLiftReachQ8 is
+    // liftFrom()'s. Nearest is a read-only query on both Tavern and
+    // WardPopulation; neither talks to anybody by being asked.
+    const std::int32_t reach = sneaking ? sim::kLiftReachQ8 : sim::kReachQ8;
+    const bool personHere =
+        tavern_->nearestTo(body_->x(), body_->y(), reach) != nullptr ||
+        (!sneaking && people_->nearestTo(body_->tileX(), body_->tileY(), body_->band(),
+                                        kWardTalkReachTiles) != nullptr);
+    if (personHere) {
+        // Pickpocketing a WARD actor is not implemented (lift() only ever
+        // reached the Tavern's own roster) -- matched here rather than
+        // previewing a verb the button cannot actually perform.
+        return sneaking ? "PICKPOCKET" : "TALK";
+    }
+
+    // 3. THE BOX -- the one item this can preview exactly, because its
+    // geometry (gull::roomAtStand) and its state (rentedRoom/crackedBoxes/
+    // openedLocks) are all public, read-only, and the same ones
+    // crackStrongbox() itself reads.
+    if (body_->band() == sim::gull::kUpperBand) {
+        const std::int32_t room = sim::gull::roomAtStand(body_->tileX(), body_->tileY());
+        if (room >= 0) {
+            const std::int32_t bit = 1 << room;
+            if (room == tavern_->rentedRoom()) {
+                // Resolves to a refusal ("THAT ONE IS YOURS"), but the box is
+                // still what the press is about, so the button still names
+                // an action rather than falling back to LOOK.
+                return "TAKE";
+            }
+            if ((tavern_->crackedBoxes() & bit) == 0) {
+                if ((tavern_->openedLocks() & bit) == 0) {
+                    return "PICK LOCK";
+                }
+                return sneaking ? "TAKE QUIETLY" : "TAKE";
+            }
+        }
+    }
+
+    return "LOOK";
 }
 
 void Session::moveTopicCursor(int delta) {
@@ -2234,14 +2550,18 @@ void Session::restHere() {
     dismissOverlays();
     const sim::ServiceResult slept = tavern_->sleep();
     if (slept == sim::ServiceResult::Served) {
-        timeOfDay_ = tavern_->timeOfDay();
-        settings_.timeOfDay = timeOfDay_;
-        stepsThisSecond_ = 0;
-        syncWardToCalendar();
-        say("SLEPT UNTIL MORNING.");
+        settleSleep();
         return;
     }
     say(std::string(sim::restRefusal(slept)));
+}
+
+void Session::settleSleep() {
+    timeOfDay_ = tavern_->timeOfDay();
+    settings_.timeOfDay = timeOfDay_;
+    stepsThisSecond_ = 0;
+    syncWardToCalendar();
+    say("SLEPT UNTIL MORNING.");
 }
 
 void Session::skipToHour(int hour) {
@@ -3114,6 +3434,23 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.stealthLabel = conversing ? std::string_view{} : std::string_view{unseen};
     const std::string lock = lockLine();
     hud.lockLabel = conversing ? std::string_view{} : std::string_view{lock};
+    // #85. THE RESOLVED INTERACT VERB, LIVE. "E  TALK" changing to
+    // "E  PICKPOCKET" the instant the player crouches facing somebody --
+    // Eli's own brief, verbatim: "the player must SEE what pressing it will
+    // do before they press it." The key name comes off the same primary
+    // binding keyRows() prints, so a rebinding shows up here exactly the way
+    // it already does on the keys page. NOT '[' / ']' around the key -- see
+    // hud.cpp's own header on the 4x6 font's glyph set -- the same
+    // "<key>  <label>" two-space convention every other row on this page
+    // already uses.
+    const std::string verb = interactPrompt();
+    std::string prompt;
+    if (!verb.empty()) {
+        prompt = std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]));
+        prompt += "  ";
+        prompt += verb;
+    }
+    hud.interactLabel = conversing ? std::string_view{} : std::string_view{prompt};
     // The rung, and what the line wants next. Bottom-left, over the health bar.
     const std::string guild = guildLine();
     const std::string objective = objectiveLine();
@@ -4351,6 +4688,14 @@ std::int32_t gTrailUnreached = 0;
         // pin is.
         walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
         session.dropDown();
+        // #85. STANDS UP FIRST. Beat 1 crouched this body and nothing since
+        // has stood it back up; interact() now resolves a person in reach to
+        // PICKPOCKET while crouched rather than TALK, and speakTo() below
+        // needs the latter to reach Finch's Join topic at all. A burglar
+        // squaring an honest deal for more wire stands up to have the
+        // conversation, which is the in-fiction reading and not only the
+        // mechanical one.
+        session.setCrouched(false);
         // The oath first. Nobody sells a stranger wire -- Tavern::buyPicks
         // refuses anyone off the Skyrunners' ladder in as many words -- so the
         // burglar takes their first rung off Finch through the same Join topic

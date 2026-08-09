@@ -19,8 +19,9 @@ struct ActionNames {
 };
 
 // The table. One row per action, and the ORDER IS THE KEYS PAGE'S ORDER --
-// movement, then the body, then the interface -- because a control list sorted
-// by enum value is a control list nobody reads.
+// movement, then the ~10 core buttons, then the keyboard's own bonus bindings
+// -- because a control list sorted by enum value is a control list nobody
+// reads.
 //
 // EVERY LABEL IS SHORT ENOUGH TO SHARE A COLUMN WITH A KEY NAME. A topic column
 // is eighteen glyphs at every resolution this game runs at
@@ -29,6 +30,26 @@ struct ActionNames {
 // "SPACE  UP: MANT." and "E  TALK TO WHOE.". A controls page that arrives
 // truncated is worse than none, because a player reads the truncation as the
 // binding.
+//
+// #85. A CLEAN BREAK, NOT A MIGRATION. The `key` column below is the settings
+// file's own vocabulary (ControlSettings::toText/fromText), and the file
+// format already tolerates drift by design: fromText() starts from defaults()
+// and skips any line it does not recognise (actionFromKey returns
+// Action::Count for a name this build has never heard of, and the loader
+// throws that line away rather than failing). So a save file written by the
+// old 38-action build -- "bind examine Q", "bind traverse V", "bind menu
+// ESC" -- loses exactly the lines that named a retired action and keeps
+// every line that still means the same thing (forward, crouch, jump's old
+// key now feeding Vertical under the "interact"-shaped name change, and so
+// on are NOT silently reinterpreted as something else; "examine"/"steal"/
+// "lift"/"rest"/"traverse"/"drop_down"/"journal"/"keys"/"options"/
+// "character"/"map"/"letters"/"walk" simply stop matching and the shipped
+// default takes over for those verbs). NOTHING CORRUPTS: an unrecognised
+// bind line cannot rebind the wrong verb, because actionFromKey has no
+// partial match, only an exact one or Action::Count. This is the right
+// call because there are no real players yet to migrate -- stated here
+// rather than left for somebody to wonder whether a save format changed out
+// from under them.
 constexpr ActionNames kActions[] = {
     {Action::Forward, "forward", "FORWARD"},
     {Action::Back, "back", "BACK"},
@@ -36,23 +57,16 @@ constexpr ActionNames kActions[] = {
     {Action::StrafeRight, "strafe_right", "STEP RIGHT"},
     {Action::TurnLeft, "turn_left", "TURN L"},
     {Action::TurnRight, "turn_right", "TURN R"},
-    {Action::Sprint, "sprint", "SPRINT"},
-    {Action::Walk, "walk", "WALK"},
-    {Action::Crouch, "crouch", "CROUCH"},
-    {Action::Jump, "jump", "JUMP"},
-    {Action::Interact, "interact", "TALK"},
-    {Action::Examine, "examine", "LOOK AT IT"},
-    {Action::Steal, "steal", "HANDS ON IT"},
-    {Action::Lift, "lift", "PICK A PURSE"},
-    {Action::Punch, "punch", "PUNCH"},
-    {Action::Rest, "rest", "SLEEP"},
-    {Action::Traverse, "traverse", "CLIMB"},
-    {Action::DropDown, "drop_down", "DOWN"},
-    {Action::Journal, "journal", "CASEBOOK"},
-    {Action::Keys, "keys", "THIS LIST"},
-    {Action::Menu, "menu", "PAUSE"},
-    {Action::Options, "options", "OPTIONS"},
-    {Action::Character, "character", "CHARACTER"},
+    {Action::Attack, "attack", "ATTACK"},
+    {Action::Interact, "interact", "USE"},
+    {Action::Crouch, "crouch", "SNEAK"},
+    {Action::Vertical, "vertical", "JUMP"},
+    {Action::Sprint, "sprint", "RUN"},
+    {Action::Menu, "menu", "MENU"},
+    {Action::PagePrev, "page_prev", "PAGE <"},
+    {Action::PageNext, "page_next", "PAGE >"},
+    {Action::Pause, "pause", "PAUSE"},
+    {Action::QuickWheel, "quick_wheel", "QUICK WHEEL"},
     {Action::QuickSlot1, "quick_1", "SLOT 1"},
     {Action::QuickSlot2, "quick_2", "SLOT 2"},
     {Action::QuickSlot3, "quick_3", "SLOT 3"},
@@ -66,8 +80,6 @@ constexpr ActionNames kActions[] = {
     {Action::QuickNext, "quick_next", "NEXT"},
     {Action::QuickPrev, "quick_prev", "PREV"},
     {Action::Screenshot, "screenshot", "SCREENSHOT"},
-    {Action::Map, "map", "DISTRICT MAP"},
-    {Action::Letters, "letters", "LETTERS"},
 };
 static_assert(sizeof(kActions) / sizeof(kActions[0]) == kActionCount,
               "every action needs a name and a label, or the keys page lies");
@@ -335,32 +347,46 @@ ControlSettings ControlSettings::defaults() noexcept {
     set(Action::TurnLeft, Key::Left);
     set(Action::TurnRight, Key::Right);
 
-    // The modifiers everyone already has muscle memory for.
-    set(Action::Sprint, Key::LeftShift, Key::RightShift);
-    set(Action::Walk, Key::LeftAlt, Key::RightAlt);
-    set(Action::Crouch, Key::LeftCtrl, Key::RightCtrl);
-    set(Action::Jump, Key::Space);
+    // #85. THE ~10 CORE BUTTONS. Every one of these carries a pad default now
+    // -- the earlier build left all but two Actions with no gamepad binding
+    // at all, which is a strange thing to ship for a scheme whose whole point
+    // is "small enough to hand to a controller". Face buttons read the way a
+    // lot of console action games already train a thumb to expect: A is the
+    // primary-action position (Interact, the button pressed the most), X is
+    // the attack, Y sits north for "vertical", B is the stance modifier.
+    // EVERY ONE OF THESE HAS A PAD KEY NOW, and every one of them had to give
+    // something up to fit it: two binding slots per action, one keyboard key
+    // that stays and one that moves to the pad. RightShift/RightCtrl were
+    // always a redundant duplicate of the other hand's key, not a loss; F and
+    // MouseRight were real alternates and are the actual trade -- see each
+    // set() below for which.
+    set(Action::Sprint, Key::LeftShift, Key::PadLeftStick);
+    set(Action::Crouch, Key::LeftCtrl, Key::PadEast);
+    set(Action::Vertical, Key::Space, Key::PadNorth);
+    // ATTACK PROMOTES THE MOUSE TO PRIMARY. The old Punch had F first and the
+    // mouse second, which is backwards from every shooter's own convention.
+    // F is freed by giving the pad slot to PadWest instead -- a keyboard
+    // player still has the mouse, which is where an attack belongs anyway.
+    set(Action::Attack, Key::MouseLeft, Key::PadWest);
+    // MouseRight was Interact's old secondary; PadSouth takes that slot
+    // instead. E alone is enough on a keyboard, and Interact is the button
+    // pressed the most on a pad -- the primary-action position is where it
+    // belongs.
+    set(Action::Interact, Key::E, Key::PadSouth);
 
-    set(Action::Interact, Key::E, Key::MouseRight);
-    set(Action::Examine, Key::Q);
-    set(Action::Steal, Key::G);
-    set(Action::Lift, Key::T);
-    set(Action::Punch, Key::F, Key::MouseLeft);
-    set(Action::Rest, Key::R);
-    // THE FALLBACK, not the way up. Walking into a ledge climbs it -- see
-    // sim::MoveInput::autoTraverse -- and this is here for the player who wants
-    // to line a leap up deliberately, and for a gap the legs would not have
-    // tried on their own.
-    set(Action::Traverse, Key::V, Key::PadRightBumper);
-    set(Action::DropDown, Key::X);
-
-    set(Action::Journal, Key::Tab, Key::J);
-    set(Action::Keys, Key::F1);
-    set(Action::Menu, Key::Escape, Key::PadStart);
-    set(Action::Options, Key::F2);
-    set(Action::Character, Key::C);
-    set(Action::Map, Key::M);
-    set(Action::Letters, Key::L);
+    // ONE SCREEN, PAGES. Tab is where Journal always was -- the row a player
+    // already reaches for. J is freed the same way MouseRight/F were, for
+    // PadBack -- the "show me my stuff" button on most pads already.
+    set(Action::Menu, Key::Tab, Key::PadBack);
+    set(Action::PagePrev, Key::LeftBracket, Key::PadLeftBumper);
+    set(Action::PageNext, Key::RightBracket, Key::PadRightBumper);
+    // RENAMED FROM Menu, UNCHANGED KEY: this was always Escape's job.
+    set(Action::Pause, Key::Escape, Key::PadStart);
+    // HELD. Right-stick click sits opposite the left stick that steers, so a
+    // thumb already on the stick that is NOT driving movement is the one that
+    // opens the wheel -- see the header on why the D-pad, not the stick
+    // angle, is what actually picks a slot while this is down.
+    set(Action::QuickWheel, Key::Q, Key::PadRightStick);
 
     set(Action::QuickSlot1, Key::Num1);
     set(Action::QuickSlot2, Key::Num2);

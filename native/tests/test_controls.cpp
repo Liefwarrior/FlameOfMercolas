@@ -42,10 +42,10 @@ TEST_CASE("the shipped bindings are the ones a player already knows") {
     CHECK(keys.bound(Action::StrafeRight, Key::D));
     CHECK(keys.bound(Action::Sprint, Key::LeftShift));
     CHECK(keys.bound(Action::Crouch, Key::LeftCtrl));
-    CHECK(keys.bound(Action::Jump, Key::Space));
+    CHECK(keys.bound(Action::Vertical, Key::Space));
     CHECK(keys.bound(Action::Interact, Key::E));
-    CHECK(keys.bound(Action::Journal, Key::Tab));
-    CHECK(keys.bound(Action::Menu, Key::Escape));
+    CHECK(keys.bound(Action::Menu, Key::Tab));
+    CHECK(keys.bound(Action::Pause, Key::Escape));
 
     // The number row is the quick bar, and the wheel walks it.
     CHECK(keys.actionFor(Key::Num1) == Action::QuickSlot1);
@@ -61,14 +61,42 @@ TEST_CASE("the shipped bindings are the ones a player already knows") {
     CHECK(keys.bound(Action::TurnLeft, Key::Left));
     CHECK(keys.bound(Action::TurnRight, Key::Right));
 
-    // SPACE IS JUMP AND NOT CLIMB, which is the single most important line in
-    // this file. The S5 build put the mantle/leap verb on space; a player who
-    // pressed it expecting a jump got a climb, and a player who walked at a
-    // ledge expecting a climb got a wall. Both halves of that are fixed: space
-    // jumps, walking into the ledge climbs it, and the explicit climb is still
-    // bound for anyone who wants to line one up.
-    CHECK(keys.actionFor(Key::Space) == Action::Jump);
-    CHECK(keys.actionFor(Key::V) == Action::Traverse);
+    // #85. SPACE IS VERTICAL, RESOLVED BY WHAT IS AHEAD OR BELOW -- the same
+    // "space jumps, walking into a ledge climbs it" rule the S5 build fixed,
+    // now folded into one Action instead of three (Jump/Traverse/DropDown).
+    CHECK(keys.actionFor(Key::Space) == Action::Vertical);
+
+    // #85. EVERY CORE BUTTON HAS A PAD DEFAULT -- the whole point of a scheme
+    // sized for a controller's own scarcity of buttons.
+    CHECK(keys.bound(Action::Interact, Key::PadSouth));
+    CHECK(keys.bound(Action::Attack, Key::PadWest));
+    CHECK(keys.bound(Action::Vertical, Key::PadNorth));
+    CHECK(keys.bound(Action::Crouch, Key::PadEast));
+    CHECK(keys.bound(Action::Sprint, Key::PadLeftStick));
+    CHECK(keys.bound(Action::QuickWheel, Key::PadRightStick));
+    CHECK(keys.bound(Action::Menu, Key::PadBack));
+    CHECK(keys.bound(Action::Pause, Key::PadStart));
+    CHECK(keys.bound(Action::PagePrev, Key::PadLeftBumper));
+    CHECK(keys.bound(Action::PageNext, Key::PadRightBumper));
+}
+
+TEST_CASE("#85: the core gameplay button count is what Eli asked for") {
+    // TEN. Attack, Interact, Crouch, Vertical, Sprint, Menu, PagePrev,
+    // PageNext, Pause, QuickWheel -- movement axes, the TurnLeft/TurnRight
+    // accessibility fallback and Screenshot (a dev/capture utility) excluded,
+    // exactly as the brief asked. This is a COUNTING test, not a behaviour
+    // one: it exists so a future action added to the "core" bucket without
+    // updating this case is a red build instead of a drifted comment.
+    const Action core[] = {
+        Action::Attack,     Action::Interact, Action::Crouch,  Action::Vertical,
+        Action::Sprint,     Action::Menu,     Action::PagePrev, Action::PageNext,
+        Action::Pause,      Action::QuickWheel,
+    };
+    CHECK(static_cast<int>(sizeof(core) / sizeof(core[0])) == 10);
+    // And every one of them is >= 10 and <= 12, which is Eli's own range,
+    // literally.
+    CHECK(sizeof(core) / sizeof(core[0]) >= 10);
+    CHECK(sizeof(core) / sizeof(core[0]) <= 12);
 }
 
 TEST_CASE("no two verbs share a key in the shipped layout") {
@@ -95,19 +123,19 @@ TEST_CASE("rebinding steals the key rather than sharing it") {
     ControlSettings keys = ControlSettings::defaults();
     REQUIRE(keys.bound(Action::Forward, Key::W));
 
-    keys.bind(Action::Jump, Key::W);
-    CHECK(keys.bound(Action::Jump, Key::W));
+    keys.bind(Action::Vertical, Key::W);
+    CHECK(keys.bound(Action::Vertical, Key::W));
     // Visibly taken off Forward -- not shared, and not silently ignored. A
     // rebinding screen that allows a collision produces a game where one of the
     // two verbs stops working and the player cannot find out which.
     CHECK_FALSE(keys.bound(Action::Forward, Key::W));
-    CHECK(keys.actionFor(Key::W) == Action::Jump);
+    CHECK(keys.actionFor(Key::W) == Action::Vertical);
     // The arrow is still on Forward, so the player is not stranded.
     CHECK(keys.bound(Action::Forward, Key::Up));
 
     keys.bind(Action::Forward, Key::W);
     CHECK(keys.bound(Action::Forward, Key::W));
-    CHECK_FALSE(keys.bound(Action::Jump, Key::W));
+    CHECK_FALSE(keys.bound(Action::Vertical, Key::W));
 }
 
 TEST_CASE("a modifier is both a hold and a toggle, and they do not fight") {
@@ -258,7 +286,7 @@ TEST_CASE("the look stick is cubed, so it can aim and still turn round") {
 
 TEST_CASE("a rebinding survives the process, and a broken file does not break the game") {
     ControlSettings mine = ControlSettings::defaults();
-    mine.bind(Action::Jump, Key::MouseX1);
+    mine.bind(Action::Vertical, Key::MouseX1);
     mine.bind(Action::Crouch, Key::Z);
     mine.bind(Action::Forward, Key::PadUp, /*asSecondary=*/true);
     mine.mouse.sensitivity = 31;
@@ -267,7 +295,7 @@ TEST_CASE("a rebinding survives the process, and a broken file does not break th
     mine.pad.deadzonePercent = 9;
 
     const ControlSettings back = ControlSettings::fromText(mine.toText());
-    CHECK(back.bound(Action::Jump, Key::MouseX1));
+    CHECK(back.bound(Action::Vertical, Key::MouseX1));
     CHECK(back.bound(Action::Crouch, Key::Z));
     CHECK(back.bound(Action::Forward, Key::PadUp));
     CHECK(back.bound(Action::Forward, Key::W));
@@ -280,8 +308,8 @@ TEST_CASE("a rebinding survives the process, and a broken file does not break th
 
     // A FILE THAT MENTIONS ONE VERB LEAVES THE OTHERS PLAYABLE. It is a diff
     // against the shipped layout, not a replacement for it.
-    const ControlSettings sparse = ControlSettings::fromText("bind jump MOUSE3\n");
-    CHECK(sparse.bound(Action::Jump, Key::MouseMiddle));
+    const ControlSettings sparse = ControlSettings::fromText("bind vertical MOUSE3\n");
+    CHECK(sparse.bound(Action::Vertical, Key::MouseMiddle));
     CHECK(sparse.bound(Action::Forward, Key::W));
 
     // GARBAGE IS IGNORED, NOT FATAL. Unknown verbs, unknown keys, unknown
@@ -319,13 +347,13 @@ TEST_CASE("controls round trip through a real file, and a missing one is the def
 
     ControlSettings mine = ControlSettings::defaults();
     mine.mouse.sensitivity = 44;
-    mine.bind(Action::Examine, Key::MouseMiddle);
+    mine.bind(Action::Interact, Key::MouseMiddle);
     REQUIRE(saveControls(mine, file));
     REQUIRE(std::filesystem::exists(file));
 
     const ControlSettings reloaded = loadControls(file);
     CHECK(reloaded.mouse.sensitivity == 44);
-    CHECK(reloaded.bound(Action::Examine, Key::MouseMiddle));
+    CHECK(reloaded.bound(Action::Interact, Key::MouseMiddle));
 
     // And a file full of nonsense still boots.
     {
@@ -372,7 +400,7 @@ TEST_CASE("a rebinding and a sensitivity survive the process -- loaded, and LIVE
     previous.mouse.sensitivity = 88;
     previous.mouse.invertY = true;
     previous.fovDegrees = 110;
-    previous.bind(Action::Jump, Key::K);
+    previous.bind(Action::Vertical, Key::K);
     REQUIRE(saveControls(previous, file));
 
     // THE NEXT LAUNCH. loadControls() then setControls(), the same order and

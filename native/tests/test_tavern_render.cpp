@@ -581,12 +581,24 @@ TEST_CASE("the three verbs do what the keys say they do") {
         session.stepMany(sim::MoveInput{}, 7 * sim::kStepsPerSecond);
         CHECK(session.lastMessage().empty());
     }
-    SUBCASE("E in an empty room says so and opens nothing") {
+    SUBCASE("E in an empty room opens nothing, and falls through to a look") {
+        // #85. THIS IS THE BEHAVIOUR CHANGE THE CONSOLIDATION MEANS. Before
+        // #85, Interact tried ONLY talk and said "NOBODY WITHIN REACH." when
+        // nobody was there. It now falls all the way through interact()'s
+        // resolution order -- no bed, no person, no box/bale/rat -- to the
+        // investigation look (examine(), the old Q key), which NEVER refuses
+        // (LookResult::line is documented "Never empty."). An empty room is
+        // exactly where that fallback is supposed to catch a press that
+        // resolved to nothing else, rather than the player learning nothing
+        // happened.
         Session session(insideTheGull(5, 148, 68, 180));
         REQUIRE(session.tavern().presentCount() == 0);
         session.interact();
         CHECK_FALSE(session.talking());
-        CHECK(session.lastMessage() == "NOBODY WITHIN REACH.");
+        CHECK_FALSE(session.lastMessage().empty());
+        // AND IT IS THE LOOK, NOT THE OLD REFUSAL -- the refusal text is
+        // gone; something else, real, took its place.
+        CHECK(session.lastMessage() != "NOBODY WITHIN REACH.");
     }
 }
 

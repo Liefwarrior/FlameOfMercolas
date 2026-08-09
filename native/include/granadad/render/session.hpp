@@ -170,21 +170,88 @@ public:
     // --- the three verbs ----------------------------------------------------
     //
     // On Session and not in the client, so the test suite drives exactly the
-    // code a keypress does. The client binds E, F and R to these and owns no
-    // game logic of its own.
+    // code a keypress does. The client binds Attack, Interact and Vertical to
+    // these and owns no game logic of its own.
 
-    /// E. Opens a conversation with whoever is in reach; picks the topic under
-    /// the cursor when one is already open.
+    /// #85. ONE BUTTON, RESOLVED BY STANCE AND BY WHAT IS FACED. Folds
+    /// Interact + Examine + Steal + Lift + Rest into a single verb, per
+    /// Eli's own brief: "a button to 'interact (pickpocket if sneaking)'".
     ///
-    /// S3 CHANGED WHAT THIS KEY MEANS, deliberately. In S2 it produced one
-    /// sentence and, for the two people who sell things, silently completed a
-    /// purchase. Buying is now a topic on a list beside asking them about the
-    /// vanished clerk, which is what "topics, not a single greeting" means.
+    /// THE RESOLUTION ORDER, walked every press:
+    ///
+    ///   1. Already talking: picks the topic under the cursor (unchanged
+    ///      from before the consolidation -- a conversation already owns
+    ///      the keyboard, and Interact confirming its own list is the same
+    ///      "a verb reused contextually while a mode is active" pattern
+    ///      lockpicking already used).
+    ///   2. NOT SNEAKING + AT YOUR OWN RENTED BED = REST. Checked first,
+    ///      not because it is the most likely case but because it is the
+    ///      one exact-tile trigger nothing else could also mean.
+    ///   3. PERSON IN REACH = TALK (not sneaking) or PICKPOCKET (sneaking).
+    ///   4. ITEM/FIXTURE = the same chain steal() always tried: the box (or
+    ///      its lock -- crackStrongbox() does not read stance, so "facing a
+    ///      lock picks it, sneaking or not" is already true with no branch
+    ///      here), the bale, the rat, the wire that buys more picks.
+    ///   5. NOTHING RESOLVED: the investigation look (examine()), which
+    ///      never refuses.
+    ///
+    /// interactPrompt() BELOW WALKS THE IDENTICAL ORDER on read-only queries,
+    /// so the HUD can show the verb THIS press is about to run before the
+    /// player commits to it -- Eli's own brief: "a static INTERACT label
+    /// defeats the whole point; the player must SEE what pressing it will
+    /// do before they press it." If this order ever changes, that method's
+    /// order has to change with it or the HUD starts lying; see its own
+    /// header for the one place they are allowed to (documented) disagree.
+    ///
+    /// S3's original note on why this key opens topics rather than a single
+    /// greeting is still true and still the shape talk resolves into.
     void interact();
+    /// #85. THE LIVE LABEL Interact is about to resolve to -- "TALK",
+    /// "PICKPOCKET", "PICK LOCK", "TAKE", "TAKE QUIETLY", "REST", "LOOK", or
+    /// empty while a page already owns the keyboard (talking, picking,
+    /// paused, or Menu's options page is listening for a key). CONST and
+    /// read-only by construction: every query it makes (Tavern::nearestTo,
+    /// WardPopulation::nearestTo, Tavern::rentedRoom/crackedBoxes/
+    /// openedLocks, sim::gull::roomAtStand) is a lookup, never a mutation,
+    /// which is what lets drawFrame() call this every frame with no side
+    /// effect on the world it is describing.
+    ///
+    /// VERIFICATION GAP (#85): THE BALE, THE RAT AND buyPicks() ARE NOT
+    /// PREVIEWED. Those three live behind handleBale()/takeScalp()/
+    /// buyPicks(), which -- like crackStrongbox() -- MUTATE the room the
+    /// moment they are asked (a bale count decrements, a rat is marked
+    /// skinned), so there is no read-only query to peek through without
+    /// re-deriving their geometry a second time for a label alone. Standing
+    /// at the bale or a downed rat still resolves CORRECTLY when the button
+    /// is actually pressed -- interact() tries them for real -- the HUD
+    /// prompt just falls back to "LOOK" there instead of naming them in
+    /// advance. The two scenarios the brief's own acceptance capture is
+    /// built around -- a person (TALK/PICKPOCKET) and a lock ("facing a
+    /// lock=pick it") -- are both exact.
+    [[nodiscard]] std::string interactPrompt() const;
+    /// #85. Was Jump + Traverse + DropDown. ONE BUTTON, RESOLVED BY WHAT IS
+    /// DIRECTLY AHEAD OR BELOW: climb (mantle, or the leap it falls back to)
+    /// first, a drop if there is a ledge to step off, an ordinary standing
+    /// jump when neither is there -- see tryClimb()/tryDropDown() below,
+    /// which climb() and dropDown() also use so the three public verbs and
+    /// this one can never resolve a press differently.
+    ///
+    /// THE MANTLE HALF OF "CLIMB" ALMOST NEVER FIRES FROM A KEYPRESS AT ALL.
+    /// MoveInput::autoTraverse (on by default for the player) already hauls
+    /// the body over a ledge it walks into, every ordinary step -- "you get
+    /// onto things by trying to go there, not by learning a verb key" is
+    /// player.hpp's own note on that flag. What a standing body still needs
+    /// a button for is the LEAP, which is climb()'s documented fallback.
+    void vertical();
     /// F. Throws a punch. In a taproom that is an offence, and the house has
     /// opinions about it.
     void punch();
     /// R. Sleeps, if there is a rented room and you are standing in it.
+    ///
+    /// NOT BOUND TO A KEY OF ITS OWN ANY MORE -- #85 folded this into
+    /// interact()'s own resolution -- but kept public and unchanged for the
+    /// suite, and for interact()'s own use through settleSleep() (private,
+    /// below) for the shared "you slept" half of both call sites.
     void restHere();
 
     // --- S5: the three roof verbs, and the one thieving one ------------------
@@ -196,8 +263,14 @@ public:
     /// with a surface on top of it -- and a leap second, because those are the
     /// two answers to "get me across or over" and a player pressing one key
     /// should not have to know which of them the geometry wants.
+    ///
+    /// NOT BOUND TO A KEY OF ITS OWN ANY MORE -- #85 folded this into
+    /// vertical()'s resolution, through the shared private tryClimb(). Kept
+    /// public and unchanged for the suite.
     void climb();
     /// X. Steps off the ledge in front and takes the fall.
+    ///
+    /// NOT BOUND TO A KEY OF ITS OWN ANY MORE -- see climb()'s identical note.
     void dropDown();
     /// G. Puts hands on whatever is here: the strongbox at a bed-foot, or the
     /// bale in the snug.
@@ -205,6 +278,10 @@ public:
     /// S9: and the wire goes in first. A box whose lock is still shut opens the
     /// lockpicking surface rather than refusing; the box itself is emptied by
     /// the same key once the lock gives.
+    ///
+    /// NOT BOUND TO A KEY OF ITS OWN ANY MORE -- #85 folded this into
+    /// interact()'s item/fixture branch, through the shared private
+    /// stealNearestThing(). Kept public and unchanged for the suite.
     void steal();
 
     // --- S9: the three verbs of a burglar ------------------------------------
@@ -229,6 +306,10 @@ public:
     [[nodiscard]] std::string lockLine() const;
 
     /// T. Lifts from whoever is at your elbow, with no conversation open.
+    ///
+    /// NOT BOUND TO A KEY OF ITS OWN ANY MORE -- #85 folded this into
+    /// interact()'s sneaking + person branch. Kept public and unchanged for
+    /// the suite.
     void lift();
 
     // --- S10: the investigation ----------------------------------------------
@@ -294,6 +375,48 @@ public:
     /// numbers and cannot drop a row as it grows.
     void toggleKeys();
     [[nodiscard]] bool keysOpen() const noexcept { return keysOpen_; }
+
+    // --- #85: ONE MENU, SIX PAGES ---------------------------------------------
+    //
+    // Journal (the casebook above), Character, Map, Letters, Keys and Options
+    // used to be six independent top-level actions, each hand-writing the
+    // identical "close every other overlay" block toggleCasebook/toggleKeys/
+    // etc. still carry -- see dismissOverlays()'s own comment on the ten call
+    // sites that lean on it existing. #85 does NOT touch any of the six: this
+    // is a THIN ROUTER in front of them, the exact shape Oblivion and
+    // Skyrim's own tabbed inventory screen already is -- one button opens it,
+    // a bumper-equivalent flips between tabs that were always separate
+    // screens underneath. Menu/pause already had one level of this in
+    // production before #85 ever landed: choosePause()'s SETTINGS row has
+    // always called toggleOptions() directly, Menu-into-Options as a
+    // page-within-a-page, which is the concrete precedent this whole design
+    // generalises rather than invents.
+    //
+    // Reachable from BOTH the Menu action and Pause's own SETTINGS row for
+    // Options specifically, and that is by design and not a leftover: both
+    // routes land on the identical optionsOpen_ state, so there is one
+    // rebinding screen, reached two ways, never two screens that could drift
+    // apart -- see controls.hpp's own note on Pause for the brief this
+    // answers ("don't leave it reachable from both in a way that reads as
+    // two systems").
+
+    /// True while any of the six pages is open. The one predicate
+    /// menuPageIndex()/openMenuPage() below are built on, and the one this
+    /// build's "is a page eating the keyboard" checks (main.cpp's `listening`,
+    /// among others -- see its own comment) fold into instead of each
+    /// hand-listing the same six flags.
+    [[nodiscard]] bool menuOpen() const noexcept;
+    /// Opens the first page (the casebook) if none of the six is open;
+    /// closes whichever one is open otherwise -- the same "the key that
+    /// opened it closes it" rule every one of the six already has on its own.
+    void toggleMenu();
+    /// Closes whichever page is open and opens the next one in the fixed
+    /// cycle Journal -> Character -> Map -> Letters -> Keys -> Options ->
+    /// (back to Journal). Does nothing while the menu is not open -- a
+    /// bumper press with nothing open is not what opens it.
+    void menuPageNext();
+    /// The same cycle, backward.
+    void menuPagePrev();
 
     // --- #77: the controls, and the page that changes them -------------------
 
@@ -634,6 +757,51 @@ private:
     /// Puts the casebook and the key list down. Every verb that acts on the
     /// world calls it first.
     void dismissOverlays() noexcept;
+
+    // --- #85: the shared halves of the consolidated verbs ---------------------
+    //
+    // interact() and vertical() are ORCHESTRATORS: each tries a short list of
+    // narrower attempts in priority order and stops at the first one that
+    // resolves. These are the attempts, factored out so the STANDALONE public
+    // verbs (climb/dropDown/restHere/steal) and the new orchestrators run the
+    // identical code rather than two copies of it that could drift apart.
+
+    /// The success half of climb(): mantle, or the leap it falls back to.
+    /// SAYS THE LINE AND MUTATES STATE ONLY WHEN IT SUCCEEDS -- a failure is
+    /// returned silently (RoofResult::ok() false) so a caller trying several
+    /// things in sequence is not left explaining a wrong guess to the player.
+    /// climb() itself says the refusal when this fails; vertical() instead
+    /// moves on to tryDropDown().
+    [[nodiscard]] sim::RoofResult tryClimb();
+    /// The identical shape for dropDown(): steps off the ledge in front and
+    /// falls to the first floor under it, or fails silently.
+    [[nodiscard]] sim::RoofResult tryDropDown();
+    /// Charges a landing and says "SLEPT UNTIL MORNING." -- the half of
+    /// restHere() that only runs when tavern_->sleep() actually returned
+    /// Served, shared with interact()'s own bed branch so neither has to
+    /// duplicate what happens once the room agrees.
+    void settleSleep();
+    /// The chain steal() has always tried, tried in order until one of them
+    /// is not TooFar: the box (or its lock -- crackStrongbox() does not read
+    /// stance, so a locked box resolves to picking it whether interact()'s
+    /// caller is sneaking or not), the bale, the rat, the wire that buys more
+    /// picks. SAYS THE LINE ITSELF, always -- steal() relies on that to
+    /// preserve its own pre-#85 behaviour exactly -- and answers whether the
+    /// final attempt was anything other than TooFar, which is interact()'s
+    /// cue to fall through to the investigation look instead.
+    bool stealNearestThing();
+
+    /// Which of the six Menu pages is open, in the fixed cycle order Journal
+    /// (0) / Character (1) / Map (2) / Letters (3) / Keys (4) / Options (5),
+    /// or -1 when none is. The single place that ties "which bool is true"
+    /// to "which page number that is" so menuPageNext/Prev only have to know
+    /// the count.
+    [[nodiscard]] int menuPageIndex() const noexcept;
+    /// Opens page `index` (mod 6) by calling ITS OWN existing toggle*()
+    /// method -- never writes an xOpen_ flag directly, so every exclusivity
+    /// rule and every syncPanelAnim() call the six pages already make keeps
+    /// running unmodified underneath this router.
+    void openMenuPage(int index);
     /// TASK #82. Every letter whose `lead` (sim::Letter::lead, a
     /// casebook.json lead id) has actually been investigated -- Cold or
     /// Followed, never merely Open -- in authored order. What the letters
