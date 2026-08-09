@@ -31,10 +31,12 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "granadad/sim/attributes.hpp"
 #include "granadad/sim/barks.hpp"
 #include "granadad/sim/world_hash.hpp"
 
@@ -224,6 +226,13 @@ public:
         std::string displayName;
         std::int32_t level = 0;
         std::int32_t uses = 0;
+        /// Off the raw's own governingAttribute column (attributes.hpp).
+        /// std::nullopt for the one skill whose raw says "NONE" -- THE FLAME.
+        std::optional<AttributeId> governingAttribute;
+        /// Off the raw's own aptitudeTier column. Trained when the raw is
+        /// silent or says something this loader does not recognise, the same
+        /// fallback aptitudeTierFromRaw() itself documents.
+        AptitudeTier aptitudeTier = AptitudeTier::Trained;
     };
 
     /// Reads the skill vocabulary. NEVER throws; a missing file leaves an empty
@@ -238,6 +247,13 @@ public:
     [[nodiscard]] const Entry* find(std::string_view id) const noexcept;
     [[nodiscard]] std::int32_t level(std::string_view id) const noexcept;
     [[nodiscard]] bool setLevel(std::string_view id, std::int32_t level) noexcept;
+    /// std::nullopt for a skill the raws do not define, same as for THE
+    /// FLAME's own authored "NONE" -- the two are indistinguishable on
+    /// purpose, since neither has an attribute to report.
+    [[nodiscard]] std::optional<AttributeId> governingAttribute(std::string_view id) const noexcept;
+    /// Trained for a skill the raws do not define, the same permissive
+    /// default level() gives an unknown id (0) rather than a crash.
+    [[nodiscard]] AptitudeTier aptitudeTier(std::string_view id) const noexcept;
 
     /// One use of a skill. Returns true when it levelled. Ignored, returning
     /// false, for a skill the raws do not define.

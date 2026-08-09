@@ -193,6 +193,66 @@ TEST_CASE("the skill vocabulary comes out of the raws, not out of this file") {
     }
 }
 
+TEST_CASE("the raws' own governingAttribute and aptitudeTier columns come "
+          "through, not just id and displayName") {
+    const SkillTrack track = SkillTrack::load(granadad::content::contentDir());
+    REQUIRE(track.loaded());
+
+    // A real attribute, a real tier -- content/raws/skills/skills.json says
+    // skyrunning is AGI, FAVORED.
+    CHECK(track.governingAttribute(kRoofSkill) == AttributeId::Agility);
+    CHECK(track.aptitudeTier(kRoofSkill) == AptitudeTier::Favored);
+    // sidearms: AGI, TRAINED.
+    CHECK(track.governingAttribute("sidearms") == AttributeId::Agility);
+    CHECK(track.aptitudeTier("sidearms") == AptitudeTier::Trained);
+
+    // THE FLAME is the one raw whose governingAttribute is authored "NONE" --
+    // absent, not a fabricated fifth attribute -- and whose aptitudeTier is
+    // the one FLAME in the whole file.
+    CHECK_FALSE(track.governingAttribute("the_flame").has_value());
+    CHECK(track.aptitudeTier("the_flame") == AptitudeTier::Flame);
+
+    // An id the raws do not define reports absent/Trained rather than
+    // crashing -- the same permissive-default rule level() already follows.
+    CHECK_FALSE(track.governingAttribute("persuasion").has_value());
+    CHECK(track.aptitudeTier("persuasion") == AptitudeTier::Trained);
+
+    // Pinned aggregate, the same discipline as this file's own skill-count
+    // check above: every one of the twenty raws parsed to SOME attribute
+    // (nineteen) or NONE (one), and to one of the four tiers -- a skill added
+    // to the raws with a typo'd column would silently fall through both of
+    // these without this count moving.
+    std::size_t withAttribute = 0;
+    std::size_t favored = 0;
+    std::size_t trained = 0;
+    std::size_t neglected = 0;
+    std::size_t flame = 0;
+    for (const SkillTrack::Entry& entry : track.entries()) {
+        if (entry.governingAttribute.has_value()) {
+            ++withAttribute;
+        }
+        switch (entry.aptitudeTier) {
+            case AptitudeTier::Favored:
+                ++favored;
+                break;
+            case AptitudeTier::Trained:
+                ++trained;
+                break;
+            case AptitudeTier::Neglected:
+                ++neglected;
+                break;
+            case AptitudeTier::Flame:
+                ++flame;
+                break;
+        }
+    }
+    CHECK(withAttribute == 19);
+    CHECK(favored == 3);
+    CHECK(trained == 8);
+    CHECK(neglected == 8);
+    CHECK(flame == 1);
+}
+
 TEST_CASE("a skill rises by being used, and rises more slowly the higher it is") {
     SkillTrack track = SkillTrack::load(granadad::content::contentDir());
     REQUIRE(track.loaded());

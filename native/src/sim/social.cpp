@@ -383,6 +383,16 @@ SkillTrack SkillTrack::load(const std::filesystem::path& contentDir) {
         const auto display = node.find("displayName");
         entry.displayName =
             display != node.end() && display->is_string() ? display->get<std::string>() : entry.id;
+
+        const auto governing = node.find("governingAttribute");
+        entry.governingAttribute = governing != node.end() && governing->is_string()
+                                        ? attributeFromRaw(governing->get<std::string>())
+                                        : std::nullopt;
+        const auto aptitude = node.find("aptitudeTier");
+        entry.aptitudeTier = aptitude != node.end() && aptitude->is_string()
+                                  ? aptitudeTierFromRaw(aptitude->get<std::string>())
+                                  : AptitudeTier::Trained;
+
         out.entries_.push_back(std::move(entry));
     }
     std::sort(out.entries_.begin(), out.entries_.end(),
@@ -413,6 +423,16 @@ SkillTrack::Entry* SkillTrack::findMutable(std::string_view id) noexcept {
 std::int32_t SkillTrack::level(std::string_view id) const noexcept {
     const Entry* entry = find(id);
     return entry == nullptr ? 0 : entry->level;
+}
+
+std::optional<AttributeId> SkillTrack::governingAttribute(std::string_view id) const noexcept {
+    const Entry* entry = find(id);
+    return entry == nullptr ? std::nullopt : entry->governingAttribute;
+}
+
+AptitudeTier SkillTrack::aptitudeTier(std::string_view id) const noexcept {
+    const Entry* entry = find(id);
+    return entry == nullptr ? AptitudeTier::Trained : entry->aptitudeTier;
 }
 
 bool SkillTrack::setLevel(std::string_view id, std::int32_t level) noexcept {

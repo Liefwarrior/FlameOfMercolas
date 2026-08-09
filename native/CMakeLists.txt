@@ -115,6 +115,15 @@ add_library(granadad-sim STATIC
     src/sim/social.cpp
     src/sim/barter.cpp
     src/sim/dialogue.cpp
+    # Attribute/skill allocation mechanics -- attributes.cpp gives
+    # content/raws/skills/skills.json's governingAttribute/aptitudeTier
+    # columns (parsed by social.cpp's SkillTrack::load) an actual value a
+    # character can hold; chargen.cpp is the Daggerfall-inspired
+    # Primary/Major/Minor skill sheet and attribute bonus-point pool that
+    # writes starting levels into a real SkillTrack. Listed after social.cpp
+    # because both depend on SkillTrack's own definition.
+    src/sim/attributes.cpp
+    src/sim/chargen.cpp
     # S4 -- the guilds. faction reads the owner's registry and the S4 ladders
     # hung off it; questline reads any stages-shaped quest file; spellforge is
     # canon's own cost model plus the composition verb the modular effect
@@ -314,6 +323,11 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_render.cpp
         tests/test_tavern_render.cpp
         tests/test_social.cpp
+        # Attribute/skill allocation mechanics: the Daggerfall-inspired
+        # Primary/Major/Minor skill sheet and the attribute bonus-point pool,
+        # proved against the real content/raws/skills/skills.json SkillTrack
+        # rather than a rival list.
+        tests/test_chargen.cpp
         tests/test_dialogue.cpp
         tests/test_faction.cpp
         tests/test_spellforge.cpp
