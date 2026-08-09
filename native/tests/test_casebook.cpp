@@ -610,9 +610,25 @@ TEST_CASE("a lead's dateline is stamped once, when it goes in the book, and neve
 }
 
 TEST_CASE("the casebook's own dateline names when a lead was heard, and what pointed to it") {
+    // Q's look() only lands within kLookRangeTiles of the lead's own site --
+    // see "the look key finds the body, and the district's other corners
+    // stay quiet" above, which spawns the same way. Without this the player
+    // starts at the general Docks spawn, tens of tiles from the Mission, Q
+    // finds nothing, and the start lead never leaves LeadState::Open -- which
+    // is exactly the bug this test caught: `first.caseRef.find("OPENED ")`
+    // passed for the wrong reason (it is a substring of the unconditional
+    // "THE CASE OPENED HERE"), and nothing below it was real.
+    const CasebookRaws& file = raws();
+    const std::int32_t mission = file.indexOf("mission-backroom");
+    REQUIRE(mission >= 0);
+    const LeadSite site = file.leads()[static_cast<std::size_t>(mission)].site;
+
     render::SessionConfig config;
     config.contentDir = content::contentDir();
     config.timeOfDay = 8 * 3600;
+    config.spawnX = site.x;
+    config.spawnY = site.y;
+    config.spawnBand = site.band;
     render::Session session(config);
     session.stepMany(MoveInput{}, 2);
 
