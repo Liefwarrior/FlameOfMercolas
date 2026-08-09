@@ -252,6 +252,8 @@ void print_usage() {
         "                       (SETTINGS chosen, so the rebinding screen is\n"
         "                       what gets photographed) or armed (the cursor\n"
         "                       on QUIT with the first of its two presses in)\n"
+        "  --character          open the character sheet before the shutter\n"
+        "                       goes -- the same call C makes\n"
         "  --street[=WHO]       stand next to somebody out in the WARD and talk\n"
         "                       to them. WHO is hand, watch, priest, disciple,\n"
         "                       keeper, fisher, sailor, carter, wastrel, urchin,\n"
@@ -431,6 +433,9 @@ void print_usage() {
         } else if (starts_with(arg, "--pause=", &value)) {
             options.smoke.pause = true;
             options.smoke.pauseEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--character") == 0) {
+            options.smoke.character = true;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--street") == 0) {
             options.smoke.street = true;

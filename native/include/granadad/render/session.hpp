@@ -788,6 +788,13 @@ struct SmokeRunConfig {
     /// presses already in, so the "SURE? ENTER" row is on screen).
     bool pause = false;
     std::string pauseEnd = "menu";
+    /// VERIFICATION. Opens the character sheet before the shutter goes -- the
+    /// same call `C` makes. Added while adversarially verifying this round's
+    /// menu/HUD polish: the character sheet shipped with no headless capture
+    /// path at all, for exactly the reason `pause` above states its own --
+    /// this environment cannot drive a real window, so without a flag the
+    /// page could be unit-tested for its text but never actually LOOKED AT.
+    bool character = false;
     /// S5. Climb onto the Gilded Gull's roof and look down at the ward: in at
     /// the door, up the stair, out over the north wall, and turn round. WHERE
     /// is "roof" (standing on the lead), "leap" (across the alley onto the next

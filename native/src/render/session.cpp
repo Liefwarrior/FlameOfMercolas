@@ -4232,6 +4232,14 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += landed ? 1 : 0;
     }
 
+    if (config.character) {
+        // THE SAME CALL `C` MAKES -- see SmokeRunConfig::character's own
+        // header on why this exists at all.
+        session.toggleCharacter();
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.characterOpen() ? 1 : 0;
+    }
+
     if (config.street) {
         const StreetLineResult street = runStreetLine(session, config.streetWho,
                                                       config.streetTopic);
