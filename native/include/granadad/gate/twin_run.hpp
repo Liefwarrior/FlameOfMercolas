@@ -8,7 +8,7 @@
 // that reload, goldens that hold, a world hash that means anything -- rests on
 // it.
 //
-// TWO COMPARATORS, NEITHER SUBSUMING THE OTHER
+// TWO COMPARATORS, ONLY ONE DIRECTION PROVEN NECESSARY
 //
 //   [1/2] the combined world hash.  Structural state. It sees every byte of
 //         terrain and every field a system chose to hash, and it sees nothing
@@ -21,9 +21,26 @@
 //         path that diverges is a real bug -- it is what the player and the
 //         debugger both read -- and the state hash will never once flinch at it.
 //
-// Running both is not belt and braces. Drop [1/2] and a state divergence that
-// happens not to reach the report goes unseen; drop [2/2] and every divergence
-// outside the hashed set goes unseen. The Java gate makes the same argument and
+// [2/2] catching a divergence [1/2] cannot is PROVEN: a wall-clock line added
+// to the report only left the combined hash bit-identical while the text
+// comparator went red (see WHAT IT HAS BEEN OBSERVED CATCHING, below).
+//
+// The reverse -- [1/2] catching a state divergence that [2/2] would have
+// missed -- has NOT been demonstrated, and an M1-era adversarial pass that
+// went looking for exactly that came back empty: every value it folded only
+// into a hash_into(), never printed by hand, still moved the report, because
+// run_workload() prints every system's section hash AND the combined hash as
+// hex text at the end of the report. A divergence that changes the state
+// changes one of those hashes, and changing one of those hashes changes a
+// printed line. Given how this workload builds its report, a state
+// divergence with no textual footprint may not be constructible at all --
+// the hash IS part of the text.
+//
+// That does not make [1/2] dead weight. Both runs already happen; a second
+// comparator over data already in hand costs nothing extra, and its
+// sub-hashes (WRLD, DRFT, HEAR, LEDG, ...) name which system diverged in one
+// line instead of making somebody read a text diff to find it. Keep both --
+// it is cheap insurance, not a proven mathematical necessity. The Java gate
 // runs the same two.
 //
 // WHY ONE PROCESS
@@ -60,9 +77,19 @@
 //   a wall-clock elapsed_ns line added to the REPORT only
 //       -> hash comparator IDENTICAL, text comparator red at the offending
 //          line; gate exit 1
+//   an adversarial attempt to hide a state divergence FROM the report --
+//   a value folded only into hash_into(), never printed by hand
+//       -> still moved the printed section hash and the printed combined
+//          hash; text comparator red at that line too. This is the negative
+//          result behind "only one direction proven necessary" above: nobody
+//          has yet built a divergence [2/2] misses and [1/2] alone catches.
 //
-// The second is the one that justifies having two comparators at all: the
-// combined world hash agreed to the bit and the run was still not reproducible.
+// The wall-clock case is the one that justifies having two comparators at
+// all: the combined world hash agreed to the bit and the run was still not
+// reproducible. Reconfirmed under #76 (2026-08-09) by re-running both
+// mutations against a fresh build: the hash-only injection still diverged the
+// report (at the HEAR section hash and the combined-hash line), and the
+// report-only injection still left the hash IDENTICAL.
 
 #include <cstddef>
 #include <string>
