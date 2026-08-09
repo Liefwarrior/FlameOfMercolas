@@ -1,0 +1,80 @@
+{
+  "id": "gabri",
+  "name": "Gabri",
+  "epithet": "Wielder of the Flame of Mercolas",
+  "role": "originTemplate",
+  "archetype": "no-nonsense",
+  "counterpart": { "id": "devin", "archetype": "secretive" },
+
+  "bio": "White garb, black leather under it, and a sword that lights when he needs it to. Gabri holds complete lawful immunity in every case but one, and he uses it the way most men use a key -- he does not knock, he does not haggle, and he does not sit on a lead he could walk to and look at himself. Ask him a hard question and he answers it in as few words as it takes: 'Big,' when a minister wants to know how bad the news is; 'Wrong,' with his hand already at a Y'marr's throat. He has stood back up mid-slaughter and kept fighting from the floor rather than lose the room, and he has put a blade through a locked door rather than pick it. What the Flame has not taught his hands yet, his hands are going to learn the slow way, same as anyone's.",
+
+  "selfIntro": "Gabri. Wielder of the Flame of Mercolas, for what that is worth to you standing here. I am not going to charm you and I am not going to threaten you -- I am going to ask you what happened, and then I am going to go and look at it myself. Tell me straight and we will get on fine.",
+
+  "startingSkills": {
+    "sidearms": 0,
+    "bladework": 8,
+    "lancework": 0,
+    "heavy_arms": 0,
+    "dire_bows": 0,
+    "open_hand": 1,
+    "shieldwall": 0,
+    "harness": 5,
+    "grit": 10,
+    "skyrunning": 0,
+    "cracksmanship": 0,
+    "kit_keeping": 1,
+    "mixtures": 0,
+    "channeling": 3,
+    "streetwise": 0,
+    "the_flame": 0,
+    "fieldcraft": 0,
+    "seacraft": 0,
+    "fishing": 0,
+    "linkcraft": 0
+  },
+
+  "aptitudes": {
+    "sidearms": "TRAINED",
+    "bladework": "NEGLECTED",
+    "lancework": "NEGLECTED",
+    "heavy_arms": "NEGLECTED",
+    "dire_bows": "NEGLECTED",
+    "open_hand": "TRAINED",
+    "shieldwall": "NEGLECTED",
+    "harness": "TRAINED",
+    "grit": "TRAINED",
+    "skyrunning": "FAVORED",
+    "cracksmanship": "TRAINED",
+    "kit_keeping": "TRAINED",
+    "mixtures": "TRAINED",
+    "channeling": "FAVORED",
+    "streetwise": "FAVORED",
+    "the_flame": "FLAME",
+    "fieldcraft": "NEGLECTED",
+    "seacraft": "NEGLECTED",
+    "fishing": "NEGLECTED",
+    "linkcraft": "TRAINED"
+  },
+
+  "appearanceType": "priest_of_the_flame",
+
+  "derivedAttributesAtStart": {
+    "MGT": 11,
+    "AGI": 10,
+    "VIG": 12,
+    "WIT": 10,
+    "PRS": 100
+  },
+
+  "derivedStatsAtStart": {
+    "maxHP": 71,
+    "maxStamina": 84,
+    "encumbranceCapDeciStone": 520
+  },
+
+  "canonAnchor": "novel L2340-2345 (self-introduction over the girl he has just pulled clear of Zradist: 'I am Gabri, wielder of the flame of Mercolas', white garb, burning blade, gives the order and trusts it followed without a second word); L2409-2427 ('Big,' he said simply -- the whole of his answer to how bad the news is; walks in on the minister unannounced, novel says outright Devin thinks he 'enjoys his complete lawful immunity'); L2703-2718 (crypt fight: knocked down mid-slaughter, keeps killing from the floor rather than lose the room, no hesitation and no debate); L2717 ('trust the Flame' is the whole of what he tells a shaking Devin, not a longer reassurance); L2718 (does not knock -- stabs the flaming sword through a locked door rather than pick it, canon-explicit); L2736-2752 (freeing Golath/Vallech: states his reasoning once, in one sentence -- 'my power was not given to me so that I could judge the wicked... it is to free them' -- and acts on it without asking permission); L2966-2980 (kicks in Bledhreft's door with no warrant, no announcement and no argument). Cross-doc anchors: docs/design/PROGRESSION-SPEC.md section 2's skill table (governingAttribute/aptitudeTier columns are already authored AS Gabri's own aptitude -- 'Apt = Gabri's aptitude', stated in that section's own header note -- so this file's aptitudes block restates content/raws/skills/skills.json's aptitudeTier column verbatim rather than inventing a second one, the one place this file's numbers are NOT new); section 2's own north-star guard on Streetwise ('A Streetwise 0 Gabri is still obeyed everywhere but pays list price, knows nothing about the Darkstreets, and never sees a patrol coming') is taken literally -- streetwise: 0 is a ruled fact here, not this file's invention; section 7 rules THE FLAME 'Locked at start (level 0, cannot gain XP, no abilities)' for every fresh arrival including the Wielder himself, so the_flame: 0 here is that same rule, not a weak-start apology; section 5 states Presence 'STATIC 100... the Wielder's social weight is a constant of the world', which this file gives Gabri in full because he is, textually, the Wielder -- the one number in this file that is not weak-start by design.",
+
+  "provenance": "Eli named the archetype pair 'Devin (secretive) and Gabri (no-nonsense)' as BG3/Divinity-Original-Sin-2-style origin templates alongside a fully custom path (task #80). Every startingSkills number here except streetwise and the_flame (both ruled elsewhere, see canonAnchor) is this file's own attempt to make 'no-nonsense' a mechanical fact: no lockpicking (cracksmanship 0 -- he burns doors, canon-explicit, L2718), no sneaking (skyrunning 0 -- full lawful immunity means he never has to hide, and every crypt/palace entry in the novel is a front door), no potions or venoms (mixtures 0), no ranged weapon of his own (sidearms/dire_bows/lancework/heavy_arms all 0 -- his weapon is the sword, canon-anchored bladework, and everything else is Devin's kit or nobody's), and what little investment exists goes to grit (10, highest of any skill in this file -- taking a hit and finishing the fight, L2703-2718) and harness (5 -- he is the one of the three in Vallech's crypt fight actually wearing armor under his robes, 'black leather under', unlike Devin's bare apprentice grays per that file's own canonAnchor) over bladework (8) and a small channeling seed (3 -- fire-adjacent bookishness a Wielder-in-training plausibly has before the Flame itself unlocks, invented, needs-blessing). derivedAttributesAtStart computed by hand from PROGRESSION-SPEC.md section 5's own formula (attr = 10 + ((sum of skill_i * weight_i) >> 8), integer, no rounding) over this file's own startingSkills -- verified by tests/test_companions.cpp against a from-scratch reimplementation of the same formula, and cross-checked against content/raws/companions/devin.json's derivedAttributesAtStart, which the identical formula reproduces exactly from that file's own startingSkills. derivedStatsAtStart likewise follows section 5's maxHP/maxStamina/encumbranceCapDeciStone formulas exactly, pinned by the same test. All levels/aptitudes carried over from skills.json are ALREADY-RULED canon per canonAnchor above; every other level is PLACEHOLDER, NEEDS-BLESSING, matching house convention for every other invented number in PROGRESSION-SPEC.md. appearanceType: priest_of_the_flame is the closest of the eleven playable looks in sim/appearance.hpp to 'clothes of pure white' (novel L2340) -- the same WardType/ActorSheet vocabulary the ward's own billboards are drawn with (render/actor_sheet.hpp), not a separate art system; no face_named_gabri portrait exists yet (FACES-SPEC.md section 2 has shipped only face_named_devin and face_named_john), which is a real gap for whoever wires this template into the running game, flagged here rather than silently left for someone to notice on screen.",
+
+  "notes": "NOT YET WIRED INTO A RUNNING GAME. tests/test_companions.cpp's CompanionTemplate::load reads this file, checks every startingSkills id against the real content/raws/skills/skills.json SkillTrack, and can write every level into a real SkillTrack via applyStartingSkills() -- but nothing in src/client/main.cpp calls that yet, and no Session is ever built from a chosen origin. render/creation.hpp's own CreationFlow (task #80's origin-select/customize screens) reads this file's name/tag for its origin cards; wiring CreationResult all the way into a spawned Session, and turning devin.json's/this file's startingSkills into the game's actual opening state, is the remaining integration work and is explicitly out of scope for a content-authoring pass, the same framing devin.json's own notes field already states. Schema mirrors devin.json field-for-field, plus one addition (appearanceType, sim/appearance.hpp's eleven-option vocabulary) neither devin.json nor chargen.hpp/attributes.hpp touch -- devin.json remains unedited; a future pass giving Devin the same field is that file's own author's call, not made here."
+}
