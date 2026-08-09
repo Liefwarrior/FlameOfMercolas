@@ -1592,10 +1592,14 @@ std::string Session::interactPrompt() const {
     // header in session.hpp for the verification gap (the bale, the rat and
     // buyPicks() are not previewed) and for why the order below has to track
     // interact()'s own order exactly.
-    if (talking() || picking() || pauseOpen() || optionsOpen() || awaitingKey_) {
-        // The topic list / options page already shows what Interact (or
-        // ENTER) does on this row; a second label would say the same thing
-        // twice in two different places on the same frame.
+    if (talking() || picking() || pauseOpen() || menuOpen()) {
+        // The topic list / one of Menu's six pages already shows what
+        // Interact (or ENTER) does on this row -- menuOpen() covers all six,
+        // not only Options, which an earlier pass of this check missed
+        // (caught by test_interact_context.cpp: toggleMenu() opens the
+        // casebook first, and the label kept computing a real prompt behind
+        // it). A second, floating label would say the same thing twice in
+        // two different places on the same frame.
         return {};
     }
     const bool sneaking = stance() == sim::Stance::Crouched;

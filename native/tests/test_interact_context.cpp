@@ -149,11 +149,20 @@ TEST_CASE("Interact resolves to PICK LOCK facing a locked box, sneaking or not")
     // for the rest test above to rent without the two colliding inside one
     // process (each TEST_CASE gets its own fresh Session either way, but the
     // choice of room keeps the two cases legible independently).
+    //
+    // FIVE IN THE MORNING, not nine at night: a guest room can have its own
+    // tenant asleep in it, and PERSON outranks BOX in interact()'s own
+    // priority order (correctly -- a body in reach is not a fixture), so an
+    // hour with somebody actually home resolves to TALK/PICKPOCKET instead
+    // and this case is proving the wrong branch. 5am is the same hour
+    // "Interact resolves to LOOK" already uses and already know is quiet.
     const sim::gull::GuestRoom& room = sim::gull::kRooms[1];
 
     SUBCASE("upright") {
-        Session session(gullAt(21, room.standX, room.standY, sim::gull::kUpperBand));
+        Session session(gullAt(5, room.standX, room.standY, sim::gull::kUpperBand));
         REQUIRE(session.stance() == sim::Stance::Upright);
+        REQUIRE(session.tavern().nearestTo(session.body().x(), session.body().y(),
+                                           sim::kReachQ8) == nullptr);
         CHECK(session.interactPrompt() == "PICK LOCK");
 
         session.interact();
@@ -166,9 +175,11 @@ TEST_CASE("Interact resolves to PICK LOCK facing a locked box, sneaking or not")
         // not)". crackStrongbox() never reads stance, so this is the same
         // outcome through the sneaking branch of interact() instead of the
         // upright one.
-        Session session(gullAt(21, room.standX, room.standY, sim::gull::kUpperBand));
+        Session session(gullAt(5, room.standX, room.standY, sim::gull::kUpperBand));
         session.setCrouched(true);
         REQUIRE(session.stance() == sim::Stance::Crouched);
+        REQUIRE(session.tavern().nearestTo(session.body().x(), session.body().y(),
+                                           sim::kLiftReachQ8) == nullptr);
         CHECK(session.interactPrompt() == "PICK LOCK");
 
         session.interact();
