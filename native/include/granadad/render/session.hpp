@@ -34,6 +34,7 @@
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/lamps.hpp"
+#include "granadad/render/menu_view.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
 #include "granadad/sim/compound.hpp"
@@ -331,16 +332,28 @@ public:
     /// see legend.hpp on why that is the design and not a shortcut.
     [[nodiscard]] sim::Legend legend() const;
 
-    /// J. Opens and closes the casebook.
+    /// MORROWIND ROUND. Opens and closes the tiled Menu, focused on the
+    /// Journal tile -- see the "ONE MENU, FOUR TILES" block below for what
+    /// the tiled Menu actually is now. Kept as its own named entry point
+    /// (rather than folded away once #85's per-page toggles stopped being
+    /// individually key-bound) because the test suite and every scripted
+    /// capture still open pages by name, and "open the Menu with the Journal
+    /// focused" is a real, distinct thing to ask for.
     ///
-    /// IT IS DRAWN IN THE CONVERSATION'S OWN SURFACE, deliberately. The HUD
-    /// rule says the centre of the screen stays empty, and a journal is the
-    /// single most likely thing in an RPG to break it -- the Java build's
-    /// first-person view died on exactly this. The dialogue view already owns a
-    /// top band and a bottom band with the middle untouched and a case that
-    /// proves it, so the casebook is a conversation with your own notes: the
-    /// leads are the topic list, the entry you pick is what gets said.
+    /// IT IS DRAWN IN THE CONVERSATION SURFACE'S OWN VOCABULARY, but the tiled
+    /// Menu as a WHOLE deliberately does NOT hug the HUD's centre-clear rule
+    /// the way a live conversation still does -- see menu_view.hpp's own
+    /// header on why a Morrowind-style overview is allowed to cover the
+    /// middle of the screen and a conversation is not.
     void toggleCasebook();
+    /// True while the tiled Menu is open, REGARDLESS of which of its four
+    /// tiles currently has focus -- see characterOpen()/mapOpen()/
+    /// lettersOpen() below, which are the identical bool. The four tiles are
+    /// drawn SIMULTANEOUSLY now (Character top-left, Map top-centre, Letters
+    /// top-right, Journal full-width along the bottom, per Eli's own brief:
+    /// "just show them like Morrowind does"), so there is no longer a
+    /// meaningful sense in which one tile is "open" and the others are not --
+    /// menuFocus() is the only thing that still distinguishes them.
     [[nodiscard]] bool casebookOpen() const noexcept { return casebookOpen_; }
     /// "CASE 4/12  COLD 1  THE WARD IS TALKING", or empty before the trail
     /// starts. Bottom-left, one row, on the edge.
@@ -348,75 +361,90 @@ public:
     /// "LEGEND CUTPURSE  6 RUNGS", or empty at rung zero across the board.
     [[nodiscard]] std::string legendLine() const;
 
-    /// TASK #82. L. Opens and closes the letters a lead has unlocked.
-    ///
-    /// AN EIGHTH PAGE ON THE SAME SURFACE, for the exact reason a sixth and
-    /// seventh (characterOpen_, mapOpen_) already were: "reads through
-    /// caseCursor_/casePage_, the same pair the casebook and the keys page
-    /// already share -- a third read-only list that is never open at the
-    /// same time as the other two" is characterOpen_'s own comment, and this
-    /// is the same claim made a fourth time. content/raws/quests/
-    /// bloodletter_letters.json is the authored file (sim/letters.hpp);
-    /// unlockedLetters() decides which of it the player has actually earned,
-    /// off the casebook lead each one is tied to -- nothing here has a
-    /// "read" flag of its own to fall out of sync with the book that gates
-    /// it.
+    /// TASK #82, MORROWIND ROUND. Opens and closes the tiled Menu, focused on
+    /// the Letters tile -- see toggleCasebook()'s own note on why this stays
+    /// a named entry point. content/raws/quests/bloodletter_letters.json is
+    /// the authored file (sim/letters.hpp); unlockedLetters() decides which
+    /// of it the player has actually earned, off the casebook lead each one
+    /// is tied to -- nothing here has a "read" flag of its own to fall out of
+    /// sync with the book that gates it.
     void toggleLetters();
-    [[nodiscard]] bool lettersOpen() const noexcept { return lettersOpen_; }
+    /// True while the tiled Menu is open -- the same bool casebookOpen() is;
+    /// see that accessor's own note on why the four tiles no longer have
+    /// four different answers to "is this one open".
+    [[nodiscard]] bool lettersOpen() const noexcept { return casebookOpen_; }
 
-    /// F1. The keys, IN THE GAME, where a player who has forgotten one can
-    /// find it without alt-tabbing to a README.
-    ///
-    /// Drawn in the conversation's own two bands for the same reason the
-    /// casebook is: the centre of the screen is not the HUD's to use, and a
-    /// controls overlay is the second most likely thing after a journal to
-    /// take it. It is literally a conversation with the keyboard -- the key
-    /// rows ARE the topic list, so it pages nine at a time off the same
-    /// numbers and cannot drop a row as it grows.
+    /// RELOCATED TO PAUSE'S OWN CONTROLS ROW. The keys page itself, and
+    /// dialogueView()'s keysOpen_ branch, are UNCHANGED -- still the same
+    /// single-panel conversation-surface widget, still respecting the HUD's
+    /// centre-clear rule, exactly as it always has. What moved is only how a
+    /// player REACHES it: it used to be one stop of Menu's own six-page
+    /// cycle (#85); the Morrowind round's tiled Menu has no "pages" left to
+    /// cycle through (its four tiles are all on screen at once), so Keys
+    /// followed Options' own precedent and took a numbered row on Pause
+    /// instead -- see pauseRows()'s own header.
     void toggleKeys();
     [[nodiscard]] bool keysOpen() const noexcept { return keysOpen_; }
 
-    // --- #85: ONE MENU, SIX PAGES ---------------------------------------------
+    // --- ONE MENU, FOUR TILES (Morrowind round) -------------------------------
     //
-    // Journal (the casebook above), Character, Map, Letters, Keys and Options
-    // used to be six independent top-level actions, each hand-writing the
-    // identical "close every other overlay" block toggleCasebook/toggleKeys/
-    // etc. still carry -- see dismissOverlays()'s own comment on the ten call
-    // sites that lean on it existing. #85 does NOT touch any of the six: this
-    // is a THIN ROUTER in front of them, the exact shape Oblivion and
-    // Skyrim's own tabbed inventory screen already is -- one button opens it,
-    // a bumper-equivalent flips between tabs that were always separate
-    // screens underneath. Menu/pause already had one level of this in
-    // production before #85 ever landed: choosePause()'s SETTINGS row has
-    // always called toggleOptions() directly, Menu-into-Options as a
-    // page-within-a-page, which is the concrete precedent this whole design
-    // generalises rather than invents.
+    // Eli, having seen a real Morrowind screenshot: "I like how we've got a UI
+    // that's nice and chunky like from the 90s, BUT even Daggerfall knew when
+    // to scale it back to fit more words on the screen. Fix the multi-page
+    // menu thing, just show them like Morrowind does." Morrowind's own layout:
+    // three roughly-square panels across the top (Stats, Map, Magic) plus one
+    // full-width panel along the bottom (Inventory), all visible at once, no
+    // paging between them.
     //
-    // Reachable from BOTH the Menu action and Pause's own SETTINGS row for
-    // Options specifically, and that is by design and not a leftover: both
-    // routes land on the identical optionsOpen_ state, so there is one
-    // rebinding screen, reached two ways, never two screens that could drift
-    // apart -- see controls.hpp's own note on Pause for the brief this
-    // answers ("don't leave it reachable from both in a way that reads as
-    // two systems").
+    // #85's SIX-PAGE CYCLE IS GONE. Journal, Character, Map and Letters are
+    // no longer four of six pages a bumper flips between one at a time --
+    // they are FOUR TILES drawn every frame the Menu is open, by
+    // menu_view.hpp's drawMenuTiles(): Character top-left, Map top-centre,
+    // Letters top-right, Journal full-width along the bottom. casebookOpen_
+    // is the one flag that opens and closes all four together now, which is
+    // why casebookOpen()/characterOpen()/mapOpen()/lettersOpen() all read the
+    // identical bool -- see casebookOpen()'s own note.
+    //
+    // KEYS AND OPTIONS MOVED TO PAUSE. Neither fits a tile (both are long,
+    // single lists meant to be read top to bottom, not a quarter-screen
+    // panel), and Options already had a Pause-side door (SETTINGS) before
+    // this round -- see controls.hpp's own note on why that is one system
+    // reached two ways, never two. Keys gained the identical kind of door
+    // (CONTROLS) so the pattern is uniform: pauseRows()'s own header.
+    //
+    // PAGEPREV/PAGENEXT ARE REPURPOSED, NOT REBOUND. With all four tiles
+    // visible at once, "which page is showing" no longer exists, so these two
+    // actions now step WHICH TILE HAS FOCUS instead -- menuFocus() below --
+    // the same two buttons, the same bindings (see controls.hpp, untouched),
+    // a different job. Arrow keys, the printed numbers and ENTER all continue
+    // to act on whichever tile currently has focus; see moveTopicCursor()/
+    // chooseVisibleTopic()/chooseTopic(), which now dispatch on menuFocus_
+    // instead of on which of four now-identical bools happened to be true.
 
-    /// True while any of the six pages is open. The one predicate
-    /// menuPageIndex()/openMenuPage() below are built on, and the one this
-    /// build's "is a page eating the keyboard" checks (main.cpp's `listening`,
-    /// among others -- see its own comment) fold into instead of each
-    /// hand-listing the same six flags.
+    /// True while the tiled Menu, the keys page or the options page is open --
+    /// the one predicate this build's "is a page eating the keyboard" checks
+    /// (main.cpp's `listening`, among others -- see its own comment) fold
+    /// into instead of each hand-listing the same three flags.
     [[nodiscard]] bool menuOpen() const noexcept;
-    /// Opens the first page (the casebook) if none of the six is open;
-    /// closes whichever one is open otherwise -- the same "the key that
-    /// opened it closes it" rule every one of the six already has on its own.
+    /// Opens the tiled Menu (focused on the Journal tile) if nothing is open;
+    /// closes it otherwise -- the same "the key that opened it closes it"
+    /// rule Keys, Options and Pause each still have on their own.
     void toggleMenu();
-    /// Closes whichever page is open and opens the next one in the fixed
-    /// cycle Journal -> Character -> Map -> Letters -> Keys -> Options ->
-    /// (back to Journal). Does nothing while the menu is not open -- a
-    /// bumper press with nothing open is not what opens it.
+    /// Steps menuFocus() forward one tile, wrapping Journal -> Character ->
+    /// Map -> Letters -> (back to Journal). Does nothing while the tiled
+    /// Menu is not open -- a bumper press with nothing open is not what
+    /// opens it, and Keys/Options/Pause have no tiles of their own to step
+    /// between.
     void menuPageNext();
     /// The same cycle, backward.
     void menuPagePrev();
+    /// Which of the tiled Menu's four tiles currently has input focus --
+    /// kMenuFocusCharacter/Map/Letters/Journal (menu_view.hpp). Arrow keys,
+    /// the printed numbers and ENTER all act on this one; the other three
+    /// keep drawing whatever they last showed, unread but not reset, exactly
+    /// the way Morrowind's own four panes hold their own scroll position
+    /// while only one has the keyboard.
+    [[nodiscard]] int menuFocus() const noexcept { return menuFocus_; }
 
     // --- #77: the controls, and the page that changes them -------------------
 
@@ -476,7 +504,17 @@ public:
     // same class of bug as an enum name leaking into a bark.
     void togglePause();
     [[nodiscard]] bool pauseOpen() const noexcept { return pauseOpen_; }
-    /// RESUME, SETTINGS, and QUIT -- the last one asking twice. See choosePause.
+    /// RESUME, CONTROLS, SETTINGS, and QUIT -- the last one asking twice. See
+    /// choosePause().
+    ///
+    /// MORROWIND ROUND: CONTROLS IS NEW HERE. The tiled Menu's four tiles
+    /// (Character/Map/Letters/Journal) have no room for a fifth, long,
+    /// read-top-to-bottom list, so Keys followed Options' own precedent --
+    /// SETTINGS has always opened the identical optionsOpen_ state Menu's
+    /// own Options page used to (controls.hpp's own note on why that reads
+    /// as one system, not two) -- and took a numbered row here instead. The
+    /// keys page ITSELF is unchanged: same single-panel widget, same
+    /// centre-clear guarantee, reached a different way.
     [[nodiscard]] std::vector<std::string> pauseRows() const;
     void movePauseCursor(int delta);
     /// ENTER. RESUME closes the page; SETTINGS opens the options page in its
@@ -506,10 +544,10 @@ public:
     // both of them are tests. The other four tracks, and every rung of them,
     // were computed and thrown away every single frame.
     //
-    // SAME SURFACE, SAME REASON THE CASEBOOK IS. The centre of the screen stays
-    // empty; this is one more list widget on the dialogue view and not a sheet
-    // in the middle of it -- see toggleCasebook's own comment, which is the
-    // argument this build keeps making rather than re-deciding per screen.
+    // MORROWIND ROUND: THE TOP-LEFT TILE. One of the tiled Menu's four
+    // simultaneous panels now (see "ONE MENU, FOUR TILES" above), drawn by
+    // menu_view.hpp's drawMenuTiles() rather than filling the whole
+    // conversation surface the way it did as one of #85's six pages.
     //
     // NO PAPER DOLL AND NO ARMOUR RATING, ON PURPOSE. There is no item and no
     // equipment-slot model in this build -- the quick bar's own comment says so
@@ -521,7 +559,9 @@ public:
     // are authored vocabulary with nothing in this build that levels them yet),
     // and this page is exactly that, no more.
     void toggleCharacter();
-    [[nodiscard]] bool characterOpen() const noexcept { return characterOpen_; }
+    /// True while the tiled Menu is open -- the same bool casebookOpen() is;
+    /// see that accessor's own note.
+    [[nodiscard]] bool characterOpen() const noexcept { return casebookOpen_; }
     /// The five Legend tracks, the skills actually in play, and what the ward
     /// and the purse currently say -- one row a line, built fresh from the same
     /// counters the HUD's corner rows read.
@@ -547,8 +587,12 @@ public:
     // READ-ONLY, LIKE THE KEYS PAGE AND THE CHARACTER SHEET -- unlike the
     // casebook, nothing on this page is a choice to make, only ground to
     // read, so a number press moves the cursor and nothing else.
+    //
+    // MORROWIND ROUND: THE TOP-CENTRE TILE. See toggleCharacter()'s own note.
     void toggleMap();
-    [[nodiscard]] bool mapOpen() const noexcept { return mapOpen_; }
+    /// True while the tiled Menu is open -- the same bool casebookOpen() is;
+    /// see that accessor's own note.
+    [[nodiscard]] bool mapOpen() const noexcept { return casebookOpen_; }
     /// Known ground, then open leads (each with a bearing and a range from
     /// where the player is standing), then who will talk -- see the .cpp for
     /// why each section is built from what Casebook already knows and no new
@@ -791,17 +835,26 @@ private:
     /// cue to fall through to the investigation look instead.
     bool stealNearestThing();
 
-    /// Which of the six Menu pages is open, in the fixed cycle order Journal
-    /// (0) / Character (1) / Map (2) / Letters (3) / Keys (4) / Options (5),
-    /// or -1 when none is. The single place that ties "which bool is true"
-    /// to "which page number that is" so menuPageNext/Prev only have to know
-    /// the count.
-    [[nodiscard]] int menuPageIndex() const noexcept;
-    /// Opens page `index` (mod 6) by calling ITS OWN existing toggle*()
-    /// method -- never writes an xOpen_ flag directly, so every exclusivity
-    /// rule and every syncPanelAnim() call the six pages already make keeps
-    /// running unmodified underneath this router.
-    void openMenuPage(int index);
+    /// MORROWIND ROUND. Opens/refocuses the tiled Menu on tile `focus`
+    /// (kMenuFocusCharacter/Map/Letters/Journal, mod 4): if the Menu is
+    /// already open, this only moves menuFocus_ (or closes the whole Menu
+    /// when `focus` is already the one that has it, the same "press it again
+    /// to close" rule every one of #85's six pages used to have on its own);
+    /// if it is not open, this opens it fresh, standing every other overlay
+    /// down first, exactly as toggleOptions()/toggleKeys()/togglePause()
+    /// still do on their own. The one function toggleCasebook()/
+    /// toggleCharacter()/toggleMap()/toggleLetters() all forward to.
+    void toggleMenuFocused(int focus);
+    /// Builds the DialogueViewState for one of the tiled Menu's four panels,
+    /// independent of which (if any) currently has focus -- drawMenuTiles()
+    /// needs all four every frame, not only the focused one, and
+    /// dialogueView() reads whichever one menuFocus_ names so a caller that
+    /// only ever asked about "the open page" (every pre-Morrowind-round test)
+    /// keeps seeing exactly the content it always did.
+    [[nodiscard]] DialogueViewState characterPanelView() const;
+    [[nodiscard]] DialogueViewState mapPanelView() const;
+    [[nodiscard]] DialogueViewState lettersPanelView() const;
+    [[nodiscard]] DialogueViewState journalPanelView() const;
     /// TASK #82. Every letter whose `lead` (sim::Letter::lead, a
     /// casebook.json lead id) has actually been investigated -- Cold or
     /// Followed, never merely Open -- in authored order. What the letters
@@ -915,22 +968,58 @@ private:
     /// The raws are held because Casebook borrows them for its whole life.
     sim::CasebookRaws caseRaws_;
     sim::Casebook casebook_;
+    /// MORROWIND ROUND. THE ONE FLAG THAT OPENS AND CLOSES THE TILED MENU.
+    /// casebookOpen()/characterOpen()/mapOpen()/lettersOpen() all read this
+    /// SAME bool now -- the four tiles are drawn simultaneously (see "ONE
+    /// MENU, FOUR TILES" up in the public section), so there is no longer a
+    /// separate "is this one open" per tile, only menuFocus_ below to say
+    /// which one currently has the keyboard.
     bool casebookOpen_ = false;
-    /// TASK #82. The authored letters, and whether the page reading them is
-    /// up. No per-letter "has this been read" flag lives here: a letter's
-    /// visibility is DERIVED, every call, off whether the casebook lead it
-    /// is tied to has actually been investigated -- see unlockedLetters().
-    /// That is one less thing to hash and one less thing that could disagree
-    /// with the book that gates it.
+    /// TASK #82. The authored letters. No per-letter "has this been read"
+    /// flag lives here: a letter's visibility is DERIVED, every call, off
+    /// whether the casebook lead it is tied to has actually been
+    /// investigated -- see unlockedLetters(). That is one less thing to hash
+    /// and one less thing that could disagree with the book that gates it.
     sim::LetterRaws letterRaws_;
-    bool lettersOpen_ = false;
     bool keysOpen_ = false;
     bool firstRun_ = true;
+    /// THE JOURNAL TILE'S OWN CURSOR, PAGE AND PICKED ENTRY -- unchanged
+    /// names and unchanged meaning from #85: which lead the cursor is on,
+    /// which page of a long list is showing, and which entry (if any) the
+    /// player has picked to read in full. No longer shared with Character,
+    /// Map or Letters -- each tile keeps its own now that all four are drawn
+    /// (and can each be mid-read) at once; see the four fields below.
     int caseCursor_ = 0;
     int casePage_ = 0;
-    /// The entry the player has picked out of their own notes, or -1. Pure UI
-    /// state: the trail itself lives in the simulation.
     int caseEntry_ = -1;
+    /// THE CHARACTER TILE'S OWN CURSOR AND PAGE. Read-only (nothing on this
+    /// tile is a choice to make), so there is no "entry" to remember.
+    int characterCursor_ = 0;
+    int characterPage_ = 0;
+    /// THE MAP TILE'S OWN CURSOR AND PAGE. Also read-only.
+    int mapCursor_ = 0;
+    int mapPage_ = 0;
+    /// THE LETTERS TILE'S OWN CURSOR, PAGE AND PICKED ENTRY -- the title
+    /// list's own state, mirroring the Journal tile's caseCursor_/casePage_/
+    /// caseEntry_ exactly. lettersBodyPage_ is a FIFTH field the other three
+    /// tiles have no equivalent of: once a letter is picked (lettersEntry_
+    /// >= 0) the tile stops showing a list at all and starts showing that
+    /// letter's own wrapped, paged prose, and this is which page of IT is
+    /// showing -- kept apart from lettersPage_ rather than reusing it and
+    /// having it change meaning mid-flight, which is what #82's original,
+    /// single-panel version of this page did to casePage_ and warned its own
+    /// callers about in the header letters kept while it was one of six
+    /// pages rather than a tile.
+    int lettersCursor_ = 0;
+    int lettersPage_ = 0;
+    int lettersEntry_ = -1;
+    int lettersBodyPage_ = 0;
+    /// MORROWIND ROUND. Which of the tiled Menu's four tiles currently has
+    /// input focus -- see menuFocus()'s own header. Defaults to the Journal
+    /// tile, the same tile #85's Menu always opened on first, so a caller
+    /// that opens the Menu and never touches PagePrev/PageNext lands on
+    /// exactly the tile it always landed on.
+    int menuFocus_ = kMenuFocusJournal;
     /// #77. The live bindings, the options page and the row it is on.
     ControlSettings controls_ = ControlSettings::defaults();
     bool optionsOpen_ = false;
@@ -945,14 +1034,6 @@ private:
     int pauseCursor_ = 0;
     bool quitArmed_ = false;
     bool quitRequested_ = false;
-    /// The character sheet. Reads through caseCursor_/casePage_, the same pair
-    /// the casebook and the keys page already share -- a third read-only list
-    /// that is never open at the same time as the other two.
-    bool characterOpen_ = false;
-    /// #82. The district map. A fourth read-only list sharing the same
-    /// caseCursor_/casePage_ pair, and never open alongside any of the other
-    /// five overlay pages -- see toggleMap().
-    bool mapOpen_ = false;
 
     /// Task #83. The panel widget's own open/close ease -- see
     /// conversingNow()/syncPanelAnim() -- and the HUD alert row's fade in and
@@ -1021,23 +1102,26 @@ struct SmokeRunConfig {
     /// where the real one cannot run, and "trust me, I read the code" is not
     /// what a screenshot is for.
     ///
-    /// WHERE is "menu" (RESUME/SETTINGS/QUIT, freshly opened), "settings"
-    /// (SETTINGS chosen, so the rebinding screen it opens is what gets
-    /// photographed) or "armed" (the cursor on QUIT with the first of its two
-    /// presses already in, so the "SURE? ENTER" row is on screen).
+    /// WHERE is "menu" (RESUME/CONTROLS/SETTINGS/QUIT, freshly opened),
+    /// "controls" (CONTROLS chosen, so the keys page it opens -- Keys' own
+    /// Morrowind-round Pause-side door -- is what gets photographed),
+    /// "settings" (SETTINGS chosen, so the rebinding screen it opens is what
+    /// gets photographed) or "armed" (the cursor on QUIT with the first of
+    /// its two presses already in, so the "SURE? ENTER" row is on screen).
     bool pause = false;
     std::string pauseEnd = "menu";
-    /// VERIFICATION. Opens the character sheet before the shutter goes -- the
-    /// same call `C` makes. Added while adversarially verifying this round's
-    /// menu/HUD polish: the character sheet shipped with no headless capture
-    /// path at all, for exactly the reason `pause` above states its own --
-    /// this environment cannot drive a real window, so without a flag the
-    /// page could be unit-tested for its text but never actually LOOKED AT.
+    /// VERIFICATION. Opens the tiled Menu, focused on the Character tile,
+    /// before the shutter goes -- Session::toggleCharacter(). Added while
+    /// adversarially verifying an earlier round's menu/HUD polish: the
+    /// character sheet shipped with no headless capture path at all, for
+    /// exactly the reason `pause` above states its own -- this environment
+    /// cannot drive a real window, so without a flag the page could be
+    /// unit-tested for its text but never actually LOOKED AT.
     bool character = false;
-    /// VERIFICATION (#82). Opens the district map before the shutter goes --
-    /// the same call `M` makes. The identical reason `character` exists: no
-    /// flag here means the page could be unit-tested for its rows and never
-    /// actually looked at.
+    /// VERIFICATION (#82). Opens the tiled Menu, focused on the Map tile,
+    /// before the shutter goes -- Session::toggleMap(). The identical reason
+    /// `character` exists: no flag here means the page could be unit-tested
+    /// for its rows and never actually looked at.
     bool map = false;
     /// VERIFICATION. Every scripted overlay above (`pause`, `character`, and
     /// the panel any conversation opens) toggles on the LAST beat of the

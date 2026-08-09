@@ -285,6 +285,9 @@ add_library(granadad-render STATIC
     src/render/controls.cpp
     src/render/hud.cpp
     src/render/dialogue_view.cpp
+    # Morrowind round -- the tiled Menu (Character/Map/Letters top, Journal
+    # full-width bottom, all four drawn at once). See the file's own header.
+    src/render/menu_view.cpp
     src/render/capture.cpp
     src/render/session.cpp
     src/render/step_pump.cpp

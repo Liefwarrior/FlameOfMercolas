@@ -50,25 +50,28 @@ constexpr Rgb kParchmentInk{0.86F, 0.74F, 0.52F};
     return Rgb{0.70F, 0.68F, 0.62F};
 }
 
-/// The picked row's highlight: a soft band under the label and a bright
-/// hairline where the cursor arrow sits, so "this one is selected" is a SHAPE
-/// on the screen and not only a colour the label happens to print in. Kept to
-/// the room the label itself was cut to fit, so it can never reach into the
-/// next column any more than the label already could.
-///
-/// BREATHES GENTLY WITH `phase`, and 0 draws it at rest -- the same contract
-/// DialogueViewState::phase documents: a hand-built state that never heard of
-/// this gets the resting frame, which is what it always drew before the
-/// highlight existed.
-void drawPickHighlight(Framebuffer& target, int x, int y, int rowStep, int glyphAdvance,
-                       int scale, int labelWidth, int roomWidth, float phase) {
+}  // namespace
+
+// THE PICKED ROW'S HIGHLIGHT: a soft band under the label and a bright
+// hairline where the cursor arrow sits, so "this one is selected" is a SHAPE
+// on the screen and not only a colour the label happens to print in. Kept to
+// the room the label itself was cut to fit, so it can never reach into the
+// next column any more than the label already could.
+//
+// BREATHES GENTLY WITH `phase`, and 0 draws it at rest -- the same contract
+// DialogueViewState::phase documents: a hand-built state that never heard of
+// this gets the resting frame, which is what it always drew before the
+// highlight existed.
+//
+// EXPOSED (was anonymous-namespace-private) so menu_view.cpp's four smaller
+// panels draw the identical shape -- see the header on the .hpp declaration.
+void drawPickHighlight(Framebuffer& target, int x, int y, int rowStep, int glyphAdvance, int scale,
+                       int labelWidth, int roomWidth, float phase) {
     const float breathe = 0.5F + 0.5F * std::sin(phase * 6.0F);
     const int width = std::max(glyphAdvance, std::min(roomWidth, labelWidth + 2 * glyphAdvance));
     target.fillRect(x - glyphAdvance, y - scale, width, rowStep, kTopicPicked, 0.10F + 0.07F * breathe);
     target.fillRect(x - glyphAdvance, y - scale, scale, rowStep, kTopicPicked, 0.85F);
 }
-
-}  // namespace
 
 int topicPageCount(std::size_t topics) noexcept {
     if (topics == 0) {

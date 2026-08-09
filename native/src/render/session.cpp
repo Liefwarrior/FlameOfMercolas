@@ -635,9 +635,7 @@ void Session::dismissOverlays() noexcept {
     firstRun_ = false;
     pauseOpen_ = false;
     quitArmed_ = false;
-    characterOpen_ = false;
-    mapOpen_ = false;
-    lettersOpen_ = false;
+    menuFocus_ = kMenuFocusJournal;
     // TASK #83. Ten call sites deep (climb, dropDown, steal, toggleCrouch,
     // lift, setCrouched, jump, interact, punch, restHere) and every one of
     // them can be the thing that closes a panel a player left open. One call
@@ -744,9 +742,7 @@ void Session::toggleOptions() {
         keysOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
-        characterOpen_ = false;
-        mapOpen_ = false;
-        lettersOpen_ = false;
+        menuFocus_ = kMenuFocusJournal;
     }
     awaitingKey_ = false;
     firstRun_ = false;
@@ -842,9 +838,7 @@ void Session::togglePause() {
     keysOpen_ = false;
     optionsOpen_ = false;
     awaitingKey_ = false;
-    characterOpen_ = false;
-    mapOpen_ = false;
-    lettersOpen_ = false;
+    menuFocus_ = kMenuFocusJournal;
     pauseOpen_ = willOpen;
     pauseCursor_ = 0;
     quitArmed_ = false;
@@ -853,8 +847,15 @@ void Session::togglePause() {
 }
 
 std::vector<std::string> Session::pauseRows() const {
+    // MORROWIND ROUND: CONTROLS IS NEW. The tiled Menu's four tiles have no
+    // room for a long, read-top-to-bottom reference list (session.hpp's own
+    // note), so Keys followed Options' own precedent -- SETTINGS has always
+    // opened Menu's rebinding screen through the identical optionsOpen_ state
+    // -- and took a row here too, rather than being left with no door into
+    // the tiled Menu at all.
     return {
         "RESUME",
+        "CONTROLS",
         "SETTINGS",
         quitArmed_ ? "QUIT -- SURE? ENTER" : "QUIT GRANADAD",
     };
@@ -891,6 +892,14 @@ void Session::choosePause() {
             syncPanelAnim();
             return;
         case 1:
+            // CONTROLS. toggleKeys() opens it and puts this page down in the
+            // same call, the identical shape SETTINGS below already has.
+            // Relocated here from #85's own Menu cycle -- see toggleKeys()'s
+            // own header on why the page itself is unchanged and only the
+            // door moved.
+            toggleKeys();
+            return;
+        case 2:
             // SETTINGS. toggleOptions() opens it and puts this page down in the
             // same call -- see its own comment on why every overlay does that,
             // AND syncs the panel anim itself -- no need to repeat it here.
@@ -899,6 +908,14 @@ void Session::choosePause() {
             toggleOptions();
             return;
         default:
+            // QUIT (case 3). ITS OWN NUMBERED CASE RATHER THAN THE CATCH-ALL
+            // "anything else" `default` used to be -- CONTROLS' insertion
+            // ahead of it means a `default` that stayed the QUIT fallback
+            // would have silently swallowed a fifth row this switch never
+            // gets, with nothing here to say so. Numbering it explicitly
+            // means a future sixth pause row breaks this switch LOUDLY
+            // (falls through to `break` below and does nothing) instead of
+            // quietly arming QUIT.
             break;
     }
     // QUIT. Armed on the first press and confirmed on the second, so leaning on
@@ -961,10 +978,8 @@ void Session::toggleKeys() {
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
-        characterOpen_ = false;
-        mapOpen_ = false;
-        lettersOpen_ = false;
         awaitingKey_ = false;
+        menuFocus_ = kMenuFocusJournal;
     }
     firstRun_ = false;
     caseCursor_ = 0;
@@ -973,238 +988,105 @@ void Session::toggleKeys() {
     syncPanelAnim();
 }
 
-void Session::toggleCasebook() {
+void Session::toggleMenuFocused(int focus) {
     if (talking() || picking()) {
         return;
     }
-    keysOpen_ = false;
-    optionsOpen_ = false;
-    pauseOpen_ = false;
-    quitArmed_ = false;
-    characterOpen_ = false;
-    mapOpen_ = false;
-    lettersOpen_ = false;
-    awaitingKey_ = false;
-    firstRun_ = false;
-    casebookOpen_ = !casebookOpen_;
-    caseCursor_ = 0;
-    casePage_ = 0;
-    caseEntry_ = -1;
-    syncPanelAnim();
-}
-
-void Session::toggleCharacter() {
-    if (talking() || picking()) {
-        return;
-    }
-    casebookOpen_ = false;
-    keysOpen_ = false;
-    optionsOpen_ = false;
-    pauseOpen_ = false;
-    quitArmed_ = false;
-    awaitingKey_ = false;
-    firstRun_ = false;
-    mapOpen_ = false;
-    lettersOpen_ = false;
-    characterOpen_ = !characterOpen_;
-    caseCursor_ = 0;
-    casePage_ = 0;
-    caseEntry_ = -1;
-    syncPanelAnim();
-}
-
-void Session::toggleMap() {
-    // #82. THE DISTRICT MAP. Same exclusivity every overlay page enforces --
-    // see toggleOptions' own comment on why an overlay that opens without
-    // putting the others down is how a page draws on screen while a
-    // different one is still the one reading the keyboard.
-    if (talking() || picking()) {
-        return;
-    }
-    casebookOpen_ = false;
-    keysOpen_ = false;
-    optionsOpen_ = false;
-    pauseOpen_ = false;
-    quitArmed_ = false;
-    characterOpen_ = false;
-    lettersOpen_ = false;
-    awaitingKey_ = false;
-    firstRun_ = false;
-    mapOpen_ = !mapOpen_;
-    caseCursor_ = 0;
-    casePage_ = 0;
-    caseEntry_ = -1;
-    syncPanelAnim();
-}
-
-void Session::toggleLetters() {
-    // TASK #82. THE LETTERS. Same exclusivity every overlay page enforces --
-    // see toggleOptions' own comment on why an overlay that opens without
-    // putting the others down is how a page draws on screen while a
-    // different one is still the one reading the keyboard. Opening with
-    // nothing unlocked yet is not refused -- the page simply lists nothing,
-    // the same honest-empty-list behaviour the casebook itself gives a
-    // player who has not heard of anything yet.
-    if (talking() || picking()) {
-        return;
-    }
-    casebookOpen_ = false;
-    keysOpen_ = false;
-    optionsOpen_ = false;
-    pauseOpen_ = false;
-    quitArmed_ = false;
-    characterOpen_ = false;
-    mapOpen_ = false;
-    awaitingKey_ = false;
-    firstRun_ = false;
-    lettersOpen_ = !lettersOpen_;
-    caseCursor_ = 0;
-    casePage_ = 0;
-    caseEntry_ = -1;
-    syncPanelAnim();
-}
-
-// ---------------------------------------------------------------------------
-// #85: one Menu, six pages
-// ---------------------------------------------------------------------------
-
-bool Session::menuOpen() const noexcept {
-    return casebookOpen_ || characterOpen_ || mapOpen_ || lettersOpen_ || keysOpen_ ||
-           optionsOpen_;
-}
-
-int Session::menuPageIndex() const noexcept {
-    // A FIXED CYCLE ORDER: Journal, Character, Map, Letters, Keys, Options --
-    // the player's own notes and standing first, reference material (the
-    // key list, the rebinding screen) last, the same "read this, then look
-    // this up if you need to" ordering the pause menu's own SETTINGS-last
-    // row already implies.
+    const int wrapped = ((focus % kMenuFocusCount) + kMenuFocusCount) % kMenuFocusCount;
     if (casebookOpen_) {
-        return 0;
+        if (menuFocus_ == wrapped) {
+            // THE KEY THAT OPENED IT CLOSES IT -- the same rule every one of
+            // #85's six pages used to have on its own, now scoped to "the tile
+            // you are already looking at" rather than to a page that no
+            // longer exists on its own.
+            casebookOpen_ = false;
+            caseCursor_ = 0;
+            casePage_ = 0;
+            caseEntry_ = -1;
+            characterCursor_ = 0;
+            characterPage_ = 0;
+            mapCursor_ = 0;
+            mapPage_ = 0;
+            lettersCursor_ = 0;
+            lettersPage_ = 0;
+            lettersEntry_ = -1;
+            lettersBodyPage_ = 0;
+            menuFocus_ = kMenuFocusJournal;
+        } else {
+            // ALREADY OPEN, DIFFERENT TILE ASKED FOR: MOVE FOCUS, DO NOT
+            // RESET. Each tile keeps its own cursor/page/picked-entry --
+            // switching focus to read the Letters tile and back should not
+            // have thrown away where the Journal tile's cursor was.
+            menuFocus_ = wrapped;
+        }
+    } else {
+        // OPENING FRESH. Every other overlay stands down, same as
+        // toggleOptions()/toggleKeys()/togglePause() already do on their own.
+        keysOpen_ = false;
+        optionsOpen_ = false;
+        pauseOpen_ = false;
+        quitArmed_ = false;
+        awaitingKey_ = false;
+        casebookOpen_ = true;
+        menuFocus_ = wrapped;
+        caseCursor_ = 0;
+        casePage_ = 0;
+        caseEntry_ = -1;
+        characterCursor_ = 0;
+        characterPage_ = 0;
+        mapCursor_ = 0;
+        mapPage_ = 0;
+        lettersCursor_ = 0;
+        lettersPage_ = 0;
+        lettersEntry_ = -1;
+        lettersBodyPage_ = 0;
     }
-    if (characterOpen_) {
-        return 1;
-    }
-    if (mapOpen_) {
-        return 2;
-    }
-    if (lettersOpen_) {
-        return 3;
-    }
-    if (keysOpen_) {
-        return 4;
-    }
-    if (optionsOpen_) {
-        return 5;
-    }
-    return -1;
+    firstRun_ = false;
+    syncPanelAnim();
 }
 
-void Session::openMenuPage(int index) {
-    // NEVER WRITES AN xOpen_ FLAG DIRECTLY. Each of the six toggle*() methods
-    // already carries its own exclusivity block and its own syncPanelAnim()
-    // call -- see toggleOptions' own comment on why an overlay that opens
-    // without putting the others down is a page on screen that is not the
-    // page reading the keyboard. Calling the toggle only when the target page
-    // is NOT already open keeps this idempotent: pressing PageNext twice on
-    // an index that maps to the same page (it never does today, but a future
-    // page count that is not a clean divisor of the cycle could) will not
-    // flip a page closed by mistake.
-    switch (((index % 6) + 6) % 6) {
-        case 0:
-            if (!casebookOpen_) {
-                toggleCasebook();
-            }
-            break;
-        case 1:
-            if (!characterOpen_) {
-                toggleCharacter();
-            }
-            break;
-        case 2:
-            if (!mapOpen_) {
-                toggleMap();
-            }
-            break;
-        case 3:
-            if (!lettersOpen_) {
-                toggleLetters();
-            }
-            break;
-        case 4:
-            if (!keysOpen_) {
-                toggleKeys();
-            }
-            break;
-        case 5:
-            if (!optionsOpen_) {
-                toggleOptions();
-            }
-            break;
-        default:
-            break;
-    }
-}
+void Session::toggleCasebook() { toggleMenuFocused(kMenuFocusJournal); }
+
+void Session::toggleCharacter() { toggleMenuFocused(kMenuFocusCharacter); }
+
+void Session::toggleMap() { toggleMenuFocused(kMenuFocusMap); }
+
+void Session::toggleLetters() { toggleMenuFocused(kMenuFocusLetters); }
+
+// ---------------------------------------------------------------------------
+// Morrowind round: one Menu, four tiles (Keys and Options moved to Pause)
+// ---------------------------------------------------------------------------
+
+bool Session::menuOpen() const noexcept { return casebookOpen_ || keysOpen_ || optionsOpen_; }
 
 void Session::toggleMenu() {
-    if (menuOpen()) {
-        // THE KEY THAT OPENED IT CLOSES IT -- the same rule every one of the
-        // six pages already has on its own. Closing means calling the OPEN
-        // page's own toggle a second time, not writing its flag to false
-        // directly, for the identical reason openMenuPage() above never
-        // writes one either.
-        switch (menuPageIndex()) {
-            case 0:
-                toggleCasebook();
-                break;
-            case 1:
-                toggleCharacter();
-                break;
-            case 2:
-                toggleMap();
-                break;
-            case 3:
-                toggleLetters();
-                break;
-            case 4:
-                toggleKeys();
-                break;
-            case 5:
-                toggleOptions();
-                break;
-            default:
-                break;
-        }
-        return;
-    }
-    // OPENS ON THE CASEBOOK -- Journal was always the traditional "first tab"
-    // on the tabbed inventory screens this design is grounded in, and it is
-    // the page a fresh session already opens on (see the constructor's own
-    // firstRun_ handling), so Menu landing there first is consistent rather
-    // than arbitrary. Each of the six toggle*() methods already refuses while
-    // talking()/picking(), and toggleCasebook() additionally stands the pause
-    // menu down the same way every overlay already does -- nothing extra to
-    // check here.
-    openMenuPage(0);
+    // THE KEY THAT OPENED IT CLOSES IT -- toggleMenuFocused() already carries
+    // this rule for "the tiled Menu, focused on the tile it is already
+    // focused on", which is exactly what re-pressing the single Menu action
+    // (never any of the four toggle*() entry points a real key no longer
+    // reaches) always asks for.
+    toggleMenuFocused(menuFocus_);
 }
 
 void Session::menuPageNext() {
-    const int index = menuPageIndex();
-    if (index < 0) {
-        // NOT OPEN: A BUMPER PRESS WITH NOTHING OPEN IS NOT WHAT OPENS MENU.
-        // That is what the Menu action itself is for; PagePrev/PageNext only
-        // flip pages that already exist.
+    // MORROWIND ROUND: STEPS FOCUS, NOT PAGES. With all four tiles on screen
+    // at once there is no "next page" left -- see session.hpp's own note.
+    // Keys and Options have no tiles of their own to step between, so this
+    // is a no-op while either of them (rather than the tiled Menu) is what is
+    // open; NOT OPEN AT ALL is the same no-op it always was, so a bumper
+    // press with nothing open still does not open anything.
+    if (!casebookOpen_) {
         return;
     }
-    openMenuPage(index + 1);
+    menuFocus_ = ((menuFocus_ + 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
 }
 
 void Session::menuPagePrev() {
-    const int index = menuPageIndex();
-    if (index < 0) {
+    if (!casebookOpen_) {
         return;
     }
-    openMenuPage(index + 5);
+    menuFocus_ =
+        ((menuFocus_ - 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
 }
 
 std::vector<std::int32_t> Session::unlockedLetters() const {
@@ -1593,13 +1475,14 @@ std::string Session::interactPrompt() const {
     // buyPicks() are not previewed) and for why the order below has to track
     // interact()'s own order exactly.
     if (talking() || picking() || pauseOpen() || menuOpen()) {
-        // The topic list / one of Menu's six pages already shows what
-        // Interact (or ENTER) does on this row -- menuOpen() covers all six,
-        // not only Options, which an earlier pass of this check missed
-        // (caught by test_interact_context.cpp: toggleMenu() opens the
-        // casebook first, and the label kept computing a real prompt behind
-        // it). A second, floating label would say the same thing twice in
-        // two different places on the same frame.
+        // The topic list / the tiled Menu's own rows already show what
+        // Interact (or ENTER) does on this row -- menuOpen() covers the
+        // tiled Menu, Keys AND Options, not only Options, which an earlier
+        // pass of this check missed (caught by test_interact_context.cpp:
+        // toggleMenu() opens the casebook first, and the label kept
+        // computing a real prompt behind it). A second, floating label would
+        // say the same thing twice in two different places on the same
+        // frame.
         return {};
     }
     const bool sneaking = stance() == sim::Stance::Crouched;
@@ -1663,66 +1546,74 @@ void Session::moveTopicCursor(int delta) {
         casePage_ = caseCursor_ / kTopicPageSize;
         return;
     }
-    if (characterOpen_) {
-        // THE SAME KEYS, THE SAME PAGING, THE SAME BAND -- see toggleCharacter.
-        const int count = static_cast<int>(characterRows().size());
-        if (count <= 0) {
-            caseCursor_ = 0;
-            casePage_ = 0;
-            return;
-        }
-        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
-        casePage_ = caseCursor_ / kTopicPageSize;
-        return;
-    }
-    if (mapOpen_) {
-        // THE SAME KEYS, THE SAME PAGING, THE SAME BAND -- see toggleMap.
-        const int count = static_cast<int>(mapRows().size());
-        if (count <= 0) {
-            caseCursor_ = 0;
-            casePage_ = 0;
-            return;
-        }
-        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
-        casePage_ = caseCursor_ / kTopicPageSize;
-        return;
-    }
-    if (lettersOpen_) {
-        if (caseEntry_ >= 0) {
-            // AN OPEN LETTER HAS NO CURSOR TO MOVE -- casePage_ is doing a
-            // different job here (which page of the BODY is showing; see
-            // nextTopicPage's own lettersOpen_ branch), and letting this
-            // fall through to the arithmetic below would reset it to 0 on
-            // every arrow-key press, which reads as the letter jumping back
-            // to its own first page for no reason a player pressed.
-            return;
-        }
-        // TASK #82. THE SAME KEYS, THE SAME PAGING, THE SAME BAND -- see
-        // toggleLetters.
-        const int count = static_cast<int>(unlockedLetters().size());
-        if (count <= 0) {
-            caseCursor_ = 0;
-            casePage_ = 0;
-            return;
-        }
-        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
-        casePage_ = caseCursor_ / kTopicPageSize;
-        return;
-    }
+    // MORROWIND ROUND: ROUTED BY WHICH TILE HAS FOCUS, not by which of four
+    // now-simultaneous bools happens to be true -- see menuFocus()'s own
+    // header. Each tile keeps its OWN cursor/page (and, for Journal and
+    // Letters, its own picked entry), so reading one tile never disturbs
+    // where the cursor was left on another.
     if (casebookOpen_) {
-        // THE SAME KEYS, THE SAME PAGING, THE SAME BAND. The casebook is a
-        // conversation with your own notes -- see Session::toggleCasebook on
-        // why it borrows the dialogue surface rather than opening a sheet in
-        // the middle of the screen.
-        const int count = static_cast<int>(casebook_.known().size());
-        if (count <= 0) {
-            caseCursor_ = 0;
-            casePage_ = 0;
-            return;
+        switch (menuFocus_) {
+            case kMenuFocusCharacter: {
+                // THE SAME KEYS, THE SAME PAGING -- see toggleCharacter.
+                const int count = static_cast<int>(characterRows().size());
+                if (count <= 0) {
+                    characterCursor_ = 0;
+                    characterPage_ = 0;
+                    return;
+                }
+                characterCursor_ = ((characterCursor_ + delta) % count + count) % count;
+                characterPage_ = characterCursor_ / kTopicPageSize;
+                return;
+            }
+            case kMenuFocusMap: {
+                // THE SAME KEYS, THE SAME PAGING -- see toggleMap.
+                const int count = static_cast<int>(mapRows().size());
+                if (count <= 0) {
+                    mapCursor_ = 0;
+                    mapPage_ = 0;
+                    return;
+                }
+                mapCursor_ = ((mapCursor_ + delta) % count + count) % count;
+                mapPage_ = mapCursor_ / kTopicPageSize;
+                return;
+            }
+            case kMenuFocusLetters: {
+                if (lettersEntry_ >= 0) {
+                    // AN OPEN LETTER HAS NO CURSOR TO MOVE -- lettersBodyPage_
+                    // is doing a different job here (which page of the BODY is
+                    // showing; see nextTopicPage's own kMenuFocusLetters
+                    // branch).
+                    return;
+                }
+                // TASK #82. THE SAME KEYS, THE SAME PAGING -- see toggleLetters.
+                const int count = static_cast<int>(unlockedLetters().size());
+                if (count <= 0) {
+                    lettersCursor_ = 0;
+                    lettersPage_ = 0;
+                    return;
+                }
+                lettersCursor_ = ((lettersCursor_ + delta) % count + count) % count;
+                lettersPage_ = lettersCursor_ / kTopicPageSize;
+                return;
+            }
+            case kMenuFocusJournal:
+            default: {
+                // THE SAME KEYS, THE SAME PAGING. The Journal tile is a
+                // conversation with your own notes -- see
+                // Session::toggleCasebook on why it borrows the dialogue
+                // surface's own vocabulary rather than being a sheet of its
+                // own.
+                const int count = static_cast<int>(casebook_.known().size());
+                if (count <= 0) {
+                    caseCursor_ = 0;
+                    casePage_ = 0;
+                    return;
+                }
+                caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
+                casePage_ = caseCursor_ / kTopicPageSize;
+                return;
+            }
         }
-        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
-        casePage_ = caseCursor_ / kTopicPageSize;
-        return;
     }
     if (!talking()) {
         return;
@@ -1756,57 +1647,63 @@ void Session::nextTopicPage() {
         caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
         return;
     }
-    if (characterOpen_) {
-        const std::size_t rows = characterRows().size();
-        const int pages = topicPageCount(rows);
-        if (pages <= 1) {
-            return;
-        }
-        casePage_ = (casePage_ + 1) % pages;
-        caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
-        return;
-    }
-    if (mapOpen_) {
-        const std::size_t rows = mapRows().size();
-        const int pages = topicPageCount(rows);
-        if (pages <= 1) {
-            return;
-        }
-        casePage_ = (casePage_ + 1) % pages;
-        caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
-        return;
-    }
-    if (lettersOpen_) {
-        if (caseEntry_ >= 0) {
-            // PAGING THROUGH THE OPEN LETTER'S OWN BODY, not the title list
-            // -- casePage_ changes meaning the instant a letter is picked.
-            // drawDialogue works out the true page count off the actual
-            // wrapped rows at the real frame width (Session has no window
-            // size to wrap against) and CLAMPS state.page into range every
-            // frame, so incrementing past the end here is never observable:
-            // the render simply keeps showing the last page until this
-            // resets on the next letter or the next `L`.
-            ++casePage_;
-            return;
-        }
-        const std::size_t entries = unlockedLetters().size();
-        const int pages = topicPageCount(entries);
-        if (pages <= 1) {
-            return;
-        }
-        casePage_ = (casePage_ + 1) % pages;
-        caseCursor_ = std::min(static_cast<int>(entries) - 1, casePage_ * kTopicPageSize);
-        return;
-    }
+    // MORROWIND ROUND: ROUTED BY FOCUS -- see moveTopicCursor()'s own note.
     if (casebookOpen_) {
-        const std::size_t entries = casebook_.known().size();
-        const int pages = topicPageCount(entries);
-        if (pages <= 1) {
-            return;
+        switch (menuFocus_) {
+            case kMenuFocusCharacter: {
+                const std::size_t rows = characterRows().size();
+                const int pages = topicPageCount(rows);
+                if (pages <= 1) {
+                    return;
+                }
+                characterPage_ = (characterPage_ + 1) % pages;
+                characterCursor_ =
+                    std::min(static_cast<int>(rows) - 1, characterPage_ * kTopicPageSize);
+                return;
+            }
+            case kMenuFocusMap: {
+                const std::size_t rows = mapRows().size();
+                const int pages = topicPageCount(rows);
+                if (pages <= 1) {
+                    return;
+                }
+                mapPage_ = (mapPage_ + 1) % pages;
+                mapCursor_ = std::min(static_cast<int>(rows) - 1, mapPage_ * kTopicPageSize);
+                return;
+            }
+            case kMenuFocusLetters: {
+                if (lettersEntry_ >= 0) {
+                    // PAGING THROUGH THE OPEN LETTER'S OWN BODY, not the
+                    // title list -- lettersBodyPage_ is a field of its own
+                    // (menu_view.cpp works out the true page count off the
+                    // actual wrapped rows at the panel's real width, and
+                    // CLAMPS it into range every frame, so incrementing past
+                    // the end here is never observable).
+                    ++lettersBodyPage_;
+                    return;
+                }
+                const std::size_t entries = unlockedLetters().size();
+                const int pages = topicPageCount(entries);
+                if (pages <= 1) {
+                    return;
+                }
+                lettersPage_ = (lettersPage_ + 1) % pages;
+                lettersCursor_ =
+                    std::min(static_cast<int>(entries) - 1, lettersPage_ * kTopicPageSize);
+                return;
+            }
+            case kMenuFocusJournal:
+            default: {
+                const std::size_t entries = casebook_.known().size();
+                const int pages = topicPageCount(entries);
+                if (pages <= 1) {
+                    return;
+                }
+                casePage_ = (casePage_ + 1) % pages;
+                caseCursor_ = std::min(static_cast<int>(entries) - 1, casePage_ * kTopicPageSize);
+                return;
+            }
         }
-        casePage_ = (casePage_ + 1) % pages;
-        caseCursor_ = std::min(static_cast<int>(entries) - 1, casePage_ * kTopicPageSize);
-        return;
     }
     if (!talking()) {
         return;
@@ -1857,54 +1754,62 @@ void Session::chooseVisibleTopic(int slot) {
         }
         return;
     }
-    if (characterOpen_) {
-        // A ROW ON THIS PAGE IS SOMETHING TO READ, not a choice -- the same
-        // honest no-op the keys page gives a number press.
-        const int index = casePage_ * kTopicPageSize + slot;
-        if (index < static_cast<int>(characterRows().size())) {
-            caseCursor_ = index;
-        }
-        return;
-    }
-    if (mapOpen_) {
-        // A ROW ON THIS PAGE IS SOMETHING TO READ, not a choice -- the
-        // identical no-op the character sheet and the keys page give a
-        // number press.
-        const int index = casePage_ * kTopicPageSize + slot;
-        if (index < static_cast<int>(mapRows().size())) {
-            caseCursor_ = index;
-        }
-        return;
-    }
-    if (lettersOpen_) {
-        if (caseEntry_ >= 0) {
-            // THE TITLE GRID IS NOT ON SCREEN WHILE A LETTER IS OPEN -- see
-            // DialogueViewState::letter's own note -- so a number press here
-            // has nothing on screen to have picked. ESC (closeConversation)
-            // is what steps back to the list.
-            return;
-        }
-        // TASK #82. A ROW HERE IS A CHOICE, THE SAME WAY A LEAD IS ON THE
-        // CASEBOOK'S OWN PAGE -- picking a title opens the letter under it in
-        // the top band. Still pure UI: nothing in the simulation moves when
-        // a letter is opened, exactly as reading a casebook entry does not.
-        const int index = casePage_ * kTopicPageSize + slot;
-        if (index >= static_cast<int>(unlockedLetters().size())) {
-            return;
-        }
-        caseCursor_ = index;
-        caseEntry_ = index;
-        casePage_ = 0;
-        return;
-    }
+    // MORROWIND ROUND: ROUTED BY FOCUS -- see moveTopicCursor()'s own note.
     if (casebookOpen_) {
-        const int index = casePage_ * kTopicPageSize + slot;
-        if (index >= static_cast<int>(casebook_.known().size())) {
-            return;
+        switch (menuFocus_) {
+            case kMenuFocusCharacter: {
+                // A ROW ON THIS TILE IS SOMETHING TO READ, not a choice --
+                // the same honest no-op the keys page gives a number press.
+                const int index = characterPage_ * kTopicPageSize + slot;
+                if (index < static_cast<int>(characterRows().size())) {
+                    characterCursor_ = index;
+                }
+                return;
+            }
+            case kMenuFocusMap: {
+                // A ROW ON THIS TILE IS SOMETHING TO READ, not a choice -- the
+                // identical no-op the character tile and the keys page give a
+                // number press.
+                const int index = mapPage_ * kTopicPageSize + slot;
+                if (index < static_cast<int>(mapRows().size())) {
+                    mapCursor_ = index;
+                }
+                return;
+            }
+            case kMenuFocusLetters: {
+                if (lettersEntry_ >= 0) {
+                    // THE TITLE LIST IS NOT ON SCREEN WHILE A LETTER IS OPEN
+                    // -- see DialogueViewState::letter's own note -- so a
+                    // number press here has nothing on this tile to have
+                    // picked. ESC (closeConversation) is what steps back to
+                    // the list.
+                    return;
+                }
+                // TASK #82. A ROW HERE IS A CHOICE, THE SAME WAY A LEAD IS ON
+                // THE JOURNAL TILE -- picking a title opens the letter under
+                // it. Still pure UI: nothing in the simulation moves when a
+                // letter is opened, exactly as reading a casebook entry does
+                // not.
+                const int index = lettersPage_ * kTopicPageSize + slot;
+                if (index >= static_cast<int>(unlockedLetters().size())) {
+                    return;
+                }
+                lettersCursor_ = index;
+                lettersEntry_ = index;
+                lettersBodyPage_ = 0;
+                return;
+            }
+            case kMenuFocusJournal:
+            default: {
+                const int index = casePage_ * kTopicPageSize + slot;
+                if (index >= static_cast<int>(casebook_.known().size())) {
+                    return;
+                }
+                caseCursor_ = index;
+                caseEntry_ = index;
+                return;
+            }
         }
-        caseCursor_ = index;
-        caseEntry_ = index;
-        return;
     }
     if (!talking()) {
         return;
@@ -1918,7 +1823,8 @@ void Session::chooseVisibleTopic(int slot) {
 }
 
 void Session::chooseTopic(std::size_t index) {
-    if (casebookOpen_) {
+    // MORROWIND ROUND: ROUTED BY FOCUS -- see moveTopicCursor()'s own note.
+    if (casebookOpen_ && menuFocus_ == kMenuFocusJournal) {
         // Reading an entry of your own notes. Nothing in the simulation moves;
         // this is the one place in the game where picking a row is pure UI, and
         // it is pure UI because the trail's state changed when you LOOKED, not
@@ -1929,15 +1835,15 @@ void Session::chooseTopic(std::size_t index) {
         }
         return;
     }
-    if (lettersOpen_) {
+    if (casebookOpen_ && menuFocus_ == kMenuFocusLetters) {
         // TASK #82. Opening a letter is exactly as pure-UI as opening a
         // casebook entry -- see that branch's own note. A no-op while a
         // letter is already open, for the identical reason
-        // chooseVisibleTopic's own lettersOpen_ branch gives.
-        if (caseEntry_ < 0 && index < unlockedLetters().size()) {
-            caseCursor_ = static_cast<int>(index);
-            caseEntry_ = static_cast<int>(index);
-            casePage_ = 0;
+        // chooseVisibleTopic's own kMenuFocusLetters branch gives.
+        if (lettersEntry_ < 0 && index < unlockedLetters().size()) {
+            lettersCursor_ = static_cast<int>(index);
+            lettersEntry_ = static_cast<int>(index);
+            lettersBodyPage_ = 0;
         }
         return;
     }
@@ -2025,42 +1931,35 @@ void Session::closeConversation() {
         syncPanelAnim();
         return;
     }
-    if (characterOpen_) {
-        characterOpen_ = false;
-        caseCursor_ = 0;
-        casePage_ = 0;
-        syncPanelAnim();
-        return;
-    }
-    if (mapOpen_) {
-        mapOpen_ = false;
-        caseCursor_ = 0;
-        casePage_ = 0;
-        syncPanelAnim();
-        return;
-    }
-    if (lettersOpen_) {
-        if (caseEntry_ >= 0) {
-            // STEP BACK TO THE TITLE LIST FIRST. Same shape as
-            // awaitingKey_'s own ESC handling on the options page: a page
-            // reached by drilling in gives you one press back to where you
-            // were, not straight out to the game.
-            caseEntry_ = -1;
-            casePage_ = 0;
+    if (casebookOpen_) {
+        // MORROWIND ROUND. If the focused Letters tile has a letter open,
+        // ESC steps back to its own title list first -- the SAME "a page
+        // reached by drilling in gives you one press back to where you
+        // were" rule the options page's awaitingKey_ handling above already
+        // has, now scoped to one tile instead of the whole surface.
+        if (menuFocus_ == kMenuFocusLetters && lettersEntry_ >= 0) {
+            lettersEntry_ = -1;
+            lettersBodyPage_ = 0;
             syncPanelAnim();
             return;
         }
-        lettersOpen_ = false;
-        caseCursor_ = 0;
-        casePage_ = 0;
-        syncPanelAnim();
-        return;
-    }
-    if (casebookOpen_) {
+        // OTHERWISE ESC CLOSES THE WHOLE TILED MENU, all four tiles at once
+        // -- they were never four separate pages to step back out of one at
+        // a time, only one surface with four panes on it (see
+        // toggleCasebook()'s own header).
         casebookOpen_ = false;
         caseCursor_ = 0;
         casePage_ = 0;
         caseEntry_ = -1;
+        characterCursor_ = 0;
+        characterPage_ = 0;
+        mapCursor_ = 0;
+        mapPage_ = 0;
+        lettersCursor_ = 0;
+        lettersPage_ = 0;
+        lettersEntry_ = -1;
+        lettersBodyPage_ = 0;
+        menuFocus_ = kMenuFocusJournal;
         syncPanelAnim();
         return;
     }
@@ -2187,6 +2086,242 @@ void Session::takeAskingPrice() {
     haggleOffer_ = 0;
 }
 
+// ---------------------------------------------------------------------------
+// Morrowind round: the tiled Menu's four panels, each built independently of
+// which (if any) currently has focus -- drawMenuTiles() needs all four every
+// frame, and dialogueView() returns whichever one menuFocus_ names so a
+// caller that only ever asked about "the open page" keeps seeing exactly the
+// content it always did. CONTENT UNCHANGED FROM #85's SIX-PAGE MENU; only
+// the per-tile cursor/page fields (characterCursor_/mapCursor_/
+// lettersCursor_ instead of a shared caseCursor_) are new -- see session.hpp's
+// own note on why each tile needs its own now that all four can be mid-read
+// at once.
+// ---------------------------------------------------------------------------
+
+DialogueViewState Session::characterPanelView() const {
+    DialogueViewState view;
+    view.phase = static_cast<float>(body_->stepCount()) / 60.0F;
+    view.open = true;
+    view.speaker = "CHARACTER";
+    const std::string title = legendLine();
+    view.epithet = title.empty() ? std::string(sim::kReputationUnremarkable) : title;
+    view.line =
+        "WHAT THE STREETS HAVE MADE OF YOU, ON FIVE TRACKS AT ONCE, AND THE HANDS THAT "
+        "DID IT.";
+    for (const std::string& row : characterRows()) {
+        view.topics.push_back(row);
+    }
+    view.cursor = characterCursor_;
+    view.page = characterPage_;
+    return view;
+}
+
+DialogueViewState Session::mapPanelView() const {
+    // #82. THE DISTRICT MAP. Same reason every other tile is drawn through
+    // this shared vocabulary: one content shape, proved once.
+    DialogueViewState view;
+    view.phase = static_cast<float>(body_->stepCount()) / 60.0F;
+    view.open = true;
+    view.speaker = "THE CHART";
+    // WHERE YOU ARE, right where a map's own "you are here" would go.
+    view.epithet = placeLabel();
+    view.line = "KNOWN GROUND, OPEN LEADS AND WHO WILL TALK, RECKONED FROM WHERE YOU STAND.";
+    for (const std::string& row : mapRows()) {
+        view.topics.push_back(row);
+    }
+    view.cursor = mapCursor_;
+    view.page = mapPage_;
+    return view;
+}
+
+DialogueViewState Session::lettersPanelView() const {
+    // TASK #82. A LETTER, DRAWN AS A DOCUMENT INSTEAD OF A LIST. Same content
+    // shape every other tile uses; menu_view.cpp switches to the parchment
+    // palette and pages through the body as wrapped prose instead of a row
+    // list once DialogueViewState::letter is set -- see that field's own
+    // header.
+    DialogueViewState view;
+    view.phase = static_cast<float>(body_->stepCount()) / 60.0F;
+    view.open = true;
+    const std::vector<std::int32_t> unlocked = unlockedLetters();
+    if (lettersEntry_ >= 0 && static_cast<std::size_t>(lettersEntry_) < unlocked.size()) {
+        const sim::Letter& read = letterRaws_.letters()[static_cast<std::size_t>(
+            unlocked[static_cast<std::size_t>(lettersEntry_)])];
+        view.speaker = read.from.empty() ? std::string("A LETTER") : read.from;
+        view.line = "A LETTER, READ IN FULL BELOW.";
+        view.letter = true;
+        // ONE ENTRY A PARAGRAPH, RAW -- see DialogueViewState::letterLines'
+        // own header on why WRAPPING happens at draw time rather than
+        // here: Session has no window size to wrap prose against, and a
+        // machine that pre-decided where a sentence breaks at every
+        // resolution is the exact "picks badly" case casebook.hpp's own
+        // `brief` field warns about for a proper noun -- prose gets to
+        // wrap for real.
+        if (!read.to.empty()) {
+            view.letterLines.push_back("TO " + read.to);
+        }
+        if (!read.dateline.empty()) {
+            view.letterLines.push_back(read.dateline);
+        }
+        if (!read.salutation.empty()) {
+            view.letterLines.push_back(read.salutation);
+        }
+        for (const std::string& paragraph : read.body) {
+            view.letterLines.push_back(paragraph);
+        }
+        if (!read.closing.empty()) {
+            view.letterLines.push_back(read.closing);
+        }
+        if (!read.signature.empty()) {
+            view.letterLines.push_back("- " + read.signature);
+        }
+        view.page = lettersBodyPage_;
+    } else {
+        view.speaker = "THE LETTERS";
+        view.epithet = "READ, NOT RECEIVED";
+        view.line = unlocked.empty()
+                        ? "NOBODY HAS HANDED YOU ANYTHING WORTH KEEPING YET."
+                        : "A DOCUMENT SOMEBODY ELSE WROTE. PICK ONE TO READ IT WHOLE.";
+        view.page = lettersPage_;
+    }
+    for (const std::int32_t index : unlocked) {
+        const sim::Letter& letter = letterRaws_.letters()[static_cast<std::size_t>(index)];
+        // MAELL'S THREE SHARE ONE NAME, so the title list numbers them
+        // against every OTHER letter tied to the same lead rather than
+        // showing "FATHER MAELL" three times over with no way to tell
+        // which press opens which.
+        std::int32_t total = 0;
+        std::int32_t position = 0;
+        for (std::size_t i = 0; i < letterRaws_.letters().size(); ++i) {
+            if (letterRaws_.letters()[i].lead == letter.lead) {
+                ++total;
+                if (static_cast<std::int32_t>(i) == index) {
+                    position = total;
+                }
+            }
+        }
+        std::string label = letter.from.empty() ? std::string("A LETTER") : letter.from;
+        if (total > 1) {
+            label += " " + std::to_string(position) + "/" + std::to_string(total);
+        }
+        view.topics.push_back(label);
+    }
+    view.cursor = lettersCursor_;
+    return view;
+}
+
+DialogueViewState Session::journalPanelView() const {
+    // THE JOURNAL. Not a new panel and not a sheet: one more content shape on
+    // the widget family every other tile already uses.
+    DialogueViewState view;
+    view.phase = static_cast<float>(body_->stepCount()) / 60.0F;
+    view.open = true;
+    view.speaker = "THE CASEBOOK";
+    view.epithet = std::string(caseRaws_.title());
+    // THE ATTITUDE FIELD IS SHORT BY CONSTRUCTION -- in a conversation it
+    // holds "WARM" or "HOSTILE" -- and the top-right of that band is where
+    // the HUD draws the clock over it. The first S10 capture put a
+    // twenty-nine character dread band there and the clock landed in the
+    // middle of it. The ward's nerve moved down onto the line, where it is
+    // the first thing you read in your own notes, which is also better.
+    view.attitude = casebook_.closed() ? "CLOSED" : "OPEN";
+    const std::vector<std::int32_t> heard = casebook_.known();
+    const sim::Legend book = legend();
+    if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < heard.size()) {
+        const std::int32_t leadIndex = heard[static_cast<std::size_t>(caseEntry_)];
+        const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(leadIndex)];
+        const sim::LeadState what = casebook_.state(leadIndex);
+        view.line = what == sim::LeadState::Open ? lead.place + ". " + lead.what + "."
+                                                  : lead.found + " " + lead.detail;
+        // TASK #82. THE DATELINE, AND THE CROSS-REFERENCE -- what a
+        // detective's log keeps that a bare topic list does not: when
+        // this went in the book, what told you to come here, and (once
+        // followed) what it put in the book next. See
+        // DialogueViewState::caseRef's own header on why this is a
+        // separate row rather than folded into `line`.
+        std::string ref = formatCaseDay(casebook_.heardAt(leadIndex));
+        const std::vector<std::int32_t> from = caseRaws_.openedBy(leadIndex);
+        if (from.empty()) {
+            // THE ONE LEAD WITH NO OPENER. Not blank: a log that omits
+            // the start of its own case reads as missing a page, not as
+            // having none to show.
+            ref += "  THE CASE OPENED HERE";
+        } else {
+            ref += "  FROM ";
+            for (std::size_t i = 0; i < from.size(); ++i) {
+                if (i > 0) {
+                    ref += ", ";
+                }
+                const sim::Lead& opener = caseRaws_.leads()[static_cast<std::size_t>(from[i])];
+                ref += opener.brief.empty() ? opener.place : opener.brief;
+            }
+        }
+        if (what == sim::LeadState::Followed && !lead.opens.empty()) {
+            ref += "  OPENED ";
+            for (std::size_t i = 0; i < lead.opens.size(); ++i) {
+                if (i > 0) {
+                    ref += ", ";
+                }
+                const std::int32_t opened = caseRaws_.indexOf(lead.opens[i]);
+                if (opened >= 0) {
+                    const sim::Lead& next = caseRaws_.leads()[static_cast<std::size_t>(opened)];
+                    ref += next.brief.empty() ? next.place : next.brief;
+                }
+            }
+        } else if (what == sim::LeadState::Cold) {
+            ref += "  DEAD END";
+        }
+        // A HINT AT THE LETTERS, when this exact lead unlocked one. The
+        // player has already earned the right to read it -- see
+        // unlockedLetters() -- so the casebook says where to press
+        // rather than making them discover the key by accident.
+        for (const std::int32_t li : unlockedLetters()) {
+            if (letterRaws_.letters()[static_cast<std::size_t>(li)].lead == lead.id) {
+                ref += "  L READS HIS LETTERS";
+                break;
+            }
+        }
+        view.caseRef = ref;
+    } else if (casebook_.readCount() == 0) {
+        // THE OPENING PAGE OF A NEW GAME: the hook, and nothing else. It is
+        // the first thing a player ever reads in this game and it gets the
+        // band to itself.
+        view.line = std::string(caseRaws_.hook());
+    } else {
+        // And afterwards: what the ward's nerve is doing, and what it calls
+        // you for the work so far. TWO SHORT SENTENCES, because the band
+        // wraps to three lines and the S10 capture that ran to four lost
+        // "OF THE FLAME" off the end of its own title.
+        view.line = std::string(caseRaws_.dreadLabel(casebook_.dread())) + ". THEY CALL YOU " +
+                    std::string(book.title()) + ".";
+    }
+    for (const std::int32_t index : heard) {
+        const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
+        std::string row;
+        switch (casebook_.state(index)) {
+            case sim::LeadState::Open:
+                row = "? ";
+                break;
+            case sim::LeadState::Cold:
+                row = "X ";
+                break;
+            case sim::LeadState::Followed:
+                row = "* ";
+                break;
+            default:
+                row = "  ";
+                break;
+        }
+        // THE SHORT NAME, and it is authored rather than truncated here.
+        // casebook.json carries a `short` for every lead and a case pins
+        // that all of them fit.
+        view.topics.push_back(row + (lead.brief.empty() ? lead.place : lead.brief));
+    }
+    view.cursor = caseCursor_;
+    view.page = casePage_;
+    return view;
+}
+
 DialogueViewState Session::dialogueView() const {
     DialogueViewState view;
     // The panel's own small motion -- the picked row's highlight breathes
@@ -2235,114 +2370,26 @@ DialogueViewState Session::dialogueView() const {
         view.page = casePage_;
         return view;
     }
-    if (characterOpen_) {
-        view.open = true;
-        view.speaker = "CHARACTER";
-        const std::string title = legendLine();
-        view.epithet = title.empty() ? std::string(sim::kReputationUnremarkable) : title;
-        view.line =
-            "WHAT THE STREETS HAVE MADE OF YOU, ON FIVE TRACKS AT ONCE, AND THE HANDS THAT "
-            "DID IT. C PUTS THIS DOWN.";
-        for (const std::string& row : characterRows()) {
-            view.topics.push_back(row);
+    if (casebookOpen_) {
+        // MORROWIND ROUND: WHICHEVER TILE CURRENTLY HAS FOCUS. dialogueView()
+        // used to check four mutually-exclusive xOpen_ bools in turn; now all
+        // four tiles are open together (casebookOpen_ is the one flag), so
+        // the dispatch is by menuFocus_ instead -- a caller that only ever
+        // asked "what is the open page showing" (every test written before
+        // this round) keeps seeing exactly the content it always did,
+        // because the Menu still opens focused on the Journal tile by
+        // default, same as #85's Menu always opened on the casebook first.
+        switch (menuFocus_) {
+            case kMenuFocusCharacter:
+                return characterPanelView();
+            case kMenuFocusMap:
+                return mapPanelView();
+            case kMenuFocusLetters:
+                return lettersPanelView();
+            case kMenuFocusJournal:
+            default:
+                return journalPanelView();
         }
-        view.cursor = caseCursor_;
-        view.page = casePage_;
-        return view;
-    }
-    if (mapOpen_) {
-        // #82. THE DISTRICT MAP, DRAWN IN THE CONVERSATION'S OWN SURFACE, for
-        // the identical reason the casebook and the character sheet are: the
-        // HUD rule leaves the centre of the screen clear, and this is one
-        // more list on the widget that already proves it rather than a
-        // seventh way to break the rule.
-        view.open = true;
-        view.speaker = "THE CHART";
-        // WHERE YOU ARE, right where a map's own "you are here" would go.
-        view.epithet = placeLabel();
-        view.line =
-            "KNOWN GROUND, OPEN LEADS AND WHO WILL TALK, RECKONED FROM WHERE YOU STAND. M "
-            "PUTS THIS DOWN.";
-        for (const std::string& row : mapRows()) {
-            view.topics.push_back(row);
-        }
-        view.cursor = caseCursor_;
-        view.page = casePage_;
-        return view;
-    }
-    if (lettersOpen_) {
-        // TASK #82. A LETTER, DRAWN AS A DOCUMENT INSTEAD OF A CONVERSATION.
-        // Same surface, same reason every other page uses it -- the HUD
-        // rule leaves the centre clear -- but the BOTTOM band switches to
-        // the parchment palette and pages through the body as wrapped prose
-        // instead of a topic grid; see DialogueViewState::letter's own
-        // header and dialogue_view.cpp's drawing code.
-        view.open = true;
-        const std::vector<std::int32_t> unlocked = unlockedLetters();
-        if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < unlocked.size()) {
-            const sim::Letter& read =
-                letterRaws_.letters()[static_cast<std::size_t>(unlocked[static_cast<std::size_t>(
-                    caseEntry_)])];
-            view.speaker = read.from.empty() ? std::string("A LETTER") : read.from;
-            view.line = "A LETTER, READ IN FULL BELOW.";
-            view.letter = true;
-            // ONE ENTRY A PARAGRAPH, RAW -- see DialogueViewState::letterLines'
-            // own header on why WRAPPING happens at draw time rather than
-            // here: Session has no window size to wrap prose against, and a
-            // machine that pre-decided where a sentence breaks at every
-            // resolution is the exact "picks badly" case casebook.hpp's own
-            // `brief` field warns about for a proper noun -- prose gets to
-            // wrap for real.
-            if (!read.to.empty()) {
-                view.letterLines.push_back("TO " + read.to);
-            }
-            if (!read.dateline.empty()) {
-                view.letterLines.push_back(read.dateline);
-            }
-            if (!read.salutation.empty()) {
-                view.letterLines.push_back(read.salutation);
-            }
-            for (const std::string& paragraph : read.body) {
-                view.letterLines.push_back(paragraph);
-            }
-            if (!read.closing.empty()) {
-                view.letterLines.push_back(read.closing);
-            }
-            if (!read.signature.empty()) {
-                view.letterLines.push_back("- " + read.signature);
-            }
-        } else {
-            view.speaker = "THE LETTERS";
-            view.epithet = "READ, NOT RECEIVED";
-            view.line = unlocked.empty()
-                            ? "NOBODY HAS HANDED YOU ANYTHING WORTH KEEPING YET."
-                            : "A DOCUMENT SOMEBODY ELSE WROTE. PICK ONE TO READ IT WHOLE.";
-        }
-        for (const std::int32_t index : unlocked) {
-            const sim::Letter& letter = letterRaws_.letters()[static_cast<std::size_t>(index)];
-            // MAELL'S THREE SHARE ONE NAME, so the title list numbers them
-            // against every OTHER letter tied to the same lead rather than
-            // showing "FATHER MAELL" three times over with no way to tell
-            // which press opens which.
-            std::int32_t total = 0;
-            std::int32_t position = 0;
-            for (std::size_t i = 0; i < letterRaws_.letters().size(); ++i) {
-                if (letterRaws_.letters()[i].lead == letter.lead) {
-                    ++total;
-                    if (static_cast<std::int32_t>(i) == index) {
-                        position = total;
-                    }
-                }
-            }
-            std::string label = letter.from.empty() ? std::string("A LETTER") : letter.from;
-            if (total > 1) {
-                label += " " + std::to_string(position) + "/" + std::to_string(total);
-            }
-            view.topics.push_back(label);
-        }
-        view.cursor = caseCursor_;
-        view.page = casePage_;
-        return view;
     }
     if (optionsOpen_) {
         view.open = true;
@@ -2356,123 +2403,6 @@ DialogueViewState Session::dialogueView() const {
         }
         view.cursor = optionCursor_;
         view.page = optionPage_;
-        return view;
-    }
-    if (casebookOpen_) {
-        // THE CASEBOOK, DRAWN IN THE CONVERSATION'S SURFACE. Not a new panel
-        // and not a sheet: the HUD rule is that the centre of the screen stays
-        // clear, dialogue_view.hpp already owns a top band and a bottom band
-        // with a case that proves the middle is untouched, and a journal is the
-        // single most likely element in an RPG to break that rule. The Java
-        // build's first-person view broke it exactly here.
-        view.open = true;
-        view.speaker = "THE CASEBOOK";
-        view.epithet = std::string(caseRaws_.title());
-        // THE ATTITUDE FIELD IS SHORT BY CONSTRUCTION -- in a conversation it
-        // holds "WARM" or "HOSTILE" -- and the top-right of that band is where
-        // the HUD draws the clock over it. The first S10 capture put a
-        // twenty-nine character dread band there and the clock landed in the
-        // middle of it. The ward's nerve moved down onto the line, where it is
-        // the first thing you read in your own notes, which is also better.
-        view.attitude = casebook_.closed() ? "CLOSED" : "OPEN";
-        const std::vector<std::int32_t> heard = casebook_.known();
-        const sim::Legend book = legend();
-        if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < heard.size()) {
-            const std::int32_t leadIndex = heard[static_cast<std::size_t>(caseEntry_)];
-            const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(leadIndex)];
-            const sim::LeadState what = casebook_.state(leadIndex);
-            view.line = what == sim::LeadState::Open
-                            ? lead.place + ". " + lead.what + "."
-                            : lead.found + " " + lead.detail;
-            // TASK #82. THE DATELINE, AND THE CROSS-REFERENCE -- what a
-            // detective's log keeps that a bare topic list does not: when
-            // this went in the book, what told you to come here, and (once
-            // followed) what it put in the book next. See
-            // DialogueViewState::caseRef's own header on why this is a
-            // separate row rather than folded into `line`.
-            std::string ref = formatCaseDay(casebook_.heardAt(leadIndex));
-            const std::vector<std::int32_t> from = caseRaws_.openedBy(leadIndex);
-            if (from.empty()) {
-                // THE ONE LEAD WITH NO OPENER. Not blank: a log that omits
-                // the start of its own case reads as missing a page, not as
-                // having none to show.
-                ref += "  THE CASE OPENED HERE";
-            } else {
-                ref += "  FROM ";
-                for (std::size_t i = 0; i < from.size(); ++i) {
-                    if (i > 0) {
-                        ref += ", ";
-                    }
-                    const sim::Lead& opener = caseRaws_.leads()[static_cast<std::size_t>(from[i])];
-                    ref += opener.brief.empty() ? opener.place : opener.brief;
-                }
-            }
-            if (what == sim::LeadState::Followed && !lead.opens.empty()) {
-                ref += "  OPENED ";
-                for (std::size_t i = 0; i < lead.opens.size(); ++i) {
-                    if (i > 0) {
-                        ref += ", ";
-                    }
-                    const std::int32_t opened = caseRaws_.indexOf(lead.opens[i]);
-                    if (opened >= 0) {
-                        const sim::Lead& next = caseRaws_.leads()[static_cast<std::size_t>(opened)];
-                        ref += next.brief.empty() ? next.place : next.brief;
-                    }
-                }
-            } else if (what == sim::LeadState::Cold) {
-                ref += "  DEAD END";
-            }
-            // A HINT AT THE LETTERS, when this exact lead unlocked one. The
-            // player has already earned the right to read it -- see
-            // unlockedLetters() -- so the casebook says where to press
-            // rather than making them discover the key by accident.
-            for (const std::int32_t li : unlockedLetters()) {
-                if (letterRaws_.letters()[static_cast<std::size_t>(li)].lead == lead.id) {
-                    ref += "  L READS HIS LETTERS";
-                    break;
-                }
-            }
-            view.caseRef = ref;
-        } else if (casebook_.readCount() == 0) {
-            // THE OPENING PAGE OF A NEW GAME: the hook, and nothing else. It is
-            // the first thing a player ever reads in this game and it gets the
-            // band to itself.
-            view.line = std::string(caseRaws_.hook());
-        } else {
-            // And afterwards: what the ward's nerve is doing, and what it calls
-            // you for the work so far. TWO SHORT SENTENCES, because the band
-            // wraps to three lines and the S10 capture that ran to four lost
-            // "OF THE FLAME" off the end of its own title.
-            view.line = std::string(caseRaws_.dreadLabel(casebook_.dread())) +
-                        ". THEY CALL YOU " + std::string(book.title()) + ".";
-        }
-        for (const std::int32_t index : heard) {
-            const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
-            std::string row;
-            switch (casebook_.state(index)) {
-                case sim::LeadState::Open:
-                    row = "? ";
-                    break;
-                case sim::LeadState::Cold:
-                    row = "X ";
-                    break;
-                case sim::LeadState::Followed:
-                    row = "* ";
-                    break;
-                default:
-                    row = "  ";
-                    break;
-            }
-            // THE SHORT NAME, and it is authored rather than truncated here.
-            // The topic grid is three columns and about fourteen characters a
-            // cell -- Master Venn's twelve topics are what sized it -- so
-            // "MISSION OF THE FLAME" arrived on the first S10 capture as
-            // "MISSION OF.". casebook.json carries a `short` for every lead and
-            // a case pins that all of them fit.
-            view.topics.push_back(row + (lead.brief.empty() ? lead.place : lead.brief));
-        }
-        view.cursor = caseCursor_;
-        view.page = casePage_;
         return view;
     }
     const sim::DialogueDirector& talk = tavern_->dialogue();
@@ -3176,8 +3106,7 @@ bool Session::conversingNow() const noexcept {
     // overprint findings happen: two places computing the same fact, and
     // nothing catching them when a seventh page joined the list and only one
     // of the two remembered to add it.
-    return talking() || casebookOpen_ || keysOpen_ || optionsOpen_ || pauseOpen_ ||
-           characterOpen_ || mapOpen_ || lettersOpen_;
+    return talking() || casebookOpen_ || keysOpen_ || optionsOpen_ || pauseOpen_;
 }
 
 void Session::syncPanelAnim() noexcept {
@@ -3503,6 +3432,41 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // one is open, which is sized from what it draws, so a warning shouted
     // across the room is still read and nothing is drawn on top of anything.
     hud.showAlert = !conversing;
+    // MORROWIND ROUND: THE TILED MENU IS A DIFFERENT SURFACE FROM THE SINGLE
+    // CONVERSATION PANEL, drawn by a different function (menu_view.hpp's
+    // drawMenuTiles rather than dialogue_view.hpp's drawDialogue) because it
+    // deliberately does NOT respect the HUD's centre-clear rule the way every
+    // other overlay in this build still does -- see menu_view.hpp's own
+    // header on why a Morrowind-style overview is exempt and a live
+    // conversation is not.
+    if (casebookOpen_) {
+        MenuTileState tiles;
+        tiles.open = true;
+        tiles.character = characterPanelView();
+        tiles.map = mapPanelView();
+        tiles.letters = lettersPanelView();
+        tiles.journal = journalPanelView();
+        if (warned) {
+            // THE BOUNCER'S WARNING, ROUTED INTO THE JOURNAL TILE. The tiled
+            // Menu has no single top band of its own to carry it the way a
+            // conversation or one of #85's six pages did -- see
+            // DialogueViewState::alert's own header -- so it lands on the
+            // one tile that is always on screen regardless of focus and
+            // already reads as "your own notes", the same place a warning
+            // interrupted a casebook read before this round.
+            tiles.journal.alert = tavern_->lastWarning();
+        }
+        tiles.focus = menuFocus_;
+        tiles.phase = phase;
+        // TASK #83's OWN EASE, REUSED. See the identical note on the
+        // single-panel path below.
+        tiles.openAmount = panelAnim_.value();
+        if (config_.hud) {
+            drawMenuTiles(target, tiles);
+            drawHud(target, hud);
+        }
+        return stats;
+    }
     DialogueViewState panel = dialogueView();
     if (conversing && warned) {
         panel.alert = tavern_->lastWarning();
@@ -3516,6 +3480,16 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // after that to have anything left to fade. Once panelAnim_ settles at 0
     // this is exactly `panel.open` again, which is the pre-existing behaviour
     // for every caller and every test that never heard of this pass.
+    //
+    // MORROWIND ROUND: THIS ALSO COVERS THE TILED MENU'S OWN CLOSING TAIL.
+    // The moment casebookOpen_ goes false this branch is what runs, and
+    // dialogueView() falls through to an empty, closed state -- so a Menu
+    // that was just closed fades out as an (empty) single panel for its last
+    // few frames rather than as the four tiles it was a moment before. That
+    // is the SAME pre-existing behaviour this build already had for closing
+    // Keys, Options or a conversation (dialogueView() has never reconstructed
+    // "what was open a frame ago" for a close tail), not a new gap the
+    // Morrowind round introduced.
     panel.openAmount = panelAnim_.value();
     panel.open = panel.open || panelAnim_.value() > 0.0F;
     // The panel FIRST, the HUD over it: a bouncer's warning has to survive
@@ -5123,11 +5097,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.togglePause();
         bool landed = false;
         if (config.pauseEnd == "settings") {
-            session.movePauseCursor(1);  // RESUME -> SETTINGS
+            session.movePauseCursor(2);  // RESUME -> CONTROLS -> SETTINGS
             session.choosePause();
             landed = session.optionsOpen();
+        } else if (config.pauseEnd == "controls") {
+            // MORROWIND ROUND: KEYS' OWN NEW PAUSE-SIDE DOOR.
+            session.movePauseCursor(1);  // RESUME -> CONTROLS
+            session.choosePause();
+            landed = session.keysOpen();
         } else if (config.pauseEnd == "armed") {
-            session.movePauseCursor(2);  // RESUME -> QUIT
+            session.movePauseCursor(3);  // RESUME -> CONTROLS -> SETTINGS -> QUIT
             session.choosePause();       // arms it; does not fire on one press
             landed = session.pauseOpen() && session.quitArmed();
         } else {

@@ -287,4 +287,16 @@ struct TopicRow {
 [[nodiscard]] std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int page,
                                                  int cursor, int capacity);
 
+/// The picked row's highlight: a soft band under the label and a bright
+/// hairline where the cursor arrow sits. EXPOSED (moved out of
+/// dialogue_view.cpp's own anonymous namespace) so the tiled Menu
+/// (menu_view.cpp) can draw the identical "this one is selected" shape inside
+/// each of its four smaller panels instead of re-implementing it -- see that
+/// file's own header. Parameterised by `scale` rather than tied to the one
+/// register drawDialogue() itself draws at, so a caller drawing at
+/// hudMinorScale (a smaller panel, denser text) gets a highlight sized to
+/// match.
+void drawPickHighlight(Framebuffer& target, int x, int y, int rowStep, int glyphAdvance, int scale,
+                       int labelWidth, int roomWidth, float phase);
+
 }  // namespace granadad::render
