@@ -524,7 +524,7 @@ TEST_CASE("a Den Duke cannot turn a family out, and only one of the six answers 
     CHECK(stats.bondsTaken > 0);
 }
 
-TEST_CASE("a landlord-less roof never bleeds rent into nobody's pocket") {
+TEST_CASE("a landlord-less roof stops being charged the day it loses its landlord") {
     // #86. quarterDay()'s roof-rent loop used to charge any RoofHut with
     // roofRent > 0 whether or not it actually had a landlord to receive the
     // coin. A distrained house-owner -- and any lodger who had named them
@@ -536,30 +536,81 @@ TEST_CASE("a landlord-less roof never bleeds rent into nobody's pocket") {
     // "NOBODY COLLECTS ON A VACANT CHARGE" rule the ground penny two blocks
     // up enforces.
     //
-    // arrears is the tell: nothing else in this file ever touches it for a
-    // RoofHut (the ground penny and the hearing both gate on ownsHouse(),
-    // which a roofed household never is), so a landlord-less roof with
-    // nonzero arrears is a quarter that billed a household with nobody on
-    // the other end of the transaction.
+    // arrears is NOT the tell -- it was the first thing tried here, and it
+    // does not work: a roof lodger's wage (kWagePerRoofHead * heads, daily)
+    // dwarfs a quarterly roofRent of 6-13, so the phantom charge is paid off
+    // in full out of ordinary income before arrears ever has anything to show
+    // and this check passed whether or not the guard existed. What the
+    // household's OWN day-over-day coin delta cannot hide is the one day a
+    // quarter the guard actually fires: with a landlord it does nothing
+    // (there IS no landlord), so that day should look exactly like any other
+    // day this household has, and without the guard it looks like every other
+    // day minus roofRent.
     const std::unique_ptr<Ward> ward = freshWard();
-    for (std::int32_t day = 0; day < 720; ++day) {
+    const std::int32_t quarter = ward->raws().quarterDays();
+    REQUIRE(quarter > 0);
+
+    std::int32_t orphanId = -1;
+    std::int32_t orphanRoofRent = 0;
+    for (std::int32_t day = 0; day < 720 && orphanId < 0; ++day) {
+        ward->endOfDay();
+        for (const Household& home : ward->households()) {
+            if (home.kind == HouseKind::RoofHut && home.landlord < 0 && home.roofRent > 0) {
+                orphanId = home.id;
+                orphanRoofRent = home.roofRent;
+                break;
+            }
+        }
+    }
+    // The scenario has to actually be reached, or everything below is
+    // vacuous. #86's own soak (two years, the same seed the rest of this
+    // file uses) always turns somebody's roof landlord-less well inside 720
+    // days -- the case above proves housesDistrained and lodgersTurnedOut are
+    // both nonzero over the same span.
+    REQUIRE(orphanId >= 0);
+    REQUIRE(orphanRoofRent > 0);
+
+    // Line up on a quarter boundary with at least three ordinary days of
+    // runway before it, so the baseline day and the boundary day are cleanly
+    // apart and neither is the day the household was actually turned out (the
+    // roof-rent step in quarterDay() runs BEFORE that same day's hearing, so
+    // the eviction day itself still pays its old, real landlord).
+    std::int64_t nextQuarter = ((ward->day() / quarter) + 1) * quarter;
+    if (nextQuarter - ward->day() < 3) {
+        nextQuarter += quarter;
+    }
+    while (ward->day() < nextQuarter - 2) {
         ward->endOfDay();
     }
-    REQUIRE(ward->stats().housesDistrained > 0);
 
-    bool sawOrphan = false;
-    for (const Household& home : ward->households()) {
-        if (home.kind != HouseKind::RoofHut || home.landlord >= 0) {
-            continue;
+    const auto coinOf = [&]() -> std::int32_t {
+        for (const Household& home : ward->households()) {
+            if (home.id == orphanId) {
+                return home.coin;
+            }
         }
-        sawOrphan = true;
-        INFO("household ", home.id, " roofRent=", home.roofRent, " arrears=", home.arrears);
-        CHECK(home.arrears == 0);
-    }
-    // The scenario has to actually be reached, or the checks above pass
-    // vacuously and prove nothing. #86's own soak (two years, the same seed
-    // the rest of this file uses) always turns somebody's roof landlord-less.
-    REQUIRE(sawOrphan);
+        FAIL("orphaned household vanished off the roll");
+        return 0;
+    };
+
+    const std::int32_t coinBeforeBaseline = coinOf();
+    ward->endOfDay();  // an ordinary day: nextQuarter - 1
+    REQUIRE(ward->day() == nextQuarter - 1);
+    const std::int32_t coinAfterBaseline = coinOf();
+    const std::int32_t baselineDelta = coinAfterBaseline - coinBeforeBaseline;
+
+    ward->endOfDay();  // the quarter boundary itself
+    REQUIRE(ward->day() == nextQuarter);
+    const std::int32_t coinAfterQuarter = coinOf();
+    const std::int32_t quarterDelta = coinAfterQuarter - coinAfterBaseline;
+
+    INFO("household ", orphanId, " roofRent=", orphanRoofRent, " baselineDelta=", baselineDelta,
+         " quarterDelta=", quarterDelta);
+    // Without the fix this is baselineDelta - orphanRoofRent (give or take the
+    // odd royal from the food-purchase step's own day-to-day rounding); with
+    // it, the quarter-boundary day is not allowed to look any worse than an
+    // ordinary one.
+    CHECK(quarterDelta >= baselineDelta - 1);
 }
 
 TEST_CASE("the abatement is the sharpest instrument in the ward, and it is not dead code") {
