@@ -13,6 +13,7 @@
 // number below is a WORLD tile.
 
 #include <cstdint>
+#include <string_view>
 
 #include "granadad/sim/angle.hpp"
 
@@ -244,5 +245,56 @@ inline constexpr Place kPlaces[] = {
 };
 
 inline constexpr std::size_t kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]);
+
+/// The ward's own word for whatever is standing at (x, y, band), checked in
+/// table order so a building inside a street wins over the street -- the same
+/// rule render::Session::placeLabel has used since S2. Empty when nothing
+/// authored covers the tile, which is the honest answer for the two-thirds of
+/// the district that is compounds, yards and back lanes nobody has named yet.
+///
+/// #81. PULLED OUT OF THE RENDER LAYER SO A SIM-SIDE CALLER CAN NAME A PLACE
+/// TOO. The HUD has asked this question since S2; the radiant quest generator
+/// is the first caller that is not the HUD, and it asks it of a body that
+/// moved there on its own schedule rather than of the player -- which is the
+/// whole difference between a job that says "the Weighhouse" because a raws
+/// file was written that way once and a job that says it because that is
+/// where the body actually is RIGHT NOW.
+[[nodiscard]] inline std::string_view placeNameAt(std::int32_t x, std::int32_t y,
+                                                  std::int32_t band) noexcept {
+    for (std::size_t i = 0; i < kPlaceCount; ++i) {
+        const Place& place = kPlaces[i];
+        if (band == place.band && x >= place.x0 && x <= place.x1 && y >= place.y0 &&
+            y <= place.y1) {
+            return place.name;
+        }
+    }
+    return std::string_view{};
+}
+
+/// What a band alone says, when no street name covers the tile. Verbatim the
+/// four strings render::Session::placeLabel has always fallen back to.
+[[nodiscard]] inline std::string_view bandFallbackLabel(std::int32_t band) noexcept {
+    if (band == kBandQuayside) {
+        return "THE DOCKS - QUAYSIDE";
+    }
+    if (band == kBandMidSlope) {
+        return "THE DOCKS - MID SLOPE";
+    }
+    if (band == kBandUpper) {
+        return "THE DOCKS - UPPER";
+    }
+    if (band < kBandQuayside) {
+        return "UNDER THE PIERS";
+    }
+    return "THE DOCKS";
+}
+
+/// placeNameAt, with bandFallbackLabel behind it -- never empty. What "where
+/// is this body standing" reads as in one call.
+[[nodiscard]] inline std::string_view placeLabelAt(std::int32_t x, std::int32_t y,
+                                                   std::int32_t band) noexcept {
+    const std::string_view named = placeNameAt(x, y, band);
+    return named.empty() ? bandFallbackLabel(band) : named;
+}
 
 }  // namespace granadad::sim::docks
