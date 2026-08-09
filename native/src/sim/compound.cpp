@@ -811,8 +811,19 @@ void Ward::quarterDay() {
     //    than the Duke. Roof income is what makes a struggling owner look
     //    solvent enough to bear a raised penny, so it has to land before the
     //    penny does.
+    //
+    // NOBODY COLLECTS ON A LANDLORD-LESS ROOF, same rule as the ground penny
+    // below. A distrained house-owner (and any lodger who named them landlord)
+    // is turned out with landlord == -1 -- see Verdict::Distraint in apply()
+    // -- and roofRent is left exactly as it was so a future landlord (buyHouse()
+    // adopts orphaned huts on the same plot) charges the right rate. Without
+    // this guard that household paid its rent into the void every quarter for
+    // the rest of the game: coin left the family and was credited to nobody,
+    // which is not the documented wage/market faucet-and-sink, it is a transfer
+    // that silently drops its other half and drains a family already turned out
+    // toward the Mission's own hearing metric.
     for (Household& home : households_) {
-        if (home.kind != HouseKind::RoofHut || home.roofRent <= 0) {
+        if (home.kind != HouseKind::RoofHut || home.roofRent <= 0 || home.landlord < 0) {
             continue;
         }
         const std::int32_t paid = std::min(home.coin, home.roofRent);
