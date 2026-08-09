@@ -316,6 +316,43 @@ public:
     void setFov(int degrees);
     [[nodiscard]] int fovDegrees() const noexcept { return controls_.fovDegrees; }
 
+    // --- the pause menu -------------------------------------------------------
+    //
+    // ESC USED TO QUIT THE MOMENT NOTHING ELSE WAS OPEN. That is the switch
+    // statement's own comment, verbatim, from before this page existed:
+    // pressing the one key every other game backs out with closed the window
+    // outright, with no confirmation and no way back if a finger slipped. This
+    // is the menu that key opens instead -- RESUME, SETTINGS and QUIT, drawn in
+    // the same conversation surface the casebook and the keys page already
+    // prove, so it is one more list widget and not a new kind of screen.
+    //
+    // IT DOES NOT STOP THE CLOCK. Same as the casebook, the keys page and the
+    // options page: PhasedEngine keeps ticking underneath it, because "the
+    // district keeps its own hours whether you watch it or not" (the keys
+    // page's own F1 copy) is a design law with no carve-out for this page. It
+    // is called "MENU" on screen rather than "PAUSED" for exactly that reason
+    // -- a label that promised a freeze this build does not do would be the
+    // same class of bug as an enum name leaking into a bark.
+    void togglePause();
+    [[nodiscard]] bool pauseOpen() const noexcept { return pauseOpen_; }
+    /// RESUME, SETTINGS, and QUIT -- the last one asking twice. See choosePause.
+    [[nodiscard]] std::vector<std::string> pauseRows() const;
+    void movePauseCursor(int delta);
+    /// ENTER. RESUME closes the page; SETTINGS opens the options page in its
+    /// place, so the rebinding screen from the controls round is one more press
+    /// away from the menu a player actually pauses on; QUIT arms a second press
+    /// rather than closing the window on the first one -- see quitArmed().
+    void choosePause();
+    /// True once QUIT has been chosen and is waiting on a confirming second
+    /// press. The row itself says so, and ESC or moving the cursor disarms it
+    /// without closing the menu -- a player who leant on a key by accident
+    /// should not have to re-open anything to see they are still safe.
+    [[nodiscard]] bool quitArmed() const noexcept { return quitArmed_; }
+    /// True once QUIT has been confirmed. The client polls this once a frame
+    /// and is the only thing that actually tears the window down -- Session
+    /// never touches SDL, here or anywhere else in it.
+    [[nodiscard]] bool quitRequested() const noexcept { return quitRequested_; }
+
     /// A STANDING JUMP. Half a metre, and it gets you onto nothing -- see
     /// sim::PlayerBody::jump. Bound to space, which is where a jump goes.
     ///
@@ -598,6 +635,13 @@ private:
     int optionPage_ = 0;
     bool awaitingKey_ = false;
     int quickSlot_ = 0;
+    /// The pause menu: whether it is up, which row the cursor is on, whether
+    /// QUIT is one press from happening, and whether it has landed. The last
+    /// two are separate on purpose -- see quitArmed()/quitRequested().
+    bool pauseOpen_ = false;
+    int pauseCursor_ = 0;
+    bool quitArmed_ = false;
+    bool quitRequested_ = false;
 };
 
 /// What a scripted capture run was asked to do.

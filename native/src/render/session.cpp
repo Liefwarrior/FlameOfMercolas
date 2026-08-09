@@ -513,6 +513,8 @@ void Session::dismissOverlays() noexcept {
     optionsOpen_ = false;
     awaitingKey_ = false;
     firstRun_ = false;
+    pauseOpen_ = false;
+    quitArmed_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -598,10 +600,22 @@ void Session::toggleOptions() {
     if (talking() || picking()) {
         return;
     }
-    optionsOpen_ = !optionsOpen_;
-    if (optionsOpen_) {
+    const bool willOpen = !optionsOpen_;
+    optionsOpen_ = willOpen;
+    if (willOpen) {
+        // EVERY OTHER OVERLAY STANDS DOWN, INCLUDING THE PAUSE MENU. This used
+        // to clear only the casebook and the keys page, which left a real hole:
+        // open options with F2, then press F1, and keysOpen_ went true right
+        // alongside it -- the keys page drew (dialogueView() checks it first)
+        // while route_menu_key kept routing to the OPTIONS branch underneath,
+        // because that check runs BEFORE the keys/casebook one. The page on
+        // screen and the page reading your keystrokes were two different pages.
+        // Reached this build via the pause menu's SETTINGS row, which is one
+        // more way to get here than F2 alone used to have.
         casebookOpen_ = false;
         keysOpen_ = false;
+        pauseOpen_ = false;
+        quitArmed_ = false;
     }
     awaitingKey_ = false;
     firstRun_ = false;
@@ -679,6 +693,86 @@ void Session::bindAwaited(Key key) {
     controls_.bind(static_cast<Action>(index), key);
 }
 
+// ---------------------------------------------------------------------------
+// the pause menu
+// ---------------------------------------------------------------------------
+
+void Session::togglePause() {
+    if (talking() || picking()) {
+        return;
+    }
+    const bool willOpen = !pauseOpen_;
+    // EVERY OTHER OVERLAY STANDS DOWN, same as toggleOptions -- opening the
+    // pause menu over an already-open casebook or keys page would be the same
+    // split-brain bug that fix closes there: a page on screen that is not the
+    // page reading the keyboard.
+    casebookOpen_ = false;
+    keysOpen_ = false;
+    optionsOpen_ = false;
+    awaitingKey_ = false;
+    pauseOpen_ = willOpen;
+    pauseCursor_ = 0;
+    quitArmed_ = false;
+    firstRun_ = false;
+}
+
+std::vector<std::string> Session::pauseRows() const {
+    return {
+        "RESUME",
+        "SETTINGS",
+        quitArmed_ ? "QUIT -- SURE? ENTER" : "QUIT GRANADAD",
+    };
+}
+
+void Session::movePauseCursor(int delta) {
+    if (!pauseOpen_) {
+        return;
+    }
+    // MOVING THE CURSOR DISARMS QUIT. A player who backed off the row rather
+    // than pressing it again plainly changed their mind, and leaving the arm
+    // set for whichever row they land on next would fire QUIT off a key that
+    // was never pressed twice.
+    quitArmed_ = false;
+    const int count = static_cast<int>(pauseRows().size());
+    if (count <= 0) {
+        return;
+    }
+    pauseCursor_ = ((pauseCursor_ + delta) % count + count) % count;
+}
+
+void Session::choosePause() {
+    if (!pauseOpen_) {
+        return;
+    }
+    switch (pauseCursor_) {
+        case 0:
+            // RESUME. The same thing ESC does from here, spelled out as a row
+            // for the player who would rather click or press ENTER than learn
+            // that ESC backs out of everything in this game.
+            pauseOpen_ = false;
+            pauseCursor_ = 0;
+            quitArmed_ = false;
+            return;
+        case 1:
+            // SETTINGS. toggleOptions() opens it and puts this page down in the
+            // same call -- see its own comment on why every overlay does that.
+            // This is the controls round's rebinding screen, reachable from the
+            // menu a player actually pauses on rather than only from F2.
+            toggleOptions();
+            return;
+        default:
+            break;
+    }
+    // QUIT. Armed on the first press and confirmed on the second, so leaning on
+    // ENTER once cannot close the window -- see quitArmed().
+    if (!quitArmed_) {
+        quitArmed_ = true;
+        return;
+    }
+    quitArmed_ = false;
+    quitRequested_ = true;
+}
+
 void Session::setCrouched(bool crouched) {
     dismissOverlays();
     if (talking()) {
@@ -719,9 +813,17 @@ void Session::toggleKeys() {
     if (talking() || picking()) {
         return;
     }
-    keysOpen_ = !keysOpen_;
-    if (keysOpen_) {
+    const bool willOpen = !keysOpen_;
+    keysOpen_ = willOpen;
+    if (willOpen) {
+        // See toggleOptions' comment: an overlay that opens without putting the
+        // others down is how a page draws on screen while a different one is
+        // still the one reading the keyboard.
         casebookOpen_ = false;
+        optionsOpen_ = false;
+        pauseOpen_ = false;
+        quitArmed_ = false;
+        awaitingKey_ = false;
     }
     firstRun_ = false;
     caseCursor_ = 0;
@@ -734,6 +836,10 @@ void Session::toggleCasebook() {
         return;
     }
     keysOpen_ = false;
+    optionsOpen_ = false;
+    pauseOpen_ = false;
+    quitArmed_ = false;
+    awaitingKey_ = false;
     firstRun_ = false;
     casebookOpen_ = !casebookOpen_;
     caseCursor_ = 0;
@@ -1081,6 +1187,21 @@ void Session::chooseVisibleTopic(int slot) {
     if (slot < 0 || slot >= kTopicPageSize) {
         return;
     }
+    if (pauseOpen_) {
+        // A MENU ROW IS AN ACTION, NOT A VALUE. Options' own numbered rows only
+        // move the cursor -- ENTER is what rebinds or nudges a slider, and a
+        // stray tenth-of-a-second double press should not fire a rebind. This
+        // page has no sliders, only three rows the numbers already printed
+        // beside on screen (topicRowsFor prints them for every list this
+        // surface draws), so the honest behaviour for "press the number you
+        // read" is the one talking() gets below: the press both moves the
+        // cursor and acts, immediately.
+        if (slot < static_cast<int>(pauseRows().size())) {
+            pauseCursor_ = slot;
+            choosePause();
+        }
+        return;
+    }
     if (optionsOpen_) {
         const int index = optionPage_ * kTopicPageSize + slot;
         if (index < static_cast<int>(optionRows().size())) {
@@ -1172,6 +1293,19 @@ void Session::chooseTopic(std::size_t index) {
 }
 
 void Session::closeConversation() {
+    if (pauseOpen_) {
+        // ESC out of QUIT's second press first, and out of the menu second --
+        // the same shape as awaitingKey_ below, for the same reason: a player
+        // who leant on ENTER by accident has to be able to back off it without
+        // the whole page vanishing under them.
+        if (quitArmed_) {
+            quitArmed_ = false;
+            return;
+        }
+        pauseOpen_ = false;
+        pauseCursor_ = 0;
+        return;
+    }
     if (optionsOpen_) {
         // ESC out of a rebinding first, and out of the page second. A player
         // who opened "press a key" by accident has to be able to get out of it
@@ -1322,6 +1456,25 @@ void Session::takeAskingPrice() {
 
 DialogueViewState Session::dialogueView() const {
     DialogueViewState view;
+    if (pauseOpen_) {
+        view.open = true;
+        view.speaker = "MENU";
+        view.epithet = quitArmed_ ? "ENTER QUITS  ESC CANCELS" : "ENTER SELECTS  ESC RESUMES";
+        // NOT "PAUSED", DELIBERATELY. This page does not stop PhasedEngine --
+        // nothing in this build does, not the casebook, not the keys page, not
+        // options, and a menu that promised a freeze the game does not deliver
+        // would be exactly the class of bug the copy bar exists to catch. Said
+        // once, here, where a player opening this for the first time reads it.
+        view.line =
+            "THE DOCKS KEEP RUNNING WHILE YOU DECIDE. NOTHING HERE IS LOST -- SETTINGS SAVE "
+            "THEMSELVES.";
+        for (const std::string& row : pauseRows()) {
+            view.topics.push_back(row);
+        }
+        view.cursor = pauseCursor_;
+        view.page = 0;
+        return view;
+    }
     if (keysOpen_) {
         view.open = true;
         view.speaker = "CONTROLS";
@@ -2136,7 +2289,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // drew straight over the sliders and the sliders drew straight back, and
     // both were illegible. Nothing in a `--screenshot` capture would ever have
     // shown it, because nothing scripted opens this page.
-    const bool conversing = talking() || casebookOpen_ || keysOpen_ || optionsOpen_;
+    const bool conversing = talking() || casebookOpen_ || keysOpen_ || optionsOpen_ || pauseOpen_;
     hud.roomLabel = conversing ? std::string_view{} : std::string_view{room};
     // The ward's opinion of you sits under the purse -- unless somebody is in
     // front of you, in which case THEIR opinion is the one that matters and the

@@ -575,6 +575,47 @@ void print_usage() {
     const bool numbered = slot >= 0 && slot < 9;
     const bool pageKey = action == render::Action::QuickSlot0;
 
+    if (session.pauseOpen()) {
+        // THE PAUSE MENU. Three rows, its own cursor, no sliders and no paging
+        // -- the smallest of the four surfaces this router knows, and still
+        // its own branch rather than folded into moveTopicCursor/chooseTopic,
+        // because ESC and every navigation key here also has to disarm QUIT
+        // (see Session::movePauseCursor) and none of the other surfaces do.
+        if (up) {
+            session.movePauseCursor(-1);
+            return true;
+        }
+        if (downward) {
+            session.movePauseCursor(1);
+            return true;
+        }
+        if (confirm) {
+            session.choosePause();
+            return true;
+        }
+        if (numbered) {
+            // THE NUMBER PRINTED BESIDE EACH ROW ACTUALLY PICKS IT. Every
+            // topic list this surface draws prints "1 ", "2 ", "3 " ahead of
+            // the label (dialogue_view.cpp's topicRowsFor), so a page that
+            // left the digits live but unread would show a number nothing
+            // answers to -- which is worse than not printing one.
+            session.chooseVisibleTopic(slot);
+            return true;
+        }
+        if (pageKey) {
+            // SWALLOWED, NOT ROUTED. Three rows never paginate (kTopicPageSize
+            // is nine), so "0 MORE" never prints here -- but the digit that
+            // opens it elsewhere must not fall through to the quick bar behind
+            // the menu, which is what it used to do before this branch existed.
+            return true;
+        }
+        // ESCAPE FALLS THROUGH ON PURPOSE, same as the options page below: the
+        // key that opened this closes it, and closeConversation() already
+        // knows to disarm QUIT on the first press rather than leaving the page
+        // entirely.
+        return false;
+    }
+
     if (session.optionsOpen()) {
         if (up) {
             session.moveOptionCursor(-1);
@@ -1166,12 +1207,16 @@ int run_client(const Options& options) {
                     return;
                 }
                 case render::Action::Menu:
-                    // ESCAPE BACKS OUT OF WHATEVER IS OPEN, and only quits when
-                    // nothing is. A game where escape closes the window from
-                    // inside a menu is a game that eats your evening once and is
-                    // never trusted again.
+                    // ESCAPE BACKS OUT OF WHATEVER IS OPEN, and opens the pause
+                    // menu when nothing is. IT USED TO QUIT THE GAME OUTRIGHT
+                    // ON THAT SECOND BRANCH -- no confirmation, no way back if
+                    // a finger slipped -- which is exactly the "eats your
+                    // evening once and is never trusted again" this comment
+                    // already warned about for every OTHER key. ESC gets the
+                    // same warning applied to itself now: the pause menu is
+                    // what opens, and only QUIT, chosen twice, closes anything.
                     if (session.talking() || session.picking() || session.casebookOpen() ||
-                        session.keysOpen() || session.optionsOpen()) {
+                        session.keysOpen() || session.optionsOpen() || session.pauseOpen()) {
                         if (session.picking()) {
                             session.stopPicking();
                         } else {
@@ -1179,7 +1224,7 @@ int run_client(const Options& options) {
                         }
                         return;
                     }
-                    running = false;
+                    session.togglePause();
                     return;
                 default:
                     break;
