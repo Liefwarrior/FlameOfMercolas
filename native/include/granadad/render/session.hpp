@@ -27,6 +27,7 @@
 
 #include "granadad/content/world.hpp"
 #include "granadad/render/actor_sheet.hpp"
+#include "granadad/render/anim.hpp"
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/controls.hpp"
 #include "granadad/render/dialogue_view.hpp"
@@ -353,6 +354,39 @@ public:
     /// never touches SDL, here or anywhere else in it.
     [[nodiscard]] bool quitRequested() const noexcept { return quitRequested_; }
 
+    // --- the character sheet ---------------------------------------------------
+    //
+    // WHO YOU HAVE BECOME, ON THE FIVE TRACKS legend.hpp ALREADY ADDS UP, PLUS
+    // THE HANDS THAT DID THE ADDING. Legend was built in S8 to answer "who am I
+    // in this city yet" and has been derived every frame since -- see
+    // legend.hpp's own design note -- but the only place it ever reached the
+    // screen was one row on the HUD's own corner (Session::guildLine, the
+    // track you happen to be highest on) and legendLine(), a second summary
+    // line that has had exactly two callers since the sprint that wrote it and
+    // both of them are tests. The other four tracks, and every rung of them,
+    // were computed and thrown away every single frame.
+    //
+    // SAME SURFACE, SAME REASON THE CASEBOOK IS. The centre of the screen stays
+    // empty; this is one more list widget on the dialogue view and not a sheet
+    // in the middle of it -- see toggleCasebook's own comment, which is the
+    // argument this build keeps making rather than re-deciding per screen.
+    //
+    // NO PAPER DOLL AND NO ARMOUR RATING, ON PURPOSE. There is no item and no
+    // equipment-slot model in this build -- the quick bar's own comment says so
+    // (VERIFICATION GAP #77, above) -- so a screen that drew ten empty slots
+    // would be furniture claiming a state the simulation does not have. What
+    // the simulation DOES have is five derived standings and four skills
+    // actually wired to a verb (SKYRUNNING, CRACKSMANSHIP, STREETWISE,
+    // LINKCRAFT -- the other sixteen entries in content/raws/skills/skills.json
+    // are authored vocabulary with nothing in this build that levels them yet),
+    // and this page is exactly that, no more.
+    void toggleCharacter();
+    [[nodiscard]] bool characterOpen() const noexcept { return characterOpen_; }
+    /// The five Legend tracks, the skills actually in play, and what the ward
+    /// and the purse currently say -- one row a line, built fresh from the same
+    /// counters the HUD's corner rows read.
+    [[nodiscard]] std::vector<std::string> characterRows() const;
+
     /// A STANDING JUMP. Half a metre, and it gets you onto nothing -- see
     /// sim::PlayerBody::jump. Bound to space, which is where a jump goes.
     ///
@@ -566,6 +600,27 @@ private:
     /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
     [[nodiscard]] std::string heatLine() const;
 
+    // --- task #83: panel and prompt easing -----------------------------------
+    //
+    // ONE WIDGET, ONE ANIMATION. dialogueView() already draws the
+    // conversation, the casebook, the keys page, options, the pause menu and
+    // the character sheet through the identical DialogueViewState -- see that
+    // struct's own header -- so the one moment any of the six is open or
+    // closed is the one moment this build has a "panel" at all, and one
+    // EasedToggle is what every one of them eases through.
+    /// True while ANY of the six pages the panel widget draws is up. The one
+    /// formula drawFrame() and syncPanelAnim() both read, so the two can never
+    /// quietly disagree about what "conversing" means.
+    [[nodiscard]] bool conversingNow() const noexcept;
+    /// Re-reads conversingNow() and pushes it at panelAnim_, and re-reads
+    /// whatever the HUD's alert would currently be showing and pushes THAT at
+    /// alertAnim_. Called at the end of every verb that can open or close one
+    /// of the six pages or start or clear a message, so the very first frame
+    /// drawn after a keypress already carries visible motion rather than
+    /// waiting for the next step() to catch up -- see EasedToggle::setTarget's
+    /// own note on why opening from rest is never exactly zero.
+    void syncPanelAnim() noexcept;
+
     SessionConfig config_;
     content::World world_;
     std::unique_ptr<sim::TileQuery> tiles_;
@@ -591,6 +646,19 @@ private:
     std::string message_;
     /// Movement steps the message has left to live.
     std::int32_t messageSteps_ = 0;
+    /// The line the top band was last asked to speak, and how many movement
+    /// steps it has had to arrive. Drives the typewriter reveal in
+    /// DialogueViewState::speechRevealChars -- NOT simulation state,
+    /// deliberately not hashed, for the identical reason wardTalkId_ is not:
+    /// it is a courtesy to whoever is watching the screen live and carries no
+    /// fact about the world. A test that wants the line whole steps a few
+    /// times, exactly as it already does to let messageSteps_ run out.
+    std::string lastSpokenLine_;
+    std::int32_t speechAgeSteps_ = 0;
+    /// How many movement steps the reveal takes to finish -- about a third of
+    /// a second at kStepsPerSecond, fast enough that a scripted capture a
+    /// handful of steps later reads the line as fully arrived.
+    static constexpr std::int32_t kSpeechRevealSteps = 20;
     /// Which topic the cursor is on, and what number the player is about to
     /// name across a counter. Both are pure UI state -- the standing, the
     /// prices and the memory all live in the simulation.
@@ -642,6 +710,22 @@ private:
     int pauseCursor_ = 0;
     bool quitArmed_ = false;
     bool quitRequested_ = false;
+    /// The character sheet. Reads through caseCursor_/casePage_, the same pair
+    /// the casebook and the keys page already share -- a third read-only list
+    /// that is never open at the same time as the other two.
+    bool characterOpen_ = false;
+
+    /// Task #83. The panel widget's own open/close ease -- see
+    /// conversingNow()/syncPanelAnim() -- and the HUD alert row's fade in and
+    /// out. Render-adjacent bookkeeping and deliberately NOT simulation state:
+    /// nothing here reaches PhasedEngine and nothing here is hashed, for the
+    /// identical reason wardTalkId_ above is not -- it is a courtesy to
+    /// whoever is watching the screen live and carries no fact about the
+    /// world. See render::EasedToggle's own header on why it is driven in
+    /// movement steps rather than draw calls, which is what keeps a captured
+    /// frame reproducible.
+    EasedToggle panelAnim_;
+    EasedToggle alertAnim_;
 };
 
 /// What a scripted capture run was asked to do.
@@ -683,6 +767,27 @@ struct SmokeRunConfig {
     /// capture shows the SAME person greeting you differently after you have
     /// done something to them -- rob them, then say hello.
     bool again = false;
+    /// Opens the pause menu before the shutter goes.
+    ///
+    /// WHY A CAPTURE FLAG EXISTS FOR A PAGE ESC OPENS FOR FREE. Every other
+    /// page this build has grown was first proven on screen by
+    /// scripts/drive-windowed.ps1 driving a REAL window with real SendInput --
+    /// see docs/frames/p77-controls's own header on why a headless
+    /// `--screenshot` cannot prove feel. That tool needs a desktop able to
+    /// grant a window the foreground, and it correctly REFUSES to drive
+    /// anything when one is not there rather than typing into whatever
+    /// happens to be in front -- which some environments this build gets
+    /// verified in do not have. Without this flag the pause menu would have
+    /// no headless path to a photograph at all in exactly the environment
+    /// where the real one cannot run, and "trust me, I read the code" is not
+    /// what a screenshot is for.
+    ///
+    /// WHERE is "menu" (RESUME/SETTINGS/QUIT, freshly opened), "settings"
+    /// (SETTINGS chosen, so the rebinding screen it opens is what gets
+    /// photographed) or "armed" (the cursor on QUIT with the first of its two
+    /// presses already in, so the "SURE? ENTER" row is on screen).
+    bool pause = false;
+    std::string pauseEnd = "menu";
     /// S5. Climb onto the Gilded Gull's roof and look down at the ward: in at
     /// the door, up the stair, out over the north wall, and turn round. WHERE
     /// is "roof" (standing on the lead), "leap" (across the alley onto the next

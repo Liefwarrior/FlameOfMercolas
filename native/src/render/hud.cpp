@@ -461,8 +461,11 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         const int y = band.take(alertScale);
         if (y >= 0) {
             const int drawn = textWidth(alert, alertScale);
+            // TASK #83. Eased in Session, not here -- see HudState::alertFade.
+            // A caller that never set it gets 1, which is 0.95F unchanged.
             drawText(target, std::max(margin, (width - drawn) / 2), y, alert,
-                     Rgb{0.90F, 0.62F, 0.30F}, 0.95F, alertScale);
+                     Rgb{0.90F, 0.62F, 0.30F}, 0.95F * std::clamp(state.alertFade, 0.0F, 1.0F),
+                     alertScale);
         }
     }
     // The lock under the wire. A lockpicking minigame is exactly the element

@@ -83,6 +83,7 @@ Three keys are the rest of the game:
 |---|---|
 | **`Q`** | **look at what is here.** The investigation verb. |
 | **`J`** or **`TAB`** | **your casebook.** Everything you have been told, and where to go. |
+| **`C`** | **your character.** Legend's five tracks, the skills you have actually used, and what the ward and the purse say. |
 | **`F1`** | **the keys.** All of them, in the game, paged nine at a time. |
 
 **`F2` rebinds any of them**, and what you change is still changed tomorrow —

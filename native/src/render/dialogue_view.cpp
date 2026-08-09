@@ -1,6 +1,8 @@
 #include "granadad/render/dialogue_view.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <string>
 
 namespace granadad::render {
@@ -30,6 +32,24 @@ constexpr Rgb kHaggleInk{0.90F, 0.76F, 0.42F};
         return Rgb{0.52F, 0.82F, 0.48F};
     }
     return Rgb{0.70F, 0.68F, 0.62F};
+}
+
+/// The picked row's highlight: a soft band under the label and a bright
+/// hairline where the cursor arrow sits, so "this one is selected" is a SHAPE
+/// on the screen and not only a colour the label happens to print in. Kept to
+/// the room the label itself was cut to fit, so it can never reach into the
+/// next column any more than the label already could.
+///
+/// BREATHES GENTLY WITH `phase`, and 0 draws it at rest -- the same contract
+/// DialogueViewState::phase documents: a hand-built state that never heard of
+/// this gets the resting frame, which is what it always drew before the
+/// highlight existed.
+void drawPickHighlight(Framebuffer& target, int x, int y, int rowStep, int glyphAdvance,
+                       int scale, int labelWidth, int roomWidth, float phase) {
+    const float breathe = 0.5F + 0.5F * std::sin(phase * 6.0F);
+    const int width = std::max(glyphAdvance, std::min(roomWidth, labelWidth + 2 * glyphAdvance));
+    target.fillRect(x - glyphAdvance, y - scale, width, rowStep, kTopicPicked, 0.10F + 0.07F * breathe);
+    target.fillRect(x - glyphAdvance, y - scale, scale, rowStep, kTopicPicked, 0.85F);
 }
 
 }  // namespace
@@ -189,6 +209,12 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     if (!state.open) {
         return;
     }
+    // TASK #83. THE BOX ITSELF EASES, so the panel grows in and shrinks away
+    // rather than switching on like a light. See DialogueViewState::openAmount
+    // -- 1 is "fully open and not animating", which is what every hand-built
+    // state already meant, so `* fade` is a no-op for every caller that never
+    // heard of this.
+    const float fade = std::clamp(state.openAmount, 0.0F, 1.0F);
     const int scale = std::max(1, target.height() / 180);
     const int margin = 5 * scale;
     const int rowStep = 8 * scale;
@@ -264,8 +290,41 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     const int topHeight =
         std::min(centre.y0 - scale, margin + rowStep * (1 + static_cast<int>(speech.size()) +
                                                         alertRows + detailRows));
-    target.fillRect(0, 0, target.width(), topHeight, kPanel, 0.82F);
-    target.fillRect(0, topHeight, target.width(), scale, kEdge, 0.55F);
+    target.fillRect(0, 0, target.width(), topHeight, kPanel, 0.82F * fade);
+    target.fillRect(0, topHeight, target.width(), scale, kEdge, 0.55F * fade);
+
+    // ---- the nameplate: who is talking, on a plate of their own -----------
+    //
+    // Flat text straight on the panel background read as one more line of
+    // menu furniture -- indistinguishable, at a glance, from the topic grid
+    // underneath it. A plate under the row, and an accent in the EXACT colour
+    // attitudeInk already uses to carry standing, makes the row read as a
+    // SPEAKER rather than a caption -- which is the one job a first-person
+    // conversation's top band has that no other row in this game does.
+    //
+    // SIZED FROM WHAT IT DRAWS, and never past the clock's own reserve, for
+    // the identical reason the speech column stops there: a plate wide enough
+    // to run under the hour would look like it was reaching for something
+    // that is not its business.
+    {
+        int nameplateWidth = textWidth(state.speaker, scale);
+        if (!state.epithet.empty()) {
+            nameplateWidth += glyphAdvance + textWidth(state.epithet, scale);
+        }
+        if (!state.attitude.empty()) {
+            nameplateWidth += glyphAdvance + textWidth("(" + state.attitude + ")", scale);
+        }
+        const int plateCeiling = std::max(glyphAdvance * 4, target.width() - reservedRight);
+        const int plateWidth = std::min(plateCeiling, margin + nameplateWidth + glyphAdvance);
+        const int plateHeight = rowStep;
+        target.fillRect(0, 0, plateWidth, plateHeight, Rgb{0.10F, 0.09F, 0.08F}, 0.50F * fade);
+        // The accent: standing, in colour, before a single word of it is read.
+        // Neutral brass when nobody has an opinion yet -- the keys page, the
+        // options page and the casebook all borrow this same widget and none
+        // of them is anybody's attitude.
+        const Rgb accent = state.attitude.empty() ? kEdge : attitudeInk(state.attitude);
+        target.fillRect(0, 0, scale, plateHeight, accent, 0.92F * fade);
+    }
 
     int cursorX = margin;
     cursorX += drawText(target, cursorX, margin, state.speaker, kSpeakerInk, 0.98F, scale);
@@ -281,9 +340,35 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         drawText(target, cursorX, margin, "(" + state.attitude + ")",
                  attitudeInk(state.attitude), 0.95F, scale);
     }
-    for (std::size_t i = 0; i < speech.size(); ++i) {
-        drawText(target, margin, margin + rowStep * static_cast<int>(i + 1), speech[i], kSpeechInk,
-                 0.94F, scale);
+    // speechRevealChars < 0 means "draw all of it", which is what every
+    // hand-built state gets and what a caller who never heard of the effect
+    // gets for free. Session narrows the budget for a short window after a
+    // line changes; see the field's own doc comment for why a cut, when there
+    // is one, always lands on a word.
+    std::size_t speechBudget = state.speechRevealChars < 0
+                                   ? std::numeric_limits<std::size_t>::max()
+                                   : static_cast<std::size_t>(state.speechRevealChars);
+    for (std::size_t i = 0; i < speech.size() && speechBudget > 0; ++i) {
+        const std::string& fullLine = speech[i];
+        const int y = margin + rowStep * static_cast<int>(i + 1);
+        if (fullLine.size() <= speechBudget) {
+            drawText(target, margin, y, fullLine, kSpeechInk, 0.94F, scale);
+            speechBudget -= fullLine.size();
+        } else {
+            // Pulled back to the last whole word within the budget, the same
+            // rule clipLabel uses and for the identical reason: a fragment cut
+            // mid-word reads as the truncation bug this codebase has shipped
+            // and fixed more than once, not as an animation in progress. The
+            // three dots say "still arriving" out loud, the way clipLabel's
+            // own mark says "cut here" out loud.
+            const std::size_t cut = speechBudget;
+            const std::size_t space = fullLine.rfind(' ', cut - 1);
+            const std::string shown = (space != std::string::npos && space > 0)
+                                          ? fullLine.substr(0, space)
+                                          : fullLine.substr(0, cut);
+            drawText(target, margin, y, shown + "...", kSpeechInk, 0.94F, scale);
+            speechBudget = 0;
+        }
     }
     if (alertRows > 0) {
         // The bouncer's own colour, so it reads as somebody shouting across the
@@ -329,8 +414,8 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     const int bottomTop = (state.haggling || state.forging)
                               ? deepest
                               : target.height() - 2 * scale - rows * rowStep;
-    target.fillRect(0, bottomTop, target.width(), target.height() - bottomTop, kPanel, 0.82F);
-    target.fillRect(0, bottomTop - scale, target.width(), scale, kEdge, 0.55F);
+    target.fillRect(0, bottomTop, target.width(), target.height() - bottomTop, kPanel, 0.82F * fade);
+    target.fillRect(0, bottomTop - scale, target.width(), scale, kEdge, 0.55F * fade);
 
     if (state.haggling) {
         // The counter, not the topic list: what they want, what you are about
@@ -369,14 +454,17 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
                 continue;
             }
             const bool picked = index == state.forgeCursor;
-            if (picked) {
-                drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, 0.95F, scale);
-            }
             std::string label = state.forgeFields[i];
             const std::size_t room =
                 static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance));
             if (label.size() > room) {
                 label.resize(room);
+            }
+            if (picked) {
+                drawPickHighlight(target, x, y, rowStep, glyphAdvance, scale,
+                                  textWidth(label, scale), static_cast<int>(room) * glyphAdvance,
+                                  state.phase);
+                drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, 0.95F, scale);
             }
             drawText(target, x + glyphAdvance / 2, y, label, picked ? kTopicPicked : kTopicInk,
                      picked ? 0.98F : 0.82F, scale);
@@ -416,6 +504,12 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
             static_cast<std::size_t>(std::max(1, columnWidth / glyphAdvance - 2));
         const std::string label = clipLabel(printed[i].label, room);
         if (printed[i].picked) {
+            // THE HIGHLIGHT FIRST, so the arrow and the label print on top of
+            // it rather than under it. Kept to the same room clipLabel already
+            // cut the text to, so it can never reach the next column's key any
+            // more than the label already could.
+            drawPickHighlight(target, x, y, rowStep, glyphAdvance, scale, textWidth(label, scale),
+                              static_cast<int>(room) * glyphAdvance, state.phase);
             drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, 0.95F, scale);
         }
         drawText(target, x + glyphAdvance / 2, y, label,

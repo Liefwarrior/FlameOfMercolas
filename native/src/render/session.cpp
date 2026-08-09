@@ -223,6 +223,12 @@ Session::Session(const SessionConfig& config)
         message_ = "TAB YOUR NOTES  F1 KEYS  F2 OPTIONS  Q LOOK AT IT";
         messageSteps_ = 60 * 12;
     }
+    // TASK #83. SNAPPED, NOT EASED. Nobody pressed a key to reach whichever of
+    // these is true on frame one -- SessionConfig chose it -- so there is
+    // nothing to animate from and the panel/alert draw at full strength
+    // immediately, exactly as they always have. See EasedToggle::snapTo.
+    panelAnim_.snapTo(conversingNow());
+    alertAnim_.snapTo(!message_.empty());
     syncTavernToBody();
 }
 
@@ -515,6 +521,12 @@ void Session::dismissOverlays() noexcept {
     firstRun_ = false;
     pauseOpen_ = false;
     quitArmed_ = false;
+    characterOpen_ = false;
+    // TASK #83. Ten call sites deep (climb, dropDown, steal, toggleCrouch,
+    // lift, setCrouched, jump, interact, punch, restHere) and every one of
+    // them can be the thing that closes a panel a player left open. One call
+    // here catches all ten rather than repeating it at each.
+    syncPanelAnim();
 }
 
 // ---------------------------------------------------------------------------
@@ -616,11 +628,13 @@ void Session::toggleOptions() {
         keysOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
+        characterOpen_ = false;
     }
     awaitingKey_ = false;
     firstRun_ = false;
     optionCursor_ = 0;
     optionPage_ = 0;
+    syncPanelAnim();
 }
 
 void Session::moveOptionCursor(int delta) {
@@ -710,10 +724,12 @@ void Session::togglePause() {
     keysOpen_ = false;
     optionsOpen_ = false;
     awaitingKey_ = false;
+    characterOpen_ = false;
     pauseOpen_ = willOpen;
     pauseCursor_ = 0;
     quitArmed_ = false;
     firstRun_ = false;
+    syncPanelAnim();
 }
 
 std::vector<std::string> Session::pauseRows() const {
@@ -752,10 +768,12 @@ void Session::choosePause() {
             pauseOpen_ = false;
             pauseCursor_ = 0;
             quitArmed_ = false;
+            syncPanelAnim();
             return;
         case 1:
             // SETTINGS. toggleOptions() opens it and puts this page down in the
-            // same call -- see its own comment on why every overlay does that.
+            // same call -- see its own comment on why every overlay does that,
+            // AND syncs the panel anim itself -- no need to repeat it here.
             // This is the controls round's rebinding screen, reachable from the
             // menu a player actually pauses on rather than only from F2.
             toggleOptions();
@@ -823,12 +841,14 @@ void Session::toggleKeys() {
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
+        characterOpen_ = false;
         awaitingKey_ = false;
     }
     firstRun_ = false;
     caseCursor_ = 0;
     casePage_ = 0;
     caseEntry_ = -1;
+    syncPanelAnim();
 }
 
 void Session::toggleCasebook() {
@@ -839,12 +859,32 @@ void Session::toggleCasebook() {
     optionsOpen_ = false;
     pauseOpen_ = false;
     quitArmed_ = false;
+    characterOpen_ = false;
     awaitingKey_ = false;
     firstRun_ = false;
     casebookOpen_ = !casebookOpen_;
     caseCursor_ = 0;
     casePage_ = 0;
     caseEntry_ = -1;
+    syncPanelAnim();
+}
+
+void Session::toggleCharacter() {
+    if (talking() || picking()) {
+        return;
+    }
+    casebookOpen_ = false;
+    keysOpen_ = false;
+    optionsOpen_ = false;
+    pauseOpen_ = false;
+    quitArmed_ = false;
+    awaitingKey_ = false;
+    firstRun_ = false;
+    characterOpen_ = !characterOpen_;
+    caseCursor_ = 0;
+    casePage_ = 0;
+    caseEntry_ = -1;
+    syncPanelAnim();
 }
 
 bool Session::picking() const noexcept { return tavern_->picking().open(); }
@@ -980,7 +1020,53 @@ void Session::step(const sim::MoveInput& input) {
         syncTavernToBody();
     }
 
-    if (messageSteps_ > 0 && --messageSteps_ == 0) {
+    // TASK #83. THE STRING OUTLIVES ITS OWN COUNTDOWN BY A FEW STEPS, ON
+    // PURPOSE. message_ used to clear the instant messageSteps_ reached zero,
+    // which is exactly the pop this pass exists to close: an alpha cannot
+    // fade a string that is already gone. So the countdown alone decides
+    // whether the alert is WANTED (see syncPanelAnim, just below) and the
+    // string itself is only cleared once alertAnim_ has actually finished
+    // easing down to nothing -- which is a handful of steps later, not the
+    // same step.
+    if (messageSteps_ > 0) {
+        --messageSteps_;
+    }
+
+    // THE SPEECH REVEAL CLOCK. A courtesy for whoever is watching the screen
+    // live, not a fact about the world -- see lastSpokenLine_'s own note. It
+    // ticks only while a real conversation is open: the casebook, the keys
+    // page and the options page all borrow this same widget to print
+    // reference material nobody said out loud, and typing THAT out would be
+    // decoration doing the opposite of its job. The clock resets the instant
+    // the line changes, so a fresh reply always arrives fresh rather than
+    // picking up wherever the last one left off.
+    if (tavern_->dialogue().isOpen()) {
+        const std::string& spoken = tavern_->dialogue().lastLine();
+        if (spoken != lastSpokenLine_) {
+            lastSpokenLine_ = spoken;
+            speechAgeSteps_ = 0;
+        } else if (speechAgeSteps_ < kSpeechRevealSteps) {
+            ++speechAgeSteps_;
+        }
+    } else if (!lastSpokenLine_.empty()) {
+        lastSpokenLine_.clear();
+    }
+
+    // TASK #83. THE PANEL AND THE ALERT EASE ONCE A STEP, IN STEP. Re-reading
+    // the target every step (rather than only from the toggle methods that
+    // set it eagerly) is what catches a conversation the SIMULATION closed --
+    // a bouncer walking somebody out, say -- and not only one a keypress did.
+    syncPanelAnim();
+    panelAnim_.advance();
+    alertAnim_.advance();
+    // NOW the string can go. messageSteps_ reaching zero is what stopped
+    // WANTING the alert on screen -- see the note above and syncPanelAnim's
+    // own formula -- and alertAnim_ finishing its fade is what stopped
+    // NEEDING the string to still be there to fade. Both, not either: a
+    // message replaced by a fresh say() mid-fade re-arms messageSteps_ and
+    // this never fires, which is correct -- the new line is what should be
+    // showing, not a clear racing it.
+    if (messageSteps_ == 0 && alertAnim_.settled() && !alertAnim_.target()) {
         message_.clear();
     }
 
@@ -1049,6 +1135,12 @@ void Session::say(std::string line) {
     // Six seconds on screen. Long enough to read at a glance, short enough that
     // the bottom of the frame is usually empty.
     messageSteps_ = 6 * sim::kStepsPerSecond;
+    // TASK #83. EAGER, so the very first frame drawn after whichever verb
+    // called this -- most of them do not call step() first, and the caller
+    // here could be a test that never does -- already shows the prompt easing
+    // in rather than waiting for the next real step() to notice messageSteps_
+    // went from 0 to nonzero.
+    syncPanelAnim();
 }
 
 bool Session::talking() const noexcept {
@@ -1112,6 +1204,18 @@ void Session::moveTopicCursor(int delta) {
         casePage_ = caseCursor_ / kTopicPageSize;
         return;
     }
+    if (characterOpen_) {
+        // THE SAME KEYS, THE SAME PAGING, THE SAME BAND -- see toggleCharacter.
+        const int count = static_cast<int>(characterRows().size());
+        if (count <= 0) {
+            caseCursor_ = 0;
+            casePage_ = 0;
+            return;
+        }
+        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
+        casePage_ = caseCursor_ / kTopicPageSize;
+        return;
+    }
     if (casebookOpen_) {
         // THE SAME KEYS, THE SAME PAGING, THE SAME BAND. The casebook is a
         // conversation with your own notes -- see Session::toggleCasebook on
@@ -1155,6 +1259,16 @@ void Session::nextTopicPage() {
     if (keysOpen_) {
         const std::size_t rows = keyRows().size();
         const int pages = topicPageCount(rows);
+        casePage_ = (casePage_ + 1) % pages;
+        caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
+        return;
+    }
+    if (characterOpen_) {
+        const std::size_t rows = characterRows().size();
+        const int pages = topicPageCount(rows);
+        if (pages <= 1) {
+            return;
+        }
         casePage_ = (casePage_ + 1) % pages;
         caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
         return;
@@ -1214,6 +1328,15 @@ void Session::chooseVisibleTopic(int slot) {
         // else happens, which is the honest behaviour for a list you read.
         const int index = casePage_ * kTopicPageSize + slot;
         if (index < static_cast<int>(keyRows().size())) {
+            caseCursor_ = index;
+        }
+        return;
+    }
+    if (characterOpen_) {
+        // A ROW ON THIS PAGE IS SOMETHING TO READ, not a choice -- the same
+        // honest no-op the keys page gives a number press.
+        const int index = casePage_ * kTopicPageSize + slot;
+        if (index < static_cast<int>(characterRows().size())) {
             caseCursor_ = index;
         }
         return;
@@ -1290,6 +1413,12 @@ void Session::chooseTopic(std::size_t index) {
     if (!reply.journalLine.empty()) {
         say(reply.journalLine);
     }
+    // TASK #83. Covers the one path through this function that can close the
+    // conversation (reply.closes, when it lands on an empty reply.line) with
+    // no call to say() to have carried the sync eagerly -- see say()'s own
+    // note. Every other exit already got one from a say() above; this is a
+    // no-op for those.
+    syncPanelAnim();
 }
 
 void Session::closeConversation() {
@@ -1304,6 +1433,7 @@ void Session::closeConversation() {
         }
         pauseOpen_ = false;
         pauseCursor_ = 0;
+        syncPanelAnim();
         return;
     }
     if (optionsOpen_) {
@@ -1317,12 +1447,21 @@ void Session::closeConversation() {
         optionsOpen_ = false;
         optionCursor_ = 0;
         optionPage_ = 0;
+        syncPanelAnim();
         return;
     }
     if (keysOpen_) {
         keysOpen_ = false;
         caseCursor_ = 0;
         casePage_ = 0;
+        syncPanelAnim();
+        return;
+    }
+    if (characterOpen_) {
+        characterOpen_ = false;
+        caseCursor_ = 0;
+        casePage_ = 0;
+        syncPanelAnim();
         return;
     }
     if (casebookOpen_) {
@@ -1330,6 +1469,7 @@ void Session::closeConversation() {
         caseCursor_ = 0;
         casePage_ = 0;
         caseEntry_ = -1;
+        syncPanelAnim();
         return;
     }
     tavern_->endConversation();
@@ -1338,6 +1478,7 @@ void Session::closeConversation() {
     topicPage_ = 0;
     haggleOffer_ = 0;
     forgeOpen_ = false;
+    syncPanelAnim();
 }
 
 sim::Reply Session::chooseWardTopic(std::size_t index) {
@@ -1456,6 +1597,12 @@ void Session::takeAskingPrice() {
 
 DialogueViewState Session::dialogueView() const {
     DialogueViewState view;
+    // The panel's own small motion -- the picked row's highlight breathes
+    // with it. The identical role body_->stepCount()/60 already plays for the
+    // lamp flicker in drawFrame: a pure function of simulated steps, so a
+    // scripted capture still draws the same frame every time it is asked to,
+    // and it costs nothing on every page this widget is reused for.
+    view.phase = static_cast<float>(body_->stepCount()) / 60.0F;
     if (pauseOpen_) {
         view.open = true;
         view.speaker = "MENU";
@@ -1490,6 +1637,21 @@ DialogueViewState Session::dialogueView() const {
             "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS WHETHER YOU WATCH IT "
             "OR NOT. F1 PUTS THIS DOWN.";
         for (const std::string& row : keyRows()) {
+            view.topics.push_back(row);
+        }
+        view.cursor = caseCursor_;
+        view.page = casePage_;
+        return view;
+    }
+    if (characterOpen_) {
+        view.open = true;
+        view.speaker = "CHARACTER";
+        const std::string title = legendLine();
+        view.epithet = title.empty() ? std::string(sim::kReputationUnremarkable) : title;
+        view.line =
+            "WHAT THE STREETS HAVE MADE OF YOU, ON FIVE TRACKS AT ONCE, AND THE HANDS THAT "
+            "DID IT. C PUTS THIS DOWN.";
+        for (const std::string& row : characterRows()) {
             view.topics.push_back(row);
         }
         view.cursor = caseCursor_;
@@ -1589,6 +1751,17 @@ DialogueViewState Session::dialogueView() const {
     view.epithet = talk.speaker().epithet;
     view.attitude = std::string(sim::attitudeName(talk.attitude()));
     view.line = talk.lastLine();
+    // THE TYPEWRITER. speechAgeSteps_ was reset to 0 the step this exact line
+    // first became lastLine() -- see step()'s own note -- so this ramps 0..all
+    // of it over kSpeechRevealSteps and then reports -1 (all of it, no budget
+    // to track) for as long as the line stands, which is most of a
+    // conversation's life. Nothing here changes what talk.lastLine() IS; only
+    // how much of it the top band has been told to draw this frame.
+    view.speechRevealChars =
+        speechAgeSteps_ >= kSpeechRevealSteps
+            ? -1
+            : static_cast<int>((static_cast<std::int64_t>(view.line.size()) * speechAgeSteps_) /
+                                kSpeechRevealSteps);
     view.cursor = topicCursor_;
     view.page = topicPage_;
     for (const sim::Topic& topic : talk.topics()) {
@@ -2048,6 +2221,62 @@ std::string Session::legendLine() const {
                 34);
 }
 
+std::vector<std::string> Session::characterRows() const {
+    // FIVE ROWS, THEN FOUR, THEN THREE: the five Legend tracks (S8's own
+    // "who am I in this city yet", derived and thrown away every frame until
+    // this page existed -- see the header), the four skills a verb in this
+    // build actually levels, and what the ward and the purse currently say.
+    // Nine is exactly one page -- see kTopicPageSize -- so the five tracks and
+    // four skills are never split by a page turn a player has to go looking
+    // for.
+    std::vector<std::string> rows;
+    rows.reserve(sim::kLegendTracks + 4 + 3);
+    const sim::Legend book = legend();
+    for (std::size_t i = 0; i < sim::kLegendTracks; ++i) {
+        const sim::LegendRow& row = book.rows()[i];
+        std::string_view name = sim::legendTrackName(row.track);
+        // EVERY TRACK NAME STARTS "THE ", legend.hpp's own table, and five
+        // copies of the one word they share is four words spent out of an
+        // eighteen-glyph column for nothing. Dropped on the way to the screen
+        // only -- legendTrackName() still returns the full "THE WIRE"
+        // everywhere else that reads it, because this is a display choice and
+        // not a rename.
+        if (name.substr(0, 4) == "THE ") {
+            name.remove_prefix(4);
+        }
+        rows.push_back(std::string(name) + " - " + std::string(row.title));
+    }
+    const sim::DialogueDirector& talk = tavern_->dialogue();
+    struct ActiveSkill {
+        std::string_view id;
+        std::string_view label;
+    };
+    // THE FOUR OF TWENTY THIS BUILD ACTUALLY LEVELS. content/raws/skills has
+    // sixteen more entries -- authored vocabulary for a Morrowind-style pass
+    // that has not reached this build yet (see the header's own note) -- and
+    // listing them all at LV 0 would tell a player they are being tracked when
+    // nothing in the game is watching.
+    static constexpr ActiveSkill kActiveSkills[] = {
+        {sim::kRoofSkill, "SKYRUNNING"},
+        {sim::kThieverySkill, "CRACKSMANSHIP"},
+        {sim::kHaggleSkill, "STREETWISE"},
+        {sim::kCraftingSkill, "LINKCRAFT"},
+    };
+    for (const ActiveSkill& entry : kActiveSkills) {
+        rows.push_back(std::string(entry.label) + "  LV " +
+                       std::to_string(talk.skills().level(entry.id)));
+    }
+    // ABSENCE COSTS NOTHING ON THE HUD; IT COSTS NOTHING HERE EITHER, but for
+    // the opposite reason. The HUD drops a row that has nothing to say because
+    // it is read every frame; a sheet a player opened ON PURPOSE to look
+    // themselves up is the one place a zero is worth printing, so REPUTATION,
+    // COIN and HEAT are always here, not just when they are interesting.
+    rows.push_back("REPUTATION  " + std::string(talk.ledger().reputationLabel()));
+    rows.push_back("COIN  " + std::to_string(tavern_->playerCoin()));
+    rows.push_back("HEAT  " + std::to_string(talk.crimes().heat()));
+    return rows;
+}
+
 std::string Session::heatLine() const {
     const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
     const sim::Stash& sack = crimes.stash();
@@ -2074,6 +2303,33 @@ std::string Session::heatLine() const {
         line += "  BALE";
     }
     return clip(std::move(line), 34);
+}
+
+bool Session::conversingNow() const noexcept {
+    // THE ONE FORMULA. Repeated in drawFrame() as `conversing` until this
+    // pass, which is exactly the shape of drift that let the S7 review's
+    // overprint findings happen: two places computing the same fact, and
+    // nothing catching them when a seventh page joined the list and only one
+    // of the two remembered to add it.
+    return talking() || casebookOpen_ || keysOpen_ || optionsOpen_ || pauseOpen_ ||
+           characterOpen_;
+}
+
+void Session::syncPanelAnim() noexcept {
+    panelAnim_.setTarget(conversingNow());
+    // The identical two-line test drawFrame() makes for what the HUD's own
+    // alert row is about to show -- see its own comment there. Duplicated
+    // rather than shared through a common accessor because one runs on a
+    // `const` path (drawFrame) and this one has to mutate alertAnim_; the
+    // formula itself is three lines and has not moved since S6.
+    const bool warned = !tavern_->lastWarning().empty() &&
+                        tavern_->playerStanding() != sim::Standing::Welcome;
+    // messageSteps_, NOT message_.empty(). The string is deliberately kept
+    // alive a few steps past the countdown reaching zero so the fade-out has
+    // something to fade -- see step()'s own note -- so the STRING being
+    // non-empty cannot be what decides whether the alert is still wanted, or
+    // the two would deadlock each other.
+    alertAnim_.setTarget(warned || messageSteps_ > 0);
 }
 
 std::string Session::rivalLine() const {
@@ -2289,7 +2545,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // drew straight over the sliders and the sliders drew straight back, and
     // both were illegible. Nothing in a `--screenshot` capture would ever have
     // shown it, because nothing scripted opens this page.
-    const bool conversing = talking() || casebookOpen_ || keysOpen_ || optionsOpen_ || pauseOpen_;
+    const bool conversing = conversingNow();
     hud.roomLabel = conversing ? std::string_view{} : std::string_view{room};
     // The ward's opinion of you sits under the purse -- unless somebody is in
     // front of you, in which case THEIR opinion is the one that matters and the
@@ -2352,6 +2608,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     } else if (!conversing) {
         hud.alert = std::string_view{message_};
     }
+    // TASK #83. Eased in step()/syncPanelAnim(), not here -- see
+    // HudState::alertFade's own note. 1 when nothing has changed since
+    // construction, which is the whole of what every caller before this field
+    // existed drew.
+    hud.alertFade = alertAnim_.value();
     hud.caseLabel = conversing ? std::string_view{} : std::string_view{investigation};
     hud.showHealth = !conversing;
     // AND THE BOTTOM BAND IS THE TOPIC LIST'S, WHOLE. The alert used to be
@@ -2364,6 +2625,17 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     if (conversing && warned) {
         panel.alert = tavern_->lastWarning();
     }
+    // TASK #83. THE PANEL EASES OPEN AND CLOSED INSTEAD OF POPPING.
+    // panelAnim_.value() is what drawDialogue actually fades against -- see
+    // DialogueViewState::openAmount. `panel.open` is ALSO forced true for as
+    // long as any of that fade is still on screen, because dialogueView()
+    // reports the panel closed the instant the LAST overlay flag goes false,
+    // and a close animation needs a few more frames of "yes, still drawing"
+    // after that to have anything left to fade. Once panelAnim_ settles at 0
+    // this is exactly `panel.open` again, which is the pre-existing behaviour
+    // for every caller and every test that never heard of this pass.
+    panel.openAmount = panelAnim_.value();
+    panel.open = panel.open || panelAnim_.value() > 0.0F;
     // The panel FIRST, the HUD over it: a bouncer's warning has to survive
     // being told mid-conversation, and it is the one line that outranks a menu.
     if (config_.hud) {
@@ -3938,6 +4210,26 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             session.interact();
         }
         result.talking = session.talking();
+    }
+
+    if (config.pause) {
+        // THE SAME THREE CALLS ESC, DOWN, DOWN AND ENTER MAKE -- see
+        // Session::togglePause's own header on why this exists at all.
+        session.togglePause();
+        bool landed = false;
+        if (config.pauseEnd == "settings") {
+            session.movePauseCursor(1);  // RESUME -> SETTINGS
+            session.choosePause();
+            landed = session.optionsOpen();
+        } else if (config.pauseEnd == "armed") {
+            session.movePauseCursor(2);  // RESUME -> QUIT
+            session.choosePause();       // arms it; does not fire on one press
+            landed = session.pauseOpen() && session.quitArmed();
+        } else {
+            landed = session.pauseOpen();
+        }
+        result.scriptedWanted += 1;
+        result.scriptedLanded += landed ? 1 : 0;
     }
 
     if (config.street) {

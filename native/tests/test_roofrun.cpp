@@ -489,6 +489,51 @@ TEST_CASE("a drop off the Gull's roof falls two storeys to the Tarwalk") {
     CHECK(body.takeFallBands() == 0);
 }
 
+TEST_CASE("a two-storey drop dips the eye more than a standing jump, and it recovers") {
+    // #77. THE FEEL HALF: the fall curve above charges hit points; this is
+    // what the CAMERA does about the same fall, and it is new. Reuses the
+    // exact drop the case above proves is two bands.
+    const TileQuery tiles(docksWorld());
+    PlayerBody body(tiles, gull::kFootprintX0, 70, gull::kRoofBand, kFacingWest);
+    REQUIRE(body.spawnedLegally());
+    const std::int32_t feetAtImpact = body.feetZ();  // land() never touches feetZ
+
+    const RoofResult fell = body.dropOff();
+    REQUIRE(fell.ok());
+    REQUIRE(fell.bands == 2);
+
+    // THE IMPACT REGISTERS AT ONCE -- no ease-in on the way down, only on the
+    // way back out -- and a real two-storey fall dips deeper than the floor
+    // an ordinary standing jump gives (see kLandingDipMinMm, kLandingDipPerBandMm).
+    CHECK(body.landingDipOffsetQ8() == landingDipQ8(2));
+    CHECK(body.landingDipOffsetQ8() > landingDipQ8(0));
+    CHECK(body.eyeZ() == feetAtImpact + kEyeHeight - landingDipQ8(2));
+
+    // AND IT CLIMBS BACK OUT, the same ease-out curve every camera response
+    // in this file uses.
+    MoveInput idle;
+    for (int i = 0; i < 200 && body.landingDipOffsetQ8() != 0; ++i) {
+        body.step(idle);
+    }
+    CHECK(body.landingDipOffsetQ8() == 0);
+    // The dip is gone; the eye is exactly standing height above wherever the
+    // feet have eased down to by now, no more and no less.
+    CHECK(body.eyeZ() == body.feetZ() + kEyeHeight);
+}
+
+TEST_CASE("a mantle never dips the eye -- only coming down does") {
+    // mantleToward() calls the same land() a drop does; fell is 0 there
+    // because toBand > fromBand, and the guard in land() has to actually
+    // discriminate rather than dipping on every band change. Same fixture as
+    // "the body climbs onto the Gull's roof and the frame goes up with it".
+    const TileQuery tiles(docksWorld());
+    PlayerBody body(tiles, 150, 67, gull::kUpperBand, kFacingNorth);
+    REQUIRE(body.spawnedLegally());
+    const RoofResult up = body.mantle();
+    REQUIRE(up.ok());
+    CHECK(body.landingDipOffsetQ8() == 0);
+}
+
 TEST_CASE("a drop onto ordinary ground is refused as the step it is") {
     const TileQuery tiles(docksWorld());
     PlayerBody body(tiles, 150, 70, gull::kRoofBand, kFacingEast);

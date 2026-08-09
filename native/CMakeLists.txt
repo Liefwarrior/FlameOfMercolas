@@ -253,6 +253,9 @@ add_library(granadad-render STATIC
     src/render/session.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp
+    # Task #83 -- the steps-based ease every panel's open/close and the HUD's
+    # own alert row now animate through, instead of popping. See the header.
+    src/render/anim.cpp
     # #78 -- the people, as pixels the owner drew. content/art/sprites is
     # twenty-five 16x16 actor figures in the MERCOLAS-24 palette with a tag
     # vocabulary already authored against the Java actor types; this reads the
@@ -317,6 +320,9 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_questline.cpp
         tests/test_step_pump.cpp
         tests/test_controls.cpp
+        # Task #83 -- the steps-based ease every panel's open/close and the
+        # HUD's own alert row animate through.
+        tests/test_anim.cpp
         # S5 -- the roofs, and the trade that runs on them.
         tests/test_roofrun.cpp
         tests/test_crime.cpp
@@ -340,6 +346,16 @@ if(GRANADAD_BUILD_TESTS)
         # than against a comment, and the five tracks the ward remembers you by.
         tests/test_casebook.cpp
         tests/test_firstrun.cpp
+        # The pause menu ESC opens when nothing else has already claimed the
+        # keyboard -- RESUME, SETTINGS and a QUIT that asks twice, replacing
+        # the unconfirmed `running = false` that key carried since #77.
+        tests/test_pause.cpp
+        # The character sheet: the five Legend tracks, the four skills this
+        # build actually levels, and what the ward and the purse currently
+        # say -- reached from the same read-only reference-list surface the
+        # casebook and the keys page already prove, and drawn from counters
+        # that were being computed and thrown away every frame before it.
+        tests/test_character.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.

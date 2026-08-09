@@ -317,16 +317,44 @@ foreach ($beat in $Script.Split(',')) {
 # ---------------------------------------------------------------------------
 # stop it, and read what the body says it did
 # ---------------------------------------------------------------------------
-Send-Key 'esc' $true; Start-Sleep -Milliseconds 60; Send-Key 'esc' $false
-Start-Sleep -Milliseconds 900
-if (-not $proc.HasExited) {
-    # ESC backs out of a page before it quits, so a second one may be needed --
-    # which is itself worth knowing.
+#
+# ESC OPENS THE PAUSE MENU NOW RATHER THAN QUITTING OUTRIGHT -- that is the
+# whole point of the pause menu this script is now also proving in a real
+# window, and the old "press ESC twice" idiom this block used to end on
+# cannot land on the close button any more the way it used to: with nothing
+# open, ESC now opens RESUME/SETTINGS/QUIT instead of quitting, so blind
+# repetition ALTERNATES between "pause open" and "nothing open" rather than
+# converging on "quit" the way it used to converge after at most two presses.
+#
+# One beat -- ESC, DOWN, DOWN, ENTER, ENTER -- reaches QUIT and confirms it
+# ONLY when nothing was already open when the beat started (ESC opens the
+# menu fresh, the two DOWNs land on QUIT, the two ENTERs arm and confirm it).
+# If instead the script's own beats left exactly one page open (a stray
+# F1/F2/journal), that ESC closes IT instead of opening the menu, and the
+# DOWN/ENTER presses that follow land as ordinary gameplay input -- a nudge
+# on the body and a no-op, both harmless, but the game is still running.
+#
+# THE FIX IS NOT TO GUESS WHICH CASE IT IS. It is to run the same beat TWICE.
+# Whichever case the first pass was, it leaves the game at "nothing open"
+# (either QUIT already fired, or the stray page just closed) -- so the SECOND
+# pass is always case one: ESC opens the menu fresh, and DOWN, DOWN, ENTER,
+# ENTER walks it to a confirmed QUIT. Two passes, not one, is what closing
+# ANY page this build can leave open actually takes now.
+for ($attempt = 0; $attempt -lt 2 -and -not $proc.HasExited; $attempt++) {
     Send-Key 'esc' $true; Start-Sleep -Milliseconds 60; Send-Key 'esc' $false
-    Start-Sleep -Milliseconds 900
+    Start-Sleep -Milliseconds 400
+    if ($proc.HasExited) { break }
+    Send-Key 'down' $true; Start-Sleep -Milliseconds 60; Send-Key 'down' $false
+    Start-Sleep -Milliseconds 200
+    Send-Key 'down' $true; Start-Sleep -Milliseconds 60; Send-Key 'down' $false
+    Start-Sleep -Milliseconds 200
+    Send-Key 'enter' $true; Start-Sleep -Milliseconds 60; Send-Key 'enter' $false
+    Start-Sleep -Milliseconds 300
+    Send-Key 'enter' $true; Start-Sleep -Milliseconds 60; Send-Key 'enter' $false
+    Start-Sleep -Milliseconds 700
 }
 if (-not $proc.HasExited) {
-    Write-Host "the game did not quit on ESC; closing it"
+    Write-Host "the game did not quit through the pause menu; closing it"
     $proc.CloseMainWindow() | Out-Null
     Start-Sleep -Milliseconds 800
     if (-not $proc.HasExited) { $proc.Kill() }

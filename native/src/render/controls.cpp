@@ -50,8 +50,9 @@ constexpr ActionNames kActions[] = {
     {Action::DropDown, "drop_down", "DOWN"},
     {Action::Journal, "journal", "CASEBOOK"},
     {Action::Keys, "keys", "THIS LIST"},
-    {Action::Menu, "menu", "BACK OUT"},
+    {Action::Menu, "menu", "PAUSE"},
     {Action::Options, "options", "OPTIONS"},
+    {Action::Character, "character", "CHARACTER"},
     {Action::QuickSlot1, "quick_1", "SLOT 1"},
     {Action::QuickSlot2, "quick_2", "SLOT 2"},
     {Action::QuickSlot3, "quick_3", "SLOT 3"},
@@ -355,6 +356,7 @@ ControlSettings ControlSettings::defaults() noexcept {
     set(Action::Keys, Key::F1);
     set(Action::Menu, Key::Escape, Key::PadStart);
     set(Action::Options, Key::F2);
+    set(Action::Character, Key::C);
 
     set(Action::QuickSlot1, Key::Num1);
     set(Action::QuickSlot2, Key::Num2);

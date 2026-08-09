@@ -148,7 +148,7 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
                             "SPACE  JUMP", "LALT  WALK", "E  TALK", "Q  LOOK AT IT",
                             "G  HANDS ON IT", "T  PICK A PURSE", "F  PUNCH", "R  SLEEP",
                             "V  CLIMB", "X  DOWN", "TAB  CASEBOOK", "F1  THIS LIST",
-                            "ESC  BACK OUT", "F2  OPTIONS", "1-0  QUICK BAR",
+                            "ESC  PAUSE", "F2  OPTIONS", "1-0  QUICK BAR",
                             "F12  SCREENSHOT", "LOCK:"}) {
         INFO("missing key row: " << row);
         CHECK(mentions(row));

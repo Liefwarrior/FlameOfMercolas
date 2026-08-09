@@ -69,6 +69,54 @@ struct DialogueViewState {
     /// Which page of the list is showing.
     int page = 0;
 
+    // --- polish-2: a courtesy for whoever is watching it live ---------------
+    //
+    // Neither field changes what a test sees by default. A negative
+    // speechRevealChars and a zero phase are exactly what a hand-built state
+    // already had before this pass, because "the line arrived instantly and
+    // the panel does not breathe" is what every caller that never heard of
+    // this got for free before it existed.
+
+    /// How many characters of `line` the top band has been told to show, or a
+    /// negative number for all of it. Session narrows this for a short window
+    /// after a fresh line arrives, so a reply visibly types in rather than
+    /// snapping onto the screen -- see the drawing code for why the cut, when
+    /// there is one, always lands on a word and never mid-one: a frame caught
+    /// mid-reveal must read as "still arriving", not repeat the class of bug
+    /// clipLabel exists to rule out.
+    int speechRevealChars = -1;
+    /// A seconds-ish animation clock for the panel's own small motion -- the
+    /// picked topic's highlight breathes with it. The same role
+    /// body_->stepCount()/60 already plays for the lamp flicker in
+    /// Session::drawFrame: a pure function of simulated steps, so a scripted
+    /// capture still draws the same frame every time it is asked to.
+    float phase = 0.0F;
+
+    // --- task #83: the panel eases open and closed instead of popping -------
+    //
+    // DEFAULTS TO 1, WHICH IS "FULLY OPEN AND NOT ANIMATING" -- exactly what
+    // every hand-built state already meant before this field existed. A test
+    // that constructs a DialogueViewState directly and never heard of this
+    // draws bit-for-bit what it always drew.
+
+    /// 0 (closed) .. 1 (open). Session eases this with render::EasedToggle
+    /// rather than snapping it the step `open` flips, so pressing E, J, F1,
+    /// F2, ESC or C -- this widget is dialogue, the casebook, the keys page,
+    /// options, the pause menu and the character sheet at once, see the
+    /// struct's own header -- grows the panel in and shrinks it away rather
+    /// than switching it like a light. Multiplies the alpha of the panel's
+    /// own background and its edge line, top band and bottom band alike: the
+    /// box itself materialising and dissolving is what reads as a transition
+    /// rather than a flip. The content drawn over it is not separately faded.
+    ///
+    /// THE PANEL KEEPS DRAWING DURING ITS CLOSING TAIL. `open` alone used to
+    /// be both "is there a panel" and "has the player closed it", and a close
+    /// animation needs those to be two different questions for a few frames:
+    /// Session sets `open` true for as long as openAmount is above zero, even
+    /// after the flag that opened it has gone false, so the fade has
+    /// something left to draw while it finishes.
+    float openAmount = 1.0F;
+
     // --- haggling -----------------------------------------------------------
     bool haggling = false;
     /// What they are asking, and what the player is about to offer.

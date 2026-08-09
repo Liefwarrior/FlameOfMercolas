@@ -291,6 +291,115 @@ TEST_CASE("a standing jump clears half a metre and gets you onto nothing") {
     CHECK(mmFromBandQ8(rose) < kMillimetresPerBand / 4);
 }
 
+TEST_CASE("crouching eases the eye down and back, not the feet") {
+    // #77: THE FEEL HALF. Before this, crouching had no camera at all --
+    // toggling it changed the speed and the stealth roll and nothing you
+    // could see. This is the first thing the eye does that the legs do not.
+    PlayerBody body = spawned();
+    const std::int32_t feetBefore = body.feetZ();
+    const std::int32_t eyeBefore = body.eyeZ();
+    CHECK(body.crouchOffsetQ8() == 0);
+
+    MoveInput crouch;
+    crouch.crouch = true;
+
+    // IT EASES. One step in, it must be strictly between upright and the
+    // bottom of the crouch -- a snap would put it at kCrouchEyeDropQ8 already.
+    body.step(crouch);
+    const std::int32_t afterOneStep = body.crouchOffsetQ8();
+    CHECK(afterOneStep > 0);
+    CHECK(afterOneStep < kCrouchEyeDropQ8);
+
+    for (int i = 0; i < 100 && body.crouchOffsetQ8() != kCrouchEyeDropQ8; ++i) {
+        body.step(crouch);
+    }
+    CHECK(body.crouchOffsetQ8() == kCrouchEyeDropQ8);
+    CHECK(body.eyeZ() == eyeBefore - kCrouchEyeDropQ8);
+    // Neither the feet nor the body's own footing moved. Crouching is what
+    // the EYE does; MoveInput::crouch and sim/stealth.hpp own what it costs.
+    CHECK(body.feetZ() == feetBefore);
+
+    // AND IT COMES BACK, on the same curve, the moment the key is let go.
+    MoveInput idle;
+    for (int i = 0; i < 100 && body.crouchOffsetQ8() != 0; ++i) {
+        body.step(idle);
+    }
+    CHECK(body.crouchOffsetQ8() == 0);
+    CHECK(body.eyeZ() == eyeBefore);
+    CHECK(body.feetZ() == feetBefore);
+}
+
+TEST_CASE("a landing dips the eye and it climbs back out") {
+    // #77. Before this a landing, however far you fell, arrived at exactly
+    // the eye height you left with no more feedback than a paper doll would
+    // give. This is the gentlest case there is -- a standing jump, which
+    // never leaves the band it started on -- and even it gets something now.
+    PlayerBody body = spawned();
+    REQUIRE(body.landingDipOffsetQ8() == 0);
+    REQUIRE(body.jump());
+    for (int i = 0; i < kJumpSteps; ++i) {
+        body.step(MoveInput{});
+    }
+    CHECK_FALSE(body.jumping());
+    CHECK(body.landingDipOffsetQ8() == landingDipQ8(0));
+    CHECK(body.landingDipOffsetQ8() > 0);
+    // THE IMPACT REGISTERS AT ONCE -- no ease-in on the way down, only on the
+    // way back out.
+    CHECK(body.eyeZ() == body.feetZ() + kEyeHeight - landingDipQ8(0));
+
+    MoveInput idle;
+    for (int i = 0; i < 100 && body.landingDipOffsetQ8() != 0; ++i) {
+        body.step(idle);
+    }
+    CHECK(body.landingDipOffsetQ8() == 0);
+    CHECK(body.eyeZ() == body.feetZ() + kEyeHeight);
+}
+
+TEST_CASE("a jump asked for too early is buffered and fires the moment the legs are free, not dropped") {
+    // #77. MID-AIR, PRESSED AGAIN, TOO LATE TO MATTER. Pressed with most of
+    // the hang time still ahead, it is refused and forgotten -- see
+    // kJumpBufferSteps -- because a buffer that never expired would not be a
+    // buffer, it would be a queue.
+    PlayerBody early = spawned();
+    REQUIRE(early.jump());
+    CHECK_FALSE(early.jump());
+    CHECK(early.jumpBuffered());
+    for (int i = 0; i < kJumpBufferSteps; ++i) {
+        early.step(MoveInput{});
+    }
+    CHECK_FALSE(early.jumpBuffered());
+    CHECK(early.jumping());  // the ORIGINAL jump, still the only one asked for
+    for (int i = kJumpBufferSteps; i < kJumpSteps + 2; ++i) {
+        early.step(MoveInput{});
+    }
+    CHECK_FALSE(early.jumping());  // landed once, and only once
+
+    // MID-AIR, PRESSED AGAIN, JUST BEFORE TOUCHDOWN. This is the tap the
+    // buffer exists for: it is remembered, and the instant the legs are next
+    // eligible -- the step landing resolves -- a second jump starts on its
+    // own, without a second press.
+    PlayerBody chained = spawned();
+    REQUIRE(chained.jump());
+    for (int i = 0; i < kJumpSteps - 2; ++i) {
+        chained.step(MoveInput{});
+    }
+    REQUIRE(chained.jumping());
+    CHECK_FALSE(chained.jump());
+    CHECK(chained.jumpBuffered());
+
+    bool relaunched = false;
+    for (int i = 0; i < kJumpBufferSteps + 4; ++i) {
+        const bool wasJumping = chained.jumping();
+        chained.step(MoveInput{});
+        if (!wasJumping && chained.jumping()) {
+            relaunched = true;
+            break;
+        }
+    }
+    CHECK(relaunched);
+    CHECK_FALSE(chained.jumpBuffered());
+}
+
 TEST_CASE("yaw wraps and pitch clamps") {
     PlayerBody body = spawned();
     MoveInput look;

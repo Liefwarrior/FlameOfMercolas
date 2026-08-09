@@ -247,6 +247,11 @@ void print_usage() {
         "  --cursor=N           put the topic cursor on row N without picking\n"
         "                       it, so a frame can be taken OF a long label\n"
         "  --again              close the conversation and open it again\n"
+        "  --pause[=WHERE]      open the pause menu before the shutter goes.\n"
+        "                       WHERE is menu (freshly opened), settings\n"
+        "                       (SETTINGS chosen, so the rebinding screen is\n"
+        "                       what gets photographed) or armed (the cursor\n"
+        "                       on QUIT with the first of its two presses in)\n"
         "  --street[=WHO]       stand next to somebody out in the WARD and talk\n"
         "                       to them. WHO is hand, watch, priest, disciple,\n"
         "                       keeper, fisher, sailor, carter, wastrel, urchin,\n"
@@ -420,6 +425,13 @@ void print_usage() {
         } else if (std::strcmp(arg, "--again") == 0) {
             options.smoke.talk = true;
             options.smoke.again = true;
+        } else if (std::strcmp(arg, "--pause") == 0) {
+            options.smoke.pause = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--pause=", &value)) {
+            options.smoke.pause = true;
+            options.smoke.pauseEnd = value;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--street") == 0) {
             options.smoke.street = true;
             options.wantsSmoke = true;
@@ -749,7 +761,7 @@ void print_usage() {
         return false;
     }
 
-    if (session.casebookOpen() || session.keysOpen()) {
+    if (session.casebookOpen() || session.keysOpen() || session.characterOpen()) {
         if (up) {
             session.moveTopicCursor(-1);
             return true;
@@ -1183,6 +1195,9 @@ int run_client(const Options& options) {
                 case render::Action::Options:
                     session.toggleOptions();
                     return;
+                case render::Action::Character:
+                    session.toggleCharacter();
+                    return;
                 case render::Action::Crouch:
                     crouch.press(stepClock);
                     session.setCrouched(crouch.active());
@@ -1216,7 +1231,8 @@ int run_client(const Options& options) {
                     // same warning applied to itself now: the pause menu is
                     // what opens, and only QUIT, chosen twice, closes anything.
                     if (session.talking() || session.picking() || session.casebookOpen() ||
-                        session.keysOpen() || session.optionsOpen() || session.pauseOpen()) {
+                        session.keysOpen() || session.optionsOpen() || session.pauseOpen() ||
+                        session.characterOpen()) {
                         if (session.picking()) {
                             session.stopPicking();
                         } else {
@@ -1360,7 +1376,8 @@ int run_client(const Options& options) {
         // case the movement keys are walking a list and must not also walk you
         // out of the room.
         const bool listening =
-            session.talking() || session.picking() || session.optionsOpen();
+            session.talking() || session.picking() || session.optionsOpen() ||
+            session.pauseOpen();
         const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
         const Uint32 mouseButtons = listening ? 0U : SDL_GetMouseState(nullptr, nullptr);
         SDL_Gamepad* livePad = listening ? nullptr : pad;
@@ -1426,6 +1443,14 @@ int run_client(const Options& options) {
         }
 
         held.crouch = crouch.active();
+
+        // THE ONLY THING THAT ACTUALLY QUITS. Session never touches SDL, so a
+        // QUIT confirmed on the pause menu sets a flag and this is the one
+        // place that reads it -- one frame after the confirming press, so the
+        // menu's own last frame still draws before the window goes.
+        if (session.quitRequested()) {
+            running = false;
+        }
 
         const Clock::time_point now = Clock::now();
         const double frameSeconds = std::chrono::duration<double>(now - last).count();

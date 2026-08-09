@@ -166,6 +166,16 @@ struct HudState {
     /// conversation's own top band (DialogueViewState::alert), which is sized
     /// from what it draws. Nothing is lost and nothing overlaps.
     bool showAlert = true;
+    /// TASK #83. 0 (gone) .. 1 (full strength). Session eases this with
+    /// render::EasedToggle instead of the alert popping onto the frame at full
+    /// brightness the instant there is one and popping off the instant
+    /// messageSteps_ hits zero -- an interaction prompt that appears and
+    /// dismisses smoothly rather than one that flicks on and off. Multiplies
+    /// only the alert row's own alpha; every other HUD row is unaffected.
+    /// Defaults to 1, which is what every hand-built HudState already meant
+    /// before this field existed, so `* alertFade` is a no-op for a caller
+    /// that never heard of it.
+    float alertFade = 1.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the

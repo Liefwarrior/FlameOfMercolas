@@ -76,6 +76,9 @@ enum class Action : std::uint8_t {
     Keys,
     Menu,
     Options,
+    /// The character sheet: the five Legend tracks, the skills actually wired
+    /// to a verb, and what the ward and the purse currently say.
+    Character,
     QuickSlot1,
     QuickSlot2,
     QuickSlot3,

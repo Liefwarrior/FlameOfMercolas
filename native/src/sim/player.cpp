@@ -191,6 +191,15 @@ void PlayerBody::step(const MoveInput& input) noexcept {
     yaw_ &= (kTurnFull - 1);
     setPitch(wrap_add(pitch_, input.pitchDelta));
 
+    // --- the eye's own two verbs ---------------------------------------------
+    //
+    // EVERY STEP, REGARDLESS OF WHAT THE LEGS ARE DOING. A crouch held through
+    // a leap still eases in; a landing dip keeps climbing back out while the
+    // legs are locked in the next haul. Neither of these touches feetZ, x or
+    // y -- see eyeZ() -- so nothing below this can read stale.
+    crouchOffsetQ8_ = easeToward(crouchOffsetQ8_, input.crouch ? kCrouchEyeDropQ8 : 0);
+    landingDipOffsetQ8_ = easeToward(landingDipOffsetQ8_, 0);
+
     // --- fly ----------------------------------------------------------------
     //
     // A body in a LEAP is not steering. The look above still runs, because
@@ -212,6 +221,22 @@ void PlayerBody::step(const MoveInput& input) noexcept {
         --haulStepsLeft_;
         settleFeet();
         return;
+    }
+
+    // --- the buffered jump, if the legs are free for it now -----------------
+    //
+    // A press that arrived mid-haul or mid-hop was not dropped -- see jump()
+    // -- and this is where it collects. The instant the body is grounded and
+    // not already rising, a buffered request starts the jump exactly as if it
+    // had landed on this very step. Reached only once leapStepsLeft_ and
+    // haulStepsLeft_ are both already zero, by the two returns above.
+    if (jumpBufferStepsLeft_ > 0) {
+        --jumpBufferStepsLeft_;
+        if (jumpStepsLeft_ == 0) {
+            jumpStepsLeft_ = kJumpSteps;
+            jumpStepsTotal_ = kJumpSteps;
+            jumpBufferStepsLeft_ = 0;
+        }
     }
 
     // --- walk ---------------------------------------------------------------
@@ -344,8 +369,14 @@ void PlayerBody::step(const MoveInput& input) noexcept {
 
 bool PlayerBody::jump() noexcept {
     if (leapStepsLeft_ > 0 || jumpStepsLeft_ > 0 || haulStepsLeft_ > 0) {
+        // BUFFERED, NOT DROPPED. See kJumpBufferSteps: this fires the instant
+        // the body is next eligible instead of being silently swallowed by
+        // whichever step's poll happened to catch the press mid-haul or
+        // mid-hop.
+        jumpBufferStepsLeft_ = kJumpBufferSteps;
         return false;
     }
+    jumpBufferStepsLeft_ = 0;
     jumpStepsLeft_ = kJumpSteps;
     jumpStepsTotal_ = kJumpSteps;
     return true;
@@ -356,6 +387,15 @@ void PlayerBody::flyJumpStep() noexcept {
     if (jumpStepsLeft_ <= 0) {
         jumpStepsTotal_ = 0;
         settleFeet();
+        // THE EYE REGISTERS TOUCHING DOWN. bands is 0 -- an ordinary standing
+        // jump always lands on the band it left -- so this is landingDipQ8's
+        // floor, kLandingDipMinMm: some feedback where before there was none
+        // at all. A real fall's dip comes from land(), below, and the two
+        // never fight -- whichever is deeper wins.
+        const std::int32_t dip = landingDipQ8(0);
+        if (dip > landingDipOffsetQ8_) {
+            landingDipOffsetQ8_ = dip;
+        }
         return;
     }
     // The same integer parabola a leap flies: 4*a*t*(1-t), with the multiply
@@ -391,6 +431,29 @@ std::int32_t PlayerBody::approach(std::int32_t have, std::int32_t want, std::int
     }
     const std::int32_t next = have - rate;
     return next < want ? want : next;
+}
+
+std::int32_t PlayerBody::easeToward(std::int32_t have, std::int32_t target) noexcept {
+    if (have == target) {
+        return target;
+    }
+    // A QUARTER OF WHAT IS LEFT, EVERY STEP -- which is an ease-out: large the
+    // first step, smaller every step after, the way a spring settles and
+    // approach()'s fixed accel/brake deliberately does not. Never rounds to a
+    // dead stop short of the target: integer division truncates a diff of 1,
+    // 2 or 3 to zero, so the floor below is what actually gets there.
+    const std::int64_t diff = static_cast<std::int64_t>(target) - have;
+    std::int64_t step = diff / 4;
+    if (step == 0) {
+        step = diff > 0 ? 1 : -1;
+    }
+    const std::int64_t next = have + step;
+    // AND NEVER OVERSHOOTS. The last step of any ease lands exactly on the
+    // target rather than past it and back.
+    if ((diff > 0 && next > target) || (diff < 0 && next < target)) {
+        return target;
+    }
+    return static_cast<std::int32_t>(next);
 }
 
 RoofResult PlayerBody::takeAutoMove() noexcept {
@@ -431,6 +494,15 @@ RoofResult PlayerBody::land(std::int32_t tileX, std::int32_t tileY, std::int32_t
     band_ = toBand;
     const std::int32_t fell = fromBand > toBand ? fromBand - toBand : 0;
     fallBands_ += fell;
+    if (fell > 0) {
+        // THE EYE REGISTERS THE FALL, not only the hit points it costs. A
+        // mantle also calls land() -- fell is 0 there, toBand > fromBand --
+        // so climbing up never dips; only ever coming down does.
+        const std::int32_t dip = landingDipQ8(fell);
+        if (dip > landingDipOffsetQ8_) {
+            landingDipOffsetQ8_ = dip;
+        }
+    }
     RoofResult out;
     out.move = RoofMove::Done;
     out.bands = toBand > fromBand ? toBand - fromBand : fell;
@@ -462,6 +534,13 @@ void PlayerBody::placeAt(std::int32_t tileX, std::int32_t tileY, std::int32_t ba
     velY_ = 0;
     autoMove_ = RoofResult{};
     feetZ_ = q8_of_tile(band_);
+    // #77: and neither is a landing dip from wherever the body just left, nor
+    // a jump buffered against a haul or a hop that is not happening any more.
+    // crouchOffsetQ8_ is left alone on purpose -- a body the Watch carries off
+    // crouched is still crouched on the far side of the carry, and forcing it
+    // upright here would be an un-crouch the player never asked for.
+    landingDipOffsetQ8_ = 0;
+    jumpBufferStepsLeft_ = 0;
 }
 
 RoofResult PlayerBody::mantle() noexcept { return mantleToward(facing_step(yaw_)); }
@@ -708,6 +787,12 @@ std::uint64_t PlayerBody::digest() const noexcept {
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(haulStepsLeft_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(velX_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(velY_)));
+    // #77: the eye's own two verbs, folded in for the same reason the haul's
+    // own fields are -- a fingerprint taken mid-ease is a fingerprint two runs
+    // have to agree about.
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(crouchOffsetQ8_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(landingDipOffsetQ8_)));
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(jumpBufferStepsLeft_)));
     return mix64(h + static_cast<std::uint64_t>(steps_));
 }
 

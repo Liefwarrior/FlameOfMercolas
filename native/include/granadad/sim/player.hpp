@@ -230,6 +230,32 @@ inline constexpr std::int32_t kLeapArcQ8 = 56;
 /// second.
 inline constexpr std::int32_t kHaulSteps = 256 / kEyeEaseRate;
 
+// ---------------------------------------------------------------------------
+// #77: the eye's own two verbs, in the axis the eye is measured on
+// ---------------------------------------------------------------------------
+//
+// human_scale.hpp states the drop and the dip in millimetres, the units the
+// design is written in; these convert them through the one place a
+// millimetre becomes a band-relative Q8, the same way kJumpRiseQ8 does for
+// the jump.
+
+/// The crouch's eye drop, band-relative Q8.
+inline constexpr std::int32_t kCrouchEyeDropQ8 = bandQ8FromMm(kCrouchEyeDropMm);
+
+/// The dip a landing of `bands` deserves, band-relative Q8. Wraps
+/// landingDipMm so the eye and the millimetre the design was written in
+/// cannot drift apart.
+[[nodiscard]] constexpr std::int32_t landingDipQ8(std::int32_t bands) noexcept {
+    return bandQ8FromMm(landingDipMm(bands));
+}
+
+/// Movement steps a jump asked for too early is remembered before it is
+/// dropped for real. 8 at 60 Hz is a shade over a tenth of a second: long
+/// enough to catch a tap that landed a beat before a haul finished or a hop
+/// touched down, short enough that a jump can never fire long after the
+/// press that asked for it.
+inline constexpr std::int32_t kJumpBufferSteps = 8;
+
 /// What a roof move did, or why it did not.
 enum class RoofMove : std::uint8_t {
     /// It happened.
@@ -456,8 +482,29 @@ public:
     [[nodiscard]] std::int32_t band() const noexcept { return band_; }
     /// Height of the feet, Q8, eased across a band change.
     [[nodiscard]] std::int32_t feetZ() const noexcept { return feetZ_; }
-    /// Height of the eye, Q8.
-    [[nodiscard]] std::int32_t eyeZ() const noexcept { return feetZ_ + kEyeHeight; }
+    /// Height of the eye, Q8. feetZ() plus the fixed standing height, LESS
+    /// whatever the eye's own two verbs currently owe it: crouching low and
+    /// climbing back out of a landing's dip. See kCrouchEyeDropQ8 and
+    /// landingDipQ8 -- neither ever touches feetZ_, so a camera that reads
+    /// only feetZ() (there is none, but there could be) sees a body that
+    /// never left the ground.
+    [[nodiscard]] std::int32_t eyeZ() const noexcept {
+        return feetZ_ + kEyeHeight - crouchOffsetQ8_ - landingDipOffsetQ8_;
+    }
+    /// How far the eye is currently ducked below standing height, Q8. 0
+    /// upright, kCrouchEyeDropQ8 at the bottom of a full crouch, eased
+    /// between. Exposed so a case can assert the EASE happened rather than
+    /// only its endpoints.
+    [[nodiscard]] std::int32_t crouchOffsetQ8() const noexcept { return crouchOffsetQ8_; }
+    /// How far the eye is currently sunk from a landing that has not finished
+    /// climbing back out, Q8. 0 between landings.
+    [[nodiscard]] std::int32_t landingDipOffsetQ8() const noexcept {
+        return landingDipOffsetQ8_;
+    }
+    /// True while a jump asked for too early -- mid-haul, mid-leap, mid-hop --
+    /// is still waiting to fire the moment the body is next eligible. See
+    /// kJumpBufferSteps.
+    [[nodiscard]] bool jumpBuffered() const noexcept { return jumpBufferStepsLeft_ > 0; }
 
     [[nodiscard]] std::int32_t tileX() const noexcept { return q8_tile(x_); }
     [[nodiscard]] std::int32_t tileY() const noexcept { return q8_tile(y_); }
@@ -513,6 +560,13 @@ private:
     [[nodiscard]] static std::int32_t approach(std::int32_t have, std::int32_t want,
                                                std::int32_t accel,
                                                std::int32_t brake) noexcept;
+    /// #77: THE CAMERA'S OWN RESPONSE CURVE. Moves `have` a quarter of the
+    /// remaining distance to `target` and never gets stuck a unit short of it
+    /// -- fast at first and gentler as it settles, the way a spring does and
+    /// approach()'s straight ramp deliberately does not. Everything the eye
+    /// does on top of the legs (crouchOffsetQ8_, landingDipOffsetQ8_) is this
+    /// one curve pointed at a different target.
+    [[nodiscard]] static std::int32_t easeToward(std::int32_t have, std::int32_t target) noexcept;
     /// Hauls onto the ledge lying in direction `dir`. mantle() is this with the
     /// facing snapped to the compass; the automatic path is this with the
     /// direction the legs were actually pushing.
@@ -577,6 +631,19 @@ private:
     /// The traversal the body took on its own, waiting to be read by whoever
     /// charges for one. See takeAutoMove.
     RoofResult autoMove_{};
+
+    // --- #77: the eye's own two verbs ---------------------------------------
+    //
+    // Neither of these is feetZ, x or y -- see eyeZ() -- so nothing here can
+    // move a hitbox, break a collision case, or shift where a scripted
+    // capture's body ends up. Integer and in the digest anyway, for the same
+    // reason the haul's own fields are: a fingerprint taken mid-ease is a
+    // fingerprint two runs have to agree about.
+    std::int32_t crouchOffsetQ8_ = 0;
+    std::int32_t landingDipOffsetQ8_ = 0;
+    /// A jump asked for while the body could not take it yet, waiting to
+    /// fire. See kJumpBufferSteps.
+    std::int32_t jumpBufferStepsLeft_ = 0;
 };
 
 }  // namespace granadad::sim

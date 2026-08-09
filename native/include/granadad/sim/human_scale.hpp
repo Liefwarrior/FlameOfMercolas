@@ -378,4 +378,45 @@ inline constexpr std::int32_t kJumpSteps = hopStepsForRise(kJumpRiseMm);
 static_assert(kJumpRiseQ8 > 0 && kJumpRiseQ8 < 256 / kTilesPerBand,
               "a standing jump must not clear one tile, let alone one storey");
 
+// ---------------------------------------------------------------------------
+// #77: what the CAMERA does, not just what the legs do
+// ---------------------------------------------------------------------------
+//
+// Getting the legs right (above) turned out to be half of "robotic". The other
+// half is the eye. Every one of walk/sprint/crouch/jump/land moved the LEGS
+// smoothly and the camera anyway, because the camera was never anything but
+// feetZ plus a constant. Crouching had no camera at all -- toggling it changed
+// your speed and nothing you could see -- and a landing, however far you fell,
+// arrived at exactly the eye height you left with no more feedback than a
+// paper doll would give. Both read as a rig on rails wearing legs that work.
+//
+// These constants are the eye's own two verbs, and PlayerBody::eyeZ is the
+// only place either is read: neither touches feetZ, x or y, so nothing here
+// can move a hitbox, break a collision case, or shift where a scripted
+// capture's body ends up.
+
+/// How far the eye drops when crouched, millimetres. A duck, not a full squat
+/// -- kCrouchMmPerSec above is a "measured crouch-WALK", and a body that can
+/// still cross a room at 1.1 m/s has not folded itself in half. 380 mm is
+/// about a quarter of standing eye height: visibly lower, nowhere near prone.
+inline constexpr std::int32_t kCrouchEyeDropMm = 380;
+
+/// What the eye does on a hard landing: dips on impact and climbs back out.
+/// kLandingDipMinMm is what even a gentle standing jump gives -- some
+/// feedback is better than the silence that shipped before this -- and every
+/// band actually fallen through adds more, capped well short of anything
+/// disorienting.
+inline constexpr std::int32_t kLandingDipMinMm = 50;
+inline constexpr std::int32_t kLandingDipPerBandMm = 70;
+inline constexpr std::int32_t kLandingDipMaxMm = 260;
+
+/// The dip a landing of `bands` deserves, millimetres, capped. `bands` is
+/// never negative in practice -- a climb calls this with 0 through the same
+/// path a fall does -- but the clamp is here so a caller cannot invert it.
+[[nodiscard]] constexpr std::int32_t landingDipMm(std::int32_t bands) noexcept {
+    const std::int32_t clampedBands = bands > 0 ? bands : 0;
+    const std::int32_t raw = kLandingDipMinMm + clampedBands * kLandingDipPerBandMm;
+    return raw > kLandingDipMaxMm ? kLandingDipMaxMm : raw;
+}
+
 }  // namespace granadad::sim
