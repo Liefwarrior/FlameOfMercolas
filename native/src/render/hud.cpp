@@ -365,22 +365,42 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
             rows[count++] = Row{text, ink, alpha, rank};
         }
     };
+    // EVERY ROW HERE IS RIGHT-ANCHORED, AND CLIPPED TO WHAT THE FRAME
+    // ACTUALLY HAS, not to a count session.cpp guessed. An anchor only
+    // protects the edge it is anchored TO: an unclipped row wide enough to
+    // overrun starts its draw at a negative x and loses its own FRONT off
+    // the LEFT edge instead, which is the higher-priority half of every one
+    // of these (heatLabel's "CONDEMNED  WANTED" reads before "HEAT 84"). See
+    // test_render.cpp's "a bottom-band or top-right label does not run off
+    // the frame at an off-16:9 window" -- a 320x180/640x360/960x540 capture
+    // never has the aspect ratio to catch this, and --width/--height (see
+    // main.cpp) are independent flags with no aspect check between them.
+    const int rowBudget = std::max(0, target.width() - 2 * margin);
     std::string purse;
     if (state.coin >= 0) {
-        purse = std::to_string(std::min(state.coin, 99999)) + " C";
+        purse = clipToWidth(std::to_string(std::min(state.coin, 99999)) + " C", rowBudget, minor);
         add(purse, Rgb{0.82F, 0.72F, 0.38F}, 0.9F, 3);
     }
-    add(state.standingLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.82F, 5);
+    const std::string standing = clipToWidth(state.standingLabel, rowBudget, minor);
+    add(standing, Rgb{0.62F, 0.66F, 0.72F}, 0.82F, 5);
     // Red for anything the ward has decided about you -- a warrant, a hand
-    // taken, a rope waiting -- and ash for the rest.
+    // taken, a rope waiting -- and ash for the rest. Checked against the
+    // UNCLIPPED label: the keyword is always at the front and clipping only
+    // ever removes the tail (clipToWidth), so the colour cannot be lost by
+    // it even when the words that explain it are.
     const bool wanted = state.heatLabel.find("WANTED") != std::string_view::npos ||
                         state.heatLabel.find("MAIMED") != std::string_view::npos ||
                         state.heatLabel.find("CONDEMNED") != std::string_view::npos;
-    add(state.heatLabel, wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F}, 0.86F, 2);
-    add(state.stashLabel, Rgb{0.58F, 0.66F, 0.52F}, 0.84F, 4);
-    // Green while the room cannot see you, amber the moment it can.
+    const std::string heat = clipToWidth(state.heatLabel, rowBudget, minor);
+    add(heat, wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F}, 0.86F, 2);
+    const std::string stash = clipToWidth(state.stashLabel, rowBudget, minor);
+    add(stash, Rgb{0.58F, 0.66F, 0.52F}, 0.84F, 4);
+    // Green while the room cannot see you, amber the moment it can. Checked
+    // against the UNCLIPPED label for the identical reason: SEEN is always
+    // the first word.
     const bool seen = state.stealthLabel.substr(0, 4) == "SEEN";
-    add(state.stealthLabel, seen ? Rgb{0.86F, 0.66F, 0.28F} : Rgb{0.44F, 0.72F, 0.50F}, 0.86F, 1);
+    const std::string stealth = clipToWidth(state.stealthLabel, rowBudget, minor);
+    add(stealth, seen ? Rgb{0.86F, 0.66F, 0.28F} : Rgb{0.44F, 0.72F, 0.50F}, 0.86F, 1);
 
     // THE GAP IS ONE PIXEL SHORT OF THE OBVIOUS ONE, AND THAT BOUGHT A ROW.
     // rowHeight already carries the drop shadow, so the visible gap between
@@ -483,12 +503,23 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // The case. IT IS THE COLOUR OF THE WARD'S NERVE and not a fixed one: a
     // player who has frightened the district enough that nobody walks the
     // Gullet alone should see that without reading the words.
+    // caseLabel/guildLabel/objectiveLabel below are LEFT-anchored, and
+    // rivalLabel is RIGHT-anchored; all four are now clipped to the pixel
+    // budget the row actually has (the same `width - 2*margin` roomLabel and
+    // lockLabel already use), not trusted bare off session.cpp's own guessed
+    // character count. Left-anchored text session.cpp under-clipped for this
+    // frame runs off the RIGHT edge mid-glyph with no mark that anything was
+    // cut; right-anchored text under-clipped starts its draw at a negative x
+    // and runs off the LEFT edge instead, losing its own front rather than
+    // its tail. See test_render.cpp's "a bottom-band or top-right label does
+    // not run off the frame at an off-16:9 window".
     if (!state.caseLabel.empty()) {
         const int y = band.take(minor);
         if (y >= 0) {
             const bool afraid = state.caseLabel.find("EMPTYING") != std::string_view::npos ||
                                 state.caseLabel.find("ALONE") != std::string_view::npos;
-            drawText(target, margin, y, state.caseLabel,
+            const std::string line = clipToWidth(state.caseLabel, width - 2 * margin, minor);
+            drawText(target, margin, y, line,
                      afraid ? Rgb{0.86F, 0.44F, 0.36F} : Rgb{0.70F, 0.72F, 0.66F}, 0.90F, minor);
         }
     }
@@ -498,23 +529,28 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         const int y = band.take(minor);
         if (y >= 0) {
             // A hunted man should not have to read the line to notice it.
+            // Checked against the UNCLIPPED label: HUNTING is always the
+            // last word rivalLine() appends, and clipping only ever removes
+            // the tail, so the unclipped field still answers this correctly
+            // even on the frame narrow enough to have dropped the word.
             const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
-            drawText(target, width - margin - textWidth(state.rivalLabel, minor), y,
-                     state.rivalLabel,
+            const std::string line = clipToWidth(state.rivalLabel, width - 2 * margin, minor);
+            drawText(target, width - margin - textWidth(line, minor), y, line,
                      hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F}, 0.90F, minor);
         }
     }
     if (!state.guildLabel.empty()) {
         const int y = band.take(minor);
         if (y >= 0) {
-            drawText(target, margin, y, state.guildLabel, Rgb{0.86F, 0.74F, 0.44F}, 0.92F, minor);
+            const std::string line = clipToWidth(state.guildLabel, width - 2 * margin, minor);
+            drawText(target, margin, y, line, Rgb{0.86F, 0.74F, 0.44F}, 0.92F, minor);
         }
     }
     if (!state.objectiveLabel.empty()) {
         const int y = band.take(minor);
         if (y >= 0) {
-            drawText(target, margin, y, state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.80F,
-                     minor);
+            const std::string line = clipToWidth(state.objectiveLabel, width - 2 * margin, minor);
+            drawText(target, margin, y, line, Rgb{0.62F, 0.66F, 0.72F}, 0.80F, minor);
         }
     }
 }

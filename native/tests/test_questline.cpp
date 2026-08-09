@@ -15,6 +15,7 @@
 
 #include "granadad/content/content_dir.hpp"
 #include "granadad/sim/barks.hpp"
+#include "granadad/sim/faction.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/questline.hpp"
 #include "granadad/sim/world_hash.hpp"
@@ -95,6 +96,29 @@ TEST_CASE("the Priest of the Flame line is authored end to end") {
         CHECK(stage.standing > 0);
     }
     CHECK(granted == 1);
+}
+
+TEST_CASE("every line's faction and giver are real, for every line the book has") {
+    // completeStage (dialogue.cpp) resolves `line.faction` through
+    // FactionRegistry::indexOf and hands the -1 a dangling name would produce
+    // straight to FactionLedger::addStanding/advance, which treats an
+    // out-of-range index as a silent no-op (inRange() guards every one of
+    // them) rather than a refusal. The two authored lines both happen to name
+    // real factions and real givers today; test_questline.cpp and
+    // test_crime.cpp each pin ONE line's ONE field to a literal string, which
+    // proves that line's own value and nothing about the other line or the
+    // other field. This is the generic version: every line the book actually
+    // loaded, checked against the same registries the game reads at runtime.
+    const FactionRegistry factions = FactionRegistry::load(content::contentDir());
+    REQUIRE(factions.size() > 0);
+    const NotableRegistry notables = NotableRegistry::load(content::contentDir());
+    REQUIRE(notables.loaded());
+    REQUIRE(book().size() > 0);
+    for (const Questline& line : book().lines()) {
+        CAPTURE(line.id);
+        CHECK(factions.indexOf(line.faction) >= 0);
+        CHECK(notables.find(line.giver) != nullptr);
+    }
 }
 
 TEST_CASE("the journal walks the stages, writes the log, and stops at the end") {

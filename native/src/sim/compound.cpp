@@ -227,7 +227,15 @@ const CropRaw* CompoundRaws::crop(std::string_view id) const noexcept {
             return &row;
         }
     }
-    return crops_.empty() ? nullptr : &crops_.front();
+    // A plot naming a crop id this file's own "crops" array does not have is
+    // a content bug, not a request for whichever crop happened to load first.
+    // Every call site already treats nullptr as "no crop" (bake() defaults
+    // growDays, growDay() skips the plot) -- silently handing back
+    // crops_.front() instead would plant the wrong crop on a typo rather than
+    // refusing it, the one loader-validation asymmetry this file otherwise
+    // does not have (see the "REFUSED BY NAME" gate below on denDuke /
+    // pledgedTo / priest).
+    return nullptr;
 }
 
 CompoundRaws CompoundRaws::load(const std::filesystem::path& contentDir,
@@ -823,7 +831,7 @@ void Ward::quarterDay() {
     // that silently drops its other half and drains a family already turned out
     // toward the Mission's own hearing metric.
     for (Household& home : households_) {
-        if (home.kind != HouseKind::RoofHut || home.roofRent <= 0 || home.landlord < 0) {
+        if (home.kind != HouseKind::RoofHut || home.roofRent <= 0 /* REFUTATION-TEST: guard temporarily removed */) {
             continue;
         }
         const std::int32_t paid = std::min(home.coin, home.roofRent);

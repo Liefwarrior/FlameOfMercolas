@@ -404,6 +404,67 @@ TEST_CASE("DEVIN's customize rows read his real fixed sheet, not a shadow copy")
     }
 }
 
+TEST_CASE("DEVIN's and GABRI's rows survive the real eighteen-glyph column, not just a "
+          "substring check") {
+    // THE GAP THE CRACKSMANSHIP FIX LEFT OPEN. ec472fb fixed "4 CRACKSMANSHIP."
+    // clipping one glyph over its column on DEVIN's own sheet -- found by
+    // capturing --creation=devin and looking at the frame, not by a test,
+    // because the test above (and its GABRI-fixing predecessor) only ever
+    // asks whether view.topics[i] CONTAINS the right substring. A string that
+    // contains " 30" still contains " 30" after clipLabel cuts it down to
+    // "4 CRACKSMANSHIP" for the column -- the substring check cannot see a
+    // clip happen. This is topicRowsFor + clipLabel, the exact pair
+    // dialogue_view.hpp says a case "over this function is therefore a case
+    // over the drawing path" for, and test_render.cpp's own "a topic label
+    // stops short of the next column's key" already proves the room formula
+    // below is drawDialogue's, not a second copy invented here.
+    //
+    // A regression this catches and the substring check above cannot: a
+    // longer skill displayName landing in skills.json, or a companion level
+    // ever reaching three digits, silently reclipping a row with nobody
+    // capturing a frame to notice.
+    for (const std::string_view id : {"devin", "gabri"}) {
+        INFO("companion: ", id);
+        render::CreationFlow flow = fresh();
+        if (id == "gabri") {
+            flow.moveOriginCursor(1);
+        }
+        flow.chooseOrigin();
+        REQUIRE(flow.chosenCompanion() != nullptr);
+        REQUIRE(flow.chosenCompanion()->id() == id);
+
+        const render::DialogueViewState view = flow.view();
+        REQUIRE_FALSE(view.topics.empty());
+
+        // Both resolutions test_creation.cpp's own "drawCreation draws
+        // something" case already renders at -- the eighteen-glyph room is
+        // the same at both, which is the claim dialogue_view.hpp's own
+        // header makes ("eighteen glyphs at every resolution this game runs
+        // at"), proved here rather than assumed.
+        for (const int height : {180, 360}) {
+            const int width = height * 16 / 9;
+            const int scale = std::max(1, height / 180);
+            const int margin = 5 * scale;
+            const int glyphAdvance = 5 * scale;
+            const int columnWidth = (width - 2 * margin) / render::kTopicColumns;
+            const int room = std::max(1, columnWidth / glyphAdvance - 2);
+            INFO("height ", height, " room ", room);
+
+            for (int page = 0; page < render::topicPageCount(view.topics.size()); ++page) {
+                for (const render::TopicRow& row :
+                     render::topicRowsFor(view.topics, page, -1, render::kTopicSlots)) {
+                    INFO("row: ", row.label);
+                    // Unclipped: the label clipLabel would actually draw is
+                    // byte-for-byte the label the row already carries, so
+                    // nothing was cut and no mark was appended.
+                    CHECK(render::clipLabel(row.label, static_cast<std::size_t>(room)) ==
+                          row.label);
+                }
+            }
+        }
+    }
+}
+
 TEST_CASE("LEFT/RIGHT never moves a single row of DEVIN's or GABRI's sheet") {
     for (const int originIndex : {0, 1}) {  // DEVIN, GABRI
         render::CreationFlow flow = fresh();

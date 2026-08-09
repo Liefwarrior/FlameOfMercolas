@@ -21,8 +21,8 @@
 
     { "id": "netter-fenner-debt", "kind": "debt",
       "a": "fenner", "b": "netter", "edge": "DEBTOR",
-      "bioA": "Keeps one paper he never displays: the Widow Netter's, signed against the house itself.",
-      "bioB": "Signed quiet paper at Fenner's window after the boats were lost; the house stands on his patience.",
+      "bioA": "Keeps one paper he never displays: the Widow Netter's, signed against the charge, not the house.",
+      "bioB": "Signed quiet paper at Fenner's window after the boats were lost; the charge stands on his patience.",
       "gossip": "gossip.netter-fenner-debt" },
 
     { "id": "vess-venn-grudge", "kind": "feud",

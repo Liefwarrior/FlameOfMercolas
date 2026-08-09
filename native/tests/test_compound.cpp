@@ -524,6 +524,44 @@ TEST_CASE("a Den Duke cannot turn a family out, and only one of the six answers 
     CHECK(stats.bondsTaken > 0);
 }
 
+TEST_CASE("a landlord-less roof never bleeds rent into nobody's pocket") {
+    // #86. quarterDay()'s roof-rent loop used to charge any RoofHut with
+    // roofRent > 0 whether or not it actually had a landlord to receive the
+    // coin. A distrained house-owner -- and any lodger who had named them
+    // landlord -- is turned out with landlord == -1 but KEEPS its old
+    // roofRent (on purpose: a later landlord, e.g. buyHouse() adopting an
+    // orphaned hut, has to charge the right rate), so every quarter drained
+    // real coin off an already-evicted family and credited it to nobody.
+    // That is the one rent flow in this file that did not already follow the
+    // "NOBODY COLLECTS ON A VACANT CHARGE" rule the ground penny two blocks
+    // up enforces.
+    //
+    // arrears is the tell: nothing else in this file ever touches it for a
+    // RoofHut (the ground penny and the hearing both gate on ownsHouse(),
+    // which a roofed household never is), so a landlord-less roof with
+    // nonzero arrears is a quarter that billed a household with nobody on
+    // the other end of the transaction.
+    const std::unique_ptr<Ward> ward = freshWard();
+    for (std::int32_t day = 0; day < 720; ++day) {
+        ward->endOfDay();
+    }
+    REQUIRE(ward->stats().housesDistrained > 0);
+
+    bool sawOrphan = false;
+    for (const Household& home : ward->households()) {
+        if (home.kind != HouseKind::RoofHut || home.landlord >= 0) {
+            continue;
+        }
+        sawOrphan = true;
+        INFO("household ", home.id, " roofRent=", home.roofRent, " arrears=", home.arrears);
+        CHECK(home.arrears == 0);
+    }
+    // The scenario has to actually be reached, or the checks above pass
+    // vacuously and prove nothing. #86's own soak (two years, the same seed
+    // the rest of this file uses) always turns somebody's roof landlord-less.
+    REQUIRE(sawOrphan);
+}
+
 TEST_CASE("the abatement is the sharpest instrument in the ward, and it is not dead code") {
     // THE S7 REVIEW'S FOURTH FINDING. Verdict::Abatement could be replaced with
     // Verdict::Stay at compound.cpp and all 394 cases stayed green: the one

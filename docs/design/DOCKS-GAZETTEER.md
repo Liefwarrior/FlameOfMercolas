@@ -239,10 +239,38 @@ off-map actor.
 | Plot | Den Duke | Defence, from §4.4 |
 |---|---|---|
 | C1 The Quayward | **Ceffa Quayward** | "runs the courtyard market her farming tenants stock" — three generations of ground, low pennies, high standing with the Flame. She is the good Duke, which is what makes "grooming an heir at her elbow" the ward's slowest-burning threat. C1 has no rooftop slum: under this model that is not a map fact but a choice by her house-owners not to let their roofs. |
-| C2 The Netters' | **Widow Annis Netter** — *and the charge is pledged* | §4.5's `netter-fenner-debt` already reads "signed against the house itself" and "the house stands on his patience". Ruling: what she pledged is **the charge**, not the house. If she defaults, **Fenner becomes Den Duke of the Netters' compound** — a pawnbroker one bad quarter from holding the ground under forty dockworker families. This makes §4.7 THE WIDOW'S PAPER load-bearing rather than decorative. |
+| C2 The Netters' | **Widow Annis Netter** — *and the charge is pledged* | §4.5's `netter-fenner-debt` was authored (S4, 2026-07-23) before this ruling and originally read "signed against the house itself" and "the house stands on his patience" — a contradiction closed 2026-08-09 (task #65; see the reconciliation note below the table), now reading "the charge, not the house" throughout §4.5, §4.7, `histories.json` and `quests.json`. Ruling: what she pledged is **the charge**, not the house. If she defaults, **Fenner becomes Den Duke of the Netters' compound** — a pawnbroker one bad quarter from holding the ground under forty dockworker families. This makes §4.7 THE WIDOW'S PAPER load-bearing rather than decorative. |
 | C3 Saltgate Terrace | **Goodman Tarl Saltgate** | "mansion-poor and tenant-rich" is a rent roll with no cash behind it. He is himself in arrears to the Flame, so he petitions most and loses most: the ward's distraint engine. "The terrace roofs above him house people he prefers not to think about" is now literally true — they are not his tenants. |
 | C4 The Gullet | **none — the charge is vacant** | The Flame has not re-let it. §4.4: "Rent is not paid in the Gullet, but respects are, and they are paid to Mag." **Gullet Mag** is the Gullet's ground-holder in fact and not in law. A vacant charge is a prize; any actor, including the player, may petition for it. |
 | The 45 hovels | **none — this is the glebe** | Church ground never let to anyone, squatted and worked directly, token alms in place of a penny. This explains the Mission's alms traffic, explains why the hovel rows are the only unsigned dwellings in the ward, and produces the good inversion: **the poorest are the least enserfed**. A Duke who wants labour cannot get it from the glebe; he must go to the Gullet, to the Rows, or to his own tenants. |
+
+**Reconciliation note (2026-08-09, task #65) — the Widow's paper/charge.** DOCKS-GAZETTEER
+previously carried both readings of the same debt: this section said "the charge is pledged, not
+the house," while §4.5's `netter-fenner-debt` and §4.7 THE WIDOW'S PAPER (both authored in S4,
+2026-07-23 — five days before this tenure ruling) said the widow signed "against the house
+itself." **Sources checked, in the project's own precedence order:** the novel
+(`LordOfTrojia-MVP\Lore\Lord of Trojia (indexable).txt`) names no Widow Netter, no Fenner, no Den
+Duke and no charge/house tenure of any kind — the only "widow" hit in the whole text is a generic
+one about townsfolk fighting to defend their home (L2132), unrelated. The WorldBible is likewise
+silent (this whole tenure system is `(placeholder — invented for v0)` per this section's own
+"Canon grounding" paragraph above). With the novel and WorldBible both silent, precedence falls to
+the most recent invented-design ruling: **Eli, 2026-07-29** (`DECISIONS.md`, "Trojian tenure: the
+charge and the bond" row) — *"Individuals own their houses outright, standing on ground they will
+never own"* — which this section's own table already applied to C2 ("what she pledged is the
+charge, not the house") but which the earlier-authored §4.5/§4.7 prose and the `histories.json`/
+`quests.json` raws it was quoting never got updated to match. **Resolution:** the charge/not-house
+reading is correct and is now the only reading in the doc — §4.5's table row, §4.7's paper
+description, and the two raws records that back them
+(`content/raws/names/histories.json:netter-fenner-debt`, the `trouble` stage's `log` line in
+`content/raws/quests/quests.json:widows-paper`) all now read "the charge, not the house." The
+compound ownership table (`content/raws/compounds/compounds.json`, C2's note: *"The charge is
+pledged, not the house"*) and the C2 gate/door plaques (§3.3 below) were already correct — they
+postdate the S7 roll and never carried the error. Left untouched, deliberately: the "the house
+stands on \[someone's\] patience" turns of phrase elsewhere in `quests.json`'s later stages and the
+bark line `gossip.netter-fenner-debt` ("They whisper... The HOUSE, some say") — these describe the
+*consequence* of the debt (the house's fate rides on the paper) or are explicitly framed as
+possibly-mistaken ward gossip, not a claim about what instrument was pledged, so they do not
+contradict the ruling.
 
 Working ground is held on the same terms by **Craftlords**: Foreman Hemp at the Ropewalk,
 Ulwer at Pitchfield, Cooper Stave at the cooperage, Salla on Salt Row, Harl at the yard,
@@ -711,7 +739,7 @@ append, at which point the file migrates values without reshaping.
 | `brann-dagny-grayledger` | feud | Brann's manifests keep surfacing in Dagny's Wrackhouse with the labels sanded off |
 | `fenner-jek-hook` | debt | Fenner holds paper on every treasure Tarry Jek pulls from the strand |
 | `fenner-neddry-paper` | debt | The Slop-Chest's stock past the third hook is quietly Fenner's — Neddry signed in a bad winter |
-| `netter-fenner-debt` | debt | The Widow Netter signed quiet paper against the house itself after the boats were lost |
+| `netter-fenner-debt` | debt | The Widow Netter signed quiet paper against the charge, not the house, after the boats were lost |
 | `vess-venn-grudge` | feud | Sergeant Vess's clean cases keep dying in the Gilded Gull's back room |
 | `gilt-crell-erasure` | secret | One Weighhouse number never happened; Crell's erased line ends in Gilt's blotter |
 | `harl-quayward-silence` | pact | House Quayward pays Harl's yard a whistling-wage for midnight lighters |
@@ -794,7 +822,9 @@ is worth and to whom. Data: `content/raws/quests/quests.json` (`widows-paper`), 
 `DocksWidowsPaperWalkthroughTest`.
 
 **The paper (canon; an item, not a person).** After the Netter boats were lost, **Widow Annis
-Netter** signed quiet paper at Fenner's window **against the house itself**. Fenner has never once
+Netter** signed quiet paper at Fenner's window **against the charge, not the house itself** (§2.8's
+tenure ruling — the widow owns her house outright; what she pledged was the ground-charge under
+it). Fenner has never once
 demanded payment — the holding, not the collecting, is the profit: half the east quay watches how
 the Netters are handled before signing anything themselves. The paper lives in the strongbox
 behind his cage (K15's back room, the authored strongbox furniture at map `{127,57}`).

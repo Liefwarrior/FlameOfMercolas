@@ -541,6 +541,119 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     }
 }
 
+TEST_CASE("a bottom-band or top-right label does not run off the frame at an off-16:9 window") {
+    // THE SAME CLASS OF DEFECT the chargen sheet's clipLabel() had -- a hard
+    // cut with no usable boundary, invisible to a suite that only ever
+    // exercised the one shape that happened to survive it. session.cpp's
+    // guildLine()/heatLine()/rivalLine() (and stashLine/stealthLine/
+    // standingLabel/objectiveLine/caseLine alongside them) clip their own
+    // text to a GUESSED CHARACTER COUNT -- 34, 34, 44 -- sized to fit the
+    // three 16:9 captures this suite has always rendered at (320x180,
+    // 640x360, 960x540). drawTopRight/drawBottomBand draw every one of those
+    // strings straight off that guess with no clipToWidth of their own, the
+    // way roomLabel/lockLabel/alert already have: "a line anchored right or
+    // left is clamped by its anchor" (hud.hpp's own clipToWidth doc) is only
+    // true if whoever pre-clipped it actually knew the frame's real pixel
+    // width, and session.cpp's guess only agrees with the real one at 16:9.
+    //
+    // --width and --height are independent CLI flags (main.cpp: each is only
+    // floored at 64, neither is derived from the other), so a window that is
+    // not 16:9 is a supported configuration this suite never exercised.
+    //
+    // At 220x640 the budget these rows should have -- width - 2*margin -- is
+    // well under what a 34-glyph label needs at this height's minor scale.
+    // Unclipped, a LEFT-anchored row (guildLabel) runs off the RIGHT edge
+    // with no mark that anything was cut; a RIGHT-anchored one (rivalLabel,
+    // and every row of the top-right stack) starts its draw at a negative x
+    // and runs off the LEFT edge instead -- losing the FRONT of the line,
+    // which is the higher-priority half of every one of these (heatLabel's
+    // "CONDEMNED  WANTED" reads before "HEAT 84").
+    const int width = 220;
+    const int height = 640;
+    const std::string longLabel(34, 'A');
+
+    const int scale = hudScale(height);
+    const int minor = hudMinorScale(height);
+    const int margin = 6 * scale;
+    // The premise: this label genuinely does not fit the row's real budget,
+    // or every check below is vacuous.
+    REQUIRE(textWidth(longLabel, minor) > width - 2 * margin);
+
+    const auto rightmostInk = [&](const Framebuffer& bare, const Framebuffer& dressed) {
+        int rightmost = -1;
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                if (bare.pixels()[bare.index(x, y)] != dressed.pixels()[dressed.index(x, y)]) {
+                    rightmost = std::max(rightmost, x);
+                }
+            }
+        }
+        return rightmost;
+    };
+    const auto leftmostInk = [&](const Framebuffer& bare, const Framebuffer& dressed) {
+        int leftmost = width;
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                if (bare.pixels()[bare.index(x, y)] != dressed.pixels()[dressed.index(x, y)]) {
+                    leftmost = std::min(leftmost, x);
+                }
+            }
+        }
+        return leftmost;
+    };
+
+    SUBCASE("left-anchored: guildLabel") {
+        HudState state;
+        state.showHealth = false;
+        state.showCompass = false;
+        state.guildLabel = longLabel;
+        Framebuffer bare(width, height);
+        bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+        Framebuffer dressed(width, height);
+        dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(dressed, state);
+
+        const int rightmost = rightmostInk(bare, dressed);
+        REQUIRE(rightmost >= 0);  // it drew, so the check below is not vacuous
+        INFO("rightmost ink at x=", rightmost, " of width ", width, " (margin ", margin, ")");
+        CHECK(rightmost < width - margin);
+    }
+
+    SUBCASE("right-anchored, bottom band: rivalLabel") {
+        HudState state;
+        state.showHealth = false;
+        state.showCompass = false;
+        state.rivalLabel = longLabel;
+        Framebuffer bare(width, height);
+        bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+        Framebuffer dressed(width, height);
+        dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(dressed, state);
+
+        const int leftmost = leftmostInk(bare, dressed);
+        REQUIRE(leftmost < width);  // it drew, so the check below is not vacuous
+        INFO("leftmost ink at x=", leftmost, " of width ", width, " (margin ", margin, ")");
+        CHECK(leftmost >= margin);
+    }
+
+    SUBCASE("right-anchored, top-right stack: heatLabel") {
+        HudState state;
+        state.showHealth = false;
+        state.showCompass = false;
+        state.heatLabel = longLabel;
+        Framebuffer bare(width, height);
+        bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+        Framebuffer dressed(width, height);
+        dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(dressed, state);
+
+        const int leftmost = leftmostInk(bare, dressed);
+        REQUIRE(leftmost < width);
+        INFO("leftmost ink at x=", leftmost, " of width ", width, " (margin ", margin, ")");
+        CHECK(leftmost >= margin);
+    }
+}
+
 TEST_CASE("the HUD costs a fraction of the frame, and the fraction is pinned") {
     // "I love the vibe of the UI but just be more careful with real estate."
     //
