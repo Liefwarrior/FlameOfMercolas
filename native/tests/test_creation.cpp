@@ -363,11 +363,15 @@ TEST_CASE("DEVIN's customize rows read his real fixed sheet, not a shadow copy")
     const sim::SkillTrack skills = sim::SkillTrack::load(content::contentDir());
     const sim::CompanionTemplate devin = sim::CompanionTemplate::load(content::contentDir(), "devin");
     REQUIRE(devin.loaded());
+    // DEVIN's own file authors no appearanceType (see the dedicated LOOK
+    // test below), so row 1 is still the first skill row for him -- checked
+    // rather than assumed, since a future content edit could add one.
+    REQUIRE_FALSE(devin.appearanceType().has_value());
 
-    std::size_t expectedSkillRows = 0;
+    std::vector<sim::CompanionSkill> expectedSkills;
     for (const sim::CompanionSkill& skill : devin.startingSkills()) {
         if (skills.aptitudeTier(skill.id) != sim::AptitudeTier::Flame) {
-            ++expectedSkillRows;
+            expectedSkills.push_back(skill);
         }
     }
 
@@ -378,14 +382,18 @@ TEST_CASE("DEVIN's customize rows read his real fixed sheet, not a shadow copy")
     const render::DialogueViewState view = flow.view();
     // NAME + one row per authored, non-FLAME skill + one row per attribute +
     // BEGIN.
-    CHECK(view.topics.size() == 1 + expectedSkillRows + sim::kAttributeCount + 1);
+    CHECK(view.topics.size() == 1 + expectedSkills.size() + sim::kAttributeCount + 1);
 
-    // Every skill row (rows 1..expectedSkillRows) names a real level off the
-    // template, never zero-by-omission and never a Chargen designation word.
-    for (std::size_t i = 0; i < expectedSkillRows; ++i) {
+    // Every skill row (rows 1..expectedSkills.size()) names the exact level
+    // his own template set -- a bare number, not "LV N" (which the longest
+    // skill names here, e.g. "Kit-Keeping", clip clean off their column;
+    // caught by actually capturing and looking at the rendered frame, not
+    // assumed) -- and never zero-by-omission, never a Chargen designation
+    // word.
+    for (std::size_t i = 0; i < expectedSkills.size(); ++i) {
         const std::string row = view.topics[1 + i];
         INFO(row);
-        CHECK(row.find("LV ") != std::string::npos);
+        CHECK(row.find("  " + std::to_string(expectedSkills[i].level)) != std::string::npos);
         CHECK(row.find("PRIMARY") == std::string::npos);
         CHECK(row.find("MAJOR") == std::string::npos);
         CHECK(row.find("MINOR") == std::string::npos);

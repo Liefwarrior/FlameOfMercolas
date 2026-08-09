@@ -262,7 +262,8 @@ void print_usage() {
         "                       goes -- the same call C makes\n"
         "  --creation[=STEP]    capture the origin-select/customize flow with\n"
         "                       no window and no world. STEP is origin\n"
-        "                       (default) or customize\n"
+        "                       (default), customize (CUSTOM, a few points\n"
+        "                       spent), devin or gabri (their own fixed sheet)\n"
         "  --settle             run a scripted overlay's open animation to\n"
         "                       completion before the shutter, instead of\n"
         "                       capturing the frame it opened on\n"
@@ -1072,13 +1073,20 @@ const PadRow kPadTable[] = {
 // CreationFlow draws through render::drawDialogue, which is a pure function
 // of a framebuffer and a state struct.
 //
-// "customize" LANDS ON CUSTOM AND SPENDS A REAL FEW POINTS, deliberately not
-// on DEVIN or GABRI (the origin cursor's own default): their sheet is fixed
-// and adjustCustomizeRow is a no-op on it by design (see creation.hpp), so
-// capturing them here would prove nothing LEFT/RIGHT actually did. Three
-// skill rows get one point each so the picture shows real numbers -- PRIMARY
-// 3/3 or similar -- rather than every row reading "Undesignated", the same
-// reason --character's own capture flag spends nothing on an empty sheet.
+// "customize" LANDS ON CUSTOM AND SPENDS A REAL FEW POINTS: their sheet is
+// fixed and adjustCustomizeRow is a no-op on it by design (see
+// creation.hpp), so capturing CUSTOM is the only way to photograph
+// LEFT/RIGHT actually having done something. Three skill rows get one point
+// each so the picture shows real numbers -- PRIMARY 3/3 or similar -- rather
+// than every row reading "Undesignated", the same reason --character's own
+// capture flag spends nothing on an empty sheet.
+//
+// "devin"/"gabri" LAND ON THEIR OWN FIXED SHEET, unspent -- there is nothing
+// to spend. Added while verifying this round's LOOK row: gabri.json's
+// appearanceType is "priest_of_the_flame", whose label ("PRIEST OF THE
+// FLAME") is nineteen glyphs, longer than any CUSTOM skill row this pass
+// checked by looking, and headless was the only way to actually see whether
+// it clips the identical way the skill rows did before this round's fix.
 int run_creation_capture(const Options& options) {
     render::CreationFlow flow(granadad::content::contentDir());
     if (options.creationStep == "customize") {
@@ -1088,8 +1096,13 @@ int run_creation_capture(const Options& options) {
             flow.moveCustomizeCursor(1);
             flow.adjustCustomizeRow(1);
         }
+    } else if (options.creationStep == "devin") {
+        flow.chooseOrigin();
+    } else if (options.creationStep == "gabri") {
+        flow.moveOriginCursor(1);
+        flow.chooseOrigin();
     } else if (options.creationStep != "origin") {
-        std::printf("granadad: --creation wants origin or customize\n");
+        std::printf("granadad: --creation wants origin, customize, devin or gabri\n");
         return 2;
     }
 
