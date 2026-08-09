@@ -550,6 +550,43 @@ TEST_CASE("CUSTOM's LOOK row cycles the real eleven, wrapping both ways") {
     CHECK(flow.appearanceIndex() == count - 1);  // one full ring back to where it started
 }
 
+TEST_CASE("every one of the eleven LOOK labels survives the real eighteen-glyph column") {
+    // THE OTHER THREE the GABRI case above did not catch. "MILITIA WATCH" and
+    // "ANIMAL KEEPER" (thirteen glyphs) and "DISCIPLE OF THE FLAME" (twenty-
+    // one, one glyph longer than PRIEST's own) all ran over the same room
+    // PRIEST OF THE FLAME did, and CUSTOM's cycling LOOK row is the one place
+    // this build ever prints them -- GABRI is pinned to PRIEST and nothing
+    // authors a companion fixed to any of the other three. Same claim as the
+    // DEVIN/GABRI case above (topicRowsFor + clipLabel, not a substring
+    // check), walked over every option appearanceOptions() has instead of
+    // just the one CUSTOM happens to start on.
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(2);  // CUSTOM
+    flow.chooseOrigin();
+    flow.moveCustomizeCursor(1);  // row 1: LOOK
+
+    const int count = static_cast<int>(sim::appearanceOptions().size());
+    for (int i = 0; i < count; ++i) {
+        const std::string label = flow.view().topics[1];
+        INFO("option ", i, ": ", label);
+        for (const int height : {180, 360}) {
+            const int width = height * 16 / 9;
+            const int scale = std::max(1, height / 180);
+            const int margin = 5 * scale;
+            const int glyphAdvance = 5 * scale;
+            const int columnWidth = (width - 2 * margin) / render::kTopicColumns;
+            const int room = std::max(1, columnWidth / glyphAdvance - 2);
+            // The row this build actually draws carries a row number ahead
+            // of the label, exactly as topicRowsFor composes every topic --
+            // see the DEVIN/GABRI case above for why that prefix has to be
+            // part of what is measured.
+            const std::string onScreen = "2 " + label;
+            CHECK(render::clipLabel(onScreen, static_cast<std::size_t>(room)) == onScreen);
+        }
+        flow.adjustCustomizeRow(1);
+    }
+}
+
 TEST_CASE("GABRI's LOOK row shows his own fixed appearance and refuses to move") {
     render::CreationFlow flow = fresh();
     flow.moveOriginCursor(1);  // GABRI
