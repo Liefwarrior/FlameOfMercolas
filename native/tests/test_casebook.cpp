@@ -546,3 +546,220 @@ TEST_CASE("a casebook row fits the column it is drawn in") {
         CHECK(lead.brief.back() != '.');
     }
 }
+
+// ===========================================================================
+// TASK #82: THE JOURNAL -- DATED, AND CROSS-REFERENCED
+// ===========================================================================
+
+TEST_CASE("openedBy answers the reverse of opens, and the trail's own convergence shows in it") {
+    const CasebookRaws& file = raws();
+    const std::int32_t start = file.indexOf("mission-backroom");
+    REQUIRE(start >= 0);
+    // THE LEAD THAT STARTS THE CASE HAS NO OPENER.
+    CHECK(file.openedBy(start).empty());
+
+    // EVERY OTHER LEAD'S OPENERS ARE EXACTLY THE LEADS WHOSE OWN `opens`
+    // NAME IT -- walked the other direction off the identical arrays the
+    // RAWS test above already proves are internally consistent.
+    for (std::size_t i = 0; i < file.leads().size(); ++i) {
+        for (const std::int32_t opener : file.openedBy(static_cast<std::int32_t>(i))) {
+            const Lead& parent = file.leads()[static_cast<std::size_t>(opener)];
+            INFO("lead " << file.leads()[i].id << " claims opener " << parent.id);
+            CHECK(std::find(parent.opens.begin(), parent.opens.end(), file.leads()[i].id) !=
+                  parent.opens.end());
+        }
+    }
+
+    // THE CONVERGENCE ITSELF: four separate leads all point at the Drowned
+    // Hold -- the file header's own claim, made checkable -- and openedBy is
+    // the one place in this build that can say so back.
+    const std::int32_t hold = file.indexOf("drowned-hold");
+    REQUIRE(hold >= 0);
+    CHECK(file.openedBy(hold).size() == 4);
+}
+
+TEST_CASE("a lead's dateline is stamped once, when it goes in the book, and never moves again") {
+    Casebook notes;
+    notes.begin(raws(), 100);
+    const std::int32_t start = notes.nextOpen();
+    REQUIRE(start >= 0);
+    // THE START LEAD IS DATED AT begin()'s OWN CLOCK.
+    CHECK(notes.heardAt(start) == 100);
+    // A LEAD NOT YET IN THE BOOK HAS NO DATE.
+    const std::int32_t farAway = raws().indexOf("drowned-hold");
+    REQUIRE(farAway >= 0);
+    CHECK(notes.heardAt(farAway) == -1);
+
+    const Lead& lead = raws().leads()[static_cast<std::size_t>(start)];
+    const LookResult saw = notes.look(lead.site.x, lead.site.y, lead.site.band, 500);
+    REQUIRE(saw.found);
+    REQUIRE(saw.opened > 0);
+    // EVERYTHING IT OPENED IS DATED AT THE MOMENT IT WAS OPENED -- 500, not
+    // 100 and not 0.
+    for (const std::string& id : lead.opens) {
+        const std::int32_t opened = raws().indexOf(id);
+        REQUIRE(opened >= 0);
+        CHECK(notes.heardAt(opened) == 500);
+    }
+
+    // AND RE-READING THE START LEAD DOES NOT MOVE ITS OWN DATE. A detective's
+    // log dates the day the note was written, not the day it is reread --
+    // see heardAt()'s own comment.
+    (void)notes.look(lead.site.x, lead.site.y, lead.site.band, 999);
+    CHECK(notes.heardAt(start) == 100);
+}
+
+TEST_CASE("the casebook's own dateline names when a lead was heard, and what pointed to it") {
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 8 * 3600;
+    render::Session session(config);
+    session.stepMany(MoveInput{}, 2);
+
+    // Q reads the start lead, which opens three more.
+    session.examine();
+    session.toggleCasebook();
+    REQUIRE(session.casebookOpen());
+    session.chooseVisibleTopic(0);
+    const render::DialogueViewState first = session.dialogueView();
+    INFO(first.caseRef);
+    // DATED, in the "DAY N HH:MM" shape -- 8AM on the first day.
+    CHECK(first.caseRef.substr(0, 4) == "DAY ");
+    CHECK(first.caseRef.find("DAY 1 08:") != std::string::npos);
+    // THE START LEAD HAS NO OPENER, and says so rather than leaving a blank.
+    CHECK(first.caseRef.find("THE CASE OPENED HERE") != std::string::npos);
+    // AND IT SAYS WHAT IT OPENED, since reading it followed something.
+    CHECK(first.caseRef.find("OPENED ") != std::string::npos);
+
+    // A LEAD IT OPENED NAMES IT BACK AS ITS OWN "FROM".
+    REQUIRE(session.dialogueView().topics.size() > 1);
+    session.chooseVisibleTopic(1);
+    const render::DialogueViewState second = session.dialogueView();
+    INFO(second.caseRef);
+    CHECK(second.caseRef.find("FROM ") != std::string::npos);
+    CHECK(second.caseRef.find("THE BODY") != std::string::npos);
+}
+
+// ===========================================================================
+// TASK #82: THE LETTERS -- READ, ONCE EARNED
+// ===========================================================================
+
+TEST_CASE("the letters wait on the lead that reveals them, and speak in the writer's own name once it is") {
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 8 * 3600;
+    render::Session session(config);
+    session.stepMany(MoveInput{}, 2);
+
+    // NOTHING TO READ YET. The page opens to an honest empty list rather
+    // than refusing, exactly the way the casebook itself does before
+    // anything has been heard.
+    session.toggleLetters();
+    REQUIRE(session.lettersOpen());
+    CHECK(session.dialogueView().topics.empty());
+    session.toggleLetters();
+    REQUIRE_FALSE(session.lettersOpen());
+
+    // WALK THE MISSION CLUSTER, through the simulation directly, until
+    // mission-flagstones has actually been READ -- the same pattern every
+    // other PLAY case in this file uses.
+    const std::vector<Lead>& leads = raws().leads();
+    const std::int32_t flagstones = raws().indexOf("mission-flagstones");
+    REQUIRE(flagstones >= 0);
+    int rounds = 0;
+    while (session.casebook().state(flagstones) == LeadState::Unheard &&
+           session.casebook().nextOpen() >= 0 &&
+           rounds <= static_cast<int>(leads.size())) {
+        const std::int32_t at = session.casebook().nextOpen();
+        const Lead& lead = leads[static_cast<std::size_t>(at)];
+        (void)session.casebook().look(lead.site.x, lead.site.y, lead.site.band);
+        ++rounds;
+    }
+    if (session.casebook().state(flagstones) == LeadState::Open) {
+        const Lead& lead = leads[static_cast<std::size_t>(flagstones)];
+        (void)session.casebook().look(lead.site.x, lead.site.y, lead.site.band);
+    }
+    REQUIRE(session.casebook().state(flagstones) != LeadState::Unheard);
+    REQUIRE(session.casebook().state(flagstones) != LeadState::Open);
+
+    // AND NOW THE CASEBOOK ITSELF POINTS AT THEM.
+    session.toggleCasebook();
+    session.chooseVisibleTopic(1);
+    CHECK(session.dialogueView().caseRef.find("L READS HIS LETTERS") != std::string::npos);
+    session.toggleCasebook();
+
+    session.toggleLetters();
+    REQUIRE(session.lettersOpen());
+    const render::DialogueViewState list = session.dialogueView();
+    // MAELL'S THREE, told apart -- see dialogueView()'s own ordinal-labelling
+    // note on why a shared name is not enough on its own.
+    REQUIRE(list.topics.size() >= 3);
+    int numbered = 0;
+    for (const std::string& title : list.topics) {
+        if (title.find('/') != std::string::npos) {
+            ++numbered;
+        }
+    }
+    CHECK(numbered == static_cast<int>(list.topics.size()));
+
+    session.chooseVisibleTopic(0);
+    const render::DialogueViewState read = session.dialogueView();
+    CHECK(read.letter);
+    CHECK_FALSE(read.speaker.empty());
+    CHECK_FALSE(read.letterLines.empty());
+    // THE WHOLE LETTER IS THERE TO PAGE THROUGH, not clipped to one screen's
+    // worth -- see dialogue_view.cpp's own wrapping and paging.
+    CHECK(read.letterLines.size() > 1);
+
+    // ESC STEPS BACK TO THE LIST FIRST, not out of the page outright.
+    session.closeConversation();
+    CHECK(session.lettersOpen());
+    CHECK(session.dialogueView().topics.size() == list.topics.size());
+    // AND A SECOND ESC ACTUALLY CLOSES IT.
+    session.closeConversation();
+    CHECK_FALSE(session.lettersOpen());
+}
+
+TEST_CASE("a letter opens in the conversation's own bands and leaves the middle alone") {
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 8 * 3600;
+    render::Session session(config);
+    session.stepMany(MoveInput{}, 2);
+
+    const std::vector<Lead>& leads = raws().leads();
+    int rounds = 0;
+    while (session.casebook().nextOpen() >= 0 &&
+           rounds <= static_cast<int>(leads.size()) && !session.casebook().closed()) {
+        const std::int32_t at = session.casebook().nextOpen();
+        const Lead& lead = leads[static_cast<std::size_t>(at)];
+        (void)session.casebook().look(lead.site.x, lead.site.y, lead.site.band);
+        ++rounds;
+    }
+    // BY NOW THE WHOLE TRAIL IS READ, so every letter in the file has its
+    // lead investigated -- proof this frame is of an actual document, not
+    // of the empty title list.
+    session.toggleLetters();
+    REQUIRE(session.lettersOpen());
+    REQUIRE_FALSE(session.dialogueView().topics.empty());
+    session.chooseVisibleTopic(0);
+    REQUIRE(session.dialogueView().letter);
+
+    // SAME PROOF THE CASEBOOK'S OWN TEST MAKES: draw with the page up and
+    // with it down, and require the exclusion rectangle to be pixel-
+    // identical. The parchment palette is a different colour, not a
+    // different rule.
+    render::Framebuffer withLetter(config.width, config.height);
+    session.drawFrame(withLetter);
+    session.toggleLetters();
+    REQUIRE_FALSE(session.lettersOpen());
+    render::Framebuffer without(config.width, config.height);
+    session.drawFrame(without);
+    const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
+    for (int y = centre.y0; y < centre.y1; ++y) {
+        for (int x = centre.x0; x < centre.x1; ++x) {
+            REQUIRE(withLetter.pixels()[withLetter.index(x, y)] ==
+                    without.pixels()[without.index(x, y)]);
+        }
+    }
+}

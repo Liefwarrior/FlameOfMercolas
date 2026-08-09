@@ -39,6 +39,7 @@
 #include "granadad/sim/compound.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/legend.hpp"
+#include "granadad/sim/letters.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/tavern.hpp"
@@ -266,6 +267,22 @@ public:
     /// "LEGEND CUTPURSE  6 RUNGS", or empty at rung zero across the board.
     [[nodiscard]] std::string legendLine() const;
 
+    /// TASK #82. L. Opens and closes the letters a lead has unlocked.
+    ///
+    /// AN EIGHTH PAGE ON THE SAME SURFACE, for the exact reason a sixth and
+    /// seventh (characterOpen_, mapOpen_) already were: "reads through
+    /// caseCursor_/casePage_, the same pair the casebook and the keys page
+    /// already share -- a third read-only list that is never open at the
+    /// same time as the other two" is characterOpen_'s own comment, and this
+    /// is the same claim made a fourth time. content/raws/quests/
+    /// bloodletter_letters.json is the authored file (sim/letters.hpp);
+    /// unlockedLetters() decides which of it the player has actually earned,
+    /// off the casebook lead each one is tied to -- nothing here has a
+    /// "read" flag of its own to fall out of sync with the book that gates
+    /// it.
+    void toggleLetters();
+    [[nodiscard]] bool lettersOpen() const noexcept { return lettersOpen_; }
+
     /// F1. The keys, IN THE GAME, where a player who has forgotten one can
     /// find it without alt-tabbing to a README.
     ///
@@ -386,6 +403,34 @@ public:
     /// and the purse currently say -- one row a line, built fresh from the same
     /// counters the HUD's corner rows read.
     [[nodiscard]] std::vector<std::string> characterRows() const;
+
+    // --- #82: the district map ------------------------------------------------
+    //
+    // DAGGERFALL'S OWN TRAVEL MAP, SCALED TO ONE DISTRICT. There is no
+    // cross-country fast travel to draw a screen for -- the whole game is the
+    // Docks -- so what a Wielder needs here is not a map of the WORLD, it is a
+    // map of the INVESTIGATION: the ground the trail has put a name to, the
+    // leads still waiting on a look, and who among the named will actually
+    // talk. All three are read out of state the game already keeps
+    // (Casebook, NotableRegistry, FactionRegistry); nothing new is persisted
+    // and nothing here is hashed, for the identical reason characterRows()
+    // is not -- see that method's own note.
+    //
+    // SAME SURFACE, SAME REASON EVERY OTHER PAGE IS. One list widget, proved
+    // once by the casebook and the character sheet; a seventh reason to draw
+    // it in the middle of the screen would be a seventh way to break the HUD
+    // rule the Java build broke once already.
+    //
+    // READ-ONLY, LIKE THE KEYS PAGE AND THE CHARACTER SHEET -- unlike the
+    // casebook, nothing on this page is a choice to make, only ground to
+    // read, so a number press moves the cursor and nothing else.
+    void toggleMap();
+    [[nodiscard]] bool mapOpen() const noexcept { return mapOpen_; }
+    /// Known ground, then open leads (each with a bearing and a range from
+    /// where the player is standing), then who will talk -- see the .cpp for
+    /// why each section is built from what Casebook already knows and no new
+    /// state.
+    [[nodiscard]] std::vector<std::string> mapRows() const;
 
     /// A STANDING JUMP. Half a metre, and it gets you onto nothing -- see
     /// sim::PlayerBody::jump. Bound to space, which is where a jump goes.
@@ -589,6 +634,19 @@ private:
     /// Puts the casebook and the key list down. Every verb that acts on the
     /// world calls it first.
     void dismissOverlays() noexcept;
+    /// TASK #82. Every letter whose `lead` (sim::Letter::lead, a
+    /// casebook.json lead id) has actually been investigated -- Cold or
+    /// Followed, never merely Open -- in authored order. What the letters
+    /// page lists, and what the letters navigation bounds the cursor
+    /// against.
+    [[nodiscard]] std::vector<std::int32_t> unlockedLetters() const;
+    /// TASK #82. The casebook's own clock, in the unit Casebook::heardAt and
+    /// Casebook::look/hear/begin all take: seconds since midnight on the day
+    /// the session started PLUS every simulated second since. Two calls
+    /// apart in wall-clock time but made on the same movement step read the
+    /// same value, which is the whole point -- a dateline is a fact about
+    /// the SIMULATED moment, not about how long a player paused there.
+    [[nodiscard]] std::int64_t caseNowSeconds() const noexcept;
     /// Runs the ward's day forward to the tavern's calendar. Called after every
     /// step and after every jump of the clock -- see the note on the definition
     /// for why the ward could not previously see a slept night.
@@ -603,19 +661,20 @@ private:
     // --- task #83: panel and prompt easing -----------------------------------
     //
     // ONE WIDGET, ONE ANIMATION. dialogueView() already draws the
-    // conversation, the casebook, the keys page, options, the pause menu and
-    // the character sheet through the identical DialogueViewState -- see that
-    // struct's own header -- so the one moment any of the six is open or
-    // closed is the one moment this build has a "panel" at all, and one
-    // EasedToggle is what every one of them eases through.
-    /// True while ANY of the six pages the panel widget draws is up. The one
+    // conversation, the casebook, the keys page, options, the pause menu, the
+    // character sheet, (#82) the district map and (#82) the letters through
+    // the identical DialogueViewState -- see that struct's own header -- so
+    // the one moment any of the eight is open or closed is the one moment
+    // this build has a "panel" at all, and one EasedToggle is what every one
+    // of them eases through.
+    /// True while ANY of the eight pages the panel widget draws is up. The one
     /// formula drawFrame() and syncPanelAnim() both read, so the two can never
     /// quietly disagree about what "conversing" means.
     [[nodiscard]] bool conversingNow() const noexcept;
     /// Re-reads conversingNow() and pushes it at panelAnim_, and re-reads
     /// whatever the HUD's alert would currently be showing and pushes THAT at
     /// alertAnim_. Called at the end of every verb that can open or close one
-    /// of the six pages or start or clear a message, so the very first frame
+    /// of the eight pages or start or clear a message, so the very first frame
     /// drawn after a keypress already carries visible motion rather than
     /// waiting for the next step() to catch up -- see EasedToggle::setTarget's
     /// own note on why opening from rest is never exactly zero.
@@ -689,6 +748,14 @@ private:
     sim::CasebookRaws caseRaws_;
     sim::Casebook casebook_;
     bool casebookOpen_ = false;
+    /// TASK #82. The authored letters, and whether the page reading them is
+    /// up. No per-letter "has this been read" flag lives here: a letter's
+    /// visibility is DERIVED, every call, off whether the casebook lead it
+    /// is tied to has actually been investigated -- see unlockedLetters().
+    /// That is one less thing to hash and one less thing that could disagree
+    /// with the book that gates it.
+    sim::LetterRaws letterRaws_;
+    bool lettersOpen_ = false;
     bool keysOpen_ = false;
     bool firstRun_ = true;
     int caseCursor_ = 0;
@@ -714,6 +781,10 @@ private:
     /// the casebook and the keys page already share -- a third read-only list
     /// that is never open at the same time as the other two.
     bool characterOpen_ = false;
+    /// #82. The district map. A fourth read-only list sharing the same
+    /// caseCursor_/casePage_ pair, and never open alongside any of the other
+    /// five overlay pages -- see toggleMap().
+    bool mapOpen_ = false;
 
     /// Task #83. The panel widget's own open/close ease -- see
     /// conversingNow()/syncPanelAnim() -- and the HUD alert row's fade in and
@@ -795,6 +866,11 @@ struct SmokeRunConfig {
     /// this environment cannot drive a real window, so without a flag the
     /// page could be unit-tested for its text but never actually LOOKED AT.
     bool character = false;
+    /// VERIFICATION (#82). Opens the district map before the shutter goes --
+    /// the same call `M` makes. The identical reason `character` exists: no
+    /// flag here means the page could be unit-tested for its rows and never
+    /// actually looked at.
+    bool map = false;
     /// VERIFICATION. Every scripted overlay above (`pause`, `character`, and
     /// the panel any conversation opens) toggles on the LAST beat of the
     /// script, with no session.step() left to call afterward -- so every
@@ -850,7 +926,9 @@ struct SmokeRunConfig {
     ///
     /// `trailEnd` is where the shutter goes: notes (the casebook open over the
     /// last place), keys (the in-game controls page), mission, weighhouse or
-    /// hold (stop after that lead), or empty for the whole walk.
+    /// hold (stop after that lead), letters (TASK #82: stop after
+    /// mission-flagstones and open the first of Maell's letters), or empty
+    /// for the whole walk.
     bool trail = false;
     std::string trailEnd;
     /// Run the Priest of the Flame line end to end and capture wherever it

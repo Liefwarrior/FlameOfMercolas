@@ -92,6 +92,16 @@ enum class Action : std::uint8_t {
     QuickNext,
     QuickPrev,
     Screenshot,
+    /// #82. THE DISTRICT MAP: known ground, open leads and who will talk to
+    /// you, each reckoned from where the player is standing right now. ON THE
+    /// END, per this enum's own rule above -- an insertion in the middle
+    /// silently rebinds somebody's saved controls -- rather than beside
+    /// Character, where it reads.
+    Map,
+    /// #82. THE LETTERS: authored documents a lead has unlocked, read on
+    /// their own parchment-toned page. ON THE END for the identical reason
+    /// Map is.
+    Letters,
     Count
 };
 

@@ -398,6 +398,14 @@ if(GRANADAD_BUILD_TESTS)
         # casebook and the keys page already prove, and drawn from counters
         # that were being computed and thrown away every frame before it.
         tests/test_character.cpp
+        # #82 -- THE DISTRICT MAP. Daggerfall's own travel map, scaled to one
+        # district: known ground, open leads (each with a bearing and a range
+        # from where the player is standing) and who among the named will
+        # actually talk -- all three read off the same Casebook state the
+        # casebook itself reads, growing by the identical act (hearing a
+        # lead), on the same read-only reference-list surface the keys page
+        # and the character sheet already prove.
+        tests/test_map.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.

@@ -157,6 +157,21 @@ public:
     /// The band label for a dread score.
     [[nodiscard]] std::string_view dreadLabel(std::int32_t dread) const noexcept;
 
+    /// TASK #82. EVERY LEAD WHOSE `opens` NAMES THIS ONE, in authored order.
+    /// The cross-reference a detective's log actually keeps: not just what a
+    /// clue told you, but what told you TO IT. Empty for the lead that starts
+    /// the case, and more than one entry long for a lead the trail CONVERGES
+    /// on -- the Drowned Hold is named by four separate leads, which is what
+    /// corroboration is, and a log that only ever showed the first of the four
+    /// would be a log that hid the shape of its own case.
+    ///
+    /// Pure function of the raws: this asks nothing about which leads the
+    /// PLAYER has actually read, because it is answering "what does the file
+    /// say opens this", not "what has this player found" -- the same
+    /// separation `opens` itself already keeps. A caller that wants only
+    /// leads the player has heard of filters by Casebook::state.
+    [[nodiscard]] std::vector<std::int32_t> openedBy(std::int32_t leadIndex) const;
+
 private:
     std::vector<Lead> leads_;
     std::vector<DreadBand> dread_;
@@ -185,12 +200,31 @@ class Casebook {
 public:
     Casebook() = default;
     /// Binds to a set of raws and opens whichever lead is marked `start`.
-    void begin(const CasebookRaws& raws);
+    ///
+    /// `nowSeconds` is the moment this happened, in the same simulated-second
+    /// clock every other call below takes -- see heardAt()'s own comment for
+    /// what it is for. Defaulted to 0 so every caller written before task #82
+    /// still compiles and still gets a Casebook that works exactly as it
+    /// always did; the only thing a caller that never heard of this misses is
+    /// a correct dateline on the one row it starts with.
+    void begin(const CasebookRaws& raws, std::int64_t nowSeconds = 0);
 
     [[nodiscard]] bool active() const noexcept { return raws_ != nullptr; }
     [[nodiscard]] const CasebookRaws* raws() const noexcept { return raws_; }
 
     [[nodiscard]] LeadState state(std::int32_t lead) const noexcept;
+    /// TASK #82. THE MOMENT THIS LEAD WENT IN THE BOOK, in simulated seconds
+    /// since the session's own clock started counting -- the same unit
+    /// Session::elapsedSeconds() reports, so a caller who also has the
+    /// session's `config().timeOfDay` can turn this into a day and an hour.
+    /// -1 for a lead that is still Unheard.
+    ///
+    /// NOT WALL-CLOCK AND NOT A GUESS: it is the argument `look`/`hear` were
+    /// called with, stamped once, on the one movement step the state actually
+    /// flipped -- which is why a second look at an already-read site (see
+    /// `look`'s own note on re-reading) never moves it. A detective's log
+    /// dates the day the note was WRITTEN, not the day it is reread.
+    [[nodiscard]] std::int64_t heardAt(std::int32_t lead) const noexcept;
     /// Every lead the player has heard of, in authored order. This is what the
     /// casebook surface lists and it is never sorted at draw time -- two runs
     /// that disagreed about the order of a menu would be two different games.
@@ -211,12 +245,17 @@ public:
     /// LOOK AT WHAT IS HERE. The one verb. Answers what a body standing at
     /// (tileX, tileY, band) can see, opens whatever that opens, and never rolls
     /// anything.
-    [[nodiscard]] LookResult look(std::int32_t tileX, std::int32_t tileY, std::int32_t band);
+    ///
+    /// `nowSeconds` stamps heardAt() for this lead and for every lead this one
+    /// opens -- see that accessor. Defaulted to 0 for the reason begin()'s
+    /// default is: every pre-#82 caller still compiles unchanged.
+    [[nodiscard]] LookResult look(std::int32_t tileX, std::int32_t tileY, std::int32_t band,
+                                  std::int64_t nowSeconds = 0);
 
     /// Puts a lead in the book without looking at it -- what a clue's `opens`
     /// list does, exposed because the questline layer will want it too. Returns
     /// true when the lead was not already known.
-    bool hear(std::int32_t lead);
+    bool hear(std::int32_t lead, std::int64_t nowSeconds = 0);
 
     void hashInto(HashSink& sink) const;
 
@@ -226,6 +265,9 @@ private:
     /// there is nothing here whose iteration order could differ between two
     /// machines -- see the ban in ARCHITECTURE.md.
     std::vector<std::uint8_t> state_;
+    /// TASK #82. One entry per lead, parallel to `state_` and -1 until the
+    /// matching entry there leaves Unheard. See heardAt()'s own comment.
+    std::vector<std::int64_t> heardAt_;
     std::int32_t dread_ = 0;
     bool closed_ = false;
 };

@@ -66,6 +66,8 @@ constexpr ActionNames kActions[] = {
     {Action::QuickNext, "quick_next", "NEXT"},
     {Action::QuickPrev, "quick_prev", "PREV"},
     {Action::Screenshot, "screenshot", "SCREENSHOT"},
+    {Action::Map, "map", "DISTRICT MAP"},
+    {Action::Letters, "letters", "LETTERS"},
 };
 static_assert(sizeof(kActions) / sizeof(kActions[0]) == kActionCount,
               "every action needs a name and a label, or the keys page lies");
@@ -357,6 +359,8 @@ ControlSettings ControlSettings::defaults() noexcept {
     set(Action::Menu, Key::Escape, Key::PadStart);
     set(Action::Options, Key::F2);
     set(Action::Character, Key::C);
+    set(Action::Map, Key::M);
+    set(Action::Letters, Key::L);
 
     set(Action::QuickSlot1, Key::Num1);
     set(Action::QuickSlot2, Key::Num2);

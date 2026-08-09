@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <utility>
 
 namespace granadad::render {
 
@@ -17,6 +18,21 @@ constexpr Rgb kSpeechInk{0.88F, 0.86F, 0.80F};
 constexpr Rgb kTopicInk{0.66F, 0.68F, 0.66F};
 constexpr Rgb kTopicPicked{0.98F, 0.86F, 0.42F};
 constexpr Rgb kHaggleInk{0.90F, 0.76F, 0.42F};
+/// TASK #82. THE ONE ROW THAT SAYS "THIS IS A CASEBOOK ENTRY, NOT A LEAD ON
+/// THE LIST" -- muted, the same register the epithet already reads at,
+/// because a dateline is reference material read deliberately and not the
+/// thing the eye should land on first.
+constexpr Rgb kCaseRefInk{0.58F, 0.56F, 0.48F};
+/// TASK #82. THE PARCHMENT PALETTE. Warm and dim rather than inverted to a
+/// bright page -- this build's whole HUD is dark panels and light ink read
+/// by what reads as lamplight, and a letter is a page held up to that same
+/// lamp, not a sheet lit from behind. Warmer and richer than the ordinary
+/// panel's near-black and the ordinary edge's neutral bronze, so the switch
+/// from "menu" to "document" is a colour a player feels before they read a
+/// word -- the same job attitudeInk already does for standing.
+constexpr Rgb kParchmentPanel{0.16F, 0.11F, 0.06F};
+constexpr Rgb kParchmentEdge{0.62F, 0.46F, 0.22F};
+constexpr Rgb kParchmentInk{0.86F, 0.74F, 0.52F};
 
 /// Attitude colouring. The one place standing is a COLOUR and not a word: you
 /// should be able to tell across a room, without reading, that the man behind
@@ -287,9 +303,13 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         }
     }
     const int detailRows = detail.empty() ? 0 : 1;
+    // TASK #82. THE CASEBOOK'S OWN DATELINE, under the detail row and after
+    // it in the priority order -- see DialogueViewState::caseRef's own
+    // comment on why this is a fourth row rather than folded into `line`.
+    const int caseRefRows = state.caseRef.empty() ? 0 : 1;
     const int topHeight =
         std::min(centre.y0 - scale, margin + rowStep * (1 + static_cast<int>(speech.size()) +
-                                                        alertRows + detailRows));
+                                                        alertRows + detailRows + caseRefRows));
     target.fillRect(0, 0, target.width(), topHeight, kPanel, 0.82F * fade);
     target.fillRect(0, topHeight, target.width(), scale, kEdge, 0.55F * fade);
 
@@ -397,6 +417,19 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
                      scale);
         }
     }
+    if (caseRefRows > 0) {
+        // TASK #82. Last in the priority order and drawn like `alert` is:
+        // clipped and marked rather than wrapped and silently shortened, and
+        // dropped outright -- never garbled -- on the rare frame that has no
+        // room left for it, exactly as `alert` and `detail` already are.
+        const int y = margin +
+                      rowStep * (static_cast<int>(speech.size()) + alertRows + detailRows + 1);
+        if (y + 6 * scale <= topHeight) {
+            drawText(target, margin, y,
+                     clipToWidth(state.caseRef, target.width() - 2 * margin, scale), kCaseRefInk,
+                     0.86F, scale);
+        }
+    }
 
     // ---- the bottom band: what you can say --------------------------------
     //
@@ -419,11 +452,17 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     const int rows = std::clamp((static_cast<int>(printed.size()) + kTopicColumns - 1) /
                                     kTopicColumns,
                                 1, maxRows);
-    const int bottomTop = (state.haggling || state.forging)
+    const int bottomTop = (state.haggling || state.forging || state.letter)
                               ? deepest
                               : target.height() - 2 * scale - rows * rowStep;
-    target.fillRect(0, bottomTop, target.width(), target.height() - bottomTop, kPanel, 0.82F * fade);
-    target.fillRect(0, bottomTop - scale, target.width(), scale, kEdge, 0.55F * fade);
+    // TASK #82. THE PARCHMENT SWITCH. A letter gets the warm palette in place
+    // of the ordinary dark one; every other page -- including the casebook
+    // list a letter is reached FROM -- keeps the panel it always had.
+    const Rgb bandPanel = state.letter ? kParchmentPanel : kPanel;
+    const Rgb bandEdge = state.letter ? kParchmentEdge : kEdge;
+    target.fillRect(0, bottomTop, target.width(), target.height() - bottomTop, bandPanel,
+                    0.86F * fade);
+    target.fillRect(0, bottomTop - scale, target.width(), scale, bandEdge, 0.65F * fade);
 
     if (state.haggling) {
         // The counter, not the topic list: what they want, what you are about
@@ -483,6 +522,50 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
                 : state.forgeProblem;
         drawText(target, margin, target.height() - margin - 2 * scale, foot,
                  state.forgeProblem.empty() ? kTopicInk : kHaggleInk, 0.88F, scale);
+        return;
+    }
+
+    if (state.letter) {
+        // WRAP EVERY PARAGRAPH TO THE ROW'S ACTUAL WIDTH, and PAGE across
+        // screens when the whole letter does not fit on one -- see
+        // DialogueViewState::letterLines' own header on why this happens
+        // here and not in Session. A blank entry in `letterLines` is a
+        // paragraph break, not an empty row to skip: `wrapText` on an empty
+        // string returns nothing, which would otherwise silently swallow
+        // the gap between salutation and body.
+        const std::size_t columns = static_cast<std::size_t>(
+            std::max(8, (target.width() - 2 * margin) / glyphAdvance));
+        std::vector<std::string> allLines;
+        for (const std::string& paragraph : state.letterLines) {
+            if (paragraph.empty()) {
+                allLines.emplace_back();
+                continue;
+            }
+            for (std::string& row : wrapText(paragraph, columns)) {
+                allLines.push_back(std::move(row));
+            }
+        }
+        // ONE FOOT ROW RESERVED, ALWAYS, so the page indicator (or the close
+        // hint, on a letter short enough to need none) never has to fight a
+        // body row for the same pixels.
+        const int footY = target.height() - margin - 2 * scale;
+        const int rowsAvail =
+            std::max(1, (footY - (bottomTop + scale) - scale) / rowStep);
+        const int pages =
+            std::max(1, (static_cast<int>(allLines.size()) + rowsAvail - 1) / rowsAvail);
+        const int page = std::clamp(state.page, 0, pages - 1);
+        const std::size_t first =
+            static_cast<std::size_t>(page) * static_cast<std::size_t>(rowsAvail);
+        for (std::size_t i = first;
+             i < allLines.size() && i < first + static_cast<std::size_t>(rowsAvail); ++i) {
+            const int y = bottomTop + scale + rowStep * static_cast<int>(i - first);
+            drawText(target, margin, y, allLines[i], kParchmentInk, 0.92F, scale);
+        }
+        const std::string foot =
+            pages > 1 ? "0 MORE (" + std::to_string(page + 1) + "/" + std::to_string(pages) +
+                            ")   ESC BACK   L PUTS IT DOWN"
+                      : std::string("ESC BACK   L PUTS IT DOWN");
+        drawText(target, margin, footY, foot, kParchmentInk, 0.62F, scale);
         return;
     }
 

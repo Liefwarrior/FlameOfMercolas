@@ -125,6 +125,51 @@ struct DialogueViewState {
     int patience = 0;
     std::string goods;
 
+    // --- TASK #82: the journal's dateline, and the letter -------------------
+
+    /// ONE LINE: a casebook entry's dateline and cross-reference -- "DAY 2
+    /// 20:14  FROM THE BODY  OPENED THE OUTFALL, THE LEDGER". Empty draws
+    /// nothing, which is every page but the casebook and every casebook
+    /// screen but a picked entry.
+    ///
+    /// A SEPARATE ROW, DELIBERATELY, RATHER THAN FOLDED INTO `line`. `line`
+    /// is wrapped and, when it asks for more room than the top band has, the
+    /// TAIL IS SILENTLY DROPPED -- see the comment over `speech.resize` in
+    /// dialogue_view.cpp, an accepted tradeoff for a widget reused by six
+    /// different pages. A lead's own found/detail text already runs close to
+    /// that ceiling on its own (the Drowned Hold's paragraph is the longest
+    /// sentence in the game), so a dateline appended to it would be the
+    /// first thing silently cut -- data quietly missing, which is exactly
+    /// the class of bug the "no shitty English anywhere" bar exists to
+    /// catch. This row is sized and clipped the way `alert` and the topic
+    /// detail line already are: it MARKS a cut, and never drops one in
+    /// silence.
+    std::string caseRef;
+
+    /// TASK #82. A LETTER IS A DOCUMENT, NOT A MENU: an authored page in
+    /// somebody else's hand, addressed and signed, read in full -- not a
+    /// wrapped sentence competing with the top band's own two-row ceiling.
+    /// When true, the bottom band stops being a topic grid (same switch
+    /// `haggling`/`forging` already make) and becomes a parchment-toned
+    /// panel instead of the ordinary dark one -- the "parchment-style
+    /// panel" out of this engine's own pixel-ink vocabulary, since nothing
+    /// in this renderer has a texture to borrow one from.
+    bool letter = false;
+    /// ONE ENTRY A PARAGRAPH, RAW. Unlike a topic label (short, authored to
+    /// fit its column -- casebook.hpp's own `brief` field states that rule
+    /// outright) a letter's body is PROSE, of a length nobody chose with a
+    /// pixel budget in mind, so it is wrapped and PAGED at draw time instead
+    /// -- the same wrapText this widget already runs the top band's speech
+    /// through, reapplied here because Session has no window size to wrap
+    /// against and a caller that pre-decided where every sentence breaks at
+    /// every resolution would be the "picks badly" case casebook.hpp warns
+    /// against, aimed at prose instead of a proper noun. `cursor`/`page`
+    /// mean something different while this is true: `page` selects which
+    /// screen of the WRAPPED, FLATTENED body is showing rather than a page
+    /// of `topics`, which a letter does not use for anything but the title
+    /// list a caller reads before one is picked.
+    std::vector<std::string> letterLines;
+
     // --- the workbench ------------------------------------------------------
     bool forging = false;
     /// The bench's five fields, already worded by the simulation. The view

@@ -12,6 +12,7 @@
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
+#include "granadad/sim/stealth.hpp"
 
 namespace granadad::render {
 
@@ -150,6 +151,37 @@ const char* const kLockRows[] = {
     "LOCK: ESC  OUT",
 };
 
+/// TASK #82. "DAY 2 08:14" out of a Casebook::heardAt() value -- the
+/// dateline a detective's log actually carries. NEGATIVE (never yet heard)
+/// prints nothing rather than "DAY 0 00:00", which would read as a real
+/// timestamp for an entry that has none.
+///
+/// DAY ONE, NOT DAY ZERO. sim::kSecondsPerDay divides the count exactly the
+/// way the ward's own compound.cpp already does; +1 is the one translation
+/// from a zero-based count to the ordinal a player reads ("the first day"),
+/// applied here and nowhere inside the simulation, which never counts days
+/// at all -- see Casebook::heardAt's own comment on why the raw value is
+/// deliberately not day-and-hour already.
+[[nodiscard]] std::string formatCaseDay(std::int64_t heardAtSeconds) {
+    if (heardAtSeconds < 0) {
+        return {};
+    }
+    const std::int64_t day = heardAtSeconds / sim::kSecondsPerDay + 1;
+    const int hour = static_cast<int>((heardAtSeconds / 3600) % 24);
+    const int minute = static_cast<int>((heardAtSeconds / 60) % 60);
+    std::string out = "DAY " + std::to_string(day) + " ";
+    if (hour < 10) {
+        out += '0';
+    }
+    out += std::to_string(hour);
+    out += ':';
+    if (minute < 10) {
+        out += '0';
+    }
+    out += std::to_string(minute);
+    return out;
+}
+
 }  // namespace
 
 Session::Session(const SessionConfig& config)
@@ -204,7 +236,16 @@ Session::Session(const SessionConfig& config)
     // leaves an empty trail rather than refusing to boot, which is the contract
     // every raws loader in this build honours.
     caseRaws_ = sim::CasebookRaws::load(config_.contentDir);
-    casebook_.begin(caseRaws_);
+    // TASK #82. `caseNowSeconds()` needs timeOfDay_ set, which the block above
+    // already did, so begin() is stamped with the game's real starting hour
+    // rather than the 0-default every pre-#82 caller still gets for free.
+    casebook_.begin(caseRaws_, caseNowSeconds());
+    // TASK #82. THE LETTERS. A second, independent raws loader -- see
+    // sim/letters.hpp's own header on why a second file rather than a second
+    // schema bolted onto casebook.json. No `begin()` here: a Letter carries
+    // no state of its own, so there is nothing to bind besides the raws
+    // themselves, which unlockedLetters() reads straight off casebook_.
+    letterRaws_ = sim::LetterRaws::load(config_.contentDir);
     // THE FIRST RUN OPENS ON THE HOOK.
     //
     // Every sprint before this one dropped the player onto the Tarwalk facing a
@@ -460,6 +501,17 @@ sim::Legend Session::legend() const {
                          casebook_);
 }
 
+std::int64_t Session::caseNowSeconds() const noexcept {
+    // TASK #82. THE STARTING HOUR PLUS EVERYTHING SIMULATED SINCE. timeOfDay_
+    // wraps at kSecondsPerDay (see the constructor and skipToHour), so this is
+    // NOT itself a day-and-hour pair -- it is a strictly increasing count a
+    // caller turns into one, exactly the way elapsedSeconds() already is one
+    // ingredient of `DAY N` today. Session never wraps this back down: two
+    // moments a day apart have to compare as a day apart, which a wrapped
+    // value could not do.
+    return static_cast<std::int64_t>(config_.timeOfDay) + elapsedSeconds_;
+}
+
 void Session::examine() {
     if (talking() || picking()) {
         return;
@@ -482,7 +534,8 @@ void Session::examine() {
     const std::int32_t tileX = body_->tileX();
     const std::int32_t tileY = body_->tileY();
     const std::int32_t band = body_->band();
-    sim::LookResult saw = casebook_.look(tileX, tileY, band);
+    const std::int64_t now = caseNowSeconds();
+    sim::LookResult saw = casebook_.look(tileX, tileY, band, now);
     if (!saw.found && saw.lead < 0 && reach > sim::kLookRangeTiles) {
         // Nothing within the base reach. Walk outward one ring at a time up to
         // the bonus, standing the look at each offset -- integer, bounded, and
@@ -492,7 +545,7 @@ void Session::examine() {
             const std::int32_t offsets[4][2] = {
                 {ring, 0}, {-ring, 0}, {0, ring}, {0, -ring}};
             for (const auto& offset : offsets) {
-                saw = casebook_.look(tileX + offset[0], tileY + offset[1], band);
+                saw = casebook_.look(tileX + offset[0], tileY + offset[1], band, now);
                 if (saw.lead >= 0) {
                     break;
                 }
@@ -522,6 +575,8 @@ void Session::dismissOverlays() noexcept {
     pauseOpen_ = false;
     quitArmed_ = false;
     characterOpen_ = false;
+    mapOpen_ = false;
+    lettersOpen_ = false;
     // TASK #83. Ten call sites deep (climb, dropDown, steal, toggleCrouch,
     // lift, setCrouched, jump, interact, punch, restHere) and every one of
     // them can be the thing that closes a panel a player left open. One call
@@ -629,6 +684,8 @@ void Session::toggleOptions() {
         pauseOpen_ = false;
         quitArmed_ = false;
         characterOpen_ = false;
+        mapOpen_ = false;
+        lettersOpen_ = false;
     }
     awaitingKey_ = false;
     firstRun_ = false;
@@ -725,6 +782,8 @@ void Session::togglePause() {
     optionsOpen_ = false;
     awaitingKey_ = false;
     characterOpen_ = false;
+    mapOpen_ = false;
+    lettersOpen_ = false;
     pauseOpen_ = willOpen;
     pauseCursor_ = 0;
     quitArmed_ = false;
@@ -842,6 +901,8 @@ void Session::toggleKeys() {
         pauseOpen_ = false;
         quitArmed_ = false;
         characterOpen_ = false;
+        mapOpen_ = false;
+        lettersOpen_ = false;
         awaitingKey_ = false;
     }
     firstRun_ = false;
@@ -860,6 +921,8 @@ void Session::toggleCasebook() {
     pauseOpen_ = false;
     quitArmed_ = false;
     characterOpen_ = false;
+    mapOpen_ = false;
+    lettersOpen_ = false;
     awaitingKey_ = false;
     firstRun_ = false;
     casebookOpen_ = !casebookOpen_;
@@ -880,11 +943,87 @@ void Session::toggleCharacter() {
     quitArmed_ = false;
     awaitingKey_ = false;
     firstRun_ = false;
+    mapOpen_ = false;
+    lettersOpen_ = false;
     characterOpen_ = !characterOpen_;
     caseCursor_ = 0;
     casePage_ = 0;
     caseEntry_ = -1;
     syncPanelAnim();
+}
+
+void Session::toggleMap() {
+    // #82. THE DISTRICT MAP. Same exclusivity every overlay page enforces --
+    // see toggleOptions' own comment on why an overlay that opens without
+    // putting the others down is how a page draws on screen while a
+    // different one is still the one reading the keyboard.
+    if (talking() || picking()) {
+        return;
+    }
+    casebookOpen_ = false;
+    keysOpen_ = false;
+    optionsOpen_ = false;
+    pauseOpen_ = false;
+    quitArmed_ = false;
+    characterOpen_ = false;
+    lettersOpen_ = false;
+    awaitingKey_ = false;
+    firstRun_ = false;
+    mapOpen_ = !mapOpen_;
+    caseCursor_ = 0;
+    casePage_ = 0;
+    caseEntry_ = -1;
+    syncPanelAnim();
+}
+
+void Session::toggleLetters() {
+    // TASK #82. THE LETTERS. Same exclusivity every overlay page enforces --
+    // see toggleOptions' own comment on why an overlay that opens without
+    // putting the others down is how a page draws on screen while a
+    // different one is still the one reading the keyboard. Opening with
+    // nothing unlocked yet is not refused -- the page simply lists nothing,
+    // the same honest-empty-list behaviour the casebook itself gives a
+    // player who has not heard of anything yet.
+    if (talking() || picking()) {
+        return;
+    }
+    casebookOpen_ = false;
+    keysOpen_ = false;
+    optionsOpen_ = false;
+    pauseOpen_ = false;
+    quitArmed_ = false;
+    characterOpen_ = false;
+    mapOpen_ = false;
+    awaitingKey_ = false;
+    firstRun_ = false;
+    lettersOpen_ = !lettersOpen_;
+    caseCursor_ = 0;
+    casePage_ = 0;
+    caseEntry_ = -1;
+    syncPanelAnim();
+}
+
+std::vector<std::int32_t> Session::unlockedLetters() const {
+    std::vector<std::int32_t> out;
+    // A LETTER'S GATE IS THE SAME GATE ITS LEAD ALREADY HAS -- Cold or
+    // Followed, never merely Open. An Open lead is a name in the book with
+    // nobody standing over it yet; the sentence that says a letter exists at
+    // all ("he wrote three unanswered letters...") is inside the lead's OWN
+    // `detail` text, which the player has not read until the state has moved
+    // past Open. Showing the letter earlier would hand over a document
+    // before the game has told the player it exists.
+    for (std::size_t i = 0; i < letterRaws_.letters().size(); ++i) {
+        const sim::Letter& letter = letterRaws_.letters()[i];
+        const std::int32_t lead = caseRaws_.indexOf(letter.lead);
+        if (lead < 0) {
+            continue;
+        }
+        const sim::LeadState state = casebook_.state(lead);
+        if (state == sim::LeadState::Cold || state == sim::LeadState::Followed) {
+            out.push_back(static_cast<std::int32_t>(i));
+        }
+    }
+    return out;
 }
 
 bool Session::picking() const noexcept { return tavern_->picking().open(); }
@@ -1216,6 +1355,40 @@ void Session::moveTopicCursor(int delta) {
         casePage_ = caseCursor_ / kTopicPageSize;
         return;
     }
+    if (mapOpen_) {
+        // THE SAME KEYS, THE SAME PAGING, THE SAME BAND -- see toggleMap.
+        const int count = static_cast<int>(mapRows().size());
+        if (count <= 0) {
+            caseCursor_ = 0;
+            casePage_ = 0;
+            return;
+        }
+        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
+        casePage_ = caseCursor_ / kTopicPageSize;
+        return;
+    }
+    if (lettersOpen_) {
+        if (caseEntry_ >= 0) {
+            // AN OPEN LETTER HAS NO CURSOR TO MOVE -- casePage_ is doing a
+            // different job here (which page of the BODY is showing; see
+            // nextTopicPage's own lettersOpen_ branch), and letting this
+            // fall through to the arithmetic below would reset it to 0 on
+            // every arrow-key press, which reads as the letter jumping back
+            // to its own first page for no reason a player pressed.
+            return;
+        }
+        // TASK #82. THE SAME KEYS, THE SAME PAGING, THE SAME BAND -- see
+        // toggleLetters.
+        const int count = static_cast<int>(unlockedLetters().size());
+        if (count <= 0) {
+            caseCursor_ = 0;
+            casePage_ = 0;
+            return;
+        }
+        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
+        casePage_ = caseCursor_ / kTopicPageSize;
+        return;
+    }
     if (casebookOpen_) {
         // THE SAME KEYS, THE SAME PAGING, THE SAME BAND. The casebook is a
         // conversation with your own notes -- see Session::toggleCasebook on
@@ -1271,6 +1444,38 @@ void Session::nextTopicPage() {
         }
         casePage_ = (casePage_ + 1) % pages;
         caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
+        return;
+    }
+    if (mapOpen_) {
+        const std::size_t rows = mapRows().size();
+        const int pages = topicPageCount(rows);
+        if (pages <= 1) {
+            return;
+        }
+        casePage_ = (casePage_ + 1) % pages;
+        caseCursor_ = std::min(static_cast<int>(rows) - 1, casePage_ * kTopicPageSize);
+        return;
+    }
+    if (lettersOpen_) {
+        if (caseEntry_ >= 0) {
+            // PAGING THROUGH THE OPEN LETTER'S OWN BODY, not the title list
+            // -- casePage_ changes meaning the instant a letter is picked.
+            // drawDialogue works out the true page count off the actual
+            // wrapped rows at the real frame width (Session has no window
+            // size to wrap against) and CLAMPS state.page into range every
+            // frame, so incrementing past the end here is never observable:
+            // the render simply keeps showing the last page until this
+            // resets on the next letter or the next `L`.
+            ++casePage_;
+            return;
+        }
+        const std::size_t entries = unlockedLetters().size();
+        const int pages = topicPageCount(entries);
+        if (pages <= 1) {
+            return;
+        }
+        casePage_ = (casePage_ + 1) % pages;
+        caseCursor_ = std::min(static_cast<int>(entries) - 1, casePage_ * kTopicPageSize);
         return;
     }
     if (casebookOpen_) {
@@ -1341,6 +1546,37 @@ void Session::chooseVisibleTopic(int slot) {
         }
         return;
     }
+    if (mapOpen_) {
+        // A ROW ON THIS PAGE IS SOMETHING TO READ, not a choice -- the
+        // identical no-op the character sheet and the keys page give a
+        // number press.
+        const int index = casePage_ * kTopicPageSize + slot;
+        if (index < static_cast<int>(mapRows().size())) {
+            caseCursor_ = index;
+        }
+        return;
+    }
+    if (lettersOpen_) {
+        if (caseEntry_ >= 0) {
+            // THE TITLE GRID IS NOT ON SCREEN WHILE A LETTER IS OPEN -- see
+            // DialogueViewState::letter's own note -- so a number press here
+            // has nothing on screen to have picked. ESC (closeConversation)
+            // is what steps back to the list.
+            return;
+        }
+        // TASK #82. A ROW HERE IS A CHOICE, THE SAME WAY A LEAD IS ON THE
+        // CASEBOOK'S OWN PAGE -- picking a title opens the letter under it in
+        // the top band. Still pure UI: nothing in the simulation moves when
+        // a letter is opened, exactly as reading a casebook entry does not.
+        const int index = casePage_ * kTopicPageSize + slot;
+        if (index >= static_cast<int>(unlockedLetters().size())) {
+            return;
+        }
+        caseCursor_ = index;
+        caseEntry_ = index;
+        casePage_ = 0;
+        return;
+    }
     if (casebookOpen_) {
         const int index = casePage_ * kTopicPageSize + slot;
         if (index >= static_cast<int>(casebook_.known().size())) {
@@ -1370,6 +1606,18 @@ void Session::chooseTopic(std::size_t index) {
         if (index < casebook_.known().size()) {
             caseCursor_ = static_cast<int>(index);
             caseEntry_ = static_cast<int>(index);
+        }
+        return;
+    }
+    if (lettersOpen_) {
+        // TASK #82. Opening a letter is exactly as pure-UI as opening a
+        // casebook entry -- see that branch's own note. A no-op while a
+        // letter is already open, for the identical reason
+        // chooseVisibleTopic's own lettersOpen_ branch gives.
+        if (caseEntry_ < 0 && index < unlockedLetters().size()) {
+            caseCursor_ = static_cast<int>(index);
+            caseEntry_ = static_cast<int>(index);
+            casePage_ = 0;
         }
         return;
     }
@@ -1459,6 +1707,30 @@ void Session::closeConversation() {
     }
     if (characterOpen_) {
         characterOpen_ = false;
+        caseCursor_ = 0;
+        casePage_ = 0;
+        syncPanelAnim();
+        return;
+    }
+    if (mapOpen_) {
+        mapOpen_ = false;
+        caseCursor_ = 0;
+        casePage_ = 0;
+        syncPanelAnim();
+        return;
+    }
+    if (lettersOpen_) {
+        if (caseEntry_ >= 0) {
+            // STEP BACK TO THE TITLE LIST FIRST. Same shape as
+            // awaitingKey_'s own ESC handling on the options page: a page
+            // reached by drilling in gives you one press back to where you
+            // were, not straight out to the game.
+            caseEntry_ = -1;
+            casePage_ = 0;
+            syncPanelAnim();
+            return;
+        }
+        lettersOpen_ = false;
         caseCursor_ = 0;
         casePage_ = 0;
         syncPanelAnim();
@@ -1658,6 +1930,100 @@ DialogueViewState Session::dialogueView() const {
         view.page = casePage_;
         return view;
     }
+    if (mapOpen_) {
+        // #82. THE DISTRICT MAP, DRAWN IN THE CONVERSATION'S OWN SURFACE, for
+        // the identical reason the casebook and the character sheet are: the
+        // HUD rule leaves the centre of the screen clear, and this is one
+        // more list on the widget that already proves it rather than a
+        // seventh way to break the rule.
+        view.open = true;
+        view.speaker = "THE CHART";
+        // WHERE YOU ARE, right where a map's own "you are here" would go.
+        view.epithet = placeLabel();
+        view.line =
+            "KNOWN GROUND, OPEN LEADS AND WHO WILL TALK, RECKONED FROM WHERE YOU STAND. M "
+            "PUTS THIS DOWN.";
+        for (const std::string& row : mapRows()) {
+            view.topics.push_back(row);
+        }
+        view.cursor = caseCursor_;
+        view.page = casePage_;
+        return view;
+    }
+    if (lettersOpen_) {
+        // TASK #82. A LETTER, DRAWN AS A DOCUMENT INSTEAD OF A CONVERSATION.
+        // Same surface, same reason every other page uses it -- the HUD
+        // rule leaves the centre clear -- but the BOTTOM band switches to
+        // the parchment palette and pages through the body as wrapped prose
+        // instead of a topic grid; see DialogueViewState::letter's own
+        // header and dialogue_view.cpp's drawing code.
+        view.open = true;
+        const std::vector<std::int32_t> unlocked = unlockedLetters();
+        if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < unlocked.size()) {
+            const sim::Letter& read =
+                letterRaws_.letters()[static_cast<std::size_t>(unlocked[static_cast<std::size_t>(
+                    caseEntry_)])];
+            view.speaker = read.from.empty() ? std::string("A LETTER") : read.from;
+            view.line = "A LETTER, READ IN FULL BELOW.";
+            view.letter = true;
+            // ONE ENTRY A PARAGRAPH, RAW -- see DialogueViewState::letterLines'
+            // own header on why WRAPPING happens at draw time rather than
+            // here: Session has no window size to wrap prose against, and a
+            // machine that pre-decided where a sentence breaks at every
+            // resolution is the exact "picks badly" case casebook.hpp's own
+            // `brief` field warns about for a proper noun -- prose gets to
+            // wrap for real.
+            if (!read.to.empty()) {
+                view.letterLines.push_back("TO " + read.to);
+            }
+            if (!read.dateline.empty()) {
+                view.letterLines.push_back(read.dateline);
+            }
+            if (!read.salutation.empty()) {
+                view.letterLines.push_back(read.salutation);
+            }
+            for (const std::string& paragraph : read.body) {
+                view.letterLines.push_back(paragraph);
+            }
+            if (!read.closing.empty()) {
+                view.letterLines.push_back(read.closing);
+            }
+            if (!read.signature.empty()) {
+                view.letterLines.push_back("- " + read.signature);
+            }
+        } else {
+            view.speaker = "THE LETTERS";
+            view.epithet = "READ, NOT RECEIVED";
+            view.line = unlocked.empty()
+                            ? "NOBODY HAS HANDED YOU ANYTHING WORTH KEEPING YET."
+                            : "A DOCUMENT SOMEBODY ELSE WROTE. PICK ONE TO READ IT WHOLE.";
+        }
+        for (const std::int32_t index : unlocked) {
+            const sim::Letter& letter = letterRaws_.letters()[static_cast<std::size_t>(index)];
+            // MAELL'S THREE SHARE ONE NAME, so the title list numbers them
+            // against every OTHER letter tied to the same lead rather than
+            // showing "FATHER MAELL" three times over with no way to tell
+            // which press opens which.
+            std::int32_t total = 0;
+            std::int32_t position = 0;
+            for (std::size_t i = 0; i < letterRaws_.letters().size(); ++i) {
+                if (letterRaws_.letters()[i].lead == letter.lead) {
+                    ++total;
+                    if (static_cast<std::int32_t>(i) == index) {
+                        position = total;
+                    }
+                }
+            }
+            std::string label = letter.from.empty() ? std::string("A LETTER") : letter.from;
+            if (total > 1) {
+                label += " " + std::to_string(position) + "/" + std::to_string(total);
+            }
+            view.topics.push_back(label);
+        }
+        view.cursor = caseCursor_;
+        view.page = casePage_;
+        return view;
+    }
     if (optionsOpen_) {
         view.open = true;
         view.speaker = "OPTIONS";
@@ -1692,14 +2058,61 @@ DialogueViewState Session::dialogueView() const {
         const std::vector<std::int32_t> heard = casebook_.known();
         const sim::Legend book = legend();
         if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < heard.size()) {
-            const sim::Lead& lead =
-                caseRaws_.leads()[static_cast<std::size_t>(heard[static_cast<std::size_t>(
-                    caseEntry_)])];
-            const sim::LeadState what =
-                casebook_.state(heard[static_cast<std::size_t>(caseEntry_)]);
+            const std::int32_t leadIndex = heard[static_cast<std::size_t>(caseEntry_)];
+            const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(leadIndex)];
+            const sim::LeadState what = casebook_.state(leadIndex);
             view.line = what == sim::LeadState::Open
                             ? lead.place + ". " + lead.what + "."
                             : lead.found + " " + lead.detail;
+            // TASK #82. THE DATELINE, AND THE CROSS-REFERENCE -- what a
+            // detective's log keeps that a bare topic list does not: when
+            // this went in the book, what told you to come here, and (once
+            // followed) what it put in the book next. See
+            // DialogueViewState::caseRef's own header on why this is a
+            // separate row rather than folded into `line`.
+            std::string ref = formatCaseDay(casebook_.heardAt(leadIndex));
+            const std::vector<std::int32_t> from = caseRaws_.openedBy(leadIndex);
+            if (from.empty()) {
+                // THE ONE LEAD WITH NO OPENER. Not blank: a log that omits
+                // the start of its own case reads as missing a page, not as
+                // having none to show.
+                ref += "  THE CASE OPENED HERE";
+            } else {
+                ref += "  FROM ";
+                for (std::size_t i = 0; i < from.size(); ++i) {
+                    if (i > 0) {
+                        ref += ", ";
+                    }
+                    const sim::Lead& opener = caseRaws_.leads()[static_cast<std::size_t>(from[i])];
+                    ref += opener.brief.empty() ? opener.place : opener.brief;
+                }
+            }
+            if (what == sim::LeadState::Followed && !lead.opens.empty()) {
+                ref += "  OPENED ";
+                for (std::size_t i = 0; i < lead.opens.size(); ++i) {
+                    if (i > 0) {
+                        ref += ", ";
+                    }
+                    const std::int32_t opened = caseRaws_.indexOf(lead.opens[i]);
+                    if (opened >= 0) {
+                        const sim::Lead& next = caseRaws_.leads()[static_cast<std::size_t>(opened)];
+                        ref += next.brief.empty() ? next.place : next.brief;
+                    }
+                }
+            } else if (what == sim::LeadState::Cold) {
+                ref += "  DEAD END";
+            }
+            // A HINT AT THE LETTERS, when this exact lead unlocked one. The
+            // player has already earned the right to read it -- see
+            // unlockedLetters() -- so the casebook says where to press
+            // rather than making them discover the key by accident.
+            for (const std::int32_t li : unlockedLetters()) {
+                if (letterRaws_.letters()[static_cast<std::size_t>(li)].lead == lead.id) {
+                    ref += "  L READS HIS LETTERS";
+                    break;
+                }
+            }
+            view.caseRef = ref;
         } else if (casebook_.readCount() == 0) {
             // THE OPENING PAGE OF A NEW GAME: the hook, and nothing else. It is
             // the first thing a player ever reads in this game and it gets the
@@ -2073,6 +2486,60 @@ namespace {
     return text;
 }
 
+// --- #82: the district map --------------------------------------------------
+
+/// The job-family prefix content/raws/factions/factions.json's own
+/// memberJobs speaks, for a notable's authored TYPE
+/// (content/raws/names/notables.json). Four of the Forty's seven authored
+/// types have no family at all here, and that is not a gap this table failed
+/// to cover: a wastrel answers to nobody, which is factions.json's own
+/// documented rule ("wastrel.streetlife ... deliberately unaffiliated"), and
+/// the same silence is the honest answer for anything else this build has
+/// not met yet.
+[[nodiscard]] std::string_view notableJobFamily(std::string_view type) noexcept {
+    if (type == "shopkeeper") {
+        return "trade";
+    }
+    if (type == "militia_watch") {
+        return "watch";
+    }
+    if (type == "priest_of_the_flame" || type == "disciple_of_the_flame") {
+        return "clergy";
+    }
+    if (type == "serf") {
+        return "serf";
+    }
+    if (type == "animal_keeper") {
+        return "husbandry";
+    }
+    return {};
+}
+
+/// "NW 31T", or "HERE" standing on it -- the eight-point word and the
+/// straight-line tile range from one point to another. This is the whole
+/// reason the district map exists over the casebook's own list: a lead there
+/// is a NAME; here it is a DIRECTION from where the player is actually
+/// standing.
+///
+/// INTEGER THROUGHOUT, deliberately. sim::bearingTo is the identical call
+/// PlayerBody's own stealth arc is judged by (sim/stealth.hpp) -- not a fresh
+/// trig call invented for a menu -- and the range is Chebyshev, the tile
+/// count a body that can step diagonally actually walks to close it, not a
+/// ruler laid across the map.
+[[nodiscard]] std::string bearingLabel(std::int32_t fromX, std::int32_t fromY, std::int32_t toX,
+                                       std::int32_t toY) {
+    const std::int32_t dx = toX - fromX;
+    const std::int32_t dy = toY - fromY;
+    if (dx == 0 && dy == 0) {
+        return "HERE";
+    }
+    const std::int32_t ax = dx < 0 ? -dx : dx;
+    const std::int32_t ay = dy < 0 ? -dy : dy;
+    const std::int32_t tiles = ax > ay ? ax : ay;
+    return std::string(sim::compass_point(sim::bearingTo(fromX, fromY, toX, toY))) + " " +
+           std::to_string(tiles) + "T";
+}
+
 }  // namespace
 
 std::vector<SpriteInstance> Session::wardSprites() const {
@@ -2277,6 +2744,80 @@ std::vector<std::string> Session::characterRows() const {
     return rows;
 }
 
+std::vector<std::string> Session::mapRows() const {
+    // THREE SECTIONS, EACH BUILT FROM WHAT THE CASEBOOK ALREADY KNOWS -- see
+    // toggleMap's own header on why nothing here is new state. All three grow
+    // by the identical act: hearing a lead. There is no separate "have you
+    // been here" or "have you met them" flag to invent, forget to update, or
+    // let drift from the trail itself.
+    std::vector<std::string> rows;
+    if (!casebook_.active()) {
+        return rows;
+    }
+    const std::vector<std::int32_t> heard = casebook_.known();
+    const std::int32_t px = body_->tileX();
+    const std::int32_t py = body_->tileY();
+
+    // -- known ground: the named places a heard lead has put in the book,
+    // once each, in the order they were first heard of. The casebook's own
+    // `place` field, authored, never derived -- these are the district's
+    // named sites and the street table (docks::kPlaces) only knows the
+    // streets between them.
+    std::vector<std::string_view> places;
+    for (const std::int32_t index : heard) {
+        const std::string_view place = caseRaws_.leads()[static_cast<std::size_t>(index)].place;
+        if (std::find(places.begin(), places.end(), place) == places.end()) {
+            places.push_back(place);
+        }
+    }
+    for (const std::string_view place : places) {
+        // "- ", not "@ " -- the 4x6 font carries no glyph for '@' (hud.cpp's
+        // own table), and a hole punched through a place name by a symbol
+        // nobody chose to support is exactly the class of bug the standing
+        // quality bar exists to catch. See test_map.cpp's own copy case.
+        rows.push_back("- " + std::string(place));
+    }
+
+    // -- open leads: heard, not yet looked at, each with a bearing from HERE.
+    // The one thing this page has that the casebook's own list does not: the
+    // casebook prints WHAT you have heard, unplaced; this prints WHERE it is
+    // from where you are standing right now.
+    for (const std::int32_t index : heard) {
+        if (casebook_.state(index) != sim::LeadState::Open) {
+            continue;
+        }
+        const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
+        rows.push_back(bearingLabel(px, py, lead.site.x, lead.site.y) + "  " +
+                       (lead.brief.empty() ? lead.place : lead.brief));
+    }
+
+    // -- who will talk: every named person a heard lead has pointed you at,
+    // once each, who actually answers to somebody -- a wastrel answers to
+    // nobody, which is factions.json's own rule (see notableJobFamily) and
+    // not a gap in this list.
+    const sim::NotableRegistry& notables = tavern_->dialogue().notables();
+    const sim::FactionRegistry& factions = tavern_->dialogue().factions();
+    std::vector<std::string_view> named;
+    for (const std::int32_t index : heard) {
+        const std::string_view who = caseRaws_.leads()[static_cast<std::size_t>(index)].who;
+        if (who.empty() || std::find(named.begin(), named.end(), who) != named.end()) {
+            continue;
+        }
+        named.push_back(who);
+        const sim::Notable* notable = notables.find(who);
+        if (notable == nullptr) {
+            continue;
+        }
+        const sim::Faction* faction =
+            factions.at(factions.factionForJobPrefix(notableJobFamily(notable->type)));
+        if (faction == nullptr) {
+            continue;
+        }
+        rows.push_back("! " + notable->name + "  " + upperAscii(faction->id));
+    }
+    return rows;
+}
+
 std::string Session::heatLine() const {
     const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
     const sim::Stash& sack = crimes.stash();
@@ -2312,7 +2853,7 @@ bool Session::conversingNow() const noexcept {
     // nothing catching them when a seventh page joined the list and only one
     // of the two remembered to add it.
     return talking() || casebookOpen_ || keysOpen_ || optionsOpen_ || pauseOpen_ ||
-           characterOpen_;
+           characterOpen_ || mapOpen_ || lettersOpen_;
 }
 
 void Session::syncPanelAnim() noexcept {
@@ -3609,6 +4150,13 @@ std::int32_t gTrailUnreached = 0;
         if (ending == "mission" && lead.id == "mission-backroom") {
             break;
         }
+        // TASK #82. `letters` needs the SECOND Mission lead read, not the
+        // first -- mission-flagstones' own detail is the sentence that says
+        // Maell's letters exist at all (see unlockedLetters()'s own note),
+        // and mission-backroom alone leaves them still Open, not Followed.
+        if (ending == "letters" && lead.id == "mission-flagstones") {
+            break;
+        }
         if (ending == "weighhouse" && lead.id == "weighhouse-ledger") {
             break;
         }
@@ -3621,6 +4169,14 @@ std::int32_t gTrailUnreached = 0;
         session.toggleCasebook();
     } else if (ending == "keys") {
         session.toggleKeys();
+    } else if (ending == "letters") {
+        // TASK #82. THE LETTERS THEMSELVES, not the place they were earned
+        // at -- proving the panel exists is the point of this ending, and a
+        // frame of the flagstones says nothing about whether a page reads.
+        session.toggleLetters();
+        // Picks the first one, so the capture shows an actual document
+        // rather than only the title list a player sees before choosing.
+        session.chooseVisibleTopic(0);
     } else if (last >= 0) {
         // STAND BACK, THEN LOOK AT IT. The anchors are counters, flagstones and
         // sagging floors, so a body that has walked onto one is standing with
@@ -4238,6 +4794,13 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.toggleCharacter();
         result.scriptedWanted += 1;
         result.scriptedLanded += session.characterOpen() ? 1 : 0;
+    }
+
+    if (config.map) {
+        // THE SAME CALL `M` MAKES -- see SmokeRunConfig::map's own header.
+        session.toggleMap();
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.mapOpen() ? 1 : 0;
     }
 
     if (config.street) {

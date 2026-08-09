@@ -156,6 +156,23 @@ std::int32_t CasebookRaws::indexOf(std::string_view id) const noexcept {
     return -1;
 }
 
+std::vector<std::int32_t> CasebookRaws::openedBy(std::int32_t leadIndex) const {
+    std::vector<std::int32_t> out;
+    if (leadIndex < 0 || static_cast<std::size_t>(leadIndex) >= leads_.size()) {
+        return out;
+    }
+    const std::string& id = leads_[static_cast<std::size_t>(leadIndex)].id;
+    for (std::size_t i = 0; i < leads_.size(); ++i) {
+        for (const std::string& opened : leads_[i].opens) {
+            if (opened == id) {
+                out.push_back(static_cast<std::int32_t>(i));
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 std::string_view CasebookRaws::dreadLabel(std::int32_t dread) const noexcept {
     std::string_view label;
     for (const DreadBand& band : dread_) {
@@ -170,14 +187,16 @@ std::string_view CasebookRaws::dreadLabel(std::int32_t dread) const noexcept {
 // the notes
 // ---------------------------------------------------------------------------
 
-void Casebook::begin(const CasebookRaws& raws) {
+void Casebook::begin(const CasebookRaws& raws, std::int64_t nowSeconds) {
     raws_ = &raws;
     state_.assign(raws.leads().size(), static_cast<std::uint8_t>(LeadState::Unheard));
+    heardAt_.assign(raws.leads().size(), -1);
     dread_ = 0;
     closed_ = false;
     for (std::size_t i = 0; i < raws.leads().size(); ++i) {
         if (raws.leads()[i].start) {
             state_[i] = static_cast<std::uint8_t>(LeadState::Open);
+            heardAt_[i] = nowSeconds;
         }
     }
 }
@@ -187,6 +206,13 @@ LeadState Casebook::state(std::int32_t lead) const noexcept {
         return LeadState::Unheard;
     }
     return static_cast<LeadState>(state_[static_cast<std::size_t>(lead)]);
+}
+
+std::int64_t Casebook::heardAt(std::int32_t lead) const noexcept {
+    if (lead < 0 || static_cast<std::size_t>(lead) >= heardAt_.size()) {
+        return -1;
+    }
+    return heardAt_[static_cast<std::size_t>(lead)];
 }
 
 std::vector<std::int32_t> Casebook::known() const {
@@ -229,7 +255,7 @@ std::int32_t Casebook::nextOpen() const noexcept {
     return -1;
 }
 
-bool Casebook::hear(std::int32_t lead) {
+bool Casebook::hear(std::int32_t lead, std::int64_t nowSeconds) {
     if (lead < 0 || static_cast<std::size_t>(lead) >= state_.size()) {
         return false;
     }
@@ -237,10 +263,12 @@ bool Casebook::hear(std::int32_t lead) {
         return false;
     }
     state_[static_cast<std::size_t>(lead)] = static_cast<std::uint8_t>(LeadState::Open);
+    heardAt_[static_cast<std::size_t>(lead)] = nowSeconds;
     return true;
 }
 
-LookResult Casebook::look(std::int32_t tileX, std::int32_t tileY, std::int32_t band) {
+LookResult Casebook::look(std::int32_t tileX, std::int32_t tileY, std::int32_t band,
+                          std::int64_t nowSeconds) {
     LookResult out;
     if (raws_ == nullptr) {
         out.line = "NOTHING HERE WORTH WRITING DOWN.";
@@ -300,7 +328,7 @@ LookResult Casebook::look(std::int32_t tileX, std::int32_t tileY, std::int32_t b
     out.line = lead.found;
     dread_ = std::min<std::int32_t>(100, dread_ + std::max<std::int32_t>(0, lead.dread));
     for (const std::string& id : lead.opens) {
-        if (hear(raws_->indexOf(id))) {
+        if (hear(raws_->indexOf(id), nowSeconds)) {
             ++out.opened;
         }
     }
@@ -323,6 +351,15 @@ void Casebook::hashInto(HashSink& sink) const {
     sink.put_int(static_cast<std::uint32_t>(state_.size()));
     for (const std::uint8_t one : state_) {
         sink.put_byte(one);
+    }
+    // TASK #82. The dateline goes in the hash too, and for the same reason
+    // every other field here does: two runs given the same inputs have to
+    // agree about it, and folding it in is how a divergence in WHEN a lead
+    // was recorded -- not just whether -- would actually be caught rather
+    // than trusted.
+    sink.put_int(static_cast<std::uint32_t>(heardAt_.size()));
+    for (const std::int64_t at : heardAt_) {
+        sink.put_long(static_cast<std::uint64_t>(at));
     }
     sink.put_int(static_cast<std::uint32_t>(dread_));
     sink.put_byte(closed_ ? 1U : 0U);

@@ -260,6 +260,8 @@ void print_usage() {
         "                       on QUIT with the first of its two presses in)\n"
         "  --character          open the character sheet before the shutter\n"
         "                       goes -- the same call C makes\n"
+        "  --map                open the district map before the shutter goes\n"
+        "                       -- the same call M makes\n"
         "  --creation[=STEP]    capture the origin-select/customize flow with\n"
         "                       no window and no world. STEP is origin\n"
         "                       (default), customize (CUSTOM, a few points\n"
@@ -313,8 +315,10 @@ void print_usage() {
         "                       behind the doors of a warehouse that has been\n"
         "                       condemned for nine years. WHERE is notes (the\n"
         "                       casebook open), start (the opening page of a\n"
-        "                       new game), mission, weighhouse, hold, or keys\n"
-        "                       (the in-game controls page)\n"
+        "                       new game), mission, weighhouse, hold, letters\n"
+        "                       (Maell's own letters, opened after his second\n"
+        "                       lead is read), or keys (the in-game controls\n"
+        "                       page)\n"
         "  --nohud              draw the world and NOTHING over it -- no HUD,\n"
         "                       no conversation surface, no build stamp. It is\n"
         "                       a ruler: capture a scene twice, once with it\n"
@@ -449,6 +453,9 @@ void print_usage() {
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--character") == 0) {
             options.smoke.character = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--map") == 0) {
+            options.smoke.map = true;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--creation") == 0) {
             options.wantsCreation = true;
@@ -787,7 +794,8 @@ void print_usage() {
         return false;
     }
 
-    if (session.casebookOpen() || session.keysOpen() || session.characterOpen()) {
+    if (session.casebookOpen() || session.keysOpen() || session.characterOpen() ||
+        session.mapOpen() || session.lettersOpen()) {
         if (up) {
             session.moveTopicCursor(-1);
             return true;
@@ -1448,6 +1456,12 @@ int run_client(const Options& options) {
                 case render::Action::Character:
                     session.toggleCharacter();
                     return;
+                case render::Action::Map:
+                    session.toggleMap();
+                    return;
+                case render::Action::Letters:
+                    session.toggleLetters();
+                    return;
                 case render::Action::Crouch:
                     crouch.press(stepClock);
                     session.setCrouched(crouch.active());
@@ -1482,7 +1496,7 @@ int run_client(const Options& options) {
                     // what opens, and only QUIT, chosen twice, closes anything.
                     if (session.talking() || session.picking() || session.casebookOpen() ||
                         session.keysOpen() || session.optionsOpen() || session.pauseOpen() ||
-                        session.characterOpen()) {
+                        session.characterOpen() || session.mapOpen() || session.lettersOpen()) {
                         if (session.picking()) {
                             session.stopPicking();
                         } else {
