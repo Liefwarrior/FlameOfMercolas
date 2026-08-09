@@ -71,6 +71,18 @@ std::vector<CreationFlow::CustomizeRow> CreationFlow::customizeRowModel() const 
     rows.push_back(CustomizeRow{CustomizeRow::Kind::Name, "", sim::AttributeId::Might, true});
 
     const sim::CompanionTemplate* companion = chosenCompanion();
+    // LOOK, RIGHT UNDER NAME -- present for CUSTOM always (a player has to
+    // land somewhere in sim::appearanceOptions() to be drawn in the ward's
+    // own sprite vocabulary at all), present for DEVIN/GABRI only when their
+    // own raw actually authors an appearanceType. ABSENCE COSTS NOTHING
+    // HERE, the identical rule the skill rows below already hold to: Devin's
+    // file does not author one yet, and a row that read "LOOK  NOT SET" for
+    // him would claim a gap in HIS content that this screen invented rather
+    // than one gabri.json's own provenance already names honestly.
+    if (companion == nullptr || companion->appearanceType().has_value()) {
+        rows.push_back(CustomizeRow{CustomizeRow::Kind::Appearance, "", sim::AttributeId::Might,
+                                   companion == nullptr});
+    }
     if (companion != nullptr) {
         // DEVIN/GABRI: read-only, and only the skills their own sheet
         // actually sets -- ABSENCE COSTS NOTHING HERE, the same rule the
@@ -128,6 +140,19 @@ std::string CreationFlow::labelFor(const CustomizeRow& row) const {
         case CustomizeRow::Kind::Name: {
             const std::string value = name_.empty() ? std::string("NAME NOT SET") : name_;
             return "NAME  " + value;
+        }
+        case CustomizeRow::Kind::Appearance: {
+            // COMPANION FIRST: their own fixed look, never the CUSTOM
+            // cursor's -- this row is only ever built for them when
+            // appearanceType() is set (customizeRowModel()), so the
+            // dereference below is safe by construction.
+            const sim::WardType type = companion != nullptr
+                                          ? *companion->appearanceType()
+                                          : sim::appearanceOptions()[static_cast<std::size_t>(
+                                                appearanceIndex_)]
+                                                .type;
+            const sim::AppearanceOption* option = sim::appearanceOptionFor(type);
+            return "LOOK  " + (option != nullptr ? std::string(option->label) : std::string());
         }
         case CustomizeRow::Kind::Skill: {
             const sim::SkillTrack::Entry* entry = skills_.find(row.skillId);
@@ -210,7 +235,12 @@ void CreationFlow::adjustCustomizeRow(int delta) noexcept {
         return;
     }
     const int step = delta > 0 ? 1 : -1;
-    if (row.kind == CustomizeRow::Kind::Skill) {
+    if (row.kind == CustomizeRow::Kind::Appearance) {
+        // WRAPS, the same ring moveOriginCursor uses -- eleven cards on one
+        // row have no page to turn to either.
+        const int count = static_cast<int>(sim::appearanceOptions().size());
+        appearanceIndex_ = ((appearanceIndex_ + step) % count + count) % count;
+    } else if (row.kind == CustomizeRow::Kind::Skill) {
         const int current = static_cast<int>(chargen_.designationOf(row.skillId));
         const int next = std::clamp(current + step, 0, 3);
         if (next == current) {
@@ -278,9 +308,14 @@ bool CreationFlow::confirm() noexcept {
     if (companion != nullptr) {
         result_.companion = *companion;
         result_.chargen = sim::Chargen{};
+        // THEIR OWN FIXED LOOK, possibly std::nullopt (Devin's file does not
+        // author one yet) -- carried through honestly rather than papered
+        // over with a default CUSTOM would never actually land on.
+        result_.appearance = companion->appearanceType();
     } else {
         result_.chargen = chargen_;
         result_.companion = sim::CompanionTemplate{};
+        result_.appearance = sim::appearanceOptions()[static_cast<std::size_t>(appearanceIndex_)].type;
     }
     return true;
 }

@@ -35,12 +35,22 @@
 //   stand on top of, built and proved first so that screen has real numbers
 //   to show rather than numbers invented to match it."
 //
-// Neither sibling's content is edited here -- companions.hpp, chargen.hpp
-// and attributes.hpp are read through their own public accessors only. This
-// file's own contribution is the ONE THING neither of them could be: the
-// three-way switch a player actually presses keys against, and the row
-// layout that makes a fixed sheet and a spendable one look like the same
-// kind of screen.
+//   WHAT YOU LOOK LIKE IS sim::appearanceOptions() (appearance.hpp) -- eleven
+//   of WardType's sixteen values, the same tag-queried vocabulary
+//   render::ActorSheet draws the ward's own six hundred out of. DEVIN and
+//   GABRI carry a FIXED look off their own CompanionTemplate::appearanceType
+//   (a read-only LOOK row, shown only when the raw actually authors one --
+//   Gabri's does, Devin's does not yet, see companions.hpp); CUSTOM gets a
+//   real LEFT/RIGHT picker over the same eleven, right under NAME, because a
+//   custom character choosing how they present is exactly as much "who you
+//   are" as what to call yourself.
+//
+// Neither sibling's content is edited here -- companions.hpp, chargen.hpp,
+// attributes.hpp and appearance.hpp are read through their own public
+// accessors only. This file's own contribution is the ONE THING none of them
+// could be: the three-way switch a player actually presses keys against, and
+// the row layout that makes a fixed sheet and a spendable one look like the
+// same kind of screen.
 //
 // DRAWN THROUGH THE EXISTING WIDGET, NOT A NEW ONE. Every other page this
 // build has grown -- the casebook, the keys page, options, the pause menu,
@@ -70,10 +80,12 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "granadad/render/dialogue_view.hpp"
+#include "granadad/sim/appearance.hpp"
 #include "granadad/sim/attributes.hpp"
 #include "granadad/sim/chargen.hpp"
 #include "granadad/sim/companions.hpp"
@@ -123,12 +135,21 @@ inline constexpr std::size_t kMaxNameLength = 16;
 /// designated; a CompanionTemplate with loaded() == false) rather than
 /// omitted, so a caller can read either one unconditionally and trust
 /// loaded()/an empty picks() list to say which is real.
+///
+/// `appearance` is set independently of that switch: for DEVIN/GABRI it is
+/// whatever their own CompanionTemplate::appearanceType() carries (possibly
+/// std::nullopt -- Devin's file does not author one yet), and for CUSTOM it
+/// is whichever of sim::appearanceOptions()'s eleven the player left the
+/// LOOK row on. A caller wanting to draw this character anywhere in the
+/// ward's own sprite vocabulary (render::ActorSheet::forType) reads this one
+/// field regardless of which origin was chosen.
 struct CreationResult {
     bool confirmed = false;
     std::string originId;
     std::string name;
     sim::Chargen chargen;
     sim::CompanionTemplate companion;
+    std::optional<sim::WardType> appearance;
 };
 
 enum class CreationStep : std::uint8_t {
@@ -188,7 +209,11 @@ public:
     void typeNameChar(char c) noexcept;
     void backspaceName() noexcept;
 
-    /// Row 0 is NAME. What follows depends on chosenOrigin():
+    /// Row 0 is NAME. Row 1 is LOOK, off sim/appearance.hpp's eleven
+    /// options -- present for CUSTOM always, present for DEVIN/GABRI only
+    /// when their own CompanionTemplate::appearanceType() actually authors
+    /// one (absence costs nothing here, the same rule the skill rows
+    /// already hold to below). What follows depends on chosenOrigin():
     ///
     ///   DEVIN / GABRI  one row per skill their fixed sheet actually sets
     ///                  (CompanionTemplate::startingSkills(), typically
@@ -217,15 +242,25 @@ public:
     /// A NO-OP OUTRIGHT UNLESS chosenOrigin() IS CUSTOM -- DEVIN's and
     /// GABRI's sheets are fixed, hand-authored numbers (companions.hpp's own
     /// header: "NOT point-bought"), not a rival copy this screen could drift
-    /// from theirs by letting a player nudge it. On CUSTOM: no-op on NAME
-    /// and BEGIN; on a skill row, steps that skill's designation through
-    /// NONE -> PRIMARY -> MAJOR -> MINOR -> NONE, refused (row unchanged)
-    /// the instant the target tier is already full -- sim::Chargen::
-    /// designate's own contract, and the status line's slot counts (see
-    /// view()) are the player's evidence of why nothing moved; on an
-    /// attribute row, spends or returns one point off the pool via
-    /// sim::Chargen::spendAttributePoints, refused past its own cap.
+    /// from theirs by letting a player nudge it; their own LOOK row is
+    /// exactly as fixed, for the identical reason. On CUSTOM: no-op on NAME
+    /// and BEGIN; on LOOK, cycles sim::appearanceOptions() (wraps, the same
+    /// ring the origin cursor itself uses -- eleven cards on one row have no
+    /// page to turn to either); on a skill row, steps that skill's
+    /// designation through NONE -> PRIMARY -> MAJOR -> MINOR -> NONE,
+    /// refused (row unchanged) the instant the target tier is already full
+    /// -- sim::Chargen::designate's own contract, and the status line's
+    /// slot counts (see view()) are the player's evidence of why nothing
+    /// moved; on an attribute row, spends or returns one point off the pool
+    /// via sim::Chargen::spendAttributePoints, refused past its own cap.
     void adjustCustomizeRow(int delta) noexcept;
+
+    /// Which of sim::appearanceOptions()'s eleven the CUSTOM path's LOOK row
+    /// is currently on. Meaningless (and untouched by adjustCustomizeRow)
+    /// for DEVIN/GABRI, whose LOOK row reads their own fixed
+    /// CompanionTemplate::appearanceType() instead -- exposed so a test can
+    /// assert the cursor moved without re-deriving it from a rendered label.
+    [[nodiscard]] int appearanceIndex() const noexcept { return appearanceIndex_; }
 
     /// ESC on the customize screen. While editing a name this only closes
     /// text entry, keeping whatever was typed. Otherwise it steps back to
@@ -283,16 +318,17 @@ private:
     /// One row of the customize screen's topic list, and what it means to
     /// step it with LEFT/RIGHT.
     struct CustomizeRow {
-        enum class Kind : std::uint8_t { Name, Skill, Attribute, Begin };
+        enum class Kind : std::uint8_t { Name, Appearance, Skill, Attribute, Begin };
         Kind kind = Kind::Name;
         /// Valid when kind == Skill.
         std::string skillId;
         /// Valid when kind == Attribute.
         sim::AttributeId attribute = sim::AttributeId::Might;
-        /// False for a DEVIN/GABRI skill or attribute row -- adjustCustomizeRow
-        /// refuses outright rather than reaching sim::Chargen for a row that
-        /// was never Chargen's to move. Always true for NAME and BEGIN,
-        /// which have their own kind-based handling regardless of this flag.
+        /// False for a DEVIN/GABRI skill, attribute or LOOK row --
+        /// adjustCustomizeRow refuses outright rather than reaching
+        /// sim::Chargen or appearanceIndex_ for a row that was never either
+        /// one's to move. Always true for NAME and BEGIN, which have their
+        /// own kind-based handling regardless of this flag.
         bool editable = true;
     };
     [[nodiscard]] std::vector<CustomizeRow> customizeRowModel() const;
@@ -326,6 +362,9 @@ private:
     CreationStep step_ = CreationStep::Origin;
     int originCursor_ = 0;
     int customizeCursor_ = 0;
+    /// Index into sim::appearanceOptions() the CUSTOM path's LOOK row is on.
+    /// Meaningless for DEVIN/GABRI -- see appearanceIndex()'s own doc.
+    int appearanceIndex_ = 0;
     std::string name_;
     bool nameIsDefault_ = true;
     bool editingName_ = false;

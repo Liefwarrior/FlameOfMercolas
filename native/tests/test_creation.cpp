@@ -255,11 +255,13 @@ TEST_CASE("LEFT/RIGHT on a skill row actually moves the real Chargen, and a full
     flow.moveOriginCursor(2);  // CUSTOM -- the only origin Chargen is live on
     flow.chooseOrigin();
 
-    // Row 0 is NAME; row 1 is the first skill in SkillTrack's own ascending
-    // order (see social.hpp) -- "bladework", off content/raws/skills.
+    // Row 0 is NAME, row 1 is LOOK (sim/appearance.hpp's picker -- always
+    // present on CUSTOM), row 2 is the first skill in SkillTrack's own
+    // ascending order (see social.hpp) -- "bladework", off
+    // content/raws/skills.
     REQUIRE(flow.skills().loaded());
     const std::string firstSkillId = flow.skills().entries().front().id;
-    flow.moveCustomizeCursor(1);
+    flow.moveCustomizeCursor(2);
     REQUIRE(flow.chargen().designationOf(firstSkillId) == sim::SkillDesignation::None);
 
     flow.adjustCustomizeRow(1);
@@ -287,9 +289,10 @@ TEST_CASE("LEFT/RIGHT on a skill row actually moves the real Chargen, and a full
     slots.moveOriginCursor(2);  // CUSTOM
     slots.chooseOrigin();
     for (int i = 0; i < 3; ++i) {
-        // Row (i+1) is the i-th skill in the model (row 0 is NAME).
+        // Row (i+2) is the i-th skill in the model (row 0 is NAME, row 1 is
+        // LOOK).
         slots.moveCustomizeCursor(0);  // no-op, keeps intent explicit
-        while (slots.customizeCursor() != i + 1) {
+        while (slots.customizeCursor() != i + 2) {
             slots.moveCustomizeCursor(1);
         }
         slots.adjustCustomizeRow(1);
@@ -298,7 +301,7 @@ TEST_CASE("LEFT/RIGHT on a skill row actually moves the real Chargen, and a full
     }
     CHECK(slots.chargen().slotsFilled(sim::SkillDesignation::Primary) == sim::kPrimarySkillSlots);
 
-    while (slots.customizeCursor() != 4) {
+    while (slots.customizeCursor() != 5) {
         slots.moveCustomizeCursor(1);
     }
     slots.adjustCustomizeRow(1);  // the fourth Primary attempt
@@ -435,6 +438,118 @@ TEST_CASE("confirming DEVIN carries his real CompanionTemplate, and no Chargen p
 }
 
 // ===========================================================================
+// LOOK: the CUSTOM path's appearance/identity step, and DEVIN/GABRI's own
+// fixed one -- sim/appearance.hpp's eleven-option vocabulary, the same
+// ward-sprite system render::ActorSheet draws the district's own six hundred
+// out of. Not re-proving appearance.hpp's own round-trips (test_companions.cpp
+// does that); this proves the HOSTING, the identical split the section above
+// draws for skills and attributes.
+// ===========================================================================
+
+TEST_CASE("CUSTOM's LOOK row cycles the real eleven, wrapping both ways") {
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(2);  // CUSTOM
+    flow.chooseOrigin();
+    REQUIRE(flow.appearanceIndex() == 0);
+
+    flow.moveCustomizeCursor(1);  // row 1: LOOK
+    const std::string firstLabel = flow.view().topics[1];
+    CHECK(firstLabel.rfind("LOOK  ", 0) == 0);
+
+    flow.adjustCustomizeRow(1);
+    CHECK(flow.appearanceIndex() == 1);
+    const std::string secondLabel = flow.view().topics[1];
+    CHECK(secondLabel != firstLabel);  // the row's own printed value moved
+
+    flow.adjustCustomizeRow(-1);
+    CHECK(flow.appearanceIndex() == 0);
+    CHECK(flow.view().topics[1] == firstLabel);
+
+    // WRAPS, THE SAME RING moveOriginCursor USES -- LEFT off the first
+    // option reaches the last, RIGHT off the last reaches the first.
+    const int count = static_cast<int>(sim::appearanceOptions().size());
+    flow.adjustCustomizeRow(-1);
+    CHECK(flow.appearanceIndex() == count - 1);
+    for (int i = 0; i < count; ++i) {
+        flow.adjustCustomizeRow(1);
+    }
+    CHECK(flow.appearanceIndex() == count - 1);  // one full ring back to where it started
+}
+
+TEST_CASE("GABRI's LOOK row shows his own fixed appearance and refuses to move") {
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(1);  // GABRI
+    flow.chooseOrigin();
+    REQUIRE(flow.chosenCompanion() != nullptr);
+    REQUIRE(flow.chosenCompanion()->appearanceType().has_value());
+
+    const sim::AppearanceOption* option =
+        sim::appearanceOptionFor(*flow.chosenCompanion()->appearanceType());
+    REQUIRE(option != nullptr);
+
+    const std::vector<std::string>& rows = flow.view().topics;
+    REQUIRE(rows.size() > 1);
+    CHECK(rows[1] == "LOOK  " + std::string(option->label));
+
+    flow.moveCustomizeCursor(1);
+    flow.adjustCustomizeRow(1);
+    flow.adjustCustomizeRow(-1);
+    CHECK(flow.view().topics[1] == rows[1]);  // unmoved, same as every other row on a fixed sheet
+}
+
+TEST_CASE("DEVIN has no LOOK row at all -- his file authors no appearanceType") {
+    // gabri.json's own provenance says this plainly: devin.json is left
+    // unedited by that pass. Confirmed here rather than assumed -- ABSENCE
+    // COSTS NOTHING is the same rule his skill rows already hold to
+    // (customizeRowModel's own comment), extended to LOOK.
+    render::CreationFlow flow = fresh();
+    flow.chooseOrigin();  // DEVIN is the default card
+    REQUIRE(flow.chosenCompanion() != nullptr);
+    REQUIRE(flow.chosenCompanion()->id() == "devin");
+    CHECK_FALSE(flow.chosenCompanion()->appearanceType().has_value());
+
+    for (const std::string& row : flow.view().topics) {
+        CHECK(row.rfind("LOOK", 0) != 0);
+    }
+}
+
+TEST_CASE("confirming carries the right appearance for all three origins") {
+    // CUSTOM: whichever of the eleven the player left the cursor on.
+    render::CreationFlow custom = fresh();
+    custom.moveOriginCursor(2);
+    custom.chooseOrigin();
+    custom.moveCustomizeCursor(1);  // LOOK
+    custom.adjustCustomizeRow(1);
+    custom.adjustCustomizeRow(1);  // two steps in, away from the default
+    const sim::WardType expected = sim::appearanceOptions()[static_cast<std::size_t>(
+                                                                 custom.appearanceIndex())]
+                                       .type;
+    custom.moveCustomizeCursor(-1);  // back to NAME
+    custom.chooseCustomizeRow();     // start editing
+    custom.typeNameChar('A');
+    custom.typeNameChar('S');
+    custom.typeNameChar('H');
+    custom.chooseCustomizeRow();     // stop editing
+    REQUIRE(custom.confirm());
+    REQUIRE(custom.result().appearance.has_value());
+    CHECK(*custom.result().appearance == expected);
+
+    // GABRI: his own fixed look, regardless of anything pressed.
+    render::CreationFlow gabri = fresh();
+    gabri.moveOriginCursor(1);
+    gabri.chooseOrigin();
+    REQUIRE(gabri.confirm());
+    REQUIRE(gabri.result().appearance.has_value());
+    CHECK(*gabri.result().appearance == sim::WardType::PriestOfTheFlame);
+
+    // DEVIN: honestly nullopt -- his file has nothing to carry.
+    render::CreationFlow devin = fresh();
+    devin.chooseOrigin();
+    REQUIRE(devin.confirm());
+    CHECK_FALSE(devin.result().appearance.has_value());
+}
+
+// ===========================================================================
 // the view, and everything it draws
 // ===========================================================================
 
@@ -454,14 +569,14 @@ TEST_CASE("the view carries the right headline in the right place, on both scree
     const render::DialogueViewState custom = flow.view();
     CHECK(custom.speaker == "CUSTOMIZE");
     CHECK(custom.epithet == "CUSTOM - YOUR OWN PATH");
-    // NAME + every non-FLAME skill + one row per attribute + BEGIN.
+    // NAME + LOOK + every non-FLAME skill + one row per attribute + BEGIN.
     std::size_t nonFlame = 0;
     for (const sim::SkillTrack::Entry& entry : flow.skills().entries()) {
         if (entry.aptitudeTier != sim::AptitudeTier::Flame) {
             ++nonFlame;
         }
     }
-    CHECK(custom.topics.size() == 1 + nonFlame + sim::kAttributeCount + 1);
+    CHECK(custom.topics.size() == 1 + 1 + nonFlame + sim::kAttributeCount + 1);
     for (const std::string& topic : custom.topics) {
         mustReadAsEnglish("customize row", topic);
     }
@@ -477,7 +592,7 @@ TEST_CASE("the status line reports the real slot counts and the real pool, for C
     CHECK(line.find("POINTS " + std::to_string(sim::kAttributeBonusPool) + " LEFT") !=
          std::string::npos);
 
-    flow.moveCustomizeCursor(1);
+    flow.moveCustomizeCursor(2);  // row 1 is LOOK; the first skill is row 2
     flow.adjustCustomizeRow(1);  // one skill designated Primary
     const std::string after = flow.view().line;
     CHECK(after.find("PRIMARY 1/") != std::string::npos);
