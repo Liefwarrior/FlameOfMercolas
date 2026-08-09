@@ -67,6 +67,24 @@
 // NO FLOATS. NO UNORDERED CONTAINERS: candidate pools are built fresh each
 // refresh as a std::vector in ascending actor-id order, and the board itself
 // is a std::vector sorted by objective id, exactly like ContractBoard's rows.
+//
+// TASK #84 CHECKED WHETHER TONE/REPUTATION (S3's SocialLedger) GATES THIS
+// BOARD THE WAY DialogueDirector::brokerWillTalk() ALREADY GATES A
+// CONTRACT BOARD JOB (toneAttitude() >= Attitude::Neutral before a broker
+// will even discuss work). It does not, and the reason is not a missing
+// check -- it is that nothing in Session, Tavern or DialogueDirector ever
+// constructs, refreshes or reads a RadiantBoard at all. Grep the tree: every
+// reference to RadiantBoard/RadiantRaws/RadiantObjective outside this file
+// and radiant_quest.cpp is this file's own two test suites
+// (test_radiant_quest.cpp, test_radiant_variety.cpp). The generator this
+// file builds is real, tested and correct on its own terms; a player cannot
+// currently reach it by any means, so "does reputation affect its
+// availability" has no board to be unavailable FROM yet. That is the same
+// gap this file's own "PROSE IS DELIBERATELY NOT THIS SPRINT'S JOB" note
+// above already named for the brief text -- wiring a RadiantBoard into a
+// DialogueDirector, giving it topics a conversation can offer, and deciding
+// THEN whether toneAttitude() should gate it the way a contract broker's
+// does, is one more sprint's job, not a seam #84 closes by itself.
 
 #include <cstdint>
 #include <filesystem>

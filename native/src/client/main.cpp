@@ -1266,7 +1266,7 @@ render::CreationResult run_creation_window(const Options& options) {
 // the window
 // ---------------------------------------------------------------------------
 
-int run_client(const Options& options) {
+int run_client(const Options& options, const render::CreationResult& chosen) {
     // A NEW GAME OPENS ON THE CASE, AND AT DAWN.
     //
     // The window path -- and only the window path. A scripted capture and two
@@ -1287,6 +1287,42 @@ int run_client(const Options& options) {
     if (!session.body().spawnedLegally()) {
         std::printf("granadad: spawn tile is not standable -- check --spawn\n");
         return 1;
+    }
+
+    // #84. THE SEAM #80 NAMED, CLOSED. run_creation_window() built a real
+    // point-bought Chargen sheet or handed back DEVIN's/GABRI's real fixed
+    // one, and until now `chosen` stopped being read the moment this
+    // function's own signature ended -- SEEN, ABOVE, AS A COMMENT NAMING
+    // ITSELF: "Nothing downstream of this line reads either yet." It is read
+    // now, against the SAME SkillTrack every mechanic in this build already
+    // checks -- session.tavern().dialogue().skills(), the one
+    // DialogueDirector talkToWard()'s own comment names as shared between the
+    // taproom and the whole ward ("the SAME director, the same authored
+    // tables"). A Devin who signed on fluent in cracksmanship now opens a
+    // strongbox measurably faster than a custom sheet that never touched it,
+    // haggles off STREETWISE the same way, and is safer on the roofs off
+    // SKYRUNNING -- the same three skills characterRows() already prints, so
+    // the sheet built at the door is the sheet the character screen shows
+    // back.
+    //
+    // ATTRIBUTES ARE DELIBERATELY LEFT UNCROSSED. chargen.hpp's own header
+    // states the attribute bonus pool has no runtime reader yet -- no skill
+    // check in this build weighs an AttributeId, only a level -- so wiring
+    // AttributeBlock into a mechanic that does not exist would be inventing
+    // one, not closing a seam. Chargen::apply() is [[nodiscard]] for exactly
+    // this reason and its answer is discarded here on purpose, not silently
+    // dropped.
+    {
+        sim::SkillTrack& playerSkills = session.tavern().dialogue().skills();
+        if (chosen.companion.loaded()) {
+            const std::int32_t matched = chosen.companion.applyStartingSkills(playerSkills);
+            std::printf("granadad: %s's sheet set %d skill(s)\n", chosen.companion.name().c_str(),
+                        static_cast<int>(matched));
+        } else {
+            (void)chosen.chargen.apply(playerSkills);
+            std::printf("granadad: custom sheet set %d skill(s)\n",
+                        static_cast<int>(chosen.chargen.picks().size()));
+        }
     }
 
     // THE CONTROLS SURVIVE THE PROCESS. Beside the executable, because this game
@@ -1810,19 +1846,11 @@ int main(int argc, char** argv) {
         }
         std::printf("granadad: playing as %s (%s)\n", chosen.name.c_str(),
                     chosen.originId.c_str());
-        // SEAM (#80, allocation mechanics -> Session). Exactly one of
-        // chosen.chargen (CUSTOM's real point-bought sheet) or
-        // chosen.companion (DEVIN's/GABRI's real fixed sheet, loaded off
-        // content/raws/companions) is populated -- see CreationResult's own
-        // header on which -- and either is ready to write through a real
-        // sim::SkillTrack: `chosen.chargen.apply(track)` or
-        // `chosen.companion.applyStartingSkills(track)`. Nothing downstream
-        // of this line reads either yet: Session has no player-facing
-        // SkillTrack seam for a caller to apply it through, and building one
-        // is the sibling task that owns the mechanics half of #80, not this
-        // file's UI/flow half. Stated here rather than silently dropped on
-        // the floor.
-        return run_client(options);
+        // #84 CLOSED THE SEAM #80 LEFT HERE. `chosen` used to stop being read
+        // the moment this function returned -- see run_client()'s own header
+        // for where the sheet is actually applied now, and why the attribute
+        // bonus pool still is not.
+        return run_client(options, chosen);
     } catch (const std::exception& error) {
         std::printf("granadad: %s\n", error.what());
         std::printf("granadad: content directory is %s (set %s to move it)\n",

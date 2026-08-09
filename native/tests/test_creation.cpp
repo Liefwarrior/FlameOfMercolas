@@ -26,6 +26,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,9 +35,11 @@
 #include "granadad/render/creation.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
+#include "granadad/render/session.hpp"
 #include "granadad/sim/attributes.hpp"
 #include "granadad/sim/chargen.hpp"
 #include "granadad/sim/companions.hpp"
+#include "granadad/sim/social.hpp"
 
 namespace content = granadad::content;
 namespace render = granadad::render;
@@ -631,6 +634,131 @@ TEST_CASE("ESC while editing closes text entry without discarding the letters, "
 
     flow.backToOrigin();
     CHECK(flow.step() == render::CreationStep::Origin);
+}
+
+// ===========================================================================
+// TASK #84: THE SEAM #80 NAMED, CLOSED. main.cpp's run_client() now applies
+// exactly one of CreationResult::chargen or CreationResult::companion onto
+// session.tavern().dialogue().skills() -- the ONE SkillTrack every mechanic
+// in this build already reads (social.hpp's kHaggleSkill/kThieverySkill/
+// kRoofSkill constants, legend.cpp, tavern.cpp's haggle/lockpick/roof-drop
+// code, and Session::talkToWard()'s own "the SAME director" comment). Not
+// re-proving Chargen::apply() or CompanionTemplate::applyStartingSkills()
+// themselves (test_chargen.cpp and test_companions.cpp already do,
+// round-trip, on their own terms) -- these cases prove the HOSTING: that the
+// exact sheet this screen hands back is the exact sheet a live Session's
+// skill checks read, with no shadow copy in between. main.cpp's own SDL
+// loop that calls this at boot is not exercised here for the same reason it
+// never is anywhere else in this build (test_pause.cpp, test_character.cpp,
+// this file's own header): that needs a real SDL harness.
+// ===========================================================================
+
+TEST_CASE("DEVIN's fixed sheet, applied through CreationResult, reaches the live SkillTrack "
+         "every mechanic in this build reads") {
+    // GABRI'S OWN SHEET DELIBERATELY LEAVES ALL FOUR MECHANICALLY-ACTIVE
+    // SKILLS AT ZERO (content/raws/companions/gabri.json's own rationale
+    // quotes PROGRESSION-SPEC.md's north star: a Streetwise-0 Gabri is
+    // "still obeyed everywhere but pays list price") -- a real design
+    // choice, and the wrong sheet to prove THIS wiring with, since applying
+    // it would leave every number this test could check sitting at the same
+    // zero a never-applied sheet reads. Devin's Primary picks (skyrunning,
+    // cracksmanship) and Major pick (streetwise) are exactly the three
+    // social.hpp names, so his sheet is the one that proves the seam by
+    // actually moving a number off zero.
+    render::CreationFlow flow = fresh();
+    flow.chooseOrigin();  // DEVIN
+    const std::size_t rowCount = flow.view().topics.size();
+    flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
+    REQUIRE(flow.view().topics.back() == "BEGIN");
+    flow.chooseCustomizeRow();
+    REQUIRE(flow.done());
+    const render::CreationResult& chosen = flow.result();
+    REQUIRE(chosen.companion.loaded());
+    REQUIRE(chosen.companion.startingLevel(sim::kRoofSkill) > 0);
+    REQUIRE(chosen.companion.startingLevel(sim::kThieverySkill) > 0);
+    REQUIRE(chosen.companion.startingLevel(sim::kHaggleSkill) > 0);
+
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    render::Session session(config);
+    sim::SkillTrack& live = session.tavern().dialogue().skills();
+
+    // BEFORE: a fresh arrival's SkillTrack starts every id at the same
+    // untouched floor SkillTrack::level() gives an id nobody has set.
+    REQUIRE(live.level(sim::kRoofSkill) == 0);
+    REQUIRE(live.level(sim::kThieverySkill) == 0);
+    REQUIRE(live.level(sim::kHaggleSkill) == 0);
+
+    const std::int32_t matched = chosen.companion.applyStartingSkills(live);
+    CHECK(matched == static_cast<std::int32_t>(chosen.companion.startingSkills().size()));
+
+    // AFTER: the SAME SkillTrack DialogueDirector hands to a haggle, a
+    // strongbox and a roof landing now carries Devin's own numbers, exactly
+    // -- not a shadow copy a player would never see move.
+    CHECK(live.level(sim::kRoofSkill) == chosen.companion.startingLevel(sim::kRoofSkill));
+    CHECK(live.level(sim::kThieverySkill) == chosen.companion.startingLevel(sim::kThieverySkill));
+    CHECK(live.level(sim::kHaggleSkill) == chosen.companion.startingLevel(sim::kHaggleSkill));
+
+    // AND THE CHARACTER SHEET -- the one screen a player actually reads
+    // these numbers back off, C in the real game -- agrees, because
+    // characterRows() reads through this exact same accessor. Exact string,
+    // not just "not zero": the row format ("SKYRUNNING  LV n") is
+    // characterRows()'s own, pinned here so a future change to either the
+    // format or the applied level would fail this the honest way.
+    const std::string expected =
+        "SKYRUNNING  LV " + std::to_string(chosen.companion.startingLevel(sim::kRoofSkill));
+    const std::vector<std::string> rows = session.characterRows();
+    CHECK(std::find(rows.begin(), rows.end(), expected) != rows.end());
+}
+
+TEST_CASE("CUSTOM's point-bought Chargen sheet, applied through CreationResult, reaches the "
+         "same live SkillTrack") {
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(2);  // CUSTOM
+    flow.chooseOrigin();
+    REQUIRE(flow.skills().loaded());
+    const std::string firstSkillId = flow.skills().entries().front().id;
+
+    // Row 0 is NAME, row 1 is LOOK, row 2 is the first skill in ascending
+    // order -- the same layout "LEFT/RIGHT on a skill row actually moves the
+    // real Chargen" above already pins.
+    flow.moveCustomizeCursor(2);
+    flow.adjustCustomizeRow(1);  // Primary
+    REQUIRE(flow.chargen().designationOf(firstSkillId) == sim::SkillDesignation::Primary);
+
+    // CUSTOM's NAME starts blank (creation.cpp's own loadOriginDefaultName)
+    // and canConfirm() refuses BEGIN on an empty one -- open NAME, type a
+    // real one, close it, exactly the round trip "switching origins
+    // re-suggests a name" above already proves.
+    flow.moveCustomizeCursor(-2);
+    REQUIRE(flow.customizeCursor() == 0);
+    flow.chooseCustomizeRow();
+    REQUIRE(flow.editingName());
+    for (const char c : std::string("ASH")) {
+        flow.typeNameChar(c);
+    }
+    flow.chooseCustomizeRow();
+    REQUIRE_FALSE(flow.editingName());
+    REQUIRE(flow.name() == "ASH");
+
+    const std::size_t rowCount = flow.view().topics.size();
+    flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
+    REQUIRE(flow.view().topics.back() == "BEGIN");
+    flow.chooseCustomizeRow();
+    REQUIRE(flow.done());
+    const render::CreationResult& chosen = flow.result();
+    CHECK_FALSE(chosen.companion.loaded());  // CUSTOM carries no fixed sheet
+
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    render::Session session(config);
+    sim::SkillTrack& live = session.tavern().dialogue().skills();
+    REQUIRE(live.level(firstSkillId) == 0);
+
+    const sim::AttributeBlock block = chosen.chargen.apply(live);
+    (void)block;  // no runtime reader yet -- see run_client()'s own note
+
+    CHECK(live.level(firstSkillId) == sim::kPrimaryStartLevel);
 }
 
 // ===========================================================================
