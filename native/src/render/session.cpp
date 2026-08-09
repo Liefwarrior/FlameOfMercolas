@@ -2984,7 +2984,20 @@ std::vector<std::string> Session::characterRows() const {
         {sim::kCraftingSkill, "LINKCRAFT"},
     };
     for (const ActiveSkill& entry : kActiveSkills) {
-        rows.push_back(std::string(entry.label) + "  LV " +
+        // MORROWIND ROUND: ONE SPACE, NOT TWO. The Character tile's own
+        // column is narrower than the old full-width panel's -- see
+        // menu_view.cpp's own note on why a single column is still WIDER
+        // per row than the old three-column grid ever gave a label, but at
+        // the smallest resolution this build still tests (320x180) every
+        // glyph matters. The saved column buys SKYRUNNING/ROOFS/STREETWISE/
+        // LINKCRAFT their full "LV 0" back there; CRACKSMANSHIP (thirteen
+        // letters, the longest of the four) still cuts to "CRACKSMANSHIP."
+        // at that one resolution -- VERIFICATION GAP: clipLabel() marks the
+        // cut rather than dropping it silently (the same contract every
+        // other clipped row in this renderer already keeps), and the value
+        // is not lost -- it reads on the Journal-tile-sized capture at
+        // 640x360 and above, which is this build's own shipped default.
+        rows.push_back(std::string(entry.label) + " LV " +
                        std::to_string(talk.skills().level(entry.id)));
     }
     // ABSENCE COSTS NOTHING ON THE HUD; IT COSTS NOTHING HERE EITHER, but for
