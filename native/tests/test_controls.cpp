@@ -22,11 +22,14 @@
 #include <set>
 #include <string>
 
+#include "granadad/content/content_dir.hpp"
 #include "granadad/render/controls.hpp"
+#include "granadad/render/session.hpp"
 #include "granadad/sim/human_scale.hpp"
 
 using namespace granadad::render;
 namespace sim = granadad::sim;
+namespace content = granadad::content;
 
 TEST_CASE("the shipped bindings are the ones a player already knows") {
     const ControlSettings keys = ControlSettings::defaults();
@@ -331,6 +334,86 @@ TEST_CASE("controls round trip through a real file, and a missing one is the def
     }
     const ControlSettings survived = loadControls(file);
     CHECK(survived.bound(Action::Forward, Key::W));
+
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE("a rebinding and a sensitivity survive the process -- loaded, and LIVE in the game") {
+    // WHAT THE PREVIOUS CASE DOES NOT PROVE. "controls round trip through a
+    // real file" is loadControls(file) answering loadControls(saveControls())
+    // -- true of ControlSettings, a plain struct, and true regardless of
+    // whether one line of the game ever reads it. The question the settings
+    // page's own polish pass was asked, verbatim: "does the game actually
+    // reload saved keybinds/sensitivity on next launch?" is a question about
+    // main.cpp's run_client(), which does exactly two things with a settings
+    // file at boot --
+    //
+    //     render::ControlSettings controls = render::loadControls(controlsFile);
+    //     ...
+    //     session.setControls(controls);
+    //
+    // -- and then answers every rebind and every slider off session.controls()
+    // from then on. Neither of those two calls touches SDL. This case makes
+    // them, in that order, on a REAL file on REAL disk, and checks the LIVE
+    // Session -- the keys page's own generated rows, the sensitivity the mouse
+    // is actually multiplied by, the field of view the camera actually reads --
+    // rather than the struct loadControls happened to hand back. It is the
+    // same two lines run_client() runs, run without the window around them.
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() / "granadad-controls-live-case";
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+    const std::filesystem::path file = dir / std::string(kControlsFileName);
+
+    // A PREVIOUS SESSION'S SAVE. Written the same way saveControls() would
+    // have written it -- not hand-typed here, so this proves the format the
+    // game itself produces and not a format this test happens to like.
+    ControlSettings previous = ControlSettings::defaults();
+    previous.mouse.sensitivity = 88;
+    previous.mouse.invertY = true;
+    previous.fovDegrees = 110;
+    previous.bind(Action::Jump, Key::K);
+    REQUIRE(saveControls(previous, file));
+
+    // THE NEXT LAUNCH. loadControls() then setControls(), the same order and
+    // the same two calls main.cpp makes, nothing else.
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    const ControlSettings loaded = loadControls(file);
+    Session session(config);
+    session.setControls(loaded);
+
+    // THE SENSITIVITY IS LIVE, not just stored. MouseSettings::yawFor is the
+    // ONE place either preference is read (its own header says so), so this
+    // is the actual multiplier a real mouse delta would go through --
+    // checked at the boundary rather than by re-reading the field back.
+    CHECK(session.controls().mouse.sensitivity == 88);
+    CHECK(session.controls().mouse.invertY);
+    const sim::Angle turned = session.controls().mouse.yawFor(1000);
+    const sim::Angle defaultTurn = ControlSettings::defaults().mouse.yawFor(1000);
+    CHECK(turned > defaultTurn);
+
+    // THE FIELD OF VIEW IS LIVE. fovDegrees() is what the camera reads every
+    // frame -- see its own header comment -- so this is the number a captured
+    // frame would actually be built with, not a copy of it.
+    CHECK(session.fovDegrees() == 110);
+
+    // AND THE REBINDING IS LIVE, on the page a player would actually read it
+    // off: the keys page is GENERATED from session.controls() (Session::
+    // keyRows's whole reason to exist -- see its own header), so this is the
+    // same check "a rebinding shows up on the reference page by construction"
+    // makes elsewhere, aimed at a binding that came off a real file this time
+    // rather than off session.setControls() called directly in the test.
+    const auto mentions = [](const std::vector<std::string>& rows, const char* fragment) {
+        for (const std::string& row : rows) {
+            if (row.find(fragment) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    };
+    CHECK(mentions(session.keyRows(), "K  JUMP"));
+    CHECK_FALSE(mentions(session.keyRows(), "SPACE  JUMP"));
 
     std::filesystem::remove_all(dir, ignored);
 }
