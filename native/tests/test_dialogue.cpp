@@ -91,11 +91,12 @@ TEST_CASE("the owner's bark tables load, all of them") {
     // content/raws/barks/flame_barks.json (S4), the 22 in roof_barks.json (S5),
     // the 18 in contract_barks.json (S6), the 12 in house_barks.json (S7), the
     // 8 in nemesis_barks.json (S8), the 25 in ward_barks.json (#79), the 4 in
-    // tone_barks.json and the 26 in topic_barks.json (both #82) beside it --
-    // each sprint adds a SECOND file rather than editing 59KB of canon, and
-    // BarkTables::load reads the whole directory. Pinned: content added should
-    // be a visible change here, and content LOST should be red.
-    CHECK(barks().tableCount() == 357);
+    // tone_barks.json and the 26 in topic_barks.json (both #82), and the 16 in
+    // contract_tone_barks.json (#81 -- the register reaching a radiant offer)
+    // beside it -- each sprint adds a SECOND file rather than editing 59KB of
+    // canon, and BarkTables::load reads the whole directory. Pinned: content
+    // added should be a visible change here, and content LOST should be red.
+    CHECK(barks().tableCount() == 373);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.
@@ -437,6 +438,196 @@ TEST_CASE("tone can open a job list a colder tongue keeps shut, and shut one a w
         CHECK(askedAboutWork());
         CHECK(offeredCount() == 0);
     }
+}
+
+// ===========================================================================
+// #81 -- the quest-giver presentation: contract.none reachable, and the
+// register colouring how a radiant offer is handed off, refused or found
+// wanting
+// ===========================================================================
+
+TEST_CASE("#81: a broker who would deal with you still answers when the board is bare, "
+          "out of contract.none rather than silence") {
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    // Same day and seed test_dialogue.cpp already trusts to leave Venn with
+    // at least one live offer.
+    director.postContracts(3, 0x4752414E41444144ull);
+
+    Speaker venn = dockerNamed(1, "Master Venn");
+    venn.notableId = "venn";
+    venn.family = JobFamily::Trade;
+    venn.skillId = "streetwise";
+    venn.skillLevel = 30;
+    director.ledger().seed(1, kWarmAtOrAbove);
+
+    REQUIRE(director.open(venn, hourOfDay(21)));
+
+    // Drain every one of Venn's live offers today -- taken, then paid off in
+    // full -- so the broker ends this loop willing and genuinely empty
+    // rather than merely between two of them.
+    for (int guard = 0; guard < 10; ++guard) {
+        std::size_t offerIndex = director.topics().size();
+        for (std::size_t i = 0; i < director.topics().size(); ++i) {
+            if (director.topics()[i].kind == TopicKind::TakeContract &&
+                director.topics()[i].payload >= 0) {
+                offerIndex = i;
+                break;
+            }
+        }
+        if (offerIndex >= director.topics().size()) {
+            break;
+        }
+        const Contract* job = director.contracts().find(director.topics()[offerIndex].payload);
+        REQUIRE(job != nullptr);
+        const std::int32_t contractId = job->id;
+        const Contraband good = job->good;
+        const std::int32_t units = job->units;
+        REQUIRE(director.choose(offerIndex).ok);
+
+        // Venn's own goods never want the Flame's sanction (only a scalp
+        // does), so supplying the units and handing straight back is enough
+        // to settle it.
+        REQUIRE(director.crimes().stash().add(good, units) == units);
+        std::size_t turnInIndex = director.topics().size();
+        for (std::size_t i = 0; i < director.topics().size(); ++i) {
+            if (director.topics()[i].kind == TopicKind::TurnIn &&
+                director.topics()[i].payload == contractId) {
+                turnInIndex = i;
+                break;
+            }
+        }
+        REQUIRE(turnInIndex < director.topics().size());
+        REQUIRE(director.choose(turnInIndex).ok);
+    }
+
+    // Every offer of Venn's this board ever held today is taken and paid.
+    // He still likes the player fine -- nothing above touched the ledger --
+    // and will still deal with them, but the board has nothing of his left
+    // on it. Before #81 that produced NO work-related topic at all.
+    std::size_t nothingIndex = director.topics().size();
+    for (std::size_t i = 0; i < director.topics().size(); ++i) {
+        if (director.topics()[i].kind == TopicKind::TakeContract &&
+            director.topics()[i].payload == kContractNothingPayload) {
+            nothingIndex = i;
+            break;
+        }
+    }
+    REQUIRE(nothingIndex < director.topics().size());
+
+    const std::vector<std::string>* none = barks().rows("contract.none");
+    REQUIRE(none != nullptr);
+    const Reply told = director.choose(nothingIndex);
+    CHECK_FALSE(told.ok);
+    CHECK(std::find(none->begin(), none->end(), told.line) != none->end());
+}
+
+TEST_CASE("#81: the register colours a job being handed off, broker-first the same way "
+          "the untagged line already is") {
+    Speaker venn = dockerNamed(1, "Master Venn");
+    venn.notableId = "venn";
+    venn.family = JobFamily::Trade;
+    venn.skillId = "streetwise";
+    venn.skillLevel = 30;
+
+    const auto firstOfferIndex = [](const DialogueDirector& d) {
+        std::size_t index = d.topics().size();
+        for (std::size_t i = 0; i < d.topics().size(); ++i) {
+            if (d.topics()[i].kind == TopicKind::TakeContract && d.topics()[i].payload >= 0) {
+                index = i;
+                break;
+            }
+        }
+        return index;
+    };
+
+    // Two independent boards rather than one reused across tones -- taking
+    // an offer consumes it, and each check needs its own untouched one.
+    DialogueDirector polite = DialogueDirector::load(content::contentDir());
+    polite.postContracts(3, 0x4752414E41444144ull);
+    polite.ledger().seed(1, kWarmAtOrAbove);
+    polite.setTone(Tone::Polite);
+    REQUIRE(polite.open(venn, hourOfDay(21)));
+    const std::size_t politeIndex = firstOfferIndex(polite);
+    REQUIRE(politeIndex < polite.topics().size());
+    const std::vector<std::string>* politeRows = barks().rows("contract.take.venn.polite");
+    REQUIRE(politeRows != nullptr);
+    const Reply politeTake = polite.choose(politeIndex);
+    REQUIRE(politeTake.ok);
+    CHECK(std::find(politeRows->begin(), politeRows->end(), politeTake.line) != politeRows->end());
+
+    DialogueDirector blunt = DialogueDirector::load(content::contentDir());
+    blunt.postContracts(3, 0x4752414E41444144ull);
+    blunt.ledger().seed(1, kWarmAtOrAbove);
+    blunt.setTone(Tone::Blunt);
+    REQUIRE(blunt.open(venn, hourOfDay(21)));
+    const std::size_t bluntIndex = firstOfferIndex(blunt);
+    REQUIRE(bluntIndex < blunt.topics().size());
+    const std::vector<std::string>* bluntRows = barks().rows("contract.take.venn.blunt");
+    REQUIRE(bluntRows != nullptr);
+    const Reply bluntTake = blunt.choose(bluntIndex);
+    REQUIRE(bluntTake.ok);
+    CHECK(std::find(bluntRows->begin(), bluntRows->end(), bluntTake.line) != bluntRows->end());
+
+    // And neither register borrowed the other's line.
+    CHECK(politeTake.line != bluntTake.line);
+}
+
+TEST_CASE("#81: the register colours a refusal too, once the gate is closed") {
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    director.postContracts(3, 0x4752414E41444144ull);
+
+    Speaker finch = dockerNamed(2, "\"Finch\"");
+    finch.notableId = "finch";
+    finch.family = JobFamily::Wastrel;
+
+    const auto blockedIndex = [](const DialogueDirector& d) {
+        std::size_t index = d.topics().size();
+        for (std::size_t i = 0; i < d.topics().size(); ++i) {
+            if (d.topics()[i].kind == TopicKind::TakeContract &&
+                d.topics()[i].payload == kContractBlockedPayload) {
+                index = i;
+                break;
+            }
+        }
+        return index;
+    };
+
+    // Finch's gate is guild membership, never sworn here, so every one of
+    // these opens on the blocked branch regardless of the register dialled.
+    REQUIRE(director.open(finch, hourOfDay(21)));
+    const std::size_t normalIndex = blockedIndex(director);
+    REQUIRE(normalIndex < director.topics().size());
+    const Reply normalReply = director.choose(normalIndex);
+    CHECK_FALSE(normalReply.ok);
+    const std::vector<std::string>* normalRows = barks().rows("contract.blocked");
+    REQUIRE(normalRows != nullptr);
+    CHECK(std::find(normalRows->begin(), normalRows->end(), normalReply.line) !=
+          normalRows->end());
+    director.close();
+
+    director.setTone(Tone::Polite);
+    REQUIRE(director.open(finch, hourOfDay(21)));
+    const std::size_t politeIndex = blockedIndex(director);
+    REQUIRE(politeIndex < director.topics().size());
+    const Reply politeReply = director.choose(politeIndex);
+    CHECK_FALSE(politeReply.ok);
+    const std::vector<std::string>* politeRows = barks().rows("contract.blocked.polite");
+    REQUIRE(politeRows != nullptr);
+    CHECK(std::find(politeRows->begin(), politeRows->end(), politeReply.line) !=
+          politeRows->end());
+    CHECK(politeReply.line != normalReply.line);
+    director.close();
+
+    director.setTone(Tone::Blunt);
+    REQUIRE(director.open(finch, hourOfDay(21)));
+    const std::size_t bluntIndex = blockedIndex(director);
+    REQUIRE(bluntIndex < director.topics().size());
+    const Reply bluntReply = director.choose(bluntIndex);
+    CHECK_FALSE(bluntReply.ok);
+    const std::vector<std::string>* bluntRows = barks().rows("contract.blocked.blunt");
+    REQUIRE(bluntRows != nullptr);
+    CHECK(std::find(bluntRows->begin(), bluntRows->end(), bluntReply.line) != bluntRows->end());
+    CHECK(bluntReply.line != normalReply.line);
 }
 
 namespace {

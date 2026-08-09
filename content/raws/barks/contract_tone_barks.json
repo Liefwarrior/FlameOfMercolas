@@ -1,0 +1,124 @@
+{
+  "id": "contract_tone_barks",
+  "notes": "TASK #81 ADDITION. content/raws/barks/contract_barks.json is UNTOUCHED. Two things this file does. FIRST, it wires the register (see content/raws/barks/tone_barks.json's own notes on DialogueDirector::toned()) into the moment a radiant offer actually reaches the player: being handed a job, being paid for one, being turned away, and being told there is simply nothing tonight. SECOND, some of these keys are the only place a line for a given key exists at all -- contract.none.polite / contract.none.blunt / contract.blocked.polite / contract.blocked.blunt are GENERIC (no per-broker table sits ahead of them in any broker's resolve chain, so they reach every broker who hits that state), while contract.take.<id>.polite/.blunt and contract.paid.<id>.polite/.blunt are PER-BROKER on purpose -- contract_barks.json already gives cull, venn and finch their own untagged contract.take/contract.paid table, and DialogueDirector::toned() widens a chain broker-specific-then-generic, so a generic contract.take.polite table would sit BEHIND cull's own untagged contract.take.cull in every resolve and would be dead content, exactly the bug this task found and fixed in contract.none. contract.paid.polite/.blunt stays generic in addition to cull's and finch's own tables because venn has no contract.paid.venn table of his own to shadow it -- the generic pair is what colours HIS payout.",
+  "tables": [
+    {
+      "key": "contract.take.cull.polite",
+      "rows": [
+        "Manners, in the impound yard. That's a first one. Take it, and mind the number the same as I'd have told you either way.",
+        "Please, is it. Fine. The rats don't care how nicely you ask for them, but go on. Bring the scalps to me, not the yard.",
+        "You could have just said take it. But go on, be that sort. Bring a priest's word with them when you're done."
+      ]
+    },
+    {
+      "key": "contract.take.cull.blunt",
+      "rows": [
+        "Good. No wasted breath. Take it -- the number's the number, same as always.",
+        "That is the whole conversation I want out of anybody standing in this yard. Go.",
+        "Straight to it. I like a man who does not make me listen to him first."
+      ]
+    },
+    {
+      "key": "contract.take.venn.polite",
+      "rows": [
+        "Ask nicely and I still might not answer you. But it is a better start than most give me. Down the stair, past the snug.",
+        "Polite goes further in my cellar than it does at the Weighhouse. Do not stop to drink it on the way down.",
+        "There. See how much easier that was than making me guess what you wanted."
+      ]
+    },
+    {
+      "key": "contract.take.venn.blunt",
+      "rows": [
+        "Fine, no wasted words. Down the stair, past the snug, and do not drink it.",
+        "Good. I have no patience for a long ask over a short job.",
+        "That is how I like my custom -- quick in, quick out, quick paid."
+      ]
+    },
+    {
+      "key": "contract.take.finch.polite",
+      "rows": [
+        "Careful with me. Politeness is a thing people remember, and remembering is the one thing this work cannot afford.",
+        "Ask however you like. What you carry back had better speak plainer than you do.",
+        "Fine words do not count for anything up here. The count does. Go."
+      ]
+    },
+    {
+      "key": "contract.take.finch.blunt",
+      "rows": [
+        "Good. Say less, and none of it out loud.",
+        "That is the roofs' own manners -- none. Go.",
+        "Short and quiet. Keep both the whole way there."
+      ]
+    },
+    {
+      "key": "contract.paid.cull.polite",
+      "rows": [
+        "Manners AND the scalps counted right. I could get used to that, and I will not let myself.",
+        "Counted, marked and paid -- and thank you kindly, noted, though the ward's coin says it whether you are civil or not."
+      ]
+    },
+    {
+      "key": "contract.paid.cull.blunt",
+      "rows": [
+        "Counted. Paid. Go.",
+        "That is the coin. No speech needed on either end of this counter."
+      ]
+    },
+    {
+      "key": "contract.paid.finch.polite",
+      "rows": [
+        "Polite AND quick. That combination gets rarer every year I do this.",
+        "Counted. And I will remember the manners longer than I will remember the coin."
+      ]
+    },
+    {
+      "key": "contract.paid.finch.blunt",
+      "rows": [
+        "Counted. Gone.",
+        "Good count, fewer words. That is the whole of this trade."
+      ]
+    },
+    {
+      "key": "contract.paid.polite",
+      "rows": [
+        "Counted properly, and asked for properly. Small mercies, in this ward.",
+        "There is your coin, and my thanks for not making this longer than it needed to be."
+      ]
+    },
+    {
+      "key": "contract.paid.blunt",
+      "rows": [
+        "Counted. Paid. Done.",
+        "No speeches. Here is your coin."
+      ]
+    },
+    {
+      "key": "contract.blocked.polite",
+      "rows": [
+        "Ask as nicely as you like -- I still do not know you well enough to hand you anything.",
+        "Kind of you to ask so properly. The answer is still no."
+      ]
+    },
+    {
+      "key": "contract.blocked.blunt",
+      "rows": [
+        "No. Come back when I know you.",
+        "Nothing for you. Do not make me say it twice."
+      ]
+    },
+    {
+      "key": "contract.none.polite",
+      "rows": [
+        "Nothing tonight, and thank you for asking rather than just standing there waiting on it.",
+        "Kindly asked, honestly answered: there is nothing for you right now."
+      ]
+    },
+    {
+      "key": "contract.none.blunt",
+      "rows": [
+        "Nothing. Come back later.",
+        "Empty tonight. Do not ask twice."
+      ]
+    }
+  ]
+}

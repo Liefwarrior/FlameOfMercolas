@@ -517,14 +517,20 @@ void DialogueDirector::buildTopics() {
             Topic topic;
             topic.kind = TopicKind::TakeContract;
             topic.label = "ASK ABOUT WORK";
-            topic.payload = -1;
+            topic.payload = kContractBlockedPayload;
             topics_.push_back(std::move(topic));
         } else {
+            // #81. WHETHER THIS BROKER ACTUALLY HAD ANYTHING TO SAY. Taken and
+            // offered rows both feed it -- a broker holding only a waiting
+            // TurnIn still had something to say, and only a broker with
+            // neither reaches the branch below.
+            bool anyWork = false;
             for (const std::int32_t id : board_.takenBy(broker->id)) {
                 const Contract* row = board_.find(id);
                 if (row == nullptr) {
                     continue;
                 }
+                anyWork = true;
                 Topic topic;
                 topic.kind = TopicKind::TurnIn;
                 topic.label = "HAND OVER " + std::to_string(row->units) + " " +
@@ -538,11 +544,25 @@ void DialogueDirector::buildTopics() {
                 if (row == nullptr) {
                     continue;
                 }
+                anyWork = true;
                 Topic topic;
                 topic.kind = TopicKind::TakeContract;
                 topic.label = row->label;
                 topic.payload = id;
                 topic.arg = row->offerId;
+                topics_.push_back(std::move(topic));
+            }
+            if (!anyWork) {
+                // #81. A WILLING BROKER WITH NOTHING ON THE BOARD is not the
+                // same silence as a broker who will not deal with you --
+                // contract.none has been authored since S6 for exactly this
+                // sentence and was unreachable content until this topic gave
+                // a player a way to ask for it. Same "ask and be told"
+                // shape as the blocked branch above, different answer.
+                Topic topic;
+                topic.kind = TopicKind::TakeContract;
+                topic.label = "ASK ABOUT WORK";
+                topic.payload = kContractNothingPayload;
                 topics_.push_back(std::move(topic));
             }
         }
@@ -1212,6 +1232,19 @@ Reply DialogueDirector::choose(std::size_t index) {
             const ContractBroker* broker = brokerFor(speaker_.notableId);
             if (broker == nullptr) {
                 out = reply(TopicKind::TakeContract, "NO WORK HERE.");
+                out.ok = false;
+                break;
+            }
+            if (topic.payload == kContractNothingPayload) {
+                // #81. Willing, and empty -- see the note where this topic
+                // was built. Answered out of contract.none, broker-first the
+                // same way contract.take and contract.paid already are.
+                out = reply(TopicKind::TakeContract,
+                            speak({"contract.none." + broker->id, "contract.none"},
+                                  TopicKind::TakeContract, 0));
+                if (out.line.empty()) {
+                    out.line = "NOTHING TONIGHT.";
+                }
                 out.ok = false;
                 break;
             }

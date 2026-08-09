@@ -213,10 +213,12 @@ enum class TopicKind : std::uint8_t {
     /// root, where there is nowhere left to step back TO.
     Back = 26,
     /// S6. Take a job off somebody who hands them out. The payload is the
-    /// contract's own id, or -1 when the broker will not talk to you yet --
-    /// which is a topic on purpose, because a player has to be able to ask
-    /// before they can be told no. APPENDED, for the reason on Buy: the ordinal
-    /// is folded into which authored row a topic speaks from.
+    /// contract's own id, or one of two negative sentinels -- see
+    /// kContractBlockedPayload and kContractNothingPayload -- which is a
+    /// topic on purpose, because a player has to be able to ask before they
+    /// can be told no, or told there is simply nothing tonight. APPENDED,
+    /// for the reason on Buy: the ordinal is folded into which authored row
+    /// a topic speaks from.
     TakeContract = 18,
     /// Hand the goods over and be paid.
     TurnIn = 19,
@@ -245,6 +247,21 @@ inline constexpr std::string_view kAskQuest = "quest";
 /// tavern.hpp, because the dialogue layer must not know what a tavern is. A
 /// test pins the two to each other, so a change to one is a change to both.
 inline constexpr std::int32_t kBoughtDrinkCost = 2;
+
+/// #81. TopicKind::TakeContract's payload when a broker will not deal with
+/// the player AT ALL yet -- brokerWillTalk() is false. Answered out of
+/// contract.blocked.
+inline constexpr std::int32_t kContractBlockedPayload = -1;
+/// #81. TopicKind::TakeContract's payload when the broker WOULD deal with
+/// the player and simply has nothing of theirs on the board right now --
+/// everything taken, paid, or not drawn tonight. Kept distinct from
+/// kContractBlockedPayload so choose() answers out of contract.none rather
+/// than contract.blocked: a broker who likes you fine and has nothing to
+/// give you tonight is not saying the same sentence as one who will not
+/// deal with you at all. contract.none has been authored since S6 and was
+/// unreachable content until this payload gave a topic a reason to ask for
+/// it -- see the note in buildTopics() at the S6 THE WORK section.
+inline constexpr std::int32_t kContractNothingPayload = -2;
 
 struct Topic {
     TopicKind kind = TopicKind::Leave;
