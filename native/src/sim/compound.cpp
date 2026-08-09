@@ -831,7 +831,7 @@ void Ward::quarterDay() {
     // that silently drops its other half and drains a family already turned out
     // toward the Mission's own hearing metric.
     for (Household& home : households_) {
-        if (home.kind != HouseKind::RoofHut || home.roofRent <= 0 /* REFUTATION-TEST: guard temporarily removed */) {
+        if (home.kind != HouseKind::RoofHut || home.roofRent <= 0 || home.landlord < 0) {
             continue;
         }
         const std::int32_t paid = std::min(home.coin, home.roofRent);
