@@ -470,6 +470,15 @@ if(GRANADAD_BUILD_TESTS)
         # swapped: mostly-distinct briefs, no single brief dominating, and
         # more than one body ever drawn into the giver or target slot.
         tests/test_radiant_variety.cpp
+        # #85 -- THE CONSOLIDATED CONTROL SCHEME. Interact resolved by stance
+        # and by what is faced (talk/pickpocket, examine/take, rest, pick-a-
+        # lock), proved as the actual feature rather than only "the action
+        # fires" -- see the file's own header.
+        tests/test_interact_context.cpp
+        # #85 -- Vertical's own orchestration (climb, then a drop, then an
+        # ordinary jump) and the Menu router's page cycle, kept apart from
+        # Pause.
+        tests/test_vertical_menu.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
