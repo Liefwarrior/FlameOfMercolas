@@ -5,6 +5,10 @@
 #include <cctype>
 #include <utility>
 
+// TASK #81. Casebook{} default-constructs the unbound placeholder
+// earnedLegend() hands to legendOf() for the row it never reads. See that
+// method's own comment on tavern.hpp.
+#include "granadad/sim/casebook.hpp"
 #include "granadad/sim/fixed.hpp"
 
 namespace granadad::sim {
@@ -1464,6 +1468,11 @@ void Tavern::tickPatrons() {
     }
 }
 
+Legend Tavern::earnedLegend() const {
+    return legendOf(dialogue_.crimes(), dialogue_.skills(), dialogue_.standings(),
+                    dialogue_.contracts(), Casebook{});
+}
+
 std::int32_t Tavern::drinkPriceForPlayer() const {
     if (negotiatedDrink_ >= 0) {
         return negotiatedDrink_;
@@ -1490,6 +1499,13 @@ std::int32_t Tavern::drinkPriceForPlayer() const {
     // moves, so a house founded over your body is legible as the price of a
     // mug going up and staying up.
     terms.guildPercent += nemesis_.tollPercent(factionOf(*bartender));
+    // TASK #81: AND WHAT A CONTRACT PAID OFF BUYS BACK. THE TRADE is legend's
+    // own name for a run of contracts taken and paid rather than left to
+    // expire -- see legendOf's own comment. A rung on it is a discount here,
+    // in the same channel and the same units as the guild's own rate, so
+    // completing jobs for coin and completing them for standing are the same
+    // ladder rather than two the player has to climb twice.
+    terms.guildPercent += earnedLegend().pricePercent();
     return askingPrice(terms);
 }
 
@@ -1509,6 +1525,9 @@ std::int32_t Tavern::roomPriceForPlayer() const {
     terms.goods = Goods::Room;
     terms.guildPercent = guildPricePercent(dialogue_.standings(), factionOf(*innkeeper));
     terms.guildPercent += nemesis_.tollPercent(factionOf(*innkeeper));
+    // TASK #81: see the matching note on drinkPriceForPlayer -- the same
+    // Trade rung buys the same discount on a room.
+    terms.guildPercent += earnedLegend().pricePercent();
     return askingPrice(terms);
 }
 
@@ -2600,10 +2619,15 @@ Tavern::StealResult Tavern::buyPicks() {
     }
     playerCoin_ = wrap_add(playerCoin_, -price);
     dialogue_.setPlayerCoin(playerCoin_);
-    picks_ += kPicksPerSet;
+    // TASK #81: MORE WIRE FOR THE SAME COIN, off THE WIRE. The price above is
+    // what kPicksPerSet is worth and does not move; a rung on the ward's
+    // opinion of your hands is a few extra picks in the set the same coin
+    // buys, exactly as legendOf's own comment on picksPerSetBonus promises.
+    const std::int32_t given = kPicksPerSet + earnedLegend().picksPerSetBonus();
+    picks_ += given;
     out.result = ServiceResult::Served;
     out.coin = -price;
-    out.line = std::to_string(kPicksPerSet) + " PICKS FOR " + std::to_string(price) + "C. " +
+    out.line = std::to_string(given) + " PICKS FOR " + std::to_string(price) + "C. " +
                std::to_string(picks_) + " IN THE ROLL.";
     return out;
 }

@@ -44,6 +44,8 @@
 #include "granadad/sim/brawl.hpp"
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/engine.hpp"
+// TASK #81. earnedLegend() reads what a Trade or a Wire rung buys back.
+#include "granadad/sim/legend.hpp"
 // S9. A lock is a thing in the room, and being unseen is a fact about the room:
 // both belong to whoever owns the taproom's people and its lamps.
 #include "granadad/sim/lockpick.hpp"
@@ -1107,6 +1109,15 @@ private:
     /// Every present actor and the faction that claims each, in roster order.
     /// What a founding chapter enlists out of.
     [[nodiscard]] RiseWorld riseWorld() noexcept;
+    /// TWO OF THE THREE BOONS legend.hpp's own file header promises: a Trade
+    /// rung is a cheaper counter and a Wire rung is more wire in a set, the
+    /// same way a Flame rung already buys Session::examine a longer look.
+    /// Flame needs a Casebook, which lives on Session above this room in the
+    /// layering, so it is never asked for here -- Wire and Trade are pure
+    /// functions of ledgers this room already owns (dialogue_'s crimes,
+    /// skills, standings and contracts), and a default Casebook{} is unbound,
+    /// contributing rung 0 to the one row nothing here reads.
+    [[nodiscard]] Legend earnedLegend() const;
 
     SystemId id_;
     const TileQuery* tiles_;
