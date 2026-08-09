@@ -31,7 +31,8 @@
         shift:MS     hold sprint while moving (combine: "w+shift:1200")
         ctrl:MS      hold crouch
         alt:MS       hold walk
-        tap:KEY      press and release KEY (space, e, q, tab, f1, f2, v, x)
+        tap:KEY      press and release KEY (space, e, q, tab, f1, f2, v, x,
+                     lbracket, rbracket -- PagePrev/PageNext's own bindings)
         look:DX,DY   move the mouse DX,DY counts, relative
         turn:DEG     look, in degrees, using the shipped sensitivity
         wait:MS      do nothing
@@ -176,6 +177,11 @@ $scan = @{
     'f1' = 0x3B; 'f2' = 0x3C; 'f3' = 0x3D; 'f12' = 0x58
     '1' = 0x02; '2' = 0x03; '3' = 0x04; '0' = 0x0B
     'left' = 0x4B; 'right' = 0x4D; 'up' = 0x48; 'down' = 0x50
+    # MORROWIND ROUND: PagePrev/PageNext's own shipped bindings
+    # (controls.cpp's defaults) -- '[' and ']', repurposed by this round to
+    # step which of the tiled Menu's four tiles has focus rather than to
+    # flip pages.
+    'lbracket' = 0x1A; 'rbracket' = 0x1B
 }
 $extended = @('left', 'right', 'up', 'down')
 
@@ -343,14 +349,19 @@ foreach ($beat in $Script.Split(',')) {
 # whole point of the pause menu this script is now also proving in a real
 # window, and the old "press ESC twice" idiom this block used to end on
 # cannot land on the close button any more the way it used to: with nothing
-# open, ESC now opens RESUME/SETTINGS/QUIT instead of quitting, so blind
-# repetition ALTERNATES between "pause open" and "nothing open" rather than
-# converging on "quit" the way it used to converge after at most two presses.
+# open, ESC now opens RESUME/CONTROLS/SETTINGS/QUIT instead of quitting, so
+# blind repetition ALTERNATES between "pause open" and "nothing open" rather
+# than converging on "quit" the way it used to converge after at most two
+# presses.
 #
-# One beat -- ESC, DOWN, DOWN, ENTER, ENTER -- reaches QUIT and confirms it
-# ONLY when nothing was already open when the beat started (ESC opens the
-# menu fresh, the two DOWNs land on QUIT, the two ENTERs arm and confirm it).
-# If instead the script's own beats left exactly one page open (a stray
+# MORROWIND ROUND: THREE DOWNS, NOT TWO. Pause grew a fourth row (CONTROLS,
+# Keys' own new Pause-side door -- see Session::pauseRows()) ahead of QUIT,
+# so RESUME -> QUIT is now three steps down instead of two.
+#
+# One beat -- ESC, DOWN x3, ENTER, ENTER -- reaches QUIT and confirms it ONLY
+# when nothing was already open when the beat started (ESC opens the menu
+# fresh, the three DOWNs land on QUIT, the two ENTERs arm and confirm it). If
+# instead the script's own beats left exactly one page open (a stray
 # F1/F2/journal), that ESC closes IT instead of opening the menu, and the
 # DOWN/ENTER presses that follow land as ordinary gameplay input -- a nudge
 # on the body and a no-op, both harmless, but the game is still running.
@@ -358,17 +369,17 @@ foreach ($beat in $Script.Split(',')) {
 # THE FIX IS NOT TO GUESS WHICH CASE IT IS. It is to run the same beat TWICE.
 # Whichever case the first pass was, it leaves the game at "nothing open"
 # (either QUIT already fired, or the stray page just closed) -- so the SECOND
-# pass is always case one: ESC opens the menu fresh, and DOWN, DOWN, ENTER,
+# pass is always case one: ESC opens the menu fresh, and DOWN x3, ENTER,
 # ENTER walks it to a confirmed QUIT. Two passes, not one, is what closing
 # ANY page this build can leave open actually takes now.
 for ($attempt = 0; $attempt -lt 2 -and -not $proc.HasExited; $attempt++) {
     Send-Key 'esc' $true; Start-Sleep -Milliseconds 60; Send-Key 'esc' $false
     Start-Sleep -Milliseconds 400
     if ($proc.HasExited) { break }
-    Send-Key 'down' $true; Start-Sleep -Milliseconds 60; Send-Key 'down' $false
-    Start-Sleep -Milliseconds 200
-    Send-Key 'down' $true; Start-Sleep -Milliseconds 60; Send-Key 'down' $false
-    Start-Sleep -Milliseconds 200
+    for ($down = 0; $down -lt 3; $down++) {
+        Send-Key 'down' $true; Start-Sleep -Milliseconds 60; Send-Key 'down' $false
+        Start-Sleep -Milliseconds 200
+    }
     Send-Key 'enter' $true; Start-Sleep -Milliseconds 60; Send-Key 'enter' $false
     Start-Sleep -Milliseconds 300
     Send-Key 'enter' $true; Start-Sleep -Milliseconds 60; Send-Key 'enter' $false
