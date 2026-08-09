@@ -162,6 +162,13 @@ add_library(granadad-sim STATIC
     # buys something a player can feel.
     src/sim/casebook.cpp
     src/sim/legend.cpp
+    # #82 -- THE BLOODLETTER TRAIL, AS REAL LETTERS. letters.cpp is a second,
+    # standalone raws loader (content/raws/quests/bloodletter_letters.json)
+    # cross-referenced to casebook.json's own lead ids by string, not merged
+    # into casebook.hpp's schema and not touching casebook.json itself. See
+    # letters.hpp's own header for why a second file and what is and is not
+    # claimed.
+    src/sim/letters.cpp
     # #78 -- THE WARD, WITH PEOPLE IN IT. path_finder.cpp is the bounded
     # deterministic A* a district-sized walk needs (region_path.cpp's exhaustive
     # frontier is right for a room and useless across the Docks);
@@ -374,6 +381,12 @@ if(GRANADAD_BUILD_TESTS)
         # dead ends, the coordinates checked against the baked world rather
         # than against a comment, and the five tracks the ward remembers you by.
         tests/test_casebook.cpp
+        # #82 -- the bloodletter trail's own leads, read as the letters
+        # somebody actually wrote: that the file loads, that every `lead`
+        # it names is a real casebook.json lead, and that the Wielder's own
+        # closing dispatch never claims a discovery only the unbuilt
+        # undercellar delve would have made.
+        tests/test_letters.cpp
         tests/test_firstrun.cpp
         # The pause menu ESC opens when nothing else has already claimed the
         # keyboard -- RESUME, SETTINGS and a QUIT that asks twice, replacing

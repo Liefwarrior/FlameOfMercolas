@@ -1,0 +1,87 @@
+{
+  "id": "bloodletter_letters",
+  "letters": [
+    {
+      "id": "maell-letter-1",
+      "lead": "mission-flagstones",
+      "from": "Father Maell",
+      "to": "Minister John, of the Divine Light Cathedral, Granadad",
+      "dateline": "Written at the Mission of the Flame, on the Docks",
+      "salutation": "Minister John,",
+      "body": [
+        "I do not write to trouble the Cathedral over weather, and I want that understood before anything else in this letter.",
+        "Three nights now, on the ebb, the water off the Outfall grate has come back warm. Not sun-warm - the sun does not reach that stone before noon, and the water was warm at dawn on the first of the three. I put my own hand in it. Wake's boat would not hold a line by the grate on any of the three nights, and he will not say why in front of his own crew.",
+        "I have kept this Mission's lamp lit for nineteen years. In that time I have learned the difference between an old man's nerves and a fact with a temperature. This is the second kind.",
+        "I ask only that someone with more learning than a parish priest tell me I am wrong."
+      ],
+      "closing": "In the Flame's service,",
+      "signature": "Maell"
+    },
+    {
+      "id": "maell-letter-2",
+      "lead": "mission-flagstones",
+      "from": "Father Maell",
+      "to": "Minister John, of the Divine Light Cathedral, Granadad",
+      "dateline": "Written at the Mission of the Flame, on the Docks",
+      "salutation": "Minister John,",
+      "body": [
+        "This is my second letter. I have had no answer to the first, so I will say the new thing plainly and let you judge whether an old priest is finally cracking.",
+        "There is a name on the Drowned-Name Wall that nobody claims. Serfs keep that shrine, not us, so I have no standing to ask who cut it - only the fact that I can find nobody missing from this ward, and the name is there regardless. In nineteen years I have watched that wall fill with grief after the fact. I have never once watched it get ahead of one.",
+        "The water off the Outfall is still warm on the ebb. Wake's crew have stopped taking that watch at all, on any tide. I have moved Onna's rounds an hour earlier and told her why only enough to keep her careful, not enough to keep her from sleeping. She needs the sleep more than the warning.",
+        "If the Cathedral has read three letters from smaller men than me and found nothing worth an answer in them, tell me that and I will let it rest. If nobody has read them at all, I would rather know that too."
+      ],
+      "closing": "In the Flame's service, still,",
+      "signature": "Maell"
+    },
+    {
+      "id": "maell-letter-3",
+      "lead": "mission-flagstones",
+      "from": "Father Maell",
+      "to": "Minister John, of the Divine Light Cathedral, Granadad",
+      "dateline": "Written at the Mission of the Flame, on the Docks",
+      "salutation": "Minister John,",
+      "body": [
+        "Third letter, and I am past caring how it reads.",
+        "Nobody's dogs will walk the Tarwalk after the tide turns anymore, not only Cobb's. Herdis has moved her goats off the pen nearest the water, and if you have ever kept goats you already know what that means without my explaining it.",
+        "The warm water has not been warm every night this week. Twice now it has run as cold as any tide ought to, and I find that worse than the warm, though I could not tell you why in words that would survive being read aloud in the Cathedral.",
+        "I am not asking for an exorcist and I am not asking to be believed. I am asking for one man with a passport and a reason to walk in anywhere in this ward, because I have alms to give out and disciples to feed and I cannot also be the only person watching the water.",
+        "I will write again if I am still able to."
+      ],
+      "closing": "In the Flame's service, for as long as that is worth,",
+      "signature": "Maell"
+    },
+    {
+      "id": "crell-memo",
+      "lead": "weighhouse-ledger",
+      "from": "Ottavan Crell, Harbormaster",
+      "to": "Handed to the Wielder of the Flame, at his own asking and not before",
+      "dateline": "Endorsed at the Weighhouse of the Docks",
+      "salutation": "",
+      "body": [
+        "The attached page is the whole of the entry for the struck line, cut by my own clerk's own hand, on my own instruction, on inspection, for cause I did not think worth writing down at the time because it was not my place to think it worth anything.",
+        "One line. One item. I did not ask what it was, and the clerk who did has not sat at his desk since. I do not know where he has gone and I have stopped asking, because the last three answers I got to that question were each worse than the one before it.",
+        "You wanted it item by item. This is the item."
+      ],
+      "closing": "Ask the next question of somebody else's ledger.",
+      "signature": "O. Crell, Harbormaster"
+    },
+    {
+      "id": "gabri-dispatch",
+      "lead": "drowned-hold",
+      "from": "Gabri",
+      "to": "Minister John, of the Divine Light Cathedral, Granadad",
+      "dateline": "Written at the Drowned Hold, on the Docks",
+      "salutation": "Minister John,",
+      "body": [
+        "Two bodies now, both marked the same way, both bled past what the wound explains. The first came up against the Outfall grate. The second was hung by the feet in a warehouse condemned nine years ago and occupied, recently, by nobody who left a name behind.",
+        "Whatever did this rode in on a grain coaster, three nights at berth, gone before I reached the quay. Harl found scratch marks inside a hold he was paid to repair and paid again to forget. I do not think the sea let this in. I think the sea only carried it.",
+        "The warehouse floor has gone through into a cellar nobody has mapped. I am going down into it. I would rather tell you that before I do than have somebody else tell you after.",
+        "Father Maell wrote you three times about warm water on an ebb tide and got nothing back for any of them. He was right, and he does not need me to say so - a captain has already said it to his face. I am asking you the question underneath his three letters instead, because it is the one I actually need answered: how does anything at all cross into Trojian ground. Nobody in this ward can tell me. Somebody in the Cathedral had better be able to."
+      ],
+      "closing": "That is the whole of it.",
+      "signature": "Gabri"
+    }
+  ],
+  "provenance": "Task #82. content/raws/quests/casebook.json (S10) is the owner's authored canon and is UNTOUCHED by this file - the binding rule that content/ files are add-only, same discipline flame_disciple.json (S4) and flame_barks.json (S4) were built under; this is a THIRD file in content/raws/quests/, cross-referenced to casebook.json's own lead ids by the `lead` field rather than merged into its schema. NOTHING here invents a fact casebook.json, flame_disciple.json, flame_barks.json or notables.json did not already establish: the warm outfall water on the ebb tide over three nights (flame_disciple.json stage 'water', flame_barks.json 'quest.flame-disciple.water.wake'), Wake's boat not holding a line there (same), the three unanswered letters themselves and Maell's nineteen-year lamp (flame_barks.json 'quest.flame-disciple.letters.maell' and 'quest.flame-disciple.lamp.maell'), the Drowned-Name Wall getting names ahead of bodies (casebook.json lead 'drowned-name-wall'), the nine-years-condemned warehouse and its recent, hurried smuggler occupation (casebook.json lead 'drowned-hold' and DOCKS-GAZETTEER.md section 5.4 point 3), the struck ledger line and vanished clerk (casebook.json lead 'weighhouse-ledger'), and Crell's own 'ask item by item' character (notables.json 'crell' bio, quoted almost exactly by his own memo here on purpose). Minister John is the novel's own character (L2413-2422: Devin's strained history with him, Gabri walking into his study unannounced, 'No minister, we have big problems', the minister's reaction to the word bloodletter) - this build invents no new person, only the letters he would have received. DOCKS-GAZETTEER.md section 6's L3 authoring plan names the beat 'Report to Father Maell -> letter to Minister John -> MVP narrative close, sequel hook armed'; gabri-dispatch is that beat given its actual words for the first time, but DELIBERATELY SCOPED TO WHAT THIS BUILD'S SURFACE TRAIL (casebook.json, ending at drowned-hold) HAS ACTUALLY FOUND - it never names 'the Y'marr' or anything only the undercellar L1-L3 delve (design documentation only, not simulated by this build) would turn up; test_letters.cpp checks that restraint by grepping the letter's own body for the word. MAGIC-CANON.md section 5.4's hard content rule (every in-world surface says six, never seven) does not apply here directly - none of these five letters mentions a count of magic systems at all - but no line was written that would have needed to obey it, which is the same discipline stated the negative way.",
+  "notes": "Five documents, not twelve: this build's casebook.json has twelve leads and this file does not attach a letter to every one of them on purpose. A letter is a physical document somebody had a real, ordinary reason to write and keep, and only three of the twelve leads have that reason on the record already (Maell's retained drafts, Crell's covering memo on a ledger he is shown handing over item by item, and the Wielder's own closing dispatch, which is a named design beat rather than this file's invention). Inventing a letter for the other nine leads (a body, a corroded grate, a corroborating hull, a sealed bond, a shrine wall, a kennel row, a mudlark's testimony) would mean writing documents nobody in the fiction had a reason to produce, which is the exact kind of invention DOCKS-GAZETTEER.md's own canon-honesty note warns against for a different case. Maell's three carry no `order` field - LetterRaws never sorts, so they are simply authored in the order he wrote them, and native/include/granadad/sim/letters.hpp's own header explains why that is enough. Crell's `salutation` is empty on purpose: a harbor memo does not open with a greeting, and LetterRaws treats an empty salutation as legal rather than malformed. NOT YET WIRED INTO A READING SCREEN - LetterRaws loads and cross-references cleanly against content::contentDir(), the same path the shipped binary reads, and test_letters.cpp proves that; nothing in render/session.cpp yet draws one of these letters on screen, because the top band dialogue_view.cpp draws through is sized for a sentence or two (see that file's own wrapText/maxSpeechRows comments) and a real parchment-style reading screen with its own paging is a rendering task this WRITING task did not attempt to also build in the same pass. Flagged in code as the follow-up this leaves: // VERIFICATION GAP (S-letters): no in-game screen reads a Letter yet."
+}
