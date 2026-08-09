@@ -41,6 +41,15 @@
 // that is not where it wanted to go, arrives, and re-asks -- which reads to a
 // player as an actor with somewhere else to be, forever.
 //
+// #32. NEITHER BOUND MEANS "UNREACHABLE", and a caller that treats a NO ROUTE
+// answer that way needs its own reason to believe it -- WardPopulation gets
+// that reason from componentAt(), asked BEFORE this is ever called, over the
+// unbounded flood fill kSearchPadding and kSearchMaxNodes cannot see past. A
+// search that hits either bound has only proven that ITS box or ITS budget
+// was too small, and roughly a sixteenth of the shipped ward's own home-to-
+// work legs used to hit one of the two despite a real route existing. See the
+// two constants' own comments for the measurement.
+//
 // PER-ACTOR ROUTE JITTER. Entering a cell costs a few extra units drawn from a
 // pure avalanche hash of (actor salt, cell). Small against the 10/14 base, so
 // routes stay near-optimal -- but the tie-breaking landscape differs per actor,
@@ -103,18 +112,41 @@ inline constexpr std::int32_t kMaxPathDrop = 3;
 /// Tiles of slack around the bounding rectangle of the two endpoints. A route
 /// almost never needs to leave that rectangle; when it does -- rounding a
 /// warehouse -- this is how far out of the way it is allowed to go.
-inline constexpr std::int32_t kSearchPadding = 28;
+///
+/// #32. WAS 28, AND 28 WAS NOT ENOUGH. bakeRoster() only ever homes or posts
+/// a body on ground the unbounded flood fill (walkComponent_) calls
+/// reachable, so every home-to-work pair in the roster genuinely has a route
+/// -- but the Docks' own compounds force some of those routes into a detour
+/// wider than a straight-line rectangle plus 28 tiles, and a search that
+/// cannot see outside its box reports NO ROUTE for a body that has one. The
+/// case in test_ward_actors.cpp that names #32 walks the router over every
+/// authored home/anchor pair in the shipped roster and found the tightest
+/// one needed 54; this carries a real margin over that measurement rather
+/// than the bare minimum, because the next map edit should not have to
+/// re-derive the number.
+inline constexpr std::int32_t kSearchPadding = 64;
 
 /// The widest box a search may open, per axis. The Docks is 256 tiles across,
 /// so this admits a route from one end of the district to the other and refuses
 /// anything that would be a bug.
 inline constexpr std::int32_t kSearchMaxSpan = 256;
 
-/// Cell expansions before a search gives up. The Java's number, and it is a
-/// budget rather than a limit: a clear route across the ward expands a few
-/// hundred, and the searches that hit this are the ones asking for somewhere
-/// there is no way to.
-inline constexpr std::int32_t kSearchMaxNodes = 4000;
+/// Cell expansions before a search gives up. Was 4000, the Java's number, and
+/// it is a budget rather than a limit: a clear LOCAL route across the ward
+/// still expands only a few hundred.
+///
+/// #32. BUT NOT EVERY ROUTE IS LOCAL, and 4000 quietly assumed one thing the
+/// comment above used to claim outright: that a search hitting the cap was
+/// always asking for somewhere there was no way to. It was not. bakeRoster()
+/// never homes or posts a body anywhere the flood fill cannot reach, so the
+/// only searches that ever run here (stepToward gates on componentAt() first)
+/// are already known-connected -- and roughly a sixteenth of the shipped
+/// roster's home-to-work legs are long enough, through the compounds' own
+/// turns, to need more than 4000 expansions before the goal comes off the
+/// heap. Measured (the #32 case in test_ward_actors.cpp, over the whole
+/// roster): the worst of those legs needed just under 7,000. This is set with
+/// real headroom above that measurement, not at it.
+inline constexpr std::int32_t kSearchMaxNodes = 10000;
 
 /// A route search. Holds its own scratch so a district-sized search does not
 /// reallocate on every replan; not thread-safe and not meant to be.

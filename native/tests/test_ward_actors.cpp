@@ -625,3 +625,59 @@ TEST_CASE("the shared ward is a pure function of its hour and its tick count") {
     own->run(240);
     CHECK(signature(own->people()) == atThreeHundred);
 }
+
+// ---------------------------------------------------------------------------
+// #32: a home or work anchor with no path was a bound, not a broken map
+// ---------------------------------------------------------------------------
+
+TEST_CASE("every actor's home and its work anchor are mutually reachable") {
+    // #32. Measured against the Java build's docks_surface world: ~9.4% of
+    // ward actors had a home or work anchor in a region with no path to it.
+    // That reading was never a WORLD-DATA defect -- bakeRoster() refuses to
+    // place a HOME anywhere off the ward's own walking island unless it is a
+    // proven-round-trip roof bed (the componentAt() guard in section 1 of
+    // ward_roster.cpp), and every WORK anchor is snapped with
+    // wantWalkable=true (the default) -- so both ends of every trip in the
+    // roster are, by construction, on ground the UNBOUNDED flood fill calls
+    // reachable. It was a PATHING defect: PathFinder's box (kSearchPadding)
+    // and node budget (kSearchMaxNodes) were sized for a LOCAL replan, and
+    // stepToward() asks the same bounded search to cover a body's entire
+    // commute the moment it leaves home. About a sixteenth of the shipped
+    // roster's home-to-work legs are long enough, through the compounds' own
+    // turns, that the tight bound answered NO ROUTE for a body that had one --
+    // the actor never walked to work or home again, and every retry cooldown
+    // it re-asked the same unanswerable-by-construction question at the full
+    // cost of a failed search. Both constants now carry real margin over what
+    // this case measures on the shipped roster; see their comments in
+    // path_finder.hpp.
+    const sim::WardPopulation& run = wardAt(8, 0);
+    sim::PathFinder finder(sharedTiles());
+    std::int32_t total = 0;
+    std::int32_t failed = 0;
+    std::int32_t worstOk = 0;
+    for (const sim::WardActor& actor : run.actors()) {
+        if (actor.homeX == actor.anchorX && actor.homeY == actor.anchorY &&
+            actor.homeBand == actor.anchorBand) {
+            continue;  // trivially reached: a beast's home IS its post
+        }
+        ++total;
+        std::vector<sim::PathStep> route;
+        const sim::Gait gait = actor.homeOnTheRoof ? sim::Gait::Climb : sim::Gait::Walk;
+        const bool ok = finder.find(sim::PathStep{actor.homeX, actor.homeY, actor.homeBand},
+                                    sim::PathStep{actor.anchorX, actor.anchorY, actor.anchorBand},
+                                    static_cast<std::uint32_t>(actor.id) + 1u, route, gait);
+        if (!ok) {
+            ++failed;
+            MESSAGE("actor ", actor.id, " (", sim::wardTypeName(actor.type), ") home ",
+                    actor.homeX, ",", actor.homeY, ",z", actor.homeBand, " -> anchor ",
+                    actor.anchorX, ",", actor.anchorY, ",z", actor.anchorBand,
+                    " NO ROUTE, expansions=", finder.lastExpansions());
+        } else {
+            worstOk = std::max(worstOk, finder.lastExpansions());
+        }
+    }
+    MESSAGE("home<->anchor: ", failed, " / ", total, " unreachable (",
+            total > 0 ? (100.0 * failed) / total : 0.0, "%), worst SUCCESSFUL search expanded ",
+            worstOk, " nodes");
+    CHECK(failed == 0);
+}
