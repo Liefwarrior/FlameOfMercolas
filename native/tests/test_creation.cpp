@@ -798,13 +798,18 @@ TEST_CASE("DEVIN's fixed sheet, applied through CreationResult, reaches the live
     CHECK(live.level(sim::kHaggleSkill) == chosen.companion.startingLevel(sim::kHaggleSkill));
 
     // AND THE CHARACTER SHEET -- the one screen a player actually reads
-    // these numbers back off, C in the real game -- agrees, because
-    // characterRows() reads through this exact same accessor. Exact string,
-    // not just "not zero": the row format ("SKYRUNNING  LV n") is
-    // characterRows()'s own, pinned here so a future change to either the
-    // format or the applied level would fail this the honest way.
+    // these numbers back off, the tiled Menu's Character tile in the real
+    // game -- agrees, because characterRows() reads through this exact same
+    // accessor. Exact string, not just "not zero": the row format
+    // ("SKYRUNNING LV n") is characterRows()'s own, pinned here so a future
+    // change to either the format or the applied level would fail this the
+    // honest way.
+    //
+    // MORROWIND ROUND: ONE SPACE, NOT TWO -- see characterRows()'s own note
+    // on why the tiled Character tile's narrower column gave that glyph
+    // back to the skill rows.
     const std::string expected =
-        "SKYRUNNING  LV " + std::to_string(chosen.companion.startingLevel(sim::kRoofSkill));
+        "SKYRUNNING LV " + std::to_string(chosen.companion.startingLevel(sim::kRoofSkill));
     const std::vector<std::string> rows = session.characterRows();
     CHECK(std::find(rows.begin(), rows.end(), expected) != rows.end());
 }
