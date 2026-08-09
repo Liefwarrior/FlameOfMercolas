@@ -4333,6 +4333,17 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.moveTopicCursor(want - session.topicCursor());
     }
 
+    // VERIFICATION. See SmokeRunConfig::settle's own header. Zero-input
+    // steps, same as `--hold`'s own loop -- nothing walks, nothing turns --
+    // run comfortably past EasedToggle's default riseSteps (8) so the panel
+    // this capture opened is fully open, not caught on its first tick.
+    if (config.settle) {
+        const sim::MoveInput still{};
+        for (int i = 0; i < 16; ++i) {
+            session.step(still);
+        }
+    }
+
     Framebuffer frame(config.session.width, config.session.height);
     result.stats = session.drawFrame(frame);
     result.lampCount = session.lampCount();

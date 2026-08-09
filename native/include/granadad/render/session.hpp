@@ -795,6 +795,19 @@ struct SmokeRunConfig {
     /// this environment cannot drive a real window, so without a flag the
     /// page could be unit-tested for its text but never actually LOOKED AT.
     bool character = false;
+    /// VERIFICATION. Every scripted overlay above (`pause`, `character`, and
+    /// the panel any conversation opens) toggles on the LAST beat of the
+    /// script, with no session.step() left to call afterward -- so every
+    /// headless capture this project has ever taken of an overlay panel froze
+    /// EasedToggle at its opening bump (one riseStep's worth, ~1/8 open) and
+    /// none has ever shown the settled, fully-open panel a player spends the
+    /// rest of the transition looking at. This runs the panel's own animation
+    /// to completion (plain zero-input steps, nothing walks) before the
+    /// shutter, so a capture can show the finished page instead of always
+    /// re-proving the same first frame. Off by default: it changes what a
+    /// capture looks like, and callers that specifically want the opening
+    /// bump (proving the transition itself does not flash) still need it off.
+    bool settle = false;
     /// S5. Climb onto the Gilded Gull's roof and look down at the ward: in at
     /// the door, up the stair, out over the north wall, and turn round. WHERE
     /// is "roof" (standing on the lead), "leap" (across the alley onto the next

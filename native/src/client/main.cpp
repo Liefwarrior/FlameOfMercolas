@@ -254,6 +254,9 @@ void print_usage() {
         "                       on QUIT with the first of its two presses in)\n"
         "  --character          open the character sheet before the shutter\n"
         "                       goes -- the same call C makes\n"
+        "  --settle             run a scripted overlay's open animation to\n"
+        "                       completion before the shutter, instead of\n"
+        "                       capturing the frame it opened on\n"
         "  --street[=WHO]       stand next to somebody out in the WARD and talk\n"
         "                       to them. WHO is hand, watch, priest, disciple,\n"
         "                       keeper, fisher, sailor, carter, wastrel, urchin,\n"
@@ -436,6 +439,9 @@ void print_usage() {
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--character") == 0) {
             options.smoke.character = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--settle") == 0) {
+            options.smoke.settle = true;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--street") == 0) {
             options.smoke.street = true;
