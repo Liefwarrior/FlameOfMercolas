@@ -400,6 +400,47 @@ TEST_CASE("Finch sells wire to his own and to nobody else") {
     CHECK(gull.playerCoin() == coinBefore - kPickPrice * kPicksPerSet);
 }
 
+// TASK #81. legend.hpp's own file header calls picksPerSetBonus() one of
+// three boons "wired at exactly one call site each" -- Tavern::buyPicks --
+// and until this task it was derived correctly and read by nothing. This is
+// that call site, proved: a hand the ward calls LIGHT FINGERS gets more wire
+// for the SAME coin, not cheaper wire, because the price is what the goods
+// are worth and the bonus is what the ward thinks of the hands buying them.
+TEST_CASE("a rung on the Wire buys more wire for the same coin, not cheaper wire") {
+    Room room(hourOfDay(1), gull::kBaleX, gull::kBaleY, gull::kGroundBand);
+    Tavern& gull = room.tavern();
+    const Actor* finch = nullptr;
+    for (const Actor& actor : gull.actors()) {
+        if (actor.role() == ActorRole::SkyrunnerContact && actor.present()) {
+            finch = &actor;
+            break;
+        }
+    }
+    REQUIRE(finch != nullptr);
+    room.standAt(finch->tileX(), finch->tileY(), gull::kGroundBand);
+
+    const std::int32_t roofs = gull.dialogue().factions().indexOf("skyrunners");
+    REQUIRE(roofs >= 0);
+    gull.dialogue().standings().addStanding(roofs, 40);
+    REQUIRE(gull.dialogue().standings().join(roofs, gull.dialogue().skills()) ==
+            LadderResult::Granted);
+
+    // A cracksman's hand, not a bought favour: cracksmanship is what THE WIRE
+    // is measured in (legend.cpp's own wire score), so setting it directly is
+    // the same rung a run of burgled boxes would have earned.
+    REQUIRE(gull.dialogue().skills().setLevel(kThieverySkill, 8));
+
+    const std::int32_t coinBefore = gull.playerCoin();
+    const Tavern::StealResult bought = gull.buyPicks();
+    CHECK(bought.result == ServiceResult::Served);
+    // MORE PICKS. The price did not move -- it is still one set's worth of
+    // coin -- so a bonus that changed the price instead of the count would
+    // pass a same-coin-different-picks assertion for the wrong reason; both
+    // are checked.
+    CHECK(gull.picks() > kStartingPicks + kPicksPerSet);
+    CHECK(gull.playerCoin() == coinBefore - kPickPrice * kPicksPerSet);
+}
+
 // ===========================================================================
 // PLAY
 // ===========================================================================

@@ -413,6 +413,67 @@ TEST_CASE("a rung on the Row is worth real coin across a real counter") {
     CHECK(room.tavern().drinkPriceForPlayer() <= before);
 }
 
+// TASK #81. legend.hpp's own file header calls pricePercent() one of three
+// boons "wired at exactly one call site each" -- Tavern::alePrice and
+// Tavern::bedPrice -- and until this task it was derived correctly and read
+// by nothing: contracts finished moved paidCount() and coinEarned(), THE
+// TRADE moved with them, and the counter never heard about it. This pays two
+// jobs off through the room's OWN board -- the same ContractBoard
+// drinkPriceForPlayer()/roomPriceForPlayer() now read via
+// Tavern::earnedLegend() -- with no keypress and no haggle anywhere near it,
+// so a drop in what follows is legend's own pricePercent() and not the
+// pre-existing skill-gap or guild-rung discounts test_dialogue.cpp and the
+// case above already cover.
+TEST_CASE("a rung on THE TRADE discounts the same counter as a rung on the Row") {
+    Room room(hourOfDay(20), gull::kBartenderX, gull::kBartenderY + 1);
+    const std::int32_t drinkBefore = room.tavern().drinkPriceForPlayer();
+    const std::int32_t roomBefore = room.tavern().roomPriceForPlayer();
+
+    DialogueDirector& talk = room.tavern().dialogue();
+    ContractBoard& board = talk.contracts();
+    Stash& stash = talk.crimes().stash();
+
+    // Two jobs, taken and paid the same night they were offered -- so neither
+    // ever has a chance to go stale on a due date this case is not tracking.
+    // ContractBoard::take()/turnIn() are exactly the mechanics
+    // test_contract.cpp's own RULES tier already exercises with nothing but
+    // a board and a Stash. Two rather than one, so paidCount() alone clears
+    // THE TRADE's first threshold (legend.cpp's kLegendThresholds[0] == 8,
+    // and paidCount()*6 is 12 at two) whatever either job happened to pay.
+    std::vector<std::int32_t> paidIds;
+    for (std::int32_t day = 0; day < 10 && paidIds.size() < 2; ++day) {
+        board.refresh(day, 0x4752414E41444144ull, talk.standings());
+        for (const Contract& row : board.contracts()) {
+            if (paidIds.size() >= 2) {
+                break;
+            }
+            if (row.state != ContractState::Offered || board.take(row.id) != TakeResult::Taken) {
+                continue;
+            }
+            stash.add(row.good, row.units);
+            // A priest's mark for whichever job wanted one; harmless to call
+            // for one that did not.
+            board.sanction();
+            // Recovery progress for whichever job named an object; a few
+            // calls past what it needed just return nullptr.
+            for (std::int32_t i = 0; i < row.units + 1; ++i) {
+                (void)board.recoverPiece();
+            }
+            REQUIRE(board.turnIn(row.id, stash, day).result == TurnInResult::Paid);
+            paidIds.push_back(row.id);
+        }
+    }
+    REQUIRE(paidIds.size() == 2);
+    REQUIRE(board.paidCount() == 2);
+
+    CHECK(room.tavern().drinkPriceForPlayer() <= drinkBefore);
+    CHECK(room.tavern().roomPriceForPlayer() <= roomBefore);
+    // AND NOT BY ACCIDENT: at least one of the two actually moved, or a
+    // wiring bug that always adds zero would still pass the <= checks above.
+    CHECK((room.tavern().drinkPriceForPlayer() < drinkBefore ||
+          room.tavern().roomPriceForPlayer() < roomBefore));
+}
+
 TEST_CASE("the ward's balance of power decides how much rope a house gives") {
     Room room(hourOfDay(20), gull::kBartenderX, gull::kBartenderY + 1);
     const std::int32_t base = room.tavern().graceSecondsForPlayer();
