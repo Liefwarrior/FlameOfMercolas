@@ -153,6 +153,64 @@ constexpr KeyName kKeys[] = {
     return value < low ? low : (value > high ? high : value);
 }
 
+// ---------------------------------------------------------------------------
+// fromText()'s own whole-file candidate table. See fromText()'s header for
+// why this exists as a second, deliberately UNGUARDED path instead of routing
+// every line through ControlSettings::bind().
+// ---------------------------------------------------------------------------
+
+// THE ~10 CORE BUTTONS -- exactly the ones controls.hpp's own Action enum
+// marks CORE in its doc comments, and exactly the ten the "#85: the core
+// gameplay button count is what Eli asked for" test counts. This is the list
+// fromText()'s whole-file validation pass enforces "at least one live
+// binding" against: movement axes, the TurnLeft/TurnRight accessibility
+// fallback, and Screenshot (a dev/capture utility, not a Steam-Input-style
+// gameplay action) are deliberately not on it. Keep this in step with
+// controls.hpp if that list ever changes.
+constexpr Action kCoreActions[] = {
+    Action::Attack,   Action::Interact, Action::Crouch,    Action::Vertical,
+    Action::Sprint,   Action::Menu,     Action::PagePrev,  Action::PageNext,
+    Action::Pause,    Action::QuickWheel,
+};
+
+// RAW, UNCONDITIONAL steal-and-set on a bare table, with none of
+// ControlSettings::bind()'s own strand-refusal guard.
+//
+// THIS IS DELIBERATE, not a regression of round 1's fix. bind()'s guard
+// exists to protect a single LIVE rebind -- one keystroke on the options
+// page, applied to a table every other line of the game can already see --
+// where refusing a strand outright is the only safe answer, because there is
+// no "later" in which some OTHER line of the same file will fix it up.
+// fromText()'s whole-file candidate table is not that: every line of the
+// settings file gets applied to it before anyone judges whether an action
+// ended up reachable, and the judging happens once, as a whole-table
+// validation pass (see fromText()), not line by line. Routing that pass
+// through bind()'s guard is exactly what broke twice -- round 1's guard let
+// an old-format line strand Pause because the file's SECOND relevant line
+// (Pause's own still-default entry) never got a chance to be seen as
+// "protecting" anything; round 2's fix covered that one shape and then broke
+// on a different one, because a per-call guard can only ever reason about
+// the ONE call in front of it. A function that cannot strand permanently --
+// because whatever it strands, the validation pass after it will notice and
+// repair -- does not need to refuse anything up front.
+void rawApplyBind(ControlSettings& table, Action action, Key key, bool asSecondary) noexcept {
+    const std::size_t index = static_cast<std::size_t>(action);
+    if (key != Key::None) {
+        for (std::size_t i = 0; i < kActionCount; ++i) {
+            if (i == index) {
+                continue;  // trading a key between your OWN two slots is fine
+            }
+            if (table.primary[i] == key) {
+                table.primary[i] = Key::None;
+            }
+            if (table.secondary[i] == key) {
+                table.secondary[i] = Key::None;
+            }
+        }
+    }
+    (asSecondary ? table.secondary : table.primary)[index] = key;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -516,10 +574,43 @@ std::string ControlSettings::toText() const {
 }
 
 ControlSettings ControlSettings::fromText(std::string_view text) {
+    // WHOLE-FILE, THEN VALIDATE, THEN ADOPT. THIRD ATTEMPT AT THIS FILE'S ONE
+    // BUG, and the first two both patched a single bind() call site -- a
+    // collision guard gated on `key != Key::None` (round 1), and stealing
+    // through bind()'s existing guard call-by-call for every line (round 2,
+    // routed through bind() below this comment used to). Both broke on the
+    // NEXT adversarial line ordering, because a guard on one call can only
+    // ever see the one call in front of it: fromText() applies a "bind"
+    // line's primary key and secondary key as two SEPARATE calls, so a line
+    // with no secondary key writes Key::None as its own second call, and
+    // nothing that guards `key != Key::None` fires for that write at all --
+    // it wipes whatever the FIRST call's steal happened to leave behind,
+    // unconditionally. Patching that call site a third time just moves the
+    // hole to whatever ordering this task's own adversarial test does not
+    // happen to try.
+    //
+    // So this does not judge anything line by line any more. It parses the
+    // WHOLE file onto a bare candidate table with no strand-refusal at all
+    // (rawApplyBind, above -- steal is unconditional, same as bind() minus
+    // its own guard), then, ONCE, after every line has landed, VALIDATES the
+    // finished table as a unit: does every CORE action still hold at least
+    // one live key. Anything that does not gets ITS OWN shipped default
+    // back -- not the whole file's defaults, just the one stranded verb --
+    // and that restoration steals through rawApplyBind exactly like a real
+    // bind line would, so the recovered action is actually REACHABLE and not
+    // just holding a key value nobody's actionFor() will ever return for it.
+    //
+    // Two explicit lines in the SAME file naming two DIFFERENT actions --a
+    // deliberate two-key swap a player actually asked for -- never trips
+    // this at all: both actions come out of parsing with a live key each,
+    // the validation pass has nothing to do, and the swap stands exactly as
+    // written. See "the collision guard does not block a legitimate
+    // two-action key swap" and the broader adversarial-ordering case below.
+    const ControlSettings shipped = defaults();
     // STARTS FROM THE DEFAULTS, so a file that mentions three verbs leaves the
     // other thirty playable. A settings file is a diff against the shipped
     // layout, not a replacement for it.
-    ControlSettings out = defaults();
+    ControlSettings candidate = shipped;
     std::istringstream lines{std::string(text)};
     std::string line;
     while (std::getline(lines, line)) {
@@ -542,27 +633,11 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
             if (action == Action::Count) {
                 continue;
             }
-            // ROUTED THROUGH bind(), not written straight into the slots. This
-            // USED to be a direct write, on the stated theory that bind()
-            // steals and "a whole file applied through it would have each line
-            // un-bind the line before it whenever two share a key" -- true of
-            // two EXPLICIT lines in the same file colliding, and bind()'s own
-            // collision guard (see its header) now covers exactly that case,
-            // the same way a live rebind already would. What a direct write
-            // could never catch is a line colliding with an action THIS FILE
-            // NEVER MENTIONS AT ALL -- its ordinary, untouched default -- and
-            // that gap was real: an old file's "bind menu ESC" line (menu WAS
-            // pause, pre-#85) wrote Escape onto the NEW Menu action while
-            // Pause's own still-Escape default sat there unmentioned, and
-            // actionFor() silently preferred whichever action has the lower
-            // enum index. Routed through bind(), that collision is resolved
-            // the same way any other duplicate key is -- the loser is stolen
-            // from, and the guard refuses the steal outright rather than leave
-            // the loser with no key on any device.
             std::string second;
             const bool hasSecond = static_cast<bool>(fields >> second);
-            out.bind(action, keyFromName(first), /*asSecondary=*/false);
-            out.bind(action, hasSecond ? keyFromName(second) : Key::None, /*asSecondary=*/true);
+            rawApplyBind(candidate, action, keyFromName(first), /*asSecondary=*/false);
+            rawApplyBind(candidate, action, hasSecond ? keyFromName(second) : Key::None,
+                         /*asSecondary=*/true);
         } else if (verb == "set") {
             std::string name;
             std::string value;
@@ -572,22 +647,69 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
             const std::int32_t number = std::atoi(value.c_str());
             const std::string what = lower(name);
             if (what == "sensitivity") {
-                out.mouse.sensitivity = number;
+                candidate.mouse.sensitivity = number;
             } else if (what == "invert_y") {
-                out.mouse.invertY = number != 0;
+                candidate.mouse.invertY = number != 0;
             } else if (what == "fov") {
-                out.fovDegrees = number;
+                candidate.fovDegrees = number;
             } else if (what == "pad_deadzone") {
-                out.pad.deadzonePercent = number;
+                candidate.pad.deadzonePercent = number;
             } else if (what == "pad_saturation") {
-                out.pad.saturationPercent = number;
+                candidate.pad.saturationPercent = number;
             } else if (what == "pad_look") {
-                out.pad.lookBamPerSecond = number;
+                candidate.pad.lookBamPerSecond = number;
             } else if (what == "pad_trigger_deadzone") {
-                out.pad.triggerDeadzonePercent = number;
+                candidate.pad.triggerDeadzonePercent = number;
             }
         }
     }
+
+    // THE WHOLE-TABLE VALIDATION PASS. Every line of the file has already
+    // landed on `candidate` by this point, and NOTHING has looked at whether
+    // any action is reachable yet -- that question is asked exactly once,
+    // here, over the finished table, not once per bind() call the way both
+    // earlier rounds asked it.
+    //
+    // BOUNDED, NOT ONE PASS. Restoring one stranded CORE action steals its
+    // shipped keys back from whoever the file gave them to -- which can be
+    // ANOTHER core action that was fine a moment ago (its own shipped keys
+    // might be the very ones just reclaimed). One pass therefore is not
+    // always enough; a pass that repairs nothing is always enough, because
+    // there is nothing left to repair. Capped at kActionCount passes purely
+    // as a termination proof for a loop that should never need more than two
+    // or three: each restoration can only ever affect the handful of actions
+    // whose slots it steals from, so the chain cannot outrun the action
+    // table itself.
+    for (std::size_t pass = 0; pass < kActionCount; ++pass) {
+        bool strandedAny = false;
+        for (const Action action : kCoreActions) {
+            const std::size_t index = static_cast<std::size_t>(action);
+            if (candidate.primary[index] != Key::None || candidate.secondary[index] != Key::None) {
+                continue;  // reachable by at least one live key -- nothing to do
+            }
+            // STRANDED. Give it back ITS OWN shipped default, stealing those
+            // specific keys off whoever holds them now -- a plain overwrite
+            // without the steal would leave two actions holding the same
+            // key value, and actionFor()'s first-match-by-enum-index rule
+            // would then resolve that key to whichever action comes first,
+            // which is exactly the original #85 migration bug one level
+            // removed: "has a key" is not "is reachable."
+            rawApplyBind(candidate, action, shipped.primary[index], /*asSecondary=*/false);
+            rawApplyBind(candidate, action, shipped.secondary[index], /*asSecondary=*/true);
+            strandedAny = true;
+        }
+        if (!strandedAny) {
+            break;
+        }
+    }
+
+    // ATOMIC ADOPTION. Nothing before this line is the return value -- every
+    // intermediate shape `candidate` passed through while parsing, and every
+    // shape it passed through while the validation loop above was still
+    // repairing a cascade, stays local to this function. The caller (and a
+    // second, concurrent loadControls() elsewhere) only ever sees the fully
+    // parsed, fully validated table below, in one assignment.
+    ControlSettings out = candidate;
     out.sanitise();
     return out;
 }

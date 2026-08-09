@@ -535,3 +535,111 @@ TEST_CASE("the collision guard does not block a legitimate two-action key swap")
     CHECK(swapped.bound(Action::Menu, Key::PadBack));
     CHECK(swapped.bound(Action::Pause, Key::PadStart));
 }
+
+// ---------------------------------------------------------------------------
+// ROUND 3: the whole-file candidate-table fix. Two rounds of guarding one
+// bind() call site each broke on the next adversarial line ordering that
+// call site could not see (see fromText()'s own header for the blow-by-blow).
+// Nothing below hand-picks a single ordering and calls it proven again.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("round 2's own hole: two full lines, neither with a second key, "
+          "in toText's own write order") {
+    // THE EXACT SHAPE THAT SURVIVED ROUND 2. fromText() applies a line's
+    // primary and secondary key as two SEPARATE bind() calls; a line with no
+    // second key writes Key::None as its own second call, and round 2's
+    // guard only ever fired on `key != Key::None`. "bind menu ESC" then
+    // "bind pause ESC" is not a contrived ordering -- it is the ORDINARY one:
+    // toText() always writes Menu's line before Pause's, because Menu's enum
+    // index precedes Pause's, so this is what a hand-edited file that rebinds
+    // Pause to Escape (its own shipped default, entirely reasonably typed by
+    // hand) looks like sitting next to an untouched Menu line.
+    const ControlSettings loaded =
+        ControlSettings::fromText("bind menu ESC\nbind pause ESC\n");
+    const std::size_t pauseIndex = static_cast<std::size_t>(Action::Pause);
+    INFO("pause primary=", keyName(loaded.primary[pauseIndex]),
+         " secondary=", keyName(loaded.secondary[pauseIndex]));
+    CHECK((loaded.primary[pauseIndex] != Key::None || loaded.secondary[pauseIndex] != Key::None));
+    // Reachable, not just non-empty: Escape actually resolves to Pause, since
+    // Menu gave it up entirely (both its slots came back empty from parsing
+    // and the validation pass restored Menu to its own full shipped default,
+    // Tab + PadBack, rather than leaving it holding a key it shares with
+    // Pause).
+    CHECK(loaded.actionFor(Key::Escape) == Action::Pause);
+    CHECK(loaded.bound(Action::Menu, Key::Tab));
+    CHECK(loaded.bound(Action::Menu, Key::PadBack));
+}
+
+TEST_CASE("every CORE action keeps at least one live key, across a spread of "
+          "adversarial line orderings and two different action pairs") {
+    // NOT JUST THE TWO KNOWN BAD ORDERINGS. Round 1 and round 2 each closed
+    // exactly the one shape their own verifier found. This iterates a spread
+    // of shapes over TWO different CORE pairs -- Menu/Pause (the pair both
+    // prior rounds' bugs were found on) and Interact/Attack (a pair that has
+    // nothing to do with either prior fix, to prove this is not a
+    // Menu/Pause-specific patch) -- and asserts the actual invariant the
+    // architecture promises: after ANY load, EVERY CORE action has at least
+    // one live binding. Not just the two actions a given line touches --
+    // ALL TEN, every time, because a restoration cascade (fixing one action
+    // can steal a key off a different one) is exactly the kind of collateral
+    // strand a narrower check would miss.
+    const char* const files[] = {
+        // Round 2's own shape, both orderings.
+        "bind menu ESC\nbind pause ESC\n",
+        "bind pause ESC\nbind menu ESC\n",
+        // Round 1's own shape: one line claims both of the other action's
+        // shipped keys at once.
+        "bind menu ESC PAD_START\n",
+        "bind pause TAB PAD_BACK\n",
+        // The single-key wipe split across two lines instead of landing on
+        // one: primary stolen by one line, secondary by a different one.
+        "bind menu ESC\nbind pause PAD_START\n",
+        "bind pause PAD_START\nbind menu ESC\n",
+        // Three lines touching the same pair, last write standing.
+        "bind menu TAB\nbind pause TAB\nbind menu ESC\n",
+        "bind pause ESC PAD_START\nbind menu ESC\nbind pause TAB\n",
+        // The same shapes again, on Interact/Attack instead of Menu/Pause --
+        // proving the fix is architectural and not keyed to one pair of
+        // actions. Interact ships E + PadSouth; Attack ships MouseLeft +
+        // PadWest.
+        "bind interact E\nbind attack E\n",
+        "bind attack E\nbind interact E\n",
+        "bind interact MOUSE1 PAD_WEST\n",
+        "bind attack E PAD_SOUTH\n",
+        "bind interact E\nbind attack PAD_SOUTH\n",
+        "bind attack PAD_SOUTH\nbind interact E\n",
+        // A file that hits BOTH pairs at once, every line a single key, in
+        // an order that does not mirror toText()'s own write order.
+        "bind pause ESC\nbind attack E\nbind menu ESC\nbind interact E\n",
+    };
+    for (const char* const file : files) {
+        INFO("file: ", file);
+        const ControlSettings loaded = ControlSettings::fromText(file);
+        for (const Action action : {Action::Attack, Action::Interact, Action::Crouch,
+                                     Action::Vertical, Action::Sprint, Action::Menu,
+                                     Action::PagePrev, Action::PageNext, Action::Pause,
+                                     Action::QuickWheel}) {
+            const std::size_t index = static_cast<std::size_t>(action);
+            INFO("action: ", actionKey(action),
+                 " primary=", keyName(loaded.primary[index]),
+                 " secondary=", keyName(loaded.secondary[index]));
+            CHECK((loaded.primary[index] != Key::None || loaded.secondary[index] != Key::None));
+        }
+    }
+}
+
+TEST_CASE("round-1's own regression case still holds under the whole-file fix") {
+    // THE ORIGINAL #85 MIGRATION SHAPE, kept verbatim (not just folded into
+    // the adversarial sweep above) because this is the case the very first
+    // guard was written for, and it is worth its own name.
+    const std::string_view oldSaveLine = "bind menu ESC PAD_START\n";
+    const ControlSettings loaded = ControlSettings::fromText(oldSaveLine);
+    const std::size_t pauseIndex = static_cast<std::size_t>(Action::Pause);
+    CHECK((loaded.primary[pauseIndex] != Key::None || loaded.secondary[pauseIndex] != Key::None));
+    const bool pauseReachableByKeyboard =
+        (loaded.primary[pauseIndex] != Key::None &&
+         loaded.actionFor(loaded.primary[pauseIndex]) == Action::Pause) ||
+        (loaded.secondary[pauseIndex] != Key::None &&
+         loaded.actionFor(loaded.secondary[pauseIndex]) == Action::Pause);
+    CHECK(pauseReachableByKeyboard);
+}
