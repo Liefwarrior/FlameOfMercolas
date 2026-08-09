@@ -66,6 +66,22 @@ void put_string(HashSink& sink, std::string_view text) {
     return out;
 }
 
+/// contrabandLabelFor's own lower-cased sibling, so a brief that ever names
+/// {good} gets a counted noun ("3 scalps") rather than the raws-facing
+/// snake_case spelling contrabandSymbol carries ("scalp", verbatim what
+/// `"good": "scalp"` says in this file) -- no authored brief in
+/// contracts.json reaches this token today, but a template that added one
+/// would otherwise print the raws' own key at the player, the exact class of
+/// leak radiant_quest.cpp's placeProse was just written to close.
+[[nodiscard]] std::string lowerAscii(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return out;
+}
+
 /// The name a topic row has room for.
 ///
 /// A topic column is EIGHTEEN GLYPHS WIDE at every resolution this game runs
@@ -630,7 +646,7 @@ void ContractBoard::refresh(std::int32_t day, std::uint64_t worldSeed,
         substitute(row.brief, "{source}", from == nullptr ? "somebody" : from->name);
         substitute(row.brief, "{sourceSite}", from == nullptr ? "the ward" : from->place);
         substitute(row.brief, "{units}", std::to_string(units));
-        substitute(row.brief, "{good}", std::string(contrabandSymbol(offer.good)));
+        substitute(row.brief, "{good}", lowerAscii(contrabandLabelFor(offer.good, units)));
         substitute(row.brief, "{thing}", thing);
         rows_.push_back(std::move(row));
     }
