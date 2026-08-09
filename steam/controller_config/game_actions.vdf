@@ -1,0 +1,209 @@
+// game_actions.vdf -- Steam Input "In-Game Action File" for Granadad: The
+// Darkstreets (marketing name for the tech: Mercolas Engine).
+//
+// STATUS: this repo has no linked Steamworks SDK and no Steam AppID yet (see
+// steam/controller_config/README.md for how that was confirmed). This file
+// cannot be exercised inside the real Steam client until both exist -- it is
+// the READY-TO-USE declaration for when they land, written against the
+// control-scheme redesign's DESIGN BRIEF action vocabulary rather than
+// against exact keybinds, which a concurrent session owns and may still be
+// tuning. See the README for the full explanation, the existing gamepad
+// input path this repo already has, and a Key::Pad* -> Steam Input glyph
+// lookup table.
+//
+// Two action sets, matching the brief:
+//   Default -- the first-person world/gameplay input, active while walking
+//              the Docks and running the investigation loop.
+//   Menu    -- the tabbed Menu/Pause screen's input, active whenever that
+//              screen owns focus and the world stops reading a stick.
+//
+// MoveForward/Back/StrafeLeft/StrafeRight and NavigateUp/Down/Left/Right are
+// each declared as their own "StickPadGyro" action in "dpad" input_mode
+// rather than as digital "Button" actions or a single 2-axis "Move" action.
+// That is deliberate, not a guess: this game's own MoveInput is TILE-STEPPED
+// intent (see granadad::render::stickIntent in controls.hpp), not a
+// continuous analog vector -- the stick decides a direction in {-1,0,+1} per
+// axis, and a separate magnitude threshold decides walk/jog/sprint. Four
+// discrete directional actions sourced from one physical stick, via Steam
+// Input's own dpad-from-stick emulation, is the accurate mirror of that,
+// and it keeps the VDF action names 1:1 with this game's own
+// granadad::render::Action enum members (Forward, Back, StrafeLeft,
+// StrafeRight) for whenever a real lookup table gets built.
+//
+// CameraLook is the one true analog stick action here (right stick / mouse
+// look), hence "joystick_camera" rather than "dpad".
+
+"In Game Actions"
+{
+	"actions"
+	{
+		"Default"
+		{
+			"title"			"#Set_Default"
+			// Marks this as the action set Steam Input falls back to for its
+			// legacy XInput/DirectInput emulation layer -- see the README's
+			// point (2) on why that legacy path likely already works with
+			// this codebase's existing SDL_Gamepad input, zero extra code,
+			// even before a real ISteamInput() integration exists.
+			"legacy_set"		"1"
+
+			"StickPadGyro"
+			{
+				"MoveForward"
+				{
+					"title"		"#Action_MoveForward"
+					"input_mode"	"dpad"
+				}
+				"MoveBack"
+				{
+					"title"		"#Action_MoveBack"
+					"input_mode"	"dpad"
+				}
+				"StrafeLeft"
+				{
+					"title"		"#Action_StrafeLeft"
+					"input_mode"	"dpad"
+				}
+				"StrafeRight"
+				{
+					"title"		"#Action_StrafeRight"
+					"input_mode"	"dpad"
+				}
+				"CameraLook"
+				{
+					"title"		"#Action_CameraLook"
+					"input_mode"	"joystick_camera"
+				}
+			}
+
+			"Button"
+			{
+				"Attack"
+				{
+					"title"		"#Action_Attack"
+				}
+				"Interact"
+				{
+					"title"		"#Action_Interact"
+				}
+				"Sneak"
+				{
+					"title"		"#Action_Sneak"
+				}
+				"Sprint"
+				{
+					"title"		"#Action_Sprint"
+				}
+				"Walk"
+				{
+					"title"		"#Action_Walk"
+				}
+				"VerticalMove"
+				{
+					"title"		"#Action_VerticalMove"
+				}
+				// Chord/radial-capable: a single declared action that Steam
+				// Input's own controller configurator can bind to a radial
+				// menu / touch menu activator, cycling several game verbs off
+				// one physical control. That binding lives in a PLAYER or
+				// Valve-authored controller config, not in this action
+				// manifest -- this file only needs to declare QuickWheel
+				// exists so a config can target it.
+				"QuickWheel"
+				{
+					"title"		"#Action_QuickWheel"
+				}
+				"OpenMenu"
+				{
+					"title"		"#Action_OpenMenu"
+				}
+				"Pause"
+				{
+					"title"		"#Action_Pause"
+				}
+			}
+		}
+
+		"Menu"
+		{
+			"title"			"#Set_Menu"
+
+			"StickPadGyro"
+			{
+				"NavigateUp"
+				{
+					"title"		"#Action_NavigateUp"
+					"input_mode"	"dpad"
+				}
+				"NavigateDown"
+				{
+					"title"		"#Action_NavigateDown"
+					"input_mode"	"dpad"
+				}
+				"NavigateLeft"
+				{
+					"title"		"#Action_NavigateLeft"
+					"input_mode"	"dpad"
+				}
+				"NavigateRight"
+				{
+					"title"		"#Action_NavigateRight"
+					"input_mode"	"dpad"
+				}
+			}
+
+			"Button"
+			{
+				"Confirm"
+				{
+					"title"		"#Action_Confirm"
+				}
+				"Back"
+				{
+					"title"		"#Action_Back"
+				}
+				"NextPage"
+				{
+					"title"		"#Action_NextPage"
+				}
+				"PrevPage"
+				{
+					"title"		"#Action_PrevPage"
+				}
+			}
+		}
+	}
+
+	"localization"
+	{
+		"english"
+		{
+			"Set_Default"			"Default"
+			"Set_Menu"			"Menu"
+
+			"Action_MoveForward"		"Move Forward"
+			"Action_MoveBack"		"Move Back"
+			"Action_StrafeLeft"		"Strafe Left"
+			"Action_StrafeRight"		"Strafe Right"
+			"Action_CameraLook"		"Look"
+			"Action_Attack"			"Attack"
+			"Action_Interact"		"Interact"
+			"Action_Sneak"			"Sneak"
+			"Action_Sprint"			"Sprint"
+			"Action_Walk"			"Walk"
+			"Action_VerticalMove"		"Jump / Vault / Climb / Drop"
+			"Action_QuickWheel"		"Quick Wheel"
+			"Action_OpenMenu"		"Open Menu"
+			"Action_Pause"			"Pause"
+
+			"Action_NavigateUp"		"Navigate Up"
+			"Action_NavigateDown"		"Navigate Down"
+			"Action_NavigateLeft"		"Navigate Left"
+			"Action_NavigateRight"		"Navigate Right"
+			"Action_Confirm"		"Confirm"
+			"Action_Back"			"Back"
+			"Action_NextPage"		"Next Page"
+			"Action_PrevPage"		"Prev Page"
+		}
+	}
+}
