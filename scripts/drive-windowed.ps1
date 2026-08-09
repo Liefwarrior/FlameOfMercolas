@@ -269,6 +269,27 @@ foreach ($beat in $Script.Split(',')) {
     # CHECKED EVERY BEAT, not once at the start. A window that loses focus half
     # way through a run -- a notification, a stray click -- would otherwise send
     # the rest of the script into whatever took it.
+    #
+    # #85. RE-ACQUIRE BEFORE GIVING UP. #80 put a SEPARATE window in front of
+    # run_client()'s own: the character-creation screen (run_creation_window())
+    # opens its own SDL window, closes it, and THEN run_client() opens a new
+    # one -- same process, a DIFFERENT HWND. The $hwnd this script grabbed
+    # once at boot is the creation window's, and it is gone by the time a
+    # script has driven through Origin/Customize/BEGIN, so every beat after
+    # that used to read as "lost focus" even though the game is right there.
+    # One re-fetch of MainWindowHandle and one more ForceForeground handles
+    # it; a script that is ACTUALLY looking at something else still stops
+    # here exactly as before.
+    if ([Drive]::GetForegroundWindow() -ne $hwnd) {
+        $proc.Refresh()
+        $freshHwnd = $proc.MainWindowHandle
+        if ($freshHwnd -ne [IntPtr]::Zero -and $freshHwnd -ne $hwnd) {
+            Write-Host "  window handle changed (creation -> client) -- re-acquiring"
+            $hwnd = $freshHwnd
+            [Drive]::ForceForeground($hwnd)
+            Start-Sleep -Milliseconds 400
+        }
+    }
     if ([Drive]::GetForegroundWindow() -ne $hwnd) {
         Write-Host "  LOST FOCUS. Stopping here rather than typing into something else."
         break

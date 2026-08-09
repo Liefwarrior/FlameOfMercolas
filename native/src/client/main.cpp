@@ -1727,9 +1727,21 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // per-page checks and every toggle*()'s own exclusivity block read
         // off the same six flags instead of three hand-kept copies of the
         // list.
+        // NOT WHILE session.firstRun() -- the brand-new-game opening casebook
+        // (SessionConfig::openingPage) is the ONE exception: Session::step()
+        // itself dismisses it on the first movement it sees ("FIRST STEP
+        // CLOSES THE OPENING PAGE", its own comment), which needs the
+        // movement KEY POLLED in the first place. Gating that read on
+        // menuOpen() -- true here too, since the opening page IS the
+        // casebook -- would mean the page can never be dismissed by walking
+        // at all: `held` stays zero forever, step() never sees a non-zero
+        // MoveInput, and firstRun_ never clears. firstRun() is a true
+        // one-shot (every discrete verb press clears it, in dismissOverlays()
+        // and in every toggle*()), so this only widens the gap for that exact
+        // window and closes again the moment anything else happens.
         const bool listening =
-            session.talking() || session.picking() || session.menuOpen() ||
-            session.pauseOpen();
+            session.talking() || session.picking() ||
+            (session.menuOpen() && !session.firstRun()) || session.pauseOpen();
         const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
         const Uint32 mouseButtons = listening ? 0U : SDL_GetMouseState(nullptr, nullptr);
         SDL_Gamepad* livePad = listening ? nullptr : pad;
