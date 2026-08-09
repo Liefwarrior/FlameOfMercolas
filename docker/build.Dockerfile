@@ -865,12 +865,12 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "you cannot read a clue nobody has pointed you at" \
         "the trail is walked end to end, and the dead ends cost a walk and pay a clue" \
         "the look key finds the body, and the district's other corners stay quiet" \
-        "the casebook opens in the conversation's own bands and leaves the middle alone" \
+        "the casebook opens as the Journal tile of the tiled Menu, which covers the middle of the screen on purpose" \
         "working the trail is what the Flame's track is made of, and it pays a rung" \
         "the five tracks are five different people, and the titles never collide" \
         "a new game opens on the case, not on a systems demo" \
         "the keys are in the game, and every verb the client binds is on the list" \
-        "the notes, the keys and the world never fight over the middle of the screen" \
+        "the keys page still respects the HUD rule; the tiled Menu is a full overview and does not" \
         "a lock opens to a hand that only has what a player has" \
         "the burglar's second box is opened by hands the first one taught" \
         "the Skyrunner line lands all nine of its stages" \

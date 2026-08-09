@@ -25,6 +25,7 @@
 
 #include "granadad/content/content_dir.hpp"
 #include "granadad/render/hud.hpp"
+#include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/casebook.hpp"
 #include "granadad/sim/docks.hpp"
@@ -253,19 +254,21 @@ TEST_CASE("the cursor wraps the district map the same way it wraps every other l
     CHECK(view.cursor == 0);
 }
 
-TEST_CASE("the district map is exclusive with every other overlay page -- both ways") {
+TEST_CASE("the map tile stays open alongside the character, letters and journal tiles, and is exclusive with keys, options and pause -- both ways") {
+    // MORROWIND ROUND. Map is one of the tiled Menu's four SIMULTANEOUS
+    // panels now (Session::casebookOpen()'s own header), so it is no longer
+    // "exclusive" with the casebook or the character sheet -- opening any of
+    // the four opens all four together; test_vertical_menu.cpp's own "Menu
+    // opens all four tiles at once" proves that directly. What survives from
+    // this case's original claim is that the tiled Menu as a WHOLE is still
+    // exclusive with Keys, Options and Pause.
     render::Session session = standing();
 
     session.toggleMap();
     REQUIRE(session.mapOpen());
-
-    session.toggleCasebook();
     CHECK(session.casebookOpen());
-    CHECK_FALSE(session.mapOpen());
-
-    session.toggleMap();
-    CHECK(session.mapOpen());
-    CHECK_FALSE(session.casebookOpen());
+    CHECK(session.characterOpen());
+    CHECK(session.lettersOpen());
 
     session.toggleKeys();
     CHECK(session.keysOpen());
@@ -274,14 +277,6 @@ TEST_CASE("the district map is exclusive with every other overlay page -- both w
     session.toggleMap();
     CHECK(session.mapOpen());
     CHECK_FALSE(session.keysOpen());
-
-    session.toggleCharacter();
-    CHECK(session.characterOpen());
-    CHECK_FALSE(session.mapOpen());
-
-    session.toggleMap();
-    CHECK(session.mapOpen());
-    CHECK_FALSE(session.characterOpen());
 
     session.toggleOptions();
     CHECK(session.optionsOpen());
@@ -298,6 +293,21 @@ TEST_CASE("the district map is exclusive with every other overlay page -- both w
     session.toggleMap();
     CHECK(session.mapOpen());
     CHECK_FALSE(session.pauseOpen());
+}
+
+TEST_CASE("PagePrev/PageNext move focus onto the map tile without closing it") {
+    render::Session session = standing();
+
+    session.toggleMap();
+    REQUIRE(session.mapOpen());
+    REQUIRE(session.menuFocus() == render::kMenuFocusMap);
+
+    session.menuPageNext();  // Map -> Letters
+    CHECK(session.menuFocus() == render::kMenuFocusLetters);
+    CHECK(session.mapOpen());  // still open, just not focused
+
+    session.menuPagePrev();  // back to Map
+    CHECK(session.menuFocus() == render::kMenuFocusMap);
 }
 
 TEST_CASE("the district map never opens over a conversation or a pick in progress") {
@@ -317,11 +327,13 @@ TEST_CASE("the district map never opens over a conversation or a pick in progres
     CHECK(session.talking());
 }
 
-TEST_CASE("the district map never fights over the middle of the screen") {
-    // THE SAME MEASUREMENT test_character.cpp, test_casebook.cpp and
-    // test_pause.cpp already run for their own pages: draw the frame with the
-    // map up and with it down, and require the exclusion rectangle to be
-    // pixel-identical.
+TEST_CASE("the tiled Menu covers the middle of the screen on purpose, unlike a live conversation") {
+    // MORROWIND ROUND: THE CLAIM THIS CASE PROVES IS INVERTED FROM WHAT IT
+    // USED TO BE -- see test_character.cpp's identically-renamed case for the
+    // full explanation. The tiled Menu (menu_view.hpp) is a Morrowind-style
+    // overview and is deliberately exempt from the HUD's centre-clear rule;
+    // a live conversation is not, and stays the control that proves the rule
+    // still holds where it should.
     render::SessionConfig config = fresh();
     render::Session session(config);
     session.stepMany(MoveInput{}, 4);
@@ -333,15 +345,20 @@ TEST_CASE("the district map never fights over the middle of the screen") {
 
     session.toggleMap();
     REQUIRE(session.mapOpen());
-    render::Framebuffer withMap(config.width, config.height);
-    session.drawFrame(withMap);
+    render::Framebuffer withMenu(config.width, config.height);
+    session.drawFrame(withMenu);
 
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
-    for (int y = centre.y0; y < centre.y1; ++y) {
+    bool anyDiffer = false;
+    for (int y = centre.y0; y < centre.y1 && !anyDiffer; ++y) {
         for (int x = centre.x0; x < centre.x1; ++x) {
-            REQUIRE(withMap.pixels()[withMap.index(x, y)] == plain.pixels()[plain.index(x, y)]);
+            if (withMenu.pixels()[withMenu.index(x, y)] != plain.pixels()[plain.index(x, y)]) {
+                anyDiffer = true;
+                break;
+            }
         }
     }
+    CHECK(anyDiffer);
 }
 
 TEST_CASE("every word the district map can show is a sentence, not a diagnostic") {

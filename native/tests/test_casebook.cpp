@@ -376,7 +376,20 @@ TEST_CASE("the look key finds the body, and the district's other corners stay qu
     CHECK(session.casebook().dread() == dread);
 }
 
-TEST_CASE("the casebook opens in the conversation's own bands and leaves the middle alone") {
+TEST_CASE("the casebook opens as the Journal tile of the tiled Menu, which covers the middle of the screen on purpose") {
+    // MORROWIND ROUND: THIS CASE'S OWN CLAIM IS INVERTED FROM WHAT IT USED TO
+    // BE, AND THAT IS DELIBERATE -- read menu_view.hpp's own header before
+    // touching this case again. The casebook used to be one of #85's six
+    // single-panel pages and shared drawDialogue's centre-clear guarantee
+    // with a live conversation; it is now the Journal tile of a
+    // Morrowind-style tiled OVERVIEW (Character/Map/Letters/Journal, all
+    // drawn at once), and that overview is EXEMPT from the centre-clear rule
+    // on purpose -- "there is nobody TO look at while it is up", the same
+    // reason Oblivion's and Skyrim's own full-screen inventory covers it too.
+    // A live conversation is NOT exempt and never will be; see
+    // test_render.cpp's/test_tavern_render.cpp's own "leaves the centre of
+    // the screen alone" cases for that half of the claim, still true,
+    // still unchanged.
     render::SessionConfig config;
     config.contentDir = content::contentDir();
     config.timeOfDay = 8 * 3600;
@@ -384,7 +397,7 @@ TEST_CASE("the casebook opens in the conversation's own bands and leaves the mid
     session.stepMany(MoveInput{}, 2);
 
     // A Session built without SessionConfig::openingPage starts with the notes
-    // down; J is what a player presses.
+    // down; Menu is what a player presses.
     CHECK_FALSE(session.casebookOpen());
     session.toggleCasebook();
     REQUIRE(session.casebookOpen());
@@ -396,10 +409,11 @@ TEST_CASE("the casebook opens in the conversation's own bands and leaves the mid
     CHECK(view.topics.size() == 1);
     CHECK_FALSE(view.line.empty());
 
-    // THE CENTRE OF THE SCREEN STAYS EMPTY WITH IT OPEN. Same claim the
-    // dialogue surface makes and the same way of proving it: draw the frame
-    // with the book up and with it down, and require the exclusion rectangle to
-    // be pixel-identical.
+    // THE CENTRE OF THE SCREEN NO LONGER STAYS EMPTY WITH IT OPEN -- draw the
+    // frame with the tiled Menu up and with it down, and require that the
+    // exclusion rectangle ACTUALLY DIFFERS: proof the tiled overview is
+    // really drawing over the middle of the screen and not merely permitted
+    // to.
     render::Framebuffer withBook(config.width, config.height);
     session.drawFrame(withBook);
     session.toggleCasebook();
@@ -407,12 +421,16 @@ TEST_CASE("the casebook opens in the conversation's own bands and leaves the mid
     render::Framebuffer without(config.width, config.height);
     session.drawFrame(without);
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
-    for (int y = centre.y0; y < centre.y1; ++y) {
+    bool anyDiffer = false;
+    for (int y = centre.y0; y < centre.y1 && !anyDiffer; ++y) {
         for (int x = centre.x0; x < centre.x1; ++x) {
-            REQUIRE(withBook.pixels()[withBook.index(x, y)] ==
-                    without.pixels()[without.index(x, y)]);
+            if (withBook.pixels()[withBook.index(x, y)] != without.pixels()[without.index(x, y)]) {
+                anyDiffer = true;
+                break;
+            }
         }
     }
+    CHECK(anyDiffer);
 }
 
 // ===========================================================================
@@ -736,7 +754,11 @@ TEST_CASE("the letters wait on the lead that reveals them, and speak in the writ
     CHECK_FALSE(session.lettersOpen());
 }
 
-TEST_CASE("a letter opens in the conversation's own bands and leaves the middle alone") {
+TEST_CASE("a letter opens in the tiled Menu's Letters tile, which covers the middle of the screen on purpose") {
+    // MORROWIND ROUND: SEE THE JOURNAL TILE'S OWN IDENTICALLY-INVERTED CASE
+    // ABOVE for the full explanation. The Letters tile is part of the same
+    // tiled overview the Journal tile is, and is exempt from the
+    // centre-clear rule for the identical reason.
     render::SessionConfig config;
     config.contentDir = content::contentDir();
     config.timeOfDay = 8 * 3600;
@@ -761,10 +783,11 @@ TEST_CASE("a letter opens in the conversation's own bands and leaves the middle 
     session.chooseVisibleTopic(0);
     REQUIRE(session.dialogueView().letter);
 
-    // SAME PROOF THE CASEBOOK'S OWN TEST MAKES: draw with the page up and
-    // with it down, and require the exclusion rectangle to be pixel-
-    // identical. The parchment palette is a different colour, not a
-    // different rule.
+    // THE INVERSE OF THE CASEBOOK'S OWN PROOF: draw with the page up and
+    // with it down, and require the exclusion rectangle to ACTUALLY DIFFER --
+    // the parchment palette is a different colour, and covering the middle
+    // of the screen is a different rule than the one this page used to
+    // prove.
     render::Framebuffer withLetter(config.width, config.height);
     session.drawFrame(withLetter);
     session.toggleLetters();
@@ -772,10 +795,14 @@ TEST_CASE("a letter opens in the conversation's own bands and leaves the middle 
     render::Framebuffer without(config.width, config.height);
     session.drawFrame(without);
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
-    for (int y = centre.y0; y < centre.y1; ++y) {
+    bool anyDiffer = false;
+    for (int y = centre.y0; y < centre.y1 && !anyDiffer; ++y) {
         for (int x = centre.x0; x < centre.x1; ++x) {
-            REQUIRE(withLetter.pixels()[withLetter.index(x, y)] ==
-                    without.pixels()[without.index(x, y)]);
+            if (withLetter.pixels()[withLetter.index(x, y)] != without.pixels()[without.index(x, y)]) {
+                anyDiffer = true;
+                break;
+            }
         }
     }
+    CHECK(anyDiffer);
 }

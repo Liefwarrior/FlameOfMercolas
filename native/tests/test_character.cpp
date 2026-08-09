@@ -32,6 +32,7 @@
 
 #include "granadad/content/content_dir.hpp"
 #include "granadad/render/hud.hpp"
+#include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/legend.hpp"
 
@@ -203,19 +204,22 @@ TEST_CASE("a printed number moves the cursor on the character sheet and does not
     CHECK(session.dialogueView().cursor == before);
 }
 
-TEST_CASE("the character sheet is exclusive with the casebook, the keys page, options and the pause menu -- both ways") {
+TEST_CASE("the character tile stays open alongside the map, letters and journal tiles, and is exclusive with keys, options and pause -- both ways") {
+    // MORROWIND ROUND. Character is one of the tiled Menu's four SIMULTANEOUS
+    // panels now (Session::casebookOpen()'s own header): opening any one of
+    // the four opens all four together, so "exclusive with the casebook" is
+    // no longer a claim this page can make about itself -- see
+    // test_vertical_menu.cpp's own "Menu opens all four tiles at once" case
+    // for that proof. What is still true, unchanged, is that the tiled Menu
+    // as a WHOLE remains exclusive with Keys, Options and Pause, which is
+    // this case's own remaining claim.
     render::Session session = standing();
 
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
-
-    session.toggleCasebook();
     CHECK(session.casebookOpen());
-    CHECK_FALSE(session.characterOpen());
-
-    session.toggleCharacter();
-    CHECK(session.characterOpen());
-    CHECK_FALSE(session.casebookOpen());
+    CHECK(session.mapOpen());
+    CHECK(session.lettersOpen());
 
     session.toggleKeys();
     CHECK(session.keysOpen());
@@ -242,6 +246,25 @@ TEST_CASE("the character sheet is exclusive with the casebook, the keys page, op
     CHECK_FALSE(session.pauseOpen());
 }
 
+TEST_CASE("PagePrev/PageNext move focus onto the character tile without closing it") {
+    // The Morrowind-round replacement for the old "toggleCasebook() steals
+    // the page back" case above: switching focus to another tile no longer
+    // closes this one, because there is no longer a "this one" to close --
+    // all four are always open together.
+    render::Session session = standing();
+
+    session.toggleCharacter();
+    REQUIRE(session.characterOpen());
+    REQUIRE(session.menuFocus() == render::kMenuFocusCharacter);
+
+    session.menuPageNext();  // Character -> Map
+    CHECK(session.menuFocus() == render::kMenuFocusMap);
+    CHECK(session.characterOpen());  // still open, just not focused
+
+    session.menuPagePrev();  // back to Character
+    CHECK(session.menuFocus() == render::kMenuFocusCharacter);
+}
+
 TEST_CASE("the character sheet never opens over a conversation or a pick in progress") {
     render::SessionConfig config = fresh();
     config.timeOfDay = 21 * 3600;
@@ -259,10 +282,17 @@ TEST_CASE("the character sheet never opens over a conversation or a pick in prog
     CHECK(session.talking());
 }
 
-TEST_CASE("the character sheet never fights over the middle of the screen") {
-    // THE SAME MEASUREMENT test_casebook.cpp and test_pause.cpp already run
-    // for their own pages: draw the frame with the sheet up and with it down,
-    // and require the exclusion rectangle to be pixel-identical.
+TEST_CASE("the tiled Menu covers the middle of the screen on purpose, unlike a live conversation") {
+    // MORROWIND ROUND: THE CLAIM THIS CASE PROVES IS INVERTED FROM WHAT IT
+    // USED TO BE. Character was one of #85's six single-panel pages and
+    // shared drawDialogue's own centre-clear guarantee with every other one
+    // of them; it is now one tile of a Morrowind-style tiled OVERVIEW
+    // (menu_view.hpp), and that overview is deliberately exempt from the
+    // centre-clear rule -- see that file's own header for why ("there is
+    // nobody TO look at while it is up"). A live conversation (still
+    // drawDialogue, still exempt from nothing) is the control: it MUST still
+    // leave the centre alone, so this proves both halves of the claim at
+    // once rather than only the new one.
     render::SessionConfig config = fresh();
     render::Session session(config);
     session.stepMany(MoveInput{}, 4);
@@ -274,25 +304,20 @@ TEST_CASE("the character sheet never fights over the middle of the screen") {
 
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
-    render::Framebuffer withSheet(config.width, config.height);
-    session.drawFrame(withSheet);
-
-    // And on the second page, where every row is a different string.
-    for (int i = 0; i < 9; ++i) {
-        session.moveTopicCursor(1);
-    }
-    render::Framebuffer secondPage(config.width, config.height);
-    session.drawFrame(secondPage);
+    render::Framebuffer withMenu(config.width, config.height);
+    session.drawFrame(withMenu);
 
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
-    for (int y = centre.y0; y < centre.y1; ++y) {
+    bool anyDiffer = false;
+    for (int y = centre.y0; y < centre.y1 && !anyDiffer; ++y) {
         for (int x = centre.x0; x < centre.x1; ++x) {
-            REQUIRE(withSheet.pixels()[withSheet.index(x, y)] ==
-                    plain.pixels()[plain.index(x, y)]);
-            REQUIRE(secondPage.pixels()[secondPage.index(x, y)] ==
-                    plain.pixels()[plain.index(x, y)]);
+            if (withMenu.pixels()[withMenu.index(x, y)] != plain.pixels()[plain.index(x, y)]) {
+                anyDiffer = true;
+                break;
+            }
         }
     }
+    CHECK(anyDiffer);
 }
 
 TEST_CASE("every word the character sheet can show is a sentence, not a diagnostic") {

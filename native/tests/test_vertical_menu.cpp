@@ -1,18 +1,26 @@
 // #85. Two smaller pieces of the same consolidation: Vertical (Jump +
 // Traverse + DropDown, resolved by what is directly ahead or below) and the
-// Menu router (Journal/Character/Map/Letters/Keys/Options behind one button
-// with PagePrev/PageNext flipping between them).
+// Menu router.
 //
-// Neither of these touches the six pages' or the three roof moves' own
-// behaviour -- test_roofrun.cpp and the pause/casebook/keys/character/map/
-// letters cases already prove those in depth, unchanged. What is new here is
-// the ORCHESTRATION on top: which of several tried-in-order attempts a single
-// button resolves to, and that flipping pages never leaves two pages open or
-// loses track of which one is showing.
+// MORROWIND ROUND: THE MENU HALF OF THIS FILE IS REWRITTEN. #85's Menu used
+// to flip between six independent pages one at a time; it is now a tiled
+// overview -- Character/Map/Letters/Journal drawn simultaneously (see
+// menu_view.hpp), Keys and Options relocated to Pause's own CONTROLS/
+// SETTINGS rows (test_pause.cpp) -- and PagePrev/PageNext step which of the
+// four tiles has FOCUS instead of which page is showing. The pages'
+// individual content is unchanged and still proved by test_casebook.cpp,
+// test_character.cpp and test_map.cpp; what is new here is the tiled
+// exclusivity (all four together, or none) and the focus cycle.
+//
+// Neither half touches the three roof moves' own behaviour -- test_roofrun.cpp
+// already proves that in depth, unchanged. What is new here is the
+// ORCHESTRATION on top: which of several tried-in-order attempts a single
+// button resolves to, and that stepping focus never opens or closes a tile.
 
 #include <doctest/doctest.h>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/tavern.hpp"
@@ -77,66 +85,74 @@ TEST_CASE("Vertical does nothing while talking, same as the three verbs it folds
     CHECK(session.talking());
 }
 
-TEST_CASE("Menu opens on the casebook, and the key that opened it closes it") {
+TEST_CASE("Menu opens all four tiles at once, and the key that opened it closes all four") {
     Session session(onTheStreet());
     REQUIRE_FALSE(session.menuOpen());
 
     session.toggleMenu();
     CHECK(session.menuOpen());
+    // MORROWIND ROUND: ALL FOUR TILES TOGETHER, NOT ONE PAGE AT A TIME.
+    // casebookOpen()/characterOpen()/mapOpen()/lettersOpen() are the
+    // identical bool now (Session::casebookOpen()'s own header) -- the four
+    // tiles draw simultaneously, per Eli's brief: "just show them like
+    // Morrowind does".
     CHECK(session.casebookOpen());
-    CHECK_FALSE(session.characterOpen());
-    CHECK_FALSE(session.mapOpen());
-    CHECK_FALSE(session.lettersOpen());
+    CHECK(session.characterOpen());
+    CHECK(session.mapOpen());
+    CHECK(session.lettersOpen());
+    // Keys and Options are NOT tiles -- they relocated to Pause's own
+    // CONTROLS/SETTINGS rows (test_pause.cpp) -- so opening the tiled Menu
+    // never opens either.
     CHECK_FALSE(session.keysOpen());
     CHECK_FALSE(session.optionsOpen());
+    // Opens focused on the Journal tile, the same tile #85's six-page Menu
+    // always opened on first.
+    CHECK(session.menuFocus() == kMenuFocusJournal);
 
     session.toggleMenu();
     CHECK_FALSE(session.menuOpen());
     CHECK_FALSE(session.casebookOpen());
-}
-
-TEST_CASE("PagePrev/PageNext cycle the six pages in order and wrap both ways") {
-    Session session(onTheStreet());
-    session.toggleMenu();
-    REQUIRE(session.casebookOpen());
-
-    // FORWARD, ALL SIX, BACK TO THE START. Exactly one page open at every
-    // step -- the six toggle*() methods' own exclusivity blocks are what
-    // guarantees that, not anything new here, but this is the case that
-    // would go red if the router ever called the wrong one.
-    session.menuPageNext();
-    CHECK(session.characterOpen());
-    CHECK_FALSE(session.casebookOpen());
-
-    session.menuPageNext();
-    CHECK(session.mapOpen());
-
-    session.menuPageNext();
-    CHECK(session.lettersOpen());
-
-    session.menuPageNext();
-    CHECK(session.keysOpen());
-
-    session.menuPageNext();
-    CHECK(session.optionsOpen());
-
-    // WRAPS FORWARD, BACK TO THE CASEBOOK.
-    session.menuPageNext();
-    CHECK(session.casebookOpen());
-
-    // AND WRAPS BACKWARD, THE OTHER WAY, LANDING ON OPTIONS FIRST.
-    session.menuPagePrev();
-    CHECK(session.optionsOpen());
-    session.menuPagePrev();
-    CHECK(session.keysOpen());
-
-    // Exactly one page open throughout -- spot-checked at the far end of the
-    // cycle rather than at every step above.
-    CHECK_FALSE(session.casebookOpen());
     CHECK_FALSE(session.characterOpen());
     CHECK_FALSE(session.mapOpen());
     CHECK_FALSE(session.lettersOpen());
-    CHECK_FALSE(session.optionsOpen());
+}
+
+TEST_CASE("PagePrev/PageNext step which tile has focus, and wrap both ways, without closing any tile") {
+    Session session(onTheStreet());
+    session.toggleMenu();
+    REQUIRE(session.casebookOpen());
+    REQUIRE(session.menuFocus() == kMenuFocusJournal);
+
+    // FORWARD, ALL FOUR, BACK TO THE START. All four tiles stay open
+    // throughout -- there is no "page" left to close, only which one is
+    // reading the keyboard right now.
+    session.menuPageNext();
+    CHECK(session.menuFocus() == kMenuFocusCharacter);
+    CHECK(session.characterOpen());
+    CHECK(session.casebookOpen());  // the Journal tile is STILL open
+
+    session.menuPageNext();
+    CHECK(session.menuFocus() == kMenuFocusMap);
+
+    session.menuPageNext();
+    CHECK(session.menuFocus() == kMenuFocusLetters);
+
+    // WRAPS FORWARD, BACK TO THE JOURNAL.
+    session.menuPageNext();
+    CHECK(session.menuFocus() == kMenuFocusJournal);
+
+    // AND WRAPS BACKWARD, THE OTHER WAY, LANDING ON LETTERS FIRST.
+    session.menuPagePrev();
+    CHECK(session.menuFocus() == kMenuFocusLetters);
+    session.menuPagePrev();
+    CHECK(session.menuFocus() == kMenuFocusMap);
+
+    // All four tiles stayed open throughout -- spot-checked at the far end
+    // of the cycle rather than at every step above.
+    CHECK(session.casebookOpen());
+    CHECK(session.characterOpen());
+    CHECK(session.mapOpen());
+    CHECK(session.lettersOpen());
 }
 
 TEST_CASE("PagePrev/PageNext do nothing while Menu is not open") {
@@ -148,6 +164,26 @@ TEST_CASE("PagePrev/PageNext do nothing while Menu is not open") {
     CHECK_FALSE(session.menuOpen());
 }
 
+TEST_CASE("PagePrev/PageNext do nothing while Keys or Options (not the tiled Menu) is open") {
+    // MORROWIND ROUND. Keys and Options have no tiles of their own to step
+    // between -- they are single lists, reached through Pause now -- so a
+    // PagePrev/PageNext press while either is open must not silently open
+    // or refocus the tiled Menu underneath it.
+    Session session(onTheStreet());
+    session.toggleKeys();
+    REQUIRE(session.keysOpen());
+    session.menuPageNext();
+    CHECK(session.keysOpen());
+    CHECK_FALSE(session.casebookOpen());
+    session.toggleKeys();
+
+    session.toggleOptions();
+    REQUIRE(session.optionsOpen());
+    session.menuPagePrev();
+    CHECK(session.optionsOpen());
+    CHECK_FALSE(session.casebookOpen());
+}
+
 TEST_CASE("Pause stays a separate system from Menu, per controls.hpp's own note") {
     Session session(onTheStreet());
     session.togglePause();
@@ -155,21 +191,35 @@ TEST_CASE("Pause stays a separate system from Menu, per controls.hpp's own note"
     CHECK_FALSE(session.menuOpen());
 
     // Opening Menu while Pause is up stands Pause down, the same exclusivity
-    // every one of the six pages already enforces against each other and
-    // against Pause -- see toggleCasebook()'s own comment.
+    // every overlay already enforces against each other and against Pause --
+    // see toggleCasebook()'s own comment.
     session.toggleMenu();
     CHECK(session.menuOpen());
     CHECK_FALSE(session.pauseOpen());
 
-    // AND OPTIONS IS THE SAME STATE REACHED FROM PAUSE'S OWN SETTINGS ROW.
-    // Reachable two ways, never two screens: toggling to the Options page of
-    // Menu is exactly optionsOpen_, the same flag choosePause()'s SETTINGS
-    // row has always driven through toggleOptions().
-    for (int i = 0; i < 5; ++i) {
+    // MORROWIND ROUND: OPTIONS AND KEYS NO LONGER LIVE ON THE TILED MENU'S
+    // OWN CYCLE. PagePrev/PageNext only step which of the FOUR TILES has
+    // focus now -- Options and Keys have no tile to land on, so cycling
+    // never reaches either.
+    for (int i = 0; i < 6; ++i) {
         session.menuPageNext();
     }
+    CHECK_FALSE(session.optionsOpen());
+    CHECK_FALSE(session.keysOpen());
+    CHECK(session.casebookOpen());
+    session.toggleMenu();
+    CHECK_FALSE(session.menuOpen());
+
+    // AND OPTIONS IS THE SAME STATE REACHED FROM PAUSE'S OWN SETTINGS ROW.
+    // Reachable two ways, never two screens: choosePause()'s SETTINGS row
+    // has always driven through toggleOptions() (controls.hpp's own note),
+    // relocated here from Menu's own now-defunct Options page.
+    session.togglePause();
+    REQUIRE(session.pauseOpen());
+    session.movePauseCursor(2);  // RESUME -> CONTROLS -> SETTINGS
+    session.choosePause();
     REQUIRE(session.optionsOpen());
-    session.toggleMenu();  // closes Options, the currently-open page
+    session.toggleOptions();  // closes it
     CHECK_FALSE(session.optionsOpen());
     CHECK_FALSE(session.menuOpen());
 }

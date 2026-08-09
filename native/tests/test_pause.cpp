@@ -77,10 +77,14 @@ TEST_CASE("ESC opens a menu now, not the window's close button") {
     // build does not do is the same class of bug as an enum name in a bark.
     CHECK(view.speaker == "MENU");
     CHECK(view.speaker != "PAUSED");
-    REQUIRE(view.topics.size() == 3);
+    // MORROWIND ROUND: FOUR ROWS, NOT THREE. CONTROLS is new -- Keys' own
+    // relocated door, the identical shape SETTINGS already was for Options
+    // -- since the tiled Menu's four tiles have no room left for either.
+    REQUIRE(view.topics.size() == 4);
     CHECK(view.topics[0] == "RESUME");
-    CHECK(view.topics[1] == "SETTINGS");
-    CHECK(view.topics[2] == "QUIT GRANADAD");
+    CHECK(view.topics[1] == "CONTROLS");
+    CHECK(view.topics[2] == "SETTINGS");
+    CHECK(view.topics[3] == "QUIT GRANADAD");
 
     // The second press resumes -- the same key, the same toggle, exactly the
     // way F1 and F2 already behave.
@@ -138,16 +142,37 @@ TEST_CASE("SETTINGS reaches the controls round's rebinding screen from the menu 
 
     session.togglePause();
     REQUIRE(session.pauseOpen());
-    REQUIRE(session.pauseRows()[1] == "SETTINGS");
+    REQUIRE(session.pauseRows()[2] == "SETTINGS");
 
-    session.movePauseCursor(1);  // RESUME -> SETTINGS
+    session.movePauseCursor(2);  // RESUME -> CONTROLS -> SETTINGS
     session.choosePause();
 
-    // The exact page F2 opens, reached a different way. Rebinding a key here
-    // is rebinding a key, full stop -- there is only one options page.
+    // The exact page F2 used to open, reached a different way. Rebinding a
+    // key here is rebinding a key, full stop -- there is only one options
+    // page.
     CHECK_FALSE(session.pauseOpen());
     CHECK(session.optionsOpen());
     CHECK(session.dialogueView().speaker == "OPTIONS");
+}
+
+TEST_CASE("MORROWIND ROUND: CONTROLS reaches the keys page from the menu a player pauses on") {
+    // Keys' own new door -- the identical shape SETTINGS already proves for
+    // Options, above -- since the tiled Menu's four tiles have no room left
+    // for a long, read-top-to-bottom reference list.
+    render::Session session = standing();
+
+    session.togglePause();
+    REQUIRE(session.pauseOpen());
+    REQUIRE(session.pauseRows()[1] == "CONTROLS");
+
+    session.movePauseCursor(1);  // RESUME -> CONTROLS
+    session.choosePause();
+
+    // The exact page F1 used to open, reached a different way -- the keys
+    // page itself is unchanged.
+    CHECK_FALSE(session.pauseOpen());
+    CHECK(session.keysOpen());
+    CHECK(session.dialogueView().speaker == "CONTROLS");
 }
 
 TEST_CASE("QUIT asks twice, and moving the cursor or pressing ESC calls it off") {
@@ -155,9 +180,9 @@ TEST_CASE("QUIT asks twice, and moving the cursor or pressing ESC calls it off")
 
     session.togglePause();
     REQUIRE(session.pauseOpen());
-    REQUIRE(session.pauseRows()[2] == "QUIT GRANADAD");
+    REQUIRE(session.pauseRows()[3] == "QUIT GRANADAD");
 
-    session.movePauseCursor(2);  // RESUME -> SETTINGS -> QUIT
+    session.movePauseCursor(3);  // RESUME -> CONTROLS -> SETTINGS -> QUIT
     session.choosePause();
     // ARMED, NOT FIRED. One press on QUIT must not be indistinguishable from
     // one press on RESUME -- that is the entire defect this file exists over.
@@ -166,8 +191,8 @@ TEST_CASE("QUIT asks twice, and moving the cursor or pressing ESC calls it off")
     CHECK(session.pauseOpen());
     // And the row says so, so a player who did not mean to press it twice can
     // see the state they are in before they do.
-    CHECK(session.pauseRows()[2] != "QUIT GRANADAD");
-    CHECK(session.pauseRows()[2].find("QUIT") != std::string::npos);
+    CHECK(session.pauseRows()[3] != "QUIT GRANADAD");
+    CHECK(session.pauseRows()[3].find("QUIT") != std::string::npos);
 
     SUBCASE("a second press on the same row confirms it") {
         session.choosePause();
@@ -178,7 +203,7 @@ TEST_CASE("QUIT asks twice, and moving the cursor or pressing ESC calls it off")
         session.movePauseCursor(-1);  // QUIT -> SETTINGS
         CHECK_FALSE(session.quitArmed());
         CHECK(session.pauseOpen());
-        CHECK(session.pauseRows()[2] == "QUIT GRANADAD");
+        CHECK(session.pauseRows()[3] == "QUIT GRANADAD");
     }
 
     SUBCASE("ESC disarms it on the first press, and closes the menu on the second") {
@@ -210,22 +235,28 @@ TEST_CASE("the printed number picks a pause row exactly the way it picks a topic
     session.togglePause();
     REQUIRE(session.pauseOpen());
 
-    SUBCASE("2 opens settings immediately, cursor and all") {
+    SUBCASE("2 opens CONTROLS immediately") {
         session.chooseVisibleTopic(1);
+        CHECK_FALSE(session.pauseOpen());
+        CHECK(session.keysOpen());
+    }
+
+    SUBCASE("3 opens settings immediately, cursor and all") {
+        session.chooseVisibleTopic(2);
         CHECK_FALSE(session.pauseOpen());
         CHECK(session.optionsOpen());
     }
 
-    SUBCASE("3 arms quit, and 3 again confirms it") {
-        session.chooseVisibleTopic(2);
+    SUBCASE("4 arms quit, and 4 again confirms it") {
+        session.chooseVisibleTopic(3);
         CHECK(session.quitArmed());
         CHECK_FALSE(session.quitRequested());
-        session.chooseVisibleTopic(2);
+        session.chooseVisibleTopic(3);
         CHECK(session.quitRequested());
     }
 
     SUBCASE("1 resumes even from an armed quit -- picking a different row calls it off") {
-        session.chooseVisibleTopic(2);
+        session.chooseVisibleTopic(3);
         REQUIRE(session.quitArmed());
         session.chooseVisibleTopic(0);
         CHECK_FALSE(session.pauseOpen());
@@ -278,7 +309,7 @@ TEST_CASE("the menu, the options it opens and the plain scene never fight over t
     render::Framebuffer withPause(config.width, config.height);
     session.drawFrame(withPause);
 
-    session.movePauseCursor(1);
+    session.movePauseCursor(2);  // RESUME -> CONTROLS -> SETTINGS
     session.choosePause();
     REQUIRE(session.optionsOpen());
     render::Framebuffer withSettings(config.width, config.height);
@@ -315,6 +346,13 @@ TEST_CASE("--pause reaches the menu headlessly, for an environment that cannot d
 
     SUBCASE("menu") {
         const render::SmokeRunResult played = play("menu");
+        INFO(played.summary);
+        CHECK(played.ok);
+        CHECK_FALSE(played.scriptFellShort());
+    }
+    SUBCASE("controls") {
+        // MORROWIND ROUND: KEYS' OWN NEW PAUSE-SIDE DOOR.
+        const render::SmokeRunResult played = play("controls");
         INFO(played.summary);
         CHECK(played.ok);
         CHECK_FALSE(played.scriptFellShort());
@@ -357,7 +395,7 @@ TEST_CASE("every word the pause menu can show is a sentence, not a diagnostic") 
     for (const std::string& row : session.pauseRows()) {
         mustRead(row);
     }
-    session.movePauseCursor(2);
+    session.movePauseCursor(3);  // RESUME -> CONTROLS -> SETTINGS -> QUIT
     session.choosePause();
     REQUIRE(session.quitArmed());
     for (const std::string& row : session.pauseRows()) {

@@ -210,10 +210,16 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
     CHECK_FALSE(session.keysOpen());
 }
 
-TEST_CASE("the notes, the keys and the world never fight over the middle of the screen") {
-    // THE HUD RULE, WITH EVERY S10 SURFACE ON. The centre stays pixel-identical
-    // whichever of the three is up, which is the only way to prove a rule that
-    // is about absence.
+TEST_CASE("the keys page still respects the HUD rule; the tiled Menu is a full overview and does not") {
+    // MORROWIND ROUND: HALF OF THIS CASE'S OWN CLAIM FLIPPED, ON PURPOSE. The
+    // keys page is unchanged -- still the single-panel conversation surface,
+    // still centre-clear, exactly as every S10 surface always was. The
+    // notes are not: they are the Journal tile of a Morrowind-style tiled
+    // Menu now (Character/Map/Letters/Journal, all drawn at once), and that
+    // tiled overview is deliberately EXEMPT from the centre-clear rule --
+    // see menu_view.hpp's own header on why ("there is nobody TO look at
+    // while it is up"). This proves both halves at once: Keys still leaves
+    // the centre alone, and the tiled Menu genuinely does not.
     render::SessionConfig config = fresh();
     render::Session session(config);
     session.stepMany(MoveInput{}, 4);
@@ -236,13 +242,18 @@ TEST_CASE("the notes, the keys and the world never fight over the middle of the 
     session.drawFrame(withKeys);
 
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
+    bool notesDiffer = false;
     for (int y = centre.y0; y < centre.y1; ++y) {
         for (int x = centre.x0; x < centre.x1; ++x) {
-            REQUIRE(withNotes.pixels()[withNotes.index(x, y)] ==
-                    plain.pixels()[plain.index(x, y)]);
+            if (withNotes.pixels()[withNotes.index(x, y)] != plain.pixels()[plain.index(x, y)]) {
+                notesDiffer = true;
+            }
+            // KEYS: STILL UNCHANGED, STILL CENTRE-CLEAR.
             REQUIRE(withKeys.pixels()[withKeys.index(x, y)] == plain.pixels()[plain.index(x, y)]);
         }
     }
+    // THE TILED MENU: NOW GENUINELY COVERS THE MIDDLE.
+    CHECK(notesDiffer);
 }
 
 TEST_CASE("the two surfaces are exclusive, and neither opens over a conversation") {
