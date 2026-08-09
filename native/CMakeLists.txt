@@ -196,6 +196,15 @@ add_library(granadad-sim STATIC
     # attributes.cpp/chargen.cpp above.
     src/sim/appearance.cpp
     src/sim/companions.cpp
+    # #81 -- THE RADIANT QUEST GENERATOR CORE. Not a second ContractBoard:
+    # contract.cpp's patrons and sources are the Forty, bound to a site field
+    # read once out of notables.json at load. This draws its giver and target
+    # from the WHOLE live ward roster ward_roster.cpp bakes and ward_voice.cpp
+    # names, and resolves where each of them is standing off docks.hpp's own
+    # place table AT GENERATION TIME rather than off an authored site. Listed
+    # last because it depends on ward_actors.hpp's WardPopulation, the last
+    # thing this library builds.
+    src/sim/radiant_quest.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -448,6 +457,13 @@ if(GRANADAD_BUILD_TESTS)
         # against a from-the-doc reimplementation of PROGRESSION-SPEC.md
         # section 5's attribute formula -- see companions.hpp's own header.
         tests/test_companions.cpp
+        # #81 -- THE RADIANT QUEST GENERATOR CORE. That a malformed or
+        # nonexistent-body template is refused at load exactly like a
+        # contract's patron/source; that the same day of the same world
+        # offers the same board and a different day does not; and that every
+        # generated brief substitutes a real WardIdentity name and a place
+        # read off the actor's own live tile, with no token left unfilled.
+        tests/test_radiant_quest.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})

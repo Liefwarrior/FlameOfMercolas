@@ -1,0 +1,87 @@
+{
+  "id": "radiant_quest_templates",
+  "notes": "TASK #81 ADDITION. THE RADIANT QUEST GENERATOR CORE. Every giver and target this file names is a WardType, never a person -- the actual person is drawn at generation time off the live ward roster, which is the whole difference between this and content/raws/contracts/contracts.json's patrons and sources. A patron there is one of the Forty, bound to a site written into notables.json once; a giver here is whichever living, visible body of the named trade the board happens to draw tonight, and where they are is read off their own tile the moment the board is made, not off a field in this file. Six real templates: three FETCH (bring units of a named contraband good, the same five-word vocabulary contract.hpp and the Watch already share, from wherever the target is standing to wherever the giver is) and three DELIVER (carry word between two real people, no goods, no units). Every giverTypes/targetTypes entry is a person-carrying WardType; a beast named here is dropped at load and the whole template is refused if that leaves the list empty, the same refusal discipline contract.hpp applies to a patron notables.json does not have. Prose here is deliberately plain -- correct English, no unsubstituted token, nothing enum-shaped -- and is not trying to be the ward's authored voice; that is a later sprint's job, and it has real nouns to write around because this file supplies them. TWO DELIBERATELY BAD ENTRIES, `refused_unknown_kind` and `refused_beast_only`, are carried on purpose -- contracts.json's own note on `nobody_at_all` applies word for word here: a filter that has never had anything to filter is a filter nobody has tested. Do not remove them.",
+  "templates": [
+    {
+      "id": "fetch_counter_short",
+      "kind": "fetch",
+      "verb": "FETCH",
+      "brief": "{giver}, working {giverPlace}, is short and asking after {units} {good}. {target} keeps enough of it near {targetPlace} to spare that much, if asked the right way.",
+      "giverTypes": ["shopkeeper"],
+      "targetTypes": ["serf", "carter", "fisher", "sailor"],
+      "goods": ["scalp", "dust", "flower"],
+      "unitsMin": 1,
+      "unitsMax": 3,
+      "payPerUnit": 6
+    },
+    {
+      "id": "fetch_watch_bounty",
+      "kind": "fetch",
+      "verb": "TAKE",
+      "brief": "{giver}, standing {giverPlace}, will pay the ward's own rate for {units} {good}. {target} says the worst of it comes up near {targetPlace} once the lamps are lit.",
+      "giverTypes": ["watch"],
+      "targetTypes": ["serf", "carter", "fisher", "wastrel", "urchin"],
+      "goods": ["scalp"],
+      "unitsMin": 2,
+      "unitsMax": 4,
+      "payPerUnit": 5
+    },
+    {
+      "id": "fetch_kennel_arrears",
+      "kind": "fetch",
+      "verb": "RUN",
+      "brief": "{giver} keeps the kennel {giverPlace}, and the kennel is behind on {units} {good}. {target}, {targetPlace}, has been asked before and has not answered.",
+      "giverTypes": ["keeper"],
+      "targetTypes": ["serf", "carter", "fisher", "sailor"],
+      "goods": ["scalp", "dust"],
+      "unitsMin": 1,
+      "unitsMax": 3,
+      "payPerUnit": 7
+    },
+    {
+      "id": "deliver_counter_word",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver}, {giverPlace}, has word that will not keep. Find {target}, last seen near {targetPlace}, and put it in no other hand.",
+      "giverTypes": ["shopkeeper"],
+      "targetTypes": ["serf", "carter", "fisher", "sailor", "watch", "keeper"],
+      "payFlat": 18
+    },
+    {
+      "id": "deliver_watch_word",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver} stands {giverPlace} and cannot leave the post to say it in person. {target} needs to hear it, and the last sighting puts them near {targetPlace}.",
+      "giverTypes": ["watch"],
+      "targetTypes": ["shopkeeper", "serf", "carter", "fisher", "sailor", "keeper"],
+      "payFlat": 22
+    },
+    {
+      "id": "deliver_quiet_word",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver}, {giverPlace}, cannot be seen anywhere near {targetPlace} -- but {target} has to hear this before the tide turns, and it has to look like nobody carried it.",
+      "giverTypes": ["wastrel", "urchin"],
+      "targetTypes": ["shopkeeper", "serf", "carter", "fisher", "sailor", "keeper", "watch"],
+      "payFlat": 15
+    },
+    {
+      "id": "refused_unknown_kind",
+      "kind": "escort",
+      "verb": "ESCORT",
+      "brief": "{giver}, {giverPlace}, wants an escort to {targetPlace}.",
+      "giverTypes": ["shopkeeper"],
+      "targetTypes": ["serf"],
+      "payFlat": 99
+    },
+    {
+      "id": "refused_beast_only",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver}, {giverPlace}, has word for {target}.",
+      "giverTypes": ["shopkeeper"],
+      "targetTypes": ["mouse"],
+      "payFlat": 99
+    }
+  ]
+}
