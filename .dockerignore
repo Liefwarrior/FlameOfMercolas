@@ -149,6 +149,22 @@
 !content/raws/compounds/**
 !content/raws/actors/**
 
+# --- re-admitted: the fixed origin-template sheets (#80) ---
+# 8 KB, two files. devin.json and gabri.json are the DEVIN/GABRI halves of
+# task #80's BG3/Divinity-Original-Sin-2-style origin templates -- hand-
+# authored character sheets, not point-bought -- and CompanionTemplate::load
+# (sim/companions.hpp) is silent about a missing file for the identical
+# reason every other raws loader above is. Without these two files in the
+# context, every companion case would either fail loudly (the honest
+# outcome the suite actually got before this line existed) or, if the loader
+# were ever made more permissive, pass against nothing -- the same empty-
+# content trap this file's own header warns about for barks.json and the
+# rest.
+#
+#   companions/devin.json   4 KB
+#   companions/gabri.json   4 KB
+!content/raws/companions/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**

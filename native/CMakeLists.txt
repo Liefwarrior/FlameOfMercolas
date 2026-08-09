@@ -178,6 +178,17 @@ add_library(granadad-sim STATIC
     # already standing at their authored sites. Listed AFTER ward_roster.cpp
     # because it implements that file's last bake step.
     src/sim/ward_voice.cpp
+    # #80 -- WHAT A PLAYER LOOKS LIKE, IN THE WARD'S OWN VOCABULARY. Eleven of
+    # WardType's sixteen values, named as ids a content file or a screen can
+    # hold -- see appearance.hpp's own header on the five deliberately left
+    # off. companions.cpp reads content/raws/companions/*.json (the DEVIN and
+    # GABRI origin templates), checks every startingSkills id against the
+    # real SkillTrack, and can write them through SkillTrack::setLevel the
+    # same way any other caller does. Listed after ward_voice.cpp because
+    # companions.cpp depends on SkillTrack's own definition, same as
+    # attributes.cpp/chargen.cpp above.
+    src/sim/appearance.cpp
+    src/sim/companions.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -270,6 +281,10 @@ add_library(granadad-render STATIC
     # vocabulary already authored against the Java actor types; this reads the
     # ART and none of the Java code that indexed it.
     src/render/actor_sheet.cpp
+    # #80 -- the origin-select and customize flow: a new game's first two
+    # screens, BG3/DOS2-shaped, drawn with no Session and no world underneath
+    # them -- see the file's own header on why.
+    src/render/creation.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
@@ -402,6 +417,16 @@ if(GRANADAD_BUILD_TESTS)
         # sprint arriving at, and a soak that watches the mouse count actually
         # fall and come back.
         tests/test_ward_hunt.cpp
+        # #80 -- THE ORIGIN-SELECT AND CUSTOMIZE FLOW. Three cards, a name
+        # field, and a real sim::Chargen sheet hosted rather than reinvented
+        # -- see creation.hpp's own header on why this reuses
+        # render::drawDialogue instead of a new widget.
+        tests/test_creation.cpp
+        # #80 -- THE FIXED SHEETS. content/raws/companions/devin.json and
+        # gabri.json proved against the real SkillTrack and, independently,
+        # against a from-the-doc reimplementation of PROGRESSION-SPEC.md
+        # section 5's attribute formula -- see companions.hpp's own header.
+        tests/test_companions.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})

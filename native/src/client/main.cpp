@@ -30,6 +30,7 @@
 #include "granadad/sim/compound.hpp"
 #include "granadad/render/capture.hpp"
 #include "granadad/render/controls.hpp"
+#include "granadad/render/creation.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/step_pump.hpp"
@@ -203,6 +204,11 @@ struct Options {
     /// Where the bindings live. Overridable so a capture, a case or a second
     /// player on the same machine can have their own.
     std::filesystem::path controlsFile;
+    /// #80: capture the origin-select/customize flow with no window, the
+    /// same shape --pause and --character already have. Off by default;
+    /// creationStep is "origin" or "customize".
+    bool wantsCreation = false;
+    std::string creationStep = "origin";
 };
 
 [[nodiscard]] bool starts_with(const char* text, const char* prefix, const char** rest) {
@@ -254,6 +260,9 @@ void print_usage() {
         "                       on QUIT with the first of its two presses in)\n"
         "  --character          open the character sheet before the shutter\n"
         "                       goes -- the same call C makes\n"
+        "  --creation[=STEP]    capture the origin-select/customize flow with\n"
+        "                       no window and no world. STEP is origin\n"
+        "                       (default) or customize\n"
         "  --settle             run a scripted overlay's open animation to\n"
         "                       completion before the shutter, instead of\n"
         "                       capturing the frame it opened on\n"
@@ -440,6 +449,11 @@ void print_usage() {
         } else if (std::strcmp(arg, "--character") == 0) {
             options.smoke.character = true;
             options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--creation") == 0) {
+            options.wantsCreation = true;
+        } else if (starts_with(arg, "--creation=", &value)) {
+            options.wantsCreation = true;
+            options.creationStep = value;
         } else if (std::strcmp(arg, "--settle") == 0) {
             options.smoke.settle = true;
             options.wantsSmoke = true;
@@ -971,6 +985,27 @@ const PadRow kPadTable[] = {
     }
 }
 
+/// #80. A letter, a space, a hyphen or an apostrophe off a Key -- everything
+/// CreationFlow::typeNameChar accepts, and nothing it does not. Shift is not
+/// read: the name field stores everything upper-case regardless of case, the
+/// same way the rest of this game's font draws lower-case as upper-case, so
+/// there is nothing a shifted key would change.
+[[nodiscard]] char name_char_of_key(render::Key key) noexcept {
+    if (key >= render::Key::A && key <= render::Key::Z) {
+        return static_cast<char>('A' + (static_cast<int>(key) - static_cast<int>(render::Key::A)));
+    }
+    if (key == render::Key::Space) {
+        return ' ';
+    }
+    if (key == render::Key::Minus) {
+        return '-';
+    }
+    if (key == render::Key::Apostrophe) {
+        return '\'';
+    }
+    return '\0';
+}
+
 /// Is this key down right now? Keyboard, mouse or pad -- so a movement key can
 /// be rebound to any of the three and the held-key sweep below does not care
 /// which it got.
@@ -1013,6 +1048,197 @@ const PadRow kPadTable[] = {
     const std::size_t index = static_cast<std::size_t>(action);
     return key_is_down(controls.primary[index], keyboard, mouseButtons, pad) ||
            key_is_down(controls.secondary[index], keyboard, mouseButtons, pad);
+}
+
+// ---------------------------------------------------------------------------
+// #80: the origin-select/customize flow, in its own small window
+// ---------------------------------------------------------------------------
+//
+// ITS OWN WINDOW RATHER THAN A RESTRUCTURED run_client(). No Session and no
+// world exist yet at this point in the boot sequence -- this screen has to
+// run BEFORE either -- and the alternative (hoisting run_client's own forty
+// lines of SDL setup above the Session construction they currently follow)
+// touches code every other page in this build was proven against. A second,
+// self-contained SDL_Init/window/renderer/texture that tears itself down
+// before run_client's own setup runs is a few lines longer and a great deal
+// safer to review, and it costs nothing at runtime a player would notice:
+// SDL_QuitSubSystem below balances the SDL_Init here, so run_client's own
+// SDL_Init(VIDEO | GAMEPAD) right after this returns is an ordinary fresh
+// init and not a double-init of anything.
+//
+// #80. THE ORIGIN-SELECT/CUSTOMIZE FLOW, CAPTURED WITH NO WINDOW.
+//
+// NO WINDOW AND NO WORLD, the same reason --screenshot never needed one:
+// CreationFlow draws through render::drawDialogue, which is a pure function
+// of a framebuffer and a state struct.
+//
+// "customize" LANDS ON CUSTOM AND SPENDS A REAL FEW POINTS, deliberately not
+// on DEVIN or GABRI (the origin cursor's own default): their sheet is fixed
+// and adjustCustomizeRow is a no-op on it by design (see creation.hpp), so
+// capturing them here would prove nothing LEFT/RIGHT actually did. Three
+// skill rows get one point each so the picture shows real numbers -- PRIMARY
+// 3/3 or similar -- rather than every row reading "Undesignated", the same
+// reason --character's own capture flag spends nothing on an empty sheet.
+int run_creation_capture(const Options& options) {
+    render::CreationFlow flow(granadad::content::contentDir());
+    if (options.creationStep == "customize") {
+        flow.moveOriginCursor(2);  // CUSTOM
+        flow.chooseOrigin();
+        for (int i = 0; i < 3; ++i) {
+            flow.moveCustomizeCursor(1);
+            flow.adjustCustomizeRow(1);
+        }
+    } else if (options.creationStep != "origin") {
+        std::printf("granadad: --creation wants origin or customize\n");
+        return 2;
+    }
+
+    const int width = std::max(64, options.smoke.session.width);
+    const int height = std::max(64, options.smoke.session.height);
+    render::Framebuffer frame(width, height);
+    render::drawCreation(frame, flow);
+
+    std::printf("granadad: creation flow captured, step=%s\n", options.creationStep.c_str());
+    if (!options.smoke.screenshot.empty()) {
+        const render::Framebuffer output = render::upscaleNearest(frame, options.windowScale);
+        if (!render::writePng(output, options.smoke.screenshot)) {
+            std::printf("granadad: FAILED to write %s\n",
+                        options.smoke.screenshot.string().c_str());
+            return 1;
+        }
+        std::printf("granadad: wrote %s\n", options.smoke.screenshot.string().c_str());
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// #80: the origin-select/customize flow, in its own small window
+// ---------------------------------------------------------------------------
+//
+// ITS OWN WINDOW RATHER THAN A RESTRUCTURED run_client(). No Session and no
+// world exist yet at this point in the boot sequence -- this screen has to
+// run BEFORE either -- and the alternative (hoisting run_client's own forty
+// lines of SDL setup above the Session construction they currently follow)
+// touches code every other page in this build was proven against. A second,
+// self-contained SDL_Init/window/renderer/texture that tears itself down
+// before run_client's own setup runs is a few lines longer and a great deal
+// safer to review, and it costs nothing at runtime a player would notice:
+// SDL_QuitSubSystem below balances the SDL_Init here, so run_client's own
+// SDL_Init(VIDEO | GAMEPAD) right after this returns is an ordinary fresh
+// init and not a double-init of anything.
+//
+// Returns an UNCONFIRMED CreationResult if the player closed the window --
+// main() treats that exactly like closing the game, not like starting one.
+render::CreationResult run_creation_window(const Options& options) {
+    render::CreationFlow flow(granadad::content::contentDir());
+
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        std::printf("SDL_Init (creation) failed: %s\n", SDL_GetError());
+        return {};
+    }
+    const int width = options.smoke.session.width;
+    const int height = options.smoke.session.height;
+    SDL_Window* window =
+        SDL_CreateWindow("Granadad: The Darkstreets", width * options.windowScale,
+                         height * options.windowScale, SDL_WINDOW_RESIZABLE);
+    if (window == nullptr) {
+        std::printf("SDL_CreateWindow (creation) failed: %s\n", SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        return {};
+    }
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
+    if (renderer == nullptr) {
+        std::printf("SDL_CreateRenderer (creation) failed: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        return {};
+    }
+    SDL_SetRenderLogicalPresentation(renderer, width, height,
+                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
+    SDL_SetRenderVSync(renderer, 1);
+    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888,
+                                             SDL_TEXTUREACCESS_STREAMING, width, height);
+    if (texture != nullptr) {
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    }
+
+    render::Framebuffer frame(width, height);
+    bool cancelled = false;
+
+    while (!flow.done() && !cancelled) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                cancelled = true;
+                continue;
+            }
+            if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) {
+                continue;
+            }
+            const render::Key key = key_of_scancode(event.key.scancode);
+            if (flow.step() == render::CreationStep::Origin) {
+                if (key == render::Key::Up || key == render::Key::W) {
+                    flow.moveOriginCursor(-1);
+                } else if (key == render::Key::Down || key == render::Key::S) {
+                    flow.moveOriginCursor(1);
+                } else if (key == render::Key::Enter) {
+                    flow.chooseOrigin();
+                } else if (key == render::Key::Escape) {
+                    cancelled = true;
+                }
+                continue;
+            }
+            // Customize.
+            if (flow.editingName()) {
+                if (key == render::Key::Enter) {
+                    flow.chooseCustomizeRow();
+                } else if (key == render::Key::Escape) {
+                    flow.backToOrigin();
+                } else if (key == render::Key::Backspace) {
+                    flow.backspaceName();
+                } else {
+                    const char typed = name_char_of_key(key);
+                    if (typed != '\0') {
+                        flow.typeNameChar(typed);
+                    }
+                }
+                continue;
+            }
+            if (key == render::Key::Up || key == render::Key::W) {
+                flow.moveCustomizeCursor(-1);
+            } else if (key == render::Key::Down || key == render::Key::S) {
+                flow.moveCustomizeCursor(1);
+            } else if (key == render::Key::Left || key == render::Key::A) {
+                flow.adjustCustomizeRow(-1);
+            } else if (key == render::Key::Right || key == render::Key::D) {
+                flow.adjustCustomizeRow(1);
+            } else if (key == render::Key::Enter) {
+                flow.chooseCustomizeRow();
+            } else if (key == render::Key::Escape) {
+                flow.backToOrigin();
+            }
+        }
+
+        flow.advance();
+        render::drawCreation(frame, flow);
+        if (texture != nullptr) {
+            SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+            SDL_RenderPresent(renderer);
+        }
+    }
+
+    const render::CreationResult result = flow.done() ? flow.result() : render::CreationResult{};
+
+    if (texture != nullptr) {
+        SDL_DestroyTexture(texture);
+    }
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1520,6 +1746,9 @@ int main(int argc, char** argv) {
     }
 
     try {
+        if (options.wantsCreation) {
+            return run_creation_capture(options);
+        }
         if (options.wantsSmoke) {
             const render::SmokeRunResult result = render::runSmoke(options.smoke);
             std::printf("granadad: %s\n", result.summary.c_str());
@@ -1542,6 +1771,30 @@ int main(int argc, char** argv) {
             }
             return result.ok ? 0 : 1;
         }
+        // #80. A NEW GAME OPENS ON THE ORIGIN SCREEN, NOT ON THE WORLD.
+        // Every scripted/headless path above returns before reaching this
+        // line -- a capture or a test wants a frame of the Docks (or, now,
+        // of the creation flow via --creation), never a frame of one menu
+        // blocking another.
+        const render::CreationResult chosen = run_creation_window(options);
+        if (!chosen.confirmed) {
+            std::printf("granadad: no character was made -- closing.\n");
+            return 0;
+        }
+        std::printf("granadad: playing as %s (%s)\n", chosen.name.c_str(),
+                    chosen.originId.c_str());
+        // SEAM (#80, allocation mechanics -> Session). Exactly one of
+        // chosen.chargen (CUSTOM's real point-bought sheet) or
+        // chosen.companion (DEVIN's/GABRI's real fixed sheet, loaded off
+        // content/raws/companions) is populated -- see CreationResult's own
+        // header on which -- and either is ready to write through a real
+        // sim::SkillTrack: `chosen.chargen.apply(track)` or
+        // `chosen.companion.applyStartingSkills(track)`. Nothing downstream
+        // of this line reads either yet: Session has no player-facing
+        // SkillTrack seam for a caller to apply it through, and building one
+        // is the sibling task that owns the mechanics half of #80, not this
+        // file's UI/flow half. Stated here rather than silently dropped on
+        // the floor.
         return run_client(options);
     } catch (const std::exception& error) {
         std::printf("granadad: %s\n", error.what());

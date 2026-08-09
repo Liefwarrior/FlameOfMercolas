@@ -150,6 +150,13 @@ COPY content/raws/contracts /src/content/raws/contracts
 COPY content/raws/compounds /src/content/raws/compounds
 COPY content/raws/actors /src/content/raws/actors
 
+# #80: the fixed DEVIN/GABRI origin-template sheets, 8 KB. CompanionTemplate::
+# load (sim/companions.hpp) is silent about a missing file for the identical
+# reason every loader above is -- without these two here, every companion case
+# would fail loudly on loaded() rather than proving anything about the sheets
+# themselves.
+COPY content/raws/companions /src/content/raws/companions
+
 # Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
 # has no use for either, and the rest of content is read at runtime straight
