@@ -196,18 +196,21 @@ std::string CreationFlow::labelFor(const CustomizeRow& row) const {
             const sim::SkillTrack::Entry* entry = skills_.find(row.skillId);
             const std::string label = entry != nullptr ? entry->displayName : row.skillId;
             if (companion != nullptr) {
-                // BARE NUMBER, NOT "LV 30" -- caught the same way
-                // shortDesignation() was: captured a real frame and looked
-                // at it. "KIT-KEEPING  LV 30" (eleven-glyph name, "Kit-
-                // Keeping" is the longest of the twelve this content file
-                // currently designates) plus its row number is twenty
-                // glyphs into the eighteen-glyph column, and dropped the
-                // number outright -- "7 KIT-KEEPING  LV." names a skill and
-                // says nothing about it. The attribute rows just below
-                // already print a bare number with no unit ("MIGHT  40");
-                // this matches that, and the column's own header line
-                // ("A FIXED SHEET") already says these are levels.
-                return label + "  " + std::to_string(companion->startingLevel(row.skillId));
+                // BARE NUMBER, ONE SPACE, NOT "  LV 30" -- caught the same
+                // way shortDesignation() was: captured a real frame and
+                // looked at it. "CRACKSMANSHIP" is thirteen glyphs, the
+                // longest of the nineteen non-FLAME skills this raws file
+                // names, and a two-digit level plus its row number was
+                // still one glyph over the eighteen-glyph column even after
+                // dropping "LV" -- "4 CRACKSMANSHIP." on DEVIN's own sheet,
+                // the exact same defect this same pass already fixed once
+                // for the two-space form on GABRI's "KIT-KEEPING". One
+                // space instead of two buys back the one glyph every
+                // skill this raws file currently names needs; the attribute
+                // rows just below print a bare number with no unit either
+                // ("MIGHT  40"), and the column's own header line ("A FIXED
+                // SHEET") already says these are levels.
+                return label + " " + std::to_string(companion->startingLevel(row.skillId));
             }
             return label + "  " + std::string(shortDesignation(chargen_.designationOf(row.skillId)));
         }

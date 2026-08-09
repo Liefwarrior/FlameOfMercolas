@@ -385,15 +385,15 @@ TEST_CASE("DEVIN's customize rows read his real fixed sheet, not a shadow copy")
     CHECK(view.topics.size() == 1 + expectedSkills.size() + sim::kAttributeCount + 1);
 
     // Every skill row (rows 1..expectedSkills.size()) names the exact level
-    // his own template set -- a bare number, not "LV N" (which the longest
-    // skill names here, e.g. "Kit-Keeping", clip clean off their column;
-    // caught by actually capturing and looking at the rendered frame, not
-    // assumed) -- and never zero-by-omission, never a Chargen designation
-    // word.
+    // his own template set -- a bare number, one space, not "  LV N" (which
+    // the longest skill names here, e.g. "Cracksmanship", clip clean off
+    // their column even as a bare two-space number; caught by actually
+    // capturing and looking at the rendered frame, not assumed) -- and
+    // never zero-by-omission, never a Chargen designation word.
     for (std::size_t i = 0; i < expectedSkills.size(); ++i) {
         const std::string row = view.topics[1 + i];
         INFO(row);
-        CHECK(row.find("  " + std::to_string(expectedSkills[i].level)) != std::string::npos);
+        CHECK(row.find(" " + std::to_string(expectedSkills[i].level)) != std::string::npos);
         CHECK(row.find("PRIMARY") == std::string::npos);
         CHECK(row.find("MAJOR") == std::string::npos);
         CHECK(row.find("MINOR") == std::string::npos);
