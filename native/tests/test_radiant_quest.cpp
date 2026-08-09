@@ -6,16 +6,26 @@
 //   RAWS      the templates' own file, and the one claim that keeps this from
 //             being a slot machine: a template naming a kind this build
 //             cannot evaluate, or a body type that cannot exist (a beast, or
-//             nothing at all), is refused at load -- proved against two
+//             nothing at all), is refused at load -- proved against the
 //             DELIBERATE bad entries content/raws/quests/radiant_quests.json
-//             carries for exactly this, the same way contracts.json carries
-//             `nobody_at_all`.
+//             and content/raws/quests/radiant_quests_skyrunner.json each
+//             carry for exactly this, the same way contracts.json carries
+//             `nobody_at_all`. This is also where the SECOND file's own cast
+//             gets checked -- the Skyrunner templates run through
+//             WardType::Thief and its street affiliates rather than the
+//             owner's shopkeepers and watchmen.
 //   RADIANCE  the same day of the same world offers the same board on any
 //             machine, and a different day does not.
 //   LIVE       every generated objective names a body that is actually on the
 //   BINDING    ward's roll right now, under the ward's own baked name, and a
 //             place read off that body's OWN live tile at generation time --
 //             never a fabricated noun, never the giver delivering to itself.
+//
+// A FOURTH KIND OF CASE -- whether hundreds of days of boards read as more
+// than one template said over and over, bucketed by template and by the
+// giver's own faction -- lives in tests/test_radiant_variety.cpp instead of
+// here, on purpose, so a future content-only addition to either radiant raws
+// file never has to touch this file at all. See that file's own header.
 
 #include <doctest/doctest.h>
 
@@ -62,9 +72,15 @@ const RadiantTemplate* templateNamed(std::string_view id) {
 
 TEST_CASE("a radiant template naming a kind this build cannot evaluate is refused at load") {
     REQUIRE(raws().loaded());
-    // Exactly the six real templates content/raws/quests/radiant_quests.json
-    // authors -- the two deliberate bad ones dropped, nothing else lost.
-    REQUIRE(raws().templates().size() == 6);
+    // The six real templates content/raws/quests/radiant_quests.json authors,
+    // PLUS the six real templates content/raws/quests/radiant_quests_skyrunner.json
+    // authors, PLUS the five real templates
+    // content/raws/quests/radiant_quests_flame.json authors, now that
+    // RadiantRaws::load merges every *.json in the directory carrying a
+    // "templates" array -- seventeen, with all four deliberate bad ones (two
+    // in the owner's file, one in the Skyrunner file, one in the flame file)
+    // dropped.
+    REQUIRE(raws().templates().size() == 17);
 
     for (const RadiantTemplate& tmpl : raws().templates()) {
         INFO("template ", tmpl.id);
@@ -88,20 +104,162 @@ TEST_CASE("a radiant template naming a kind this build cannot evaluate is refuse
         }
     }
 
-    // AND THE REFUSAL IS PROVED, NOT ASSUMED. `refused_unknown_kind` names a
-    // kind ("escort") this build has no way to evaluate; `refused_beast_only`
-    // asks a mouse to carry word. Both load-parse cleanly as JSON and both are
-    // still not in the table.
+    // AND THE REFUSAL IS PROVED, NOT ASSUMED, IN ALL THREE FILES.
+    // `refused_unknown_kind` names a kind ("escort") this build has no way to
+    // evaluate; `refused_beast_only` asks a mouse to carry word; the
+    // Skyrunner file's own `refused_skyrunner_unknown_kind` names a kind
+    // ("waylay") no more real than the first; the flame file's own
+    // `refused_flame_unknown_kind` names a kind ("bless") no more real than
+    // either. All four load-parse cleanly as JSON and none is in the table --
+    // proving the refusal discipline holds for a THIRD file the loader reads,
+    // not just the first one it was ever tested against.
     CHECK(templateNamed("refused_unknown_kind") == nullptr);
     CHECK(templateNamed("refused_beast_only") == nullptr);
+    CHECK(templateNamed("refused_skyrunner_unknown_kind") == nullptr);
+    CHECK(templateNamed("refused_flame_unknown_kind") == nullptr);
 
-    // Every one of the six real ids is present, so the two refusals cost
-    // nothing else in the file.
-    for (std::string_view id : {"fetch_counter_short", "fetch_watch_bounty",
-                                "fetch_kennel_arrears", "deliver_counter_word",
-                                "deliver_watch_word", "deliver_quiet_word"}) {
+    // Every one of the seventeen real ids is present, so none of the four
+    // refusals cost anything else in any file.
+    for (std::string_view id :
+        {"fetch_counter_short", "fetch_watch_bounty", "fetch_kennel_arrears",
+         "deliver_counter_word", "deliver_watch_word", "deliver_quiet_word",
+         "fetch_roost_toll", "fetch_fence_reckoning", "fetch_second_bounty",
+         "fetch_flower_climb", "deliver_roof_word", "deliver_fence_summons",
+         "fetch_mission_scalps", "fetch_mission_wound_quayfire",
+         "deliver_mission_burial_word", "deliver_mission_alms_call",
+         "deliver_call_the_priest"}) {
         INFO("expected template ", id);
         CHECK(templateNamed(id) != nullptr);
+    }
+}
+
+TEST_CASE("the Skyrunner file's own templates carry the roof-runner cast, not the owner's") {
+    REQUIRE(raws().loaded());
+
+    // The four Skyrunner FETCH templates run through the roofs' own giver,
+    // WardType::Thief -- the type ward_actors.hpp itself calls "cutpurse,
+    // robber, roof-runner" and factions.json ties to villain.skyrunner --
+    // except where the flow runs the other way.
+    for (std::string_view id : {"fetch_roost_toll", "fetch_fence_reckoning",
+                                "fetch_second_bounty", "fetch_flower_climb"}) {
+        const RadiantTemplate* tmpl = templateNamed(id);
+        REQUIRE(tmpl != nullptr);
+        INFO("template ", id);
+        CHECK(tmpl->kind == RadiantKind::Fetch);
+        REQUIRE(tmpl->giverTypes.size() == 1);
+        CHECK(tmpl->giverTypes.front() == WardType::Thief);
+    }
+
+    // deliver_roof_word: a roof-runner sends word out.
+    const RadiantTemplate* roofWord = templateNamed("deliver_roof_word");
+    REQUIRE(roofWord != nullptr);
+    REQUIRE(roofWord->giverTypes.size() == 1);
+    CHECK(roofWord->giverTypes.front() == WardType::Thief);
+
+    // deliver_fence_summons: the street affiliates send word UP to a
+    // roof-runner -- factions.json's own "rooftop brotherhood and its street
+    // affiliates", the mirror direction.
+    const RadiantTemplate* summons = templateNamed("deliver_fence_summons");
+    REQUIRE(summons != nullptr);
+    REQUIRE(summons->targetTypes.size() == 1);
+    CHECK(summons->targetTypes.front() == WardType::Thief);
+    for (const WardType type : summons->giverTypes) {
+        CHECK((type == WardType::Wastrel || type == WardType::Urchin));
+    }
+
+    // Between fetch_fence_reckoning, fetch_second_bounty and fetch_flower_climb,
+    // the Skyrunner file reaches every good radiant_quests.json's own three
+    // fetch templates never once drew: moonshine and artifact.
+    bool sawMoonshine = false;
+    bool sawArtifact = false;
+    for (std::string_view id : {"fetch_roost_toll", "fetch_fence_reckoning",
+                                "fetch_second_bounty", "fetch_flower_climb"}) {
+        const RadiantTemplate* tmpl = templateNamed(id);
+        REQUIRE(tmpl != nullptr);
+        for (const Contraband good : tmpl->goods) {
+            sawMoonshine = sawMoonshine || good == Contraband::Moonshine;
+            sawArtifact = sawArtifact || good == Contraband::Artifact;
+        }
+    }
+    CHECK(sawMoonshine);
+    CHECK(sawArtifact);
+}
+
+TEST_CASE("the flame file's own templates carry the Mission's cast, not the owner's") {
+    REQUIRE(raws().loaded());
+
+    // fetch_mission_scalps and fetch_mission_wound_quayfire both draw their
+    // giver off the Mission -- WardType::PriestOfTheFlame or
+    // WardType::DiscipleOfTheFlame, never anybody else.
+    for (std::string_view id : {"fetch_mission_scalps", "fetch_mission_wound_quayfire"}) {
+        const RadiantTemplate* tmpl = templateNamed(id);
+        REQUIRE(tmpl != nullptr);
+        INFO("template ", id);
+        CHECK(tmpl->kind == RadiantKind::Fetch);
+        for (const WardType type : tmpl->giverTypes) {
+            CHECK((type == WardType::PriestOfTheFlame || type == WardType::DiscipleOfTheFlame));
+        }
+    }
+
+    // deliver_mission_burial_word: either the priest or a disciple can bring
+    // it -- Father Maell alone would leave this template's giver pool one
+    // body wide (he is the ward's only priest), which is exactly the
+    // "same two names forever" shape test_radiant_variety.cpp's own
+    // giverIds >= 2 bar exists to catch.
+    const RadiantTemplate* burial = templateNamed("deliver_mission_burial_word");
+    REQUIRE(burial != nullptr);
+    for (const WardType type : burial->giverTypes) {
+        CHECK((type == WardType::PriestOfTheFlame || type == WardType::DiscipleOfTheFlame));
+    }
+
+    // deliver_mission_alms_call: a disciple sends it, never the priest.
+    const RadiantTemplate* almsCall = templateNamed("deliver_mission_alms_call");
+    REQUIRE(almsCall != nullptr);
+    REQUIRE(almsCall->giverTypes.size() == 1);
+    CHECK(almsCall->giverTypes.front() == WardType::DiscipleOfTheFlame);
+
+    // deliver_call_the_priest runs the other direction -- an ordinary ward
+    // body sends word FOR the Mission; the Mission never sends this one.
+    const RadiantTemplate* callPriest = templateNamed("deliver_call_the_priest");
+    REQUIRE(callPriest != nullptr);
+    REQUIRE(callPriest->targetTypes.size() == 2);
+    for (const WardType type : callPriest->targetTypes) {
+        CHECK((type == WardType::PriestOfTheFlame || type == WardType::DiscipleOfTheFlame));
+    }
+    for (const WardType type : callPriest->giverTypes) {
+        CHECK_FALSE(type == WardType::PriestOfTheFlame);
+        CHECK_FALSE(type == WardType::DiscipleOfTheFlame);
+    }
+
+    // Between the two FETCH templates, the flame file reaches scalp (the
+    // ward's one legal good, and the one thing DECISIONS.md gives the Church
+    // an opinion about) and moonshine (quayfire, wanted here for what it
+    // cleans rather than what it pours).
+    bool sawScalp = false;
+    bool sawMoonshine = false;
+    for (std::string_view id : {"fetch_mission_scalps", "fetch_mission_wound_quayfire"}) {
+        const RadiantTemplate* tmpl = templateNamed(id);
+        REQUIRE(tmpl != nullptr);
+        for (const Contraband good : tmpl->goods) {
+            sawScalp = sawScalp || good == Contraband::Scalp;
+            sawMoonshine = sawMoonshine || good == Contraband::Moonshine;
+        }
+    }
+    CHECK(sawScalp);
+    CHECK(sawMoonshine);
+
+    // MAGIC-CANON.md section 5.4: every in-world surface says six, and the
+    // word "seven" never appears at all -- checked here rather than trusted
+    // from a comment, the same discipline test_letters.cpp already applies to
+    // Maell's letters.
+    for (std::string_view id : {"fetch_mission_scalps", "fetch_mission_wound_quayfire",
+                                "deliver_mission_burial_word", "deliver_mission_alms_call",
+                                "deliver_call_the_priest"}) {
+        const RadiantTemplate* tmpl = templateNamed(id);
+        REQUIRE(tmpl != nullptr);
+        INFO("template ", id);
+        CHECK(tmpl->brief.find("seven") == std::string::npos);
+        CHECK(tmpl->brief.find("Seven") == std::string::npos);
     }
 }
 

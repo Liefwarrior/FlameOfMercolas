@@ -1,0 +1,82 @@
+{
+  "id": "radiant_quest_templates_skyrunner",
+  "notes": "TASK #81 ADDITION, second pass. radiant_quests.json's own note said writing the ward's authored voice into this generator was a later sprint's job -- this file is that job, for one faction. Loads alongside radiant_quests.json rather than editing it: RadiantRaws::load now reads every *.json in content/raws/quests carrying a top-level 'templates' array, owner's file first, and this is the second file, sorted after it by name. Same schema, same six tokens, same refusal discipline -- nothing here changes how a board is drawn, only what it can draw. SIX REAL TEMPLATES, four FETCH and two DELIVER, and between them the five-word contraband vocabulary contraband.hpp names (scalp, dust, moonshine, flower, artifact) gets its first real coverage: radiant_quests.json's own three fetch templates never once drew moonshine or artifact, so this file spends two of its four fetch slots making sure both do. THE VOICE: roof_barks.json already wrote Finch's -- 'the roofs are the road', 'coin is coin', 'do not carry it about' -- and this is the same register turned to third-person narration rather than his own direct speech, because that is the shape every OTHER radiant brief in this build already uses. GIVERS ARE THIEF -- the WardType roof_barks.json's own comment ties to villain.skyrunner/villain.cutpurse/villain.robber, 'cutpurse, robber, roof-runner' in ward_actors.hpp's own words -- except the two deliver templates that run the other way, a street affiliate (wastrel, urchin) carrying word UP to a roof-runner, which is factions.json's own description of the guild: 'the rooftop brotherhood and its street affiliates'. ONE DELIBERATELY BAD ENTRY, refused_skyrunner_unknown_kind, is carried on purpose, for the same reason radiant_quests.json carries two of its own: proving the refusal discipline still holds for a SECOND file, not just the first one the loader was ever tested against. CANON OBEYED: no line here names or maps the Skyrunner's Roost (DOCKS-GAZETTEER 3.1 K35, and roof_barks.json's own note on the same rule) -- giverPlace/targetPlace are read off a live body's tile at generation time exactly as radiant_quests.json's own templates do, never authored here. Scalp is still the ward's one legal good; the shadow-bounty template does not contradict that, it prices the fact that the roofs will pay more than the Watch for the same legal thing and skip the priest's mark doing it, which is a criminal economy being criminal about a LEGAL good, not a rules exception."
+  ,
+  "templates": [
+    {
+      "id": "fetch_roost_toll",
+      "kind": "fetch",
+      "verb": "RUN",
+      "brief": "{giver} does not come down off the roofs for anybody and is not about to start now, and keeps to {giverPlace} while everyone else moves. {target}, last seen {targetPlace}, is holding {units} {good} that never touched a manifest -- get it up before the watch changes, and nobody has to ask where it went.",
+      "giverTypes": ["thief"],
+      "targetTypes": ["carter", "sailor", "fisher", "serf"],
+      "goods": ["dust", "moonshine"],
+      "unitsMin": 2,
+      "unitsMax": 4,
+      "payPerUnit": 9
+    },
+    {
+      "id": "fetch_fence_reckoning",
+      "kind": "fetch",
+      "verb": "FENCE",
+      "brief": "{giver} buys what nobody can explain owning, and does the buying {giverPlace} where the watch does not look twice at a face. {target}, {targetPlace}, is sitting on {units} {good} that needs a new owner before anybody remembers whose it was.",
+      "giverTypes": ["thief"],
+      "targetTypes": ["wastrel", "urchin"],
+      "goods": ["artifact"],
+      "unitsMin": 1,
+      "unitsMax": 1,
+      "payPerUnit": 20
+    },
+    {
+      "id": "fetch_second_bounty",
+      "kind": "fetch",
+      "verb": "TAKE",
+      "brief": "{giver} runs a second bounty out of {giverPlace}, quieter than the ward's own and paid without a priest's mark anywhere near it. {target}, {targetPlace}, has been keeping a count of {units} {good}, and it is time that count moved.",
+      "giverTypes": ["thief"],
+      "targetTypes": ["urchin", "wastrel", "serf"],
+      "goods": ["scalp"],
+      "unitsMin": 2,
+      "unitsMax": 5,
+      "payPerUnit": 8
+    },
+    {
+      "id": "fetch_flower_climb",
+      "kind": "fetch",
+      "verb": "CARRY",
+      "brief": "{giver} is waiting {giverPlace} with the coin already counted, because what the roofs grow does not sell itself and does not walk on its own either. {target}, {targetPlace}, has {units} {good} that needs to be gone before the tide turns.",
+      "giverTypes": ["thief"],
+      "targetTypes": ["sailor", "fisher", "carter"],
+      "goods": ["flower"],
+      "unitsMin": 2,
+      "unitsMax": 4,
+      "payPerUnit": 9
+    },
+    {
+      "id": "deliver_roof_word",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver} cannot be seen leaving {giverPlace} tonight, of all nights, and the word will not keep long enough for that to change. {target}, last seen {targetPlace}, needs to hear it before anybody official does, and needs to hear it from somebody the roofs already trust.",
+      "giverTypes": ["thief"],
+      "targetTypes": ["shopkeeper", "serf", "carter", "sailor", "fisher", "wastrel", "urchin", "keeper"],
+      "payFlat": 24
+    },
+    {
+      "id": "deliver_fence_summons",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver} has been sent {giverPlace} with nothing written down, because nothing in this trade ever is. Find {target}, last seen {targetPlace}, and say only that the roofs are asking -- no more than that, and never any louder.",
+      "giverTypes": ["wastrel", "urchin"],
+      "targetTypes": ["thief"],
+      "payFlat": 20
+    },
+    {
+      "id": "refused_skyrunner_unknown_kind",
+      "kind": "waylay",
+      "verb": "WAYLAY",
+      "brief": "{giver}, {giverPlace}, wants {target} stopped short of {targetPlace} and nothing more said about it.",
+      "giverTypes": ["thief"],
+      "targetTypes": ["serf"],
+      "payFlat": 99
+    }
+  ]
+}

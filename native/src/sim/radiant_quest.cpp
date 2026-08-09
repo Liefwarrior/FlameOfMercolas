@@ -59,6 +59,50 @@ namespace {
     return out;
 }
 
+/// docks::placeLabelAt is ALSO HUD vocabulary -- every entry in kPlaces and
+/// every bandFallbackLabel is ASCII SHOUTING CASE, the same shape
+/// contrabandLabelFor is and for the same reason (it is meant for a corner of
+/// the screen). Substituted verbatim into a brief this is the identical bug
+/// the comment above just fixed for {good}, one line later: "working THE
+/// GILDED GULL" reads as a shout with no reason to be one. This renders the
+/// same label the way it would read in a sentence a person wrote -- title
+/// case, with "the" kept as the lower-case article it already is in
+/// "the Weighhouse" and every other hand-authored site name in
+/// contracts.json's own sites map, rather than shouted like the rest of the
+/// word. Never applied to the stored row.giverPlace/targetPlace themselves --
+/// those stay the ward's own canonical label, exactly as
+/// test_radiant_quest.cpp pins them against docks::placeLabelAt -- only to
+/// what goes into the composed sentence, the same split row.good/{good}
+/// already draws.
+[[nodiscard]] std::string placeProse(std::string_view label) {
+    std::string out;
+    out.reserve(label.size());
+    std::string word;
+    auto flushWord = [&out, &word]() {
+        if (word.empty()) {
+            return;
+        }
+        for (char& c : word) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (word != "the") {
+            word[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(word[0])));
+        }
+        out += word;
+        word.clear();
+    };
+    for (const char c : label) {
+        if (c == ' ' || c == '-') {
+            flushWord();
+            out.push_back(c);
+        } else {
+            word.push_back(c);
+        }
+    }
+    flushWord();
+    return out;
+}
+
 /// A raws string ("serf", "watch", ...) resolved to the WardType it names, or
 /// false when it names nothing -- including a beast. RADIANT OBJECTIVES ARE
 /// PEOPLE WORK: a dog does not commission a fetch and a mouse does not carry
@@ -182,66 +226,119 @@ std::filesystem::path radiantRawsPath(const std::filesystem::path& contentDir) {
     return contentDir / "raws" / "quests" / "radiant_quests.json";
 }
 
+std::filesystem::path radiantRawsDir(const std::filesystem::path& contentDir) {
+    return contentDir / "raws" / "quests";
+}
+
+std::vector<std::filesystem::path> radiantRawsFiles(const std::filesystem::path& contentDir) {
+    std::vector<std::filesystem::path> files;
+    const std::filesystem::path owner = radiantRawsPath(contentDir);
+    std::error_code error;
+    if (std::filesystem::is_regular_file(owner, error)) {
+        // THE OWNER'S FILE IS ALWAYS FIRST -- see barkRawsFiles(), the same
+        // rule borrowed for the same reason: on a duplicate template id the
+        // first file loaded wins, so nothing added later can shadow one of
+        // radiant_quests.json's own six.
+        files.push_back(owner);
+    }
+    std::vector<std::filesystem::path> extras;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator(radiantRawsDir(contentDir), error)) {
+        if (!entry.is_regular_file(error) || entry.path().extension() != ".json") {
+            continue;
+        }
+        if (entry.path().filename() == owner.filename()) {
+            continue;
+        }
+        // The quests directory is shared with quests.json, casebook.json,
+        // flame_disciple.json, skyrunner_tenant.json and
+        // bloodletter_letters.json -- every one of them a different schema
+        // with no top-level "templates" array. They are still handed to
+        // load() below; a document with no "templates" array simply
+        // contributes nothing, the same way a bark table file with no
+        // "tables" array would not.
+        extras.push_back(entry.path());
+    }
+    // Sorted before use: directory iteration order is a property of the
+    // filesystem, and a template set that depended on it would differ between
+    // two machines carrying identical content.
+    std::sort(extras.begin(), extras.end());
+    files.insert(files.end(), extras.begin(), extras.end());
+    return files;
+}
+
 RadiantRaws RadiantRaws::load(const std::filesystem::path& contentDir) {
     RadiantRaws out;
-    std::error_code error;
-    const std::filesystem::path path = radiantRawsPath(contentDir);
-    if (!std::filesystem::is_regular_file(path, error)) {
-        return out;
-    }
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        return out;
-    }
-    std::ostringstream text;
-    text << file.rdbuf();
-    const nlohmann::json document = nlohmann::json::parse(text.str(), nullptr, false);
-    if (document.is_discarded() || !document.is_object()) {
-        return out;
-    }
+    for (const std::filesystem::path& path : radiantRawsFiles(contentDir)) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            continue;
+        }
+        std::ostringstream text;
+        text << file.rdbuf();
+        const nlohmann::json document = nlohmann::json::parse(text.str(), nullptr, false);
+        if (document.is_discarded() || !document.is_object()) {
+            continue;
+        }
 
-    const auto templates = document.find("templates");
-    if (templates == document.end() || !templates->is_array()) {
-        return out;
-    }
-    for (const nlohmann::json& node : *templates) {
-        if (!node.is_object()) {
+        const auto templates = document.find("templates");
+        if (templates == document.end() || !templates->is_array()) {
             continue;
         }
-        RadiantTemplate row;
-        row.id = stringField(node, "id");
-        if (row.id.empty()) {
-            continue;
+        for (const nlohmann::json& node : *templates) {
+            if (!node.is_object()) {
+                continue;
+            }
+            RadiantTemplate row;
+            row.id = stringField(node, "id");
+            if (row.id.empty()) {
+                continue;
+            }
+            // AN ID SEEN BEFORE IS DROPPED. radiant_quests.json is always the
+            // first file this loop reads, so this is what makes "the owner's
+            // file always wins" true rather than aspirational.
+            bool duplicate = false;
+            for (const RadiantTemplate& already : out.templates_) {
+                if (already.id == row.id) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) {
+                continue;
+            }
+            if (!radiantKindFromSymbol(stringField(node, "kind"), row.kind)) {
+                // A template naming a kind this build cannot evaluate is a
+                // template authoring an objective that cannot be finished --
+                // questline.hpp's own rule for its stage vocabulary, applied
+                // here.
+                continue;
+            }
+            row.verb = upperAscii(stringField(node, "verb"));
+            row.brief = stringField(node, "brief");
+            row.giverTypes = wardTypeArray(node, "giverTypes");
+            row.targetTypes = wardTypeArray(node, "targetTypes");
+            row.unitsMin = std::max(1, intField(node, "unitsMin", 1));
+            row.unitsMax = std::max(row.unitsMin, intField(node, "unitsMax", row.unitsMin));
+            row.payPerUnit = std::max(0, intField(node, "payPerUnit"));
+            row.payFlat = std::max(0, intField(node, "payFlat"));
+            if (row.kind == RadiantKind::Fetch) {
+                row.goods = contrabandArray(node, "goods");
+            }
+            // REFUSED BY NAME. A template with nobody to want it, nobody to
+            // ask it of, no verb, no brief, or -- for a fetch -- nothing to
+            // fetch, is not an objective. Dropping it here is what makes
+            // every generated row name somebody and something that actually
+            // exists.
+            if (row.giverTypes.empty() || row.targetTypes.empty() || row.verb.empty() ||
+                row.brief.empty()) {
+                continue;
+            }
+            if (row.kind == RadiantKind::Fetch && row.goods.empty()) {
+                continue;
+            }
+            out.templates_.push_back(std::move(row));
         }
-        if (!radiantKindFromSymbol(stringField(node, "kind"), row.kind)) {
-            // A template naming a kind this build cannot evaluate is a
-            // template authoring an objective that cannot be finished --
-            // questline.hpp's own rule for its stage vocabulary, applied here.
-            continue;
-        }
-        row.verb = upperAscii(stringField(node, "verb"));
-        row.brief = stringField(node, "brief");
-        row.giverTypes = wardTypeArray(node, "giverTypes");
-        row.targetTypes = wardTypeArray(node, "targetTypes");
-        row.unitsMin = std::max(1, intField(node, "unitsMin", 1));
-        row.unitsMax = std::max(row.unitsMin, intField(node, "unitsMax", row.unitsMin));
-        row.payPerUnit = std::max(0, intField(node, "payPerUnit"));
-        row.payFlat = std::max(0, intField(node, "payFlat"));
-        if (row.kind == RadiantKind::Fetch) {
-            row.goods = contrabandArray(node, "goods");
-        }
-        // REFUSED BY NAME. A template with nobody to want it, nobody to ask it
-        // of, no verb, no brief, or -- for a fetch -- nothing to fetch, is not
-        // an objective. Dropping it here is what makes every generated row
-        // name somebody and something that actually exists.
-        if (row.giverTypes.empty() || row.targetTypes.empty() || row.verb.empty() ||
-            row.brief.empty()) {
-            continue;
-        }
-        if (row.kind == RadiantKind::Fetch && row.goods.empty()) {
-            continue;
-        }
-        out.templates_.push_back(std::move(row));
     }
     return out;
 }
@@ -386,9 +483,9 @@ void RadiantBoard::refresh(std::int32_t day, std::uint64_t worldSeed, const Radi
         // place that body is actually standing in right now.
         std::string brief = tmpl.brief;
         substitute(brief, "{giver}", row.giverName);
-        substitute(brief, "{giverPlace}", row.giverPlace);
+        substitute(brief, "{giverPlace}", placeProse(row.giverPlace));
         substitute(brief, "{target}", row.targetName);
-        substitute(brief, "{targetPlace}", row.targetPlace);
+        substitute(brief, "{targetPlace}", placeProse(row.targetPlace));
         substitute(brief, "{units}", std::to_string(units));
         substitute(brief, "{good}",
                   tmpl.kind == RadiantKind::Fetch ? lowerAscii(contrabandLabelFor(good, units))

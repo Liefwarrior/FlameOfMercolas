@@ -1,0 +1,66 @@
+{
+  "id": "radiant_quest_templates_flame",
+  "notes": "TASK #81 ADDITION, third pass -- the Priest of the Flame's own set. Loads alongside radiant_quests.json and radiant_quests_skyrunner.json rather than editing either: RadiantRaws::load reads every *.json in content/raws/quests carrying a top-level 'templates' array, owner's file first, the rest in sorted filename order, and an id already seen is dropped rather than overwritten -- this file's ids are new, so nothing here shadows anything the other two authored. FIVE REAL TEMPLATES, two FETCH and three DELIVER, cast off WardType::PriestOfTheFlame ('priest' in the raws, one body -- Father Maell, exactly one per ward_actors.hpp's own comment) and WardType::DiscipleOfTheFlame ('disciple', several -- the Mission's night-soup hands). WHY THESE TWO GOODS ON THE FETCH SIDE. Scalp is the ward's one legal contraband and the one thing DECISIONS.md's tenure ruling gives the Church an opinion about -- 'the Church sanctions the redemption of a scalp' -- so fetch_mission_scalps has the Mission wanting scalps walked to Father Maell before his evening hour closes, the same hour session.cpp's own bounty-line comment names ('the priest keeps an evening hour that ends at half past nine'); it does not claim the RadiantBoard objective itself performs the Flame's sanction, which stays exactly where contract.cpp/dialogue.cpp already built it, on the player's own sack. Quayfire (moonshine's ward-floor label, contraband.cpp) is the second: fetch_mission_wound_quayfire has the sick bay wanting it to clean a wound, not to pour, which is a real historical use of spirit an almshouse would have and reads as the Mission's own quiet compromise with an otherwise illegal good rather than a contradiction of it staying illegal. WHY THE DELIVER SIDE READS THE WAY IT DOES. deliver_mission_burial_word and deliver_mission_alms_call are the Mission's own two offices in miniature -- the ward's dead with nobody to claim them, and the ward's living with nowhere to sleep -- both drawn from Father Maell's or a disciple's ordinary duties (the night pot, the almshouse bunks) rather than from the Bloodletter or Disciple's Oath questlines, which this file never touches, names or advances; a radiant objective is a day's errand, not a stage. deliver_call_the_priest runs the other direction -- an ordinary ward body (shopkeeper, serf, carter, fisher, sailor) sending word FOR the white cloth, the same garment quest.flame-disciple's own barks call 'not a welcome sight' and this brief still does not dress up: someone reaching for it in extremity is one person's choice, not the ward's opinion changing. CANON OBEYED, checked line by line against MAGIC-CANON.md. Section 5.4: every in-world surface says SIX, and the word 'seven' appears nowhere below -- these five briefs never count the magic systems at all, in either direction. Section 5.5: the Flame ships nothing, and nothing here shows Father Maell or a disciple casting, channeling, teaching or so much as gesturing at a crafting; 'marks the ward's scalp bounty' is a priest's signature the same way session.cpp's own Sanction topic already is, not a spell. No line here contradicts or advances flame_disciple.json's own oath/nightpot/water/letters/lamp/forge stages -- those are Onna's found body and Maell's three unanswered letters, a single dated mystery; a generated body at the Mission door on an arbitrary day is the almshouse's ordinary, ongoing work, not that same body twice. ONE DELIBERATELY BAD ENTRY, refused_flame_unknown_kind, carried on purpose -- the same proof radiant_quests.json's two and radiant_quests_skyrunner.json's one already stand for, now for a THIRD file: the refusal discipline was never special-cased to the loader's first caller.",
+  "templates": [
+    {
+      "id": "fetch_mission_scalps",
+      "kind": "fetch",
+      "verb": "REDEEM",
+      "brief": "{giver} marks the ward's scalp bounty {giverPlace}, and the evening hour does not wait on latecomers. {target}, {targetPlace}, is sitting on {units} {good} and has put off the walk three nights running.",
+      "giverTypes": ["priest", "disciple"],
+      "targetTypes": ["keeper", "wastrel", "urchin", "serf"],
+      "goods": ["scalp"],
+      "unitsMin": 2,
+      "unitsMax": 4,
+      "payPerUnit": 6
+    },
+    {
+      "id": "fetch_mission_wound_quayfire",
+      "kind": "fetch",
+      "verb": "BRING",
+      "brief": "{giver} tends the sick bay {giverPlace}, and it has nothing left that will clean a wound. {target}, {targetPlace}, keeps {units} {good} that never saw the Weighhouse, and has never once been asked for it kindly.",
+      "giverTypes": ["priest", "disciple"],
+      "targetTypes": ["wastrel", "urchin", "carter", "fisher"],
+      "goods": ["moonshine"],
+      "unitsMin": 1,
+      "unitsMax": 2,
+      "payPerUnit": 9
+    },
+    {
+      "id": "deliver_mission_burial_word",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver}, {giverPlace}, has another body at the Mission door with no kin found for it yet. Find {target}, last seen near {targetPlace}, before the ward buries one more stranger nobody came looking for.",
+      "giverTypes": ["priest", "disciple"],
+      "targetTypes": ["shopkeeper", "serf", "carter", "fisher", "sailor", "watch", "keeper"],
+      "payFlat": 20
+    },
+    {
+      "id": "deliver_mission_alms_call",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver}, {giverPlace}, cannot leave the night pot to say this in person. Find {target}, near {targetPlace}, and tell them the Mission has a bed free tonight, if they can still walk to it.",
+      "giverTypes": ["disciple"],
+      "targetTypes": ["serf", "carter", "fisher", "sailor", "wastrel", "urchin"],
+      "payFlat": 16
+    },
+    {
+      "id": "deliver_call_the_priest",
+      "kind": "deliver",
+      "verb": "CARRY WORD",
+      "brief": "{giver}, {giverPlace}, has somebody dying who is asking for the white cloth and not the surgeon. Find {target}, last seen near {targetPlace}, and tell them there is no time to walk it twice.",
+      "giverTypes": ["shopkeeper", "serf", "carter", "fisher", "sailor"],
+      "targetTypes": ["priest", "disciple"],
+      "payFlat": 24
+    },
+    {
+      "id": "refused_flame_unknown_kind",
+      "kind": "bless",
+      "verb": "BLESS",
+      "brief": "{giver}, {giverPlace}, wants {target} blessed before {targetPlace}.",
+      "giverTypes": ["priest"],
+      "targetTypes": ["serf"],
+      "payFlat": 99
+    }
+  ]
+}

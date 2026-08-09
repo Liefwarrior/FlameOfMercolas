@@ -132,9 +132,19 @@ struct RadiantTemplate {
 /// The board's authored half: every template this build can draw from.
 class RadiantRaws {
 public:
-    /// Reads content/raws/quests/radiant_quests.json. NEVER throws -- a
-    /// missing or malformed file leaves an empty table and the board offers
-    /// nothing, which is the rule every raws loader in this build follows.
+    /// Reads content/raws/quests/radiant_quests.json AND merges every other
+    /// *.json in that directory that carries a top-level "templates" array --
+    /// the same seam barks.hpp cut for its own owner-file-plus-extras split
+    /// (see barkRawsFiles()). radiant_quests.json is always read FIRST; the
+    /// rest follow in sorted filename order. A quest file in that directory
+    /// with a different top-level shape (quests.json's "quests", casebook's
+    /// "case", skyrunner_tenant's "stages", ...) simply has no "templates" key
+    /// and contributes nothing -- it is not an error, the same way a bark
+    /// table file with no "tables" array would not be.
+    ///
+    /// NEVER THROWS -- a missing or malformed file leaves an empty table and
+    /// the board offers nothing, which is the rule every raws loader in this
+    /// build follows.
     ///
     /// REFUSES BY NAME, the same discipline ContractRaws::load applies to a
     /// broker or a patron: a template naming an unknown kind, an unrecognised
@@ -142,6 +152,10 @@ public:
     /// giver/target/goods list after that filtering, is dropped whole. That is
     /// what keeps a generated objective from ever asking a mouse to carry a
     /// letter.
+    ///
+    /// A TEMPLATE ID SEEN BEFORE IS DROPPED, not overwritten -- the owner's
+    /// file is always read first, so radiant_quests.json's own six templates
+    /// can never be shadowed by an id an extra file happens to reuse.
     [[nodiscard]] static RadiantRaws load(const std::filesystem::path& contentDir);
 
     [[nodiscard]] bool loaded() const noexcept { return !templates_.empty(); }
@@ -150,12 +164,24 @@ public:
     }
 
 private:
-    /// In authored file order. Never reordered after load -- the draw picks an
+    /// In the order the files that authored them were read: radiant_quests.json
+    /// first, then every extra file in sorted filename order, each in its own
+    /// authored array order. Never reordered after that -- the draw picks an
     /// INDEX, so reordering this would re-roll every board of every world.
     std::vector<RadiantTemplate> templates_;
 };
 
+/// The owner's own template file, radiant_quests.json. Always read FIRST and
+/// always wins an id collision -- see RadiantRaws::load and radiantRawsFiles().
 [[nodiscard]] std::filesystem::path radiantRawsPath(const std::filesystem::path& contentDir);
+[[nodiscard]] std::filesystem::path radiantRawsDir(const std::filesystem::path& contentDir);
+
+/// Every *.json in content/raws/quests, the owner's radiant_quests.json first
+/// and the rest in sorted order. This is the seam that lets a later sprint add
+/// a themed set of templates -- Skyrunner contraband runs, say -- as a NEW
+/// file rather than an edit to the owner's own.
+[[nodiscard]] std::vector<std::filesystem::path> radiantRawsFiles(
+    const std::filesystem::path& contentDir);
 
 // ---------------------------------------------------------------------------
 // one generated objective

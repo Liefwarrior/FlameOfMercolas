@@ -464,6 +464,12 @@ if(GRANADAD_BUILD_TESTS)
         # generated brief substitutes a real WardIdentity name and a place
         # read off the actor's own live tile, with no token left unfilled.
         tests/test_radiant_quest.cpp
+        # #81 -- THE ANTI-REPETITION CHECK. Hundreds of days of boards,
+        # bucketed by template and by the giver's own faction, proving the
+        # generator does not collapse into the same sentence with one noun
+        # swapped: mostly-distinct briefs, no single brief dominating, and
+        # more than one body ever drawn into the giver or target slot.
+        tests/test_radiant_variety.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
