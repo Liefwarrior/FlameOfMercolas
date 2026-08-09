@@ -122,7 +122,7 @@
         {
           "key": "trouble",
           "objective": "The Netter house stands on a pawnbroker's patience. The widow will say it plain if asked - or the ward will: Grandmother Withy sees everything worth a price on the Arcade, and Herdis hears whatever the pens hear.",
-          "log": "The whisper is real. After the boats were lost, Widow Annis Netter signed paper at Fenner's window against the charge, not the house itself - and Fenner keeps that paper in the strongbox behind his cage.",
+          "log": "The whisper is real. After the boats were lost, Widow Annis Netter signed paper at Fenner's window against the charge itself, not the house - and Fenner keeps that paper in the strongbox behind his cage.",
           "advance": [
             { "kind": "talk", "party": "netter", "to": "paper" },
             { "kind": "talk", "party": "withy", "to": "paper" },
