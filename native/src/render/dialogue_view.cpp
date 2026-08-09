@@ -317,7 +317,15 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         const int plateCeiling = std::max(glyphAdvance * 4, target.width() - reservedRight);
         const int plateWidth = std::min(plateCeiling, margin + nameplateWidth + glyphAdvance);
         const int plateHeight = rowStep;
-        target.fillRect(0, 0, plateWidth, plateHeight, Rgb{0.10F, 0.09F, 0.08F}, 0.50F * fade);
+        // BRIGHT ENOUGH TO READ AS A SHAPE, not just a rounding error on the
+        // panel underneath it. The first version of this used the panel's own
+        // near-black at a low alpha and the plate vanished into it in every
+        // capture -- correct arithmetic, invisible result, which is worse than
+        // not drawing it: a plate you cannot see is not a nameplate treatment,
+        // it is a wasted fillRect. Warm bronze, closer to kEdge than to kPanel,
+        // so the row reads as raised the instant the panel appears.
+        target.fillRect(0, 0, plateWidth, plateHeight, Rgb{0.22F, 0.19F, 0.15F}, 0.62F * fade);
+        target.fillRect(0, plateHeight - scale, plateWidth, scale, kEdge, 0.45F * fade);
         // The accent: standing, in colour, before a single word of it is read.
         // Neutral brass when nobody has an opinion yet -- the keys page, the
         // options page and the casebook all borrow this same widget and none
