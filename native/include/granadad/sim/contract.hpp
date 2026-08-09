@@ -115,6 +115,15 @@ struct ContractOffer {
     std::vector<std::string> sources;
     /// What a FETCH is fetching, when the offer names things.
     std::vector<std::string> things;
+    /// #81. The rung this offer's broker's OWN FACTION LADDER (ranks.json)
+    /// asks for before it enters a night's draw pool at all. 0 means the
+    /// broker's own `needs` field is the only gate -- most offers. 1 is that
+    /// ladder's first title, matching FactionLedger::rank()'s own numbering.
+    /// Set by content/raws/contracts/contract_ranks.json, a sibling file that
+    /// hangs a requirement off some of these offers the same way ranks.json
+    /// hangs a ladder off factions.json -- contracts.json itself never
+    /// mentions a rank and stays untouched.
+    std::int32_t minRank = 0;
 };
 
 /// One of the Forty, as a job needs to talk about them: their authored name and
@@ -173,6 +182,9 @@ private:
 };
 
 [[nodiscard]] std::filesystem::path contractRawsPath(const std::filesystem::path& contentDir);
+/// #81. content/raws/contracts/contract_ranks.json -- the sibling file that
+/// hangs a minRank requirement off some of contracts.json's own offers.
+[[nodiscard]] std::filesystem::path contractRankRawsPath(const std::filesystem::path& contentDir);
 
 // ---------------------------------------------------------------------------
 // one job

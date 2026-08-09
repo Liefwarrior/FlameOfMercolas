@@ -106,6 +106,10 @@ std::filesystem::path contractRawsPath(const std::filesystem::path& contentDir) 
     return contentDir / "raws" / "contracts" / "contracts.json";
 }
 
+std::filesystem::path contractRankRawsPath(const std::filesystem::path& contentDir) {
+    return contentDir / "raws" / "contracts" / "contract_ranks.json";
+}
+
 const ContractBroker* ContractRaws::broker(std::string_view id) const noexcept {
     for (const ContractBroker& row : brokers_) {
         if (row.id == id) {
@@ -262,6 +266,59 @@ ContractRaws ContractRaws::load(const std::filesystem::path& contentDir,
     }
     std::sort(out.offers_.begin(), out.offers_.end(),
               [](const ContractOffer& a, const ContractOffer& b) { return a.id < b.id; });
+
+    // --- #81: which of those templates a rung is asked for -------------------
+    //
+    // A sibling file, read AFTER offers_ so a gate can be matched against a
+    // real one and refused by name otherwise -- the same shape a broker or a
+    // patron this file does not have is refused at load, above. Absent file,
+    // absent "gates" array, or a row naming an offer that does not exist all
+    // leave minRank at the 0 every ContractOffer is already built with, which
+    // means the broker's own `needs` field stays the only gate on it.
+    {
+        std::ifstream ranksFile(contractRankRawsPath(contentDir), std::ios::binary);
+        if (ranksFile) {
+            std::ostringstream ranksText;
+            ranksText << ranksFile.rdbuf();
+            const nlohmann::json ranksDoc = nlohmann::json::parse(ranksText.str(), nullptr, false);
+            if (!ranksDoc.is_discarded() && ranksDoc.is_object()) {
+                const auto gates = ranksDoc.find("gates");
+                if (gates != ranksDoc.end() && gates->is_array()) {
+                    for (const nlohmann::json& node : *gates) {
+                        if (!node.is_object()) {
+                            continue;
+                        }
+                        const std::string offerId = stringField(node, "offer");
+                        const auto found = std::lower_bound(
+                            out.offers_.begin(), out.offers_.end(), offerId,
+                            [](const ContractOffer& row, const std::string& probe) {
+                                return row.id < probe;
+                            });
+                        if (found == out.offers_.end() || found->id != offerId) {
+                            // Names an offer contracts.json does not carry.
+                            // Refused, the same as a broker or a patron would
+                            // be, rather than left to invent a ninth offer.
+                            continue;
+                        }
+                        // Clamped to the broker's own ladder, so a typo in
+                        // this file cannot ask for a rung the faction's own
+                        // ladder does not go up to.
+                        std::int32_t cap = 0;
+                        if (const ContractBroker* offerBroker = out.broker(found->broker);
+                            offerBroker != nullptr) {
+                            const std::int32_t index = factions.indexOf(offerBroker->faction);
+                            if (const FactionLadder* ladder = factions.ladder(index);
+                                ladder != nullptr) {
+                                cap = static_cast<std::int32_t>(ladder->ranks.size());
+                            }
+                        }
+                        found->minRank =
+                            std::clamp(intField(node, "minRank"), 0, cap);
+                    }
+                }
+            }
+        }
+    }
 
     // --- and everybody those templates are allowed to name -------------------
     //
@@ -443,6 +500,28 @@ void ContractBoard::refresh(std::int32_t day, std::uint64_t worldSeed,
     CounterRandomSource night = source;
     night.begin_tick(static_cast<std::uint64_t>(day < 0 ? 0 : day));
 
+    // #81. A rung this offer's broker's own faction ladder has not been
+    // climbed to yet keeps that offer out of every pool below, in the
+    // broker-restricted slots and in the wildcard one alike -- a player who
+    // has not sworn far enough in never sees the work exist, rather than
+    // seeing it and being turned away for it. minRank 0 (every offer this
+    // sprint did not name in contract_ranks.json) is unconditionally true,
+    // so this changes nothing for a board with no gated offers on it.
+    const auto meetsRank = [this, &standings](const ContractOffer& offer) noexcept {
+        if (offer.minRank <= 0) {
+            return true;
+        }
+        const ContractBroker* offerBroker = raws_->broker(offer.broker);
+        if (offerBroker == nullptr || standings.registry() == nullptr) {
+            return true;
+        }
+        const std::int32_t index = standings.registry()->indexOf(offerBroker->faction);
+        if (index < 0) {
+            return true;
+        }
+        return standings.rank(index) >= offer.minRank;
+    };
+
     const std::vector<ContractOffer>& templates = raws_->offers();
     for (std::int32_t slot = 0; slot < kOffersPerDay; ++slot) {
         const auto key = static_cast<std::uint64_t>(slot);
@@ -457,6 +536,9 @@ void ContractBoard::refresh(std::int32_t day, std::uint64_t worldSeed,
         std::vector<const ContractOffer*> pool;
         const std::vector<ContractBroker>& brokers = raws_->brokers();
         for (const ContractOffer& row : templates) {
+            if (!meetsRank(row)) {
+                continue;
+            }
             if (static_cast<std::size_t>(slot) >= brokers.size() ||
                 row.broker == brokers[static_cast<std::size_t>(slot)].id) {
                 pool.push_back(&row);

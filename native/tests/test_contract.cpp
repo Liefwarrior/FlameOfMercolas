@@ -61,6 +61,15 @@ const ContractRaws& board() {
     return loaded;
 }
 
+/// #81. A skill track with one skill forced to a level, so a ladder's skill
+/// gate can be climbed without playing an evening to earn it -- the same
+/// helper test_faction.cpp's own RULES section uses.
+SkillTrack skillsAt(std::string_view id, std::int32_t level) {
+    SkillTrack track = SkillTrack::load(content::contentDir());
+    (void)track.setLevel(id, level);
+    return track;
+}
+
 /// The Gull, an engine and a body -- the same shape test_crime.cpp uses.
 class Room {
 public:
@@ -245,6 +254,69 @@ TEST_CASE("a broker, patron or source the registry does not have is refused at l
         ContractRaws::load("/definitely-not-a-content-directory", who(), guilds());
     CHECK_FALSE(absent.loaded());
     CHECK(absent.offers().empty());
+}
+
+TEST_CASE("#81: a rank gate is authored per offer, and a bad one is refused by name") {
+    const auto findOffer = [](std::string_view id) -> const ContractOffer* {
+        for (const ContractOffer& offer : board().offers()) {
+            if (offer.id == id) {
+                return &offer;
+            }
+        }
+        return nullptr;
+    };
+
+    // Finch's low-value courier work stays open to any sworn Tenant: the
+    // roofs' own first rung is what makes him say a word about work at all,
+    // and this is the work that earns that rung rather than the work that
+    // waits past it.
+    const ContractOffer* flowerLoft = findOffer("flower_loft");
+    const ContractOffer* flowerBath = findOffer("flower_bath");
+    REQUIRE(flowerLoft != nullptr);
+    REQUIRE(flowerBath != nullptr);
+    CHECK(flowerLoft->minRank == 0);
+    CHECK(flowerBath->minRank == 0);
+
+    // The two goods above the doorway rung ask Cutpurse, the rung
+    // ranks.json's own file first opens 'fence' on.
+    const ContractOffer* dustQuiet = findOffer("dust_quiet");
+    const ContractOffer* dustLedger = findOffer("dust_grey_ledger");
+    REQUIRE(dustQuiet != nullptr);
+    REQUIRE(dustLedger != nullptr);
+    CHECK(dustQuiet->minRank == 2);
+    CHECK(dustLedger->minRank == 2);
+
+    // FETCH work -- inside a named house, going through somebody's things --
+    // asks Robber.
+    const ContractOffer* piecePawn = findOffer("piece_pawn");
+    const ContractOffer* pieceWrack = findOffer("piece_wrack");
+    REQUIRE(piecePawn != nullptr);
+    REQUIRE(pieceWrack != nullptr);
+    CHECK(piecePawn->minRank == 3);
+    CHECK(pieceWrack->minRank == 3);
+
+    // Cull's public bounty and Venn's favour ask `needs: none`/`acquaintance`
+    // -- an attitude gate or none at all, never a guild rung -- so this file
+    // deliberately leaves them at minRank 0.
+    const ContractOffer* bountyRats = findOffer("bounty_rats");
+    const ContractOffer* bountyKennel = findOffer("bounty_kennel");
+    const ContractOffer* spiritCellar = findOffer("spirit_cellar");
+    const ContractOffer* spiritRow = findOffer("spirit_row");
+    REQUIRE(bountyRats != nullptr);
+    REQUIRE(bountyKennel != nullptr);
+    REQUIRE(spiritCellar != nullptr);
+    REQUIRE(spiritRow != nullptr);
+    CHECK(bountyRats->minRank == 0);
+    CHECK(bountyKennel->minRank == 0);
+    CHECK(spiritCellar->minRank == 0);
+    CHECK(spiritRow->minRank == 0);
+
+    // content/raws/contracts/contract_ranks.json carries one DELIBERATE bad
+    // offer id ("nobody_offers_this"), so this refusal is proved by a case
+    // rather than by the file happening to be correct -- it must not
+    // silently invent a ninth offer.
+    CHECK(findOffer("nobody_offers_this") == nullptr);
+    CHECK(board().offers().size() == 10);
 }
 
 // ===========================================================================
@@ -625,6 +697,78 @@ TEST_CASE("a bounty is not paid without the Flame's mark, and pay is the ward's 
     CHECK(same->pay > pay);
 }
 
+TEST_CASE("#81: a rung a player has not climbed to keeps that work off the board entirely") {
+    auto shared = std::make_shared<const ContractRaws>(
+        ContractRaws::load(content::contentDir(), who(), guilds()));
+    auto registry = std::make_shared<const FactionRegistry>(
+        FactionRegistry::load(content::contentDir()));
+    const std::int32_t roofs = registry->indexOf("skyrunners");
+    REQUIRE(roofs >= 0);
+
+    const auto sawGatedOffer = [](const ContractBoard& scan) {
+        for (const Contract& row : scan.contracts()) {
+            if (row.offerId == "dust_quiet" || row.offerId == "dust_grey_ledger" ||
+                row.offerId == "piece_pawn" || row.offerId == "piece_wrack") {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const auto sawUngatedOffer = [](const ContractBoard& scan) {
+        for (const Contract& row : scan.contracts()) {
+            if (row.offerId == "flower_loft" || row.offerId == "flower_bath") {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // A sworn Tenant -- the roofs' own first rung, and nothing past it.
+    FactionLedger tenant;
+    tenant.attach(registry);
+    tenant.addStanding(roofs, 100);
+    REQUIRE(tenant.join(roofs, skillsAt("skyrunning", 0)) == LadderResult::Granted);
+    REQUIRE(tenant.rank(roofs) == 1);
+
+    ContractBoard atDoorway;
+    atDoorway.attach(shared);
+    bool sawGatedAtDoorway = false;
+    bool sawUngatedAtDoorway = false;
+    for (std::int32_t day = 0; day < 80; ++day) {
+        atDoorway.refresh(day, 0x4752414E41444144ull, tenant);
+        sawGatedAtDoorway = sawGatedAtDoorway || sawGatedOffer(atDoorway);
+        sawUngatedAtDoorway = sawUngatedAtDoorway || sawUngatedOffer(atDoorway);
+    }
+    // NOT A SLOW NIGHT -- IMPOSSIBLE. #81's ContractBoard::refresh drops a
+    // gated offer from the draw pool before the dice are even rolled, so a
+    // Tenant cannot be offered dust or a FETCH job on ANY night of this
+    // world, not merely an unlucky one.
+    CHECK_FALSE(sawGatedAtDoorway);
+    // And the gate did not just starve Finch's whole board: the doorway
+    // rung's OWN work -- flower -- still reaches a Tenant across the same
+    // eighty nights.
+    CHECK(sawUngatedAtDoorway);
+
+    // Climbed past Cutpurse to Robber -- both rungs the gated offers ask for.
+    FactionLedger robber;
+    robber.attach(registry);
+    robber.addStanding(roofs, 100);
+    REQUIRE(robber.join(roofs, skillsAt("skyrunning", 0)) == LadderResult::Granted);
+    REQUIRE(robber.advance(roofs, skillsAt("skyrunning", 5)) == LadderResult::Granted);
+    REQUIRE(robber.advance(roofs, skillsAt("skyrunning", 11)) == LadderResult::Granted);
+    REQUIRE(robber.rank(roofs) == 3);
+
+    ContractBoard pastTheGate;
+    pastTheGate.attach(shared);
+    bool sawGatedAtRobber = false;
+    for (std::int32_t day = 0; day < 80 && !sawGatedAtRobber; ++day) {
+        pastTheGate.refresh(day, 0x4752414E41444144ull, robber);
+        sawGatedAtRobber = sawGatedOffer(pastTheGate);
+    }
+    CHECK(sawGatedAtRobber);
+}
+
 // ===========================================================================
 // ROOM -- the sprint's acceptance
 // ===========================================================================
@@ -1003,6 +1147,18 @@ TEST_CASE("a recovery job is settled by the piece it named, not by a count in a 
     Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
     Tavern& gull = room.tavern();
     DialogueDirector& talk = gull.dialogue();
+
+    // #81: Finch's two FETCH offers -- the only Artifact-good work on the
+    // board -- now ask Robber (rank 3) on the roofs' own ladder. This case is
+    // about which PIECE settles the job, not about the rung, so the player
+    // arrives already sworn to it rather than scanning sixty nights a
+    // Tenant can never be offered one on.
+    const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+    REQUIRE(roofs >= 0);
+    talk.standings().addStanding(roofs, 100);
+    REQUIRE(talk.standings().join(roofs, skillsAt("skyrunning", 0)) == LadderResult::Granted);
+    REQUIRE(talk.standings().advance(roofs, skillsAt("skyrunning", 5)) == LadderResult::Granted);
+    REQUIRE(talk.standings().advance(roofs, skillsAt("skyrunning", 11)) == LadderResult::Granted);
 
     // Four pieces in the sack BEFORE anybody asked for one. Fenced goods, not
     // somebody's christening cup.
