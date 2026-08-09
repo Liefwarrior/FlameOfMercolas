@@ -105,20 +105,22 @@ TEST_CASE("choosing DEVIN or GABRI suggests their own name; CUSTOM starts blank"
     CHECK(custom.name().empty());
 }
 
-TEST_CASE("CUSTOM's card reads as an honest placeholder, never as a paragraph nobody wrote") {
+TEST_CASE("CUSTOM's card names Eli's own tag, never an invented paragraph") {
     // CUSTOM has no companion template and never will -- its whole point is
-    // a blank sheet -- so its card is always the neutral placeholder line.
+    // a blank sheet -- so its top-band line is always just its own tag, task
+    // #80's own framing and nothing this file invented.
     render::CreationFlow flow = fresh();
     flow.moveOriginCursor(2);  // CUSTOM
     const render::DialogueViewState origin = flow.view();
-    CHECK(origin.line == "MORE ABOUT THIS PATH IS COMING.");
+    CHECK(origin.line == "YOUR OWN PATH");
     mustReadAsEnglish("origin blurb placeholder", origin.line);
 }
 
 TEST_CASE("DEVIN's and GABRI's cards speak their own real epithet off content/raws/companions") {
     // content/raws/companions/devin.json and gabri.json are real, authored
     // files as of this task -- see creation.hpp's own header. If they can be
-    // read at all, the card must be showing THEIR words, not the fallback.
+    // read at all, the card's line must carry Eli's own tag AND their words,
+    // not the tag alone.
     render::CreationFlow flow = fresh();
     const sim::CompanionTemplate devin = sim::CompanionTemplate::load(content::contentDir(), "devin");
     const sim::CompanionTemplate gabri = sim::CompanionTemplate::load(content::contentDir(), "gabri");
@@ -127,11 +129,11 @@ TEST_CASE("DEVIN's and GABRI's cards speak their own real epithet off content/ra
     REQUIRE_FALSE(devin.epithet().empty());
     REQUIRE_FALSE(gabri.epithet().empty());
 
-    CHECK(flow.view().line == devin.epithet());
+    CHECK(flow.view().line == "SECRETIVE -- " + devin.epithet());
     mustReadAsEnglish("devin epithet", flow.view().line);
 
     flow.moveOriginCursor(1);  // GABRI
-    CHECK(flow.view().line == gabri.epithet());
+    CHECK(flow.view().line == "NO-NONSENSE -- " + gabri.epithet());
     mustReadAsEnglish("gabri epithet", flow.view().line);
 }
 

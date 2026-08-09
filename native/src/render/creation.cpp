@@ -2,10 +2,42 @@
 
 #include <algorithm>
 #include <cctype>
+#include <string_view>
 
 #include "granadad/render/framebuffer.hpp"
 
 namespace granadad::render {
+
+namespace {
+
+/// "PRI"/"MAJ"/"MIN"/"-" rather than sim::skillDesignationName's full
+/// "Primary"/"Major"/"Minor"/"Undesignated" -- DISPLAY ONLY, this build's
+/// own reasoning for the row, chargen.cpp's own words untouched everywhere
+/// else. The topic grid's own column is eighteen glyphs INCLUDING the row
+/// number (dialogue_view.cpp), so "CRACKSMANSHIP" (thirteen, the longest
+/// skill name this raws file has) paired with "Undesignated" (twelve) was
+/// never going to fit -- paired with a three-letter code it does, for every
+/// skill this build's raws currently name. The one row still too long for
+/// its column (a skill name AND a code that together still clear eighteen)
+/// falls back on the exact same rescue every other page's overlong row
+/// already has -- clipLabel's own word-boundary cut, and the cursor's own
+/// row spelled out in full one line up -- rather than a promise this
+/// function cannot keep for every skill this raws file will ever name.
+[[nodiscard]] std::string_view shortDesignation(sim::SkillDesignation tier) noexcept {
+    switch (tier) {
+        case sim::SkillDesignation::Primary:
+            return "PRI";
+        case sim::SkillDesignation::Major:
+            return "MAJ";
+        case sim::SkillDesignation::Minor:
+            return "MIN";
+        case sim::SkillDesignation::None:
+            return "-";
+    }
+    return "-";
+}
+
+}  // namespace
 
 const std::vector<OriginTemplate>& originTemplates() {
     // THREE, AND ONLY THREE -- Eli named exactly these, task #80's own text.
@@ -138,7 +170,13 @@ std::string CreationFlow::labelFor(const CustomizeRow& row) const {
     const sim::CompanionTemplate* companion = chosenCompanion();
     switch (row.kind) {
         case CustomizeRow::Kind::Name: {
-            const std::string value = name_.empty() ? std::string("NAME NOT SET") : name_;
+            // "UNSET" AND NOT "NAME NOT SET" -- the longer phrase plus the
+            // "NAME  " prefix plus the row's own number is twenty-one
+            // glyphs into an eighteen-glyph column, the identical class of
+            // clip shortDesignation() exists to head off below. A missing
+            // name is not itself a defect worth writing a sentence about;
+            // one honest word says it and fits.
+            const std::string value = name_.empty() ? std::string("UNSET") : name_;
             return "NAME  " + value;
         }
         case CustomizeRow::Kind::Appearance: {
@@ -160,8 +198,7 @@ std::string CreationFlow::labelFor(const CustomizeRow& row) const {
             if (companion != nullptr) {
                 return label + "  LV " + std::to_string(companion->startingLevel(row.skillId));
             }
-            return label + "  " +
-                  std::string(sim::skillDesignationName(chargen_.designationOf(row.skillId)));
+            return label + "  " + std::string(shortDesignation(chargen_.designationOf(row.skillId)));
         }
         case CustomizeRow::Kind::Attribute: {
             const std::int32_t value = companion != nullptr
@@ -340,18 +377,25 @@ DialogueViewState CreationFlow::view() const {
         // longer bio() because the top band has a few rows before the HUD's
         // centre-clear rule starts eating them, and a paragraph silently
         // losing its back half reads as a rendering bug, not as writing.
-        std::string blurb;
-        if (hovered.id == "devin" && devinTemplate_.loaded()) {
-            blurb = devinTemplate_.epithet();
-        } else if (hovered.id == "gabri" && gabriTemplate_.loaded()) {
-            blurb = gabriTemplate_.epithet();
-        }
-        if (blurb.empty()) {
-            blurb = "MORE ABOUT THIS PATH IS COMING.";
+        std::string blurb = hovered.tag;
+        if (hovered.id == "devin" && devinTemplate_.loaded() && !devinTemplate_.epithet().empty()) {
+            blurb += " -- " + devinTemplate_.epithet();
+        } else if (hovered.id == "gabri" && gabriTemplate_.loaded() &&
+                  !gabriTemplate_.epithet().empty()) {
+            blurb += " -- " + gabriTemplate_.epithet();
         }
         state.line = blurb;
+        // NAME ONLY ON THE CARD ITSELF. Eli's own tag alongside it --
+        // "GABRI  NO-NONSENSE" -- is eighteen characters before the row
+        // number even joins it, which is the topic grid's own column width
+        // AT BEST and over it the moment "YOUR OWN PATH" or "NO-NONSENSE"
+        // is the tag: three cards sharing one row of three columns clipped
+        // two of them to "NO-NONSE." and "YOUR." the first time this screen
+        // was actually looked at as a picture rather than read as code. The
+        // tag and the real voice both belong in the top band above, which
+        // has the room and already carries them.
         for (const OriginTemplate& t : originTemplates()) {
-            state.topics.push_back(t.name + "  " + t.tag);
+            state.topics.push_back(t.name);
         }
         state.cursor = originCursor_;
         state.page = topicPageOf(originCursor_);
