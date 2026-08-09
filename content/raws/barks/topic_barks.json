@@ -1,0 +1,140 @@
+{
+  "id": "topic_barks",
+  "_note": "ADDED for #82, the 'TELL ME ABOUT' topic tree (LOCATION / PERSON / THING / WORK / QUEST). barks.json is the owner's canon and is not edited; barkRawsFiles() loads the owner's file FIRST and it wins every duplicate key, so nothing here can shadow anything authored. PERSON and WORK speak out of tables barks.json already owns (personal.*, gossip.*, mastery.*); this file adds the two new axes the tree needed content for: LOCATION and THING. Every fact behind every line traces to DOCKS-GAZETTEER.md (the five K-sites: K01 Weighhouse, K03 Gilded Gull, K17 Mission, K13 Drowned Hold, K21 Saltgate Watch-Post) or to a ruling already shipped (DECISIONS.md's tenure ruling for the ground penny; MAGIC-CANON.md's 'the office is visible, the power is not' for the Flame; the passport at the Inner Wall gate, L2410; the crime layer's scalp bounty; the tide's two-level swing, DOCKS-GAZETTEER 2.1/2.7.4). Keys follow topicChain()'s own shape: location.<id> / thing.<id> generic, then .<family> and .<family>.<attitude> narrowings -- most specific first, exactly the fallback greetChain already uses.",
+
+  "tables": [
+
+    { "key": "location.weighhouse",
+      "rows": [
+        "The Weighhouse. Where every scale in the ward gets its number checked against the customs man's own.",
+        "Berth ledger, tariff scales, the impound yard out back. Nothing crosses that quay without going through there first.",
+        "Ask Crell. He has read every manifest that ever came off a boat, and he remembers most of them."
+      ] },
+    { "key": "location.weighhouse.trade",
+      "rows": [
+        "Good scales, honest weights, and a harbormaster who has caught me shorting a customer exactly once. Once was enough.",
+        "The tariff schedule is posted on the wall and nobody has ever liked reading it."
+      ] },
+    { "key": "location.weighhouse.watch",
+      "rows": [
+        "The Weighhouse keeps the district's books straight. Cross Crell and you have crossed the whole customs house.",
+        "I have stood outside that door more mornings than I can count. The queue never gets shorter."
+      ] },
+
+    { "key": "location.gilded_gull",
+      "rows": [
+        "The Gilded Gull. Captains' tavern, up on the Tarwalk. Charts on the walls and the good wine, if you can pay for it.",
+        "Factors do their deals there over a table nobody else is allowed to sit at.",
+        "Ask around the Gull if you want to know what came in on the last tide. Somebody there always does."
+      ] },
+    { "key": "location.gilded_gull.maritime",
+      "rows": [
+        "Best charts on the waterfront hang on that wall, and half of them are wrong on purpose.",
+        "I have slept better nights on a rolling deck than on a bench in that taproom, but the wine is worth the trip."
+      ] },
+    { "key": "location.gilded_gull.wastrel",
+      "rows": [
+        "Not a house for the likes of me. Captains and factors drink there, and they do not buy for strangers.",
+        "I have stood outside the Gull's window more than once, just for the smell of it."
+      ] },
+
+    { "key": "location.mission",
+      "rows": [
+        "The Mission of the Flame. Soup, a bunk if you need one, and a disciple awake at every hour to give it.",
+        "Father Maell keeps it. White garb, and not everyone out here trusts the sight of it, but the bowls are full."
+      ] },
+    { "key": "location.mission.clergy",
+      "rows": [
+        "The Mission never closes its door, whatever the hour. That is the whole of what the Flame asks of it.",
+        "Father Maell has fed this ward through worse winters than this one. I would not bet against him feeding it through the next."
+      ] },
+    { "key": "location.mission.wastrel",
+      "rows": [
+        "They will feed you at the Mission and not ask what you did to get hungry. I have never worked out the trick of it."
+      ] },
+
+    { "key": "location.drowned_hold",
+      "rows": [
+        "The Drowned Hold. Condemned warehouse, east end. Been empty nine years, officially.",
+        "Half its floor is sagging toward the water and nobody has fixed it. Nobody official goes near it either.",
+        "Lamplight under the door some nights, they say. I have not gone to look."
+      ] },
+    { "key": "location.drowned_hold.wastrel",
+      "rows": [
+        "I do not go near the Drowned Hold after dark, and neither should you. Empty buildings do not light their own lamps."
+      ] },
+    { "key": "location.drowned_hold.watch",
+      "rows": [
+        "Condemned nine years and never pulled down. That is a question somebody higher up has never answered for me either.",
+        "We do not patrol the Drowned Hold. There is nothing there to protect, officially."
+      ] },
+
+    { "key": "location.saltgate_watch",
+      "rows": [
+        "The Watch-Post, up at the top of the Rise. Notice board out front, and a gibbet cage that has not always been empty.",
+        "That is where you go if you want the Watch to actually listen."
+      ] },
+    { "key": "location.saltgate_watch.watch",
+      "rows": [
+        "My post. Notice board, holding cell, and a view down the whole Rise to the water. I have had worse."
+      ] },
+    { "key": "location.saltgate_watch.watch.warm",
+      "rows": [
+        "Come up and see it sometime. Best view of the harbour in the ward, and I will even pour you what passes for tea up there."
+      ] },
+
+    { "key": "thing.ground_penny",
+      "rows": [
+        "The ground penny. Quarterly rent on the earth under your house, owed to whoever holds the charge on the plot.",
+        "Nobody in this ward owns the ground they stand on. Not even the man who collects for it."
+      ] },
+    { "key": "thing.ground_penny.trade",
+      "rows": [
+        "Pay the ground penny on time and a Den Duke never has cause to look at you twice. That is the whole trick of it.",
+        "I have seen a man lease himself to work off a bad quarter's penny. It happens more than the Duke likes admitted."
+      ] },
+
+    { "key": "thing.the_flame",
+      "rows": [
+        "The Flame. An office, a vigil, kept at the Mission. Ask there if you want more than that from me.",
+        "The Divine Light holds this ward together more than the Watch does, if you ask me, which nobody official ever does."
+      ] },
+    { "key": "thing.the_flame.clergy",
+      "rows": [
+        "The Flame is not mine to hand you. It is an office and a vigil, and I only keep the second of those.",
+        "Six powers, publicly. That is what I am permitted to say and it is the whole truth I am permitted to say it with."
+      ] },
+
+    { "key": "thing.a_passport",
+      "rows": [
+        "A passport. Papers for the Inner Wall gate. Even a Wielder presents one, they say, so do not think your face buys you past it."
+      ] },
+    { "key": "thing.a_passport.watch",
+      "rows": [
+        "No passport, no gate. I have turned back better-dressed men than you for forgetting theirs."
+      ] },
+
+    { "key": "thing.a_scalp",
+      "rows": [
+        "A scalp. Vermin bounty, paid at the counter, signed for by the Flame before the knife and not after."
+      ] },
+    { "key": "thing.a_scalp.wastrel",
+      "rows": [
+        "A scalp is honest coin if the rats are honest vermin. Mind whose mark you are carrying when you bring one in."
+      ] },
+    { "key": "thing.a_scalp.watch",
+      "rows": [
+        "Scalps are the one bounty we do not ask questions about, so long as the Flame's mark is on the sack."
+      ] },
+
+    { "key": "thing.the_tide",
+      "rows": [
+        "The tide. Two levels, high and low, and the Outfall grate only opens at the low one. Everything under the quay minds it."
+      ] },
+    { "key": "thing.the_tide.maritime",
+      "rows": [
+        "Watch the tide before you watch anything else out here. It has drowned better sailors than the harbour ever did on purpose."
+      ] }
+
+  ]
+}

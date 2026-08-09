@@ -478,7 +478,20 @@ TEST_CASE("a cat answers, and is not asked about the vanished clerk") {
         *hand, run.people->identity(hand->id), second.notables(), second.factions(),
         second.barks());
     REQUIRE(second.open(person, sim::hourOfDay(13)));
-    CHECK(second.topics().size() > 3);
+    // More than the beast's one-way-out, AND the door into #82's tree opens
+    // onto real content rather than an empty category list -- a ward hand
+    // with nobody's name and no coin still has the whole tree behind him.
+    CHECK(second.topics().size() > 1);
+    std::size_t ask = second.topics().size();
+    for (std::size_t i = 0; i < second.topics().size(); ++i) {
+        if (second.topics()[i].kind == sim::TopicKind::Ask) {
+            ask = i;
+        }
+    }
+    REQUIRE(ask < second.topics().size());
+    second.choose(ask);
+    CHECK(second.menu() == sim::DialogueMenu::Category);
+    CHECK(second.topics().size() > 1);
 }
 
 // ===========================================================================
@@ -573,8 +586,27 @@ TEST_CASE("the ward's trades talk shop about their own trade") {
                                 talk.factions(), talk.barks());
         CHECK(speaker.skillId == crell->bestSkill());
         CHECK(speaker.skillLevel == crell->bestSkillLevel());
-        // And he brings his own table and his own stories with him.
+        // And he brings his own table and his own stories with him -- #82:
+        // behind the PERSON branch of the tree now, not at the root.
         REQUIRE(talk.open(speaker, sim::hourOfDay(13)));
+        std::size_t ask = talk.topics().size();
+        for (std::size_t i = 0; i < talk.topics().size(); ++i) {
+            if (talk.topics()[i].kind == sim::TopicKind::Ask) {
+                ask = i;
+            }
+        }
+        REQUIRE(ask < talk.topics().size());
+        talk.choose(ask);
+        std::size_t person = talk.topics().size();
+        for (std::size_t i = 0; i < talk.topics().size(); ++i) {
+            if (talk.topics()[i].kind == sim::TopicKind::Category &&
+                talk.topics()[i].arg == sim::kAskPerson) {
+                person = i;
+            }
+        }
+        REQUIRE(person < talk.topics().size());
+        talk.choose(person);
+        REQUIRE(talk.menu() == sim::DialogueMenu::Person);
         bool personal = false;
         bool history = false;
         for (const sim::Topic& topic : talk.topics()) {

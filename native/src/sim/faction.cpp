@@ -287,6 +287,11 @@ std::int32_t factionDeedWeight(Deed deed) noexcept {
             return -15;
         case Deed::Listened:
             return 0;
+        // #82. A guild does not hear secondhand HOW you asked -- only what
+        // came of asking, which is every other row in this table.
+        case Deed::SpokePolitely:
+        case Deed::SpokeBluntly:
+            return 0;
     }
     return 0;
 }

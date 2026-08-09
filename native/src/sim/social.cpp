@@ -73,6 +73,10 @@ std::string_view deedName(Deed deed) noexcept {
             return "drew steel";
         case Deed::Listened:
             return "listened";
+        case Deed::SpokePolitely:
+            return "spoke politely";
+        case Deed::SpokeBluntly:
+            return "spoke bluntly";
     }
     return "?";
 }
@@ -85,6 +89,17 @@ std::int32_t deedWeight(Deed deed) noexcept {
             return 0;
         case Deed::Listened:
             return 2;
+        // #82. A HAIR more than plain Listened -- politeness alone was never
+        // meant to be a lever, only a nudge that can tip a standing already
+        // sitting near a threshold.
+        case Deed::SpokePolitely:
+            return 1;
+        // #82. NEGATIVE, and on purpose: unlike Spoke/Listened/SpokePolitely
+        // this weight is NOT read through record()'s talk-ceiling branch, so
+        // it moves disposition for real -- see record()'s own note on why the
+        // three "just talk" deeds above split this way.
+        case Deed::SpokeBluntly:
+            return -2;
         case Deed::BoughtDrink:
             return 12;
         case Deed::PaidAsking:
@@ -111,9 +126,13 @@ std::int32_t deedWeight(Deed deed) noexcept {
 
 std::int32_t witnessWeight(Deed deed) noexcept {
     switch (deed) {
-        // Small talk with somebody else is not news.
+        // Small talk with somebody else is not news -- and neither is HOW it
+        // was said. A room does not turn to look at a polite word or a curt
+        // one; it turns for a robbery.
         case Deed::Spoke:
         case Deed::Listened:
+        case Deed::SpokePolitely:
+        case Deed::SpokeBluntly:
         case Deed::HaggledFair:
             return 0;
         case Deed::BoughtDrink:
@@ -192,12 +211,18 @@ Memory& SocialLedger::entryFor(std::int32_t actorId) {
 std::int32_t SocialLedger::record(std::int32_t actorId, Deed deed) {
     Memory& memory = entryFor(actorId);
     const std::int32_t weight = deedWeight(deed);
-    if (deed == Deed::Spoke || deed == Deed::Listened) {
+    if (deed == Deed::Spoke || deed == Deed::Listened || deed == Deed::SpokePolitely) {
         // YOU CANNOT CHAT YOUR WAY INTO BEING LIKED. Hearing somebody out is
         // worth something, and it stops being worth anything just short of
         // WARM: past that the only currency is coin spent, favours done and
         // trouble not started. Without this, standing in front of a docker
         // pressing one key three hundred times would make you his brother.
+        //
+        // #82's SpokePolitely rides this SAME branch -- manners are still
+        // just talk. SpokeBluntly deliberately does NOT: talking down to
+        // somebody can cost you standing you already had, the same as
+        // WalkedOut or Lowballed can, and both of those fall through to the
+        // plain clamp below.
         memory.disposition =
             std::max(memory.disposition, std::min(memory.disposition + weight, kTalkCeiling));
     } else {

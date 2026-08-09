@@ -1,0 +1,38 @@
+{
+  "id": "tone_barks",
+  "tables": [
+    {
+      "key": "greet.serf.warm.polite",
+      "rows": [
+        "Manners, from you? Sit down if you're staying.",
+        "Didn't have to ask so nice. Good to see you all the same, friend.",
+        "Ease off the bowing - but aye, good to see you."
+      ]
+    },
+    {
+      "key": "greet.serf.warm.blunt",
+      "rows": [
+        "Straight to it, then. Fine by me.",
+        "No pleasantries either. Suits me better.",
+        "Same as always - short words, long trust."
+      ]
+    },
+    {
+      "key": "personal.polite",
+      "rows": [
+        "(they soften, just a touch, at the please)",
+        "Ask proper and I might answer proper.",
+        "(a longer look than a plain ask usually gets)"
+      ]
+    },
+    {
+      "key": "personal.blunt",
+      "rows": [
+        "(they don't flinch at plain talk - if anything, they relax)",
+        "No dressing it up? Good. Neither will I.",
+        "(they answer shorter, and no slower for it)"
+      ]
+    }
+  ],
+  "notes": "TASK #82 addition. The owner's content/raws/barks/barks.json is UNTOUCHED and always loads FIRST -- see barkRawsFiles, where the merge rule is that the first file to carry a key wins -- so nothing in here can take a line the owner wrote. These four tables are what DialogueDirector::toned() reaches for when the player has dialled POLITE or BLUNT: a tone-tagged key is offered ahead of its untagged sibling in the resolve chain and falls straight through to it when nothing is authored here, so every existing line stays exactly what it was at Tone::Normal. greet.serf.warm.{polite,blunt} prove the greeting itself changes; personal.{polite,blunt} prove the generic THEIR BUSINESS topic -- the one nearly every hired hand in the ward offers -- does too. Neither table touches gossip, quest or the social-topological gates: which story somebody is licensed to repeat is a fact about who they are, not about how nicely you asked."
+}

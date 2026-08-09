@@ -60,6 +60,32 @@ std::string_view attitudeName(Attitude attitude) noexcept {
     return "NEUTRAL";
 }
 
+std::string_view toneKey(Tone tone) noexcept {
+    switch (tone) {
+        case Tone::Polite:
+            return "polite";
+        case Tone::Blunt:
+            return "blunt";
+        case Tone::Normal:
+            // No suffix was ever authored for the normal register -- it is
+            // what an untagged line already is. See the header.
+            return "";
+    }
+    return "";
+}
+
+std::string_view toneName(Tone tone) noexcept {
+    switch (tone) {
+        case Tone::Polite:
+            return "POLITE";
+        case Tone::Normal:
+            return "NORMAL";
+        case Tone::Blunt:
+            return "BLUNT";
+    }
+    return "NORMAL";
+}
+
 std::string_view jobFamilyKey(JobFamily family) noexcept {
     switch (family) {
         case JobFamily::Serf:
@@ -331,6 +357,18 @@ std::vector<std::string> masteryChain(std::string_view skillId, std::int32_t lev
         return {base + "adept", base + "novice"};
     }
     return {base + "novice"};
+}
+
+std::vector<std::string> topicChain(std::string_view prefix, std::string_view id, JobFamily family,
+                                    Attitude attitude, TimeBand band) {
+    const std::string base = std::string(prefix) + "." + std::string(id);
+    const std::string withFamily = base + "." + std::string(jobFamilyKey(family));
+    const std::string withAttitude = withFamily + "." + std::string(attitudeKey(attitude));
+    // Most specific first, exactly like greetChain: the band-and-attitude row,
+    // then attitude alone, then the bare family, then the guaranteed generic
+    // fallback -- the one rung every topic id authors, so the chain never
+    // bottoms out into "...".
+    return {withAttitude + "." + std::string(timeBandKey(band)), withAttitude, withFamily, base};
 }
 
 }  // namespace granadad::sim

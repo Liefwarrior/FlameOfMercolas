@@ -90,11 +90,12 @@ TEST_CASE("the owner's bark tables load, all of them") {
     // 210 tables in the owner's content/raws/barks/barks.json, plus the 32 in
     // content/raws/barks/flame_barks.json (S4), the 22 in roof_barks.json (S5),
     // the 18 in contract_barks.json (S6), the 12 in house_barks.json (S7), the
-    // 8 in nemesis_barks.json (S8) and the 25 in ward_barks.json (#79) beside
-    // it -- each sprint adds a SECOND file rather than editing 59KB of canon,
-    // and BarkTables::load reads the whole directory. Pinned: content added
-    // should be a visible change here, and content LOST should be red.
-    CHECK(barks().tableCount() == 327);
+    // 8 in nemesis_barks.json (S8), the 25 in ward_barks.json (#79), the 4 in
+    // tone_barks.json and the 26 in topic_barks.json (both #82) beside it --
+    // each sprint adds a SECOND file rather than editing 59KB of canon, and
+    // BarkTables::load reads the whole directory. Pinned: content added should
+    // be a visible change here, and content LOST should be red.
+    CHECK(barks().tableCount() == 357);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.
@@ -341,30 +342,216 @@ TEST_CASE("a mood outranks a greeting, because somebody on the floor is not chat
     CHECK(director.greetingKey() == "mood.downed");
 }
 
+// ===========================================================================
+// #82 -- the tone selector: POLITE / NORMAL / BLUNT, chosen per exchange
+// ===========================================================================
+
+TEST_CASE("the tone dial is silent at NORMAL, and changes what is actually said once you turn it") {
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    // Warm, and on purpose: greet.serf.warm has no per-hour refinement
+    // authored (unlike greet.serf.neutral, which has all four), so the
+    // untagged tiered key cannot win the chain before a tone-tagged one gets
+    // a chance to.
+    const Speaker docker = dockerNamed(21, "Tam Sallow");
+    director.ledger().seed(21, kWarmAtOrAbove);
+
+    REQUIRE(director.tone() == Tone::Normal);
+    REQUIRE(director.open(docker, hourOfDay(21)));
+    CHECK(director.attitude() == Attitude::Warm);
+    CHECK(director.greetingKey() == "greet.serf.warm");
+    const std::string normalLine = director.greeting();
+    director.close();
+
+    director.setTone(Tone::Polite);
+    REQUIRE(director.open(docker, hourOfDay(21)));
+    CHECK(director.greetingKey() == "greet.serf.warm.polite");
+    const std::vector<std::string>* polite = director.barks().rows("greet.serf.warm.polite");
+    REQUIRE(polite != nullptr);
+    CHECK(std::find(polite->begin(), polite->end(), director.greeting()) != polite->end());
+    CHECK(director.greeting() != normalLine);
+    director.close();
+
+    director.setTone(Tone::Blunt);
+    REQUIRE(director.open(docker, hourOfDay(21)));
+    CHECK(director.greetingKey() == "greet.serf.warm.blunt");
+    const std::vector<std::string>* blunt = director.barks().rows("greet.serf.warm.blunt");
+    REQUIRE(blunt != nullptr);
+    CHECK(std::find(blunt->begin(), blunt->end(), director.greeting()) != blunt->end());
+    CHECK(director.greeting() != normalLine);
+    director.close();
+
+    // And dialled back, it says exactly what it always said -- nothing about
+    // the untagged table moved underneath it.
+    director.setTone(Tone::Normal);
+    REQUIRE(director.open(docker, hourOfDay(21)));
+    CHECK(director.greetingKey() == "greet.serf.warm");
+}
+
+TEST_CASE("tone can open a job list a colder tongue keeps shut, and shut one a warmer tongue had open") {
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    // Day 3 of this exact seed is the combination test_contract.cpp already
+    // proves leaves every broker, Venn included, with at least one live offer.
+    director.postContracts(3, 0x4752414E41444144ull);
+
+    Speaker venn = dockerNamed(1, "Master Venn");
+    venn.notableId = "venn";
+    venn.family = JobFamily::Trade;
+    venn.skillId = "streetwise";
+    venn.skillLevel = 30;
+
+    const auto offeredCount = [&]() {
+        return std::count_if(director.topics().begin(), director.topics().end(),
+                             [](const Topic& t) {
+                                 return t.kind == TopicKind::TakeContract && t.payload >= 0;
+                             });
+    };
+    const auto askedAboutWork = [&]() {
+        return std::any_of(director.topics().begin(), director.topics().end(),
+                           [](const Topic& t) {
+                               return t.kind == TopicKind::TakeContract && t.payload < 0;
+                           });
+    };
+
+    SUBCASE("cold enough to be refused, warm enough once you ask nicely") {
+        director.ledger().seed(1, kColdAtOrBelow);
+        REQUIRE(director.open(venn, hourOfDay(21)));
+        CHECK(director.attitude() == Attitude::Cold);
+        // Venn's own "acquaintance" gate is closed: the placeholder shows and
+        // his real offers do not.
+        CHECK(askedAboutWork());
+        CHECK(offeredCount() == 0);
+
+        director.setTone(Tone::Polite);
+        CHECK_FALSE(askedAboutWork());
+        CHECK(offeredCount() > 0);
+    }
+
+    SUBCASE("neutral enough to be heard, closed off by a flat tongue") {
+        director.ledger().seed(1, kColdAtOrBelow + 1);
+        REQUIRE(director.open(venn, hourOfDay(21)));
+        CHECK(director.attitude() == Attitude::Neutral);
+        CHECK_FALSE(askedAboutWork());
+        CHECK(offeredCount() > 0);
+
+        director.setTone(Tone::Blunt);
+        CHECK(askedAboutWork());
+        CHECK(offeredCount() == 0);
+    }
+}
+
+namespace {
+
+[[nodiscard]] bool has(const std::vector<Topic>& list, TopicKind kind) {
+    return std::any_of(list.begin(), list.end(), [&](const Topic& t) { return t.kind == kind; });
+}
+
+/// The index of the first topic of a kind, or list.size() if there is none.
+[[nodiscard]] std::size_t indexOf(const std::vector<Topic>& list, TopicKind kind) {
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        if (list[i].kind == kind) {
+            return i;
+        }
+    }
+    return list.size();
+}
+
+/// Opens the tree and walks down to one named category branch. REQUIREs both
+/// hops land, because a test that silently stayed at the root would pass
+/// against a tree that never opened.
+void openBranch(DialogueDirector& director, std::string_view category) {
+    const std::vector<Topic>& root = director.topics();
+    const std::size_t ask = indexOf(root, TopicKind::Ask);
+    REQUIRE(ask < root.size());
+    director.choose(ask);
+    REQUIRE(director.menu() == DialogueMenu::Category);
+
+    const std::vector<Topic>& categories = director.topics();
+    std::size_t branch = categories.size();
+    for (std::size_t i = 0; i < categories.size(); ++i) {
+        if (categories[i].kind == TopicKind::Category && categories[i].arg == category) {
+            branch = i;
+        }
+    }
+    REQUIRE(branch < categories.size());
+    director.choose(branch);
+}
+
+}  // namespace
+
+TEST_CASE("the same topic, dialled to a different register, answers differently -- and the ledger hears it") {
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    const Speaker docker = dockerNamed(22, "Nace Fenwright");
+    REQUIRE(director.open(docker, hourOfDay(21)));
+    // #82's THEIR OWN BUSINESS moved into the PERSON branch of the tree; see
+    // dialogue.hpp's own note on why. openBranch walks the door in exactly
+    // the way a player would.
+    openBranch(director, kAskPerson);
+    REQUIRE(director.menu() == DialogueMenu::Person);
+
+    std::size_t at = indexOf(director.topics(), TopicKind::Personal);
+    REQUIRE(at < director.topics().size());
+    CHECK(director.topics()[at].barkKey == "personal");
+    const std::int32_t start = director.ledger().dispositionOf(22);
+
+    // Dialling the tone rebuilds whichever level is on screen -- here, the
+    // PERSON branch itself, not the root -- which is exactly what proves the
+    // dial reaches a topic three levels deep and not only the door into it.
+    director.setTone(Tone::Polite);
+    REQUIRE(director.menu() == DialogueMenu::Person);
+    at = indexOf(director.topics(), TopicKind::Personal);
+    REQUIRE(at < director.topics().size());
+    CHECK(director.topics()[at].barkKey == "personal.polite");
+    const Reply polite = director.choose(at);
+    REQUIRE(polite.ok);
+    CHECK(polite.dispositionBefore == start);
+    const std::vector<std::string>* politeRows = director.barks().rows("personal.polite");
+    REQUIRE(politeRows != nullptr);
+    CHECK(std::find(politeRows->begin(), politeRows->end(), polite.line) != politeRows->end());
+    // Held to the exact same talk ceiling every "just listening" deed always
+    // was -- SpokePolitely rides Listened's own branch.
+    CHECK(polite.dispositionAfter == start + deedWeight(Deed::SpokePolitely));
+
+    director.setTone(Tone::Blunt);
+    REQUIRE(director.menu() == DialogueMenu::Person);
+    at = indexOf(director.topics(), TopicKind::Personal);
+    REQUIRE(at < director.topics().size());
+    CHECK(director.topics()[at].barkKey == "personal.blunt");
+    const Reply blunt = director.choose(at);
+    REQUIRE(blunt.ok);
+    CHECK(blunt.dispositionBefore == polite.dispositionAfter);
+    const std::vector<std::string>* bluntRows = director.barks().rows("personal.blunt");
+    REQUIRE(bluntRows != nullptr);
+    CHECK(std::find(bluntRows->begin(), bluntRows->end(), blunt.line) != bluntRows->end());
+    CHECK(blunt.line != polite.line);
+    // NOT held to the ceiling: a flat tongue costs standing you already had,
+    // the same as WalkedOut or Lowballed would.
+    CHECK(blunt.dispositionAfter == polite.dispositionAfter + deedWeight(Deed::SpokeBluntly));
+    CHECK(blunt.dispositionAfter < polite.dispositionAfter);
+}
+
 TEST_CASE("the topic list is built out of what this person is allowed to know") {
     DialogueDirector director = DialogueDirector::load(content::contentDir());
 
     SUBCASE("a hired hand the raws never named still has plenty to say") {
         REQUIRE(director.open(dockerNamed(4, "Wick Hempson"), hourOfDay(21)));
         const std::vector<Topic>& topics = director.topics();
-        // The generic tables, the quest everybody has heard of, shop talk about
-        // his own trade, and the two verbs that change how he feels about you.
-        const auto has = [&](TopicKind kind) {
-            return std::any_of(topics.begin(), topics.end(),
-                               [&](const Topic& t) { return t.kind == kind; });
-        };
-        CHECK(has(TopicKind::Personal));
-        CHECK(has(TopicKind::WardTalk));
-        CHECK(has(TopicKind::Quest));
-        CHECK(has(TopicKind::Mastery));
-        CHECK(has(TopicKind::BuyDrinkFor));
-        CHECK(has(TopicKind::PickPocket));
-        CHECK(has(TopicKind::Leave));
+        // #82: the root keeps exactly the verbs -- the quest everybody has
+        // heard of (deliberately still here, mirrored into the tree rather
+        // than moved -- see dialogue.hpp's own note), the two verbs that
+        // change how he feels about you, and the door into the tree.
+        CHECK(has(topics, TopicKind::Ask));
+        CHECK(has(topics, TopicKind::Quest));
+        CHECK(has(topics, TopicKind::BuyDrinkFor));
+        CHECK(has(topics, TopicKind::PickPocket));
+        CHECK(has(topics, TopicKind::Leave));
         // He sells nothing, so there is nothing to argue about.
-        CHECK_FALSE(has(TopicKind::Trade));
-        CHECK_FALSE(has(TopicKind::Buy));
-        // ...and he has no story of his own, because the raws gave him none.
-        CHECK_FALSE(has(TopicKind::History));
+        CHECK_FALSE(has(topics, TopicKind::Trade));
+        CHECK_FALSE(has(topics, TopicKind::Buy));
+        // THEIR BUSINESS, the ward's talk and shop talk moved behind the door
+        // in #82 -- none of them is a root topic for anybody any more.
+        CHECK_FALSE(has(topics, TopicKind::Personal));
+        CHECK_FALSE(has(topics, TopicKind::WardTalk));
+        CHECK_FALSE(has(topics, TopicKind::Mastery));
         // Every topic that speaks does so out of a key that really exists.
         for (const Topic& topic : topics) {
             INFO("topic ", topic.label);
@@ -373,6 +560,36 @@ TEST_CASE("the topic list is built out of what this person is allowed to know") 
                 REQUIRE(director.barks().has(topic.barkKey));
             }
         }
+
+        // Walk the door in. He has no story of his own, because the raws
+        // gave him none, so PERSON offers his own business and the ward's
+        // talk and nothing about anybody else; WORK offers his own trade.
+        openBranch(director, kAskPerson);
+        const std::vector<Topic>& person = director.topics();
+        CHECK(director.menu() == DialogueMenu::Person);
+        CHECK(has(person, TopicKind::Personal));
+        CHECK(has(person, TopicKind::WardTalk));
+        CHECK(has(person, TopicKind::Back));
+        // ...and he has no story of his own, because the raws gave him none.
+        CHECK_FALSE(has(person, TopicKind::History));
+        for (const Topic& topic : person) {
+            if (!topic.barkKey.empty()) {
+                REQUIRE(director.barks().has(topic.barkKey));
+            }
+        }
+
+        // Back up to the category list, back up again to the root -- and
+        // down the WORK branch from there: fieldcraft 25 has a table.
+        // openBranch always starts its own walk from the root's own Ask
+        // topic, so it is re-entered fresh rather than resumed mid-tree.
+        director.choose(indexOf(person, TopicKind::Back));
+        CHECK(director.menu() == DialogueMenu::Category);
+        director.choose(indexOf(director.topics(), TopicKind::Back));
+        CHECK(director.menu() == DialogueMenu::Root);
+        openBranch(director, kAskWork);
+        CHECK(director.menu() == DialogueMenu::Work);
+        CHECK(has(director.topics(), TopicKind::Mastery));
+        CHECK(has(director.topics(), TopicKind::Back));
     }
 
     SUBCASE("a notable carries the stories the rumor domains license") {
@@ -386,6 +603,11 @@ TEST_CASE("the topic list is built out of what this person is allowed to know") 
         venn.basePrice = 12;
         REQUIRE(director.open(venn, hourOfDay(21)));
 
+        // Buy/Trade are unaffected verbs and never moved.
+        CHECK(has(director.topics(), TopicKind::Buy));
+        CHECK(has(director.topics(), TopicKind::Trade));
+
+        openBranch(director, kAskPerson);
         std::vector<std::string> stories;
         for (const Topic& topic : director.topics()) {
             if (topic.kind == TopicKind::History) {
@@ -401,13 +623,6 @@ TEST_CASE("the topic list is built out of what this person is allowed to know") 
         const Topic& personal = director.topics().front();
         REQUIRE(personal.kind == TopicKind::Personal);
         CHECK(personal.barkKey == "personal.venn");
-        // And he sells beds, so both trade topics are on the list.
-        const auto has = [&](TopicKind kind) {
-            return std::any_of(director.topics().begin(), director.topics().end(),
-                               [&](const Topic& t) { return t.kind == kind; });
-        };
-        CHECK(has(TopicKind::Buy));
-        CHECK(has(TopicKind::Trade));
     }
 }
 
@@ -559,6 +774,155 @@ TEST_CASE("standing somebody a drink costs what a drink costs") {
     // conversation would have managed.
     director.choose(at);
     CHECK(director.ledger().attitudeOf(4) == Attitude::Warm);
+}
+
+// ===========================================================================
+// #82 -- THE "TELL ME ABOUT" TREE
+// ===========================================================================
+
+TEST_CASE("the tree opens under TELL ME ABOUT and BACK always lands one level up") {
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    REQUIRE(director.open(dockerNamed(4, "Wick Hempson"), hourOfDay(21)));
+    CHECK(director.menu() == DialogueMenu::Root);
+
+    openBranch(director, kAskLocation);
+    CHECK(director.menu() == DialogueMenu::Location);
+    // A PLACE would not have shown at all with nothing behind it -- five
+    // curated landmarks are common knowledge, so at least one resolves.
+    CHECK(director.topics().size() > 1);
+    CHECK(has(director.topics(), TopicKind::Location));
+    CHECK(has(director.topics(), TopicKind::Back));
+
+    // BACK from a leaf lands on the category list, and BACK from there lands
+    // on the root -- never anywhere else, and never closing the
+    // conversation.
+    const Reply backToCategory = director.choose(indexOf(director.topics(), TopicKind::Back));
+    CHECK(backToCategory.ok);
+    CHECK_FALSE(backToCategory.closes);
+    CHECK(director.menu() == DialogueMenu::Category);
+    CHECK(has(director.topics(), TopicKind::Back));
+
+    director.choose(indexOf(director.topics(), TopicKind::Back));
+    CHECK(director.menu() == DialogueMenu::Root);
+    // Back at the root, exactly the list open() built the first time.
+    CHECK(has(director.topics(), TopicKind::Ask));
+    CHECK_FALSE(has(director.topics(), TopicKind::Back));
+}
+
+TEST_CASE("a dockhand and a priest describe the same place in different words") {
+    // THE ACCEPTANCE CLAIM: the SAME topic, asked of two different families,
+    // resolves through their own voice -- the fallback chain topicChain()
+    // shares with greetChain, proven on real authored content rather than a
+    // synthetic table.
+    Speaker docker = dockerNamed(4, "Wick Hempson");
+    docker.family = JobFamily::Serf;
+
+    Speaker priest = dockerNamed(5, "Father Something");
+    priest.family = JobFamily::Clergy;
+
+    DialogueDirector dockerTalk = DialogueDirector::load(content::contentDir());
+    REQUIRE(dockerTalk.open(docker, hourOfDay(13)));
+    openBranch(dockerTalk, kAskLocation);
+    const std::size_t dockerMission = indexOf(dockerTalk.topics(), TopicKind::Location);
+    REQUIRE(dockerMission < dockerTalk.topics().size());
+    // Walk to the specific "THE MISSION" leaf -- more than one location may
+    // be on the list, and the claim is about this one, which has a
+    // clergy-specific table authored.
+    std::size_t at = dockerTalk.topics().size();
+    for (std::size_t i = 0; i < dockerTalk.topics().size(); ++i) {
+        if (dockerTalk.topics()[i].kind == TopicKind::Location &&
+            dockerTalk.topics()[i].arg == "mission") {
+            at = i;
+        }
+    }
+    REQUIRE(at < dockerTalk.topics().size());
+    const std::string dockerKey = dockerTalk.topics()[at].barkKey;
+    const Reply dockerReply = dockerTalk.choose(at);
+    CHECK(dockerReply.ok);
+    // A serf has no family-specific table authored for the Mission, so he
+    // falls all the way back to the generic key.
+    CHECK(dockerKey == "location.mission");
+
+    DialogueDirector priestTalk = DialogueDirector::load(content::contentDir());
+    REQUIRE(priestTalk.open(priest, hourOfDay(13)));
+    openBranch(priestTalk, kAskLocation);
+    std::size_t priestAt = priestTalk.topics().size();
+    for (std::size_t i = 0; i < priestTalk.topics().size(); ++i) {
+        if (priestTalk.topics()[i].kind == TopicKind::Location &&
+            priestTalk.topics()[i].arg == "mission") {
+            priestAt = i;
+        }
+    }
+    REQUIRE(priestAt < priestTalk.topics().size());
+    const std::string priestKey = priestTalk.topics()[priestAt].barkKey;
+    const Reply priestReply = priestTalk.choose(priestAt);
+    CHECK(priestReply.ok);
+    // A priest has his own authored table, and the key PROVES it -- not
+    // merely that the line happens to differ.
+    CHECK(priestKey == "location.mission.clergy");
+    CHECK(priestKey != dockerKey);
+
+    // And the words themselves are different, each genuinely out of its own
+    // authored table.
+    CHECK(dockerReply.line != priestReply.line);
+    const std::vector<std::string>* dockerRows = dockerTalk.barks().rows(dockerKey);
+    const std::vector<std::string>* priestRows = priestTalk.barks().rows(priestKey);
+    REQUIRE(dockerRows != nullptr);
+    REQUIRE(priestRows != nullptr);
+    CHECK(std::find(dockerRows->begin(), dockerRows->end(), dockerReply.line) !=
+          dockerRows->end());
+    CHECK(std::find(priestRows->begin(), priestRows->end(), priestReply.line) !=
+          priestRows->end());
+}
+
+TEST_CASE("the THING branch answers too, and a watchman's passport line is his own") {
+    Speaker watch = dockerNamed(6, "Watchman Somebody");
+    watch.family = JobFamily::Watch;
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    REQUIRE(director.open(watch, hourOfDay(13)));
+
+    openBranch(director, kAskThing);
+    CHECK(director.menu() == DialogueMenu::Thing);
+    std::size_t passport = director.topics().size();
+    for (std::size_t i = 0; i < director.topics().size(); ++i) {
+        if (director.topics()[i].kind == TopicKind::Thing && director.topics()[i].arg == "a_passport") {
+            passport = i;
+        }
+    }
+    REQUIRE(passport < director.topics().size());
+    CHECK(director.topics()[passport].barkKey == "thing.a_passport.watch");
+    const Reply reply = director.choose(passport);
+    CHECK(reply.ok);
+    CHECK_FALSE(reply.line.empty());
+}
+
+TEST_CASE("a walk through the whole tree, run twice, says exactly the same things") {
+    // The same draw-free claim the flat list already proved, extended to
+    // every level of the tree: LOCATION and THING are new content and a new
+    // fallback chain, and #82's tone dial widens every chain the tree
+    // resolves through -- if either hid a draw, this is where it would show.
+    const Speaker docker = dockerNamed(4, "Wick Hempson");
+    const auto walkOnce = [&]() {
+        std::vector<std::string> heard;
+        DialogueDirector director = DialogueDirector::load(content::contentDir());
+        REQUIRE(director.open(docker, hourOfDay(21)));
+        for (const std::string_view category : {"location", "person", "thing", "work", "quest"}) {
+            openBranch(director, category);
+            for (std::size_t i = 0; i < director.topics().size(); ++i) {
+                if (director.topics()[i].kind == TopicKind::Back) {
+                    continue;
+                }
+                heard.push_back(director.choose(i).line);
+            }
+            director.choose(indexOf(director.topics(), TopicKind::Back));  // -> category
+            director.choose(indexOf(director.topics(), TopicKind::Back));  // -> root
+        }
+        return heard;
+    };
+    const std::vector<std::string> first = walkOnce();
+    const std::vector<std::string> second = walkOnce();
+    REQUIRE_FALSE(first.empty());
+    CHECK(first == second);
 }
 
 // ===========================================================================

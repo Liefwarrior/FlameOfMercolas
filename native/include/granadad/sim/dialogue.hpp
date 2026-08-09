@@ -191,6 +191,27 @@ enum class TopicKind : std::uint8_t {
     /// from, so an insert in the middle would move every existing speaker's
     /// lines.
     Rival = 21,
+    /// #82. "TELL ME ABOUT..." -- the door into the topic tree. Speaks
+    /// nothing itself; choosing it swaps the list for the five category
+    /// branches (or however many of them have anything behind them).
+    Ask = 22,
+    /// #82. One branch of the tree, picked off the category list. `arg` names
+    /// which (see kAskLocation etc.) -- one kind for five branches, because a
+    /// branch is a fact about WHICH LIST the director shows next and not a
+    /// fact that needs its own row-selection axis.
+    Category = 23,
+    /// #82. Ask about a named landmark. Speaks through
+    /// location.<id>.<family>.<attitude>.<band>, most specific first, down to
+    /// the bare location.<id> -- see topicChain(). The same dockhand who
+    /// greets you differently at four in the morning answers a question about
+    /// the Weighhouse differently too.
+    Location = 24,
+    /// #82. Ask about a named thing. Same chain as Location, keyed thing.<id>.
+    Thing = 25,
+    /// #82. Step back up one level of the tree. Never closes the
+    /// conversation -- Leave still owns that, and Back never appears at the
+    /// root, where there is nowhere left to step back TO.
+    Back = 26,
     /// S6. Take a job off somebody who hands them out. The payload is the
     /// contract's own id, or -1 when the broker will not talk to you yet --
     /// which is a topic on purpose, because a player has to be able to ask
@@ -207,6 +228,17 @@ enum class TopicKind : std::uint8_t {
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
+
+/// #82. The five branches of the "TELL ME ABOUT" tree, named the same short
+/// lower-case way a faction id is: carried on TopicKind::Category's own
+/// `arg`, so a caller outside dialogue.cpp (a scripted capture, a test) can
+/// find a branch by name instead of guessing the string this file happens to
+/// use today.
+inline constexpr std::string_view kAskLocation = "location";
+inline constexpr std::string_view kAskPerson = "person";
+inline constexpr std::string_view kAskThing = "thing";
+inline constexpr std::string_view kAskWork = "work";
+inline constexpr std::string_view kAskQuest = "quest";
 
 /// What standing somebody a drink costs the player. The same two coin a drink
 /// costs across the Gull's bar -- named here rather than reached for out of
@@ -228,6 +260,21 @@ struct Topic {
     /// to know WHICH ladder or WHICH line it is about -- a payload integer
     /// would have made the topic depend on load order.
     std::string arg;
+};
+
+/// #82. Which list the director is currently showing. Root is everything that
+/// was always a flat topic; the other six are the "TELL ME ABOUT" tree's own
+/// levels -- one for the category branches, one per branch. Exposed so a
+/// test can assert the LEVEL rather than infer it from which labels happen
+/// to be on screen.
+enum class DialogueMenu : std::uint8_t {
+    Root = 0,
+    Category = 1,
+    Location = 2,
+    Person = 3,
+    Thing = 4,
+    Work = 5,
+    Quest = 6,
 };
 
 /// What choosing a topic produced.
@@ -372,6 +419,20 @@ public:
     /// The authored key the greeting came out of. Exposed so a test can assert
     /// the CONTENT changed and not merely the number behind it.
     [[nodiscard]] const std::string& greetingKey() const noexcept { return greetingKey_; }
+    /// #82. Which level of the TELL ME ABOUT tree topics() is currently
+    /// showing. Root until "TELL ME ABOUT..." is chosen.
+    [[nodiscard]] DialogueMenu menu() const noexcept { return menu_; }
+
+    // --- #82: the register ---------------------------------------------------
+
+    /// Dials the register for whatever is said or asked NEXT. Rebuilds the
+    /// topic list immediately when a conversation is open -- the whole point
+    /// of a tone selector is that a topic can appear or vanish the instant
+    /// this changes, not on the next thing said. See toned() and
+    /// toneAttitude() in the .cpp for the two ways it actually reaches
+    /// anything.
+    void setTone(Tone tone) noexcept;
+    [[nodiscard]] Tone tone() const noexcept { return tone_; }
 
     /// Picks a topic off the list.
     Reply choose(std::size_t index);
@@ -408,6 +469,53 @@ public:
 
 private:
     void buildTopics();
+
+    // --- #82: the "TELL ME ABOUT" tree ---------------------------------------
+    //
+    // buildTopics() builds the ROOT list, unchanged in shape from before #82
+    // except that PERSONAL, HISTORY, WARD TALK and MASTERY moved out of it and
+    // into the branches below -- confirmed dead in every consumer outside
+    // dialogue.cpp itself before they moved. QUEST and QUESTBEAT did NOT move:
+    // too much already reaches for them at the root (scripted captures, the
+    // crime and faction suites), so the QUEST branch below is a deliberate
+    // MIRROR that shows the same topics a second way rather than a relocation
+    // -- asking there is exactly as valid as asking at the root, and choosing
+    // either one is the exact same Topic, dispatched by the exact same
+    // choose() case.
+
+    /// The category list: LOCATION / PERSON / THING / WORK / QUEST, each shown
+    /// only when it has an answer behind it -- the same "no topic leads to
+    /// nothing" law every branch below applies to itself.
+    void buildCategoryTopics();
+    void buildLocationTopics();
+    void buildPersonTopics();
+    void buildThingTopics();
+    void buildWorkTopics();
+    /// The mirror described above: THE VANISHED CLERK and any active
+    /// Talk/Alms/Tally stage this speaker is the party to -- everything
+    /// buildTopics()'s own active-stage loop shows at the root, MINUS
+    /// Oath/Teach/Forge, which stay verbs and never appear here.
+    void buildQuestTopics();
+    /// Appends the "(BACK)" topic every non-root level ends on.
+    void pushBack();
+    /// Rebuilds whichever level menu_ currently names. The single call site
+    /// every state-changing topic reaches for after choose() -- a rung
+    /// climbed or a stage finished has to refresh the list the player is
+    /// ACTUALLY looking at, root or three branches deep, and menu_ is always
+    /// the fact of which one that is.
+    void rebuildCurrentLevel();
+
+    [[nodiscard]] bool personAvailable() const;
+    [[nodiscard]] bool locationAvailable() const;
+    [[nodiscard]] bool thingAvailable() const;
+    [[nodiscard]] bool workAvailable() const;
+    [[nodiscard]] bool questAvailable() const;
+    /// The chain quest.<questId>[.rumor.<notableId>] everybody who has heard
+    /// of the clerk speaks from -- shared between questAvailable() and
+    /// buildQuestTopics() so the two can never quietly disagree about what
+    /// "available" means.
+    [[nodiscard]] std::vector<std::string> vanishedClerkChain() const;
+
     [[nodiscard]] std::int32_t rowIndexFor(TopicKind kind, std::int32_t payload) const noexcept;
     [[nodiscard]] std::string speak(const std::vector<std::string>& chain, TopicKind kind,
                                     std::int32_t payload);
@@ -420,6 +528,20 @@ private:
     void recordDeed(Deed deed);
     /// The registry index of the speaker's own faction, or -1.
     [[nodiscard]] std::int32_t speakerFaction() const noexcept;
+    /// #82. Widens a fallback chain with this exchange's tone-tagged variant
+    /// of each candidate, immediately ahead of the candidate itself, so a
+    /// register with nothing authored for a given key degrades to exactly
+    /// that key's untagged line -- never to silence, and never to a LESS
+    /// specific key jumping the queue. A no-op, chain in, chain out, when
+    /// tone_ is NORMAL; that is what keeps every line spoken before #82
+    /// unchanged unless the player actually reaches for POLITE or BLUNT.
+    [[nodiscard]] std::vector<std::string> toned(const std::vector<std::string>& chain) const;
+    /// #82. The MOMENTARY attitude a dialled register reads as, for GATING
+    /// only -- whether a topic is on the table right now. Never the ledger's
+    /// own number, which moves only through a recorded Deed; see the .cpp.
+    [[nodiscard]] Attitude toneAttitude() const noexcept;
+    /// #82. Which Deed hearing somebody out records, by the current register.
+    [[nodiscard]] Deed toneListenDeed() const noexcept;
     /// The authored chain for a faction verb: faction.<id>.<verb>, then the
     /// generic faction.<verb>.
     [[nodiscard]] std::vector<std::string> factionChain(std::string_view factionId,
@@ -467,10 +589,17 @@ private:
     std::int32_t secondOfDay_ = 0;
     std::int32_t talkIndex_ = 0;
     Attitude attitude_ = Attitude::Neutral;
+    /// #82. The register dialled for the NEXT exchange. Never persisted, never
+    /// hashed as anything other than "what the current tick's replayed inputs
+    /// set it to" -- see hashInto()'s own note.
+    Tone tone_ = Tone::Normal;
     std::string greeting_;
     std::string greetingKey_;
     std::string lastLine_;
     std::vector<Topic> topics_;
+    /// #82. Which level topics_ currently holds. Reset to Root by open() and
+    /// close(); moved only by choosing Ask/Category/Back.
+    DialogueMenu menu_ = DialogueMenu::Root;
     std::int32_t playerCoin_ = 0;
     /// Bumped by every conversation opened. Hashed, so replaying the same
     /// actions reproduces the same rotation through the authored rows.

@@ -73,9 +73,18 @@ enum class Deed : std::uint8_t {
     DrewSteel = 9,
     /// Heard something they were carrying and needed to say.
     Listened = 10,
+    /// #82. Chose the polite register while hearing them out. Worth a hair
+    /// more than plain Listened and held to the exact same talk ceiling --
+    /// see record()'s own note on why NEITHER can out-talk it.
+    SpokePolitely = 11,
+    /// #82. Chose the blunt register while hearing them out. UNLIKE every
+    /// other talk-only deed above it, this one is NOT held to the talk
+    /// ceiling: a flat tongue can cost you standing you already had, the same
+    /// as WalkedOut or Lowballed can -- see record()'s own note.
+    SpokeBluntly = 12,
 };
 
-inline constexpr std::size_t kDeedCount = 11;
+inline constexpr std::size_t kDeedCount = 13;
 
 [[nodiscard]] std::string_view deedName(Deed deed) noexcept;
 

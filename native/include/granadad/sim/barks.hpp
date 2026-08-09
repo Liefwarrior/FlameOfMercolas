@@ -66,6 +66,32 @@ enum class Attitude : std::uint8_t {
 /// What the HUD calls it.
 [[nodiscard]] std::string_view attitudeName(Attitude attitude) noexcept;
 
+// ---------------------------------------------------------------------------
+// #82: the register
+// ---------------------------------------------------------------------------
+
+/// The register the PLAYER dials for one exchange -- exactly the three the
+/// environment brief named and no others. Unlike Attitude (what somebody
+/// remembers feeling about you) this is never stored anywhere: it colours the
+/// next thing said and the next thing asked, and it is gone the moment the
+/// player dials it away again. See DialogueDirector::setTone.
+enum class Tone : std::uint8_t {
+    Polite = 0,
+    Normal = 1,
+    Blunt = 2,
+};
+
+/// The authored key suffix a line can be written under: "polite" / "blunt".
+/// TONE::NORMAL HAS NO SUFFIX AND IS NEVER PASSED HERE -- the untagged line is
+/// already the normal register, which is every line barks.json has ever
+/// authored, so nothing tone-aware widens a chain at all until the player
+/// actually reaches for POLITE or BLUNT. Asking for Tone::Normal's key is a
+/// caller error and returns empty rather than inventing a suffix nobody
+/// authored under.
+[[nodiscard]] std::string_view toneKey(Tone tone) noexcept;
+/// What the HUD calls it.
+[[nodiscard]] std::string_view toneName(Tone tone) noexcept;
+
 /// The nine presented job families the greet tables are authored over.
 enum class JobFamily : std::uint8_t {
     Serf = 0,
@@ -175,6 +201,17 @@ private:
 /// vocabulary; the thresholds are ours.
 [[nodiscard]] std::vector<std::string> masteryChain(std::string_view skillId,
                                                     std::int32_t level);
+
+/// #82. The "TELL ME ABOUT" fallback chain: the SAME shape greetChain already
+/// uses -- family, then family+attitude, then family+attitude+band, most
+/// specific first -- with a topic id folded in front of it and a bare
+/// `<prefix>.<id>` as the one rung that is NEVER optional. A location and a
+/// thing both want "the same fact in a different mouth", which is exactly
+/// what a greeting already is; this is that mechanism, reused rather than
+/// reinvented, for two new axes of "ask about something" content.
+[[nodiscard]] std::vector<std::string> topicChain(std::string_view prefix, std::string_view id,
+                                                   JobFamily family, Attitude attitude,
+                                                   TimeBand band);
 
 /// Fold to the ASCII the 4x6 HUD font can actually draw. The authored JSON
 /// carries mojibake em-dashes (a UTF-8 em-dash re-encoded through cp1252), and

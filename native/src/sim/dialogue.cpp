@@ -13,6 +13,15 @@ namespace {
 /// theirs instead, which is what the fallback chain is for.
 constexpr std::string_view kQuestId = "vanished-clerk";
 
+/// #82. How far a dialled register moves the MOMENTARY read of a standing
+/// used to gate what is on the table right now -- never the ledger's own
+/// number, which only ever moves through a recorded Deed. Big enough to tip a
+/// standing sitting near a threshold either way (a Cold docker just shy of
+/// -10, a Neutral one just past it); small enough that it can never walk a
+/// Hostile all the way up to Warm on tone alone. See
+/// DialogueDirector::toneAttitude.
+constexpr std::int32_t kToneGateShift = 15;
+
 [[nodiscard]] std::string upper(std::string_view text) {
     std::string out;
     out.reserve(text.size());
@@ -26,6 +35,38 @@ constexpr std::string_view kQuestId = "vanished-clerk";
 [[nodiscard]] std::string coins(std::int32_t amount) {
     return std::to_string(amount) + "C";
 }
+
+/// #82. One leaf of the TELL ME ABOUT tree's LOCATION or THING branch: an id
+/// the authored topic_barks.json speaks from, and the label the player reads.
+struct TopicIdLabel {
+    std::string_view id;
+    std::string_view label;
+};
+
+/// A curated, compiled-in roster rather than a raws file of its own: every one
+/// of these is public, common-knowledge -- the same reason `gossip`'s generic
+/// table needs no notableId -- so nobody has to be a party to knowing the
+/// Weighhouse exists. Every id and every fact behind it is DOCKS-GAZETTEER's
+/// own (K01, K03, K17, K13, K21); nothing here invents a place.
+constexpr TopicIdLabel kLocationTopics[] = {
+    {"weighhouse", "THE WEIGHHOUSE"},
+    {"gilded_gull", "THE GILDED GULL"},
+    {"mission", "THE MISSION"},
+    {"drowned_hold", "THE DROWNED HOLD"},
+    {"saltgate_watch", "THE WATCH-POST"},
+};
+
+/// Same shape, for the ward's own things -- the tenure ruling's ground penny,
+/// the Flame's public office, a passport, a scalp bounty, the tide. Every
+/// fact behind these traces to DECISIONS.md, MAGIC-CANON.md or the crime
+/// layer already shipped; nothing here invents a mechanic.
+constexpr TopicIdLabel kThingTopics[] = {
+    {"ground_penny", "THE GROUND PENNY"},
+    {"the_flame", "THE FLAME"},
+    {"a_passport", "A PASSPORT"},
+    {"a_scalp", "A SCALP"},
+    {"the_tide", "THE TIDE"},
+};
 
 }  // namespace
 
@@ -75,6 +116,16 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "sanction";
         case TopicKind::Rival:
             return "rival";
+        case TopicKind::Ask:
+            return "ask";
+        case TopicKind::Category:
+            return "category";
+        case TopicKind::Location:
+            return "location";
+        case TopicKind::Thing:
+            return "thing";
+        case TopicKind::Back:
+            return "back";
     }
     return "?";
 }
@@ -115,7 +166,14 @@ bool DialogueDirector::brokerWillTalk(const ContractBroker& broker) const noexce
         // build that reads ATTITUDE rather than a rung, and it is the right
         // shape for it: buying for your own cellar off somebody is a favour,
         // and nobody does a favour for a man they have thrown out.
-        return attitude_ >= Attitude::Neutral;
+        //
+        // #82: which side of "not disliked" you land on can move with the
+        // register you ask in, the same as it would across a real counter --
+        // toneAttitude() reads the MOMENTARY standing, not the ledger's own
+        // number, so asking politely can open this list and a flat "no" can
+        // close it, without either ever touching what he actually remembers
+        // of you.
+        return toneAttitude() >= Attitude::Neutral;
     }
     const std::int32_t index = factions_->indexOf(broker.faction);
     return standings_.isMember(index);
@@ -123,6 +181,75 @@ bool DialogueDirector::brokerWillTalk(const ContractBroker& broker) const noexce
 
 std::int32_t DialogueDirector::speakerFaction() const noexcept {
     return factions_->indexOf(speaker_.factionId);
+}
+
+std::vector<std::string> DialogueDirector::toned(const std::vector<std::string>& chain) const {
+    // TONE::NORMAL WIDENS NOTHING. This is the one invariant every other
+    // guarantee here rests on: every line spoken and every gate read before
+    // #82 stays exactly what it was, for the entire game, unless the player
+    // actually reaches for POLITE or BLUNT.
+    if (tone_ == Tone::Normal) {
+        return chain;
+    }
+    std::vector<std::string> out;
+    out.reserve(chain.size() * 2);
+    const std::string suffix = "." + std::string(toneKey(tone_));
+    for (const std::string& candidate : chain) {
+        // The tone-tagged variant goes FIRST and the untagged line right
+        // behind it, so a register with nothing authored under this exact key
+        // degrades to precisely the line that key already spoke -- never to
+        // silence, and never to a less specific key jumping ahead of a more
+        // specific untagged one.
+        out.push_back(candidate + suffix);
+        out.push_back(candidate);
+    }
+    return out;
+}
+
+Attitude DialogueDirector::toneAttitude() const noexcept {
+    std::int32_t shift = 0;
+    if (tone_ == Tone::Polite) {
+        shift = kToneGateShift;
+    } else if (tone_ == Tone::Blunt) {
+        shift = -kToneGateShift;
+    }
+    const std::int32_t shifted = std::clamp(
+        ledger_.dispositionOf(speaker_.actorId) + shift, kDispositionMin, kDispositionMax);
+    return attitudeFor(shifted);
+}
+
+Deed DialogueDirector::toneListenDeed() const noexcept {
+    switch (tone_) {
+        case Tone::Polite:
+            return Deed::SpokePolitely;
+        case Tone::Blunt:
+            return Deed::SpokeBluntly;
+        case Tone::Normal:
+            return Deed::Listened;
+    }
+    return Deed::Listened;
+}
+
+void DialogueDirector::setTone(Tone tone) noexcept {
+    if (tone_ == tone) {
+        return;
+    }
+    tone_ = tone;
+    // #82's whole point: dialling this can put a topic on the table that was
+    // not there a breath ago, or take one off it. Rebuilt immediately rather
+    // than on the next choose(), so a player watching the list sees it move
+    // the instant they turn the dial. If nothing is open there is no list
+    // yet to change -- the next open() builds one with whatever this is set
+    // to.
+    //
+    // REBUILDS WHICHEVER LEVEL THE PLAYER IS ACTUALLY LOOKING AT, not always
+    // the root: the topic tree (also #82) can put a player three menus deep
+    // into TELL ME ABOUT -> A PERSON, and turning the register there must
+    // move THAT list, not silently walk them back out to the root behind
+    // their own cursor.
+    if (open_) {
+        rebuildCurrentLevel();
+    }
 }
 
 std::vector<std::string> DialogueDirector::factionChain(std::string_view factionId,
@@ -167,8 +294,11 @@ bool DialogueDirector::open(const Speaker& speaker, std::int32_t secondOfDay) {
     if (!speaker_.moodKey.empty()) {
         chain.push_back(speaker_.moodKey);
     }
+    // #82: which register you walk up talking in colours the greeting itself
+    // -- toned() is a no-op unless the player has already dialled off NORMAL,
+    // so this reproduces every greeting exactly as before until they do.
     const std::vector<std::string> greetKeys =
-        greetChain(speaker_.family, attitude_, timeBandOf(secondOfDay));
+        toned(greetChain(speaker_.family, attitude_, timeBandOf(secondOfDay)));
     chain.insert(chain.end(), greetKeys.begin(), greetKeys.end());
 
     greetingKey_ = std::string(barks_.resolve(chain));
@@ -192,6 +322,7 @@ void DialogueDirector::close() noexcept {
     haggle_.reset();
     bench_.reset();
     topics_.clear();
+    menu_ = DialogueMenu::Root;
 }
 
 std::int32_t DialogueDirector::rowIndexFor(TopicKind kind, std::int32_t payload) const noexcept {
@@ -203,7 +334,11 @@ std::int32_t DialogueDirector::rowIndexFor(TopicKind kind, std::int32_t payload)
 
 std::string DialogueDirector::speak(const std::vector<std::string>& chain, TopicKind kind,
                                     std::int32_t payload) {
-    const std::string key(barks_.resolve(chain));
+    // #82: every caller of speak() gets tone for free -- the guild verbs, the
+    // refusals, the rival's own table. A no-op today wherever nobody has
+    // authored a tone-tagged row for that key; the day somebody does, it
+    // speaks without another line of C++.
+    const std::string key(barks_.resolve(toned(chain)));
     if (key.empty()) {
         return {};
     }
@@ -212,6 +347,7 @@ std::string DialogueDirector::speak(const std::vector<std::string>& chain, Topic
 
 void DialogueDirector::buildTopics() {
     topics_.clear();
+    menu_ = DialogueMenu::Root;
 
     // 0. #79 -- WHAT HAS NO WORDS GETS NO LIST.
     //
@@ -229,56 +365,25 @@ void DialogueDirector::buildTopics() {
         return;
     }
 
-    // 1. Their own business.
-    const std::vector<std::string> personal = personalChain(speaker_.notableId);
-    if (!barks_.resolve(personal).empty()) {
+    // 1. #82 -- TELL ME ABOUT. THEIR BUSINESS, every story they may tell, the
+    //    ward's own talk and their shop talk all moved behind this door and
+    //    into the tree's PERSON and WORK branches -- confirmed dead in every
+    //    consumer outside this file before they moved, so nothing at the root
+    //    reaches for them any more. Shown only when the tree actually answers
+    //    to at least one of its five branches, the same "no topic leads to
+    //    nothing" law every branch below applies to itself.
+    if (personAvailable() || locationAvailable() || thingAvailable() || workAvailable() ||
+        questAvailable()) {
         Topic topic;
-        topic.kind = TopicKind::Personal;
-        topic.label = "THEIR BUSINESS";
-        topic.barkKey = std::string(barks_.resolve(personal));
+        topic.kind = TopicKind::Ask;
+        topic.label = "TELL ME ABOUT...";
         topics_.push_back(std::move(topic));
     }
 
-    // 2. Every authored story this person is allowed to tell. Party first, then
-    //    whatever the rumor domains license -- and NOTHING else, which is the
-    //    social-topological gate the gazetteer requires.
-    const std::vector<const History*> tellable = notables_.tellableBy(speaker_.notableId);
-    for (const History* history : tellable) {
-        if (history == nullptr) {
-            continue;
-        }
-        const Notable* a = notables_.find(history->a);
-        const Notable* b = notables_.find(history->b);
-        if (a == nullptr || b == nullptr) {
-            continue;
-        }
-        const std::string key(barks_.resolve(gossipChain(history->id)));
-        if (key.empty() || key == "gossip") {
-            // No table of its own means no story to tell. The generic ward
-            // chatter is a separate topic and should not stand in for one.
-            continue;
-        }
-        Topic topic;
-        topic.kind = TopicKind::History;
-        // The ward's own short names, because a topic list is a menu and
-        // "ASK ABOUT SERGEANT VESS AND MASTER VENN" does not fit in a
-        // column that has to leave the middle of the screen alone.
-        topic.label = upper(a->id) + " AND " + upper(b->id);
-        topic.barkKey = key;
-        topic.payload = static_cast<std::int32_t>(topics_.size());
-        topics_.push_back(std::move(topic));
-    }
-
-    // 3. What the ward is saying.
-    if (barks_.has("gossip")) {
-        Topic topic;
-        topic.kind = TopicKind::WardTalk;
-        topic.label = "THE WARD";
-        topic.barkKey = "gossip";
-        topics_.push_back(std::move(topic));
-    }
-
-    // 4. The vanished clerk. Everybody has heard.
+    // 4. The vanished clerk. Everybody has heard. #82: STAYS AT THE ROOT,
+    //    deliberately -- too much already reaches for it here (scripted
+    //    captures, the crime and faction suites) to relocate it. It is
+    //    MIRRORED into the tree's QUEST branch instead; see buildQuestTopics().
     {
         std::vector<std::string> chain;
         const std::string base = "quest." + std::string(kQuestId);
@@ -443,19 +548,8 @@ void DialogueDirector::buildTopics() {
         }
     }
 
-    // 5. Shop talk, if they are good enough at anything to have any.
-    {
-        const std::string key(
-            barks_.resolve(masteryChain(speaker_.skillId, speaker_.skillLevel)));
-        if (!key.empty()) {
-            const SkillTrack::Entry* entry = skills_.find(speaker_.skillId);
-            Topic topic;
-            topic.kind = TopicKind::Mastery;
-            topic.label = upper(entry == nullptr ? speaker_.skillId : entry->displayName);
-            topic.barkKey = key;
-            topics_.push_back(std::move(topic));
-        }
-    }
+    // #82: shop talk moved into the tree's WORK branch -- see
+    // buildWorkTopics(). It never appeared at the root after this point.
 
     // 6. Trade -- take the price on the board, or argue about it.
     if (speaker_.trades && speaker_.basePrice > 0) {
@@ -564,6 +658,341 @@ void DialogueDirector::buildTopics() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// #82: the "TELL ME ABOUT" tree
+// ---------------------------------------------------------------------------
+
+void DialogueDirector::pushBack() {
+    Topic topic;
+    topic.kind = TopicKind::Back;
+    topic.label = "(BACK)";
+    topics_.push_back(std::move(topic));
+}
+
+bool DialogueDirector::personAvailable() const {
+    if (!barks_.resolve(toned(personalChain(speaker_.notableId))).empty()) {
+        return true;
+    }
+    if (!notables_.tellableBy(speaker_.notableId).empty()) {
+        return true;
+    }
+    return barks_.has("gossip");
+}
+
+bool DialogueDirector::locationAvailable() const {
+    const TimeBand band = timeBandOf(secondOfDay_);
+    for (const TopicIdLabel& entry : kLocationTopics) {
+        const std::vector<std::string> chain =
+            toned(topicChain("location", entry.id, speaker_.family, attitude_, band));
+        if (!barks_.resolve(chain).empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool DialogueDirector::thingAvailable() const {
+    const TimeBand band = timeBandOf(secondOfDay_);
+    for (const TopicIdLabel& entry : kThingTopics) {
+        const std::vector<std::string> chain =
+            toned(topicChain("thing", entry.id, speaker_.family, attitude_, band));
+        if (!barks_.resolve(chain).empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool DialogueDirector::workAvailable() const {
+    return !barks_.resolve(toned(masteryChain(speaker_.skillId, speaker_.skillLevel))).empty();
+}
+
+std::vector<std::string> DialogueDirector::vanishedClerkChain() const {
+    std::vector<std::string> chain;
+    const std::string base = "quest." + std::string(kQuestId);
+    if (!speaker_.notableId.empty()) {
+        chain.push_back(base + ".rumor." + speaker_.notableId);
+    }
+    chain.push_back(base);
+    return chain;
+}
+
+bool DialogueDirector::questAvailable() const {
+    if (!barks_.resolve(vanishedClerkChain()).empty()) {
+        return true;
+    }
+    // ...or an active stage this speaker is the party to, of the kind the
+    // QUEST branch actually mirrors (see buildQuestTopics()).
+    for (const Questline& line : quests_.lines()) {
+        if (journal_.done(line.id)) {
+            continue;
+        }
+        const std::int32_t at = journal_.stage(line.id);
+        if (at < 0 || static_cast<std::size_t>(at) >= line.stages.size()) {
+            continue;
+        }
+        const QuestStage& stage = line.stages[static_cast<std::size_t>(at)];
+        if (speaker_.notableId.empty() || stage.party != speaker_.notableId) {
+            continue;
+        }
+        if (stage.kind == StageKind::Talk || stage.kind == StageKind::Alms ||
+            stage.kind == StageKind::Tally) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void DialogueDirector::buildCategoryTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Category;
+    if (locationAvailable()) {
+        Topic topic;
+        topic.kind = TopicKind::Category;
+        topic.label = "A PLACE";
+        topic.arg = std::string(kAskLocation);
+        topics_.push_back(std::move(topic));
+    }
+    if (personAvailable()) {
+        Topic topic;
+        topic.kind = TopicKind::Category;
+        topic.label = "A PERSON";
+        topic.arg = std::string(kAskPerson);
+        topics_.push_back(std::move(topic));
+    }
+    if (thingAvailable()) {
+        Topic topic;
+        topic.kind = TopicKind::Category;
+        topic.label = "A THING";
+        topic.arg = std::string(kAskThing);
+        topics_.push_back(std::move(topic));
+    }
+    if (workAvailable()) {
+        Topic topic;
+        topic.kind = TopicKind::Category;
+        topic.label = "THEIR WORK";
+        topic.arg = std::string(kAskWork);
+        topics_.push_back(std::move(topic));
+    }
+    if (questAvailable()) {
+        Topic topic;
+        topic.kind = TopicKind::Category;
+        topic.label = "A QUEST";
+        topic.arg = std::string(kAskQuest);
+        topics_.push_back(std::move(topic));
+    }
+    pushBack();
+}
+
+void DialogueDirector::buildLocationTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Location;
+    const TimeBand band = timeBandOf(secondOfDay_);
+    std::int32_t index = 0;
+    for (const TopicIdLabel& entry : kLocationTopics) {
+        const std::vector<std::string> chain =
+            toned(topicChain("location", entry.id, speaker_.family, attitude_, band));
+        const std::string key(barks_.resolve(chain));
+        if (!key.empty()) {
+            Topic topic;
+            topic.kind = TopicKind::Location;
+            topic.label = std::string(entry.label);
+            topic.barkKey = key;
+            topic.arg = std::string(entry.id);
+            topic.payload = index;
+            topics_.push_back(std::move(topic));
+        }
+        ++index;
+    }
+    pushBack();
+}
+
+void DialogueDirector::buildThingTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Thing;
+    const TimeBand band = timeBandOf(secondOfDay_);
+    std::int32_t index = 0;
+    for (const TopicIdLabel& entry : kThingTopics) {
+        const std::vector<std::string> chain =
+            toned(topicChain("thing", entry.id, speaker_.family, attitude_, band));
+        const std::string key(barks_.resolve(chain));
+        if (!key.empty()) {
+            Topic topic;
+            topic.kind = TopicKind::Thing;
+            topic.label = std::string(entry.label);
+            topic.barkKey = key;
+            topic.arg = std::string(entry.id);
+            topic.payload = index;
+            topics_.push_back(std::move(topic));
+        }
+        ++index;
+    }
+    pushBack();
+}
+
+void DialogueDirector::buildPersonTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Person;
+
+    // Their own business. #82: toned() lets a register colour WHICH TABLE
+    // this comes out of -- the topic itself is offered to nearly anybody, so
+    // this is content, not a gate.
+    const std::string personalKey(barks_.resolve(toned(personalChain(speaker_.notableId))));
+    if (!personalKey.empty()) {
+        Topic topic;
+        topic.kind = TopicKind::Personal;
+        topic.label = "THEIR OWN BUSINESS";
+        topic.barkKey = personalKey;
+        topics_.push_back(std::move(topic));
+    }
+
+    // Every authored story this person is allowed to tell. Party first, then
+    // whatever the rumor domains license -- and NOTHING else, which is the
+    // social-topological gate the gazetteer requires. DELIBERATELY NOT
+    // TONED: which micro-history somebody is licensed to repeat is a fact
+    // about who they are, not about how nicely you asked.
+    const std::vector<const History*> tellable = notables_.tellableBy(speaker_.notableId);
+    for (const History* history : tellable) {
+        if (history == nullptr) {
+            continue;
+        }
+        const Notable* a = notables_.find(history->a);
+        const Notable* b = notables_.find(history->b);
+        if (a == nullptr || b == nullptr) {
+            continue;
+        }
+        const std::string key(barks_.resolve(gossipChain(history->id)));
+        if (key.empty() || key == "gossip") {
+            // No table of its own means no story to tell. The generic ward
+            // chatter is a separate topic and should not stand in for one.
+            continue;
+        }
+        Topic topic;
+        topic.kind = TopicKind::History;
+        // The ward's own short names, because a topic list is a menu and
+        // "ASK ABOUT SERGEANT VESS AND MASTER VENN" does not fit in a
+        // column that has to leave the middle of the screen alone.
+        topic.label = upper(a->id) + " AND " + upper(b->id);
+        topic.barkKey = key;
+        topic.payload = static_cast<std::int32_t>(topics_.size());
+        topics_.push_back(std::move(topic));
+    }
+
+    // What the ward is saying.
+    if (barks_.has("gossip")) {
+        Topic topic;
+        topic.kind = TopicKind::WardTalk;
+        topic.label = "WHAT THE WARD SAYS";
+        topic.barkKey = "gossip";
+        topics_.push_back(std::move(topic));
+    }
+
+    pushBack();
+}
+
+void DialogueDirector::buildWorkTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Work;
+
+    // Shop talk, if they are good enough at anything to have any. #82: toned,
+    // for the same reason THEIR OWN BUSINESS is -- how a master talks shop
+    // with you is fair game for a register, whether the topic is offered at
+    // all is not.
+    const std::string key(
+        barks_.resolve(toned(masteryChain(speaker_.skillId, speaker_.skillLevel))));
+    if (!key.empty()) {
+        const SkillTrack::Entry* entry = skills_.find(speaker_.skillId);
+        Topic topic;
+        topic.kind = TopicKind::Mastery;
+        topic.label = upper(entry == nullptr ? speaker_.skillId : entry->displayName);
+        topic.barkKey = key;
+        topics_.push_back(std::move(topic));
+    }
+
+    pushBack();
+}
+
+void DialogueDirector::buildQuestTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Quest;
+
+    // THE VANISHED CLERK, mirrored from the root -- see the note on
+    // buildTopics() itself for why this is a mirror and not a move.
+    {
+        const std::string key(barks_.resolve(vanishedClerkChain()));
+        if (!key.empty()) {
+            Topic topic;
+            topic.kind = TopicKind::Quest;
+            topic.label = "THE VANISHED CLERK";
+            topic.barkKey = key;
+            topics_.push_back(std::move(topic));
+        }
+    }
+
+    // Any active Talk/Alms/Tally stage this speaker is the party to -- the
+    // three StageKinds that are things you ASK rather than things you DO.
+    // Oath/Teach/Forge stay exclusively at the root: signing on, being
+    // taught and opening the bench are verbs, not conversation.
+    for (const Questline& line : quests_.lines()) {
+        if (journal_.done(line.id)) {
+            continue;
+        }
+        const std::int32_t at = journal_.stage(line.id);
+        if (at < 0 || static_cast<std::size_t>(at) >= line.stages.size()) {
+            continue;
+        }
+        const QuestStage& stage = line.stages[static_cast<std::size_t>(at)];
+        if (speaker_.notableId.empty() || stage.party != speaker_.notableId) {
+            continue;
+        }
+        if (stage.kind != StageKind::Talk && stage.kind != StageKind::Alms &&
+            stage.kind != StageKind::Tally) {
+            continue;
+        }
+        Topic topic;
+        topic.kind = TopicKind::QuestBeat;
+        topic.payload = at;
+        topic.arg = line.id;
+        topic.barkKey = stage.barkKey;
+        topic.label = stage.label;
+        if (stage.kind == StageKind::Alms || stage.kind == StageKind::Tally) {
+            // The count is on the label, so a player never has to guess how
+            // much of a counted stage is behind them.
+            topic.label += " (" + std::to_string(journal_.counter(line.id)) + "/" +
+                           std::to_string(stage.count) + ")";
+        }
+        topics_.push_back(std::move(topic));
+    }
+
+    pushBack();
+}
+
+void DialogueDirector::rebuildCurrentLevel() {
+    switch (menu_) {
+        case DialogueMenu::Root:
+            buildTopics();
+            break;
+        case DialogueMenu::Category:
+            buildCategoryTopics();
+            break;
+        case DialogueMenu::Location:
+            buildLocationTopics();
+            break;
+        case DialogueMenu::Person:
+            buildPersonTopics();
+            break;
+        case DialogueMenu::Thing:
+            buildThingTopics();
+            break;
+        case DialogueMenu::Work:
+            buildWorkTopics();
+            break;
+        case DialogueMenu::Quest:
+            buildQuestTopics();
+            break;
+    }
+}
+
 const ContractBroker* DialogueDirector::brokerFor(std::string_view notableId) const noexcept {
     if (notableId.empty() || contractRaws_ == nullptr) {
         return nullptr;
@@ -613,18 +1042,61 @@ Reply DialogueDirector::choose(std::size_t index) {
     const std::int32_t before = ledger_.dispositionOf(speaker_.actorId);
 
     switch (topic.kind) {
+        case TopicKind::Ask: {
+            // #82 -- the door into the tree. Speaks nothing: lastLine_ stays
+            // whatever it already was, exactly like Leave and Buy already do.
+            out = reply(TopicKind::Ask, {});
+            buildCategoryTopics();
+            break;
+        }
+        case TopicKind::Category: {
+            out = reply(TopicKind::Category, {});
+            if (topic.arg == kAskLocation) {
+                buildLocationTopics();
+            } else if (topic.arg == kAskPerson) {
+                buildPersonTopics();
+            } else if (topic.arg == kAskThing) {
+                buildThingTopics();
+            } else if (topic.arg == kAskWork) {
+                buildWorkTopics();
+            } else if (topic.arg == kAskQuest) {
+                buildQuestTopics();
+            } else {
+                // An unknown branch id is a bug elsewhere, not a crash here:
+                // stand still on the category list rather than guess.
+                buildCategoryTopics();
+            }
+            break;
+        }
+        case TopicKind::Back: {
+            out = reply(TopicKind::Back, {});
+            // One level up. Category steps back to the root; any of the five
+            // leaves step back to the category list -- there is nowhere else
+            // a Back topic can ever be standing.
+            if (menu_ == DialogueMenu::Category) {
+                buildTopics();
+            } else {
+                buildCategoryTopics();
+            }
+            break;
+        }
         case TopicKind::Personal:
         case TopicKind::WardTalk:
         case TopicKind::History:
         case TopicKind::Quest:
-        case TopicKind::Mastery: {
+        case TopicKind::Mastery:
+        case TopicKind::Location:
+        case TopicKind::Thing: {
             std::string line(barks_.line(topic.barkKey, rowIndexFor(topic.kind, topic.payload)));
             if (line.empty()) {
                 line = "...";
             }
-            // Hearing somebody out is worth a little. It is the only way to
-            // raise a standing that costs nothing, and it is nearly nothing.
-            recordDeed(Deed::Listened);
+            // Hearing somebody out is worth a little -- and #82's dial says
+            // HOW you heard them out. A polite ear rides the exact same talk
+            // ceiling Listened always did; a flat one does not, and can cost
+            // you standing you already had -- see SocialLedger::record's own
+            // note on why the three split that way.
+            recordDeed(toneListenDeed());
             out = reply(topic.kind, std::move(line));
             break;
         }
@@ -1080,7 +1552,13 @@ Reply DialogueDirector::choose(std::size_t index) {
     // The list the player is looking at has just changed: a rung climbed
     // removes the topic that climbed it and a stage finished offers the next
     // one. Rebuilt for exactly the kinds that can move it, and never after a
-    // Leave, which has already closed the conversation.
+    // Leave, which has already closed the conversation. #82: rebuilds
+    // whichever level menu_ names rather than always the root -- QuestBeat is
+    // reachable both at the root and from the tree's QUEST branch (see the
+    // note on buildTopics()), and each has to refresh the list it is
+    // ACTUALLY showing, not the one it always used to be the only one of.
+    // Ask/Category/Back already rebuilt the level they moved to, above, so
+    // they are deliberately not repeated here.
     switch (topic.kind) {
         case TopicKind::Join:
         case TopicKind::Advance:
@@ -1098,7 +1576,7 @@ Reply DialogueDirector::choose(std::size_t index) {
         case TopicKind::TurnIn:
         case TopicKind::Sanction:
             if (open_) {
-                buildTopics();
+                rebuildCurrentLevel();
             }
             break;
         default:
@@ -1380,6 +1858,18 @@ void DialogueDirector::hashInto(HashSink& sink) const {
     sink.put_int(static_cast<std::uint32_t>(conversations_));
     sink.put_int(static_cast<std::uint32_t>(talkIndex_));
     sink.put_byte(static_cast<std::uint32_t>(attitude_));
+    // #82. The dialled register is an INPUT, like a topic index or a haggle
+    // offer, and it moves what gets said and what gets shown -- a twin run
+    // that disagreed about it after an identical scripted setTone() would be
+    // a twin run the gate ought to catch, so it goes in the hash the same as
+    // every other choice a run makes.
+    sink.put_byte(static_cast<std::uint32_t>(tone_));
+    // #82. Which level of the TELL ME ABOUT tree is on screen. Fully derived
+    // from the choose() sequence already hashed above, but so is topics_.size()
+    // right below it, and the same reasoning applies: a twin run that agreed
+    // on every choice made and still disagreed about which list it was
+    // looking at is exactly the class of bug this hash exists to catch.
+    sink.put_byte(static_cast<std::uint32_t>(menu_));
     sink.put_int(static_cast<std::uint32_t>(topics_.size()));
 }
 
