@@ -96,6 +96,54 @@ TEST_CASE("a building already in docks::kPlaces wins over its own tmx sign") {
     CHECK(resolved.text == "THE GILDED GULL");
 }
 
+TEST_CASE("every one of the 40 door signs resolves to its own authored name, not a street's") {
+    // The regression guard the priority-order bug shipped without: checking
+    // ONLY k03 and k01 (the two cases below) missed the 8 doors whose
+    // footprint centre happened to fall inside one of kPlaces' broad
+    // street/area rects and had their real tmx name overwritten by the
+    // street name instead. This walks every door the survey found, not a
+    // sample of two.
+    std::size_t doorsChecked = 0;
+    for (const docks::Sign& sign : docks::kSigns) {
+        if (sign.kind != docks::SignKind::Door) {
+            continue;
+        }
+        ++doorsChecked;
+        const docks::ResolvedSignLabel resolved = docks::resolveSignLabel(sign);
+        INFO("door id: ", sign.id);
+        if (std::strcmp(sign.id, "sign_k03_gilded_gull") == 0) {
+            // The one door where docks::kPlaces genuinely names the same
+            // building as the tmx sign -- see the dedicated test case above.
+            // The two tables spell it with different casing, so this is the
+            // one door NOT expected to echo sign.place verbatim.
+            CHECK(resolved.tier == docks::SignSourceTier::KnownPlace);
+            CHECK(resolved.text == "THE GILDED GULL");
+            continue;
+        }
+        // Every other door: its own tmx-authored name, never a street's.
+        CHECK(resolved.tier == docks::SignSourceTier::TmxRecovered);
+        CHECK(resolved.text == std::string_view{sign.place});
+    }
+    CHECK(doorsChecked == 40);
+
+    // The 8 doors the adversarial verify pass caught (or predicted) being
+    // overwritten by a street/area name, named individually so a future
+    // regression here fails with the door's own id in the output rather than
+    // just a doorsChecked-loop CHECK further up.
+    static const char* const kFormerlyWrongDoors[] = {
+        "sign_k20_merles",         "sign_k21_watchpost",       "sign_k28_slopchest",
+        "sign_k30_kestrel",        "sign_k24_eelpots",         "sign_k31_breggas_promise",
+        "sign_k32_deep_keel",      "sign_k33_widows_grief",
+    };
+    for (const char* id : kFormerlyWrongDoors) {
+        const docks::Sign* sign = findSign(id);
+        REQUIRE(sign != nullptr);
+        const docks::ResolvedSignLabel resolved = docks::resolveSignLabel(*sign);
+        CHECK(resolved.tier == docks::SignSourceTier::TmxRecovered);
+        CHECK(resolved.text == std::string_view{sign->place});
+    }
+}
+
 TEST_CASE("a building with no docks::kPlaces entry reads its real tmx-recovered name") {
     const docks::Sign* weighhouse = findSign("sign_k01_weighhouse");
     REQUIRE(weighhouse != nullptr);

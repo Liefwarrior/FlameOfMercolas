@@ -80,6 +80,36 @@ struct ResolvedSignLabel {
     return kind == SignKind::Door ? "BUILDING" : "WAY";
 }
 
+/// True when a docks::kPlaces entry names this DOOR's own building, rather
+/// than a street or area the door merely happens to sit inside.
+///
+/// THE SIGNAL IS THE RECTANGLE ITSELF, not a hand-maintained list of street
+/// names. kPlaces mixes two authoring intents that placeNameAt's point-in-
+/// rect check cannot tell apart: THE GILDED GULL's entry (docks.hpp) was
+/// authored to cover exactly that one building, and its rect (146,66)-
+/// (160,79) is a byte-for-byte match for sign_k03_gilded_gull's own tmx
+/// footprint -- because it IS the same building, described twice. TARWALK,
+/// ROPEWYND, SALTGATE RISE, GALLOWS ROW and THE LONG PIERS, by contrast, are
+/// each authored to span a whole street or reach -- every one of their rects
+/// is far larger than any single door's footprint, so none of them can ever
+/// coincide with one by accident. A door's footprint rect matching a
+/// kPlaces rect exactly is therefore proof the two entries name the same
+/// structure; a door's footprint merely falling inside a much bigger kPlaces
+/// rect is proof of the opposite. Verified against every door in
+/// docks_signs_generated.hpp: the Gull is the only exact match today, and a
+/// future kPlaces entry that genuinely names one building (authored the same
+/// way the Gull's was) keeps working here with no list to update.
+[[nodiscard]] inline bool kPlacesNamesThisDoor(const Sign& sign) noexcept {
+    for (std::size_t i = 0; i < kPlaceCount; ++i) {
+        const Place& place = kPlaces[i];
+        if (place.band == sign.band && place.x0 == sign.x0 && place.y0 == sign.y0 &&
+            place.x1 == sign.x1 && place.y1 == sign.y1) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// The one place that decides what a Sign's label actually is, in priority
 /// order. Never empty.
 ///
@@ -90,11 +120,21 @@ struct ResolvedSignLabel {
 /// for where to DRAW the label, exactly wrong for asking kPlaces "whose
 /// building is this", which is a question about the footprint, not the
 /// doorstep.
+///
+/// FOR A DOOR SIGN, A TIER-1 HIT ONLY WINS WHEN IT NAMES THAT SAME DOOR'S
+/// BUILDING -- see kPlacesNamesThisDoor. Without that check, any door whose
+/// footprint centre merely falls inside one of kPlaces' broad street/area
+/// rects (TARWALK, ROPEWYND, SALTGATE RISE, GALLOWS ROW, THE LONG PIERS) had
+/// its own real tmx name silently overwritten by the street it stands on --
+/// Merle's Boats reading THE LONG PIERS, Saltgate Watch-Post reading GALLOWS
+/// ROW, and six more like them. Way signs are unaffected: a `way` marker's
+/// whole job is to say what street it is standing on, so the street name
+/// winning there is correct, not a bug.
 [[nodiscard]] inline ResolvedSignLabel resolveSignLabel(const Sign& sign) noexcept {
     const std::int32_t centreX = (sign.x0 + sign.x1) / 2;
     const std::int32_t centreY = (sign.y0 + sign.y1) / 2;
     const std::string_view known = placeNameAt(centreX, centreY, sign.band);
-    if (!known.empty()) {
+    if (!known.empty() && (sign.kind == SignKind::Way || kPlacesNamesThisDoor(sign))) {
         return {known, SignSourceTier::KnownPlace};
     }
     if (sign.place != nullptr && sign.place[0] != '\0') {
