@@ -13,11 +13,6 @@ namespace {
 /// gets renamed.
 const std::uint64_t kLockSalt = system_salt("granadad.sim.lockpick");
 
-constexpr std::int32_t clampTo(std::int32_t value, std::int32_t low,
-                               std::int32_t high) noexcept {
-    return value < low ? low : (value > high ? high : value);
-}
-
 }  // namespace
 
 std::string_view feelName(Feel feel) noexcept {
@@ -59,13 +54,13 @@ std::int32_t pinDepth(std::uint64_t worldSeed, const Lock& lock, std::int32_t pi
     // Wards narrow the range a pin can hide in from the BOTTOM: a hard lock
     // never has a shallow pin, so an apprentice's habit of trying zero first
     // stops working on the captain's box.
-    const std::int32_t floorDepth = clampTo(lock.wards, 0, kPinDepths - 2);
+    const std::int32_t floorDepth = std::clamp(lock.wards, 0, kPinDepths - 2);
     const std::int32_t span = kPinDepths - floorDepth;
     return floorDepth + static_cast<std::int32_t>(draw % static_cast<std::uint64_t>(span));
 }
 
 std::int32_t pickTolerance(std::int32_t craftLevel) noexcept {
-    return clampTo(std::max(0, craftLevel) / kTolerancePerCraftLevels, 0, kToleranceCap);
+    return std::clamp(std::max(0, craftLevel) / kTolerancePerCraftLevels, 0, kToleranceCap);
 }
 
 std::int32_t pickStrain(std::int32_t craftLevel, std::int32_t wards) noexcept {
@@ -74,8 +69,8 @@ std::int32_t pickStrain(std::int32_t craftLevel, std::int32_t wards) noexcept {
     // limit of one -- a single wrong probe snapping the wire -- which is not a
     // hard lock, it is a lock nobody untrained can ever touch. Halved, the good
     // rooms cost an apprentice one wrong probe of slack and no more.
-    const std::int32_t raw = kStrainPerPick + fromCraft - clampTo(wards, 0, 3) / 2;
-    return clampTo(raw, 1, kStrainCeiling);
+    const std::int32_t raw = kStrainPerPick + fromCraft - std::clamp(wards, 0, 3) / 2;
+    return std::clamp(raw, 1, kStrainCeiling);
 }
 
 bool hasFeel(std::int32_t craftLevel) noexcept {
@@ -85,7 +80,7 @@ bool hasFeel(std::int32_t craftLevel) noexcept {
 void Lockpicking::begin(const Lock& lock, std::uint64_t worldSeed,
                         std::int32_t craftLevel) noexcept {
     lock_ = lock;
-    lock_.pins = clampTo(lock.pins, 1, kMaxPins);
+    lock_.pins = std::clamp(lock.pins, 1, kMaxPins);
     depths_.fill(0);
     for (std::int32_t i = 0; i < lock_.pins; ++i) {
         depths_[static_cast<std::size_t>(i)] = pinDepth(worldSeed, lock_, i);
@@ -107,7 +102,7 @@ void Lockpicking::moveDepth(std::int32_t delta) noexcept {
     if (!open_) {
         return;
     }
-    depth_ = clampTo(depth_ + delta, 0, kPinDepths - 1);
+    depth_ = std::clamp(depth_ + delta, 0, kPinDepths - 1);
 }
 
 Feel Lockpicking::probe(std::int32_t& picksLeft) noexcept {

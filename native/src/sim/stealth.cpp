@@ -15,15 +15,10 @@ constexpr std::int32_t kRadiusUnit = 16;
 constexpr std::int32_t kRadiusFloorQ4 = 56;  // 3.5 tiles
 constexpr std::int32_t kRadiusCeilQ4 = 88;   // 5.5 tiles
 
-constexpr std::int32_t clampTo(std::int32_t value, std::int32_t low,
-                               std::int32_t high) noexcept {
-    return value < low ? low : (value > high ? high : value);
-}
-
 /// Saturating union, on the 0..kLightMax scale: a + b - a*b/max. Two lanterns
 /// over one table never make a tile twice as bright as a tile can be.
 constexpr std::int32_t unite(std::int32_t a, std::int32_t b) noexcept {
-    return clampTo(a + b - (a * b) / kLightMax, 0, kLightMax);
+    return std::clamp(a + b - (a * b) / kLightMax, 0, kLightMax);
 }
 
 }  // namespace
@@ -38,7 +33,7 @@ std::int32_t lightRadiusQ4(std::int32_t luminance) noexcept {
     }
     // 4 + (lum - 8)/12 tiles, in sixteenths, then the renderer's own clamp.
     const std::int32_t raw = 4 * kRadiusUnit + ((luminance - 8) * kRadiusUnit) / 12;
-    return clampTo(raw, kRadiusFloorQ4, kRadiusCeilQ4);
+    return std::clamp(raw, kRadiusFloorQ4, kRadiusCeilQ4);
 }
 
 std::int32_t lightPeak(std::int32_t luminance) noexcept {
@@ -47,7 +42,7 @@ std::int32_t lightPeak(std::int32_t luminance) noexcept {
     }
     // 0.55 + 0.45 * lum/26, on the 0..100 scale.
     const std::int32_t raw = 55 + (45 * luminance) / 26;
-    return clampTo(raw, 0, kLightMax);
+    return std::clamp(raw, 0, kLightMax);
 }
 
 std::int32_t glowFrom(const SimLight& light, std::int32_t x, std::int32_t y,
@@ -69,7 +64,7 @@ std::int32_t glowFrom(const SimLight& light, std::int32_t x, std::int32_t y,
     // (1 - (d/R)^2)^2, in hundredths, then scaled by the peak.
     const std::int32_t t = static_cast<std::int32_t>(100 - (d2 * 100) / r2);
     const std::int32_t falloff = (t * t) / 100;
-    return clampTo((lightPeak(light.luminance) * falloff) / 100, 0, kLightMax);
+    return std::clamp((lightPeak(light.luminance) * falloff) / 100, 0, kLightMax);
 }
 
 std::int32_t glowAt(const std::vector<SimLight>& lights, std::int32_t x, std::int32_t y,
@@ -96,7 +91,7 @@ std::int32_t ambientLight(std::int32_t secondOfDay) noexcept {
         second += kSecondsPerDay;
     }
     const std::int32_t fromMidnight = second < kHalfDay ? second : kSecondsPerDay - second;
-    return clampTo((fromMidnight * kNoonLight) / kHalfDay, 0, kLightMax);
+    return std::clamp((fromMidnight * kNoonLight) / kHalfDay, 0, kLightMax);
 }
 
 std::int32_t illuminationAt(const std::vector<SimLight>& lights, std::int32_t x, std::int32_t y,
@@ -128,7 +123,7 @@ void StealthState::setMotion(bool moving, bool running) noexcept {
 }
 
 void StealthState::makeNoise(std::int32_t amount) noexcept {
-    const std::int32_t clamped = clampTo(amount, 0, kNoiseMax);
+    const std::int32_t clamped = std::clamp(amount, 0, kNoiseMax);
     if (clamped <= 0) {
         return;
     }
@@ -227,7 +222,7 @@ Notice noticeOf(const NoticeInput& input) noexcept {
 
     const std::int32_t tiles = input.distanceQ8 / kSubOne;
     std::int32_t read = kNoticeBase - tiles * kNoticePerTile;
-    read += (clampTo(input.light, 0, kLightMax) * kNoticeLightWeight) / kLightMax;
+    read += (std::clamp(input.light, 0, kLightMax) * kNoticeLightWeight) / kLightMax;
     if (withinArc(input.observerFacing, input.bearingToBody, kNoticeArc)) {
         read += kNoticeFacing;
     }
@@ -243,10 +238,10 @@ Notice noticeOf(const NoticeInput& input) noexcept {
         cover += kCoverCrouch;
     }
     cover += std::min(kCoverSneakCap, std::max(0, input.sneakLevel) * kCoverPerSneakLevel);
-    cover += (clampTo(input.roomNoise, 0, kNoiseMax) * kCoverRoomNoiseWeight) / kNoiseMax;
+    cover += (std::clamp(input.roomNoise, 0, kNoiseMax) * kCoverRoomNoiseWeight) / kNoiseMax;
 
     const std::int32_t noise =
-        (clampTo(input.noise, 0, kNoiseMax) * kNoiseHalvedPercent) / 100;
+        (std::clamp(input.noise, 0, kNoiseMax) * kNoiseHalvedPercent) / 100;
 
     out.read = read;
     out.cover = cover;
