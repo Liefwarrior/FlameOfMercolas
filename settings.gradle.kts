@@ -15,8 +15,6 @@ rootProject.name = "flame-of-mercolas"
 include("sim-core")
 include("content")
 include("tools")
-include("headless")
-include("client-observer")
 
 dependencyResolutionManagement {
     repositories {

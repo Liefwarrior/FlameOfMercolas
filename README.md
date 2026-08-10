@@ -68,8 +68,12 @@ back -- a trade house of his own with a permanent cut of what a mug costs you, a
 the compound roll as the Den Duke of the Gullet. You get up on the quay a few hours later. He
 keeps all of it.
 
-The Java tree (`sim-core/`, `client-observer/`, `tools/`, `headless/`) stays in place, untouched,
-as the behavioural reference until the C++ reaches parity. It is not the thing being built.
+The Java tree has shrunk to `sim-core/` and `tools/`, kept for what neither has a C++
+replacement for yet: `sim-core`'s `WorldSaver` is the only writer of the `.trojsav` format,
+and `tools`' Tiled importer is the only way to bake an authored map into one — plus the
+golden-vector generator that `native/tests/golden_java_vectors.hpp` is checked against.
+`client-observer/` and `headless/`, the old Java client and CLI runner, are gone; `native/`
+is the client now.
 
 | Directory | What it is |
 |---|---|
