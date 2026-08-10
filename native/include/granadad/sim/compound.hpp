@@ -406,7 +406,6 @@ struct Household {
 
     // --- the belly ----------------------------------------------------------
     std::int32_t hungryDays = 0;
-    std::int32_t starvedDays = 0;
     /// Quarters this household has kept this ground. What a tenant may plead.
     std::int32_t quartersKept = 0;
     /// True when this is the player's own household.

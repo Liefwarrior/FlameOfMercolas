@@ -797,7 +797,6 @@ void Ward::eatDay() {
             }
         }
         if (home.starving()) {
-            ++home.starvedDays;
             stats_.headDaysStarving += home.heads;
             starvingToday += home.heads;
         }
@@ -1168,6 +1167,13 @@ void Ward::apply(const Hearing& hearing) {
             plot.playerIsDuke = false;
             plot.dukeArrears = 0;
             plot.flameStanding = kFlameStandingStart;
+            // AND THE STRIPPED DUKE'S NAME GOES WITH THE CHARGE. heldBy's own
+            // contract (compound.hpp) is "empty means the roll still reads the
+            // way compounds.json wrote it" -- a revoked charge is exactly that
+            // again, vacant and unheld, so the actor grantCharge() once wrote
+            // here cannot be left standing as this plot's Duke after the Flame
+            // has just said he is not.
+            plot.heldBy.clear();
             break;
     }
 }
