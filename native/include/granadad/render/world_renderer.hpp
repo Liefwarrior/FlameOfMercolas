@@ -90,6 +90,20 @@ struct Camera {
                                          float hfovTan) noexcept;
 };
 
+/// The two numbers every screen-space projection in this renderer is built
+/// from -- `focal` turns a world offset into pixels, `horizon` is the row a
+/// point at eye height projects to. renderFrame's own horizontal-face loop
+/// and drawSprite both derive these from the framebuffer size and the camera
+/// alone, so it is pulled out here rather than duplicated: a second, drifting
+/// copy of "half the frame width over hfovTan" is exactly how a world-space
+/// overlay (a sign, say) ends up misaligned with what the ray march drew.
+struct Projection {
+    float focal = 0.0F;
+    float horizon = 0.0F;
+};
+
+[[nodiscard]] Projection projectionFor(const Camera& camera, int width, int height) noexcept;
+
 /// Anything alive, or anything that should face the camera. Drawn after the
 /// world against the depth buffer the world pass wrote.
 struct SpriteInstance {

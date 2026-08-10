@@ -106,6 +106,15 @@ Camera Camera::fromBody(std::int32_t xQ8, std::int32_t yQ8, std::int32_t eyeZQ8,
     return camera;
 }
 
+Projection projectionFor(const Camera& camera, int width, int height) noexcept {
+    const float halfWidth = static_cast<float>(width) * 0.5F;
+    const float focal = halfWidth / camera.hfovTan;
+    Projection projection;
+    projection.focal = focal;
+    projection.horizon = static_cast<float>(height) * 0.5F + std::tan(camera.pitch) * focal;
+    return projection;
+}
+
 WorldRenderer::WorldRenderer(const sim::TileQuery& tiles, const TileAtlas& atlas,
                              std::vector<Lamp> lamps)
     : tiles_(&tiles), atlas_(&atlas), lamps_(std::move(lamps)) {
@@ -254,10 +263,9 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
 
     target.clear(sky.skyTop);
 
-    const float halfWidth = static_cast<float>(width) * 0.5F;
-    const float focal = halfWidth / camera.hfovTan;
-    const float horizon =
-        static_cast<float>(height) * 0.5F + std::tan(camera.pitch) * focal;
+    const Projection projection = projectionFor(camera, width, height);
+    const float focal = projection.focal;
+    const float horizon = projection.horizon;
 
     const float forwardX = std::sin(camera.yaw);
     const float forwardY = -std::cos(camera.yaw);

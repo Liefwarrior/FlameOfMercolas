@@ -9,6 +9,7 @@
 #include "granadad/content/content_dir.hpp"
 #include "granadad/content/world_reader.hpp"
 #include "granadad/render/capture.hpp"
+#include "granadad/render/signage_renderer.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
@@ -3277,6 +3278,13 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     sprites.insert(sprites.end(), ward.begin(), ward.end());
 
     const FrameStats stats = renderer_->renderFrame(target, view, settings, sprites);
+
+    // World content, not interface -- drawn like the sprites above rather
+    // than gated behind config_.hud, and BEFORE the HUD/menu/dialogue passes
+    // below so none of them paint over a legible sign. See
+    // signage_renderer.hpp's own header for why occlusion needs the depth
+    // buffer renderFrame just wrote and nothing drawn after it yet.
+    drawSignage(target, view);
 
     HudState hud;
     hud.health = tavern_->playerHp();

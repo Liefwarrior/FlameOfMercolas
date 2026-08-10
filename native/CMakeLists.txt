@@ -282,6 +282,11 @@ add_library(granadad-render STATIC
     src/render/lamps.cpp
     src/render/lighting.cpp
     src/render/world_renderer.cpp
+    # Every Docks building's door and every named street, as a legible
+    # floating nameplate when the player is close enough to read it. See the
+    # file's own header for why it reuses the world pass's camera math and
+    # depth buffer instead of a second projection/visibility system.
+    src/render/signage_renderer.cpp
     src/render/controls.cpp
     src/render/hud.cpp
     src/render/dialogue_view.cpp
@@ -482,6 +487,12 @@ if(GRANADAD_BUILD_TESTS)
         # ordinary jump) and the Menu router's page cycle, kept apart from
         # Pause.
         tests/test_vertical_menu.cpp
+        # The Docks signage pass: the generated 83-sign table matches the
+        # survey's own count, docks::kPlaces wins the priority order over a
+        # sign's own tmx name where both exist, and a label actually draws
+        # in view and stops drawing behind you or past the legibility
+        # radius.
+        tests/test_signage.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
