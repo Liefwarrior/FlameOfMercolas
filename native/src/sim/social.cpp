@@ -436,13 +436,9 @@ const SkillTrack::Entry* SkillTrack::find(std::string_view id) const noexcept {
 }
 
 SkillTrack::Entry* SkillTrack::findMutable(std::string_view id) noexcept {
-    const auto found = std::lower_bound(
-        entries_.begin(), entries_.end(), id,
-        [](const Entry& entry, std::string_view probe) { return entry.id < probe; });
-    if (found == entries_.end() || found->id != id) {
-        return nullptr;
-    }
-    return &*found;
+    // Same lookup as find(), once: cast the const away from the const overload
+    // rather than repeating the lower_bound and its comparator a second time.
+    return const_cast<Entry*>(static_cast<const SkillTrack&>(*this).find(id));
 }
 
 std::int32_t SkillTrack::level(std::string_view id) const noexcept {
