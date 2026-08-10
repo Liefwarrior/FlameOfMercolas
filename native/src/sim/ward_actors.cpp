@@ -2191,6 +2191,12 @@ void WardPopulation::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(actor.huntTarget));
         sink.put_int(static_cast<std::uint32_t>(actor.huntTicks));
         sink.put_long(static_cast<std::uint64_t>(actor.huntBackoffUntil));
+        // routeRetryUntil is legRetryUntil's own twin -- the tick a failed
+        // stepToward search may be retried on -- and it was missing here: every
+        // other latch on this struct is hashed for the reason the comment above
+        // states, and this one gates real behaviour in stepToward and actHunt
+        // exactly like legRetryUntil does.
+        sink.put_long(static_cast<std::uint64_t>(actor.routeRetryUntil));
         sink.put_long(static_cast<std::uint64_t>(actor.legRetryUntil));
         sink.put_long(static_cast<std::uint64_t>(actor.downedUntil));
         sink.put_byte(actor.homeOnTheRoof ? 1u : 0u);
