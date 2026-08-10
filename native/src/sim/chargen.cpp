@@ -1,6 +1,7 @@
 #include "granadad/sim/chargen.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "granadad/sim/social.hpp"
 

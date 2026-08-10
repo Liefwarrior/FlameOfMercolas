@@ -40,6 +40,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "granadad/sim/appearance.hpp"
