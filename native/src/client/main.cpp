@@ -236,7 +236,6 @@ int run_gamepad_selftest() {
 struct Options {
     render::SmokeRunConfig smoke;
     bool wantsSmoke = false;
-    bool wantsWindow = true;
     int windowScale = 2;
     /// Mouse look sensitivity, BAM per mouse count. Only used when NAMED: the
     /// settings file is the source of truth, and a command line that always
@@ -460,7 +459,6 @@ void print_usage() {
         } else if (starts_with(arg, "--screenshot=", &value)) {
             options.smoke.screenshot = value;
             options.wantsSmoke = true;
-            options.wantsWindow = false;
         } else if (starts_with(arg, "--width=", &value)) {
             options.smoke.session.width = std::max(64, std::atoi(value));
         } else if (starts_with(arg, "--height=", &value)) {
@@ -916,7 +914,7 @@ struct ScanRow {
     SDL_Scancode scancode;
 };
 
-const ScanRow kScanTable[] = {
+constexpr ScanRow kScanTable[] = {
     {render::Key::A, SDL_SCANCODE_A},
     {render::Key::B, SDL_SCANCODE_B},
     {render::Key::C, SDL_SCANCODE_C},
@@ -998,7 +996,7 @@ struct PadRow {
     SDL_GamepadButton button;
 };
 
-const PadRow kPadTable[] = {
+constexpr PadRow kPadTable[] = {
     {render::Key::PadSouth, SDL_GAMEPAD_BUTTON_SOUTH},
     {render::Key::PadEast, SDL_GAMEPAD_BUTTON_EAST},
     {render::Key::PadWest, SDL_GAMEPAD_BUTTON_WEST},
@@ -1125,22 +1123,8 @@ const PadRow kPadTable[] = {
 }
 
 // ---------------------------------------------------------------------------
-// #80: the origin-select/customize flow, in its own small window
-// ---------------------------------------------------------------------------
-//
-// ITS OWN WINDOW RATHER THAN A RESTRUCTURED run_client(). No Session and no
-// world exist yet at this point in the boot sequence -- this screen has to
-// run BEFORE either -- and the alternative (hoisting run_client's own forty
-// lines of SDL setup above the Session construction they currently follow)
-// touches code every other page in this build was proven against. A second,
-// self-contained SDL_Init/window/renderer/texture that tears itself down
-// before run_client's own setup runs is a few lines longer and a great deal
-// safer to review, and it costs nothing at runtime a player would notice:
-// SDL_QuitSubSystem below balances the SDL_Init here, so run_client's own
-// SDL_Init(VIDEO | GAMEPAD) right after this returns is an ordinary fresh
-// init and not a double-init of anything.
-//
 // #80. THE ORIGIN-SELECT/CUSTOMIZE FLOW, CAPTURED WITH NO WINDOW.
+// ---------------------------------------------------------------------------
 //
 // NO WINDOW AND NO WORLD, the same reason --screenshot never needed one:
 // CreationFlow draws through render::drawDialogue, which is a pure function
@@ -1629,6 +1613,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         render::upscaleNearest(frame, options.windowScale);
                     if (render::writePng(output, "granadad-screenshot.png")) {
                         std::printf("granadad: wrote granadad-screenshot.png\n");
+                    } else {
+                        std::printf("granadad: FAILED to write granadad-screenshot.png\n");
                     }
                     return;
                 }
@@ -1789,11 +1775,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 case SDL_EVENT_MOUSE_WHEEL: {
                     // The wheel walks the quick bar, and it walks a long list
                     // when one is open -- which is what a wheel is for.
-                    const render::Key key =
-                        event.wheel.y > 0 ? render::Key::WheelUp : render::Key::WheelDown;
                     if (event.wheel.y == 0) {
                         break;
                     }
+                    const render::Key key =
+                        event.wheel.y > 0 ? render::Key::WheelUp : render::Key::WheelDown;
                     if (!route_menu_key(session, key)) {
                         pressed(key);
                     }
