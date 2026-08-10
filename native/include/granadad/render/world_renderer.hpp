@@ -162,8 +162,9 @@ struct RenderSettings {
     /// Seconds since midnight. Drives ambient, fog and whether lamps carry.
     int timeOfDay = 20 * 3600;
     /// How far the DDA walks before giving up and calling it sky, in tiles.
-    /// Fog closes well inside this, so raising it buys very little.
-    float maxDistance = 44.0F;
+    /// Fog closes well inside this, so raising it alone buys very little —
+    /// kept proportional to lighting.cpp's own fogDistance ceiling.
+    float maxDistance = 54.0F;
     /// z levels drawn below and above the eye's own level. Four below reaches
     /// the harbour floor from the quay; six above clears the tallest authored
     /// roof. The substrate under the district is solid WALL all the way down,

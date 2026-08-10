@@ -151,7 +151,7 @@ SkyState skyAt(int timeOfDaySeconds) {
 
     sky.fog = lerp(sky.skyHorizon * 0.75F, sky.skyHorizon, 0.5F);
     // Fog closes in at night: the district should swallow its own far end.
-    sky.fogDistance = 14.0F + 20.0F * daylight;
+    sky.fogDistance = 17.0F + 24.0F * daylight;
     return sky;
 }
 
