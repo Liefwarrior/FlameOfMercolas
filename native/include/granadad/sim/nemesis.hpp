@@ -372,7 +372,11 @@ private:
 
     std::shared_ptr<const FactionRegistry> factions_;
     ChapterRaws chapters_;
-    /// Ascending by actorId, always.
+    /// NOT a maintained invariant: entryFor() inserts a fresh rival in
+    /// actorId order, but reassigns an EXISTING rival's actorId in place (a
+    /// stable name meeting a new roster id) without re-sorting -- see of()'s
+    /// own note on the S9 fix. Every lookup here is a linear scan for exactly
+    /// that reason; nothing may binary-search this vector.
     std::vector<Nemesis> rivals_;
     std::int32_t defeats_ = 0;
 };
