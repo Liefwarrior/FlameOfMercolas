@@ -186,6 +186,49 @@ int run_selftest() {
     return failures == 0 ? 0 : 1;
 }
 
+// A SECOND, DELIBERATELY SEPARATE "no window" check -- `run_selftest()` above
+// stays SDL-free on purpose (its own header says so: it has to run on a
+// machine with no display), so a gamepad probe does not belong inside it.
+// This one DOES touch SDL, because what it proves is what SDL's own gamepad
+// subsystem sees, not sim-core's arithmetic -- but it still opens no window
+// and no renderer, the same way `--ward`/`--people` open none: gamepad
+// enumeration on Windows (XInput/DirectInput/HID) needs no surface at all.
+//
+// WHY THIS EXISTS. Before it, the only place this build ever reported a
+// gamepad was `run_client()`'s own "connected" line -- reachable only by
+// actually opening the real windowed game, which is exactly the kind of
+// check `--selftest` exists to avoid needing. This gives a scriptable,
+// CI-friendly answer to "does this binary, on this machine, right now, see
+// any gamepad SDL can enumerate" -- 0 included, so a verifier can tell
+// "checked, found none" apart from "never checked" without a human pressing
+// a physical button. It is NOT a substitute for the real windowed client's
+// own hot-plug handling (see the SDL_EVENT_GAMEPAD_ADDED/REMOVED cases in
+// run_client()) and it does not claim Steam Input hardware-level proof --
+// only that SDL's own enumeration ran and reports what it reports.
+int run_gamepad_selftest() {
+    if (!SDL_Init(SDL_INIT_GAMEPAD)) {
+        std::printf("gamepad-selftest: SDL_Init failed: %s\n", SDL_GetError());
+        return 1;
+    }
+    int count = 0;
+    SDL_JoystickID* ids = SDL_GetGamepads(&count);
+    std::printf("gamepad-selftest: gamepads detected=%d\n", count);
+    if (ids != nullptr) {
+        for (int i = 0; i < count; ++i) {
+            const char* name = SDL_GetGamepadNameForID(ids[i]);
+            std::printf("gamepad-selftest: [%d] %s\n", i, name != nullptr ? name : "(unnamed)");
+        }
+        SDL_free(ids);
+    }
+    SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+    SDL_Quit();
+    // ALWAYS ZERO. Finding no gamepad is not a failure of this binary -- it is
+    // a true fact about the machine it ran on, exactly as legitimate an
+    // answer as finding one. The only failure mode here is SDL itself
+    // refusing to initialise, handled above.
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // command line
 // ---------------------------------------------------------------------------
@@ -335,6 +378,10 @@ void print_usage() {
         "                       run first -- a cat takes about five to get\n"
         "                       hungry enough to hunt. No window\n"
         "  --selftest           deterministic primitives only, no window\n"
+        "  --gamepad-selftest   ask SDL what gamepads it sees, no window --\n"
+        "                       prints the count (0 included) and every name,\n"
+        "                       so a controller's presence can be proved from\n"
+        "                       a script without a human pressing a button\n"
         "  --version            print the build banner and exit\n"
         "\n"
         "IN THE GAME: WASD moves, the mouse looks, SHIFT sprints, CTRL\n"
@@ -391,6 +438,11 @@ void print_usage() {
         if (std::strcmp(arg, "--selftest") == 0) {
             stop = true;
             exitCode = run_selftest();
+            return options;
+        }
+        if (std::strcmp(arg, "--gamepad-selftest") == 0) {
+            stop = true;
+            exitCode = run_gamepad_selftest();
             return options;
         }
         if (std::strcmp(arg, "--version") == 0) {
@@ -1170,6 +1222,17 @@ render::CreationResult run_creation_window(const Options& options) {
         std::printf("SDL_Init (creation) failed: %s\n", SDL_GetError());
         return {};
     }
+    // DON'T STEAL FOCUS ON LAUNCH. SDL's own default is to activate a window
+    // the moment SDL_ShowWindow (which SDL_CreateWindow calls internally)
+    // shows it -- which is exactly the OS's ordinary activate-on-show
+    // behaviour for a foreground-launched process, and exactly what Eli asked
+    // not to have happen. This is the FIRST window a real launch opens (see
+    // main()'s own call order), so the hint has to be set here too, not only
+    // in run_client() below -- setting it on only the second window would
+    // leave THIS one still stealing focus the moment it appears. Set to "0"
+    // BEFORE SDL_CreateWindow, per SDL's own documented contract; it does
+    // nothing to ordinary click-to-focus, which the OS still grants normally.
+    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
     const int width = options.smoke.session.width;
     const int height = options.smoke.session.height;
     SDL_Window* window =
@@ -1366,6 +1429,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         std::printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
+    // DON'T STEAL FOCUS ON LAUNCH. See the identical call and comment in
+    // run_creation_window() above -- this is the SECOND window a real launch
+    // opens. Set again here rather than trusted to carry over: SDL does not
+    // document SDL_SetHint as scoped to a subsystem's lifetime, but this file
+    // does not lean on that either way -- run_creation_window() fully quits
+    // SDL_INIT_VIDEO and this function calls SDL_Init from scratch, so
+    // stating the hint again at the one call site that actually needs it is
+    // one line and removes the question entirely.
+    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
     const int windowW = start.width * options.windowScale;
     const int windowH = start.height * options.windowScale;
     SDL_Window* window =
@@ -1406,10 +1478,20 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     SDL_SetWindowRelativeMouseMode(window, true);
 
     // Whichever pad turned up first. One player, one pad.
+    //
+    // THE COUNT IS PRINTED UNCONDITIONALLY, ZERO INCLUDED. Before this, the
+    // only gamepad line this build ever printed was "connected", which meant
+    // a reader of stdout could not tell "SDL looked and found nothing" apart
+    // from "this code never ran" -- exactly the gap that made an empirical
+    // check of Steam Input routing depend on a human pressing a physical
+    // button. A verifier (drive-windowed.ps1's own stdout capture, a CI run
+    // with no controller attached, a player who wants to know why a pad is
+    // not doing anything) can now read this line and know for certain.
     SDL_Gamepad* pad = nullptr;
     {
         int count = 0;
         SDL_JoystickID* ids = SDL_GetGamepads(&count);
+        std::printf("granadad: gamepads detected=%d\n", count);
         if (ids != nullptr) {
             if (count > 0) {
                 pad = SDL_OpenGamepad(ids[0]);
@@ -1609,7 +1691,23 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 case SDL_EVENT_QUIT:
                     running = false;
                     break;
-                case SDL_EVENT_GAMEPAD_ADDED:
+                // HOT-PLUG. A pad Steam Input starts (or stops) translating
+                // AFTER this window already has focus -- launch first, then
+                // route the Steam Controller, or alt-tab to configure Steam --
+                // arrives here exactly like a pad that was plugged in the
+                // whole time, because the event pump runs every frame
+                // unconditionally. Both branches print the SAME "gamepads
+                // detected=" line the startup enumeration above does, so a
+                // verifier watching stdout sees one consistent count that
+                // moves, rather than a "connected" line with nothing to
+                // compare it against.
+                case SDL_EVENT_GAMEPAD_ADDED: {
+                    int count = 0;
+                    SDL_JoystickID* liveIds = SDL_GetGamepads(&count);
+                    if (liveIds != nullptr) {
+                        SDL_free(liveIds);
+                    }
+                    std::printf("granadad: gamepad ADDED, gamepads detected=%d\n", count);
                     if (pad == nullptr) {
                         pad = SDL_OpenGamepad(event.gdevice.which);
                         if (pad != nullptr) {
@@ -1618,7 +1716,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         }
                     }
                     break;
-                case SDL_EVENT_GAMEPAD_REMOVED:
+                }
+                case SDL_EVENT_GAMEPAD_REMOVED: {
                     if (pad != nullptr &&
                         SDL_GetGamepadID(pad) == event.gdevice.which) {
                         SDL_CloseGamepad(pad);
@@ -1627,7 +1726,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         crouch.clear();
                         quickWheelOpen = false;
                     }
+                    int count = 0;
+                    SDL_JoystickID* liveIds = SDL_GetGamepads(&count);
+                    if (liveIds != nullptr) {
+                        SDL_free(liveIds);
+                    }
+                    std::printf("granadad: gamepad REMOVED, gamepads detected=%d\n", count);
                     break;
+                }
                 case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
                     if (!route_menu_key(session, key_of_pad_button(event.gbutton.button))) {
                         pressed(key_of_pad_button(event.gbutton.button));

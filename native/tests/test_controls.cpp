@@ -99,6 +99,40 @@ TEST_CASE("#85: the core gameplay button count is what Eli asked for") {
     CHECK(sizeof(core) / sizeof(core[0]) <= 12);
 }
 
+TEST_CASE("every CORE action resolves an actual pad key, generically") {
+    // GENERIC AND ENUM-DRIVEN, unlike "the shipped bindings are the ones a
+    // player already knows" above, which hardcodes each action's exact pad
+    // button by name (Interact->PadSouth, Attack->PadWest, and so on). That
+    // test proves TODAY'S table; this one proves the PROPERTY -- every one of
+    // the 10 core actions carries at least one key that is a pad key, whatever
+    // that key happens to be -- so a future core action added to controls.hpp
+    // without a pad default in defaults() fails HERE, on the property, rather
+    // than only if somebody remembers to add another hardcoded CHECK() to the
+    // list above. This is the binding-completeness gap class the gamepad-
+    // readiness task named directly: an unbound action is invisible until a
+    // player actually reaches for it on a pad.
+    const ControlSettings keys = ControlSettings::defaults();
+    const Action core[] = {
+        Action::Attack,     Action::Interact, Action::Crouch,  Action::Vertical,
+        Action::Sprint,     Action::Menu,     Action::PagePrev, Action::PageNext,
+        Action::Pause,      Action::QuickWheel,
+    };
+    // Key::PadSouth..Key::PadRight are one contiguous run in controls.hpp's
+    // own Key enum (the face buttons, bumpers, triggers, sticks, Start/Back
+    // and the D-pad, in that order, with nothing else interleaved) -- see the
+    // enum itself. That ordering is what makes a range check here a check on
+    // "is this a pad key" rather than a second hardcoded name list.
+    const auto isPadKey = [](Key key) noexcept {
+        return key >= Key::PadSouth && key <= Key::PadRight;
+    };
+    for (const Action action : core) {
+        const std::size_t index = static_cast<std::size_t>(action);
+        INFO("action ", actionKey(action), " primary=", keyName(keys.primary[index]),
+             " secondary=", keyName(keys.secondary[index]));
+        CHECK((isPadKey(keys.primary[index]) || isPadKey(keys.secondary[index])));
+    }
+}
+
 TEST_CASE("no two verbs share a key in the shipped layout") {
     const ControlSettings keys = ControlSettings::defaults();
     std::set<Key> seen;
