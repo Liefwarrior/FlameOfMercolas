@@ -1152,7 +1152,6 @@ private:
     // trade
     std::int32_t drinkStock_ = kOpeningStock;
     std::int32_t rentedRoom_ = -1;
-    std::int64_t stockedOnDay_ = -1;
     /// -1 when nothing has been argued down. Set by a struck haggle and spent
     /// by the purchase that follows it.
     std::int32_t negotiatedDrink_ = -1;

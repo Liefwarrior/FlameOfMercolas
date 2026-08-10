@@ -766,7 +766,6 @@ void Tavern::advanceSecond() {
         // barrels. Both are what stop their trade being a faucet.
         scalpedVermin_ = 0;
         rentedRoom_ = -1;
-        stockedOnDay_ = tick_;
     }
     // Somebody put on the floor comes round. A brawl is not a killing, so a
     // downed patron is a patron who gets up in a minute or two with a headache
