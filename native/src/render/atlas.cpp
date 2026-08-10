@@ -204,6 +204,7 @@ TileAtlas TileAtlas::procedural() {
             static_cast<std::int32_t>(36.0F + (256.0F - 36.0F) * t * t + 0.5F));
     }
     atlas.waterDepthAlphaQ8_ = {0, 96, 120, 144, 168, 192, 216, 240};
+    atlas.buildAverageCache();
     return atlas;
 }
 
@@ -390,6 +391,13 @@ TileAtlas TileAtlas::load(const std::filesystem::path& contentDir) {
     alias("reman_facade", "reman_concrete");
 
     atlas.fromAuthoredArt_ = anyBound;
+    // load() appends tiles on top of what procedural() already cached, so the
+    // cache built inside procedural() (above, via the atlas = procedural()
+    // copy) is stale for every tile appended since — rebuild once, now that
+    // every texel this atlas will ever have is final. Every earlier return in
+    // this function bails before any tile append, so procedural()'s cache is
+    // still correct there and needs no extra rebuild.
+    atlas.buildAverageCache();
     return atlas;
 }
 
@@ -422,18 +430,29 @@ Rgb TileAtlas::texel(std::size_t tile, int u, int v) const noexcept {
     return unpackRgb(texelRaw(tile, u, v));
 }
 
-Rgb TileAtlas::averageOf(std::size_t tile) const noexcept {
-    Rgb sum;
-    for (int v = 0; v < kTilePx; ++v) {
-        for (int u = 0; u < kTilePx; ++u) {
-            const Rgb c = texel(tile, u, v);
-            sum.r += c.r;
-            sum.g += c.g;
-            sum.b += c.b;
-        }
-    }
+void TileAtlas::buildAverageCache() {
+    const std::size_t count = texels_.size() / kTileTexels;
+    tileAverages_.assign(count, Rgb{});
     const float inv = 1.0F / static_cast<float>(kTileTexels);
-    return Rgb{sum.r * inv, sum.g * inv, sum.b * inv};
+    for (std::size_t tile = 0; tile < count; ++tile) {
+        Rgb sum;
+        for (int v = 0; v < kTilePx; ++v) {
+            for (int u = 0; u < kTilePx; ++u) {
+                const Rgb c = texel(tile, u, v);
+                sum.r += c.r;
+                sum.g += c.g;
+                sum.b += c.b;
+            }
+        }
+        tileAverages_[tile] = Rgb{sum.r * inv, sum.g * inv, sum.b * inv};
+    }
+}
+
+Rgb TileAtlas::averageOf(std::size_t tile) const noexcept {
+    if (tile >= tileAverages_.size()) {
+        return Rgb{};
+    }
+    return tileAverages_[tile];
 }
 
 }  // namespace granadad::render

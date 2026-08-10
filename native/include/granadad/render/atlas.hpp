@@ -116,6 +116,12 @@ private:
 
     std::size_t appendProceduralTile(Rgb base, std::uint32_t seed, bool speckled);
 
+    /// Fills tileAverages_ from texels_. Must run after every texel append is
+    /// final for the atlas being built — averageOf() is O(1) off this cache,
+    /// not a live per-call texel scan, so it has to be complete before the
+    /// atlas is handed out.
+    void buildAverageCache();
+
     std::vector<std::uint32_t> texels_;
     /// [material][face] -> the tile indices that may be used, in pack order.
     std::vector<std::vector<std::vector<std::size_t>>> byMaterialFace_;
@@ -124,6 +130,10 @@ private:
     std::vector<std::int32_t> waterDepthAlphaQ8_;
     Rgb voidColour_{0.05F, 0.043F, 0.063F};
     bool fromAuthoredArt_ = false;
+    /// Per-tile flat average, index == tile index. Precomputed by
+    /// buildAverageCache() so averageOf() is a lookup, not a 256-texel loop,
+    /// since the renderer now calls it live per minified horizontal face.
+    std::vector<Rgb> tileAverages_;
 };
 
 }  // namespace granadad::render

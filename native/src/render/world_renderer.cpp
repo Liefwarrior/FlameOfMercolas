@@ -446,8 +446,16 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                         }
                         const float yA = horizon - (height3d - camera.z) * focal / safeEnter;
                         const float yB = horizon - (height3d - camera.z) * focal / exit;
-                        const int rowFrom = std::max(0, rowAtLeast(std::min(yA, yB)));
-                        const int rowTo = std::min(height - 1, rowAtMost(std::max(yA, yB)));
+                        // rowAtLeast/rowAtMost take ceil/floor directly, which is a
+                        // top-left-of-pixel convention — but the sample loop below
+                        // tests row centres (sy + 0.5F). Subtracting 0.5F here before
+                        // ceil/floor makes "row r qualifies" mean exactly "r+0.5 lies
+                        // inside [yA,yB]", matching the sampler, so a footprint that
+                        // legitimately covers a pixel centre without straddling an
+                        // integer boundary (e.g. [10.3,10.6]) no longer computes
+                        // rowFrom > rowTo and drops the row entirely.
+                        const int rowFrom = std::max(0, rowAtLeast(std::min(yA, yB) - 0.5F));
+                        const int rowTo = std::min(height - 1, rowAtMost(std::max(yA, yB) - 0.5F));
                         if (rowTo < rowFrom) {
                             continue;
                         }
@@ -458,6 +466,37 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                                    static_cast<std::uint32_t>(mapY) * 40483U ^
                                    static_cast<std::uint32_t>(z) * 1572869U));
                         const float rise = height3d - camera.z;
+                        // Bounded minification blend: when this face's screen footprint
+                        // covers meaningfully more than one atlas texel per row (a
+                        // distant or grazing-angle flat surface — water most of all),
+                        // point-sampling scatters isolated bright texels instead of
+                        // reading as a coherent surface. Detect it with two cheap
+                        // distance evaluations (no texture reads) and, only then, blend
+                        // each sampled texel toward the tile's precomputed flat average.
+                        // O(1) per face, one cached lookup + one lerp per pixel — not
+                        // literal supersampling, and inert when a row is already
+                        // sub-texel (typical close-up wall/floor case).
+                        float minifyMix = 0.0F;
+                        Rgb tileAverage{};
+                        if (rowTo > rowFrom) {
+                            const auto worldAt = [&](int sy) {
+                                const float d = horizon - (static_cast<float>(sy) + 0.5F);
+                                const float dist = std::abs(d) < 0.25F
+                                                       ? safeEnter
+                                                       : std::clamp(rise * focal / d, safeEnter, exit);
+                                return std::pair{camera.x + rayX * dist, camera.y + rayY * dist};
+                            };
+                            const auto [nx, ny] = worldAt(rowFrom);
+                            const auto [fx, fy] = worldAt(rowTo);
+                            const float worldStep = std::max(std::abs(fx - nx), std::abs(fy - ny));
+                            const float texelsPerRow =
+                                worldStep * static_cast<float>(TileAtlas::kTilePx) /
+                                static_cast<float>(rowTo - rowFrom);
+                            minifyMix = std::clamp((texelsPerRow - 1.0F) / 3.0F, 0.0F, 0.85F);
+                            if (minifyMix > 0.0F) {
+                                tileAverage = atlas_->averageOf(tile);
+                            }
+                        }
                         for (int sy = rowFrom; sy <= rowTo; ++sy) {
                             if (written[static_cast<std::size_t>(sy)] != 0) {
                                 continue;
@@ -482,6 +521,9 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                                                  static_cast<float>(TileAtlas::kTilePx)),
                                 0, TileAtlas::kTilePx - 1);
                             Rgb colour = atlas_->texel(tile, u, v);
+                            if (minifyMix > 0.0F) {
+                                colour = lerp(colour, tileAverage, minifyMix);
+                            }
                             if (isTop && voxel.wetness > 0) {
                                 // Water darkens what it covers, by the pack's
                                 // own per-depth alpha: a puddle glosses a
