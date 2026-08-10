@@ -527,6 +527,16 @@ private:
     [[nodiscard]] bool thingAvailable() const;
     [[nodiscard]] bool workAvailable() const;
     [[nodiscard]] bool questAvailable() const;
+    /// The bark key one authored micro-history may actually be TOLD from, or
+    /// "" when there is nothing to say -- both parties still have to resolve
+    /// in the registry, and the table has to be that history's OWN
+    /// (gossip.<id>), not a fall-through to the generic gossip table, which
+    /// is a separate topic (WardTalk) and not this history's story. Shared
+    /// between personAvailable() and buildPersonTopics() so the two can never
+    /// quietly disagree about which of a notable's tellable histories are
+    /// actually tellable -- see the note on personAvailable() itself for the
+    /// bug this closed.
+    [[nodiscard]] std::string historyBarkKey(const History& history) const;
     /// The chain quest.<questId>[.rumor.<notableId>] everybody who has heard
     /// of the clerk speaks from -- shared between questAvailable() and
     /// buildQuestTopics() so the two can never quietly disagree about what

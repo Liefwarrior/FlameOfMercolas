@@ -15,6 +15,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <filesystem>
@@ -1114,6 +1115,82 @@ TEST_CASE("a walk through the whole tree, run twice, says exactly the same thing
     const std::vector<std::string> second = walkOnce();
     REQUIRE_FALSE(first.empty());
     CHECK(first == second);
+}
+
+namespace {
+
+/// A throwaway synthetic content tree, so this one case can control every
+/// authored fact instead of hoping the owner's 373 real bark tables happen to
+/// carry a gap. Same idiom content/tests/test_content_dir.cpp already uses
+/// for the same reason.
+class TempTree {
+public:
+    explicit TempTree(const std::string& name)
+        : root_(std::filesystem::temp_directory_path() /
+                ("granadad-dialogue-" + name)) {
+        std::error_code error;
+        std::filesystem::remove_all(root_, error);
+        std::filesystem::create_directories(root_, error);
+    }
+    ~TempTree() {
+        std::error_code error;
+        std::filesystem::remove_all(root_, error);
+    }
+    TempTree(const TempTree&) = delete;
+    TempTree& operator=(const TempTree&) = delete;
+
+    [[nodiscard]] const std::filesystem::path& root() const noexcept { return root_; }
+
+    void write(const std::string& relative, std::string_view json) const {
+        const std::filesystem::path made = root_ / relative;
+        std::error_code error;
+        std::filesystem::create_directories(made.parent_path(), error);
+        std::ofstream file(made, std::ios::binary);
+        file << json;
+    }
+
+private:
+    std::filesystem::path root_;
+};
+
+}  // namespace
+
+TEST_CASE("TELL ME ABOUT is never offered on a promise the PERSON branch cannot keep") {
+    // Regression for a personAvailable()/buildPersonTopics() mismatch.
+    // personAvailable() used to read "notables_.tellableBy(id) is non-empty"
+    // as enough on its own to promise a PERSON branch -- but tellableBy()
+    // only says the registry LICENSES this notable to tell a history, not
+    // that anything is actually authored to tell it from. buildPersonTopics()
+    // has always required a history's OWN gossip.<id> table (never the bare
+    // generic "gossip" fallback, which is a separate topic) before it adds
+    // anything. In the owner's real content every history happens to carry
+    // its own table -- see "the Forty Notables..." above -- so the gap is
+    // silent there; this fixture authors a history deliberately missing one,
+    // the same way a mid-authored line still under S9's "active feature
+    // development" could.
+    TempTree tree("person-availability");
+    tree.write("raws/names/notables.json",
+               R"({"notables": [{"id": "alice"}, {"id": "bob"}]})");
+    tree.write("raws/names/histories.json",
+               R"({"histories": [{"id": "alice-bob-thing", "a": "alice", "b": "bob"}]})");
+    tree.write("raws/rumors/rumors.json", R"({"domains": []})");
+    // No "personal" table and no "gossip" table of any kind -- the one
+    // history alice is a party to has nowhere authored to be told from, and
+    // neither does the generic ward-talk fallback.
+    tree.write("raws/barks/barks.json", R"({"tables": []})");
+
+    DialogueDirector director = DialogueDirector::load(tree.root());
+    REQUIRE_FALSE(director.notables().tellableBy("alice").empty());
+
+    Speaker alice = dockerNamed(1, "Alice");
+    alice.notableId = "alice";
+    REQUIRE(director.open(alice, hourOfDay(12)));
+
+    // Nothing is authored for LOCATION, THING, WORK or QUEST either in this
+    // fixture, so TELL ME ABOUT itself must not appear at all -- if it did,
+    // opening it would land on a category list whose one live branch led
+    // nowhere but (BACK).
+    CHECK_FALSE(has(director.topics(), TopicKind::Ask));
 }
 
 // ===========================================================================

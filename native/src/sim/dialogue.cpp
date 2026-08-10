@@ -689,12 +689,41 @@ void DialogueDirector::pushBack() {
     topics_.push_back(std::move(topic));
 }
 
+std::string DialogueDirector::historyBarkKey(const History& history) const {
+    if (notables_.find(history.a) == nullptr || notables_.find(history.b) == nullptr) {
+        // A history authored against a notable id that does not (or no
+        // longer) resolves is not a story anybody standing in front of you
+        // can actually tell.
+        return {};
+    }
+    const std::string key(barks_.resolve(gossipChain(history.id)));
+    if (key.empty() || key == "gossip") {
+        // No table of its own means no story to tell. The generic ward
+        // chatter is a separate topic (WardTalk) and must not stand in for
+        // one -- see buildPersonTopics()'s own note, which this mirrors.
+        return {};
+    }
+    return key;
+}
+
 bool DialogueDirector::personAvailable() const {
     if (!barks_.resolve(toned(personalChain(speaker_.notableId))).empty()) {
         return true;
     }
-    if (!notables_.tellableBy(speaker_.notableId).empty()) {
-        return true;
+    // BUG (fixed): this used to be `!tellableBy(...).empty()`, which is true
+    // the moment a notable is a PARTY to or LICENSED to repeat any history at
+    // all -- regardless of whether that history is actually tellable. A
+    // notable whose only history has no gossip.<id> table of its own (and no
+    // generic "gossip" table backing the fallback either) would still open
+    // the PERSON branch, which buildPersonTopics() then filled with nothing
+    // but (BACK) -- a category promising content it could not deliver, which
+    // is exactly the "no topic leads to nothing" law this tree is built to
+    // never break. historyBarkKey() is the exact gate buildPersonTopics()
+    // applies per history, so the two can no longer disagree.
+    for (const History* history : notables_.tellableBy(speaker_.notableId)) {
+        if (history != nullptr && !historyBarkKey(*history).empty()) {
+            return true;
+        }
     }
     return barks_.has("gossip");
 }
@@ -876,17 +905,14 @@ void DialogueDirector::buildPersonTopics() {
         if (history == nullptr) {
             continue;
         }
+        // historyBarkKey() is the same gate personAvailable() applies before
+        // ever promising this branch exists -- see its own note.
+        const std::string key = historyBarkKey(*history);
+        if (key.empty()) {
+            continue;
+        }
         const Notable* a = notables_.find(history->a);
         const Notable* b = notables_.find(history->b);
-        if (a == nullptr || b == nullptr) {
-            continue;
-        }
-        const std::string key(barks_.resolve(gossipChain(history->id)));
-        if (key.empty() || key == "gossip") {
-            // No table of its own means no story to tell. The generic ward
-            // chatter is a separate topic and should not stand in for one.
-            continue;
-        }
         Topic topic;
         topic.kind = TopicKind::History;
         // The ward's own short names, because a topic list is a menu and
@@ -1293,9 +1319,7 @@ Reply DialogueDirector::choose(std::size_t index) {
                 out.ok = false;
                 break;
             }
-            const std::int32_t pay = row->pay;
             const Settlement settled = board_.turnIn(topic.payload, crimes_.stash(), board_.day());
-            out.contractId = topic.payload;
             if (settled.result != TurnInResult::Paid) {
                 const char* chain = settled.result == TurnInResult::Late ? "contract.late"
                                                                         : "contract.short";
@@ -1327,7 +1351,6 @@ Reply DialogueDirector::choose(std::size_t index) {
             out.line += " (" + coins(settled.pay) + ")";
             out.coinDelta = settled.pay;
             out.contractId = topic.payload;
-            (void)pay;
             // Delivering work for a guild is a deed done to that guild, and it
             // is the ONLY way a contract moves standing -- through exactly the
             // faction ledger a bought drink moves.
