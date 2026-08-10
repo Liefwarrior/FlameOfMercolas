@@ -182,6 +182,55 @@ const char* const kLockRows[] = {
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// the tiled Menu's four panels (plus the keys page and a live conversation)
+// share one cursor/page navigation shape, wrapped or paged over a list whose
+// length changes every call -- the SAME three or four lines were repeated
+// once per list. Pulled out once, here: the per-list state still lives on
+// Session (characterCursor_/mapCursor_/lettersCursor_/caseCursor_/
+// topicCursor_ and their *Page_ twins), these just take it by reference so
+// each call site stays one line instead of a paragraph.
+// ---------------------------------------------------------------------------
+
+/// Wraps `cursor` by `delta` into [0, count) and sets `page` to the page it
+/// falls on -- moveTopicCursor()'s own shape, once per list this widget can
+/// be navigating. `count` of zero parks both at zero rather than dividing by
+/// it (unreachable for every list this build has today, since none of them
+/// can ever be empty while its own overlay is open, but a caller has no way
+/// to prove that from here).
+void wrapCursorAndPage(int& cursor, int& page, int delta, int count) noexcept {
+    if (count <= 0) {
+        cursor = 0;
+        page = 0;
+        return;
+    }
+    cursor = ((cursor + delta) % count + count) % count;
+    page = topicPageOf(cursor);
+}
+
+/// Steps `page` forward one and puts `cursor` on its first row --
+/// nextTopicPage()'s own shape. A single page is a no-op: the row already
+/// showing has nowhere else to turn to.
+void advancePage(int& page, int& cursor, std::size_t total) noexcept {
+    const int pages = topicPageCount(total);
+    if (pages <= 1) {
+        return;
+    }
+    page = (page + 1) % pages;
+    cursor = std::min(static_cast<int>(total) - 1, page * kTopicPageSize);
+}
+
+/// Puts `cursor` on the row this number key names, if that row is actually on
+/// the page showing -- chooseVisibleTopic()'s own shape. Out of range is a
+/// no-op, the same as every list on this surface gives a number with nothing
+/// under it.
+void pickCursorIfVisible(int& cursor, int page, int slot, std::size_t total) noexcept {
+    const int index = page * kTopicPageSize + slot;
+    if (index < static_cast<int>(total)) {
+        cursor = index;
+    }
+}
+
 }  // namespace
 
 Session::Session(const SessionConfig& config)
@@ -1541,9 +1590,7 @@ std::string Session::interactPrompt() const {
 
 void Session::moveTopicCursor(int delta) {
     if (keysOpen_) {
-        const int count = static_cast<int>(keyRows().size());
-        caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
-        casePage_ = caseCursor_ / kTopicPageSize;
+        wrapCursorAndPage(caseCursor_, casePage_, delta, static_cast<int>(keyRows().size()));
         return;
     }
     // MORROWIND ROUND: ROUTED BY WHICH TILE HAS FOCUS, not by which of four
@@ -1553,31 +1600,17 @@ void Session::moveTopicCursor(int delta) {
     // where the cursor was left on another.
     if (casebookOpen_) {
         switch (menuFocus_) {
-            case kMenuFocusCharacter: {
+            case kMenuFocusCharacter:
                 // THE SAME KEYS, THE SAME PAGING -- see toggleCharacter.
-                const int count = static_cast<int>(characterRows().size());
-                if (count <= 0) {
-                    characterCursor_ = 0;
-                    characterPage_ = 0;
-                    return;
-                }
-                characterCursor_ = ((characterCursor_ + delta) % count + count) % count;
-                characterPage_ = characterCursor_ / kTopicPageSize;
+                wrapCursorAndPage(characterCursor_, characterPage_, delta,
+                                  static_cast<int>(characterRows().size()));
                 return;
-            }
-            case kMenuFocusMap: {
+            case kMenuFocusMap:
                 // THE SAME KEYS, THE SAME PAGING -- see toggleMap.
-                const int count = static_cast<int>(mapRows().size());
-                if (count <= 0) {
-                    mapCursor_ = 0;
-                    mapPage_ = 0;
-                    return;
-                }
-                mapCursor_ = ((mapCursor_ + delta) % count + count) % count;
-                mapPage_ = mapCursor_ / kTopicPageSize;
+                wrapCursorAndPage(mapCursor_, mapPage_, delta,
+                                  static_cast<int>(mapRows().size()));
                 return;
-            }
-            case kMenuFocusLetters: {
+            case kMenuFocusLetters:
                 if (lettersEntry_ >= 0) {
                     // AN OPEN LETTER HAS NO CURSOR TO MOVE -- lettersBodyPage_
                     // is doing a different job here (which page of the BODY is
@@ -1586,50 +1619,30 @@ void Session::moveTopicCursor(int delta) {
                     return;
                 }
                 // TASK #82. THE SAME KEYS, THE SAME PAGING -- see toggleLetters.
-                const int count = static_cast<int>(unlockedLetters().size());
-                if (count <= 0) {
-                    lettersCursor_ = 0;
-                    lettersPage_ = 0;
-                    return;
-                }
-                lettersCursor_ = ((lettersCursor_ + delta) % count + count) % count;
-                lettersPage_ = lettersCursor_ / kTopicPageSize;
+                wrapCursorAndPage(lettersCursor_, lettersPage_, delta,
+                                  static_cast<int>(unlockedLetters().size()));
                 return;
-            }
             case kMenuFocusJournal:
-            default: {
+            default:
                 // THE SAME KEYS, THE SAME PAGING. The Journal tile is a
                 // conversation with your own notes -- see
                 // Session::toggleCasebook on why it borrows the dialogue
                 // surface's own vocabulary rather than being a sheet of its
                 // own.
-                const int count = static_cast<int>(casebook_.known().size());
-                if (count <= 0) {
-                    caseCursor_ = 0;
-                    casePage_ = 0;
-                    return;
-                }
-                caseCursor_ = ((caseCursor_ + delta) % count + count) % count;
-                casePage_ = caseCursor_ / kTopicPageSize;
+                wrapCursorAndPage(caseCursor_, casePage_, delta,
+                                  static_cast<int>(casebook_.known().size()));
                 return;
-            }
         }
     }
     if (!talking()) {
         return;
     }
-    const int count = static_cast<int>(tavern_->dialogue().topics().size());
-    if (count <= 0) {
-        topicCursor_ = 0;
-        topicPage_ = 0;
-        return;
-    }
-    // Wraps, so holding one direction walks the whole list.
-    topicCursor_ = ((topicCursor_ + delta) % count + count) % count;
-    // The page FOLLOWS the cursor. Walking off the bottom of a page turns it,
-    // so the arrow keys reach every topic and the numbers on screen are always
-    // the numbers that pick the ones you can see.
-    topicPage_ = topicPageOf(topicCursor_);
+    // Wraps, so holding one direction walks the whole list. The page FOLLOWS
+    // the cursor: walking off the bottom of a page turns it, so the arrow
+    // keys reach every topic and the numbers on screen are always the numbers
+    // that pick the ones you can see.
+    wrapCursorAndPage(topicCursor_, topicPage_, delta,
+                       static_cast<int>(tavern_->dialogue().topics().size()));
 }
 
 void Session::nextTopicPage() {
@@ -1650,28 +1663,13 @@ void Session::nextTopicPage() {
     // MORROWIND ROUND: ROUTED BY FOCUS -- see moveTopicCursor()'s own note.
     if (casebookOpen_) {
         switch (menuFocus_) {
-            case kMenuFocusCharacter: {
-                const std::size_t rows = characterRows().size();
-                const int pages = topicPageCount(rows);
-                if (pages <= 1) {
-                    return;
-                }
-                characterPage_ = (characterPage_ + 1) % pages;
-                characterCursor_ =
-                    std::min(static_cast<int>(rows) - 1, characterPage_ * kTopicPageSize);
+            case kMenuFocusCharacter:
+                advancePage(characterPage_, characterCursor_, characterRows().size());
                 return;
-            }
-            case kMenuFocusMap: {
-                const std::size_t rows = mapRows().size();
-                const int pages = topicPageCount(rows);
-                if (pages <= 1) {
-                    return;
-                }
-                mapPage_ = (mapPage_ + 1) % pages;
-                mapCursor_ = std::min(static_cast<int>(rows) - 1, mapPage_ * kTopicPageSize);
+            case kMenuFocusMap:
+                advancePage(mapPage_, mapCursor_, mapRows().size());
                 return;
-            }
-            case kMenuFocusLetters: {
+            case kMenuFocusLetters:
                 if (lettersEntry_ >= 0) {
                     // PAGING THROUGH THE OPEN LETTER'S OWN BODY, not the
                     // title list -- lettersBodyPage_ is a field of its own
@@ -1682,41 +1680,20 @@ void Session::nextTopicPage() {
                     ++lettersBodyPage_;
                     return;
                 }
-                const std::size_t entries = unlockedLetters().size();
-                const int pages = topicPageCount(entries);
-                if (pages <= 1) {
-                    return;
-                }
-                lettersPage_ = (lettersPage_ + 1) % pages;
-                lettersCursor_ =
-                    std::min(static_cast<int>(entries) - 1, lettersPage_ * kTopicPageSize);
+                advancePage(lettersPage_, lettersCursor_, unlockedLetters().size());
                 return;
-            }
             case kMenuFocusJournal:
-            default: {
-                const std::size_t entries = casebook_.known().size();
-                const int pages = topicPageCount(entries);
-                if (pages <= 1) {
-                    return;
-                }
-                casePage_ = (casePage_ + 1) % pages;
-                caseCursor_ = std::min(static_cast<int>(entries) - 1, casePage_ * kTopicPageSize);
+            default:
+                advancePage(casePage_, caseCursor_, casebook_.known().size());
                 return;
-            }
         }
     }
     if (!talking()) {
         return;
     }
-    const std::size_t count = tavern_->dialogue().topics().size();
-    const int pages = topicPageCount(count);
-    if (pages <= 1) {
-        return;
-    }
-    topicPage_ = (topicPage_ + 1) % pages;
-    // The cursor comes with it, onto the first topic of the new page, so E
-    // never picks something that is not on screen.
-    topicCursor_ = std::min(static_cast<int>(count) - 1, topicPage_ * kTopicPageSize);
+    // The cursor comes with the page, onto its first topic, so E never picks
+    // something that is not on screen.
+    advancePage(topicPage_, topicCursor_, tavern_->dialogue().topics().size());
 }
 
 void Session::chooseVisibleTopic(int slot) {
@@ -1739,43 +1716,30 @@ void Session::chooseVisibleTopic(int slot) {
         return;
     }
     if (optionsOpen_) {
-        const int index = optionPage_ * kTopicPageSize + slot;
-        if (index < static_cast<int>(optionRows().size())) {
-            optionCursor_ = index;
-        }
+        pickCursorIfVisible(optionCursor_, optionPage_, slot, optionRows().size());
         return;
     }
     if (keysOpen_) {
         // A key row is a reference, not a choice. The cursor moves and nothing
         // else happens, which is the honest behaviour for a list you read.
-        const int index = casePage_ * kTopicPageSize + slot;
-        if (index < static_cast<int>(keyRows().size())) {
-            caseCursor_ = index;
-        }
+        pickCursorIfVisible(caseCursor_, casePage_, slot, keyRows().size());
         return;
     }
     // MORROWIND ROUND: ROUTED BY FOCUS -- see moveTopicCursor()'s own note.
     if (casebookOpen_) {
         switch (menuFocus_) {
-            case kMenuFocusCharacter: {
+            case kMenuFocusCharacter:
                 // A ROW ON THIS TILE IS SOMETHING TO READ, not a choice --
                 // the same honest no-op the keys page gives a number press.
-                const int index = characterPage_ * kTopicPageSize + slot;
-                if (index < static_cast<int>(characterRows().size())) {
-                    characterCursor_ = index;
-                }
+                pickCursorIfVisible(characterCursor_, characterPage_, slot,
+                                    characterRows().size());
                 return;
-            }
-            case kMenuFocusMap: {
+            case kMenuFocusMap:
                 // A ROW ON THIS TILE IS SOMETHING TO READ, not a choice -- the
                 // identical no-op the character tile and the keys page give a
                 // number press.
-                const int index = mapPage_ * kTopicPageSize + slot;
-                if (index < static_cast<int>(mapRows().size())) {
-                    mapCursor_ = index;
-                }
+                pickCursorIfVisible(mapCursor_, mapPage_, slot, mapRows().size());
                 return;
-            }
             case kMenuFocusLetters: {
                 if (lettersEntry_ >= 0) {
                     // THE TITLE LIST IS NOT ON SCREEN WHILE A LETTER IS OPEN
