@@ -132,6 +132,21 @@ struct AuthoredLamp {
     LampWarmth warmth = LampWarmth::Lantern;
 };
 
+/// Reads a whole file into `out`. False (out left untouched) when the file
+/// cannot be opened; a file that opens but is empty still returns true, which
+/// is what tells scanTmxFile and loadLamps apart -- one throws on a file it
+/// cannot find, the other treats "found but has nothing baked" as absent.
+[[nodiscard]] bool readWholeFile(const std::filesystem::path& file, std::string& out) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        return false;
+    }
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    out = buffer.str();
+    return true;
+}
+
 }  // namespace
 
 std::string_view lampWarmthName(LampWarmth warmth) noexcept {
@@ -308,13 +323,10 @@ std::vector<Lamp> scanTmxLightSources(std::string_view tmx) {
 }
 
 std::vector<Lamp> scanTmxFile(const std::filesystem::path& tmxFile) {
-    std::ifstream in(tmxFile, std::ios::binary);
-    if (!in) {
+    std::string text;
+    if (!readWholeFile(tmxFile, text)) {
         throw std::runtime_error("cannot read " + tmxFile.string());
     }
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    const std::string text = buffer.str();
     return scanTmxLightSources(text);
 }
 
@@ -379,14 +391,12 @@ std::filesystem::path lampBakePath(const std::filesystem::path& contentDir,
 std::vector<Lamp> loadLamps(const std::filesystem::path& contentDir,
                             const std::string& worldName) {
     const std::filesystem::path file = lampBakePath(contentDir, worldName);
-    std::ifstream in(file, std::ios::binary);
-    if (!in) {
+    std::string text;
+    if (!readWholeFile(file, text)) {
         return {};
     }
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
     try {
-        return readLampBake(buffer.str());
+        return readLampBake(text);
     } catch (const std::exception&) {
         return {};
     }

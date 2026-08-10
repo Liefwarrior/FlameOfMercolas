@@ -31,7 +31,6 @@
 #include <string_view>
 #include <vector>
 
-#include "granadad/content/lanes.hpp"
 #include "granadad/render/framebuffer.hpp"
 
 namespace granadad::render {

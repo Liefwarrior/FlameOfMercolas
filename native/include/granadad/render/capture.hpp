@@ -13,9 +13,7 @@
 // can now render a frame of the Docks and assert facts about the pixels on
 // every single build.
 
-#include <cstdint>
 #include <filesystem>
-#include <string>
 
 #include "granadad/render/framebuffer.hpp"
 

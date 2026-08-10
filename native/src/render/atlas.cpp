@@ -4,7 +4,6 @@
 #include <stb_image.h>
 
 #include <array>
-#include <cstdio>
 #include <fstream>
 #include <sstream>
 
@@ -62,6 +61,27 @@ constexpr MaterialTone kFallbackTones[] = {
     {"trudgeon_wood", {0.33F, 0.24F, 0.16F}, false},
     {"trudgeon_wood@getilia_soak", {0.28F, 0.22F, 0.19F}, false},
 };
+
+/// kFallbackTones is indexed positionally by TileAtlas::procedural() (`m` runs
+/// 0..kMaterialCount and picks `kFallbackTones[m]` directly) rather than
+/// looked up by MaterialTone::id, so the two tables silently drifting out of
+/// row-for-row alignment would hand one material another's colour with
+/// nothing to catch it — the `id` field would just sit there unread, decoration
+/// rather than the cross-check it looks like. Checked once, at compile time,
+/// against the id it claims to be.
+[[nodiscard]] constexpr bool fallbackTonesMatchMaterialIds() noexcept {
+    if (sizeof(kFallbackTones) / sizeof(kFallbackTones[0]) != kMaterialCount) {
+        return false;
+    }
+    for (std::size_t i = 0; i < kMaterialCount; ++i) {
+        if (kFallbackTones[i].id != kMaterialIds[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(fallbackTonesMatchMaterialIds(),
+              "kFallbackTones must name the same materials as kMaterialIds, in the same order");
 
 /// The pack's region suffix for each face kind.
 constexpr std::string_view kFaceSuffix[kFaceKindCount] = {"face",  "floor", "ramp",

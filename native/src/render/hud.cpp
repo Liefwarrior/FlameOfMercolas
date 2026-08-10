@@ -452,6 +452,52 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                  0.88F, minor);
     }
 
+    // THE SHARED SHAPE EVERY ROW BELOW BUT THE ALERT ALREADY HAD: skip an
+    // empty label before it can cost a slot, take one, clip to the row's own
+    // pixel budget, draw. Three lambdas rather than one, because where the
+    // row lands is not negotiable -- centred (interactLabel, lockLabel),
+    // left-anchored (caseLabel, guildLabel, objectiveLabel) and right-anchored
+    // (rivalLabel) are three different promises to the exclusion rectangle and
+    // collapsing them into a single "anchor" flag would be one more thing a
+    // caller could get backwards. Colour is still every caller's own choice --
+    // caseLabel and rivalLabel pick theirs from the UNCLIPPED label, exactly
+    // as the comment below explains, and that stays their code, not this one's.
+    const int rowBudget = width - 2 * margin;
+    const auto takeCentred = [&](std::string_view label, const Rgb& colour, float alpha) {
+        if (label.empty()) {
+            return;
+        }
+        const int y = band.take(minor);
+        if (y < 0) {
+            return;
+        }
+        const std::string line = clipToWidth(label, rowBudget, minor);
+        const int drawn = textWidth(line, minor);
+        drawText(target, std::max(margin, (width - drawn) / 2), y, line, colour, alpha, minor);
+    };
+    const auto takeLeft = [&](std::string_view label, const Rgb& colour, float alpha) {
+        if (label.empty()) {
+            return;
+        }
+        const int y = band.take(minor);
+        if (y < 0) {
+            return;
+        }
+        const std::string line = clipToWidth(label, rowBudget, minor);
+        drawText(target, margin, y, line, colour, alpha, minor);
+    };
+    const auto takeRight = [&](std::string_view label, const Rgb& colour, float alpha) {
+        if (label.empty()) {
+            return;
+        }
+        const int y = band.take(minor);
+        if (y < 0) {
+            return;
+        }
+        const std::string line = clipToWidth(label, rowBudget, minor);
+        drawText(target, width - margin - textWidth(line, minor), y, line, colour, alpha, minor);
+    };
+
     // PRIORITY ORDER, AND IT IS AN ARGUMENT. A shout outranks a lock, a lock
     // outranks the case, the case outranks the man hunting you, and the rung
     // you hold and the errand you are on are the two things a player can go and
@@ -493,27 +539,11 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // while a lock is open, Session::interactPrompt() stands down for
     // picking() the same way it does for talking()), but the alert (a
     // bouncer's own warning) still outranks everything on this edge.
-    if (!state.interactLabel.empty()) {
-        const std::string prompt = clipToWidth(state.interactLabel, width - 2 * margin, minor);
-        const int y = band.take(minor);
-        if (y >= 0) {
-            const int drawn = textWidth(prompt, minor);
-            drawText(target, std::max(margin, (width - drawn) / 2), y, prompt,
-                     Rgb{0.85F, 0.80F, 0.60F}, 0.92F, minor);
-        }
-    }
+    takeCentred(state.interactLabel, Rgb{0.85F, 0.80F, 0.60F}, 0.92F);
     // The lock under the wire. A lockpicking minigame is exactly the element
     // that would otherwise become a panel in the middle of the screen, which is
     // the failure this HUD is built against; it gets one row on an edge.
-    if (!state.lockLabel.empty()) {
-        const std::string lock = clipToWidth(state.lockLabel, width - 2 * margin, minor);
-        const int y = band.take(minor);
-        if (y >= 0) {
-            const int drawn = textWidth(lock, minor);
-            drawText(target, std::max(margin, (width - drawn) / 2), y, lock,
-                     Rgb{0.78F, 0.74F, 0.56F}, 0.92F, minor);
-        }
-    }
+    takeCentred(state.lockLabel, Rgb{0.78F, 0.74F, 0.56F}, 0.92F);
     // The case. IT IS THE COLOUR OF THE WARD'S NERVE and not a fixed one: a
     // player who has frightened the district enough that nobody walks the
     // Gullet alone should see that without reading the words.
@@ -527,46 +557,26 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // and runs off the LEFT edge instead, losing its own front rather than
     // its tail. See test_render.cpp's "a bottom-band or top-right label does
     // not run off the frame at an off-16:9 window".
-    if (!state.caseLabel.empty()) {
-        const int y = band.take(minor);
-        if (y >= 0) {
-            const bool afraid = state.caseLabel.find("EMPTYING") != std::string_view::npos ||
-                                state.caseLabel.find("ALONE") != std::string_view::npos;
-            const std::string line = clipToWidth(state.caseLabel, width - 2 * margin, minor);
-            drawText(target, margin, y, line,
-                     afraid ? Rgb{0.86F, 0.44F, 0.36F} : Rgb{0.70F, 0.72F, 0.66F}, 0.90F, minor);
-        }
+    {
+        const bool afraid = state.caseLabel.find("EMPTYING") != std::string_view::npos ||
+                            state.caseLabel.find("ALONE") != std::string_view::npos;
+        takeLeft(state.caseLabel, afraid ? Rgb{0.86F, 0.44F, 0.36F} : Rgb{0.70F, 0.72F, 0.66F},
+                 0.90F);
     }
     // The man who put you here, anchored to the right edge so a long name
-    // cannot run off the frame the way S6 alert did.
-    if (!state.rivalLabel.empty()) {
-        const int y = band.take(minor);
-        if (y >= 0) {
-            // A hunted man should not have to read the line to notice it.
-            // Checked against the UNCLIPPED label: HUNTING is always the
-            // last word rivalLine() appends, and clipping only ever removes
-            // the tail, so the unclipped field still answers this correctly
-            // even on the frame narrow enough to have dropped the word.
-            const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
-            const std::string line = clipToWidth(state.rivalLabel, width - 2 * margin, minor);
-            drawText(target, width - margin - textWidth(line, minor), y, line,
-                     hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F}, 0.90F, minor);
-        }
+    // cannot run off the frame the way S6 alert did. A hunted man should not
+    // have to read the line to notice it. Checked against the UNCLIPPED
+    // label: HUNTING is always the last word rivalLine() appends, and
+    // clipping only ever removes the tail, so the unclipped field still
+    // answers this correctly even on the frame narrow enough to have dropped
+    // the word.
+    {
+        const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
+        takeRight(state.rivalLabel, hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F},
+                  0.90F);
     }
-    if (!state.guildLabel.empty()) {
-        const int y = band.take(minor);
-        if (y >= 0) {
-            const std::string line = clipToWidth(state.guildLabel, width - 2 * margin, minor);
-            drawText(target, margin, y, line, Rgb{0.86F, 0.74F, 0.44F}, 0.92F, minor);
-        }
-    }
-    if (!state.objectiveLabel.empty()) {
-        const int y = band.take(minor);
-        if (y >= 0) {
-            const std::string line = clipToWidth(state.objectiveLabel, width - 2 * margin, minor);
-            drawText(target, margin, y, line, Rgb{0.62F, 0.66F, 0.72F}, 0.80F, minor);
-        }
-    }
+    takeLeft(state.guildLabel, Rgb{0.86F, 0.74F, 0.44F}, 0.92F);
+    takeLeft(state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.80F);
 }
 
 }  // namespace

@@ -197,6 +197,11 @@ void ActorSheet::buildFallback() {
         {sim::WardType::Cat, 0xFF283038u, 0xFF1C2228u, 0xFF303840u, true},
         {sim::WardType::Mouse, 0xFF303840u, 0xFF242A30u, 0xFF383F46u, true},
     };
+    // The same guarantee kQueries carries above: every ward type gets a
+    // procedural figure, checked at compile time rather than left to whoever
+    // adds the seventeenth type to notice byType_[t] came back empty.
+    static_assert(sizeof(kTones) / sizeof(kTones[0]) == sim::kWardTypeCount,
+                  "every ward type has to have a fallback figure");
     sprites_.clear();
     byType_.assign(sim::kWardTypeCount, {});
     for (const Tone& tone : kTones) {
