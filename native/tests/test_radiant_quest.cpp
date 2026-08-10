@@ -30,6 +30,8 @@
 #include <doctest/doctest.h>
 
 #include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -47,6 +49,39 @@ namespace content = granadad::content;
 namespace testfix = granadad::testfix;
 
 namespace {
+
+/// A throwaway synthetic content tree, so a case can author one deliberately
+/// bad template without touching the owner's real radiant_quests.json. Same
+/// idiom content/tests/test_content_dir.cpp uses for the same reason.
+class TempTree {
+public:
+    explicit TempTree(const std::string& name)
+        : root_(std::filesystem::temp_directory_path() /
+                ("granadad-radiant-" + name)) {
+        std::error_code error;
+        std::filesystem::remove_all(root_, error);
+        std::filesystem::create_directories(root_, error);
+    }
+    ~TempTree() {
+        std::error_code error;
+        std::filesystem::remove_all(root_, error);
+    }
+    TempTree(const TempTree&) = delete;
+    TempTree& operator=(const TempTree&) = delete;
+
+    [[nodiscard]] const std::filesystem::path& root() const noexcept { return root_; }
+
+    void write(const std::string& relative, std::string_view json) const {
+        const std::filesystem::path made = root_ / relative;
+        std::error_code error;
+        std::filesystem::create_directories(made.parent_path(), error);
+        std::ofstream file(made, std::ios::binary);
+        file << json;
+    }
+
+private:
+    std::filesystem::path root_;
+};
 
 const RadiantRaws& raws() {
     static const RadiantRaws loaded = RadiantRaws::load(content::contentDir());
@@ -131,6 +166,49 @@ TEST_CASE("a radiant template naming a kind this build cannot evaluate is refuse
         INFO("expected template ", id);
         CHECK(templateNamed(id) != nullptr);
     }
+}
+
+TEST_CASE("a template with no pay authored is refused, not offered for a flat single coin") {
+    // Regression: RadiantRaws::load()'s "REFUSED BY NAME" discipline dropped
+    // a template with no verb, no brief, or (for a fetch) no goods -- but not
+    // one that forgot payPerUnit (fetch) or payFlat (deliver). Both default
+    // to 0, and refresh()'s own std::max(1, ...) floor turned that into a
+    // job that silently paid one flat coin forever, regardless of units or
+    // effort -- exactly the kind of job the file's own "not an objective"
+    // rule is supposed to catch. Every one of the seventeen real templates
+    // happens to author a positive pay (proved above), so this was silent in
+    // the owner's own content.
+    TempTree tree("no-pay-template");
+    tree.write("raws/quests/radiant_quests.json", R"({"templates": [
+        {"id": "no_pay_fetch", "kind": "fetch", "verb": "FETCH",
+         "brief": "{giver} at {giverPlace} wants {units} {good} off {target} at {targetPlace}.",
+         "giverTypes": ["shopkeeper"], "targetTypes": ["shopkeeper"],
+         "goods": ["scalp"], "unitsMin": 1, "unitsMax": 1},
+        {"id": "no_pay_deliver", "kind": "deliver", "verb": "CARRY WORD",
+         "brief": "{giver} at {giverPlace} sends word to {target} at {targetPlace}.",
+         "giverTypes": ["shopkeeper"], "targetTypes": ["shopkeeper"]},
+        {"id": "paid_fetch", "kind": "fetch", "verb": "FETCH",
+         "brief": "{giver} at {giverPlace} wants {units} {good} off {target} at {targetPlace}.",
+         "giverTypes": ["shopkeeper"], "targetTypes": ["shopkeeper"],
+         "goods": ["scalp"], "unitsMin": 1, "unitsMax": 1, "payPerUnit": 4}
+    ]})");
+
+    const RadiantRaws raws = RadiantRaws::load(tree.root());
+    REQUIRE(raws.loaded());
+    bool sawNoPayFetch = false;
+    bool sawNoPayDeliver = false;
+    bool sawPaidFetch = false;
+    for (const RadiantTemplate& tmpl : raws.templates()) {
+        sawNoPayFetch = sawNoPayFetch || tmpl.id == "no_pay_fetch";
+        sawNoPayDeliver = sawNoPayDeliver || tmpl.id == "no_pay_deliver";
+        sawPaidFetch = sawPaidFetch || tmpl.id == "paid_fetch";
+    }
+    CHECK_FALSE(sawNoPayFetch);
+    CHECK_FALSE(sawNoPayDeliver);
+    // ...and the refusal costs nothing else: a template that DOES author pay
+    // still loads.
+    CHECK(sawPaidFetch);
+    REQUIRE(raws.templates().size() == 1);
 }
 
 TEST_CASE("the Skyrunner file's own templates carry the roof-runner cast, not the owner's") {

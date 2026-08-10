@@ -337,6 +337,23 @@ RadiantRaws RadiantRaws::load(const std::filesystem::path& contentDir) {
             if (row.kind == RadiantKind::Fetch && row.goods.empty()) {
                 continue;
             }
+            // BUG (fixed): a template with no pay authored used to load
+            // anyway -- payPerUnit/payFlat default to 0, and refresh()'s own
+            // std::max(1, ...) floor then silently paid a flat single coin
+            // for it forever, regardless of units or effort. That is not a
+            // job anybody would post; it is the same "refused by name" case
+            // as an empty goods list, just on the pay axis instead of the
+            // goods axis. Every one of this build's real templates already
+            // authors a positive pay -- pinned by "a radiant template
+            // naming a kind..." in test_radiant_quest.cpp -- so this closes
+            // a gap a future template could fall into silently rather than
+            // one any of today's seventeen were relying on.
+            if (row.kind == RadiantKind::Fetch && row.payPerUnit <= 0) {
+                continue;
+            }
+            if (row.kind == RadiantKind::Deliver && row.payFlat <= 0) {
+                continue;
+            }
             out.templates_.push_back(std::move(row));
         }
     }
