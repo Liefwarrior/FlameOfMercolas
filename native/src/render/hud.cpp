@@ -72,9 +72,36 @@ constexpr int kGlyphAdvance = 5;
 
 constexpr Rgb kInk{0.90F, 0.87F, 0.78F};
 constexpr Rgb kShadow{0.02F, 0.02F, 0.03F};
-constexpr Rgb kHealth{0.72F, 0.16F, 0.14F};
+// HARDENING PASS. THREE STOPS, NOT ONE. A fixed red bar reads identically at
+// 100 HP and at 4 -- the near-universal genre convention (Barony included) is
+// a bar that goes red before the number does, so a glance at the corner
+// answers "am I in danger" without reading the segment count. kHealthLow is
+// the ORIGINAL fixed colour this pass replaces, kept as the near-death end of
+// the gradient rather than invented fresh, so a nearly-dead player still sees
+// the same red this HUD has always shipped.
+constexpr Rgb kHealthFull{0.30F, 0.62F, 0.20F};
+constexpr Rgb kHealthMid{0.82F, 0.68F, 0.16F};
+constexpr Rgb kHealthLow{0.72F, 0.16F, 0.14F};
 constexpr Rgb kHealthBack{0.10F, 0.06F, 0.06F};
 constexpr Rgb kFrame{0.55F, 0.50F, 0.40F};
+
+/// Green above half health, ambering through yellow at half, reddening into
+/// kHealthLow as the segments run out -- see the constants' own note above.
+/// `fraction` is clamped here rather than trusted, so a caller passing a
+/// stale health/healthMax pair (healthMax 0, health negative) still gets a
+/// legal colour instead of extrapolating off the end of the gradient.
+[[nodiscard]] Rgb healthColor(float fraction) noexcept {
+    fraction = std::clamp(fraction, 0.0F, 1.0F);
+    const auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+    if (fraction >= 0.5F) {
+        const float t = (fraction - 0.5F) / 0.5F;
+        return Rgb{lerp(kHealthMid.r, kHealthFull.r, t), lerp(kHealthMid.g, kHealthFull.g, t),
+                   lerp(kHealthMid.b, kHealthFull.b, t)};
+    }
+    const float t = fraction / 0.5F;
+    return Rgb{lerp(kHealthLow.r, kHealthMid.r, t), lerp(kHealthLow.g, kHealthMid.g, t),
+               lerp(kHealthLow.b, kHealthMid.b, t)};
+}
 
 /// A drawn row is six glyph rows plus the one-pixel drop shadow under them.
 [[nodiscard]] constexpr int rowHeight(int scale) noexcept { return (kGlyphH + 1) * scale; }
@@ -247,13 +274,18 @@ void drawHealth(Framebuffer& target, const HudState& state, const BottomBand& ba
 
     const int maxHealth = std::max(1, state.healthMax);
     const int clamped = std::clamp(state.health, 0, maxHealth);
+    // HARDENING PASS. THE FILL FRACTION DRIVES THE COLOUR TOO, NOT JUST THE
+    // SEGMENT COUNT. Both come off the identical clamped/maxHealth the bar
+    // already needed to size itself -- see healthColor()'s own header --
+    // so the colour can never disagree with the number of segments drawn.
+    const Rgb colour = healthColor(static_cast<float>(clamped) / static_cast<float>(maxHealth));
     // Chunky segments rather than a smooth bar: it reads at a glance and it is
     // the register the rest of the art is in.
     const int segments = 16;
     const int filled = (clamped * segments + maxHealth - 1) / maxHealth;
     const int segW = barW / segments;
     for (int i = 0; i < filled; ++i) {
-        target.fillRect(x + i * segW + 1, y + 1, segW - 1, barH - 2, kHealth, 0.95F);
+        target.fillRect(x + i * segW + 1, y + 1, segW - 1, barH - 2, colour, 0.95F);
     }
 }
 

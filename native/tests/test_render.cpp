@@ -708,24 +708,84 @@ TEST_CASE("the HUD costs a fraction of the frame, and the fraction is pinned") {
 }
 
 TEST_CASE("the HUD's health bar tracks the number it is given") {
+    // HARDENING PASS. THE BAR IS NO LONGER ONE FIXED RED, so "count the red
+    // pixels" stopped being a legal way to measure how many segments are lit
+    // -- a full bar is GREEN now, and a hue check tuned for the old constant
+    // colour would just read a fully healthy player as an empty bar. Counted
+    // by SATURATION instead (max channel minus min channel): every stop of
+    // the health gradient (green, amber, red) is well clear of the muted
+    // bronze frame border and the near-black backing plate, which is what a
+    // segment count needs to stay a fact about how many segments are FILLED,
+    // not about which colour they happen to be filled with.
+    //
+    // SCOPED TO THE BAR'S OWN RECTANGLE, NOT THE WHOLE FRAME -- a whole-frame
+    // scan also caught the compass ribbon's fixed north mark (a small,
+    // equally saturated yellow tick drawn regardless of health), which is
+    // exactly why the ORIGINAL red-only filter looked safe: red hue happened
+    // to exclude that mark by accident, not by scoping. Health is default
+    // HudState's only non-empty field here, so nothing else in the bar's own
+    // bottom-left corner can light up.
     const auto litPixels = [](int health) {
         Framebuffer frame(320, 180);
         frame.clear(Rgb{0.0F, 0.0F, 0.0F});
         HudState hud;
         hud.health = health;
         drawHud(frame, hud);
-        std::size_t red = 0;
-        for (const std::uint32_t pixel : frame.pixels()) {
-            const Rgb colour = unpackRgb(pixel);
-            if (colour.r > 0.4F && colour.g < 0.35F) {
-                ++red;
+        const int scale = std::max(1, frame.height() / 180);
+        const int barX0 = 6 * scale - scale;               // band.margin() - scale (frame ring)
+        const int barY0 = frame.height() - 12 * scale - scale;
+        const int barX1 = 6 * scale + 48 * scale + scale;   // margin + barWidth + scale
+        const int barY1 = frame.height() - 6 * scale + scale;
+        std::size_t lit = 0;
+        for (int y = barY0; y < barY1; ++y) {
+            for (int x = barX0; x < barX1; ++x) {
+                const Rgb colour = unpackRgb(frame.pixels()[frame.index(x, y)]);
+                const float lo = std::min({colour.r, colour.g, colour.b});
+                const float hi = std::max({colour.r, colour.g, colour.b});
+                if (hi - lo > 0.3F) {
+                    ++lit;
+                }
             }
         }
-        return red;
+        return lit;
     };
     CHECK(litPixels(100) > litPixels(50));
     CHECK(litPixels(50) > litPixels(10));
     CHECK(litPixels(0) == 0);
+}
+
+TEST_CASE("the health bar's own colour answers danger at a glance, not just the segment count") {
+    // TASK #4 OF THE HARDENING BRIEF: full health and near-death used to
+    // render identically -- a fixed red bar regardless of the number behind
+    // it. This is the glance test: sample the leftmost filled segment (the
+    // one pixel every fill level from 1 to 100 lights) and check its own
+    // colour, not merely whether it is lit.
+    const auto firstSegmentColour = [](int health) {
+        Framebuffer frame(320, 180);
+        frame.clear(Rgb{0.0F, 0.0F, 0.0F});
+        HudState hud;
+        hud.health = health;
+        drawHud(frame, hud);
+        // The bar's own top-left corner interior, one pixel in from the
+        // frame border drawHealth() paints -- see its own header on the
+        // margin()/scale() geometry this mirrors. Always inside segment 0
+        // for any health > 0, at every resolution hudScale() can produce.
+        const int scale = std::max(1, frame.height() / 180);
+        const int x = 6 * scale + 1;
+        const int y = frame.height() - 6 * scale - 6 * scale + 1;
+        return unpackRgb(frame.pixels()[frame.index(x, y)]);
+    };
+    const Rgb full = firstSegmentColour(100);
+    const Rgb dying = firstSegmentColour(4);
+    INFO("full: (", full.r, ", ", full.g, ", ", full.b, ")  dying: (", dying.r, ", ", dying.g,
+         ", ", dying.b, ")");
+    // Full health reads GREENER than red (g outweighs r); near death reads
+    // the other way round -- the near-universal genre convention the brief
+    // asks for, checkable without pinning the exact gradient stops.
+    CHECK(full.g > full.r);
+    CHECK(dying.r > dying.g);
+    // And the two are not the same colour -- the gradient actually moves.
+    CHECK((full.r != dying.r || full.g != dying.g || full.b != dying.b));
 }
 
 TEST_CASE("the compass names the direction the body is facing") {
