@@ -126,9 +126,25 @@ inline constexpr std::int32_t kQuayApproachY = 60;
 /// on it now: the whole of the +120 is on z21 and not one tile of it is
 /// anywhere else, which is what says the change stopped a FALL rather than
 /// opening a door.
-inline constexpr std::int32_t kReachableFromSpawn = 17054;
+/// RE-DERIVED for the archetype-diversity pass (Docks building material/height/roof-cap
+/// pass): only kReachableFromSpawn and kReachableOnMidSlope moved (-132 and -132 tiles;
+/// Quayside/Upper/BelowQuay did not move by one tile). The cause is entirely roof-cap
+/// authoring in tools/scripts/gen_docks_surface.py: the workshop/industrial and market
+/// buckets lost roof caps they used to have (K06/K07-main/K07-lean-to/K09/K20/K22/K23 --
+/// "no roof cap, reinforce openness" is the deliberate bucket rule), which converts those
+/// roof cells from standable FLOOR to open air; the shop bucket partly offsets this by
+/// gaining roof caps it never had (K02/K26/K27/K28). Net: 933 fewer standable cells on the
+/// mid-slope band (see kStandableOnMidSlope below -- same delta, verified by direct area
+/// arithmetic over every changed rect: 1,118 sq. tiles of roof removed, 185 sq. tiles added,
+/// net -933), of which only 132 had been reachable from the spawn by ordinary walking in the
+/// first place -- the rest were already same-z-isolated roof decks by design (see the S5
+/// section below). test_ward_actors.cpp -- the suite that actually covers actor home/job
+/// reachability -- is UNCHANGED and green: no actor's home or job route crosses any of these
+/// roof cells, so this is a district-wide walkability-audit number moving for a documented
+/// reason, not a sealed route.
+inline constexpr std::int32_t kReachableFromSpawn = 16922;
 inline constexpr std::int32_t kReachableOnQuayside = 11089;
-inline constexpr std::int32_t kReachableOnMidSlope = 3043;
+inline constexpr std::int32_t kReachableOnMidSlope = 2911;
 inline constexpr std::int32_t kReachableOnUpper = 2031;
 /// Under the piers and down at the strand — one level below the quay.
 inline constexpr std::int32_t kReachableBelowQuay = 891;
@@ -136,7 +152,7 @@ inline constexpr std::int32_t kReachableBelowQuay = 891;
 /// Tiles a body can stand on, per band, over the whole district. S1: 11,310 /
 /// 7,369 / 3,901, before the doorway lintels counted as standable.
 inline constexpr std::int32_t kStandableOnQuayside = 11432;
-inline constexpr std::int32_t kStandableOnMidSlope = 7459;
+inline constexpr std::int32_t kStandableOnMidSlope = 6526;
 inline constexpr std::int32_t kStandableOnUpper = 3921;
 
 // --- S5: the roofs ----------------------------------------------------------
@@ -187,7 +203,12 @@ inline constexpr std::int32_t kStandableOnRoofs = 1706;
 /// mutation that guts PlayerBody::mantle's stair clause turns those red while
 /// leaving the three reachability counts green. That asymmetry is the reason
 /// this paragraph exists.
-inline constexpr std::int32_t kReachableWithRoofMoves = 24960;
+/// RE-DERIVED alongside kReachableFromSpawn above, same cause, same -933: every one of
+/// those roof cells was already counted here (a roof move only ever ADDS to the walk-only
+/// number), so removing them moves this number by the identical amount. Nothing on the
+/// compound roof-slum plane (kStandableOnRoofs, kRoofReachableOnRoofs) or the upper band
+/// moved at all -- this pass never touched a compound.
+inline constexpr std::int32_t kReachableWithRoofMoves = 24027;
 inline constexpr std::int32_t kRoofReachableOnUpper = 3864;
 inline constexpr std::int32_t kRoofReachableOnRoofs = 1664;
 

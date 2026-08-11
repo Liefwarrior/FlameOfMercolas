@@ -195,9 +195,14 @@ TEST_CASE("docks_surface loads completely") {
 
     // --- FORM lane ---------------------------------------------------------
     const auto forms = histogram(world.byteLane(kFormLane));
+    // Rebaked by the archetype-diversity pass: several buildings' roof-cap frect() calls were
+    // added or removed (a workshop/market bucket losing its roof, a shop bucket gaining one it
+    // never had) -- FLOOR <-> OPEN cells at the roof z-slice, no footprint/wall change, which is
+    // exactly why Wall/Ramp/Stair/Void below are untouched but Open/Floor moved by the same
+    // 933-cell delta in opposite directions.
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Void)) == 1179648);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Open)) == 91887);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Floor)) == 29410);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Open)) == 92820);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Floor)) == 28477);
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Wall)) == 271785);
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Ramp)) == 82);
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Stair)) == 52);
@@ -223,14 +228,22 @@ TEST_CASE("docks_surface loads completely") {
     }
     // 15 distinct materials, reading correctly as a docks district: granite
     // dominant, then dirt, then reman concrete and brick.
+    // Rebaked by the archetype-diversity pass: material moved on ~20 buildings (see
+    // gen_docks_surface.py's own "Archetype pass" comments), so these histogram counts moved
+    // too -- distinct material COUNT stays 15 (every id below was already in use somewhere in
+    // the ward; the pass repainted existing materials onto more/fewer cells, it never
+    // introduced a material id the ward hadn't already used). thatch drops the most (multiple
+    // roof caps removed for the workshop/market buckets, which the DoD's bucket table calls
+    // for); brick and oak rise the most (new/changed roof caps and wall swaps in the shop
+    // bucket); dirt/reman_concrete/ash are untouched -- nothing in this pass painted them.
     CHECK(materials.size() == 15);
-    CHECK(materials.at(fx::kMaterialGranite) == 178421);
+    CHECK(materials.at(fx::kMaterialGranite) == 178385);
     CHECK(materials.at(fx::kMaterialDirt) == 102876);
     CHECK(materials.at(fx::kMaterialRemanConcrete) == 6234);
-    CHECK(materials.at(fx::kMaterialBrick) == 5019);
-    CHECK(materials.at(fx::kMaterialOak) == 2722);
-    CHECK(materials.at(fx::kMaterialThatch) == 2679);
-    CHECK(materials.at(fx::kMaterialTrudgeonWood) == 2449);
+    CHECK(materials.at(fx::kMaterialBrick) == 5555);
+    CHECK(materials.at(fx::kMaterialOak) == 2795);
+    CHECK(materials.at(fx::kMaterialThatch) == 1551);
+    CHECK(materials.at(fx::kMaterialTrudgeonWood) == 2051);
     CHECK(materials.at(fx::kMaterialAsh) == 86);
     for (const auto& [id, count] : materials) {
         CHECK(id < fx::kMaterialCount);

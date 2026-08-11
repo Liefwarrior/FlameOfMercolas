@@ -42,17 +42,25 @@ struct BakedWorldFacts {
     std::uint64_t wrldUncompressedLen;
 };
 
+// Rebaked by the archetype-diversity pass (Docks building-material/height/roof-cap pass):
+// gen_docks_surface.py changed material/height/roof-cap authoring on ~20 of the ward's ~35
+// non-compound buildings (see tools/scripts/gen_docks_surface.py's own per-building "Archetype
+// pass" comments), then content/maps/src/docks_surface.tmx was regenerated and re-baked via
+// `import-map`. Only the WRLD-affecting facts below moved; META (dimensions, rawsFingerprint)
+// did not, because the raws themselves are unchanged -- only which existing materials get
+// painted where, and several roof-cap frect() calls were added or removed (FLOOR<->OPEN, not a
+// footprint change, so chunk shape/count are identical too).
 inline constexpr BakedWorldFacts kDocksSurface{
     /*name=*/"docks_surface",
-    /*fileBytes=*/17695,
+    /*fileBytes=*/17709,
     /*chunksX=*/8,
     /*chunksY=*/6,
     /*chunksZ=*/4,
     /*chunkCount=*/192,
     /*metaCrc32c=*/0x12FBB6D6u,
-    /*wrldCrc32c=*/0x7E6E9738u,
+    /*wrldCrc32c=*/0x39F6DAA0u,
     /*metaUncompressedLen=*/77,
-    /*wrldUncompressedLen=*/86436,
+    /*wrldUncompressedLen=*/86076,
 };
 
 inline constexpr BakedWorldFacts kTavernFixture{
