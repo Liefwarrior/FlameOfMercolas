@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <string_view>
 
 #include "granadad/render/framebuffer.hpp"
@@ -9,6 +10,88 @@
 namespace granadad::render {
 
 namespace {
+
+// INNOVATION SPRINT ITEM #4. THE VOID GETS SOME ANCHORING. drawCreation()
+// used to clear straight to near-black and hand the whole frame to
+// drawDialogue(), which only ever fills the top ~15% and bottom ~40% or so
+// with its own two bands -- the same "70% flat true-black void" the brief
+// names, with nothing at all designed for the space between them. That black
+// is not the problem and is not changing (docs/design/DECISIONS.md's own art
+// register: "true black voids in unbuilt/unlit space" is this build's
+// settled muse) -- the problem is that nothing else this game's world ever
+// draws over that black without ALSO drawing the one thing that makes it
+// read as deliberate: "warm torch/brazier light pools cutting through the
+// black" (DECISIONS.md, verbatim). WorldRenderer's own lamps use
+// {1.00, 0.58, 0.24}-ish warm colours for exactly this (lighting.cpp's
+// kFireColour); this screen has no lamp and no WorldRenderer, so the same
+// warmth is painted here by hand, once, as a soft radial pool behind the
+// options the player is actually reading -- plus a thin bronze frame border
+// in dialogue_view.cpp's own kEdge tone, the identical "this was built, not
+// left blank" cue every panel edge in this game already carries.
+//
+// BOTH ARE STATIC. `state.openAmount` stays 1.0 with no easing, exactly as
+// creation.cpp's own header already argues -- "there is nothing for it to
+// ease from and no world underneath it to reveal" -- and this treatment
+// follows that reasoning exactly: it is not a transition, it is the room's
+// own furniture, so it is painted once a frame and never animated.
+//
+// KEPT DIM ON PURPOSE. The character options -- NAME, LOOK, the skill and
+// attribute rows -- are the actual content of this screen, and drawDialogue
+// draws them last, on top of this. Both the pool and the border sit well
+// under the panel's own text alpha (0.94-0.98F elsewhere in this file) so
+// neither competes with a word.
+[[nodiscard]] Rgb voidLightPoolColour() noexcept { return Rgb{1.00F, 0.58F, 0.24F}; }
+[[nodiscard]] Rgb voidBorderColour() noexcept { return Rgb{0.44F, 0.40F, 0.31F}; }
+
+void drawVoidAnchor(Framebuffer& target) {
+    const int width = target.width();
+    const int height = target.height();
+    const int scale = std::max(1, height / 180);
+
+    // THE LIGHT POOL: a soft, warm radial falloff centred on the frame, the
+    // way a brazier's own glow pools rather than cutting a hard edge. Kept
+    // well short of the corners (radius a little under half the shorter
+    // side) so it reads as light falling on the middle of the room and never
+    // reaches the panel bands drawDialogue paints over the top and bottom
+    // edges. Squared falloff (t*t) for a soft core that fades fast toward
+    // its own rim rather than a linear cone, and a peak alpha under a fifth
+    // of full strength -- restrained the same way the alert plate's own
+    // pulse and the brawl flash both are elsewhere this sprint, so a warm
+    // wash reads as "considered" rather than "a spotlight".
+    const float cx = static_cast<float>(width) * 0.5F;
+    const float cy = static_cast<float>(height) * 0.5F;
+    const float radius = static_cast<float>(std::min(width, height)) * 0.46F;
+    const Rgb pool = voidLightPoolColour();
+    constexpr float kPoolPeakAlpha = 0.16F;
+    for (int y = 0; y < height; ++y) {
+        const float dy = static_cast<float>(y) - cy;
+        for (int x = 0; x < width; ++x) {
+            const float dx = static_cast<float>(x) - cx;
+            const float dist = std::sqrt(dx * dx + dy * dy);
+            const float t = std::clamp(1.0F - dist / radius, 0.0F, 1.0F);
+            if (t <= 0.0F) {
+                continue;
+            }
+            target.blend(x, y, pool, kPoolPeakAlpha * t * t);
+        }
+    }
+
+    // THE FRAME: a thin bronze bezel a few pixels in from every edge, the
+    // same near-neutral tone dialogue_view.cpp's own panel edge (kEdge)
+    // already uses everywhere else this build draws a border. Deliberately
+    // NOT the panel's own bright picked-row gold -- this is furniture, not
+    // something to press a key on.
+    const int inset = 3 * scale;
+    const Rgb border = voidBorderColour();
+    constexpr float kBorderAlpha = 0.30F;
+    const int thickness = std::max(1, scale / 2);
+    target.fillRect(inset, inset, width - 2 * inset, thickness, border, kBorderAlpha);
+    target.fillRect(inset, height - inset - thickness, width - 2 * inset, thickness, border,
+                    kBorderAlpha);
+    target.fillRect(inset, inset, thickness, height - 2 * inset, border, kBorderAlpha);
+    target.fillRect(width - inset - thickness, inset, thickness, height - 2 * inset, border,
+                    kBorderAlpha);
+}
 
 /// "PRI"/"MAJ"/"MIN"/"-" rather than sim::skillDesignationName's full
 /// "Primary"/"Major"/"Minor"/"Undesignated" -- DISPLAY ONLY, this build's
@@ -435,6 +518,11 @@ void drawCreation(Framebuffer& target, const CreationFlow& flow) {
     // here as a deliberate backdrop and not an uncleared buffer -- this
     // screen has no world and no face to leave the middle open FOR.
     target.clear(Rgb{0.04F, 0.04F, 0.05F});
+    // INNOVATION SPRINT ITEM #4. THE VOID'S OWN ANCHORING, BEFORE THE PANEL.
+    // See drawVoidAnchor's own header. Drawn first so the panel's opaque top
+    // and bottom bands paint over whatever the pool and the border put under
+    // them, exactly as the world's own signage draws under the HUD.
+    drawVoidAnchor(target);
     drawDialogue(target, flow.view());
 }
 
