@@ -1,6 +1,7 @@
 #include "granadad/render/menu_view.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -32,16 +33,34 @@ struct Rect {
 };
 
 /// The panel's own frame: a near-opaque fill, a hairline edge, and -- for the
-/// one tile that currently has input focus -- a brighter, thicker border in
-/// the SAME accent colour drawPickHighlight already means "this one is
-/// selected" with everywhere else in this widget family. That reuse is
-/// deliberate: a player who has read one page of this game already knows
-/// what that colour means before they ever see four boxes at once.
-void drawPanelFrame(Framebuffer& target, const Rect& r, bool focused, int edgeScale, float fade) {
+/// tile that currently has (or is easing toward/away from) input focus -- a
+/// brighter, thicker border in the SAME accent colour drawPickHighlight
+/// already means "this one is selected" with everywhere else in this widget
+/// family. That reuse is deliberate: a player who has read one page of this
+/// game already knows what that colour means before they ever see four boxes
+/// at once.
+///
+/// INNOVATION SPRINT ITEM #2. `focusAmount` (0 unfocused .. 1 focused) used
+/// to be a bare bool, and border colour and thickness both switched on the
+/// exact step focus moved -- a hard cut every time PageNext/PagePrev stepped
+/// to a new tile. Both are interpolated off the SAME continuous amount now
+/// (Session eases it with a short render::EasedToggle -- see MenuTileState's
+/// own header on why it is snappy rather than leisurely), so a tile's border
+/// visibly grows in and brightens as focus arrives and does the reverse as it
+/// leaves, instead of the old on/off swap. `focusAmount` at exactly 0 or 1 --
+/// what a hand-built MenuTileState already means and what a settled frame
+/// always reaches -- draws bit-for-bit the same border the old bool gave.
+void drawPanelFrame(Framebuffer& target, const Rect& r, float focusAmount, int edgeScale,
+                    float fade) {
     target.fillRect(r.x, r.y, r.w, r.h, kPanel, 0.88F * fade);
-    const Rgb edgeColour = focused ? kTopicPicked : kEdge;
-    const float edgeAlpha = (focused ? 0.95F : 0.55F) * fade;
-    const int thickness = focused ? std::max(edgeScale, 2 * edgeScale) : edgeScale;
+    const float amount = std::clamp(focusAmount, 0.0F, 1.0F);
+    const Rgb edgeColour = lerp(kEdge, kTopicPicked, amount);
+    const float edgeAlpha = (0.55F + 0.40F * amount) * fade;
+    // Unfocused is edgeScale, focused is 2*edgeScale -- the exact two values
+    // the old bool switch drew, now the two ends of a lerp instead of a jump.
+    const int thickness =
+        std::max(edgeScale, static_cast<int>(std::round(static_cast<float>(edgeScale) *
+                                                        (1.0F + amount))));
     target.fillRect(r.x, r.y, r.w, thickness, edgeColour, edgeAlpha);
     target.fillRect(r.x, r.y + r.h - thickness, r.w, thickness, edgeColour, edgeAlpha);
     target.fillRect(r.x, r.y, thickness, r.h, edgeColour, edgeAlpha);
@@ -186,9 +205,9 @@ void drawLetterBody(Framebuffer& target, const Rect& r, int margin, int bodyTop,
 }
 
 void drawTile(Framebuffer& target, const Rect& r, const DialogueViewState& view, bool focused,
-             int edgeScale, int headerScale, int bodyScale, float phase, float fade,
-             bool showProse) {
-    drawPanelFrame(target, r, focused, edgeScale, fade);
+             float focusAmount, int edgeScale, int headerScale, int bodyScale, float phase,
+             float fade, bool showProse) {
+    drawPanelFrame(target, r, focusAmount, edgeScale, fade);
     if (!view.open) {
         return;
     }
@@ -259,18 +278,18 @@ void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
     // letter is picked, as that document's own first line of body text, via
     // `view.letter`'s own branch in drawTile -- this flag only governs the
     // TITLE-LIST state.
-    drawTile(target, characterRect, state.character, state.focus == kMenuFocusCharacter, edgeScale,
+    drawTile(target, characterRect, state.character, state.focus == kMenuFocusCharacter,
+             state.characterFocus, edgeScale, headerScale, bodyScale, state.phase, fade, false);
+    drawTile(target, mapRect, state.map, state.focus == kMenuFocusMap, state.mapFocus, edgeScale,
              headerScale, bodyScale, state.phase, fade, false);
-    drawTile(target, mapRect, state.map, state.focus == kMenuFocusMap, edgeScale, headerScale,
-             bodyScale, state.phase, fade, false);
-    drawTile(target, lettersRect, state.letters, state.focus == kMenuFocusLetters, edgeScale,
-             headerScale, bodyScale, state.phase, fade, false);
+    drawTile(target, lettersRect, state.letters, state.focus == kMenuFocusLetters,
+             state.lettersFocus, edgeScale, headerScale, bodyScale, state.phase, fade, false);
     // JOURNAL: full width along the bottom, the tile with the most room, and
     // the one whose prose (the hook, the ward's dread, a picked lead's own
     // found/detail text, its dateline) is the actual point of the page -- so
     // it keeps showing it, wrapped to two lines and marked when cut.
-    drawTile(target, journalRect, state.journal, state.focus == kMenuFocusJournal, edgeScale,
-             headerScale, bodyScale, state.phase, fade, true);
+    drawTile(target, journalRect, state.journal, state.focus == kMenuFocusJournal,
+             state.journalFocus, edgeScale, headerScale, bodyScale, state.phase, fade, true);
 }
 
 }  // namespace granadad::render

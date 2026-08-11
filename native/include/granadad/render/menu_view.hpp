@@ -91,6 +91,28 @@ struct MenuTileState {
     /// The panel's own small motion, so the focused tile's row highlight
     /// breathes exactly the way a conversation's own picked topic does.
     float phase = 0.0F;
+
+    // --- INNOVATION SPRINT (item #2): the focus swap eases, not snaps -----
+    //
+    // drawPanelFrame() used to pick its border colour and thickness off a
+    // bare `focused` bool -- an instant cut the moment PagePrev/PageNext
+    // moved focus from one tile to another. Each tile now carries its OWN
+    // 0 (not focused) .. 1 (focused) amount instead of that bool, eased by
+    // Session with a SHORT, SNAPPY render::EasedToggle -- quick enough to
+    // feel responsive rather than sluggish, but never an instant swap. See
+    // Session's own focus-anim fields for why each tile gets its own
+    // instance rather than one shared value: all four can be mid-transition
+    // at once during a fast double-tap of the bumper, and a shared value
+    // would make the tile losing focus and the tile gaining it animate in
+    // lockstep instead of independently.
+    //
+    // DEFAULTS MATCH `focus` ABOVE'S OWN DEFAULT (Journal), so a hand-built
+    // state that never heard of this draws the identical hard-edged border
+    // every pre-existing caller and test already expects.
+    float characterFocus = 0.0F;
+    float mapFocus = 0.0F;
+    float lettersFocus = 0.0F;
+    float journalFocus = 1.0F;
 };
 
 /// Draws all four tiles at once: Character top-left, Map top-centre, Letters
