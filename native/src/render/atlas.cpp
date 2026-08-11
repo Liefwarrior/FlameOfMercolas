@@ -365,9 +365,14 @@ TileAtlas TileAtlas::load(const std::filesystem::path& contentDir) {
         }
     }
 
-    // The three facade materials carry no art of their own; the pack's own
-    // notes say so. Point them at the material they face, which is what a
-    // facade IS, rather than at the missing-texture chequer.
+    // Historically the three facade materials carried no art of their own, so this aliased
+    // them onto the material they face -- what a facade IS, absent anything better. The pack
+    // now carries its own distinct pediment/pilaster-trimmed region per facade material (see
+    // art-mapping.json's "materials" entries and its notes field), bound by the loop above
+    // exactly like any other material. This alias is therefore now a FALLBACK ONLY: it must
+    // never clobber a face slot the pack itself already filled, or a future authored facade
+    // sprite would render as its plain base material with nothing to catch the regression --
+    // silently the same bug this whole fix exists to close.
     const auto alias = [&atlas](std::string_view facade, std::string_view base) {
         std::size_t facadeIndex = kMaterialCount;
         std::size_t baseIndex = kMaterialCount;
@@ -383,7 +388,9 @@ TileAtlas TileAtlas::load(const std::filesystem::path& contentDir) {
             return;
         }
         for (std::size_t f = 0; f < kFaceKindCount; ++f) {
-            atlas.byMaterialFace_[facadeIndex][f] = atlas.byMaterialFace_[baseIndex][f];
+            if (atlas.byMaterialFace_[facadeIndex][f].empty()) {
+                atlas.byMaterialFace_[facadeIndex][f] = atlas.byMaterialFace_[baseIndex][f];
+            }
         }
     };
     alias("brick_facade", "brick");

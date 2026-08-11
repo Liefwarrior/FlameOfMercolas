@@ -93,6 +93,11 @@ RAMPS = {
     "lightstone_shards":          ("N0", "V2", "V4", "B2"),
     "ice":                        ("C2", "C3", "C4", "B2"),
     "water":                      ("C1", "C2", "C3", "C4"),
+    # Facade materials: a grander/lighter tint step off their base material's own ramp, so a
+    # facade reads as distinct even before the pediment/pilaster structural trim is counted.
+    "granite_facade":             ("N0", "G2", "G3", "B1"),   # a shade lighter than granite
+    "brick_facade":               ("N0", "R2", "R3", "B1"),   # brighter red + pale coping
+    "reman_facade":               ("G3", "B1", "B2", "Y1"),   # warm travertine/gold cue
 }
 
 MATS = [
@@ -101,6 +106,15 @@ MATS = [
     "phorys", "reman_concrete", "steel", "thatch", "trudgeon_wood",
     "trudgeon_wood@getilia_soak",
 ]
+
+# The 3 civic-facade materials (content/raws/materials/{granite,brick,reman}_facade.json):
+# physical clones of their base material, minted purely as distinct art-resolution keys
+# (Art register FIFTH revision). Until now this pack had zero regions for them, so
+# atlas.cpp's own fallback silently aliased all three back to their plain base material --
+# a civic building's street-facing facade rendered pixel-identical to a plain wall. WALL-only
+# (a facade has no floor/ramp/stair of its own -- see facade_forms_json below), so they are
+# NOT in MATS/ROLE_VARIANTS' full 5-role sweep, just their own single "face" region.
+FACADE_MATS = ["granite_facade", "brick_facade", "reman_facade"]
 
 ROLE_VARIANTS = {"floor": 4, "face": 3, "top": 3, "ramp": 2, "stair": 2}
 
@@ -398,6 +412,36 @@ def st_running_bond(g, r, y0=2, y1=14, course_h=3):
             dline_h(g, r, ye + 1 if False else ye, 3, 0)  # no-op keeps stream stable
         yy = ye + 1
         ci += 1
+
+
+def st_pediment_trim(g, r, y0=2, y1=14, col_period=5):
+    """Facade materials' own distinct trim, layered on top of the base material's ordinary
+    coursing (rule: even a tint/pattern variant of the base .face region counts as distinct
+    -- this is a genuine pattern change, not just a tint). A light cornice/entablature band
+    just under the rim, plus regularly spaced fluted pilasters, is the cheapest pixel-legible
+    "grand civic frontage" cue -- the read a pedimented colonnade needs at 16px."""
+    dline_h(g, r, y0, 3, 100)
+    dline_h(g, r, y0 + 1, 3, 55)
+    off = r.rint(0, col_period - 1)
+    for x in range(off, T, col_period):
+        dline_v(g, r, x, 3, 85, y0 + 2, y1)
+        if x + 1 < T:
+            dline_v(g, r, x + 1, 0, 45, y0 + 2, y1)
+
+
+def st_granite_facade(g, r):
+    st_courses(g, r, y0=2, y1=14, course_h=4)
+    st_pediment_trim(g, r, col_period=5)
+
+
+def st_brick_facade(g, r):
+    st_running_bond(g, r, y0=2, y1=14)
+    st_pediment_trim(g, r, col_period=4)
+
+
+def st_reman_facade(g, r):
+    st_courses(g, r, y0=2, y1=14, course_h=5, joint_pct=55, mid_pct=20)
+    st_pediment_trim(g, r, col_period=6)
 
 
 def st_strata(g, r, y0=0, y1=15, gap=(3, 4), line_idx=0, amp=1, pct=70):
@@ -940,6 +984,20 @@ MOTIFS = {
         face=st_ice_face,
         face_d=dt_glints(n=3, noise=4),
     ),
+    # Facade materials: WALL-only (see FACADE_MATS above) -- no floor/ramp/stair/top entries,
+    # so only "face" and "face_d" are ever read for these three.
+    "granite_facade": dict(
+        face=st_granite_facade,
+        face_d=dt_stone(chips=2, cracks=1, noise=6),
+    ),
+    "brick_facade": dict(
+        face=st_brick_facade,
+        face_d=dt_noise(7, 1, 2),
+    ),
+    "reman_facade": dict(
+        face=st_reman_facade,
+        face_d=dt_stone(chips=2, cracks=1, noise=10),
+    ),
 }
 
 
@@ -1035,6 +1093,8 @@ def region_inventory():
             inv[f"{m}.face.a{b}"] = ("face", m, f"{m}#a{b}", 3)
             inv[f"{m}.floor.a{b}"] = ("floor", m, f"{m}#a{b}", 4)
             inv[f"{m}.top.a{b}"] = ("top", m, f"{m}#a{b}", 3)
+    for m in FACADE_MATS:
+        inv[f"{m}.face"] = ("face", m, m, ROLE_VARIANTS["face"])
     inv["water"] = ("water", None, "water", 4)
     inv["missing"] = ("missing", None, None, 1)
     return inv
@@ -1116,7 +1176,10 @@ def build_sheet():
             rendered[(col, row)] = (name, vi, None if is_rgb else g)
             idx += 1
         cells[name] = coords
-    assert idx == 311, f"expected 311 cells, packed {idx}"
+    # 311 base cells + 9 facade cells (3 materials x ROLE_VARIANTS["face"]=3) = 320, which is
+    # exactly COLS*ROWS -- the facade regions land in the sheet's last remaining cells with no
+    # resize needed.
+    assert idx == 320, f"expected 320 cells, packed {idx}"
     return img, cells, names, inv, rendered
 
 
@@ -1140,6 +1203,16 @@ def material_forms_json(m):
     return lines
 
 
+def facade_forms_json(m):
+    """Facade materials are WALL-only -- block/wall forms pointing at the facade's own
+    region, no floor/ramp/stair (they never appear as floor/ramp/stair, only as a wall a
+    building's frontage is built from)."""
+    lines = []
+    lines.append('        "block": { "byAppearance": ["%s.face"] },' % m)
+    lines.append('        "wall":  { "byAppearance": ["%s.face"] }' % m)
+    return lines
+
+
 def jarr(strings):
     return "[" + ", ".join('"%s"' % s for s in strings) + "]"
 
@@ -1159,7 +1232,10 @@ def write_mapping(cells, names):
       "ruling 5, an overlay tint not a sheet pixel); glowstone.minLight kept. The wall form "
       "key deliberately duplicates block: block is JsonTileArtResolver's DEFAULT_FORM "
       "fallback and the safest default for unknown future forms. <mat>.top regions are on the "
-      'sheet but unmapped - reserved inventory (legal per TILE-ART-SPEC section 7.2).",')
+      "sheet but unmapped - reserved inventory (legal per TILE-ART-SPEC section 7.2). The "
+      "3 civic-facade materials (granite_facade/brick_facade/reman_facade) are WALL-only: "
+      "block/wall forms only, no floor/ramp/stair -- each carries its own distinct pediment/"
+      'pilaster-trimmed face region rather than aliasing its base material.",')
     a('  "atlas": "art/custom/tiles.png",')
     a('  "tilePx": 16,')
     a('  "sheet": { "columns": %d, "rows": %d },' % (COLS, ROWS))
@@ -1174,16 +1250,20 @@ def write_mapping(cells, names):
         a('    "%s": [%s]%s' % (name, pairs, comma))
     a("  },")
     a('  "materials": {')
-    for i, m in enumerate(MATS):
+    all_mats = MATS + FACADE_MATS
+    for i, m in enumerate(all_mats):
         a('    "%s": {' % m)
         if m == "chromatis":
             a('      "heatGlowTint": "#E8842A",')
         if m == "glowstone":
             a('      "minLight": 8,')
         a('      "forms": {')
-        out.extend(material_forms_json(m))
+        if m in FACADE_MATS:
+            out.extend(facade_forms_json(m))
+        else:
+            out.extend(material_forms_json(m))
         a("      }")
-        a("    }" + ("," if i < len(MATS) - 1 else ""))
+        a("    }" + ("," if i < len(all_mats) - 1 else ""))
     a("  },")
     a('  "fluids": {')
     a('    "water": { "region": "water", "depthAlphaQ8": [0, 96, 120, 144, 168, 192, 216, 240] }')
@@ -1208,8 +1288,8 @@ def validate(img, cells, names, inv, rendered):
                 errors.append(f"off-palette pixel at ({x},{y}): {px[x, y]}")
                 break
     total = sum(len(v) for v in cells.values())
-    if total != 311:
-        errors.append(f"cell count {total} != 311")
+    if total != 320:
+        errors.append(f"cell count {total} != 320")
     # per-cell rules
     for (col, row), (name, vi, g) in sorted(rendered.items(),
                                             key=lambda kv: (kv[0][1], kv[0][0])):
