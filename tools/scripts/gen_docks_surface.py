@@ -174,6 +174,30 @@ def shell(z, x0, y0, x1, y1, wall, floor=None, doors=(), skip_sides=()):
         _record_door(z, x0, y0, x1, y1, dx, dy)
 
 
+def facade_frontage(z, x0, y0, x1, y1, side, facade_gid, floor_gid):
+    """Archetype pass (civic/authority bucket): overwrite ONE border wall run of an
+    already-shelled building with a civic-facade material and re-open whatever door cells
+    that run already has. Generalizes the K01/K12/K17 "trect the frontage, then re-punch its
+    doors" idiom to buildings whose doors=[...] list only gave shell() ONE cell and let
+    _second_door_cell auto-widen it (K21/K34/K36) -- rather than hand-guess which side the
+    widener picked, this scans the run for cells already open (0) BEFORE painting, so
+    whatever shell() actually punched reopens exactly, auto-widened cell included."""
+    if side == "n":
+        rx0, ry0, rx1, ry1 = x0, y0, x1, y0
+    elif side == "s":
+        rx0, ry0, rx1, ry1 = x0, y1, x1, y1
+    elif side == "w":
+        rx0, ry0, rx1, ry1 = x0, y0, x0, y1
+    else:
+        rx0, ry0, rx1, ry1 = x1, y0, x1, y1
+    openings = [(x, y) for y in range(ry0, ry1 + 1) for x in range(rx0, rx1 + 1)
+                if T[z][y][x] == 0]
+    trect(z, rx0, ry0, rx1, ry1, facade_gid)
+    for (x, y) in openings:
+        T[z][y][x] = 0
+        F[z][y][x] = floor_gid
+
+
 def mk(z, cls, name, tx, ty, **props):
     MK[z].append((cls, name, tx * 16 + 8, ty * 16 + 8, props))
 
@@ -606,7 +630,8 @@ for (px, py) in ((82, 14), (93, 14), (82, 20), (93, 20), (87, 17)):  # pilings
     T[10][py][px] = TRUDGEON_WALL
     FL[9][py][px] = 0
     FL[10][py][px] = 0
-frect(12, 82, 14, 93, 25, TRUDGEON_FLOOR)                     # roof
+# Archetype pass (workshop/industrial bucket): no roof cap -- an open boathouse deck,
+# consistent with K06/K07/K09/K23 (the old TRUDGEON_FLOOR cap here is removed).
 mk(11, "script_anchor", "merle_liftfloor_anchor", 86, 20)
 mk(11, "script_anchor", "dungeon_seam_merles_floor", 87, 21)  # seam stub: marker only
 mk(11, "script_anchor", "business_k20_merles_anchor", 88, 18)
@@ -775,7 +800,9 @@ for (px, py) in PIT:
 T[10][40][137] = OAK_STAIR_UP
 T[11][40][137] = OAK_STAIR_DOWN
 mk(10, "script_anchor", "sawpit_anchor", 137, 41)
-frect(12, 136, 36, 147, 46, TRUDGEON_FLOOR)   # workshop roof
+# Archetype pass (workshop/industrial bucket): no roof cap -- the bucket's open working-yard
+# read (saw pit, timber store) is reinforced by leaving the shed genuinely open to the sky,
+# same as K09/K20/K23 below; the old TRUDGEON_FLOOR cap here made it read like a sealed shop.
 # Timber store yard: fence, gates, log-stack rows.
 # S6 fix (World route audit 2026-07-24, Eli's bug 4): the three full-width stack
 # rows (x151-158, fence at x150/x159) sealed every aisle south of y38 -- the y40-41
@@ -887,10 +914,14 @@ mk(11, "script_anchor", "clue_c2_weighhouse_ledger", 68, 37)
 
 # K02 Impound Yard (steel spike fence, watchman shed, crates, dog) -- 13x6,
 # shares the Weighhouse's new west edge and abuts its south wall
-border(11, 56, 53, 68, 58, STEEL_WALL)
+border(11, 56, 53, 68, 58, STEEL_WALL)   # spike fence stays steel -- a security fence,
+#                                          not the yard's own building, exempt from the bucket
 for g in ((62, 53), (63, 53)):
     T[11][g[1]][g[0]] = 0
-shell(11, 56, 55, 59, 58, OAK_WALL, DIRT_FLOOR, doors=[(59, 56)])
+# Archetype pass (warehouse/storage bucket): the watchman shed's own wall moves off oak onto
+# brick, and gets a flat brick roof cap it never had (matching K12/K29's monolithic look).
+shell(11, 56, 55, 59, 58, BRICK_WALL, DIRT_FLOOR, doors=[(59, 56)])
+frect(12, 56, 55, 59, 58, BRICK_FLOOR)
 cells(11, [(64, 55), (66, 57), (67, 54)], OAK_WALL)
 mk(11, "script_anchor", "business_k02_impound_anchor", 63, 56)
 mk(11, "script_anchor", "impound_dog_anchor", 60, 57)
@@ -938,12 +969,17 @@ mk(11, "script_anchor", "patron_seat_gull_05_anchor", 119, 40)
 mk(11, "script_anchor", "patron_seat_gull_06_anchor", 121, 40)
 
 # K04 The Bilge (mid tavern + hammock loft) -- 12x10
-shell(11, 100, 34, 111, 43, TRUDGEON_WALL, OAK_FLOOR, doors=[(105, 34), (106, 34)])
-trect(11, 103, 37, 107, 37, _furn(FURN_BOARD, TRUDGEON_WALL))   # bar
-cells(11, [(101, 40), (109, 40)], _furn(FURN_BOARD, TRUDGEON_WALL))   # tables
+# Archetype pass (tavern/inn bucket, Eli's bucket table): K03 The Gilded Gull already set
+# the district's tavern rule -- granite ground floor, oak upper floor, thatch roof. K04 was
+# the odd one out (trudgeon both floors); brought into line so the 3 taverns read as one
+# building type. The bar/table furniture no longer needs the trudgeon dodge (_furn's alt
+# substitution existed only to keep FURN_BOARD off a trudgeon wall it would blend into).
+shell(11, 100, 34, 111, 43, GRANITE_WALL, OAK_FLOOR, doors=[(105, 34), (106, 34)])
+trect(11, 103, 37, 107, 37, FURN_BOARD)             # bar
+cells(11, [(101, 40), (109, 40)], FURN_BOARD)       # tables
 cells(11, [(104, 41), (105, 41)], GRANITE_WALL)     # hearth, back wall (design 3.1)
 T[11][41][109] = OAK_STAIR_UP
-shell(12, 100, 34, 111, 43, TRUDGEON_WALL, OAK_FLOOR)
+shell(12, 100, 34, 111, 43, OAK_WALL, OAK_FLOOR)
 cells(12, [(102, 37), (105, 37), (108, 37)], OAK_WALL)
 # Triple the hammock density (2026-07-15 interior-detail pass, design 5): 2 more post rows
 # mirroring the existing y37 row -- 3 posts -> 9, a genuinely crowded dive-bar loft.
@@ -987,9 +1023,9 @@ shell(11, 4, 82, 67, 90, TRUDGEON_WALL, DIRT_FLOOR,
       doors=[(4, 85), (4, 86), (67, 85), (67, 86)])
 cells(11, [(12, 85), (20, 86), (28, 85), (36, 86), (44, 85), (52, 86), (60, 85)],
       OAK_WALL)                                     # rope-laying posts
-frect(12, 4, 82, 67, 90, THATCH_FLOOR)
-shell(11, 60, 91, 66, 94, THATCH_WALL, DIRT_FLOOR, skip_sides=("n",))  # hemp lean-to
-frect(12, 60, 91, 66, 94, THATCH_FLOOR)             # DEV: lean-to roof (unspecified)
+# Archetype pass (workshop/industrial bucket): no roof cap (open shed, matches K06/K09/K20/K23);
+# the hemp lean-to's wall also moves off THATCH onto the bucket's trudgeon_wood.
+shell(11, 60, 91, 66, 94, TRUDGEON_WALL, DIRT_FLOOR, skip_sides=("n",))  # hemp lean-to
 mk(11, "script_anchor", "business_k07_ropewalk_anchor", 36, 85)
 
 # K08 Brann's Chandlery (+ the gray-ledger cellar) -- 8x9, THE flagged oversized
@@ -1010,7 +1046,8 @@ cells(11, [(27, 73)], _furn(FURN_STOCK, OAK_WALL))  # stockroom rope-coil pile
 shell(10, 26, 70, 30, 73, GRANITE_WALL, GRANITE_FLOOR)   # cellar carve (gray ledger)
 T[10][72][28] = OAK_STAIR_UP
 T[11][72][28] = OAK_STAIR_DOWN
-frect(12, 24, 66, 31, 74, THATCH_FLOOR)
+# Archetype pass (shop/trade-counter bucket): brick roof cap, not thatch (the bucket rule).
+frect(12, 24, 66, 31, 74, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k08_branns_anchor", 27, 69)
 mk(10, "script_anchor", "clue_brann_grayledger_anchor", 28, 71)
 mk(11, "light_source", "lamp_branns_door", 27, 65, luminance=14)
@@ -1022,7 +1059,10 @@ for gx in range(14, 18):
     T[11][36][gx] = 0                               # gate
 shell(11, 6, 44, 14, 49, TRUDGEON_WALL, DIRT_FLOOR, skip_sides=("n",))  # cauldron shed
 cells(11, [(9, 47), (12, 47)], GRANITE_WALL)        # cauldrons
-frect(12, 6, 44, 14, 49, BRICK_FLOOR)               # tile roof at the tar yard
+# Archetype pass (workshop/industrial bucket): no roof cap -- open working shed, consistent
+# with K06/K07/K20/K23. The border fence itself is already GETILIA_WALL (fireproofed
+# trudgeon_wood@getilia_soak), which is the bucket's own "where already used" exception --
+# left untouched.
 for bx in (20, 22, 24, 26, 28):                     # tar barrel grid
     for by in (40, 43, 46, 49, 52, 55):
         if (bx, by) != (24, 46):                    # aisle
@@ -1035,16 +1075,25 @@ mk(11, "script_anchor", "business_k09_pitchfield_anchor", 10, 46)
 for sy in (38, 42, 46):
     trect(11, 40, sy, 43, sy, TRUDGEON_WALL)
     trect(11, 48, sy, 50, sy, TRUDGEON_WALL)
-T[11][40][46] = GRANITE_WALL                        # auction block
+# Archetype pass (market/open-air stalls bucket): sparse trudgeon/oak posts only, no masonry
+# -- the auction block and fishmonger's well move off GRANITE_WALL onto the bucket's own
+# materials so the market reads as open stalls, not a walled structure.
+T[11][40][46] = OAK_WALL                            # auction block
 # Dressing pass (slab-clutter): a fishmonger's well, extra stall counters, and produce
 # crates in the empty south/margins; central x46 spine (muster->auction->anchor) stays clear.
-trect(11, 37, 47, 38, 48, GRANITE_WALL)             # fishmonger's well, SW corner
+trect(11, 37, 47, 38, 48, TRUDGEON_WALL)            # fishmonger's well, SW corner
 cells(11, [(53, 46), (53, 47), (37, 38), (37, 39), (44, 45), (45, 45)], TRUDGEON_WALL)  # extra fish stalls
 cells(11, [(40, 48), (41, 48), (48, 48), (49, 48), (51, 40), (51, 41), (40, 44), (41, 44)], OAK_WALL)  # produce crates
 mk(11, "script_anchor", "business_k10_dawnstalls_anchor", 46, 41)
 mk(11, "script_anchor", "muster_dawnstalls_anchor", 46, 37)
 
 # K11 Salt Row (gutting sheds + smokehouses) -- 16x9, same lot
+# Archetype pass (workshop/industrial bucket): the gutting sheds already match (trudgeon
+# wall, no roof cap -- open sheds). The two smokehouses deliberately stay GRANITE_WALL rather
+# than moving to trudgeon: each contains a live hearth (T[11][57][hx] below) and a smokehouse
+# built of timber around an open fire is the same real fire-safety problem the K27 bakery
+# and K13/rot-narrative comments above call out -- granite is the correct material for a
+# structure whose whole function is containing fire.
 for (sx0, sx1) in ((38, 41), (43, 46), (48, 51)):
     shell(11, sx0, 50, sx1, 53, TRUDGEON_WALL, DIRT_FLOOR, skip_sides=("n",))
 for (mx0, mx1, d, hx) in ((39, 42, (40, 54), 41), (47, 50, (48, 54), 49)):
@@ -1076,6 +1125,12 @@ mk(11, "script_anchor", "watch_bond_post_anchor", 90, 33)
 
 # K13 The Drowned Hold (condemned hulk; Gullet-only entry; no lamps) -- 12x21,
 # stays sprawling on purpose, trimmed 1-2 tiles off the old 13x23
+# Archetype pass (warehouse/storage bucket): deliberately EXEMPT from the bucket's brick/
+# brick_facade wall rule -- the whole building's identity is wood decay (rot gaps below, a
+# sagging NE quadrant, floor holes on the upper story, "condemned; officially empty 9
+# years"). Bricks don't rot or sag; converting this shell to brick would contradict its own
+# flavor text and undo the "roofless/decayed" read the bucket table explicitly says to keep.
+# Left byte-for-byte as authored.
 shell(11, 178, 34, 189, 54, TRUDGEON_WALL, doors=[(178, 49)])
 # PASS 9 (door standard): the rot gaps double as entries, so each gets a second
 # contiguous gap cell along its wall run ((184,34) / (187,54) -- (189,54) is the SE
@@ -1116,13 +1171,18 @@ for x in range(165, 173):                           # stockroom partition
     T[11][39][x] = OAK_WALL
 T[11][39][168] = 0
 T[11][39][169] = 0                                  # PASS 9: door standard (>=2 wide)
-frect(12, 164, 34, 173, 42, TRUDGEON_FLOOR)
+# Archetype pass (shop/trade-counter bucket): brick roof cap, distinct from the trudgeon
+# wall beneath it, per the bucket rule ("brick or oak, no thatch").
+frect(12, 164, 34, 173, 42, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k14_wrackhouse_anchor", 168, 37)
 mk(11, "script_anchor", "clue_wrackhouse_salvage_anchor", 170, 40)
 
 # K15 Fenner's Pawn (deliberately cramped; caged counter) -- 7x7, pushed BELOW
 # the new shop standard per the gazetteer's own "deliberately cramped" language
-shell(11, 122, 52, 128, 58, BRICK_WALL, BRICK_FLOOR, doors=[(125, 52)])
+# Archetype pass (shop/trade-counter bucket): wall off BRICK_WALL onto trudgeon_wood -- brick
+# was reading as the K12/K29 warehouse bucket's own material; the interior BRICK_FLOOR and
+# the roof cap stay (both already satisfy "brick or oak, no thatch" for this bucket).
+shell(11, 122, 52, 128, 58, TRUDGEON_WALL, BRICK_FLOOR, doors=[(125, 52)])
 for x in range(123, 128):                           # cage partition with slot
     T[11][54][x] = STEEL_WALL
 T[11][54][125] = 0
@@ -1163,7 +1223,16 @@ for x in range(91, 98):                             # back room (the body)
     T[11][75][x] = OAK_WALL
 T[11][75][94] = 0
 T[11][75][95] = 0                                   # PASS 9: door standard (>=2 wide)
-frect(12, 82, 66, 98, 80, THATCH_FLOOR)
+# Archetype pass (civic/authority bucket): brick or granite roof cap, never thatch -- the
+# Mission is the one civic site that was still capped with a tavern/lodging material.
+# Scope note: the bucket also asks for "2 stories + roof"; K01 is the only civic site with a
+# genuine second-story SHELL (its own walls + a stair). Giving the Mission one too would mean
+# authoring new stairs and upper-floor content on a building with none today -- exactly the
+# kind of footprint/height change the DoD flags as a reachability risk (the historic 9.4%
+# actor-home disconnection bug came from a wall/height edit sealing a route). The safe,
+# deliberate fix here is the roof-cap material only; K17/K21/K34/K36 all keep their existing
+# single-story-plus-roof-slab silhouette.
+frect(12, 82, 66, 98, 80, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k17_mission_anchor", 88, 71)
 mk(11, "script_anchor", "mission_bunks_anchor", 85, 78)
 mk(11, "script_anchor", "clue_c1_mission_backroom", 94, 78)
@@ -1177,7 +1246,10 @@ mk(11, "light_source", "lamp_mission_night", 88, 65, luminance=22)
 mk(11, "script_anchor", "mission_garden_anchor", 81, 73)
 
 # K18 Squall's Bathhouse (real pooled water) -- 11x13
-shell(11, 102, 66, 112, 78, GRANITE_WALL, GRANITE_FLOOR, doors=[(107, 66), (108, 66)])
+# Archetype pass (shop/trade-counter bucket): wall off GRANITE_WALL onto oak -- the interior
+# GRANITE_FLOOR (wet-room floor), the STEEL_WALL boilers and the pooled water are untouched;
+# only the building's own street-facing shell moves to the bucket's material.
+shell(11, 102, 66, 112, 78, OAK_WALL, GRANITE_FLOOR, doors=[(107, 66), (108, 66)])
 cells(11, [(104, 75), (106, 75)], STEEL_WALL)       # boilers
 T[11][75][103] = GRANITE_WALL                       # hearth
 for y in range(69, 73):
@@ -1198,6 +1270,10 @@ mk(11, "script_anchor", "business_k19_rows_anchor", 109, 55)
 # K21 Saltgate Watch-Post (Band C: ground z13, roof z14) -- 10x10, unchanged;
 # becomes the Rise's HEAD garrison, paired with the new K34 at the foot
 shell(13, 62, 117, 71, 126, GRANITE_WALL, GRANITE_FLOOR, doors=[(71, 120), (71, 121)])
+# Archetype pass (civic/authority bucket): the east wall (x71) is the door-bearing street
+# frontage, facing Saltgate Rise -- give it the same pedimented-colonnade facade treatment
+# as K01/K17, so all 5 civic sites read as the ward's grandest bucket.
+facade_frontage(13, 62, 117, 71, 126, "e", GRANITE_FACADE_WALL, GRANITE_FLOOR)
 for y in range(118, 126):                           # cell partition
     T[13][y][64] = STEEL_WALL
 T[13][121][64] = 0
@@ -1211,8 +1287,10 @@ mk(13, "script_anchor", "gibbet_anchor", 80, 119)
 mk(13, "light_source", "lamp_watchpost_brazier", 73, 118, luminance=20)
 
 # K22 Netmenders' Arcade (leaky colonnade fronting Dawnstalls) -- 15x2
+# Archetype pass (market/open-air stalls bucket): posts only, no roof cap -- the bucket
+# rule ("none - reinforce openness") also happens to fit the "leaky" flavor text better than
+# the old continuous THATCH_FLOOR cap did (a full roof is not leaky).
 cells(11, [(38, 35), (41, 35), (45, 35), (48, 35), (52, 35)], OAK_WALL)
-frect(12, 38, 34, 52, 35, THATCH_FLOOR)
 mk(11, "script_anchor", "business_k22_netmenders_anchor", 45, 34)
 
 # K23 Cooper & Blockmaker (sawdust register; open double doors) -- 14x11
@@ -1225,7 +1303,8 @@ trect(11, 44, 71, 47, 71, _furn(FURN_BOARD, TRUDGEON_WALL))     # workbench
 trect(11, 48, 73, 49, 74, OAK_WALL)                 # stave stack, mirrors the barrel stack
 cells(11, [(43, 68), (45, 68)], _furn(FURN_BOARD, TRUDGEON_WALL))   # stave-drying rack
 cells(11, [(44, 72), (47, 72)], _furn(FURN_BOARD, TRUDGEON_WALL))   # tool cells
-frect(12, 40, 66, 53, 76, THATCH_FLOOR)
+# Archetype pass (workshop/industrial bucket): no roof cap -- open workshop, consistent with
+# K06/K07/K09/K20 (the old THATCH_FLOOR cap here is removed).
 mk(11, "script_anchor", "business_k23_coopers_anchor", 47, 70)
 
 # K24 The Eel-Pots (lantern-lit night stalls on the Tarwalk) -- 28x3, the extra
@@ -1253,6 +1332,9 @@ mk(11, "script_anchor", "kennel_dog_anchor_03", 171, 53)
 # chandlery) -- 8x8, shrunk into the same lot
 shell(11, 8, 70, 15, 77, TRUDGEON_WALL, OAK_FLOOR, doors=[(11, 70), (12, 70)])
 trect(11, 9, 74, 10, 75, _furn(FURN_BOARD, TRUDGEON_WALL))      # canvas-cutting table
+# Archetype pass (shop/trade-counter bucket): a roof cap was never authored here -- add the
+# bucket's own brick cap (distinct from the trudgeon wall beneath it, no thatch).
+frect(12, 8, 70, 15, 77, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k26_sailmaker_anchor", 11, 73)
 mk(11, "light_source", "lamp_sailmaker_door", 11, 69, luminance=12)
 
@@ -1262,6 +1344,13 @@ mk(11, "light_source", "lamp_sailmaker_door", 11, 69, luminance=12)
 shell(11, 32, 70, 38, 78, GRANITE_WALL, OAK_FLOOR, doors=[(35, 70)])
 cells(11, [(33, 75), (34, 75)], GRANITE_WALL)       # bake oven
 trect(11, 36, 73, 37, 73, FURN_BOARD)               # counter
+# Archetype pass (shop/trade-counter bucket): wall material deliberately NOT retuned to
+# oak/trudgeon -- this file's own comment above already justifies GRANITE_WALL on fire-safety
+# grounds (an oven bakery), the same reasoning the Salt Row smokehouses (K11) use, and
+# switching a working bakery oven's shell to timber would be a real fire-safety regression
+# hiding behind an archetype rule. The roof cap was never authored, though, and gets the
+# bucket's brick cap (no thatch) same as its shop siblings.
+frect(12, 32, 70, 38, 78, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k27_hardtack_anchor", 35, 74)
 mk(11, "light_source", "lamp_hardtack_oven", 33, 75, luminance=10)
 
@@ -1276,6 +1365,9 @@ mk(11, "light_source", "lamp_hardtack_oven", 33, 75, luminance=10)
 # west along the same row).
 shell(11, 130, 58, 135, 64, OAK_WALL, OAK_FLOOR, doors=[(133, 58)])
 trect(11, 132, 61, 134, 61, FURN_BOARD)             # counter + racks
+# Archetype pass (shop/trade-counter bucket): a roof cap was never authored here -- add the
+# bucket's own brick cap (distinct from the oak wall beneath it, no thatch).
+frect(12, 130, 58, 135, 64, BRICK_FLOOR)
 mk(11, "script_anchor", "business_k28_slopchest_anchor", 133, 62)
 
 # K29 The Long Store (general dry-goods warehouse: open floor, racking, a
@@ -1318,6 +1410,9 @@ mk(11, "script_anchor", "business_k29_longstore_anchor", 88, 87)
 # MAX_OCCUPANTS_PER_CELL(2) = 12 capacity. The watch room + armory + north doors are
 # unchanged; cells fill at arrest time in a later justice pass (no actors spawned in them).
 shell(11, 100, 80, 112, 92, GRANITE_WALL, GRANITE_FLOOR, doors=[(106, 80), (107, 80)])
+# Archetype pass (civic/authority bucket): north wall (y80) is the door-bearing street
+# frontage -- same facade treatment as K01/K17/K21.
+facade_frontage(11, 100, 80, 112, 92, "n", GRANITE_FACADE_WALL, GRANITE_FLOOR)
 for y in range(81, 88):                             # armory partition (unchanged)
     T[11][y][109] = OAK_WALL
 T[11][85][109] = 0
@@ -1352,6 +1447,10 @@ mk(11, "light_source", "lamp_guardhouse_door", 106, 79, luminance=18)
 # STEEL_WALL vault ring enclosing ONE chest cell (the future Royal COIN vault -- Phase 2
 # seeds it, NOT here), a teller counter + banker stand, two flanking guard posts.
 shell(11, 150, 48, 159, 59, GRANITE_WALL, GRANITE_FLOOR, doors=[(154, 48)])
+# Archetype pass (civic/authority bucket): north wall (y48) is the door-bearing street
+# frontage -- same facade treatment as K01/K17/K21/K34, so the bank reads as the ward's
+# grandest building type too.
+facade_frontage(11, 150, 48, 159, 59, "n", GRANITE_FACADE_WALL, GRANITE_FLOOR)
 trect(11, 152, 52, 155, 52, FURN_BOARD)             # teller counter (both flanks left open)
 for (vx, vy) in ((151, 56), (151, 57), (153, 57),
                  (151, 58), (152, 58), (153, 58)):  # STEEL vault ring; (152,56) stays the door
