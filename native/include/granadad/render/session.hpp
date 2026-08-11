@@ -1132,10 +1132,27 @@ struct SmokeRunConfig {
     /// rest of the transition looking at. This runs the panel's own animation
     /// to completion (plain zero-input steps, nothing walks) before the
     /// shutter, so a capture can show the finished page instead of always
-    /// re-proving the same first frame. Off by default: it changes what a
-    /// capture looks like, and callers that specifically want the opening
-    /// bump (proving the transition itself does not flash) still need it off.
-    bool settle = false;
+    /// re-proving the same first frame.
+    ///
+    /// HARDENING PASS (#85 IN THE BRIEF, NOT THE SOURCE): ON BY DEFAULT NOW,
+    /// FOR A SCREENSHOT. This flag was wired to `--settle` on the CLI
+    /// (main.cpp) the day it was added and NOTHING has ever passed it --
+    /// grep the repo -- so every screenshot this project has ever taken of
+    /// an overlay panel (the pause menu, the character sheet, the casebook,
+    /// the keys/options pages) has silently been the opening bump this field
+    /// exists to run past, and every review of one of those PNGs has been
+    /// reviewing that bump, not the panel. A capture flag nobody remembers
+    /// to set is not a fix, it is a diagnosis with a knob nobody turns.
+    ///
+    /// runSmoke() only actually spends the sixteen extra steps this arms
+    /// when `screenshot` (below) is non-empty -- see its own gate on this
+    /// field -- so a scripted run that reads back scriptedWanted/
+    /// scriptedLanded and never asked for a picture is untouched by this
+    /// defaulting true; only a capture that writes a PNG is. Off is the
+    /// special case now, spelled `--no-settle` on the CLI, for the one
+    /// caller that genuinely wants the opening bump on purpose -- proving the
+    /// transition itself does not flash on its very first frame.
+    bool settle = true;
     /// S5. Climb onto the Gilded Gull's roof and look down at the ward: in at
     /// the door, up the stair, out over the north wall, and turn round. WHERE
     /// is "roof" (standing on the lead), "leap" (across the alley onto the next

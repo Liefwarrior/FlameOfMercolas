@@ -312,7 +312,13 @@ void print_usage() {
         "                       spent), devin or gabri (their own fixed sheet)\n"
         "  --settle             run a scripted overlay's open animation to\n"
         "                       completion before the shutter, instead of\n"
-        "                       capturing the frame it opened on\n"
+        "                       capturing the frame it opened on (this is\n"
+        "                       now the DEFAULT for a screenshot -- see\n"
+        "                       --no-settle)\n"
+        "  --no-settle          capture the overlay's opening bump instead\n"
+        "                       of its settled, fully-open frame -- only\n"
+        "                       useful for proving the transition itself\n"
+        "                       does not flash on its first drawn frame\n"
         "  --street[=WHO]       stand next to somebody out in the WARD and talk\n"
         "                       to them. WHO is hand, watch, priest, disciple,\n"
         "                       keeper, fisher, sailor, carter, wastrel, urchin,\n"
@@ -516,6 +522,12 @@ void print_usage() {
             options.creationStep = value;
         } else if (std::strcmp(arg, "--settle") == 0) {
             options.smoke.settle = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--no-settle") == 0) {
+            // SmokeRunConfig::settle now defaults to true -- see its own
+            // header. This is the escape hatch for the one caller that
+            // deliberately wants the opening bump captured instead.
+            options.smoke.settle = false;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--street") == 0) {
             options.smoke.street = true;

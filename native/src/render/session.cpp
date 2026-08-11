@@ -5213,7 +5213,18 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // steps, same as `--hold`'s own loop -- nothing walks, nothing turns --
     // run comfortably past EasedToggle's default riseSteps (8) so the panel
     // this capture opened is fully open, not caught on its first tick.
-    if (config.settle) {
+    //
+    // GATED ON A SCREENSHOT ACTUALLY BEING TAKEN, not on config.settle alone.
+    // The field defaults true, but a scripted run that only reads back
+    // scriptedWanted/scriptedLanded counters (most of this suite) never asked
+    // for a picture, and the twelve-odd extra ticks of a live world this loop
+    // runs are twelve-odd ticks a counter-only test has no reason to absorb.
+    // "the default behavior for screenshot captures" is what was asked for,
+    // not "sixteen more ticks of every scripted line in this project" --
+    // those are the same sixteen ticks that were always safe for the frame
+    // this exists to fix and never free for a hash or a count nobody asked to
+    // move.
+    if (config.settle && !config.screenshot.empty()) {
         const sim::MoveInput still{};
         for (int i = 0; i < 16; ++i) {
             session.step(still);
