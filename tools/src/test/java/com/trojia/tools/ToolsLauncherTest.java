@@ -3,8 +3,18 @@ package com.trojia.tools;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.trojia.sim.material.MaterialRawsLoader;
+import com.trojia.sim.material.RawsBundle;
+import com.trojia.sim.world.Coords;
+import com.trojia.sim.world.PackedPos;
+import com.trojia.sim.world.TickableWorld;
+import com.trojia.sim.world.TileCursor;
+import com.trojia.sim.world.TileForm;
+import com.trojia.sim.world.io.TrojSav;
+import com.trojia.sim.world.io.WorldLoader;
 import com.trojia.tools.palette.RawsPaletteGenerator;
 
 import java.io.ByteArrayOutputStream;
@@ -147,6 +157,50 @@ class ToolsLauncherTest {
         assertTrue(errBytes.toString(StandardCharsets.UTF_8).contains("gen-palette"));
     }
 
+    // ---------------------------------------------------------- import-map
+
+    @Test
+    void importMapWritesLoadableTrojSav() throws Exception {
+        Path out = tempDir.resolve("tavern.trojsav");
+
+        int code = run("import-map", mapsDir().resolve("tavern_fixture.tmx").toString(), out.toString());
+
+        assertEquals(0, code, () -> outBytes + " / " + errBytes);
+        assertTrue(Files.exists(out), "import-map must write the output file");
+        assertTrue(outBytes.toString(StandardCharsets.UTF_8).contains("wrote " + out));
+
+        // CLI wiring proof: the written file round-trips through the real save/load
+        // path (the importer's own baking fidelity is proven at the library level by
+        // TavernImportRoundTripTest).
+        TrojSav save = TrojSav.read(out);
+        RawsBundle raws = MaterialRawsLoader.load(rawsDir());
+        assertEquals(raws.materials().fingerprint(), save.header().rawsFingerprint(),
+                "TROJSAV header must carry the loaded raws' material fingerprint");
+
+        TickableWorld reloaded = new WorldLoader().load(save);
+        TileCursor cursor = reloaded.cursor().moveTo(
+                PackedPos.pack(Coords.CHUNK_SIZE_X, Coords.CHUNK_SIZE_Y, Coords.CHUNK_SIZE_Z));
+        assertNotEquals(TileForm.OPEN, cursor.form(),
+                "authored map(0,0) at minZ is a wall, not void, after reload");
+    }
+
+    @Test
+    void importMapReportsTmxWarnings() {
+        int code = run("import-map", mapsDir().resolve("tavern_fixture.tmx").toString(),
+                tempDir.resolve("ignored.trojsav").toString(), "--raws", rawsDir().toString());
+        assertEquals(0, code, () -> outBytes + " / " + errBytes);
+        // the tavern fixture is clean, so no warnings are expected -- this just
+        // proves the plumbing doesn't blow up when warnings is empty.
+        assertFalse(outBytes.toString(StandardCharsets.UTF_8).contains("[import-map] warning:"));
+    }
+
+    @Test
+    void importMapMissingMapFileExitsOne() {
+        assertEquals(1, run("import-map", tempDir.resolve("nope.tmx").toString(),
+                tempDir.resolve("out.trojsav").toString()));
+        assertTrue(errBytes.toString(StandardCharsets.UTF_8).contains("no such map file"));
+    }
+
     // ---------------------------------------------------------- usage errors
 
     @Test
@@ -155,6 +209,7 @@ class ToolsLauncherTest {
         assertEquals(2, run("no-such-command"));
         assertEquals(2, run("gen-palette", "only-one-arg"));
         assertEquals(2, run("check-map"));
+        assertEquals(2, run("import-map", "only-one-arg"));
     }
 
     @Test
@@ -164,5 +219,6 @@ class ToolsLauncherTest {
         assertTrue(usage.contains("check-map"), usage);
         assertTrue(usage.contains("check-raws"), usage);
         assertTrue(usage.contains("gen-palette"), usage);
+        assertTrue(usage.contains("import-map"), usage);
     }
 }

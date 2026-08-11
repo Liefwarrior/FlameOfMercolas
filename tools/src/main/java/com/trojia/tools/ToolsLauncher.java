@@ -1,8 +1,19 @@
 package com.trojia.tools;
 
+import com.trojia.sim.material.MaterialRawsLoader;
+import com.trojia.sim.material.RawsBundle;
+import com.trojia.sim.material.RawsValidationException;
+import com.trojia.sim.world.TickableWorld;
+import com.trojia.tools.importer.TiledImportException;
+import com.trojia.tools.importer.TiledWorldImporter;
 import com.trojia.tools.palette.PaletteGenerationException;
 import com.trojia.tools.palette.RawsPaletteGenerator;
+import com.trojia.tools.tmx.TmxMap;
 import com.trojia.tools.tmx.TmxParseException;
+import com.trojia.tools.tmx.TmxReader;
+import com.trojia.tools.tmx.TmxTileset;
+import com.trojia.tools.tmx.TmxTilesetRef;
+import com.trojia.tools.tmx.TsxReader;
 import com.trojia.tools.validate.MapCheckContext;
 import com.trojia.tools.validate.RawsLoadResult;
 import com.trojia.tools.validate.RawsLoader;
@@ -18,21 +29,28 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * CLI entry point for content tooling (ARCHITECTURE.md section 3, tools).
  *
  * <pre>
- *   check-map &lt;file.tmx&gt; [--raws &lt;dir&gt;]   validate a Tiled map against the raws
- *   check-raws [&lt;dir&gt;]                    validate the raws files themselves
- *   gen-palette &lt;rawsDir&gt; &lt;out.tsx&gt;       regenerate the material palette tileset
+ *   check-map &lt;file.tmx&gt; [--raws &lt;dir&gt;]        validate a Tiled map against the raws
+ *   check-raws [&lt;dir&gt;]                         validate the raws files themselves
+ *   gen-palette &lt;rawsDir&gt; &lt;out.tsx&gt;            regenerate the material palette tileset
+ *   import-map &lt;file.tmx&gt; &lt;out.trojsav&gt; [--raws &lt;dir&gt;]
+ *                                               bake a Tiled map into a tick-0 TROJSAV
  * </pre>
  *
  * <p>{@code gen-palette} is deterministic (identical raws produce a byte-identical
  * file) and writes atomically (temp file + rename), so a crash never leaves a
- * truncated palette. When {@code --raws} is omitted the {@code content/raws}
- * directory is located by walking up from the map file (respectively the working
- * directory). M1 adds {@code import-map}.</p>
+ * truncated palette. {@code import-map} bakes through
+ * {@link com.trojia.tools.importer.TiledWorldImporter} (itself deterministic) and
+ * writes its TROJSAV the same atomic way ({@link com.trojia.sim.world.io.TrojSav#writeTo}
+ * is tmp-file-plus-rename internally), so a crash never leaves a truncated save.
+ * When {@code --raws} is omitted the {@code content/raws} directory is located by
+ * walking up from the map file (respectively the working directory).</p>
  *
  * <p><strong>Exit codes:</strong> 0 success (warnings allowed) · 1 command failed
  * (validation errors, missing input, I/O error) · 2 usage error (unknown command,
@@ -46,9 +64,10 @@ public final class ToolsLauncher {
 
     private static final String USAGE = """
             trojia-tools commands:
-              check-map <file.tmx> [--raws <dir>]   validate a Tiled map against the raws
-              check-raws [<dir>]                    validate the raws files themselves
-              gen-palette <rawsDir> <out.tsx>       regenerate the material palette tileset
+              check-map <file.tmx> [--raws <dir>]              validate a Tiled map against the raws
+              check-raws [<dir>]                                validate the raws files themselves
+              gen-palette <rawsDir> <out.tsx>                   regenerate the material palette tileset
+              import-map <file.tmx> <out.trojsav> [--raws <dir>] bake a Tiled map into a tick-0 TROJSAV
             exit code: 0 = success (warnings allowed), 1 = command failed, 2 = usage error""";
 
     private ToolsLauncher() {
@@ -81,6 +100,7 @@ public final class ToolsLauncher {
                 case "check-map" -> checkMap(args, out, err);
                 case "check-raws" -> checkRaws(args, out, err);
                 case "gen-palette" -> genPalette(args, out, err);
+                case "import-map" -> importMap(args, out, err);
                 default -> {
                     err.println("unknown command \"" + args[0] + "\"");
                     err.println(USAGE);
@@ -194,6 +214,86 @@ public final class ToolsLauncher {
             err.println("gen-palette: cannot write " + outFile + ": " + e.getMessage());
             return EXIT_FAILURE;
         }
+    }
+
+    /** Executes {@code import-map <file.tmx> <out.trojsav> [--raws <dir>]}. */
+    private static int importMap(String[] args, PrintStream out, PrintStream err) {
+        Path mapFile = null;
+        Path outFile = null;
+        Path rawsDir = null;
+        for (int i = 1; i < args.length; i++) {
+            if (args[i].equals("--raws")) {
+                if (i + 1 >= args.length) {
+                    err.println("--raws needs a directory argument");
+                    return EXIT_USAGE;
+                }
+                rawsDir = Path.of(args[++i]);
+            } else if (mapFile == null) {
+                mapFile = Path.of(args[i]);
+            } else if (outFile == null) {
+                outFile = Path.of(args[i]);
+            } else {
+                err.println("unexpected argument \"" + args[i] + "\"");
+                err.println(USAGE);
+                return EXIT_USAGE;
+            }
+        }
+        if (mapFile == null || outFile == null) {
+            err.println("import-map needs a .tmx file and an out.trojsav argument");
+            err.println(USAGE);
+            return EXIT_USAGE;
+        }
+        if (!Files.isRegularFile(mapFile)) {
+            err.println("no such map file: " + mapFile);
+            return EXIT_FAILURE;
+        }
+        if (rawsDir == null) {
+            rawsDir = locateRawsDir(mapFile.toAbsolutePath().getParent());
+            if (rawsDir == null) {
+                err.println("cannot locate content/raws above " + mapFile.toAbsolutePath().getParent()
+                        + " or the working directory; pass --raws <dir>");
+                return EXIT_FAILURE;
+            }
+        }
+
+        List<String> warnings = new ArrayList<>();
+        TmxMap map = new TmxReader(warnings::add).read(mapFile);
+        if (map.tilesets().isEmpty()) {
+            err.println("import-map: map references no tileset");
+            return EXIT_FAILURE;
+        }
+        TmxTilesetRef ref = map.tilesets().get(0);
+        TmxTileset tileset = new TsxReader(warnings::add)
+                .read(mapFile.toAbsolutePath().getParent().resolve(ref.source()));
+        for (String warning : warnings) {
+            out.println("[import-map] warning: " + warning);
+        }
+
+        RawsBundle raws;
+        try {
+            raws = MaterialRawsLoader.load(rawsDir);
+        } catch (RawsValidationException e) {
+            err.println("import-map: invalid raws at " + rawsDir + ": " + e.getMessage());
+            return EXIT_FAILURE;
+        }
+
+        TiledWorldImporter importer = new TiledWorldImporter();
+        TickableWorld baked;
+        try {
+            baked = importer.importWorld(map, tileset, raws.materials(), raws.fluids());
+        } catch (TiledImportException e) {
+            err.println("import-map: " + e.getMessage());
+            return EXIT_FAILURE;
+        }
+
+        try {
+            importer.toTrojSav(baked, raws.materials().fingerprint()).writeTo(outFile);
+        } catch (IOException e) {
+            err.println("import-map: cannot write " + outFile + ": " + e.getMessage());
+            return EXIT_FAILURE;
+        }
+        out.println("import-map: wrote " + outFile);
+        return EXIT_OK;
     }
 
     // -------------------------------------------------------------- helpers
