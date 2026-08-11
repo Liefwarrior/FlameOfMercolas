@@ -228,11 +228,17 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     if (!state.open) {
         return;
     }
-    // TASK #83. THE BOX ITSELF EASES, so the panel grows in and shrinks away
-    // rather than switching on like a light. See DialogueViewState::openAmount
-    // -- 1 is "fully open and not animating", which is what every hand-built
-    // state already meant, so `* fade` is a no-op for every caller that never
-    // heard of this.
+    // TASK #83, AND INNOVATION SPRINT ITEM #1 MAKES IT TRUE. This comment
+    // used to say "the box itself eases" while `fade` only ever multiplied a
+    // fillRect/drawText alpha argument -- the panel's own rect never moved.
+    // It really does now: `fade` still drives every alpha below exactly as
+    // it always did, AND drives topOffset/bottomOffset further down, which
+    // slide the top band in from the top edge and the bottom band in from
+    // the bottom edge as the SAME value rises from 0 to 1. See
+    // DialogueViewState::openAmount -- 1 is "fully open and not animating",
+    // which is what every hand-built state already meant, so a caller that
+    // never heard of this still gets topOffset == bottomOffset == 0 and
+    // draws bit-for-bit what it always drew.
     const float fade = std::clamp(state.openAmount, 0.0F, 1.0F);
     const int scale = std::max(1, target.height() / 180);
     const int margin = 5 * scale;
@@ -313,8 +319,22 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     const int topHeight =
         std::min(centre.y0 - scale, margin + rowStep * (1 + static_cast<int>(speech.size()) +
                                                         alertRows + detailRows + caseRefRows));
-    target.fillRect(0, 0, target.width(), topHeight, kPanel, 0.82F * fade);
-    target.fillRect(0, topHeight, target.width(), scale, kEdge, 0.55F * fade);
+    // INNOVATION SPRINT ITEM #1. THE ANIMATED RECT, COMPUTED ONCE. The top
+    // band already hugs the top edge (this file's own header), so it slides
+    // in from off the top of the frame as `fade` rises: at fade == 0 this is
+    // -topHeight, which puts the whole band above y == 0 and out of sight;
+    // at fade == 1 (every hand-built state, and every settled frame) it is
+    // exactly 0, which is the layout this panel has always drawn -- so the
+    // OPEN geometry is untouched and only the path to it moves. `topHeight`
+    // itself -- the CAPACITY math above, and every "does this row still fit
+    // above topHeight" check below -- stays in the band's own unshifted
+    // coordinates; only where the content is actually PAINTED gets this
+    // offset added, at each drawText/fillRect call site, so a row that fits
+    // at fade == 1 still fits mid-transition and nothing about how many rows
+    // this band can hold changes because it is moving.
+    const int topOffset = -static_cast<int>(static_cast<float>(topHeight) * (1.0F - fade));
+    target.fillRect(0, topOffset, target.width(), topHeight, kPanel, 0.82F * fade);
+    target.fillRect(0, topHeight + topOffset, target.width(), scale, kEdge, 0.55F * fade);
 
     // ---- the nameplate: who is talking, on a plate of their own -----------
     //
@@ -347,28 +367,30 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         // not drawing it: a plate you cannot see is not a nameplate treatment,
         // it is a wasted fillRect. Warm bronze, closer to kEdge than to kPanel,
         // so the row reads as raised the instant the panel appears.
-        target.fillRect(0, 0, plateWidth, plateHeight, Rgb{0.22F, 0.19F, 0.15F}, 0.62F * fade);
-        target.fillRect(0, plateHeight - scale, plateWidth, scale, kEdge, 0.45F * fade);
+        target.fillRect(0, topOffset, plateWidth, plateHeight, Rgb{0.22F, 0.19F, 0.15F},
+                        0.62F * fade);
+        target.fillRect(0, plateHeight - scale + topOffset, plateWidth, scale, kEdge, 0.45F * fade);
         // The accent: standing, in colour, before a single word of it is read.
         // Neutral brass when nobody has an opinion yet -- the keys page, the
         // options page and the casebook all borrow this same widget and none
         // of them is anybody's attitude.
         const Rgb accent = state.attitude.empty() ? kEdge : attitudeInk(state.attitude);
-        target.fillRect(0, 0, scale, plateHeight, accent, 0.92F * fade);
+        target.fillRect(0, topOffset, scale, plateHeight, accent, 0.92F * fade);
     }
 
     int cursorX = margin;
-    cursorX += drawText(target, cursorX, margin, state.speaker, kSpeakerInk, 0.98F, scale);
+    cursorX += drawText(target, cursorX, margin + topOffset, state.speaker, kSpeakerInk, 0.98F, scale);
     if (!state.epithet.empty()) {
         cursorX += glyphAdvance;
-        cursorX += drawText(target, cursorX, margin, state.epithet, kEpithetInk, 0.80F, scale);
+        cursorX +=
+            drawText(target, cursorX, margin + topOffset, state.epithet, kEpithetInk, 0.80F, scale);
     }
     if (!state.attitude.empty()) {
         // Beside the name, not against the right edge: the right edge is the
         // clock's. Colour carries it -- red for hostile, green for warm and up
         // -- so standing is legible without reading.
         cursorX += glyphAdvance;
-        drawText(target, cursorX, margin, "(" + state.attitude + ")",
+        drawText(target, cursorX, margin + topOffset, "(" + state.attitude + ")",
                  attitudeInk(state.attitude), 0.95F, scale);
     }
     // speechRevealChars < 0 means "draw all of it", which is what every
@@ -383,7 +405,7 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         const std::string& fullLine = speech[i];
         const int y = margin + rowStep * static_cast<int>(i + 1);
         if (fullLine.size() <= speechBudget) {
-            drawText(target, margin, y, fullLine, kSpeechInk, 0.94F, scale);
+            drawText(target, margin, y + topOffset, fullLine, kSpeechInk, 0.94F, scale);
             speechBudget -= fullLine.size();
         } else {
             // Pulled back to the last whole word within the budget, the same
@@ -397,16 +419,19 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
             const std::string shown = (space != std::string::npos && space > 0)
                                           ? fullLine.substr(0, space)
                                           : fullLine.substr(0, cut);
-            drawText(target, margin, y, shown + "...", kSpeechInk, 0.94F, scale);
+            drawText(target, margin, y + topOffset, shown + "...", kSpeechInk, 0.94F, scale);
             speechBudget = 0;
         }
     }
     if (alertRows > 0) {
         // The bouncer's own colour, so it reads as somebody shouting across the
         // room rather than as another thing the person in front of you said.
+        // `y` (and the fits-check against `topHeight`) stay in the band's own
+        // unshifted coordinates -- see topOffset's own header -- only the
+        // draw call itself is offset.
         const int y = margin + rowStep * (static_cast<int>(speech.size()) + 1);
         if (y + 6 * scale <= topHeight) {
-            drawText(target, margin, y,
+            drawText(target, margin, y + topOffset,
                      clipToWidth(state.alert, target.width() - 2 * margin, scale),
                      Rgb{0.90F, 0.62F, 0.30F}, 0.95F, scale);
         }
@@ -416,8 +441,8 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         if (y + 6 * scale <= topHeight) {
             const std::size_t width = static_cast<std::size_t>(
                 std::max(8, (target.width() - 2 * margin) / glyphAdvance));
-            drawText(target, margin, y, "> " + clipLabel(detail, width), kTopicPicked, 0.92F,
-                     scale);
+            drawText(target, margin, y + topOffset, "> " + clipLabel(detail, width), kTopicPicked,
+                     0.92F, scale);
         }
     }
     if (caseRefRows > 0) {
@@ -428,7 +453,7 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         const int y = margin +
                       rowStep * (static_cast<int>(speech.size()) + alertRows + detailRows + 1);
         if (y + 6 * scale <= topHeight) {
-            drawText(target, margin, y,
+            drawText(target, margin, y + topOffset,
                      clipToWidth(state.caseRef, target.width() - 2 * margin, scale), kCaseRefInk,
                      0.86F, scale);
         }
@@ -458,29 +483,42 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     const int bottomTop = (state.haggling || state.forging || state.letter)
                               ? deepest
                               : target.height() - 2 * scale - rows * rowStep;
+    // INNOVATION SPRINT ITEM #1. THE SAME TREATMENT, FROM THE OTHER EDGE. The
+    // bottom band hugs the bottom edge, so it slides in from off the bottom
+    // of the frame as `fade` rises: at fade == 0 this is
+    // `target.height() - bottomTop`, which pushes the whole band's top edge
+    // down to exactly `target.height()` -- out of sight below the frame; at
+    // fade == 1 it is 0, the untouched, always-shipped layout. Same rule as
+    // topOffset: `bottomTop`, `rows`, `deepest` and every capacity/fits check
+    // below stay in unshifted coordinates, and only the actual paint calls
+    // add this in.
+    const int bottomOffset =
+        static_cast<int>(static_cast<float>(target.height() - bottomTop) * (1.0F - fade));
     // TASK #82. THE PARCHMENT SWITCH. A letter gets the warm palette in place
     // of the ordinary dark one; every other page -- including the casebook
     // list a letter is reached FROM -- keeps the panel it always had.
     const Rgb bandPanel = state.letter ? kParchmentPanel : kPanel;
     const Rgb bandEdge = state.letter ? kParchmentEdge : kEdge;
-    target.fillRect(0, bottomTop, target.width(), target.height() - bottomTop, bandPanel,
-                    0.86F * fade);
-    target.fillRect(0, bottomTop - scale, target.width(), scale, bandEdge, 0.65F * fade);
+    target.fillRect(0, bottomTop + bottomOffset, target.width(), target.height() - bottomTop,
+                    bandPanel, 0.86F * fade);
+    target.fillRect(0, bottomTop - scale + bottomOffset, target.width(), scale, bandEdge,
+                    0.65F * fade);
 
     if (state.haggling) {
         // The counter, not the topic list: what they want, what you are about
         // to say, and how much more of this they will take.
         const std::string head = state.goods + " - THEY ASK " + std::to_string(state.asking) + "C";
-        drawText(target, margin, bottomTop + scale, head, kSpeechInk, 0.95F, scale);
+        drawText(target, margin, bottomTop + scale + bottomOffset, head, kSpeechInk, 0.95F, scale);
         const std::string mine = "YOUR OFFER: " + std::to_string(state.offer) + "C";
-        drawText(target, margin, bottomTop + scale + rowStep, mine, kHaggleInk, 0.98F, scale);
+        drawText(target, margin, bottomTop + scale + rowStep + bottomOffset, mine, kHaggleInk,
+                 0.98F, scale);
         std::string patience = "PATIENCE ";
         for (int i = 0; i < std::max(0, state.patience); ++i) {
             patience += '*';
         }
-        drawText(target, margin, bottomTop + scale + rowStep * 2, patience, kTopicInk, 0.85F,
-                 scale);
-        drawText(target, margin, bottomTop + scale + rowStep * 3,
+        drawText(target, margin, bottomTop + scale + rowStep * 2 + bottomOffset, patience,
+                 kTopicInk, 0.85F, scale);
+        drawText(target, margin, bottomTop + scale + rowStep * 3 + bottomOffset,
                  "LEFT/RIGHT NAME A NUMBER   ENTER OFFER   T TAKE IT   ESC WALK", kTopicInk, 0.80F,
                  scale);
         return;
@@ -493,7 +531,7 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         // they ask for it.
         const std::string head = "COMPOSE - COST " + std::to_string(state.forgeDifficulty) +
                                  " OF " + std::to_string(state.forgeCeiling);
-        drawText(target, margin, bottomTop + scale, head, kSpeechInk, 0.95F, scale);
+        drawText(target, margin, bottomTop + scale + bottomOffset, head, kSpeechInk, 0.95F, scale);
         for (std::size_t i = 0; i < state.forgeFields.size(); ++i) {
             const int index = static_cast<int>(i);
             const int column = index / 3;
@@ -511,19 +549,20 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
                 label.resize(room);
             }
             if (picked) {
-                drawPickHighlight(target, x, y, rowStep, glyphAdvance, scale,
+                drawPickHighlight(target, x, y + bottomOffset, rowStep, glyphAdvance, scale,
                                   textWidth(label, scale), static_cast<int>(room) * glyphAdvance,
                                   state.phase);
-                drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, 0.95F, scale);
+                drawText(target, x - glyphAdvance / 2, y + bottomOffset, ">", kTopicPicked, 0.95F,
+                         scale);
             }
-            drawText(target, x + glyphAdvance / 2, y, label, picked ? kTopicPicked : kTopicInk,
-                     picked ? 0.98F : 0.82F, scale);
+            drawText(target, x + glyphAdvance / 2, y + bottomOffset, label,
+                     picked ? kTopicPicked : kTopicInk, picked ? 0.98F : 0.82F, scale);
         }
         const std::string foot =
             state.forgeProblem.empty()
                 ? std::string("UP/DOWN FIELD   LEFT/RIGHT VALUE   ENTER MAKE   ESC STOP")
                 : state.forgeProblem;
-        drawText(target, margin, target.height() - margin - 2 * scale, foot,
+        drawText(target, margin, target.height() - margin - 2 * scale + bottomOffset, foot,
                  state.forgeProblem.empty() ? kTopicInk : kHaggleInk, 0.88F, scale);
         return;
     }
@@ -550,7 +589,10 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         }
         // ONE FOOT ROW RESERVED, ALWAYS, so the page indicator (or the close
         // hint, on a letter short enough to need none) never has to fight a
-        // body row for the same pixels.
+        // body row for the same pixels. UNSHIFTED, like every other capacity
+        // number in this function -- see topOffset's own header -- so paging
+        // never recomputes mid-transition; bottomOffset is added only where
+        // this is actually painted, below.
         const int footY = target.height() - margin - 2 * scale;
         const int rowsAvail =
             std::max(1, (footY - (bottomTop + scale) - scale) / rowStep);
@@ -562,13 +604,13 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         for (std::size_t i = first;
              i < allLines.size() && i < first + static_cast<std::size_t>(rowsAvail); ++i) {
             const int y = bottomTop + scale + rowStep * static_cast<int>(i - first);
-            drawText(target, margin, y, allLines[i], kParchmentInk, 0.92F, scale);
+            drawText(target, margin, y + bottomOffset, allLines[i], kParchmentInk, 0.92F, scale);
         }
         const std::string foot =
             pages > 1 ? "0 MORE (" + std::to_string(page + 1) + "/" + std::to_string(pages) +
                             ")   ESC BACK   L PUTS IT DOWN"
                       : std::string("ESC BACK   L PUTS IT DOWN");
-        drawText(target, margin, footY, foot, kParchmentInk, 0.62F, scale);
+        drawText(target, margin, footY + bottomOffset, foot, kParchmentInk, 0.62F, scale);
         return;
     }
 
@@ -602,11 +644,13 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
             // it rather than under it. Kept to the same room clipLabel already
             // cut the text to, so it can never reach the next column's key any
             // more than the label already could.
-            drawPickHighlight(target, x, y, rowStep, glyphAdvance, scale, textWidth(label, scale),
-                              static_cast<int>(room) * glyphAdvance, state.phase);
-            drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, 0.95F, scale);
+            drawPickHighlight(target, x, y + bottomOffset, rowStep, glyphAdvance, scale,
+                              textWidth(label, scale), static_cast<int>(room) * glyphAdvance,
+                              state.phase);
+            drawText(target, x - glyphAdvance / 2, y + bottomOffset, ">", kTopicPicked, 0.95F,
+                     scale);
         }
-        drawText(target, x + glyphAdvance / 2, y, label,
+        drawText(target, x + glyphAdvance / 2, y + bottomOffset, label,
                  printed[i].picked ? kTopicPicked : kTopicInk, printed[i].picked ? 0.98F : 0.82F,
                  scale);
     }
