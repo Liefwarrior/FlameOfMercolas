@@ -250,6 +250,28 @@ int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb
     return cursor - x;
 }
 
+/// HARDENING PASS. See hud.hpp's own header on where these two colours come
+/// from -- pulled out of client-observer's PlaceSignArt.java by its exact
+/// values via git history, not re-guessed, since that file (and the client it
+/// belonged to) no longer exists in this tree.
+constexpr Rgb kPlateBlack{0.0F, 0.0F, 0.0F};
+constexpr Rgb kPlateBone{0.90F, 0.87F, 0.76F};
+
+void drawTextPlate(Framebuffer& target, int x0, int y0, int x1, int y1, int border, float alpha) {
+    if (alpha <= 0.0F || x1 <= x0 || y1 <= y0) {
+        return;
+    }
+    border = std::clamp(border, 1, std::min(x1 - x0, y1 - y0) / 2);
+    // THE FIELD, THEN THE FOUR BORDER RAILS -- the identical order the
+    // retired renderer's own box() drew in, so the border is never eaten by
+    // the fill it is drawn over.
+    target.fillRect(x0, y0, x1 - x0, y1 - y0, kPlateBlack, alpha);
+    target.fillRect(x0, y0, x1 - x0, border, kPlateBone, alpha);                 // top
+    target.fillRect(x0, y1 - border, x1 - x0, border, kPlateBone, alpha);        // bottom
+    target.fillRect(x0, y0, border, y1 - y0, kPlateBone, alpha);                 // left
+    target.fillRect(x1 - border, y0, border, y1 - y0, kPlateBone, alpha);        // right
+}
+
 namespace {
 
 /// The health bar, bottom-left, and the only thing down here still drawn at
@@ -559,10 +581,26 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         const int y = band.take(alertScale);
         if (y >= 0) {
             const int drawn = textWidth(alert, alertScale);
+            const int textX = std::max(margin, (width - drawn) / 2);
+            const float rowAlpha = std::clamp(state.alertFade, 0.0F, 1.0F);
+            // HARDENING PASS. THE ALERT IS THE SINGLE MOST URGENT LINE ON THIS
+            // HUD -- a bouncer's own warning -- and used to draw with only the
+            // engine's generic 1px drop shadow behind it, which a real capture
+            // showed floating nearly unreadable over open floor. Backed now by
+            // the S8 pop-up's own plate -- see drawTextPlate's own header --
+            // sized tight to this row's glyph box with a small margin, drawn
+            // BEFORE the text so the plate never paints over it.
+            // Padding is generous on X (legibility matters most there) and
+            // deliberately tight on Y -- band.take() reserved this row a slot
+            // sized off `minor`, not `alertScale`, and a tall plate risks
+            // eating into whatever row the priority order above stacks next.
+            const int padX = alertScale * 2;
+            const int padY = std::max(1, alertScale / 2);
+            drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
+                          y + kGlyphH * alertScale + padY, std::max(1, alertScale / 2), rowAlpha);
             // TASK #83. Eased in Session, not here -- see HudState::alertFade.
             // A caller that never set it gets 1, which is 0.95F unchanged.
-            drawText(target, std::max(margin, (width - drawn) / 2), y, alert,
-                     Rgb{0.90F, 0.62F, 0.30F}, 0.95F * std::clamp(state.alertFade, 0.0F, 1.0F),
+            drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F}, 0.95F * rowAlpha,
                      alertScale);
         }
     }

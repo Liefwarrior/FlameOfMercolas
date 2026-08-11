@@ -232,6 +232,26 @@ void drawHud(Framebuffer& target, const HudState& state);
 int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
              float alpha, int scale);
 
+/// HARDENING PASS. THE S8 "NES POP-UP" TREATMENT (docs/design/PLAYTEST-LOG.md's
+/// S8 entry), CARRIED OVER FROM client-observer -- retired whole in f712579
+/// ("the observer's old Java client and its CLI runner, gone") the day before
+/// this pass, so the treatment is real and shipped once but the class that
+/// drew it (PlaceSignArt.java) no longer exists in this tree. Its exact
+/// constants (pure #000000 field, a flat bone border, no gradient, no fade)
+/// are pulled from that file's own git history rather than re-guessed, and
+/// reused here as this engine's kPlateBlack/kPlateBone.
+///
+/// A hard-edged solid field plus a flat border of `border` px, sized to
+/// exactly the rectangle the caller hands it -- draw this FIRST, then the
+/// text over it, the identical fill-then-border-then-text order the retired
+/// renderer used so the border is never eaten by the fill. `alpha` is the
+/// caller's own fade (signage recedes by distance, the alert row eases with
+/// HudState::alertFade); the original popup never needed one because it
+/// snapped on and off outright rather than easing, but both of this pass's
+/// callers do.
+void drawTextPlate(Framebuffer& target, int x0, int y0, int x1, int y1, int border,
+                    float alpha);
+
 /// Width in pixels a string would occupy at a scale.
 [[nodiscard]] int textWidth(std::string_view text, int scale) noexcept;
 

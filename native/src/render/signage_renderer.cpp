@@ -153,6 +153,20 @@ void drawSignage(Framebuffer& target, const Camera& camera, const SignageSetting
             continue;
         }
 
+        // HARDENING PASS. A SIGN'S BARE TEXT AGAINST ITS OWN BUILDING IS
+        // EXACTLY THE S8 "NES POP-UP" PROBLEM, THE WORLD-SPACE HALF OF IT.
+        // A real capture confirmed "THE BILGE" nearly unreadable painted
+        // straight over a similarly-toned wall behind it, with nothing but
+        // the engine's generic 1px drop shadow between the two. Backed now
+        // by the identical plate the alert row uses -- see drawTextPlate's
+        // own header on where its exact black/bone constants come from --
+        // but kept DELIBERATELY LIGHTWEIGHT: a 1-pixel border and a hair of
+        // padding, not the full pop-up's 8px+ margins, because a busy block
+        // can have several of these on screen at once and they already fade
+        // by distance (`alpha`, reused here so the plate recedes with the
+        // text it backs rather than staying opaque after the words have
+        // faded out).
+        drawTextPlate(target, box.x0 - scale, box.y0 - 1, box.x1 + scale, box.y1 + 1, 1, alpha);
         constexpr Rgb kSignInk{0.93F, 0.87F, 0.68F};  // warm parchment, reads on stone and sky alike
         drawText(target, box.x0, box.y0, candidate.text, kSignInk, alpha, scale);
         drawn.push_back(box);
