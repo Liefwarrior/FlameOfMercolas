@@ -354,6 +354,22 @@ Session::Session(const SessionConfig& config)
     guildAnim_.snapTo(guildAnim_.target());
     objectiveAnim_.snapTo(objectiveAnim_.target());
     stealthAnim_.snapTo(stealthAnim_.target());
+    // INNOVATION SPRINT ITEM #2. SNAPPED, FOR THE IDENTICAL REASON THE ROWS
+    // ABOVE ARE. NOT a hardcoded "journal starts focused" -- syncPanelAnim()
+    // just computed the real answer off casebookOpen_/menuFocus_ (both true
+    // only when config.openingPage put the Menu up focused on Journal from
+    // the start; false the whole ordinary way a session boots, which
+    // --smoke's captures always are, since openingPage is a run_client-only
+    // default). Snapping to whatever setTarget() just chose is what makes
+    // this correct in both cases without a special case for either.
+    characterFocusAnim_.snapTo(characterFocusAnim_.target());
+    mapFocusAnim_.snapTo(mapFocusAnim_.target());
+    lettersFocusAnim_.snapTo(lettersFocusAnim_.target());
+    journalFocusAnim_.snapTo(journalFocusAnim_.target());
+    // INNOVATION SPRINT ITEM #3. THE STARTING HIT POINTS, NOT A HARD-CODED
+    // 100 -- see lastPlayerHp_'s own header on why a session that boots the
+    // player already hurt must not read its own first frame as a fresh hit.
+    lastPlayerHp_ = tavern_->playerHp();
 }
 
 void Session::syncTavernToBody() {
@@ -1384,6 +1400,30 @@ void Session::step(const sim::MoveInput& input) {
     guildAnim_.advance();
     objectiveAnim_.advance();
     stealthAnim_.advance();
+    // INNOVATION SPRINT ITEM #2. THE SAME PER-STEP ADVANCE, ONE PER TILE.
+    characterFocusAnim_.advance();
+    mapFocusAnim_.advance();
+    lettersFocusAnim_.advance();
+    journalFocusAnim_.advance();
+    // INNOVATION SPRINT ITEM #3. A BLOW LANDING ON THE PLAYER, CAUGHT BY
+    // COMPARISON RATHER THAN A NEW SIM-SIDE FLAG. tickBrawl() (tavern.cpp)
+    // can drop tavern_->playerHp() during the stepMovement() call already
+    // made above, from any of however many opponents are still swinging --
+    // there is no single call site in THIS file that "throws the punch" the
+    // way Session::punch() is for the player's own, so the render layer
+    // reads the one number it already reads for the HUD's health bar
+    // (drawFrame's hud.health) and watches it for a drop instead. Purely a
+    // comparison of already-public state; nothing new reaches into the
+    // simulation and nothing here is hashed -- see punchTakenPulse_'s own
+    // header.
+    const std::int32_t hpNow = tavern_->playerHp();
+    if (hpNow < lastPlayerHp_) {
+        punchTakenPulse_.trigger();
+    }
+    lastPlayerHp_ = hpNow;
+    punchLandedPulse_.advance();
+    punchTakenPulse_.advance();
+    alertPulse_.advance();
     // NOW the string can go. messageSteps_ reaching zero is what stopped
     // WANTING the alert on screen -- see the note above and syncPanelAnim's
     // own formula -- and alertAnim_ finishing its fade is what stopped
@@ -2512,6 +2552,13 @@ void Session::punch() {
     } else {
         say("MISSED " + result.targetName + ".");
     }
+    // INNOVATION SPRINT ITEM #3. A LANDED PUNCH FINALLY HAS SOME WEIGHT --
+    // downed is a landed blow that also put them on the floor, so it counts
+    // here too. A miss stays silent: this is punctuation for a connecting
+    // hit, not for the swing itself.
+    if (result.blow.landed) {
+        punchLandedPulse_.trigger();
+    }
 }
 
 void Session::restHere() {
@@ -3171,6 +3218,29 @@ void Session::syncPanelAnim() noexcept {
     // non-empty cannot be what decides whether the alert is still wanted, or
     // the two would deadlock each other.
     alertAnim_.setTarget(warned || messageSteps_ > 0);
+    // INNOVATION SPRINT ITEM #3. THE RISING EDGE ONLY -- a fresh warning
+    // pulses the alert plate's own weight; the SAME warning re-read on every
+    // later step (`warned` staying true) must not retrigger it, or the pulse
+    // would sit at full strength for as long as the bouncer keeps talking
+    // instead of reading as one beat. See alertPulse_'s own header.
+    if (warned && !lastWarned_) {
+        alertPulse_.trigger();
+    }
+    lastWarned_ = warned;
+
+    // INNOVATION SPRINT ITEM #2. THE TILED MENU'S OWN FOUR BORDERS. Re-read
+    // every call, exactly like every row below -- see this function's own
+    // header on why that catches a focus change made through menuPageNext()/
+    // menuPagePrev() (neither of which calls this directly) the moment
+    // step() next runs it, not only one made through toggleMenuFocused().
+    // Closed (casebookOpen_ false) targets every tile unfocused rather than
+    // leaving whichever one last had it visibly "focused" underneath a
+    // panel that is not there to show it.
+    const bool menuUp = casebookOpen_;
+    characterFocusAnim_.setTarget(menuUp && menuFocus_ == kMenuFocusCharacter);
+    mapFocusAnim_.setTarget(menuUp && menuFocus_ == kMenuFocusMap);
+    lettersFocusAnim_.setTarget(menuUp && menuFocus_ == kMenuFocusLetters);
+    journalFocusAnim_.setTarget(menuUp && menuFocus_ == kMenuFocusJournal);
 
     // HARDENING PASS. EVERY OTHER ROW hud.hpp:178-187 NAMED AS STILL
     // SNAPPING, on the identical two-part shape the alert just used above:
@@ -3392,6 +3462,38 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // buffer renderFrame just wrote and nothing drawn after it yet.
     drawSignage(target, view);
 
+    // INNOVATION SPRINT ITEM #3. A BRAWL FINALLY HAS SOME PHYSICAL WEIGHT.
+    // Two brief, low-alpha washes over the WORLD -- drawn here, before the
+    // HUD, so the one readout that matters most while this fires (the health
+    // bar) is never sitting on top of the wash instead of over the plain
+    // world. RESTRAINED ON PURPOSE: this is a moody, text-forward
+    // investigation game and not an arcade brawler, so both peak under a
+    // fifth of full strength and are gone within a handful of frames -- see
+    // punchLandedPulse_/punchTakenPulse_'s own header for why an
+    // ImpactPulse (a one-shot event) rather than a held EasedToggle is what
+    // drives this, and why there is no third or fourth flash bolted on: two
+    // real moments, executed with restraint, rather than a scattershot pass
+    // across every verb that could theoretically want one.
+    if (config_.hud) {
+        const float landed = punchLandedPulse_.value();
+        if (landed > 0.0F) {
+            // A CONNECTING PUNCH: pale and warm, the same register the
+            // lantern flame and the plate's own bone border already draw in
+            // -- an "it worked" beat, not a warning.
+            target.fillRect(0, 0, target.width(), target.height(), Rgb{0.92F, 0.86F, 0.70F},
+                            0.16F * landed);
+        }
+        const float taken = punchTakenPulse_.value();
+        if (taken > 0.0F) {
+            // A BLOW LANDING ON THE PLAYER: a low, blooded red, read as a
+            // wince rather than an alarm -- deliberately not brighter than
+            // the landed-punch flash above, which is meant to feel like the
+            // better of the two moments.
+            target.fillRect(0, 0, target.width(), target.height(), Rgb{0.58F, 0.10F, 0.08F},
+                            0.18F * taken);
+        }
+    }
+
     HudState hud;
     hud.health = tavern_->playerHp();
     hud.healthMax = 100;
@@ -3499,6 +3601,8 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // construction, which is the whole of what every caller before this field
     // existed drew.
     hud.alertFade = alertAnim_.value();
+    // INNOVATION SPRINT ITEM #3. See HudState::alertPulse's own header.
+    hud.alertPulse = alertPulse_.value();
     hud.caseLabel = std::string_view{caseCache_};
     hud.caseFade = caseAnim_.value();
     hud.showHealth = !conversing;
@@ -3537,6 +3641,14 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         // TASK #83's OWN EASE, REUSED. See the identical note on the
         // single-panel path below.
         tiles.openAmount = panelAnim_.value();
+        // INNOVATION SPRINT ITEM #2. See MenuTileState::characterFocus's own
+        // header -- each tile's border eases toward or away from focus off
+        // its own EasedToggle rather than snapping the instant menuFocus_
+        // changes.
+        tiles.characterFocus = characterFocusAnim_.value();
+        tiles.mapFocus = mapFocusAnim_.value();
+        tiles.lettersFocus = lettersFocusAnim_.value();
+        tiles.journalFocus = journalFocusAnim_.value();
         if (config_.hud) {
             drawMenuTiles(target, tiles);
             drawHud(target, hud);
@@ -5207,6 +5319,25 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += session.mapOpen() ? 1 : 0;
     }
 
+    if (config.punch) {
+        // VERIFICATION ONLY. See SmokeRunConfig::punch's own header. The
+        // SAME key F makes -- Session::punch() -- retried until it actually
+        // connects, since a swing that misses leaves nothing on screen for
+        // punchLandedPulse_ to draw.
+        session.closeConversation();
+        bool landed = false;
+        for (int attempt = 0; attempt < 8 && !landed; ++attempt) {
+            session.punch();
+            const std::string& msg = session.lastMessage();
+            landed = msg.rfind("HIT ", 0) == 0 || msg.find(" GOES DOWN.") != std::string::npos;
+            if (!landed) {
+                session.stepMany(sim::MoveInput{}, 1);
+            }
+        }
+        result.scriptedWanted += 1;
+        result.scriptedLanded += landed ? 1 : 0;
+    }
+
     if (config.street) {
         const StreetLineResult street = runStreetLine(session, config.streetWho,
                                                       config.streetTopic);
@@ -5315,9 +5446,13 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // those are the same sixteen ticks that were always safe for the frame
     // this exists to fix and never free for a hash or a count nobody asked to
     // move.
-    if (config.settle && !config.screenshot.empty()) {
+    if (!config.screenshot.empty()) {
+        // VERIFICATION ONLY. settleSteps overrides the count exactly when
+        // given; otherwise this is unchanged from before that field existed
+        // -- 16 or 0. See SmokeRunConfig::settleSteps's own header.
+        const int steps = config.settleSteps >= 0 ? config.settleSteps : (config.settle ? 16 : 0);
         const sim::MoveInput still{};
-        for (int i = 0; i < 16; ++i) {
+        for (int i = 0; i < steps; ++i) {
             session.step(still);
         }
     }

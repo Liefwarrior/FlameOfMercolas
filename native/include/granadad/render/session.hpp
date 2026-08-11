@@ -1092,6 +1092,71 @@ private:
     std::string guildCache_;
     std::string objectiveCache_;
     std::string stealthCache_;
+
+    /// INNOVATION SPRINT ITEM #2. Which of the tiled Menu's four tiles is
+    /// easing toward or away from input focus, one EasedToggle a tile --
+    /// see MenuTileState::characterFocus's own header on why each tile gets
+    /// its own instance rather than one shared value. SHORT rise/fall
+    /// (kMenuFocusRiseFallSteps below), not EasedToggle's own default eight:
+    /// a focus swap has to read as "quick, with a little give", not as the
+    /// same leisurely open/close a whole panel gets -- see the constructor.
+    /// Re-targeted every syncPanelAnim() call (menuFocus_ is re-read there
+    /// exactly like every other row this pass drives), so a caller that
+    /// steps focus without going through toggleMenuFocused() (menuPageNext/
+    /// menuPagePrev) still gets a fresh target the moment step() next runs
+    /// syncPanelAnim(), the same "catches a change even without an explicit
+    /// call" guarantee syncPanelAnim()'s own header already promises for
+    /// every other row.
+    static constexpr std::int32_t kMenuFocusRiseFallSteps = 4;
+    EasedToggle characterFocusAnim_{kMenuFocusRiseFallSteps, kMenuFocusRiseFallSteps};
+    EasedToggle mapFocusAnim_{kMenuFocusRiseFallSteps, kMenuFocusRiseFallSteps};
+    EasedToggle lettersFocusAnim_{kMenuFocusRiseFallSteps, kMenuFocusRiseFallSteps};
+    EasedToggle journalFocusAnim_{kMenuFocusRiseFallSteps, kMenuFocusRiseFallSteps};
+    // All four are snapped in the constructor body to whatever
+    // syncPanelAnim() computes their real starting target to be (open on
+    // Menu tile is not itself a bump-worthy "was closed, is now open" -- see
+    // the constructor's own note for why journalFocusAnim_ specifically
+    // needs the real answer rather than an assumed one).
+
+    // --- INNOVATION SPRINT ITEM #3: some impact, tastefully -----------------
+    //
+    // Two real moments this build had never given any physical weight to --
+    // see render::ImpactPulse's own header on why an EVENT (happens once, at
+    // an instant) is the right shape and EasedToggle (a held STATE) is not.
+    // Both render-adjacent, deliberately not hashed, for the identical reason
+    // panelAnim_ above is not: neither carries a fact about the world, only a
+    // courtesy to whoever is watching the screen live.
+
+    /// A brawl finally has SOME weight: a brief flash the instant the
+    /// player's own punch connects (Session::punch()), and a second, separate
+    /// instance for a blow landing ON the player (step(), off a drop in
+    /// tavern_->playerHp() -- see that call site's own note on why a
+    /// comparison and not a new sim-side flag). Two instances, not one,
+    /// because a mutual exchange can trigger both in the same step and each
+    /// needs to run its own decay without restarting the other's.
+    ImpactPulse punchLandedPulse_;
+    ImpactPulse punchTakenPulse_;
+    /// Last step's own hit points, purely so step() can tell "the player was
+    /// just hit" apart from every OTHER reason playerHp() could differ from
+    /// one frame to the next (there is only the one today, but comparing
+    /// rather than assuming keeps this honest if a second one is ever added).
+    /// Initialised from the real starting hp in the constructor, not 100,
+    /// so a session that boots the player already hurt does not read as
+    /// having just been struck on its very first frame.
+    std::int32_t lastPlayerHp_ = 0;
+
+    /// A bouncer's warning finally lands with a little weight: the alert
+    /// row's own legibility plate (drawTextPlate, this same sprint) briefly
+    /// overshoots its settled size and eases back down the instant a NEW
+    /// warning arrives -- see syncPanelAnim()'s own rising-edge check and
+    /// HudState::alertPulse's header for where this is read back.
+    ImpactPulse alertPulse_;
+    /// Whether a bouncer's warning was showing as of the LAST syncPanelAnim()
+    /// call, so that call can tell "a fresh warning just arrived" (the rising
+    /// edge alertPulse_ triggers on) apart from "the same warning is still
+    /// showing" (re-read every step, must NOT retrigger the pulse every
+    /// step) and "warned went from true back to false" (no pulse either way).
+    bool lastWarned_ = false;
 };
 
 /// What a scripted capture run was asked to do.
@@ -1199,6 +1264,29 @@ struct SmokeRunConfig {
     /// caller that genuinely wants the opening bump on purpose -- proving the
     /// transition itself does not flash on its very first frame.
     bool settle = true;
+    /// VERIFICATION ONLY (INNOVATION SPRINT). -1 (the default) leaves
+    /// `settle` above as the whole story: 16 zero-input steps or none. A
+    /// non-negative value overrides that count exactly -- so a capture can
+    /// stop the panel/border eases this sprint added PARTWAY through their
+    /// own transition (say, four steps into an eight-step rise) rather than
+    /// only ever photographing "not started" (`--no-settle`) or "finished"
+    /// (`--settle`). Neither of those two proves a RECT is moving and not
+    /// only fading -- at the opening bump alpha is already low enough that a
+    /// slid-in-but-dim panel and a not-there panel can look the same in a
+    /// screenshot -- so this exists to let a mid-transition frame actually
+    /// be taken, the same reasoning `cursorRow` and every other verification
+    /// flag in this struct already state for themselves.
+    int settleSteps = -1;
+    /// VERIFICATION ONLY (INNOVATION SPRINT). Closes any open conversation
+    /// and throws the player's own punch at whoever is nearest, retrying up
+    /// to eight times (one movement step apart) until one actually LANDS --
+    /// a miss leaves nothing to photograph, and the swing itself is a coin
+    /// flip this flag has no business hardcoding around. Exists for the
+    /// identical reason `character`/`map` do: item #3's brawl-impact flash
+    /// (and, as a natural side effect of throwing a punch inside a taproom
+    /// with bouncers watching, the alert plate's own pulse once the house
+    /// notices) had no headless capture path at all before this.
+    bool punch = false;
     /// S5. Climb onto the Gilded Gull's roof and look down at the ward: in at
     /// the door, up the stair, out over the north wall, and turn round. WHERE
     /// is "roof" (standing on the lead), "leap" (across the alley onto the next

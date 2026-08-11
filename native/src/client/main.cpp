@@ -306,6 +306,8 @@ void print_usage() {
         "                       before the shutter goes\n"
         "  --map                open the tiled Menu, Map tile focused,\n"
         "                       before the shutter goes\n"
+        "  --punch              VERIFICATION ONLY: retry the punch key until\n"
+        "                       one lands, before the shutter goes\n"
         "  --creation[=STEP]    capture the origin-select/customize flow with\n"
         "                       no window and no world. STEP is origin\n"
         "                       (default), customize (CUSTOM, a few points\n"
@@ -319,6 +321,10 @@ void print_usage() {
         "                       of its settled, fully-open frame -- only\n"
         "                       useful for proving the transition itself\n"
         "                       does not flash on its first drawn frame\n"
+        "  --settle-steps=N     VERIFICATION ONLY: run exactly N zero-input\n"
+        "                       steps before the shutter instead of 16-or-0,\n"
+        "                       so a mid-transition frame of the panel/menu\n"
+        "                       eases can actually be photographed\n"
         "  --street[=WHO]       stand next to somebody out in the WARD and talk\n"
         "                       to them. WHO is hand, watch, priest, disciple,\n"
         "                       keeper, fisher, sailor, carter, wastrel, urchin,\n"
@@ -515,6 +521,10 @@ void print_usage() {
         } else if (std::strcmp(arg, "--map") == 0) {
             options.smoke.map = true;
             options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--punch") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::punch's own header.
+            options.smoke.punch = true;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--creation") == 0) {
             options.wantsCreation = true;
         } else if (starts_with(arg, "--creation=", &value)) {
@@ -528,6 +538,13 @@ void print_usage() {
             // header. This is the escape hatch for the one caller that
             // deliberately wants the opening bump captured instead.
             options.smoke.settle = false;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--settle-steps=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::settleSteps's own
+            // header -- a mid-transition frame for the panel-geometry and
+            // menu-focus eases, neither of which `--settle`/`--no-settle`
+            // alone can photograph.
+            options.smoke.settleSteps = std::max(0, std::atoi(value));
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--street") == 0) {
             options.smoke.street = true;
