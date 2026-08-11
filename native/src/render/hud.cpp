@@ -454,7 +454,8 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
     // the first word.
     const bool seen = state.stealthLabel.substr(0, 4) == "SEEN";
     const std::string stealth = clipToWidth(state.stealthLabel, rowBudget, minor);
-    add(stealth, seen ? Rgb{0.86F, 0.66F, 0.28F} : Rgb{0.44F, 0.72F, 0.50F}, 0.86F, 1);
+    add(stealth, seen ? Rgb{0.86F, 0.66F, 0.28F} : Rgb{0.44F, 0.72F, 0.50F},
+        0.86F * std::clamp(state.stealthFade, 0.0F, 1.0F), 1);
 
     // THE GAP IS ONE PIXEL SHORT OF THE OBVIOUS ONE, AND THAT BOUGHT A ROW.
     // rowHeight already carries the drop shadow, so the visible gap between
@@ -503,7 +504,7 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         const std::string line = clipToWidth(state.roomLabel, room, minor);
         drawText(target, width - margin - textWidth(line, minor),
                  target.height() - margin - rowHeight(minor), line, Rgb{0.72F, 0.70F, 0.62F},
-                 0.88F, minor);
+                 0.88F * std::clamp(state.roomFade, 0.0F, 1.0F), minor);
     }
 
     // THE SHARED SHAPE EVERY ROW BELOW BUT THE ALERT ALREADY HAD: skip an
@@ -609,11 +610,17 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // while a lock is open, Session::interactPrompt() stands down for
     // picking() the same way it does for talking()), but the alert (a
     // bouncer's own warning) still outranks everything on this edge.
-    takeCentred(state.interactLabel, Rgb{0.85F, 0.80F, 0.60F}, 0.92F);
+    //
+    // HARDENING PASS: EASED, LIKE THE ALERT ABOVE. state.interactFade is
+    // Session's own render::EasedToggle for this row -- see hud.hpp's own
+    // note on why it is not the alert's alertFade reused.
+    takeCentred(state.interactLabel, Rgb{0.85F, 0.80F, 0.60F},
+                0.92F * std::clamp(state.interactFade, 0.0F, 1.0F));
     // The lock under the wire. A lockpicking minigame is exactly the element
     // that would otherwise become a panel in the middle of the screen, which is
     // the failure this HUD is built against; it gets one row on an edge.
-    takeCentred(state.lockLabel, Rgb{0.78F, 0.74F, 0.56F}, 0.92F);
+    takeCentred(state.lockLabel, Rgb{0.78F, 0.74F, 0.56F},
+                0.92F * std::clamp(state.lockFade, 0.0F, 1.0F));
     // The case. IT IS THE COLOUR OF THE WARD'S NERVE and not a fixed one: a
     // player who has frightened the district enough that nobody walks the
     // Gullet alone should see that without reading the words.
@@ -631,7 +638,7 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         const bool afraid = state.caseLabel.find("EMPTYING") != std::string_view::npos ||
                             state.caseLabel.find("ALONE") != std::string_view::npos;
         takeLeft(state.caseLabel, afraid ? Rgb{0.86F, 0.44F, 0.36F} : Rgb{0.70F, 0.72F, 0.66F},
-                 0.90F);
+                 0.90F * std::clamp(state.caseFade, 0.0F, 1.0F));
     }
     // The man who put you here, anchored to the right edge so a long name
     // cannot run off the frame the way S6 alert did. A hunted man should not
@@ -643,10 +650,12 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     {
         const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
         takeRight(state.rivalLabel, hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F},
-                  0.90F);
+                  0.90F * std::clamp(state.rivalFade, 0.0F, 1.0F));
     }
-    takeLeft(state.guildLabel, Rgb{0.86F, 0.74F, 0.44F}, 0.92F);
-    takeLeft(state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F}, 0.80F);
+    takeLeft(state.guildLabel, Rgb{0.86F, 0.74F, 0.44F},
+             0.92F * std::clamp(state.guildFade, 0.0F, 1.0F));
+    takeLeft(state.objectiveLabel, Rgb{0.62F, 0.66F, 0.72F},
+             0.80F * std::clamp(state.objectiveFade, 0.0F, 1.0F));
 }
 
 }  // namespace

@@ -335,6 +335,25 @@ Session::Session(const SessionConfig& config)
     panelAnim_.snapTo(conversingNow());
     alertAnim_.snapTo(!message_.empty());
     syncTavernToBody();
+    // HARDENING PASS. THE SAME SNAP, GENERALIZED. syncPanelAnim() below sets
+    // the target and caches the text for every other row this pass eases too
+    // (see its own header) -- calling it here is a no-op for panelAnim_/
+    // alertAnim_, which are already sitting exactly on the target just
+    // snapped above (EasedToggle::setTarget is idempotent), but the eight
+    // new toggles have never been touched and would otherwise arm their own
+    // opening bump on a session that starts with, say, a rung already held
+    // or the player already standing inside the Gull. Snapped to whatever
+    // target it just computed, for the identical reason panelAnim_/
+    // alertAnim_ are snapped instead of merely targeted, above.
+    syncPanelAnim();
+    interactAnim_.snapTo(interactAnim_.target());
+    lockAnim_.snapTo(lockAnim_.target());
+    caseAnim_.snapTo(caseAnim_.target());
+    roomAnim_.snapTo(roomAnim_.target());
+    rivalAnim_.snapTo(rivalAnim_.target());
+    guildAnim_.snapTo(guildAnim_.target());
+    objectiveAnim_.snapTo(objectiveAnim_.target());
+    stealthAnim_.snapTo(stealthAnim_.target());
 }
 
 void Session::syncTavernToBody() {
@@ -543,6 +562,28 @@ void Session::toggleCrouch() {
 sim::Stance Session::stance() const noexcept { return tavern_->stance(); }
 
 bool Session::hidden() const noexcept { return tavern_->hidden(); }
+
+std::string Session::roomLine() const {
+    // HARDENING PASS. Pulled out of drawFrame()'s own inline block so
+    // syncPanelAnim() can call the identical logic instead of a second copy
+    // -- see that method's own header. Bottom-right, and only when there is
+    // a room to describe.
+    if (!tavern_->playerInside()) {
+        return {};
+    }
+    std::ostringstream line;
+    line << "THE GULL  " << tavern_->presentCount() << " IN  ";
+    if (!tavern_->isOpen()) {
+        line << "SHUT";
+    } else if (tavern_->noise() >= 60) {
+        line << "LOUD";
+    } else if (tavern_->noise() >= 25) {
+        line << "BUSY";
+    } else {
+        line << "QUIET";
+    }
+    return line.str();
+}
 
 std::string Session::stealthLine() const {
     const sim::Notice worst = tavern_->worstNotice();
@@ -1334,6 +1375,15 @@ void Session::step(const sim::MoveInput& input) {
     syncPanelAnim();
     panelAnim_.advance();
     alertAnim_.advance();
+    // HARDENING PASS. THE SAME PER-STEP ADVANCE, ONE PER ROW.
+    interactAnim_.advance();
+    lockAnim_.advance();
+    caseAnim_.advance();
+    roomAnim_.advance();
+    rivalAnim_.advance();
+    guildAnim_.advance();
+    objectiveAnim_.advance();
+    stealthAnim_.advance();
     // NOW the string can go. messageSteps_ reaching zero is what stopped
     // WANTING the alert on screen -- see the note above and syncPanelAnim's
     // own formula -- and alertAnim_ finishing its fade is what stopped
@@ -1344,6 +1394,25 @@ void Session::step(const sim::MoveInput& input) {
     if (messageSteps_ == 0 && alertAnim_.settled() && !alertAnim_.target()) {
         message_.clear();
     }
+    // THE SAME CLEAR, GENERALIZED. Once a row's own toggle has fully eased to
+    // closed there is nothing left to fade, and clearing its cache is what
+    // stops an old rung or an old room line from permanently claiming a
+    // bottom-band slot it finished fading out of minutes ago -- see
+    // BottomBand::take() in hud.cpp, which hands a row a slot by "is this
+    // label non-empty", not by its alpha.
+    const auto clearIfClosed = [](EasedToggle& anim, std::string& cache) {
+        if (anim.settled() && !anim.target()) {
+            cache.clear();
+        }
+    };
+    clearIfClosed(interactAnim_, interactCache_);
+    clearIfClosed(lockAnim_, lockCache_);
+    clearIfClosed(caseAnim_, caseCache_);
+    clearIfClosed(roomAnim_, roomCache_);
+    clearIfClosed(rivalAnim_, rivalCache_);
+    clearIfClosed(guildAnim_, guildCache_);
+    clearIfClosed(objectiveAnim_, objectiveCache_);
+    clearIfClosed(stealthAnim_, stealthCache_);
 
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
@@ -3102,6 +3171,43 @@ void Session::syncPanelAnim() noexcept {
     // non-empty cannot be what decides whether the alert is still wanted, or
     // the two would deadlock each other.
     alertAnim_.setTarget(warned || messageSteps_ > 0);
+
+    // HARDENING PASS. EVERY OTHER ROW hud.hpp:178-187 NAMED AS STILL
+    // SNAPPING, on the identical two-part shape the alert just used above:
+    // setTarget() decides whether the row is WANTED, and the cached string
+    // is what stays behind to fade once it is not -- see interactCache_'s
+    // own header. `conversing` matches exactly what drawFrame() already
+    // blanks every one of these rows for while a panel is open (the topic
+    // list, the casebook, the keys page, options or pause own the bottom
+    // band then), and roomLine()/stealthLine() gate themselves on
+    // tavern_->playerInside() the same way drawFrame() used to inline.
+    const bool conversing = conversingNow();
+    const auto sync = [conversing](EasedToggle& anim, std::string& cache, std::string&& text) {
+        const bool visible = !conversing && !text.empty();
+        if (visible) {
+            cache = std::move(text);
+        }
+        anim.setTarget(visible);
+    };
+    // #85's OWN "<key>  <label>" COMPOSITION, MOVED HERE FROM drawFrame()
+    // RATHER THAN DUPLICATED. interactPrompt() answers the bare verb
+    // ("TALK"); the key name off the same primary binding keyRows() prints
+    // is prefixed here, once, so drawFrame() reading interactCache_ back
+    // gets the exact row it used to build inline.
+    std::string prompt;
+    if (const std::string verb = interactPrompt(); !verb.empty()) {
+        prompt = std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]));
+        prompt += "  ";
+        prompt += verb;
+    }
+    sync(interactAnim_, interactCache_, std::move(prompt));
+    sync(lockAnim_, lockCache_, lockLine());
+    sync(caseAnim_, caseCache_, caseLine());
+    sync(roomAnim_, roomCache_, roomLine());
+    sync(rivalAnim_, rivalCache_, rivalLine());
+    sync(guildAnim_, guildCache_, guildLine());
+    sync(objectiveAnim_, objectiveCache_, objectiveLine());
+    sync(stealthAnim_, stealthCache_, tavern_->playerInside() ? stealthLine() : std::string());
 }
 
 std::string Session::rivalLine() const {
@@ -3294,22 +3400,6 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.locationLabel = label;
     hud.timeOfDaySeconds = timeOfDay_;
     hud.coin = tavern_->playerCoin();
-    // Bottom-right, and only when there is a room to describe.
-    std::string room;
-    if (tavern_->playerInside()) {
-        std::ostringstream line;
-        line << "THE GULL  " << tavern_->presentCount() << " IN  ";
-        if (!tavern_->isOpen()) {
-            line << "SHUT";
-        } else if (tavern_->noise() >= 60) {
-            line << "LOUD";
-        } else if (tavern_->noise() >= 25) {
-            line << "BUSY";
-        } else {
-            line << "QUIET";
-        }
-        room = line.str();
-    }
     // While a conversation is open the bottom band belongs to the topic list,
     // so the room line and the running message stand down rather than draw on
     // top of it.
@@ -3325,7 +3415,15 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // both were illegible. Nothing in a `--screenshot` capture would ever have
     // shown it, because nothing scripted opens this page.
     const bool conversing = conversingNow();
-    hud.roomLabel = conversing ? std::string_view{} : std::string_view{room};
+    // HARDENING PASS. roomLabel READS THE CACHE syncPanelAnim() JUST FILLED,
+    // NOT A FRESH roomLine() CALL. The cache is what keeps a room label on
+    // screen fading out after tavern_->playerInside() has already gone
+    // false -- roomLine() itself would answer empty by then, same as every
+    // other row below -- and roomFade is Session's own EasedToggle for this
+    // row (roomAnim_), the identical pattern hud.alertFade already set for
+    // the alert. See interactCache_'s own header in session.hpp.
+    hud.roomLabel = std::string_view{roomCache_};
+    hud.roomFade = roomAnim_.value();
     // The ward's opinion of you sits under the purse -- unless somebody is in
     // front of you, in which case THEIR opinion is the one that matters and the
     // panel is already showing it.
@@ -3347,39 +3445,31 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.stashLabel = conversing ? std::string_view{} : std::string_view{sack};
     // S9. Whether the room can see you, and the lock under the wire. Both on
     // edges, both empty when they have nothing to say -- the right-hand stack
-    // for the first, the bottom band for the second.
-    const std::string unseen = tavern_->playerInside() ? stealthLine() : std::string();
-    hud.stealthLabel = conversing ? std::string_view{} : std::string_view{unseen};
-    const std::string lock = lockLine();
-    hud.lockLabel = conversing ? std::string_view{} : std::string_view{lock};
-    // #85. THE RESOLVED INTERACT VERB, LIVE. "E  TALK" changing to
-    // "E  PICKPOCKET" the instant the player crouches facing somebody --
-    // Eli's own brief, verbatim: "the player must SEE what pressing it will
-    // do before they press it." The key name comes off the same primary
-    // binding keyRows() prints, so a rebinding shows up here exactly the way
-    // it already does on the keys page. NOT '[' / ']' around the key -- see
-    // hud.cpp's own header on the 4x6 font's glyph set -- the same
-    // "<key>  <label>" two-space convention every other row on this page
-    // already uses.
-    const std::string verb = interactPrompt();
-    std::string prompt;
-    if (!verb.empty()) {
-        prompt = std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]));
-        prompt += "  ";
-        prompt += verb;
-    }
-    hud.interactLabel = conversing ? std::string_view{} : std::string_view{prompt};
+    // for the first, the bottom band for the second. Both read their own
+    // cache and fade the identical way roomLabel just did, above.
+    hud.stealthLabel = std::string_view{stealthCache_};
+    hud.stealthFade = stealthAnim_.value();
+    hud.lockLabel = std::string_view{lockCache_};
+    hud.lockFade = lockAnim_.value();
+    // #85. THE RESOLVED INTERACT VERB. "E  TALK" changing to "E  PICKPOCKET"
+    // the instant the player crouches facing somebody -- Eli's own brief,
+    // verbatim: "the player must SEE what pressing it will do before they
+    // press it." interactCache_ already carries the composed "<key>  <label>"
+    // row -- see syncPanelAnim()'s own note on why that composition moved
+    // there instead of staying here.
+    hud.interactLabel = std::string_view{interactCache_};
+    hud.interactFade = interactAnim_.value();
     // The rung, and what the line wants next. Bottom-left, over the health bar.
-    const std::string guild = guildLine();
-    const std::string objective = objectiveLine();
-    hud.guildLabel = conversing ? std::string_view{} : std::string_view{guild};
-    hud.objectiveLabel = conversing ? std::string_view{} : std::string_view{objective};
+    hud.guildLabel = std::string_view{guildCache_};
+    hud.guildFade = guildAnim_.value();
+    hud.objectiveLabel = std::string_view{objectiveCache_};
+    hud.objectiveFade = objectiveAnim_.value();
     // S10. Where the case stands and where it wants you next: ONE row,
     // bottom-left, in the one slot of that stack provably outside the exclusion
     // rectangle. What the ward CALLS you for the work is not on the HUD at all
     // -- it is on the casebook's own page, because a title is something you
     // look up and not something you need every frame.
-    const std::string investigation = caseLine();
+    //
     // ONE SLOT, TWO TENANTS -- AND polish-1 GAVE THEM A SLOT EACH.
     //
     // The case row used to sit at y - 16*scale off the health bar, which IS
@@ -3392,8 +3482,8 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // suppression is gone and both are shown.
     // And who put you on the floor last, which is the one thing on the HUD that
     // is about somebody else rather than about you.
-    const std::string rival = rivalLine();
-    hud.rivalLabel = conversing ? std::string_view{} : std::string_view{rival};
+    hud.rivalLabel = std::string_view{rivalCache_};
+    hud.rivalFade = rivalAnim_.value();
     hud.showCompass = !conversing;
     // A bouncer's warning outranks anything the player did to themselves: it is
     // the one line in this game they must not miss.
@@ -3409,7 +3499,8 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // construction, which is the whole of what every caller before this field
     // existed drew.
     hud.alertFade = alertAnim_.value();
-    hud.caseLabel = conversing ? std::string_view{} : std::string_view{investigation};
+    hud.caseLabel = std::string_view{caseCache_};
+    hud.caseFade = caseAnim_.value();
     hud.showHealth = !conversing;
     // AND THE BOTTOM BAND IS THE TOPIC LIST'S, WHOLE. The alert used to be
     // drawn over it and S7 shipped the frame that proves it -- see

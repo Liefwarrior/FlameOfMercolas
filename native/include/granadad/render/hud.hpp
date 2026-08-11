@@ -185,6 +185,22 @@ struct HudState {
     /// before this field existed, so `* alertFade` is a no-op for a caller
     /// that never heard of it.
     float alertFade = 1.0F;
+    /// HARDENING PASS. THE SAME alertFade PATTERN, ONE PER ROW. #83 eased the
+    /// alert row in and out and left every other row on this HUD popping --
+    /// see this file's own header on the rule these rows draw under and
+    /// Session::syncPanelAnim() for how each of these is driven by its OWN
+    /// render::EasedToggle, not a shared one, because interactLabel and
+    /// stealthLabel (for instance) appear and disappear on completely
+    /// unrelated triggers. Each defaults to 1, the same no-op reasoning as
+    /// alertFade: a HudState nobody eased draws exactly as it always has.
+    float interactFade = 1.0F;
+    float lockFade = 1.0F;
+    float caseFade = 1.0F;
+    float roomFade = 1.0F;
+    float rivalFade = 1.0F;
+    float guildFade = 1.0F;
+    float objectiveFade = 1.0F;
+    float stealthFade = 1.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the

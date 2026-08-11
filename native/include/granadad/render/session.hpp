@@ -878,6 +878,11 @@ private:
     void settleLanding(const sim::RoofResult& move);
     /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
     [[nodiscard]] std::string heatLine() const;
+    /// "THE GULL  14 IN  BUSY", or empty when the player is not inside.
+    /// Pulled out of drawFrame() into its own Line() method, the same shape
+    /// every other bottom-band row already had, so syncPanelAnim() can call
+    /// it too -- see that method's own header on why it now needs to.
+    [[nodiscard]] std::string roomLine() const;
 
     // --- task #83: panel and prompt easing -----------------------------------
     //
@@ -899,6 +904,18 @@ private:
     /// drawn after a keypress already carries visible motion rather than
     /// waiting for the next step() to catch up -- see EasedToggle::setTarget's
     /// own note on why opening from rest is never exactly zero.
+    ///
+    /// HARDENING PASS. ALSO RE-READS EVERY OTHER HUD ROW hud.hpp:178-187 named
+    /// as still snapping instead of easing -- the interact prompt, the lock
+    /// line, the case banner, the room label, the rival/guild/objective lines
+    /// and the stealth readout -- and pushes each at its OWN EasedToggle
+    /// (interactAnim_ etc., below), the same reasoning panelAnim_ and
+    /// alertAnim_ already argue for: sharing one toggle across rows that
+    /// appear and disappear on unrelated triggers would make one row's fade
+    /// restart every time an unrelated row changed. Folded into this
+    /// function, not a second one with its own call sites, so every place
+    /// that already calls syncPanelAnim() to catch a change the simulation
+    /// made (not a keypress) keeps every row honest for free.
     void syncPanelAnim() noexcept;
 
     SessionConfig config_;
@@ -1046,6 +1063,35 @@ private:
     /// frame reproducible.
     EasedToggle panelAnim_;
     EasedToggle alertAnim_;
+    /// HARDENING PASS. hud.hpp:178-187's own gap: alertFade multiplied only
+    /// the alert row, so every row below it still popped. One EasedToggle per
+    /// row, not one shared, because the interact prompt, the lock line, the
+    /// case banner, the room label, the rival/guild/objective lines and the
+    /// stealth readout all appear and disappear independently of each other --
+    /// see syncPanelAnim()'s own header. Advanced once a step, in step(),
+    /// exactly like panelAnim_/alertAnim_ above.
+    EasedToggle interactAnim_;
+    EasedToggle lockAnim_;
+    EasedToggle caseAnim_;
+    EasedToggle roomAnim_;
+    EasedToggle rivalAnim_;
+    EasedToggle guildAnim_;
+    EasedToggle objectiveAnim_;
+    EasedToggle stealthAnim_;
+    /// The last non-empty text each row above showed, held onto through the
+    /// row's own fade-out -- the identical reason message_ outlives
+    /// messageSteps_ (see step()'s own note by the alert's clear): an alpha
+    /// cannot fade a string that is already gone. Cleared once its toggle has
+    /// actually finished easing to closed, not the instant the row's own
+    /// condition goes false -- see step()'s clearIfClosed.
+    std::string interactCache_;
+    std::string lockCache_;
+    std::string caseCache_;
+    std::string roomCache_;
+    std::string rivalCache_;
+    std::string guildCache_;
+    std::string objectiveCache_;
+    std::string stealthCache_;
 };
 
 /// What a scripted capture run was asked to do.
