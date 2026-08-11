@@ -85,4 +85,51 @@ private:
     float value_ = 0.0F;
 };
 
+// INNOVATION SPRINT (item #3): SOME IMPACT, TASTEFULLY. Grep confirmed this
+// build has no screen shake, flash or hit-stop anywhere: a punch lands, a
+// blow lands on the player, a bouncer shouts across the room, and nothing on
+// screen has ever weighed any of it. EasedToggle is the wrong shape for that
+// -- it is a STATE (open or closed, held until told otherwise) and a punch
+// landing is an EVENT (happens once, at an instant, and is over). Restating
+// it as an EasedToggle you flip on and then immediately flip back off would
+// work by accident and read as a hack to the next person who has to
+// understand why.
+//
+// ImpactPulse is the one small piece of state that fixes that: it jumps to
+// full strength the instant trigger() is called and eases back down to
+// nothing over a short, fixed run of advance() calls, with nothing holding
+// it open. RESTRAINED BY CONSTRUCTION, not by convention: there is no way to
+// call this that produces a loop or a hold -- the peak is a single instant
+// and the decay is the whole of what happens after it, which is what keeps
+// every caller's flash "a few frames" rather than "however long I forget to
+// turn it off".
+class ImpactPulse {
+public:
+    /// decaySteps: how many advance() calls the pulse takes to reach zero
+    /// from full strength. Short on purpose -- this is punctuation for a
+    /// moody, text-forward investigation game, not a fighting game's hit
+    /// spark, and every caller of this class picks a value on the order of a
+    /// tenth of a second at kStepsPerSecond (60), not longer.
+    explicit ImpactPulse(std::int32_t decaySteps = 8) noexcept;
+
+    /// Jumps straight back to full strength, even mid-decay. A flurry of
+    /// punches restacks the flash rather than waiting for an earlier one to
+    /// finish fading -- the same "the newest thing wins" rule a fresh say()
+    /// already gives Session::message_.
+    void trigger() noexcept;
+
+    /// One step's worth of decay. Call once per Session::step(), same as
+    /// EasedToggle::advance() and for the identical reason -- see anim.hpp's
+    /// own header on why this is counted in steps and not draw calls.
+    void advance() noexcept;
+
+    /// 1 the instant trigger() is called, easing down to 0 and sitting there
+    /// until triggered again.
+    [[nodiscard]] float value() const noexcept { return value_; }
+
+private:
+    std::int32_t decaySteps_;
+    float value_ = 0.0F;
+};
+
 }  // namespace granadad::render

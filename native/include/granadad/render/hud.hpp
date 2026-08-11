@@ -201,6 +201,18 @@ struct HudState {
     float guildFade = 1.0F;
     float objectiveFade = 1.0F;
     float stealthFade = 1.0F;
+    /// INNOVATION SPRINT ITEM #3. 1 the instant a NEW bouncer's warning
+    /// arrives, easing down to 0 over a handful of frames -- see
+    /// render::ImpactPulse's own header and Session::alertPulse_'s. Unlike
+    /// every *Fade field above (a level, held at whatever the row's own
+    /// EasedToggle currently sits at) this is an EVENT: it grows the alert
+    /// row's own legibility plate (drawTextPlate, this same sprint) a few
+    /// pixels past its settled size for an instant and lets it ease back
+    /// down, so the warning reads as having LANDED rather than merely having
+    /// appeared. Defaults to 0, which is the plate's ordinary settled size --
+    /// what every caller before this field existed drew, and what this one
+    /// draws again a few frames after any warning.
+    float alertPulse = 0.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the

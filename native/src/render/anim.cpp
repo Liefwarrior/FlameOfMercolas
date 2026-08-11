@@ -53,4 +53,18 @@ bool EasedToggle::settled() const noexcept {
     return target_ ? value_ >= 1.0F : value_ <= 0.0F;
 }
 
+ImpactPulse::ImpactPulse(std::int32_t decaySteps) noexcept
+    : decaySteps_(std::max<std::int32_t>(1, decaySteps)) {}
+
+void ImpactPulse::trigger() noexcept { value_ = 1.0F; }
+
+void ImpactPulse::advance() noexcept {
+    if (value_ <= 0.0F) {
+        value_ = 0.0F;
+        return;
+    }
+    value_ -= 1.0F / static_cast<float>(decaySteps_);
+    value_ = std::max(0.0F, value_);
+}
+
 }  // namespace granadad::render

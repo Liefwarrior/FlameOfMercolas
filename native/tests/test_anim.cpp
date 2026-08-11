@@ -7,6 +7,7 @@
 #include "granadad/render/anim.hpp"
 
 using granadad::render::EasedToggle;
+using granadad::render::ImpactPulse;
 
 TEST_CASE("a fresh toggle starts closed and settled") {
     EasedToggle toggle;
@@ -112,5 +113,64 @@ TEST_CASE("value never leaves 0..1 across a long, direction-flipping run") {
         toggle.advance();
         CHECK(toggle.value() >= 0.0F);
         CHECK(toggle.value() <= 1.0F);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// INNOVATION SPRINT (item #3): ImpactPulse -- an EVENT, not a STATE. Nothing
+// holds it open; trigger() is the whole of what starts it.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a fresh pulse sits at zero until triggered") {
+    ImpactPulse pulse;
+    CHECK(pulse.value() == 0.0F);
+    pulse.advance();
+    CHECK(pulse.value() == 0.0F);
+}
+
+TEST_CASE("trigger jumps straight to full strength") {
+    ImpactPulse pulse(4);
+    pulse.trigger();
+    CHECK(pulse.value() == 1.0F);
+}
+
+TEST_CASE("advance decays to exactly zero over decaySteps calls and stays there") {
+    ImpactPulse pulse(4);
+    pulse.trigger();
+    for (int i = 0; i < 4; ++i) {
+        CHECK(pulse.value() > 0.0F);
+        pulse.advance();
+    }
+    CHECK(pulse.value() == 0.0F);
+    pulse.advance();
+    CHECK(pulse.value() == 0.0F);
+}
+
+TEST_CASE("a fresh trigger restacks a pulse that has not finished decaying") {
+    // A FLURRY RESTARTS THE FLASH RATHER THAN QUEUEING BEHIND IT. Two punches
+    // a handful of steps apart should each read as their own beat, not have
+    // the second one silently absorbed into the first's tail.
+    ImpactPulse pulse(10);
+    pulse.trigger();
+    pulse.advance();
+    pulse.advance();
+    pulse.advance();
+    const float midDecay = pulse.value();
+    REQUIRE(midDecay > 0.0F);
+    REQUIRE(midDecay < 1.0F);
+
+    pulse.trigger();
+    CHECK(pulse.value() == 1.0F);
+}
+
+TEST_CASE("pulse value never leaves 0..1 across a long run of scattered triggers") {
+    ImpactPulse pulse(3);
+    for (int i = 0; i < 200; ++i) {
+        if (i % 7 == 0) {
+            pulse.trigger();
+        }
+        pulse.advance();
+        CHECK(pulse.value() >= 0.0F);
+        CHECK(pulse.value() <= 1.0F);
     }
 }

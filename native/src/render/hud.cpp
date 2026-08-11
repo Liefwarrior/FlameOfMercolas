@@ -595,10 +595,21 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             // deliberately tight on Y -- band.take() reserved this row a slot
             // sized off `minor`, not `alertScale`, and a tall plate risks
             // eating into whatever row the priority order above stacks next.
-            const int padX = alertScale * 2;
-            const int padY = std::max(1, alertScale / 2);
+            //
+            // INNOVATION SPRINT ITEM #3. `pulse` (0..1, HudState::alertPulse's
+            // own header) briefly overshoots the pad and the border by a
+            // pixel or two, easing back to the ordinary settled size drawn
+            // above -- the plate landing with a little weight instead of
+            // merely popping into place. AT REST (pulse == 0, every caller
+            // before this field existed) this is bit-for-bit the same plate
+            // drawn before it existed.
+            const float pulse = std::clamp(state.alertPulse, 0.0F, 1.0F);
+            const int pulsePad = static_cast<int>(std::round(static_cast<float>(alertScale) * pulse));
+            const int padX = alertScale * 2 + pulsePad;
+            const int padY = std::max(1, alertScale / 2) + pulsePad;
             drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
-                          y + kGlyphH * alertScale + padY, std::max(1, alertScale / 2), rowAlpha);
+                          y + kGlyphH * alertScale + padY,
+                          std::max(1, alertScale / 2 + pulsePad), rowAlpha);
             // TASK #83. Eased in Session, not here -- see HudState::alertFade.
             // A caller that never set it gets 1, which is 0.95F unchanged.
             drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F}, 0.95F * rowAlpha,
