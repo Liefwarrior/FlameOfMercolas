@@ -201,6 +201,15 @@ struct HudState {
     float guildFade = 1.0F;
     float objectiveFade = 1.0F;
     float stealthFade = 1.0F;
+    /// PLANNING SPRINT (item #2, the sweep). THE SAME PATTERN, FOR THE THREE
+    /// ROWS THAT WERE STILL MISSING IT. standingLabel/heatLabel/stashLabel
+    /// used to snap on hud.hpp:73-105's own `conversing` bool at full
+    /// strength while stealthFade (right above) already eased its neighbour
+    /// -- a real sweep for the class of bug the prior two sprints fixed found
+    /// them. Same no-op-by-default reasoning as every *Fade field above.
+    float standingFade = 1.0F;
+    float heatFade = 1.0F;
+    float stashFade = 1.0F;
     /// INNOVATION SPRINT ITEM #3. 1 the instant a NEW bouncer's warning
     /// arrives, easing down to 0 over a handful of frames -- see
     /// render::ImpactPulse's own header and Session::alertPulse_'s. Unlike

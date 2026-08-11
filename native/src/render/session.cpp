@@ -354,6 +354,11 @@ Session::Session(const SessionConfig& config)
     guildAnim_.snapTo(guildAnim_.target());
     objectiveAnim_.snapTo(objectiveAnim_.target());
     stealthAnim_.snapTo(stealthAnim_.target());
+    // PLANNING SPRINT (item #2, the sweep). THE SAME SNAP, FOR THE THREE ROWS
+    // THE SWEEP FOUND. See standingAnim_'s own header.
+    standingAnim_.snapTo(standingAnim_.target());
+    heatAnim_.snapTo(heatAnim_.target());
+    stashAnim_.snapTo(stashAnim_.target());
     // INNOVATION SPRINT ITEM #2. SNAPPED, FOR THE IDENTICAL REASON THE ROWS
     // ABOVE ARE. NOT a hardcoded "journal starts focused" -- syncPanelAnim()
     // just computed the real answer off casebookOpen_/menuFocus_ (both true
@@ -1400,6 +1405,10 @@ void Session::step(const sim::MoveInput& input) {
     guildAnim_.advance();
     objectiveAnim_.advance();
     stealthAnim_.advance();
+    // PLANNING SPRINT (item #2, the sweep). THE SAME PER-STEP ADVANCE.
+    standingAnim_.advance();
+    heatAnim_.advance();
+    stashAnim_.advance();
     // INNOVATION SPRINT ITEM #2. THE SAME PER-STEP ADVANCE, ONE PER TILE.
     characterFocusAnim_.advance();
     mapFocusAnim_.advance();
@@ -1453,6 +1462,9 @@ void Session::step(const sim::MoveInput& input) {
     clearIfClosed(guildAnim_, guildCache_);
     clearIfClosed(objectiveAnim_, objectiveCache_);
     clearIfClosed(stealthAnim_, stealthCache_);
+    clearIfClosed(standingAnim_, standingCache_);
+    clearIfClosed(heatAnim_, heatCache_);
+    clearIfClosed(stashAnim_, stashCache_);
 
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
@@ -3278,6 +3290,12 @@ void Session::syncPanelAnim() noexcept {
     sync(guildAnim_, guildCache_, guildLine());
     sync(objectiveAnim_, objectiveCache_, objectiveLine());
     sync(stealthAnim_, stealthCache_, tavern_->playerInside() ? stealthLine() : std::string());
+    // PLANNING SPRINT (item #2, the sweep). THE SAME sync() SHAPE, FOR THE
+    // TOP-RIGHT STACK'S THREE REMAINING ROWS -- see standingAnim_'s own
+    // header on why these three, specifically, were still snapping.
+    sync(standingAnim_, standingCache_, standingLine());
+    sync(heatAnim_, heatCache_, heatLine());
+    sync(stashAnim_, stashCache_, stashLine());
 }
 
 std::string Session::rivalLine() const {
@@ -3387,6 +3405,18 @@ std::string Session::objectiveLine() const {
     // orientation a new player needs must not be the thing that breaks the HUD
     // rule to deliver it.
     return {};
+}
+
+std::string Session::standingLine() const {
+    // ABSENCE COSTS NOTHING, the identical rule every other row on this stack
+    // already keeps: "NOBODY IN PARTICULAR" is the ward having no opinion of
+    // you at all, and the row only appears the moment it HAS one -- see
+    // drawFrame()'s own comment where this used to be computed inline.
+    const std::string_view standing = tavern_->dialogue().ledger().reputationLabel();
+    if (standing == sim::kReputationUnremarkable) {
+        return {};
+    }
+    return std::string(standing);
 }
 
 FrameStats Session::drawFrame(Framebuffer& target) const {
@@ -3535,16 +3565,22 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // every frame this game has ever produced, saying that nothing had
     // happened. The row appears the moment the ward HAS an opinion, which is
     // the only moment it is worth the sky it stands in.
-    const std::string_view standing = tavern_->dialogue().ledger().reputationLabel();
-    const bool noticed = standing != sim::kReputationUnremarkable;
-    hud.standingLabel = (conversing || !noticed) ? std::string_view{} : standing;
+    //
+    // PLANNING SPRINT (item #2, the sweep). READS ITS OWN CACHE AND FADES,
+    // THE IDENTICAL SHAPE roomLabel JUST USED ABOVE, instead of the bare
+    // `conversing ? empty : text` this used to be. A real sweep of this file
+    // found these three rows (standing, heat, the sack) still popping on and
+    // off with `conversing` at full strength -- stealthLabel, right below,
+    // already got this treatment; these three did not.
+    hud.standingLabel = std::string_view{standingCache_};
+    hud.standingFade = standingAnim_.value();
     // What the Watch has heard, what is in your coat, and whether you are
     // carrying somebody's bale. Top right under the purse, hugging the edge --
     // the centre of the frame stays empty, which is the rule.
-    const std::string heat = heatLine();
-    const std::string sack = stashLine();
-    hud.heatLabel = conversing ? std::string_view{} : std::string_view{heat};
-    hud.stashLabel = conversing ? std::string_view{} : std::string_view{sack};
+    hud.heatLabel = std::string_view{heatCache_};
+    hud.heatFade = heatAnim_.value();
+    hud.stashLabel = std::string_view{stashCache_};
+    hud.stashFade = stashAnim_.value();
     // S9. Whether the room can see you, and the lock under the wire. Both on
     // edges, both empty when they have nothing to say -- the right-hand stack
     // for the first, the bottom band for the second. Both read their own
@@ -5319,6 +5355,51 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += session.mapOpen() ? 1 : 0;
     }
 
+    // PLANNING SPRINT (item #1). THE GAP `--character --map` COULD NEVER
+    // CLOSE, closed. See SmokeRunConfig::refocus's own header for what this
+    // fixes and why: with nothing here, a caller wanting a mid-crossfade
+    // frame had to fire both toggle*() calls back to back (`config.character`
+    // and `config.map` above, with zero step() calls between them) and could
+    // only ever photograph the SECOND tile's animation from a cold start.
+    //
+    // THIS RUNS BEFORE `settleSteps`' OWN GENERAL LOOP FURTHER DOWN, on
+    // purpose: it spends its own settle budget getting the ORIGIN tile
+    // (`character`/`map` above) genuinely open first, switches focus, spends
+    // a SECOND, separate budget (`refocusSteps`) easing the switch partway
+    // (or all the way -- the caller's choice), and only then falls through to
+    // the ordinary settle logic below, which sees `config.refocus` non-empty
+    // and stands down rather than spending a third, redundant round of steps.
+    if (!config.refocus.empty()) {
+        const int preSteps = config.settleSteps >= 0 ? config.settleSteps : (config.settle ? 16 : 0);
+        const sim::MoveInput still{};
+        for (int i = 0; i < preSteps; ++i) {
+            session.step(still);
+        }
+        // THE SAME FOUR PUBLIC TOGGLES A KEYPRESS CALLS -- toggleCharacter()/
+        // toggleMap()/toggleLetters()/toggleCasebook() -- never
+        // toggleMenuFocused() directly, so this capture proves nothing a
+        // player's own keyboard could not also have produced.
+        bool refocused = false;
+        if (config.refocus == "character") {
+            session.toggleCharacter();
+            refocused = true;
+        } else if (config.refocus == "map") {
+            session.toggleMap();
+            refocused = true;
+        } else if (config.refocus == "letters") {
+            session.toggleLetters();
+            refocused = true;
+        } else if (config.refocus == "journal") {
+            session.toggleCasebook();
+            refocused = true;
+        }
+        result.scriptedWanted += 1;
+        result.scriptedLanded += refocused ? 1 : 0;
+        for (int i = 0; i < config.refocusSteps; ++i) {
+            session.step(still);
+        }
+    }
+
     if (config.punch) {
         // VERIFICATION ONLY. See SmokeRunConfig::punch's own header. The
         // SAME key F makes -- Session::punch() -- retried until it actually
@@ -5446,7 +5527,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // those are the same sixteen ticks that were always safe for the frame
     // this exists to fix and never free for a hash or a count nobody asked to
     // move.
-    if (!config.screenshot.empty()) {
+    // PLANNING SPRINT (item #1). SKIPPED WHEN `refocus` ALREADY SPENT ITS OWN
+    // TWO BUDGETS, above -- running this too would spend a THIRD, unasked-for
+    // round of settle steps past the deliberately mid-crossfade point a
+    // `refocusSteps` capture asked to stop at, silently finishing the swap
+    // the caller wanted photographed partway through.
+    if (!config.screenshot.empty() && config.refocus.empty()) {
         // VERIFICATION ONLY. settleSteps overrides the count exactly when
         // given; otherwise this is unchanged from before that field existed
         // -- 16 or 0. See SmokeRunConfig::settleSteps's own header.
@@ -5459,6 +5545,14 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
 
     Framebuffer frame(config.session.width, config.session.height);
     result.stats = session.drawFrame(frame);
+    // PLANNING SPRINT (item #1). THE NUMBERS BESIDE THE PICTURE -- see
+    // SmokeRunResult::characterFocusAtCapture's own header. Read AFTER every
+    // step() above has already run, so this is the exact value the frame
+    // just drawn was a picture of.
+    result.characterFocusAtCapture = session.characterFocusValue();
+    result.mapFocusAtCapture = session.mapFocusValue();
+    result.lettersFocusAtCapture = session.lettersFocusValue();
+    result.journalFocusAtCapture = session.journalFocusValue();
     result.lampCount = session.lampCount();
     result.endTileX = session.body().tileX();
     result.endTileY = session.body().tileY();

@@ -445,6 +445,16 @@ public:
     /// the way Morrowind's own four panes hold their own scroll position
     /// while only one has the keyboard.
     [[nodiscard]] int menuFocus() const noexcept { return menuFocus_; }
+    /// PLANNING SPRINT (item #1). 0 (unfocused) .. 1 (focused) -- the exact
+    /// value INNOVATION SPRINT ITEM #2's own characterFocusAnim_ etc. are
+    /// sitting at right now. Exposed so a scripted `--refocus` capture (see
+    /// SmokeRunConfig::refocus below) can report the NUMBER a mid-crossfade
+    /// screenshot is a picture of, not just the picture -- a PNG proves a
+    /// border is some shade of the accent colour; this proves which shade.
+    [[nodiscard]] float characterFocusValue() const noexcept { return characterFocusAnim_.value(); }
+    [[nodiscard]] float mapFocusValue() const noexcept { return mapFocusAnim_.value(); }
+    [[nodiscard]] float lettersFocusValue() const noexcept { return lettersFocusAnim_.value(); }
+    [[nodiscard]] float journalFocusValue() const noexcept { return journalFocusAnim_.value(); }
 
     // --- #77: the controls, and the page that changes them -------------------
 
@@ -700,6 +710,13 @@ public:
     /// What the questline in progress wants next, and empty for the same
     /// reason while the wire is in.
     [[nodiscard]] std::string objectiveLine() const;
+    /// "THE WARD WANTS YOU GONE", or empty exactly when reputationLabel()
+    /// reads kReputationUnremarkable -- the identical "absence costs
+    /// nothing" rule every other row on this stack already keeps. PLANNING
+    /// SPRINT (item #2): the one row of this HUD's top-right stack still
+    /// missing the treatment every bottom-left row already has -- see
+    /// syncPanelAnim()'s own note on standingAnim_/heatAnim_/stashAnim_.
+    [[nodiscard]] std::string standingLine() const;
 
     // --- the conversation ---------------------------------------------------
     //
@@ -1078,6 +1095,19 @@ private:
     EasedToggle guildAnim_;
     EasedToggle objectiveAnim_;
     EasedToggle stealthAnim_;
+    /// PLANNING SPRINT (item #2, the sweep). hud.hpp:73-105's own top-right
+    /// stack had THREE rows still popping on/off with `conversing` -- see
+    /// hudTopRightReserve()'s own comment in hud.cpp, which says so out loud:
+    /// "Standing, heat, the sack and the stealth line all stand down for the
+    /// length of a conversation." stealthLabel got its own EasedToggle
+    /// (stealthAnim_ above) the same pass every bottom-left row did; these
+    /// three did not, and a real sweep of this file for exactly the class of
+    /// bug the prior two sprints fixed found them. Same shape, same reason:
+    /// one EasedToggle per row, because a purse appearing has nothing to do
+    /// with the ward's opinion of you appearing.
+    EasedToggle standingAnim_;
+    EasedToggle heatAnim_;
+    EasedToggle stashAnim_;
     /// The last non-empty text each row above showed, held onto through the
     /// row's own fade-out -- the identical reason message_ outlives
     /// messageSteps_ (see step()'s own note by the alert's clear): an alpha
@@ -1092,6 +1122,9 @@ private:
     std::string guildCache_;
     std::string objectiveCache_;
     std::string stealthCache_;
+    std::string standingCache_;
+    std::string heatCache_;
+    std::string stashCache_;
 
     /// INNOVATION SPRINT ITEM #2. Which of the tiled Menu's four tiles is
     /// easing toward or away from input focus, one EasedToggle a tile --
@@ -1277,6 +1310,44 @@ struct SmokeRunConfig {
     /// be taken, the same reasoning `cursorRow` and every other verification
     /// flag in this struct already state for themselves.
     int settleSteps = -1;
+    /// PLANNING SPRINT (item #1). VERIFICATION ONLY -- extends settleSteps'
+    /// own spirit to prove the exact thing it could not.
+    ///
+    /// THE GAP THIS CLOSES. An adversarial review confirmed the Menu's
+    /// focus-swap crossfade (kMenuFocusRiseFallSteps, INNOVATION SPRINT ITEM
+    /// #2) is genuinely correct -- an isolated test inserting real step()
+    /// calls between two toggleCharacter()/toggleMap() calls proves a clean
+    /// crossfade -- but `--character --map` TOGETHER on this CLI calls both
+    /// toggles back to back with ZERO step() calls between them.
+    /// toggleMenuFocused() only ever moves menuFocus_; the EasedToggle
+    /// targets it drives are not re-read until step()'s own syncPanelAnim()
+    /// call (session.cpp) next runs, so with nothing between the two
+    /// toggles, characterFocusAnim_'s target is set to open and then to
+    /// closed on the SAME call, before a single advance() has ever moved it
+    /// off zero -- a screenshot taken that way can only ever show Map's own
+    /// animation from a cold start, never a real mid-crossfade frame with
+    /// Character actually falling away.
+    ///
+    /// `refocus` (character/map/letters/journal, by name) is the tile to
+    /// switch focus TO, once the tile `character` or `map` above opened has
+    /// been given `settleSteps`-worth of real step() calls to actually
+    /// settle open (the ORDINARY CLI opener is still `--character`/`--map`;
+    /// there is no separate `--letters`/`--casebook` flag, so `refocus`
+    /// itself is the only CLI-reachable way to land on those two tiles for a
+    /// capture). `refocusSteps` is how many further zero-input step() calls
+    /// to run AFTER that switch, before the shutter -- the same "stop
+    /// partway through an eight-step rise" job settleSteps already does for
+    /// panel geometry, aimed at the four-step focus swap instead. Runs
+    /// entirely inside runSmoke() (session.cpp), through the SAME public
+    /// toggle*() methods a keypress calls -- toggleCharacter()/toggleMap()/
+    /// toggleLetters()/toggleCasebook() -- so the file's own reasoning for
+    /// why a captured frame is evidence applies unchanged.
+    ///
+    /// Left empty (the default), this does nothing and runSmoke() falls
+    /// straight through to its ordinary settleSteps-only path -- a caller
+    /// that never heard of this is unaffected.
+    std::string refocus;
+    int refocusSteps = 0;
     /// VERIFICATION ONLY (INNOVATION SPRINT). Closes any open conversation
     /// and throws the player's own punch at whoever is nearest, retrying up
     /// to eight times (one movement step apart) until one actually LANDS --
@@ -1471,6 +1542,17 @@ struct SmokeRunResult {
     /// says so in the summary AND fails the process.
     std::int32_t scriptedWanted = 0;
     std::int32_t scriptedLanded = 0;
+    /// PLANNING SPRINT (item #1). Only meaningful when SmokeRunConfig::refocus
+    /// was non-empty -- every one of the tiled Menu's four focus values
+    /// (Session::characterFocusValue() etc.) AT THE MOMENT OF CAPTURE, so a
+    /// case or a review can assert the NUMBER a `--refocus` screenshot is a
+    /// picture of, rather than reading it off pixels. 0 for every caller that
+    /// never asked for a refocus, which is what a hand-built result already
+    /// means.
+    float characterFocusAtCapture = 0.0F;
+    float mapFocusAtCapture = 0.0F;
+    float lettersFocusAtCapture = 0.0F;
+    float journalFocusAtCapture = 0.0F;
     [[nodiscard]] bool scriptFellShort() const noexcept {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }

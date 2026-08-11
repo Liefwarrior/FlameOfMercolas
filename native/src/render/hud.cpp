@@ -435,8 +435,12 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
         purse = clipToWidth(std::to_string(std::min(state.coin, 99999)) + " C", rowBudget, minor);
         add(purse, Rgb{0.82F, 0.72F, 0.38F}, 0.9F, 3);
     }
+    // PLANNING SPRINT (item #2, the sweep). `* clamp(state.*Fade)`, THE SAME
+    // MULTIPLY stealthLabel already carries below -- see HudState::
+    // standingFade's own header. A caller that never heard of it gets the
+    // default 1.0, which is a no-op.
     const std::string standing = clipToWidth(state.standingLabel, rowBudget, minor);
-    add(standing, Rgb{0.62F, 0.66F, 0.72F}, 0.82F, 5);
+    add(standing, Rgb{0.62F, 0.66F, 0.72F}, 0.82F * std::clamp(state.standingFade, 0.0F, 1.0F), 5);
     // Red for anything the ward has decided about you -- a warrant, a hand
     // taken, a rope waiting -- and ash for the rest. Checked against the
     // UNCLIPPED label: the keyword is always at the front and clipping only
@@ -446,9 +450,10 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
                         state.heatLabel.find("MAIMED") != std::string_view::npos ||
                         state.heatLabel.find("CONDEMNED") != std::string_view::npos;
     const std::string heat = clipToWidth(state.heatLabel, rowBudget, minor);
-    add(heat, wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F}, 0.86F, 2);
+    add(heat, wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F},
+        0.86F * std::clamp(state.heatFade, 0.0F, 1.0F), 2);
     const std::string stash = clipToWidth(state.stashLabel, rowBudget, minor);
-    add(stash, Rgb{0.58F, 0.66F, 0.52F}, 0.84F, 4);
+    add(stash, Rgb{0.58F, 0.66F, 0.52F}, 0.84F * std::clamp(state.stashFade, 0.0F, 1.0F), 4);
     // Green while the room cannot see you, amber the moment it can. Checked
     // against the UNCLIPPED label for the identical reason: SEEN is always
     // the first word.

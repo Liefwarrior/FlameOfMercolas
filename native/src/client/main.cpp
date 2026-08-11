@@ -325,6 +325,20 @@ void print_usage() {
         "                       steps before the shutter instead of 16-or-0,\n"
         "                       so a mid-transition frame of the panel/menu\n"
         "                       eases can actually be photographed\n"
+        "  --refocus=TILE       VERIFICATION ONLY: after --character/--map has\n"
+        "                       been given --settle-steps to genuinely finish\n"
+        "                       opening, switch the tiled Menu's focus to TILE\n"
+        "                       (character, map, letters or journal) and run\n"
+        "                       --refocus-steps more zero-input steps before\n"
+        "                       the shutter -- a real step() gap between the\n"
+        "                       two toggle*() calls that --character --map\n"
+        "                       together could never give, so the Menu's own\n"
+        "                       focus-swap crossfade can be photographed\n"
+        "                       genuinely mid-transition\n"
+        "  --refocus-steps=N    how many steps to run after --refocus switches\n"
+        "                       focus, before the shutter (default 0, the very\n"
+        "                       first frame of the swap). Ignored without\n"
+        "                       --refocus\n"
         "  --street[=WHO]       stand next to somebody out in the WARD and talk\n"
         "                       to them. WHO is hand, watch, priest, disciple,\n"
         "                       keeper, fisher, sailor, carter, wastrel, urchin,\n"
@@ -545,6 +559,19 @@ void print_usage() {
             // menu-focus eases, neither of which `--settle`/`--no-settle`
             // alone can photograph.
             options.smoke.settleSteps = std::max(0, std::atoi(value));
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--refocus=", &value)) {
+            // PLANNING SPRINT (item #1). VERIFICATION ONLY. See
+            // SmokeRunConfig::refocus's own header -- the CLI mechanism a
+            // real step() gap between two toggle*() calls needed, so the
+            // Menu's focus-swap crossfade can be photographed mid-transition
+            // and not just proven correct in an isolated test.
+            options.smoke.refocus = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--refocus-steps=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::refocusSteps's own
+            // header. Only read when --refocus is also given.
+            options.smoke.refocusSteps = std::max(0, std::atoi(value));
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--street") == 0) {
             options.smoke.street = true;
@@ -2019,6 +2046,20 @@ int main(int argc, char** argv) {
                 // bug, and it sent me after one.
                 std::printf("granadad: wrote %s\n",
                             options.smoke.screenshot.string().c_str());
+            }
+            if (!options.smoke.refocus.empty()) {
+                // PLANNING SPRINT (item #1). THE NUMBER BESIDE THE PICTURE.
+                // See SmokeRunResult::characterFocusAtCapture's own header --
+                // a PNG proves a border is SOME shade of the accent colour; this
+                // prints which shade, so a review does not have to eyeball a
+                // fraction off a screenshot.
+                std::printf(
+                    "granadad: focus at capture -- character=%.3f map=%.3f letters=%.3f"
+                    " journal=%.3f\n",
+                    static_cast<double>(result.characterFocusAtCapture),
+                    static_cast<double>(result.mapFocusAtCapture),
+                    static_cast<double>(result.lettersFocusAtCapture),
+                    static_cast<double>(result.journalFocusAtCapture));
             }
             if (result.scriptFellShort()) {
                 std::printf(
