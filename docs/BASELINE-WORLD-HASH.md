@@ -258,3 +258,56 @@ Recorded from the twin-run gate inside the green full build (`run A` and `run B`
 report text byte-identical, `GATE_EXIT=0`). The pre-S8 number at the top of this file is **not**
 re-blessed to it — that one is the pre-arc reference and stays that. Use this one when a later
 slice wants to prove itself inert against the ward as the quality pass left it.
+
+---
+
+## The archetype-buildings drift, on the record
+
+The Docks archetype-diversity pass (2026-08-10: per-bucket wall material / height / roof-cap
+rules across ~20 of the ward's ~35 non-compound buildings, plus the granite_facade/
+brick_facade/reman_facade art fix) moved the number. This section says exactly where, in this
+file's own discipline, so a later reader can tell a deliberate step from a regression.
+
+**Tool note.** Every number above this section was produced by the Java `client-observer`
+module, which no longer exists in this repo (removed as dead weight; see CLAUDE.md — do not
+resurrect it). The C++ port's own `granadad-twin-gate --population` is now the tool of record
+for this measurement; it does not take the same tick count or actor count as the old Java run
+(7,200 ticks / 96 walkers vs. the old 15,000 ticks / 692 actors — see
+`native/CMakeLists.txt`'s `granadad-twin-run-gate-population` test for why those numbers are
+what they are), so this section's number is not directly comparable to the ones above it byte
+for byte — it is a fresh baseline for the C++ tool, not a continuation of the Java series.
+
+### What drifted, and why it had to
+
+**One thing changed the world, and it is a REBAKE**, the same class of change the quality pass
+above made: `content/maps/src/docks_surface.tmx` was regenerated from
+`tools/scripts/gen_docks_surface.py` (per-bucket material/roof-cap authoring on ~20 buildings)
+and rebaked to `content/maps/baked/docks_surface.trojsav` via the new `import-map` CLI command.
+Materials moved on walls and roof-cap floor cells; that is exactly what `WorldHasher.hashWorld`
+reads, so the number moves by construction.
+
+### What was proved INERT
+
+* **The facade art fix** (`content/art/custom/art-mapping.json`, `tiles.png`,
+  `native/src/render/atlas.cpp`) touches only the render-side art pack and the C++ atlas
+  loader/fallback — never read by the sim or baked into a `.trojsav`. Not measured separately
+  here for the same reason slice 1 of the quality pass wasn't: art-mapping is read by the
+  client at boot, never by the sim.
+* **Actor home/job reachability.** `test_ward_actors.cpp` needed no golden updates and stayed
+  green throughout this pass (see the golden-value-update commit's own message for the full
+  accounting) — no actor's assigned home or job route crosses any of the cells this pass
+  touched.
+
+### The post-archetype-buildings number
+
+```
+at commit db26124, granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x4365e04522472019
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16 --ticks
+7200` (`run A` and `run B` identical, report text byte-identical, 18,771 bytes both times). The
+pre-S8 number at the top of this file is **not** re-blessed to it — that one is the pre-arc
+reference and stays that, and in any case predates the C++ port and cannot be reproduced by the
+tool that made this one. Use this one when a later C++-side slice wants to prove itself inert
+against the ward as the archetype-buildings pass left it.
