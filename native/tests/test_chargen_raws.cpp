@@ -86,51 +86,106 @@ namespace {
 }  // namespace
 
 // ===========================================================================
-// the difficulty dagger
+// the difficulty dagger, and the aptitude composed into it (S17)
 // ===========================================================================
 
-TEST_CASE("the dagger defaults to neutral, and neutral is bit-for-bit the old charge") {
+TEST_CASE("the dagger defaults to neutral, and Trained + neutral is bit-for-bit "
+          "the pre-aptitude flat charge") {
     const SkillTrack track = skills();
     CHECK(track.advanceMultiplierQ8() == kDaggerNeutralQ8);
-    for (std::int32_t level = 0; level <= 100; ++level) {
-        CHECK(track.scaledUsesForLevel(level) == usesForLevel(level));
+    // S17 RE-SCOPE, with the arithmetic: this sweep used to run without a
+    // skill id, because the charge was per-track. Aptitude made it per-skill,
+    // and the old bit-for-bit guarantee is now precisely the TRAINED tier's:
+    // u * 256 / 256 == u exactly. Every Trained skill in the raws, every
+    // level -- the identity the whole re-derivation below leans on.
+    std::int32_t trainedSwept = 0;
+    for (const SkillTrack::Entry& entry : track.entries()) {
+        if (entry.aptitudeTier != AptitudeTier::Trained) {
+            continue;
+        }
+        ++trainedSwept;
+        for (std::int32_t level = 0; level <= 100; ++level) {
+            CHECK(track.scaledUsesForLevel(entry.id, level) == usesForLevel(level));
+        }
     }
+    // Eight Trained skills in the shipped raws (test_social's tier census).
+    CHECK(trainedSwept == 8);
 }
 
-TEST_CASE("the default dagger keeps every existing grind timing: a fresh skill "
-          "levels on exactly the flat schedule") {
+TEST_CASE("the default dagger keeps every TRAINED grind timing, and a FAVORED "
+          "skill now grinds at its authored three-quarters") {
     SkillTrack track = skills();
-    // 4 uses for level 0 -> 1: three do nothing, the fourth levels. The exact
-    // arithmetic every grind-timing test in this suite already leans on.
-    CHECK_FALSE(track.use("streetwise"));
+    // cracksmanship is Trained: 4 uses for level 0 -> 1, three do nothing,
+    // the fourth levels -- the exact flat schedule, unchanged by S17. (This
+    // case used streetwise before aptitude was live; streetwise is FAVORED
+    // and legitimately moved, so the flat pin now stands on a Trained skill.)
+    CHECK_FALSE(track.use("cracksmanship"));
+    CHECK_FALSE(track.use("cracksmanship"));
+    CHECK_FALSE(track.use("cracksmanship"));
+    CHECK(track.use("cracksmanship"));
+    CHECK(track.level("cracksmanship") == 1);
+
+    // streetwise is Favored x3/4: 4 * 192 / 256 = 3 exactly. Two do nothing,
+    // the third levels -- the authored ratio, visible in the grind itself.
     CHECK_FALSE(track.use("streetwise"));
     CHECK_FALSE(track.use("streetwise"));
     CHECK(track.use("streetwise"));
     CHECK(track.level("streetwise") == 1);
 }
 
-TEST_CASE("dagger boundary math at 77, 256 and 768") {
+TEST_CASE("dagger boundary math at 77, 256 and 768, per aptitude tier") {
     SkillTrack track = skills();
+    REQUIRE(track.aptitudeTier("cracksmanship") == AptitudeTier::Trained);
+    REQUIRE(track.aptitudeTier("skyrunning") == AptitudeTier::Favored);
+    REQUIRE(track.aptitudeTier("bladework") == AptitudeTier::Neglected);
+    REQUIRE(track.aptitudeTier("the_flame") == AptitudeTier::Flame);
 
     track.setAdvanceMultiplierQ8(kDaggerMaxQ8);  // 3.0x advancement
-    // usesForLevel(0) = 4 -> 4 * 256 / 768 = 1 (integer), floored at 1.
-    CHECK(track.scaledUsesForLevel(0) == 1);
+    // TRAINED keeps this case's original numbers exactly (aptitude 256 is
+    // the identity): usesForLevel(0) = 4 -> 4 * 256 / 768 = 1, floored at 1;
     // usesForLevel(10) = 24 -> 24 * 256 / 768 = 8.
-    CHECK(track.scaledUsesForLevel(10) == 8);
+    CHECK(track.scaledUsesForLevel("cracksmanship", 0) == 1);
+    CHECK(track.scaledUsesForLevel("cracksmanship", 10) == 8);
+    // FAVORED + fast dagger STACK: 4 * 192 / 768 = 1; 24 * 192 / 768 = 6.
+    CHECK(track.scaledUsesForLevel("skyrunning", 0) == 1);
+    CHECK(track.scaledUsesForLevel("skyrunning", 10) == 6);
+    // FLAME's x4 holds even against the fastest dagger: 4 * 1024 / 768 = 5
+    // (truncated from 5.33...).
+    CHECK(track.scaledUsesForLevel("the_flame", 0) == 5);
 
     track.setAdvanceMultiplierQ8(kDaggerMinQ8);  // 0.3x advancement
-    // usesForLevel(0) = 4 -> 4 * 256 / 77 = 13 (truncated from 13.29...).
-    CHECK(track.scaledUsesForLevel(0) == 13);
-    // usesForLevel(10) = 24 -> 24 * 256 / 77 = 79 (truncated from 79.79...).
-    CHECK(track.scaledUsesForLevel(10) == 79);
+    // Trained again on the original numbers: 4 * 256 / 77 = 13 (truncated
+    // from 13.29...); 24 * 256 / 77 = 79 (truncated from 79.79...).
+    CHECK(track.scaledUsesForLevel("cracksmanship", 0) == 13);
+    CHECK(track.scaledUsesForLevel("cracksmanship", 10) == 79);
+    // NEGLECTED + slow dagger STACK: 4 * 320 / 77 = 16 (truncated from
+    // 16.62...); 24 * 320 / 77 = 99 (truncated from 99.74...).
+    CHECK(track.scaledUsesForLevel("bladework", 0) == 16);
+    CHECK(track.scaledUsesForLevel("bladework", 10) == 99);
 
     track.setAdvanceMultiplierQ8(kDaggerNeutralQ8);
-    CHECK(track.scaledUsesForLevel(0) == 4);
+    CHECK(track.scaledUsesForLevel("cracksmanship", 0) == 4);
+    // At neutral the tiers read their own plain ratios: Favored 3 (4 * 192 /
+    // 256), Neglected 5 (4 * 320 / 256), Flame 16 (4 * 1024 / 256).
+    CHECK(track.scaledUsesForLevel("skyrunning", 0) == 3);
+    CHECK(track.scaledUsesForLevel("bladework", 0) == 5);
+    CHECK(track.scaledUsesForLevel("the_flame", 0) == 16);
 
-    // Never free, even at the fastest setting and the cheapest level.
+    // ONE ROUNDING RULE, proved where two would differ: bladework at level 1
+    // (usesForLevel = 6) under a 300 dagger. One widening multiply and one
+    // truncating division give 6 * 320 / 300 = 6 (truncated from 6.4).
+    // Rounding aptitude first would give 6 * 320 / 256 = 7 (from 7.5), then
+    // 7 * 256 / 300 = 5 (from 5.97) -- a different, twice-lossy answer.
+    track.setAdvanceMultiplierQ8(300);
+    CHECK(track.scaledUsesForLevel("bladework", 1) == 6);
+
+    // Never free: every skill in the raws, every level, at the fastest
+    // dagger -- the floor at 1 outranks even Favored + 3.0x.
     track.setAdvanceMultiplierQ8(kDaggerMaxQ8);
-    for (std::int32_t level = 0; level <= 100; ++level) {
-        CHECK(track.scaledUsesForLevel(level) >= 1);
+    for (const SkillTrack::Entry& entry : track.entries()) {
+        for (std::int32_t level = 0; level <= 100; ++level) {
+            CHECK(track.scaledUsesForLevel(entry.id, level) >= 1);
+        }
     }
 }
 
@@ -144,15 +199,36 @@ TEST_CASE("setAdvanceMultiplierQ8 clamps to the dagger's own range") {
     CHECK(track.advanceMultiplierQ8() == 300);
 }
 
-TEST_CASE("a fast dagger levels faster through use() itself, not only on paper") {
+TEST_CASE("a fast dagger levels faster through use() itself, not only on paper -- "
+          "and stacks with FAVORED") {
     SkillTrack fast = skills();
     fast.setAdvanceMultiplierQ8(kDaggerMaxQ8);
-    // Charge at level 0 is 1 use, at level 1 (usesForLevel=6) it is 2.
+    // S17 RE-DERIVATION: skyrunning is Favored, so the aptitude now rides
+    // this charge too. Level 0 costs 4 * 192 / 768 = 1 use; level 1
+    // (usesForLevel = 6) costs 6 * 192 / 768 = 1 (truncated from 1.5) --
+    // where the pre-aptitude charge was 6 * 256 / 768 = 2. Two presses, two
+    // levels: the Favored-times-fast-dagger stack, felt through use().
     CHECK(fast.use("skyrunning"));
     CHECK(fast.level("skyrunning") == 1);
-    CHECK_FALSE(fast.use("skyrunning"));
     CHECK(fast.use("skyrunning"));
     CHECK(fast.level("skyrunning") == 2);
+    // Level 2 (usesForLevel = 8) costs 8 * 192 / 768 = 2: one press banks,
+    // the second levels -- the truncation runs out exactly where the paper
+    // arithmetic says.
+    CHECK_FALSE(fast.use("skyrunning"));
+    CHECK(fast.use("skyrunning"));
+    CHECK(fast.level("skyrunning") == 3);
+}
+
+TEST_CASE("a NEGLECTED skill against a slow dagger pays the full stacked toll "
+          "through use()") {
+    SkillTrack slow = skills();
+    slow.setAdvanceMultiplierQ8(kDaggerMinQ8);
+    // bladework, Neglected, at 0.3x: level 0 costs 4 * 320 / 77 = 16 uses.
+    // Fifteen do nothing; the sixteenth levels.
+    CHECK_FALSE(slow.use("bladework", 15));
+    CHECK(slow.use("bladework"));
+    CHECK(slow.level("bladework") == 1);
 }
 
 TEST_CASE("the dagger is hashed: moving it moves the track's hash") {

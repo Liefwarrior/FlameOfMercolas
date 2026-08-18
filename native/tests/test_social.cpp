@@ -264,7 +264,13 @@ TEST_CASE("a skill rises by being used, and rises more slowly the higher it is")
         ++uses;
         REQUIRE(uses < 1000);
     }
-    CHECK(uses == usesForLevel(0));
+    // S17 RE-DERIVATION: this pinned usesForLevel(0) = 4 while aptitude was
+    // parsed but not charged. streetwise is FAVORED x3/4, so the first level
+    // now costs 4 * 192 / 256 = 3 uses, exactly -- the raws' own column,
+    // finally priced. (A Trained skill still pays the flat 4; the next
+    // suite's dagger cases pin that identity.)
+    CHECK(uses == 3);
+    CHECK(uses == track.scaledUsesForLevel(kHaggleSkill, 0));
 
     // The tenth level costs more than the first. That is the whole of the
     // Morrowind steer: the thing you keep doing keeps getting better, slowly.
