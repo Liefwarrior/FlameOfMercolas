@@ -167,7 +167,7 @@ TEST_CASE("a real vendored ogg decodes to mono 48k samples in range") {
     REQUIRE(sample.has_value());
     // A footstep is a fraction of a second: at 48k that is thousands of
     // samples, and every one of them a sane amplitude.
-    CHECK(sample->mono.size() > 1000);
+    CHECK(sample->mono.size() > 1000U);
     CHECK(sample->mono.size() < static_cast<std::size_t>(kSampleRate) * 5U);
     for (const float s : sample->mono) {
         REQUIRE(std::isfinite(s));

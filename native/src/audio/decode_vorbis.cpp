@@ -13,6 +13,7 @@
 
 #include "granadad/audio/decode.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <vector>
 

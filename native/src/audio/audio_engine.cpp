@@ -205,7 +205,7 @@ void AudioEngine::playOn(Bus bus, SoundId id, float gain, float pan,
     }
     std::size_t variant = static_cast<std::size_t>(nextRandom() % count);
     const std::size_t idx = soundIndex(id);
-    if (count > 1 && variant == lastVariant_[idx]) {
+    if (count > 1 && variant == static_cast<std::size_t>(lastVariant_[idx])) {
         variant = (variant + 1) % count;  // never the same twice running
     }
     lastVariant_[idx] = static_cast<std::uint8_t>(variant);
