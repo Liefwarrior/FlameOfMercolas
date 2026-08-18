@@ -25,6 +25,7 @@
 #include <string>
 #include <string_view>
 
+#include "granadad/audio/backend_sdl.hpp"
 #include "granadad/content/content_dir.hpp"
 #include "granadad/content/world_reader.hpp"
 #include "granadad/sim/compound.hpp"
@@ -229,6 +230,44 @@ int run_gamepad_selftest() {
     return 0;
 }
 
+// THE AUDIO WIRING PASS'S OWN SCRIPTABLE PROOF, run_gamepad_selftest's exact
+// shape and for the exact reason it exists: before this, the only place the
+// SDL audio backend ever opened was inside the real windowed game, which a
+// headless verifier cannot run and nobody can HEAR from a script anyway. This
+// opens the same engine run_client() opens (createSdlAudioEngine: real sound
+// bank, real device attempt, silence-degrade contract), drives the same calls
+// the session hooks make, and prints what happened -- so "the backend opens
+// and the hooks have something real on the other end" is a stdout fact, not a
+// claim about ears.
+//
+// ALWAYS ZERO for "no device": a machine without a sound card is a true fact
+// about the machine, exactly as the gamepad probe's own note says of finding
+// no pad. The only failure here is the engine failing to construct at all.
+int run_audio_selftest() {
+    const std::unique_ptr<granadad::audio::AudioEngine> audio =
+        granadad::audio::createSdlAudioEngine();
+    if (audio == nullptr) {
+        std::printf("audio-selftest: engine allocation FAILED\n");
+        return 1;
+    }
+    std::printf("audio-selftest: device %s\n",
+                audio->deviceOpen() ? "open (48kHz float stereo)"
+                                    : "absent -- engine in silent no-op mode");
+    // The same calls the wired session makes, in miniature: a bed, a clock, a
+    // footstep on the material-0 surface, one UI one-shot, and a second of
+    // update()s for the crossfade and cadence clocks to move through.
+    audio->setTimeOfDay(12 * 3600);
+    audio->startBed(granadad::audio::BedId::Harbour);
+    const bool stepped = audio->footstep(0, false, 0);
+    audio->playOneShot(granadad::audio::SoundId::UiConfirm);
+    for (int i = 0; i < 60; ++i) {
+        audio->update(1.0F / 60.0F);
+    }
+    std::printf("audio-selftest: bed=%d footstep_sounded=%d\n",
+                static_cast<int>(audio->currentBed()), stepped ? 1 : 0);
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // command line
 // ---------------------------------------------------------------------------
@@ -411,6 +450,12 @@ void print_usage() {
         "                       prints the count (0 included) and every name,\n"
         "                       so a controller's presence can be proved from\n"
         "                       a script without a human pressing a button\n"
+        "  --audio-selftest     open the real SDL audio engine, no window --\n"
+        "                       prints whether a device opened (no device is\n"
+        "                       a fact, not a failure: the game runs silent)\n"
+        "                       and drives the same bed/footstep/UI calls the\n"
+        "                       game makes, so the sound path can be proved\n"
+        "                       from a script without ears\n"
         "  --version            print the build banner and exit\n"
         "\n"
         "IN THE GAME: WASD moves, the mouse looks, SHIFT sprints, CTRL\n"
@@ -472,6 +517,11 @@ void print_usage() {
         if (std::strcmp(arg, "--gamepad-selftest") == 0) {
             stop = true;
             exitCode = run_gamepad_selftest();
+            return options;
+        }
+        if (std::strcmp(arg, "--audio-selftest") == 0) {
+            stop = true;
+            exitCode = run_audio_selftest();
             return options;
         }
         if (std::strcmp(arg, "--version") == 0) {
@@ -1490,6 +1540,28 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // stating the hint again at the one call site that actually needs it is
     // one line and removes the question entirely.
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
+
+    // THE AUDIO WIRING PASS. Once, after SDL_Init, exactly as
+    // audio_engine.hpp's plan states (createSdlAudioEngine does its own
+    // SDL_InitSubSystem(SDL_INIT_AUDIO), so the VIDEO|GAMEPAD line above did
+    // not change). Null only on allocation failure; a machine with no sound
+    // device gets a fully functional engine whose every call is a cheap
+    // no-op, and one line here says which of the three this launch got --
+    // the same "a verifier reading stdout can know for certain" reasoning
+    // the gamepad count above states for itself. The scripted/headless paths
+    // (--smoke/--screenshot, every test) never reach this function, so none
+    // of them ever open a device.
+    const std::unique_ptr<granadad::audio::AudioEngine> audio =
+        granadad::audio::createSdlAudioEngine();
+    if (audio != nullptr) {
+        std::printf("granadad: audio %s\n",
+                    audio->deviceOpen() ? "device open (48kHz float stereo)"
+                                        : "no output device -- running silent");
+        session.setAudio(audio.get());
+    } else {
+        std::printf("granadad: audio engine unavailable -- running silent\n");
+    }
+
     const int windowW = start.width * options.windowScale;
     const int windowH = start.height * options.windowScale;
     SDL_Window* window =
@@ -2061,6 +2133,16 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             session.step(pump.nextStepInput(held));
         }
 
+        // AUDIO, PER FRAME, per the plan: the clock for the beds' day/night
+        // layer gains, then one update() of wall-clock dt for the crossfades,
+        // sparse one-shot timers and the footstep cadence (dt is clamped
+        // internally against pauses and hitches). After the step loop, so
+        // the hour the beds shape to is the hour the steps just reached.
+        if (audio != nullptr) {
+            audio->setTimeOfDay(session.timeOfDay());
+            audio->update(static_cast<float>(frameSeconds));
+        }
+
         session.drawFrame(frame);
         ++frames;
 
@@ -2073,6 +2155,13 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             SDL_RenderPresent(renderer);
         }
     }
+
+    // THE BORROW ENDS BEFORE THE LENDER DOES. `audio` (declared after
+    // `session`) destructs first on the way out of this function, so the
+    // session's borrowed pointer is detached here, while both are still
+    // alive -- nothing below this line steps or toggles the session, but a
+    // dangling pointer that is merely never used is still a dangling pointer.
+    session.setAudio(nullptr);
 
     // A REBINDING SURVIVES THE PROCESS. Written on the way out as well as at
     // the moment it is made, so a slider moved on the options page is still

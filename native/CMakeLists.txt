@@ -312,7 +312,16 @@ add_library(granadad-render STATIC
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
-target_link_libraries(granadad-render PUBLIC granadad-sim stb::stb)
+# PRIVATE granadad-audio: the wiring pass (audio_engine.hpp's own plan) put
+# the event hooks in session.cpp, so render calls the CORE audio engine --
+# never granadad-audio-sdl, which stays the client's alone. PRIVATE because
+# session.hpp only forward-declares AudioEngine; no audio header is in
+# render's interface. The determinism argument is unchanged: granadad-sim
+# and the gate targets still link no audio, and nothing under src/sim can
+# include it.
+target_link_libraries(granadad-render
+    PUBLIC granadad-sim stb::stb
+    PRIVATE granadad-audio)
 granadad_apply_determinism(granadad-render)
 
 # The lamp baker. Turns a fixture's authored light_source markers into the
@@ -337,8 +346,9 @@ granadad_static_runtime(granadad-bake-lamps)
 # granadad-content provides contentDir() so the sound bank resolves the same
 # way every other asset does.
 #
-# The client does NOT link granadad-audio-sdl yet. That is the wiring pass,
-# deliberately deferred — see audio_engine.hpp's wiring plan.
+# The client links granadad-audio-sdl (below) as of the wiring pass —
+# createSdlAudioEngine() in main.cpp, event hooks in session.cpp; see
+# audio_engine.hpp's wiring plan, now made.
 # ---------------------------------------------------------------------------
 add_library(granadad-audio STATIC
     src/audio/mixer.cpp
@@ -375,7 +385,10 @@ endif()
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_CLIENT)
     add_executable(granadad src/client/main.cpp)
-    target_link_libraries(granadad PRIVATE granadad-render ${GRANADAD_SDL_TARGET})
+    # granadad-audio-sdl per audio_engine.hpp's wiring plan: the client is the
+    # ONE target that reaches a real sound device.
+    target_link_libraries(granadad
+        PRIVATE granadad-render granadad-audio-sdl ${GRANADAD_SDL_TARGET})
     granadad_apply_determinism(granadad)
     # Console subsystem stays on — the sim prints, and we want stdout to work
     # when the game is launched from a terminal on Windows.

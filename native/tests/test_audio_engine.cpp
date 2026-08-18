@@ -26,6 +26,8 @@
 #include "granadad/audio/sound_bank.hpp"
 #include "granadad/content/content_dir.hpp"
 #include "granadad/render/atlas.hpp"
+#include "granadad/render/session.hpp"
+#include "granadad/sim/player.hpp"
 
 using granadad::audio::AudioEngine;
 using granadad::audio::BedId;
@@ -448,6 +450,59 @@ TEST_CASE("a bed's sparse one-shots actually fire over time") {
         (void)engineStats(*engine, 2400);
     }
     CHECK(sawVoice);
+}
+
+// ---------------------------------------------------------------------------
+// THE WIRING PASS, PROVED HEADLESS. Session's hooks (session.cpp) speak to a
+// borrowed engine; here that engine is the null backend with the synthetic
+// bank, so "the hook fired" is a voice count moving -- no device, no ears, no
+// content/art needed. Voices are never rendered in this case, so nothing is
+// ever reaped and every count comparison is monotone by construction.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("session hooks reach an attached engine, and a detached one stays silent") {
+    granadad::render::SessionConfig config;
+    config.contentDir = granadad::content::contentDir();
+    granadad::render::Session session(config);
+
+    auto engine = AudioEngine::createNull(0xA11D10u, SoundBank::synthetic());
+    REQUIRE(engine != nullptr);
+    session.setAudio(engine.get());
+
+    // The bed starts the moment there are ears: the authored Tarwalk spawn is
+    // out of doors, so the harbour is what plays.
+    CHECK(engine->currentBed() == BedId::Harbour);
+
+    // A walking step speaks a footstep through the material-under-feet table
+    // (the cadence clock boots ready, so the very first step sounds).
+    const int atAttach = engine->mixer().activeVoices();
+    granadad::sim::MoveInput forward;
+    forward.forward = 1;
+    session.step(forward);
+    const int afterStep = engine->mixer().activeVoices();
+    CHECK(afterStep > atAttach);
+
+    // Opening the tiled Menu speaks the book pair's open half...
+    session.toggleMenu();
+    const int afterOpen = engine->mixer().activeVoices();
+    CHECK(afterOpen > afterStep);
+    // ...paging its tiles is paper...
+    session.menuPageNext();
+    const int afterFlip = engine->mixer().activeVoices();
+    CHECK(afterFlip > afterOpen);
+    // ...and the key that opened it closes it with the pair's other half.
+    session.toggleMenu();
+    CHECK(engine->mixer().activeVoices() > afterFlip);
+
+    // Detached, the identical calls are inert -- which is what keeps every
+    // other test and every headless capture exactly as quiet as before the
+    // wiring pass existed.
+    session.setAudio(nullptr);
+    const int detached = engine->mixer().activeVoices();
+    session.toggleMenu();
+    session.step(forward);
+    session.toggleMenu();
+    CHECK(engine->mixer().activeVoices() == detached);
 }
 
 TEST_CASE("dayness is 0 at night, 1 at noon, and ramps through dawn") {

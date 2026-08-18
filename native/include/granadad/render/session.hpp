@@ -48,6 +48,15 @@
 #include "granadad/sim/ward_actors.hpp"
 #include "granadad/sim/ward_voice.hpp"
 
+// FORWARD-DECLARED, NEVER INCLUDED HERE. The audio wiring pass gave Session
+// an optional borrowed AudioEngine (see setAudio below), and keeping the type
+// opaque in this header keeps every audio include confined to session.cpp --
+// the same one-way-arrow discipline the CMake seam notes argue for: nothing
+// that includes session.hpp learns anything about audio by doing so.
+namespace granadad::audio {
+class AudioEngine;
+}
+
 namespace granadad::render {
 
 /// Everything a session needs to know before it starts.
@@ -143,6 +152,24 @@ public:
     [[nodiscard]] const sim::WardPopulation& people() const noexcept { return *people_; }
     /// The art the ward is drawn with.
     [[nodiscard]] const ActorSheet& actorSheet() const noexcept { return actorSheet_; }
+
+    /// THE AUDIO WIRING PASS. Borrows (never owns) an AudioEngine and speaks
+    /// to it from the event sites audio_engine.hpp's own plan names:
+    /// footsteps in step(), panel open/close and cursor/confirm one-shots at
+    /// the same places the EasedToggles and ImpactPulses already fire, the
+    /// brawl's own blows, the harbour/interior bed off tavern().playerInside(),
+    /// and a coin handle when the purse moves. Null (the default, and what
+    /// every test and every --smoke capture keeps) makes every hook a no-op.
+    ///
+    /// STRICTLY ONE-WAY, per the determinism note in audio_engine.hpp: the
+    /// hooks read already-public sim state and hand nothing back. Nothing
+    /// audible is hashed and the sim cannot observe the engine at all --
+    /// granadad-sim and the gate targets still link no audio.
+    ///
+    /// The caller keeps the engine alive for as long as the Session might
+    /// step or toggle -- main.cpp detaches (setAudio(nullptr)) before its
+    /// engine goes away.
+    void setAudio(audio::AudioEngine* engine);
 
     /// Advances the body by one movement step, and the world with it.
     void step(const sim::MoveInput& input);
@@ -1236,6 +1263,23 @@ private:
     /// showing" (re-read every step, must NOT retrigger the pulse every
     /// step) and "warned went from true back to false" (no pulse either way).
     bool lastWarned_ = false;
+
+    // --- the audio wiring pass ----------------------------------------------
+    //
+    // All render-side, none of it hashed, and all of it inert while audio_ is
+    // null -- see setAudio()'s own header and the determinism note in
+    // audio_engine.hpp.
+
+    /// Borrowed, never owned. Null for every test and every headless capture.
+    audio::AudioEngine* audio_ = nullptr;
+    /// Whether the panel that last OPENED was the tiled Menu, so the close
+    /// half of the pair can speak BookClose after casebookOpen_ has already
+    /// gone false -- the same remember-the-edge shape lastWarned_ uses.
+    bool audioPanelWasMenu_ = false;
+    /// The purse as of the last step, so a change -- any change: a haggle
+    /// settled, a pocket picked, rent paid -- is one CoinHandle, caught by
+    /// comparison exactly the way lastPlayerHp_ catches a blow.
+    std::int32_t lastCoinForAudio_ = 0;
 };
 
 /// What a scripted capture run was asked to do.

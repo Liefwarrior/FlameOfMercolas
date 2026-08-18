@@ -6,6 +6,11 @@
 #include <sstream>
 #include <utility>
 
+// THE AUDIO WIRING PASS. The one render file that speaks to the audio engine,
+// and it speaks only ids -- see setAudio()'s header in session.hpp, and the
+// determinism note in audio_engine.hpp for why this include may never spread
+// to a header or to anything under src/sim.
+#include "granadad/audio/audio_engine.hpp"
 #include "granadad/content/content_dir.hpp"
 #include "granadad/content/world_reader.hpp"
 #include "granadad/render/capture.hpp"
@@ -375,6 +380,27 @@ Session::Session(const SessionConfig& config)
     // 100 -- see lastPlayerHp_'s own header on why a session that boots the
     // player already hurt must not read its own first frame as a fresh hit.
     lastPlayerHp_ = tavern_->playerHp();
+    // AUDIO WIRING. The starting purse, for the identical reason: a session
+    // that boots with coin in the pocket has not just been paid.
+    lastCoinForAudio_ = tavern_->playerCoin();
+}
+
+void Session::setAudio(audio::AudioEngine* engine) {
+    audio_ = engine;
+    if (audio_ == nullptr) {
+        return;
+    }
+    // Baselines re-read at attach, so nothing that happened while no engine
+    // was listening is replayed as if it just happened.
+    lastCoinForAudio_ = tavern_->playerCoin();
+    audioPanelWasMenu_ = casebookOpen_;
+    // And the bed starts the moment there are ears: the same
+    // playerInside()-keyed choice step() re-asserts every step (re-asserting
+    // the current bed is a documented no-op), so a body standing still on the
+    // quay hears the harbour without having to move first.
+    audio_->startBed(tavern_->playerInside() ? audio::BedId::Interior
+                                             : audio::BedId::Harbour);
+    audio_->setTimeOfDay(timeOfDay_);
 }
 
 void Session::syncTavernToBody() {
@@ -867,6 +893,10 @@ void Session::moveOptionCursor(int delta) {
     if (!optionsOpen_ || awaitingKey_) {
         return;
     }
+    // AUDIO WIRING: the same one quiet tick moveTopicCursor speaks.
+    if (audio_ != nullptr && delta != 0) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
     const int count = static_cast<int>(optionRows().size());
     if (count <= 0) {
         return;
@@ -904,6 +934,11 @@ void Session::adjustOption(int delta) {
 void Session::chooseOption() {
     if (!optionsOpen_ || awaitingKey_) {
         return;
+    }
+    // AUDIO WIRING: the same accept every other list speaks -- a slider nudge
+    // and a rebind-arm are both ENTER doing something.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiConfirm);
     }
     if (optionCursor_ < kSliderRows) {
         // ENTER ALWAYS DOES SOMETHING. On a slider it is a nudge up, so a player
@@ -982,6 +1017,10 @@ void Session::movePauseCursor(int delta) {
     // set for whichever row they land on next would fire QUIT off a key that
     // was never pressed twice.
     quitArmed_ = false;
+    // AUDIO WIRING: the same one quiet tick every other list speaks.
+    if (audio_ != nullptr && delta != 0) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
     const int count = static_cast<int>(pauseRows().size());
     if (count <= 0) {
         return;
@@ -992,6 +1031,13 @@ void Session::movePauseCursor(int delta) {
 void Session::choosePause() {
     if (!pauseOpen_) {
         return;
+    }
+    // AUDIO WIRING: the same accept every other list speaks. CONTROLS/
+    // SETTINGS' page swaps add nothing further (conversingNow() stays true
+    // across a swap, so panelAnim_ never flips); RESUME's close is spoken by
+    // the panel pair in syncPanelAnim(), as every close is.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiConfirm);
     }
     switch (pauseCursor_) {
         case 0:
@@ -1190,12 +1236,20 @@ void Session::menuPageNext() {
     if (!casebookOpen_) {
         return;
     }
+    // AUDIO WIRING: the plan's "page cycle in the tiled Menu -> BookFlip".
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::BookFlip);
+    }
     menuFocus_ = ((menuFocus_ + 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
 }
 
 void Session::menuPagePrev() {
     if (!casebookOpen_) {
         return;
+    }
+    // AUDIO WIRING: the same page-turn, backward.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::BookFlip);
     }
     menuFocus_ =
         ((menuFocus_ - 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
@@ -1263,6 +1317,11 @@ void Session::settleDefeat() {
     // toll on every price and the name on the roll all survive this call. That
     // is the design.
     const sim::Rise& rise = tavern_->lastDefeat();
+    // AUDIO WIRING: the plan's "knockdown -> ThudHeavy" -- the one call every
+    // path to the floor funnels through.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::ThudHeavy);
+    }
     tavern_->reviveAfterDefeat();
     body_->placeAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
     awaitingLanding_ = false;
@@ -1321,6 +1380,21 @@ void Session::step(const sim::MoveInput& input) {
     tavern_->setPlayerBlocking(blockHeld_ && !talking() && !picking());
     body_->step(moved);
     syncTavernToBody();
+
+    // AUDIO WIRING: FOOTSTEPS, exactly per audio_engine.hpp's plan -- the
+    // material of the tile UNDER the feet, whether the body is at a run, and
+    // the wading layer at the feet themselves. Called every step while the
+    // input says "moving" (the engine rate-limits to a walk/run cadence
+    // internally, so this is the documented legal wiring); airborne feet
+    // touch nothing and say nothing.
+    if (audio_ != nullptr && walking && !body_->airborne()) {
+        const std::int32_t px = body_->tileX();
+        const std::int32_t py = body_->tileY();
+        const std::int32_t pz = body_->band();
+        (void)audio_->footstep(tiles_->material(px, py, pz - 1),
+                               moved.sprint && !moved.crouch,
+                               tiles_->fluidDepth(px, py, pz));
+    }
 
     // #77. A CLIMB NOBODY PRESSED A KEY FOR IS STILL A CLIMB, and the room
     // charges it exactly as it charges one that was asked for: the craft, the
@@ -1446,8 +1520,17 @@ void Session::step(const sim::MoveInput& input) {
     if (hpNow < lastPlayerHp_) {
         if (blockedNow > lastBlowsBlocked_) {
             blockPulse_.trigger();
+            // AUDIO WIRING: the guard's clang, on the identical edge the cool
+            // wash fires on -- one sound per blow, same as one wash per blow.
+            if (audio_ != nullptr) {
+                audio_->playOneShot(audio::SoundId::SwordClash);
+            }
         } else {
             punchTakenPulse_.trigger();
+            // AUDIO WIRING: the taken hit, beside its blooded wash.
+            if (audio_ != nullptr) {
+                audio_->playOneShot(audio::SoundId::ThudMedium);
+            }
         }
     }
     lastPlayerHp_ = hpNow;
@@ -1456,6 +1539,23 @@ void Session::step(const sim::MoveInput& input) {
     punchTakenPulse_.advance();
     blockPulse_.advance();
     alertPulse_.advance();
+    // AUDIO WIRING: the purse and the bed, both by re-read rather than by
+    // instrumenting every call site that could move either. Any purse change
+    // -- a haggle settled, a pocket picked, rent paid, a bounty collected --
+    // is one CoinHandle, the same comparison-not-flag shape the hp watch
+    // above uses; and the ambient bed is re-asserted off the one cheap
+    // signal this build already keeps for "under a roof"
+    // (tavern_->playerInside()), which the engine's own header blesses:
+    // re-asserting the current bed is a no-op, so every step is legal.
+    if (audio_ != nullptr) {
+        const std::int32_t coinNow = tavern_->playerCoin();
+        if (coinNow != lastCoinForAudio_) {
+            audio_->playOneShot(audio::SoundId::CoinHandle);
+        }
+        lastCoinForAudio_ = coinNow;
+        audio_->startBed(tavern_->playerInside() ? audio::BedId::Interior
+                                                 : audio::BedId::Harbour);
+    }
     // NOW the string can go. messageSteps_ reaching zero is what stopped
     // WANTING the alert on screen -- see the note above and syncPanelAnim's
     // own formula -- and alertAnim_ finishing its fade is what stopped
@@ -1736,6 +1836,11 @@ std::string Session::interactPrompt() const {
 }
 
 void Session::moveTopicCursor(int delta) {
+    // AUDIO WIRING: one quiet tick per cursor move, on every list this router
+    // serves -- the restrained half of the plan's "focus move -> UiTick".
+    if (audio_ != nullptr && delta != 0 && (talking() || casebookOpen_ || keysOpen_)) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
     if (keysOpen_) {
         wrapCursorAndPage(caseCursor_, casePage_, delta, static_cast<int>(keyRows().size()));
         return;
@@ -1809,6 +1914,11 @@ void Session::nextTopicPage() {
     }
     // MORROWIND ROUND: ROUTED BY FOCUS -- see moveTopicCursor()'s own note.
     if (casebookOpen_) {
+        // AUDIO WIRING: turning a page WITHIN a tile is the same paper the
+        // tile cycle is -- one BookFlip, whichever tile pages.
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::BookFlip);
+        }
         switch (menuFocus_) {
             case kMenuFocusCharacter:
                 advancePage(characterPage_, characterCursor_, characterRows().size());
@@ -1943,6 +2053,11 @@ void Session::chooseTopic(std::size_t index) {
         if (index < casebook_.known().size()) {
             caseCursor_ = static_cast<int>(index);
             caseEntry_ = static_cast<int>(index);
+            // AUDIO WIRING: opening an entry of your own notes is a page, not
+            // a menu -- BookFlip, not UiConfirm.
+            if (audio_ != nullptr) {
+                audio_->playOneShot(audio::SoundId::BookFlip);
+            }
         }
         return;
     }
@@ -1955,11 +2070,22 @@ void Session::chooseTopic(std::size_t index) {
             lettersCursor_ = static_cast<int>(index);
             lettersEntry_ = static_cast<int>(index);
             lettersBodyPage_ = 0;
+            // AUDIO WIRING: unfolding a letter is paper too.
+            if (audio_ != nullptr) {
+                audio_->playOneShot(audio::SoundId::BookFlip);
+            }
         }
         return;
     }
     if (!talking()) {
         return;
+    }
+    // AUDIO WIRING: the accept, spoken once per picked topic -- the plan's
+    // "accept -> UiConfirm". Before the settlement on purpose: the press is
+    // what is being acknowledged, and any coin the settlement moves speaks
+    // for itself a step later (see the purse watch in step()).
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiConfirm);
     }
     // #79. WHICH ROOM OWNS THE CONSEQUENCE. The director decides what was SAID
     // and what the world now owes; whoever owns the body applies it. Inside the
@@ -2588,6 +2714,19 @@ void Session::punch() {
         say("HIT " + result.targetName + " FOR " + std::to_string(result.blow.damage) + ".");
     } else {
         say("MISSED " + result.targetName + ".");
+    }
+    // AUDIO WIRING: the plan's own three -- PunchMedium/PunchHeavy by blow
+    // weight (a blow that put them down is the heavy one), Whoosh for the
+    // swing that connects with nothing. One sound per swing, same as one
+    // wash per landed hit.
+    if (audio_ != nullptr) {
+        if (result.blow.downed) {
+            audio_->playOneShot(audio::SoundId::PunchHeavy);
+        } else if (result.blow.landed) {
+            audio_->playOneShot(audio::SoundId::PunchMedium);
+        } else {
+            audio_->playOneShot(audio::SoundId::Whoosh);
+        }
     }
     // INNOVATION SPRINT ITEM #3. A LANDED PUNCH FINALLY HAS SOME WEIGHT --
     // downed is a landed blow that also put them on the floor, so it counts
@@ -3268,7 +3407,26 @@ bool Session::conversingNow() const noexcept {
 }
 
 void Session::syncPanelAnim() noexcept {
-    panelAnim_.setTarget(conversingNow());
+    // AUDIO WIRING: PANEL OPEN AND CLOSE, on the exact edge the plan names --
+    // "wherever an EasedToggle target flips is exactly where the matching
+    // one-shot belongs". panelAnim_ is the ONE toggle all eight pages share,
+    // so this is one hook for every open and close in the game: the tiled
+    // Menu speaks as a book (its tiles are the casebook, the letters, the
+    // map), everything else in the quiet Ui pair. The flip fires once per
+    // actual change however many times this function is re-run per step,
+    // because the target itself only changes once.
+    const bool panelWanted = conversingNow();
+    if (audio_ != nullptr && panelWanted != panelAnim_.target()) {
+        if (panelWanted) {
+            audioPanelWasMenu_ = casebookOpen_;
+            audio_->playOneShot(audioPanelWasMenu_ ? audio::SoundId::BookOpen
+                                                   : audio::SoundId::UiOpen);
+        } else {
+            audio_->playOneShot(audioPanelWasMenu_ ? audio::SoundId::BookClose
+                                                   : audio::SoundId::UiClose);
+        }
+    }
+    panelAnim_.setTarget(panelWanted);
     // The identical two-line test drawFrame() makes for what the HUD's own
     // alert row is about to show -- see its own comment there. Duplicated
     // rather than shared through a common accessor because one runs on a
