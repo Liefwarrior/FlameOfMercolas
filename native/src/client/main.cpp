@@ -362,6 +362,11 @@ void print_usage() {
         "                       compound ground, read the roll for it and\n"
         "                       petition the vacant charge -- the leasehold\n"
         "                       line, end to end\n"
+        "  --radiant[=END]      VERIFICATION ONLY: find the radiant board's\n"
+        "                       own giver out in the ward, talk, and take the\n"
+        "                       errand off them. END `offer` stops with the\n"
+        "                       giver's row on the open list; `taken` (the\n"
+        "                       default) presses it and checks the journal\n"
         "  --quickbar           VERIFICATION ONLY: bind the first crafting to\n"
         "                       slot 3 through the Grimoire page, close it and\n"
         "                       press the number, so the bottom-centre strip\n"
@@ -632,6 +637,16 @@ void print_usage() {
         } else if (std::strcmp(arg, "--petition") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::petition's own header.
             options.smoke.petition = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--radiant") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::radiant's own header.
+            options.smoke.radiant = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--radiant=", &value)) {
+            // `--radiant=offer` stops with the giver's row on the open list,
+            // the same NAME=END spelling --flame/--contract/--roofs use.
+            options.smoke.radiant = true;
+            options.smoke.radiantEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--quickbar") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::quickbar's own header.

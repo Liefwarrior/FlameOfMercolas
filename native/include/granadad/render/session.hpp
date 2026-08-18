@@ -950,6 +950,17 @@ public:
     [[nodiscard]] std::vector<SpriteInstance> wardSprites(const Camera& view) const;
     [[nodiscard]] std::vector<SpriteInstance> wardSprites() const;
 
+    /// SHEETS BUILD. The Journal tile's rows UNDER the leads: every live
+    /// contract off the board contractLine() already reads (ALL of them,
+    /// where that HUD row only shows the soonest), every TAKEN radiant
+    /// errand (RADIANT BUILD), then every finished stage's authored
+    /// QuestStage::log line in the order it was earned. Pure derived reads
+    /// of already-hashed state; a work row is something to read, never a
+    /// choice. PUBLIC since the RADIANT BUILD: runRadiantLine's journal beat
+    /// asserts the tile's own rows carry a taken errand, and a scripted
+    /// proof that re-derived the rows itself would be proving its own copy.
+    [[nodiscard]] std::vector<std::string> journalWorkRows() const;
+
 private:
     /// How close you have to be to address somebody on the street. Two tiles,
     /// which is the same reach Tavern::talkTo uses across a taproom -- one rule
@@ -1025,13 +1036,6 @@ private:
     [[nodiscard]] DialogueViewState mapPanelView() const;
     [[nodiscard]] DialogueViewState lettersPanelView() const;
     [[nodiscard]] DialogueViewState journalPanelView() const;
-    /// SHEETS BUILD. The Journal tile's rows UNDER the leads: every live
-    /// contract off the board contractLine() already reads (ALL of them,
-    /// where that HUD row only shows the soonest), then every finished
-    /// stage's authored QuestStage::log line in the order it was earned.
-    /// Pure derived reads of already-hashed state; a work row is something
-    /// to read, never a choice.
-    [[nodiscard]] std::vector<std::string> journalWorkRows() const;
     /// TASK #82. Every letter whose `lead` (sim::Letter::lead, a
     /// casebook.json lead id) has actually been investigated -- Cold or
     /// Followed, never merely Open -- in authored order. What the letters
@@ -1757,6 +1761,40 @@ struct SmokeRunConfig {
     /// is the game: the real topics, the real Ward::petitionForCharge, the
     /// real purse. See PetitionLineResult for what it reports.
     bool petition = false;
+
+    /// RADIANT BUILD, VERIFICATION ONLY: play a radiant errand -- read the
+    /// board the session's own tavern posted off the live ward, find an
+    /// offered objective whose giver is answerable where they are actually
+    /// standing (scanning the clock hour by hour, the petition line's own
+    /// walk), stand beside them the one-placement way --street does, talk,
+    /// and take the errand off them. Everything after the placement is the
+    /// game: the real interact, the real director, the real RadiantBoard.
+    bool radiant = false;
+    /// Where the line stops for the shutter. "offer" opens the conversation
+    /// and leaves the giver's own TAKE row on the visible list (one beat);
+    /// "taken" -- the default -- presses it and proves the board moved and
+    /// the journal shows the errand (three beats).
+    std::string radiantEnd = "taken";
+};
+
+/// RADIANT BUILD. What a `--radiant` run actually did, so a case can assert
+/// the arc -- the board had work, the giver answered, the take landed, the
+/// journal carries it -- rather than reading pixels.
+struct RadiantLineResult {
+    /// An offered objective with an answerable giver was found.
+    bool found = false;
+    /// The board id and cast of the errand played.
+    std::int32_t objectiveId = -1;
+    std::string giver;
+    std::string brief;
+    /// The conversation opened ON the giver.
+    bool opened = false;
+    /// The giver's own TAKE row was on the list.
+    bool offered = false;
+    /// Chosen, and the board row genuinely reads Taken.
+    bool taken = false;
+    /// journalWorkRows() carries the errand's row.
+    bool journal = false;
 };
 
 /// TIME-AND-TENURE BUILD. What a `--petition` run actually did, so a case can
@@ -1891,6 +1929,9 @@ struct SmokeRunResult {
     /// in the summary for the same reason streetSpeaker is: "a conversation
     /// happened" is not evidence the ROLL moved.
     PetitionLineResult petitionResult;
+    /// RADIANT BUILD: what a --radiant run found and did, printed in the
+    /// summary for the identical reason.
+    RadiantLineResult radiantResult;
     [[nodiscard]] bool scriptFellShort() const noexcept {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }
@@ -1930,5 +1971,12 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
 /// (capture plumbing, through the public purse setter; the priest's answer is
 /// still the real verb's).
 PetitionLineResult runPetitionLine(Session& session, bool grantCoin);
+
+/// RADIANT BUILD. Plays a radiant errand's take -- see SmokeRunConfig::radiant.
+/// Exposed for exactly runStreetLine's reason: the evidence that TASK #81's
+/// generator is reachable is a topic on a real list, a board row that moved
+/// and a journal that shows it, and a case asserts those directly.
+/// `takeIt` false stops with the offer on the open list (the "offer" end).
+RadiantLineResult runRadiantLine(Session& session, bool takeIt);
 
 }  // namespace granadad::render

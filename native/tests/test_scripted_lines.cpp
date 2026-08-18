@@ -123,3 +123,40 @@ TEST_CASE("the roof line gets onto the lead and back down again, all three ways"
         CHECK_FALSE(played.scriptFellShort());
     }
 }
+
+TEST_CASE("--radiant takes a real errand off its own giver, and the journal shows it") {
+    // RADIANT BUILD. TASK #81's acceptance in one flag: the board the session
+    // posted off the live ward is reachable across a real conversation, and
+    // the taken errand reads back off the Journal tile's own rows.
+    render::SmokeRunConfig run;
+    run.radiant = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.radiantResult.found);
+    CHECK(played.radiantResult.opened);
+    CHECK(played.radiantResult.offered);
+    CHECK(played.radiantResult.taken);
+    CHECK(played.radiantResult.journal);
+    // The brief is real prose bound to real nouns -- never an unsubstituted
+    // token, the generator's own bar.
+    CHECK_FALSE(played.radiantResult.brief.empty());
+    CHECK(played.radiantResult.brief.find('{') == std::string::npos);
+    CHECK_FALSE(played.radiantResult.giver.empty());
+}
+
+TEST_CASE("--radiant=offer stops with the giver's row on the open list, one beat owed") {
+    render::SmokeRunConfig run;
+    run.radiant = true;
+    run.radiantEnd = "offer";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.radiantResult.offered);
+    // Stopped before the press, honestly: nothing taken, conversation still
+    // up for the shutter.
+    CHECK_FALSE(played.radiantResult.taken);
+    CHECK(played.talking);
+}

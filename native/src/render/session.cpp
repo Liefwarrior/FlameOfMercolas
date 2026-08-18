@@ -300,6 +300,12 @@ Session::Session(const SessionConfig& config)
     // The one wire between the two: a rival who rises far enough petitions the
     // Flame for a vacant charge, and the roll is where that becomes true.
     tavern_->attachRoll(ward_);
+    // RADIANT BUILD: and the wire the other way -- the room learns the
+    // district's own people, so the radiant board posts off the live roster
+    // (TASK #81's generator, constructed by a windowed client for the first
+    // time). Attached before boot, exactly as the roll is, so the first
+    // day's errands are up before anybody has taken a step.
+    tavern_->attachPeople(people_);
     engine_->boot();
     // S10: AND THE CASE. The bloodletter trail is the reason to be in the
     // district at all -- see sim/casebook.hpp. The raws are a member because
@@ -2925,6 +2931,29 @@ std::vector<std::string> Session::journalWorkRows() const {
             line += "  1 NIGHT";
         } else {
             line += "  " + std::to_string(nights) + " NIGHTS";
+        }
+        rows.push_back(std::move(line));
+    }
+    // RADIANT BUILD: the ward's own errands, under the broker's jobs. Every
+    // TAKEN radiant objective, with the same have/want fraction a contract
+    // row gets (a deliver has no goods to count, so its row names the two
+    // ends of the walk instead), and NO deadline -- an errand has none, and
+    // printing a fake one would be worse than printing the truth. The same
+    // read-only contract as every row here: something to read, not a choice.
+    for (const sim::RadiantObjective& row : talk.radiant().objectives()) {
+        if (!row.live()) {
+            continue;
+        }
+        std::string line = "- ";
+        if (row.isFetch()) {
+            const std::int32_t have = talk.crimes().stash().count(row.good);
+            line += row.verb + " " + std::to_string(row.units) + " " +
+                    std::string(sim::contrabandLabelFor(row.good, row.units)) + " " +
+                    std::to_string(have) + "/" + std::to_string(row.units) + "  FOR " +
+                    upperAscii(row.giverName);
+        } else {
+            line += row.verb + " TO " + upperAscii(row.targetName) + "  FROM " +
+                    upperAscii(row.giverName);
         }
         rows.push_back(std::move(line));
     }
@@ -6405,6 +6434,143 @@ PetitionLineResult runPetitionLine(Session& session, bool grantCoin) {
     return out;
 }
 
+RadiantLineResult runRadiantLine(Session& session, bool takeIt) {
+    RadiantLineResult out;
+
+    // 1. AN OFFERED ERRAND WHOSE GIVER ANSWERS FROM WHERE THEY NOW STAND.
+    // The board bound its nouns at posting time; the giver has been living
+    // their day since. So the search is the petition line's own: scan the
+    // CURRENT hour's positions for a stand tile the talk key would confirm,
+    // and walk the clock an hour at a time until somebody's day allows it --
+    // re-reading the board each hour, because a skip across midnight posts a
+    // fresh one and yesterday's untaken offers go with it. Clear of the
+    // Gilded Gull, runStreetLine's own exclusion for its own reason.
+    const sim::WardActor* giver = nullptr;
+    const sim::RadiantObjective* row = nullptr;
+    std::int32_t standX = 0;
+    std::int32_t standY = 0;
+    const auto scanNow = [&]() {
+        for (const sim::RadiantObjective& offer :
+             session.tavern().dialogue().radiant().objectives()) {
+            if (offer.state != sim::RadiantState::Offered) {
+                continue;
+            }
+            const sim::WardActor* body = session.people().byId(offer.giverActorId);
+            if (body == nullptr || !body->visible()) {
+                continue;
+            }
+            if (body->x >= sim::gull::kFootprintX0 - 4 && body->x <= sim::gull::kFootprintX1 + 4 &&
+                body->y >= sim::gull::kFootprintY0 - 6 && body->y <= sim::gull::kFootprintY1 + 4) {
+                continue;
+            }
+            for (std::int32_t oy = -kStreetReachTiles; oy <= kStreetReachTiles; ++oy) {
+                for (std::int32_t ox = -kStreetReachTiles; ox <= kStreetReachTiles; ++ox) {
+                    if (ox == 0 && oy == 0) {
+                        continue;
+                    }
+                    const std::int32_t sx = body->x + ox;
+                    const std::int32_t sy = body->y + oy;
+                    if (!session.tiles().standable(sx, sy, body->band)) {
+                        continue;
+                    }
+                    const sim::WardActor* answers =
+                        session.people().nearestTo(sx, sy, body->band, kStreetReachTiles);
+                    if (answers == nullptr || answers->id != body->id) {
+                        continue;
+                    }
+                    giver = body;
+                    row = &offer;
+                    standX = sx;
+                    standY = sy;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    bool found = false;
+    for (int hourStep = 0; hourStep < 24 && !found; ++hourStep) {
+        if (hourStep > 0) {
+            session.skipToHour((session.timeOfDay() / 3600 + 1) % 24);
+            // ONE SETTLING STEP BEFORE THE SCAN, and it is load-bearing: a
+            // skip that crossed midnight leaves yesterday's board standing
+            // until the next advanceSecond posts the new day's -- so a scan
+            // straight off the skip could pick a row the very next step
+            // sweeps, and the conversation would open on a giver whose offer
+            // no longer exists. The step runs the posting first; the scan
+            // reads the board the interact below will actually see.
+            session.stepMany(sim::MoveInput{}, 1);
+        }
+        found = scanNow();
+    }
+    if (!found || giver == nullptr || row == nullptr) {
+        return out;
+    }
+    out.found = true;
+    out.objectiveId = row->id;
+    out.giver = row->giverName;
+    out.brief = row->brief;
+
+    // 2. THE ONE PLACEMENT -- runStreetLine's own move, same reasons.
+    session.body().placeAt(standX, standY, giver->band);
+    {
+        const std::int32_t toX = giver->x - standX;
+        const std::int32_t toY = giver->y - standY;
+        sim::Angle look = sim::kFacingNorth;
+        if (std::abs(toX) >= std::abs(toY)) {
+            look = toX > 0 ? sim::kFacingEast : sim::kFacingWest;
+        } else {
+            look = toY > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+        }
+        session.body().setYaw(look);
+    }
+    session.stepMany(sim::MoveInput{}, 1);
+
+    // 3. EVERYTHING AFTER THIS IS THE GAME: the real interact, the real
+    // director recognising its own giver, the real board behind the press.
+    session.interact();
+    out.opened = session.talking() && session.wardTalkingTo() == giver->id;
+    if (!out.opened) {
+        return out;
+    }
+    const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
+    std::int32_t offerIndex = -1;
+    for (std::size_t i = 0; i < topics.size(); ++i) {
+        if (topics[i].kind == sim::TopicKind::TakeRadiant && topics[i].payload == out.objectiveId) {
+            offerIndex = static_cast<std::int32_t>(i);
+            break;
+        }
+    }
+    out.offered = offerIndex >= 0;
+    if (!out.offered || !takeIt) {
+        // The "offer" end: the shutter gets the giver's own row on the list.
+        return out;
+    }
+    session.chooseTopic(static_cast<std::size_t>(offerIndex));
+    const sim::RadiantObjective* moved =
+        session.tavern().dialogue().radiant().find(out.objectiveId);
+    out.taken = moved != nullptr && moved->state == sim::RadiantState::Taken;
+    // 4. AND THE JOURNAL SHOWS IT -- the same rows the Journal tile draws,
+    // asked for the errand's own cast rather than eyeballed off a PNG: the
+    // row carries the verb and names the errand's own party.
+    const std::string party = row->isFetch() ? "FOR " + upperAscii(row->giverName)
+                                             : "TO " + upperAscii(row->targetName);
+    for (const std::string& line : session.journalWorkRows()) {
+        if (line.rfind("- ", 0) == 0 && line.find(row->verb) != std::string::npos &&
+            line.find(party) != std::string::npos) {
+            out.journal = true;
+            break;
+        }
+    }
+    // The taken end is DONE talking -- its evidence is the board and the
+    // journal, and the menu-opening flags below runSmoke's scripted lines
+    // (--refocus=journal in particular) cannot open a page over a
+    // conversation still holding the keys. The "offer" end above returns
+    // with the list up because the list IS its photograph.
+    session.closeConversation();
+    return out;
+}
+
 int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     // ONE IN THE MORNING, and the hour is the point.
     //
@@ -6618,6 +6784,25 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += (result.petitionResult.opened ? 1 : 0) +
                                  (result.petitionResult.rollLine.empty() ? 0 : 1) +
                                  (result.petitionResult.becameDuke ? 1 : 0);
+    }
+
+    if (config.radiant) {
+        // RADIANT BUILD. See SmokeRunConfig::radiant. The "offer" end owes
+        // one beat (the giver's own row on the visible list, conversation
+        // left open for the shutter); "taken" owes three -- offered, the
+        // board moved, the journal shows it.
+        const bool takeIt = config.radiantEnd != "offer";
+        result.radiantResult = runRadiantLine(session, takeIt);
+        result.talking = session.talking();
+        if (takeIt) {
+            result.scriptedWanted += 3;
+            result.scriptedLanded += (result.radiantResult.offered ? 1 : 0) +
+                                     (result.radiantResult.taken ? 1 : 0) +
+                                     (result.radiantResult.journal ? 1 : 0);
+        } else {
+            result.scriptedWanted += 1;
+            result.scriptedLanded += result.radiantResult.offered ? 1 : 0;
+        }
     }
 
     if (config.quickbar) {
@@ -6972,6 +7157,19 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " roll=\"" << pet.rollLine << "\""
                 << " answer=\"" << pet.petitionLine << "\""
                 << " duke=" << (pet.becameDuke ? "yes" : "no");
+    }
+    if (config.radiant) {
+        // RADIANT BUILD: which errand, whose word it is, and whether the
+        // BOARD says it moved -- the claim is a reachable generator, so the
+        // board's own answer is what gets printed.
+        const RadiantLineResult& job = result.radiantResult;
+        summary << " | radiant id=" << job.objectiveId
+                << " giver=\"" << job.giver << "\""
+                << " opened=" << (job.opened ? "yes" : "no")
+                << " offered=" << (job.offered ? "yes" : "no")
+                << " taken=" << (job.taken ? "yes" : "no")
+                << " journal=" << (job.journal ? "yes" : "no")
+                << " brief=\"" << job.brief << "\"";
     }
     if (config.wait) {
         summary << " | wait open=" << (session.waitOpen() ? "yes" : "no")
