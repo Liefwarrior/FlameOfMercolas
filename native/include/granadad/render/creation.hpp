@@ -78,12 +78,14 @@
 // render::EasedToggle's own header already describes for exactly the same
 // reason.
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "granadad/render/anim.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/sim/appearance.hpp"
 #include "granadad/sim/attributes.hpp"
@@ -96,24 +98,39 @@ namespace granadad::render {
 
 class Framebuffer;
 
-/// One of the three doors into a game. Structural framing only -- `tag` is
-/// Eli's own one-word description of each template, task #80's own text,
-/// not this file's invention. The actual voice (a bio, an epithet, a
-/// self-introduction) lives in content/raws/companions/*.json for DEVIN and
-/// GABRI, read through sim::CompanionTemplate -- see CreationFlow's own
-/// companion accessors below, which is where that content actually reaches
-/// the screen.
+/// One row of the restructured Origin screen. Structural framing only -- the
+/// five rows and their order are docs/design/CHARGEN-DAGGERFALL-DRAFT.md
+/// section 6's approved mock: the Daggerfall flow's three doors on top (TAKE
+/// A CALLING / ANSWER FOR YOURSELF / WALK YOUR OWN PATH), then GABRI and
+/// DEVIN as quick starts -- canon characters, never removed, their voice
+/// still content/raws/companions/*.json's own, read through
+/// sim::CompanionTemplate exactly as before. The mock's two group headers
+/// (MAKE YOUR OWN / QUICK START) have no row of their own here because the
+/// topic grid has no non-selectable row to give them; the hovered row's own
+/// top-band line carries its group instead ("QUICK START -- NO-NONSENSE --
+/// ..."), which is the same band the mock put the grouping in.
 struct OriginTemplate {
-    /// "devin", "gabri", "custom" -- stable, never shown.
+    /// "calling", "quiz", "custom", "gabri", "devin" -- stable, never shown.
     std::string id;
-    /// "DEVIN" -- shown on the card.
+    /// "TAKE A CALLING" / "GABRI" -- shown on the card.
     std::string name;
-    /// "SECRETIVE" -- Eli's own one-word framing for the template, task #80.
+    /// The card's own one-line description, spoken in the top band when the
+    /// row is hovered -- the doc mock's right-hand column for the doors,
+    /// Eli's own task #80 word for the quick starts.
     std::string tag;
 };
 
-/// The fixed three, in the order the screen offers them. Never empty.
+/// The fixed five, in the doc mock's own order. Never empty.
 [[nodiscard]] const std::vector<OriginTemplate>& originTemplates();
+
+/// A deterministic display order for one quiz question's three answers --
+/// the doc's "shuffled per question at display time, Daggerfall's own guard
+/// against pattern-marking", done WITHOUT a draw: a fixed permutation per
+/// question index, so the screen position of an axis still varies question
+/// to question but a captured frame is a pure function of the flow's state,
+/// the contract every other pixel of this screen already keeps. Returns
+/// display row -> authored answer index (the raws author A, B, C in order).
+[[nodiscard]] std::array<int, 3> quizDisplayOrder(int questionIndex) noexcept;
 
 /// Longest a typed name is allowed to run. Sixteen glyphs is generous next
 /// to "CRACKSMANSHIP" (thirteen) and short enough that any surface this
@@ -124,8 +141,9 @@ inline constexpr std::size_t kMaxNameLength = 16;
 /// actually needs. Set only once, by CreationFlow::confirm(). Exactly one of
 /// the two sheets below is meaningful, decided by originId:
 ///
-///   originId == "custom"          -- `chargen` is the point-bought sheet
-///                                    the player built. Apply with
+///   originId == "calling"/"quiz"/ -- `chargen` is the sheet: point-bought by
+///               "custom"             hand, or a taken calling designated
+///                                    through the same arithmetic. Apply with
 ///                                    `chargen.apply(track)`.
 ///   originId == "devin" / "gabri" -- `companion` is the fixed sheet that
 ///                                    origin ships with, loaded() == true.
@@ -162,9 +180,23 @@ struct CreationResult {
     sim::ChargenEffects effects;
 };
 
+/// The screens, in flow order. The three Daggerfall doors (task #92) all
+/// converge on Customize -- the doc's own REVIEW screen -- with their result
+/// pre-designated into the same sim::Chargen the CUSTOM path spends by hand:
+///
+///   TAKE A CALLING       Origin -> Calling -> Background -> Customize
+///   ANSWER FOR YOURSELF  Origin -> Quiz (verdict card at the end, accept or
+///                        decline back to Calling) -> Background -> Customize
+///   WALK YOUR OWN PATH   Origin -> Customize (build the sheet; BEGIN routes
+///                        through Background once) -> Background -> Customize
+///   GABRI / DEVIN        Origin -> Customize, unchanged. No quiz and no
+///                        biography: their history is the raws' own.
 enum class CreationStep : std::uint8_t {
     Origin = 0,
-    Customize = 1,
+    Calling = 1,
+    Quiz = 2,
+    Background = 3,
+    Customize = 4,
 };
 
 /// The two screens, and the cursor, the typed name and the sim::Chargen that
@@ -193,9 +225,84 @@ public:
     void moveOriginCursor(int delta) noexcept;
     /// ENTER on the origin screen. Loads the picked template's own name into
     /// the name field -- unless the player has already typed one of their
-    /// own, see loadOriginDefaultName() in the .cpp -- and moves to
-    /// Customize.
+    /// own, see loadOriginDefaultName() in the .cpp -- and moves to the
+    /// picked door's own first screen (see CreationStep's flow map). A door
+    /// whose content failed to load falls through to Customize and reads
+    /// exactly like CUSTOM -- the same must-still-boot rule the constructor
+    /// already keeps for a missing skills.json.
     void chooseOrigin() noexcept;
+
+    // --- the Daggerfall doors: calling roster, quiz, biography ------------
+
+    [[nodiscard]] const sim::CallingRegistry& callings() const noexcept { return callings_; }
+    [[nodiscard]] const sim::ChargenQuiz& quiz() const noexcept { return quiz_; }
+    [[nodiscard]] const sim::BiographyRegistry& biography() const noexcept { return biography_; }
+
+    /// The one cursor the Calling, Quiz and Background screens share -- only
+    /// one of them is ever on screen, and resetting it on every transition is
+    /// what a per-screen cursor would have had to do anyway.
+    [[nodiscard]] int choiceCursor() const noexcept { return choiceCursor_; }
+    /// UP/DOWN on Calling, Quiz (a question's three answers, or the verdict
+    /// card's two rows) and Background. Rings, the same wrap the origin
+    /// cursor uses. No-op on every other step.
+    void moveChoiceCursor(int delta) noexcept;
+    /// ENTER on those same screens. On Calling: takes the hovered calling --
+    /// resets the sheet, designates the whole calling into it through
+    /// sim::Chargen's own refusing calls (CallingTemplate::designateInto),
+    /// and moves on to Background (or straight to Customize when the
+    /// biography was already answered, or could not be loaded). On Quiz:
+    /// commits the hovered answer -- one restrained ImpactPulse, the
+    /// DECISIONS.md convention -- and, after the last question, shows the
+    /// verdict card, where row 0 accepts the tally's calling and row 1
+    /// declines back to the roster, Daggerfall's own never-a-trap rule. On
+    /// Background: commits the hovered answer; the first question also
+    /// offers A PAST AT RANDOM (Daggerfall's own RANDOM option), which
+    /// answers everything remaining off a seed drawn from the step count --
+    /// deterministic for a capture, unrepeatable in practice for a player.
+    void chooseChoice() noexcept;
+    /// ESC anywhere: steps one commitment back. Mid-quiz and mid-biography
+    /// it un-answers the previous question; at the front of either it leaves
+    /// the screen the way the player came in; on Customize it defers to
+    /// backToOrigin() unchanged.
+    void back() noexcept;
+
+    /// The taken calling's id ("netter"), empty until one is taken. Set by
+    /// the roster and by an accepted verdict alike.
+    [[nodiscard]] const std::string& chosenCallingId() const noexcept { return chosenCallingId_; }
+    /// One authored answer index per answered quiz question, in question
+    /// order -- exactly the vector sim::tallyQuiz takes.
+    [[nodiscard]] const std::vector<std::int32_t>& quizAnswers() const noexcept {
+        return quizAnswers_;
+    }
+    /// Engaged only while the verdict card is on screen.
+    [[nodiscard]] const std::optional<sim::QuizTally>& quizVerdict() const noexcept {
+        return verdict_;
+    }
+    /// Per-axis counts of the answers committed SO FAR -- what the three
+    /// meters draw mid-quiz, ahead of the full tally sim::tallyQuiz renders
+    /// at the end. Indexed by sim::ChargenAxis.
+    [[nodiscard]] std::array<std::int32_t, sim::kChargenAxisCount> quizTallySoFar() const noexcept;
+    [[nodiscard]] const std::vector<std::int32_t>& biographyAnswers() const noexcept {
+        return bioAnswers_;
+    }
+    [[nodiscard]] bool biographyDone() const noexcept { return bioDone_; }
+    /// Everything the answered biography adds up to, in the closed vocabulary
+    /// sim/chargen_raws.hpp owns. Default (a no-op) until the biography is
+    /// finished; carried out of the door on CreationResult::effects by
+    /// confirm(). daggerPoints stays 0 in this build: the section-5 advantage
+    /// shop's prices are still on the owner's desk (doc section 0 item 5),
+    /// so the custom path's dagger readout shows the neutral 1.00x honestly
+    /// rather than shipping an unpriced shop.
+    [[nodiscard]] const sim::ChargenEffects& effects() const noexcept { return effects_; }
+    /// 1 the instant an answer lands, easing to 0 over ~8 steps -- the one
+    /// restrained ImpactPulse the answer-commit gets (DECISIONS.md rule 3).
+    [[nodiscard]] float commitPulse() const noexcept { return commitPulse_.value(); }
+    /// The screen's own centre furniture, unwrapped: the hovered calling's
+    /// (or the verdict's) full sheet preview on Calling/verdict, the hovered
+    /// answer's full text on Quiz/Background -- the words the topic grid's
+    /// eighteen-glyph column can only ever clip, drawn whole in the one
+    /// region this screen has no world or face to keep clear for.
+    [[nodiscard]] std::vector<std::string> centreLines() const;
 
     // --- customize --------------------------------------------------------
 
@@ -318,8 +425,12 @@ public:
     /// A slow, steps-based breathing phase for the cursor highlight -- the
     /// identical contract DialogueViewState::phase already makes, and for
     /// the identical reason: a captured frame has to be a pure function of
-    /// how many times this was called, never of wall-clock time.
-    void advance() noexcept { ++stepCount_; }
+    /// how many times this was called, never of wall-clock time. Also decays
+    /// the answer-commit pulse, ImpactPulse's own once-per-step contract.
+    void advance() noexcept {
+        ++stepCount_;
+        commitPulse_.advance();
+    }
     [[nodiscard]] float phase() const noexcept {
         return static_cast<float>(stepCount_) / 60.0F;
     }
@@ -354,14 +465,32 @@ private:
     /// but ONLY while the player has not yet typed or backspaced one of
     /// their own -- see nameIsDefault_. Flipping between DEVIN and GABRI to
     /// compare them should not cost a name that was already customised, but
-    /// arriving here for the first time -- or from CUSTOM's blank field --
+    /// arriving here for the first time -- or from a door's blank field --
     /// should hand over the template's own name rather than leave the field
-    /// exactly as blank as it was. CUSTOM has no name of its own to offer,
-    /// so it clears the field instead.
+    /// exactly as blank as it was. The three Daggerfall doors name PATHS,
+    /// not characters, so they clear the field instead.
     void loadOriginDefaultName() noexcept;
+    /// How many rows the shared choice cursor can stand on for the current
+    /// step -- see choiceCursor().
+    [[nodiscard]] int choiceRowCount() const noexcept;
+    /// Takes `calling`: fresh sheet, designateInto through Chargen's own
+    /// refusing calls, then Background (or Customize -- see chooseChoice()).
+    void applyCalling(const sim::CallingTemplate& calling) noexcept;
+    /// The last biography answer just landed: accumulate the effects (pure,
+    /// sim::accumulateBiography) and converge on Customize.
+    void finishBiography() noexcept;
+    /// The full sheet preview centreLines() builds for one calling.
+    [[nodiscard]] std::vector<std::string> sheetPreview(
+        const sim::CallingTemplate& calling) const;
 
     sim::SkillTrack skills_;
     sim::Chargen chargen_;
+    /// The Daggerfall flow's content, loaded once at construction through
+    /// the sim's own refusing loaders (chargen_raws.hpp). loaded() false on
+    /// any of them closes its door -- see chooseOrigin().
+    sim::CallingRegistry callings_;
+    sim::ChargenQuiz quiz_;
+    sim::BiographyRegistry biography_;
     /// DEVIN's and GABRI's fixed sheets, loaded once at construction --
     /// there are only ever two of them, so there is nothing to gain from
     /// loading on demand. loaded() is false for either when the raws could
@@ -378,6 +507,17 @@ private:
     std::string name_;
     bool nameIsDefault_ = true;
     bool editingName_ = false;
+    /// The shared Calling/Quiz/Background cursor -- see choiceCursor().
+    int choiceCursor_ = 0;
+    std::string chosenCallingId_;
+    std::vector<std::int32_t> quizAnswers_;
+    std::optional<sim::QuizTally> verdict_;
+    std::vector<std::int32_t> bioAnswers_;
+    bool bioDone_ = false;
+    sim::ChargenEffects effects_;
+    /// The answer-commit pulse -- ~8 steps of decay, the shipped default,
+    /// DECISIONS.md rule 3's own numbers.
+    ImpactPulse commitPulse_;
     CreationResult result_;
     std::int64_t stepCount_ = 0;
 };

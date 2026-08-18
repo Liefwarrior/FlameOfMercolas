@@ -1,8 +1,13 @@
-// THE ORIGIN-SELECT AND CUSTOMIZE FLOW: a new game's first two screens.
+// THE ORIGIN-SELECT AND CUSTOMIZE FLOW: a new game's first screens -- and,
+// since task #92, the Daggerfall doors between them: the calling roster, the
+// ward's ten questions with their verdict card, and the twelve-question
+// biography, all converging on the same customize/review screen.
 //
 // WHAT THIS FILE PROVES, AND WHAT IT DOES NOT.
 //
-// CreationFlow owns three cards, a name field, one sim::Chargen for CUSTOM
+// CreationFlow owns five origin rows, a name field, one sim::Chargen shared
+// by every make-your-own path, the chargen_raws.hpp registries (proved on
+// their own terms by test_chargen_raws.cpp -- tallies, zero-sums, refusals)
 // and two sim::CompanionTemplate for DEVIN/GABRI -- the real
 // Primary/Major/Minor skill sheet, the real attribute bonus pool, and the
 // real hand-authored fixed sheets, all of it already built and already
@@ -27,6 +32,9 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -70,34 +78,42 @@ void mustReadAsEnglish(std::string_view what, std::string_view text) {
 // origin select
 // ===========================================================================
 
-TEST_CASE("exactly three origins, Eli's own three, and the cursor rings rather than stopping") {
+TEST_CASE("five origin rows in the doc mock's own order, and the cursor rings rather than "
+          "stopping") {
+    // docs/design/CHARGEN-DAGGERFALL-DRAFT.md section 6 (RULING 2): the
+    // Daggerfall flow's three doors on top, GABRI and DEVIN as quick starts
+    // -- canon characters, never removed. CUSTOM keeps index 2, the one
+    // every existing capture flag and case in this file walks to.
     const std::vector<render::OriginTemplate>& origins = render::originTemplates();
-    REQUIRE(origins.size() == 3);
-    CHECK(origins[0].id == "devin");
-    CHECK(origins[0].tag == "SECRETIVE");
-    CHECK(origins[1].id == "gabri");
-    CHECK(origins[1].tag == "NO-NONSENSE");
+    REQUIRE(origins.size() == 5);
+    CHECK(origins[0].id == "calling");
+    CHECK(origins[1].id == "quiz");
     CHECK(origins[2].id == "custom");
+    CHECK(origins[3].id == "gabri");
+    CHECK(origins[3].tag == "NO-NONSENSE");
+    CHECK(origins[4].id == "devin");
+    CHECK(origins[4].tag == "SECRETIVE");
 
     render::CreationFlow flow = fresh();
     REQUIRE(flow.originCursor() == 0);
     flow.moveOriginCursor(-1);
-    CHECK(flow.originCursor() == 2);  // UP from DEVIN wraps to CUSTOM
+    CHECK(flow.originCursor() == 4);  // UP from the top wraps to DEVIN
     flow.moveOriginCursor(1);
     CHECK(flow.originCursor() == 0);
-    flow.moveOriginCursor(4);
-    CHECK(flow.originCursor() == 1);  // (0 + 4) mod 3
+    flow.moveOriginCursor(7);
+    CHECK(flow.originCursor() == 2);  // (0 + 7) mod 5
 }
 
-TEST_CASE("choosing DEVIN or GABRI suggests their own name; CUSTOM starts blank") {
+TEST_CASE("choosing DEVIN or GABRI suggests their own name; the make-your-own doors start blank") {
     render::CreationFlow devin = fresh();
+    devin.moveOriginCursor(4);
     devin.chooseOrigin();
     CHECK(devin.step() == render::CreationStep::Customize);
     CHECK(devin.name() == "DEVIN");
     CHECK(devin.chosenOrigin().id == "devin");
 
     render::CreationFlow gabri = fresh();
-    gabri.moveOriginCursor(1);
+    gabri.moveOriginCursor(3);
     gabri.chooseOrigin();
     CHECK(gabri.name() == "GABRI");
 
@@ -106,24 +122,31 @@ TEST_CASE("choosing DEVIN or GABRI suggests their own name; CUSTOM starts blank"
     custom.chooseOrigin();
     CHECK(custom.chosenOrigin().id == "custom");
     CHECK(custom.name().empty());
+
+    // The other two doors name PATHS, not characters, the same rule.
+    render::CreationFlow calling = fresh();
+    calling.chooseOrigin();  // row 0: TAKE A CALLING
+    CHECK(calling.name().empty());
 }
 
-TEST_CASE("CUSTOM's card names Eli's own tag, never an invented paragraph") {
-    // CUSTOM has no companion template and never will -- its whole point is
-    // a blank sheet -- so its top-band line is always just its own tag, task
-    // #80's own framing and nothing this file invented.
+TEST_CASE("the doors' cards speak the mock's own descriptions in the top band") {
     render::CreationFlow flow = fresh();
-    flow.moveOriginCursor(2);  // CUSTOM
-    const render::DialogueViewState origin = flow.view();
-    CHECK(origin.line == "YOUR OWN PATH");
-    mustReadAsEnglish("origin blurb placeholder", origin.line);
+    CHECK(flow.view().line == "THE WARD'S NINE TRADES, PICKED BY EYE");
+    flow.moveOriginCursor(1);
+    CHECK(flow.view().line == "TEN QUESTIONS, AND BE TOLD WHAT YOU ARE");
+    flow.moveOriginCursor(1);
+    CHECK(flow.view().line == "EVERY SKILL, EVERY POINT, AND THE DAGGER");
+    for (int i = 0; i < 3; ++i) {
+        mustReadAsEnglish("door blurb", flow.view().line);
+        flow.moveOriginCursor(-1);
+    }
 }
 
-TEST_CASE("DEVIN's and GABRI's cards speak their own real epithet off content/raws/companions") {
+TEST_CASE("DEVIN's and GABRI's cards speak their own real epithet, announced as quick starts") {
     // content/raws/companions/devin.json and gabri.json are real, authored
-    // files as of this task -- see creation.hpp's own header. If they can be
-    // read at all, the card's line must carry Eli's own tag AND their words,
-    // not the tag alone.
+    // files -- see creation.hpp's own header. If they can be read at all,
+    // the card's line must carry the QUICK START group (the mock's header
+    // row, which the topic grid cannot draw), Eli's own tag AND their words.
     render::CreationFlow flow = fresh();
     const sim::CompanionTemplate devin = sim::CompanionTemplate::load(content::contentDir(), "devin");
     const sim::CompanionTemplate gabri = sim::CompanionTemplate::load(content::contentDir(), "gabri");
@@ -132,11 +155,12 @@ TEST_CASE("DEVIN's and GABRI's cards speak their own real epithet off content/ra
     REQUIRE_FALSE(devin.epithet().empty());
     REQUIRE_FALSE(gabri.epithet().empty());
 
-    CHECK(flow.view().line == "SECRETIVE -- " + devin.epithet());
+    flow.moveOriginCursor(4);  // DEVIN
+    CHECK(flow.view().line == "QUICK START -- SECRETIVE -- " + devin.epithet());
     mustReadAsEnglish("devin epithet", flow.view().line);
 
-    flow.moveOriginCursor(1);  // GABRI
-    CHECK(flow.view().line == "NO-NONSENSE -- " + gabri.epithet());
+    flow.moveOriginCursor(-1);  // GABRI
+    CHECK(flow.view().line == "QUICK START -- NO-NONSENSE -- " + gabri.epithet());
     mustReadAsEnglish("gabri epithet", flow.view().line);
 }
 
@@ -146,11 +170,12 @@ TEST_CASE("DEVIN's and GABRI's cards speak their own real epithet off content/ra
 
 TEST_CASE("switching origins re-suggests a name only until the player types their own") {
     render::CreationFlow flow = fresh();
-    flow.chooseOrigin();  // DEVIN
+    flow.moveOriginCursor(4);  // DEVIN
+    flow.chooseOrigin();
     REQUIRE(flow.name() == "DEVIN");
 
     flow.backToOrigin();
-    flow.moveOriginCursor(1);  // GABRI
+    flow.moveOriginCursor(-1);  // GABRI
     flow.chooseOrigin();
     CHECK(flow.name() == "GABRI");  // still following the default
 
@@ -173,7 +198,7 @@ TEST_CASE("switching origins re-suggests a name only until the player types thei
     CHECK(flow.name() == "ASH");
 
     flow.backToOrigin();
-    flow.moveOriginCursor(-1);  // back to DEVIN
+    flow.moveOriginCursor(1);  // back to DEVIN
     flow.chooseOrigin();
     CHECK(flow.name() == "ASH");  // the player's own name survives the switch
 }
@@ -208,7 +233,8 @@ TEST_CASE("typing refuses a leading space, refuses non-name characters, and stop
     mustReadAsEnglish("typed name", flow.name());
 }
 
-TEST_CASE("BEGIN refuses a blank name and confirms once one is typed") {
+TEST_CASE("BEGIN refuses a blank name, routes the custom door through the biography once, "
+          "and confirms the second time") {
     render::CreationFlow flow = fresh();
     flow.moveOriginCursor(2);  // CUSTOM
     flow.chooseOrigin();
@@ -229,11 +255,31 @@ TEST_CASE("BEGIN refuses a blank name and confirms once one is typed") {
     flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
     CHECK(flow.view().topics.back() == "BEGIN");
 
+    // THE DOC'S OWN ORDER (section 6): sheet first, then the twelve
+    // questions, then back here to review -- the first BEGIN a
+    // make-your-own path presses is the door into the biography, not the
+    // confirmation.
+    flow.chooseCustomizeRow();
+    REQUIRE(flow.biography().loaded());
+    REQUIRE(flow.step() == render::CreationStep::Background);
+    CHECK_FALSE(flow.done());
+    const std::size_t questionCount = flow.biography().questions().size();
+    for (std::size_t i = 0; i < questionCount; ++i) {
+        flow.chooseChoice();  // answer (a) of each
+    }
+    REQUIRE(flow.biographyDone());
+    REQUIRE(flow.step() == render::CreationStep::Customize);
+
+    flow.moveCustomizeCursor(static_cast<int>(flow.view().topics.size()) - 1);
+    REQUIRE(flow.view().topics.back() == "BEGIN");
     flow.chooseCustomizeRow();
     CHECK(flow.done());
     CHECK(flow.result().confirmed);
     CHECK(flow.result().name == "NO");
     CHECK(flow.result().originId == "custom");
+    // The answered biography rides out on the result -- the seam
+    // main.cpp's boot block applies through.
+    CHECK(flow.result().effects == flow.effects());
 }
 
 // ===========================================================================
@@ -241,8 +287,12 @@ TEST_CASE("BEGIN refuses a blank name and confirms once one is typed") {
 // only that this screen actually reaches it
 // ===========================================================================
 
-TEST_CASE("THE FLAME never appears as a skill row on this screen, on any origin") {
-    for (int origin = 0; origin < 3; ++origin) {
+TEST_CASE("THE FLAME never appears as a skill row on this screen, on any sheet-holding origin") {
+    // 2 = CUSTOM, 3 = GABRI, 4 = DEVIN -- the three rows that land straight
+    // on a sheet. The calling roster's own no-FLAME rule is the loader's
+    // (test_chargen_raws.cpp) and the taken-calling case below re-proves the
+    // hosting.
+    for (const int origin : {2, 3, 4}) {
         render::CreationFlow flow = fresh();
         flow.moveOriginCursor(origin);
         flow.chooseOrigin();
@@ -378,7 +428,8 @@ TEST_CASE("DEVIN's customize rows read his real fixed sheet, not a shadow copy")
         }
     }
 
-    flow.chooseOrigin();  // DEVIN is the default card
+    flow.moveOriginCursor(4);  // DEVIN
+    flow.chooseOrigin();
     REQUIRE(flow.chosenCompanion() != nullptr);
     REQUIRE(flow.chosenCompanion()->id() == "devin");
 
@@ -426,9 +477,7 @@ TEST_CASE("DEVIN's and GABRI's rows survive the real eighteen-glyph column, not 
     for (const std::string_view id : {"devin", "gabri"}) {
         INFO("companion: ", id);
         render::CreationFlow flow = fresh();
-        if (id == "gabri") {
-            flow.moveOriginCursor(1);
-        }
+        flow.moveOriginCursor(id == "gabri" ? 3 : 4);
         flow.chooseOrigin();
         REQUIRE(flow.chosenCompanion() != nullptr);
         REQUIRE(flow.chosenCompanion()->id() == id);
@@ -466,7 +515,7 @@ TEST_CASE("DEVIN's and GABRI's rows survive the real eighteen-glyph column, not 
 }
 
 TEST_CASE("LEFT/RIGHT never moves a single row of DEVIN's or GABRI's sheet") {
-    for (const int originIndex : {0, 1}) {  // DEVIN, GABRI
+    for (const int originIndex : {4, 3}) {  // DEVIN, GABRI
         render::CreationFlow flow = fresh();
         flow.moveOriginCursor(originIndex);
         flow.chooseOrigin();
@@ -487,14 +536,16 @@ TEST_CASE("LEFT/RIGHT never moves a single row of DEVIN's or GABRI's sheet") {
 
 TEST_CASE("the status line says the sheet is fixed, for DEVIN and GABRI") {
     render::CreationFlow flow = fresh();
-    flow.chooseOrigin();  // DEVIN
+    flow.moveOriginCursor(4);  // DEVIN
+    flow.chooseOrigin();
     CHECK(flow.view().line == "A FIXED SHEET -- NOT ADJUSTABLE HERE.");
     mustReadAsEnglish("companion status line", flow.view().line);
 }
 
 TEST_CASE("confirming DEVIN carries his real CompanionTemplate, and no Chargen picks") {
     render::CreationFlow flow = fresh();
-    flow.chooseOrigin();  // DEVIN
+    flow.moveOriginCursor(4);  // DEVIN
+    flow.chooseOrigin();
     REQUIRE(flow.canConfirm());  // name defaulted to "DEVIN"
 
     // Walk to BEGIN (the last row) and confirm.
@@ -589,7 +640,7 @@ TEST_CASE("every one of the eleven LOOK labels survives the real eighteen-glyph 
 
 TEST_CASE("GABRI's LOOK row shows his own fixed appearance and refuses to move") {
     render::CreationFlow flow = fresh();
-    flow.moveOriginCursor(1);  // GABRI
+    flow.moveOriginCursor(3);  // GABRI
     flow.chooseOrigin();
     REQUIRE(flow.chosenCompanion() != nullptr);
     REQUIRE(flow.chosenCompanion()->appearanceType().has_value());
@@ -614,7 +665,8 @@ TEST_CASE("DEVIN has no LOOK row at all -- his file authors no appearanceType") 
     // COSTS NOTHING is the same rule his skill rows already hold to
     // (customizeRowModel's own comment), extended to LOOK.
     render::CreationFlow flow = fresh();
-    flow.chooseOrigin();  // DEVIN is the default card
+    flow.moveOriginCursor(4);  // DEVIN
+    flow.chooseOrigin();
     REQUIRE(flow.chosenCompanion() != nullptr);
     REQUIRE(flow.chosenCompanion()->id() == "devin");
     CHECK_FALSE(flow.chosenCompanion()->appearanceType().has_value());
@@ -647,7 +699,7 @@ TEST_CASE("confirming carries the right appearance for all three origins") {
 
     // GABRI: his own fixed look, regardless of anything pressed.
     render::CreationFlow gabri = fresh();
-    gabri.moveOriginCursor(1);
+    gabri.moveOriginCursor(3);
     gabri.chooseOrigin();
     REQUIRE(gabri.confirm());
     REQUIRE(gabri.result().appearance.has_value());
@@ -655,6 +707,7 @@ TEST_CASE("confirming carries the right appearance for all three origins") {
 
     // DEVIN: honestly nullopt -- his file has nothing to carry.
     render::CreationFlow devin = fresh();
+    devin.moveOriginCursor(4);
     devin.chooseOrigin();
     REQUIRE(devin.confirm());
     CHECK_FALSE(devin.result().appearance.has_value());
@@ -668,9 +721,13 @@ TEST_CASE("the view carries the right headline in the right place, on both scree
     render::CreationFlow flow = fresh();
     const render::DialogueViewState origin = flow.view();
     CHECK(origin.open);
-    CHECK(origin.speaker == "NEW GAME");
-    REQUIRE(origin.topics.size() == 3);
+    // The doc mock's own header band (section 6): the screen's name beside
+    // the group hint, the ward's line on the marked-cut caseRef row.
+    CHECK(origin.speaker == "A NAME FOR YOURSELF");
+    CHECK(origin.caseRef == "THE WARD HAD WORK FOR YOU BEFORE YOU HAD A NAME FOR IT.");
+    REQUIRE(origin.topics.size() == 5);
     mustReadAsEnglish("origin epithet", origin.epithet);
+    mustReadAsEnglish("origin caseRef", origin.caseRef);
     for (const std::string& topic : origin.topics) {
         mustReadAsEnglish("origin card", topic);
     }
@@ -679,7 +736,7 @@ TEST_CASE("the view carries the right headline in the right place, on both scree
     flow.chooseOrigin();
     const render::DialogueViewState custom = flow.view();
     CHECK(custom.speaker == "CUSTOMIZE");
-    CHECK(custom.epithet == "CUSTOM - YOUR OWN PATH");
+    CHECK(custom.epithet == "WALK YOUR OWN PATH");
     // NAME + LOOK + every non-FLAME skill + one row per attribute + BEGIN.
     std::size_t nonFlame = 0;
     for (const sim::SkillTrack::Entry& entry : flow.skills().entries()) {
@@ -702,6 +759,10 @@ TEST_CASE("the status line reports the real slot counts and the real pool, for C
     CHECK(line.find("PRIMARY 0/") != std::string::npos);
     CHECK(line.find("POINTS " + std::to_string(sim::kAttributeBonusPool) + " LEFT") !=
          std::string::npos);
+    // The dagger readout, at its honest neutral -- task #92. The multiplier
+    // is live in the sim (SkillTrack's Q8 advance multiplier); the points
+    // stay 0 until the section-5 advantage shop's prices are signed off.
+    CHECK(line.find("DAGGER +0 PACE X1.00") != std::string::npos);
 
     flow.moveCustomizeCursor(2);  // row 1 is LOOK; the first skill is row 2
     flow.adjustCustomizeRow(1);  // one skill designated Primary
@@ -711,6 +772,7 @@ TEST_CASE("the status line reports the real slot counts and the real pool, for C
 
 TEST_CASE("while editing a name, the top line says so instead of the status") {
     render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(4);  // DEVIN
     flow.chooseOrigin();
     flow.chooseCustomizeRow();  // open NAME
     REQUIRE(flow.editingName());
@@ -764,7 +826,8 @@ TEST_CASE("DEVIN's fixed sheet, applied through CreationResult, reaches the live
     // social.hpp names, so his sheet is the one that proves the seam by
     // actually moving a number off zero.
     render::CreationFlow flow = fresh();
-    flow.chooseOrigin();  // DEVIN
+    flow.moveOriginCursor(4);  // DEVIN
+    flow.chooseOrigin();
     const std::size_t rowCount = flow.view().topics.size();
     flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
     REQUIRE(flow.view().topics.back() == "BEGIN");
@@ -865,6 +928,293 @@ TEST_CASE("CUSTOM's point-bought Chargen sheet, applied through CreationResult, 
 }
 
 // ===========================================================================
+// TASK #92: THE DAGGERFALL DOORS. The registries' own arithmetic (the tally
+// table, the zero-sum bookkeeping, every refusal) is test_chargen_raws.cpp's;
+// these cases prove the HOSTING -- that the roster row a player takes is the
+// exact CallingTemplate the sim loaded, that the screen's shuffled answer
+// rows commit the authored answer they display, and that the effects a
+// finished flow carries out are byte-identical to what the pure accumulator
+// says those answers mean.
+// ===========================================================================
+
+namespace {
+
+/// Commits one quiz answer by its AUTHORED index through the same shuffled
+/// rows a keyboard walks -- no back door past the display order.
+void answerQuizAuthored(render::CreationFlow& flow, int authored) {
+    const std::array<int, 3> order =
+        render::quizDisplayOrder(static_cast<int>(flow.quizAnswers().size()));
+    for (int pos = 0; pos < 3; ++pos) {
+        if (order[static_cast<std::size_t>(pos)] == authored) {
+            while (flow.choiceCursor() != pos) {
+                flow.moveChoiceCursor(1);
+            }
+            flow.chooseChoice();
+            return;
+        }
+    }
+    FAIL("authored index " << authored << " not present in the display order");
+}
+
+}  // namespace
+
+TEST_CASE("the calling roster lists the nine trades and taking one designates the real sheet") {
+    render::CreationFlow flow = fresh();
+    REQUIRE(flow.callings().loaded());
+    flow.chooseOrigin();  // row 0: TAKE A CALLING
+    REQUIRE(flow.step() == render::CreationStep::Calling);
+
+    const render::DialogueViewState roster = flow.view();
+    REQUIRE(roster.topics.size() == flow.callings().callings().size());
+    REQUIRE(roster.topics.size() == 9);
+    // The hovered trade speaks its own one line in the top band.
+    CHECK(roster.line == flow.callings().callings().front().oneLine);
+    for (const std::string& topic : roster.topics) {
+        mustReadAsEnglish("roster row", topic);
+    }
+
+    // Walk to NETTER (authored index 3) and take it.
+    for (int i = 0; i < 3; ++i) {
+        flow.moveChoiceCursor(1);
+    }
+    const sim::CallingTemplate& netter = flow.callings().callings()[3];
+    REQUIRE(netter.id == "netter");
+    flow.chooseChoice();
+    CHECK(flow.chosenCallingId() == "netter");
+    REQUIRE(flow.step() == render::CreationStep::Background);
+
+    // The sheet is the calling's own, through Chargen's real arithmetic --
+    // every Primary at Primary, the pool exactly spent.
+    for (const std::string& id : netter.primary) {
+        CHECK(flow.chargen().designationOf(id) == sim::SkillDesignation::Primary);
+    }
+    for (const std::string& id : netter.major) {
+        CHECK(flow.chargen().designationOf(id) == sim::SkillDesignation::Major);
+    }
+    CHECK(flow.chargen().attributePointsRemaining() == 0);
+
+    // Twelve answers later the flow converges on the review screen, and the
+    // effects carried are EXACTLY what the pure accumulator says the same
+    // answers mean -- the hosting claim, not a re-proof of the sums.
+    for (int i = 0; i < 12; ++i) {
+        flow.chooseChoice();  // answer (a) of each, in authored order
+    }
+    REQUIRE(flow.biographyDone());
+    REQUIRE(flow.step() == render::CreationStep::Customize);
+    const std::vector<std::int32_t> answered(12, 0);
+    CHECK(flow.biographyAnswers() == answered);
+    const std::optional<sim::ChargenEffects> expected =
+        sim::accumulateBiography(flow.biography(), answered);
+    REQUIRE(expected.has_value());
+    CHECK(flow.effects() == *expected);
+
+    // The review screen names the trade it is reviewing, and the status
+    // line carries the dagger at its honest neutral -- no advantage shop
+    // ships until the doc's section-5 prices are signed off.
+    const render::DialogueViewState review = flow.view();
+    CHECK(review.epithet == "TAKE A CALLING - Netter");
+    CHECK(review.line.find("DAGGER +0 PACE X1.00") != std::string::npos);
+}
+
+TEST_CASE("the quiz commits the authored answer its shuffled row displays, and the meters "
+          "count it") {
+    render::CreationFlow flow = fresh();
+    REQUIRE(flow.quiz().loaded());
+    flow.moveOriginCursor(1);  // ANSWER FOR YOURSELF
+    flow.chooseOrigin();
+    REQUIRE(flow.step() == render::CreationStep::Quiz);
+    REQUIRE(flow.quiz().questions().size() == 10);
+
+    // The first screen: question 1 of 10, three answers, the prompt in the
+    // top band -- and every word of it drawable (the em-dash fold at the
+    // loader seam, proved on the exact strings this screen shows).
+    const render::DialogueViewState first = flow.view();
+    CHECK(first.speaker == "THE WARD ASKS");
+    CHECK(first.epithet == "1 OF 10");
+    REQUIRE(first.topics.size() == 3);
+    mustReadAsEnglish("quiz prompt", first.line);
+    for (const std::string& topic : first.topics) {
+        mustReadAsEnglish("quiz answer", topic);
+    }
+
+    // Row -> authored mapping: the topic shown at display row r IS the
+    // authored answer quizDisplayOrder names, and committing row r scores
+    // that answer's axis, whatever the shuffle did.
+    const std::array<int, 3> order = render::quizDisplayOrder(0);
+    const sim::QuizQuestion& q0 = flow.quiz().questions()[0];
+    for (int pos = 0; pos < 3; ++pos) {
+        CHECK(first.topics[static_cast<std::size_t>(pos)] ==
+              q0.answers[static_cast<std::size_t>(order[static_cast<std::size_t>(pos)])].text);
+    }
+
+    answerQuizAuthored(flow, 1);  // B
+    answerQuizAuthored(flow, 1);  // B
+    answerQuizAuthored(flow, 2);  // C
+    const std::array<std::int32_t, sim::kChargenAxisCount> counts = flow.quizTallySoFar();
+    CHECK(counts[0] == 0);
+    CHECK(counts[1] == 2);
+    CHECK(counts[2] == 1);
+    CHECK(flow.view().epithet == "4 OF 10");
+
+    // ESC un-answers the previous question -- one commitment back.
+    flow.back();
+    CHECK(flow.quizAnswers().size() == 2);
+    CHECK(flow.view().epithet == "3 OF 10");
+    // ...and backing all the way out lands on the origin screen.
+    flow.back();
+    flow.back();
+    CHECK(flow.quizAnswers().empty());
+    flow.back();
+    CHECK(flow.step() == render::CreationStep::Origin);
+}
+
+TEST_CASE("the verdict card is never a trap: the doc's own tally row, accept or decline") {
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(1);
+    flow.chooseOrigin();
+    // 5 A, 3 B, 2 C: A dominant short of pure, B >= C -- the table's
+    // DECKHAND row (doc section 3.3, transcribed into questions.json's own
+    // verdict block and proved at load).
+    for (int i = 0; i < 5; ++i) {
+        answerQuizAuthored(flow, 0);
+    }
+    for (int i = 0; i < 3; ++i) {
+        answerQuizAuthored(flow, 1);
+    }
+    for (int i = 0; i < 2; ++i) {
+        answerQuizAuthored(flow, 2);
+    }
+    REQUIRE(flow.quizVerdict().has_value());
+    CHECK(flow.quizVerdict()->calling == "deckhand");
+    CHECK_FALSE(flow.quizVerdict()->pure);
+
+    const render::DialogueViewState card = flow.view();
+    CHECK(card.speaker == "THE WARD'S VERDICT");
+    CHECK(card.epithet == "HAND 5  MUDLARK 3  DISCIPLE 2");
+    REQUIRE(card.topics.size() == 2);
+    CHECK(card.topics[0] == "TAKE THE CALLING");
+    CHECK(card.topics[1] == "ANOTHER TRADE");
+
+    // DECLINE lands on the roster -- Daggerfall's own rule, doc 3.2.
+    flow.moveChoiceCursor(1);
+    flow.chooseChoice();
+    CHECK(flow.step() == render::CreationStep::Calling);
+    CHECK(flow.chosenCallingId().empty());
+
+    // A second run that ACCEPTS carries the verdict's own sheet forward.
+    render::CreationFlow taker = fresh();
+    taker.moveOriginCursor(1);
+    taker.chooseOrigin();
+    for (int i = 0; i < 6; ++i) {
+        answerQuizAuthored(taker, 0);  // A pure at six -- DOCKHAND
+    }
+    for (int i = 0; i < 4; ++i) {
+        answerQuizAuthored(taker, 1);
+    }
+    REQUIRE(taker.quizVerdict().has_value());
+    CHECK(taker.quizVerdict()->pure);
+    REQUIRE(taker.quizVerdict()->calling == "dockhand");
+    taker.chooseChoice();  // row 0: TAKE THE CALLING
+    CHECK(taker.chosenCallingId() == "dockhand");
+    CHECK(taker.step() == render::CreationStep::Background);
+    const sim::CallingTemplate* dockhand = taker.callings().find("dockhand");
+    REQUIRE(dockhand != nullptr);
+    for (const std::string& id : dockhand->primary) {
+        CHECK(taker.chargen().designationOf(id) == sim::SkillDesignation::Primary);
+    }
+}
+
+TEST_CASE("the biography offers A PAST AT RANDOM on its first question only, and the random "
+          "past still accumulates purely") {
+    render::CreationFlow flow = fresh();
+    flow.chooseOrigin();  // TAKE A CALLING
+    flow.chooseChoice();  // DOCKHAND, straight into the biography
+    REQUIRE(flow.step() == render::CreationStep::Background);
+
+    const render::DialogueViewState b1 = flow.view();
+    REQUIRE(flow.biography().questions().size() == 12);
+    const std::size_t b1Answers = flow.biography().questions()[0].answers.size();
+    REQUIRE(b1.topics.size() == b1Answers + 1);
+    CHECK(b1.topics.back() == "A PAST AT RANDOM");
+    CHECK(b1.epithet == "B1 - 1 OF 12");
+    mustReadAsEnglish("biography prompt", b1.line);
+    for (const std::string& topic : b1.topics) {
+        mustReadAsEnglish("biography answer", topic);
+    }
+
+    // Question two offers only its own answers -- half-answered-then-random
+    // is not a thing.
+    flow.chooseChoice();
+    const render::DialogueViewState b2 = flow.view();
+    CHECK(b2.topics.size() == flow.biography().questions()[1].answers.size());
+
+    // Back to the first question and take the random past: every question
+    // answered, and the carried effects equal the pure accumulator over the
+    // exact answers the flow recorded -- randomness in the PICK, never in
+    // the arithmetic.
+    flow.back();
+    flow.moveChoiceCursor(-1);  // ring: up from row 0 lands on the last row
+    REQUIRE(flow.choiceCursor() == static_cast<int>(b1Answers));
+    flow.chooseChoice();
+    REQUIRE(flow.biographyDone());
+    REQUIRE(flow.step() == render::CreationStep::Customize);
+    REQUIRE(flow.biographyAnswers().size() == 12);
+    const std::optional<sim::ChargenEffects> expected =
+        sim::accumulateBiography(flow.biography(), flow.biographyAnswers());
+    REQUIRE(expected.has_value());
+    CHECK(flow.effects() == *expected);
+    // Zero-sum reputation survives the sum -- the loader enforced it per
+    // answer, and sums of zero-sums are zero-sum.
+    std::int32_t reputation = 0;
+    for (const auto& [factionId, delta] : flow.effects().factionStandings) {
+        reputation += delta;
+    }
+    CHECK(reputation == 0);
+}
+
+TEST_CASE("every word the doors can ever show survives the 4x6 font -- the em-dash fold, "
+          "proved on the loaded raws") {
+    // The owner's own files carry UTF-8 em-dashes; chargen_raws.cpp folds
+    // them at the loader seam (notables.cpp's own rule). This sweep walks
+    // the LOADED registries -- every prompt, every answer, every one-liner
+    // -- so a future raw edit that reintroduces an undrawable glyph fails
+    // here by name instead of shipping as mojibake in a frame.
+    render::CreationFlow flow = fresh();
+    REQUIRE(flow.callings().loaded());
+    REQUIRE(flow.quiz().loaded());
+    REQUIRE(flow.biography().loaded());
+    for (const sim::CallingTemplate& calling : flow.callings().callings()) {
+        mustReadAsEnglish("calling name", calling.name);
+        mustReadAsEnglish("calling one-liner", calling.oneLine);
+    }
+    for (const sim::QuizQuestion& question : flow.quiz().questions()) {
+        mustReadAsEnglish("quiz prompt", question.prompt);
+        for (const sim::QuizAnswer& answer : question.answers) {
+            mustReadAsEnglish("quiz answer", answer.text);
+        }
+    }
+    for (const sim::BiographyQuestion& question : flow.biography().questions()) {
+        mustReadAsEnglish("biography prompt", question.prompt);
+        for (const sim::BiographyAnswer& answer : question.answers) {
+            mustReadAsEnglish("biography answer", answer.text);
+        }
+    }
+}
+
+TEST_CASE("the answer-commit pulse fires once and decays -- DECISIONS.md rule 3's own shape") {
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(1);
+    flow.chooseOrigin();
+    CHECK(flow.commitPulse() == 0.0F);
+    flow.chooseChoice();
+    CHECK(flow.commitPulse() == 1.0F);
+    for (int i = 0; i < 12; ++i) {
+        flow.advance();
+    }
+    CHECK(flow.commitPulse() == 0.0F);  // nothing holds it open
+}
+
+// ===========================================================================
 // drawing -- no crash, and drawCreation actually clears + draws through
 // render::drawDialogue rather than leaving the frame untouched
 // ===========================================================================
@@ -892,4 +1242,45 @@ TEST_CASE("drawCreation draws something at both resolutions this game ships, on 
     flow.chooseOrigin();
     render::Framebuffer customizeFrame(640, 360);
     render::drawCreation(customizeFrame, flow);
+}
+
+TEST_CASE("drawCreation survives every Daggerfall screen at both resolutions") {
+    // The roster with its centre sheet preview, a mid-quiz question with the
+    // meters, the verdict card, and a biography question -- each drawn cold,
+    // no crash and something painted, the same claim the case above makes
+    // for the two original screens.
+    const auto drawBoth = [](const render::CreationFlow& flow) {
+        for (const auto& [w, h] : {std::pair{320, 180}, std::pair{640, 360}}) {
+            render::Framebuffer frame(w, h);
+            render::drawCreation(frame, flow);
+        }
+    };
+
+    render::CreationFlow roster = fresh();
+    roster.chooseOrigin();  // TAKE A CALLING
+    REQUIRE(roster.step() == render::CreationStep::Calling);
+    drawBoth(roster);
+
+    render::CreationFlow quiz = fresh();
+    quiz.moveOriginCursor(1);
+    quiz.chooseOrigin();
+    quiz.chooseChoice();
+    quiz.chooseChoice();
+    REQUIRE(quiz.step() == render::CreationStep::Quiz);
+    drawBoth(quiz);
+
+    render::CreationFlow verdict = fresh();
+    verdict.moveOriginCursor(1);
+    verdict.chooseOrigin();
+    for (int i = 0; i < 10; ++i) {
+        verdict.chooseChoice();
+    }
+    REQUIRE(verdict.quizVerdict().has_value());
+    drawBoth(verdict);
+
+    render::CreationFlow past = fresh();
+    past.chooseOrigin();
+    past.chooseChoice();  // a calling, straight into the biography
+    REQUIRE(past.step() == render::CreationStep::Background);
+    drawBoth(past);
 }
