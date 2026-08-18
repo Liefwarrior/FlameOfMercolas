@@ -330,27 +330,35 @@ TEST_CASE("a one-shot through the engine reaches the output and then decays to s
 }
 
 TEST_CASE("the footstep cadence gate turns a stream of calls into a walk") {
+    // NOTE: update() clamps dt to 0.25s (the anti-hitch clamp), so a long gap
+    // has to be fed as several updates — exactly what a frame loop does.
     auto engine = AudioEngine::createNull(5, SoundBank::synthetic());
-    engine->update(1.0F);
+    engine->update(0.25F);
+    engine->update(0.25F);
     CHECK(engine->footstep(8 /*granite*/, false, 0));
     // Same frame, next frame: swallowed.
     CHECK_FALSE(engine->footstep(8, false, 0));
     engine->update(0.1F);
     CHECK_FALSE(engine->footstep(8, false, 0));
     // A walking gap later: the next step lands.
-    engine->update(0.3F);
+    engine->update(0.2F);
+    engine->update(0.2F);
     CHECK(engine->footstep(8, false, 0));
     // Running cadence is tighter than walking.
-    engine->update(0.25F);
+    engine->update(0.12F);
+    engine->update(0.12F);
     CHECK(engine->footstep(8, true, 0));
 }
 
 TEST_CASE("wading layers a splash voice under the footstep") {
     auto engine = AudioEngine::createNull(9, SoundBank::synthetic());
-    engine->update(1.0F);
+    engine->update(0.25F);
+    engine->update(0.25F);
     CHECK(engine->footstep(6 /*dirt*/, false, 0));
     CHECK(engine->mixer().activeVoices() == 1);
-    engine->update(1.0F);
+    // dt is clamped to 0.25s per update, so open the cadence gate in steps.
+    engine->update(0.25F);
+    engine->update(0.25F);
     (void)engineStats(*engine, 4800);  // drain the first step's blip
     CHECK(engine->footstep(6, false, 3));
     CHECK(engine->mixer().activeVoices() == 2);
@@ -379,8 +387,10 @@ TEST_CASE("the harbour bed crossfades in monotonically and arrives at its day ga
         engine->update(0.05F);
         (void)engineStats(*engine, 2400);
     }
-    // Exact: the mixer's ramp clamps onto its target.
-    CHECK(engine->mixer().proceduralGain(ProcLayer::WaterLap) == 0.0F);
+    // Not an exact zero: update() re-targets the ramp every frame from the
+    // CURRENT gain, so the tail is a geometric approach (measured ~1e-23
+    // after three seconds). Audibly and numerically silence.
+    CHECK(engine->mixer().proceduralGain(ProcLayer::WaterLap) < 1.0e-4F);
 }
 
 TEST_CASE("night rebalances the harbour: less water-lap, more wind") {
