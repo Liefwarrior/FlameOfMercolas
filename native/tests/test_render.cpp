@@ -633,6 +633,10 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     HudState full;
     full.health = 61;
     full.healthMax = 100;
+    // FATIGUE BUILD: the wind bar lit too, mid-pool, so the one element this
+    // build adds is inside the every-field proof from the day it ships.
+    full.fatigue = 80;
+    full.fatigueMax = 160;
     full.yawBam = sim::kFacingWest;
     full.locationLabel = "THE DOCKS - UPPER";
     full.timeOfDaySeconds = 21 * 3600 + 47 * 60;

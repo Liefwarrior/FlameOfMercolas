@@ -186,6 +186,15 @@ own.
 under about 2.7 m and you climb it, hands full, half a second of hauling.
 `V` still lines up a deliberate climb or leap if you would rather aim one.
 
+**Sprinting, climbing, swinging and casting all spend the same wind** — the
+amber bar tucked under your health. It comes back while you are easy, slower
+while you are walking, and faster as VIGOR and GRIT grow. Run it dry and the
+sprint drops to a jog and the walls stop being climbable until you get your
+breath back; a tired swing whiffs more and a tired link slips more. Your four
+attributes finally do their work here: MIGHT lands harder, AGILITY moves and
+climbs cheaper, VIGOR carries the pool, WIT steadies the cast and cools the
+link sooner.
+
 Four keys are the rest of the game:
 
 | | |
