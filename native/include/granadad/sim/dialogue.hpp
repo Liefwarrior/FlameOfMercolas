@@ -48,6 +48,7 @@
 #include "granadad/sim/faction.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/questline.hpp"
+#include "granadad/sim/radiant_quest.hpp"
 #include "granadad/sim/social.hpp"
 #include "granadad/sim/spellbook.hpp"
 #include "granadad/sim/spellforge.hpp"
@@ -243,6 +244,20 @@ enum class TopicKind : std::uint8_t {
     /// everything, so the topic can never say yes where the roll says no.
     /// APPENDED at 28, same reason.
     Petition = 28,
+    /// RADIANT BUILD. Take an errand off the one body in the ward who is
+    /// offering it -- TASK #81's generator, finally reachable. The radiant
+    /// giver IS the party: there is no broker and no counter, the payload is
+    /// the objective's own board id, and the topic appears only in a
+    /// conversation with that giver (a ward speaker, never one of the Gull's
+    /// fourteen -- see buildTopics' RADIANT section on how the two id spaces
+    /// are told apart). APPENDED at 29, for the reason on Buy: the ordinal is
+    /// folded into which authored row a topic speaks from.
+    TakeRadiant = 29,
+    /// RADIANT BUILD. Settle a taken errand with the party it settles WITH:
+    /// a fetch hands the goods back to its GIVER; a deliver arrives at its
+    /// TARGET -- the word is the settlement, and the fee travels with the
+    /// letter (see RadiantBoard::deliver). APPENDED at 30, same reason.
+    SettleRadiant = 30,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -342,6 +357,9 @@ struct Reply {
     /// the coin is in coinDelta like every other payment -- but a HUD that
     /// wants to say which job just closed does, and so does a test.
     std::int32_t contractId = -1;
+    /// RADIANT BUILD. The errand this reply moved, or -1. contractId's exact
+    /// contract, for the other board.
+    std::int32_t radiantId = -1;
     /// S5. The act the world has to be told about, and whether it happened in
     /// front of anybody. kCrimeCount means "nothing criminal happened" -- the
     /// dialogue layer does not know what a taproom is, so whoever owns the room
@@ -427,6 +445,26 @@ public:
     /// Whether this broker will talk about work to this player at all. Public
     /// because the room's own scripted runs and the tests both need to ask.
     [[nodiscard]] bool brokerWillTalk(const ContractBroker& broker) const noexcept;
+
+    // --- RADIANT BUILD: the ward's own errands --------------------------------
+    //
+    // TASK #81's generator, owned exactly the way the contract board is: the
+    // raws loaded once by load(), the board a member, the posting verb called
+    // by whoever owns the clock. The one structural difference is honest and
+    // stated: a radiant board binds to the LIVE WARD at generation time, so
+    // postRadiant takes the population the way postContracts never had to --
+    // the director still does not know what a ward IS, only that the board it
+    // owns wants one handed through.
+
+    [[nodiscard]] RadiantBoard& radiant() noexcept { return radiant_; }
+    [[nodiscard]] const RadiantBoard& radiant() const noexcept { return radiant_; }
+    /// The authored templates, or an empty set when the raws were not found.
+    [[nodiscard]] const RadiantRaws& radiantRaws() const noexcept { return *radiantRaws_; }
+    /// Posts a day's errands off the live ward. Called by whoever owns the
+    /// clock AND the people -- the room, once a population is attached to it
+    /// (Tavern::attachPeople), exactly where it already posts contracts.
+    /// Answers instantly on a day already posted, like the board underneath.
+    void postRadiant(std::int32_t day, std::uint64_t worldSeed, const WardPopulation& ward);
 
     /// What the world says the player is carrying. Set before choose(), so the
     /// director can refuse a round it cannot pay for. Not hashed here -- the
@@ -631,6 +669,12 @@ private:
     /// True when the player is carrying goods a taken contract cannot be paid
     /// for without the Flame's mark.
     [[nodiscard]] bool wantsSanction() const noexcept;
+    /// RADIANT BUILD. The ward actor id the current speaker is, or -1 for one
+    /// of the Gull's fourteen. The two id spaces are kept apart by
+    /// kWardSpeakerIdBase (ward_voice.hpp) and this is the one place the
+    /// director undoes that lift -- so a radiant giver can be recognised
+    /// across the table without the Gull's bouncer ever matching a board row.
+    [[nodiscard]] std::int32_t speakerWardId() const noexcept;
 
     BarkTables barks_;
     NotableRegistry notables_;
@@ -650,6 +694,10 @@ private:
     /// built by a factory that returns by value.
     std::shared_ptr<const ContractRaws> contractRaws_;
     ContractBoard board_;
+    /// RADIANT BUILD. Shared for contractRaws_'s exact reason: the director
+    /// is built by a factory that returns by value.
+    std::shared_ptr<const RadiantRaws> radiantRaws_;
+    RadiantBoard radiant_;
     ForgeBench bench_;
     /// Which authored line the bench was opened for, and at which stage. Held
     /// across the composition because a bench is a conversation with rounds and

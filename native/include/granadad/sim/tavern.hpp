@@ -1014,6 +1014,19 @@ public:
     void attachRoll(Ward* roll) noexcept { roll_ = roll; }
     [[nodiscard]] const Ward* roll() const noexcept { return roll_; }
 
+    /// RADIANT BUILD. Joins the room to the district's own people, so the
+    /// radiant board can be posted off the live roster -- attachRoll's exact
+    /// shape, for TASK #81's exact gap: a generator nothing constructs is a
+    /// generator nobody can reach. Borrowed, never owned; may be null and
+    /// usually is in a synthetic test, where the board simply stays empty and
+    /// every conversation is exactly what it was before this build.
+    ///
+    /// Posts today's errands at the moment of attach and again at every day
+    /// turn (advanceSecond, beside postContracts), so a session that opens at
+    /// ten at night opens on a board that has been up since the doors did.
+    void attachPeople(const WardPopulation* people);
+    [[nodiscard]] const WardPopulation* people() const noexcept { return wardPeople_; }
+
     /// What the last defeat did. `happened` is false until there has been one.
     [[nodiscard]] const Rise& lastDefeat() const noexcept { return lastDefeat_; }
 
@@ -1363,6 +1376,9 @@ private:
     NemesisBook nemesis_;
     /// The ward's roll, borrowed. Never owned; may be null.
     Ward* roll_ = nullptr;
+    /// RADIANT BUILD. The district's people, borrowed the way the roll is.
+    /// Never owned; may be null, and the radiant board stays empty then.
+    const WardPopulation* wardPeople_ = nullptr;
     /// Who landed the blow that is currently taking the player down. -1 when
     /// nobody has hit them since the last defeat was settled.
     std::int32_t lastBlowBy_ = -1;

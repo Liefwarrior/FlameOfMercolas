@@ -713,6 +713,17 @@ if(GRANADAD_BUILD_TESTS)
         # walks home in between.
         add_test(NAME granadad-twin-run-gate-population
             COMMAND granadad-twin-gate --population --population-hour 16 --ticks 7200)
+        # RADIANT BUILD: the taproom AND the district's people on one engine,
+        # wired together the way the client wires them (Tavern::attachPeople),
+        # which is the ONLY live twin run in the build whose radiant board is
+        # populated and moving -- the driver takes an errand off it every six
+        # simulated minutes, and both runs must agree bit for bit about a
+        # board that was generated off six hundred live bodies. 900 ticks,
+        # the tavern entry's own number: the population's determinism has its
+        # own two-hour entry above; this one exists to compare radiant STATE,
+        # posted at attach and moved by the driver, not to re-prove the crowd.
+        add_test(NAME granadad-twin-run-gate-radiant
+            COMMAND granadad-twin-gate --tavern --population --population-hour 16 --ticks 900)
     endif()
 endif()
 

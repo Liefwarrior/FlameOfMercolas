@@ -337,6 +337,27 @@ public:
                 }
             }
         }
+        // RADIANT BUILD: AND IT TAKES AN ERRAND, for exactly the sentence the
+        // contract block above wrote in S6 -- the radiant board is now in the
+        // hash, and a board nobody ever takes anything off is four Offered
+        // rows that never change: perfectly deterministic, proving nothing.
+        // Populated only in a run with the district's people registered
+        // (attachPeople in run_workload below); otherwise this loop walks an
+        // empty vector and the tavern-only gate report stays what it was.
+        //
+        // REPORTED rather than walked, like everything above and for the same
+        // reason. A different cadence than the contract take on purpose, so
+        // the two boards' state moves out of step and a hash that conflated
+        // them could not stay green by accident.
+        if (ticks_ % 360 == 0) {
+            sim::RadiantBoard& errands = tavern_->dialogue().radiant();
+            for (const sim::RadiantObjective& row : errands.objectives()) {
+                if (row.state == sim::RadiantState::Offered) {
+                    (void)errands.take(row.id);
+                    break;
+                }
+            }
+        }
         // S8: AND IT LOSES A FIGHT, for exactly the reason S5 made it commit
         // crimes and S6 made it take work. The nemesis book is in the tavern's
         // hash; a workload nobody ever beats compares an empty book to an empty
@@ -506,6 +527,12 @@ RunResult run_workload(const WorkloadConfig& config) {
         // deciding who to look at -- is state the twin-run gate now compares.
         tavern->setPlayer(sim::q8_tile_centre(sim::gull::kBartenderX),
                           sim::q8_tile_centre(sim::gull::kBarY - 1), sim::gull::kGroundBand);
+        // RADIANT BUILD. A gate run carrying BOTH the taproom and the
+        // district's people wires the two together exactly as the client
+        // does, so the radiant board it hashes is a POPULATED one whose rows
+        // the driver above moves. attachPeople(nullptr) is a stated no-op,
+        // so the tavern-only gate keeps its empty board and its frozen shape.
+        tavern->attachPeople(people_view);
         tavern_view = tavern.get();
         engine.register_system(std::move(tavern));
         engine.register_system(std::make_unique<TavernDriverSystem>(tavern_view));
@@ -564,6 +591,18 @@ RunResult run_workload(const WorkloadConfig& config) {
                        dec(static_cast<std::uint64_t>(talk.contracts().contracts().size())) +
                        " taken=" +
                        dec(static_cast<std::uint64_t>(talk.contracts().takenCount())) + "]";
+                // RADIANT BUILD: printed as well as hashed, the standing rule
+                // -- a report that SHOWS errands being posted and taken is
+                // worth more than an assertion that they are compared. Only
+                // in a run that actually wired the district in, so the
+                // tavern-only report keeps its exact historical shape.
+                if (people_view != nullptr) {
+                    out += "  errands[day=" +
+                           dec(static_cast<std::uint64_t>(talk.radiant().day())) + " open=" +
+                           dec(static_cast<std::uint64_t>(talk.radiant().objectives().size())) +
+                           " taken=" +
+                           dec(static_cast<std::uint64_t>(talk.radiant().takenCount())) + "]";
+                }
                 out += "  roofs[lifts=" +
                        dec(static_cast<std::uint64_t>(talk.crimes().tally(sim::Crime::Lift))) +
                        " heat=" + dec(static_cast<std::uint64_t>(talk.crimes().heat())) +

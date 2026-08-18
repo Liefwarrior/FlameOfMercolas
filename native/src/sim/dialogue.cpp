@@ -4,6 +4,13 @@
 #include <memory>
 #include <utility>
 
+// RADIANT BUILD. For kWardSpeakerIdBase alone -- the one constant that keeps
+// the ward's actor ids and the Gull's apart, and the director has to undo
+// that lift to recognise a radiant giver across the table. See
+// speakerWardId(). ward_voice.hpp includes this file's own header; the
+// include is one-directional at translation-unit level and cycles nothing.
+#include "granadad/sim/ward_voice.hpp"
+
 namespace granadad::sim {
 
 namespace {
@@ -130,11 +137,17 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "read the roll";
         case TopicKind::Petition:
             return "petition";
+        case TopicKind::TakeRadiant:
+            return "take errand";
+        case TopicKind::SettleRadiant:
+            return "settle errand";
     }
     return "?";
 }
 
-DialogueDirector::DialogueDirector() : factions_(std::make_shared<FactionRegistry>()) {
+DialogueDirector::DialogueDirector()
+    : factions_(std::make_shared<FactionRegistry>()),
+      radiantRaws_(std::make_shared<const RadiantRaws>()) {
     standings_.attach(factions_);
 }
 
@@ -152,11 +165,20 @@ DialogueDirector DialogueDirector::load(const std::filesystem::path& contentDir)
     out.contractRaws_ = std::make_shared<const ContractRaws>(
         ContractRaws::load(contentDir, out.notables_, *out.factions_));
     out.board_.attach(out.contractRaws_);
+    // RADIANT BUILD. The errand templates, read the same breath. Nothing to
+    // refuse against here: a radiant template's cast is WardTypes, and
+    // RadiantRaws::load refuses its own rows by name against that vocabulary.
+    out.radiantRaws_ = std::make_shared<const RadiantRaws>(RadiantRaws::load(contentDir));
     return out;
 }
 
 void DialogueDirector::postContracts(std::int32_t day, std::uint64_t worldSeed) {
     board_.refresh(day, worldSeed, standings_);
+}
+
+void DialogueDirector::postRadiant(std::int32_t day, std::uint64_t worldSeed,
+                                   const WardPopulation& ward) {
+    radiant_.refresh(day, worldSeed, *radiantRaws_, ward);
 }
 
 bool DialogueDirector::brokerWillTalk(const ContractBroker& broker) const noexcept {
@@ -602,6 +624,62 @@ void DialogueDirector::buildTopics() {
                 topic.kind = TopicKind::TakeContract;
                 topic.label = "ASK ABOUT WORK";
                 topic.payload = kContractNothingPayload;
+                topics_.push_back(std::move(topic));
+            }
+        }
+    }
+
+    // 4f. RADIANT BUILD -- THE WARD'S OWN ERRANDS. TASK #81's generator,
+    //     reachable at last, and the party is the PERSON, not a counter: the
+    //     board drew a live giver off the ward roster, so the take topic
+    //     appears in a conversation with that body and nowhere else, and a
+    //     settlement happens with whoever it honestly settles with -- a fetch
+    //     back at its giver's side, a deliver at its target's. Waiting
+    //     settlements first, the exact order the broker's board keeps, so a
+    //     player who came back with the goods is not scrolling past offers.
+    //
+    //     THE #84 QUESTION, ANSWERED WHERE ITS OWN HEADER SAID IT WOULD BE:
+    //     an offer is gated on toneAttitude() >= Neutral -- brokerWillTalk's
+    //     "acquaintance" bar, because asking a stranger to carry your letter
+    //     is a favour and nobody asks one of somebody they have cause to
+    //     hate. A settlement is deliberately NOT gated: work already done is
+    //     owed for, and an errand that could become unfinishable by souring
+    //     its giver would be a trap, not a system.
+    if (const std::int32_t wardId = speakerWardId(); wardId >= 0) {
+        for (const RadiantObjective& row : radiant_.objectives()) {
+            if (row.state != RadiantState::Taken) {
+                continue;
+            }
+            const bool fetchHere = row.isFetch() && row.giverActorId == wardId;
+            const bool wordHere = !row.isFetch() && row.targetActorId == wardId;
+            if (!fetchHere && !wordHere) {
+                continue;
+            }
+            Topic topic;
+            topic.kind = TopicKind::SettleRadiant;
+            topic.label = fetchHere
+                              ? "HAND OVER " + std::to_string(row.units) + " " +
+                                    std::string(contrabandLabelFor(row.good, row.units))
+                              : "PASS THE WORD FROM " + upper(row.giverName);
+            topic.payload = row.id;
+            topic.arg = row.templateId;
+            topics_.push_back(std::move(topic));
+        }
+        if (toneAttitude() >= Attitude::Neutral) {
+            for (const RadiantObjective& row : radiant_.objectives()) {
+                if (row.state != RadiantState::Offered || row.giverActorId != wardId) {
+                    continue;
+                }
+                Topic topic;
+                topic.kind = TopicKind::TakeRadiant;
+                // Menu furniture off the row's own authored verb and live
+                // nouns: "FETCH 3 SCALPS", "CARRY WORD TO MERTA COOPER".
+                topic.label = row.isFetch()
+                                  ? row.verb + " " + std::to_string(row.units) + " " +
+                                        std::string(contrabandLabelFor(row.good, row.units))
+                                  : row.verb + " TO " + upper(row.targetName);
+                topic.payload = row.id;
+                topic.arg = row.templateId;
                 topics_.push_back(std::move(topic));
             }
         }
@@ -1108,6 +1186,13 @@ const ContractBroker* DialogueDirector::brokerFor(std::string_view notableId) co
     return contractRaws_->broker(notableId);
 }
 
+std::int32_t DialogueDirector::speakerWardId() const noexcept {
+    if (speaker_.actorId < kWardSpeakerIdBase) {
+        return -1;
+    }
+    return speaker_.actorId - kWardSpeakerIdBase;
+}
+
 bool DialogueDirector::wantsSanction() const noexcept {
     // THE MARK IS FOR THE TAKING, NOT FOR THE SACK. A priest signs before the
     // knife rather than after it, which is the only reading that a player can
@@ -1441,6 +1526,91 @@ Reply DialogueDirector::choose(std::size_t index) {
             }
             break;
         }
+        case TopicKind::TakeRadiant: {
+            // RADIANT BUILD. The board's own verb behind the giver's own
+            // topic. The speaker check is re-run at choose() the way every
+            // gated topic's gate is: a list built one press ago is not an
+            // authority on who is across the table now.
+            const RadiantObjective* row = radiant_.find(topic.payload);
+            if (row == nullptr || speakerWardId() != row->giverActorId) {
+                out = reply(TopicKind::TakeRadiant, "NOT MINE TO GIVE.");
+                out.ok = false;
+                break;
+            }
+            const RadiantTakeResult took = radiant_.take(topic.payload);
+            if (took != RadiantTakeResult::Taken) {
+                // The same sentence a broker refuses a fourth job with --
+                // three in hand is three in hand, whichever board they came
+                // off.
+                out = reply(TopicKind::TakeRadiant, "YOU ARE CARRYING ENOUGH ALREADY.");
+                out.ok = false;
+                break;
+            }
+            // radiant.take is a seam for a later content pass; today it
+            // degrades to the broker's own authored acceptance, never to
+            // silence.
+            out = reply(TopicKind::TakeRadiant,
+                        speak({"radiant.take", "contract.take"}, TopicKind::TakeRadiant,
+                              topic.payload));
+            if (out.line.empty()) {
+                out.line = "TAKEN.";
+            }
+            // The brief is the JOB, in the ward's own words -- the identical
+            // journal contract a broker's job rides out on.
+            out.journalLine = row->brief;
+            out.radiantId = row->id;
+            break;
+        }
+        case TopicKind::SettleRadiant: {
+            const RadiantObjective* row = radiant_.find(topic.payload);
+            if (row == nullptr) {
+                out = reply(TopicKind::SettleRadiant, "NOT MY BUSINESS.");
+                out.ok = false;
+                break;
+            }
+            // The right party, re-checked at the press: a fetch settles with
+            // its giver, a deliver with its target.
+            const std::int32_t party = row->isFetch() ? row->giverActorId : row->targetActorId;
+            if (speakerWardId() != party) {
+                out = reply(TopicKind::SettleRadiant, "NOT MY BUSINESS.");
+                out.ok = false;
+                break;
+            }
+            const RadiantSettlement settled = row->isFetch()
+                                                  ? radiant_.turnIn(topic.payload,
+                                                                    crimes_.stash())
+                                                  : radiant_.deliver(topic.payload);
+            if (settled.result != RadiantTurnInResult::Paid) {
+                out = reply(TopicKind::SettleRadiant,
+                            speak({"contract.short"}, TopicKind::SettleRadiant, topic.payload));
+                if (out.line.empty()) {
+                    out.line = "NOT THE NUMBER.";
+                }
+                out.ok = false;
+                out.radiantId = topic.payload;
+                break;
+            }
+            if (row->isFetch()) {
+                // Every unit through the same hands that carried it -- the
+                // Morrowind steer, exactly as a contract pays it. A deliver
+                // moves no goods, so it trains nothing; the walk was the work.
+                skills_.use(contrabandSkill(row->good), settled.unitsTaken);
+            }
+            out = reply(TopicKind::SettleRadiant,
+                        speak({"radiant.paid", "contract.paid"}, TopicKind::SettleRadiant,
+                              topic.payload));
+            if (out.line.empty()) {
+                out.line = "COUNTED.";
+            }
+            out.line += " (" + coins(settled.pay) + ")";
+            out.coinDelta = settled.pay;
+            out.radiantId = topic.payload;
+            // Deliberately NO standing moved: a contract's turn-in pays a
+            // GUILD's ladder because the broker speaks for one; an errand's
+            // giver is a person, and the coin across the table is the whole
+            // of what was promised. Restraint stated rather than forgotten.
+            break;
+        }
         case TopicKind::ReadRoll: {
             // TIME-AND-TENURE BUILD. An intent and nothing more, exactly the
             // Buy contract: the director does not know what a ward is, so
@@ -1711,6 +1881,11 @@ Reply DialogueDirector::choose(std::size_t index) {
         case TopicKind::TakeContract:
         case TopicKind::TurnIn:
         case TopicKind::Sanction:
+        // RADIANT BUILD: the same three sentences, for the other board --
+        // taking an errand moves it off the offered list, settling one takes
+        // its row away, so both rebuild what the player is looking at.
+        case TopicKind::TakeRadiant:
+        case TopicKind::SettleRadiant:
             if (open_) {
                 rebuildCurrentLevel();
             }
@@ -1987,6 +2162,17 @@ void DialogueDirector::hashInto(HashSink& sink) const {
     // A board is regenerable from (day, seed, standings) and WHICH JOBS WERE
     // TAKEN is not, so it is state and it is hashed.
     board_.hashInto(sink);
+    // RADIANT BUILD. The ward's own errands under the identical sentence --
+    // and MORE so: a radiant board is not even regenerable without the ward
+    // it was generated against, so its rows are state twice over.
+    //
+    // DELIBERATE STRUCTURE CHANGE to the live world hash, stated rather than
+    // discovered, exactly the S13 shape: the pinned codec goldens
+    // (test_world_hash.cpp) hash fixed byte specs, not this struct, so
+    // nothing pinned moves; the twin-run and cross-toolchain gates compare
+    // live runs of THIS shape against itself; and the baked-map world-hash
+    // fingerprint registers no tavern and no director, so it is untouched.
+    radiant_.hashInto(sink);
     bench_.hashInto(sink);
     sink.put_byte(open_ ? 1U : 0U);
     sink.put_int(static_cast<std::uint32_t>(speaker_.actorId));

@@ -758,6 +758,13 @@ void Tavern::advanceSecond() {
     // BEFORE THE RESTOCK, not after. The boat reads the board -- see
     // drawBaleGoods -- so the board has to be tonight's before the hull is.
     dialogue_.postContracts(dayNumber(), rng_.world_seed());
+    // RADIANT BUILD: and new errands, when the room knows the district's own
+    // people. The same comparison-not-rebuild contract; on the day the clock
+    // turns, the board binds its nouns to wherever those bodies are actually
+    // standing at that instant, which is the generator's whole design.
+    if (wardPeople_ != nullptr) {
+        dialogue_.postRadiant(dayNumber(), rng_.world_seed(), *wardPeople_);
+    }
     if (timeOfDay_ == gull::kOpensAt) {
         drinkStock_ = kOpeningStock;
         balesInSnug_ = kBalesPerNight;
@@ -1427,6 +1434,16 @@ void Tavern::armRivals() {
         // twice ought to feel like.
         actor.setWeapon(rival->weapon());
         actor.setIntent(rival->intent());
+    }
+}
+
+void Tavern::attachPeople(const WardPopulation* people) {
+    wardPeople_ = people;
+    // Today's errands, up the moment the district is known -- not on the next
+    // day turn. A session that attaches at construction gets a board bound to
+    // the same instant the population itself was placed at.
+    if (wardPeople_ != nullptr) {
+        dialogue_.postRadiant(dayNumber(), rng_.world_seed(), *wardPeople_);
     }
 }
 

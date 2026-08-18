@@ -496,3 +496,348 @@ TEST_CASE("every generated objective names a real body and a real place, never i
     CHECK(fetchSeen > 0);
     CHECK(deliverSeen > 0);
 }
+
+// ===========================================================================
+// RADIANT BUILD -- the state machine that makes the generator reachable
+// ===========================================================================
+//
+// Everything above proves the board GENERATES honestly. Everything below
+// proves it can be TAKEN and SETTLED -- the take/turn-in shape ContractBoard
+// already proved, run through the radiant board's own verbs, because a
+// generator nobody can reach is the gap this build exists to close.
+
+TEST_CASE("an errand is taken once, refused twice, and capped at three in hand") {
+    const WardPopulation& ward = testfix::wardAt(8, 0);
+    RadiantBoard board;
+    board.refresh(3, testfix::kSeed, raws(), ward);
+    REQUIRE_FALSE(board.objectives().empty());
+
+    const std::int32_t first = board.objectives().front().id;
+    CHECK(board.take(first) == RadiantTakeResult::Taken);
+    CHECK(board.find(first)->state == RadiantState::Taken);
+    CHECK(board.takenCount() == 1);
+
+    // Taken is taken. Asking again is answered, not crashed on.
+    CHECK(board.take(first) == RadiantTakeResult::NotOffered);
+    // And a job that was never posted is its own distinct refusal.
+    CHECK(board.take(999999) == RadiantTakeResult::NoSuchObjective);
+
+    // The three-in-hand cap, kMaxTakenRadiant's own number. The board posts
+    // four a day, so a full day's board is enough to hit it.
+    std::int32_t taken = 1;
+    for (const RadiantObjective& row : board.objectives()) {
+        if (row.id == first) {
+            continue;
+        }
+        const RadiantTakeResult result = board.take(row.id);
+        if (taken < kMaxTakenRadiant) {
+            CHECK(result == RadiantTakeResult::Taken);
+            ++taken;
+        } else {
+            CHECK(result == RadiantTakeResult::HandsFull);
+        }
+    }
+    CHECK(board.takenCount() == kMaxTakenRadiant);
+}
+
+TEST_CASE("a fetch errand is settled out of the sack and pays; a deliver settles by arriving") {
+    const WardPopulation& ward = testfix::wardAt(8, 0);
+    RadiantBoard board;
+    // Walk days until the board holds one of each kind -- both exist across
+    // the first handful of days (the variety suite proves far more), so this
+    // terminates fast and never fakes a row by hand.
+    const RadiantObjective* fetch = nullptr;
+    const RadiantObjective* deliver = nullptr;
+    for (std::int32_t day = 1; day < 40 && (fetch == nullptr || deliver == nullptr); ++day) {
+        board.refresh(day, testfix::kSeed, raws(), ward);
+        fetch = nullptr;
+        deliver = nullptr;
+        for (const RadiantObjective& row : board.objectives()) {
+            if (row.state != RadiantState::Offered) {
+                continue;
+            }
+            if (row.isFetch() && fetch == nullptr) {
+                fetch = &row;
+            }
+            if (!row.isFetch() && deliver == nullptr) {
+                deliver = &row;
+            }
+        }
+    }
+    REQUIRE(fetch != nullptr);
+    REQUIRE(deliver != nullptr);
+
+    // THE FETCH. Not taken yet: nothing to settle.
+    Stash sack;
+    CHECK(board.turnIn(fetch->id, sack).result == RadiantTurnInResult::NotTaken);
+    REQUIRE(board.take(fetch->id) == RadiantTakeResult::Taken);
+    // Short-handed is answered by name, and nothing leaves the sack.
+    CHECK(board.turnIn(fetch->id, sack).result == RadiantTurnInResult::Short);
+    // With the goods actually carried, it pays the posted pay and the goods
+    // leave through the stash's own verb.
+    REQUIRE(sack.add(fetch->good, fetch->units) == fetch->units);
+    const RadiantSettlement paid = board.turnIn(fetch->id, sack);
+    CHECK(paid.result == RadiantTurnInResult::Paid);
+    CHECK(paid.pay == fetch->pay);
+    CHECK(paid.unitsTaken == fetch->units);
+    CHECK(sack.count(fetch->good) == 0);
+    CHECK(board.find(fetch->id)->state == RadiantState::Paid);
+    // Paid is paid: a second settlement is refused, not double-paid.
+    CHECK(board.turnIn(fetch->id, sack).result == RadiantTurnInResult::NotTaken);
+
+    // THE DELIVER. The wrong verb is a named refusal on both sides.
+    CHECK(board.turnIn(deliver->id, sack).result == RadiantTurnInResult::WrongKind);
+    REQUIRE(board.take(deliver->id) == RadiantTakeResult::Taken);
+    CHECK(board.deliver(fetch->id).result == RadiantTurnInResult::WrongKind);
+    const RadiantSettlement arrived = board.deliver(deliver->id);
+    CHECK(arrived.result == RadiantTurnInResult::Paid);
+    CHECK(arrived.pay == deliver->pay);
+    CHECK(arrived.unitsTaken == 0);
+    CHECK(board.find(deliver->id)->state == RadiantState::Paid);
+
+    // The record of what the day's work earned.
+    CHECK(board.paidCount() == 2);
+    CHECK(board.coinEarned() == fetch->pay + deliver->pay);
+}
+
+TEST_CASE("a taken errand survives the day turning; offered and paid rows are swept") {
+    const WardPopulation& ward = testfix::wardAt(8, 0);
+    RadiantBoard board;
+    board.refresh(3, testfix::kSeed, raws(), ward);
+    REQUIRE(board.objectives().size() >= 2);
+
+    const std::int32_t held = board.objectives().front().id;
+    const std::string heldBrief = board.objectives().front().brief;
+    REQUIRE(board.take(held) == RadiantTakeResult::Taken);
+
+    board.refresh(4, testfix::kSeed, raws(), ward);
+    // The errand somebody is out walking is still on the board, word for
+    // word, alongside the new day's offers.
+    const RadiantObjective* carried = board.find(held);
+    REQUIRE(carried != nullptr);
+    CHECK(carried->state == RadiantState::Taken);
+    CHECK(carried->brief == heldBrief);
+    // And yesterday's untaken offers are gone: every other row is day 4's.
+    for (const RadiantObjective& row : board.objectives()) {
+        if (row.id == held) {
+            continue;
+        }
+        CHECK(row.postedOnDay == 4);
+        CHECK(row.state == RadiantState::Offered);
+    }
+}
+
+TEST_CASE("which errands were taken is state the hash can see") {
+    const WardPopulation& ward = testfix::wardAt(8, 0);
+    RadiantBoard untouched;
+    RadiantBoard moved;
+    untouched.refresh(3, testfix::kSeed, raws(), ward);
+    moved.refresh(3, testfix::kSeed, raws(), ward);
+    REQUIRE_FALSE(moved.objectives().empty());
+    REQUIRE(moved.take(moved.objectives().front().id) == RadiantTakeResult::Taken);
+
+    HashSink still(777);
+    untouched.hashInto(still);
+    HashSink taken(777);
+    moved.hashInto(taken);
+    // The same board, one take apart, must not hash the same -- a take the
+    // twin-run gate could not see would be a take the gate does not protect.
+    CHECK(still.finished() != taken.finished());
+}
+
+// ===========================================================================
+// RADIANT BUILD -- reachability: the board behind a conversation
+// ===========================================================================
+//
+// The whole point of the build: the same board, reached the only way a player
+// can reach anything social in this game -- a topic list built by the real
+// DialogueDirector for the real body the generator drew.
+
+#include "granadad/sim/dialogue.hpp"
+#include "granadad/sim/ward_voice.hpp"
+
+namespace {
+
+/// The real director over the real content tree, with today's errands posted
+/// off the shared ward. Fresh per call: these cases MUTATE boards and purses.
+granadad::sim::DialogueDirector directorWithErrands(const WardPopulation& ward,
+                                                    std::int32_t day) {
+    granadad::sim::DialogueDirector talk =
+        granadad::sim::DialogueDirector::load(content::contentDir());
+    talk.postRadiant(day, testfix::kSeed, ward);
+    return talk;
+}
+
+/// The Speaker a Session would hand the director for this ward body -- built
+/// by the REAL wardSpeakerFor, so the id lift and the notable resolution are
+/// the production path and not this file having its own idea of them.
+Speaker wardSpeaker(const WardPopulation& ward, std::int32_t actorId,
+                    const granadad::sim::DialogueDirector& talk) {
+    const WardActor* actor = ward.byId(actorId);
+    REQUIRE(actor != nullptr);
+    return wardSpeakerFor(*actor, ward.identity(actorId), talk.notables(), talk.factions(),
+                          talk.barks());
+}
+
+/// The index of the topic carrying (kind, payload), or -1.
+std::int32_t topicIndexOf(const granadad::sim::DialogueDirector& talk, TopicKind kind,
+                          std::int32_t payload) {
+    const std::vector<Topic>& topics = talk.topics();
+    for (std::size_t i = 0; i < topics.size(); ++i) {
+        if (topics[i].kind == kind && topics[i].payload == payload) {
+            return static_cast<std::int32_t>(i);
+        }
+    }
+    return -1;
+}
+
+}  // namespace
+
+TEST_CASE("an errand is offered by its own giver, taken across the table, and settled there") {
+    const WardPopulation& ward = testfix::wardAt(8, 0);
+    // A day whose board holds a FETCH -- walked for, not assumed, exactly as
+    // the board suite above does.
+    for (std::int32_t day = 1; day < 40; ++day) {
+        granadad::sim::DialogueDirector talk = directorWithErrands(ward, day);
+        const RadiantObjective* fetch = nullptr;
+        for (const RadiantObjective& row : talk.radiant().objectives()) {
+            if (row.isFetch()) {
+                fetch = &row;
+                break;
+            }
+        }
+        if (fetch == nullptr) {
+            continue;
+        }
+        const std::int32_t id = fetch->id;
+        const std::int32_t pay = fetch->pay;
+        const std::int32_t units = fetch->units;
+        const Contraband good = fetch->good;
+        const std::int32_t giverId = fetch->giverActorId;
+        const std::string brief = fetch->brief;
+
+        // THE GIVER OFFERS IT. Their own topic list, their own label.
+        REQUIRE(talk.open(wardSpeaker(ward, giverId, talk), hourOfDay(8)));
+        const std::int32_t offer = topicIndexOf(talk, TopicKind::TakeRadiant, id);
+        REQUIRE(offer >= 0);
+
+        // TAKEN: the reply carries the brief the journal will show, and the
+        // board row is genuinely Taken.
+        const Reply took = talk.choose(static_cast<std::size_t>(offer));
+        CHECK(took.ok);
+        CHECK(took.radiantId == id);
+        CHECK(took.journalLine == brief);
+        REQUIRE(talk.radiant().find(id) != nullptr);
+        CHECK(talk.radiant().find(id)->state == RadiantState::Taken);
+        // The list the player is looking at rebuilt under the press: the
+        // offer row is gone, the settlement row is up.
+        CHECK(topicIndexOf(talk, TopicKind::TakeRadiant, id) < 0);
+        CHECK(topicIndexOf(talk, TopicKind::SettleRadiant, id) >= 0);
+
+        // SHORT-HANDED IS AN ANSWER, NOT A PAYDAY.
+        const std::int32_t shortIndex = topicIndexOf(talk, TopicKind::SettleRadiant, id);
+        const Reply refused = talk.choose(static_cast<std::size_t>(shortIndex));
+        CHECK_FALSE(refused.ok);
+        CHECK(refused.coinDelta == 0);
+        CHECK(talk.radiant().find(id)->state == RadiantState::Taken);
+
+        // WITH THE GOODS CARRIED, IT PAYS -- through the same stash a
+        // contract pays out of.
+        REQUIRE(talk.crimes().stash().add(good, units) == units);
+        const std::int32_t settleIndex = topicIndexOf(talk, TopicKind::SettleRadiant, id);
+        REQUIRE(settleIndex >= 0);
+        const Reply paid = talk.choose(static_cast<std::size_t>(settleIndex));
+        CHECK(paid.ok);
+        CHECK(paid.coinDelta == pay);
+        CHECK(paid.radiantId == id);
+        CHECK(talk.radiant().find(id)->state == RadiantState::Paid);
+        CHECK(talk.crimes().stash().count(good) == 0);
+        // And the settled row removed itself from the open list.
+        CHECK(topicIndexOf(talk, TopicKind::SettleRadiant, id) < 0);
+        talk.close();
+        return;
+    }
+    FAIL("no fetch errand on any board in forty days -- the raws have changed shape");
+}
+
+TEST_CASE("a deliver errand settles at its TARGET, and the wrong party is refused") {
+    const WardPopulation& ward = testfix::wardAt(8, 0);
+    for (std::int32_t day = 1; day < 40; ++day) {
+        granadad::sim::DialogueDirector talk = directorWithErrands(ward, day);
+        const RadiantObjective* word = nullptr;
+        for (const RadiantObjective& row : talk.radiant().objectives()) {
+            if (!row.isFetch()) {
+                word = &row;
+                break;
+            }
+        }
+        if (word == nullptr) {
+            continue;
+        }
+        const std::int32_t id = word->id;
+        const std::int32_t pay = word->pay;
+        const std::int32_t giverId = word->giverActorId;
+        const std::int32_t targetId = word->targetActorId;
+
+        // Taken at the giver's side.
+        REQUIRE(talk.open(wardSpeaker(ward, giverId, talk), hourOfDay(8)));
+        const std::int32_t offer = topicIndexOf(talk, TopicKind::TakeRadiant, id);
+        REQUIRE(offer >= 0);
+        CHECK(talk.choose(static_cast<std::size_t>(offer)).ok);
+        // The GIVER shows no settlement row for a deliver: the word is not
+        // for them, and a courier who never left the doorstep earns nothing.
+        CHECK(topicIndexOf(talk, TopicKind::SettleRadiant, id) < 0);
+        talk.close();
+
+        // Settled at the target's side, and the word pays where it lands.
+        REQUIRE(talk.open(wardSpeaker(ward, targetId, talk), hourOfDay(8)));
+        const std::int32_t arrive = topicIndexOf(talk, TopicKind::SettleRadiant, id);
+        REQUIRE(arrive >= 0);
+        const Reply landed = talk.choose(static_cast<std::size_t>(arrive));
+        CHECK(landed.ok);
+        CHECK(landed.coinDelta == pay);
+        CHECK(talk.radiant().find(id)->state == RadiantState::Paid);
+        talk.close();
+        return;
+    }
+    FAIL("no deliver errand on any board in forty days -- the raws have changed shape");
+}
+
+TEST_CASE("errands are the giver's alone: strangers, the Gull's fourteen, and a soured tone") {
+    const WardPopulation& ward = testfix::wardAt(8, 0);
+    granadad::sim::DialogueDirector talk = directorWithErrands(ward, 3);
+    REQUIRE_FALSE(talk.radiant().objectives().empty());
+    const RadiantObjective& row = talk.radiant().objectives().front();
+
+    // A ward body who is NOT the giver never offers it. The target is a
+    // guaranteed such body (never the giver -- the generator's own rule).
+    REQUIRE(talk.open(wardSpeaker(ward, row.targetActorId, talk), hourOfDay(8)));
+    CHECK(topicIndexOf(talk, TopicKind::TakeRadiant, row.id) < 0);
+    talk.close();
+
+    // One of the Gull's fourteen never does either, whatever their id: the
+    // two id spaces are kept apart by kWardSpeakerIdBase and a tavern
+    // speaker's raw id must never collide into a board row. The bartender's
+    // shape, id'd exactly where a giver id COULD sit.
+    Speaker keeper;
+    keeper.actorId = row.giverActorId;  // the collision this guards against
+    keeper.name = "Keeper Fenner";
+    keeper.family = JobFamily::Trade;
+    REQUIRE(talk.open(keeper, hourOfDay(20)));
+    for (const Topic& topic : talk.topics()) {
+        CHECK(topic.kind != TopicKind::TakeRadiant);
+        CHECK(topic.kind != TopicKind::SettleRadiant);
+    }
+    talk.close();
+
+    // And the #84 answer, pinned: a soured register hides the OFFER -- asking
+    // a favour of somebody you are being ugly to is not a thing -- while
+    // Normal tone on a stranger shows it.
+    REQUIRE(talk.open(wardSpeaker(ward, row.giverActorId, talk), hourOfDay(8)));
+    CHECK(topicIndexOf(talk, TopicKind::TakeRadiant, row.id) >= 0);
+    talk.setTone(Tone::Blunt);
+    CHECK(topicIndexOf(talk, TopicKind::TakeRadiant, row.id) < 0);
+    talk.setTone(Tone::Normal);
+    CHECK(topicIndexOf(talk, TopicKind::TakeRadiant, row.id) >= 0);
+    talk.close();
+}
