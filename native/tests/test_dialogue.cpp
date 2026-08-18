@@ -818,6 +818,64 @@ TEST_CASE("the topic list is built out of what this person is allowed to know") 
     }
 }
 
+TEST_CASE("the roll and the vacant charge are Clergy topics, and only on ground the roll names") {
+    // TIME-AND-TENURE BUILD. The director only ever knows THAT there is a
+    // plot underfoot (setGroundPlot -- render::Session's report of the feet);
+    // what the roll SAYS is composed by whoever owns the roll, the same
+    // intent-only contract Buy has. This case pins the gating: who gets the
+    // rows, on what ground, and that a granted petition takes its own row
+    // off the list the moment the ground context says VACANT stopped being
+    // true.
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    Speaker priest = dockerNamed(901, "Father Elm");
+    priest.family = JobFamily::Clergy;
+    priest.skillId = "channeling";
+
+    // No ground context, no vacant charge: neither row exists -- no topic
+    // leads to nothing.
+    REQUIRE(director.open(priest, hourOfDay(12)));
+    CHECK_FALSE(has(director.topics(), TopicKind::ReadRoll));
+    CHECK_FALSE(has(director.topics(), TopicKind::Petition));
+
+    // Standing on held ground: the roll may be read for the feet. The
+    // petition row is a fact about the REGISTER, not the feet, so it stays
+    // absent until the roll carries an open prize.
+    director.setGroundPlot(0, "THE QUAYWARD");
+    CHECK(has(director.topics(), TopicKind::ReadRoll));
+    CHECK_FALSE(has(director.topics(), TopicKind::Petition));
+    CHECK(director.topics()[indexOf(director.topics(), TopicKind::ReadRoll)].label ==
+          "THE ROLL: THE QUAYWARD");
+
+    // The roll carries a vacant charge: the petition row appears -- named
+    // for the plot it is FOR, not the plot stood on -- and choosing it is an
+    // INTENT: ok, empty-lined, for the owner of the roll to settle and voice.
+    director.setVacantCharge(3, "THE GULLET");
+    REQUIRE(has(director.topics(), TopicKind::Petition));
+    CHECK(director.topics()[indexOf(director.topics(), TopicKind::Petition)].label ==
+          "PETITION FOR THE GULLET");
+    const Reply asked =
+        director.choose(indexOf(director.topics(), TopicKind::Petition));
+    CHECK(asked.ok);
+    CHECK(asked.kind == TopicKind::Petition);
+    CHECK(asked.line.empty());
+    CHECK(asked.coinDelta == 0);
+
+    // The petition settled and the roll changed: the context updates
+    // mid-conversation and the row is gone -- the same immediate rebuild the
+    // tone dial gets.
+    director.setVacantCharge(-1, {});
+    CHECK(has(director.topics(), TopicKind::ReadRoll));
+    CHECK_FALSE(has(director.topics(), TopicKind::Petition));
+    director.close();
+
+    // And a dockhand over the same register gets neither row: the roll is
+    // the Church's register, so the gate is the Flame's mark's own -- Clergy.
+    director.setVacantCharge(3, "THE GULLET");
+    REQUIRE(director.open(dockerNamed(4, "Wick Hempson"), hourOfDay(12)));
+    CHECK_FALSE(has(director.topics(), TopicKind::ReadRoll));
+    CHECK_FALSE(has(director.topics(), TopicKind::Petition));
+}
+
 TEST_CASE("asking about something says an authored line and is worth something") {
     DialogueDirector director = DialogueDirector::load(content::contentDir());
     REQUIRE(director.open(dockerNamed(4, "Wick Hempson"), hourOfDay(21)));

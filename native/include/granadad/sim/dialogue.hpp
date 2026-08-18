@@ -227,6 +227,22 @@ enum class TopicKind : std::uint8_t {
     /// scalp", so the ward's own bounty is redeemed under a priest's mark and
     /// not otherwise.
     Sanction = 20,
+    /// TIME-AND-TENURE BUILD. Ask the priest what the roll says about the
+    /// ground the conversation is standing on. The director only knows THAT
+    /// there is a plot underfoot (setGroundPlot); the answer is composed by
+    /// whoever owns the roll -- the same intent-only contract Buy has, because
+    /// the director does not know what a ward is any more than it knows what a
+    /// cellar is. APPENDED at 27, for the reason on Buy: the ordinal is folded
+    /// into which authored row a topic speaks from.
+    ReadRoll = 27,
+    /// TIME-AND-TENURE BUILD. Petition the Flame for the vacant charge
+    /// underfoot -- the player's own door into Ward::petitionForCharge, and
+    /// the first caller that verb has ever had. Intent only, exactly like
+    /// ReadRoll above; whoever owns the roll settles it and fills in the line.
+    /// Offered only on a plot the roll reads VACANT; the verb itself re-checks
+    /// everything, so the topic can never say yes where the roll says no.
+    /// APPENDED at 28, same reason.
+    Petition = 28,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -418,6 +434,29 @@ public:
     void setPlayerCoin(std::int32_t coin) noexcept { playerCoin_ = coin; }
     [[nodiscard]] std::int32_t playerCoin() const noexcept { return playerCoin_; }
 
+    /// TIME-AND-TENURE BUILD. What ground the conversation is standing on: a
+    /// plot index into the ward's roll, or -1 for ground no compound claims,
+    /// with its display name. Gates the ReadRoll topic -- the register is
+    /// read for the plot UNDERFOOT, per the no-ownership-overlay ruling. Set
+    /// by whoever owns the body's position -- render::Session -- before a
+    /// conversation opens and again after a petition settles, exactly the
+    /// playerCoin_ contract above: conversation context, derived from state
+    /// the room already hashes, so NOT hashed here either. Rebuilds the open
+    /// topic list immediately.
+    void setGroundPlot(std::int32_t plotIndex, std::string name);
+    [[nodiscard]] std::int32_t groundPlot() const noexcept { return groundPlot_; }
+
+    /// TIME-AND-TENURE BUILD. The roll's open prize: the plot whose charge
+    /// currently reads VACANT, or -1 when nothing does. Gates the Petition
+    /// topic -- and deliberately NOT tied to the feet, because a charge is
+    /// petitioned for from the FLAME, wherever its priest keeps an hour: the
+    /// Gullet's own sign says "the charge is vacant; ask" -- you go asking,
+    /// you do not stand on the ground shouting. Same setter contract as
+    /// setGroundPlot above; a granted petition clears it and the row removes
+    /// itself mid-conversation.
+    void setVacantCharge(std::int32_t plotIndex, std::string name);
+    [[nodiscard]] std::int32_t vacantCharge() const noexcept { return vacantPlot_; }
+
     // --- one conversation ---------------------------------------------------
 
     /// Opens on somebody. Returns false when there is nothing to talk with.
@@ -453,6 +492,14 @@ public:
 
     /// Picks a topic off the list.
     Reply choose(std::size_t index);
+
+    /// TIME-AND-TENURE BUILD. Voices a line composed OUTSIDE the director --
+    /// the settled half of an intent reply (ReadRoll/Petition follow Buy's
+    /// "whoever owns the counter resolves it" contract) -- as lastLine(), so
+    /// the conversation panel carries the answer instead of a greeting going
+    /// stale under it. A no-op when nothing is open or the line is empty;
+    /// the caller stays responsible for having settled honestly.
+    void speakResolved(std::string line);
 
     // --- haggling -----------------------------------------------------------
 
@@ -628,6 +675,15 @@ private:
     /// close(); moved only by choosing Ask/Category/Back.
     DialogueMenu menu_ = DialogueMenu::Root;
     std::int32_t playerCoin_ = 0;
+    /// TIME-AND-TENURE BUILD. The ground underfoot and the roll's open
+    /// prize, as told by setGroundPlot/setVacantCharge. Conversation context
+    /// like playerCoin_ above: derived every time from position the body
+    /// already owns and a roll the ward already hashes, so deliberately not
+    /// hashed here -- see the setters' own headers.
+    std::int32_t groundPlot_ = -1;
+    std::string groundPlotName_;
+    std::int32_t vacantPlot_ = -1;
+    std::string vacantPlotName_;
     /// Bumped by every conversation opened. Hashed, so replaying the same
     /// actions reproduces the same rotation through the authored rows.
     std::int32_t conversations_ = 0;

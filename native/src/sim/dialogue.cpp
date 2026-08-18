@@ -126,6 +126,10 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "thing";
         case TopicKind::Back:
             return "back";
+        case TopicKind::ReadRoll:
+            return "read the roll";
+        case TopicKind::Petition:
+            return "petition";
     }
     return "?";
 }
@@ -247,6 +251,41 @@ void DialogueDirector::setTone(Tone tone) noexcept {
     // into TELL ME ABOUT -> A PERSON, and turning the register there must
     // move THAT list, not silently walk them back out to the root behind
     // their own cursor.
+    if (open_) {
+        rebuildCurrentLevel();
+    }
+}
+
+void DialogueDirector::setGroundPlot(std::int32_t plotIndex, std::string name) {
+    if (groundPlot_ == plotIndex && groundPlotName_ == name) {
+        return;
+    }
+    groundPlot_ = plotIndex;
+    groundPlotName_ = std::move(name);
+    // The same immediate-rebuild rule setTone above states, for the same
+    // reason: the list the player is looking at must say what the context
+    // now says.
+    if (open_) {
+        rebuildCurrentLevel();
+    }
+}
+
+void DialogueDirector::speakResolved(std::string line) {
+    if (!open_ || line.empty()) {
+        return;
+    }
+    lastLine_ = std::move(line);
+}
+
+void DialogueDirector::setVacantCharge(std::int32_t plotIndex, std::string name) {
+    if (vacantPlot_ == plotIndex && vacantPlotName_ == name) {
+        return;
+    }
+    vacantPlot_ = plotIndex;
+    vacantPlotName_ = std::move(name);
+    // A petition settled mid-conversation takes its own row off the list the
+    // reply that announced it -- the roll no longer carries a vacant charge,
+    // so the topic no longer exists.
     if (open_) {
         rebuildCurrentLevel();
     }
@@ -667,6 +706,29 @@ void DialogueDirector::buildTopics() {
         Topic topic;
         topic.kind = TopicKind::Sanction;
         topic.label = "ASK THE FLAME TO SIGN";
+        topics_.push_back(std::move(topic));
+    }
+
+    // 9c. TIME-AND-TENURE BUILD -- the roll, and the vacant charge. The same
+    //     Clergy gate the Flame's mark above uses, because the roll is the
+    //     Church's register and a disciple keeps it as much as a priest does.
+    //     The reading exists only where there is ground underfoot to ask
+    //     about (setGroundPlot) -- a conversation on the Tarwalk shows no
+    //     roll row, the "no topic leads to nothing" law. The petition exists
+    //     wherever the ROLL carries an open prize (setVacantCharge): a
+    //     charge is asked of the Flame, not of the ground.
+    if (speaker_.family == JobFamily::Clergy && groundPlot_ >= 0) {
+        Topic topic;
+        topic.kind = TopicKind::ReadRoll;
+        topic.label = "THE ROLL: " + groundPlotName_;
+        topic.payload = groundPlot_;
+        topics_.push_back(std::move(topic));
+    }
+    if (speaker_.family == JobFamily::Clergy && vacantPlot_ >= 0) {
+        Topic topic;
+        topic.kind = TopicKind::Petition;
+        topic.label = "PETITION FOR " + vacantPlotName_;
+        topic.payload = vacantPlot_;
         topics_.push_back(std::move(topic));
     }
 
@@ -1377,6 +1439,24 @@ Reply DialogueDirector::choose(std::size_t index) {
                     standings_.addStanding(temple, 1);
                 }
             }
+            break;
+        }
+        case TopicKind::ReadRoll: {
+            // TIME-AND-TENURE BUILD. An intent and nothing more, exactly the
+            // Buy contract: the director does not know what a ward is, so
+            // whoever owns the roll (render::Session, which set the ground
+            // context in the first place) composes the reading and fills in
+            // the line. lastLine_ stays as it was, like Buy's.
+            out = reply(TopicKind::ReadRoll, {});
+            break;
+        }
+        case TopicKind::Petition: {
+            // TIME-AND-TENURE BUILD. Same intent-only contract as ReadRoll
+            // above. The topic only stood on a plot the roll read VACANT, but
+            // nothing is promised here: Ward::petitionForCharge re-checks
+            // tenure and purse itself, and its answer -- Done or any of the
+            // refusals -- is the line the settlement writes back.
+            out = reply(TopicKind::Petition, {});
             break;
         }
         case TopicKind::Rival: {

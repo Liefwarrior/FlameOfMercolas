@@ -148,4 +148,61 @@ struct ResolvedSignLabel {
     return {functionFallbackLabel(sign.kind), SignSourceTier::Synthesized};
 }
 
+// ---------------------------------------------------------------------------
+// the ground underfoot (TIME-AND-TENURE BUILD)
+// ---------------------------------------------------------------------------
+//
+// THE TIER-3 CORRELATION, FINALLY WIRED -- but for a DIFFERENT question than
+// the one the header above retired it from. Tier 3 lost the labelling contest
+// because every door already had a tier-2 name; nothing ever asked the OTHER
+// direction, "whose ground is this tile", until the leasehold petition needed
+// it: a priest reads the roll for the plot the conversation is standing on,
+// and the four compound door signs are the only place in the codebase where a
+// compound has a footprint at all. The correlation the survey found (c1_/c2_/
+// c3_/c4_ <-> C1_QUAYWARD etc.) is written down here as the four-row table it
+// always was, keyed by the sign's own tmx id so a regenerated table cannot
+// quietly detach it.
+//
+// X/Y ONLY, NO BAND, ON PURPOSE. A charge is a claim on the GROUND and
+// everything standing on it -- the rooftop slum over the Gullet is the
+// Gullet's ground even though its tenants owe the house-owner beneath and not
+// the Duke (section 2.8). A body on any band inside the footprint is on the
+// plot; the strand under a pier is not under any compound, so the question
+// never has a band ambiguity to get wrong.
+
+/// One compound door sign <-> one compounds.json plot id.
+struct PlotGround {
+    const char* signId;
+    const char* plotId;
+};
+
+/// The survey's own Part 3 correlation, all four rows of it. sign_c2_netter_house
+/// is NOT here: it is a single house INSIDE the Netters' footprint, and the
+/// compound row (sign_c2_netters) already covers its ground.
+inline constexpr PlotGround kPlotGrounds[] = {
+    {"sign_c1_quayward", "C1_QUAYWARD"},
+    {"sign_c2_netters", "C2_NETTERS"},
+    {"sign_c3_saltgate_terrace", "C3_SALTGATE"},
+    {"sign_c4_gullet", "C4_GULLET"},
+};
+
+/// The compounds.json plot id whose footprint holds this world tile, or ""
+/// for ground no compound claims (streets, the glebe, the K-sites).
+[[nodiscard]] inline std::string_view plotIdUnder(std::int32_t tileX,
+                                                  std::int32_t tileY) noexcept {
+    for (const PlotGround& ground : kPlotGrounds) {
+        for (const Sign& sign : kSigns) {
+            if (std::string_view{sign.id} != ground.signId) {
+                continue;
+            }
+            if (tileX >= sign.x0 && tileX <= sign.x1 && tileY >= sign.y0 &&
+                tileY <= sign.y1) {
+                return ground.plotId;
+            }
+            break;
+        }
+    }
+    return {};
+}
+
 }  // namespace granadad::sim::docks
