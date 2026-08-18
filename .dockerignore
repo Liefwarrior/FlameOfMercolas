@@ -165,6 +165,31 @@
 #   companions/gabri.json   4 KB
 !content/raws/companions/**
 
+# --- re-admitted: the four audio packs the sound manifest draws from ---
+# ~5.4 MB, and ONLY these four of the sixteen packs under Audio/. They are in
+# the context for the standalone: the docker build runs granadad-pack-content,
+# which packs exactly the ~178 OGGs the compiled soundPaths() manifest names
+# and refuses loudly on a missing one -- so the four directories that manifest
+# draws from have to be here, and none of the other twelve (Casino, Retro,
+# Voiceover...) ever comes in. The whole Audio subtree is 31 MB and the game
+# opens 2 MB of it; the whole kenney dump is 1.2 GB and stays out as it always
+# has. The game itself still reads audio at runtime from the repo -- this
+# admission feeds the PACKER, not the compiler.
+!content/art/kenney-all-in-1/Audio/Impact Sounds/**
+!content/art/kenney-all-in-1/Audio/Foley Sounds/**
+!content/art/kenney-all-in-1/Audio/Interface Sounds/**
+!content/art/kenney-all-in-1/Audio/RPG Audio/**
+
+# --- re-admitted: the rest of raws/, for the standalone's pack ---
+# The packer takes content/raws WHOLE (survey ruling: three loaders enumerate
+# directories, so byte-identical directory contents is the cheap way to make
+# the standalone behave identically to the repo exe). Every C++-read raws
+# directory is already admitted above; this line catches any raws directory a
+# future sprint adds without having to remember this file. ~130 KB of
+# Java-side raws (materials, fluids, treatments...) ride along; the C++ exe
+# never opens them and the price is noise-level.
+!content/raws/**
+
 # --- re-admitted: the Daggerfall flow's chargen content (#92) ---
 # ~40 KB, three files: the nine callings, the ward's ten questions and the
 # twelve biography questions, transcribed from the approved

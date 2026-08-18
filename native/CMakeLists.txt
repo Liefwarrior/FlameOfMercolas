@@ -380,6 +380,18 @@ target_link_libraries(granadad-audio-probe PRIVATE granadad-audio)
 granadad_apply_determinism(granadad-audio-probe)
 granadad_static_runtime(granadad-audio-probe)
 
+# The content packer — the build-time half of granadad-standalone.exe. Same
+# standing as the probe: a dev tool, run by the docker build. It links
+# granadad-audio so the audio subset it packs IS the compiled soundPaths()
+# manifest — the 2 MB the game opens, never the 1.2 GB kenney dump — and it
+# cannot drift from the code because it is generated from it. The pack
+# writer/extractor pair lives in granadad-content (via granadad-audio's
+# PUBLIC link) so the round trip is proved in that module's own suite.
+add_executable(granadad-pack-content src/tools/pack_content.cpp)
+target_link_libraries(granadad-pack-content PRIVATE granadad-audio)
+granadad_apply_determinism(granadad-pack-content)
+granadad_static_runtime(granadad-pack-content)
+
 if(GRANADAD_BUILD_CLIENT)
     # The ONLY audio target that sees SDL. The client links THIS at wiring
     # time, never granadad-audio directly.

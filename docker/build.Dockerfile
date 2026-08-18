@@ -157,6 +157,26 @@ COPY content/raws/actors /src/content/raws/actors
 # themselves.
 COPY content/raws/companions /src/content/raws/companions
 
+# THE STANDALONE'S CONTENT, in two strokes (see granadad-pack-content).
+#
+# The whole of raws/ -- 607 KB -- because the packer takes it whole: three
+# loaders enumerate directories, so byte-identical directory contents is what
+# makes the standalone behave identically to the repo exe. Every directory the
+# COPYs above brought in is inside this one; they stay, because each carries
+# the reason its files are load-bearing for the TEST gate, and this layer
+# carries the reason the rest are load-bearing for the PACK.
+COPY content/raws /src/content/raws
+
+# The four audio packs the compiled soundPaths() manifest draws from -- 5.4 MB
+# of the 31 MB Audio subtree, itself a corner of the 1.2 GB kenney dump that
+# stays out. The packer packs exactly the ~178 files the manifest names and
+# fails loudly if one is missing from these directories. JSON-form COPY
+# because the pack names carry spaces.
+COPY ["content/art/kenney-all-in-1/Audio/Impact Sounds", "/src/content/art/kenney-all-in-1/Audio/Impact Sounds"]
+COPY ["content/art/kenney-all-in-1/Audio/Foley Sounds", "/src/content/art/kenney-all-in-1/Audio/Foley Sounds"]
+COPY ["content/art/kenney-all-in-1/Audio/Interface Sounds", "/src/content/art/kenney-all-in-1/Audio/Interface Sounds"]
+COPY ["content/art/kenney-all-in-1/Audio/RPG Audio", "/src/content/art/kenney-all-in-1/Audio/RPG Audio"]
+
 # Only native/ is copied besides that. content/art and .claude/worktrees
 # (1.6 GB of parallel checkouts) are excluded by .dockerignore — the compiler
 # has no use for either, and the rest of content is read at runtime straight
@@ -1165,6 +1185,60 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     echo "        [...]"; \
     grep -E 'hash\.(wrld|combined) |run\.(wrld|combined) ' /out/world-hash-linux-gcc.txt; \
     \
+    # ----------------------------------------------------------------------
+    # The content pack, and the standalone mechanism proven END TO END on the
+    # one toolchain this container can execute.
+    # ----------------------------------------------------------------------
+    # granadad-standalone.exe is the shipped exe's exact compiled bytes with
+    # this pack concatenated after them -- strip, cat, done, no second compile
+    # -- so proving the MECHANISM here (footer found, pack extracted to the
+    # digest-keyed cache, contentDir() answering with it, and the world hash
+    # coming out byte-identical) is proving the same code path the Windows
+    # binary will take. scripts/verify-standalone.ps1 then proves it again on
+    # the machine that matters.
+    echo "=== the content pack ==="; \
+    pack_info="$(/build-cache/hostcheck/bin/granadad-pack-content \
+        --content /src/content --out /tmp/content.pack)"; \
+    printf '%s\n' "$pack_info"; \
+    \
+    echo "=== the standalone mechanism, end to end on linux/gcc ==="; \
+    # A stripped twin-gate with the pack appended, ALONE in a directory with
+    # no content/ within three parent levels and the env var unset -- exactly
+    # the state a friend's machine is in -- must extract and produce the SAME
+    # world-hash bytes the loose-files run above published. That equality is
+    # the determinism claim: same binary logic, different content source,
+    # bit-identical world.
+    rm -rf /tmp/standalone-linux /tmp/standalone-cache; \
+    mkdir -p /tmp/standalone-linux /tmp/standalone-cache; \
+    cp /build-cache/hostcheck/bin/granadad-twin-gate /tmp/standalone-linux/gate-standalone; \
+    strip -s /tmp/standalone-linux/gate-standalone; \
+    cat /tmp/content.pack >> /tmp/standalone-linux/gate-standalone; \
+    env -u GRANADAD_CONTENT_DIR XDG_CACHE_HOME=/tmp/standalone-cache \
+        /tmp/standalone-linux/gate-standalone --fingerprint /tmp/standalone-world-hash.txt; \
+    cmp /out/world-hash-linux-gcc.txt /tmp/standalone-world-hash.txt \
+        || { echo "FATAL: the standalone (extracted pack) hashed the world"; \
+             echo "       differently from the repo binary (loose files). The"; \
+             echo "       pack is not carrying the same content the exe reads"; \
+             echo "       from the repo -- check granadad-pack-content's"; \
+             echo "       manifest against the loaders."; exit 1; }; \
+    echo "ok: extracted-pack world hash is byte-identical to loose-files"; \
+    # The cache landed where the digest says, and a SECOND launch finds it and
+    # extracts nothing -- the everyday launch after the first.
+    pack_cache="$(printf '%s\n' "$pack_info" | sed -n 's/^pack cache: *//p')"; \
+    test -d "/tmp/standalone-cache/granadad/${pack_cache}/maps/baked" \
+        || { echo "FATAL: extraction did not land in the digest-keyed cache dir"; \
+             echo "       (${pack_cache}). See extractedPackDir()."; exit 1; }; \
+    env -u GRANADAD_CONTENT_DIR XDG_CACHE_HOME=/tmp/standalone-cache \
+        /tmp/standalone-linux/gate-standalone --fingerprint /tmp/standalone-world-hash-2.txt \
+        2>/tmp/standalone-second-run.err; \
+    if grep -q "extracting embedded content pack" /tmp/standalone-second-run.err; then \
+        echo "FATAL: the second launch re-extracted the same pack. The cache is"; \
+        echo "       digest-keyed exactly so this never happens."; exit 1; \
+    fi; \
+    cmp /tmp/standalone-world-hash.txt /tmp/standalone-world-hash-2.txt; \
+    echo "ok: second launch reused the cache and hashed the same"; \
+    rm -rf /tmp/standalone-linux; \
+    \
     echo "=== cross-compile: Windows x86-64 .exe ==="; \
     cmake -S /src/native -B /build-cache/win -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE=/src/native/cmake/toolchain-mingw-w64.cmake \
@@ -1176,6 +1250,27 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         -DGRANADAD_REVISION="${GRANADAD_REVISION}"; \
     cmake --build /build-cache/win; \
     cmake --install /build-cache/win; \
+    \
+    # ----------------------------------------------------------------------
+    # The SHAREABLE exe: one file a friend double-clicks on a machine that
+    # has nothing else.
+    # ----------------------------------------------------------------------
+    # The standalone is dist/granadad.exe's exact compiled bytes: a COPY is
+    # stripped (the ~97 MB is ~92 MB of DWARF; code+data is ~6 MB) and the
+    # pack is concatenated after it -- no second compile, so "same binary
+    # logic" is true by construction, and the twin-gate gets the identical
+    # treatment so scripts/verify-standalone.ps1 can prove the world hash
+    # byte-identical from an empty directory. Strip BEFORE cat: strip
+    # discards trailing data, so the order is load-bearing. The dev exe in
+    # dist/ stays fat and debuggable, exactly as it was.
+    echo "=== granadad-standalone.exe: strip, append pack ==="; \
+    for base in granadad granadad-twin-gate; do \
+        cp "/out/${base}.exe" "/tmp/${base}-standalone.exe"; \
+        x86_64-w64-mingw32-strip -s "/tmp/${base}-standalone.exe"; \
+        cat /tmp/content.pack >> "/tmp/${base}-standalone.exe"; \
+        mv "/tmp/${base}-standalone.exe" "/out/${base}-standalone.exe"; \
+    done; \
+    ls -l /out/granadad-standalone.exe /out/granadad-twin-gate-standalone.exe; \
     \
     echo "=== verify every artifact is a self-contained Windows binary ==="; \
     # Two failure modes worth failing the build over, both of which produce an
@@ -1212,7 +1307,8 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # quietly reverts to one toolchain. That is exactly how this gap was born.
     echo "=== the windows half must actually ship ==="; \
     for required in granadad-content-tests.exe content-fingerprint-linux-gcc.txt \
-                    granadad-tests.exe granadad-twin-gate.exe world-hash-linux-gcc.txt; do \
+                    granadad-tests.exe granadad-twin-gate.exe world-hash-linux-gcc.txt \
+                    granadad-standalone.exe granadad-twin-gate-standalone.exe; do \
         test -f "/out/$required" \
             || { echo "FATAL: /out/$required is missing. Without it the"; \
                  echo "       cross-toolchain comparison cannot be run on Windows"; \
@@ -1289,6 +1385,10 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
       echo "target:      windows-x86_64 (PE32+), cross-compiled from Debian bookworm"; \
       echo "cmake:       $(cmake --version | head -1)"; \
       echo "compiler:    $(x86_64-w64-mingw32-g++ --version | head -1)"; \
+      echo ""; \
+      echo "content pack (appended to the -standalone exes):"; \
+      printf '%s\n' "$pack_info" | sed 's/^/  /'; \
+      echo "  pack sha256:  $(sha256sum /tmp/content.pack | cut -d' ' -f1)"; \
       echo ""; \
       echo "sha256:"; \
       cd /out && sha256sum *; \
