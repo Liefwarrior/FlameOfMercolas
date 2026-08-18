@@ -630,6 +630,76 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                      alertScale);
         }
     }
+    // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot
+    // this file's own header has reserved in Barony's name since task #66,
+    // finally holding something. Right after the alert in priority: while it
+    // is up at all, it is up because the player's hand is ON it (a held
+    // wheel, a number press), which is exactly when it must not be the row
+    // that gets dropped. Out of the band's slot grid like every row here, so
+    // it can never land in the play space or on another row's pixels; behind
+    // its own plate, because ten dim digits over open floor is the alert's
+    // own S8 legibility failure again; and TRANSIENT (quickBarFade is a
+    // Session-side EasedToggle), because Barony's hotbar is furniture and
+    // this game's TES-quiet bar is not.
+    if (state.quickBarFade > 0.0F) {
+        const float fade = std::clamp(state.quickBarFade, 0.0F, 1.0F);
+        const int y = band.take(minor);
+        if (y >= 0) {
+            constexpr int kQuickSlots = 10;
+            const int cellW = (kGlyphAdvance + 2) * minor;
+            const int cellsW = kQuickSlots * cellW;
+            // The selected slot's own name rides the same row -- the digits
+            // say which slots are loaded, the name says with what.
+            std::string name;
+            if (state.quickSelected >= 0 && state.quickSelected < kQuickSlots) {
+                const std::string_view picked =
+                    state.quickSlots[static_cast<std::size_t>(state.quickSelected)];
+                name = clipToWidth(picked, rowBudget - cellsW - 2 * kGlyphAdvance * minor,
+                                   minor);
+            }
+            const int nameW =
+                name.empty() ? 0 : 2 * kGlyphAdvance * minor + textWidth(name, minor);
+            const int x0 = std::max(margin, (width - cellsW - nameW) / 2);
+            const int padY = std::max(1, minor / 2);
+            drawTextPlate(target, x0 - 2 * minor, y - padY, x0 + cellsW + nameW + 2 * minor,
+                          y + kGlyphH * minor + padY, std::max(1, minor / 2), 0.80F * fade);
+            for (int slot = 0; slot < kQuickSlots; ++slot) {
+                const int cx = x0 + slot * cellW;
+                const bool loaded = !state.quickSlots[static_cast<std::size_t>(slot)].empty();
+                const bool equipped = slot == state.quickEquipped;
+                const bool selected = slot == state.quickSelected;
+                if (equipped) {
+                    // INVERTED, the strongest mark on the strip: this cell is
+                    // what the next press of Cast spends, the same fact the
+                    // CAST row reads off the same equipped id.
+                    target.fillRect(cx, y - padY, cellW - minor, kGlyphH * minor + 2 * padY,
+                                    kPlateBone, 0.90F * fade);
+                }
+                if (selected) {
+                    // FRAMED, one pixel-row of border: where the wheel or the
+                    // number row last pointed, which need not be the equipped
+                    // cell (an empty slot can be selected and says so).
+                    const Rgb gold{0.85F, 0.80F, 0.60F};
+                    const int frameY0 = y - padY;
+                    const int frameY1 = y + kGlyphH * minor + padY;
+                    target.fillRect(cx, frameY0, cellW - minor, minor, gold, fade);
+                    target.fillRect(cx, frameY1 - minor, cellW - minor, minor, gold, fade);
+                    target.fillRect(cx, frameY0, minor, frameY1 - frameY0, gold, fade);
+                    target.fillRect(cx + cellW - 2 * minor, frameY0, minor,
+                                    frameY1 - frameY0, gold, fade);
+                }
+                const char digit[2] = {static_cast<char>(slot == 9 ? '0' : '1' + slot), '\0'};
+                const Rgb ink = equipped ? kPlateBlack : kPlateBone;
+                const float inkAlpha = equipped ? fade : (loaded ? 0.95F : 0.35F) * fade;
+                drawText(target, cx + (cellW - kGlyphW * minor) / 2, y, digit, ink, inkAlpha,
+                         minor);
+            }
+            if (!name.empty()) {
+                drawText(target, x0 + cellsW + 2 * kGlyphAdvance * minor, y, name,
+                         Rgb{0.90F, 0.87F, 0.76F}, 0.92F * fade, minor);
+            }
+        }
+    }
     // #85. THE RESOLVED INTERACT VERB. Right after the alert, ahead of the
     // lock -- the two never draw together (interactLabel is empty exactly
     // while a lock is open, Session::interactPrompt() stands down for

@@ -351,6 +351,14 @@ void print_usage() {
         "                       guard, hold it until a blow is softened\n"
         "  --cast               VERIFICATION ONLY: press the cast key once\n"
         "                       (pair with --flame to have a spell to cast)\n"
+        "  --grimoire           VERIFICATION ONLY: open the Grimoire page (the\n"
+        "                       same page a tap of the QuickWheel key opens)\n"
+        "                       before the shutter goes; pair with --flame so\n"
+        "                       the list has craftings on it\n"
+        "  --quickbar           VERIFICATION ONLY: bind the first crafting to\n"
+        "                       slot 3 through the Grimoire page, close it and\n"
+        "                       press the number, so the bottom-centre strip\n"
+        "                       and the CAST row are photographed agreeing\n"
         "  --creation[=STEP]    capture the origin-select/customize flow with\n"
         "                       no window and no world. STEP is origin\n"
         "                       (default), customize (CUSTOM, a few points\n"
@@ -600,6 +608,14 @@ void print_usage() {
         } else if (std::strcmp(arg, "--cast") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::cast's own header.
             options.smoke.cast = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--grimoire") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::grimoire's own header.
+            options.smoke.grimoire = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--quickbar") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::quickbar's own header.
+            options.smoke.quickbar = true;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--creation") == 0) {
             options.wantsCreation = true;
@@ -862,6 +878,44 @@ void print_usage() {
         }
         // ESCAPE AND F2 FALL THROUGH on purpose, so the key that opened the
         // page always closes it and Menu always backs out of it.
+        return false;
+    }
+
+    if (session.grimoireOpen()) {
+        // SPELLS BUILD. The Grimoire page: up/down walk the craftings,
+        // left/right walk the cursor row's SLOT binding (the options page's
+        // own slider shape, and the reason a pad can bind at all), the
+        // printed number or ENTER readies one, 0 pages a long list. ESC
+        // falls through, so the key that closes every page closes this one.
+        if (up) {
+            session.moveGrimoireCursor(-1);
+            return true;
+        }
+        if (downward) {
+            session.moveGrimoireCursor(1);
+            return true;
+        }
+        if (leftward) {
+            session.adjustGrimoireSlot(-1);
+            return true;
+        }
+        if (rightward) {
+            session.adjustGrimoireSlot(1);
+            return true;
+        }
+        if (numbered) {
+            session.chooseGrimoireRow(slot);
+            return true;
+        }
+        if (pageKey) {
+            session.nextGrimoirePage();
+            return true;
+        }
+        if (confirm) {
+            session.chooseGrimoireRow(session.grimoireCursor() -
+                                      session.grimoirePage() * render::kTopicPageSize);
+            return true;
+        }
         return false;
     }
 
@@ -1647,7 +1701,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // #85. THE QUICK WHEEL. Plain held-down state, not a HoldToggle: there is
     // no tap-vs-hold ambiguity to resolve here the way Sprint/Crouch have --
     // it is open for exactly as long as QuickWheel is down and never latches.
+    //
+    // SPELLS BUILD: A TAP OF IT IS THE GRIMOIRE PAGE NOW. Held, the key is
+    // still the wheel, exactly as above; released within HoldToggle's own
+    // kTapSteps without ever stepping a slot, the press plainly was not FOR
+    // the wheel -- it used to do nothing at all -- and the one key that
+    // means "craftings" opens the list page instead. No new binding, no new
+    // Menu tile, per the owner's ruling. The two trackers below are what
+    // tells the taps apart.
     bool quickWheelOpen = false;
+    std::int64_t quickWheelDownAt = 0;
+    bool quickWheelStepped = false;
     // S13. THE TRIGGERS' OWN EDGE STATE. SDL reports LT/RT as AXES, never as
     // button events, so kPadTable can never produce them; the poll after the
     // stick section synthesizes pressed()/released() on threshold crossings
@@ -1691,12 +1755,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             if (quickWheelOpen) {
                 if (key == render::Key::PadUp || key == render::Key::Up ||
                     key == render::Key::PadRight || key == render::Key::Right) {
+                    quickWheelStepped = true;
                     quickSlot = (quickSlot + 1) % 10;
                     session.selectQuickSlot(quickSlot);
                     return;
                 }
                 if (key == render::Key::PadDown || key == render::Key::Down ||
                     key == render::Key::PadLeft || key == render::Key::Left) {
+                    quickWheelStepped = true;
                     quickSlot = (quickSlot + 9) % 10;
                     session.selectQuickSlot(quickSlot);
                     return;
@@ -1747,6 +1813,12 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 // `pressed`'s own early return -- see the comment there.
                 case render::Action::QuickWheel:
                     quickWheelOpen = true;
+                    // SPELLS BUILD: the strip comes up the moment the wheel
+                    // does, and the release decides tap-or-hold -- see the
+                    // trackers' own note above.
+                    quickWheelDownAt = stepClock;
+                    quickWheelStepped = false;
+                    session.showQuickBar();
                     return;
                 // S13. THE COMBAT PAIR. Cast is an ordinary press, exactly
                 // like Attack; Block is HELD, the QuickWheel's plain-bool
@@ -1828,6 +1900,16 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 // way QuickNext/QuickPrev always applied immediately -- there
                 // is no separate "confirm" beyond letting go.
                 quickWheelOpen = false;
+                // SPELLS BUILD: unless the press was a TAP -- down and up
+                // inside HoldToggle's own kTapSteps with no slot stepped --
+                // in which case it was never a wheel at all, and the Grimoire
+                // page is what it asked for. toggleGrimoire() guards itself
+                // (inert while talking or picking), so a tap mid-conversation
+                // stays inert exactly like every other page toggle.
+                if (!quickWheelStepped &&
+                    stepClock - quickWheelDownAt <= render::HoldToggle::kTapSteps) {
+                    session.toggleGrimoire();
+                }
             } else if (action == render::Action::Block) {
                 // S13. LOWERS THE GUARD. Held means blocking, up means not,
                 // no latch -- see the press side's own note.

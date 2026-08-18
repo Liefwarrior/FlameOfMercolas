@@ -495,6 +495,15 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     // S13: the two rows the Cast/Block task added, at their own longest.
     full.spellLabel = "CAST  SET THE SHOULDERS (599S)";
     full.blockLabel = "GUARD UP";
+    // SPELLS BUILD: the quick bar strip at full strength -- every slot
+    // loaded, the longest authored name selected, equipped and selected on
+    // different cells so both marks draw.
+    full.quickSlots = {"STING",  "SCALD", "SET THE SHOULDERS", "WARD THE COLD",
+                       "A CRAFTING OF YOUR OWN", "STING", "SCALD", "STING",
+                       "SCALD",  "STING"};
+    full.quickSelected = 4;
+    full.quickEquipped = 2;
+    full.quickBarFade = 1.0F;
     full.stealthLabel = "SEEN CROUCH  LIT 88  LOUD";
     full.caseLabel = "CASE 4/6 > THE DROWNED HOLD  EMPTYING";
     full.guildLabel = "THE SKYRUNNERS - THE WARD'S OWN SHADOW";

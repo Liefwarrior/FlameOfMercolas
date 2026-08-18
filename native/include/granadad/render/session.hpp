@@ -19,6 +19,7 @@
 // its fourteen actors keep their hours whether the player is in the room or on
 // the other side of the district.
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -666,14 +667,58 @@ public:
 
     /// THE QUICK BAR. Ten slots off the number row, and the wheel walks them.
     ///
-    /// VERIFICATION GAP (#77): THERE IS NOTHING IN THEM. This build has a purse,
-    /// a stash of contraband and a set of picks, and no inventory model that a
-    /// slot could hold -- so what the number row does today is select a slot and
-    /// say which one. The BINDING is real, rebindable and persisted; the
-    /// CONTENTS are not built. Stated here rather than left for a player to
-    /// discover by pressing 3 and watching nothing happen.
+    /// VERIFICATION GAP #77 IS CLOSED (SPELLS BUILD): THE SLOTS HOLD CRAFTINGS
+    /// NOW. sim::Tavern owns the contents (bindSpellToSlot/slotSpell/equipSlot
+    /// -- hashed, because what a number key readies decides what the next cast
+    /// does); selecting a LOADED slot equips its crafting through the same
+    /// equipSpellAt path the Grimoire page uses, and an empty slot still says
+    /// so out loud rather than letting the key read as broken. There is still
+    /// no item model: a slot holds a spell id and nothing else.
     void selectQuickSlot(int slot);
     [[nodiscard]] int quickSlot() const noexcept { return quickSlot_; }
+    /// Keeps the bottom-centre quick bar strip on screen for a couple of
+    /// seconds -- called by the client when the QuickWheel goes down, and by
+    /// selectQuickSlot itself, so the strip is up exactly while it is being
+    /// used and stands down after (its own EasedToggle does the easing).
+    void showQuickBar();
+    /// True while the strip is WANTED (held wheel or recent selection). The
+    /// drawn alpha is its EasedToggle's business; this is the target a test
+    /// can assert on.
+    [[nodiscard]] bool quickBarWanted() const noexcept { return quickBarShowSteps_ > 0; }
+
+    // --- the Grimoire page (SPELLS BUILD) ------------------------------------
+    //
+    // OWNER RULING: QuickWheel + a Grimoire list page, NO new Menu tile. The
+    // page is the same DialogueViewState/drawDialogue panel every other page
+    // is -- one list widget, proven once -- and it opens off the key the
+    // quick bar already owns: a TAP of QuickWheel (held, the key is the
+    // wheel; released inside HoldToggle's own kTapSteps without stepping a
+    // slot, it is this page). No new binding, no new tile, and the one key
+    // that means "craftings" covers both surfaces.
+
+    /// Opens or closes the page. Inert while talking or picking, exactly like
+    /// toggleKeys; every other overlay stands down when it opens.
+    void toggleGrimoire();
+    [[nodiscard]] bool grimoireOpen() const noexcept { return grimoireOpen_; }
+    /// One row per known crafting, grimoire order: name, its difficulty out
+    /// of the cost model, FORGED for a composition of your own, the slot it
+    /// is bound to, and READY on the one the hand is holding.
+    [[nodiscard]] std::vector<std::string> grimoireRows() const;
+    [[nodiscard]] int grimoireCursor() const noexcept { return grimoireCursor_; }
+    [[nodiscard]] int grimoirePage() const noexcept { return grimoirePage_; }
+    void moveGrimoireCursor(int delta);
+    void nextGrimoirePage();
+    /// Picks the row printed with this number on the visible page -- and
+    /// picking a crafting EQUIPS it, through the same Tavern::equipSpellAt a
+    /// loaded quick slot uses. One source of truth for what the hand holds.
+    /// ENTER does the same to the cursor's row, exactly like a topic list.
+    void chooseGrimoireRow(int slot);
+    /// LEFT/RIGHT on the cursor's row: walks WHICH SLOT that crafting is
+    /// bound to, through NONE and back round -- the options page's own
+    /// slider shape, and pad-reachable for the same reason (numbers are not
+    /// on a pad; the D-pad is). Moving a crafting off a slot clears the old
+    /// slot, so the bar never promises the same crafting twice.
+    void adjustGrimoireSlot(int delta);
 
     /// TRUE UNTIL THE PLAYER HAS DONE ANYTHING AT ALL. A fresh session opens
     /// with the casebook up and the hook on screen, because "dropped into a
@@ -1064,6 +1109,13 @@ private:
     /// and one less thing that could disagree with the book that gates it.
     sim::LetterRaws letterRaws_;
     bool keysOpen_ = false;
+    /// SPELLS BUILD. The Grimoire page: whether it is up, which crafting the
+    /// cursor is on, and which page of a long list is showing. The same
+    /// overlay family keysOpen_ belongs to: one flag, one surface, every
+    /// other overlay stands down when it opens.
+    bool grimoireOpen_ = false;
+    int grimoireCursor_ = 0;
+    int grimoirePage_ = 0;
     bool firstRun_ = true;
     /// THE JOURNAL TILE'S OWN CURSOR, PAGE AND PICKED ENTRY -- unchanged
     /// names and unchanged meaning from #85: which lead the cursor is on,
@@ -1163,6 +1215,19 @@ private:
     /// nothing to do with a guard going up, so they do not share one.
     EasedToggle spellAnim_;
     EasedToggle blockAnim_;
+    /// SPELLS BUILD. The bottom-centre quick bar strip's own ease -- per the
+    /// pinned convention, its OWN toggle: the strip appearing (a wheel held,
+    /// a slot picked) has nothing to do with any other row's trigger. The
+    /// countdown is what keeps it up for a couple of seconds after the last
+    /// touch; the names are cached here so the strip can finish fading with
+    /// its labels still on it, the identical reason every *Cache_ below
+    /// exists.
+    EasedToggle quickBarAnim_;
+    /// Two seconds at the 60 Hz step cadence -- long enough to read, short
+    /// enough that the strip never becomes furniture.
+    static constexpr int kQuickBarShowSteps = 120;
+    int quickBarShowSteps_ = 0;
+    std::array<std::string, 10> quickBarNames_{};
     /// The last non-empty text each row above showed, held onto through the
     /// row's own fade-out -- the identical reason message_ outlives
     /// messageSteps_ (see step()'s own note by the alert's clear): an alpha
@@ -1465,6 +1530,19 @@ struct SmokeRunConfig {
     /// empty-grimoire refusal on the alert row, which is the COMMON state and
     /// worth a picture of its own.
     bool cast = false;
+    /// SPELLS BUILD. VERIFICATION ONLY, the identical reason `cast` exists:
+    /// the Grimoire page had no headless capture path. Opens it through the
+    /// same Session::toggleGrimoire() a tap of the QuickWheel key calls --
+    /// pair with --flame so the list has craftings on it; alone it
+    /// photographs the page's own empty-grimoire line, the common state.
+    bool grimoire = false;
+    /// SPELLS BUILD. VERIFICATION ONLY. Binds the first known crafting to
+    /// slot 3 through the Grimoire page's own adjust verb, closes the page,
+    /// and presses the slot's number -- the same public calls a keypress
+    /// makes -- so the bottom-centre strip, its equipped highlight and the
+    /// CAST row can be photographed agreeing with each other. Pair with
+    /// --flame for the same reason as --grimoire.
+    bool quickbar = false;
     /// S5. Climb onto the Gilded Gull's roof and look down at the ward: in at
     /// the door, up the stair, out over the north wall, and turn round. WHERE
     /// is "roof" (standing on the lead), "leap" (across the alley onto the next

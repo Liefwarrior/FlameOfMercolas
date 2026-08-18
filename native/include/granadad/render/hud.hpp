@@ -57,6 +57,7 @@
 // and the area those rows CLAIM -- glyphs closed up into the rows that own
 // them, which is the space actually lost -- 8.19% -> 5.13% on the street.
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -115,6 +116,20 @@ struct HudState {
     /// in priority -- a held guard is read every second of a fight, and it
     /// is the ROOM's fact (what tickBrawl actually reads), never the key's.
     std::string_view blockLabel;
+    /// SPELLS BUILD: the quick bar strip -- BOTTOM-CENTRE, which is this
+    /// file's own header giving Barony's hotbar its place ("hotbar
+    /// bottom-centre"). Ten cells out of the bottom band's slot grid, never
+    /// the play space: a filled slot's digit is bright, an empty one dim, the
+    /// slot holding the EQUIPPED crafting is inverted (the one source of
+    /// truth is Tavern's equipped id, the same id the CAST row reads), the
+    /// selected slot is framed, and the selected slot's own name rides the
+    /// same row. TRANSIENT, not furniture: quickBarFade is a Session-side
+    /// EasedToggle that raises it while the wheel or the number row is in
+    /// use and puts it down a couple of seconds after.
+    std::array<std::string_view, 10> quickSlots{};
+    int quickSelected = -1;
+    int quickEquipped = -1;
+    float quickBarFade = 0.0F;
     /// The ladder the player is highest on, and the rung: "FLAME - DISCIPLE".
     /// Bottom-left, stacked over the health bar, because that is where a
     /// character's own state lives and the centre stays empty. Drawn only when

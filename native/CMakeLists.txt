@@ -469,6 +469,10 @@ if(GRANADAD_BUILD_TESTS)
         # keyboard -- RESUME, SETTINGS and a QUIT that asks twice, replacing
         # the unconfirmed `running = false` that key carried since #77.
         tests/test_pause.cpp
+        # SPELLS BUILD -- the Grimoire page and the quick bar it loads: the
+        # bind/select/equip round-trip that closes VERIFICATION GAP #77 and
+        # gives S13's equipSpellAt its callers.
+        tests/test_grimoire.cpp
         # The character sheet: the five Legend tracks, the four skills this
         # build actually levels, and what the ward and the purse currently
         # say -- reached from the same read-only reference-list surface the

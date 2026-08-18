@@ -1036,6 +1036,75 @@ TEST_CASE("a sting resolves through the room: hp moves, the room minds, the link
     CHECK(tavern.castCooldownLeft() <= tavern.equippedSpell()->cooldownTicks);
 }
 
+// ===========================================================================
+// ROOM -- the quick bar (SPELLS BUILD)
+// ===========================================================================
+
+TEST_CASE("quick slots hold known craftings only, and equip through the one door") {
+    Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    room.run(2);
+    Tavern& tavern = room.tavern();
+
+    // The COMMON state: empty grimoire. Nothing binds, nothing equips, and
+    // the refusals are return values, not silent no-ops.
+    CHECK_FALSE(tavern.bindSpellToSlot(0, "sting"));
+    CHECK_FALSE(tavern.equipSlot(0));
+    CHECK(tavern.slotSpell(0) == nullptr);
+
+    // Stocked the way the priest stocks it. Grimoire order is id order, so
+    // scald is the front row and the default equip.
+    const Spell* sting = tavern.spellbook().find("sting");
+    const Spell* scald = tavern.spellbook().find("scald");
+    REQUIRE(sting != nullptr);
+    REQUIRE(scald != nullptr);
+    REQUIRE(tavern.dialogue().grimoire().learn(*sting));
+    REQUIRE(tavern.dialogue().grimoire().learn(*scald));
+
+    // A slot can never hold what the hand could not equip.
+    CHECK_FALSE(tavern.bindSpellToSlot(-1, "sting"));
+    CHECK_FALSE(tavern.bindSpellToSlot(Tavern::kQuickSlotCount, "sting"));
+    CHECK_FALSE(tavern.bindSpellToSlot(3, "no-such-crafting"));
+
+    // THE ROUND-TRIP: bind, select, and the hand agrees with the slot.
+    REQUIRE(tavern.bindSpellToSlot(3, "sting"));
+    REQUIRE(tavern.slotSpell(3) != nullptr);
+    CHECK(tavern.slotSpell(3)->id == "sting");
+    REQUIRE(tavern.equippedSpell() != nullptr);
+    CHECK(tavern.equippedSpell()->id == "scald");
+    REQUIRE(tavern.equipSlot(3));
+    CHECK(tavern.equippedSpell()->id == "sting");
+
+    // An empty slot refuses and leaves the hand exactly where it was.
+    CHECK_FALSE(tavern.equipSlot(4));
+    CHECK(tavern.equippedSpell()->id == "sting");
+
+    // And a cleared slot is an empty slot again.
+    REQUIRE(tavern.clearSlot(3));
+    CHECK(tavern.slotSpell(3) == nullptr);
+    CHECK_FALSE(tavern.equipSlot(3));
+}
+
+TEST_CASE("a bound quick slot is state the twin-run gate compares") {
+    // DELIBERATE STRUCTURE CHANGE, proven live: two rooms alike in every way
+    // but one slot binding must fingerprint apart, or the gate could never
+    // catch the runs disagreeing about what the number row readies.
+    const auto hashWith = [](bool bind) {
+        Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+        room.run(2);
+        Tavern& tavern = room.tavern();
+        const Spell* sting = tavern.spellbook().find("sting");
+        REQUIRE(sting != nullptr);
+        REQUIRE(tavern.dialogue().grimoire().learn(*sting));
+        if (bind) {
+            REQUIRE(tavern.bindSpellToSlot(6, "sting"));
+        }
+        WorldHasher hasher;
+        room.tavern().hash_into(hasher.section_sink(room.tavern().id()));
+        return hasher.section_hash(room.tavern().id());
+    };
+    CHECK(hashWith(false) != hashWith(true));
+}
+
 TEST_CASE("a trickle delivers its doses on the cadence the cost model priced") {
     // Scald: OVER_TIME, -1 a dose, 30 ticks -- three doses, ten seconds apart.
     Tavern::CastResult result;

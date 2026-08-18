@@ -1114,6 +1114,26 @@ public:
         return castCoolUntil_ > elapsed_ ? castCoolUntil_ - elapsed_ : 0;
     }
 
+    // --- the quick bar (slots 1-0, SPELLS BUILD) -----------------------------
+
+    /// Ten slots off the number row, matching render::Action::QuickSlot1-0.
+    static constexpr std::int32_t kQuickSlotCount = 10;
+    /// Binds a KNOWN crafting to one slot. False when the slot is out of
+    /// range or the grimoire does not know the id -- a slot can never hold a
+    /// crafting the hand could not equip. Kept as the ID, not a grimoire
+    /// index, for the identical reason equippedSpellId_ is: the grimoire
+    /// inserts in id order and learning something new must never silently
+    /// re-point a slot.
+    bool bindSpellToSlot(std::int32_t slot, std::string_view spellId);
+    /// The crafting a slot holds, or nullptr for an empty slot.
+    [[nodiscard]] const Spell* slotSpell(std::int32_t slot) const noexcept;
+    /// Empties one slot. False when the slot is out of range.
+    bool clearSlot(std::int32_t slot);
+    /// Equips whatever the slot holds, THROUGH equipSpellAt (grimoire order)
+    /// so the two doors into the hand share one lock. False for an empty
+    /// slot; the equipped id is untouched.
+    bool equipSlot(std::int32_t slot);
+
 private:
     void buildRoster();
     void applySchedules();
@@ -1237,6 +1257,11 @@ private:
     /// grimoire inserts in id order: learning a new crafting must never
     /// silently re-point what the hand is holding.
     std::string equippedSpellId_;
+    /// SPELLS BUILD: what each of the ten number-row slots holds, by id --
+    /// empty string is an empty slot. Hashed (a deliberate structure change,
+    /// stated at the hash site): which crafting a keypress readies decides
+    /// what the next cast does, so it is state the twin-run gate compares.
+    std::array<std::string, kQuickSlotCount> quickSlotIds_{};
     /// Room-time (elapsed_) tick the next cast is allowed at.
     std::int64_t castCoolUntil_ = 0;
     /// One OVER_TIME component still delivering: a scald working through, a

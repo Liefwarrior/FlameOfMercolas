@@ -3182,6 +3182,56 @@ bool Tavern::equipSpellAt(std::int32_t index) {
     return true;
 }
 
+bool Tavern::bindSpellToSlot(std::int32_t slot, std::string_view spellId) {
+    if (slot < 0 || slot >= kQuickSlotCount) {
+        return false;
+    }
+    // Only what the grimoire actually knows. A slot holding an id the hand
+    // could not equip would be a promise the number row cannot keep.
+    if (dialogue_.grimoire().find(spellId) == nullptr) {
+        return false;
+    }
+    quickSlotIds_[static_cast<std::size_t>(slot)] = std::string(spellId);
+    return true;
+}
+
+bool Tavern::clearSlot(std::int32_t slot) {
+    if (slot < 0 || slot >= kQuickSlotCount) {
+        return false;
+    }
+    quickSlotIds_[static_cast<std::size_t>(slot)].clear();
+    return true;
+}
+
+const Spell* Tavern::slotSpell(std::int32_t slot) const noexcept {
+    if (slot < 0 || slot >= kQuickSlotCount) {
+        return nullptr;
+    }
+    const std::string& id = quickSlotIds_[static_cast<std::size_t>(slot)];
+    if (id.empty()) {
+        return nullptr;
+    }
+    return dialogue_.grimoire().find(id);
+}
+
+bool Tavern::equipSlot(std::int32_t slot) {
+    const Spell* spell = slotSpell(slot);
+    if (spell == nullptr) {
+        return false;
+    }
+    // THROUGH equipSpellAt, deliberately: the grimoire index is looked up
+    // fresh (id order can have shifted since the bind) and the one equip
+    // path S13 built keeps its one caller-side contract. This is the caller
+    // that verb was waiting for.
+    const std::vector<Spell>& spells = dialogue_.grimoire().spells();
+    for (std::size_t i = 0; i < spells.size(); ++i) {
+        if (spells[i].id == spell->id) {
+            return equipSpellAt(static_cast<std::int32_t>(i));
+        }
+    }
+    return false;
+}
+
 Tavern::CastResult Tavern::playerCastEquipped() {
     CastResult out;
     const Spell* spell = equippedSpell();
@@ -3485,6 +3535,19 @@ void Tavern::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(trickle.magnitude));
         sink.put_int(static_cast<std::uint32_t>(trickle.dosesLeft));
         sink.put_int(static_cast<std::uint32_t>(trickle.cadenceLeft));
+    }
+    // SPELLS BUILD: the quick bar's ten slot contents, right beside the
+    // equipped crafting they exist to re-point. Which crafting a number key
+    // readies decides what the next cast does, so it is state the twin-run
+    // gate compares. DELIBERATE STRUCTURE CHANGE to the live Tavern hash,
+    // exactly the S13 shape above: the pinned codec goldens hash fixed byte
+    // specs, not this struct, and the live gates compare THIS shape against
+    // itself.
+    for (const std::string& slotId : quickSlotIds_) {
+        sink.put_int(static_cast<std::uint32_t>(slotId.size()));
+        for (const char character : slotId) {
+            sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));
+        }
     }
     nemesis_.hashInto(sink);
     dialogue_.hashInto(sink);

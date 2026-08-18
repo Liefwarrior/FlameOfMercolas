@@ -237,6 +237,18 @@ void pickCursorIfVisible(int& cursor, int page, int slot, std::size_t total) noe
     }
 }
 
+/// SPELLS BUILD: moved up from the HUD-line helpers' own anonymous namespace
+/// below, unchanged -- the Grimoire page and the quick bar (earlier in this
+/// file) speak the same upper-case menu furniture the HUD lines do.
+[[nodiscard]] std::string upperAscii(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        out.push_back(c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c);
+    }
+    return out;
+}
+
 }  // namespace
 
 Session::Session(const SessionConfig& config)
@@ -768,6 +780,7 @@ void Session::examine() {
 void Session::dismissOverlays() noexcept {
     casebookOpen_ = false;
     keysOpen_ = false;
+    grimoireOpen_ = false;
     optionsOpen_ = false;
     awaitingKey_ = false;
     firstRun_ = false;
@@ -878,6 +891,7 @@ void Session::toggleOptions() {
         // more way to get here than F2 alone used to have.
         casebookOpen_ = false;
         keysOpen_ = false;
+        grimoireOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
         menuFocus_ = kMenuFocusJournal;
@@ -983,6 +997,7 @@ void Session::togglePause() {
     // page reading the keyboard.
     casebookOpen_ = false;
     keysOpen_ = false;
+    grimoireOpen_ = false;
     optionsOpen_ = false;
     awaitingKey_ = false;
     menuFocus_ = kMenuFocusJournal;
@@ -1103,10 +1118,36 @@ void Session::selectQuickSlot(int slot) {
         return;
     }
     quickSlot_ = slot;
-    // WHAT IT HONESTLY IS. See the header: the binding is real and the slot is
-    // empty, and a line that said "READY: SOMETHING" would be a lie told to a
-    // player who is about to find out.
-    say("SLOT " + std::to_string(slot + 1) + " -- NOTHING IN IT YET.");
+    showQuickBar();
+    // SPELLS BUILD: a LOADED slot equips its crafting -- through
+    // Tavern::equipSlot, which routes through the same equipSpellAt the
+    // Grimoire page uses, so the CAST row, the strip's highlight and the next
+    // press of C all read the one equipped id. An empty slot still says so
+    // out loud: the binding is real, and a key that silently does nothing is
+    // a key the player reads as broken.
+    if (tavern_->equipSlot(slot)) {
+        // AUDIO WIRING: the same accept every list speaks -- the press
+        // changed what the hand holds.
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::UiConfirm);
+        }
+        say("SLOT " + std::to_string(slot + 1) + " -- READY: " +
+            upperAscii(tavern_->slotSpell(slot)->displayName) + ".");
+        return;
+    }
+    // AUDIO WIRING: the quiet tick a cursor move gets -- nothing changed.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
+    say("SLOT " + std::to_string(slot + 1) + " -- NOTHING IN IT. THE GRIMOIRE BINDS.");
+}
+
+void Session::showQuickBar() {
+    // A couple of seconds past the last touch -- the strip is up exactly
+    // while the wheel or the number row is being used. The ease itself is
+    // quickBarAnim_'s business, driven in syncPanelAnim()/step() like every
+    // other row.
+    quickBarShowSteps_ = kQuickBarShowSteps;
 }
 
 void Session::jump() {
@@ -1133,6 +1174,7 @@ void Session::toggleKeys() {
         // others down is how a page draws on screen while a different one is
         // still the one reading the keyboard.
         casebookOpen_ = false;
+        grimoireOpen_ = false;
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
@@ -1144,6 +1186,147 @@ void Session::toggleKeys() {
     casePage_ = 0;
     caseEntry_ = -1;
     syncPanelAnim();
+}
+
+// ---------------------------------------------------------------------------
+// SPELLS BUILD: the Grimoire page, and the quick bar it loads
+// ---------------------------------------------------------------------------
+
+void Session::toggleGrimoire() {
+    if (talking() || picking()) {
+        return;
+    }
+    const bool willOpen = !grimoireOpen_;
+    grimoireOpen_ = willOpen;
+    if (willOpen) {
+        // See toggleOptions' comment: an overlay that opens without putting the
+        // others down is how a page draws on screen while a different one is
+        // still the one reading the keyboard.
+        casebookOpen_ = false;
+        keysOpen_ = false;
+        optionsOpen_ = false;
+        pauseOpen_ = false;
+        quitArmed_ = false;
+        awaitingKey_ = false;
+        menuFocus_ = kMenuFocusJournal;
+    }
+    firstRun_ = false;
+    grimoireCursor_ = 0;
+    grimoirePage_ = 0;
+    syncPanelAnim();
+}
+
+std::vector<std::string> Session::grimoireRows() const {
+    // ONE ROW PER KNOWN CRAFTING, grimoire order -- the same order
+    // equipSpellAt counts in, so the number printed beside a row IS the index
+    // the equip spends. Name, the cost model's own difficulty (the number the
+    // linkcraft check is rolled against -- information, never a buff), FORGED
+    // on a composition of your own (forgedSpellId's "forged." prefix is the
+    // honest tag; craftedCount() only counts), the slot it is bound to, and
+    // READY on the one the hand is holding.
+    std::vector<std::string> rows;
+    const sim::Grimoire& book = tavern_->dialogue().grimoire();
+    const sim::Spell* held = tavern_->equippedSpell();
+    rows.reserve(book.spells().size());
+    for (const sim::Spell& spell : book.spells()) {
+        std::string row = upperAscii(spell.displayName);
+        row += "  D" + std::to_string(sim::spellDifficulty(spell));
+        if (spell.id.rfind("forged.", 0) == 0) {
+            row += "  FORGED";
+        }
+        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+            const sim::Spell* bound = tavern_->slotSpell(slot);
+            if (bound != nullptr && bound->id == spell.id) {
+                row += "  SLOT " + std::to_string(slot + 1);
+                break;
+            }
+        }
+        if (held != nullptr && held->id == spell.id) {
+            row += "  READY";
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+void Session::moveGrimoireCursor(int delta) {
+    if (!grimoireOpen_) {
+        return;
+    }
+    // AUDIO WIRING: the same one quiet tick every other list speaks.
+    if (audio_ != nullptr && delta != 0) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
+    wrapCursorAndPage(grimoireCursor_, grimoirePage_, delta,
+                      static_cast<int>(tavern_->dialogue().grimoire().spells().size()));
+}
+
+void Session::nextGrimoirePage() {
+    if (!grimoireOpen_) {
+        return;
+    }
+    advancePage(grimoirePage_, grimoireCursor_,
+                tavern_->dialogue().grimoire().spells().size());
+}
+
+void Session::chooseGrimoireRow(int slot) {
+    if (!grimoireOpen_ || slot < 0 || slot >= kTopicPageSize) {
+        return;
+    }
+    const int index = grimoirePage_ * kTopicPageSize + slot;
+    const std::vector<sim::Spell>& spells = tavern_->dialogue().grimoire().spells();
+    if (index >= static_cast<int>(spells.size())) {
+        return;
+    }
+    grimoireCursor_ = index;
+    // THE SAME LOCK THE QUICK BAR TURNS. equipSpellAt is the one door into
+    // the hand; the CAST row, the strip's highlight and the next press of C
+    // all read the one id it re-points.
+    if (tavern_->equipSpellAt(index)) {
+        // AUDIO WIRING: the same accept every list speaks.
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::UiConfirm);
+        }
+        say("READY: " + upperAscii(spells[static_cast<std::size_t>(index)].displayName) + ".");
+    }
+}
+
+void Session::adjustGrimoireSlot(int delta) {
+    if (!grimoireOpen_ || delta == 0) {
+        return;
+    }
+    const std::vector<sim::Spell>& spells = tavern_->dialogue().grimoire().spells();
+    if (grimoireCursor_ < 0 || grimoireCursor_ >= static_cast<int>(spells.size())) {
+        return;
+    }
+    const sim::Spell& spell = spells[static_cast<std::size_t>(grimoireCursor_)];
+    // Which slot holds this crafting now, or -1 -- the cycle walks
+    // NONE, 1..10 and wraps, so LEFT from NONE is slot 10 and RIGHT off
+    // slot 10 is NONE again. Moving it clears the slot it leaves.
+    std::int32_t current = -1;
+    for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+        const sim::Spell* bound = tavern_->slotSpell(slot);
+        if (bound != nullptr && bound->id == spell.id) {
+            current = slot;
+            break;
+        }
+    }
+    const std::int32_t positions = sim::Tavern::kQuickSlotCount + 1;
+    const std::int32_t next =
+        ((current + 1 + delta) % positions + positions) % positions - 1;
+    if (current >= 0) {
+        tavern_->clearSlot(current);
+    }
+    if (next >= 0) {
+        tavern_->bindSpellToSlot(next, spell.id);
+    }
+    // AUDIO WIRING: the same one quiet tick a slider nudge gets -- the
+    // restraint note stands, no new sound design.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
+    say(next >= 0 ? upperAscii(spell.displayName) + " -- SLOT " + std::to_string(next + 1) + "."
+                  : upperAscii(spell.displayName) + " -- NO SLOT.");
 }
 
 void Session::toggleMenuFocused(int focus) {
@@ -1181,6 +1364,7 @@ void Session::toggleMenuFocused(int focus) {
         // OPENING FRESH. Every other overlay stands down, same as
         // toggleOptions()/toggleKeys()/togglePause() already do on their own.
         keysOpen_ = false;
+        grimoireOpen_ = false;
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
@@ -1215,7 +1399,9 @@ void Session::toggleLetters() { toggleMenuFocused(kMenuFocusLetters); }
 // Morrowind round: one Menu, four tiles (Keys and Options moved to Pause)
 // ---------------------------------------------------------------------------
 
-bool Session::menuOpen() const noexcept { return casebookOpen_ || keysOpen_ || optionsOpen_; }
+bool Session::menuOpen() const noexcept {
+    return casebookOpen_ || keysOpen_ || grimoireOpen_ || optionsOpen_;
+}
 
 void Session::toggleMenu() {
     // THE KEY THAT OPENED IT CLOSES IT -- toggleMenuFocused() already carries
@@ -1493,6 +1679,11 @@ void Session::step(const sim::MoveInput& input) {
     // FIRST-PERSON COMBAT (S13). THE SAME PER-STEP ADVANCE.
     spellAnim_.advance();
     blockAnim_.advance();
+    // SPELLS BUILD. The strip's own countdown and ease -- see showQuickBar().
+    if (quickBarShowSteps_ > 0) {
+        --quickBarShowSteps_;
+    }
+    quickBarAnim_.advance();
     // INNOVATION SPRINT ITEM #2. THE SAME PER-STEP ADVANCE, ONE PER TILE.
     characterFocusAnim_.advance();
     mapFocusAnim_.advance();
@@ -2168,6 +2359,13 @@ void Session::closeConversation() {
         syncPanelAnim();
         return;
     }
+    if (grimoireOpen_) {
+        grimoireOpen_ = false;
+        grimoireCursor_ = 0;
+        grimoirePage_ = 0;
+        syncPanelAnim();
+        return;
+    }
     if (casebookOpen_) {
         // MORROWIND ROUND. If the focused Letters tile has a letter open,
         // ESC steps back to its own title list first -- the SAME "a page
@@ -2607,6 +2805,31 @@ DialogueViewState Session::dialogueView() const {
         view.page = casePage_;
         return view;
     }
+    if (grimoireOpen_) {
+        // SPELLS BUILD. The same one list widget every page is -- see
+        // toggleGrimoire()'s own header. The rows carry the difficulty out of
+        // the cost model beside every name: what the linkcraft check will be
+        // rolled against, which is information, never a discount.
+        view.open = true;
+        view.speaker = "GRIMOIRE";
+        view.epithet = "LEFT RIGHT BIND A SLOT  ENTER READIES";
+        const std::vector<std::string> rows = grimoireRows();
+        if (rows.empty()) {
+            // THE COMMON STATE, in the cast refusal's own words: the page and
+            // the C key must name the same door or one of them is lying.
+            view.line = "NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES.";
+        } else {
+            view.line =
+                "EVERY CRAFTING THE HAND KNOWS. D IS WHAT THE LINK ASKS OF YOUR "
+                "LINKCRAFT; A SLOT PUTS IT ON THE NUMBER ROW.";
+        }
+        for (const std::string& row : rows) {
+            view.topics.push_back(row);
+        }
+        view.cursor = grimoireCursor_;
+        view.page = grimoirePage_;
+        return view;
+    }
     if (casebookOpen_) {
         // MORROWIND ROUND: WHICHEVER TILE CURRENTLY HAS FOCUS. dialogueView()
         // used to check four mutually-exclusive xOpen_ bools in turn; now all
@@ -3004,16 +3227,6 @@ std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
 
 namespace {
 
-
-[[nodiscard]] std::string upperAscii(std::string_view text) {
-    std::string out;
-    out.reserve(text.size());
-    for (const char c : text) {
-        out.push_back(c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c);
-    }
-    return out;
-}
-
 /// Clipped to something the bottom-left corner can hold without walking across
 /// the frame. The HUD hugs its edge; a quest tracker that runs to the middle of
 /// the screen is the exact failure the Java build shipped.
@@ -3403,7 +3616,8 @@ bool Session::conversingNow() const noexcept {
     // overprint findings happen: two places computing the same fact, and
     // nothing catching them when a seventh page joined the list and only one
     // of the two remembered to add it.
-    return talking() || casebookOpen_ || keysOpen_ || optionsOpen_ || pauseOpen_;
+    return talking() || casebookOpen_ || keysOpen_ || grimoireOpen_ || optionsOpen_ ||
+           pauseOpen_;
 }
 
 void Session::syncPanelAnim() noexcept {
@@ -3418,7 +3632,10 @@ void Session::syncPanelAnim() noexcept {
     const bool panelWanted = conversingNow();
     if (audio_ != nullptr && panelWanted != panelAnim_.target()) {
         if (panelWanted) {
-            audioPanelWasMenu_ = casebookOpen_;
+            // SPELLS BUILD: the Grimoire page is paper too -- the same
+            // BookOpen/BookClose pair the tiled Menu already speaks, no new
+            // sound design.
+            audioPanelWasMenu_ = casebookOpen_ || grimoireOpen_;
             audio_->playOneShot(audioPanelWasMenu_ ? audio::SoundId::BookOpen
                                                    : audio::SoundId::UiOpen);
         } else {
@@ -3512,6 +3729,20 @@ void Session::syncPanelAnim() noexcept {
     // a guard going up.
     sync(spellAnim_, spellCache_, spellLine());
     sync(blockAnim_, blockCache_, blockLine());
+    // SPELLS BUILD. The quick bar strip: wanted while the wheel or the number
+    // row was touched inside the last couple of seconds (showQuickBar()'s
+    // countdown, run down in step()) and no panel owns the bottom band. The
+    // names are cached on the same visible-edge rule every sync() above uses,
+    // so the strip finishes its fade with its labels still on it.
+    const bool barWanted = !conversing && quickBarShowSteps_ > 0;
+    if (barWanted) {
+        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+            const sim::Spell* bound = tavern_->slotSpell(slot);
+            quickBarNames_[static_cast<std::size_t>(slot)] =
+                bound == nullptr ? std::string() : upperAscii(bound->displayName);
+        }
+    }
+    quickBarAnim_.setTarget(barWanted);
 }
 
 std::string Session::rivalLine() const {
@@ -3840,6 +4071,26 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.spellFade = spellAnim_.value();
     hud.blockLabel = std::string_view{blockCache_};
     hud.blockFade = blockAnim_.value();
+    // SPELLS BUILD. The quick bar strip: names out of the cache
+    // syncPanelAnim() keeps (so the fade-out still has labels), the selected
+    // cell off the same quickSlot_ the number row moves, and the equipped
+    // cell derived fresh from the ONE equipped id sim::Tavern holds -- the
+    // same id spellLine() just read for the CAST row, so the two can never
+    // disagree about what the hand is holding.
+    for (std::size_t slot = 0; slot < quickBarNames_.size(); ++slot) {
+        hud.quickSlots[slot] = std::string_view{quickBarNames_[slot]};
+    }
+    hud.quickSelected = quickSlot_;
+    if (const sim::Spell* held = tavern_->equippedSpell(); held != nullptr) {
+        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+            const sim::Spell* bound = tavern_->slotSpell(slot);
+            if (bound != nullptr && bound->id == held->id) {
+                hud.quickEquipped = slot;
+                break;
+            }
+        }
+    }
+    hud.quickBarFade = quickBarAnim_.value();
     // S9. Whether the room can see you, and the lock under the wire. Both on
     // edges, both empty when they have nothing to say -- the right-hand stack
     // for the first, the bottom band for the second. Both read their own
@@ -5725,6 +5976,31 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += result.flameStages;
     }
 
+    if (config.quickbar) {
+        // VERIFICATION ONLY. See SmokeRunConfig::quickbar's own header: the
+        // same public verbs a keypress calls, end to end -- page open, the
+        // cursor's crafting walked onto slot 3 (three RIGHT presses from
+        // NONE), page down, number pressed. The beat lands only if the slot
+        // genuinely holds a crafting AND the hand genuinely equipped it,
+        // which is the round-trip the whole task exists to close. BEFORE the
+        // cast block below, deliberately, so `--flame --quickbar --cast` is
+        // a true equip-then-cast sequence: what C spends is what the number
+        // row just readied.
+        session.closeConversation();
+        session.toggleGrimoire();
+        bool landed = false;
+        if (session.grimoireOpen()) {
+            session.adjustGrimoireSlot(3);
+            session.closeConversation();
+            session.selectQuickSlot(2);
+            const sim::Spell* bound = session.tavern().slotSpell(2);
+            const sim::Spell* held = session.tavern().equippedSpell();
+            landed = bound != nullptr && held != nullptr && bound->id == held->id;
+        }
+        result.scriptedWanted += 1;
+        result.scriptedLanded += landed ? 1 : 0;
+    }
+
     if (config.cast) {
         // VERIFICATION ONLY. See SmokeRunConfig::cast's own header: the same
         // call C makes, once. AFTER the flame block above, deliberately --
@@ -5736,6 +6012,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.castEquipped();
         result.scriptedWanted += 1;
         result.scriptedLanded += session.lastMessage().empty() ? 0 : 1;
+    }
+
+    if (config.grimoire) {
+        // VERIFICATION ONLY. See SmokeRunConfig::grimoire's own header. After
+        // the quickbar block, deliberately, so `--flame --quickbar --grimoire`
+        // photographs the page WITH a slot column on it.
+        session.closeConversation();
+        session.toggleGrimoire();
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.grimoireOpen() ? 1 : 0;
     }
 
     if (config.roofs) {
