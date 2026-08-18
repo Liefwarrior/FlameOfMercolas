@@ -1514,6 +1514,15 @@ struct SmokeRunConfig {
     /// that never heard of this is unaffected.
     std::string refocus;
     int refocusSteps = 0;
+    /// SHEETS BUILD. VERIFICATION ONLY, the identical reasoning every flag
+    /// above states: the character sheet's faction-ladder rows live on the
+    /// tile's SECOND page (page one is the legend tracks and the skills,
+    /// exactly full -- see characterRows()'s own header), and nothing on
+    /// this CLI could ever turn a tile's page, so the one row-set the
+    /// numbers-on-the-sheet ruling is about had no headless capture path at
+    /// all. N presses of the same public nextTopicPage() the 0/MORE key
+    /// makes, after the menu-opening flags above have put a tile up.
+    int tilePage = 0;
     /// VERIFICATION ONLY (INNOVATION SPRINT). Closes any open conversation
     /// and throws the player's own punch at whoever is nearest, retrying up
     /// to eight times (one movement step apart) until one actually LANDS --

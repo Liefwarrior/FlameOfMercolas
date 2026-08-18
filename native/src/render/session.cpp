@@ -6246,6 +6246,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         }
     }
 
+    // SHEETS BUILD. See SmokeRunConfig::tilePage's own header: N presses of
+    // the same public call the 0/MORE key makes, so a tile's second page --
+    // where the faction-ladder rows live -- can actually be photographed.
+    // After the menu-opening flags above, which is the only order in which
+    // there is a page to turn.
+    for (int i = 0; i < config.tilePage; ++i) {
+        session.nextTopicPage();
+    }
+
     // S7. The cursor, last, so it survives every scripted line above it. This
     // is the flag that lets a frame be taken OF the row that does not fit --
     // see SmokeRunConfig::cursorRow on why that had to be possible.

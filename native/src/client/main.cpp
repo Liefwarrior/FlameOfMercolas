@@ -390,6 +390,10 @@ void print_usage() {
         "                       focus, before the shutter (default 0, the very\n"
         "                       first frame of the swap). Ignored without\n"
         "                       --refocus\n"
+        "  --tile-page=N        VERIFICATION ONLY: N presses of the 0/MORE key\n"
+        "                       after the menu-opening flags, so a tile's\n"
+        "                       second page (the character sheet's faction\n"
+        "                       ladders live there) can be photographed\n"
         "  --street[=WHO]       stand next to somebody out in the WARD and talk\n"
         "                       to them. WHO is hand, watch, priest, disciple,\n"
         "                       keeper, fisher, sailor, carter, wastrel, urchin,\n"
@@ -651,6 +655,12 @@ void print_usage() {
             // VERIFICATION ONLY. See SmokeRunConfig::refocusSteps's own
             // header. Only read when --refocus is also given.
             options.smoke.refocusSteps = std::max(0, std::atoi(value));
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--tile-page=", &value)) {
+            // SHEETS BUILD. VERIFICATION ONLY. See SmokeRunConfig::tilePage's
+            // own header -- N presses of the 0/MORE key after the menu opens,
+            // so a tile's second page can be photographed.
+            options.smoke.tilePage = std::max(0, std::atoi(value));
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--street") == 0) {
             options.smoke.street = true;
