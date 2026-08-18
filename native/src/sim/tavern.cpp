@@ -1226,11 +1226,15 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     Fighter victim = target->asFighter();
     // FATIGUE BUILD: identical to the vermin swing above -- term first, cost
     // paid, MGT on the damage. The classify above already ruled this the
-    // room's fight, so the cost lands only on a swing that was thrown.
+    // room's fight, so the cost lands only on a swing that was thrown. The
+    // MGT it reads is the EFFECTIVE sheet, same as the vermin swing: a held
+    // set_the_shoulders is muscle for as long as it lasts, and reading the
+    // base sheet here (as this line briefly did) made a tuning count against
+    // a rat but not a man, which no doctrine anywhere argued for.
     const std::int32_t swingTerm = fatigue_.termQ8();
     fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
     result.blow = strike(playerWeapon_, victim, drawForPlayerAction(),
-                         meleeDamageBonus(playerAttributes_.value(AttributeId::Might)),
+                         meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
                          swingTerm);
     target->setHealth(victim.hp, victim.hpMax);
     target->setActivity(result.blow.downed ? Activity::Downed : Activity::Brawling);
