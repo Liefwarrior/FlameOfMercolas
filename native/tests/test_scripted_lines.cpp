@@ -81,6 +81,23 @@ TEST_CASE("the ward's bounty line lands all six of its beats") {
     CHECK(played.summary.find("paid=1") != std::string::npos);
 }
 
+TEST_CASE("--contract=held stops with the job still live, and owes only its two beats") {
+    // SHEETS BUILD. The full line ends PAID, which is exactly the one state
+    // the Journal tile's live-contract rows have nothing to show for -- see
+    // the ending's own note in runContractLine. Two beats wanted, two landed:
+    // a held run that did what was asked must not read as fallen short.
+    render::SmokeRunConfig run;
+    run.contract = true;
+    run.contractEnd = "held";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.contractBeats == 2);
+    CHECK(played.summary.find("taken=1") != std::string::npos);
+    CHECK(played.summary.find("paid=0") != std::string::npos);
+}
+
 TEST_CASE("the nemesis arc lands all seven of its beats") {
     render::SmokeRunConfig run;
     run.nemesis = true;
