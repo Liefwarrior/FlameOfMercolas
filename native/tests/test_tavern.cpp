@@ -668,11 +668,29 @@ TEST_CASE("the innkeeper rents a room and the player sleeps until morning") {
 
     const gull::GuestRoom& let = gull::kRooms[tavern.rentedRoom()];
     tavern.setPlayer(q8_tile_centre(let.standX), q8_tile_centre(let.standY), gull::kUpperBand);
+    // TIME-AND-TENURE BUILD: readiness is sleep()'s own checks with the
+    // hands still -- it must agree with the verb, and moving the clock is the
+    // verb's job alone.
+    const std::int32_t hourBefore = tavern.timeOfDay();
+    CHECK(tavern.sleepReadiness() == ServiceResult::Served);
+    CHECK(tavern.timeOfDay() == hourBefore);
+    // AND SLEEP MENDS -- the owner's ruling: the healing half of Rest/Wait
+    // is bed-only, and this is the bed. A body bruised by a fall wakes whole.
+    const std::int32_t whole = tavern.playerHp();
+    tavern.injurePlayer(5);
+    REQUIRE(tavern.playerHp() < whole);
     REQUIRE(tavern.sleep() == ServiceResult::Served);
+    CHECK(tavern.playerHp() == whole);
     CHECK(tavern.timeOfDay() == hourOfDay(7));
     // Morning: the fire is banked, the doors are shut, and the room is empty.
     CHECK_FALSE(tavern.isOpen());
     CHECK(tavern.patronCount() == 0);
+    // And the CHOSEN hour lands where it says -- sleepUntil is the Wait
+    // page's bed door, wrapping like every hour on this clock.
+    tavern.injurePlayer(3);
+    REQUIRE(tavern.sleepUntil(20) == ServiceResult::Served);
+    CHECK(tavern.timeOfDay() == hourOfDay(20));
+    CHECK(tavern.playerHp() == whole);
 }
 
 TEST_CASE("the Skyrunner contact is present and says nothing worth having") {

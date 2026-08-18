@@ -593,7 +593,27 @@ public:
 
     /// Sleeps until seven in the morning. Requires a rented room and a body in
     /// it. Returns Served and moves the clock; the caller moves the body.
+    /// TIME-AND-TENURE BUILD: sleeping now MENDS -- see sleepUntil.
     ServiceResult sleep();
+
+    /// TIME-AND-TENURE BUILD. The same rented bed, waking at a chosen hour
+    /// instead of the fixed seven. This is where the owner's ruling lands in
+    /// code: SLEEP heals and is bed-only (these checks are sleep()'s own,
+    /// unchanged); WAIT is the render layer's verb, passes time anywhere safe,
+    /// and mends nothing. The mend is total -- the same full restore
+    /// reviveAfterDefeat has always given, because a night in a paid bed and a
+    /// blackout on the quay are the two ways this build sleeps.
+    ServiceResult sleepUntil(std::int32_t hour);
+
+    /// sleep()'s own checks with the hands kept still: would the bed answer,
+    /// without moving the clock. Lets the render layer offer an hour-select
+    /// page only where sleeping would actually be Served.
+    [[nodiscard]] ServiceResult sleepReadiness() const noexcept;
+
+    /// TIME-AND-TENURE BUILD. True while anybody is actually swinging at the
+    /// player -- brawlers_ is non-empty. The render layer's "anywhere safe"
+    /// rule for WAIT reads it; a pure derived read, nothing new hashed.
+    [[nodiscard]] bool playerInBrawl() const noexcept { return !brawlers_.empty(); }
 
     /// Talks to whoever is nearest. Every role answers differently, and the
     /// Skyrunner contact answers by not answering.

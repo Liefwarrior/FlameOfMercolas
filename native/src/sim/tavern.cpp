@@ -1614,7 +1614,10 @@ ServiceResult Tavern::rentRoom() {
     return ServiceResult::Served;
 }
 
-ServiceResult Tavern::sleep() {
+ServiceResult Tavern::sleepReadiness() const noexcept {
+    // sleep()'s own three checks, unmoved and unduplicated: sleepUntil calls
+    // this before it touches the clock, so the two can never quietly disagree
+    // about where a bed answers.
     if (rentedRoom_ < 0) {
         return ServiceResult::NobodyThere;
     }
@@ -1628,9 +1631,25 @@ ServiceResult Tavern::sleep() {
     if (distance > 2 * kSubOne) {
         return ServiceResult::TooFar;
     }
-    skipTo(hourOfDay(7));
     return ServiceResult::Served;
 }
+
+ServiceResult Tavern::sleepUntil(std::int32_t hour) {
+    const ServiceResult ready = sleepReadiness();
+    if (ready != ServiceResult::Served) {
+        return ready;
+    }
+    skipTo(hourOfDay(((hour % 24) + 24) % 24));
+    // THE MEND, and the whole of the owner's SLEEP/WAIT distinction in one
+    // line. A night in a paid bed restores the body the same total way
+    // reviveAfterDefeat always has; WAIT (the render layer's verb) moves the
+    // identical clock and touches no hit point. Skill buys neither: this is a
+    // bed working, not a number being bought.
+    playerHp_ = playerHpMax_;
+    return ServiceResult::Served;
+}
+
+ServiceResult Tavern::sleep() { return sleepUntil(7); }
 
 // ---------------------------------------------------------------------------
 // talking
