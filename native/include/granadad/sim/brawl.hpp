@@ -44,6 +44,8 @@
 #include <span>
 #include <string_view>
 
+#include "granadad/sim/fatigue.hpp"
+
 namespace granadad::sim {
 
 /// What a fighter has in their hands.
@@ -154,7 +156,25 @@ struct Blow {
 /// from the system's own RNG; only its low bits are used, and it is taken as an
 /// argument rather than drawn here so the caller owns the draw ORDER, which is
 /// the thing the twin-run gate is actually watching.
-[[nodiscard]] Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll) noexcept;
+///
+/// FATIGUE BUILD, and the two defaults ARE the old function. `damageBonus` is
+/// MGT's runtime reader ((MGT-40)/15 -- see fatigue.hpp) and lands only on a
+/// blow that connected, floored so a weak arm still bruises.
+/// `fatigueTermQ8` reshapes the whiff: the shipped 1-in-8 miss (low three
+/// bits of the roll all zero) is UNTOUCHED and is the whole of the miss at a
+/// full pool, and an emptying pool adds a SECOND miss band read off the
+/// roll's own high bits -- (roll>>32)&63 against (full-term)/8, so 0 wide at
+/// full and 16/64 wide at empty, roughly 34% total whiff for an exhausted
+/// swing. SAME-ROLL DISCIPLINE: no new draw exists anywhere in this -- both
+/// bands and the variance are carved out of the one roll the caller already
+/// owned, and at kFatigueTermFullQ8 the function is bit-identical to what it
+/// replaced (test_fatigue.cpp sweeps that equivalence).
+///
+/// Ward brawlers call this with the defaults: they carry no pool in this
+/// build (see fatigue.hpp's header on where the player-scoped line is drawn).
+[[nodiscard]] Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
+                          std::int32_t damageBonus = 0,
+                          std::int32_t fatigueTermQ8 = kFatigueTermFullQ8) noexcept;
 
 // ---------------------------------------------------------------------------
 // the guard

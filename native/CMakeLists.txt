@@ -124,6 +124,11 @@ add_library(granadad-sim STATIC
     # because both depend on SkillTrack's own definition.
     src/sim/attributes.cpp
     src/sim/chargen.cpp
+    # FATIGUE BUILD -- the one-bar-everything pool (ELDER-SCROLLS-REFERENCE
+    # section 1.2 adapted to MGT/AGI/VIG/WIT and integer Q8) plus the four
+    # attributes' runtime readers. After attributes.cpp: the pool is sized
+    # off an AttributeBlock.
+    src/sim/fatigue.cpp
     # S4 -- the guilds. faction reads the owner's registry and the S4 ladders
     # hung off it; questline reads any stages-shaped quest file; spellforge is
     # canon's own cost model plus the composition verb the modular effect
@@ -441,6 +446,7 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_angle.cpp
         tests/test_tile_query.cpp
         tests/test_player.cpp
+        tests/test_fatigue.cpp
         tests/test_tavern.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp

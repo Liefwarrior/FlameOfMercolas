@@ -1167,7 +1167,14 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         result.targetId = rat->id();
         result.targetName = rat->name();
         Fighter prey = rat->asFighter();
-        result.blow = strike(playerWeapon_, prey, drawForPlayerAction());
+        // FATIGUE BUILD: the swing is powered by the wind it was thrown on --
+        // term read first, then the cost paid -- and MGT's reader rides the
+        // damage. Same draw, same order; see strike()'s own header.
+        const std::int32_t swingTerm = fatigue_.termQ8();
+        fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
+        result.blow = strike(playerWeapon_, prey, drawForPlayerAction(),
+                             meleeDamageBonus(playerAttributes_.value(AttributeId::Might)),
+                             swingTerm);
         rat->setHealth(prey.hp, prey.hpMax);
         rat->setActivity(result.blow.downed ? Activity::Downed : Activity::Walking);
         return result;
@@ -1208,7 +1215,14 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     }
 
     Fighter victim = target->asFighter();
-    result.blow = strike(playerWeapon_, victim, drawForPlayerAction());
+    // FATIGUE BUILD: identical to the vermin swing above -- term first, cost
+    // paid, MGT on the damage. The classify above already ruled this the
+    // room's fight, so the cost lands only on a swing that was thrown.
+    const std::int32_t swingTerm = fatigue_.termQ8();
+    fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
+    result.blow = strike(playerWeapon_, victim, drawForPlayerAction(),
+                         meleeDamageBonus(playerAttributes_.value(AttributeId::Might)),
+                         swingTerm);
     target->setHealth(victim.hp, victim.hpMax);
     target->setActivity(result.blow.downed ? Activity::Downed : Activity::Brawling);
     target->faceToward(playerX_, playerY_);
@@ -2255,6 +2269,48 @@ void Tavern::injurePlayer(std::int32_t amount) {
     if (playerHp_ <= kPlayerBrawlFloor) {
         playerFloored_ = true;
     }
+}
+
+// ---------------------------------------------------------------------------
+// the sheet and the wind -- fatigue build
+// ---------------------------------------------------------------------------
+
+void Tavern::setPlayerAttributes(const AttributeBlock& attributes) noexcept {
+    playerAttributes_ = attributes;
+    // The boot seam refills on purpose: a body arrives at the Docks rested,
+    // and this is called once beside setPlayerHealth, never mid-game.
+    fatigue_.resetFor(playerAttributes_);
+}
+
+void Tavern::stepPlayerFatigue(bool moving, bool sprinting) noexcept {
+    if (moving && sprinting) {
+        // The sprinting step pays its drain and earns nothing back -- the
+        // reference's own "regen while not draining" rule.
+        fatigue_.drain(kSprintDrainFinePerStep);
+        return;
+    }
+    fatigue_.regen(fatigueRegenFinePerStep(
+        playerAttributes_.value(AttributeId::Vigor),
+        dialogue_.skills().level(kGritSkill), moving));
+}
+
+void Tavern::chargePlayerJump() noexcept {
+    // A standing jump is legs, not climbing: AGI still prices it, but no
+    // amount of skyrunning makes hopping free -- the roofs teach walls.
+    fatigue_.drain(verticalFatigueCostFine(
+        kJumpFatiguePoints, playerAttributes_.value(AttributeId::Agility), 0));
+}
+
+void Tavern::chargePlayerMantle() noexcept {
+    fatigue_.drain(verticalFatigueCostFine(
+        kMantleFatiguePoints, playerAttributes_.value(AttributeId::Agility),
+        dialogue_.skills().level(kRoofSkill)));
+}
+
+void Tavern::chargePlayerLeap() noexcept {
+    fatigue_.drain(verticalFatigueCostFine(
+        kLeapFatiguePoints, playerAttributes_.value(AttributeId::Agility),
+        dialogue_.skills().level(kRoofSkill)));
 }
 
 Tavern::StealResult Tavern::crackStrongbox() {
@@ -3354,15 +3410,33 @@ Tavern::CastResult Tavern::playerCastEquipped() {
     // THE CHECK, and the ONE draw a cast costs -- taken only after every
     // refusal above has passed, so a refused press leaves the draw stream
     // exactly where it found it.
+    //
+    // FATIGUE BUILD, three readers, all neutral at the shipped baseline. WIT
+    // is percentage points on the check ((WIT-40)/5 -- the mind's runtime
+    // reader, fatigue.hpp); the FatigueTerm scales the whole chance DOWN from
+    // a full pool's x1 (term/kFatigueTermFullQ8, so a full pool computes the
+    // exact shipped number and an empty one x0.6 of it -- state degrading an
+    // outcome, never buying one past the ceiling the clamp still holds); and
+    // the body's share of working the link is paid in wind BEFORE the roll,
+    // slip or open -- effort spent is spent. Same single draw as ever.
     const std::int32_t level = dialogue_.skills().level(spell->skill);
     const std::int32_t difficulty = spellDifficulty(*spell);
+    const std::int32_t wit = playerAttributes_.value(AttributeId::Wit);
+    const std::int32_t castTerm = fatigue_.termQ8();
+    fatigue_.drain(kCastFatiguePoints * kFatiguePointFine);
+    const std::int32_t rawChance = kCastBasePercent + kCastPercentPerLevel * level -
+                                   kCastPercentPerDifficulty * difficulty +
+                                   castWitBonusPercent(wit);
     const std::int32_t chance =
-        std::clamp(kCastBasePercent + kCastPercentPerLevel * level -
-                       kCastPercentPerDifficulty * difficulty,
+        std::clamp(static_cast<std::int32_t>(
+                       (static_cast<std::int64_t>(rawChance) * castTerm) /
+                       kFatigueTermFullQ8),
                    kCastFloorPercent, kCastCeilPercent);
     const std::uint64_t roll = drawForPlayerAction();
     if (static_cast<std::int32_t>(roll % 100U) >= chance) {
-        castCoolUntil_ = elapsed_ + kFizzleCooldownTicks;
+        // WIT is the magicka-analog and RECOVERY is where it is spent -- both
+        // cooldowns scale by (340-WIT)/300, exactly x1 at the base sheet.
+        castCoolUntil_ = elapsed_ + witScaledCooldown(kFizzleCooldownTicks, wit);
         // NO SKILL CHARGE on a slip: linkcraft is learned by links that open
         // -- the same rule the teaching precedent set -- and a fizzle-farm
         // in a quiet corner should train nothing.
@@ -3370,7 +3444,7 @@ Tavern::CastResult Tavern::playerCastEquipped() {
         return out;
     }
     out.cast = true;
-    castCoolUntil_ = elapsed_ + spell->cooldownTicks;
+    castCoolUntil_ = elapsed_ + witScaledCooldown(spell->cooldownTicks, wit);
     dialogue_.skills().use(spell->skill);
     for (const SpellComponent& component : spell->components) {
         switch (effectModeOf(component.mode)) {
@@ -3585,6 +3659,16 @@ void Tavern::hash_into(HashSink& sink) const {
             sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));
         }
     }
+    // FATIGUE BUILD: the sheet and the wind. The four attributes decide what
+    // every punch, gait, climb cost and cast is worth from this run on, and
+    // the pool (current, max, winded) decides whether the next sprint step is
+    // even taken -- state the twin-run gate compares or does not protect.
+    // DELIBERATE STRUCTURE CHANGE to the live Tavern hash, the S13 shape: the
+    // pinned codec goldens (test_world_hash.cpp) hash fixed byte specs, not
+    // this struct, the baked-map world hash never reaches this code, and the
+    // live twin-run/cross-toolchain gates compare THIS shape against itself.
+    playerAttributes_.hashInto(sink);
+    fatigue_.hashInto(sink);
     nemesis_.hashInto(sink);
     dialogue_.hashInto(sink);
 }

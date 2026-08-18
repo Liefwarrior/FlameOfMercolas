@@ -37,6 +37,8 @@ std::string_view roofMoveName(RoofMove move) noexcept {
             return "airborne";
         case RoofMove::Blocked:
             return "blocked";
+        case RoofMove::Winded:
+            return "winded";
     }
     return "?";
 }
@@ -57,6 +59,8 @@ std::string_view roofRefusal(RoofMove move) noexcept {
             return "YOUR FEET ARE ALREADY OFF THE LEAD.";
         case RoofMove::Blocked:
             return "NO ROOM TO PUT A BODY DOWN THERE.";
+        case RoofMove::Winded:
+            return "NO WIND LEFT FOR THE CLIMB.";
     }
     return "";
 }
@@ -253,6 +257,12 @@ void PlayerBody::step(const MoveInput& input) noexcept {
     } else if (input.sprint) {
         speed = kSprintSpeed;
     }
+    // FATIGUE BUILD: Agility's reader, one multiply on whichever gait was
+    // chosen. At the default 256 this is `speed` exactly -- the shipped legs
+    // -- and the ceiling sheet's 304 stays comfortably inside kMaxStepQ8's
+    // substepping, so nothing about collision changes shape. See
+    // setSpeedScaleQ8's own header.
+    speed = (speed * speedScaleQ8_) >> 8;
     // A body in the air keeps the speed it had; there is no sprinting off a
     // ledge into a faster jump.
     if (input.jump && jumpStepsLeft_ == 0) {
@@ -793,6 +803,12 @@ std::uint64_t PlayerBody::digest() const noexcept {
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(crouchOffsetQ8_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(landingDipOffsetQ8_)));
     h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(jumpBufferStepsLeft_)));
+    // FATIGUE BUILD: Agility's speed multiplier. Constant per run once the
+    // sheet is applied, but it decides every step's displacement, so a digest
+    // that could not see it would call two different bodies the same body.
+    // DELIBERATE STRUCTURE CHANGE to the body digest, stated here the same
+    // way the Tavern hash states its own.
+    h = mix64(h + static_cast<std::uint64_t>(static_cast<std::uint32_t>(speedScaleQ8_)));
     return mix64(h + static_cast<std::uint64_t>(steps_));
 }
 

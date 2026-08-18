@@ -92,19 +92,35 @@ std::int32_t blockedDamage(std::int32_t damage, std::int32_t shieldwallLevel) no
     return std::max(1, damage * keptPercent / 100);
 }
 
-Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll) noexcept {
+Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
+            std::int32_t damageBonus, std::int32_t fatigueTermQ8) noexcept {
     Blow blow;
     // One in eight swings misses outright. A brawl that never whiffs reads as a
     // spreadsheet; one that whiffs half the time reads as broken.
     if ((roll & 0x7U) == 0U) {
         return blow;
     }
+    // FATIGUE BUILD: the second whiff band, and only ever a SECOND one -- the
+    // 1-in-8 above is the full-pool baseline and is deliberately untouched, so
+    // a full pool never buys past what shipped. The band is 0 wide at
+    // kFatigueTermFullQ8 and (full-empty)/8 == 16 of 64 at the floor, read off
+    // high bits the variance below never looks at. No draw is added: this is
+    // the same roll, argued about harder. See strike()'s own header.
+    const std::int32_t term = std::clamp(fatigueTermQ8, kFatigueTermEmptyQ8,
+                                         kFatigueTermFullQ8);
+    const std::int32_t tiredMiss64 = (kFatigueTermFullQ8 - term) / 8;
+    if (tiredMiss64 > 0 &&
+        static_cast<std::int32_t>((roll >> 32) & 63U) < tiredMiss64) {
+        return blow;
+    }
     const bool wasBloodied = isBloodied(target);
     // Base, plus 0..2. Small numbers on purpose: the damage curve is what makes
-    // a fist fight take a dozen exchanges instead of two.
+    // a fist fight take a dozen exchanges instead of two. The MGT bonus rides
+    // the same scale (0 at base 40, +4 at the ceiling) and the floor keeps a
+    // landed blow a blow whatever a future negative bonus does.
     const std::int32_t variance = static_cast<std::int32_t>((roll >> 3) % 3U);
     blow.landed = true;
-    blow.damage = baseDamage(weapon) + variance;
+    blow.damage = std::max(1, baseDamage(weapon) + variance + damageBonus);
     target.hp = std::max(0, target.hp - blow.damage);
     blow.bloodied = !wasBloodied && isBloodied(target);
     blow.downed = isDowned(target.hp);

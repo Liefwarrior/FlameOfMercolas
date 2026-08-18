@@ -1071,6 +1071,39 @@ public:
     /// one caller is a landing off a roof that was higher than the legs allow,
     /// and it lives here because this is where the player's hit points live.
     void injurePlayer(std::int32_t amount);
+
+    // --- the sheet and the wind (fatigue build) ------------------------------
+    //
+    // ATTRIBUTES GET THEIR RUNTIME READER HERE, closing the seam #84 left
+    // "deliberately uncrossed": the room holds the AttributeBlock chargen
+    // built, and every reader of it (MGT into the punch, AGI into the legs
+    // and the climb costs, VIG into this pool, WIT into the cast) is exactly
+    // neutral at the base-40 sheet -- see fatigue.hpp. The pool itself is the
+    // reference doc's one-bar-everything economy, adapted; its own header
+    // carries the mapping.
+
+    /// The boot seam, the same shape setPlayerHealth is: sets the sheet and
+    /// REFILLS the pool to the max the sheet derives. Not for gameplay.
+    void setPlayerAttributes(const AttributeBlock& attributes) noexcept;
+    [[nodiscard]] const AttributeBlock& playerAttributes() const noexcept {
+        return playerAttributes_;
+    }
+    [[nodiscard]] const PlayerFatigue& playerFatigue() const noexcept { return fatigue_; }
+    /// True while the pool is empty and has not yet recovered -- what the
+    /// sprint gate and the climb verbs read. See PlayerFatigue::winded.
+    [[nodiscard]] bool playerWinded() const noexcept { return fatigue_.winded(); }
+    /// One movement step of the pool's own economy: the sprint drain when the
+    /// legs are flat out, regen otherwise (halved while moving). Called by
+    /// whoever owns the step loop, right beside setPlayerMotion, with the
+    /// SAME flags -- the pool and the stealth model must never disagree about
+    /// what the legs were doing.
+    void stepPlayerFatigue(bool moving, bool sprinting) noexcept;
+    /// The verbs' own drains, AGI- and skyrunning-scaled (fatigue.hpp).
+    /// Charged by the caller that owns the verb, on success only -- a refused
+    /// climb costs nothing, exactly as it costs no time.
+    void chargePlayerJump() noexcept;
+    void chargePlayerMantle() noexcept;
+    void chargePlayerLeap() noexcept;
     /// True once a brawl has taken the player to the floor.
     [[nodiscard]] bool playerFloored() const noexcept { return playerFloored_; }
     [[nodiscard]] std::int32_t warningsGiven() const noexcept { return warningsGiven_; }
@@ -1294,6 +1327,14 @@ private:
     std::int32_t playerDrinks_ = 0;
     std::int32_t shoveX_ = 0;
     std::int32_t shoveY_ = 0;
+
+    // the sheet and the wind -- fatigue build. Both hashed (a declared
+    // structure change, stated at the hash site): the sheet decides what
+    // every punch, gait, climb and cast is worth, and the pool decides
+    // whether the next sprint step is refused, so two runs that disagreed
+    // about either would be two different games.
+    AttributeBlock playerAttributes_{};
+    PlayerFatigue fatigue_{};
 
     // the guard and the cast -- first-person combat's own player state
     bool playerBlocking_ = false;

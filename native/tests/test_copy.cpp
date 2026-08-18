@@ -165,7 +165,7 @@ TEST_CASE("every refusal a player can be given is a sentence") {
     CHECK(counterRefusal(ServiceResult::OutOfStock, Goods::Drink) !=
           counterRefusal(ServiceResult::OutOfStock, Goods::Room));
 
-    for (int m = 0; m <= static_cast<int>(RoofMove::Blocked); ++m) {
+    for (int m = 0; m <= static_cast<int>(RoofMove::Winded); ++m) {
         const RoofMove move = static_cast<RoofMove>(m);
         const std::string_view line = roofRefusal(move);
         if (move == RoofMove::Done) {

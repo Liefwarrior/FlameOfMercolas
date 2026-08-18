@@ -160,11 +160,15 @@ split collision with substepping, auto-mantle, fall curve; gaits are real-world 
 from `human_scale.hpp` (walk 1.5 / jog 5.1 / sprint 7.0 m/s). `controls.hpp` has the 12
 core actions incl. the in-flight Cast and Block (Block is held-only, read by
 `Tavern::tickBrawl`, scaled by shieldwall); `brawl.hpp` pins the real-time-brawl vs
-dedicated-combat-screen rule. Gaps: **no fatigue/stamina pool exists anywhere** (grep
-confirms) — the §1.2 one-bar-everything coupling is the single biggest missing feel
-system; speeds are constants, not f(skill) (skyrunning/athletics don't move your legs);
-no encumbrance, no swim state, no weapon records (reach/speed), no armed melee model yet —
-COMBAT-FEEL-REFERENCE.md and the combat screen specs are where §1.6's choices get made.
+dedicated-combat-screen rule. The fatigue build closed the biggest gap this section used
+to name: `sim/fatigue.hpp` is the §1.2 one-bar economy adapted to MGT/AGI/VIG/WIT and
+integer Q8 (max = 2·VIG+MGT+AGI; FatigueTerm 320→192 Q8 applied as degradation-only onto
+the existing brawl whiff and cast check, same-roll, no collapse in v1), the four
+attributes have their runtime readers (MGT→melee damage, AGI→gait scale + climb costs,
+VIG→pool/regen, WIT→cast check + cooldown recovery), and skyrunning/grit nudge climb
+cost/regen. Remaining gaps: no encumbrance, no swim state, no weapon records
+(reach/speed), no armed melee model yet — COMBAT-FEEL-REFERENCE.md and the combat screen
+specs are where §1.6's choices get made.
 
 ---
 

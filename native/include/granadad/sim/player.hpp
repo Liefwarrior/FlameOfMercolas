@@ -273,6 +273,13 @@ enum class RoofMove : std::uint8_t {
     Airborne = 5,
     /// The body would not fit where it came down.
     Blocked = 6,
+    /// FATIGUE BUILD: no wind left to haul with. PLAYERBODY NEVER RETURNS
+    /// THIS -- the body knows geometry, not stamina; the pool lives with the
+    /// room (sim/fatigue.hpp) and it is the CALLER that owns both who refuses
+    /// the verb before the body is ever asked. The value lives in this enum
+    /// so the refusal rides the same RoofResult/roofRefusal path every other
+    /// refused climb already rides.
+    Winded = 7,
 };
 
 /// The DIAGNOSTIC name of a move: "no ledge", "no gap". Logs and cases only.
@@ -535,6 +542,20 @@ public:
     void setYaw(Angle yaw) noexcept { yaw_ = yaw & (kTurnFull - 1); }
     void setPitch(Angle pitch) noexcept;
 
+    /// FATIGUE BUILD: AGILITY'S RUNTIME READER, the legs' own multiplier.
+    /// Q8 against a neutral 256, applied to whichever gait the step asked for
+    /// -- every gait equally, so the walk/jog/sprint ratios (and the stealth
+    /// balance asserted against them in human_scale.hpp) are preserved
+    /// exactly. Set once at boot from the chargen sheet through
+    /// agilitySpeedScaleQ8 (fatigue.hpp): 256 at the base-40 sheet, which is
+    /// bit-for-bit the legs every earlier build had, up to 304 at the
+    /// ceiling. SIM STATE and in the digest -- a multiplier the hash could
+    /// not see would let two runs disagree about where a body is standing.
+    void setSpeedScaleQ8(std::int32_t scaleQ8) noexcept {
+        speedScaleQ8_ = scaleQ8 < 64 ? 64 : (scaleQ8 > 512 ? 512 : scaleQ8);
+    }
+    [[nodiscard]] std::int32_t speedScaleQ8() const noexcept { return speedScaleQ8_; }
+
     /// A 64-bit digest of everything above. Two runs that agree here agree
     /// about the body; the twin-run gate and any future save can compare it
     /// without reaching into fields one at a time.
@@ -644,6 +665,8 @@ private:
     /// A jump asked for while the body could not take it yet, waiting to
     /// fire. See kJumpBufferSteps.
     std::int32_t jumpBufferStepsLeft_ = 0;
+    /// FATIGUE BUILD: see setSpeedScaleQ8. 256 is the legs as shipped.
+    std::int32_t speedScaleQ8_ = 256;
 };
 
 }  // namespace granadad::sim
