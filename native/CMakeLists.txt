@@ -794,3 +794,13 @@ install(TARGETS granadad-bake-lamps RUNTIME DESTINATION .)
 # context has no Kenney audio, so the only machine that can render the REAL
 # sound bank to an inspectable WAV is the one with the repo.
 install(TARGETS granadad-audio-probe RUNTIME DESTINATION .)
+
+# The content packer ships so that PACKAGING NEVER NEEDS A BUILD. The owner
+# directive behind it: producing granadad-standalone.exe must not depend on
+# compiling the game or running its test cycle. With this tool in dist/ (and
+# granadad-base-stripped.exe beside it, published by docker/build.Dockerfile),
+# scripts/package-standalone.ps1 re-packs a content tweak on the host in
+# seconds: run the packer over content/, concatenate onto the stripped base,
+# done. The docker build still packs its own standalone every green run --
+# that is the CI proof of the mechanism -- but it is no longer the only path.
+install(TARGETS granadad-pack-content RUNTIME DESTINATION .)

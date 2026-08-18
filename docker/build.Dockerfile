@@ -1264,13 +1264,25 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # discards trailing data, so the order is load-bearing. The dev exe in
     # dist/ stays fat and debuggable, exactly as it was.
     echo "=== granadad-standalone.exe: strip, append pack ==="; \
+    # The stripped-but-packless copy of the game is published AS ITS OWN
+    # ARTIFACT (granadad-base-stripped.exe), because strip is the one step of
+    # packaging only this container can do -- mingw-strip lives here. With it
+    # and granadad-pack-content.exe both in dist/, the owner re-packs a
+    # content tweak on the host in seconds (scripts/package-standalone.ps1)
+    # without compiling anything. It is captured BEFORE cat, obviously:
+    # base + pack is the standalone, and the base has to be the half without
+    # the pack in it.
     for base in granadad granadad-twin-gate; do \
         cp "/out/${base}.exe" "/tmp/${base}-standalone.exe"; \
         x86_64-w64-mingw32-strip -s "/tmp/${base}-standalone.exe"; \
+        if [ "$base" = granadad ]; then \
+            cp "/tmp/${base}-standalone.exe" /out/granadad-base-stripped.exe; \
+        fi; \
         cat /tmp/content.pack >> "/tmp/${base}-standalone.exe"; \
         mv "/tmp/${base}-standalone.exe" "/out/${base}-standalone.exe"; \
     done; \
-    ls -l /out/granadad-standalone.exe /out/granadad-twin-gate-standalone.exe; \
+    ls -l /out/granadad-standalone.exe /out/granadad-twin-gate-standalone.exe \
+          /out/granadad-base-stripped.exe; \
     \
     echo "=== verify every artifact is a self-contained Windows binary ==="; \
     # Two failure modes worth failing the build over, both of which produce an
@@ -1308,7 +1320,8 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     echo "=== the windows half must actually ship ==="; \
     for required in granadad-content-tests.exe content-fingerprint-linux-gcc.txt \
                     granadad-tests.exe granadad-twin-gate.exe world-hash-linux-gcc.txt \
-                    granadad-standalone.exe granadad-twin-gate-standalone.exe; do \
+                    granadad-standalone.exe granadad-twin-gate-standalone.exe \
+                    granadad-pack-content.exe granadad-base-stripped.exe; do \
         test -f "/out/$required" \
             || { echo "FATAL: /out/$required is missing. Without it the"; \
                  echo "       cross-toolchain comparison cannot be run on Windows"; \
