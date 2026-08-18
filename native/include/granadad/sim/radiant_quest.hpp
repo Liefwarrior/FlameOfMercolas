@@ -71,20 +71,20 @@
 // TASK #84 CHECKED WHETHER TONE/REPUTATION (S3's SocialLedger) GATES THIS
 // BOARD THE WAY DialogueDirector::brokerWillTalk() ALREADY GATES A
 // CONTRACT BOARD JOB (toneAttitude() >= Attitude::Neutral before a broker
-// will even discuss work). It does not, and the reason is not a missing
-// check -- it is that nothing in Session, Tavern or DialogueDirector ever
-// constructs, refreshes or reads a RadiantBoard at all. Grep the tree: every
-// reference to RadiantBoard/RadiantRaws/RadiantObjective outside this file
-// and radiant_quest.cpp is this file's own two test suites
-// (test_radiant_quest.cpp, test_radiant_variety.cpp). The generator this
-// file builds is real, tested and correct on its own terms; a player cannot
-// currently reach it by any means, so "does reputation affect its
-// availability" has no board to be unavailable FROM yet. That is the same
-// gap this file's own "PROSE IS DELIBERATELY NOT THIS SPRINT'S JOB" note
-// above already named for the brief text -- wiring a RadiantBoard into a
-// DialogueDirector, giving it topics a conversation can offer, and deciding
-// THEN whether toneAttitude() should gate it the way a contract broker's
-// does, is one more sprint's job, not a seam #84 closes by itself.
+// will even discuss work). When #84 ran, it did not -- because nothing in
+// Session, Tavern or DialogueDirector constructed, refreshed or read a
+// RadiantBoard at all, and "does reputation affect its availability" had no
+// board to be unavailable FROM.
+//
+// THE RADIANT BUILD CLOSED THAT GAP, exactly along the seam this paragraph
+// named: DialogueDirector now owns a RadiantBoard beside its ContractBoard
+// (posted off the live ward by Tavern::attachPeople/advanceSecond),
+// TopicKind::TakeRadiant/SettleRadiant put its rows on the giver's own topic
+// list, this board's rows carry a RadiantState the world hash compares, and
+// the #84 question got its answer in buildTopics: an OFFER is gated on
+// toneAttitude() >= Neutral -- brokerWillTalk's "acquaintance" bar, because
+// asking a stranger to carry your letter is a favour -- and a SETTLEMENT
+// deliberately is not, because work already done is owed for.
 
 #include <cstdint>
 #include <filesystem>
@@ -205,6 +205,22 @@ private:
 // one generated objective
 // ---------------------------------------------------------------------------
 
+/// RADIANT BUILD. What has become of an objective. Deliberately smaller than
+/// ContractState: an errand has no deadline (the giver keeps wanting it until
+/// it is done -- see refresh(), which carries a Taken row across the day
+/// turning), so there is no Expired here, and the Watch does not seize word
+/// out of a mouth, so there is no Seized either.
+enum class RadiantState : std::uint8_t {
+    /// On the board and not yet anybody's.
+    Offered = 0,
+    /// Taken. The giver is waiting.
+    Taken = 1,
+    /// Settled and paid.
+    Paid = 2,
+};
+
+[[nodiscard]] std::string_view radiantStateName(RadiantState state) noexcept;
+
 struct RadiantObjective {
     /// Unique for the life of a board. day * kRadiantObjectivesPerDay + slot,
     /// the same scheme ContractBoard uses.
@@ -237,8 +253,10 @@ struct RadiantObjective {
     std::string brief;
     std::int32_t pay = 0;
     std::int32_t postedOnDay = 0;
+    RadiantState state = RadiantState::Offered;
 
     [[nodiscard]] bool isFetch() const noexcept { return kind == RadiantKind::Fetch; }
+    [[nodiscard]] bool live() const noexcept { return state == RadiantState::Taken; }
 };
 
 /// How many objectives a fresh board offers. Four, matching kOffersPerDay --
@@ -246,6 +264,49 @@ struct RadiantObjective {
 /// because four is the shape S6 already found: enough to plan a route
 /// through the ward, few enough that "which one" is still a decision.
 inline constexpr std::int32_t kRadiantObjectivesPerDay = 4;
+
+/// RADIANT BUILD. How many errands a player may be holding at once. Three,
+/// matching kMaxTakenContracts and for its exact reason: enough to plan a
+/// route through the ward, few enough that "which one" is still a decision --
+/// and, with no expiry on an errand, the one bound that keeps a hoarded board
+/// from growing without limit across refresh()'s carry-over.
+inline constexpr std::int32_t kMaxTakenRadiant = 3;
+
+/// What taking one answered. The same four answers TakeResult gives for a
+/// contract, under its own name so the two vocabularies cannot be handed to
+/// the wrong board.
+enum class RadiantTakeResult : std::uint8_t {
+    Taken = 0,
+    NoSuchObjective = 1,
+    /// Already taken or paid.
+    NotOffered = 2,
+    /// You are already carrying three.
+    HandsFull = 3,
+};
+
+[[nodiscard]] std::string_view radiantTakeResultName(RadiantTakeResult result) noexcept;
+
+/// What settling one answered.
+enum class RadiantTurnInResult : std::uint8_t {
+    Paid = 0,
+    NoSuchObjective = 1,
+    /// Not taken -- there is nothing to settle.
+    NotTaken = 2,
+    /// FETCH ONLY. You do not have the goods.
+    Short = 3,
+    /// turnIn() asked of a deliver, or deliver() asked of a fetch. A caller
+    /// error named out loud rather than folded into Short, because "you are
+    /// short" on a job with no goods in it would be a lie about the world.
+    WrongKind = 4,
+};
+
+[[nodiscard]] std::string_view radiantTurnInResultName(RadiantTurnInResult result) noexcept;
+
+struct RadiantSettlement {
+    RadiantTurnInResult result = RadiantTurnInResult::NoSuchObjective;
+    std::int32_t pay = 0;
+    std::int32_t unitsTaken = 0;
+};
 
 // ---------------------------------------------------------------------------
 // the board
@@ -269,6 +330,13 @@ public:
     /// slot -- fewer than four objectives on a quiet day is the honest answer,
     /// the same way ContractBoard leaves a slot unfilled when its pool is
     /// empty.
+    ///
+    /// RADIANT BUILD: objectives already TAKEN survive the day turning,
+    /// exactly ContractBoard::refresh's rule and for its reason -- an errand
+    /// somebody is out walking is not cancelled because the sun came up.
+    /// Offered rows that nobody took are swept with the old day, and Paid
+    /// rows go with them: the record of what an errand earned lives in
+    /// paidCount()/coinEarned(), not in a row kept around to be re-read.
     void refresh(std::int32_t day, std::uint64_t worldSeed, const RadiantRaws& raws,
                 const WardPopulation& ward);
 
@@ -278,12 +346,41 @@ public:
     }
     [[nodiscard]] const RadiantObjective* find(std::int32_t id) const noexcept;
 
+    // --- RADIANT BUILD: the verbs that make the generator reachable ---------
+    //
+    // The exact take/turn-in shape ContractBoard proved, under radiant names.
+    // Nothing here knows what a conversation is; DialogueDirector owns which
+    // SPEAKER may say each of these, and the board only owns whether the
+    // answer is yes.
+
+    [[nodiscard]] std::int32_t takenCount() const noexcept;
+    [[nodiscard]] std::int32_t paidCount() const noexcept { return paid_; }
+    [[nodiscard]] std::int32_t coinEarned() const noexcept { return earned_; }
+
+    RadiantTakeResult take(std::int32_t id);
+
+    /// FETCH ONLY. Hands the goods over -- out of the stash, exactly the way
+    /// a contract is paid -- and answers with the pay, or with the reason
+    /// there is none.
+    RadiantSettlement turnIn(std::int32_t id, Stash& stash);
+
+    /// DELIVER ONLY. The word arrives. No goods move; the settlement is that
+    /// the target has now heard it, and the fee travels with the letter --
+    /// which is why a deliver pays at the TARGET's side of the walk rather
+    /// than sending the courier back across the ward for coin the giver
+    /// already parted with.
+    RadiantSettlement deliver(std::int32_t id);
+
     void hashInto(HashSink& sink) const;
 
 private:
+    [[nodiscard]] RadiantObjective* rowFor(std::int32_t id) noexcept;
+
     std::int32_t day_ = -1;
     /// Ascending by id. Never reordered.
     std::vector<RadiantObjective> rows_;
+    std::int32_t paid_ = 0;
+    std::int32_t earned_ = 0;
 };
 
 }  // namespace granadad::sim

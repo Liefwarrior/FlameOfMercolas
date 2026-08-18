@@ -218,6 +218,48 @@ bool radiantKindFromSymbol(std::string_view symbol, RadiantKind& out) noexcept {
     return false;
 }
 
+std::string_view radiantStateName(RadiantState state) noexcept {
+    switch (state) {
+        case RadiantState::Offered:
+            return "offered";
+        case RadiantState::Taken:
+            return "taken";
+        case RadiantState::Paid:
+            return "paid";
+    }
+    return "?";
+}
+
+std::string_view radiantTakeResultName(RadiantTakeResult result) noexcept {
+    switch (result) {
+        case RadiantTakeResult::Taken:
+            return "taken";
+        case RadiantTakeResult::NoSuchObjective:
+            return "no such objective";
+        case RadiantTakeResult::NotOffered:
+            return "not offered";
+        case RadiantTakeResult::HandsFull:
+            return "hands full";
+    }
+    return "?";
+}
+
+std::string_view radiantTurnInResultName(RadiantTurnInResult result) noexcept {
+    switch (result) {
+        case RadiantTurnInResult::Paid:
+            return "paid";
+        case RadiantTurnInResult::NoSuchObjective:
+            return "no such objective";
+        case RadiantTurnInResult::NotTaken:
+            return "not taken";
+        case RadiantTurnInResult::Short:
+            return "short";
+        case RadiantTurnInResult::WrongKind:
+            return "wrong kind";
+    }
+    return "?";
+}
+
 // ---------------------------------------------------------------------------
 // the raws
 // ---------------------------------------------------------------------------
@@ -418,7 +460,17 @@ void RadiantBoard::refresh(std::int32_t day, std::uint64_t worldSeed, const Radi
         return;
     }
     day_ = day;
-    rows_.clear();
+    // RADIANT BUILD: a taken errand survives the day turning -- the giver is
+    // still waiting for it -- and everything else is swept with the old day.
+    // ContractBoard::refresh's own rule, and expireStale()'s difference: an
+    // errand has no due night, so nothing here ever flips to Expired.
+    std::vector<RadiantObjective> kept;
+    for (RadiantObjective& row : rows_) {
+        if (row.state == RadiantState::Taken) {
+            kept.push_back(std::move(row));
+        }
+    }
+    rows_ = std::move(kept);
     if (!raws.loaded()) {
         return;
     }
@@ -515,6 +567,96 @@ void RadiantBoard::refresh(std::int32_t day, std::uint64_t worldSeed, const Radi
              [](const RadiantObjective& a, const RadiantObjective& b) { return a.id < b.id; });
 }
 
+// ---------------------------------------------------------------------------
+// RADIANT BUILD: the verbs
+// ---------------------------------------------------------------------------
+
+RadiantObjective* RadiantBoard::rowFor(std::int32_t id) noexcept {
+    for (RadiantObjective& row : rows_) {
+        if (row.id == id) {
+            return &row;
+        }
+    }
+    return nullptr;
+}
+
+std::int32_t RadiantBoard::takenCount() const noexcept {
+    std::int32_t count = 0;
+    for (const RadiantObjective& row : rows_) {
+        if (row.state == RadiantState::Taken) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+RadiantTakeResult RadiantBoard::take(std::int32_t id) {
+    RadiantObjective* row = rowFor(id);
+    if (row == nullptr) {
+        return RadiantTakeResult::NoSuchObjective;
+    }
+    if (row->state != RadiantState::Offered) {
+        return RadiantTakeResult::NotOffered;
+    }
+    if (takenCount() >= kMaxTakenRadiant) {
+        return RadiantTakeResult::HandsFull;
+    }
+    row->state = RadiantState::Taken;
+    return RadiantTakeResult::Taken;
+}
+
+RadiantSettlement RadiantBoard::turnIn(std::int32_t id, Stash& stash) {
+    RadiantSettlement out;
+    RadiantObjective* row = rowFor(id);
+    if (row == nullptr) {
+        return out;
+    }
+    if (row->kind != RadiantKind::Fetch) {
+        out.result = RadiantTurnInResult::WrongKind;
+        return out;
+    }
+    if (row->state != RadiantState::Taken) {
+        out.result = RadiantTurnInResult::NotTaken;
+        return out;
+    }
+    if (stash.count(row->good) < row->units) {
+        out.result = RadiantTurnInResult::Short;
+        return out;
+    }
+    // Out of the sack THROUGH the stash's own verb, so nothing is minted and
+    // nothing vanishes untallied -- the identical hands a contract's goods go
+    // through.
+    out.unitsTaken = stash.take(row->good, row->units);
+    out.pay = row->pay;
+    out.result = RadiantTurnInResult::Paid;
+    row->state = RadiantState::Paid;
+    ++paid_;
+    earned_ += row->pay;
+    return out;
+}
+
+RadiantSettlement RadiantBoard::deliver(std::int32_t id) {
+    RadiantSettlement out;
+    RadiantObjective* row = rowFor(id);
+    if (row == nullptr) {
+        return out;
+    }
+    if (row->kind != RadiantKind::Deliver) {
+        out.result = RadiantTurnInResult::WrongKind;
+        return out;
+    }
+    if (row->state != RadiantState::Taken) {
+        out.result = RadiantTurnInResult::NotTaken;
+        return out;
+    }
+    out.pay = row->pay;
+    out.result = RadiantTurnInResult::Paid;
+    row->state = RadiantState::Paid;
+    ++paid_;
+    earned_ += row->pay;
+    return out;
+}
+
 void RadiantBoard::hashInto(HashSink& sink) const {
     sink.put_int(static_cast<std::uint32_t>(day_));
     sink.put_int(static_cast<std::uint32_t>(rows_.size()));
@@ -527,7 +669,14 @@ void RadiantBoard::hashInto(HashSink& sink) const {
         sink.put_byte(static_cast<std::uint32_t>(row.good));
         sink.put_int(static_cast<std::uint32_t>(row.units));
         sink.put_int(static_cast<std::uint32_t>(row.pay));
+        // RADIANT BUILD. Which errands were taken and which were settled is
+        // exactly the state a board cannot regenerate from (day, seed, ward),
+        // so it is state and it is hashed -- the same sentence ContractBoard
+        // hashes its own rows under.
+        sink.put_byte(static_cast<std::uint32_t>(row.state));
     }
+    sink.put_int(static_cast<std::uint32_t>(paid_));
+    sink.put_int(static_cast<std::uint32_t>(earned_));
 }
 
 }  // namespace granadad::sim
