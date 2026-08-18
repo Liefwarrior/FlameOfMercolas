@@ -403,30 +403,36 @@ TEST_CASE("standing under a lamp does not white out the frame") {
 }
 
 TEST_CASE("the skyline backdrop stands in the southern sky and the night swallows it") {
-    // DISTRICT PHASE A. The Inner Wall and the palace are "never maps, only
-    // backdrops" (Gazetteer section 1), so they are paint in the sky band --
-    // and paint can be asserted on: south has it, seaward never does, night
-    // swallows it whole, and the three authored variants are actually three.
+    // DISTRICT PHASE A, settled: the owner picked the stepped silhouette, the
+    // losing variants and the GRANADAD_SKYLINE selector are gone, and the
+    // compositor always paints the one skyline. The Inner Wall and the palace
+    // are "never maps, only backdrops" (Gazetteer section 1), so they are
+    // paint in the sky band -- and paint can be asserted on: south has it,
+    // seaward never does, night swallows it whole.
     //
-    // The camera floats high over the ward on purpose. Up there the southern
-    // sky is unoccluded AND the z-window clips the whole district out of the
-    // frame, so every comparison below is sky against sky. Street-level
-    // occlusion is what the screenshots prove; this case proves the compositor.
+    // The camera floats high over the ward on purpose. Up there the sky is
+    // unoccluded AND the z-window clips the whole district out of the frame,
+    // so every frame below is ALL sky (pinned via FrameStats) and every
+    // comparison is sky against sky. Street-level occlusion needs no selector
+    // to prove: the backdrop writes sky pixels only and the world pass
+    // unconditionally overwrites the pixels it draws geometry into, so any
+    // frame with skyPixels == 0 provably carries zero backdrop pixels.
     Session session(docksAt(12));
     Camera aloft = session.camera();
     aloft.z = bandSurface(26);
     aloft.pitch = 0.0F;
 
     constexpr float kSouth = 3.14159265F;
-    const auto pixelsWith = [&](int variant, float yaw, int hour) {
+    const auto pixelsAt = [&](float yaw, int hour) {
         RenderSettings settings;
         settings.timeOfDay = hour * 3600;
-        settings.skylineVariant = variant;
         settings.drawSprites = false;
         Camera view = aloft;
         view.yaw = yaw;
         Framebuffer frame(320, 180);
-        session.renderer().renderFrame(frame, view, settings, {});
+        const FrameStats stats = session.renderer().renderFrame(frame, view, settings, {});
+        // Sky against sky, or every comparison below is comparing geometry.
+        REQUIRE(stats.skyPixels == static_cast<std::size_t>(320 * 180));
         return frame.pixels();
     };
     const auto differing = [](const std::vector<std::uint32_t>& a,
@@ -440,40 +446,39 @@ TEST_CASE("the skyline backdrop stands in the southern sky and the night swallow
         return count;
     };
 
-    // Whatever the build environment says, the variant is one of the four.
-    CHECK(defaultSkylineVariant() >= 0);
-    CHECK(defaultSkylineVariant() <= 3);
-
-    // Facing south at noon: each variant is present, and they are distinct
-    // silhouettes rather than one shape behind three names.
-    const std::vector<std::uint32_t> bare = pixelsWith(0, kSouth, 12);
-    const std::vector<std::uint32_t> restrained = pixelsWith(1, kSouth, 12);
-    const std::vector<std::uint32_t> stepped = pixelsWith(2, kSouth, 12);
-    const std::vector<std::uint32_t> dramatic = pixelsWith(3, kSouth, 12);
-    CHECK(differing(bare, restrained) > 200U);
-    CHECK(differing(restrained, stepped) > 100U);
-    CHECK(differing(stepped, dramatic) > 100U);
+    // Facing south at noon the silhouette is present. The bare sky gradient is
+    // a function of the screen ROW alone -- no yaw term anywhere in it -- so a
+    // southern all-sky frame can differ from a seaward one only where the
+    // backdrop stands, and it does, substantially.
+    const std::vector<std::uint32_t> seaward = pixelsAt(0.0F, 12);
+    const std::vector<std::uint32_t> southern = pixelsAt(kSouth, 12);
+    CHECK(differing(seaward, southern) > 200U);
 
     // It is a MASS, not a glow: everything it touches gets darker.
-    double bareSum = 0.0;
-    double restrainedSum = 0.0;
-    for (std::size_t i = 0; i < bare.size(); ++i) {
-        const Rgb before = unpackRgb(bare[i]);
-        const Rgb after = unpackRgb(restrained[i]);
-        bareSum += static_cast<double>(0.2126F * before.r + 0.7152F * before.g +
-                                       0.0722F * before.b);
-        restrainedSum += static_cast<double>(0.2126F * after.r + 0.7152F * after.g +
-                                             0.0722F * after.b);
+    double seawardSum = 0.0;
+    double southernSum = 0.0;
+    for (std::size_t i = 0; i < seaward.size(); ++i) {
+        const Rgb before = unpackRgb(seaward[i]);
+        const Rgb after = unpackRgb(southern[i]);
+        seawardSum += static_cast<double>(0.2126F * before.r + 0.7152F * before.g +
+                                          0.0722F * before.b);
+        southernSum += static_cast<double>(0.2126F * after.r + 0.7152F * after.g +
+                                           0.0722F * after.b);
     }
-    CHECK(restrainedSum < bareSum);
+    CHECK(southernSum < seawardSum);
 
-    // Seaward is EMPTY: the harbour horizon carries no silhouette in any
-    // variant, per the geography the tables were authored from.
-    CHECK(differing(pixelsWith(0, 0.0F, 12), pixelsWith(3, 0.0F, 12)) == 0U);
+    // Seaward is EMPTY, per the geography the table was authored from. Two
+    // different seaward yaws whose whole frustums sit inside the unauthored
+    // arc (hfovTan 1: +/-45 degrees around each) render the same frame -- a
+    // silhouette pans with yaw while the row-only gradient cannot, so any
+    // authored mass over the harbour would force these apart.
+    CHECK(differing(pixelsAt(-0.25F, 12), pixelsAt(0.25F, 12)) == 0U);
 
-    // And at midnight the closed-in fog swallows the backdrop entirely: the
-    // dramatic variant and no variant at all are the same frame.
-    CHECK(differing(pixelsWith(0, kSouth, 0), pixelsWith(3, kSouth, 0)) == 0U);
+    // And at midnight daylight is exactly 0 (the day-curve case above pins
+    // it), the backdrop's alpha is daylight times the fog term, and the
+    // closed-in fog swallows the mass entirely: the southern sky and the
+    // seaward sky become the same frame.
+    CHECK(differing(pixelsAt(0.0F, 0), pixelsAt(kSouth, 0)) == 0U);
 }
 
 TEST_CASE("the two harbour beacons carry through the night fog") {
@@ -503,7 +508,10 @@ TEST_CASE("the two harbour beacons carry through the night fog") {
 
     RenderSettings settings;
     settings.timeOfDay = 0;
-    settings.skylineVariant = 0;
+    // No skyline switch exists any more, and none is needed here: at midnight
+    // daylight is 0 so the backdrop's alpha is exactly 0, and the camera faces
+    // north into the unauthored seaward arc besides. The sky behind the sprite
+    // is bare gradient twice over.
 
     SpriteInstance glow;
     glow.x = aloft.x;

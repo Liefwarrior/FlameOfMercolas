@@ -166,19 +166,6 @@ struct SpriteInstance {
     int artV1 = 0;
 };
 
-/// DISTRICT PHASE A: which authored skyline-backdrop silhouette this build
-/// paints, read ONCE from the GRANADAD_SKYLINE environment variable. 0 is off;
-/// 1 restrained (a low wall line, one palace mass); 2 stepped (wall + palace
-/// with subordinate towers); 3 dramatic (taller palace, gate-tower punctuation
-/// along the wall crest). Anything unset or unparseable is variant 1.
-///
-/// An environment variable rather than a CLI flag on purpose: the variants are
-/// an OWNER'S CHOICE pending screenshots, main.cpp belongs to another team this
-/// sprint, and the renderer defaulting its own setting keeps the whole affair
-/// inside the two files that own the sky. The losers get deleted in a follow-up
-/// commit and this hook goes with them.
-[[nodiscard]] int defaultSkylineVariant() noexcept;
-
 struct RenderSettings {
     /// Seconds since midnight. Drives ambient, fog and whether lamps carry.
     int timeOfDay = 20 * 3600;
@@ -193,12 +180,12 @@ struct RenderSettings {
     int levelsBelow = 4;
     int levelsAbove = 6;
     bool drawSprites = true;
-    /// DISTRICT PHASE A: the skyline backdrop variant, defaulted from the
-    /// environment (see defaultSkylineVariant). The backdrop writes SKY PIXELS
-    /// ONLY -- it never touches depth, geometry, or anything the sim can see --
-    /// so world geometry occludes it exactly the way a real landmark is
-    /// occluded, and the world hash cannot move.
-    int skylineVariant = defaultSkylineVariant();
+    /// NOTE there is no skyline switch. The city backdrop (the owner's pick,
+    /// the stepped silhouette -- see kSkyline in world_renderer.cpp) is simply
+    /// how the southern sky looks. It writes SKY PIXELS ONLY -- it never
+    /// touches depth, geometry, or anything the sim can see -- so world
+    /// geometry occludes it exactly the way a real landmark is occluded, and
+    /// the world hash cannot move.
     /// Lights that are not in the baked sidecar because they come and go: a
     /// tavern hearth, the candles on its tables. See dynamicGlowAt().
     std::vector<Lamp> dynamicLamps;
