@@ -193,6 +193,15 @@ public:
     /// boot seam setPlayerHealth is -- a body arrives at the Docks rested.
     void resetFor(const AttributeBlock& attributes) noexcept;
 
+    /// HELD-EFFECTS BUILD. Re-sizes the pool for a sheet WITHOUT refilling:
+    /// a held tuning that raises MGT or AGI mid-run grows the ceiling and
+    /// grants not one fine unit of free wind (a recastable refill would be
+    /// state flat-buying recovery, the S9 guardrail's exact shape), and one
+    /// lapsing clamps what is left down to the smaller pool. `winded` is
+    /// deliberately untouched -- only regen crossing the recovery line
+    /// clears it, exactly as before this method existed.
+    void resizeFor(const AttributeBlock& attributes) noexcept;
+
     [[nodiscard]] std::int32_t currentFine() const noexcept { return currentFine_; }
     [[nodiscard]] std::int32_t maxFine() const noexcept { return maxFine_; }
     /// The bar's own numbers: points, for "fatigue of max" the way hp is drawn.

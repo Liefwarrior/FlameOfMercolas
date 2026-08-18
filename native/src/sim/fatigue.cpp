@@ -103,6 +103,13 @@ void PlayerFatigue::resetFor(const AttributeBlock& attributes) noexcept {
     winded_ = false;
 }
 
+void PlayerFatigue::resizeFor(const AttributeBlock& attributes) noexcept {
+    maxFine_ = fatigueMaxPoints(attributes) * kFatiguePointFine;
+    if (currentFine_ > maxFine_) {
+        currentFine_ = maxFine_;
+    }
+}
+
 void PlayerFatigue::drain(std::int32_t fine) noexcept {
     if (fine <= 0) {
         return;

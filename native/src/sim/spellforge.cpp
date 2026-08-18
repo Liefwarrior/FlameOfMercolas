@@ -685,6 +685,14 @@ void Grimoire::hashInto(HashSink& sink) const {
             put_string(sink, component.mode);
             sink.put_int(static_cast<std::uint32_t>(component.magnitude));
             sink.put_int(static_cast<std::uint32_t>(component.durationTicks));
+            // HELD-EFFECTS BUILD: the param column joins the hash the moment
+            // the loader stops dropping it -- which attribute a tuning row
+            // moves decides what a cast does, so two runs disagreeing about
+            // it would be two different games. DELIBERATE STRUCTURE CHANGE
+            // to the live Grimoire hash, the S13 shape: the pinned codec
+            // goldens (test_world_hash.cpp) hash fixed byte specs, not this
+            // struct, and the live gates compare THIS shape against itself.
+            put_string(sink, component.param);
         }
     }
 }

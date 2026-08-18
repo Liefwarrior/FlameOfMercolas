@@ -84,6 +84,7 @@ Spellbook Spellbook::load(const std::filesystem::path& contentDir) {
                 component.mode = stringOr(part, "mode", "");
                 component.magnitude = intOr(part, "magnitude", 0);
                 component.durationTicks = intOr(part, "durationTicks", 0);
+                component.param = stringOr(part, "param", "");
                 spell.components.push_back(std::move(component));
             }
         }

@@ -300,14 +300,15 @@ inline constexpr std::int32_t kBenchDurationStep = 10;
 
 /// Craftings the player has been taught, and craftings the player composed.
 ///
-/// VERIFICATION GAP (S4): NOTHING CASTS THESE. A crafting is recorded, priced,
-/// hashed and shown; no code resolves one, so no effect ever lands on a body.
-/// The cost model, the pairing table and the composition verb are all real and
-/// tested; the verb that spends a cooldown and writes a hit point is not built,
-/// and `Spell::cooldownTicks` on a forged row is therefore stored and read by
-/// nobody. MAGIC-CANON section 4 is the design that a caster would have to
-/// obey when it lands: only the played actor casts, nothing dies, and the
-/// vitality floor is structural.
+/// THE S4 GAP ("NOTHING CASTS THESE") IS CLOSED: Tavern::playerCastEquipped
+/// (S13) spends these through the linkcraft check, cooldownTicks included,
+/// under MAGIC-CANON section 4's rules -- only the played actor casts,
+/// nothing dies, the vitality floor is structural -- and the held-effects
+/// build made WHILE_ACTIVE self tunings real state. What a FORGED row still
+/// cannot do is hold a tuning: this bench has no param field, so a composed
+/// ATTRIBUTE component names no string and the cast refuses it out loud
+/// rather than guessing a limb. Giving the bench that sixth field is the
+/// remaining half of this gap.
 ///
 /// SIMULATION STATE: sorted by id, hashed, and byte-encodable, for the same
 /// reason the social ledger is -- a thing the twin-run gate cannot see is a

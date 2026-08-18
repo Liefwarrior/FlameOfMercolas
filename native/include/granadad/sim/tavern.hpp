@@ -1172,13 +1172,63 @@ public:
         std::int32_t targetId = -1;
     };
     /// Casts the equipped crafting. Refuses, in order and out loud: an empty
-    /// grimoire, a link still cooling, an axis nothing holds yet (see the
-    /// VERIFICATION GAP in the .cpp), the unbridged link, an empty reach. A
-    /// harmful touch on a person carries a punch's own consequences -- the
-    /// brawl list, the ledger, the offence -- because a scald is an assault
-    /// whatever the hand was holding. The cast check is linkcraft against
-    /// spellDifficulty: skill raises the odds and never buys certainty.
+    /// grimoire, a link still cooling, an axis or target nothing can hold yet
+    /// (temperature, another body's tuning, a forged tuning with no named
+    /// string -- see the VERIFICATION GAP (S15) in the .cpp), the unbridged
+    /// link, an empty reach. A harmful touch on a person carries a punch's
+    /// own consequences -- the brawl list, the ledger, the offence -- because
+    /// a scald is an assault whatever the hand was holding. The cast check is
+    /// linkcraft against spellDifficulty: skill raises the odds and never
+    /// buys certainty. A WHILE_ACTIVE self tuning that opens lands as a live
+    /// row on heldEffects() -- recast refreshes it whole -- and is felt
+    /// through effectiveAttributes() until its clock runs out.
     CastResult playerCastEquipped();
+
+    // --- the held craftings (HELD-EFFECTS BUILD) ------------------------------
+    //
+    // WHAT S13 LEFT REFUSING, MADE REAL FOR THE ONE AXIS SOMETHING READS.
+    // A WHILE_ACTIVE component is a live row on the player: laid by a cast,
+    // refreshed by a recast of the same crafting, lapsing on the room's own
+    // clock. ATTRIBUTE rows are the whole point of sequencing this after the
+    // fatigue build -- the temporary delta flows through the exact runtime
+    // readers that build just crossed (MGT into the punch and the pool, AGI
+    // into the gait and the climb costs, VIG into the pool, WIT into the cast
+    // and its recovery) via effectiveAttributes(), so one crafting is felt
+    // everywhere an attribute already is. TEMPERATURE rows still refuse:
+    // nothing in the live sim reads heat on a body (the baked map's
+    // temperature lane is bake-time data), and holding a row nothing reads
+    // would be a success toast over a no-op -- see playerCastEquipped().
+
+    /// One live hold. INTEGER STATE, hashed -- see hash_into's declared note.
+    struct ActiveHold {
+        /// The crafting that laid it -- the refresh/replace key, and how the
+        /// HUD finds its display name in the grimoire.
+        std::string spellId;
+        /// The string it tunes.
+        AttributeId attribute = AttributeId::Might;
+        /// Signed, the component's own.
+        std::int32_t magnitude = 0;
+        /// The elapsed_ tick it lapses on -- the same absolute-clock shape
+        /// castCoolUntil_ uses, so a night asleep (skipTo) runs it out
+        /// honestly instead of pausing it.
+        std::int64_t expiresAt = 0;
+    };
+    /// Every live hold, in the order they were laid (refresh keeps a
+    /// crafting's place). Deterministic: casts are the only writer.
+    [[nodiscard]] const std::vector<ActiveHold>& heldEffects() const noexcept {
+        return heldEffects_;
+    }
+    /// Seconds of room time this hold has left. 0 means it lapses this second.
+    [[nodiscard]] std::int64_t holdSecondsLeft(const ActiveHold& hold) const noexcept {
+        return hold.expiresAt > elapsed_ ? hold.expiresAt - elapsed_ : 0;
+    }
+    /// THE SHEET EVERY RUNTIME READER ACTUALLY READS: the chargen base plus
+    /// every live tuning, the per-attribute total clamped to spellforge's
+    /// +/-kAttributeModifierLimit ("held to +/-2 however many rows stack" --
+    /// spells.json's own words) and then to the attribute floor/ceiling.
+    /// playerAttributes() stays the BASE sheet; this is the derived read, so
+    /// a lapsed hold restores yesterday's numbers exactly.
+    [[nodiscard]] AttributeBlock effectiveAttributes() const noexcept;
 
     /// The crafting the next cast will spend, or nullptr with an empty
     /// grimoire. When nothing has been picked the FIRST known crafting is the
@@ -1255,6 +1305,16 @@ private:
     void tickPatrons();
     /// Advances every trickle still delivering. One second per call.
     void tickSpellwork();
+    /// HELD-EFFECTS BUILD. Drops every hold whose clock has run out and, when
+    /// any did, re-derives what the pool's ceiling reads off the thinner
+    /// sheet. Called every advanceSecond beside tickSpellwork, and at the end
+    /// of every clock jump (skipTo) -- a hold is on the absolute clock, so a
+    /// night asleep runs it out rather than pausing it.
+    void sweepHeldEffects();
+    /// The one place a hold change lands on the wind: the pool ceiling is
+    /// 2*VIG + MGT + AGI of the EFFECTIVE sheet, resized without a refill --
+    /// see PlayerFatigue::resizeFor on why a recast can never buy wind back.
+    void applyHeldEffects() noexcept;
     /// One dose of vitality onto a body. Heals cap at hpMax; harm floors at
     /// spellforge's kVitalityFloor and NEVER downs or floors anybody -- no
     /// crafting on the public shelf can put a body on the ground, and the
@@ -1361,6 +1421,11 @@ private:
         std::int32_t cadenceLeft = 0;
     };
     std::vector<SpellTrickle> trickles_;
+    /// HELD-EFFECTS BUILD: every WHILE_ACTIVE row currently live on the
+    /// player. Hashed (a deliberate structure change, stated at the hash
+    /// site): a live tuning is read by every attribute reader in the game,
+    /// so two runs that disagreed about one would be two different games.
+    std::vector<ActiveHold> heldEffects_;
 
     // trade
     std::int32_t drinkStock_ = kOpeningStock;

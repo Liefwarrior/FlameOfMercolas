@@ -526,6 +526,11 @@ void Tavern::skipTo(std::int32_t secondOfDay) {
         }
     }
     applySchedules();
+    // HELD-EFFECTS BUILD: a hold is on the absolute clock, so the night this
+    // jump skipped ran it out -- swept here, not paused, for the same honesty
+    // heat cooling above claims. A quarter-hour tuning does not survive a
+    // night in a rented bed.
+    sweepHeldEffects();
 }
 
 // ---------------------------------------------------------------------------
@@ -802,6 +807,10 @@ void Tavern::advanceSecond() {
     // blows left behind, so the two cannot disagree about ordering between
     // runs.
     tickSpellwork();
+    // HELD-EFFECTS BUILD: the holds run out on the same cadence the trickles
+    // deliver on -- one sweep a second, and the sheet re-derives the moment
+    // a row lapses.
+    sweepHeldEffects();
     tickPatrons();
     tickVermin();
 }
@@ -1173,7 +1182,7 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         const std::int32_t swingTerm = fatigue_.termQ8();
         fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
         result.blow = strike(playerWeapon_, prey, drawForPlayerAction(),
-                             meleeDamageBonus(playerAttributes_.value(AttributeId::Might)),
+                             meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
                              swingTerm);
         rat->setHealth(prey.hp, prey.hpMax);
         rat->setActivity(result.blow.downed ? Activity::Downed : Activity::Walking);
@@ -2289,8 +2298,11 @@ void Tavern::stepPlayerFatigue(bool moving, bool sprinting) noexcept {
         fatigue_.drain(kSprintDrainFinePerStep);
         return;
     }
+    // HELD-EFFECTS BUILD: the EFFECTIVE sheet, here and at every attribute
+    // reader below -- a live tuning is felt exactly where the base sheet is,
+    // and nowhere else. Identical to the base at an empty table.
     fatigue_.regen(fatigueRegenFinePerStep(
-        playerAttributes_.value(AttributeId::Vigor),
+        effectiveAttributes().value(AttributeId::Vigor),
         dialogue_.skills().level(kGritSkill), moving));
 }
 
@@ -2298,19 +2310,68 @@ void Tavern::chargePlayerJump() noexcept {
     // A standing jump is legs, not climbing: AGI still prices it, but no
     // amount of skyrunning makes hopping free -- the roofs teach walls.
     fatigue_.drain(verticalFatigueCostFine(
-        kJumpFatiguePoints, playerAttributes_.value(AttributeId::Agility), 0));
+        kJumpFatiguePoints, effectiveAttributes().value(AttributeId::Agility), 0));
 }
 
 void Tavern::chargePlayerMantle() noexcept {
     fatigue_.drain(verticalFatigueCostFine(
-        kMantleFatiguePoints, playerAttributes_.value(AttributeId::Agility),
+        kMantleFatiguePoints, effectiveAttributes().value(AttributeId::Agility),
         dialogue_.skills().level(kRoofSkill)));
 }
 
 void Tavern::chargePlayerLeap() noexcept {
     fatigue_.drain(verticalFatigueCostFine(
-        kLeapFatiguePoints, playerAttributes_.value(AttributeId::Agility),
+        kLeapFatiguePoints, effectiveAttributes().value(AttributeId::Agility),
         dialogue_.skills().level(kRoofSkill)));
+}
+
+AttributeBlock Tavern::effectiveAttributes() const noexcept {
+    // Base sheet plus every live tuning, per-attribute total clamped to the
+    // spellforge limit BEFORE it is added -- "a live nudge is read by every
+    // check in the game, so it is held to +/-2 however many rows stack"
+    // (spells.json's own notes) -- and AttributeBlock::setValue holds the
+    // floor/ceiling after. With no holds live this returns the base sheet
+    // bit for bit, which is what keeps every pre-existing capture identical.
+    AttributeBlock out = playerAttributes_;
+    if (heldEffects_.empty()) {
+        return out;
+    }
+    std::array<std::int32_t, kAttributeCount> delta{};
+    for (const ActiveHold& hold : heldEffects_) {
+        delta[static_cast<std::size_t>(hold.attribute)] += hold.magnitude;
+    }
+    for (std::size_t i = 0; i < kAttributeCount; ++i) {
+        const AttributeId id = static_cast<AttributeId>(i);
+        const std::int32_t clamped =
+            std::clamp(delta[i], -kAttributeModifierLimit, kAttributeModifierLimit);
+        if (clamped != 0) {
+            out.setValue(id, playerAttributes_.value(id) + clamped);
+        }
+    }
+    return out;
+}
+
+void Tavern::applyHeldEffects() noexcept {
+    // The one derived consequence a hold has beyond the readers that consult
+    // effectiveAttributes() live: the pool's ceiling is a function of the
+    // sheet, so it re-derives here -- WITHOUT a refill (resizeFor's own
+    // contract), or recasting a MGT tuning would be a wind faucet.
+    fatigue_.resizeFor(effectiveAttributes());
+}
+
+void Tavern::sweepHeldEffects() {
+    bool lapsed = false;
+    for (std::size_t i = 0; i < heldEffects_.size();) {
+        if (heldEffects_[i].expiresAt <= elapsed_) {
+            heldEffects_.erase(heldEffects_.begin() + static_cast<std::ptrdiff_t>(i));
+            lapsed = true;
+        } else {
+            ++i;
+        }
+    }
+    if (lapsed) {
+        applyHeldEffects();
+    }
 }
 
 Tavern::StealResult Tavern::crackStrongbox() {
@@ -3343,21 +3404,49 @@ Tavern::CastResult Tavern::playerCastEquipped() {
                    std::to_string(castCoolUntil_ - elapsed_) + "S.";
         return out;
     }
-    // VERIFICATION GAP (S13): NOTHING HOLDS A HELD AXIS YET. The vocabulary's
-    // WHILE_ACTIVE rows -- warmth, tuning -- need a held-effects engine that
-    // reads a live row every tick (temperature into the cold model, a nudge
-    // into every attribute check), and no such reader exists in this tree.
-    // Resolving them to nothing while charging a cooldown and a skill-use
-    // would be a lie told with a success toast, so they are REFUSED, out
-    // loud, before anything is spent or drawn. The eight authored holds stay
-    // uncastable until the engine lands; the three vitality rows and every
-    // vitality forging resolve fully below.
+    // THE S13 REFUSAL BOUNDARY, MOVED. A held-effects engine exists now
+    // (heldEffects_, laid below), so a WHILE_ACTIVE tuning on the player's
+    // OWN body resolves: the delta flows through effectiveAttributes() into
+    // every runtime reader the fatigue build crossed. What still cannot
+    // resolve is refused, out loud, BEFORE anything is spent or drawn --
+    // resolving a row nothing reads while charging a cooldown and a skill-use
+    // would be a lie told with a success toast, the same contract as S13.
+    //
+    // VERIFICATION GAP (S15): TEMPERATURE STILL HAS NO READER. The baked
+    // map's temperature lane is bake-time data (content/world.hpp) and no
+    // live model -- cold, wet, a fire's reach -- reads a held warmth off a
+    // body, so the three authored warmth rows keep an honest refusal until a
+    // temperature model lands; inventing one was ruled out of this pass.
+    // Two narrower gaps share the sentence: a tuning laid on ANOTHER body
+    // (sap_the_step) refuses because roster and ward actors carry no
+    // attribute sheet (fatigue.hpp's player-scoped line -- giving them one
+    // moves the ward's daily-life determinism), and a FORGED tuning refuses
+    // because ForgeBench has no param field yet, so the row cannot say which
+    // string it tunes and the cast will not guess a limb.
     for (const SpellComponent& component : spell->components) {
-        if (effectKindOf(component.effect) != EffectKind::Vitality) {
-            out.line = "NOTHING HOLDS " +
-                       std::string(effectKindWord(effectKindOf(component.effect))) +
-                       " YET. THE CRAFT IS AHEAD OF THE HANDS.";
-            return out;
+        switch (effectKindOf(component.effect)) {
+            case EffectKind::Vitality:
+                break;
+            case EffectKind::Temperature:
+                out.line = "A BODY CAN HOLD NOW -- BUT NOTHING IN THIS WARD "
+                           "READS ITS HEAT YET.";
+                return out;
+            case EffectKind::Attribute:
+                if (targetShapeOf(spell->target) != TargetShape::Self) {
+                    out.line = "NO SHEET ON THEM TO TUNE. ONLY YOUR OWN TUNING HOLDS.";
+                    return out;
+                }
+                if (!attributeFromRaw(component.param).has_value()) {
+                    out.line = "THE BENCH NAMED NO STRING TO TUNE. "
+                               "THE CRAFT IS AHEAD OF THE FORGE.";
+                    return out;
+                }
+                break;
+            case EffectKind::Unknown:
+                out.line = "NOTHING HOLDS " +
+                           std::string(effectKindWord(effectKindOf(component.effect))) +
+                           " YET. THE CRAFT IS AHEAD OF THE HANDS.";
+                return out;
         }
     }
     const TargetShape shape = targetShapeOf(spell->target);
@@ -3419,9 +3508,15 @@ Tavern::CastResult Tavern::playerCastEquipped() {
     // outcome, never buying one past the ceiling the clamp still holds); and
     // the body's share of working the link is paid in wind BEFORE the roll,
     // slip or open -- effort spent is spent. Same single draw as ever.
+    // HELD-EFFECTS BUILD: the EFFECTIVE sheet, so a held Clear the Head is
+    // felt on the very next link -- "the one crafting that feeds itself",
+    // spells.json's own provenance. Read ONCE, here, before this cast lays
+    // or refreshes anything: the mind that opens this link is the mind that
+    // was held when the press landed, and the hold this cast itself lays
+    // pays out from the next read on, cooldown included.
     const std::int32_t level = dialogue_.skills().level(spell->skill);
     const std::int32_t difficulty = spellDifficulty(*spell);
-    const std::int32_t wit = playerAttributes_.value(AttributeId::Wit);
+    const std::int32_t wit = effectiveAttributes().value(AttributeId::Wit);
     const std::int32_t castTerm = fatigue_.termQ8();
     fatigue_.drain(kCastFatiguePoints * kFatiguePointFine);
     const std::int32_t rawChance = kCastBasePercent + kCastPercentPerLevel * level -
@@ -3446,6 +3541,24 @@ Tavern::CastResult Tavern::playerCastEquipped() {
     out.cast = true;
     castCoolUntil_ = elapsed_ + witScaledCooldown(spell->cooldownTicks, wit);
     dialogue_.skills().use(spell->skill);
+    // HELD-EFFECTS BUILD: RECAST REFRESHES, PER CRAFTING. Every row this
+    // spell laid last time comes off before its new rows go on, so one
+    // crafting is one entry however often it is recast -- replaced whole,
+    // clock reset, never stacked against itself. Erasing keeps insertion
+    // order for everything else, so the table stays deterministic.
+    bool laysHold = false;
+    for (const SpellComponent& component : spell->components) {
+        laysHold = laysHold || effectModeOf(component.mode) == EffectMode::WhileActive;
+    }
+    if (laysHold) {
+        for (std::size_t i = 0; i < heldEffects_.size();) {
+            if (heldEffects_[i].spellId == spell->id) {
+                heldEffects_.erase(heldEffects_.begin() + static_cast<std::ptrdiff_t>(i));
+            } else {
+                ++i;
+            }
+        }
+    }
     for (const SpellComponent& component : spell->components) {
         switch (effectModeOf(component.mode)) {
             case EffectMode::Instant:
@@ -3464,12 +3577,26 @@ Tavern::CastResult Tavern::playerCastEquipped() {
                 trickles_.push_back(trickle);
                 break;
             }
-            case EffectMode::WhileActive:
+            case EffectMode::WhileActive: {
+                // The vet above proved this is a SELF tuning with a named
+                // string, so the row is layable as authored. Absolute expiry
+                // on the room's own clock, castCoolUntil_'s exact shape.
+                ActiveHold hold;
+                hold.spellId = spell->id;
+                hold.attribute = *attributeFromRaw(component.param);
+                hold.magnitude = component.magnitude;
+                hold.expiresAt = elapsed_ + component.durationTicks;
+                heldEffects_.push_back(std::move(hold));
+                break;
+            }
             case EffectMode::Unknown:
-                // Unreachable: the component vet above refused every
-                // non-vitality axis, and vitality cannot legally hold.
+                // Unreachable: the component vet above refused every axis and
+                // shape the loader's pairing table would have refused too.
                 break;
         }
+    }
+    if (laysHold) {
+        applyHeldEffects();
     }
     if (touched != nullptr && harms) {
         touched->setActivity(Activity::Brawling);
@@ -3669,6 +3796,24 @@ void Tavern::hash_into(HashSink& sink) const {
     // live twin-run/cross-toolchain gates compare THIS shape against itself.
     playerAttributes_.hashInto(sink);
     fatigue_.hashInto(sink);
+    // HELD-EFFECTS BUILD: every live hold -- which crafting laid it, which
+    // string it tunes, by how much, and the tick it lapses on. A live tuning
+    // is read by every attribute reader in the game, so two runs that
+    // disagreed about one would be two different games. DELIBERATE STRUCTURE
+    // CHANGE to the live Tavern hash, the S13 shape: the pinned codec goldens
+    // (test_world_hash.cpp) hash fixed byte specs, not this struct, the
+    // baked-map world hash never reaches this code, and the live twin-run and
+    // cross-toolchain gates compare THIS shape against itself.
+    sink.put_int(static_cast<std::uint32_t>(heldEffects_.size()));
+    for (const ActiveHold& hold : heldEffects_) {
+        sink.put_int(static_cast<std::uint32_t>(hold.spellId.size()));
+        for (const char character : hold.spellId) {
+            sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));
+        }
+        sink.put_byte(static_cast<std::uint32_t>(hold.attribute));
+        sink.put_int(static_cast<std::uint32_t>(hold.magnitude));
+        sink.put_long(static_cast<std::uint64_t>(hold.expiresAt));
+    }
     nemesis_.hashInto(sink);
     dialogue_.hashInto(sink);
 }

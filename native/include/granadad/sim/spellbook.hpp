@@ -33,6 +33,14 @@ struct SpellComponent {
     std::string mode;
     std::int32_t magnitude = 0;
     std::int32_t durationTicks = 0;
+    /// WHICH string an ATTRIBUTE row tunes -- "MGT" / "AGI" / "VIG" / "WIT",
+    /// the raws' own governingAttribute vocabulary (attributes.hpp parses it).
+    /// Authored on every ATTRIBUTE component in spells.json since S13 and
+    /// dropped by the loader until the held-effects build gave the axis an
+    /// engine that needs to know. Empty on every other axis, and empty on a
+    /// FORGED tuning row -- ForgeBench has no param field yet, which is why
+    /// the cast refuses those out loud rather than guessing a limb.
+    std::string param;
 };
 
 /// One authored spell.
