@@ -705,11 +705,22 @@ direction the light, the crowd and your own posture point. Both skills are
 charged whether the hand came out full or not — Morrowind's rule, and this
 project's standing steer.
 
-What is NOT here yet: **casting** what you learned or composed (the grimoire
-records craftings and nothing resolves one), items, **the dedicated combat
-screen** — still the largest hole, and it is what blocks the second and third
-wins of S8's own nemesis arc — save/load to disk, and any of the ward outside
-the Gull's walls. Those are the sprints after this one.
+**Casting is real now** (S13, extended by the held-effects build): `C` spends
+the equipped crafting through a linkcraft check that never buys certainty, the
+vitality rows land as doses and trickles with a punch's own consequences when
+they harm, and a WHILE_ACTIVE **self tuning holds** — a live, hashed row on the
+player whose ±1 flows through the same runtime attribute readers the fatigue
+build crossed (the gait, the climb costs, the pool ceiling, the punch, the next
+cast and its recovery), refreshed whole by a recast and lapsing on the room's
+own clock, HUD countdown and all. Still refused, out loud: **temperature**
+(nothing in the live sim reads heat on a body — the honest boundary of this
+pass), a tuning laid on **another body** (no actor carries an attribute sheet),
+and a **forged** tuning (the bench cannot yet name which string it tunes).
+
+What is NOT here yet: items, **the dedicated combat screen** — still the
+largest hole, and it is what blocks the second and third wins of S8's own
+nemesis arc — save/load to disk, and any of the ward outside the Gull's walls.
+Those are the sprints after this one.
 
 `content/` is read-only canon and is reused verbatim — never retype, regenerate
 or "improve" anything under it. New files may be added; the baked lamp sidecars

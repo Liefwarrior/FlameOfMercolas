@@ -1149,23 +1149,325 @@ TEST_CASE("a trickle delivers its doses on the cadence the cost model priced") {
     CHECK(scalded->hp() == hpMax - 3);
 }
 
-TEST_CASE("the held axes refuse out loud until something can hold them") {
-    // VERIFICATION GAP (S13) made testable: warmth is a WHILE_ACTIVE hold and
-    // no held-effects engine exists, so the cast REFUSES -- before the draw,
-    // before the cooldown, before the skill charge -- rather than toasting a
-    // success that changed nothing.
+TEST_CASE("what the held-effects engine still cannot hold refuses out loud") {
+    // THE S13 BOUNDARY, MOVED AND RE-PINNED. Self tunings resolve now (the
+    // section below); these three still cannot, and each refuses -- before
+    // the draw, before the cooldown, before the skill charge -- rather than
+    // toasting a success that changed nothing. See the VERIFICATION GAP
+    // (S15) comment in tavern.cpp for why each boundary is where it is.
     Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
     room.run(2);
     Tavern& tavern = room.tavern();
+
+    // 1. WARMTH: nothing in the live sim reads heat on a body.
     const Spell* warm = tavern.spellbook().find("warm_the_hands");
     REQUIRE(warm != nullptr);
     REQUIRE(tavern.dialogue().grimoire().learn(*warm));
-
-    const Tavern::CastResult result = tavern.playerCastEquipped();
-    CHECK_FALSE(result.cast);
-    CHECK(result.line.find("NOTHING HOLDS") != std::string::npos);
-    // Refused, not half-charged: the link never opened, so it never cools.
+    const Tavern::CastResult warmth = tavern.playerCastEquipped();
+    CHECK_FALSE(warmth.cast);
+    CHECK(warmth.line.find("READS ITS HEAT") != std::string::npos);
     CHECK(tavern.castCooldownLeft() == 0);
+    CHECK(tavern.heldEffects().empty());
+
+    // 2. A TUNING ON ANOTHER BODY: no actor carries an attribute sheet, and
+    //    the refusal lands before the reach check -- there is nobody to find
+    //    a sheet on however close they stand.
+    const Spell* sap = tavern.spellbook().find("sap_the_step");
+    REQUIRE(sap != nullptr);
+    REQUIRE(tavern.dialogue().grimoire().learn(*sap));
+    const std::vector<Spell>& known = tavern.dialogue().grimoire().spells();
+    for (std::size_t i = 0; i < known.size(); ++i) {
+        if (known[i].id == "sap_the_step") {
+            REQUIRE(tavern.equipSpellAt(static_cast<std::int32_t>(i)));
+        }
+    }
+    const Tavern::CastResult sapped = tavern.playerCastEquipped();
+    CHECK_FALSE(sapped.cast);
+    CHECK(sapped.line.find("NO SHEET ON THEM") != std::string::npos);
+    CHECK(tavern.castCooldownLeft() == 0);
+
+    // 3. A FORGED TUNING: the bench has no param field, so the row names no
+    //    string and the cast will not guess a limb.
+    Spell forged;
+    forged.id = "zz_forged_tune";
+    forged.displayName = "Forged Tune";
+    forged.skill = std::string(kCraftingSkill);
+    forged.target = "SELF";
+    SpellComponent nameless;
+    nameless.effect = "ATTRIBUTE";
+    nameless.mode = "WHILE_ACTIVE";
+    nameless.magnitude = 1;
+    nameless.durationTicks = 300;
+    REQUIRE(nameless.param.empty());
+    forged.components.push_back(nameless);
+    REQUIRE(tavern.dialogue().grimoire().inscribe(forged));
+    const std::vector<Spell>& now = tavern.dialogue().grimoire().spells();
+    for (std::size_t i = 0; i < now.size(); ++i) {
+        if (now[i].id == "zz_forged_tune") {
+            REQUIRE(tavern.equipSpellAt(static_cast<std::int32_t>(i)));
+        }
+    }
+    const Tavern::CastResult unnamed = tavern.playerCastEquipped();
+    CHECK_FALSE(unnamed.cast);
+    CHECK(unnamed.line.find("NAMED NO STRING") != std::string::npos);
+    CHECK(tavern.castCooldownLeft() == 0);
+    CHECK(tavern.heldEffects().empty());
+}
+
+// ===========================================================================
+// ROOM -- the held craftings (HELD-EFFECTS BUILD)
+// ===========================================================================
+
+namespace {
+
+/// Recasts the equipped crafting until its link opens, waiting out fizzle
+/// cooldowns in place. Bounded and deterministic; REQUIREs the only refusal
+/// seen on the way is the fizzle itself.
+Tavern::CastResult castUntilOpen(Room& room, int limit = 12) {
+    Tavern::CastResult result;
+    for (int attempt = 0; attempt < limit; ++attempt) {
+        result = room.tavern().playerCastEquipped();
+        if (result.cast) {
+            return result;
+        }
+        REQUIRE(result.line == "THE LINK SLIPS.");
+        room.run(31);
+    }
+    return result;
+}
+
+/// The grimoire index of one id, looked up fresh -- ids sort ascending, so
+/// an index is only good the moment it is asked for.
+std::int32_t grimoireIndexOf(const Tavern& tavern, std::string_view id) {
+    const std::vector<Spell>& spells = tavern.dialogue().grimoire().spells();
+    for (std::size_t i = 0; i < spells.size(); ++i) {
+        if (spells[i].id == id) {
+            return static_cast<std::int32_t>(i);
+        }
+    }
+    return -1;
+}
+
+}  // namespace
+
+TEST_CASE("a self tuning holds: a live row, an effective sheet, and a clock that runs out") {
+    Tavern::CastResult result;
+    const auto room = roomWithFirstCast("steady_the_hand", result);
+    REQUIRE(room != nullptr);
+    Tavern& tavern = room->tavern();
+    REQUIRE(result.cast);
+
+    // The row is live, whole, and honest about its clock.
+    REQUIRE(tavern.heldEffects().size() == 1);
+    const Tavern::ActiveHold& hold = tavern.heldEffects().front();
+    CHECK(hold.spellId == "steady_the_hand");
+    CHECK(hold.attribute == AttributeId::Agility);
+    CHECK(hold.magnitude == 1);
+    CHECK(tavern.holdSecondsLeft(hold) == 900);
+
+    // The BASE sheet is untouched; the EFFECTIVE one carries the point. That
+    // split is what lets a lapsed hold restore yesterday's numbers exactly.
+    CHECK(tavern.playerAttributes().value(AttributeId::Agility) == kAttributeBase);
+    CHECK(tavern.effectiveAttributes().value(AttributeId::Agility) == kAttributeBase + 1);
+
+    // The pool ceiling re-derived off the effective sheet (2*VIG + MGT + AGI:
+    // 161 points now) and the resize gave back NOT ONE fine unit of wind --
+    // the cast paid its 5 points and the meter still says so.
+    CHECK(tavern.playerFatigue().maxPoints() == 2 * kAttributeBase + kAttributeBase +
+                                                    (kAttributeBase + 1));
+    CHECK(tavern.playerFatigue().currentFine() ==
+          4 * kAttributeBase * kFatiguePointFine - kCastFatiguePoints * kFatiguePointFine);
+
+    // One second shy of the clock the hold is still real...
+    room->run(899);
+    REQUIRE(tavern.heldEffects().size() == 1);
+    CHECK(tavern.holdSecondsLeft(tavern.heldEffects().front()) == 1);
+    // ...and on it, it lapses whole: the sheet and the ceiling snap back.
+    room->run(1);
+    CHECK(tavern.heldEffects().empty());
+    CHECK(tavern.effectiveAttributes().value(AttributeId::Agility) == kAttributeBase);
+    CHECK(tavern.playerFatigue().maxPoints() == 4 * kAttributeBase);
+}
+
+TEST_CASE("recast refreshes the hold whole: one row per crafting, clock reset, never stacked") {
+    Tavern::CastResult result;
+    const auto room = roomWithFirstCast("steady_the_hand", result);
+    REQUIRE(room != nullptr);
+    Tavern& tavern = room->tavern();
+    REQUIRE(result.cast);
+
+    // Half the hold spent, and the recovery long over.
+    room->run(500);
+    REQUIRE(tavern.heldEffects().size() == 1);
+    CHECK(tavern.holdSecondsLeft(tavern.heldEffects().front()) == 400);
+
+    const Tavern::CastResult again = castUntilOpen(*room);
+    REQUIRE(again.cast);
+    // Still ONE row -- replaced, not stacked -- with the full clock back on.
+    REQUIRE(tavern.heldEffects().size() == 1);
+    CHECK(tavern.holdSecondsLeft(tavern.heldEffects().front()) == 900);
+    // And a crafting can never stack against itself: one row is +1, not +2.
+    CHECK(tavern.effectiveAttributes().value(AttributeId::Agility) == kAttributeBase + 1);
+}
+
+TEST_CASE("holds stack across craftings and the modifier limit caps the total") {
+    Tavern::CastResult result;
+    const auto room = roomWithFirstCast("steady_the_hand", result);
+    REQUIRE(room != nullptr);
+    Tavern& tavern = room->tavern();
+    REQUIRE(result.cast);
+
+    // A second AGI tuning at the loader's own +/-2 magnitude edge -- the
+    // composed shape a future bench could author, learned the way any test
+    // stocks a grimoire. +1 then +2 is +3 asked for; spells.json's own note
+    // says a live nudge is held to +/-2 HOWEVER MANY ROWS STACK.
+    Spell deep;
+    deep.id = "zz_deep_tune";
+    deep.displayName = "Deep Tune";
+    deep.skill = std::string(kCraftingSkill);
+    deep.target = "SELF";
+    deep.cooldownTicks = 10;
+    SpellComponent part;
+    part.effect = "ATTRIBUTE";
+    part.mode = "WHILE_ACTIVE";
+    part.magnitude = 2;
+    part.durationTicks = 300;
+    part.param = "AGI";
+    deep.components.push_back(part);
+    REQUIRE(tavern.dialogue().grimoire().learn(deep));
+
+    room->run(401);  // out of steady's recovery; its hold has 499 left
+    REQUIRE(tavern.equipSpellAt(grimoireIndexOf(tavern, "zz_deep_tune")));
+    const std::int32_t windBefore = tavern.playerFatigue().currentFine();
+    const Tavern::CastResult second = castUntilOpen(*room);
+    REQUIRE(second.cast);
+
+    CHECK(tavern.heldEffects().size() == 2);
+    CHECK(tavern.effectiveAttributes().value(AttributeId::Agility) ==
+          kAttributeBase + kAttributeModifierLimit);
+    // The ceiling grew with the clamped sheet and the wind itself only ever
+    // went DOWN -- each cast in the retry loop paid, nothing refilled.
+    CHECK(tavern.playerFatigue().maxPoints() ==
+          2 * kAttributeBase + kAttributeBase + (kAttributeBase + kAttributeModifierLimit));
+    CHECK(tavern.playerFatigue().currentFine() < windBefore);
+}
+
+TEST_CASE("a held tuning moves real outcomes through the runtime readers -- "
+          "and cannot move the brawl") {
+    // THE PAYOFF OF SEQUENCING THESE PHASES, as numbers: the fatigue build's
+    // readers are where a held point lands.
+    Tavern::CastResult result;
+    const auto room = roomWithFirstCast("clear_the_head", result);
+    REQUIRE(room != nullptr);
+    Tavern& tavern = room->tavern();
+    REQUIRE(result.cast);
+
+    // Its OWN recovery was priced by the mind that opened it -- WIT 40, x1,
+    // the authored 400 -- because the hold pays out from the next read on.
+    CHECK(tavern.castCooldownLeft() == 400);
+    CHECK(tavern.effectiveAttributes().value(AttributeId::Wit) == kAttributeBase + 1);
+
+    // THE NEXT LINK'S RECOVERY IS GENUINELY SHORTER. witScaledCooldown(400,
+    // 41) = 400 * 299 / 300 = 398: two seconds bought by a crafting that
+    // feeds itself, exactly as spells.json's provenance promises.
+    const Spell* steady = tavern.spellbook().find("steady_the_hand");
+    REQUIRE(steady != nullptr);
+    REQUIRE(tavern.dialogue().grimoire().learn(*steady));
+    room->run(401);
+    REQUIRE(tavern.heldEffects().size() == 1);  // clear_the_head still held
+    REQUIRE(tavern.equipSpellAt(grimoireIndexOf(tavern, "steady_the_hand")));
+    const Tavern::CastResult second = castUntilOpen(*room);
+    REQUIRE(second.cast);
+    CHECK(tavern.castCooldownLeft() == 398);
+    CHECK(witScaledCooldown(steady->cooldownTicks, kAttributeBase) == 400);
+
+    // AND THE SPRY HOLD CHEAPENS THE CLIMB: steady_the_hand is live now too,
+    // so a mantle drains the AGI-41 price, not the base one.
+    REQUIRE(tavern.heldEffects().size() == 2);
+    const std::int32_t skyLevel = tavern.dialogue().skills().level(kRoofSkill);
+    const std::int32_t before = tavern.playerFatigue().currentFine();
+    tavern.chargePlayerMantle();
+    CHECK(before - tavern.playerFatigue().currentFine() ==
+          verticalFatigueCostFine(kMantleFatiguePoints, kAttributeBase + 1, skyLevel));
+    CHECK(verticalFatigueCostFine(kMantleFatiguePoints, kAttributeBase + 1, skyLevel) <
+          verticalFatigueCostFine(kMantleFatiguePoints, kAttributeBase, skyLevel));
+
+    // THE GUARDRAIL, PINNED: at the shelf's own +/-2 limit MGT's damage
+    // reader still reads zero -- (42-40)/15 == 0 -- so no hold can move what
+    // a landed blow does, and B3's classify/lethal-line semantics cannot
+    // silently shift through a tuning. State scales outcomes the way the
+    // FatigueTerm does; it never buys one.
+    CHECK(meleeDamageBonus(kAttributeBase + kAttributeModifierLimit) == 0);
+}
+
+TEST_CASE("a night's jump runs a hold out: the absolute clock, not a paused one") {
+    Tavern::CastResult result;
+    const auto room = roomWithFirstCast("steady_the_hand", result);
+    REQUIRE(room != nullptr);
+    Tavern& tavern = room->tavern();
+    REQUIRE(result.cast);
+    REQUIRE(tavern.heldEffects().size() == 1);
+
+    // An hour skipped is 3600 seconds spent: a quarter-hour tuning does not
+    // survive it, and the ceiling snaps back with the sheet.
+    tavern.skipHours(1);
+    CHECK(tavern.heldEffects().empty());
+    CHECK(tavern.effectiveAttributes().value(AttributeId::Agility) == kAttributeBase);
+    CHECK(tavern.playerFatigue().maxPoints() == 4 * kAttributeBase);
+}
+
+TEST_CASE("a live hold is state the twin-run gate compares") {
+    // CLEAN ISOLATION, built for it: two rooms alike in EVERYTHING ELSE.
+    // Both learn the same two synthetic tunings (identical grimoires), both
+    // spend the same presses on the same ticks (same seed, same seq, same
+    // draws), both end with the same crafting equipped, and MGT-vs-AGI at
+    // +1 moves the pool ceiling identically (2*VIG + MGT + AGI is symmetric
+    // in those two) -- so the ONLY state the runs disagree about is which
+    // string the live hold tunes. The hashes must still fingerprint apart,
+    // or the gate could never catch two runs disagreeing about a hold.
+    const auto hashHolding = [](const char* param) {
+        Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+        room.run(2);
+        Tavern& tavern = room.tavern();
+        const auto makeTune = [](const char* id, const char* attribute) {
+            Spell tune;
+            tune.id = id;
+            tune.displayName = id;
+            tune.skill = std::string(kCraftingSkill);
+            tune.target = "SELF";
+            tune.cooldownTicks = 10;
+            SpellComponent part;
+            part.effect = "ATTRIBUTE";
+            part.mode = "WHILE_ACTIVE";
+            part.magnitude = 1;
+            part.durationTicks = 300;
+            part.param = attribute;
+            tune.components.push_back(part);
+            return tune;
+        };
+        REQUIRE(tavern.dialogue().grimoire().learn(makeTune("tune_might", "MGT")));
+        REQUIRE(tavern.dialogue().grimoire().learn(makeTune("tune_spry", "AGI")));
+        REQUIRE(tavern.dialogue().skills().setLevel(kCraftingSkill, 10));
+        const char* id = std::string_view(param) == "MGT" ? "tune_might" : "tune_spry";
+        REQUIRE(tavern.equipSpellAt(grimoireIndexOf(tavern, id)));
+        // Same seed, same tick, same action sequence, same difficulty: the
+        // two rooms' draws are identical, so they fizzle and open together
+        // and stay in lockstep however many presses this takes.
+        for (int attempt = 0; attempt < 12; ++attempt) {
+            if (tavern.playerCastEquipped().cast) {
+                break;
+            }
+            room.run(31);
+        }
+        REQUIRE_FALSE(tavern.heldEffects().empty());
+        // Both rooms end with the SAME crafting equipped, so equippedSpellId_
+        // cannot be what tells them apart.
+        REQUIRE(tavern.equipSpellAt(grimoireIndexOf(tavern, "tune_might")));
+        WorldHasher hasher;
+        tavern.hash_into(hasher.section_sink(tavern.id()));
+        return hasher.section_hash(tavern.id());
+    };
+    CHECK(hashHolding("MGT") != hashHolding("AGI"));
 }
 
 // ===========================================================================

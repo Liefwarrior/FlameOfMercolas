@@ -647,6 +647,10 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     // S13: the two rows the Cast/Block task added, at their own longest.
     full.spellLabel = "CAST  SET THE SHOULDERS (599S)";
     full.blockLabel = "GUARD UP";
+    // HELD-EFFECTS BUILD: all four live-hold rows at once, at their own
+    // longest -- the fullest top-right stack this game can produce.
+    full.effectLabels = {"SET THE SHOULDERS 899S", "STEADY THE HAND 899S",
+                         "CLEAR THE HEAD 899S", "WARM THE HANDS 599S"};
     // SPELLS BUILD: the quick bar strip at full strength -- every slot
     // loaded, the longest authored name selected, equipped and selected on
     // different cells so both marks draw.

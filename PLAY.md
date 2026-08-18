@@ -195,6 +195,13 @@ attributes finally do their work here: MIGHT lands harder, AGILITY moves and
 climbs cheaper, VIGOR carries the pool, WIT steadies the cast and cools the
 link sooner.
 
+**And a held crafting now tunes them.** Cast *Steady the Hand*, *Set the
+Shoulders* or *Clear the Head* and the point it lends is real for its whole
+quarter-hour — cheaper climbs, a bigger pool, a sooner link — with its own
+countdown row in the top-right stack. Recasting refreshes the clock; sleeping
+runs it out. The warmth rows still refuse honestly: nothing in the ward reads
+heat on a body yet, and a success toast over a no-op is a lie.
+
 Four keys are the rest of the game:
 
 | | |

@@ -1258,3 +1258,34 @@ TEST_CASE("the equipped-crafting row appears the moment there is one to ready") 
     REQUIRE(session.tavern().dialogue().grimoire().learn(*sting));
     CHECK(session.spellLine() == "CAST  STING");
 }
+
+TEST_CASE("the active-effect row carries a live hold's name and its countdown") {
+    // HELD-EFFECTS BUILD. The row is absent until a hold is genuinely live,
+    // says the crafting's own name with the seconds it has left, counts DOWN
+    // as room time passes, and goes away when the hold lapses.
+    Session session(insideTheGull(20, 152, 70, 0));
+    CHECK(session.effectLine(0).empty());
+
+    const sim::Spell* steady = session.tavern().spellbook().find("steady_the_hand");
+    REQUIRE(steady != nullptr);
+    REQUIRE(session.tavern().dialogue().grimoire().learn(*steady));
+    // Level 10 puts the check at its 95 ceiling; the fizzle tail is walked
+    // out with real steps, the same shape every cast case in this file uses.
+    REQUIRE(session.tavern().dialogue().skills().setLevel("linkcraft", 10));
+    bool held = false;
+    for (int attempt = 0; attempt < 12 && !held; ++attempt) {
+        session.castEquipped();
+        held = !session.tavern().heldEffects().empty();
+        if (!held) {
+            session.stepMany(sim::MoveInput{}, 31 * 60);
+        }
+    }
+    REQUIRE(held);
+
+    CHECK(session.effectLine(0) == "STEADY THE HAND 900S");
+    CHECK(session.effectLine(1).empty());
+    // A minute of room time later the same row reads a minute less --
+    // continuous time-remaining, not a snapshot.
+    session.stepMany(sim::MoveInput{}, 60 * 60);
+    CHECK(session.effectLine(0) == "STEADY THE HAND 840S");
+}
