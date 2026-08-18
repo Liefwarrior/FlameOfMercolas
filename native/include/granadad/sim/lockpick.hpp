@@ -89,7 +89,9 @@ inline constexpr std::int32_t kStrainCeiling = 8;
 /// The level at and above which the lock tells you WHICH WAY you were wrong.
 /// Below it a bad probe is just a bad probe.
 ///
-/// S10: 10 -> 3. usesForLevel() charges 4+6+8 = 18 probes for level 3, so feel
+/// S10: 10 -> 3. usesForLevel() charges 4+6+8 = 18 probes for level 3 --
+/// still exact under S17's aptitude wiring, because CRACKSMANSHIP is Trained
+/// x1 and the composed charge is bit-for-bit the flat one there -- so feel
 /// is a THING THE PLAYER EARNS IN ONE SITTING at the boxes rather than a thing
 /// no MVP character ever reaches. Below it a lock is a nine-deep blind search
 /// you should force; at it a lock is a bisection you can win. That is the

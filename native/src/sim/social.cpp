@@ -470,14 +470,23 @@ void SkillTrack::setAdvanceMultiplierQ8(std::int32_t q8) noexcept {
     advanceMultiplierQ8_ = std::clamp(q8, kDaggerMinQ8, kDaggerMaxQ8);
 }
 
-std::int32_t SkillTrack::scaledUsesForLevel(std::int32_t level) const noexcept {
-    // Integer throughout, truncating: charge = flat * 256 / dagger. At the
-    // neutral 256 this is EXACTLY usesForLevel(level) -- u * 256 / 256 has no
-    // remainder to lose -- which is the whole default-changes-nothing
-    // guarantee the dagger's header makes. Floored at 1: even a 3.0x dagger
-    // pays at least one use per level. No overflow: usesForLevel caps at 204
-    // (level 100) and 204 * 256 is far inside int32.
-    return std::max(1, usesForLevel(level) * kDaggerNeutralQ8 / advanceMultiplierQ8_);
+namespace {
+
+/// The one charge formula, composed: flat * aptitude / dagger, ONE truncating
+/// division at the end, floored at 1. See the dagger-and-aptitude header in
+/// social.hpp for the rounding rule and the overflow bound (204 * 1024).
+[[nodiscard]] std::int32_t composedCharge(std::int32_t level, AptitudeTier tier,
+                                          std::int32_t daggerQ8) noexcept {
+    return std::max(1, usesForLevel(level) * aptitudeCostQ8(tier) / daggerQ8);
+}
+
+}  // namespace
+
+std::int32_t SkillTrack::scaledUsesForLevel(std::string_view id,
+                                            std::int32_t level) const noexcept {
+    // aptitudeTier() already reads Trained for an unknown id -- the
+    // hypothetical-skill fallback the header states.
+    return composedCharge(level, aptitudeTier(id), advanceMultiplierQ8_);
 }
 
 bool SkillTrack::use(std::string_view id, std::int32_t effort) noexcept {
@@ -487,10 +496,13 @@ bool SkillTrack::use(std::string_view id, std::int32_t effort) noexcept {
     }
     entry->uses += effort;
     bool levelled = false;
-    // THE ONE PLACE THE DAGGER BITES. usesForLevel() itself is untouched;
-    // the scaled charge is consulted exactly where the flat one used to be.
-    while (entry->level < 100 && entry->uses >= scaledUsesForLevel(entry->level)) {
-        entry->uses -= scaledUsesForLevel(entry->level);
+    // THE ONE PLACE APTITUDE AND THE DAGGER BITE. usesForLevel() itself is
+    // untouched; the composed charge is consulted exactly where the flat one
+    // used to be, off THIS entry's own tier -- no second lookup.
+    while (entry->level < 100 &&
+           entry->uses >= composedCharge(entry->level, entry->aptitudeTier,
+                                         advanceMultiplierQ8_)) {
+        entry->uses -= composedCharge(entry->level, entry->aptitudeTier, advanceMultiplierQ8_);
         ++entry->level;
         levelled = true;
     }

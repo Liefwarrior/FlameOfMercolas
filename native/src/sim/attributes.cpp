@@ -63,6 +63,20 @@ std::string_view aptitudeTierName(AptitudeTier tier) noexcept {
     return "Trained";
 }
 
+std::int32_t aptitudeCostQ8(AptitudeTier tier) noexcept {
+    switch (tier) {
+        case AptitudeTier::Favored:
+            return 192;  // x3/4, exact
+        case AptitudeTier::Trained:
+            return 256;  // x1, the identity
+        case AptitudeTier::Neglected:
+            return 320;  // x5/4, exact
+        case AptitudeTier::Flame:
+            return 1024;  // x4
+    }
+    return 256;  // the same middle-of-the-road fallback aptitudeTierFromRaw takes
+}
+
 AptitudeTier aptitudeTierFromRaw(std::string_view token) noexcept {
     if (token == "FAVORED") {
         return AptitudeTier::Favored;

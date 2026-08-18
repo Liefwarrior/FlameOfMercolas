@@ -55,10 +55,10 @@ inline constexpr std::size_t kAttributeCount = 4;
 /// The four aptitude tiers content/raws/skills/skills.json's aptitudeTier
 /// column names. PROGRESSION-SPEC.md section 1 ties each to a use-XP cost
 /// ratio for the Java reference engine (Favored x3/4, Trained x1, Neglected
-/// x5/4, Flame x4). THIS BUILD DOES NOT YET APPLY THAT RATIO to
-/// usesForLevel() (social.hpp) -- chargen.hpp's own header says why that
-/// wiring is left for a later, separately-verified pass rather than folded in
-/// here.
+/// x5/4, Flame x4). SINCE S17 THAT RATIO IS LIVE: aptitudeCostQ8() below is
+/// composed with the difficulty dagger inside SkillTrack's per-level charge
+/// (social.hpp) -- the wiring chargen.hpp's header deferred as its own
+/// separately-verified pass, now made and verified.
 enum class AptitudeTier : std::uint8_t {
     Favored = 0,
     Trained = 1,
@@ -67,6 +67,19 @@ enum class AptitudeTier : std::uint8_t {
 };
 
 [[nodiscard]] std::string_view aptitudeTierName(AptitudeTier tier) noexcept;
+
+/// The tier's use-XP COST ratio in Q8 (256 = x1). PROGRESSION-SPEC section
+/// 1's rationals {3/4, 1, 5/4, 4}, which are all EXACT in Q8 -- 192, 256,
+/// 320, 1024 -- the same no-remainder property the spec's own grains chase:
+///   Favored   x3/4 -> 192   (aptNum 15 of the spec's /20 base)
+///   Trained   x1   -> 256   (aptNum 20)
+///   Neglected x5/4 -> 320   (aptNum 25)
+///   Flame     x4   -> 1024  (aptNum 80)
+/// A COST ratio, so higher is slower: it multiplies the uses a level asks
+/// for, where the dagger (social.hpp) divides them. Trained is the identity,
+/// which is what keeps every Trained skill's grind bit-for-bit the flat
+/// pre-aptitude schedule.
+[[nodiscard]] std::int32_t aptitudeCostQ8(AptitudeTier tier) noexcept;
 /// Parses one raw aptitudeTier token. Unrecognised text reads as Trained --
 /// the middle of the road, not a crash, same fallback rule usesForLevel()
 /// itself already leans on for an unknown level.

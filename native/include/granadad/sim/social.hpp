@@ -223,7 +223,7 @@ inline constexpr std::string_view kRoofSkill = "skyrunning";
 [[nodiscard]] std::int32_t usesForLevel(std::int32_t level) noexcept;
 
 // ---------------------------------------------------------------------------
-// the difficulty dagger
+// the difficulty dagger, and the aptitude it composes with
 // ---------------------------------------------------------------------------
 //
 // Daggerfall's custom path prices advantages and disadvantages in one scalar
@@ -234,11 +234,31 @@ inline constexpr std::string_view kRoofSkill = "skyrunning";
 // untouched -- every caller that quotes its numbers (lockpick.hpp's 18-probe
 // feel pin, the session's own comments) still reads the same flat formula.
 //
-// Q8, NO FLOATS: 256 is 1.0x. At the NEUTRAL default the scaled charge is
-// bit-for-bit usesForLevel() (u * 256 / 256 == u, exactly), so every grind
-// this build has ever timed is unchanged until a player actually moves the
-// dagger. Above 256 levels come faster (fewer uses per level, floored at 1);
-// below 256 they come slower.
+// S17 COMPOSED APTITUDE INTO THE SAME SEAM. The raws' own aptitudeTier column
+// (attributes.hpp, aptitudeCostQ8: Favored 192, Trained 256, Neglected 320,
+// Flame 1024 -- a COST, so higher is slower) now multiplies the flat charge
+// where the dagger divides it, per skill, in the one consultation:
+//
+//     charge(skill, L) = max(1, usesForLevel(L) * aptitudeCostQ8(tier)
+//                                               / advanceMultiplierQ8)
+//
+// ONE ROUNDING RULE: one widening multiply, one truncating division, at the
+// end, floor at 1. No intermediate rounding, so aptitude and dagger compose
+// exactly rather than each losing their own remainder. (Overflow-safe by
+// range: usesForLevel caps at 204, 204 * 1024 = 208,896, far inside int32.)
+// PROGRESSION-SPEC section 1 is the aptitude ratios' source; the spec's
+// grains/satiation machinery is NOT imported -- this build's use-XP stays
+// whole uses against a whole-use threshold.
+//
+// Q8, NO FLOATS: 256 is 1.0x. For a TRAINED skill at the NEUTRAL default the
+// scaled charge is bit-for-bit usesForLevel() (u * 256 / 256 == u, exactly),
+// so every Trained grind this build has ever timed -- cracksmanship's
+// 18-probe feel pin, linkcraft's forge cadence -- is unchanged to the bit.
+// Favored/Neglected/Flame skills now genuinely grind at their authored
+// ratios (skyrunning's first level is 3 uses, not 4; bladework's is 5); the
+// grind-timing tests that moved were each re-derived with the arithmetic
+// stated. Above 256 the dagger makes levels come faster (fewer uses per
+// level, floored at 1); below 256 they come slower.
 //
 // PLAYER-SCOPED by construction: the multiplier lives on the SkillTrack
 // instance, and the only SkillTrack that levels through use() is the
@@ -310,12 +330,19 @@ public:
     /// above usesForLevel() for what this number is and why the default
     /// changes nothing.
     void setAdvanceMultiplierQ8(std::int32_t q8) noexcept;
-    /// What one use() actually charges at `level` under the CURRENT dagger:
-    /// usesForLevel(level) scaled by the multiplier, floored at 1 so no
-    /// setting ever makes a level free. Exposed so a test (or a UI showing
-    /// "uses to next level") reads the same arithmetic use() runs rather
-    /// than a second copy of it.
-    [[nodiscard]] std::int32_t scaledUsesForLevel(std::int32_t level) const noexcept;
+    /// What one use() actually charges `id` at `level` under the CURRENT
+    /// dagger AND the skill's own aptitude: usesForLevel(level) times
+    /// aptitudeCostQ8(tier), divided by the dagger, floored at 1 so no
+    /// setting ever makes a level free -- the one formula, spelled out in
+    /// the dagger header above. Per-skill since S17, because aptitude is:
+    /// pass the skill's id, not just a level. A skill the raws do not
+    /// define charges as Trained, the same permissive fallback
+    /// aptitudeTier() itself gives (use() refuses unknown ids anyway, so
+    /// this path only answers hypotheticals). Exposed so a test (or a UI
+    /// showing "uses to next level") reads the same arithmetic use() runs
+    /// rather than a second copy of it.
+    [[nodiscard]] std::int32_t scaledUsesForLevel(std::string_view id,
+                                                  std::int32_t level) const noexcept;
 
     void hashInto(HashSink& sink) const;
 

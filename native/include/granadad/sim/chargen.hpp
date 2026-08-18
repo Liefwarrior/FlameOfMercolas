@@ -30,20 +30,20 @@
 // standing quality bar exists to catch, just moved from a rendered string to
 // a chargen choice.
 //
-// WHAT THIS FILE DELIBERATELY DOES NOT DO. AptitudeTier (attributes.hpp) is
-// parsed off the raws now (social.hpp's SkillTrack::Entry carries it) but
-// this file's starting-level math does not read it, and neither does
-// usesForLevel() (social.hpp) for the XP a skill earns after chargen. The
-// Java reference engine ties aptitude to a use-XP cost ratio
-// (PROGRESSION-SPEC.md section 1); wiring that same ratio into usesForLevel()
-// would change how fast every ALREADY-LIVE skill grinds (skyrunning and
-// streetwise are both Favored and are levelled every session already,
-// cracksmanship and linkcraft are Trained) for every existing save and every
-// existing test that times a grind against it -- lockpick.hpp's own
-// kFeelLevel comment pins an exact probe count against the CURRENT flat
-// formula. That is a live-tuning change with its own blast radius and its own
-// verification pass, not a chargen mechanic, so it is left alone here,
-// stated rather than silently skipped.
+// WHAT THIS FILE STILL DELIBERATELY DOES NOT DO. This file's starting-level
+// math does not read AptitudeTier: a Primary skill starts at 30 whether the
+// raws call it Favored or Neglected, because the designation buys WHERE YOU
+// BEGIN and aptitude prices HOW FAST YOU CLIMB -- two different levers, per
+// PROGRESSION-SPEC.md's own "no character classes; aptitude is the fixed
+// per-skill rational" (section 2). The climbing half is no longer deferred:
+// S17 wired aptitudeCostQ8() (attributes.hpp) into SkillTrack's per-level
+// charge, composed with the difficulty dagger in the one consultation --
+// social.hpp's dagger-and-aptitude header owns the formula, the rounding
+// rule, and the list of grind timings that legitimately moved (every one
+// re-derived with its arithmetic stated; lockpick.hpp's 18-probe feel pin
+// holds untouched because cracksmanship is Trained x1). This paragraph used
+// to be the statement of that deferral; it is now the record that the
+// deferral was paid off in its own pass, exactly as promised.
 //
 // NOT SIMULATION STATE. Chargen is a one-time calculator: it holds the
 // designations and the attribute spend WHILE a character is being built, and
