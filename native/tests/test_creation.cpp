@@ -911,6 +911,24 @@ TEST_CASE("CUSTOM's point-bought Chargen sheet, applied through CreationResult, 
     flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
     REQUIRE(flow.view().topics.back() == "BEGIN");
     flow.chooseCustomizeRow();
+    // THE FIRST BEGIN A MAKE-YOUR-OWN PATH PRESSES IS THE DOOR INTO THE
+    // BIOGRAPHY, NOT THE CONFIRMATION -- the doc's own order, and exactly
+    // what "BEGIN refuses a blank name, routes the custom door through the
+    // biography once..." above already proves at length. This case pressed
+    // BEGIN once and required done() until the ward-map round's first gate
+    // run caught it stale: the biography leg (49fb234) had landed while
+    // this drive-through still assumed the pre-biography flow.
+    REQUIRE_FALSE(flow.done());
+    REQUIRE(flow.step() == render::CreationStep::Background);
+    const std::size_t questionCount = flow.biography().questions().size();
+    for (std::size_t i = 0; i < questionCount; ++i) {
+        flow.chooseChoice();  // answer (a) of each, deterministic
+    }
+    REQUIRE(flow.biographyDone());
+    REQUIRE(flow.step() == render::CreationStep::Customize);
+    flow.moveCustomizeCursor(static_cast<int>(flow.view().topics.size()) - 1);
+    REQUIRE(flow.view().topics.back() == "BEGIN");
+    flow.chooseCustomizeRow();
     REQUIRE(flow.done());
     const render::CreationResult& chosen = flow.result();
     CHECK_FALSE(chosen.companion.loaded());  // CUSTOM carries no fixed sheet

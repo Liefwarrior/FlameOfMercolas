@@ -502,8 +502,13 @@ TEST_CASE("the accumulator sums a known selection to the doc's own numbers") {
         }
         return 0;
     };
-    // streetwise: B2c +2, B3c +4, B5d +2, B7b +2, B10b +4 -> 14.
-    CHECK(lookup(fx->skillDeltas, "streetwise") == 14);
+    // streetwise: B2c +2, B3c +4, B5d +2, B7b +2, B10b +4, B11c +4, B12d +2
+    // -> 20. The first gate run of this suite failed here on 14: the
+    // original hand-sum forgot B11c ("read the new names... streetwise +4,
+    // linkcraft +2", CHARGEN-DAGGERFALL-DRAFT.md B11) and B12d ("someone is
+    // dead on the strand... streetwise +2", doc B12) -- the doc and the
+    // shipped biography.json agree on both, so the sum was the stale side.
+    CHECK(lookup(fx->skillDeltas, "streetwise") == 20);
     // skyrunning: B2c +6, B4b +4, B6b +6 -> 16.
     CHECK(lookup(fx->skillDeltas, "skyrunning") == 16);
     // linkcraft: B1b +4, B11c +2 -> 6.
