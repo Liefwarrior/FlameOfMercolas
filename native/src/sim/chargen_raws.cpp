@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "granadad/sim/barks.hpp"  // foldToAscii -- see stringField below
 #include "granadad/sim/faction.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/social.hpp"
@@ -34,7 +35,12 @@ namespace {
     if (found == node.end() || !found->is_string()) {
         return {};
     }
-    return found->get<std::string>();
+    // Folded on the way in, notables.cpp's own rule for its bios: every prompt
+    // and answer here ends up on the creation screens, and the owner's files
+    // carry UTF-8 em-dashes the 4x6 font cannot draw. Ids and skill names are
+    // 7-bit already, so folding the one funnel every string field passes
+    // through changes nothing the validators compare.
+    return foldToAscii(found->get<std::string>());
 }
 
 [[nodiscard]] std::int32_t intField(const nlohmann::json& node, const char* key,
