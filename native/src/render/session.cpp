@@ -1312,6 +1312,13 @@ void Session::step(const sim::MoveInput& input) {
     moved.crouch = tavern_->stance() == sim::Stance::Crouched;
     const bool walking = moved.forward != 0 || moved.strafe != 0;
     tavern_->setPlayerMotion(walking, moved.sprint && !moved.crouch);
+    // FIRST-PERSON COMBAT (S13). THE EFFECTIVE GUARD, PUSHED EVERY STEP the
+    // identical way the motion above is: the client only reports the key's
+    // physical edge (setBlocking -> blockHeld_), and what the ROOM is told is
+    // derived here so a page opening mid-hold lowers the guard the same step
+    // it takes the keyboard, and a page closing under a still-held key raises
+    // it again -- no edge event exists for either of those moments.
+    tavern_->setPlayerBlocking(blockHeld_ && !talking() && !picking());
     body_->step(moved);
     syncTavernToBody();
 
@@ -1409,6 +1416,9 @@ void Session::step(const sim::MoveInput& input) {
     standingAnim_.advance();
     heatAnim_.advance();
     stashAnim_.advance();
+    // FIRST-PERSON COMBAT (S13). THE SAME PER-STEP ADVANCE.
+    spellAnim_.advance();
+    blockAnim_.advance();
     // INNOVATION SPRINT ITEM #2. THE SAME PER-STEP ADVANCE, ONE PER TILE.
     characterFocusAnim_.advance();
     mapFocusAnim_.advance();
@@ -1426,12 +1436,25 @@ void Session::step(const sim::MoveInput& input) {
     // simulation and nothing here is hashed -- see punchTakenPulse_'s own
     // header.
     const std::int32_t hpNow = tavern_->playerHp();
+    // FIRST-PERSON COMBAT (S13). A GUARDED HIT IS ITS OWN, QUIETER MOMENT.
+    // blowsBlocked() moving in the same step the hp dropped means the guard
+    // caught what landed, so the cool blockPulse_ fires INSTEAD of the
+    // blooded punchTakenPulse_ -- one wash per blow, per the restraint note
+    // in drawFrame(), and the guard working reads different from the guard
+    // failing. The same comparison-not-flag shape as lastPlayerHp_ itself.
+    const std::int32_t blockedNow = tavern_->blowsBlocked();
     if (hpNow < lastPlayerHp_) {
-        punchTakenPulse_.trigger();
+        if (blockedNow > lastBlowsBlocked_) {
+            blockPulse_.trigger();
+        } else {
+            punchTakenPulse_.trigger();
+        }
     }
     lastPlayerHp_ = hpNow;
+    lastBlowsBlocked_ = blockedNow;
     punchLandedPulse_.advance();
     punchTakenPulse_.advance();
+    blockPulse_.advance();
     alertPulse_.advance();
     // NOW the string can go. messageSteps_ reaching zero is what stopped
     // WANTING the alert on screen -- see the note above and syncPanelAnim's
@@ -1465,6 +1488,8 @@ void Session::step(const sim::MoveInput& input) {
     clearIfClosed(standingAnim_, standingCache_);
     clearIfClosed(heatAnim_, heatCache_);
     clearIfClosed(stashAnim_, stashCache_);
+    clearIfClosed(spellAnim_, spellCache_);
+    clearIfClosed(blockAnim_, blockCache_);
 
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
@@ -2573,6 +2598,33 @@ void Session::punch() {
     }
 }
 
+void Session::castEquipped() {
+    dismissOverlays();
+    if (talking() || picking()) {
+        // The keyboard is a topic list's (or a lock's) right now. Inert, the
+        // same way setCrouched already stands down -- a link opened from
+        // inside a conversation would be a fact nobody saw being made.
+        return;
+    }
+    // The room resolves the whole of it -- every refusal included -- and
+    // always answers with a line, so the key can never silently do nothing.
+    // See sim::Tavern::playerCastEquipped()'s own header.
+    const sim::Tavern::CastResult result = tavern_->playerCastEquipped();
+    say(result.line);
+    // NO NEW PULSE, DELIBERATELY. The restraint note in drawFrame() stands:
+    // two real moments got a flash and a cast is not being bolted on as a
+    // third -- a landed harmful cast already reads on the target and the
+    // alert row, and the punch-taken/blocked pair stays the whole of the
+    // wash vocabulary.
+}
+
+void Session::setBlocking(bool held) {
+    // The EDGE only. What the room is told is derived in step(), every step
+    // -- see the comment there on why (a page can open or close mid-hold,
+    // and no edge event exists for either moment).
+    blockHeld_ = held;
+}
+
 void Session::restHere() {
     dismissOverlays();
     const sim::ServiceResult slept = tavern_->sleep();
@@ -3296,6 +3348,12 @@ void Session::syncPanelAnim() noexcept {
     sync(standingAnim_, standingCache_, standingLine());
     sync(heatAnim_, heatCache_, heatLine());
     sync(stashAnim_, stashCache_, stashLine());
+    // FIRST-PERSON COMBAT (S13). THE SAME sync() SHAPE, for the two rows the
+    // Cast/Block task added -- each on its own EasedToggle per the pinned
+    // convention, because a readied crafting appearing has nothing to do with
+    // a guard going up.
+    sync(spellAnim_, spellCache_, spellLine());
+    sync(blockAnim_, blockCache_, blockLine());
 }
 
 std::string Session::rivalLine() const {
@@ -3347,6 +3405,31 @@ std::string Session::stashLine() const {
         line += "  " + std::to_string(sack.illicitWeight()) + "DR";
     }
     return clip(std::move(line), 34);
+}
+
+std::string Session::spellLine() const {
+    // WHAT THE HAND IS HOLDING, one line on the top-right edge -- the same
+    // deal the sack got, and for the same reason: a readied crafting is
+    // exactly the kind of element that creeps into being a hotbar panel.
+    // Empty with an empty grimoire (absence costs nothing), and the cooling
+    // clock rides the same line rather than earning a meter.
+    const sim::Spell* spell = tavern_->equippedSpell();
+    if (spell == nullptr) {
+        return {};
+    }
+    std::string line = "CAST  " + upperAscii(spell->displayName);
+    const std::int64_t cooling = tavern_->castCooldownLeft();
+    if (cooling > 0) {
+        line += " (" + std::to_string(cooling) + "S)";
+    }
+    return clip(std::move(line), 34);
+}
+
+std::string Session::blockLine() const {
+    // THE ROOM'S OWN FACT, not the keypress: playerBlocking() is what
+    // tickBrawl actually reads, so this row can never say GUARD UP while a
+    // menu has quietly lowered it -- see step()'s own derivation.
+    return tavern_->playerBlocking() ? "GUARD UP" : std::string();
 }
 
 std::string Session::contractLine() const {
@@ -3522,6 +3605,17 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             target.fillRect(0, 0, target.width(), target.height(), Rgb{0.58F, 0.10F, 0.08F},
                             0.18F * taken);
         }
+        // FIRST-PERSON COMBAT (S13). A BLOW THE GUARD CAUGHT: cool steel
+        // instead of blood, and QUIETER than either flash above -- the guard
+        // working is the calmest of the three moments, and step() fires this
+        // INSTEAD of the taken-wash for a blocked blow, never as well, so
+        // this stays inside the "two real moments, executed with restraint"
+        // budget rather than stacking on top of it.
+        const float blocked = blockPulse_.value();
+        if (blocked > 0.0F) {
+            target.fillRect(0, 0, target.width(), target.height(), Rgb{0.52F, 0.60F, 0.70F},
+                            0.12F * blocked);
+        }
     }
 
     HudState hud;
@@ -3581,6 +3675,13 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.heatFade = heatAnim_.value();
     hud.stashLabel = std::string_view{stashCache_};
     hud.stashFade = stashAnim_.value();
+    // FIRST-PERSON COMBAT (S13). What the hand is holding and whether the
+    // guard is up -- each reading its own cache and fading the identical way
+    // every row above does.
+    hud.spellLabel = std::string_view{spellCache_};
+    hud.spellFade = spellAnim_.value();
+    hud.blockLabel = std::string_view{blockCache_};
+    hud.blockFade = blockAnim_.value();
     // S9. Whether the room can see you, and the lock under the wire. Both on
     // edges, both empty when they have nothing to say -- the right-hand stack
     // for the first, the bottom band for the second. Both read their own
@@ -5419,6 +5520,30 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += landed ? 1 : 0;
     }
 
+    if (config.block) {
+        // VERIFICATION ONLY. See SmokeRunConfig::block's own header. The
+        // brawl starts the way --punch starts one, the guard goes up through
+        // the SAME Session::setBlocking() the right mouse button calls, and
+        // the wait is until the room itself says a blow was softened --
+        // blowsBlocked() moving -- because a run of whiffs leaves a GUARD UP
+        // row over a fight the guard never actually worked in.
+        session.closeConversation();
+        session.punch();
+        session.setBlocking(true);
+        const std::int32_t before = session.tavern().blowsBlocked();
+        // Blows land once a simulated second; a dozen seconds of held guard
+        // is enough for several, and the bound keeps a pathological room from
+        // hanging the capture.
+        constexpr int kBlockWaitSteps = 12 * 60;
+        int waited = 0;
+        while (session.tavern().blowsBlocked() == before && waited < kBlockWaitSteps) {
+            session.stepMany(sim::MoveInput{}, 1);
+            ++waited;
+        }
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.tavern().blowsBlocked() > before ? 1 : 0;
+    }
+
     if (config.street) {
         const StreetLineResult street = runStreetLine(session, config.streetWho,
                                                       config.streetTopic);
@@ -5440,6 +5565,19 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedWanted += line == nullptr ? 0 : static_cast<std::int32_t>(
                                                           line->stages.size());
         result.scriptedLanded += result.flameStages;
+    }
+
+    if (config.cast) {
+        // VERIFICATION ONLY. See SmokeRunConfig::cast's own header: the same
+        // call C makes, once. AFTER the flame block above, deliberately --
+        // that line's teaching beat is what stocks the grimoire, so
+        // `--flame --flameEnd=away --cast` photographs the CAST row with a
+        // crafting actually in the hand; --cast alone photographs the
+        // empty-grimoire refusal on the alert row, the common state.
+        session.closeConversation();
+        session.castEquipped();
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.lastMessage().empty() ? 0 : 1;
     }
 
     if (config.roofs) {

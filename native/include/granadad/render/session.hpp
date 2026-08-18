@@ -247,6 +247,17 @@ public:
     /// F. Throws a punch. In a taproom that is an offence, and the house has
     /// opinions about it.
     void punch();
+    /// C. Casts the equipped crafting -- sim::Tavern::playerCastEquipped() is
+    /// the whole resolution including every refusal, and every outcome is
+    /// said on the alert row, because a key that can silently do nothing is a
+    /// key the player reads as broken.
+    void castEquipped();
+    /// RMB, HELD. The client pushes the edge (down is blocking) and step()
+    /// pushes the effective state into the room every step, gated inert while
+    /// talking()/picking() the same way movement keys are -- a guard raised
+    /// inside a menu would be a fact about the world nobody could see being
+    /// made.
+    void setBlocking(bool held);
     /// R. Sleeps, if there is a rented room and you are standing in it.
     ///
     /// NOT BOUND TO A KEY OF ITS OWN ANY MORE -- #85 folded this into
@@ -717,6 +728,16 @@ public:
     /// missing the treatment every bottom-left row already has -- see
     /// syncPanelAnim()'s own note on standingAnim_/heatAnim_/stashAnim_.
     [[nodiscard]] std::string standingLine() const;
+    /// "CAST  STING" -- the crafting the next press of C will spend, with
+    /// "(12S)" appended while the link is still cooling. Empty with an empty
+    /// grimoire: absence costs nothing, the row appears the moment there is a
+    /// crafting to ready. PUBLIC for the same reason stashLine is: a case
+    /// pins both what this says and that it stays on its edge.
+    [[nodiscard]] std::string spellLine() const;
+    /// "GUARD UP" exactly while the room's own playerBlocking() is true, and
+    /// empty otherwise -- the held state made visible, not the keypress.
+    /// PUBLIC for the identical reason.
+    [[nodiscard]] std::string blockLine() const;
 
     // --- the conversation ---------------------------------------------------
     //
@@ -1108,6 +1129,13 @@ private:
     EasedToggle standingAnim_;
     EasedToggle heatAnim_;
     EasedToggle stashAnim_;
+    /// FIRST-PERSON COMBAT (S13). The two rows the Cast/Block task added,
+    /// each with its OWN EasedToggle per the convention DECISIONS.md pinned:
+    /// the equipped-crafting readout (top-right stack, under the sack) and
+    /// the held-guard indicator (bottom band). A readied spell appearing has
+    /// nothing to do with a guard going up, so they do not share one.
+    EasedToggle spellAnim_;
+    EasedToggle blockAnim_;
     /// The last non-empty text each row above showed, held onto through the
     /// row's own fade-out -- the identical reason message_ outlives
     /// messageSteps_ (see step()'s own note by the alert's clear): an alpha
@@ -1125,6 +1153,8 @@ private:
     std::string standingCache_;
     std::string heatCache_;
     std::string stashCache_;
+    std::string spellCache_;
+    std::string blockCache_;
 
     /// INNOVATION SPRINT ITEM #2. Which of the tiled Menu's four tiles is
     /// easing toward or away from input focus, one EasedToggle a tile --
@@ -1169,6 +1199,22 @@ private:
     /// needs to run its own decay without restarting the other's.
     ImpactPulse punchLandedPulse_;
     ImpactPulse punchTakenPulse_;
+    /// FIRST-PERSON COMBAT (S13). A blow the GUARD caught -- told apart from
+    /// an unguarded hit by tavern_->blowsBlocked() moving (the same
+    /// comparison-not-flag shape lastPlayerHp_ uses, one line below), and
+    /// drawn as its own cooler, quieter wash INSTEAD of punchTakenPulse_'s
+    /// blooded one for that step: the guard working should read different
+    /// from the guard failing, and two washes for one blow would be the
+    /// scattershot the restraint note forbids. Not hashed, same reason as
+    /// its two siblings.
+    ImpactPulse blockPulse_;
+    std::int32_t lastBlowsBlocked_ = 0;
+    /// Whether the Block key is physically down, straight off the client's
+    /// edge events. Render-side bookkeeping, NOT the fact the sim hashes --
+    /// step() derives that (held AND not talking/picking) and pushes it into
+    /// the room every step, so a guard raised before a menu opened cannot
+    /// stay silently raised underneath it.
+    bool blockHeld_ = false;
     /// Last step's own hit points, purely so step() can tell "the player was
     /// just hit" apart from every OTHER reason playerHp() could differ from
     /// one frame to the next (there is only the one today, but comparing
@@ -1358,6 +1404,23 @@ struct SmokeRunConfig {
     /// with bouncers watching, the alert plate's own pulse once the house
     /// notices) had no headless capture path at all before this.
     bool punch = false;
+    /// FIRST-PERSON COMBAT (S13). VERIFICATION ONLY, the identical reason
+    /// `punch` exists: the held-guard indicator and its blocked-blow wash had
+    /// no headless capture path. Starts a brawl exactly the way --punch does
+    /// (the same Session::punch() a keypress calls), raises the guard through
+    /// the same Session::setBlocking() the right mouse button calls, and
+    /// holds it until at least one blow has actually been SOFTENED (the
+    /// room's own blowsBlocked() moving) or a bounded wait runs out -- a
+    /// brawl whose every swing whiffed leaves nothing on screen to prove.
+    bool block = false;
+    /// FIRST-PERSON COMBAT (S13). VERIFICATION ONLY. One press of Cast --
+    /// Session::castEquipped(), the same call C makes -- after whatever the
+    /// other flags scripted. Paired with --flame (whose line ends with the
+    /// priest's teaching) the grimoire is stocked and the equipped-crafting
+    /// HUD row has something to show; alone, the photographed truth is the
+    /// empty-grimoire refusal on the alert row, which is the COMMON state and
+    /// worth a picture of its own.
+    bool cast = false;
     /// S5. Climb onto the Gilded Gull's roof and look down at the ward: in at
     /// the door, up the stair, out over the north wall, and turn round. WHERE
     /// is "roof" (standing on the lead), "leap" (across the alley onto the next

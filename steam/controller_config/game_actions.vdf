@@ -113,6 +113,18 @@
 				{
 					"title"		"#Action_QuickWheel"
 				}
+				// S13, the combat pair -- Cast (C / right trigger) and Block
+				// (right mouse / left trigger, HELD while blocking). Declared
+				// as plain Buttons: a hold is a button that stays down, and
+				// Steam Input's own configs decide analog-trigger thresholds.
+				"Cast"
+				{
+					"title"		"#Action_Cast"
+				}
+				"Block"
+				{
+					"title"		"#Action_Block"
+				}
 				"OpenMenu"
 				{
 					"title"		"#Action_OpenMenu"
@@ -193,6 +205,8 @@
 			"Action_Walk"			"Walk"
 			"Action_VerticalMove"		"Jump / Vault / Climb / Drop"
 			"Action_QuickWheel"		"Quick Wheel"
+			"Action_Cast"			"Cast Spell"
+			"Action_Block"			"Block"
 			"Action_OpenMenu"		"Open Menu"
 			"Action_Pause"			"Pause"
 

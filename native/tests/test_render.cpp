@@ -492,6 +492,9 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     full.standingLabel = "THE WARD WANTS YOU GONE";
     full.heatLabel = "CONDEMNED  WANTED  HEAT 84  LOOT 12  BALE";
     full.stashLabel = "3 FLOWER  2 WIRE  4 DUST  240DR";
+    // S13: the two rows the Cast/Block task added, at their own longest.
+    full.spellLabel = "CAST  SET THE SHOULDERS (599S)";
+    full.blockLabel = "GUARD UP";
     full.stealthLabel = "SEEN CROUCH  LIT 88  LOUD";
     full.caseLabel = "CASE 4/6 > THE DROWNED HOLD  EMPTYING";
     full.guildLabel = "THE SKYRUNNERS - THE WARD'S OWN SHADOW";

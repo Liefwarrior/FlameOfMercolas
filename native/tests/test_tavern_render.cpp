@@ -1206,3 +1206,55 @@ TEST_CASE("the ward's roll is in the windowed game, and a rival can take ground 
     CHECK(session.ward().stats().harvests > harvestsBefore);
 }
 
+
+// ===========================================================================
+// S13 -- the guard row and the equipped-crafting row
+// ===========================================================================
+
+TEST_CASE("the guard row is the room's fact, and a conversation lowers it") {
+    // The client only reports the key's physical edge (setBlocking); what the
+    // ROOM is told is derived once a step, in step() -- so a page eating the
+    // keyboard lowers the guard with no release edge ever firing, and the
+    // page closing under a still-held key raises it again. blockLine() reads
+    // tavern().playerBlocking(), the exact state tickBrawl reads, so this
+    // case is pinning the row to the fact and not to the keypress.
+    Session session(insideTheGull(11, sim::gull::kBartenderX, sim::gull::kBarY - 1, 180));
+    CHECK(session.blockLine().empty());
+
+    session.setBlocking(true);
+    session.stepMany(sim::MoveInput{}, 2);
+    CHECK(session.blockLine() == "GUARD UP");
+    CHECK(session.tavern().playerBlocking());
+
+    session.interact();
+    REQUIRE(session.talking());
+    session.stepMany(sim::MoveInput{}, 2);
+    CHECK(session.blockLine().empty());
+    CHECK_FALSE(session.tavern().playerBlocking());
+
+    session.closeConversation();
+    session.stepMany(sim::MoveInput{}, 2);
+    CHECK(session.blockLine() == "GUARD UP");
+
+    session.setBlocking(false);
+    session.stepMany(sim::MoveInput{}, 2);
+    CHECK(session.blockLine().empty());
+}
+
+TEST_CASE("the equipped-crafting row appears the moment there is one to ready") {
+    Session session(insideTheGull(20, 152, 70, 0));
+    // ABSENCE COSTS NOTHING: the grimoire is empty at spawn and the row says
+    // nothing rather than saying so.
+    CHECK(session.spellLine().empty());
+    // And the key itself refuses out loud rather than doing nothing -- the
+    // COMMON state, and the main path a new player actually hits.
+    session.castEquipped();
+    CHECK(session.lastMessage() == "NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES.");
+
+    // The first crafting learned is the default equip -- no menu trip; the
+    // row appears with it, one line on the top-right edge.
+    const sim::Spell* sting = session.tavern().spellbook().find("sting");
+    REQUIRE(sting != nullptr);
+    REQUIRE(session.tavern().dialogue().grimoire().learn(*sting));
+    CHECK(session.spellLine() == "CAST  STING");
+}

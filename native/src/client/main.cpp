@@ -308,6 +308,10 @@ void print_usage() {
         "                       before the shutter goes\n"
         "  --punch              VERIFICATION ONLY: retry the punch key until\n"
         "                       one lands, before the shutter goes\n"
+        "  --block              VERIFICATION ONLY: start a brawl, raise the\n"
+        "                       guard, hold it until a blow is softened\n"
+        "  --cast               VERIFICATION ONLY: press the cast key once\n"
+        "                       (pair with --flame to have a spell to cast)\n"
         "  --creation[=STEP]    capture the origin-select/customize flow with\n"
         "                       no window and no world. STEP is origin\n"
         "                       (default), customize (CUSTOM, a few points\n"
@@ -538,6 +542,14 @@ void print_usage() {
         } else if (std::strcmp(arg, "--punch") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::punch's own header.
             options.smoke.punch = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--block") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::block's own header.
+            options.smoke.block = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--cast") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::cast's own header.
+            options.smoke.cast = true;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--creation") == 0) {
             options.wantsCreation = true;
@@ -1564,6 +1576,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // no tap-vs-hold ambiguity to resolve here the way Sprint/Crouch have --
     // it is open for exactly as long as QuickWheel is down and never latches.
     bool quickWheelOpen = false;
+    // S13. THE TRIGGERS' OWN EDGE STATE. SDL reports LT/RT as AXES, never as
+    // button events, so kPadTable can never produce them; the poll after the
+    // stick section synthesizes pressed()/released() on threshold crossings
+    // and these two remember which side of the threshold each trigger was on
+    // last frame. They clear themselves the frame a pad goes away (or goes
+    // quiet behind a menu): livePad reading null is an ordinary release edge.
+    bool leftTriggerDown = false;
+    bool rightTriggerDown = false;
 
     bool running = true;
     std::int64_t frames = 0;
@@ -1656,6 +1676,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 case render::Action::QuickWheel:
                     quickWheelOpen = true;
                     return;
+                // S13. THE COMBAT PAIR. Cast is an ordinary press, exactly
+                // like Attack; Block is HELD, the QuickWheel's plain-bool
+                // shape rather than a HoldToggle -- a latched guard is a
+                // footgun in a fight, and Session::setBlocking's own header
+                // says where the hold actually becomes the room's fact.
+                case render::Action::Cast:
+                    session.castEquipped();
+                    return;
+                case render::Action::Block:
+                    session.setBlocking(true);
+                    return;
                 case render::Action::QuickNext:
                     quickSlot = (quickSlot + 1) % 10;
                     session.selectQuickSlot(quickSlot);
@@ -1725,6 +1756,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 // way QuickNext/QuickPrev always applied immediately -- there
                 // is no separate "confirm" beyond letting go.
                 quickWheelOpen = false;
+            } else if (action == render::Action::Block) {
+                // S13. LOWERS THE GUARD. Held means blocking, up means not,
+                // no latch -- see the press side's own note.
+                session.setBlocking(false);
             }
         };
 
@@ -1962,6 +1997,49 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                              render::padLook(controls_now.mouse.invertY ? look.y : -look.y,
                                              padTuning.lookBamPerSecond, 1));
             }
+        }
+
+        // --- the triggers ---------------------------------------------------
+        //
+        // S13. SDL reports LT/RT as AXES (SDL_GAMEPAD_AXIS_*_TRIGGER, 0..32767),
+        // never as SDL_EVENT_GAMEPAD_BUTTON_DOWN -- so kPadTable can never
+        // produce Key::PadLeftTrigger/PadRightTrigger and the two sat in the
+        // Key enum with no way to ever fire. Polled here into synthesized
+        // pressed()/released() edges on threshold crossings, which finally
+        // gives PadSettings::triggerDeadzonePercent -- persisted, sanitised
+        // and parsed since the pad-readiness pass, read by nothing until now
+        // -- its one reader. An edge, not a level, so a held trigger behaves
+        // exactly like any held key: Block=LT stays down for as long as the
+        // finger does, Cast=RT fires once per pull. Runs OUTSIDE the
+        // `livePad != nullptr` stick block on purpose -- a pad unplugged (or
+        // muted behind a page: `listening` nulls livePad above) mid-pull
+        // reads as an ordinary release edge instead of a stuck guard.
+        {
+            const std::int32_t threshold =
+                controls_now.pad.triggerDeadzonePercent * render::kStickMax / 100;
+            const auto triggerEdge = [&](bool& wasDown, SDL_GamepadAxis axis,
+                                         render::Key key) {
+                const bool isDown = livePad != nullptr &&
+                                    SDL_GetGamepadAxis(livePad, axis) > threshold;
+                if (isDown == wasDown) {
+                    return;
+                }
+                wasDown = isDown;
+                if (isDown) {
+                    // The same route a physical button-down takes, menu
+                    // router first -- a trigger bound to a verb must not
+                    // outrank a page that is eating the keyboard.
+                    if (!route_menu_key(session, key)) {
+                        pressed(key);
+                    }
+                } else {
+                    released(key);
+                }
+            };
+            triggerEdge(leftTriggerDown, SDL_GAMEPAD_AXIS_LEFT_TRIGGER,
+                        render::Key::PadLeftTrigger);
+            triggerEdge(rightTriggerDown, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
+                        render::Key::PadRightTrigger);
         }
 
         held.crouch = crouch.active();

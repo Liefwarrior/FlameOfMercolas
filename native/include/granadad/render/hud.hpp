@@ -103,6 +103,18 @@ struct HudState {
     /// of the screen. An inventory in this game is one line in a corner until
     /// it has earned more.
     std::string_view stashLabel;
+    /// FIRST-PERSON COMBAT (S13): the crafting the next press of Cast will
+    /// spend -- "CAST  STING", with "(12S)" riding the same line while the
+    /// link cools. Top-right under the sack, one line on the edge, because a
+    /// readied spell is exactly the element that creeps into being a hotbar
+    /// panel. Empty draws nothing: the grimoire is empty at spawn and the
+    /// row appears the moment there is a crafting to ready.
+    std::string_view spellLabel;
+    /// FIRST-PERSON COMBAT (S13): "GUARD UP" exactly while the room's own
+    /// held-block state is true. Bottom band, centred, right behind the lock
+    /// in priority -- a held guard is read every second of a fight, and it
+    /// is the ROOM's fact (what tickBrawl actually reads), never the key's.
+    std::string_view blockLabel;
     /// The ladder the player is highest on, and the rung: "FLAME - DISCIPLE".
     /// Bottom-left, stacked over the health bar, because that is where a
     /// character's own state lives and the centre stays empty. Drawn only when
@@ -210,6 +222,10 @@ struct HudState {
     float standingFade = 1.0F;
     float heatFade = 1.0F;
     float stashFade = 1.0F;
+    /// FIRST-PERSON COMBAT (S13). The same pattern for the two rows the
+    /// Cast/Block task added, each on its own Session-side EasedToggle.
+    float spellFade = 1.0F;
+    float blockFade = 1.0F;
     /// INNOVATION SPRINT ITEM #3. 1 the instant a NEW bouncer's warning
     /// arrives, easing down to 0 over a handful of frames -- see
     /// render::ImpactPulse's own header and Session::alertPulse_'s. Unlike
