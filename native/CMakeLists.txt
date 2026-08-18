@@ -302,6 +302,10 @@ add_library(granadad-render STATIC
     # Morrowind round -- the tiled Menu (Character/Map/Letters top, Journal
     # full-width bottom, all four drawn at once). See the file's own header.
     src/render/menu_view.cpp
+    # Core action #13 -- THE WARD MAP: the full-screen top-down district plan
+    # the M key opens, with the authored sign names decluttered onto it. See
+    # the file's own header on why it is navigation, not the Chart tile.
+    src/render/map_view.cpp
     src/render/capture.cpp
     src/render/session.cpp
     src/render/step_pump.cpp
@@ -509,6 +513,12 @@ if(GRANADAD_BUILD_TESTS)
         # lead), on the same read-only reference-list surface the keys page
         # and the character sheet already prove.
         tests/test_map.cpp
+        # Core action #13 -- THE WARD MAP. The plan's cell classification
+        # against the real baked Docks, the palette derived from the atlas's
+        # own tones, and the label declutter proved deterministic, overlap-
+        # free, and -- the acceptance sentence -- able to place the Mission
+        # of the Flame from the authored spawn.
+        tests/test_map_view.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.

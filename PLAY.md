@@ -57,15 +57,55 @@ the casebook — see §2.
 
 ## 2. Character creation, start to finish
 
-Three doors, one screen, LEFT/RIGHT to move between the cards and ENTER to
-pick one:
+Five rows, one screen, UP/DOWN to move and ENTER to pick. The top three are
+the Daggerfall flow's own doors — make your own; the bottom two are quick
+starts:
 
-![Choose your origin: Devin, Gabri, or Custom](docs/frames/s10-12-chargen-origin.png)
+![A NAME FOR YOURSELF: take a calling, answer for yourself, walk your own path — or Gabri and Devin as quick starts](docs/frames/s14-chargen-origin.png)
+
+**TAKE A CALLING** lists the ward's nine trades — Dockhand, Deckhand, Watch
+Runner, Netter, Mudlark, Roof-Tenant, Almsbearer, Stallkeep, Copy-Clerk, each
+a full pre-authored Primary/Major/Minor sheet out of
+`content/raws/chargen/callings.json`, previewed whole in the middle of the
+screen while you hover it:
+
+![The nine-trade roster, Netter hovered, its whole sheet previewed](docs/frames/s14-chargen-calling.png)
+
+**ANSWER FOR YOURSELF** is the ward's ten questions — second person, three
+defensible answers each, answer order shuffled per question so the axes can't
+be pattern-marked. Three identity meters (HAND / MUDLARK / DISCIPLE) fill as
+answers land, and the hovered answer is always spelled out in full mid-screen:
+
+![Question five of ten, the meters at a mid-quiz tally](docs/frames/s14-chargen-quiz.png)
+
+Ten answers become a verdict card — the tally in the header, the offered
+trade's whole sheet previewed under it. **The verdict is never a trap**:
+`TAKE THE CALLING` or `ANOTHER TRADE`, which drops you on the roster to pick
+by eye instead:
+
+![The ward's verdict: HAND 5 MUDLARK 3 DISCIPLE 2 — Deckhand, take it or choose another](docs/frames/s14-chargen-verdict.png)
+
+Either way you then answer for your past — **the twelve-question biography**
+(`content/raws/chargen/biography.json`), each answer moving real levers:
+skill deltas, the starting purse, faction standing (zero-sum, enforced at
+load), seeded dispositions with named notables, starting heat, hpMax. The
+first question also offers `A PAST AT RANDOM`, Daggerfall's own option:
+
+![B4 — the Watch knows your face because…](docs/frames/s14-chargen-background.png)
+
+All three doors converge on the same review screen with the result
+pre-designated — and everything the sheet can't hold (coin, heat, standings,
+seeds, hpMax) rides `CreationResult::effects` to the boot seam and is applied
+once through the engine's own setters:
+
+![The convergence: a taken Netter reviewed on the customize screen](docs/frames/s14-chargen-review.png)
 
 **DEVIN and GABRI are Eli's own BG3/Divinity: Original Sin 2-style origin
 templates** — fixed, hand-authored characters, not something you spend points
-on. Pick one and the next screen shows a real skill sheet pulled straight out
-of `content/raws/companions/devin.json` or `gabri.json`, read-only:
+on, and they skip the quiz and the biography entirely: their history is the
+raws' own. Pick one and the next screen shows a real skill sheet pulled
+straight out of `content/raws/companions/devin.json` or `gabri.json`,
+read-only:
 
 ![Devin's fixed sheet: SIDEARMS 30, SKYRUNNING 30, CRACKSMANSHIP 30, and nine more, paged](docs/frames/s10-14-chargen-devin.png)
 
@@ -78,10 +118,14 @@ a different read of the character (Bladework and Channeling where Devin has
 none of either). Press `0` to page to the rest — the row list runs to twelve
 skills plus four derived attributes.
 
-**CUSTOM is the point-bought path** — Daggerfall's own Primary/Major/Minor
-sheet, for real:
+**WALK YOUR OWN PATH is the point-bought path** — Daggerfall's own
+Primary/Major/Minor sheet, for real, with the difficulty dagger's readout in
+the status line (`DAGGER +0 PACE X1.00` — the Q8 advancement multiplier is
+live in the sim; the advantage shop that would move it is priced in
+`docs/design/CHARGEN-DAGGERFALL-DRAFT.md` §5 and awaits sign-off, so the
+points stay honestly at zero):
 
-![Customize screen: PRIMARY 0/3 MAJOR 0/3 MINOR 0/6 POINTS 22 LEFT, and a LOOK row over the ward's own appearance vocabulary](docs/frames/s10-13-chargen-custom.png)
+![The custom builder: slots, points, and the dagger readout](docs/frames/s14-chargen-custom.png)
 
 `NAME` (type it — letters, spaces, hyphens, apostrophes, sixteen glyphs), then
 `LOOK` (LEFT/RIGHT cycles eleven of the ward's own sprite types — the same
@@ -92,18 +136,25 @@ NONE → PRIMARY → MAJOR → MINOR → NONE, refused the instant a tier is ful
 three Primary slots, three Major, six Minor, exactly like Devin and Gabri's
 fixed sheets), then four attribute rows spending a shared point pool. `BEGIN`
 is greyed until you have typed a name; it does **not** require every slot
-filled, so you can start with an unfinished sheet on purpose.
+filled, so you can start with an unfinished sheet on purpose. The first
+`BEGIN` a make-your-own path presses routes through the biography once —
+sheet, then your past, then back here to review, the doc's own order — and
+the second one starts the game.
 
 **What actually happens when you press BEGIN:** the game opens on the
 Tarwalk with your name and your look, and **your built sheet now reaches
 your actual playable skills** — `run_client()` writes `chosen.chargen.apply()`
 / `chosen.companion.applyStartingSkills()` straight into
 `session.tavern().dialogue().skills()`, the one live `SkillTrack` every
-mechanic in the build reads. A Devin who took Cracksmanship at Primary opens
-a lock measurably faster than one who never touched it, tonight, in this
-build — not cosmetic. (Attribute points are the one thing left uncrossed on
-purpose: nothing downstream reads them yet, so wiring them would mean
-inventing a mechanic, not closing a seam.)
+mechanic in the build reads — and then applies your biography's effects,
+once, through the engine's own public seams: the purse the barter verbs
+move, direct faction-row seeds, `SocialLedger::seed` for the named notables
+who already know you, starting heat, hpMax, and the dagger's Q8 multiplier
+onto how fast every skill grinds. A Devin who took Cracksmanship at Primary
+opens a lock measurably faster than one who never touched it, tonight, in
+this build — not cosmetic. (Attribute points are the one thing left
+uncrossed on purpose: nothing downstream reads them yet, so wiring them
+would mean inventing a mechanic, not closing a seam.)
 
 ---
 
@@ -141,12 +192,25 @@ Four keys are the rest of the game:
 |---|---|
 | **`Q`** | **look at what is here.** The investigation verb. |
 | **`E`** | **talk to whoever is in front of you.** Anyone, anywhere. |
-| **`J`** or **`TAB`** | **your casebook.** |
-| **`M`** | **the district map.** Known ground, open leads with a bearing from where you are actually standing, and who among the named will talk to you. New this morning. |
+| **`J`** or **`TAB`** | **your casebook.** The Chart tile inside it is the *investigation's* map — known ground, open leads with a bearing from where you are actually standing, and who among the named will talk to you. |
+| **`M`** | **the ward map.** New: a full-screen top-down plan of the whole district — streets, walls, the harbour, and every authored door and way name placed on the ground where it belongs. Your own position and facing are the light wedge. `M` or `ESC` closes it. On a pad it is the Select button. |
 | **`C`** | **your character sheet.** |
 | **`F1`** | **every key**, in the game, paged. |
 
 `F2` rebinds any of them, saved to `granadad-controls.cfg` beside the exe.
+
+**The ward map, because the owner asked for it in as many words** — "It's
+too difficult to locate places like the mission, let's give the player a map
+that they can press M to see":
+
+![The ward map from the Tarwalk spawn: the district plan, the harbour, the door and way names, the facing wedge](docs/frames/s14-ward-map.png)
+
+No discovery gating and no fog of war — the ward is home turf and the locals
+know it, so everything signed is shown. Way names are the grey register, door
+names the bone one, and door names place nearest-you-first, so the door you
+are hunting is the one that keeps its label. The plan is drawn at *your* band
+(one band down still reads, dimmed; the harbour always shows), so the same
+key on a rooftop shows the roof-slum plane instead of the quay.
 
 **Where to go first:** bottom-left reads `CASE 0/1 > MISSION OF THE FLAME`.
 It always names the next place the trail wants you. Stand there and press
@@ -298,21 +362,31 @@ current source, played rather than described:
 | | |
 |---|---|
 | `s10-11-morning.png` | the Tarwalk at eight, opening on the case |
-| `s10-12-chargen-origin.png` | choose your origin: Devin, Gabri, Custom |
-| `s10-13-chargen-custom.png` | the point-bought sheet, a LOOK row over the ward's own vocabulary |
+| `s14-chargen-origin.png` | the five rows: three Daggerfall doors, two quick starts |
+| `s14-chargen-calling.png` | the nine-trade roster, a whole sheet previewed |
+| `s14-chargen-quiz.png` | question five, the meters mid-tally |
+| `s14-chargen-verdict.png` | the tally's verdict card — take it, or another trade |
+| `s14-chargen-background.png` | the biography, question four of twelve |
+| `s14-chargen-review.png` | the convergence: a taken calling on the review screen |
+| `s14-chargen-custom.png` | the point-bought sheet, with the dagger readout |
 | `s10-14-chargen-devin.png` | Devin's fixed sheet, read-only, paged |
 | `s10-15-topic-root.png` | a real street conversation — TELL ME ABOUT is topic 1 |
 | `s10-16-topic-branches.png` | the five branches: place / person / thing / work / quest |
 | `s10-17-contract-work.png` | Watchman Cull, ASK ABOUT WORK on the list |
-| `s10-18-district-map.png` | the new district map — known ground, one open lead |
+| `s10-18-district-map.png` | the casebook's Chart tile — known ground, one open lead |
+| `s14-ward-map.png` | the ward map: the whole district plan under `M`, names on ground |
 
 Reproduce any of it:
 
 ```
-.\dist\granadad.exe --creation=devin --screenshot=x.png
+.\dist\granadad.exe --creation=origin --screenshot=x.png
+.\dist\granadad.exe --creation=quiz --screenshot=x.png       # also: calling,
+                                    # verdict, background, review, customize,
+                                    # devin, gabri
 .\dist\granadad.exe --street=hand --time=8 --screenshot=x.png
 .\dist\granadad.exe --contract=talk --screenshot=x.png
 .\dist\granadad.exe --map --screenshot=x.png
+.\dist\granadad.exe --map-overlay --screenshot=x.png
 ```
 
 ---
@@ -331,9 +405,10 @@ Reproduce any of it:
    build.
 4. **Talk to Cull, then Finch, then Maell** — the one complete faction-work
    loop that actually exists right now (§5).
-5. **Press `M`.** It is one keystroke old and it is a genuinely useful map,
-   not a gimmick — a bearing and a range to every open lead from wherever you
-   are actually standing.
+5. **Press `M`.** The whole district, top-down, with every signed door and
+   way named on the ground — find the Mission of the Flame by reading the
+   map, then walk there. (The *investigation's* map — bearings and ranges to
+   open leads — is the Chart tile in your casebook, `TAB`.)
 
 ### What works
 

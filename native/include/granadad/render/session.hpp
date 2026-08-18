@@ -35,6 +35,7 @@
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/lamps.hpp"
+#include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
@@ -654,6 +655,13 @@ public:
     // read, so a number press moves the cursor and nothing else.
     //
     // MORROWIND ROUND: THE TOP-CENTRE TILE. See toggleCharacter()'s own note.
+    //
+    // CORE ACTION #13 SUPERSEDED THE TEXT-ONLY STANCE FOR NAVIGATION, and
+    // only for navigation: the owner's direct ask ("It's too difficult to
+    // locate places like the mission...") added the full-screen graphical
+    // ward map below. THIS tile stays exactly what #82 built -- the
+    // INVESTIGATION's map: leads, bearings, who talks -- and nothing here
+    // moved.
     void toggleMap();
     /// True while the tiled Menu is open -- the same bool casebookOpen() is;
     /// see that accessor's own note.
@@ -663,6 +671,27 @@ public:
     /// why each section is built from what Casebook already knows and no new
     /// state.
     [[nodiscard]] std::vector<std::string> mapRows() const;
+
+    // --- the ward map (core action #13) ---------------------------------------
+    //
+    // THE OWNER'S ASK, VERBATIM: "It's too difficult to locate places like
+    // the mission, let's give the player a map that they can press M to
+    // see." A FULL-SCREEN top-down plan of the district, software-rendered
+    // from the same TileQuery the first-person pass reads, with the authored
+    // sign table's names on it -- see map_view.hpp for the page itself and
+    // for why this is NOT the tiled Menu's Chart tile (that tile is the
+    // INVESTIGATION's map -- leads, bearings, who talks -- and stays; this
+    // is NAVIGATION, and the owner's direct ask supersedes the old "the text
+    // map is settled" note for navigation purposes only).
+    //
+    // Pure render-layer reads: nothing here reaches the simulation, nothing
+    // is hashed, and the world hash is byte-identical with the page open.
+
+    /// M (or PadBack -- Select -- on a pad). Toggles the ward map; inert
+    /// while talking or picking, exactly like toggleGrimoire, and every
+    /// other overlay stands down when it opens.
+    void toggleDistrictMap();
+    [[nodiscard]] bool districtMapOpen() const noexcept { return districtMapOpen_; }
 
     /// A STANDING JUMP. Half a metre, and it gets you onto nothing -- see
     /// sim::PlayerBody::jump. Bound to space, which is where a jump goes.
@@ -1272,6 +1301,16 @@ private:
     bool waitSleep_ = false;
     int waitCursor_ = 0;
     int waitPage_ = 0;
+    /// THE WARD MAP (core action #13). One flag, one full-screen page, every
+    /// other overlay stands down when it opens -- the same overlay family
+    /// grimoireOpen_ belongs to. UI state, never hashed: the page is a pure
+    /// read of the world.
+    bool districtMapOpen_ = false;
+    /// The plan's own boot-time facts: per-material tones derived from the
+    /// atlas, and the authored extent with the VOID border cropped away.
+    /// Both computed once in the constructor -- see map_view.hpp.
+    MapPalette mapPalette_;
+    MapBounds mapBounds_;
 
     /// Task #83. The panel widget's own open/close ease -- see
     /// conversingNow()/syncPanelAnim() -- and the HUD alert row's fade in and
@@ -1319,6 +1358,10 @@ private:
     /// nothing to do with a guard going up, so they do not share one.
     EasedToggle spellAnim_;
     EasedToggle blockAnim_;
+    /// THE WARD MAP's own open/close ease -- its OWN toggle per the settled
+    /// convention (DECISIONS.md UI rule 1), driven from syncPanelAnim() and
+    /// advanced in step() exactly like every sibling above.
+    EasedToggle districtMapAnim_;
     /// SPELLS BUILD. The bottom-centre quick bar strip's own ease -- per the
     /// pinned convention, its OWN toggle: the strip appearing (a wheel held,
     /// a slot picked) has nothing to do with any other row's trigger. The
@@ -1761,6 +1804,14 @@ struct SmokeRunConfig {
     /// is the game: the real topics, the real Ward::petitionForCharge, the
     /// real purse. See PetitionLineResult for what it reports.
     bool petition = false;
+
+    /// THE WARD MAP (core action #13), VERIFICATION ONLY: open the district
+    /// map through the same Session::toggleDistrictMap() the M key calls,
+    /// after every scripted line and the other menu-opening flags, so the
+    /// page is photographable headless -- the identical reason `character`
+    /// and `map` (the tiled Menu's Chart tile) have flags. `--map-overlay`
+    /// on the CLI, following --creation/--tile-page's precedent.
+    bool mapOverlay = false;
 
     /// RADIANT BUILD, VERIFICATION ONLY: play a radiant errand -- read the
     /// board the session's own tavern posted off the live ward, find an

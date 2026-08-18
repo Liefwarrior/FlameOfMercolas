@@ -297,6 +297,12 @@ Session::Session(const SessionConfig& config)
     people_ = people.get();
     engine_->register_system(std::move(people));
     actorSheet_ = ActorSheet::load(config_.contentDir);
+    // THE WARD MAP's boot-time facts: the plan's per-material tones derived
+    // from the atlas the first-person pass already draws with, and the
+    // authored extent with the VOID border ring cropped away. Once each --
+    // see map_view.hpp.
+    mapPalette_ = MapPalette::fromAtlas(atlas_);
+    mapBounds_ = mapContentBounds(*tiles_);
     // The one wire between the two: a rival who rises far enough petitions the
     // Flame for a vacant charge, and the roll is where that becomes true.
     tavern_->attachRoll(ward_);
@@ -386,6 +392,10 @@ Session::Session(const SessionConfig& config)
     standingAnim_.snapTo(standingAnim_.target());
     heatAnim_.snapTo(heatAnim_.target());
     stashAnim_.snapTo(stashAnim_.target());
+    // THE WARD MAP. The same snap: a session never boots with the map up
+    // today, but the rule is "snap to whatever syncPanelAnim() just chose",
+    // not "assume closed".
+    districtMapAnim_.snapTo(districtMapAnim_.target());
     // INNOVATION SPRINT ITEM #2. SNAPPED, FOR THE IDENTICAL REASON THE ROWS
     // ABOVE ARE. NOT a hardcoded "journal starts focused" -- syncPanelAnim()
     // just computed the real answer off casebookOpen_/menuFocus_ (both true
@@ -792,6 +802,7 @@ void Session::dismissOverlays() noexcept {
     keysOpen_ = false;
     grimoireOpen_ = false;
     waitOpen_ = false;
+    districtMapOpen_ = false;
     optionsOpen_ = false;
     awaitingKey_ = false;
     firstRun_ = false;
@@ -904,6 +915,7 @@ void Session::toggleOptions() {
         keysOpen_ = false;
         grimoireOpen_ = false;
         waitOpen_ = false;
+        districtMapOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
         menuFocus_ = kMenuFocusJournal;
@@ -1011,6 +1023,7 @@ void Session::togglePause() {
     keysOpen_ = false;
     grimoireOpen_ = false;
     waitOpen_ = false;
+    districtMapOpen_ = false;
     optionsOpen_ = false;
     awaitingKey_ = false;
     menuFocus_ = kMenuFocusJournal;
@@ -1201,6 +1214,7 @@ void Session::toggleKeys() {
         casebookOpen_ = false;
         grimoireOpen_ = false;
         waitOpen_ = false;
+        districtMapOpen_ = false;
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
@@ -1231,6 +1245,7 @@ void Session::toggleGrimoire() {
         casebookOpen_ = false;
         keysOpen_ = false;
         waitOpen_ = false;
+        districtMapOpen_ = false;
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
@@ -1240,6 +1255,35 @@ void Session::toggleGrimoire() {
     firstRun_ = false;
     grimoireCursor_ = 0;
     grimoirePage_ = 0;
+    syncPanelAnim();
+}
+
+// ---------------------------------------------------------------------------
+// the ward map (core action #13)
+// ---------------------------------------------------------------------------
+
+void Session::toggleDistrictMap() {
+    // Inert while a conversation or the wire owns the keyboard, exactly like
+    // toggleGrimoire -- a page opening under a topic list is the split-brain
+    // bug toggleOptions' own comment describes.
+    if (talking() || picking()) {
+        return;
+    }
+    const bool willOpen = !districtMapOpen_;
+    districtMapOpen_ = willOpen;
+    if (willOpen) {
+        // Every other overlay stands down -- toggleOptions' rule, same reason.
+        casebookOpen_ = false;
+        keysOpen_ = false;
+        grimoireOpen_ = false;
+        waitOpen_ = false;
+        optionsOpen_ = false;
+        pauseOpen_ = false;
+        quitArmed_ = false;
+        awaitingKey_ = false;
+        menuFocus_ = kMenuFocusJournal;
+    }
+    firstRun_ = false;
     syncPanelAnim();
 }
 
@@ -1393,6 +1437,7 @@ void Session::openWait(bool sleepMode) {
     casebookOpen_ = false;
     keysOpen_ = false;
     grimoireOpen_ = false;
+    districtMapOpen_ = false;
     optionsOpen_ = false;
     pauseOpen_ = false;
     quitArmed_ = false;
@@ -1567,6 +1612,7 @@ void Session::toggleMenuFocused(int focus) {
         keysOpen_ = false;
         grimoireOpen_ = false;
         waitOpen_ = false;
+        districtMapOpen_ = false;
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
@@ -1602,7 +1648,10 @@ void Session::toggleLetters() { toggleMenuFocused(kMenuFocusLetters); }
 // ---------------------------------------------------------------------------
 
 bool Session::menuOpen() const noexcept {
-    return casebookOpen_ || keysOpen_ || grimoireOpen_ || optionsOpen_;
+    // districtMapOpen_ joined this list with core action #13: the ward map
+    // is a full-screen page, so the movement keys stand down under it the
+    // way they do under every other page (main.cpp's `listening`).
+    return casebookOpen_ || keysOpen_ || grimoireOpen_ || optionsOpen_ || districtMapOpen_;
 }
 
 void Session::toggleMenu() {
@@ -1881,6 +1930,8 @@ void Session::step(const sim::MoveInput& input) {
     // FIRST-PERSON COMBAT (S13). THE SAME PER-STEP ADVANCE.
     spellAnim_.advance();
     blockAnim_.advance();
+    // THE WARD MAP (core action #13). THE SAME PER-STEP ADVANCE.
+    districtMapAnim_.advance();
     // SPELLS BUILD. The strip's own countdown and ease -- see showQuickBar().
     if (quickBarShowSteps_ > 0) {
         --quickBarShowSteps_;
@@ -2619,6 +2670,14 @@ void Session::closeConversation() {
         waitOpen_ = false;
         waitCursor_ = 0;
         waitPage_ = 0;
+        syncPanelAnim();
+        return;
+    }
+    if (districtMapOpen_) {
+        // ESC closes the ward map the same way it closes every page -- the
+        // owner's ask names M as the toggle, and Escape is the universal
+        // back-out on top of it.
+        districtMapOpen_ = false;
         syncPanelAnim();
         return;
     }
@@ -4175,7 +4234,7 @@ bool Session::conversingNow() const noexcept {
     // nothing catching them when a seventh page joined the list and only one
     // of the two remembered to add it.
     return talking() || casebookOpen_ || keysOpen_ || grimoireOpen_ || waitOpen_ ||
-           optionsOpen_ || pauseOpen_;
+           districtMapOpen_ || optionsOpen_ || pauseOpen_;
 }
 
 void Session::syncPanelAnim() noexcept {
@@ -4193,7 +4252,9 @@ void Session::syncPanelAnim() noexcept {
             // SPELLS BUILD: the Grimoire page is paper too -- the same
             // BookOpen/BookClose pair the tiled Menu already speaks, no new
             // sound design.
-            audioPanelWasMenu_ = casebookOpen_ || grimoireOpen_;
+            // The ward map is paper too -- a chart unrolled reads as a book
+            // opening, not as a UI blip.
+            audioPanelWasMenu_ = casebookOpen_ || grimoireOpen_ || districtMapOpen_;
             audio_->playOneShot(audioPanelWasMenu_ ? audio::SoundId::BookOpen
                                                    : audio::SoundId::UiOpen);
         } else {
@@ -4287,6 +4348,10 @@ void Session::syncPanelAnim() noexcept {
     // a guard going up.
     sync(spellAnim_, spellCache_, spellLine());
     sync(blockAnim_, blockCache_, blockLine());
+    // THE WARD MAP (core action #13). Its own toggle, its own target -- the
+    // page's openAmount, per the settled convention (rule 1). No cache: the
+    // page draws live off TileQuery, which does not go away when it closes.
+    districtMapAnim_.setTarget(districtMapOpen_);
     // SPELLS BUILD. The quick bar strip: wanted while the wheel or the number
     // row was touched inside the last couple of seconds (showQuickBar()'s
     // countdown, run down in step()) and no panel owns the bottom band. The
@@ -4716,6 +4781,35 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // one is open, which is sized from what it draws, so a warning shouted
     // across the room is still read and nothing is drawn on top of anything.
     hud.showAlert = !conversing;
+    // THE WARD MAP (core action #13) -- its own full-screen surface, drawn by
+    // map_view.hpp's drawDistrictMap, exempt from the centre-clear rule for
+    // exactly the reason the tiled Menu is (menu_view.hpp's own header):
+    // there is nobody to look at while a map is up. The close tail draws too
+    // (its own EasedToggle still above zero) unless another page has already
+    // taken the frame -- conversingNow() is false only when nothing else is
+    // up, so a map closed INTO the tiled Menu hands over immediately.
+    if (districtMapOpen_ || (districtMapAnim_.value() > 0.0F && !conversing)) {
+        DistrictMapState plan;
+        plan.tiles = tiles_.get();
+        plan.palette = &mapPalette_;
+        plan.bounds = mapBounds_;
+        plan.playerX = static_cast<float>(body_->x()) / static_cast<float>(sim::kSubOne);
+        plan.playerY = static_cast<float>(body_->y()) / static_cast<float>(sim::kSubOne);
+        plan.band = body_->band();
+        plan.yawBam = body_->yaw();
+        plan.title = label;
+        if (warned) {
+            // The bouncer's warning outranks a map read -- the same routing
+            // the tiled Menu gives its journal tile, below.
+            plan.alert = tavern_->lastWarning();
+        }
+        plan.openAmount = districtMapAnim_.value();
+        if (config_.hud) {
+            drawDistrictMap(target, plan);
+            drawHud(target, hud);
+        }
+        return stats;
+    }
     // MORROWIND ROUND: THE TILED MENU IS A DIFFERENT SURFACE FROM THE SINGLE
     // CONVERSATION PANEL, drawn by a different function (menu_view.hpp's
     // drawMenuTiles rather than dialogue_view.hpp's drawDialogue) because it
@@ -6950,10 +7044,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
 
     if (config.map) {
-        // THE SAME CALL `M` MAKES -- see SmokeRunConfig::map's own header.
+        // THE TILED MENU'S CHART TILE -- see SmokeRunConfig::map's own header.
+        // (M no longer reaches this: core action #13 gave M to the ward map
+        // below; the Chart tile is reached through the Menu key as ever.)
         session.toggleMap();
         result.scriptedWanted += 1;
         result.scriptedLanded += session.mapOpen() ? 1 : 0;
+    }
+
+    if (config.mapOverlay) {
+        // THE WARD MAP -- THE SAME CALL `M` MAKES. See
+        // SmokeRunConfig::mapOverlay's own header.
+        session.toggleDistrictMap();
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.districtMapOpen() ? 1 : 0;
     }
 
     // PLANNING SPRINT (item #1). THE GAP `--character --map` COULD NEVER
@@ -7324,7 +7428,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // users, the casebook and the key list, neither of which sets `talking`.
     // The first S10 capture shipped "GRANADAD 0.10.0" printed straight through
     // "THE CASEBOOK" because this test only knew about the third of them.
-    if (config.stamp && !result.talking && !session.casebookOpen() && !session.keysOpen()) {
+    if (config.stamp && !result.talking && !session.casebookOpen() && !session.keysOpen() &&
+        !session.districtMapOpen()) {
         // DERIVED, NOT TYPED. S9's read "GRANADAD S6" -- a literal three sprints
         // out of date, burnt into the top-left of every capture including all
         // four of S9's own, and found by the review in a PNG rather than in the

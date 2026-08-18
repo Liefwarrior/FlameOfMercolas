@@ -125,6 +125,17 @@
 				{
 					"title"		"#Action_Block"
 				}
+				// Core action #13, the ward map -- the full-screen district
+				// plan (M / PadBack, the Select button: the classic
+				// Start/Select split beside Pause=Start). Taking PadBack
+				// moved OpenMenu's own shipped pad default to the D-pad's up
+				// -- glyph-wise, OpenMenu's default is now D-Pad Up and Map's
+				// is the View/Back/Select button; see the README's
+				// Key::Pad* -> glyph table rows for PadBack and PadUp.
+				"Map"
+				{
+					"title"		"#Action_Map"
+				}
 				"OpenMenu"
 				{
 					"title"		"#Action_OpenMenu"
@@ -207,6 +218,7 @@
 			"Action_QuickWheel"		"Quick Wheel"
 			"Action_Cast"			"Cast Spell"
 			"Action_Block"			"Block"
+			"Action_Map"			"Ward Map"
 			"Action_OpenMenu"		"Open Menu"
 			"Action_Pause"			"Pause"
 

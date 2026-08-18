@@ -86,6 +86,12 @@ constexpr ActionNames kActions[] = {
     // static_assert below only counts rows; it cannot catch a reorder.
     {Action::Cast, "cast", "CAST"},
     {Action::Block, "block", "BLOCK"},
+    // #13, THE WARD MAP. "map" was also a pre-#85 retired action name (the
+    // old map PAGE, folded into Menu); reintroducing it means a surviving
+    // pre-#85 file's "bind map ..." line parses again and lands here --
+    // which is the old map key opening the new map, the right outcome, and
+    // those files were declared unprotected by #85's clean break anyway.
+    {Action::Map, "map", "MAP"},
 };
 static_assert(sizeof(kActions) / sizeof(kActions[0]) == kActionCount,
               "every action needs a name and a label, or the keys page lies");
@@ -165,8 +171,8 @@ constexpr KeyName kKeys[] = {
 // every line through ControlSettings::bind().
 // ---------------------------------------------------------------------------
 
-// THE 12 CORE BUTTONS -- exactly the ones controls.hpp's own Action enum
-// marks CORE in its doc comments, and exactly the twelve the "#85: the core
+// THE 13 CORE BUTTONS -- exactly the ones controls.hpp's own Action enum
+// marks CORE in its doc comments, and exactly the thirteen the "#85: the core
 // gameplay button count is what Eli asked for" test counts. This is the list
 // fromText()'s whole-file validation pass enforces "at least one live
 // binding" against: movement axes, the TurnLeft/TurnRight accessibility
@@ -181,6 +187,7 @@ constexpr Action kCoreActions[] = {
     Action::Attack,   Action::Interact, Action::Crouch,    Action::Vertical,
     Action::Sprint,   Action::Menu,     Action::PagePrev,  Action::PageNext,
     Action::Pause,    Action::QuickWheel, Action::Cast,    Action::Block,
+    Action::Map,
 };
 
 // RAW, UNCONDITIONAL steal-and-set on a bare table, with none of
@@ -443,9 +450,14 @@ ControlSettings ControlSettings::defaults() noexcept {
     set(Action::Interact, Key::E, Key::PadSouth);
 
     // ONE SCREEN, PAGES. Tab is where Journal always was -- the row a player
-    // already reaches for. J is freed the same way MouseRight/F were, for
-    // PadBack -- the "show me my stuff" button on most pads already.
-    set(Action::Menu, Key::Tab, Key::PadBack);
+    // already reaches for. THE PAD SIDE MOVED for action #13: PadBack (the
+    // Select button) was Menu's from #85 until the ward map arrived, and the
+    // owner's own ask -- "a map that they can press M to see... and select
+    // on controller" -- put the map there instead, the classic Start/Select
+    // split (Pause=Start, Map=Select). Menu takes PadUp, D-pad up, which no
+    // shipped action had ever used. fromText() migrates old files that still
+    // write Menu's PAD_BACK -- see the MIGRATION comment there.
+    set(Action::Menu, Key::Tab, Key::PadUp);
     set(Action::PagePrev, Key::LeftBracket, Key::PadLeftBumper);
     set(Action::PageNext, Key::RightBracket, Key::PadRightBumper);
     // RENAMED FROM Menu, UNCHANGED KEY: this was always Escape's job.
@@ -478,6 +490,12 @@ ControlSettings ControlSettings::defaults() noexcept {
     // game with a shield puts them: LT guards, RT casts.
     set(Action::Cast, Key::C, Key::PadRightTrigger);
     set(Action::Block, Key::MouseRight, Key::PadLeftTrigger);
+
+    // #13, THE WARD MAP -- the owner's own words for both defaults: "a map
+    // that they can press M to see", "and select on controller". M was never
+    // a shipped default before this; PadBack is Menu's OLD pad key, freed by
+    // moving Menu to PadUp above.
+    set(Action::Map, Key::M, Key::PadBack);
     return out;
 }
 
@@ -630,6 +648,12 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
     // other thirty playable. A settings file is a diff against the shipped
     // layout, not a replacement for it.
     ControlSettings candidate = shipped;
+    // Whether the file ever names the map action at all. A file that does is
+    // from a build that knows Map exists (or is a pre-#85 relic reusing the
+    // retired name -- see kActions' own note), and either way its author's
+    // lines stand as written; a file that does NOT predates action #13 and is
+    // what the MIGRATION pass below exists for.
+    bool fileNamedMap = false;
     std::istringstream lines{std::string(text)};
     std::string line;
     while (std::getline(lines, line)) {
@@ -651,6 +675,9 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
             const Action action = actionFromKey(actionName);
             if (action == Action::Count) {
                 continue;
+            }
+            if (action == Action::Map) {
+                fileNamedMap = true;
             }
             std::string second;
             const bool hasSecond = static_cast<bool>(fields >> second);
@@ -680,6 +707,61 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
             } else if (what == "pad_trigger_deadzone") {
                 candidate.pad.triggerDeadzonePercent = number;
             }
+        }
+    }
+
+    // MIGRATION: ACTION #13 TOOK MENU'S OLD PAD DEFAULT, AND OLD FILES WRITE
+    // IT OUT EXPLICITLY. toText() has always written EVERY action's line, so
+    // a file saved before Map existed carries "bind menu TAB PAD_BACK" --
+    // menu's own OLD shipped default, spelled out -- and parsing it above
+    // steals PadBack off Map's shipped secondary, leaving the map with no pad
+    // key at all on every controller in the world. That is this project's
+    // most-burned bug class (three prior fix rounds on this exact shape), so
+    // the rule is stated and implemented EXPLICITLY rather than left to the
+    // strand-repair pass below, which never fires here (Map still holds M, so
+    // it is not stranded, merely half-dead):
+    //
+    //   IF the file predates Map (no "bind map" line anywhere) AND Menu came
+    //   out of parsing holding PadBack, that PadBack is treated as menu's own
+    //   old shipped default carried forward, NOT as a user's custom choice --
+    //   the two are indistinguishable from the file (an old toText() wrote
+    //   both the same way), and the honest, deterministic fallback the design
+    //   settled is: Menu's PadBack slot becomes its NEW shipped pad default
+    //   (PadUp), and Map gets PadBack back. Documented outcome, same every
+    //   time.
+    //
+    //   IF a NON-Menu action holds PadBack in a pre-Map file, that binding
+    //   could only ever have been a deliberate user choice (PadBack shipped
+    //   on Menu alone), so it is respected: Map keeps whatever it still has
+    //   (M, unless the file deliberately took that too -- in which case the
+    //   validation pass below restores the fully-stranded Map to its whole
+    //   shipped default, stealing both keys back, exactly as it would for any
+    //   other stranded core action).
+    //
+    //   IF the file names Map at all, no migration: the author knows the
+    //   action exists and their lines stand as written, under the ordinary
+    //   validation pass alone.
+    if (!fileNamedMap) {
+        const std::size_t menuIndex = static_cast<std::size_t>(Action::Menu);
+        const std::size_t mapIndex = static_cast<std::size_t>(Action::Map);
+        for (int slot = 0; slot < 2; ++slot) {
+            const bool asSecondary = slot == 1;
+            const Key held = asSecondary ? candidate.secondary[menuIndex]
+                                         : candidate.primary[menuIndex];
+            if (held != Key::PadBack) {
+                continue;
+            }
+            // Menu's PadBack slot becomes its new shipped pad default. Raw
+            // steal semantics, same as every parsed line: PadUp comes off
+            // whoever holds it (nobody, in any file old enough to trip this
+            // -- PadUp was never a shipped default before Menu's move).
+            rawApplyBind(candidate, Action::Menu, Key::PadUp, asSecondary);
+            // And Map gets its shipped pad key back, into whichever of its
+            // own slots is free (the secondary, unless the file stole M too).
+            const bool mapSecondaryFree = candidate.secondary[mapIndex] == Key::None;
+            rawApplyBind(candidate, Action::Map, Key::PadBack,
+                         /*asSecondary=*/mapSecondaryFree);
+            break;
         }
     }
 

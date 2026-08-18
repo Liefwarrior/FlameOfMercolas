@@ -74,10 +74,22 @@ TEST_CASE("the shipped bindings are the ones a player already knows") {
     CHECK(keys.bound(Action::Crouch, Key::PadEast));
     CHECK(keys.bound(Action::Sprint, Key::PadLeftStick));
     CHECK(keys.bound(Action::QuickWheel, Key::PadRightStick));
-    CHECK(keys.bound(Action::Menu, Key::PadBack));
+    // CORE ACTION #13 MOVED MENU'S PAD KEY. PadBack (Select) is the ward
+    // map's now -- the owner's own "and select on controller" -- the classic
+    // Start/Select split beside Pause=Start; Menu took the previously-unbound
+    // D-pad up. See defaults()'s own comment and fromText()'s migration.
+    CHECK(keys.bound(Action::Menu, Key::PadUp));
+    CHECK_FALSE(keys.bound(Action::Menu, Key::PadBack));
     CHECK(keys.bound(Action::Pause, Key::PadStart));
     CHECK(keys.bound(Action::PagePrev, Key::PadLeftBumper));
     CHECK(keys.bound(Action::PageNext, Key::PadRightBumper));
+
+    // THE WARD MAP -- the owner's own words for both halves: "a map that they
+    // can press M to see", "and select on controller".
+    CHECK(keys.bound(Action::Map, Key::M));
+    CHECK(keys.bound(Action::Map, Key::PadBack));
+    CHECK(keys.actionFor(Key::M) == Action::Map);
+    CHECK(keys.actionFor(Key::PadBack) == Action::Map);
 
     // THE COMBAT PAIR. C casts and the right mouse button blocks -- the
     // Morrowind hand layout -- and the pad spends its two remaining unused
@@ -95,25 +107,31 @@ TEST_CASE("the shipped bindings are the ones a player already knows") {
 }
 
 TEST_CASE("#85: the core gameplay button count is what Eli asked for") {
-    // TWELVE. Attack, Interact, Crouch, Vertical, Sprint, Menu, PagePrev,
-    // PageNext, Pause, QuickWheel, and -- since the first-person combat task
-    // -- Cast and Block. Movement axes, the TurnLeft/TurnRight accessibility
-    // fallback and Screenshot (a dev/capture utility) excluded, exactly as
-    // the brief asked. Twelve is the TOP of Eli's "10-12 buttons" range: the
-    // budget is now spent, and the next core verb has to consolidate into an
-    // existing one the way Interact and Vertical already did. This is a
-    // COUNTING test, not a behaviour one: it exists so a future action added
-    // to the "core" bucket without updating this case is a red build instead
-    // of a drifted comment.
+    // THIRTEEN. Attack, Interact, Crouch, Vertical, Sprint, Menu, PagePrev,
+    // PageNext, Pause, QuickWheel, Cast, Block -- and, the one deliberate
+    // bend of the ceiling, Map. Movement axes, the TurnLeft/TurnRight
+    // accessibility fallback and Screenshot (a dev/capture utility) excluded,
+    // exactly as the brief asked. Thirteen is ONE OVER Eli's own "10-12
+    // buttons" range, and the bend is HIS: Cast and Block spent the budget's
+    // last two slots, and then the owner asked for the map key directly --
+    // "let's give the player a map that they can press M to see", "and
+    // select on controller" -- so the ceiling's own author raised it by one,
+    // stated here rather than fudged. The next core verb has to consolidate
+    // into an existing one the way Interact and Vertical already did. This
+    // is a COUNTING test, not a behaviour one: it exists so a future action
+    // added to the "core" bucket without updating this case is a red build
+    // instead of a drifted comment.
     const Action core[] = {
         Action::Attack,     Action::Interact, Action::Crouch,  Action::Vertical,
         Action::Sprint,     Action::Menu,     Action::PagePrev, Action::PageNext,
         Action::Pause,      Action::QuickWheel, Action::Cast,   Action::Block,
+        Action::Map,
     };
-    CHECK(static_cast<int>(sizeof(core) / sizeof(core[0])) == 12);
-    // And the count sits inside 10..12, which is Eli's own range, literally.
+    CHECK(static_cast<int>(sizeof(core) / sizeof(core[0])) == 13);
+    // One over the top of Eli's own 10-12 range, on his own direct ask --
+    // pinned as exactly 13 above so the NEXT bend also has to be stated.
     CHECK(sizeof(core) / sizeof(core[0]) >= 10);
-    CHECK(sizeof(core) / sizeof(core[0]) <= 12);
+    CHECK(sizeof(core) / sizeof(core[0]) <= 13);
 }
 
 TEST_CASE("every CORE action resolves an actual pad key, generically") {
@@ -133,6 +151,7 @@ TEST_CASE("every CORE action resolves an actual pad key, generically") {
         Action::Attack,     Action::Interact, Action::Crouch,  Action::Vertical,
         Action::Sprint,     Action::Menu,     Action::PagePrev, Action::PageNext,
         Action::Pause,      Action::QuickWheel, Action::Cast,   Action::Block,
+        Action::Map,
     };
     // Key::PadSouth..Key::PadRight are one contiguous run in controls.hpp's
     // own Key enum (the face buttons, bumpers, triggers, sticks, Start/Back
@@ -581,10 +600,16 @@ TEST_CASE("the collision guard does not block a legitimate two-action key swap")
     CHECK(swapped.bound(Action::Pause, Key::Tab));
     CHECK(swapped.actionFor(Key::Escape) == Action::Menu);
     CHECK(swapped.actionFor(Key::Tab) == Action::Pause);
-    // Neither pad default was part of the swap, so both stay put -- proving
-    // the guard did not reach for a fallback it did not need.
-    CHECK(swapped.bound(Action::Menu, Key::PadBack));
     CHECK(swapped.bound(Action::Pause, Key::PadStart));
+    // CORE ACTION #13 CHANGED THIS FILE'S PAD OUTCOME, deliberately: "bind
+    // menu ... PAD_BACK" in a file that never names the map action is
+    // indistinguishable from menu's own OLD shipped default carried forward
+    // (an old toText() wrote every action's line), so fromText()'s migration
+    // moves menu's PadBack slot to its NEW shipped pad default and gives the
+    // map its Select button back -- the deterministic, documented fallback.
+    CHECK(swapped.bound(Action::Menu, Key::PadUp));
+    CHECK_FALSE(swapped.bound(Action::Menu, Key::PadBack));
+    CHECK(swapped.actionFor(Key::PadBack) == Action::Map);
 }
 
 // ---------------------------------------------------------------------------
@@ -614,11 +639,11 @@ TEST_CASE("round 2's own hole: two full lines, neither with a second key, "
     // Reachable, not just non-empty: Escape actually resolves to Pause, since
     // Menu gave it up entirely (both its slots came back empty from parsing
     // and the validation pass restored Menu to its own full shipped default,
-    // Tab + PadBack, rather than leaving it holding a key it shares with
-    // Pause).
+    // Tab + PadUp -- PadUp since core action #13 took PadBack for the map --
+    // rather than leaving it holding a key it shares with Pause).
     CHECK(loaded.actionFor(Key::Escape) == Action::Pause);
     CHECK(loaded.bound(Action::Menu, Key::Tab));
-    CHECK(loaded.bound(Action::Menu, Key::PadBack));
+    CHECK(loaded.bound(Action::Menu, Key::PadUp));
 }
 
 TEST_CASE("every CORE action keeps at least one live key, across a spread of "
@@ -635,9 +660,9 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
     // can steal a key off a different one) is exactly the kind of collateral
     // strand a narrower check would miss.
     //
-    // ALL TWELVE since Cast and Block joined the core list -- and the sweep
-    // gained shapes that attack THEIR keys too, because a core action is only
-    // as protected as the orderings the sweep actually tries.
+    // ALL THIRTEEN since Cast, Block and then Map joined the core list -- and
+    // the sweep gained shapes that attack THEIR keys too, because a core
+    // action is only as protected as the orderings the sweep actually tries.
     const char* const files[] = {
         // Round 2's own shape, both orderings.
         "bind menu ESC\nbind pause ESC\n",
@@ -676,6 +701,17 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
         // the cross-generation shape no pre-Cast/Block file could produce.
         "bind cast MOUSE1 PAD_X\n",
         "bind attack C PAD_RT\nbind block MOUSE1\n",
+        // CORE ACTION #13's own shapes: the map's keys stolen singly and
+        // together, the map stealing an old action's keys, the migration's
+        // own trigger line beside a hostile neighbour, and a file that names
+        // the map so the migration must STAND DOWN while the validation pass
+        // still holds every core action live.
+        "bind menu M PAD_UP\n",
+        "bind attack M PAD_BACK\n",
+        "bind map TAB PAD_START\n",
+        "bind menu TAB PAD_BACK\nbind pause M PAD_START\n",
+        "bind map ESC\nbind pause ESC\n",
+        "bind cast M\nbind map C PAD_RT\n",
     };
     for (const char* const file : files) {
         INFO("file: ", file);
@@ -683,7 +719,8 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
         for (const Action action : {Action::Attack, Action::Interact, Action::Crouch,
                                      Action::Vertical, Action::Sprint, Action::Menu,
                                      Action::PagePrev, Action::PageNext, Action::Pause,
-                                     Action::QuickWheel, Action::Cast, Action::Block}) {
+                                     Action::QuickWheel, Action::Cast, Action::Block,
+                                     Action::Map}) {
             const std::size_t index = static_cast<std::size_t>(action);
             INFO("action: ", actionKey(action),
                  " primary=", keyName(loaded.primary[index]),
@@ -727,7 +764,7 @@ TEST_CASE("a settings file from before Cast and Block existed loads with both "
     CHECK(loaded.bound(Action::Vertical, Key::K));
     CHECK(loaded.mouse.sensitivity == 22);
 
-    // AND THE TWO ACTIONS THE FILE HAS NEVER HEARD OF ARE ON THEIR SHIPPED
+    // AND THE ACTIONS THE FILE HAS NEVER HEARD OF ARE ON THEIR SHIPPED
     // DEFAULTS, reachable -- not empty, not stranded. fromText() starts from
     // defaults() and the file never overwrote these slots; being on
     // kCoreActions means even a file that STOLE their keys would get them
@@ -738,6 +775,162 @@ TEST_CASE("a settings file from before Cast and Block existed loads with both "
     CHECK(loaded.bound(Action::Block, Key::PadLeftTrigger));
     CHECK(loaded.actionFor(Key::C) == Action::Cast);
     CHECK(loaded.actionFor(Key::MouseRight) == Action::Block);
+
+    // AND THE MAP MIGRATION FIRED ON THIS FILE'S OWN "bind menu TAB PAD_BACK"
+    // LINE -- menu's old shipped default, spelled out the way every old
+    // toText() spelled it -- so the map holds M AND the Select button, and
+    // Menu holds Tab AND its new D-pad-up default. Every one of the 13 core
+    // actions ends this load with a live key on BOTH device families, which
+    // is the whole backward-compat claim for a file this old.
+    CHECK(loaded.bound(Action::Map, Key::M));
+    CHECK(loaded.bound(Action::Map, Key::PadBack));
+    CHECK(loaded.actionFor(Key::PadBack) == Action::Map);
+    CHECK(loaded.bound(Action::Menu, Key::Tab));
+    CHECK(loaded.bound(Action::Menu, Key::PadUp));
+    const auto isPadKey = [](Key key) noexcept {
+        return key >= Key::PadSouth && key <= Key::PadRight;
+    };
+    for (const Action action : {Action::Attack, Action::Interact, Action::Crouch,
+                                 Action::Vertical, Action::Sprint, Action::Menu,
+                                 Action::PagePrev, Action::PageNext, Action::Pause,
+                                 Action::QuickWheel, Action::Cast, Action::Block, Action::Map}) {
+        const std::size_t index = static_cast<std::size_t>(action);
+        const Key first = loaded.primary[index];
+        const Key second = loaded.secondary[index];
+        INFO("action ", actionKey(action), " primary=", keyName(first),
+             " secondary=", keyName(second));
+        // One live pad key, and one live NON-pad (keyboard/mouse) key.
+        CHECK(((first != Key::None && isPadKey(first)) ||
+               (second != Key::None && isPadKey(second))));
+        CHECK(((first != Key::None && !isPadKey(first)) ||
+               (second != Key::None && !isPadKey(second))));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CORE ACTION #13's OWN MIGRATION -- the project's most-burned bug class
+// (three prior fix rounds on exactly this shape), so every branch of the rule
+// stated in fromText()'s MIGRATION comment gets its own adversarial file.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("map migration: an S13-era file (menu on PAD_BACK, cast/block "
+          "present, no map) lands all 13 on both devices") {
+    // toText()'s own write order for the build one before this one: every
+    // action spelled out, menu carrying its then-default PAD_BACK, and a
+    // real rebind (Vertical to K) to prove the file's own lines still land.
+    const ControlSettings loaded = ControlSettings::fromText(
+        "bind forward W UP\n"
+        "bind back S DOWN\n"
+        "bind strafe_left A\n"
+        "bind strafe_right D\n"
+        "bind turn_left LEFT\n"
+        "bind turn_right RIGHT\n"
+        "bind attack MOUSE1 PAD_X\n"
+        "bind interact E PAD_A\n"
+        "bind crouch LCTRL PAD_B\n"
+        "bind vertical K PAD_Y\n"
+        "bind sprint LSHIFT PAD_LS\n"
+        "bind menu TAB PAD_BACK\n"
+        "bind page_prev LBRACKET PAD_LB\n"
+        "bind page_next RBRACKET PAD_RB\n"
+        "bind pause ESC PAD_START\n"
+        "bind quick_wheel Q PAD_RS\n"
+        "bind quick_1 1\n"
+        "bind screenshot F12\n"
+        "bind cast C PAD_RT\n"
+        "bind block MOUSE2 PAD_LT\n"
+        "set sensitivity 22\n");
+    // The rebind landed; the migration moved exactly one thing.
+    CHECK(loaded.bound(Action::Vertical, Key::K));
+    CHECK(loaded.bound(Action::Menu, Key::Tab));
+    CHECK(loaded.bound(Action::Menu, Key::PadUp));
+    CHECK_FALSE(loaded.bound(Action::Menu, Key::PadBack));
+    CHECK(loaded.bound(Action::Map, Key::M));
+    CHECK(loaded.bound(Action::Map, Key::PadBack));
+    CHECK(loaded.actionFor(Key::PadBack) == Action::Map);
+    CHECK(loaded.actionFor(Key::PadUp) == Action::Menu);
+    // Both devices, all 13 -- the acceptance sentence for this file shape.
+    const auto isPadKey = [](Key key) noexcept {
+        return key >= Key::PadSouth && key <= Key::PadRight;
+    };
+    for (const Action action : {Action::Attack, Action::Interact, Action::Crouch,
+                                 Action::Vertical, Action::Sprint, Action::Menu,
+                                 Action::PagePrev, Action::PageNext, Action::Pause,
+                                 Action::QuickWheel, Action::Cast, Action::Block, Action::Map}) {
+        const std::size_t index = static_cast<std::size_t>(action);
+        const Key first = loaded.primary[index];
+        const Key second = loaded.secondary[index];
+        INFO("action ", actionKey(action), " primary=", keyName(first),
+             " secondary=", keyName(second));
+        CHECK(((first != Key::None && isPadKey(first)) ||
+               (second != Key::None && isPadKey(second))));
+        CHECK(((first != Key::None && !isPadKey(first)) ||
+               (second != Key::None && !isPadKey(second))));
+    }
+}
+
+TEST_CASE("map migration: an old file with menu custom-bound AWAY from "
+          "PAD_BACK is left exactly as its author wrote it") {
+    // Menu on a key of the player's own choosing (PadLeft was never a shipped
+    // default, so this line can only be deliberate). No PAD_BACK anywhere, so
+    // the migration has nothing to move: menu stands as written, and the map
+    // -- which the file predates -- simply keeps its whole shipped default.
+    const ControlSettings loaded = ControlSettings::fromText(
+        "bind menu J PAD_LEFT\n"
+        "bind pause ESC PAD_START\n");
+    CHECK(loaded.bound(Action::Menu, Key::J));
+    CHECK(loaded.bound(Action::Menu, Key::PadLeft));
+    CHECK_FALSE(loaded.bound(Action::Menu, Key::PadUp));
+    CHECK(loaded.bound(Action::Map, Key::M));
+    CHECK(loaded.bound(Action::Map, Key::PadBack));
+    CHECK(loaded.actionFor(Key::PadBack) == Action::Map);
+}
+
+TEST_CASE("map migration: a NON-menu action holding PAD_BACK in an old file "
+          "is a deliberate choice and is respected") {
+    // PadBack shipped on Menu alone, so an old file putting it on Attack can
+    // only be the player's own hand. The migration must NOT steal it back:
+    // Attack keeps it, the map keeps M (keyboard-live, pad-dead -- the
+    // player's own trade), and every core action still holds a live key.
+    const ControlSettings loaded = ControlSettings::fromText(
+        "bind attack MOUSE1 PAD_BACK\n"
+        "bind menu TAB PAD_LEFT\n");
+    CHECK(loaded.bound(Action::Attack, Key::PadBack));
+    CHECK(loaded.actionFor(Key::PadBack) == Action::Attack);
+    CHECK(loaded.bound(Action::Map, Key::M));
+    CHECK(loaded.actionFor(Key::M) == Action::Map);
+}
+
+TEST_CASE("map migration: a user who deliberately bound something else to M") {
+    // TWO SHAPES, one per generation. A file that KNOWS the map action and
+    // moves both keys deliberately: everything stands as written.
+    const ControlSettings knows = ControlSettings::fromText(
+        "bind cast M PAD_RT\n"
+        "bind map N PAD_BACK\n");
+    CHECK(knows.bound(Action::Cast, Key::M));
+    CHECK(knows.bound(Action::Map, Key::N));
+    CHECK(knows.bound(Action::Map, Key::PadBack));
+    CHECK(knows.actionFor(Key::M) == Action::Cast);
+    CHECK(knows.actionFor(Key::N) == Action::Map);
+
+    // And a file that PREDATES the map action but had already spent M on
+    // something else (its author never heard of a map key, so this cannot
+    // have been aimed at it): the choice is respected -- Cast keeps M -- and
+    // the map is still live through the pad side the migration restored off
+    // the file's own old-default menu line. Pad-only for the map here is the
+    // honest outcome of the player's own earlier claim on M, and the
+    // options page is where they hand it back if they want it.
+    const ControlSettings predates = ControlSettings::fromText(
+        "bind cast M PAD_RT\n"
+        "bind menu TAB PAD_BACK\n");
+    CHECK(predates.bound(Action::Cast, Key::M));
+    CHECK(predates.actionFor(Key::M) == Action::Cast);
+    CHECK(predates.bound(Action::Map, Key::PadBack));
+    CHECK(predates.actionFor(Key::PadBack) == Action::Map);
+    CHECK(predates.bound(Action::Menu, Key::PadUp));
+    const std::size_t mapIndex = static_cast<std::size_t>(Action::Map);
+    CHECK((predates.primary[mapIndex] != Key::None ||
+           predates.secondary[mapIndex] != Key::None));
 }
 
 TEST_CASE("round-1's own regression case still holds under the whole-file fix") {

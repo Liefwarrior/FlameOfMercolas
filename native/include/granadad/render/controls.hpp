@@ -57,14 +57,18 @@ namespace granadad::render {
 ///
 /// THE SHAPE OF IT IS OBLIVION'S OWN, PER ELI'S BRIEF, VERBATIM: "a button to
 /// swing, a button to 'interact (pickpocket if sneaking)'... only 10-12
-/// buttons that need mapped for all the controls." Twelve Actions below are
+/// buttons that need mapped for all the controls." THIRTEEN Actions below are
 /// marked CORE -- the ones a player actually has to map, movement axes and
 /// the accessibility turn keys excluded, Screenshot excluded (it is a
-/// dev/capture utility, not a Steam-Input-style gameplay action). Twelve is
-/// the TOP of Eli's own 10-12 range: the first-person combat task added Cast
-/// and Block to the original ten, and that spends the whole budget -- the
-/// next core verb somebody wants has to consolidate into an existing one,
-/// the way Interact and Vertical already did. Six verbs
+/// dev/capture utility, not a Steam-Input-style gameplay action). Thirteen is
+/// ONE OVER the top of Eli's own 10-12 range, and that bend is his own
+/// doing, stated plainly rather than fudged: the first-person combat task
+/// spent the last two slots on Cast and Block, and then the owner asked for
+/// a map key directly -- "It's too difficult to locate places like the
+/// mission, let's give the player a map that they can press M to see", "and
+/// select on controller" -- which is the ceiling's own author bending it.
+/// Map is #13; the NEXT core verb somebody wants has to consolidate into an
+/// existing one, the way Interact and Vertical already did. Six verbs
 /// that used to be six keys (Interact, Examine, Steal, Lift, Rest, and the
 /// lockpick verb) now resolve out of ONE Interact press, by stance and by
 /// what is faced -- see render::Session::interact()'s own header, which is
@@ -199,6 +203,25 @@ enum class Action : std::uint8_t {
     /// brawl, scaled by the shieldwall skill -- sim::Tavern::tickBrawl() is
     /// where the held state is actually read.
     Block,
+    /// CORE, #13, THE OWNER'S OWN BEND OF HIS 10-12 CEILING (see the enum
+    /// header). The ward map: a full-screen top-down render of the district
+    /// with the authored sign names on it -- Session::toggleDistrictMap() is
+    /// the toggle, render::drawDistrictMap() the page. M on a keyboard (the
+    /// owner named the key himself) and PadBack -- the SELECT button -- on a
+    /// pad, the classic Start/Select split: Pause=Start, Map=Select. PadBack
+    /// was Menu's shipped pad default before this action existed; Menu moved
+    /// to PadUp (D-pad up, previously unbound), and fromText() carries an
+    /// explicit migration for old files that still write Menu's old default
+    /// -- see the MIGRATION comment in controls.cpp's fromText().
+    ///
+    /// SETTINGS-FILE NAME COLLISION, NOTED HONESTLY: pre-#85 files (the
+    /// retired 38-action table) also had a "map" action -- the old map PAGE
+    /// key, retired into Menu at #85. A surviving pre-#85 file's "bind map
+    /// ..." line therefore parses again and lands on THIS action, which is
+    /// semantically the right key doing semantically the right thing (the
+    /// old map key opens the new map); #85's clean-break stance already
+    /// declared those files unprotected either way.
+    Map,
     Count
 };
 

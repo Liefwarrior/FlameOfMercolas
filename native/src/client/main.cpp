@@ -345,6 +345,9 @@ void print_usage() {
         "                       before the shutter goes\n"
         "  --map                open the tiled Menu, Map tile focused,\n"
         "                       before the shutter goes\n"
+        "  --map-overlay        open the WARD MAP (the full-screen district\n"
+        "                       plan the M key opens) before the shutter\n"
+        "                       goes, so it is photographable headless\n"
         "  --punch              VERIFICATION ONLY: retry the punch key until\n"
         "                       one lands, before the shutter goes\n"
         "  --block              VERIFICATION ONLY: start a brawl, raise the\n"
@@ -488,8 +491,9 @@ void print_usage() {
         "  --version            print the build banner and exit\n"
         "\n"
         "IN THE GAME: WASD moves, the mouse looks, SHIFT sprints, CTRL\n"
-        "crouches (both HOLD and TAP), SPACE jumps, E talks, TAB opens your\n"
-        "casebook, F1 lists every key and F2 rebinds them.\n"
+        "crouches (both HOLD and TAP), SPACE jumps, E talks, M opens the\n"
+        "ward map, TAB opens your casebook, F1 lists every key and F2\n"
+        "rebinds them.\n"
         "\n"
         "WALK INTO A LEDGE TO CLIMB IT. There is no climb key to learn --\n"
         "though V still works if you would rather line a leap up yourself.\n"
@@ -617,6 +621,10 @@ void print_usage() {
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--map") == 0) {
             options.smoke.map = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--map-overlay") == 0) {
+            // CORE ACTION #13. See SmokeRunConfig::mapOverlay's own header.
+            options.smoke.mapOverlay = true;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--punch") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::punch's own header.
@@ -988,6 +996,19 @@ void print_usage() {
         if (confirm) {
             session.chooseWaitRow(session.waitCursor() -
                                   session.waitPage() * render::kTopicPageSize);
+            return true;
+        }
+        return false;
+    }
+
+    if (session.districtMapOpen()) {
+        // THE WARD MAP IS A STATIC PAGE (v1: no pan, no zoom). The digits are
+        // swallowed rather than routed -- the pause branch's own reasoning: a
+        // number pressed over a full-screen page must not fall through to the
+        // quick bar behind it. Everything else falls through, so M toggles it
+        // off (an ordinary binding), ESC closes it (the Pause branch), and a
+        // game verb dismisses it exactly like every other overlay.
+        if (numbered || pageKey) {
             return true;
         }
         return false;
@@ -2088,6 +2109,13 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     return;
                 case render::Action::Block:
                     session.setBlocking(true);
+                    return;
+                // CORE ACTION #13. THE WARD MAP -- the owner's own ask: "a map
+                // that they can press M to see... and select on controller".
+                // The same key closes it; ESC closes it through the Pause
+                // branch below (districtMapOpen is part of menuOpen()).
+                case render::Action::Map:
+                    session.toggleDistrictMap();
                     return;
                 case render::Action::QuickNext:
                     quickSlot = (quickSlot + 1) % 10;
