@@ -791,6 +791,10 @@ void Tavern::advanceSecond() {
     tickBouncers();
     tickWatch();
     tickBrawl();
+    // After the brawl on purpose: a scald's dose lands on the hp the second's
+    // blows left behind, so the two cannot disagree about ordering between
+    // runs.
+    tickSpellwork();
     tickPatrons();
     tickVermin();
 }
@@ -1264,7 +1268,21 @@ void Tavern::tickBrawl() {
         Fighter playerFighter = fighters.front();
         const Blow blow = strike(actor->weapon(), playerFighter, roll);
         if (blow.landed) {
-            playerHp_ = std::max(kPlayerBrawlFloor, playerFighter.hp);
+            std::int32_t hpAfter = playerFighter.hp;
+            if (playerBlocking_) {
+                // THE GUARD. Same roll, same draw stream -- blockedDamage is a
+                // pure function arguing about what the landed blow is WORTH,
+                // never a second chance at whether it landed. Scaled by
+                // SHIELDWALL and never to zero (see brawl.hpp), and every blow
+                // it softens trains the skill -- Morrowind's own rule, taking
+                // a hit on raised arms is how a guard is learned.
+                const std::int32_t kept =
+                    blockedDamage(blow.damage, dialogue_.skills().level(kBlockSkill));
+                hpAfter = std::max(0, fighters.front().hp - kept);
+                blowsBlocked_ = wrap_add(blowsBlocked_, 1);
+                dialogue_.skills().use(kBlockSkill);
+            }
+            playerHp_ = std::max(kPlayerBrawlFloor, hpAfter);
             // WHOSE FIST IT WAS. S8 turns being put down into a promotion for
             // whoever did it, so the room has to know which of the men swinging
             // at it landed the last one -- and it is the LAST, not the first,
@@ -3141,6 +3159,226 @@ std::vector<const Spell*> Tavern::priestTeaches(std::int32_t linkcraftLevel) con
 }
 
 // ---------------------------------------------------------------------------
+// the cast
+// ---------------------------------------------------------------------------
+
+const Spell* Tavern::equippedSpell() const noexcept {
+    const Grimoire& book = dialogue_.grimoire();
+    if (!equippedSpellId_.empty()) {
+        return book.find(equippedSpellId_);
+    }
+    // Nothing picked: the first known crafting is the default, so the first
+    // spell a priest hands over is READY without a menu trip. Grimoire order
+    // (ascending id) on both runs, so the default cannot disagree either.
+    return book.spells().empty() ? nullptr : &book.spells().front();
+}
+
+bool Tavern::equipSpellAt(std::int32_t index) {
+    const std::vector<Spell>& spells = dialogue_.grimoire().spells();
+    if (index < 0 || index >= static_cast<std::int32_t>(spells.size())) {
+        return false;
+    }
+    equippedSpellId_ = spells[static_cast<std::size_t>(index)].id;
+    return true;
+}
+
+Tavern::CastResult Tavern::playerCastEquipped() {
+    CastResult out;
+    const Spell* spell = equippedSpell();
+    if (spell == nullptr) {
+        // THE COMMON STATE. The grimoire is empty at spawn; the refusal names
+        // where casting starts rather than shrugging.
+        out.line = "NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES.";
+        return out;
+    }
+    // Materialise the default pick, so the hash and the HUD agree about what
+    // the hand is holding from the first cast on.
+    if (equippedSpellId_.empty()) {
+        equippedSpellId_ = spell->id;
+    }
+    if (elapsed_ < castCoolUntil_) {
+        out.line = "THE LINK IS STILL COOLING -- " +
+                   std::to_string(castCoolUntil_ - elapsed_) + "S.";
+        return out;
+    }
+    // VERIFICATION GAP (S13): NOTHING HOLDS A HELD AXIS YET. The vocabulary's
+    // WHILE_ACTIVE rows -- warmth, tuning -- need a held-effects engine that
+    // reads a live row every tick (temperature into the cold model, a nudge
+    // into every attribute check), and no such reader exists in this tree.
+    // Resolving them to nothing while charging a cooldown and a skill-use
+    // would be a lie told with a success toast, so they are REFUSED, out
+    // loud, before anything is spent or drawn. The eight authored holds stay
+    // uncastable until the engine lands; the three vitality rows and every
+    // vitality forging resolve fully below.
+    for (const SpellComponent& component : spell->components) {
+        if (effectKindOf(component.effect) != EffectKind::Vitality) {
+            out.line = "NOTHING HOLDS " +
+                       std::string(effectKindWord(effectKindOf(component.effect))) +
+                       " YET. THE CRAFT IS AHEAD OF THE HANDS.";
+            return out;
+        }
+    }
+    const TargetShape shape = targetShapeOf(spell->target);
+    if (shape == TargetShape::Ranged || shape == TargetShape::Unknown) {
+        // Canon gates the unbridged link behind the gift, no authored row
+        // teaches it, and this build has no way to pick a body across a room
+        // -- so the refusal is canon's own, not a missing feature dressed up.
+        out.line = "THE LINK NEEDS A BRIDGE. AN ARM, A BLADE -- A TOUCH.";
+        return out;
+    }
+    Actor* touched = nullptr;
+    if (shape == TargetShape::Touch) {
+        const Actor* found = nearestTo(playerX_, playerY_, kMeleeReach);
+        if (found == nullptr) {
+            out.line = "NOBODY IN REACH TO LINK.";
+            return out;
+        }
+        touched = mutableActorById(found->id());
+        if (touched == nullptr) {
+            out.line = "NOBODY IN REACH TO LINK.";
+            return out;
+        }
+        out.targetId = touched->id();
+    }
+    bool harms = false;
+    for (const SpellComponent& component : spell->components) {
+        if (component.magnitude < 0) {
+            harms = true;
+        }
+    }
+    if (touched != nullptr && harms) {
+        // A SCALD IS AN ASSAULT, whatever the hand was holding: the same
+        // consequences a punch carries, in the same order playerPunchNearest
+        // applies them -- join the fight, classify it BEFORE the harm lands,
+        // and refuse the room's own resolution when steel is out.
+        if (std::find(brawlers_.begin(), brawlers_.end(), touched->id()) == brawlers_.end()) {
+            brawlers_.push_back(touched->id());
+            std::sort(brawlers_.begin(), brawlers_.end());
+        }
+        const std::vector<Fighter> fighters = currentFight();
+        out.fight = classifyFight(fighters);
+        if (!resolvesInWorld(out.fight)) {
+            escalation_ = out.fight;
+            noteEscalation(touched->id());
+            reportOffence(Offence::Brawled);
+            out.line = "STEEL IS OUT. THIS IS NOT THE ROOM'S FIGHT ANY MORE.";
+            return out;
+        }
+    }
+    // THE CHECK, and the ONE draw a cast costs -- taken only after every
+    // refusal above has passed, so a refused press leaves the draw stream
+    // exactly where it found it.
+    const std::int32_t level = dialogue_.skills().level(spell->skill);
+    const std::int32_t difficulty = spellDifficulty(*spell);
+    const std::int32_t chance =
+        std::clamp(kCastBasePercent + kCastPercentPerLevel * level -
+                       kCastPercentPerDifficulty * difficulty,
+                   kCastFloorPercent, kCastCeilPercent);
+    const std::uint64_t roll = drawForPlayerAction();
+    if (static_cast<std::int32_t>(roll % 100U) >= chance) {
+        castCoolUntil_ = elapsed_ + kFizzleCooldownTicks;
+        // NO SKILL CHARGE on a slip: linkcraft is learned by links that open
+        // -- the same rule the teaching precedent set -- and a fizzle-farm
+        // in a quiet corner should train nothing.
+        out.line = "THE LINK SLIPS.";
+        return out;
+    }
+    out.cast = true;
+    castCoolUntil_ = elapsed_ + spell->cooldownTicks;
+    dialogue_.skills().use(spell->skill);
+    for (const SpellComponent& component : spell->components) {
+        switch (effectModeOf(component.mode)) {
+            case EffectMode::Instant:
+                applySpellDose(out.targetId, component.magnitude);
+                break;
+            case EffectMode::OverTime: {
+                // Every dose the cost model priced, delivered on the cadence
+                // it priced them at. The first lands one period in: a trickle
+                // is a trickle, not a blow with a tail.
+                SpellTrickle trickle;
+                trickle.targetId = out.targetId;
+                trickle.magnitude = component.magnitude;
+                trickle.dosesLeft =
+                    std::max(1, component.durationTicks / kOverTimePeriodTicks);
+                trickle.cadenceLeft = kOverTimePeriodTicks;
+                trickles_.push_back(trickle);
+                break;
+            }
+            case EffectMode::WhileActive:
+            case EffectMode::Unknown:
+                // Unreachable: the component vet above refused every
+                // non-vitality axis, and vitality cannot legally hold.
+                break;
+        }
+    }
+    if (touched != nullptr && harms) {
+        touched->setActivity(Activity::Brawling);
+        touched->faceToward(playerX_, playerY_);
+        dialogue_.ledger().record(touched->id(), Deed::Struck);
+        spreadWitness(touched->id(), Deed::Struck);
+        if (talkingToId_ == touched->id()) {
+            endConversation();
+        }
+        reportOffence(Offence::Brawled);
+    }
+    out.line = upperCase(spell->displayName) +
+               (touched != nullptr ? " -- ON " + upperCase(touched->name()) : " -- HELD.");
+    return out;
+}
+
+void Tavern::applySpellDose(std::int32_t targetId, std::int32_t magnitude) {
+    if (magnitude == 0) {
+        return;
+    }
+    if (targetId < 0) {
+        // The player. The vitality floor holds here too, and it does NOT set
+        // playerFloored_: no crafting on the public shelf can put a body on
+        // the ground -- the floor is structural, spells.json's own words.
+        if (magnitude > 0) {
+            playerHp_ = std::min(playerHpMax_, playerHp_ + magnitude);
+        } else {
+            playerHp_ = std::max(kVitalityFloor, playerHp_ + magnitude);
+        }
+        return;
+    }
+    Actor* actor = mutableActorById(targetId);
+    if (actor == nullptr || !actor->present()) {
+        return;
+    }
+    const std::int32_t hp =
+        std::clamp(actor->hp() + magnitude, kVitalityFloor, actor->hpMax());
+    // Never Downed by a dose, for the same structural reason as the floor.
+    actor->setHealth(hp, actor->hpMax());
+}
+
+void Tavern::tickSpellwork() {
+    // Index loop with in-place erase, in insertion order: deterministic, and a
+    // dose can add no new trickle so the shape is simple.
+    for (std::size_t i = 0; i < trickles_.size();) {
+        SpellTrickle& trickle = trickles_[i];
+        bool alive = true;
+        if (trickle.targetId >= 0) {
+            const Actor* actor = actorById(trickle.targetId);
+            if (actor == nullptr || !actor->present()) {
+                // The body left the room and the bridge went with it.
+                alive = false;
+            }
+        }
+        if (alive && --trickle.cadenceLeft <= 0) {
+            applySpellDose(trickle.targetId, trickle.magnitude);
+            trickle.cadenceLeft = kOverTimePeriodTicks;
+            --trickle.dosesLeft;
+            alive = trickle.dosesLeft > 0;
+        }
+        if (alive) {
+            ++i;
+        } else {
+            trickles_.erase(trickles_.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // hashing
 // ---------------------------------------------------------------------------
 
@@ -3226,6 +3464,28 @@ void Tavern::hash_into(HashSink& sink) const {
     // cannot see is state the gate does not protect.
     sink.put_int(static_cast<std::uint32_t>(lastBlowBy_));
     sink.put_byte(defeatRelease_ ? 1U : 0U);
+    // FIRST-PERSON COMBAT (S13). The held guard and its tally, the equipped
+    // crafting, the cast recovery clock, and every trickle still delivering.
+    // All of it decides what the next blow or the next second does, so all of
+    // it is state the twin-run gate compares. DELIBERATE STRUCTURE CHANGE to
+    // the live Tavern hash, stated here rather than discovered: the pinned
+    // codec goldens (test_world_hash.cpp) hash fixed byte specs, not this
+    // struct, so nothing is re-derived -- the twin-run and cross-toolchain
+    // gates compare live runs of THIS shape against itself.
+    sink.put_byte(playerBlocking_ ? 1U : 0U);
+    sink.put_int(static_cast<std::uint32_t>(blowsBlocked_));
+    sink.put_int(static_cast<std::uint32_t>(equippedSpellId_.size()));
+    for (const char character : equippedSpellId_) {
+        sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));
+    }
+    sink.put_long(static_cast<std::uint64_t>(castCoolUntil_));
+    sink.put_int(static_cast<std::uint32_t>(trickles_.size()));
+    for (const SpellTrickle& trickle : trickles_) {
+        sink.put_int(static_cast<std::uint32_t>(trickle.targetId));
+        sink.put_int(static_cast<std::uint32_t>(trickle.magnitude));
+        sink.put_int(static_cast<std::uint32_t>(trickle.dosesLeft));
+        sink.put_int(static_cast<std::uint32_t>(trickle.cadenceLeft));
+    }
     nemesis_.hashInto(sink);
     dialogue_.hashInto(sink);
 }

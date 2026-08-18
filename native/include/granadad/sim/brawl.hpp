@@ -156,4 +156,37 @@ struct Blow {
 /// the thing the twin-run gate is actually watching.
 [[nodiscard]] Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll) noexcept;
 
+// ---------------------------------------------------------------------------
+// the guard
+// ---------------------------------------------------------------------------
+
+/// The skill a held guard is worked with. content/raws/skills/skills.json's own
+/// row: "covers": "block, shield use", governing VIG, NEGLECTED tier. Named
+/// once here the way kCraftingSkill is named once in spellforge.hpp.
+inline constexpr std::string_view kBlockSkill = "shieldwall";
+
+/// What an untrained guard still lets through of a landed blow, percent, and
+/// the floor a trained one can push that down to. Every SHIELDWALL level takes
+/// one percent off, so the whole run from raw to floor is forty levels of use.
+inline constexpr std::int32_t kBlockKeptPercentAtZero = 60;
+inline constexpr std::int32_t kBlockKeptPercentFloor = 20;
+
+/// What a guarded body still takes of a landed blow.
+///
+/// SKILL-SCALED, NEVER TO ZERO. A raw guard already helps -- forty percent of
+/// a blow turned by nothing but raised arms -- and SHIELDWALL buys the rest a
+/// level at a time, down to kBlockKeptPercentFloor and no further; the
+/// max(1, ...) means a landed blow always costs at least one hit point through
+/// any guard at any level. A block that could null damage outright would be a
+/// wall of skill that turns the fight OFF, which is the flat-outcome shape the
+/// standing Morrowind steer exists to refuse: skill buys forgiveness, not
+/// immunity.
+///
+/// PURE INTEGERS, PURE FUNCTION. No draw and no state: the caller owns both,
+/// exactly as strike()'s own contract says, so a held guard never moves the
+/// draw stream -- the same roll lands, and the guard only argues about what
+/// it is worth.
+[[nodiscard]] std::int32_t blockedDamage(std::int32_t damage,
+                                         std::int32_t shieldwallLevel) noexcept;
+
 }  // namespace granadad::sim

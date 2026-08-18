@@ -460,6 +460,38 @@ TEST_CASE("a blow takes hit points off and eventually puts somebody down") {
     CHECK(target.hp == 0);  // down, and never below it
 }
 
+TEST_CASE("blockedDamage: skill buys forgiveness, never immunity") {
+    // RULE, as a table, no world near it. An untrained guard keeps sixty
+    // percent of the blow coming (min one), and the whiffed-blow case never
+    // reaches here at all -- blockedDamage argues about a LANDED blow's worth.
+    CHECK(blockedDamage(10, 0) == 6);
+    CHECK(blockedDamage(3, 0) == 1);
+    CHECK(blockedDamage(0, 20) == 0);
+
+    // Every SHIELDWALL level forgives a little more, monotonically, at the
+    // heaviest blow a brawl weapon can land (cudgel 7 + 2 variance + a few).
+    std::int32_t last = blockedDamage(13, 0);
+    for (std::int32_t level = 1; level <= 60; ++level) {
+        const std::int32_t kept = blockedDamage(13, level);
+        CHECK(kept <= last);
+        CHECK(kept >= 1);
+        last = kept;
+    }
+
+    // The floor: past the span, more skill buys nothing more.
+    CHECK(blockedDamage(13, kBlockKeptPercentAtZero - kBlockKeptPercentFloor) ==
+          blockedDamage(13, 99));
+    CHECK(blockedDamage(13, 99) == 13 * kBlockKeptPercentFloor / 100);
+
+    // NEVER TO ZERO: any landed damage through any guard at any level costs
+    // at least one hit point. A guard that could null a blow would turn the
+    // fight off, which is the flat outcome the Morrowind steer refuses.
+    for (std::int32_t damage = 1; damage <= 13; ++damage) {
+        CHECK(blockedDamage(damage, 99) >= 1);
+        CHECK(blockedDamage(damage, 0) < std::max(2, damage));  // and it does help
+    }
+}
+
 // ===========================================================================
 // ROOM -- hours, trade, and the door policy
 // ===========================================================================
@@ -866,6 +898,187 @@ TEST_CASE("a brawl never kills the player, it puts them on the floor") {
     CHECK(tavern.playerHp() < startHp);
     CHECK(tavern.playerHp() >= kPlayerBrawlFloor);
     CHECK_FALSE(tavern.escalated());
+}
+
+TEST_CASE("a held guard softens the same brawl, and every softened blow trains shieldwall") {
+    // TWO ROOMS, ONE SEED, ONE DIFFERENCE. blockedDamage is a pure function of
+    // a landed blow -- no draw of its own -- so the guarded room sees exactly
+    // the rolls the open room sees, and the only thing allowed to differ is
+    // what those rolls cost.
+    const auto brawlFor = [](bool guard) {
+        auto room = std::make_unique<Room>(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+        room->run(2);
+        REQUIRE(room->tavern().playerPunchNearest().swung);
+        room->tavern().setPlayerBlocking(guard);
+        room->run(60);
+        return room;
+    };
+    const auto open = brawlFor(false);
+    const auto guarded = brawlFor(true);
+
+    // Both fights happened, and both hurt.
+    REQUIRE(open->tavern().playerHp() < 100);
+    REQUIRE(guarded->tavern().playerHp() < 100);
+    // The guard is not immunity -- blows still landed and still cost -- but
+    // the same sixty seconds cost the guarded body less.
+    CHECK(guarded->tavern().playerHp() > open->tavern().playerHp());
+
+    // The tally is real and one-sided.
+    CHECK(guarded->tavern().blowsBlocked() > 0);
+    CHECK(open->tavern().blowsBlocked() == 0);
+
+    // And every softened blow was a SHIELDWALL use -- taking a hit on raised
+    // arms is how a guard is learned, the Morrowind rule. (`uses` alone could
+    // legitimately read zero right after a level-up spent them, so the check
+    // is "the skill moved at all".)
+    const SkillTrack::Entry* shieldwall = guarded->tavern().dialogue().skills().find(kBlockSkill);
+    REQUIRE(shieldwall != nullptr);
+    CHECK((shieldwall->uses > 0 || shieldwall->level > 0));
+    const SkillTrack::Entry* untrained = open->tavern().dialogue().skills().find(kBlockSkill);
+    REQUIRE(untrained != nullptr);
+    CHECK(untrained->uses == 0);
+    CHECK(untrained->level == 0);
+}
+
+// ===========================================================================
+// ROOM -- the cast
+// ===========================================================================
+
+TEST_CASE("casting with an empty grimoire refuses out loud, and a refused press "
+          "leaves the room byte-identical") {
+    const auto runOne = [](bool refuseFirst) {
+        Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+        room.run(2);
+        if (refuseFirst) {
+            // The COMMON state: nothing learned. Every press refuses with the
+            // line that says where casting starts, and spends NOTHING -- no
+            // draw, no cooldown, no hash movement.
+            for (int i = 0; i < 3; ++i) {
+                const Tavern::CastResult result = room.tavern().playerCastEquipped();
+                REQUIRE_FALSE(result.cast);
+                REQUIRE(result.line == "NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES.");
+            }
+            REQUIRE(room.tavern().equippedSpell() == nullptr);
+        }
+        // The punch after it draws from the SAME stream position either way.
+        room.tavern().playerPunchNearest();
+        room.run(20);
+        WorldHasher hasher;
+        room.tavern().hash_into(hasher.section_sink(room.tavern().id()));
+        return hasher.section_hash(room.tavern().id());
+    };
+    CHECK(runOne(false) == runOne(true));
+}
+
+namespace {
+
+/// A room where one authored crafting is learned and the FIRST press of Cast
+/// opened its link. The check tops out at 95 (never certainty, by contract),
+/// so a seed whose first draw lands in the top twentieth fizzles -- and a
+/// fizzled harmful cast has already, correctly, started the brawl, which makes
+/// "wait and retry in place" the wrong test harness. Fresh room, next seed:
+/// bounded, deterministic, and every room's first press is the same question.
+std::unique_ptr<Room> roomWithFirstCast(std::string_view spellId, Tavern::CastResult& result) {
+    constexpr std::uint64_t kSeeds[] = {
+        0x4752414E41444144ull, 0x0123456789ABCDEFull, 0xCAFED0CEDBADF00Dull,
+        0x1111111111111111ull, 0x600DCA57600DCA57ull, 0x2222222222222222ull,
+        0x3333333333333333ull, 0x4444444444444444ull, 0x5555555555555555ull,
+        0x6666666666666666ull,
+    };
+    for (const std::uint64_t seed : kSeeds) {
+        auto room = std::make_unique<Room>(hourOfDay(19), gull::kBartenderX,
+                                           gull::kBarY - 1, seed);
+        room->run(2);
+        Tavern& tavern = room->tavern();
+        const Spell* spell = tavern.spellbook().find(spellId);
+        REQUIRE(spell != nullptr);
+        REQUIRE(tavern.dialogue().grimoire().learn(*spell));
+        // Linkcraft 10 puts every authored vitality row at the 95 ceiling.
+        REQUIRE(tavern.dialogue().skills().setLevel(kCraftingSkill, 10));
+        result = tavern.playerCastEquipped();
+        if (result.cast) {
+            return room;
+        }
+        // The only refusal reachable here is the fizzle.
+        REQUIRE(result.line == "THE LINK SLIPS.");
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+TEST_CASE("a sting resolves through the room: hp moves, the room minds, the link cools") {
+    Tavern::CastResult result;
+    const auto room = roomWithFirstCast("sting", result);
+    REQUIRE(room != nullptr);
+    Tavern& tavern = room->tavern();
+
+    // The first crafting learned is the default equip -- no menu trip.
+    REQUIRE(tavern.equippedSpell() != nullptr);
+    CHECK(tavern.equippedSpell()->id == "sting");
+    REQUIRE(result.cast);
+    REQUIRE(result.targetId >= 0);
+
+    // One hit point, once, and never below the structural floor.
+    const Actor* stung = tavern.actorById(result.targetId);
+    REQUIRE(stung != nullptr);
+    CHECK(stung->hp() == stung->hpMax() - 1);
+
+    // A sting is an assault whatever the hand was holding: the house treats
+    // it exactly as it treats a punch.
+    CHECK(tavern.playerStanding() != Standing::Welcome);
+
+    // And the link cools on the authored clock -- the next press refuses.
+    const Tavern::CastResult again = tavern.playerCastEquipped();
+    CHECK_FALSE(again.cast);
+    CHECK(again.line.find("COOLING") != std::string::npos);
+    CHECK(tavern.castCooldownLeft() > 0);
+    CHECK(tavern.castCooldownLeft() <= tavern.equippedSpell()->cooldownTicks);
+}
+
+TEST_CASE("a trickle delivers its doses on the cadence the cost model priced") {
+    // Scald: OVER_TIME, -1 a dose, 30 ticks -- three doses, ten seconds apart.
+    Tavern::CastResult result;
+    const auto room = roomWithFirstCast("scald", result);
+    REQUIRE(room != nullptr);
+    Tavern& tavern = room->tavern();
+    REQUIRE(result.cast);
+    REQUIRE(result.targetId >= 0);
+    const Actor* scalded = tavern.actorById(result.targetId);
+    REQUIRE(scalded != nullptr);
+    const std::int32_t hpMax = scalded->hpMax();
+
+    // Nothing lands at the cast itself: a trickle is a trickle, not a blow
+    // with a tail.
+    CHECK(scalded->hp() == hpMax);
+    // First dose one period in...
+    room->run(kOverTimePeriodTicks + 1);
+    CHECK(scalded->hp() == hpMax - 1);
+    // ...and the rest on the cadence, then it ENDS -- three doses were priced,
+    // three are delivered, and ten more seconds deliver nothing.
+    room->run(2 * kOverTimePeriodTicks + 2);
+    CHECK(scalded->hp() == hpMax - 3);
+    room->run(kOverTimePeriodTicks + 2);
+    CHECK(scalded->hp() == hpMax - 3);
+}
+
+TEST_CASE("the held axes refuse out loud until something can hold them") {
+    // VERIFICATION GAP (S13) made testable: warmth is a WHILE_ACTIVE hold and
+    // no held-effects engine exists, so the cast REFUSES -- before the draw,
+    // before the cooldown, before the skill charge -- rather than toasting a
+    // success that changed nothing.
+    Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    room.run(2);
+    Tavern& tavern = room.tavern();
+    const Spell* warm = tavern.spellbook().find("warm_the_hands");
+    REQUIRE(warm != nullptr);
+    REQUIRE(tavern.dialogue().grimoire().learn(*warm));
+
+    const Tavern::CastResult result = tavern.playerCastEquipped();
+    CHECK_FALSE(result.cast);
+    CHECK(result.line.find("NOTHING HOLDS") != std::string::npos);
+    // Refused, not half-charged: the link never opened, so it never cools.
+    CHECK(tavern.castCooldownLeft() == 0);
 }
 
 // ===========================================================================

@@ -82,6 +82,16 @@ std::int32_t baseDamage(Weapon weapon) noexcept {
     return 0;
 }
 
+std::int32_t blockedDamage(std::int32_t damage, std::int32_t shieldwallLevel) noexcept {
+    if (damage <= 0) {
+        return 0;
+    }
+    const std::int32_t levelSpan = kBlockKeptPercentAtZero - kBlockKeptPercentFloor;
+    const std::int32_t level = std::max(0, std::min(shieldwallLevel, levelSpan));
+    const std::int32_t keptPercent = kBlockKeptPercentAtZero - level;
+    return std::max(1, damage * keptPercent / 100);
+}
+
 Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll) noexcept {
     Blow blow;
     // One in eight swings misses outright. A brawl that never whiffs reads as a

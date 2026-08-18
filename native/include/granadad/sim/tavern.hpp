@@ -438,6 +438,30 @@ inline constexpr std::int32_t kVerminUntil = hourOfDay(11);
 /// from it -- belongs with the dedicated combat screen, which S2 does not have.
 inline constexpr std::int32_t kPlayerBrawlFloor = 1;
 
+/// THE CAST CHECK. A cast succeeds when a d100 draw lands under
+///
+///   clamp(kCastBasePercent + kCastPercentPerLevel * linkcraft
+///                          - kCastPercentPerDifficulty * spellDifficulty,
+///         kCastFloorPercent, kCastCeilPercent)
+///
+/// -- which is spells.json's own "a cast can still fizzle (by design)" made
+/// real, priced by the cost model everything else already uses. The base sits
+/// high on purpose: the public shelf is WEAK magic gated shallow, and a Sting
+/// (difficulty 5) at linkcraft 0 landing about two casts in three is a
+/// beginner's craft, not a slot machine. The ceiling never reaches 100 -- the
+/// same "rises with the level and never buys certainty" contract every check
+/// in this project carries -- and the floor never reaches 0, because a check
+/// that cannot be passed is a button that lies.
+inline constexpr std::int32_t kCastBasePercent = 75;
+inline constexpr std::int32_t kCastPercentPerLevel = 4;
+inline constexpr std::int32_t kCastPercentPerDifficulty = 2;
+inline constexpr std::int32_t kCastFloorPercent = 10;
+inline constexpr std::int32_t kCastCeilPercent = 95;
+/// A slipped link recovers in half a minute; a delivered one waits its
+/// authored cooldownTicks. Charging the FULL cooldown on a fizzle would make
+/// low skill read as a dead button rather than an unreliable craft.
+inline constexpr std::int32_t kFizzleCooldownTicks = 30;
+
 // ---------------------------------------------------------------------------
 // the tavern
 // ---------------------------------------------------------------------------
@@ -1041,6 +1065,55 @@ public:
     /// currently swinging.
     [[nodiscard]] std::vector<Fighter> currentFight() const;
 
+    // --- the guard (Block, held) ---------------------------------------------
+
+    /// Down is blocking, up is not. Pushed by the client every frame the Block
+    /// key changes, the same seam setPlayerMotion is. SIM STATE, hashed: a
+    /// held guard changes what every landed blow in tickBrawl costs, so two
+    /// runs that disagreed about it would be two different fights.
+    void setPlayerBlocking(bool blocking) noexcept { playerBlocking_ = blocking; }
+    [[nodiscard]] bool playerBlocking() const noexcept { return playerBlocking_; }
+    /// Every blow a guard has ever softened. MONOTONIC on purpose: the client
+    /// pulses on the increase, so the sim never keeps read-and-clear feedback
+    /// state the way takeDefeatRelease has to.
+    [[nodiscard]] std::int32_t blowsBlocked() const noexcept { return blowsBlocked_; }
+
+    // --- the cast (Cast, one press) ------------------------------------------
+
+    /// What one press of the Cast key did, or why it did nothing. `line` is
+    /// always set -- menu furniture for the alert row, refusal or success --
+    /// because a key that can silently do nothing is a key the player reads
+    /// as broken.
+    struct CastResult {
+        bool cast = false;
+        std::string line;
+        /// Mirror of PunchResult::fight: a harmful link laid on a room where
+        /// steel is out is the combat screen's business, not this room's.
+        FightClass fight = FightClass::Brawl;
+        std::int32_t targetId = -1;
+    };
+    /// Casts the equipped crafting. Refuses, in order and out loud: an empty
+    /// grimoire, a link still cooling, an axis nothing holds yet (see the
+    /// VERIFICATION GAP in the .cpp), the unbridged link, an empty reach. A
+    /// harmful touch on a person carries a punch's own consequences -- the
+    /// brawl list, the ledger, the offence -- because a scald is an assault
+    /// whatever the hand was holding. The cast check is linkcraft against
+    /// spellDifficulty: skill raises the odds and never buys certainty.
+    CastResult playerCastEquipped();
+
+    /// The crafting the next cast will spend, or nullptr with an empty
+    /// grimoire. When nothing has been picked the FIRST known crafting is the
+    /// default -- grimoire order, ascending id -- so learning your first spell
+    /// readies it without a menu trip.
+    [[nodiscard]] const Spell* equippedSpell() const noexcept;
+    /// Equips the INDEXth known crafting, grimoire order. False when there is
+    /// no such row; the equipped id is untouched.
+    bool equipSpellAt(std::int32_t index);
+    /// Seconds of room time before the next cast may open a link. 0 is ready.
+    [[nodiscard]] std::int64_t castCooldownLeft() const noexcept {
+        return castCoolUntil_ > elapsed_ ? castCoolUntil_ - elapsed_ : 0;
+    }
+
 private:
     void buildRoster();
     void applySchedules();
@@ -1081,6 +1154,13 @@ private:
     [[nodiscard]] std::int32_t rosterSkillOf(const Actor& actor) const noexcept;
     void tickBrawl();
     void tickPatrons();
+    /// Advances every trickle still delivering. One second per call.
+    void tickSpellwork();
+    /// One dose of vitality onto a body. Heals cap at hpMax; harm floors at
+    /// spellforge's kVitalityFloor and NEVER downs or floors anybody -- no
+    /// crafting on the public shelf can put a body on the ground, and the
+    /// floor is structural rather than a balance choice.
+    void applySpellDose(std::int32_t targetId, std::int32_t magnitude);
     void advanceSecond();
     [[nodiscard]] Actor* findRole(ActorRole role, bool presentOnly) noexcept;
     [[nodiscard]] const Actor* findRole(ActorRole role, bool presentOnly) const noexcept;
@@ -1148,6 +1228,27 @@ private:
     std::int32_t playerDrinks_ = 0;
     std::int32_t shoveX_ = 0;
     std::int32_t shoveY_ = 0;
+
+    // the guard and the cast -- first-person combat's own player state
+    bool playerBlocking_ = false;
+    std::int32_t blowsBlocked_ = 0;
+    /// Empty means "nothing picked" and equippedSpell() defaults to the first
+    /// known crafting. Kept as the ID rather than an index because the
+    /// grimoire inserts in id order: learning a new crafting must never
+    /// silently re-point what the hand is holding.
+    std::string equippedSpellId_;
+    /// Room-time (elapsed_) tick the next cast is allowed at.
+    std::int64_t castCoolUntil_ = 0;
+    /// One OVER_TIME component still delivering: a scald working through, a
+    /// cut knitting shut. Doses land every kOverTimePeriodTicks. A target who
+    /// leaves the room takes the link down with them.
+    struct SpellTrickle {
+        std::int32_t targetId = -1;  ///< -1 is the player.
+        std::int32_t magnitude = 0;  ///< per dose, signed.
+        std::int32_t dosesLeft = 0;
+        std::int32_t cadenceLeft = 0;
+    };
+    std::vector<SpellTrickle> trickles_;
 
     // trade
     std::int32_t drinkStock_ = kOpeningStock;
