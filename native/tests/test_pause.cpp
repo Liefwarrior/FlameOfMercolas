@@ -77,14 +77,15 @@ TEST_CASE("ESC opens a menu now, not the window's close button") {
     // build does not do is the same class of bug as an enum name in a bark.
     CHECK(view.speaker == "MENU");
     CHECK(view.speaker != "PAUSED");
-    // MORROWIND ROUND: FOUR ROWS, NOT THREE. CONTROLS is new -- Keys' own
-    // relocated door, the identical shape SETTINGS already was for Options
-    // -- since the tiled Menu's four tiles have no room left for either.
-    REQUIRE(view.topics.size() == 4);
+    // TIME-AND-TENURE BUILD: FIVE ROWS. WAIT is new, second -- the door into
+    // the hour-select page (see test cases below) -- above the two
+    // visit-once doors CONTROLS and SETTINGS, with QUIT staying last.
+    REQUIRE(view.topics.size() == 5);
     CHECK(view.topics[0] == "RESUME");
-    CHECK(view.topics[1] == "CONTROLS");
-    CHECK(view.topics[2] == "SETTINGS");
-    CHECK(view.topics[3] == "QUIT GRANADAD");
+    CHECK(view.topics[1] == "WAIT");
+    CHECK(view.topics[2] == "CONTROLS");
+    CHECK(view.topics[3] == "SETTINGS");
+    CHECK(view.topics[4] == "QUIT GRANADAD");
 
     // The second press resumes -- the same key, the same toggle, exactly the
     // way F1 and F2 already behave.
@@ -142,9 +143,9 @@ TEST_CASE("SETTINGS reaches the controls round's rebinding screen from the menu 
 
     session.togglePause();
     REQUIRE(session.pauseOpen());
-    REQUIRE(session.pauseRows()[2] == "SETTINGS");
+    REQUIRE(session.pauseRows()[3] == "SETTINGS");
 
-    session.movePauseCursor(2);  // RESUME -> CONTROLS -> SETTINGS
+    session.movePauseCursor(3);  // RESUME -> WAIT -> CONTROLS -> SETTINGS
     session.choosePause();
 
     // The exact page F2 used to open, reached a different way. Rebinding a
@@ -163,9 +164,9 @@ TEST_CASE("MORROWIND ROUND: CONTROLS reaches the keys page from the menu a playe
 
     session.togglePause();
     REQUIRE(session.pauseOpen());
-    REQUIRE(session.pauseRows()[1] == "CONTROLS");
+    REQUIRE(session.pauseRows()[2] == "CONTROLS");
 
-    session.movePauseCursor(1);  // RESUME -> CONTROLS
+    session.movePauseCursor(2);  // RESUME -> WAIT -> CONTROLS
     session.choosePause();
 
     // The exact page F1 used to open, reached a different way -- the keys
@@ -180,9 +181,9 @@ TEST_CASE("QUIT asks twice, and moving the cursor or pressing ESC calls it off")
 
     session.togglePause();
     REQUIRE(session.pauseOpen());
-    REQUIRE(session.pauseRows()[3] == "QUIT GRANADAD");
+    REQUIRE(session.pauseRows()[4] == "QUIT GRANADAD");
 
-    session.movePauseCursor(3);  // RESUME -> CONTROLS -> SETTINGS -> QUIT
+    session.movePauseCursor(4);  // RESUME -> WAIT -> CONTROLS -> SETTINGS -> QUIT
     session.choosePause();
     // ARMED, NOT FIRED. One press on QUIT must not be indistinguishable from
     // one press on RESUME -- that is the entire defect this file exists over.
@@ -191,8 +192,8 @@ TEST_CASE("QUIT asks twice, and moving the cursor or pressing ESC calls it off")
     CHECK(session.pauseOpen());
     // And the row says so, so a player who did not mean to press it twice can
     // see the state they are in before they do.
-    CHECK(session.pauseRows()[3] != "QUIT GRANADAD");
-    CHECK(session.pauseRows()[3].find("QUIT") != std::string::npos);
+    CHECK(session.pauseRows()[4] != "QUIT GRANADAD");
+    CHECK(session.pauseRows()[4].find("QUIT") != std::string::npos);
 
     SUBCASE("a second press on the same row confirms it") {
         session.choosePause();
@@ -203,7 +204,7 @@ TEST_CASE("QUIT asks twice, and moving the cursor or pressing ESC calls it off")
         session.movePauseCursor(-1);  // QUIT -> SETTINGS
         CHECK_FALSE(session.quitArmed());
         CHECK(session.pauseOpen());
-        CHECK(session.pauseRows()[3] == "QUIT GRANADAD");
+        CHECK(session.pauseRows()[4] == "QUIT GRANADAD");
     }
 
     SUBCASE("ESC disarms it on the first press, and closes the menu on the second") {
@@ -235,28 +236,38 @@ TEST_CASE("the printed number picks a pause row exactly the way it picks a topic
     session.togglePause();
     REQUIRE(session.pauseOpen());
 
-    SUBCASE("2 opens CONTROLS immediately") {
+    SUBCASE("2 opens the Wait page immediately") {
+        // TIME-AND-TENURE BUILD: the new second row, in wait mode -- never
+        // sleep mode, whatever tile the body stands on. The healing door is
+        // the bed's Interact press and only that.
         session.chooseVisibleTopic(1);
+        CHECK_FALSE(session.pauseOpen());
+        CHECK(session.waitOpen());
+        CHECK_FALSE(session.waitSleeping());
+    }
+
+    SUBCASE("3 opens CONTROLS immediately") {
+        session.chooseVisibleTopic(2);
         CHECK_FALSE(session.pauseOpen());
         CHECK(session.keysOpen());
     }
 
-    SUBCASE("3 opens settings immediately, cursor and all") {
-        session.chooseVisibleTopic(2);
+    SUBCASE("4 opens settings immediately, cursor and all") {
+        session.chooseVisibleTopic(3);
         CHECK_FALSE(session.pauseOpen());
         CHECK(session.optionsOpen());
     }
 
-    SUBCASE("4 arms quit, and 4 again confirms it") {
-        session.chooseVisibleTopic(3);
+    SUBCASE("5 arms quit, and 5 again confirms it") {
+        session.chooseVisibleTopic(4);
         CHECK(session.quitArmed());
         CHECK_FALSE(session.quitRequested());
-        session.chooseVisibleTopic(3);
+        session.chooseVisibleTopic(4);
         CHECK(session.quitRequested());
     }
 
     SUBCASE("1 resumes even from an armed quit -- picking a different row calls it off") {
-        session.chooseVisibleTopic(3);
+        session.chooseVisibleTopic(4);
         REQUIRE(session.quitArmed());
         session.chooseVisibleTopic(0);
         CHECK_FALSE(session.pauseOpen());
@@ -309,7 +320,7 @@ TEST_CASE("the menu, the options it opens and the plain scene never fight over t
     render::Framebuffer withPause(config.width, config.height);
     session.drawFrame(withPause);
 
-    session.movePauseCursor(2);  // RESUME -> CONTROLS -> SETTINGS
+    session.movePauseCursor(3);  // RESUME -> WAIT -> CONTROLS -> SETTINGS
     session.choosePause();
     REQUIRE(session.optionsOpen());
     render::Framebuffer withSettings(config.width, config.height);
@@ -379,6 +390,111 @@ TEST_CASE("--pause reaches the menu headlessly, for an environment that cannot d
     }
 }
 
+// ===========================================================================
+// TIME-AND-TENURE BUILD -- the WAIT row, and the hour page behind it
+// ===========================================================================
+
+TEST_CASE("WAIT passes the hours anywhere safe -- clock moved, calendar synced, nothing mended") {
+    // Eleven at night on the open street: safe by the definition in
+    // session.hpp (nobody swinging, nobody hostile in reach, feet on dry
+    // ground), and one hour short of midnight so the pick below has to carry
+    // the ward's calendar across a day boundary -- the exact class of jump
+    // the S7 review's eighth finding was about.
+    render::SessionConfig config = fresh();
+    config.timeOfDay = 23 * 3600;
+    render::Session session(config);
+    MoveInput walk;
+    walk.forward = 1;
+    session.step(walk);
+    REQUIRE_FALSE(session.casebookOpen());
+
+    session.togglePause();
+    session.movePauseCursor(1);  // RESUME -> WAIT
+    session.choosePause();
+    REQUIRE(session.waitOpen());
+    CHECK_FALSE(session.waitSleeping());
+    CHECK_FALSE(session.pauseOpen());
+    CHECK(session.waitRefusal().empty());
+
+    // Twelve rows, one per hour ahead, each naming the hour it lands on.
+    const render::DialogueViewState view = session.dialogueView();
+    CHECK(view.speaker == "WAIT");
+    REQUIRE(view.topics.size() == 12);
+    CHECK(view.topics[0] == "1 HOUR  TO 00:00  MIDNIGHT");
+    CHECK(view.topics[6] == "7 HOURS  TO 06:00  DAWN");
+
+    // NOTHING MENDS -- the owner's ruling, checked against a real bruise.
+    const std::int32_t whole = session.tavern().playerHp();
+    session.tavern().injurePlayer(4);
+    const std::int32_t bruised = session.tavern().playerHp();
+    REQUIRE(bruised < whole);
+
+    const std::int64_t dayBefore = session.tavern().dayNumber();
+    session.chooseWaitRow(1);  // 2 HOURS -- past midnight, to 01:00
+    CHECK_FALSE(session.waitOpen());
+    CHECK(session.lastMessage() == "WAITED UNTIL 01:00.");
+    CHECK(session.timeOfDay() == hourOfDay(1));
+    CHECK(session.tavern().playerHp() == bruised);
+    // The calendar came along: the tavern turned its day and the ward's roll
+    // followed it, through the same syncWardToCalendar every skip takes.
+    CHECK(session.tavern().dayNumber() == dayBefore + 1);
+    CHECK(session.ward().day() == session.tavern().dayNumber());
+}
+
+TEST_CASE("WAIT is refused out loud with an enemy in reach, and the refusal is re-checked on the press") {
+    // Inside the Gull, two tiles from the bartender, at nine in the evening.
+    render::SessionConfig config = fresh();
+    config.timeOfDay = 21 * 3600;
+    config.spawnX = gull::kBartenderX;
+    config.spawnY = gull::kBarY + 2;
+    config.spawnBand = gull::kGroundBand;
+    render::Session session(config);
+    session.stepMany(MoveInput{}, 2);
+    session.toggleCasebook();  // put the opening page down
+    REQUIRE_FALSE(session.casebookOpen());
+
+    // Safe while the room likes you fine.
+    REQUIRE(session.waitRefusal().empty());
+
+    // Make the nearest body HOSTILE through the ledger the attitude actually
+    // reads -- no brawl, no swing, just somebody who hates you within reach.
+    const Actor* bartender =
+        session.tavern().nearestTo(session.body().x(), session.body().y(), 6 * kSubOne);
+    REQUIRE(bartender != nullptr);
+    SocialLedger& ledger = session.tavern().dialogue().ledger();
+    for (int i = 0; i < 50 && ledger.attitudeOf(bartender->id()) != Attitude::Hostile; ++i) {
+        ledger.record(bartender->id(), Deed::Robbed);
+    }
+    REQUIRE(ledger.attitudeOf(bartender->id()) == Attitude::Hostile);
+
+    CHECK(session.waitRefusal() == "NOT WITH AN ENEMY THIS CLOSE.");
+
+    // The page still opens -- it PRINTS the refusal (the top band carries it)
+    // -- and the pick is refused with the clock unmoved: the page and the
+    // key name the same door.
+    session.openWait(false);
+    REQUIRE(session.waitOpen());
+    CHECK(session.dialogueView().line == "NOT WITH AN ENEMY THIS CLOSE.");
+    const int before = session.timeOfDay();
+    session.chooseWaitRow(0);
+    CHECK(session.waitOpen());
+    CHECK(session.timeOfDay() == before);
+    CHECK(session.lastMessage() == "NOT WITH AN ENEMY THIS CLOSE.");
+}
+
+TEST_CASE("--wait reaches the page headlessly through the pause row itself") {
+    render::SmokeRunConfig run;
+    run.session.contentDir = content::contentDir();
+    run.steps = 0;
+    run.stamp = false;
+    run.wait = true;
+    const render::SmokeRunResult played = render::runSmoke(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.summary.find("wait open=yes") != std::string::npos);
+}
+
 TEST_CASE("every word the pause menu can show is a sentence, not a diagnostic") {
     render::Session session = standing();
     session.togglePause();
@@ -395,7 +511,7 @@ TEST_CASE("every word the pause menu can show is a sentence, not a diagnostic") 
     for (const std::string& row : session.pauseRows()) {
         mustRead(row);
     }
-    session.movePauseCursor(3);  // RESUME -> CONTROLS -> SETTINGS -> QUIT
+    session.movePauseCursor(4);  // RESUME -> WAIT -> CONTROLS -> SETTINGS -> QUIT
     session.choosePause();
     REQUIRE(session.quitArmed());
     for (const std::string& row : session.pauseRows()) {

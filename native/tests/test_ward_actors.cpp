@@ -29,6 +29,7 @@
 #include "granadad/content/world_reader.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/docks.hpp"
+#include "granadad/sim/docks_signs.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/path_finder.hpp"
 #include "granadad/sim/ward_actors.hpp"
@@ -559,6 +560,74 @@ TEST_CASE("the population is registered in the windowed game and keeps the hour"
         CHECK(sprite.art != nullptr);
         CHECK(sprite.ward);
         CHECK(sprite.glow == 0.0F);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TIME-AND-TENURE BUILD -- whose ground, and the petition for it
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the four compound footprints answer 'whose ground is this tile' and the streets answer nobody's") {
+    // The survey's tier-3 correlation, wired for the one question it was ever
+    // going to answer -- see docks_signs.hpp's plotIdUnder. Pins one interior
+    // tile per compound against the sign footprints the generated table
+    // carries, and the two grounds no compound may ever claim: the Tarwalk,
+    // and the Gull.
+    CHECK(sim::docks::plotIdUnder(70, 138) == "C1_QUAYWARD");
+    CHECK(sim::docks::plotIdUnder(170, 110) == "C2_NETTERS");
+    CHECK(sim::docks::plotIdUnder(130, 140) == "C3_SALTGATE");
+    CHECK(sim::docks::plotIdUnder(210, 110) == "C4_GULLET");
+    CHECK(sim::docks::plotIdUnder(sim::docks::kSpawnTileX, sim::docks::kSpawnTileY).empty());
+    CHECK(sim::docks::plotIdUnder(153, 70).empty());  // inside the Gilded Gull
+    // The Netter HOUSE is inside the Netters' footprint, and it is the
+    // compound that answers -- a house sign never claims ground.
+    CHECK(sim::docks::plotIdUnder(150, 100) == "C2_NETTERS");
+}
+
+TEST_CASE("a vacant charge is petitioned for in conversation, and the ROLL is what changes") {
+    // THE FIRST CALLER Ward::petitionForCharge has ever had, driven the way a
+    // player drives it: find somebody of the cloth answerable from compound
+    // ground, stand beside them, talk, read the roll for the feet, and
+    // petition the Flame for its open prize. Everything after the placement
+    // is the game -- the real clergy topic list, the real verb, the real
+    // purse.
+    render::SessionConfig config;
+    config.width = 160;
+    config.height = 90;
+    config.timeOfDay = 8 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+
+    const render::PetitionLineResult line = render::runPetitionLine(session, true);
+    INFO("plot=", line.plotId, " speaker=", line.speaker, " roll=\"", line.rollLine,
+         "\" answer=\"", line.petitionLine, "\"");
+    REQUIRE(line.found);
+    REQUIRE(line.opened);
+    REQUIRE_FALSE(line.plotId.empty());
+    // The reading is the register's own sentence for the ground STOOD ON,
+    // spoken by the priest.
+    CHECK_FALSE(line.rollLine.empty());
+
+    // The petition LANDED: the Gullet -- the roll's one vacant charge -- now
+    // names the player. Tenure moved through the real verb, purse and all,
+    // wherever the conversation happened to stand.
+    CHECK(line.becameDuke);
+    CHECK_FALSE(line.petitionLine.empty());
+    const std::int32_t gullet = session.ward().plotNamed("C4_GULLET");
+    REQUIRE(gullet >= 0);
+    CHECK(session.ward().plots()[static_cast<std::size_t>(gullet)].playerIsDuke);
+    CHECK(session.ward().plots()[static_cast<std::size_t>(gullet)].tenure ==
+          sim::Tenure::Charged);
+    // The answer is READABLE where the player is looking: during a
+    // conversation the alert row stands down, so the panel's own line is the
+    // one surface that can carry it -- speakResolved's whole reason.
+    CHECK(session.tavern().dialogue().lastLine().find("DEN DUKE") != std::string::npos);
+    // And asking again is refused by the register, not by the UI: with no
+    // vacant charge left on the roll, the petition row is gone from the
+    // rebuilt list.
+    const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
+    for (const sim::Topic& topic : topics) {
+        CHECK(topic.kind != sim::TopicKind::Petition);
     }
 }
 

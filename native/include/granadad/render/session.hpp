@@ -143,6 +143,18 @@ public:
     [[nodiscard]] sim::Ward& ward() noexcept { return *ward_; }
     [[nodiscard]] const sim::Ward& ward() const noexcept { return *ward_; }
 
+    /// TIME-AND-TENURE BUILD. The roll's plot index for the ground under the
+    /// player's feet, or -1 where no compound claims it. The survey's own
+    /// c1_..c4_ sign-footprint correlation (docks_signs.hpp's plotIdUnder)
+    /// resolved against the live ward -- x/y only, any band, because a charge
+    /// is a claim on the ground and everything standing on it. This is what
+    /// gates the priest's ROLL topic, per the no-ownership-overlay ruling:
+    /// tenure stays in conversation and signage, so the question "whose
+    /// ground am I on" is asked of a priest, never of a HUD. (The PETITION
+    /// topic is gated on the roll itself, not the feet -- see
+    /// DialogueDirector::setVacantCharge.)
+    [[nodiscard]] std::int32_t plotIndexUnderfoot() const noexcept;
+
     /// THE DISTRICT'S OWN PEOPLE. #78: the owner played the build and said
     /// "there were no people, even at night there should be people like guards
     /// urchins thieves taverns etc", and he was right -- the whole roll of
@@ -724,6 +736,50 @@ public:
     /// slot, so the bar never promises the same crafting twice.
     void adjustGrimoireSlot(int delta);
 
+    // --- the Wait page (TIME-AND-TENURE BUILD) -------------------------------
+    //
+    // OWNER RULING, 2026-08-18: WAIT works anywhere safe -- time passes,
+    // nothing mends; SLEEP (which heals) stays bed-only through rented rooms.
+    // ONE page serves both, the same DialogueViewState/drawDialogue widget
+    // every page is, reached through two doors: the pause menu's WAIT row
+    // (wait mode, anywhere safe) and the Interact press at your own rented
+    // bed (sleep mode, where sleep() has always answered). Twelve rows, one
+    // per hour ahead; picking one is Session::skipToHour -- through
+    // Tavern::sleepUntil first in sleep mode, which is the only path that
+    // touches a hit point. Heat keeps cooling on the elapsed seconds exactly
+    // as Tavern::skipTo always has: waiting out a warrant is an intended
+    // tactic, so no refusal here reads the Watch's ledger.
+    //
+    // "ANYWHERE SAFE", DEFINED (conservatively, and in one place --
+    // waitRefusal()): not while anybody is swinging at you, not with a
+    // HOSTILE body within three talk-reaches (six tiles), not from the
+    // floor, not in mid-air, and not standing in water. Everything else --
+    // a dark alley, a rooftop, a warrant on your name -- counts as safe:
+    // danger in this build is a person or a fall, not a place.
+
+    /// Opens the hour-select page; every other overlay stands down.
+    /// `sleepMode` true is the rented-bed door (healing skip through
+    /// Tavern::sleepUntil); false is the pause row's plain WAIT.
+    void openWait(bool sleepMode);
+    [[nodiscard]] bool waitOpen() const noexcept { return waitOpen_; }
+    [[nodiscard]] bool waitSleeping() const noexcept { return waitSleep_; }
+    /// Twelve rows: "N HOURS  TO HH:00", dawn/noon/dusk/midnight named.
+    [[nodiscard]] std::vector<std::string> waitRows() const;
+    [[nodiscard]] int waitCursor() const noexcept { return waitCursor_; }
+    [[nodiscard]] int waitPage() const noexcept { return waitPage_; }
+    void moveWaitCursor(int delta);
+    void nextWaitPage();
+    /// Picks the row printed with this number on the visible page and passes
+    /// the hours -- or says, out loud, why not. ENTER does the same to the
+    /// cursor's row, exactly like a topic list.
+    void chooseWaitRow(int slot);
+    /// Why waiting is refused HERE, or "" when this spot counts as safe.
+    /// The page prints it and chooseWaitRow enforces it, off the one
+    /// definition above, so the page and the key can never name different
+    /// doors. Sleep mode never consults this: the bed's own
+    /// sleepReadiness() is that door's gate, as it always was.
+    [[nodiscard]] std::string waitRefusal() const;
+
     /// TRUE UNTIL THE PLAYER HAS DONE ANYTHING AT ALL. A fresh session opens
     /// with the casebook up and the hook on screen, because "dropped into a
     /// systems demo with no orientation" is the thing this build has always
@@ -993,6 +1049,29 @@ private:
     /// step and after every jump of the clock -- see the note on the definition
     /// for why the ward could not previously see a slept night.
     void syncWardToCalendar();
+    /// TIME-AND-TENURE BUILD -- the shared tail of every clock jump: pulls
+    /// timeOfDay_ off the tavern, resets the step counter and runs the ward
+    /// and the population forward. skipToHour(), settleSleep() and the Wait
+    /// page's sleep pick all end here, so a fourth jump can never forget the
+    /// calendar the way the S7 review's eighth finding did.
+    void syncClockAfterSkip();
+    /// TIME-AND-TENURE BUILD. Tells the director what ground the feet are on
+    /// (plotIndexUnderfoot against the live roll) AND whether the roll
+    /// carries a vacant charge to petition for, before a conversation opens
+    /// and again after a petition settles. The one writer of
+    /// DialogueDirector::setGroundPlot and setVacantCharge.
+    void syncGroundPlot();
+    /// The priest's reading of the roll for the plot underfoot -- name,
+    /// tenure, who holds it, and what a vacant charge asks. Composed here
+    /// because the roll is the render session's borrowed ward, exactly the
+    /// Buy contract: the director declared the intent, whoever owns the
+    /// counter fills in the line.
+    [[nodiscard]] std::string groundRollLine() const;
+    /// Settles TopicKind::Petition through the REAL Ward::petitionForCharge
+    /// against the roll's first vacant charge -- purse synced both ways,
+    /// ground context refreshed -- and answers with the line the priest
+    /// says. The verb's first caller.
+    [[nodiscard]] std::string settleGroundPetition();
     void say(std::string line);
     /// Charges a landing to the body: the skill, the guild's teaching, the hit
     /// points and the roof-run tally, in the one place a landing is resolved.
@@ -1179,6 +1258,16 @@ private:
     int pauseCursor_ = 0;
     bool quitArmed_ = false;
     bool quitRequested_ = false;
+    /// TIME-AND-TENURE BUILD. The Wait page: whether it is up, whether it is
+    /// the rented bed's healing door (sleep mode) or the pause row's plain
+    /// one, and its own cursor/page -- the Grimoire page's exact shape. UI
+    /// state, not simulation state, and not hashed, like every page flag
+    /// here: what it DOES on a pick (skipToHour/sleepUntil) is simulation
+    /// and is hashed where it lives.
+    bool waitOpen_ = false;
+    bool waitSleep_ = false;
+    int waitCursor_ = 0;
+    int waitPage_ = 0;
 
     /// Task #83. The panel widget's own open/close ease -- see
     /// conversingNow()/syncPanelAnim() -- and the HUD alert row's fade in and
@@ -1651,6 +1740,42 @@ struct SmokeRunConfig {
     /// Which topic to pick once the street conversation is open, 1-based as the
     /// numbers on screen. Zero picks nothing and photographs the greeting.
     int streetTopic = 0;
+
+    /// TIME-AND-TENURE BUILD, VERIFICATION ONLY: open the Wait page through
+    /// the pause menu's own WAIT row -- togglePause, cursor down one, ENTER,
+    /// the same three presses a hand makes -- and leave it up for the
+    /// shutter. The page's twelve hour rows and its top-band ruling text are
+    /// what the capture is evidence of.
+    bool wait = false;
+
+    /// TIME-AND-TENURE BUILD, VERIFICATION ONLY: play the leasehold petition
+    /// -- find a member of the clergy answerable from compound ground
+    /// (scanning the clock hour by hour until one is; the roster's day puts
+    /// bodies where it puts them), stand beside them the same one-placement
+    /// way --street does, talk, read the roll for the ground underfoot, and
+    /// petition for the roll's vacant charge. Everything after the placement
+    /// is the game: the real topics, the real Ward::petitionForCharge, the
+    /// real purse. See PetitionLineResult for what it reports.
+    bool petition = false;
+};
+
+/// TIME-AND-TENURE BUILD. What a `--petition` run actually did, so a case can
+/// assert the arc -- found somebody on the ground, opened, read, petitioned,
+/// and what the roll now says -- rather than reading pixels.
+struct PetitionLineResult {
+    /// A clergy body was found answerable from compound ground.
+    bool found = false;
+    bool opened = false;
+    /// The plot the conversation STOOD on (the roll reading's ground), by
+    /// compounds.json id.
+    std::string plotId;
+    std::string speaker;
+    /// The priest's reading of the roll, and the petition's answer.
+    std::string rollLine;
+    std::string petitionLine;
+    /// Whether ANY plot's charge now reads playerIsDuke -- the petition names
+    /// the roll's vacant plot, which need not be the one stood on.
+    bool becameDuke = false;
 };
 
 /// What a `--street` run actually found and said. Returned so a case can
@@ -1762,6 +1887,10 @@ struct SmokeRunResult {
     float mapFocusAtCapture = 0.0F;
     float lettersFocusAtCapture = 0.0F;
     float journalFocusAtCapture = 0.0F;
+    /// TIME-AND-TENURE BUILD: what a --petition run found and did -- printed
+    /// in the summary for the same reason streetSpeaker is: "a conversation
+    /// happened" is not evidence the ROLL moved.
+    PetitionLineResult petitionResult;
     [[nodiscard]] bool scriptFellShort() const noexcept {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }
@@ -1792,5 +1921,14 @@ struct SmokeRunResult {
 /// evidence for "a dockhand and a watchman do not sound alike" is a key and a
 /// sentence, not a screenshot.
 StreetLineResult runStreetLine(Session& session, const std::string& who, int topic);
+
+/// TIME-AND-TENURE BUILD. Plays the leasehold petition end to end -- see
+/// SmokeRunConfig::petition. Exposed for exactly runStreetLine's reason: the
+/// evidence that a vacant charge can be petitioned for in conversation is a
+/// pair of sentences and a changed roll, and a case asserts those directly.
+/// `grantCoin` true stocks the purse with the plot's own charge-rent first
+/// (capture plumbing, through the public purse setter; the priest's answer is
+/// still the real verb's).
+PetitionLineResult runPetitionLine(Session& session, bool grantCoin);
 
 }  // namespace granadad::render

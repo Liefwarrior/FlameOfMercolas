@@ -216,7 +216,7 @@ TEST_CASE("Pause stays a separate system from Menu, per controls.hpp's own note"
     // relocated here from Menu's own now-defunct Options page.
     session.togglePause();
     REQUIRE(session.pauseOpen());
-    session.movePauseCursor(2);  // RESUME -> CONTROLS -> SETTINGS
+    session.movePauseCursor(3);  // RESUME -> WAIT -> CONTROLS -> SETTINGS
     session.choosePause();
     REQUIRE(session.optionsOpen());
     session.toggleOptions();  // closes it

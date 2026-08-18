@@ -135,13 +135,29 @@ TEST_CASE("Interact resolves to REST at your own rented bed, not sneaking") {
 
     const int before = session.timeOfDay();
     session.interact();
-    // SLEPT, NOT TALKED, NOT PICKED A LOCK: the clock jumped to morning,
-    // which is what only restHere()'s Served branch does.
+    // TIME-AND-TENURE BUILD: the press opens the hour-select page IN SLEEP
+    // MODE now, rather than committing a fixed night on the spot -- see
+    // interact()'s own bed-branch note. Not talked, not picked, and the
+    // clock has not moved yet: choosing an hour is what spends it.
     CHECK_FALSE(session.talking());
     CHECK_FALSE(session.picking());
+    REQUIRE(session.waitOpen());
+    CHECK(session.waitSleeping());
+    CHECK(session.timeOfDay() == before);
+
+    // Eight hours (row 8) from nine at night is five in the morning -- the
+    // chosen waking hour the ruling asked for, through Tavern::sleepUntil.
+    session.chooseWaitRow(7);
+    CHECK_FALSE(session.waitOpen());
+    CHECK(session.lastMessage() == "SLEPT UNTIL 05:00.");
+    CHECK(session.timeOfDay() == sim::hourOfDay(5));
+
+    // And the R verb keeps the old one-press night, unchanged.
+    session.body().placeAt(room.standX, room.standY, sim::gull::kUpperBand);
+    session.stepMany(sim::MoveInput{}, 1);
+    session.restHere();
     CHECK(session.lastMessage() == "SLEPT UNTIL MORNING.");
     CHECK(session.timeOfDay() == sim::hourOfDay(7));
-    CHECK(session.timeOfDay() != before);
 }
 
 TEST_CASE("Interact resolves to PICK LOCK facing a locked box, sneaking or not") {

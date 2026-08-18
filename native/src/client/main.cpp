@@ -355,6 +355,13 @@ void print_usage() {
         "                       same page a tap of the QuickWheel key opens)\n"
         "                       before the shutter goes; pair with --flame so\n"
         "                       the list has craftings on it\n"
+        "  --wait               VERIFICATION ONLY: open the Wait page through\n"
+        "                       the pause menu's own WAIT row before the\n"
+        "                       shutter goes\n"
+        "  --petition           VERIFICATION ONLY: find clergy standing on\n"
+        "                       compound ground, read the roll for it and\n"
+        "                       petition the vacant charge -- the leasehold\n"
+        "                       line, end to end\n"
         "  --quickbar           VERIFICATION ONLY: bind the first crafting to\n"
         "                       slot 3 through the Grimoire page, close it and\n"
         "                       press the number, so the bottom-centre strip\n"
@@ -617,6 +624,14 @@ void print_usage() {
         } else if (std::strcmp(arg, "--grimoire") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::grimoire's own header.
             options.smoke.grimoire = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--wait") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::wait's own header.
+            options.smoke.wait = true;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--petition") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::petition's own header.
+            options.smoke.petition = true;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--quickbar") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::quickbar's own header.
@@ -925,6 +940,35 @@ void print_usage() {
         if (confirm) {
             session.chooseGrimoireRow(session.grimoireCursor() -
                                       session.grimoirePage() * render::kTopicPageSize);
+            return true;
+        }
+        return false;
+    }
+
+    if (session.waitOpen()) {
+        // TIME-AND-TENURE BUILD. The Wait page: up/down walk the hours, the
+        // printed number or ENTER passes them (or is refused out loud), 0
+        // pages the list. ESC falls through, so the key that closes every
+        // page closes this one.
+        if (up) {
+            session.moveWaitCursor(-1);
+            return true;
+        }
+        if (downward) {
+            session.moveWaitCursor(1);
+            return true;
+        }
+        if (numbered) {
+            session.chooseWaitRow(slot);
+            return true;
+        }
+        if (pageKey) {
+            session.nextWaitPage();
+            return true;
+        }
+        if (confirm) {
+            session.chooseWaitRow(session.waitCursor() -
+                                  session.waitPage() * render::kTopicPageSize);
             return true;
         }
         return false;
@@ -1876,7 +1920,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     // #85: session.menuOpen() replaces six named flags with
                     // the one predicate that also drives the Menu action now.
                     if (session.talking() || session.picking() || session.menuOpen() ||
-                        session.pauseOpen()) {
+                        session.pauseOpen() || session.waitOpen()) {
                         if (session.picking()) {
                             session.stopPicking();
                         } else {
@@ -2091,7 +2135,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // window and closes again the moment anything else happens.
         const bool listening =
             session.talking() || session.picking() ||
-            (session.menuOpen() && !session.firstRun()) || session.pauseOpen();
+            (session.menuOpen() && !session.firstRun()) || session.pauseOpen() ||
+            session.waitOpen();
         const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
         const Uint32 mouseButtons = listening ? 0U : SDL_GetMouseState(nullptr, nullptr);
         SDL_Gamepad* livePad = listening ? nullptr : pad;

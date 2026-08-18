@@ -18,6 +18,10 @@
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
+// TIME-AND-TENURE BUILD: the compound sign footprints, for the one question
+// the tier-3 correlation was ever going to answer -- whose ground is under
+// the feet. See plotIndexUnderfoot().
+#include "granadad/sim/docks_signs.hpp"
 #include "granadad/sim/stealth.hpp"
 
 namespace granadad::render {
@@ -781,6 +785,7 @@ void Session::dismissOverlays() noexcept {
     casebookOpen_ = false;
     keysOpen_ = false;
     grimoireOpen_ = false;
+    waitOpen_ = false;
     optionsOpen_ = false;
     awaitingKey_ = false;
     firstRun_ = false;
@@ -892,6 +897,7 @@ void Session::toggleOptions() {
         casebookOpen_ = false;
         keysOpen_ = false;
         grimoireOpen_ = false;
+        waitOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
         menuFocus_ = kMenuFocusJournal;
@@ -998,6 +1004,7 @@ void Session::togglePause() {
     casebookOpen_ = false;
     keysOpen_ = false;
     grimoireOpen_ = false;
+    waitOpen_ = false;
     optionsOpen_ = false;
     awaitingKey_ = false;
     menuFocus_ = kMenuFocusJournal;
@@ -1015,8 +1022,14 @@ std::vector<std::string> Session::pauseRows() const {
     // opened Menu's rebinding screen through the identical optionsOpen_ state
     // -- and took a row here too, rather than being left with no door into
     // the tiled Menu at all.
+    // TIME-AND-TENURE BUILD: WAIT is new, second, and a door rather than a
+    // page swap -- it opens the hour-select list (see openWait). Second
+    // because the two rows a player reaches for mid-game (resume, pass the
+    // hours) belong above the two they visit once (controls, settings), and
+    // QUIT stays last where a quit belongs.
     return {
         "RESUME",
+        "WAIT",
         "CONTROLS",
         "SETTINGS",
         quitArmed_ ? "QUIT -- SURE? ENTER" : "QUIT GRANADAD",
@@ -1065,6 +1078,14 @@ void Session::choosePause() {
             syncPanelAnim();
             return;
         case 1:
+            // WAIT (TIME-AND-TENURE BUILD). openWait() opens the hour-select
+            // page and puts this menu down in the same call, the identical
+            // shape the two rows below have. Wait mode, never sleep: the
+            // healing door is the bed's Interact press and only that -- the
+            // owner's ruling, enforced by which door you walked through.
+            openWait(false);
+            return;
+        case 2:
             // CONTROLS. toggleKeys() opens it and puts this page down in the
             // same call, the identical shape SETTINGS below already has.
             // Relocated here from #85's own Menu cycle -- see toggleKeys()'s
@@ -1072,7 +1093,7 @@ void Session::choosePause() {
             // door moved.
             toggleKeys();
             return;
-        case 2:
+        case 3:
             // SETTINGS. toggleOptions() opens it and puts this page down in the
             // same call -- see its own comment on why every overlay does that,
             // AND syncs the panel anim itself -- no need to repeat it here.
@@ -1080,16 +1101,14 @@ void Session::choosePause() {
             // menu a player actually pauses on rather than only from F2.
             toggleOptions();
             return;
-        default:
-            // QUIT (case 3). ITS OWN NUMBERED CASE RATHER THAN THE CATCH-ALL
-            // "anything else" `default` used to be -- CONTROLS' insertion
-            // ahead of it means a `default` that stayed the QUIT fallback
-            // would have silently swallowed a fifth row this switch never
-            // gets, with nothing here to say so. Numbering it explicitly
-            // means a future sixth pause row breaks this switch LOUDLY
-            // (falls through to `break` below and does nothing) instead of
-            // quietly arming QUIT.
+        case 4:
+            // QUIT. ITS OWN NUMBERED CASE, and now `default` truly is the
+            // loud-failure arm the CONTROLS insertion promised: a future
+            // seventh pause row that nobody wires here does NOTHING rather
+            // than quietly arming QUIT.
             break;
+        default:
+            return;
     }
     // QUIT. Armed on the first press and confirmed on the second, so leaning on
     // ENTER once cannot close the window -- see quitArmed().
@@ -1175,6 +1194,7 @@ void Session::toggleKeys() {
         // still the one reading the keyboard.
         casebookOpen_ = false;
         grimoireOpen_ = false;
+        waitOpen_ = false;
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
@@ -1204,6 +1224,7 @@ void Session::toggleGrimoire() {
         // still the one reading the keyboard.
         casebookOpen_ = false;
         keysOpen_ = false;
+        waitOpen_ = false;
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
@@ -1329,6 +1350,180 @@ void Session::adjustGrimoireSlot(int delta) {
                   : upperAscii(spell.displayName) + " -- NO SLOT.");
 }
 
+// ---------------------------------------------------------------------------
+// TIME-AND-TENURE BUILD: the Wait page
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// One row per hour ahead, up to a half-day. Enough to reach any named hour
+/// from anywhere on the clock without a second page of arithmetic.
+constexpr int kWaitHours = 12;
+
+/// "HH:00", two digits, the clock the compass row already speaks.
+[[nodiscard]] std::string hourLabel(int hour) {
+    const int wrapped = ((hour % 24) + 24) % 24;
+    return (wrapped < 10 ? "0" : "") + std::to_string(wrapped) + ":00";
+}
+
+/// The name an hour is known by out loud, or "".
+[[nodiscard]] const char* hourName(int hour) noexcept {
+    switch (((hour % 24) + 24) % 24) {
+        case 0: return "MIDNIGHT";
+        case 6: return "DAWN";
+        case 12: return "NOON";
+        case 18: return "DUSK";
+        default: return "";
+    }
+}
+
+}  // namespace
+
+void Session::openWait(bool sleepMode) {
+    if (talking() || picking()) {
+        return;
+    }
+    // Every other overlay stands down -- toggleOptions' rule, same reason.
+    casebookOpen_ = false;
+    keysOpen_ = false;
+    grimoireOpen_ = false;
+    optionsOpen_ = false;
+    pauseOpen_ = false;
+    quitArmed_ = false;
+    awaitingKey_ = false;
+    menuFocus_ = kMenuFocusJournal;
+    firstRun_ = false;
+    waitOpen_ = true;
+    waitSleep_ = sleepMode;
+    waitCursor_ = 0;
+    waitPage_ = 0;
+    syncPanelAnim();
+}
+
+std::string Session::waitRefusal() const {
+    // THE WHOLE OF "ANYWHERE SAFE", in check order -- see the header block in
+    // session.hpp. Each clause reads state something else already owns and
+    // hashes; nothing here is new simulation. Deliberately NOT consulted:
+    // heat, warrants, darkness, altitude. Waiting out a warrant is an
+    // intended tactic (the owner's ruling), and a roof at midnight is only as
+    // dangerous as whoever is on it -- which the HOSTILE clause already asks.
+    if (tavern_->playerFloored()) {
+        return "NOT FROM THE FLOOR.";
+    }
+    if (tavern_->playerInBrawl()) {
+        return "NOT WHILE FISTS ARE UP.";
+    }
+    // A HOSTILE body close enough to cross the room while your eyes are off
+    // it. Three times a conversation's reach -- six tiles -- and Chebyshev
+    // like every reach in this build. Band deliberately ignored: a hostile
+    // one floor up a stair you cannot see is the conservative read.
+    constexpr std::int32_t kHostileReachQ8 = 3 * sim::kReachQ8;
+    for (const sim::Actor& actor : tavern_->actors()) {
+        if (!actor.present()) {
+            continue;
+        }
+        if (tavern_->dialogue().ledger().attitudeOf(actor.id()) != sim::Attitude::Hostile) {
+            continue;
+        }
+        if (actor.distanceTo(body_->x(), body_->y()) <= kHostileReachQ8) {
+            return "NOT WITH AN ENEMY THIS CLOSE.";
+        }
+    }
+    if (body_->airborne()) {
+        return "NOT IN MID-AIR.";
+    }
+    if (tiles_->fluidDepth(body_->tileX(), body_->tileY(), body_->band()) > 0) {
+        return "NOT STANDING IN WATER.";
+    }
+    return {};
+}
+
+std::vector<std::string> Session::waitRows() const {
+    // Twelve rows off the LIVE clock, so the hour printed is the hour a pick
+    // lands on -- skipToHour truncates to the top of the hour, and a list
+    // that said "1 HOUR" while delivering forty minutes would be lying.
+    std::vector<std::string> rows;
+    rows.reserve(kWaitHours);
+    const int nowHour = timeOfDay_ / 3600;
+    for (int ahead = 1; ahead <= kWaitHours; ++ahead) {
+        const int target = (nowHour + ahead) % 24;
+        std::string row = std::to_string(ahead) + (ahead == 1 ? " HOUR" : " HOURS") +
+                          "  TO " + hourLabel(target);
+        if (hourName(target)[0] != '\0') {
+            row += "  ";
+            row += hourName(target);
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+void Session::moveWaitCursor(int delta) {
+    if (!waitOpen_) {
+        return;
+    }
+    // AUDIO WIRING: the same one quiet tick every other list speaks.
+    if (audio_ != nullptr && delta != 0) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
+    wrapCursorAndPage(waitCursor_, waitPage_, delta, kWaitHours);
+}
+
+void Session::nextWaitPage() {
+    if (!waitOpen_) {
+        return;
+    }
+    advancePage(waitPage_, waitCursor_, static_cast<std::size_t>(kWaitHours));
+}
+
+void Session::chooseWaitRow(int slot) {
+    if (!waitOpen_ || slot < 0 || slot >= kTopicPageSize) {
+        return;
+    }
+    const int index = waitPage_ * kTopicPageSize + slot;
+    if (index >= kWaitHours) {
+        return;
+    }
+    waitCursor_ = index;
+    const int hours = index + 1;
+    const int target = ((timeOfDay_ / 3600) + hours) % 24;
+    // AUDIO WIRING: the same accept every list speaks, refusals included --
+    // the press is what is acknowledged, exactly chooseTopic's rule.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiConfirm);
+    }
+    if (waitSleep_) {
+        // THE BED'S OWN GATE, not waitRefusal(): sleep answers where sleep
+        // has always answered. Refused out loud in restRefusal's words, the
+        // page staying up -- the same door the R verb names.
+        const sim::ServiceResult slept = tavern_->sleepUntil(target);
+        if (slept != sim::ServiceResult::Served) {
+            say(std::string(sim::restRefusal(slept)));
+            return;
+        }
+        syncClockAfterSkip();
+    } else {
+        // RE-CHECKED ON THE PRESS, not only at the page's opening: a brawler
+        // can close the distance while the list is up, and the page and the
+        // key must name the same door.
+        const std::string refusal = waitRefusal();
+        if (!refusal.empty()) {
+            say(refusal);
+            return;
+        }
+        // skipToHour is Tavern::skipTo plus the calendar sync -- heat cools
+        // on the elapsed seconds in there, which is what makes waiting out a
+        // warrant a tactic rather than an exploit.
+        skipToHour(target);
+    }
+    waitOpen_ = false;
+    waitCursor_ = 0;
+    waitPage_ = 0;
+    syncPanelAnim();
+    say((waitSleep_ ? std::string("SLEPT UNTIL ") : std::string("WAITED UNTIL ")) +
+        hourLabel(target) + ".");
+}
+
 void Session::toggleMenuFocused(int focus) {
     if (talking() || picking()) {
         return;
@@ -1365,6 +1560,7 @@ void Session::toggleMenuFocused(int focus) {
         // toggleOptions()/toggleKeys()/togglePause() already do on their own.
         keysOpen_ = false;
         grimoireOpen_ = false;
+        waitOpen_ = false;
         optionsOpen_ = false;
         pauseOpen_ = false;
         quitArmed_ = false;
@@ -1912,19 +2108,32 @@ void Session::interact() {
 
     // 1. NOT SNEAKING + AT YOUR OWN BED = REST. Checked first: it is the one
     // exact-tile trigger nothing else here could also mean.
+    //
+    // TIME-AND-TENURE BUILD: the press now opens the hour-select page in
+    // sleep mode instead of committing a fixed night on the spot -- the
+    // owner's Rest/Wait ruling gives the bed a chosen waking hour, and a
+    // single press that irrevocably burned eight hours was always one
+    // mispress from a lost evening. sleepReadiness() is sleep()'s own checks
+    // with the hands kept still; the R verb (restHere) keeps the old
+    // one-press night for the suite and the muscle memory.
     if (!sneaking) {
-        const sim::ServiceResult slept = tavern_->sleep();
-        if (slept == sim::ServiceResult::Served) {
-            settleSleep();
+        const sim::ServiceResult bed = tavern_->sleepReadiness();
+        if (bed == sim::ServiceResult::Served) {
+            openWait(true);
             return;
         }
         // NobodyThere (no room ever rented) or TooFar (not at the bed) --
-        // sleep() has no third answer, so anything else falls through.
+        // the readiness has no third answer, so anything else falls through.
     }
 
     // 2. PERSON IN REACH: TALK upright, PICKPOCKET sneaking.
     wardTalkId_ = -1;
     if (!sneaking) {
+        // TIME-AND-TENURE BUILD: the director is told what ground the feet
+        // are on BEFORE the conversation opens, so a priest's topic list is
+        // built knowing whether there is a roll to read here. See
+        // syncGroundPlot().
+        syncGroundPlot();
         if (tavern_->talkTo() || talkToWard()) {
             topicCursor_ = 0;
             haggleOffer_ = 0;
@@ -1961,7 +2170,7 @@ std::string Session::interactPrompt() const {
     // header in session.hpp for the verification gap (the bale, the rat and
     // buyPicks() are not previewed) and for why the order below has to track
     // interact()'s own order exactly.
-    if (talking() || picking() || pauseOpen() || menuOpen()) {
+    if (talking() || picking() || pauseOpen() || menuOpen() || waitOpen()) {
         // The topic list / the tiled Menu's own rows already show what
         // Interact (or ENTER) does on this row -- menuOpen() covers the
         // tiled Menu, Keys AND Options, not only Options, which an earlier
@@ -1969,7 +2178,8 @@ std::string Session::interactPrompt() const {
         // toggleMenu() opens the casebook first, and the label kept
         // computing a real prompt behind it). A second, floating label would
         // say the same thing twice in two different places on the same
-        // frame.
+        // frame. waitOpen() joined the list with the Wait page, whose rows
+        // print their own numbers the same way.
         return {};
     }
     const bool sneaking = stance() == sim::Stance::Crouched;
@@ -2300,8 +2510,24 @@ void Session::chooseTopic(std::size_t index) {
     // Gull that is the Tavern, which has a bar to take a drink off and a
     // bouncer to send over. On the street it is the ward, which has neither --
     // so the ward has its own, much shorter, settlement.
-    const sim::Reply reply =
+    sim::Reply reply =
         wardTalkId_ >= 0 ? chooseWardTopic(index) : tavern_->chooseTopic(index);
+    // TIME-AND-TENURE BUILD. The two ground topics are intents, exactly like
+    // Buy: the director declared them and whoever owns the roll -- this
+    // session, which borrowed the ward -- resolves them and fills in the
+    // line. Settled HERE, after either settlement path above, because a
+    // priest can be a street body (the ward path) or the Gull's own (the
+    // tavern path) and the roll answers the same on both.
+    if (reply.ok && reply.kind == sim::TopicKind::ReadRoll) {
+        reply.line = groundRollLine();
+        // Voiced into the panel too -- during a conversation the alert row
+        // stands down (see drawFrame's hud.alert gate), so lastLine() is the
+        // one surface the answer can actually be read on.
+        tavern_->dialogue().speakResolved(reply.line);
+    } else if (reply.ok && reply.kind == sim::TopicKind::Petition) {
+        reply.line = settleGroundPetition();
+        tavern_->dialogue().speakResolved(reply.line);
+    }
     if (!reply.ok && reply.line.empty()) {
         return;
     }
@@ -2380,6 +2606,13 @@ void Session::closeConversation() {
         grimoireOpen_ = false;
         grimoireCursor_ = 0;
         grimoirePage_ = 0;
+        syncPanelAnim();
+        return;
+    }
+    if (waitOpen_) {
+        waitOpen_ = false;
+        waitCursor_ = 0;
+        waitPage_ = 0;
         syncPanelAnim();
         return;
     }
@@ -2830,6 +3063,30 @@ DialogueViewState Session::dialogueView() const {
     // scripted capture still draws the same frame every time it is asked to,
     // and it costs nothing on every page this widget is reused for.
     view.phase = static_cast<float>(body_->stepCount()) / 60.0F;
+    if (waitOpen_) {
+        // TIME-AND-TENURE BUILD. The same one list widget every page is. The
+        // top band carries the ruling's own distinction -- and, in wait mode,
+        // the refusal when this spot is not safe, so the page and the pick
+        // name the same door before a key is ever pressed.
+        view.open = true;
+        view.speaker = waitSleep_ ? "SLEEP" : "WAIT";
+        view.epithet = "ENTER PASSES THE HOURS  ESC BACKS OUT";
+        if (waitSleep_) {
+            view.line = "THE BED IS PAID FOR. SLEEP MENDS. PICK THE HOUR TO WAKE.";
+        } else {
+            const std::string refusal = waitRefusal();
+            view.line = refusal.empty()
+                            ? "TIME PASSES AND NOTHING MENDS. THE DISTRICT KEEPS ITS "
+                              "HOURS, AND THE WATCH KEEPS FORGETTING."
+                            : refusal;
+        }
+        for (const std::string& row : waitRows()) {
+            view.topics.push_back(row);
+        }
+        view.cursor = waitCursor_;
+        view.page = waitPage_;
+        return view;
+    }
     if (pauseOpen_) {
         view.open = true;
         view.speaker = "MENU";
@@ -3062,21 +3319,23 @@ void Session::restHere() {
     say(std::string(sim::restRefusal(slept)));
 }
 
-void Session::settleSleep() {
+void Session::syncClockAfterSkip() {
+    // The shared tail of every clock jump -- see the declaration's header.
     timeOfDay_ = tavern_->timeOfDay();
     settings_.timeOfDay = timeOfDay_;
     stepsThisSecond_ = 0;
     syncWardToCalendar();
+}
+
+void Session::settleSleep() {
+    syncClockAfterSkip();
     say("SLEPT UNTIL MORNING.");
 }
 
 void Session::skipToHour(int hour) {
     const int wrapped = ((hour % 24) + 24) % 24;
     tavern_->skipTo(wrapped * 3600);
-    timeOfDay_ = tavern_->timeOfDay();
-    settings_.timeOfDay = timeOfDay_;
-    stepsThisSecond_ = 0;
-    syncWardToCalendar();
+    syncClockAfterSkip();
 }
 
 void Session::syncWardToCalendar() {
@@ -3105,6 +3364,154 @@ void Session::syncWardToCalendar() {
     // every ordinary step, so this is safe to call as often as it likes.
     if (people_ != nullptr && tavern_ != nullptr) {
         people_->skipToSecond(timeOfDay_);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TIME-AND-TENURE BUILD: the ground underfoot, and the Flame's roll
+// ---------------------------------------------------------------------------
+
+std::int32_t Session::plotIndexUnderfoot() const noexcept {
+    if (ward_ == nullptr || !ward_->loaded()) {
+        return -1;
+    }
+    const std::string_view plotId = sim::docks::plotIdUnder(body_->tileX(), body_->tileY());
+    if (plotId.empty()) {
+        return -1;
+    }
+    return ward_->plotNamed(plotId);
+}
+
+void Session::syncGroundPlot() {
+    sim::DialogueDirector& talk = tavern_->dialogue();
+    // The ground underfoot, for the roll reading.
+    const std::int32_t plot = plotIndexUnderfoot();
+    if (plot < 0) {
+        talk.setGroundPlot(-1, {});
+    } else {
+        const sim::Plot& roll = ward_->plots()[static_cast<std::size_t>(plot)];
+        talk.setGroundPlot(plot,
+                           ward_->raws().plots()[static_cast<std::size_t>(roll.raw)].name);
+    }
+    // And the roll's open prize, for the petition -- the FIRST vacant charge
+    // in roll order (the roll carries at most one today; if it ever carries
+    // two, the Flame hears them one at a time, front of the register first).
+    // VACANT here must be petitionForCharge's own yes, or the topic offers a
+    // door the verb then refuses: tenure Vacant, never already the player's.
+    std::int32_t vacant = -1;
+    if (ward_ != nullptr && ward_->loaded()) {
+        const std::vector<sim::Plot>& plots = ward_->plots();
+        for (std::size_t i = 0; i < plots.size(); ++i) {
+            if (plots[i].tenure == sim::Tenure::Vacant && !plots[i].playerIsDuke) {
+                vacant = static_cast<std::int32_t>(i);
+                break;
+            }
+        }
+    }
+    if (vacant < 0) {
+        talk.setVacantCharge(-1, {});
+    } else {
+        const sim::Plot& roll = ward_->plots()[static_cast<std::size_t>(vacant)];
+        talk.setVacantCharge(vacant,
+                             ward_->raws().plots()[static_cast<std::size_t>(roll.raw)].name);
+    }
+}
+
+std::string Session::groundRollLine() const {
+    const std::int32_t plot = plotIndexUnderfoot();
+    if (plot < 0 || ward_ == nullptr) {
+        // Only reachable by walking off the plot between the topic being
+        // built and the press -- the honest answer is the register's.
+        return "THE ROLL DOES NOT NAME THIS GROUND.";
+    }
+    const sim::Plot& roll = ward_->plots()[static_cast<std::size_t>(plot)];
+    const sim::PlotRaw& raw = ward_->raws().plots()[static_cast<std::size_t>(roll.raw)];
+    std::string line = raw.name + ". ";
+    switch (roll.tenure) {
+        case sim::Tenure::Glebe:
+            line += "GLEBE -- CHURCH GROUND, NEVER LET.";
+            return line;
+        case sim::Tenure::Vacant:
+            // THE NUMBER IS THE REGISTER'S, not a judgement of you -- the
+            // word-only ruling governs how the ward talks ABOUT the player,
+            // and a rent on a public roll is signage. Information, never a
+            // discount: petitionForCharge charges exactly this.
+            line += "THE CHARGE IS VACANT. THE FIRST QUARTER'S CHARGE-RENT IS " +
+                    std::to_string(raw.chargeRent) + ".";
+            return line;
+        case sim::Tenure::Pledged:
+        case sim::Tenure::Charged:
+        default: {
+            if (roll.playerIsDuke) {
+                line += "YOU HOLD THE CHARGE. THE GROUND PENNY UNDER YOUR HOUSES IS " +
+                        std::to_string(raw.groundPenny) + " A QUARTER.";
+                return line;
+            }
+            // Who the roll says, in the roll's own priority: a re-let charge
+            // carries its holder's name; otherwise the raws' own Duke,
+            // resolved through the registry the roll was refused against.
+            std::string holder = roll.heldBy;
+            if (holder.empty() && !raw.denDuke.empty()) {
+                const sim::Notable* duke = tavern_->dialogue().notables().find(raw.denDuke);
+                holder = duke != nullptr ? duke->name : raw.denDuke;
+            }
+            line += holder.empty() ? "THE CHARGE IS HELD."
+                                   : upperAscii(holder) + " HOLDS THE CHARGE.";
+            if (roll.tenure == sim::Tenure::Pledged) {
+                line += " THE PAPER ON IT IS PLEDGED.";
+            }
+            return line;
+        }
+    }
+}
+
+std::string Session::settleGroundPetition() {
+    // THE ROLL'S OWN OPEN PRIZE, re-derived here rather than trusted from the
+    // topic: the same first-vacant rule syncGroundPlot() feeds the topic
+    // list, so the row and the verb can never name different plots.
+    std::int32_t plot = -1;
+    if (ward_ != nullptr && ward_->loaded()) {
+        const std::vector<sim::Plot>& plots = ward_->plots();
+        for (std::size_t i = 0; i < plots.size(); ++i) {
+            if (plots[i].tenure == sim::Tenure::Vacant && !plots[i].playerIsDuke) {
+                plot = static_cast<std::int32_t>(i);
+                break;
+            }
+        }
+    }
+    if (plot < 0 || ward_ == nullptr) {
+        return "NO CHARGE ON THE ROLL STANDS VACANT.";
+    }
+    const sim::PlotRaw& raw =
+        ward_->raws().plots()[static_cast<std::size_t>(
+            ward_->plots()[static_cast<std::size_t>(plot)].raw)];
+    // ONE PURSE. The tavern's playerCoin is the purse of record everywhere in
+    // the render layer; the ward keeps its own copy for NPC-parity verbs, so
+    // it is synced in, the verb spends from it, and the result is synced back
+    // out -- both fields already hashed, nothing minted, nothing new.
+    ward_->setPlayerCoin(tavern_->playerCoin());
+    const sim::TenureResult got = ward_->petitionForCharge(plot);
+    tavern_->setPlayerCoin(ward_->playerCoin());
+    tavern_->dialogue().setPlayerCoin(tavern_->playerCoin());
+    // The roll changed (or did not); the topic list must say so either way.
+    // A granted petition takes its own row off the list mid-conversation.
+    syncGroundPlot();
+    switch (got) {
+        case sim::TenureResult::Done:
+            return "THE FLAME RE-LETS THE CHARGE. YOU ARE DEN DUKE OF " + raw.name +
+                   ". FIRST QUARTER PAID: " + std::to_string(raw.chargeRent) + ".";
+        case sim::TenureResult::CannotAfford:
+            return "THE FIRST QUARTER'S CHARGE-RENT IS " + std::to_string(raw.chargeRent) +
+                   ". YOU DO NOT CARRY IT.";
+        case sim::TenureResult::NotVacant:
+            return "THE CHARGE IS HELD. THERE IS NOTHING TO PETITION FOR.";
+        case sim::TenureResult::AlreadyHeld:
+            return "THE ROLL ALREADY NAMES YOU.";
+        case sim::TenureResult::NoCause:
+            return "CHURCH GROUND. IT IS NEVER LET.";
+        case sim::TenureResult::NoSuchThing:
+        default:
+            return "THE ROLL DOES NOT NAME THIS GROUND.";
     }
 }
 
@@ -3738,8 +4145,8 @@ bool Session::conversingNow() const noexcept {
     // overprint findings happen: two places computing the same fact, and
     // nothing catching them when a seventh page joined the list and only one
     // of the two remembered to add it.
-    return talking() || casebookOpen_ || keysOpen_ || grimoireOpen_ || optionsOpen_ ||
-           pauseOpen_;
+    return talking() || casebookOpen_ || keysOpen_ || grimoireOpen_ || waitOpen_ ||
+           optionsOpen_ || pauseOpen_;
 }
 
 void Session::syncPanelAnim() noexcept {
@@ -5863,6 +6270,141 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
     return out;
 }
 
+PetitionLineResult runPetitionLine(Session& session, bool grantCoin) {
+    PetitionLineResult out;
+
+    // 1. SOMEBODY OF THE CLOTH, ANSWERABLE FROM COMPOUND GROUND. The roster
+    // puts the Mission's priest and disciples where their day puts them, so
+    // the run walks the clock an hour at a time -- the same public
+    // skipToHour a WAIT pick spends -- until one of them has a standable
+    // tile within talking reach that is ON a plot (the roll reading's ground
+    // is the PLAYER'S feet). Any plot serves: the reading is about the
+    // ground stood on, and the petition is about the roll's own vacant
+    // charge wherever the conversation happens.
+    const sim::WardActor* target = nullptr;
+    std::string_view plotId;
+    std::int32_t standX = 0;
+    std::int32_t standY = 0;
+    // One scan of the CURRENT hour's positions. THE STAND TILE DECIDES, not
+    // the priest's own: the ground the topics read is the ground under the
+    // PLAYER's feet, so a priest passing a compound gate still answers for
+    // its ground when the player stands inside -- which is why the stand
+    // candidates run over the conversation's whole reach (kStreetReachTiles,
+    // Chebyshev, the exact reach the talk key confirms with below) and not
+    // only the four adjacent tiles.
+    const auto scanNow = [&]() {
+        for (const sim::WardActor& actor : session.people().actors()) {
+            if (!actor.visible() || (actor.type != sim::WardType::PriestOfTheFlame &&
+                                     actor.type != sim::WardType::DiscipleOfTheFlame)) {
+                continue;
+            }
+            for (std::int32_t oy = -kStreetReachTiles; oy <= kStreetReachTiles; ++oy) {
+                for (std::int32_t ox = -kStreetReachTiles; ox <= kStreetReachTiles; ++ox) {
+                    if (ox == 0 && oy == 0) {
+                        continue;
+                    }
+                    const std::int32_t sx = actor.x + ox;
+                    const std::int32_t sy = actor.y + oy;
+                    const std::string_view ground = sim::docks::plotIdUnder(sx, sy);
+                    if (ground.empty()) {
+                        continue;
+                    }
+                    const std::int32_t plot = session.ward().plotNamed(ground);
+                    if (plot < 0) {
+                        continue;
+                    }
+                    if (!session.tiles().standable(sx, sy, actor.band)) {
+                        continue;
+                    }
+                    const sim::WardActor* answers =
+                        session.people().nearestTo(sx, sy, actor.band, kStreetReachTiles);
+                    if (answers == nullptr || answers->id != actor.id) {
+                        continue;
+                    }
+                    target = &actor;
+                    plotId = ground;
+                    standX = sx;
+                    standY = sy;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    // One pass of the clock. The placement always happens at the hour the
+    // body was actually seen, so the scan can never point at where somebody
+    // stood three skips ago.
+    bool found = false;
+    for (int hourStep = 0; hourStep < 24 && !found; ++hourStep) {
+        if (hourStep > 0) {
+            session.skipToHour((session.timeOfDay() / 3600 + 1) % 24);
+        }
+        found = scanNow();
+    }
+    if (!found || target == nullptr) {
+        return out;
+    }
+    out.found = true;
+    out.plotId = std::string(plotId);
+
+    // 2. THE PURSE, WHEN ASKED FOR -- capture plumbing, said out loud in the
+    // header: the VACANT plot's first quarter's charge-rent through the
+    // public setter, so the frame photographs the priest's YES rather than
+    // the one refusal (CannotAfford) that proves nothing about the wiring.
+    // The real verb still spends it for real.
+    if (grantCoin) {
+        const std::vector<sim::Plot>& plots = session.ward().plots();
+        for (const sim::Plot& roll : plots) {
+            if (roll.tenure != sim::Tenure::Vacant || roll.playerIsDuke) {
+                continue;
+            }
+            const sim::PlotRaw& raw =
+                session.ward().raws().plots()[static_cast<std::size_t>(roll.raw)];
+            session.tavern().setPlayerCoin(
+                std::max(session.tavern().playerCoin(), raw.chargeRent));
+            break;
+        }
+    }
+
+    // 3. THE ONE PLACEMENT -- runStreetLine's own move, same reasons.
+    session.body().placeAt(standX, standY, target->band);
+    {
+        const std::int32_t toX = target->x - standX;
+        const std::int32_t toY = target->y - standY;
+        sim::Angle look = sim::kFacingNorth;
+        if (std::abs(toX) >= std::abs(toY)) {
+            look = toX > 0 ? sim::kFacingEast : sim::kFacingWest;
+        } else {
+            look = toY > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+        }
+        session.body().setYaw(look);
+    }
+    session.stepMany(sim::MoveInput{}, 1);
+
+    // 4. EVERYTHING AFTER THIS IS THE GAME: the real interact, the real
+    // director building a clergy topic list over real ground, the real
+    // Ward::petitionForCharge behind the petition row.
+    session.interact();
+    out.opened = session.talking() && session.wardTalkingTo() == target->id;
+    if (!out.opened) {
+        return out;
+    }
+    out.speaker = session.tavern().dialogue().speaker().name;
+    if (pick(session, sim::TopicKind::ReadRoll)) {
+        out.rollLine = session.lastMessage();
+    }
+    if (pick(session, sim::TopicKind::Petition)) {
+        out.petitionLine = session.lastMessage();
+    }
+    // The petition named the roll's vacant plot, which need not be the one
+    // stood on -- so the claim checked is the roll's own: SOMEBODY's charge
+    // now reads the player.
+    for (const sim::Plot& roll : session.ward().plots()) {
+        out.becameDuke = out.becameDuke || roll.playerIsDuke;
+    }
+    return out;
+}
+
 int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     // ONE IN THE MORNING, and the hour is the point.
     //
@@ -5968,16 +6510,18 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.togglePause();
         bool landed = false;
         if (config.pauseEnd == "settings") {
-            session.movePauseCursor(2);  // RESUME -> CONTROLS -> SETTINGS
+            // TIME-AND-TENURE BUILD: one further press than before -- WAIT
+            // took the second row, so every door below it moved down one.
+            session.movePauseCursor(3);  // RESUME -> WAIT -> CONTROLS -> SETTINGS
             session.choosePause();
             landed = session.optionsOpen();
         } else if (config.pauseEnd == "controls") {
             // MORROWIND ROUND: KEYS' OWN NEW PAUSE-SIDE DOOR.
-            session.movePauseCursor(1);  // RESUME -> CONTROLS
+            session.movePauseCursor(2);  // RESUME -> WAIT -> CONTROLS
             session.choosePause();
             landed = session.keysOpen();
         } else if (config.pauseEnd == "armed") {
-            session.movePauseCursor(3);  // RESUME -> CONTROLS -> SETTINGS -> QUIT
+            session.movePauseCursor(4);  // ... -> SETTINGS -> QUIT
             session.choosePause();       // arms it; does not fire on one press
             landed = session.pauseOpen() && session.quitArmed();
         } else {
@@ -6063,6 +6607,19 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += result.flameStages;
     }
 
+    if (config.petition) {
+        // TIME-AND-TENURE BUILD. See SmokeRunConfig::petition's own header.
+        // Three beats: somebody of the cloth found ON a plot, the roll read,
+        // the charge petitioned -- and the third only counts when the ROLL
+        // says it did (playerIsDuke), not when a sentence was merely said.
+        result.petitionResult = runPetitionLine(session, true);
+        result.talking = session.talking();
+        result.scriptedWanted += 3;
+        result.scriptedLanded += (result.petitionResult.opened ? 1 : 0) +
+                                 (result.petitionResult.rollLine.empty() ? 0 : 1) +
+                                 (result.petitionResult.becameDuke ? 1 : 0);
+    }
+
     if (config.quickbar) {
         // VERIFICATION ONLY. See SmokeRunConfig::quickbar's own header: the
         // same public verbs a keypress calls, end to end -- page open, the
@@ -6109,6 +6666,19 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.toggleGrimoire();
         result.scriptedWanted += 1;
         result.scriptedLanded += session.grimoireOpen() ? 1 : 0;
+    }
+
+    if (config.wait) {
+        // TIME-AND-TENURE BUILD. See SmokeRunConfig::wait's own header: the
+        // pause menu's own WAIT row, pressed the way a hand presses it, so
+        // the capture is a picture of the DOOR working and not only of the
+        // page existing.
+        session.closeConversation();
+        session.togglePause();
+        session.movePauseCursor(1);  // RESUME -> WAIT
+        session.choosePause();
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.waitOpen() && !session.waitSleeping() ? 1 : 0;
     }
 
     if (config.roofs) {
@@ -6390,6 +6960,23 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " speaker=\"" << result.streetSpeaker << "\""
                 << " key=" << (result.streetKey.empty() ? "-" : result.streetKey)
                 << " talking=" << (result.talking ? "yes" : "no");
+    }
+    if (config.petition) {
+        // TIME-AND-TENURE BUILD: which ground, who read the roll, and whether
+        // the ROLL says the charge moved -- the claim is a changed register,
+        // so the register's own answer is what gets printed.
+        const PetitionLineResult& pet = result.petitionResult;
+        summary << " | petition plot=" << (pet.plotId.empty() ? "-" : pet.plotId)
+                << " speaker=\"" << pet.speaker << "\""
+                << " opened=" << (pet.opened ? "yes" : "no")
+                << " roll=\"" << pet.rollLine << "\""
+                << " answer=\"" << pet.petitionLine << "\""
+                << " duke=" << (pet.becameDuke ? "yes" : "no");
+    }
+    if (config.wait) {
+        summary << " | wait open=" << (session.waitOpen() ? "yes" : "no")
+                << " rows=" << session.waitRows().size()
+                << " refusal=\"" << session.waitRefusal() << "\"";
     }
     if (config.trail) {
         const sim::Casebook& notes = session.casebook();
