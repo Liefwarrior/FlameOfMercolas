@@ -375,6 +375,9 @@ current source, played rather than described:
 | `s10-17-contract-work.png` | Watchman Cull, ASK ABOUT WORK on the list |
 | `s10-18-district-map.png` | the casebook's Chart tile — known ground, one open lead |
 | `s14-ward-map.png` | the ward map: the whole district plan under `M`, names on ground |
+| `s14-ward-map-midslope.png` | the same map read from Saltgate Rise, band 20 — the mid-slope ground emphasized, the harbour still shown |
+| `s14-ward-map-facing-fp.png` | the facing proof, half one: standing on the Tarwalk spawn, compass reading N |
+| `s14-ward-map-facing-map.png` | the facing proof, half two: the same stand on the map, wedge pointing up — NORTH IS UP |
 
 Reproduce any of it:
 
