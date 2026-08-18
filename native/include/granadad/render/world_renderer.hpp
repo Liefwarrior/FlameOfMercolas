@@ -128,6 +128,14 @@ struct SpriteInstance {
     /// how much of it is candles.
     bool person = false;
 
+    /// DISTRICT PHASE A: true for the two authored harbour lights that behave
+    /// as BEACONS after dark -- the Weighhouse signal-mast lamp and the
+    /// Mission's doctrinal night lamp. A beacon's additive glow takes a reduced
+    /// fog wash at night, which is the honest way a light "carries": fog eats
+    /// the wall it hangs on long before it eats the flame itself. Tagged by
+    /// name in lampSprites(); nothing else may set it.
+    bool beacon = false;
+
     // --- #78: a figure somebody drew, instead of an ellipse ------------------
     //
     // A 16x16 RGBA cutout, or null for the ellipse path. Both paths stay,
@@ -158,6 +166,19 @@ struct SpriteInstance {
     int artV1 = 0;
 };
 
+/// DISTRICT PHASE A: which authored skyline-backdrop silhouette this build
+/// paints, read ONCE from the GRANADAD_SKYLINE environment variable. 0 is off;
+/// 1 restrained (a low wall line, one palace mass); 2 stepped (wall + palace
+/// with subordinate towers); 3 dramatic (taller palace, gate-tower punctuation
+/// along the wall crest). Anything unset or unparseable is variant 1.
+///
+/// An environment variable rather than a CLI flag on purpose: the variants are
+/// an OWNER'S CHOICE pending screenshots, main.cpp belongs to another team this
+/// sprint, and the renderer defaulting its own setting keeps the whole affair
+/// inside the two files that own the sky. The losers get deleted in a follow-up
+/// commit and this hook goes with them.
+[[nodiscard]] int defaultSkylineVariant() noexcept;
+
 struct RenderSettings {
     /// Seconds since midnight. Drives ambient, fog and whether lamps carry.
     int timeOfDay = 20 * 3600;
@@ -172,6 +193,12 @@ struct RenderSettings {
     int levelsBelow = 4;
     int levelsAbove = 6;
     bool drawSprites = true;
+    /// DISTRICT PHASE A: the skyline backdrop variant, defaulted from the
+    /// environment (see defaultSkylineVariant). The backdrop writes SKY PIXELS
+    /// ONLY -- it never touches depth, geometry, or anything the sim can see --
+    /// so world geometry occludes it exactly the way a real landmark is
+    /// occluded, and the world hash cannot move.
+    int skylineVariant = defaultSkylineVariant();
     /// Lights that are not in the baked sidecar because they come and go: a
     /// tavern hearth, the candles on its tables. See dynamicGlowAt().
     std::vector<Lamp> dynamicLamps;

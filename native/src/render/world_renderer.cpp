@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstdlib>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <utility>
@@ -87,7 +89,151 @@ constexpr float kStairSlab = 0.36F;
     return 0.2126F * colour.r + 0.7152F * colour.g + 0.0722F * colour.b;
 }
 
+// ---------------------------------------------------------------------------
+// the skyline backdrop (DISTRICT PHASE A)
+// ---------------------------------------------------------------------------
+//
+// The palace stands "tall at the far end of the city" (novel L2326) and the
+// Gazetteer section 1 rules the Inner Wall, the palace and the suburb sprawl
+// are "never maps, only backdrops". So they are painted INTO THE SKY BAND,
+// before the world pass runs: azimuth-anchored silhouettes at infinity, fog-
+// tinted so they read as miles of air, faded with the daylight and swallowed
+// entirely by the night fog. Because they write only sky pixels and no depth,
+// geometry occludes them for free -- they appear over rooftops and in street-
+// end gaps exactly where a real landmark would -- and the simulation never
+// learns they exist.
+//
+// GEOGRAPHY. Water runs the full NORTH edge (Gazetteer section 2.1) and the
+// city rises up-slope to the SOUTH, so: palace and Inner Wall crest centred on
+// azimuth 180, a low sprawl smudge east (about 90) and west (about 270), and
+// NOTHING seaward of either smudge. Azimuth here matches the camera's yaw
+// convention -- 0 north (-Y), 90 east (+X), clockwise.
+//
+// AUTHORED DATA, not hand-painted pixels: each variant is a table of
+// (azimuth in degrees, height) control points, piecewise-linear, zero outside
+// its first and last point. Height is the TANGENT of elevation above the
+// horizon -- screen rise is height * focal -- so the silhouette keeps its
+// angular size at any resolution or field of view.
+//
+// THREE VARIANTS pending the owner's pick from screenshots (GRANADAD_SKYLINE,
+// see defaultSkylineVariant in the header). The losers get deleted.
+
+struct SkylinePoint {
+    float azimuthDeg;
+    float height;
+};
+
+/// Variant 1, RESTRAINED: a low wall line with one tall palace mass.
+constexpr SkylinePoint kSkylineRestrained[] = {
+    {62.0F, 0.000F},  {78.0F, 0.020F},  {96.0F, 0.030F},  {114.0F, 0.020F},
+    {126.0F, 0.012F},                                       // east sprawl smudge
+    {131.0F, 0.068F}, {134.0F, 0.075F},                     // the wall crest rises
+    {172.0F, 0.075F}, {174.0F, 0.130F},                     // the palace mass
+    {186.0F, 0.130F}, {188.0F, 0.075F},                     // and down to the crest
+    {227.0F, 0.075F}, {231.0F, 0.045F},                     // crest ends
+    {244.0F, 0.022F}, {262.0F, 0.032F}, {284.0F, 0.016F},   // west sprawl smudge
+    {298.0F, 0.000F},
+};
+
+/// Variant 2, STEPPED: wall + palace with three subordinate towers.
+constexpr SkylinePoint kSkylineStepped[] = {
+    {62.0F, 0.000F},   {78.0F, 0.022F},   {96.0F, 0.033F},  {114.0F, 0.022F},
+    {126.0F, 0.013F},                                        // east sprawl smudge
+    {131.0F, 0.072F},  {134.0F, 0.080F},                     // the wall crest
+    {156.0F, 0.080F},  {157.5F, 0.108F},  {162.0F, 0.108F},
+    {163.5F, 0.080F},                                        // south-east tower
+    {170.0F, 0.080F},  {171.5F, 0.118F},  {174.5F, 0.118F},  // palace shoulder
+    {175.5F, 0.155F},  {184.5F, 0.155F},                     // palace main mass
+    {185.5F, 0.118F},  {188.5F, 0.118F},  {190.0F, 0.080F},  // shoulder down
+    {196.0F, 0.080F},  {197.5F, 0.112F},  {201.5F, 0.112F},
+    {203.0F, 0.080F},                                        // south-south-west tower
+    {211.0F, 0.080F},  {212.5F, 0.098F},  {216.0F, 0.098F},
+    {217.5F, 0.080F},                                        // south-west tower, lower
+    {227.0F, 0.080F},  {231.0F, 0.048F},                     // crest ends
+    {244.0F, 0.024F},  {262.0F, 0.034F},  {284.0F, 0.017F},  // west sprawl smudge
+    {298.0F, 0.000F},
+};
+
+/// Variant 3, DRAMATIC: taller palace, gate-tower punctuation along the crest.
+constexpr SkylinePoint kSkylineDramatic[] = {
+    {62.0F, 0.000F},   {78.0F, 0.022F},   {96.0F, 0.036F},  {114.0F, 0.024F},
+    {126.0F, 0.014F},                                        // east sprawl smudge
+    {131.0F, 0.078F},  {133.0F, 0.085F},                     // the wall crest
+    {138.0F, 0.085F},  {139.0F, 0.115F},  {141.5F, 0.115F},
+    {142.5F, 0.085F},                                        // gate tower
+    {152.0F, 0.085F},  {153.0F, 0.115F},  {155.5F, 0.115F},
+    {156.5F, 0.085F},                                        // gate tower
+    {166.0F, 0.085F},  {167.0F, 0.120F},  {169.5F, 0.120F},
+    {170.5F, 0.085F},                                        // gate tower
+    {172.5F, 0.085F},  {173.5F, 0.150F},  {176.0F, 0.150F},  // palace shoulder
+    {177.0F, 0.205F},  {183.0F, 0.205F},                     // the tall palace mass
+    {184.0F, 0.150F},  {186.5F, 0.150F},  {187.5F, 0.085F},  // shoulder down
+    {189.5F, 0.085F},  {190.5F, 0.120F},  {193.0F, 0.120F},
+    {194.0F, 0.085F},                                        // gate tower
+    {203.5F, 0.085F},  {204.5F, 0.115F},  {207.0F, 0.115F},
+    {208.0F, 0.085F},                                        // gate tower
+    {217.5F, 0.085F},  {218.5F, 0.115F},  {221.0F, 0.115F},
+    {222.0F, 0.085F},                                        // gate tower
+    {227.0F, 0.085F},  {231.0F, 0.050F},                     // crest ends
+    {244.0F, 0.026F},  {262.0F, 0.038F},  {284.0F, 0.018F},  // west sprawl smudge
+    {298.0F, 0.000F},
+};
+
+/// The silhouette's height (tangent of elevation) at one azimuth, for one
+/// variant. Zero for azimuths outside the authored arc -- which is the whole
+/// seaward half of the compass -- and zero for any variant not in 1..3.
+[[nodiscard]] float skylineHeightAt(int variant, float azimuthDeg) noexcept {
+    const SkylinePoint* points = nullptr;
+    std::size_t count = 0;
+    switch (variant) {
+        case 1:
+            points = kSkylineRestrained;
+            count = std::size(kSkylineRestrained);
+            break;
+        case 2:
+            points = kSkylineStepped;
+            count = std::size(kSkylineStepped);
+            break;
+        case 3:
+            points = kSkylineDramatic;
+            count = std::size(kSkylineDramatic);
+            break;
+        default:
+            return 0.0F;
+    }
+    if (azimuthDeg <= points[0].azimuthDeg || azimuthDeg >= points[count - 1].azimuthDeg) {
+        return 0.0F;
+    }
+    for (std::size_t i = 1; i < count; ++i) {
+        if (azimuthDeg <= points[i].azimuthDeg) {
+            const SkylinePoint& a = points[i - 1];
+            const SkylinePoint& b = points[i];
+            const float t = (azimuthDeg - a.azimuthDeg) / (b.azimuthDeg - a.azimuthDeg);
+            return a.height + (b.height - a.height) * t;
+        }
+    }
+    return 0.0F;
+}
+
+/// How far away the backdrop pretends to be, in tiles. Past maxDistance and
+/// past every tile of authored geometry, so the fog term below always paints it
+/// hazier than anything the world pass can draw in front of it.
+constexpr float kBackdropDistance = 48.0F;
+
 }  // namespace
+
+int defaultSkylineVariant() noexcept {
+    // Read once and cached: the variant is a build-under-review choice, not a
+    // per-frame input, and getenv in the sky loop would be absurd.
+    static const int chosen = [] {
+        const char* raw = std::getenv("GRANADAD_SKYLINE");
+        if (raw != nullptr && raw[0] >= '0' && raw[0] <= '3' && raw[1] == '\0') {
+            return raw[0] - '0';
+        }
+        return 1;
+    }();
+    return chosen;
+}
 
 Camera Camera::fromBody(std::int32_t xQ8, std::int32_t yQ8, std::int32_t eyeZQ8,
                         std::int32_t yawBam, std::int32_t pitchBam, float hfovTan) noexcept {
@@ -249,6 +395,14 @@ std::vector<SpriteInstance> WorldRenderer::lampSprites(float phase) const {
         sprite.colour = lamp.warmth == LampWarmth::Fire ? Rgb{1.0F, 0.62F, 0.26F}
                                                         : Rgb{1.0F, 0.88F, 0.66F};
         sprite.glow = 1.0F;
+        // DISTRICT PHASE A: the two authored harbour beacons, tagged BY NAME
+        // and nowhere else. The Weighhouse signal mast and the Mission's
+        // doctrinal night lamp are the district's own lighthouse pair, and
+        // drawSprite gives their glow a reduced fog wash after dark so they
+        // carry across the ward the way a signal lamp is hung to. Every other
+        // lamp keeps drowning in the fog on schedule.
+        sprite.beacon =
+            lamp.name == "lamp_weighhouse_mast" || lamp.name == "lamp_mission_night";
         sprites.push_back(sprite);
     }
     return sprites;
@@ -293,12 +447,64 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
     // --- sky ---------------------------------------------------------------
     // Painted first so anything unwritten by the world pass already looks like
     // sky. A vertical gradient with the horizon band where the fog lives.
+
+    // DISTRICT PHASE A: the skyline backdrop, composited into the gradient
+    // before geometry so the world pass overwrites it wherever anything real
+    // stands. Its visibility is the fog's own arithmetic at kBackdropDistance
+    // -- the same exp() every drawn face uses -- times the daylight, so it
+    // hazes at noon, thins at dusk under the sodium wash, and at night the
+    // closed-in fog swallows it to exactly nothing. See the variant tables up
+    // top for the shape data.
+    float backdropAlpha = 0.0F;
+    std::vector<float> skylineTopRow;
+    if (settings.skylineVariant > 0) {
+        backdropAlpha = sky.daylight * std::exp(-kBackdropDistance / sky.fogDistance);
+        if (backdropAlpha < 0.012F) {
+            backdropAlpha = 0.0F;  // night, or close enough: fully swallowed
+        } else {
+            skylineTopRow.assign(static_cast<std::size_t>(width),
+                                 std::numeric_limits<float>::infinity());
+            for (int sx = 0; sx < width; ++sx) {
+                // The same unnormalised ray the world pass casts for this
+                // column, so the silhouette and the geometry that occludes it
+                // agree about which way the camera points.
+                const float cameraX =
+                    (2.0F * static_cast<float>(sx) + 1.0F) / static_cast<float>(width) - 1.0F;
+                const float rayX = forwardX + rightX * cameraX * camera.hfovTan;
+                const float rayY = forwardY + rightY * cameraX * camera.hfovTan;
+                // Azimuth in the yaw convention: 0 north (-Y), 90 east, clockwise.
+                float azimuth = std::atan2(rayX, -rayY) * (180.0F / kPi);
+                if (azimuth < 0.0F) {
+                    azimuth += 360.0F;
+                }
+                const float silhouette = skylineHeightAt(settings.skylineVariant, azimuth);
+                if (silhouette > 0.0F) {
+                    skylineTopRow[static_cast<std::size_t>(sx)] = horizon - silhouette * focal;
+                }
+            }
+        }
+    }
+
     const float skySpan = std::max(1.0F, std::abs(horizon));
     for (int sy = 0; sy < height; ++sy) {
         const float t = std::clamp(static_cast<float>(sy) / skySpan, 0.0F, 1.0F);
         const Rgb band = lerp(sky.skyTop, sky.skyHorizon, t * t);
-        for (int sx = 0; sx < width; ++sx) {
-            target.pixels()[target.index(sx, sy)] = packRgb(band);
+        const std::uint32_t packedBand = packRgb(band);
+        const float rowCentre = static_cast<float>(sy) + 0.5F;
+        if (backdropAlpha > 0.0F && rowCentre <= horizon) {
+            // A distant mass reads as a darker, slightly cooler cut of the fog
+            // it stands behind -- blended against this row's own gradient so
+            // the silhouette darkens with the sky the way a real skyline does.
+            const Rgb mass{sky.fog.r * 0.50F, sky.fog.g * 0.53F, sky.fog.b * 0.60F};
+            const std::uint32_t packedMass = packRgb(lerp(band, mass, backdropAlpha));
+            for (int sx = 0; sx < width; ++sx) {
+                const bool inside = rowCentre >= skylineTopRow[static_cast<std::size_t>(sx)];
+                target.pixels()[target.index(sx, sy)] = inside ? packedMass : packedBand;
+            }
+        } else {
+            for (int sx = 0; sx < width; ++sx) {
+                target.pixels()[target.index(sx, sy)] = packedBand;
+            }
         }
     }
 
@@ -743,7 +949,17 @@ void WorldRenderer::drawSprite(Framebuffer& target, const Camera& camera,
             // as a smudge at this resolution.
             const float smooth = (1.0F - r2) * (1.0F - r2);
             const float falloff = 1.0F + (smooth - 1.0F) * sprite.softness;
-            const float alpha = std::clamp(falloff * (1.0F - fog * 0.8F), 0.0F, 1.0F);
+            // How much the fog washes this billboard out. 0.8 for everything,
+            // ALWAYS -- except the two tagged harbour beacons after dark, which
+            // ease to 0.25: fog scatters the light around a distant lamp long
+            // before it extinguishes the point itself, and a lighthouse is the
+            // proof. Eased BY the daylight so the exception does not exist at
+            // noon and arrives with the night it was authored for. A soft point
+            // that carries, not a lens flare: the sprite's size and glow are
+            // untouched.
+            const float wash =
+                sprite.beacon ? 0.8F - 0.55F * (1.0F - sky.daylight) : 0.8F;
+            const float alpha = std::clamp(falloff * (1.0F - fog * wash), 0.0F, 1.0F);
             if (alpha <= 0.004F) {
                 continue;
             }

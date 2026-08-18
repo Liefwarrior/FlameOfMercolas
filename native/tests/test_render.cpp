@@ -402,6 +402,144 @@ TEST_CASE("standing under a lamp does not white out the frame") {
     CHECK(pressedAgainstIt > acrossTheStreet * 1.5F);
 }
 
+TEST_CASE("the skyline backdrop stands in the southern sky and the night swallows it") {
+    // DISTRICT PHASE A. The Inner Wall and the palace are "never maps, only
+    // backdrops" (Gazetteer section 1), so they are paint in the sky band --
+    // and paint can be asserted on: south has it, seaward never does, night
+    // swallows it whole, and the three authored variants are actually three.
+    //
+    // The camera floats high over the ward on purpose. Up there the southern
+    // sky is unoccluded AND the z-window clips the whole district out of the
+    // frame, so every comparison below is sky against sky. Street-level
+    // occlusion is what the screenshots prove; this case proves the compositor.
+    Session session(docksAt(12));
+    Camera aloft = session.camera();
+    aloft.z = bandSurface(26);
+    aloft.pitch = 0.0F;
+
+    constexpr float kSouth = 3.14159265F;
+    const auto pixelsWith = [&](int variant, float yaw, int hour) {
+        RenderSettings settings;
+        settings.timeOfDay = hour * 3600;
+        settings.skylineVariant = variant;
+        settings.drawSprites = false;
+        Camera view = aloft;
+        view.yaw = yaw;
+        Framebuffer frame(320, 180);
+        session.renderer().renderFrame(frame, view, settings, {});
+        return frame.pixels();
+    };
+    const auto differing = [](const std::vector<std::uint32_t>& a,
+                              const std::vector<std::uint32_t>& b) {
+        std::size_t count = 0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            if (a[i] != b[i]) {
+                ++count;
+            }
+        }
+        return count;
+    };
+
+    // Whatever the build environment says, the variant is one of the four.
+    CHECK(defaultSkylineVariant() >= 0);
+    CHECK(defaultSkylineVariant() <= 3);
+
+    // Facing south at noon: each variant is present, and they are distinct
+    // silhouettes rather than one shape behind three names.
+    const std::vector<std::uint32_t> bare = pixelsWith(0, kSouth, 12);
+    const std::vector<std::uint32_t> restrained = pixelsWith(1, kSouth, 12);
+    const std::vector<std::uint32_t> stepped = pixelsWith(2, kSouth, 12);
+    const std::vector<std::uint32_t> dramatic = pixelsWith(3, kSouth, 12);
+    CHECK(differing(bare, restrained) > 200);
+    CHECK(differing(restrained, stepped) > 100);
+    CHECK(differing(stepped, dramatic) > 100);
+
+    // It is a MASS, not a glow: everything it touches gets darker.
+    double bareSum = 0.0;
+    double restrainedSum = 0.0;
+    for (std::size_t i = 0; i < bare.size(); ++i) {
+        const Rgb before = unpackRgb(bare[i]);
+        const Rgb after = unpackRgb(restrained[i]);
+        bareSum += 0.2126 * before.r + 0.7152 * before.g + 0.0722 * before.b;
+        restrainedSum += 0.2126 * after.r + 0.7152 * after.g + 0.0722 * after.b;
+    }
+    CHECK(restrainedSum < bareSum);
+
+    // Seaward is EMPTY: the harbour horizon carries no silhouette in any
+    // variant, per the geography the tables were authored from.
+    CHECK(differing(pixelsWith(0, 0.0F, 12), pixelsWith(3, 0.0F, 12)) == 0);
+
+    // And at midnight the closed-in fog swallows the backdrop entirely: the
+    // dramatic variant and no variant at all are the same frame.
+    CHECK(differing(pixelsWith(0, kSouth, 0), pixelsWith(3, kSouth, 0)) == 0);
+}
+
+TEST_CASE("the two harbour beacons carry through the night fog") {
+    // DISTRICT PHASE A. The Weighhouse signal mast and the Mission's doctrinal
+    // night lamp are tagged by name in lampSprites, and a tagged glow takes a
+    // reduced fog wash after dark -- a lighthouse behaviour, the honest way a
+    // distant lamp stays a point of light in weather that has already eaten
+    // the wall it hangs on.
+    Session session(docksAt(0));
+
+    // Exactly the two authored beacons, and exactly by name.
+    std::size_t beacons = 0;
+    for (const SpriteInstance& sprite : session.renderer().lampSprites(0.0F)) {
+        if (sprite.beacon) {
+            ++beacons;
+        }
+    }
+    CHECK(beacons == 2);
+
+    // The same glow, the same spot, thirty tiles out at midnight, once tagged
+    // and once not: the beacon's point survives brighter. The camera floats
+    // above the z-window so both frames are the sprite against open sky.
+    Camera aloft = session.camera();
+    aloft.z = bandSurface(26);
+    aloft.yaw = 0.0F;
+    aloft.pitch = 0.0F;
+
+    RenderSettings settings;
+    settings.timeOfDay = 0;
+    settings.skylineVariant = 0;
+
+    SpriteInstance glow;
+    glow.x = aloft.x;
+    glow.y = aloft.y - 30.0F;
+    glow.z = aloft.z;
+    glow.halfWidth = 0.6F;
+    glow.halfHeight = 0.6F;
+    glow.colour = Rgb{1.0F, 0.88F, 0.66F};
+    glow.glow = 1.0F;
+
+    const auto centreLuma = [&](bool beacon) {
+        SpriteInstance sprite = glow;
+        sprite.beacon = beacon;
+        Framebuffer frame(320, 180);
+        const FrameStats stats =
+            session.renderer().renderFrame(frame, aloft, settings, {sprite});
+        REQUIRE(stats.spritePixels > 0);
+        const Rgb centre = unpackRgb(frame.pixels()[frame.index(160, 90)]);
+        return 0.2126F * centre.r + 0.7152F * centre.g + 0.0722F * centre.b;
+    };
+
+    const float carried = centreLuma(true);
+    const float drowned = centreLuma(false);
+    CHECK(carried > drowned * 1.5F);
+
+    // At NOON the exception does not exist: a beacon is an ordinary lamp in
+    // ordinary daylight, so the two draws are pixel-identical.
+    settings.timeOfDay = 12 * 3600;
+    SpriteInstance tagged = glow;
+    tagged.beacon = true;
+    SpriteInstance plain = glow;
+    Framebuffer dayTagged(320, 180);
+    Framebuffer dayPlain(320, 180);
+    session.renderer().renderFrame(dayTagged, aloft, settings, {tagged});
+    session.renderer().renderFrame(dayPlain, aloft, settings, {plain});
+    CHECK(dayTagged.pixels() == dayPlain.pixels());
+}
+
 TEST_CASE("turning around changes the frame") {
     Session session(docksAt(20));
     Framebuffer north(320, 180);
