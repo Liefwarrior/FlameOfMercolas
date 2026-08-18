@@ -371,10 +371,14 @@ void print_usage() {
         "                       slot 3 through the Grimoire page, close it and\n"
         "                       press the number, so the bottom-centre strip\n"
         "                       and the CAST row are photographed agreeing\n"
-        "  --creation[=STEP]    capture the origin-select/customize flow with\n"
-        "                       no window and no world. STEP is origin\n"
-        "                       (default), customize (CUSTOM, a few points\n"
-        "                       spent), devin or gabri (their own fixed sheet)\n"
+        "  --creation[=STEP]    capture the character-creation flow with no\n"
+        "                       window and no world. STEP is origin (default),\n"
+        "                       calling (the nine-trade roster), quiz (question\n"
+        "                       five, meters mid-tally), verdict (the tally's\n"
+        "                       card), background (a biography question),\n"
+        "                       review (a taken calling converged on the\n"
+        "                       customize screen), customize (CUSTOM, a few\n"
+        "                       points spent), devin or gabri (fixed sheets)\n"
         "  --settle             run a scripted overlay's open animation to\n"
         "                       completion before the shutter, instead of\n"
         "                       capturing the frame it opened on (this is\n"
@@ -1388,6 +1392,33 @@ constexpr PadRow kPadTable[] = {
 // it clips the identical way the skill rows did before this round's fix.
 int run_creation_capture(const Options& options) {
     render::CreationFlow flow(granadad::content::contentDir());
+    // TASK #92: answers one quiz question by its AUTHORED index (0=A, 1=B,
+    // 2=C -- the raws author the axes in order) through the same public
+    // calls a keyboard reaches, translating through the display shuffle the
+    // screen itself applies. Pure walking, no back door.
+    const auto answerQuiz = [&flow](int authored) {
+        const std::array<int, 3> order =
+            render::quizDisplayOrder(static_cast<int>(flow.quizAnswers().size()));
+        for (int pos = 0; pos < 3; ++pos) {
+            if (order[static_cast<std::size_t>(pos)] == authored) {
+                while (flow.choiceCursor() != pos) {
+                    flow.moveChoiceCursor(1);
+                }
+                flow.chooseChoice();
+                return;
+            }
+        }
+    };
+    // Walks the calling door to NETTER (roster index 3 in the raws' own
+    // authored order) -- a mixed-axis sheet, so the preview and the review
+    // both show something less symmetric than the first row would.
+    const auto takeNetter = [&flow] {
+        flow.chooseOrigin();  // cursor 0 = TAKE A CALLING
+        for (int i = 0; i < 3; ++i) {
+            flow.moveChoiceCursor(1);
+        }
+        flow.chooseChoice();
+    };
     if (options.creationStep == "customize") {
         flow.moveOriginCursor(2);  // CUSTOM
         flow.chooseOrigin();
@@ -1396,12 +1427,63 @@ int run_creation_capture(const Options& options) {
             flow.adjustCustomizeRow(1);
         }
     } else if (options.creationStep == "devin") {
+        flow.moveOriginCursor(4);
         flow.chooseOrigin();
     } else if (options.creationStep == "gabri") {
+        flow.moveOriginCursor(3);
+        flow.chooseOrigin();
+    } else if (options.creationStep == "calling") {
+        // The roster, hovering NETTER so the top band speaks a one-liner and
+        // the centre shows a real mixed sheet.
+        flow.chooseOrigin();
+        for (int i = 0; i < 3; ++i) {
+            flow.moveChoiceCursor(1);
+        }
+    } else if (options.creationStep == "quiz") {
+        // Four answers in (A, A, B, C), question five on screen, meters at a
+        // genuinely mid-quiz 2/1/1 -- and the hovered answer is row two, so
+        // the centre text and the highlight both photograph off the default.
+        flow.moveOriginCursor(1);  // ANSWER FOR YOURSELF
+        flow.chooseOrigin();
+        answerQuiz(0);
+        answerQuiz(0);
+        answerQuiz(1);
+        answerQuiz(2);
+        flow.moveChoiceCursor(1);
+    } else if (options.creationStep == "verdict") {
+        // All ten: 5 A, 3 B, 2 C -- A dominant short of pure, B over C, the
+        // tally table's DECKHAND row -- so the card photographs the
+        // accept-or-decline choice over a with-secondary verdict.
         flow.moveOriginCursor(1);
         flow.chooseOrigin();
+        for (int i = 0; i < 5; ++i) {
+            answerQuiz(0);
+        }
+        for (int i = 0; i < 3; ++i) {
+            answerQuiz(1);
+        }
+        for (int i = 0; i < 2; ++i) {
+            answerQuiz(2);
+        }
+    } else if (options.creationStep == "background") {
+        // The calling door into the biography: three questions answered, B4
+        // on screen mid-past.
+        takeNetter();
+        for (int i = 0; i < 3; ++i) {
+            flow.chooseChoice();  // answer (a) of each -- authored order
+        }
+    } else if (options.creationStep == "review") {
+        // THE CONVERGENCE: a taken calling, all twelve questions answered,
+        // landing on the same customize/review screen every other door ends
+        // on -- pre-designated sheet, dagger readout in the status line.
+        takeNetter();
+        for (int i = 0; i < 12; ++i) {
+            flow.chooseChoice();
+        }
     } else if (options.creationStep != "origin") {
-        std::printf("granadad: --creation wants origin, customize, devin or gabri\n");
+        std::printf(
+            "granadad: --creation wants origin, calling, quiz, verdict, background, "
+            "review, customize, devin or gabri\n");
         return 2;
     }
 
@@ -1508,6 +1590,23 @@ render::CreationResult run_creation_window(const Options& options) {
                     flow.chooseOrigin();
                 } else if (key == render::Key::Escape) {
                     cancelled = true;
+                }
+                continue;
+            }
+            // TASK #92: the calling roster, the ward's questions and the
+            // biography all share one cursor and one verb set -- see
+            // CreationFlow::choiceCursor()'s own header.
+            if (flow.step() == render::CreationStep::Calling ||
+                flow.step() == render::CreationStep::Quiz ||
+                flow.step() == render::CreationStep::Background) {
+                if (key == render::Key::Up || key == render::Key::W) {
+                    flow.moveChoiceCursor(-1);
+                } else if (key == render::Key::Down || key == render::Key::S) {
+                    flow.moveChoiceCursor(1);
+                } else if (key == render::Key::Enter) {
+                    flow.chooseChoice();
+                } else if (key == render::Key::Escape) {
+                    flow.back();
                 }
                 continue;
             }
