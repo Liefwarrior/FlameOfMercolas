@@ -149,8 +149,21 @@ Write-Host ''
 Write-Host '--- 2. packing content\ (the packer refuses on any missing manifest file)'
 $packFile = Join-Path $env:TEMP ("granadad-content-" + [System.Guid]::NewGuid().ToString('N').Substring(0, 8) + ".pack")
 $tmpOut = "$outExe.packing"
+# TZ pinned to UTC for the packer, and this is a determinism fix, found the
+# day this script first ran: miniz converts the pack writer's fixed
+# MZ_TIME_T to each zip entry's DOS timestamp through localtime(), so the
+# same tree packed in the UTC build container and on a UTC-4 host produced
+# same-size, DIFFERENT-BYTES packs (digest 8f6dd65a vs 4a787d95, measured).
+# The mingw CRT honours TZ, so pinning it here makes the host pack
+# byte-identical to the container's. The real fix belongs in
+# native/content/src/pack_write.cpp (stamp the DOS time without consulting
+# the local zone); until it lands, this line is what keeps "same tree in,
+# same bytes out" true across machines.
+$savedTz = $env:TZ
+$env:TZ = 'UTC'
 try {
     & $packerExe --content $ContentDir --out $packFile
+    if ($savedTz) { $env:TZ = $savedTz } else { Remove-Item Env:\TZ -ErrorAction SilentlyContinue }
     if ($LASTEXITCODE -ne 0) {
         Fail "granadad-pack-content.exe exited $LASTEXITCODE. Read its stderr above: it names the exact content file that is missing or unreadable. Nothing was written to dist\."
     }
