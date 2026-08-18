@@ -2,12 +2,18 @@
 
 // Where the baked worlds are, resolved at RUN TIME.
 //
-// Three sources, in this order, and the order is the whole point:
+// Four sources, in this order, and the order is the whole point:
 //
 //   1. $GRANADAD_CONTENT_DIR       an explicit override always wins
 //   2. the executable's own tree   search upward from argv[0]'s real directory
 //                                  for a `content/maps/baked`
-//   3. the configure-time default  the last resort, and on a cross build it is
+//   3. the executable's own PACK   a standalone build carries a zip of the
+//                                  minimal content subset appended to the .exe
+//                                  itself; it extracts to a per-user cache and
+//                                  that cache is the content dir. Repo binaries
+//                                  carry no pack and skip this in one footer
+//                                  read -- see pack_extract.hpp.
+//   4. the configure-time default  the last resort, and on a cross build it is
 //                                  a path inside the build container
 //
 // WHY 1 IS FIRST. Binaries here are cross-compiled for Windows inside a Linux
@@ -57,8 +63,14 @@ inline constexpr const char* kContentDirEnvVar = "GRANADAD_CONTENT_DIR";
 /// the filesystem could be picked up by accident.
 inline constexpr int kContentDirSearchLevels = 3;
 
-/// The directory the running executable lives in, or an empty path when the
-/// platform will not say. Windows asks the loader; Linux reads /proc/self/exe.
+/// The running executable's own file, or an empty path when the platform will
+/// not say. Windows asks the loader; Linux reads /proc/self/exe. The pack
+/// extractor (pack_extract.hpp) reads the appended content pack out of exactly
+/// this file.
+[[nodiscard]] std::filesystem::path executablePath();
+
+/// The directory the running executable lives in -- executablePath()'s parent,
+/// or an empty path when the platform will not say.
 [[nodiscard]] std::filesystem::path executableDir();
 
 /// Searches `start` and up to kContentDirSearchLevels of its parents for a

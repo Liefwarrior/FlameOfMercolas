@@ -156,6 +156,13 @@ add_library(granadad-content STATIC
     src/coords.cpp
     src/crc32c.cpp
     src/lanes.cpp
+    # The appended content pack -- what makes granadad-standalone.exe a single
+    # shareable file. pack_extract is the boot-time half (footer read, per-user
+    # cache, extraction); pack_write is the build-time half (the deterministic
+    # zip the packer tool appends). Both live HERE so the round trip is proved
+    # in this module's own suite -- see test_pack_extract.cpp.
+    src/pack_extract.cpp
+    src/pack_write.cpp
     src/trojsav.cpp
     src/world.cpp
     src/world_reader.cpp
@@ -214,6 +221,7 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_coords.cpp
         tests/test_chunk_codec.cpp
         tests/test_content_dir.cpp
+        tests/test_pack_extract.cpp
         tests/test_trojsav.cpp
         tests/test_world_reader.cpp
     )

@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <system_error>
 
+#include "granadad/content/pack_extract.hpp"
+
 #if defined(_WIN32)
 // Only here, never in a header: <windows.h> drags in a few thousand macros and
 // two of them (near enough) are called things this codebase uses as ordinary
@@ -32,7 +34,7 @@ namespace {
 
 }  // namespace
 
-std::filesystem::path executableDir() {
+std::filesystem::path executablePath() {
 #if defined(_WIN32)
     // GetModuleFileNameW truncates and does NOT null-terminate on overflow in
     // the ANSI-era contract, so the length is checked rather than trusted.
@@ -44,7 +46,7 @@ std::filesystem::path executableDir() {
             return {};
         }
         if (written < buffer.size() - 1) {
-            return std::filesystem::path(std::wstring(buffer.data(), written)).parent_path();
+            return std::filesystem::path(std::wstring(buffer.data(), written));
         }
         if (buffer.size() >= 32768) {
             return {};  // longer than any legal Windows path; give up rather than loop
@@ -57,13 +59,21 @@ std::filesystem::path executableDir() {
     if (error) {
         return {};
     }
-    return self.parent_path();
+    return self;
 #else
     // VERIFICATION GAP (S2): every platform this project builds for is covered
     // above. Anything else falls back to $GRANADAD_CONTENT_DIR and the
     // configure-time default, which is exactly the pre-S2 behaviour.
     return {};
 #endif
+}
+
+std::filesystem::path executableDir() {
+    const std::filesystem::path self = executablePath();
+    if (self.empty()) {
+        return {};
+    }
+    return self.parent_path();
 }
 
 std::filesystem::path searchForContentDir(const std::filesystem::path& start) {
@@ -106,6 +116,15 @@ std::filesystem::path contentDir() {
     const std::filesystem::path beside = searchForContentDir(executableDir());
     if (!beside.empty()) {
         return beside;
+    }
+    // Only a standalone build ever answers here: a repo binary carries no pack
+    // footer and this is one 24-byte read (cached per process) saying so. It
+    // comes AFTER the walk-up on purpose -- a checkout's loose content/ always
+    // wins, so repo behaviour is bit-for-bit what it was before the pack
+    // existed.
+    const std::filesystem::path extracted = extractedPackDir();
+    if (!extracted.empty()) {
+        return extracted;
     }
     return std::filesystem::path(GRANADAD_CONTENT_DIR_DEFAULT);
 }
