@@ -1423,7 +1423,10 @@ private:
     /// so slot i eases on its own. Slots are table order (oldest hold first);
     /// when a hold lapses the rows above it shift down and each slot's toggle
     /// eases toward its slot's new truth.
-    std::array<EasedToggle, kEffectRows> effectAnims_{};
+    // No brace-initializer: EasedToggle's defaulted-argument constructor is
+    // explicit, so `{}` on the array would be a -Werror conversion under
+    // GCC; default-initialization calls the same constructor and says so.
+    std::array<EasedToggle, kEffectRows> effectAnims_;
     std::array<std::string, kEffectRows> effectCaches_{};
 
     /// INNOVATION SPRINT ITEM #2. Which of the tiled Menu's four tiles is
