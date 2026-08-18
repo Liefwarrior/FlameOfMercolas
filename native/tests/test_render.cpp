@@ -450,9 +450,9 @@ TEST_CASE("the skyline backdrop stands in the southern sky and the night swallow
     const std::vector<std::uint32_t> restrained = pixelsWith(1, kSouth, 12);
     const std::vector<std::uint32_t> stepped = pixelsWith(2, kSouth, 12);
     const std::vector<std::uint32_t> dramatic = pixelsWith(3, kSouth, 12);
-    CHECK(differing(bare, restrained) > 200);
-    CHECK(differing(restrained, stepped) > 100);
-    CHECK(differing(stepped, dramatic) > 100);
+    CHECK(differing(bare, restrained) > 200U);
+    CHECK(differing(restrained, stepped) > 100U);
+    CHECK(differing(stepped, dramatic) > 100U);
 
     // It is a MASS, not a glow: everything it touches gets darker.
     double bareSum = 0.0;
@@ -460,18 +460,20 @@ TEST_CASE("the skyline backdrop stands in the southern sky and the night swallow
     for (std::size_t i = 0; i < bare.size(); ++i) {
         const Rgb before = unpackRgb(bare[i]);
         const Rgb after = unpackRgb(restrained[i]);
-        bareSum += 0.2126 * before.r + 0.7152 * before.g + 0.0722 * before.b;
-        restrainedSum += 0.2126 * after.r + 0.7152 * after.g + 0.0722 * after.b;
+        bareSum += static_cast<double>(0.2126F * before.r + 0.7152F * before.g +
+                                       0.0722F * before.b);
+        restrainedSum += static_cast<double>(0.2126F * after.r + 0.7152F * after.g +
+                                             0.0722F * after.b);
     }
     CHECK(restrainedSum < bareSum);
 
     // Seaward is EMPTY: the harbour horizon carries no silhouette in any
     // variant, per the geography the tables were authored from.
-    CHECK(differing(pixelsWith(0, 0.0F, 12), pixelsWith(3, 0.0F, 12)) == 0);
+    CHECK(differing(pixelsWith(0, 0.0F, 12), pixelsWith(3, 0.0F, 12)) == 0U);
 
     // And at midnight the closed-in fog swallows the backdrop entirely: the
     // dramatic variant and no variant at all are the same frame.
-    CHECK(differing(pixelsWith(0, kSouth, 0), pixelsWith(3, kSouth, 0)) == 0);
+    CHECK(differing(pixelsWith(0, kSouth, 0), pixelsWith(3, kSouth, 0)) == 0U);
 }
 
 TEST_CASE("the two harbour beacons carry through the night fog") {
@@ -489,7 +491,7 @@ TEST_CASE("the two harbour beacons carry through the night fog") {
             ++beacons;
         }
     }
-    CHECK(beacons == 2);
+    CHECK(beacons == 2U);
 
     // The same glow, the same spot, thirty tiles out at midnight, once tagged
     // and once not: the beacon's point survives brighter. The camera floats
