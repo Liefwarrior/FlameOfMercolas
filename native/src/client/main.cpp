@@ -357,6 +357,10 @@ void print_usage() {
         "                       guard, hold it until a blow is softened\n"
         "  --cast               VERIFICATION ONLY: press the cast key once\n"
         "                       (pair with --flame to have a spell to cast)\n"
+        "  --held=ID[,ID]       VERIFICATION ONLY: equip each crafting by id\n"
+        "                       and cast until its link opens, waiting out\n"
+        "                       cooldowns -- photographs live holds with\n"
+        "                       their clocks. Pair with --flame\n"
         "  --grimoire           VERIFICATION ONLY: open the Grimoire page (the\n"
         "                       same page a tap of the QuickWheel key opens)\n"
         "                       before the shutter goes; pair with --flame so\n"
@@ -644,6 +648,10 @@ void print_usage() {
         } else if (std::strcmp(arg, "--cast") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::cast's own header.
             options.smoke.cast = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--held=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::heldSpells's own header.
+            options.smoke.heldSpells = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--grimoire") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::grimoire's own header.

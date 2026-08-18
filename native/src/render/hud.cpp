@@ -477,7 +477,8 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
         float alpha;
         int rank;
     };
-    std::array<Row, 6> rows{};
+    // Ten now (was 6): the held-effects build adds up to four live-hold rows.
+    std::array<Row, 10> rows{};
     std::size_t count = 0;
     const auto add = [&](std::string_view text, const Rgb& ink, float alpha, int rank) {
         if (!text.empty() && count < rows.size()) {
@@ -504,11 +505,14 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
     // MULTIPLY stealthLabel already carries below -- see HudState::
     // standingFade's own header. A caller that never heard of it gets the
     // default 1.0, which is a no-op.
-    // Rank 6 now (was 5): the S13 spell row slotted in at 4 and pushed the
-    // sack to 5 -- the ward's opinion is still the first row this stack gives
-    // up, which was the whole argument for ranking it last.
+    // Rank 10 now (was 6): the held-effects build slotted its four rows in at
+    // 5-8 and pushed the sack to 9 -- the ward's opinion is still the first
+    // row this stack gives up, which was the whole argument for ranking it
+    // last, and a hold with a live clock outranks both the sack and the
+    // opinion: it is the row a caster reads every second it counts down.
     const std::string standing = clipToWidth(state.standingLabel, rowBudget, minor);
-    add(standing, Rgb{0.62F, 0.66F, 0.72F}, 0.82F * std::clamp(state.standingFade, 0.0F, 1.0F), 6);
+    add(standing, Rgb{0.62F, 0.66F, 0.72F}, 0.82F * std::clamp(state.standingFade, 0.0F, 1.0F),
+        10);
     // Red for anything the ward has decided about you -- a warrant, a hand
     // taken, a rope waiting -- and ash for the rest. Checked against the
     // UNCLIPPED label: the keyword is always at the front and clipping only
@@ -521,13 +525,24 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
     add(heat, wanted ? Rgb{0.88F, 0.34F, 0.26F} : Rgb{0.70F, 0.62F, 0.50F},
         0.86F * std::clamp(state.heatFade, 0.0F, 1.0F), 2);
     const std::string stash = clipToWidth(state.stashLabel, rowBudget, minor);
-    add(stash, Rgb{0.58F, 0.66F, 0.52F}, 0.84F * std::clamp(state.stashFade, 0.0F, 1.0F), 5);
+    add(stash, Rgb{0.58F, 0.66F, 0.52F}, 0.84F * std::clamp(state.stashFade, 0.0F, 1.0F), 9);
     // FIRST-PERSON COMBAT (S13). What the hand is holding. Ranked between the
-    // sack and the ward's opinion, and that ordering is an argument: a
-    // readied crafting is read in a fight, a sack is read at a door, and the
-    // ward's week-old opinion goes first when the sky runs out.
+    // holds and the purse, and that ordering is an argument: a readied
+    // crafting is read in a fight, a sack is read at a door, and the ward's
+    // week-old opinion goes first when the sky runs out.
     const std::string spell = clipToWidth(state.spellLabel, rowBudget, minor);
     add(spell, Rgb{0.66F, 0.58F, 0.76F}, 0.86F * std::clamp(state.spellFade, 0.0F, 1.0F), 4);
+    // HELD-EFFECTS BUILD. Every live hold, name and clock, directly under the
+    // CAST row that laid it and in the same violet family -- the two are one
+    // subject read at one glance. Later rows carry later ranks, so when the
+    // sky runs out the NEWEST hold is the first of the four to step aside:
+    // the oldest clock is the one nearest to mattering.
+    std::array<std::string, 4> effects{};
+    for (std::size_t i = 0; i < state.effectLabels.size(); ++i) {
+        effects[i] = clipToWidth(state.effectLabels[i], rowBudget, minor);
+        add(effects[i], Rgb{0.58F, 0.66F, 0.78F},
+            0.86F * std::clamp(state.effectFades[i], 0.0F, 1.0F), 5 + static_cast<int>(i));
+    }
     // Green while the room cannot see you, amber the moment it can. Checked
     // against the UNCLIPPED label for the identical reason: SEEN is always
     // the first word.

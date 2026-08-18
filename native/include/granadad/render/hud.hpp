@@ -125,6 +125,18 @@ struct HudState {
     /// panel. Empty draws nothing: the grimoire is empty at spawn and the
     /// row appears the moment there is a crafting to ready.
     std::string_view spellLabel;
+    /// HELD-EFFECTS BUILD: every crafting currently HELD on the player --
+    /// "STEADY THE HAND 842S", name and seconds left, counting down
+    /// continuously. Top-right stack under the CAST row, one row per live
+    /// hold, at most four: a fifth simultaneous hold is not composable off
+    /// the authored shelf, and an edge stack is not becoming a buff panel.
+    /// Empty rows draw nothing, which is the usual state of all four --
+    /// every hand-built HudState that predates these fields is
+    /// pixel-identical.
+    std::array<std::string_view, 4> effectLabels{};
+    /// One fade per row, the alertFade contract: defaults keep a caller that
+    /// never heard of them at full strength.
+    std::array<float, 4> effectFades{1.0F, 1.0F, 1.0F, 1.0F};
     /// FIRST-PERSON COMBAT (S13): "GUARD UP" exactly while the room's own
     /// held-block state is true. Bottom band, centred, right behind the lock
     /// in priority -- a held guard is read every second of a fight, and it

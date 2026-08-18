@@ -392,6 +392,12 @@ Session::Session(const SessionConfig& config)
     standingAnim_.snapTo(standingAnim_.target());
     heatAnim_.snapTo(heatAnim_.target());
     stashAnim_.snapTo(stashAnim_.target());
+    // HELD-EFFECTS BUILD. The same snap, one per slot -- a session cannot
+    // boot with a hold live today, but the rule is "snap to whatever
+    // syncPanelAnim() just chose", not "assume empty".
+    for (EasedToggle& anim : effectAnims_) {
+        anim.snapTo(anim.target());
+    }
     // FATIGUE BUILD. The same snap: syncPanelAnim() just targeted the bar's
     // real frame-one state (up unless the session booted mid-conversation),
     // and there is nothing to fade in from.
@@ -1816,6 +1822,14 @@ void Session::step(const sim::MoveInput& input) {
         caseEntry_ = -1;
     }
     syncTavernToBody();
+    // HELD-EFFECTS BUILD. AGI's gait reader, RE-READ EVERY STEP off the
+    // effective sheet: a held Steady the Hand moves the legs the same step it
+    // moves the sheet, and moves them back the second it lapses -- continuous
+    // state driving continuous motion, the same seam applyPlayerAttributes
+    // crossed at boot. Exactly the shipped scale whenever no hold is live, so
+    // every pre-existing capture walks bit for bit.
+    body_->setSpeedScaleQ8(sim::agilitySpeedScaleQ8(
+        tavern_->effectiveAttributes().value(sim::AttributeId::Agility)));
     tavern_->stepMovement();
     const std::int32_t shoveX = tavern_->takePlayerShoveX();
     const std::int32_t shoveY = tavern_->takePlayerShoveY();
@@ -1981,6 +1995,10 @@ void Session::step(const sim::MoveInput& input) {
     // FIRST-PERSON COMBAT (S13). THE SAME PER-STEP ADVANCE.
     spellAnim_.advance();
     blockAnim_.advance();
+    // HELD-EFFECTS BUILD. THE SAME PER-STEP ADVANCE, ONE PER SLOT.
+    for (EasedToggle& anim : effectAnims_) {
+        anim.advance();
+    }
     // FATIGUE BUILD. THE SAME PER-STEP ADVANCE.
     fatigueAnim_.advance();
     // THE WARD MAP (core action #13). THE SAME PER-STEP ADVANCE.
@@ -4411,6 +4429,13 @@ void Session::syncPanelAnim() noexcept {
     // a guard going up.
     sync(spellAnim_, spellCache_, spellLine());
     sync(blockAnim_, blockCache_, blockLine());
+    // HELD-EFFECTS BUILD. THE SAME sync() SHAPE, one per active-effect slot
+    // -- each on its own EasedToggle per the pinned convention, because a
+    // warmth lapsing in slot 0 has nothing to do with a tuning arriving in
+    // slot 1.
+    for (std::size_t slot = 0; slot < kEffectRows; ++slot) {
+        sync(effectAnims_[slot], effectCaches_[slot], effectLine(slot));
+    }
     // FATIGUE BUILD. The bar mirrors the health bar's one visibility rule --
     // down for the length of a conversation, up otherwise -- on its OWN
     // toggle per the pinned convention. No cache: the bar draws live numbers,
@@ -4510,6 +4535,23 @@ std::string Session::blockLine() const {
     // tickBrawl actually reads, so this row can never say GUARD UP while a
     // menu has quietly lowered it -- see step()'s own derivation.
     return tavern_->playerBlocking() ? "GUARD UP" : std::string();
+}
+
+std::string Session::effectLine(std::size_t slot) const {
+    // HELD-EFFECTS BUILD. The slot-th live hold, name and seconds left. The
+    // name comes out of the grimoire by the id the hold itself carries --
+    // the same one source of truth the CAST row reads -- and the clock is
+    // the room's own holdSecondsLeft, re-read every step so the row counts
+    // down continuously rather than snapping on expiry.
+    const std::vector<sim::Tavern::ActiveHold>& holds = tavern_->heldEffects();
+    if (slot >= holds.size() || slot >= kEffectRows) {
+        return {};
+    }
+    const sim::Tavern::ActiveHold& hold = holds[slot];
+    const sim::Spell* spell = tavern_->dialogue().grimoire().find(hold.spellId);
+    std::string name =
+        spell != nullptr ? upperAscii(spell->displayName) : upperAscii(hold.spellId);
+    return clip(name + " " + std::to_string(tavern_->holdSecondsLeft(hold)) + "S", 34);
 }
 
 std::string Session::contractLine() const {
@@ -4769,6 +4811,12 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.spellFade = spellAnim_.value();
     hud.blockLabel = std::string_view{blockCache_};
     hud.blockFade = blockAnim_.value();
+    // HELD-EFFECTS BUILD. The live holds, each reading its own cache and
+    // fading on its own toggle -- the identical shape every row above uses.
+    for (std::size_t slot = 0; slot < kEffectRows; ++slot) {
+        hud.effectLabels[slot] = std::string_view{effectCaches_[slot]};
+        hud.effectFades[slot] = effectAnims_[slot].value();
+    }
     // SPELLS BUILD. The quick bar strip: names out of the cache
     // syncPanelAnim() keeps (so the fade-out still has labels), the selected
     // cell off the same quickSlot_ the number row moves, and the equipped
@@ -5281,6 +5329,46 @@ bool pick(Session& session, sim::TopicKind kind) {
     }
     standBackFrom(session, "Father Maell");
     return talk.journal().stagesDone(questId);
+}
+
+/// HELD-EFFECTS BUILD. Equips one crafting BY ID -- through the same
+/// grimoire-order door the number row uses -- and presses Cast until its
+/// link opens, waiting out fizzle and success cooldowns through real steps.
+/// Returns true when the crafting's hold is genuinely live on the player at
+/// the end, which is the thing the capture exists to photograph.
+[[nodiscard]] bool runHeldCast(Session& session, const std::string& spellId) {
+    // The index is looked up fresh: ids sort ascending in the grimoire, so an
+    // index is only good the moment it is asked for.
+    const std::vector<sim::Spell>& spells = session.tavern().dialogue().grimoire().spells();
+    std::int32_t index = -1;
+    for (std::size_t i = 0; i < spells.size(); ++i) {
+        if (spells[i].id == spellId) {
+            index = static_cast<std::int32_t>(i);
+            break;
+        }
+    }
+    if (index < 0 || !session.tavern().equipSpellAt(index)) {
+        return false;
+    }
+    const auto held = [&]() {
+        for (const sim::Tavern::ActiveHold& hold : session.tavern().heldEffects()) {
+            if (hold.spellId == spellId) {
+                return true;
+            }
+        }
+        return false;
+    };
+    for (int attempt = 0; attempt < 12 && !held(); ++attempt) {
+        // Wait out whatever the last press left cooling -- a prior crafting's
+        // recovery, or this one's own fizzle -- through real steps, bounded so
+        // a pathological clock cannot hang the capture.
+        for (int waited = 0; session.tavern().castCooldownLeft() > 0 && waited < 600;
+             ++waited) {
+            session.stepMany(sim::MoveInput{}, 60);
+        }
+        session.castEquipped();
+    }
+    return held();
 }
 
 /// UP ONTO THE LEAD. In at the door, up the stair, across the guest floor to
@@ -7021,6 +7109,31 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.castEquipped();
         result.scriptedWanted += 1;
         result.scriptedLanded += session.lastMessage().empty() ? 0 : 1;
+    }
+
+    if (!config.heldSpells.empty()) {
+        // HELD-EFFECTS BUILD. See SmokeRunConfig::heldSpells's own header:
+        // each id equipped and cast until its link opens, in order, so the
+        // frame photographs live holds with their clocks -- and, for the
+        // two-id run, the second crafting's recovery printed off a mind the
+        // first is still holding. One beat per id.
+        session.closeConversation();
+        std::size_t start = 0;
+        while (start <= config.heldSpells.size()) {
+            const std::size_t comma = config.heldSpells.find(',', start);
+            const std::string id =
+                comma == std::string::npos
+                    ? config.heldSpells.substr(start)
+                    : config.heldSpells.substr(start, comma - start);
+            if (!id.empty()) {
+                result.scriptedWanted += 1;
+                result.scriptedLanded += runHeldCast(session, id) ? 1 : 0;
+            }
+            if (comma == std::string::npos) {
+                break;
+            }
+            start = comma + 1;
+        }
     }
 
     if (config.grimoire) {

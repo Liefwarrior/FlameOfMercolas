@@ -906,6 +906,15 @@ public:
     /// empty otherwise -- the held state made visible, not the keypress.
     /// PUBLIC for the identical reason.
     [[nodiscard]] std::string blockLine() const;
+    /// HELD-EFFECTS BUILD. "STEADY THE HAND 842S" -- the slot-th live hold on
+    /// the player, its name out of the grimoire and the seconds it has left,
+    /// counting down continuously. Empty past the table's end, which is the
+    /// usual state of all four slots. PUBLIC for the identical reason: a case
+    /// pins what the row says and that it stays on its edge.
+    [[nodiscard]] std::string effectLine(std::size_t slot) const;
+    /// How many active-effect rows the HUD will ever stack -- the top-right
+    /// edge's own budget, matching HudState::effectLabels.
+    static constexpr std::size_t kEffectRows = 4;
 
     // --- the conversation ---------------------------------------------------
     //
@@ -1409,6 +1418,13 @@ private:
     std::string stashCache_;
     std::string spellCache_;
     std::string blockCache_;
+    /// HELD-EFFECTS BUILD. One toggle and one cache PER ROW, the pinned
+    /// convention: a warmth lapsing has nothing to do with a tuning arriving,
+    /// so slot i eases on its own. Slots are table order (oldest hold first);
+    /// when a hold lapses the rows above it shift down and each slot's toggle
+    /// eases toward its slot's new truth.
+    std::array<EasedToggle, kEffectRows> effectAnims_{};
+    std::array<std::string, kEffectRows> effectCaches_{};
 
     /// INNOVATION SPRINT ITEM #2. Which of the tiled Menu's four tiles is
     /// easing toward or away from input focus, one EasedToggle a tile --
@@ -1721,6 +1737,19 @@ struct SmokeRunConfig {
     /// empty-grimoire refusal on the alert row, which is the COMMON state and
     /// worth a picture of its own.
     bool cast = false;
+    /// HELD-EFFECTS BUILD. VERIFICATION ONLY, the identical reason `cast`
+    /// exists: the active-effects rows and the held-tuning outcome shift had
+    /// no headless capture path. A comma-separated list of spell ids; each in
+    /// turn is equipped BY ID through the grimoire-order door
+    /// (Tavern::equipSpellAt) and cast through the same Session call C makes,
+    /// waiting out fizzle and success cooldowns through real steps, until its
+    /// link opens or a bounded retry count runs dry. Pair with --flame, whose
+    /// teaching loop stocks the grimoire deep enough to hand these over.
+    /// `--held=steady_the_hand` photographs a live hold with its clock;
+    /// `--held=clear_the_head,steady_the_hand` photographs the held-WIT mind
+    /// shortening the second crafting's printed recovery -- the before/after
+    /// pair against the single-id run.
+    std::string heldSpells;
     /// SPELLS BUILD. VERIFICATION ONLY, the identical reason `cast` exists:
     /// the Grimoire page had no headless capture path. Opens it through the
     /// same Session::toggleGrimoire() a tap of the QuickWheel key calls --
