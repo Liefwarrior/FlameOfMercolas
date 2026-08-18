@@ -466,6 +466,20 @@ bool SkillTrack::setLevel(std::string_view id, std::int32_t level) noexcept {
     return true;
 }
 
+void SkillTrack::setAdvanceMultiplierQ8(std::int32_t q8) noexcept {
+    advanceMultiplierQ8_ = std::clamp(q8, kDaggerMinQ8, kDaggerMaxQ8);
+}
+
+std::int32_t SkillTrack::scaledUsesForLevel(std::int32_t level) const noexcept {
+    // Integer throughout, truncating: charge = flat * 256 / dagger. At the
+    // neutral 256 this is EXACTLY usesForLevel(level) -- u * 256 / 256 has no
+    // remainder to lose -- which is the whole default-changes-nothing
+    // guarantee the dagger's header makes. Floored at 1: even a 3.0x dagger
+    // pays at least one use per level. No overflow: usesForLevel caps at 204
+    // (level 100) and 204 * 256 is far inside int32.
+    return std::max(1, usesForLevel(level) * kDaggerNeutralQ8 / advanceMultiplierQ8_);
+}
+
 bool SkillTrack::use(std::string_view id, std::int32_t effort) noexcept {
     Entry* entry = findMutable(id);
     if (entry == nullptr || effort <= 0) {
@@ -473,8 +487,10 @@ bool SkillTrack::use(std::string_view id, std::int32_t effort) noexcept {
     }
     entry->uses += effort;
     bool levelled = false;
-    while (entry->level < 100 && entry->uses >= usesForLevel(entry->level)) {
-        entry->uses -= usesForLevel(entry->level);
+    // THE ONE PLACE THE DAGGER BITES. usesForLevel() itself is untouched;
+    // the scaled charge is consulted exactly where the flat one used to be.
+    while (entry->level < 100 && entry->uses >= scaledUsesForLevel(entry->level)) {
+        entry->uses -= scaledUsesForLevel(entry->level);
         ++entry->level;
         levelled = true;
     }
@@ -490,6 +506,10 @@ void SkillTrack::hashInto(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(entry.level));
         sink.put_int(static_cast<std::uint32_t>(entry.uses));
     }
+    // The dagger. A HASH-STRUCTURE CHANGE, on purpose and stated: a leveling
+    // speed the twin-run gate cannot see is one it does not protect. Committed
+    // after the entries so the entry block's own layout is undisturbed.
+    sink.put_int(static_cast<std::uint32_t>(advanceMultiplierQ8_));
 }
 
 }  // namespace granadad::sim

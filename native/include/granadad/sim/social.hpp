@@ -222,6 +222,39 @@ inline constexpr std::string_view kRoofSkill = "skyrunning";
 /// first ten come quickly and the fortieth does not.
 [[nodiscard]] std::int32_t usesForLevel(std::int32_t level) noexcept;
 
+// ---------------------------------------------------------------------------
+// the difficulty dagger
+// ---------------------------------------------------------------------------
+//
+// Daggerfall's custom path prices advantages and disadvantages in one scalar
+// shown as a dagger on a gauge, and the net buys your LEVELING SPEED. This is
+// that dial's landing point in the engine: a Q8 advancement multiplier on the
+// player's own SkillTrack, folded in exactly where usesForLevel() is
+// consulted (SkillTrack::use) and nowhere else. usesForLevel() itself is
+// untouched -- every caller that quotes its numbers (lockpick.hpp's 18-probe
+// feel pin, the session's own comments) still reads the same flat formula.
+//
+// Q8, NO FLOATS: 256 is 1.0x. At the NEUTRAL default the scaled charge is
+// bit-for-bit usesForLevel() (u * 256 / 256 == u, exactly), so every grind
+// this build has ever timed is unchanged until a player actually moves the
+// dagger. Above 256 levels come faster (fewer uses per level, floored at 1);
+// below 256 they come slower.
+//
+// PLAYER-SCOPED by construction: the multiplier lives on the SkillTrack
+// instance, and the only SkillTrack that levels through use() is the
+// player's own (DialogueDirector::skills()). It IS simulation state -- a
+// dagger the twin-run gate cannot see is a dagger it does not protect -- so
+// hashInto() commits it. That is a deliberate hash-STRUCTURE change, stated
+// in its own commit. There is no save frame to bump: SkillTrack has no
+// encode()/decode() pair yet (the same S3 verification gap the SocialLedger
+// header states), so the day one is written, the multiplier goes into frame
+// one.
+inline constexpr std::int32_t kDaggerNeutralQ8 = 256;
+/// 0.3x, the slowest advancement the custom path may buy...
+inline constexpr std::int32_t kDaggerMinQ8 = 77;
+/// ...and 3.0x, the fastest. setAdvanceMultiplierQ8 clamps to these.
+inline constexpr std::int32_t kDaggerMaxQ8 = 768;
+
 /// The player's skills, over the vocabulary the raws own.
 ///
 /// The LIST of skills is never written here. It is read from
@@ -268,12 +301,30 @@ public:
     /// false, for a skill the raws do not define.
     bool use(std::string_view id, std::int32_t effort = 1) noexcept;
 
+    // --- the difficulty dagger -------------------------------------------
+
+    [[nodiscard]] std::int32_t advanceMultiplierQ8() const noexcept {
+        return advanceMultiplierQ8_;
+    }
+    /// Clamped to [kDaggerMinQ8, kDaggerMaxQ8]. See the dagger's own header
+    /// above usesForLevel() for what this number is and why the default
+    /// changes nothing.
+    void setAdvanceMultiplierQ8(std::int32_t q8) noexcept;
+    /// What one use() actually charges at `level` under the CURRENT dagger:
+    /// usesForLevel(level) scaled by the multiplier, floored at 1 so no
+    /// setting ever makes a level free. Exposed so a test (or a UI showing
+    /// "uses to next level") reads the same arithmetic use() runs rather
+    /// than a second copy of it.
+    [[nodiscard]] std::int32_t scaledUsesForLevel(std::int32_t level) const noexcept;
+
     void hashInto(HashSink& sink) const;
 
 private:
     [[nodiscard]] Entry* findMutable(std::string_view id) noexcept;
     /// Ascending by id.
     std::vector<Entry> entries_;
+    /// The dagger. Neutral until the custom path's advantage shop moves it.
+    std::int32_t advanceMultiplierQ8_ = kDaggerNeutralQ8;
 };
 
 [[nodiscard]] std::filesystem::path skillRawsPath(const std::filesystem::path& contentDir);
