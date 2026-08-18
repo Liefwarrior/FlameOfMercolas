@@ -324,6 +324,53 @@ granadad_apply_determinism(granadad-bake-lamps)
 granadad_static_runtime(granadad-bake-lamps)
 
 # ---------------------------------------------------------------------------
+# granadad-audio — beds, footsteps, UI and combat sound. CLIENT-SIDE ONLY.
+#
+# The core library links NO SDL and NO granadad-sim, and nothing under
+# src/sim/ or the gate targets links it back — that structure IS the
+# determinism argument: the twin-run gate and the world hash cannot be
+# affected by code they cannot reach. The one file that touches SDL
+# (backend_sdl.cpp) compiles into its own wrapper library below, client
+# builds only, so the sim-only docker host check builds and tests the whole
+# engine headless on the null backend. stb::stb is here for stb_vorbis: the
+# vendored Kenney audio is OGG end to end and SDL3 has no Vorbis decoder.
+# granadad-content provides contentDir() so the sound bank resolves the same
+# way every other asset does.
+#
+# The client does NOT link granadad-audio-sdl yet. That is the wiring pass,
+# deliberately deferred — see audio_engine.hpp's wiring plan.
+# ---------------------------------------------------------------------------
+add_library(granadad-audio STATIC
+    src/audio/mixer.cpp
+    src/audio/decode_vorbis.cpp
+    src/audio/sound_bank.cpp
+    src/audio/audio_engine.cpp
+    src/audio/backend_null.cpp
+)
+target_include_directories(granadad-audio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+# GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
+target_link_libraries(granadad-audio PUBLIC granadad-content stb::stb)
+granadad_apply_determinism(granadad-audio)
+
+# The audio smoke probe — bake_lamps' pattern: a dev tool, run by hand.
+# Offline-renders a scripted couple of seconds of the Docks (harbour bed, a
+# walk across three surfaces into water, a punch, a click) to a WAV, inspects
+# the samples programmatically, and exits non-zero on silence or clipping.
+add_executable(granadad-audio-probe src/tools/audio_probe.cpp)
+target_link_libraries(granadad-audio-probe PRIVATE granadad-audio)
+granadad_apply_determinism(granadad-audio-probe)
+granadad_static_runtime(granadad-audio-probe)
+
+if(GRANADAD_BUILD_CLIENT)
+    # The ONLY audio target that sees SDL. The client links THIS at wiring
+    # time, never granadad-audio directly.
+    add_library(granadad-audio-sdl STATIC src/audio/backend_sdl.cpp)
+    target_link_libraries(granadad-audio-sdl
+        PUBLIC granadad-audio PRIVATE ${GRANADAD_SDL_TARGET})
+    granadad_apply_determinism(granadad-audio-sdl)
+endif()
+
+# ---------------------------------------------------------------------------
 # client-observer — the SDL3 window and nothing else.
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_CLIENT)
@@ -493,10 +540,19 @@ if(GRANADAD_BUILD_TESTS)
         # in view and stops drawing behind you or past the legibility
         # radius.
         tests/test_signage.cpp
+        # The audio engine, headless on the null backend: mixer math (pan
+        # law, bus gains, soft clip, voice reaping), the procedural harbour
+        # layers, bed crossfades proved monotone, the footstep cadence gate
+        # and the 22-row material->surface table pinned against
+        # render::materialIds(), the manifest checked file-by-file against
+        # the vendored Kenney tree wherever it exists, and graceful silence
+        # where it does not.
+        tests/test_audio_engine.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
-    target_link_libraries(granadad-tests PRIVATE granadad-gate granadad-render doctest::doctest)
+    target_link_libraries(granadad-tests
+        PRIVATE granadad-gate granadad-render granadad-audio doctest::doctest)
 
     # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
     # granadad-gate's PUBLIC compile definitions. tests/test_world_hash.cpp
@@ -673,3 +729,8 @@ install(TARGETS granadad-twin-gate RUNTIME DESTINATION .)
 # is the whole verification, rather than a claim about a file nobody can
 # regenerate.
 install(TARGETS granadad-bake-lamps RUNTIME DESTINATION .)
+
+# The audio probe ships for the same reason the lamp baker does: the docker
+# context has no Kenney audio, so the only machine that can render the REAL
+# sound bank to an inspectable WAV is the one with the repo.
+install(TARGETS granadad-audio-probe RUNTIME DESTINATION .)
