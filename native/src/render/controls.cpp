@@ -80,6 +80,12 @@ constexpr ActionNames kActions[] = {
     {Action::QuickNext, "quick_next", "NEXT"},
     {Action::QuickPrev, "quick_prev", "PREV"},
     {Action::Screenshot, "screenshot", "SCREENSHOT"},
+    // APPENDED, NOT INSERTED "near Attack". actionKey()/actionLabel() index
+    // this table BY ENUM VALUE, so its order must mirror the enum's order --
+    // and the enum's insert-only rule puts new actions on the END. The
+    // static_assert below only counts rows; it cannot catch a reorder.
+    {Action::Cast, "cast", "CAST"},
+    {Action::Block, "block", "BLOCK"},
 };
 static_assert(sizeof(kActions) / sizeof(kActions[0]) == kActionCount,
               "every action needs a name and a label, or the keys page lies");
@@ -159,18 +165,22 @@ constexpr KeyName kKeys[] = {
 // every line through ControlSettings::bind().
 // ---------------------------------------------------------------------------
 
-// THE ~10 CORE BUTTONS -- exactly the ones controls.hpp's own Action enum
-// marks CORE in its doc comments, and exactly the ten the "#85: the core
+// THE 12 CORE BUTTONS -- exactly the ones controls.hpp's own Action enum
+// marks CORE in its doc comments, and exactly the twelve the "#85: the core
 // gameplay button count is what Eli asked for" test counts. This is the list
 // fromText()'s whole-file validation pass enforces "at least one live
 // binding" against: movement axes, the TurnLeft/TurnRight accessibility
 // fallback, and Screenshot (a dev/capture utility, not a Steam-Input-style
 // gameplay action) are deliberately not on it. Keep this in step with
-// controls.hpp if that list ever changes.
+// controls.hpp if that list ever changes. Being ON this list is what makes
+// the backward-compat guarantee real for Cast and Block: an old settings
+// file that has never heard of them leaves their slots at the shipped
+// defaults (fromText starts from defaults()), and a file that STEALS their
+// keys gets them restored by the validation pass, same as the other ten.
 constexpr Action kCoreActions[] = {
     Action::Attack,   Action::Interact, Action::Crouch,    Action::Vertical,
     Action::Sprint,   Action::Menu,     Action::PagePrev,  Action::PageNext,
-    Action::Pause,    Action::QuickWheel,
+    Action::Pause,    Action::QuickWheel, Action::Cast,    Action::Block,
 };
 
 // RAW, UNCONDITIONAL steal-and-set on a bare table, with none of
@@ -459,6 +469,15 @@ ControlSettings ControlSettings::defaults() noexcept {
     set(Action::QuickNext, Key::WheelDown);
     set(Action::QuickPrev, Key::WheelUp);
     set(Action::Screenshot, Key::F12);
+
+    // THE COMBAT PAIR, actions 11 and 12 of the 12. No collision either way:
+    // C was never a shipped default, and MouseRight has been free since #85
+    // moved Interact's old secondary to PadSouth (see Interact's own set()
+    // above). The pad side finally spends the two triggers -- the only pad
+    // keys the other ten left unused -- in the position every first-person
+    // game with a shield puts them: LT guards, RT casts.
+    set(Action::Cast, Key::C, Key::PadRightTrigger);
+    set(Action::Block, Key::MouseRight, Key::PadLeftTrigger);
     return out;
 }
 

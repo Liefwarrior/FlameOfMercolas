@@ -57,10 +57,14 @@ namespace granadad::render {
 ///
 /// THE SHAPE OF IT IS OBLIVION'S OWN, PER ELI'S BRIEF, VERBATIM: "a button to
 /// swing, a button to 'interact (pickpocket if sneaking)'... only 10-12
-/// buttons that need mapped for all the controls." Ten Actions below are
+/// buttons that need mapped for all the controls." Twelve Actions below are
 /// marked CORE -- the ones a player actually has to map, movement axes and
 /// the accessibility turn keys excluded, Screenshot excluded (it is a
-/// dev/capture utility, not a Steam-Input-style gameplay action). Six verbs
+/// dev/capture utility, not a Steam-Input-style gameplay action). Twelve is
+/// the TOP of Eli's own 10-12 range: the first-person combat task added Cast
+/// and Block to the original ten, and that spends the whole budget -- the
+/// next core verb somebody wants has to consolidate into an existing one,
+/// the way Interact and Vertical already did. Six verbs
 /// that used to be six keys (Interact, Examine, Steal, Lift, Rest, and the
 /// lockpick verb) now resolve out of ONE Interact press, by stance and by
 /// what is faced -- see render::Session::interact()'s own header, which is
@@ -75,7 +79,7 @@ namespace granadad::render {
 /// rule resumes the moment this list ships, because THEN it will be
 /// protecting something.
 enum class Action : std::uint8_t {
-    // --- movement axes: always separate sticks/keys, never one of the ~10 --
+    // --- movement axes: always separate sticks/keys, never one of the 12 ---
     Forward = 0,
     Back,
     StrafeLeft,
@@ -87,7 +91,8 @@ enum class Action : std::uint8_t {
     TurnLeft,
     TurnRight,
 
-    // --- the ~10 core gameplay buttons (#85) --------------------------------
+    // --- the 12 core gameplay buttons (#85; Cast and Block sit appended at
+    // the enum's END per the insert-only rule, but count among these) --------
 
     /// CORE. Was Punch. One button swings whatever is in the hand -- a fist
     /// today, a weapon once armed combat exists. See render::Session::punch().
@@ -148,7 +153,7 @@ enum class Action : std::uint8_t {
     /// what the brief asked for when a stick angle is not readable.
     QuickWheel,
 
-    // --- kept, but NOT one of the ~10: the keyboard's plurality of input,
+    // --- kept, but NOT one of the 12: the keyboard's plurality of input,
     // not the controller's scarcity of it. A mouse and a full keyboard can
     // afford instant direct shortcuts a pad cannot; QuickWheel is the one
     // button story a controller needs and these are the desktop bonus on
@@ -174,6 +179,26 @@ enum class Action : std::uint8_t {
     /// from the ~10-12 count the way Eli's brief asked -- "not part of the
     /// Steam Input action set."
     Screenshot,
+
+    // --- appended post-#85, per the insert-only rule: new actions go on the
+    // END, so a saved settings file's action names never shift meaning. These
+    // two therefore list AFTER the keyboard bonus bindings on the keys page,
+    // which is cosmetic; being CORE is about the count and the validation
+    // pass, not the row order. ----------------------------------------------
+
+    /// CORE. Casts the currently equipped spell -- whatever the grimoire has
+    /// selected. C on a keyboard, the right trigger on a pad (the genre's
+    /// own "magic hand" position). render::Session::castEquipped() is the
+    /// resolution rule, including every refusal (nothing equipped, out of
+    /// reach, still cooling down) -- the key never does nothing silently.
+    Cast,
+    /// CORE. HELD, like QuickWheel: down is blocking, up is not, no latch --
+    /// a latched guard is a footgun in a brawl. The right mouse button
+    /// (freed by #85, which moved Interact's old secondary to PadSouth) and
+    /// the left trigger on a pad. Blocking softens incoming blows in a
+    /// brawl, scaled by the shieldwall skill -- sim::Tavern::tickBrawl() is
+    /// where the held state is actually read.
+    Block,
     Count
 };
 

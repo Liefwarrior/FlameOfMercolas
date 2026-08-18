@@ -78,23 +78,40 @@ TEST_CASE("the shipped bindings are the ones a player already knows") {
     CHECK(keys.bound(Action::Pause, Key::PadStart));
     CHECK(keys.bound(Action::PagePrev, Key::PadLeftBumper));
     CHECK(keys.bound(Action::PageNext, Key::PadRightBumper));
+
+    // THE COMBAT PAIR. C casts and the right mouse button blocks -- the
+    // Morrowind hand layout -- and the pad spends its two remaining unused
+    // keys, the triggers, the way the genre always spends them: LT guards,
+    // RT casts.
+    CHECK(keys.bound(Action::Cast, Key::C));
+    CHECK(keys.bound(Action::Cast, Key::PadRightTrigger));
+    CHECK(keys.bound(Action::Block, Key::MouseRight));
+    CHECK(keys.bound(Action::Block, Key::PadLeftTrigger));
+    // And neither stole its key from anyone: MouseRight has been free since
+    // #85 moved Interact's old secondary to PadSouth, and C never shipped
+    // bound. Attack keeps the left button; Interact keeps E.
+    CHECK(keys.bound(Action::Attack, Key::MouseLeft));
+    CHECK(keys.bound(Action::Interact, Key::E));
 }
 
 TEST_CASE("#85: the core gameplay button count is what Eli asked for") {
-    // TEN. Attack, Interact, Crouch, Vertical, Sprint, Menu, PagePrev,
-    // PageNext, Pause, QuickWheel -- movement axes, the TurnLeft/TurnRight
-    // accessibility fallback and Screenshot (a dev/capture utility) excluded,
-    // exactly as the brief asked. This is a COUNTING test, not a behaviour
-    // one: it exists so a future action added to the "core" bucket without
-    // updating this case is a red build instead of a drifted comment.
+    // TWELVE. Attack, Interact, Crouch, Vertical, Sprint, Menu, PagePrev,
+    // PageNext, Pause, QuickWheel, and -- since the first-person combat task
+    // -- Cast and Block. Movement axes, the TurnLeft/TurnRight accessibility
+    // fallback and Screenshot (a dev/capture utility) excluded, exactly as
+    // the brief asked. Twelve is the TOP of Eli's "10-12 buttons" range: the
+    // budget is now spent, and the next core verb has to consolidate into an
+    // existing one the way Interact and Vertical already did. This is a
+    // COUNTING test, not a behaviour one: it exists so a future action added
+    // to the "core" bucket without updating this case is a red build instead
+    // of a drifted comment.
     const Action core[] = {
         Action::Attack,     Action::Interact, Action::Crouch,  Action::Vertical,
         Action::Sprint,     Action::Menu,     Action::PagePrev, Action::PageNext,
-        Action::Pause,      Action::QuickWheel,
+        Action::Pause,      Action::QuickWheel, Action::Cast,   Action::Block,
     };
-    CHECK(static_cast<int>(sizeof(core) / sizeof(core[0])) == 10);
-    // And every one of them is >= 10 and <= 12, which is Eli's own range,
-    // literally.
+    CHECK(static_cast<int>(sizeof(core) / sizeof(core[0])) == 12);
+    // And the count sits inside 10..12, which is Eli's own range, literally.
     CHECK(sizeof(core) / sizeof(core[0]) >= 10);
     CHECK(sizeof(core) / sizeof(core[0]) <= 12);
 }
@@ -104,7 +121,7 @@ TEST_CASE("every CORE action resolves an actual pad key, generically") {
     // player already knows" above, which hardcodes each action's exact pad
     // button by name (Interact->PadSouth, Attack->PadWest, and so on). That
     // test proves TODAY'S table; this one proves the PROPERTY -- every one of
-    // the 10 core actions carries at least one key that is a pad key, whatever
+    // the 12 core actions carries at least one key that is a pad key, whatever
     // that key happens to be -- so a future core action added to controls.hpp
     // without a pad default in defaults() fails HERE, on the property, rather
     // than only if somebody remembers to add another hardcoded CHECK() to the
@@ -115,7 +132,7 @@ TEST_CASE("every CORE action resolves an actual pad key, generically") {
     const Action core[] = {
         Action::Attack,     Action::Interact, Action::Crouch,  Action::Vertical,
         Action::Sprint,     Action::Menu,     Action::PagePrev, Action::PageNext,
-        Action::Pause,      Action::QuickWheel,
+        Action::Pause,      Action::QuickWheel, Action::Cast,   Action::Block,
     };
     // Key::PadSouth..Key::PadRight are one contiguous run in controls.hpp's
     // own Key enum (the face buttons, bumpers, triggers, sticks, Start/Back
@@ -617,6 +634,10 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
     // ALL TEN, every time, because a restoration cascade (fixing one action
     // can steal a key off a different one) is exactly the kind of collateral
     // strand a narrower check would miss.
+    //
+    // ALL TWELVE since Cast and Block joined the core list -- and the sweep
+    // gained shapes that attack THEIR keys too, because a core action is only
+    // as protected as the orderings the sweep actually tries.
     const char* const files[] = {
         // Round 2's own shape, both orderings.
         "bind menu ESC\nbind pause ESC\n",
@@ -645,6 +666,16 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
         // A file that hits BOTH pairs at once, every line a single key, in
         // an order that does not mirror toText()'s own write order.
         "bind pause ESC\nbind attack E\nbind menu ESC\nbind interact E\n",
+        // The same shapes again on the NEW pair, Cast/Block. Cast ships
+        // C + PAD_RT; Block ships MOUSE2 + PAD_LT.
+        "bind cast MOUSE2\nbind block MOUSE2\n",
+        "bind block C\nbind cast C\n",
+        "bind cast MOUSE2 PAD_LT\n",
+        "bind block C PAD_RT\n",
+        // And a new action stealing an OLD action's keys, both directions --
+        // the cross-generation shape no pre-Cast/Block file could produce.
+        "bind cast MOUSE1 PAD_X\n",
+        "bind attack C PAD_RT\nbind block MOUSE1\n",
     };
     for (const char* const file : files) {
         INFO("file: ", file);
@@ -652,7 +683,7 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
         for (const Action action : {Action::Attack, Action::Interact, Action::Crouch,
                                      Action::Vertical, Action::Sprint, Action::Menu,
                                      Action::PagePrev, Action::PageNext, Action::Pause,
-                                     Action::QuickWheel}) {
+                                     Action::QuickWheel, Action::Cast, Action::Block}) {
             const std::size_t index = static_cast<std::size_t>(action);
             INFO("action: ", actionKey(action),
                  " primary=", keyName(loaded.primary[index]),
@@ -660,6 +691,53 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
             CHECK((loaded.primary[index] != Key::None || loaded.secondary[index] != Key::None));
         }
     }
+}
+
+TEST_CASE("a settings file from before Cast and Block existed loads with both "
+          "on their shipped defaults") {
+    // THE BACKWARD-COMPAT GUARANTEE, PROVEN RATHER THAN ASSUMED. A player who
+    // saved granadad-controls.cfg on the 10-action build has a file that
+    // never says "bind cast" or "bind block" anywhere. This is toText()'s own
+    // write order for that build -- every action that existed, spelled the
+    // way the old build spelled it, including a real rebind (Vertical to K)
+    // to prove the old lines still land while the missing ones default.
+    const ControlSettings loaded = ControlSettings::fromText(
+        "# Granadad: The Darkstreets -- controls.\n"
+        "bind forward W UP\n"
+        "bind back S DOWN\n"
+        "bind strafe_left A\n"
+        "bind strafe_right D\n"
+        "bind turn_left LEFT\n"
+        "bind turn_right RIGHT\n"
+        "bind attack MOUSE1 PAD_X\n"
+        "bind interact E PAD_A\n"
+        "bind crouch LCTRL PAD_B\n"
+        "bind vertical K PAD_Y\n"
+        "bind sprint LSHIFT PAD_LS\n"
+        "bind menu TAB PAD_BACK\n"
+        "bind page_prev LBRACKET PAD_LB\n"
+        "bind page_next RBRACKET PAD_RB\n"
+        "bind pause ESC PAD_START\n"
+        "bind quick_wheel Q PAD_RS\n"
+        "bind quick_1 1\n"
+        "bind screenshot F12\n"
+        "set sensitivity 22\n");
+
+    // The old file's own lines landed.
+    CHECK(loaded.bound(Action::Vertical, Key::K));
+    CHECK(loaded.mouse.sensitivity == 22);
+
+    // AND THE TWO ACTIONS THE FILE HAS NEVER HEARD OF ARE ON THEIR SHIPPED
+    // DEFAULTS, reachable -- not empty, not stranded. fromText() starts from
+    // defaults() and the file never overwrote these slots; being on
+    // kCoreActions means even a file that STOLE their keys would get them
+    // restored, but the ordinary old file never touches them at all.
+    CHECK(loaded.bound(Action::Cast, Key::C));
+    CHECK(loaded.bound(Action::Cast, Key::PadRightTrigger));
+    CHECK(loaded.bound(Action::Block, Key::MouseRight));
+    CHECK(loaded.bound(Action::Block, Key::PadLeftTrigger));
+    CHECK(loaded.actionFor(Key::C) == Action::Cast);
+    CHECK(loaded.actionFor(Key::MouseRight) == Action::Block);
 }
 
 TEST_CASE("round-1's own regression case still holds under the whole-file fix") {
