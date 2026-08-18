@@ -210,6 +210,14 @@ public:
     /// Adds standing, clamped, and halves the OPPOSITE onto every declared
     /// rival -- the mirror ledger, in one line.
     void addStanding(std::int32_t index, std::int32_t delta);
+    /// Sets a standing row DIRECTLY, clamped, NO rival mirror. For the seeded
+    /// starting standing an authored biography implies -- the exact
+    /// SocialLedger::seed precedent, and not for gameplay, which goes through
+    /// addStanding/recordDeed. The chargen doc's lever table rules the
+    /// biography's spreads are zero-sum AS AUTHORED and enforced at load;
+    /// running them through the mirror would double-count the very rivalry
+    /// the author already priced in.
+    void seedStanding(std::int32_t index, std::int32_t standing);
     /// Records a deed done to a member of `index`.
     void recordDeed(std::int32_t index, Deed deed);
     /// Moves influence, clamped, and takes the same off every declared rival.

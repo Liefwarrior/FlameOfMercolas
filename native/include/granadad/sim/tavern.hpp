@@ -1054,6 +1054,19 @@ public:
     /// The player's hit points as this room has been keeping them. Floors at
     /// kPlayerBrawlFloor -- see the constant.
     [[nodiscard]] std::int32_t playerHp() const noexcept { return playerHp_; }
+    /// And the ceiling those points heal back to. Exposed for the chargen
+    /// seam below, and for anything that wants to draw "hp of hpMax".
+    [[nodiscard]] std::int32_t playerHpMax() const noexcept { return playerHpMax_; }
+    /// The chargen seam: sets the player's hit points and ceiling outright,
+    /// hpMax floored at 1 and hp clamped into [0, hpMax] -- the biography's
+    /// hpMax lever and the custom path's Stout/Tender land through this, once,
+    /// at boot, over the base the fields themselves declare. Not for
+    /// gameplay: fights go through injurePlayer/reviveAfterDefeat, exactly as
+    /// setPlayerCoin sits beside the purse the barter verbs move.
+    void setPlayerHealth(std::int32_t hp, std::int32_t hpMax) noexcept {
+        playerHpMax_ = hpMax < 1 ? 1 : hpMax;
+        playerHp_ = hp < 0 ? 0 : (hp > playerHpMax_ ? playerHpMax_ : hp);
+    }
     /// Hurts the player by `amount`, floored exactly the way a brawl is. S5's
     /// one caller is a landing off a roof that was higher than the legs allow,
     /// and it lives here because this is where the player's hit points live.

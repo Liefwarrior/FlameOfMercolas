@@ -414,6 +414,16 @@ std::int32_t FactionLedger::highestRankedFaction() const noexcept {
     return best;
 }
 
+void FactionLedger::seedStanding(std::int32_t index, std::int32_t standing) {
+    if (!inRange(index)) {
+        return;
+    }
+    // Direct, clamped, NO mirror -- see the header. A seed is an authored
+    // starting fact, not a deed anybody heard about.
+    rows_[static_cast<std::size_t>(index)].standing =
+        std::clamp(standing, kFactionStandingMin, kFactionStandingMax);
+}
+
 void FactionLedger::addStanding(std::int32_t index, std::int32_t delta) {
     if (!inRange(index) || delta == 0) {
         return;

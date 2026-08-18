@@ -1627,6 +1627,95 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         }
     }
 
+    // #92, THE SIM HALF OF THE DAGGERFALL FLOW. Everything the biography (or
+    // the custom path's advantage shop) did to this character BEYOND the
+    // sheet rides CreationResult::effects -- see chargen_raws.hpp -- and is
+    // applied here, once, through the engine's own public seams: the same
+    // SkillTrack the block above just wrote, Tavern::setPlayerCoin beside the
+    // purse the barter verbs move, FactionLedger::seedStanding (the DIRECT
+    // row write the doc's zero-sum bookkeeping requires -- addStanding's
+    // rival mirror would double-count an authored spread), SocialLedger::seed
+    // (the entry point built for "the seeded starting standing an authored
+    // relationship implies"), CrimeLedger::addHeat over a heat of zero, and
+    // Tavern::setPlayerHealth over the base the field itself declares. A
+    // default ChargenEffects -- DEVIN, GABRI, or a custom sheet that skipped
+    // the biography -- makes every branch below a no-op, so the three old
+    // doors boot exactly the character they always did.
+    //
+    // ORDER MATTERS ONCE: skill deltas land AFTER the sheet, because the
+    // doc's own mechanism line is "added onto the designated start". Each
+    // effect is applied exactly once from the engine's own base values, which
+    // is what keeps the whole application idempotent per boot -- the
+    // accumulator itself is pure (chargen_raws.hpp).
+    {
+        const sim::ChargenEffects& fx = chosen.effects;
+        sim::DialogueDirector& talk = session.tavern().dialogue();
+        sim::SkillTrack& playerSkills = talk.skills();
+
+        const std::int32_t skillsTouched = sim::applySkillDeltas(playerSkills, fx);
+
+        // The dagger. At zero points this computes EXACTLY the neutral 256
+        // (daggerMultiplierQ8ForPoints's own guarantee), so setting it
+        // unconditionally is the same track every earlier build booted.
+        playerSkills.setAdvanceMultiplierQ8(
+            sim::daggerMultiplierQ8ForPoints(fx.daggerPoints));
+
+        if (fx.coinDelta != 0) {
+            session.tavern().setPlayerCoin(
+                std::max(0, session.tavern().playerCoin() + fx.coinDelta));
+        }
+
+        std::int32_t factionRows = 0;
+        if (!fx.factionStandings.empty() && talk.standings().registry() != nullptr) {
+            for (const auto& [factionId, delta] : fx.factionStandings) {
+                const std::int32_t index = talk.standings().registry()->indexOf(factionId);
+                if (index >= 0 && delta != 0) {
+                    // Rows are zero at boot, so the authored delta IS the
+                    // seeded standing.
+                    talk.standings().seedStanding(index, delta);
+                    ++factionRows;
+                }
+            }
+        }
+
+        // The seeds name notables.json ids; the ledger keys ward actor ids.
+        // The roster already bound twenty-nine of the Forty to real bodies
+        // (WardIdentity::notableId), so the join is a walk, once, at boot. A
+        // notable the roster did not bind is skipped and the count below is
+        // how a verifier reading stdout finds out.
+        std::int32_t seeded = 0;
+        for (const auto& [notableId, disposition] : fx.dispositionSeeds) {
+            for (const sim::WardActor& actor : session.people().actors()) {
+                if (session.people().identity(actor.id).notableId == notableId) {
+                    talk.ledger().seed(actor.id, disposition);
+                    ++seeded;
+                    break;
+                }
+            }
+        }
+
+        if (fx.heat != 0) {
+            talk.crimes().addHeat(fx.heat);
+        }
+
+        if (fx.hpMaxDelta != 0) {
+            const std::int32_t hpMax =
+                std::max(1, session.tavern().playerHpMax() + fx.hpMaxDelta);
+            session.tavern().setPlayerHealth(hpMax, hpMax);
+        }
+
+        if (skillsTouched > 0 || fx.coinDelta != 0 || factionRows > 0 || seeded > 0 ||
+            fx.heat != 0 || fx.hpMaxDelta != 0 || fx.daggerPoints != 0) {
+            std::printf(
+                "granadad: biography applied -- %d skill delta(s), coin %+d, "
+                "%d faction row(s), %d seed(s), heat %+d, hpMax %+d, dagger q8=%d\n",
+                static_cast<int>(skillsTouched), static_cast<int>(fx.coinDelta),
+                static_cast<int>(factionRows), static_cast<int>(seeded),
+                static_cast<int>(fx.heat), static_cast<int>(fx.hpMaxDelta),
+                static_cast<int>(playerSkills.advanceMultiplierQ8()));
+        }
+    }
+
     // THE CONTROLS SURVIVE THE PROCESS. Beside the executable, because this game
     // has no installer and no user-profile directory yet, and a file the player
     // can see and delete beats one they cannot find.

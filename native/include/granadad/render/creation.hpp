@@ -88,6 +88,7 @@
 #include "granadad/sim/appearance.hpp"
 #include "granadad/sim/attributes.hpp"
 #include "granadad/sim/chargen.hpp"
+#include "granadad/sim/chargen_raws.hpp"
 #include "granadad/sim/companions.hpp"
 #include "granadad/sim/social.hpp"
 
@@ -150,6 +151,15 @@ struct CreationResult {
     sim::Chargen chargen;
     sim::CompanionTemplate companion;
     std::optional<sim::WardType> appearance;
+    /// What the biography (and the custom path's advantage shop, when the
+    /// flow grows one) did to this character beyond the sheet: coin, heat,
+    /// standings, seeds, hpMax and the dagger, in the closed vocabulary
+    /// sim/chargen_raws.hpp owns. DEFAULT-CONSTRUCTED IT IS A NO-OP -- every
+    /// delta zero, the dagger neutral -- so DEVIN, GABRI and a flow that
+    /// never reached the biography apply through the same seam and change
+    /// nothing, which is the doc's own "their history is the raws' own" rule
+    /// made structural.
+    sim::ChargenEffects effects;
 };
 
 enum class CreationStep : std::uint8_t {
