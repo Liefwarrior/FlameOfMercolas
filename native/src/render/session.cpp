@@ -2071,9 +2071,12 @@ void Session::moveTopicCursor(int delta) {
                 // conversation with your own notes -- see
                 // Session::toggleCasebook on why it borrows the dialogue
                 // surface's own vocabulary rather than being a sheet of its
-                // own.
+                // own. The count is leads PLUS the work rows under them
+                // (journalWorkRows), so the cursor can reach a contract or a
+                // log line to read it -- picking one stays a no-op.
                 wrapCursorAndPage(caseCursor_, casePage_, delta,
-                                  static_cast<int>(casebook_.known().size()));
+                                  static_cast<int>(casebook_.known().size() +
+                                                   journalWorkRows().size()));
                 return;
         }
     }
@@ -2132,7 +2135,8 @@ void Session::nextTopicPage() {
                 return;
             case kMenuFocusJournal:
             default:
-                advancePage(casePage_, caseCursor_, casebook_.known().size());
+                advancePage(casePage_, caseCursor_,
+                            casebook_.known().size() + journalWorkRows().size());
                 return;
         }
     }
@@ -2214,11 +2218,18 @@ void Session::chooseVisibleTopic(int slot) {
             case kMenuFocusJournal:
             default: {
                 const int index = casePage_ * kTopicPageSize + slot;
-                if (index >= static_cast<int>(casebook_.known().size())) {
+                const int leads = static_cast<int>(casebook_.known().size());
+                if (index >= leads + static_cast<int>(journalWorkRows().size())) {
                     return;
                 }
                 caseCursor_ = index;
-                caseEntry_ = index;
+                if (index < leads) {
+                    // Only a LEAD opens as an entry; a work row under the
+                    // trail is something to read, so the number press moves
+                    // the cursor onto it and nothing else -- the identical
+                    // no-op the character tile gives.
+                    caseEntry_ = index;
+                }
                 return;
             }
         }
@@ -2249,6 +2260,12 @@ void Session::chooseTopic(std::size_t index) {
             if (audio_ != nullptr) {
                 audio_->playOneShot(audio::SoundId::BookFlip);
             }
+        } else if (index < casebook_.known().size() + journalWorkRows().size()) {
+            // A work row under the trail -- a live contract, a finished
+            // stage's log line -- is something to read, not a choice: the
+            // cursor moves onto it, no entry opens and no page speaks. The
+            // identical no-op the character tile gives a pick.
+            caseCursor_ = static_cast<int>(index);
         }
         return;
     }
@@ -2645,6 +2662,47 @@ DialogueViewState Session::lettersPanelView() const {
     return view;
 }
 
+std::vector<std::string> Session::journalWorkRows() const {
+    // WHAT THE PLAYER OWES AND WHAT THEY HAVE DONE, under the leads: every
+    // LIVE contract off the same board the HUD's contractLine reads -- all of
+    // them, where that corner row only ever shows the soonest -- and then
+    // every finished stage's own authored log line, in the order they were
+    // earned. Both are pure derived reads (the board and the QuestJournal are
+    // already hashed sim state; this hashes nothing new), and both rows are
+    // SOMETHING TO READ, not a choice -- picking one is the same honest no-op
+    // a character-sheet row gives a number press.
+    std::vector<std::string> rows;
+    const sim::DialogueDirector& talk = tavern_->dialogue();
+    const sim::ContractBoard& board = talk.contracts();
+    for (const sim::Contract& row : board.contracts()) {
+        if (!row.live()) {
+            continue;
+        }
+        // The same have/want fraction contractLine() prints, so the journal
+        // and the HUD corner can never disagree about the one job they both
+        // show. The deadline rides the row in nights left rather than a raw
+        // day index, because "DUE TONIGHT" is the fact a player acts on.
+        const std::int32_t have = talk.crimes().stash().count(row.good);
+        std::string line = "- " + row.label + " " + std::to_string(have) + "/" +
+                           std::to_string(row.units);
+        const std::int32_t nights = row.dueOnDay - board.day();
+        if (nights <= 0) {
+            line += "  DUE TONIGHT";
+        } else if (nights == 1) {
+            line += "  1 NIGHT";
+        } else {
+            line += "  " + std::to_string(nights) + " NIGHTS";
+        }
+        rows.push_back(std::move(line));
+    }
+    // "* " is the journal's own "followed" mark -- a finished stage is a lead
+    // that paid off, and it reads with the same glyph.
+    for (const std::string& entry : talk.journal().log()) {
+        rows.push_back("* " + entry);
+    }
+    return rows;
+}
+
 DialogueViewState Session::journalPanelView() const {
     // THE JOURNAL. Not a new panel and not a sheet: one more content shape on
     // the widget family every other tile already uses.
@@ -2751,6 +2809,13 @@ DialogueViewState Session::journalPanelView() const {
         // casebook.json carries a `short` for every lead and a case pins
         // that all of them fit.
         view.topics.push_back(row + (lead.brief.empty() ? lead.place : lead.brief));
+    }
+    // THE WORK, UNDER THE TRAIL: live contracts and the finished stages' own
+    // log lines -- see journalWorkRows(). After the leads on purpose, so
+    // every existing index into the list (caseEntry_, chooseTopic's own lead
+    // guard) still means the lead it always meant.
+    for (std::string& row : journalWorkRows()) {
+        view.topics.push_back(std::move(row));
     }
     view.cursor = caseCursor_;
     view.page = casePage_;
@@ -3440,15 +3505,16 @@ std::string Session::legendLine() const {
 }
 
 std::vector<std::string> Session::characterRows() const {
-    // FIVE ROWS, THEN FOUR, THEN THREE: the five Legend tracks (S8's own
-    // "who am I in this city yet", derived and thrown away every frame until
-    // this page existed -- see the header), the four skills a verb in this
-    // build actually levels, and what the ward and the purse currently say.
-    // Nine is exactly one page -- see kTopicPageSize -- so the five tracks and
-    // four skills are never split by a page turn a player has to go looking
+    // FIVE ROWS, THEN FOUR, THEN FIVE, THEN THREE: the five Legend tracks
+    // (S8's own "who am I in this city yet", derived and thrown away every
+    // frame until this page existed -- see the header), the four skills a
+    // verb in this build actually levels, the five faction ladders, and what
+    // the ward and the purse currently say. The tracks and skills fill page
+    // one exactly -- see kTopicPageSize -- and the ladders open page two, so
+    // neither block is ever split by a page turn a player has to go looking
     // for.
     std::vector<std::string> rows;
-    rows.reserve(sim::kLegendTracks + 4 + 3);
+    rows.reserve(sim::kLegendTracks + 4 + 5 + 3);
     const sim::Legend book = legend();
     for (std::size_t i = 0; i < sim::kLegendTracks; ++i) {
         const sim::LegendRow& row = book.rows()[i];
@@ -3462,7 +3528,19 @@ std::vector<std::string> Session::characterRows() const {
         if (name.substr(0, 4) == "THE ") {
             name.remove_prefix(4);
         }
-        rows.push_back(std::string(name) + " - " + std::string(row.title));
+        std::string line = std::string(name) + " - " + std::string(row.title);
+        // WHAT THE NEXT RUNG WANTS, kept at last. legend.hpp's own header has
+        // promised since S8 that "the panel prints what the next one wants in
+        // the same units the player already sees" -- LegendRow::nextAt has
+        // carried the number all along and no panel ever printed it. Score
+        // over threshold, the notation every counted stage already uses; a
+        // topped-out track shows its score alone, because a target it has
+        // passed forever would read as work still owed.
+        line += "  " + std::to_string(row.score);
+        if (row.nextAt > 0) {
+            line += "/" + std::to_string(row.nextAt);
+        }
+        rows.push_back(std::move(line));
     }
     const sim::DialogueDirector& talk = tavern_->dialogue();
     struct ActiveSkill {
@@ -3496,6 +3574,50 @@ std::vector<std::string> Session::characterRows() const {
         // 640x360 and above, which is this build's own shipped default.
         rows.push_back(std::string(entry.label) + " LV " +
                        std::to_string(talk.skills().level(entry.id)));
+    }
+    // THE FIVE LADDERS, WITH THE NUMBERS ON. Owner ruling for this build: the
+    // player's OWN sheet shows rank title, the standing number and what the
+    // next rung costs -- the word-only ruling still governs how NPCs and the
+    // ward-reputation lines TALK about you, and nothing there changed. Every
+    // figure is read out of FactionLedger and the raws' own ladder: the rung
+    // nextRung() answers with is the exact rung join()/advance() will measure
+    // (checkRung's), so the sheet can never promise a price the ladder does
+    // not charge. Cost notation is standing, then "/LV n" when the rung is
+    // also measured in the ladder's own skill -- the same LV the four skill
+    // rows above already taught. INFORMATION, NEVER A DISCOUNT: nothing here
+    // moves a number, it only stops the climb being a slot machine.
+    const sim::FactionLedger& standings = talk.standings();
+    if (const sim::FactionRegistry* guilds = standings.registry(); guilds != nullptr) {
+        for (std::int32_t i = 0; i < static_cast<std::int32_t>(standings.size()); ++i) {
+            const sim::Faction* who = guilds->at(i);
+            if (who == nullptr) {
+                continue;
+            }
+            // The id, not the display name: "TEMPLE OF THE FLAME" would spend
+            // the whole column on its own name, and the map tile's "who will
+            // talk" list already prints these same ids -- one vocabulary.
+            std::string line = upperAscii(who->id);
+            if (const std::string_view title = standings.rankTitle(i); !title.empty()) {
+                line += " " + upperAscii(title);
+            }
+            line += " " + std::to_string(standings.standing(i));
+            if (const sim::FactionRank* next = standings.nextRung(i); next != nullptr) {
+                // JOIN for an outsider, NEXT for a member -- the first rung is
+                // earned exactly like every later one (faction.hpp's own rule),
+                // so both read the same rung the ledger will actually check.
+                line += standings.isMember(i) ? "  NEXT " : "  JOIN ";
+                line += std::to_string(next->standing);
+                if (next->skillLevel > 0) {
+                    line += "/LV" + std::to_string(next->skillLevel);
+                }
+            } else if (standings.rank(i) > 0) {
+                // On a ladder with no rung above you. Said plainly rather than
+                // left blank, so "nothing after the number" always means "no
+                // ladder" and never "top" -- two facts, two spellings.
+                line += "  TOP";
+            }
+            rows.push_back(std::move(line));
+        }
     }
     // ABSENCE COSTS NOTHING ON THE HUD; IT COSTS NOTHING HERE EITHER, but for
     // the opposite reason. The HUD drops a row that has nothing to say because
@@ -4704,6 +4826,18 @@ void comeDownstairs(Session& session) {
         ++landed;
     }
 
+    // SHEETS BUILD: `held` STOPS HERE, WITH THE JOB STILL IN HAND. The full
+    // line ends with the contract PAID, which is exactly the one state the
+    // Journal tile's live-contract rows have nothing to show for -- so a
+    // capture of those rows needs the line to stop while the work is still
+    // owed. Two beats (taken, sanctioned), both already counted above;
+    // runSmoke() asks for two instead of six when this ending is picked, so
+    // a held run that landed both does not read as a line that fell short.
+    if (ending == "held") {
+        session.closeConversation();
+        return landed;
+    }
+
     // 3. THE HOUR. Eleven at night: the late crowd has thinned and the skirting
     //    is busy.
     session.skipToHour(23);
@@ -4776,6 +4910,9 @@ void comeDownstairs(Session& session) {
 
 /// How many beats runContractLine tries to land.
 constexpr std::int32_t kContractBeats = 6;
+/// And how many the `held` ending stops after -- taken and sanctioned, the
+/// job still live. See the ending's own note inside runContractLine.
+constexpr std::int32_t kContractHeldBeats = 2;
 
 /// S8. THE NEMESIS ARC, PLAYED: pick a fight with a named labourer, lose it,
 /// wake up on the quay, walk back in the next evening and lose it twice more.
@@ -5850,65 +5987,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += landed ? 1 : 0;
     }
 
-    if (config.character) {
-        // THE SAME CALL `C` MAKES -- see SmokeRunConfig::character's own
-        // header on why this exists at all.
-        session.toggleCharacter();
-        result.scriptedWanted += 1;
-        result.scriptedLanded += session.characterOpen() ? 1 : 0;
-    }
-
-    if (config.map) {
-        // THE SAME CALL `M` MAKES -- see SmokeRunConfig::map's own header.
-        session.toggleMap();
-        result.scriptedWanted += 1;
-        result.scriptedLanded += session.mapOpen() ? 1 : 0;
-    }
-
-    // PLANNING SPRINT (item #1). THE GAP `--character --map` COULD NEVER
-    // CLOSE, closed. See SmokeRunConfig::refocus's own header for what this
-    // fixes and why: with nothing here, a caller wanting a mid-crossfade
-    // frame had to fire both toggle*() calls back to back (`config.character`
-    // and `config.map` above, with zero step() calls between them) and could
-    // only ever photograph the SECOND tile's animation from a cold start.
-    //
-    // THIS RUNS BEFORE `settleSteps`' OWN GENERAL LOOP FURTHER DOWN, on
-    // purpose: it spends its own settle budget getting the ORIGIN tile
-    // (`character`/`map` above) genuinely open first, switches focus, spends
-    // a SECOND, separate budget (`refocusSteps`) easing the switch partway
-    // (or all the way -- the caller's choice), and only then falls through to
-    // the ordinary settle logic below, which sees `config.refocus` non-empty
-    // and stands down rather than spending a third, redundant round of steps.
-    if (!config.refocus.empty()) {
-        const int preSteps = config.settleSteps >= 0 ? config.settleSteps : (config.settle ? 16 : 0);
-        const sim::MoveInput still{};
-        for (int i = 0; i < preSteps; ++i) {
-            session.step(still);
-        }
-        // THE SAME FOUR PUBLIC TOGGLES A KEYPRESS CALLS -- toggleCharacter()/
-        // toggleMap()/toggleLetters()/toggleCasebook() -- never
-        // toggleMenuFocused() directly, so this capture proves nothing a
-        // player's own keyboard could not also have produced.
-        bool refocused = false;
-        if (config.refocus == "character") {
-            session.toggleCharacter();
-            refocused = true;
-        } else if (config.refocus == "map") {
-            session.toggleMap();
-            refocused = true;
-        } else if (config.refocus == "letters") {
-            session.toggleLetters();
-            refocused = true;
-        } else if (config.refocus == "journal") {
-            session.toggleCasebook();
-            refocused = true;
-        }
-        result.scriptedWanted += 1;
-        result.scriptedLanded += refocused ? 1 : 0;
-        for (int i = 0; i < config.refocusSteps; ++i) {
-            session.step(still);
-        }
-    }
+    // SHEETS BUILD: THE MENU-OPENING FLAGS (`--character`, `--map`,
+    // `--refocus`) MOVED BELOW THE SCRIPTED LINES. They used to run here,
+    // before them, and the combination was silently useless: every scripted
+    // line closes whatever page is up on its way through, so
+    // `--flame --character` photographed a CLOSED menu over a finished line,
+    // and there was no way at all to photograph a tile WITH the state a line
+    // had just driven into existence. Opening the page is now the last thing
+    // the script does before the shutter, which is also the order a player's
+    // own evening runs in.
 
     if (config.punch) {
         // VERIFICATION ONLY. See SmokeRunConfig::punch's own header. The
@@ -6038,7 +6125,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         const std::int32_t landed =
             static_cast<std::int32_t>(runContractLine(session, config.contractEnd));
         result.contractBeats = landed;
-        result.scriptedWanted += kContractBeats;
+        // `held` stops the line after two beats ON PURPOSE (see its note in
+        // runContractLine), so two is what it owes -- asking for six would
+        // print the fell-short warning over a run that did exactly what was
+        // asked of it.
+        result.scriptedWanted +=
+            config.contractEnd == "held" ? kContractHeldBeats : kContractBeats;
         result.scriptedLanded += landed;
         result.talking = session.talking();
     }
@@ -6084,6 +6176,74 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedWanted += line == nullptr ? 0 : static_cast<std::int32_t>(
                                                            line->stages.size());
         result.scriptedLanded += result.skyrunStages;
+    }
+
+    // SHEETS BUILD: THE MENU-OPENING FLAGS RUN HERE NOW, AFTER every scripted
+    // line -- see the note where they used to sit, above `--punch` -- so a
+    // capture can finally photograph a tile WITH the state a line just drove
+    // into existence (`--flame --flameEnd=away --refocus=character` is a
+    // sheet with rungs on it; `--contract --contractEnd=held
+    // --refocus=journal` is a journal with a live job on it). `--character`/
+    // `--map` alone behave exactly as they always did: nothing above runs
+    // without its own flag.
+    if (config.character) {
+        // THE SAME CALL `C` MAKES -- see SmokeRunConfig::character's own
+        // header on why this exists at all.
+        session.toggleCharacter();
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.characterOpen() ? 1 : 0;
+    }
+
+    if (config.map) {
+        // THE SAME CALL `M` MAKES -- see SmokeRunConfig::map's own header.
+        session.toggleMap();
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.mapOpen() ? 1 : 0;
+    }
+
+    // PLANNING SPRINT (item #1). THE GAP `--character --map` COULD NEVER
+    // CLOSE, closed. See SmokeRunConfig::refocus's own header for what this
+    // fixes and why: with nothing here, a caller wanting a mid-crossfade
+    // frame had to fire both toggle*() calls back to back (`config.character`
+    // and `config.map` above, with zero step() calls between them) and could
+    // only ever photograph the SECOND tile's animation from a cold start.
+    //
+    // THIS RUNS BEFORE `settleSteps`' OWN GENERAL LOOP FURTHER DOWN, on
+    // purpose: it spends its own settle budget getting the ORIGIN tile
+    // (`character`/`map` above) genuinely open first, switches focus, spends
+    // a SECOND, separate budget (`refocusSteps`) easing the switch partway
+    // (or all the way -- the caller's choice), and only then falls through to
+    // the ordinary settle logic below, which sees `config.refocus` non-empty
+    // and stands down rather than spending a third, redundant round of steps.
+    if (!config.refocus.empty()) {
+        const int preSteps = config.settleSteps >= 0 ? config.settleSteps : (config.settle ? 16 : 0);
+        const sim::MoveInput still{};
+        for (int i = 0; i < preSteps; ++i) {
+            session.step(still);
+        }
+        // THE SAME FOUR PUBLIC TOGGLES A KEYPRESS CALLS -- toggleCharacter()/
+        // toggleMap()/toggleLetters()/toggleCasebook() -- never
+        // toggleMenuFocused() directly, so this capture proves nothing a
+        // player's own keyboard could not also have produced.
+        bool refocused = false;
+        if (config.refocus == "character") {
+            session.toggleCharacter();
+            refocused = true;
+        } else if (config.refocus == "map") {
+            session.toggleMap();
+            refocused = true;
+        } else if (config.refocus == "letters") {
+            session.toggleLetters();
+            refocused = true;
+        } else if (config.refocus == "journal") {
+            session.toggleCasebook();
+            refocused = true;
+        }
+        result.scriptedWanted += 1;
+        result.scriptedLanded += refocused ? 1 : 0;
+        for (int i = 0; i < config.refocusSteps; ++i) {
+            session.step(still);
+        }
     }
 
     // S7. The cursor, last, so it survives every scripted line above it. This

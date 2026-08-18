@@ -19,8 +19,11 @@
 #include "granadad/content/world_reader.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/casebook.hpp"
+#include "granadad/sim/contract.hpp"
+#include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/legend.hpp"
+#include "granadad/sim/questline.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 using namespace granadad::sim;
@@ -805,4 +808,81 @@ TEST_CASE("a letter opens in the tiled Menu's Letters tile, which covers the mid
         }
     }
     CHECK(anyDiffer);
+}
+
+// ===========================================================================
+// SHEETS BUILD: THE WORK, UNDER THE TRAIL
+// ===========================================================================
+
+TEST_CASE("the journal tile lists every live contract and every finished stage's log line under the leads") {
+    // Session::journalWorkRows(), read through the tile the way a player
+    // reads it: the board the HUD's contractLine already watches (ALL live
+    // jobs, where that corner row only ever shows the soonest) and the
+    // QuestJournal's own earned log lines, appended AFTER the leads so every
+    // existing index into the list still means the lead it always meant.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 8 * 3600;
+    render::Session session(config);
+    session.stepMany(MoveInput{}, 2);
+
+    // A QUIET JOURNAL ADDS NOTHING: with no job taken and no stage finished,
+    // the topics are exactly the leads -- absence costs nothing.
+    session.toggleCasebook();
+    REQUIRE(session.casebookOpen());
+    const std::size_t leads = session.casebook().known().size();
+    REQUIRE(session.dialogueView().topics.size() == leads);
+
+    // TAKE A JOB, off the same board runContractLine takes one off -- pure
+    // already-hashed sim state, driven directly the way test_contract.cpp
+    // drives it.
+    DialogueDirector& talk = session.tavern().dialogue();
+    ContractBoard& board = talk.contracts();
+    if (board.day() < 0) {
+        board.refresh(0, 1234U, talk.standings());
+    }
+    std::int32_t job = -1;
+    for (const Contract& row : board.contracts()) {
+        if (row.state == ContractState::Offered) {
+            job = row.id;
+            break;
+        }
+    }
+    REQUIRE(job >= 0);
+    REQUIRE(board.take(job) == TakeResult::Taken);
+
+    // AND FINISH A STAGE, so the journal has a line to its name.
+    REQUIRE(talk.quests().loaded());
+    const Questline& line = talk.quests().lines().front();
+    talk.journal().start(line.id);
+    REQUIRE(talk.journal().advance(line));
+    REQUIRE_FALSE(talk.journal().log().empty());
+
+    const render::DialogueViewState view = session.dialogueView();
+    REQUIRE(view.topics.size() == leads + 2);
+    const std::string& work = view.topics[leads];
+    INFO("work row: ", work);
+    // The live job: its label, the have/want fraction contractLine() prints,
+    // and the deadline in nights rather than a raw day index.
+    CHECK(work.rfind("- ", 0) == 0);
+    CHECK(work.find(board.find(job)->label) != std::string::npos);
+    CHECK(work.find("/" + std::to_string(board.find(job)->units)) != std::string::npos);
+    CHECK((work.find("DUE TONIGHT") != std::string::npos ||
+           work.find("NIGHT") != std::string::npos));
+    // The earned line, marked with the journal's own "followed" glyph.
+    const std::string& done = view.topics[leads + 1];
+    INFO("log row: ", done);
+    CHECK(done.rfind("* ", 0) == 0);
+    CHECK(done.find(talk.journal().log().front()) != std::string::npos);
+
+    // THE CURSOR REACHES THE WORK -- wrapping backwards from the top lands on
+    // the last work row, not on the last lead.
+    session.moveTopicCursor(-1);
+    CHECK(session.dialogueView().cursor == static_cast<int>(leads) + 1);
+    // AND PICKING A WORK ROW IS SOMETHING TO READ, NOT A CHOICE: the cursor
+    // moves onto it, no entry opens (caseRef stays empty -- only an OPENED
+    // lead writes one).
+    session.chooseTopic(leads);
+    CHECK(session.dialogueView().cursor == static_cast<int>(leads));
+    CHECK(session.dialogueView().caseRef.empty());
 }

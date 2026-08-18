@@ -611,8 +611,12 @@ public:
     /// True while the tiled Menu is open -- the same bool casebookOpen() is;
     /// see that accessor's own note.
     [[nodiscard]] bool characterOpen() const noexcept { return casebookOpen_; }
-    /// The five Legend tracks, the skills actually in play, and what the ward
-    /// and the purse currently say -- one row a line, built fresh from the same
+    /// The five Legend tracks (each with the score the next rung wants --
+    /// legend.hpp's own promised "what the next one wants" line), the skills
+    /// actually in play, the five faction ladders with the numbers on (rank
+    /// title, standing, next-rung cost -- the owner's numbers-on-the-sheet
+    /// ruling; NPCs still talk in words only), and what the ward and the
+    /// purse currently say -- one row a line, built fresh from the same
     /// counters the HUD's corner rows read.
     [[nodiscard]] std::vector<std::string> characterRows() const;
 
@@ -965,6 +969,13 @@ private:
     [[nodiscard]] DialogueViewState mapPanelView() const;
     [[nodiscard]] DialogueViewState lettersPanelView() const;
     [[nodiscard]] DialogueViewState journalPanelView() const;
+    /// SHEETS BUILD. The Journal tile's rows UNDER the leads: every live
+    /// contract off the board contractLine() already reads (ALL of them,
+    /// where that HUD row only shows the soonest), then every finished
+    /// stage's authored QuestStage::log line in the order it was earned.
+    /// Pure derived reads of already-hashed state; a work row is something
+    /// to read, never a choice.
+    [[nodiscard]] std::vector<std::string> journalWorkRows() const;
     /// TASK #82. Every letter whose `lead` (sim::Letter::lead, a
     /// casebook.json lead id) has actually been investigated -- Cold or
     /// Followed, never merely Open -- in authored order. What the letters
@@ -1557,8 +1568,12 @@ struct SmokeRunConfig {
     /// S6. Play the ward's own bounty end to end: take it off Watchman Cull,
     /// get the Flame's mark from Father Maell before he goes home, skip to the
     /// hour the rats are out, hunt them on the taproom floor and hand them back
-    /// across the same table. WHERE is "talk" (the finished conversation) or
-    /// "away" (closed, so the HUD's own sack and job lines are visible).
+    /// across the same table. WHERE is "talk" (the finished conversation),
+    /// "away" (closed, so the HUD's own sack and job lines are visible) or
+    /// "held" (SHEETS BUILD: stop after the take and the mark with the job
+    /// still LIVE -- the one state the Journal tile's contract rows have
+    /// anything to show for, and one the full line never passes through the
+    /// shutter in).
     bool contract = false;
     std::string contractEnd = "talk";
     /// S8. Play the nemesis arc: pick a fight with a named labourer, lose it,
