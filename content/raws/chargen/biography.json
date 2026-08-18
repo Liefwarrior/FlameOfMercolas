@@ -1,0 +1,1038 @@
+{
+  "id": "chargen_biography",
+  "notes": "The twelve biography questions, transcribed from docs/design/CHARGEN-DAGGERFALL-DRAFT.md section 4. One shared set for v0 (per-calling sets are a later pass); the player may answer all twelve or take RANDOM. Devin and Gabri never see these — their history is their raws' own. Every lever is real: skillDelta is added onto the designated start before SkillTrack::setLevel; coinDelta is over the 40 base; factionStanding is a direct row write at chargen (never addStanding, whose rival mirror would double-count) and every answer's faction deltas sum to exactly zero, enforced at load; actorDisposition goes through SocialLedger::seed; heat is over 0 (warrant at 60); hpMax is over the player's base. No item grants: no item lever exists in chargen, so none is used. The owner line-edits the doc; a sync pass moves his edits here.",
+  "questions": [
+    {
+      "id": "B1",
+      "prompt": "Who taught you your letters?",
+      "answers": [
+        {
+          "text": "No one. The quay taught your hands instead.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "kit_keeping",
+              "amount": 6
+            },
+            {
+              "kind": "coinDelta",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "The Mission's catechism, between soup and soup.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "linkcraft",
+              "amount": 4
+            },
+            {
+              "kind": "skillDelta",
+              "target": "channeling",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "temple",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": -2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "maell",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "A copy-clerk on the counting-row, a half-Royal a month.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "linkcraft",
+              "amount": 6
+            },
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 2
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -5
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "sedge",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "Yourself, off the public shelf.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "linkcraft",
+              "amount": 8
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "prompt": "Quarter-day, the year it went wrong. Your family —",
+      "answers": [
+        {
+          "text": "paid clean, every quarter, always.",
+          "effects": [
+            {
+              "kind": "coinDelta",
+              "amount": 10
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": -4
+            }
+          ]
+        },
+        {
+          "text": "went bondsworn; you worked your father's bond beside him.",
+          "note": "DOCKS-GAZETTEER.md:188-196.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 6
+            },
+            {
+              "kind": "skillDelta",
+              "target": "fieldcraft",
+              "amount": 4
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -10
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": 6
+            },
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": -2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": -4
+            }
+          ]
+        },
+        {
+          "text": "was roofed; you grew up on a roof deck.",
+          "note": "DOCKS-GAZETTEER.md:311-318.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "skyrunning",
+              "amount": 6
+            },
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 2
+            },
+            {
+              "kind": "hpMax",
+              "amount": -2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": 6
+            },
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": -4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "finch",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "squatted the glebe, token alms in place of a penny.",
+          "note": "DOCKS-GAZETTEER.md:245.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "fieldcraft",
+              "amount": 6
+            },
+            {
+              "kind": "skillDelta",
+              "target": "fishing",
+              "amount": 2
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -5
+            },
+            {
+              "kind": "factionStanding",
+              "target": "temple",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": -2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "maell",
+              "amount": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B3",
+      "prompt": "Your first wage went —",
+      "answers": [
+        {
+          "text": "into the household jar, every copper.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 2
+            },
+            {
+              "kind": "coinDelta",
+              "amount": 5
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": -2
+            }
+          ]
+        },
+        {
+          "text": "across Fenner's counter, against your mother's pledge-paper.",
+          "note": "He remembers punctual blood, notables.json:116-123.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 2
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -5
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "fenner",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "down your throat at the Bilge in one pay-night.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 4
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -10
+            },
+            {
+              "kind": "heat",
+              "amount": 5
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "redda",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "on a knife you still carry.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "sidearms",
+              "amount": 4
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B4",
+      "prompt": "The Watch knows your face because —",
+      "answers": [
+        {
+          "text": "you ran messages up the Rise for the post.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "kit_keeping",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": 6
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": -4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "vess",
+              "amount": 10
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "brakk",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "they wrote your name down once, and you made them wrong.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "skyrunning",
+              "amount": 4
+            },
+            {
+              "kind": "heat",
+              "amount": 10
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": -4
+            }
+          ]
+        },
+        {
+          "text": "they don't. You have kept it that way on purpose.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 4
+            }
+          ]
+        },
+        {
+          "text": "your father's name is on the Drowned-Name Wall, and Vess remembers him.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "temple",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": -4
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "vess",
+              "amount": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B5",
+      "prompt": "What has the sea taken from you?",
+      "answers": [
+        {
+          "text": "A father, off a hull that never berthed again.",
+          "note": "The Arcade remembers every loss, notables.json:288-295.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 6
+            },
+            {
+              "kind": "factionStanding",
+              "target": "temple",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "withy",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "Nothing yet. You are careful with it, and it knows you are.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "seacraft",
+              "amount": 4
+            },
+            {
+              "kind": "skillDelta",
+              "target": "fishing",
+              "amount": 2
+            }
+          ]
+        },
+        {
+          "text": "A season's wages when the hull went over — you were aboard.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "seacraft",
+              "amount": 6
+            },
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 2
+            },
+            {
+              "kind": "hpMax",
+              "amount": -2
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -5
+            }
+          ]
+        },
+        {
+          "text": "Your nerve. You do not go out past the fishbone.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "fieldcraft",
+              "amount": 4
+            },
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 2
+            },
+            {
+              "kind": "hpMax",
+              "amount": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B6",
+      "prompt": "The roofs over your family's bed —",
+      "note": "DOCKS-GAZETTEER.md:221-232.",
+      "answers": [
+        {
+          "text": "paid YOUR family — you were the house-owner's child, and the lodgers' rent bought your letters.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "linkcraft",
+              "amount": 2
+            },
+            {
+              "kind": "coinDelta",
+              "amount": 10
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": 2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": -4
+            }
+          ]
+        },
+        {
+          "text": "held your family — you were the lodgers, and the quiet tenant next door taught you the crawl-gap.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "skyrunning",
+              "amount": 6
+            },
+            {
+              "kind": "heat",
+              "amount": 5
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": -4
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "finch",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "were nobody's — you slept in the Rows, a hammock by the night.",
+          "note": "He remembers every face, notables.json:278-285.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 4
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -5
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "vetch",
+              "amount": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B7",
+      "prompt": "Your one debt, still open —",
+      "answers": [
+        {
+          "text": "Fenner holds your paper: fifteen Royals against a start of forty.",
+          "note": "The repayment seam is a quest hook, not a chargen lever; the only mechanical effects are these two.",
+          "effects": [
+            {
+              "kind": "coinDelta",
+              "amount": 15
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "fenner",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "You owe Mother Sethra a secret, not coin.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "sethra",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "You owe the Mission a winter.",
+          "effects": [
+            {
+              "kind": "factionStanding",
+              "target": "temple",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": -2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "onna",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "Nothing. You pay as you go, and it costs you.",
+          "note": "Arithmetic respects arithmetic, notables.json:208-215.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 2
+            },
+            {
+              "kind": "coinDelta",
+              "amount": -5
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "gilt",
+              "amount": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B8",
+      "prompt": "The ward already knows one thing about you. Pick your poison",
+      "note": "The mandatory-malus device, ELDER-SCROLLS-REFERENCE.md:311-313.",
+      "answers": [
+        {
+          "text": "A name for trouble.",
+          "effects": [
+            {
+              "kind": "heat",
+              "amount": 15
+            }
+          ]
+        },
+        {
+          "text": "A soft chest — the wet cough every strand child knows.",
+          "effects": [
+            {
+              "kind": "hpMax",
+              "amount": -4
+            }
+          ]
+        },
+        {
+          "text": "Empty pockets.",
+          "effects": [
+            {
+              "kind": "coinDelta",
+              "amount": -20
+            }
+          ]
+        },
+        {
+          "text": "A face the roofs remember badly.",
+          "effects": [
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": -8
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B9",
+      "prompt": "Who fed you the winter the boats stayed in?",
+      "answers": [
+        {
+          "text": "The Mission's night soup.",
+          "effects": [
+            {
+              "kind": "factionStanding",
+              "target": "temple",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": -2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "onna",
+              "amount": 10
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "maell",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "Herdis's goats, and Herdis's silence.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "fieldcraft",
+              "amount": 4
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "herdis",
+              "amount": 15
+            }
+          ]
+        },
+        {
+          "text": "The tide-line.",
+          "note": "You worked his strand and he let you, notables.json:66-73.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "fishing",
+              "amount": 4
+            },
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "jek",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "No one. You went hungry and you remember it.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 6
+            },
+            {
+              "kind": "hpMax",
+              "amount": -2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B10",
+      "prompt": "The night you saw a ship come in dark — you were younger then too. You —",
+      "answers": [
+        {
+          "text": "told the Watch, and stood by it.",
+          "effects": [
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": -4
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "brakk",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "kept it. You still know which berth.",
+          "note": "She knows you know something.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 4
+            },
+            {
+              "kind": "heat",
+              "amount": 5
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "sethra",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "sold it at the Wrackhouse.",
+          "effects": [
+            {
+              "kind": "coinDelta",
+              "amount": 10
+            },
+            {
+              "kind": "heat",
+              "amount": 5
+            },
+            {
+              "kind": "factionStanding",
+              "target": "skyrunners",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "watch",
+              "amount": -2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "temple",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "dagny",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "text": "saw nothing. You were asleep. Everyone was asleep.",
+          "note": "Pure flavor, and a lie the biography records.",
+          "effects": [
+            {
+              "kind": "hpMax",
+              "amount": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B11",
+      "prompt": "At the Drowned-Name Wall you —",
+      "note": "DOCKS-GAZETTEER.md:355.",
+      "answers": [
+        {
+          "text": "tend a name.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "withy",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "scratch nothing. The sea is not owed your grief.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "grit",
+              "amount": 4
+            }
+          ]
+        },
+        {
+          "text": "read the new names before the bodies are found, and think about what that means.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 4
+            },
+            {
+              "kind": "skillDelta",
+              "target": "linkcraft",
+              "amount": 2
+            }
+          ]
+        },
+        {
+          "text": "leave a candle for a name nobody else tends.",
+          "effects": [
+            {
+              "kind": "factionStanding",
+              "target": "temple",
+              "amount": 4
+            },
+            {
+              "kind": "factionStanding",
+              "target": "dockhands",
+              "amount": -2
+            },
+            {
+              "kind": "factionStanding",
+              "target": "merchants",
+              "amount": -2
+            },
+            {
+              "kind": "actorDisposition",
+              "target": "maell",
+              "amount": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B12",
+      "prompt": "Dawn, the first day you answer for yourself. Why today?",
+      "answers": [
+        {
+          "text": "The muster bell. Work is work.",
+          "effects": [
+            {
+              "kind": "coinDelta",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "text": "The tide is at slack low an hour after dawn, and slack water is a door.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "fishing",
+              "amount": 2
+            }
+          ]
+        },
+        {
+          "text": "A letter came, and you can read it.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "linkcraft",
+              "amount": 2
+            }
+          ]
+        },
+        {
+          "text": "Someone is dead on the strand, and everyone is lying about it.",
+          "note": "The investigation's own hook, planted in the player's past.",
+          "effects": [
+            {
+              "kind": "skillDelta",
+              "target": "streetwise",
+              "amount": 2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

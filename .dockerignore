@@ -165,6 +165,17 @@
 #   companions/gabri.json   4 KB
 !content/raws/companions/**
 
+# --- re-admitted: the Daggerfall flow's chargen content (#92) ---
+# ~40 KB, three files: the nine callings, the ward's ten questions and the
+# twelve biography questions, transcribed from the approved
+# CHARGEN-DAGGERFALL-DRAFT.md. In the context for the strongest version of
+# the standing reason: these loaders REFUSE the whole file, by name, on any
+# skill/faction/notable id the other raws do not have and on any answer
+# whose faction spread is not zero-sum -- and without the files here, that
+# refusal (and the exhaustive tally-table proof over the real questions)
+# would be proved by an absence.
+!content/raws/chargen/**
+
 # --- and then trim build junk back out of the re-admitted paths ---
 native/build/**
 native/out/**

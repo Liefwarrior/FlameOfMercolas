@@ -196,6 +196,15 @@ add_library(granadad-sim STATIC
     # attributes.cpp/chargen.cpp above.
     src/sim/appearance.cpp
     src/sim/companions.cpp
+    # #92 -- THE DAGGERFALL FLOW'S CONTENT. chargen_raws.cpp reads
+    # content/raws/chargen/*.json (the nine callings, the ward's ten
+    # questions, the twelve biography questions) against the SAME SkillTrack,
+    # FactionRegistry and NotableRegistry every other system reads, refuses
+    # loudly on anything they do not know, and owns the pure quiz tally and
+    # the closed chargen effect vocabulary. Listed after companions.cpp
+    # because it generalizes that file's chargenPreset idea and shares its
+    # dependencies.
+    src/sim/chargen_raws.cpp
     # #81 -- THE RADIANT QUEST GENERATOR CORE. Not a second ContractBoard:
     # contract.cpp's patrons and sources are the Forty, bound to a site field
     # read once out of notables.json at load. This draws its giver and target
@@ -427,6 +436,7 @@ if(GRANADAD_BUILD_TESTS)
         # proved against the real content/raws/skills/skills.json SkillTrack
         # rather than a rival list.
         tests/test_chargen.cpp
+        tests/test_chargen_raws.cpp
         tests/test_dialogue.cpp
         tests/test_faction.cpp
         tests/test_spellforge.cpp

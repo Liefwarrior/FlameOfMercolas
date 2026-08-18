@@ -1,0 +1,113 @@
+{
+  "id": "chargen_callings",
+  "notes": "The nine trades of the Daggerfall flow, transcribed from docs/design/CHARGEN-DAGGERFALL-DRAFT.md section 2 (the approved roster: Bondsworn out, Copy-Clerk in). Each sheet fills 3 Primary / 3 Major / up to 6 Minor -- a short Minor row is legal and unpenalized. Attribute spends each sum to exactly 24 with no value over 15, over base 40. Axis codes are the doc's own (dominant/secondary): A honest labor, B indirection and the tide, C letters and doctrine. The owner line-edits the doc; a sync pass moves his edits here.",
+  "callings": [
+    {
+      "id": "dockhand",
+      "name": "Dockhand",
+      "oneLine": "You carry what the ward eats and you are paid by dusk",
+      "anchor": "Dockhands; serf.laborer (jobs.json:21, trains kit_keeping)",
+      "axis": { "dominant": "A" },
+      "primary": ["grit", "kit_keeping", "open_hand"],
+      "major": ["heavy_arms", "fieldcraft", "shieldwall"],
+      "minor": ["harness", "streetwise", "seacraft", "fishing", "lancework", "mixtures"],
+      "attributeBonusSpend": { "MGT": 10, "AGI": 2, "VIG": 10, "WIT": 2 }
+    },
+    {
+      "id": "deckhand",
+      "name": "Deckhand",
+      "oneLine": "Honest hands on a hull that answers only to the tide",
+      "anchor": "Dockhands; maritime.sailor (jobs.json:257, trains seacraft)",
+      "note": "skyrunning on the Major row: rigging is climbing, skills.json:88.",
+      "axis": { "dominant": "A", "secondary": "B" },
+      "primary": ["seacraft", "grit", "kit_keeping"],
+      "major": ["open_hand", "fishing", "skyrunning"],
+      "minor": ["sidearms", "heavy_arms", "shieldwall", "streetwise", "harness", "mixtures"],
+      "attributeBonusSpend": { "MGT": 6, "AGI": 8, "VIG": 8, "WIT": 2 }
+    },
+    {
+      "id": "watch_runner",
+      "name": "Watch Runner",
+      "oneLine": "You carry the post's paper and stand where you are told",
+      "anchor": "Watch rank 1 \"Runner\" (ranks.json:56); watch.patrol (jobs.json:193)",
+      "note": "kit_keeping is the Watch ladder's own skill (ranks.json:52); streetwise is what patrol trains (jobs.json:200); lancework per spear-dominant infantry canon (DOCKS-GAZETTEER.md:591).",
+      "axis": { "dominant": "A", "secondary": "C" },
+      "primary": ["kit_keeping", "streetwise", "shieldwall"],
+      "major": ["lancework", "grit", "harness"],
+      "minor": ["open_hand", "sidearms", "heavy_arms", "bladework", "linkcraft", "fieldcraft"],
+      "attributeBonusSpend": { "MGT": 8, "AGI": 2, "VIG": 8, "WIT": 6 }
+    },
+    {
+      "id": "netter",
+      "name": "Netter",
+      "oneLine": "The tide does the work; you are there when it does",
+      "anchor": "Dockhands; the Netters' Company (chapters.json:53-63); maritime.fisher (jobs.json:273, trains fishing)",
+      "note": "kit_keeping on the Primary row is net-mending -- Grandmother Withy's own craft, notables.json:294.",
+      "axis": { "dominant": "B", "secondary": "A" },
+      "primary": ["fishing", "seacraft", "kit_keeping"],
+      "major": ["fieldcraft", "grit", "streetwise"],
+      "minor": ["sidearms", "open_hand", "mixtures", "skyrunning", "harness", "shieldwall"],
+      "attributeBonusSpend": { "MGT": 2, "AGI": 10, "VIG": 6, "WIT": 6 }
+    },
+    {
+      "id": "mudlark",
+      "name": "Mudlark",
+      "oneLine": "You walk the low water and you know what a thing is worth",
+      "anchor": "Wastrel; wastrel.streetlife (jobs.json:125); Tarry Jek's trade (notables.json:66-73)",
+      "note": "streetwise: black-market pricing is the skill's own text (skills.json:133); fishing is reading water (skills.json:169). Sixth Minor slot left empty -- a mudlark's sheet is honestly thin.",
+      "axis": { "dominant": "B", "secondary": "C" },
+      "primary": ["streetwise", "skyrunning", "fishing"],
+      "major": ["cracksmanship", "mixtures", "grit"],
+      "minor": ["sidearms", "open_hand", "seacraft", "kit_keeping", "fieldcraft"],
+      "attributeBonusSpend": { "MGT": 2, "AGI": 10, "VIG": 4, "WIT": 8 }
+    },
+    {
+      "id": "roof_tenant",
+      "name": "Roof-Tenant",
+      "oneLine": "A quiet lodger the Watch has never had a reason to write down",
+      "anchor": "Skyrunners rank 1 \"Tenant\" (ranks.json:32); Finch (notables.json:218-225)",
+      "note": "mixtures on the Minor row: nighthawk venom is roofs canon, skills.json:118. Sixth Minor slot empty.",
+      "axis": { "dominant": "B" },
+      "primary": ["skyrunning", "cracksmanship", "streetwise"],
+      "major": ["sidearms", "open_hand", "grit"],
+      "minor": ["mixtures", "harness", "kit_keeping", "bladework", "linkcraft"],
+      "attributeBonusSpend": { "MGT": 2, "AGI": 14, "VIG": 2, "WIT": 6 }
+    },
+    {
+      "id": "almsbearer",
+      "name": "Almsbearer",
+      "oneLine": "You carry soup and doctrine to doors that distrust the garb",
+      "anchor": "Temple rank 2 title (ranks.json:45); clergy.acolyte (jobs.json:241, trains channeling)",
+      "note": "linkcraft is the Temple ladder's own skill (ranks.json:40); mixtures is draughts for the sick; fieldcraft is the Mission garden (DOCKS-GAZETTEER.md:120-123). Two Minor slots left empty -- the Mission does not pad a sheet.",
+      "axis": { "dominant": "C" },
+      "primary": ["channeling", "linkcraft", "mixtures"],
+      "major": ["streetwise", "kit_keeping", "grit"],
+      "minor": ["open_hand", "fieldcraft", "fishing", "seacraft"],
+      "attributeBonusSpend": { "MGT": 4, "AGI": 2, "VIG": 6, "WIT": 12 }
+    },
+    {
+      "id": "stallkeep",
+      "name": "Stallkeep",
+      "oneLine": "A counter, a scale, and a price you will stand behind",
+      "anchor": "Merchants rank 1 (ranks.json:21); trade.stallkeep (jobs.json:289, trains streetwise)",
+      "note": "linkcraft on the Primary row: two sets of books means a lettered counter, notables.json:103.",
+      "axis": { "dominant": "C", "secondary": "A" },
+      "primary": ["streetwise", "kit_keeping", "linkcraft"],
+      "major": ["mixtures", "fieldcraft", "grit"],
+      "minor": ["sidearms", "open_hand", "seacraft", "fishing", "channeling", "harness"],
+      "attributeBonusSpend": { "MGT": 4, "AGI": 4, "VIG": 6, "WIT": 10 }
+    },
+    {
+      "id": "copy_clerk",
+      "name": "Copy-Clerk",
+      "oneLine": "You copy what the ward writes down and notice what it doesn't",
+      "anchor": "Merchant Row; the counting-row (notables.json:405-412)",
+      "note": "No clerk job exists in jobs.json yet; the calling anchors to the Merchant Row and the nearest real job (trade.trader, jobs.json:305) until one does. cracksmanship on the Major row: lockboxes and strongrooms are a clerk's furniture, DOCKS-GAZETTEER.md:92-94. Sixth Minor slot empty.",
+      "axis": { "dominant": "C", "secondary": "B" },
+      "primary": ["linkcraft", "streetwise", "kit_keeping"],
+      "major": ["mixtures", "channeling", "cracksmanship"],
+      "minor": ["sidearms", "open_hand", "grit", "seacraft", "fishing"],
+      "attributeBonusSpend": { "MGT": 2, "AGI": 4, "VIG": 4, "WIT": 14 }
+    }
+  ]
+}
