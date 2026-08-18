@@ -142,15 +142,20 @@ struct PlacedMapLabel {
 ///
 ///   * way names first -- one label per distinct name (a street signed six
 ///     times along its reach gets ONE label, at the sign nearest the
-///     cluster's own centre so it does not wander as the player walks),
-///     sorted by name so the placement order cannot drift between runs;
+///     cluster's own centre so it does not wander as the player walks --
+///     picked from the posts that do NOT stand on a door's own doorstep,
+///     so a street name never walls off the seats a door label needs; see
+///     the .cpp's kDoorstepClearanceSq), sorted by name so the placement
+///     order cannot drift between runs;
 ///   * door names second, NEAREST TO THE PLAYER FIRST (ties by sign id) --
 ///     the door you are hunting is almost always the one near you;
-///   * each label tries four positions around its anchor (above, below,
-///     right, left) and takes the first that fits inside the map rect
-///     without overlapping anything already placed; a label with no clean
-///     position is DROPPED, never overprinted -- 83 signs into 640x360 all
-///     at once is sludge, and sludge is worse than fewer names.
+///   * each label tries a fixed ring of seats around its anchor (above and
+///     below first, then the sides, then one label-row further out, then
+///     lateral slides -- twenty-four in all) and takes the first that fits
+///     inside the map rect without overlapping anything already placed; a
+///     label with no clean seat is DROPPED, never overprinted -- 83 signs
+///     into 640x360 all at once is sludge, and sludge is worse than fewer
+///     names. A displaced or dropped door's DOT still marks its entrance.
 ///
 /// `textScale` is the 4x6 font scale labels will be drawn at (the caller
 /// passes hudMinorScale-derived 1 at 640x360).

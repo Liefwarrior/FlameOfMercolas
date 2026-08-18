@@ -206,6 +206,31 @@ std::vector<PlacedMapLabel> placeMapLabels(const MapFrame& frame, float playerX,
     // reach ("Tarwalk" has nine posts) gets one label, at the post nearest
     // the cluster's own centroid -- stable as the player walks, which a
     // nearest-to-player pick would not be.
+    //
+    // ...AMONG THE POSTS THAT ARE NOT ON SOMEBODY'S DOORSTEP. The first gate
+    // run of this file dropped "Mission of the Flame" -- the acceptance
+    // sentence's own label -- because Ropewynd's centroid post stands three
+    // tiles from the Mission's door, and a way label planted there walls off
+    // every seat the door's own name could take. Ways place FIRST (they must
+    // always land), so they choose their post politely: the candidate pool
+    // is the same-named posts at least kDoorstepClearance tiles from every
+    // door anchor, and only a street with no such post falls back to its
+    // whole post list. Still player-independent, so the label cannot wander.
+    constexpr float kDoorstepClearanceSq = 25.0F;  // 5 world tiles, squared
+    const auto clearOfDoors = [](const signs::Sign& post) {
+        for (std::size_t j = 0; j < signs::kSignCount; ++j) {
+            const signs::Sign& door = signs::kSigns[j];
+            if (door.kind != signs::SignKind::Door) {
+                continue;
+            }
+            const float dx = post.anchorX - door.anchorX;
+            const float dy = post.anchorY - door.anchorY;
+            if (dx * dx + dy * dy < kDoorstepClearanceSq) {
+                return false;
+            }
+        }
+        return true;
+    };
     std::vector<Candidate> ways;
     for (std::size_t i = 0; i < signs::kSignCount; ++i) {
         const signs::Sign& sign = signs::kSigns[i];
@@ -237,20 +262,29 @@ std::vector<PlacedMapLabel> placeMapLabels(const MapFrame& frame, float playerX,
         }
         const float cx = sumX / static_cast<float>(count);
         const float cy = sumY / static_cast<float>(count);
-        const signs::Sign* best = &sign;
-        float bestD = 1.0e30F;
-        for (std::size_t j = 0; j < signs::kSignCount; ++j) {
-            const signs::Sign& other = signs::kSigns[j];
-            if (other.kind != signs::SignKind::Way ||
-                std::string_view(other.place) != sign.place) {
-                continue;
-            }
-            const float dx = other.anchorX - cx;
-            const float dy = other.anchorY - cy;
-            const float d = dx * dx + dy * dy;
-            if (d < bestD || (d == bestD && std::strcmp(other.id, best->id) < 0)) {
-                bestD = d;
-                best = &other;
+        // Two passes: the polite posts first, the whole list only if no post
+        // of this street stands clear of every door.
+        const signs::Sign* best = nullptr;
+        for (int pass = 0; pass < 2 && best == nullptr; ++pass) {
+            const bool requireClear = pass == 0;
+            float bestD = 1.0e30F;
+            for (std::size_t j = 0; j < signs::kSignCount; ++j) {
+                const signs::Sign& other = signs::kSigns[j];
+                if (other.kind != signs::SignKind::Way ||
+                    std::string_view(other.place) != sign.place) {
+                    continue;
+                }
+                if (requireClear && !clearOfDoors(other)) {
+                    continue;
+                }
+                const float dx = other.anchorX - cx;
+                const float dy = other.anchorY - cy;
+                const float d = dx * dx + dy * dy;
+                if (best == nullptr || d < bestD ||
+                    (d == bestD && std::strcmp(other.id, best->id) < 0)) {
+                    bestD = d;
+                    best = &other;
+                }
             }
         }
         ways.push_back(Candidate{best, 0.0F});
@@ -289,14 +323,21 @@ std::vector<PlacedMapLabel> placeMapLabels(const MapFrame& frame, float playerX,
         const int h = 6 * textScale;
         const int ax = frame.pxOfX(sign.anchorX);
         const int ay = frame.pxOfY(sign.anchorY);
-        // Eight positions around the anchor, tried in order -- centred above
-        // first (a nameplate over a door is where the eye expects one), then
-        // centred below, the two sides, and the four corner-leaning variants
-        // that let a label slide sideways out of a crowded row. 83 signs into
-        // one frame is a packing problem; more candidate seats is what keeps
-        // the dense Ropewynd strip from dropping the very door the owner
-        // could not find.
-        const int candidates[8][2] = {
+        // Twenty-four positions around the anchor, tried in order. RING ONE:
+        // centred above first (a nameplate over a door is where the eye
+        // expects one), then centred below, the two sides, and the four
+        // corner-leaning variants that let a label slide sideways out of a
+        // crowded row. RING TWO steps the same vertical seats one label-row
+        // further out, and RING THREE slides the mid-row seats laterally --
+        // both added by the first gate run of this file, which proved eight
+        // seats are not enough for the Ropewynd strip: 83 signs into one
+        // frame is a packing problem, and the extra seats are what keep that
+        // dense row from dropping the very door the owner could not find
+        // (the door DOT still marks the exact entrance a displaced label
+        // names).
+        const int step = h + 3;
+        const int candidates[24][2] = {
+            // ring one -- tight around the anchor
             {ax - w / 2, ay - h - 2},
             {ax - w / 2, ay + 3},
             {ax + 3, ay - h / 2},
@@ -305,6 +346,24 @@ std::vector<PlacedMapLabel> placeMapLabels(const MapFrame& frame, float playerX,
             {ax - w - 2, ay - h - 2},
             {ax + 2, ay + 3},
             {ax - w - 2, ay + 3},
+            // ring two -- one label-row further up or down
+            {ax - w / 2, ay - h - 2 - step},
+            {ax - w / 2, ay + 3 + step},
+            {ax + 2, ay - h - 2 - step},
+            {ax - w - 2, ay - h - 2 - step},
+            {ax + 2, ay + 3 + step},
+            {ax - w - 2, ay + 3 + step},
+            {ax + 3, ay - h / 2 - step},
+            {ax + 3, ay - h / 2 + step},
+            {ax - w - 3, ay - h / 2 - step},
+            {ax - w - 3, ay - h / 2 + step},
+            // ring three -- the mid-row seats slid laterally
+            {ax + 3 + 12, ay - h / 2},
+            {ax - w - 3 - 12, ay - h / 2},
+            {ax + 3 + 24, ay - h / 2},
+            {ax - w - 3 - 24, ay - h / 2},
+            {ax + 3 + 36, ay - h / 2},
+            {ax - w - 3 - 36, ay - h / 2},
         };
         for (const auto& at : candidates) {
             const PxRect rect{at[0] - kLabelPad, at[1] - kLabelPad, at[0] + w + kLabelPad,
