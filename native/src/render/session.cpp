@@ -392,6 +392,10 @@ Session::Session(const SessionConfig& config)
     standingAnim_.snapTo(standingAnim_.target());
     heatAnim_.snapTo(heatAnim_.target());
     stashAnim_.snapTo(stashAnim_.target());
+    // FATIGUE BUILD. The same snap: syncPanelAnim() just targeted the bar's
+    // real frame-one state (up unless the session booted mid-conversation),
+    // and there is nothing to fade in from.
+    fatigueAnim_.snapTo(fatigueAnim_.target());
     // THE WARD MAP. The same snap: a session never boots with the map up
     // today, but the rule is "snap to whatever syncPanelAnim() just chose",
     // not "assume closed".
@@ -463,6 +467,14 @@ void Session::settleLanding(const sim::RoofResult& move) {
 }
 
 sim::RoofResult Session::tryClimb() {
+    // FATIGUE BUILD: an empty pool gates the climb verbs before the body is
+    // ever asked -- the body knows geometry, not stamina, which is why
+    // RoofMove::Winded is the one refusal PlayerBody itself never returns
+    // (see the enum's own note). A refused climb costs nothing, exactly as a
+    // NoLedge costs nothing.
+    if (tavern_->playerWinded()) {
+        return sim::RoofResult{sim::RoofMove::Winded, 0, 0};
+    }
     sim::RoofResult move = body_->mantle();
     bool leapt = false;
     if (!move.ok()) {
@@ -478,6 +490,10 @@ sim::RoofResult Session::tryClimb() {
         return move;
     }
     if (leapt) {
+        // FATIGUE BUILD: the leap's wind is spent when the jump is armed --
+        // the moment the body commits -- AGI- and skyrunning-scaled through
+        // the one charge path (Tavern::chargePlayerLeap).
+        tavern_->chargePlayerLeap();
         // A LEAP IS WATCHED, NOT TELEPORTED, and this is the S5 review's second
         // finding closed. S5 shipped a `while (body_->airborne()) step()` right
         // here, inside the keypress: the arc ran to its end before the frame
@@ -504,6 +520,9 @@ sim::RoofResult Session::tryClimb() {
         return move;
     }
     roofMove_ = "UP ONTO THE LEDGE.";
+    // FATIGUE BUILD: the haul's wind, spent on a climb that happened -- the
+    // same bill the automatic path pays in step().
+    tavern_->chargePlayerMantle();
     // Same order as dropDown, and for the same reason: a mantle onto a LOWER
     // ledge is a fall too, and the line has to be said after it is charged.
     settleLanding(move);
@@ -576,6 +595,10 @@ void Session::vertical() {
     if (!body_->jump()) {
         return;
     }
+    // FATIGUE BUILD: the reference prices every jump (5 points, AGI-scaled)
+    // and so does this one -- charged only on a hop that actually left the
+    // ground, never on the buffered request jump() banks instead.
+    tavern_->chargePlayerJump();
     // NOTHING IS SAID -- see jump()'s own note: a jump that announced itself
     // on the alert row every time would be the noisiest thing in the game.
     tavern_->setPlayerMotion(true, true);
@@ -1807,7 +1830,30 @@ void Session::step(const sim::MoveInput& input) {
     sim::MoveInput moved = input;
     moved.crouch = tavern_->stance() == sim::Stance::Crouched;
     const bool walking = moved.forward != 0 || moved.strafe != 0;
-    tavern_->setPlayerMotion(walking, moved.sprint && !moved.crouch);
+    // FATIGUE BUILD: THE SPRINT GATE, before the body ever hears the key. An
+    // empty pool downgrades the sprint to the jog -- the input is edited, not
+    // the body interrupted, so the legs brake through their own ordinary ramp
+    // -- and the refusal is said ONCE per stretch of windedness (see
+    // windedSprintSaid_'s own header on the restraint). The automatic climb
+    // is gated by the same fact for the same reason the explicit verb is in
+    // tryClimb(): no wind, no haul -- the wall just stops you, silently,
+    // because the auto path fires sixty times a second against a held key.
+    if (tavern_->playerWinded()) {
+        if (moved.sprint && !moved.crouch && walking && !windedSprintSaid_) {
+            say("TOO WINDED TO SPRINT.");
+            windedSprintSaid_ = true;
+        }
+        moved.sprint = false;
+        moved.autoTraverse = false;
+    } else {
+        windedSprintSaid_ = false;
+    }
+    const bool sprinting = moved.sprint && !moved.crouch;
+    tavern_->setPlayerMotion(walking, sprinting);
+    // The pool's own step, with the SAME flags the stealth model was just
+    // told: the sprinting step pays its drain, every other one regenerates
+    // (halved while the legs are working). See Tavern::stepPlayerFatigue.
+    tavern_->stepPlayerFatigue(walking, sprinting);
     // FIRST-PERSON COMBAT (S13). THE EFFECTIVE GUARD, PUSHED EVERY STEP the
     // identical way the motion above is: the client only reports the key's
     // physical edge (setBlocking -> blockHeld_), and what the ROOM is told is
@@ -1841,6 +1887,11 @@ void Session::step(const sim::MoveInput& input) {
     // agreeing about what a roof-run is.
     const sim::RoofResult climbed = body_->takeAutoMove();
     if (climbed.ok()) {
+        // FATIGUE BUILD: a climb nobody pressed a key for still costs wind,
+        // through the identical charge the explicit verb pays in tryClimb()
+        // -- routing the two through different bills is how they would
+        // quietly stop agreeing about what a climb costs.
+        tavern_->chargePlayerMantle();
         roofMove_ = "UP AND OVER.";
         settleLanding(climbed);
         say(roofMove_);
@@ -1930,6 +1981,8 @@ void Session::step(const sim::MoveInput& input) {
     // FIRST-PERSON COMBAT (S13). THE SAME PER-STEP ADVANCE.
     spellAnim_.advance();
     blockAnim_.advance();
+    // FATIGUE BUILD. THE SAME PER-STEP ADVANCE.
+    fatigueAnim_.advance();
     // THE WARD MAP (core action #13). THE SAME PER-STEP ADVANCE.
     districtMapAnim_.advance();
     // SPELLS BUILD. The strip's own countdown and ease -- see showQuickBar().
@@ -3397,6 +3450,16 @@ void Session::setBlocking(bool held) {
     blockHeld_ = held;
 }
 
+void Session::applyPlayerAttributes(const sim::AttributeBlock& attributes) {
+    // BOTH HALVES OR NEITHER -- see the declaration. The room takes the
+    // sheet (and sizes the fatigue pool off it); the body takes the one
+    // reader the room cannot hold for it, AGI's gait multiplier. At the
+    // base-40 sheet both halves are exactly the shipped behaviour.
+    tavern_->setPlayerAttributes(attributes);
+    body_->setSpeedScaleQ8(
+        sim::agilitySpeedScaleQ8(attributes.value(sim::AttributeId::Agility)));
+}
+
 void Session::restHere() {
     dismissOverlays();
     const sim::ServiceResult slept = tavern_->sleep();
@@ -4348,6 +4411,11 @@ void Session::syncPanelAnim() noexcept {
     // a guard going up.
     sync(spellAnim_, spellCache_, spellLine());
     sync(blockAnim_, blockCache_, blockLine());
+    // FATIGUE BUILD. The bar mirrors the health bar's one visibility rule --
+    // down for the length of a conversation, up otherwise -- on its OWN
+    // toggle per the pinned convention. No cache: the bar draws live numbers,
+    // which do not go away while it fades.
+    fatigueAnim_.setTarget(!conversing);
     // THE WARD MAP (core action #13). Its own toggle, its own target -- the
     // page's openAmount, per the settled convention (rule 1). No cache: the
     // page draws live off TileQuery, which does not go away when it closes.
@@ -4633,6 +4701,13 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     HudState hud;
     hud.health = tavern_->playerHp();
     hud.healthMax = 100;
+    // FATIGUE BUILD: the wind, in points, right beside the hit points it
+    // stands under on the frame. The fade is the bar's own EasedToggle
+    // (fatigueAnim_), mirroring showHealth's one rule without borrowing its
+    // snap -- see the member's header.
+    hud.fatigue = tavern_->playerFatigue().currentPoints();
+    hud.fatigueMax = tavern_->playerFatigue().maxPoints();
+    hud.fatigueFade = fatigueAnim_.value();
     hud.yawBam = body_->yaw();
     const std::string label = placeLabel();
     hud.locationLabel = label;
@@ -6800,6 +6875,17 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // had just driven into existence. Opening the page is now the last thing
     // the script does before the shutter, which is also the order a player's
     // own evening runs in.
+
+    if (config.sprintSteps > 0) {
+        // VERIFICATION ONLY. See SmokeRunConfig::sprintSteps's own header:
+        // real sprint steps through the real gate, so the frame taken after
+        // this shows whatever the pool honestly reads -- mid at a thousand
+        // steps, empty-plus-refusal past two thousand.
+        sim::MoveInput sprintInput;
+        sprintInput.forward = 1;
+        sprintInput.sprint = true;
+        session.stepMany(sprintInput, config.sprintSteps);
+    }
 
     if (config.punch) {
         // VERIFICATION ONLY. See SmokeRunConfig::punch's own header. The

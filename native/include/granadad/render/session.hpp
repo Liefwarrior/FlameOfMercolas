@@ -299,6 +299,13 @@ public:
     /// inside a menu would be a fact about the world nobody could see being
     /// made.
     void setBlocking(bool held);
+    /// FATIGUE BUILD, the boot seam chargen's attribute pool finally lands
+    /// through: hands the sheet to the room (Tavern::setPlayerAttributes --
+    /// which sizes and fills the fatigue pool) and sets the legs' own AGI
+    /// multiplier on the body (PlayerBody::setSpeedScaleQ8), the one reader
+    /// that cannot live in the room because the room does not own the legs.
+    /// One call, both halves, so no caller can apply half a sheet.
+    void applyPlayerAttributes(const sim::AttributeBlock& attributes);
     /// R. Sleeps, if there is a rented room and you are standing in it.
     ///
     /// NOT BOUND TO A KEY OF ITS OWN ANY MORE -- #85 folded this into
@@ -1358,6 +1365,14 @@ private:
     /// nothing to do with a guard going up, so they do not share one.
     EasedToggle spellAnim_;
     EasedToggle blockAnim_;
+    /// FATIGUE BUILD. The fatigue bar's own visibility ease -- its OWN
+    /// EasedToggle per the pinned convention, mirroring the health bar's one
+    /// visibility rule (down for the length of a conversation, up otherwise)
+    /// without borrowing the health bar's snap: the bar eases out when a
+    /// panel takes the bottom band and eases back when it is returned.
+    /// Snapped fully open at construction, because the session boots with a
+    /// rested body and nothing to fade in from.
+    EasedToggle fatigueAnim_;
     /// THE WARD MAP's own open/close ease -- its OWN toggle per the settled
     /// convention (DECISIONS.md UI rule 1), driven from syncPanelAnim() and
     /// advanced in step() exactly like every sibling above.
@@ -1454,6 +1469,15 @@ private:
     /// the room every step, so a guard raised before a menu opened cannot
     /// stay silently raised underneath it.
     bool blockHeld_ = false;
+    /// FATIGUE BUILD: whether the sprint-refusal line has been said for the
+    /// CURRENT stretch of windedness. Edge-latched, cleared the moment the
+    /// pool recovers: a refusal on the alert row once per exhaustion is
+    /// feedback, sixty a second is a strobe -- the exact restraint
+    /// mantleToward's own "silently, because..." note pinned for the climb.
+    /// Render-side bookkeeping, not hashed: the REFUSAL ITSELF is sim state
+    /// (the gated sprint never reaches the body), this only remembers
+    /// whether it was announced.
+    bool windedSprintSaid_ = false;
     /// Last step's own hit points, purely so step() can tell "the player was
     /// just hit" apart from every OTHER reason playerHp() could differ from
     /// one frame to the next (there is only the one today, but comparing
@@ -1669,6 +1693,17 @@ struct SmokeRunConfig {
     /// with bouncers watching, the alert plate's own pulse once the house
     /// notices) had no headless capture path at all before this.
     bool punch = false;
+    /// FATIGUE BUILD. VERIFICATION ONLY, the identical reason every flag
+    /// above states: the fatigue bar's mid and empty states, the winded
+    /// sprint gate and its one refusal line had no headless capture path.
+    /// Drives this many REAL sprint steps -- the same held forward-plus-
+    /// sprint input a player drains the pool with, through the same
+    /// Session::step() -- before the shutter. The pool drains on intent, so
+    /// the wall the body ends up pressed against changes nothing; around
+    /// 1,950 steps the base sheet's pool is empty, the gate downgrades the
+    /// held sprint to the jog and the refusal line lands on the alert row,
+    /// which is exactly the frame the flag exists to photograph.
+    int sprintSteps = 0;
     /// FIRST-PERSON COMBAT (S13). VERIFICATION ONLY, the identical reason
     /// `punch` exists: the held-guard indicator and its blocked-blow wash had
     /// no headless capture path. Starts a brawl exactly the way --punch does

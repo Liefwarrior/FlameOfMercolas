@@ -71,6 +71,20 @@ namespace granadad::render {
 struct HudState {
     int health = 100;
     int healthMax = 100;
+    /// FATIGUE BUILD: the wind, in points, drawn as a slimmer second bar
+    /// tucked in the margin DIRECTLY BELOW the health bar -- beside the
+    /// number it reads with, and moving no other element to get there. A
+    /// non-positive fatigueMax draws nothing, so every hand-built HudState
+    /// that predates the bar is pixel-identical. Continuous gradient off its
+    /// own ramp (amber wind cooling to a spent grey-blue -- see
+    /// fatigueColor()'s note in hud.cpp), same healthColor discipline: the
+    /// fill fraction drives colour and segments off the identical clamp.
+    int fatigue = -1;
+    int fatigueMax = -1;
+    /// The bar's own ease, driven by a Session-side EasedToggle mirroring
+    /// the health bar's visibility rule. 1 by default: a caller that never
+    /// heard of it draws at full strength, the alertFade contract.
+    float fatigueFade = 1.0F;
     /// Off while a conversation is open. The bottom band is a topic list then,
     /// and two things fighting over the same forty pixels is how the centre-
     /// clear rule gets broken by accident. Punching closes the conversation, so

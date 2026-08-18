@@ -348,6 +348,9 @@ void print_usage() {
         "  --map-overlay        open the WARD MAP (the full-screen district\n"
         "                       plan the M key opens) before the shutter\n"
         "                       goes, so it is photographable headless\n"
+        "  --sprint=N           VERIFICATION ONLY: hold forward+sprint for N\n"
+        "                       real steps before the shutter -- the fatigue\n"
+        "                       bar's mid/empty states and the winded refusal\n"
         "  --punch              VERIFICATION ONLY: retry the punch key until\n"
         "                       one lands, before the shutter goes\n"
         "  --block              VERIFICATION ONLY: start a brawl, raise the\n"
@@ -625,6 +628,10 @@ void print_usage() {
         } else if (std::strcmp(arg, "--map-overlay") == 0) {
             // CORE ACTION #13. See SmokeRunConfig::mapOverlay's own header.
             options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--sprint=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::sprintSteps's own header.
+            options.smoke.sprintSteps = std::max(0, std::atoi(value));
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--punch") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::punch's own header.
@@ -1727,24 +1734,42 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // the sheet built at the door is the sheet the character screen shows
     // back.
     //
-    // ATTRIBUTES ARE DELIBERATELY LEFT UNCROSSED. chargen.hpp's own header
-    // states the attribute bonus pool has no runtime reader yet -- no skill
-    // check in this build weighs an AttributeId, only a level -- so wiring
-    // AttributeBlock into a mechanic that does not exist would be inventing
-    // one, not closing a seam. Chargen::apply() is [[nodiscard]] for exactly
-    // this reason and its answer is discarded here on purpose, not silently
-    // dropped.
+    // ATTRIBUTES FINALLY CROSS THE SEAM. The comment that stood here from #84
+    // to the fatigue build said "DELIBERATELY LEFT UNCROSSED", because no
+    // mechanic weighed an AttributeId and wiring the block into nothing would
+    // have been inventing a mechanic. The fatigue build is the mechanic:
+    // MGT feeds the punch, AGI the legs and the climb costs, VIG the fatigue
+    // pool's size and recovery, WIT the cast check and the link's own
+    // recovery clock (sim/fatigue.hpp carries every formula, each exactly
+    // neutral at the base-40 sheet). So the AttributeBlock Chargen::apply()
+    // was [[nodiscard]] for is finally KEPT, the companions' preset sheets
+    // walk their derivedAttribute() rows into the same shape, and one call
+    // hands the whole sheet to the room and the body together --
+    // Session::applyPlayerAttributes. CHARGEN'S ATTRIBUTE SPENDING MATTERS
+    // FROM THIS BOOT ON.
     {
         sim::SkillTrack& playerSkills = session.tavern().dialogue().skills();
+        sim::AttributeBlock sheet;
         if (chosen.companion.loaded()) {
             const std::int32_t matched = chosen.companion.applyStartingSkills(playerSkills);
+            for (std::size_t i = 0; i < sim::kAttributeCount; ++i) {
+                const auto attribute = static_cast<sim::AttributeId>(i);
+                sheet.setValue(attribute, chosen.companion.derivedAttribute(attribute));
+            }
             std::printf("granadad: %s's sheet set %d skill(s)\n", chosen.companion.name().c_str(),
                         static_cast<int>(matched));
         } else {
-            (void)chosen.chargen.apply(playerSkills);
+            sheet = chosen.chargen.apply(playerSkills);
             std::printf("granadad: custom sheet set %d skill(s)\n",
                         static_cast<int>(chosen.chargen.picks().size()));
         }
+        session.applyPlayerAttributes(sheet);
+        std::printf("granadad: attributes crossed: MGT %d AGI %d VIG %d WIT %d -- fatigue %d\n",
+                    static_cast<int>(sheet.value(sim::AttributeId::Might)),
+                    static_cast<int>(sheet.value(sim::AttributeId::Agility)),
+                    static_cast<int>(sheet.value(sim::AttributeId::Vigor)),
+                    static_cast<int>(sheet.value(sim::AttributeId::Wit)),
+                    static_cast<int>(session.tavern().playerFatigue().maxPoints()));
     }
 
     // #92, THE SIM HALF OF THE DAGGERFALL FLOW. Everything the biography (or

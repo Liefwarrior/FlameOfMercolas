@@ -311,6 +311,71 @@ void drawHealth(Framebuffer& target, const HudState& state, const BottomBand& ba
     }
 }
 
+// FATIGUE BUILD. The wind's own ramp, healthColor's discipline on different
+// ends: a full pool is a warm amber (effort in the bank, distinct at a
+// glance from the health bar's green so the two stacked bars never read as
+// one gauge split in two), cooling through a duller ochre to a spent
+// grey-blue as it empties -- exhaustion reads cold, not wounded. Clamped
+// exactly as healthColor clamps, for exactly its reason.
+constexpr Rgb kFatigueFull{0.87F, 0.66F, 0.24F};
+constexpr Rgb kFatigueMid{0.62F, 0.52F, 0.30F};
+constexpr Rgb kFatigueLow{0.34F, 0.40F, 0.48F};
+
+[[nodiscard]] Rgb fatigueColor(float fraction) noexcept {
+    fraction = std::clamp(fraction, 0.0F, 1.0F);
+    const auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+    if (fraction >= 0.5F) {
+        const float t = (fraction - 0.5F) / 0.5F;
+        return Rgb{lerp(kFatigueMid.r, kFatigueFull.r, t), lerp(kFatigueMid.g, kFatigueFull.g, t),
+                   lerp(kFatigueMid.b, kFatigueFull.b, t)};
+    }
+    const float t = fraction / 0.5F;
+    return Rgb{lerp(kFatigueLow.r, kFatigueMid.r, t), lerp(kFatigueLow.g, kFatigueMid.g, t),
+               lerp(kFatigueLow.b, kFatigueMid.b, t)};
+}
+
+/// The fatigue bar: the health bar's width, HALF its height, tucked into the
+/// bottom margin directly below it -- beside the number it is read with, and
+/// costing no other row a pixel (the bottom band's slot grid starts above the
+/// health bar and never knew the margin existed). Same segment discipline,
+/// same clamp-drives-everything rule as drawHealth; the continuous state
+/// (the fill fraction) drives the continuous visual (colour and segments),
+/// per the DECISIONS.md UI row.
+void drawFatigue(Framebuffer& target, const HudState& state, const BottomBand& band) {
+    if (state.fatigueMax <= 0) {
+        return;
+    }
+    const float fade = std::clamp(state.fatigueFade, 0.0F, 1.0F);
+    if (fade <= 0.0F) {
+        return;
+    }
+    const int scale = band.scale();
+    const int barW = band.barWidth();
+    const int barH = band.barHeight() / 2;
+    const int x = band.margin();
+    // Directly below the health bar, inside the bottom margin: this bar's
+    // frame TOP lands exactly on the health frame's bottom edge (h - 5*scale)
+    // and its bottom edge lands exactly on the frame's last row, so the pair
+    // read as one stacked instrument hugging the corner and neither frame
+    // over-draws the other.
+    const int y = target.height() - band.margin() + 2 * scale;
+
+    target.fillRect(x - scale, y - scale, barW + 2 * scale, barH + 2 * scale, kFrame,
+                    0.55F * fade);
+    target.fillRect(x, y, barW, barH, kHealthBack, 0.85F * fade);
+
+    const int maxFatigue = std::max(1, state.fatigueMax);
+    const int clamped = std::clamp(state.fatigue, 0, maxFatigue);
+    const Rgb colour =
+        fatigueColor(static_cast<float>(clamped) / static_cast<float>(maxFatigue));
+    const int segments = 16;
+    const int filled = (clamped * segments + maxFatigue - 1) / maxFatigue;
+    const int segW = barW / segments;
+    for (int i = 0; i < filled; ++i) {
+        target.fillRect(x + i * segW + 1, y + 1, segW - 1, barH - 2, colour, 0.95F * fade);
+    }
+}
+
 void drawCompass(Framebuffer& target, const HudState& state) {
     const int scale = hudScale(target.height());
     const int minor = hudMinorScale(target.height());
@@ -765,6 +830,13 @@ void drawHud(Framebuffer& target, const HudState& state) {
     BottomBand band(target.width(), target.height());
     if (state.showHealth) {
         drawHealth(target, state, band);
+    }
+    // FATIGUE BUILD: the wind bar rides the health bar's own gate AND its own
+    // fade -- showHealth is the rule (the bottom band belongs to the topic
+    // list mid-conversation), fatigueFade is the ease the Session's toggle
+    // drives across that rule changing.
+    if (state.showHealth) {
+        drawFatigue(target, state, band);
     }
     if (state.showCompass) {
         drawCompass(target, state);
