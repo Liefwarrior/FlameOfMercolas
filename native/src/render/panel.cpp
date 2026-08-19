@@ -581,9 +581,14 @@ void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& me
     // The readout is right-aligned and is the LAST thing to be given up,
     // because it is the number the player is watching while they choose.
     if (readoutCells > 0) {
-        drawCellTextRight(target, row, metric, 0, 0, readoutText, kInk.number, alpha);
+        // ONE CELL OF AIR BEFORE THE EDGE. Flush against the border, the last
+        // glyph of the readout sits immediately left of the frame's own `|`/`!`
+        // and the eye reads the two together -- a first capture of the creation
+        // flow had a readout that said "NAMELESS!". The edge is furniture; it
+        // must not be able to punctuate a sentence.
+        drawCellTextRight(target, row, metric, 1, 0, readoutText, kInk.number, alpha);
     }
-    const int roomForLeft = cells - (readoutCells > 0 ? readoutCells + 2 : 0);
+    const int roomForLeft = cells - (readoutCells > 0 ? readoutCells + 3 : 0);
     if (roomForLeft <= 0) {
         return;
     }
@@ -605,7 +610,17 @@ void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& me
     for (std::size_t i = 0; i < tabs.size(); ++i) {
         std::string text = shout(tabs[i].key);
         if (!tabs[i].name.empty()) {
-            text += " - ";
+            // A TAB WITH NO KEY IS ITS NAME AND NOTHING ELSE. The reference
+            // prints `d - Dominions` because `d` is a key you can actually
+            // press; a row that shows WHERE YOU ARE in a flow rather than a
+            // view you may switch to has no key to promise, and printing
+            // ` - ORIGIN` with a leading separator would be advertising one
+            // that is not there. Same reason keys_page.cpp drops the hotkey
+            // column off the bindings list: never draw an affordance that
+            // does not exist.
+            if (!text.empty()) {
+                text += " - ";
+            }
             text += shout(tabs[i].name);
         }
         pieces.push_back(Piece{text, static_cast<int>(i) == current});
@@ -821,6 +836,239 @@ void drawOptionListPlanned(Framebuffer& target, const PanelRect& rect, const Pan
             }
         }
     }
+}
+
+int optionListAt(const PanelRect& rect, const PanelMetric& metric, const OptionListPlan& plan,
+                 int count, int px, int py) noexcept {
+    if (rect.empty() || plan.rows <= 0 || plan.columns <= 0 || count <= 0) {
+        return -1;
+    }
+    // THE INVERSE OF drawOptionListPlanned, and deliberately written as the
+    // same walk rather than as arithmetic solved backwards: solved backwards it
+    // would be a second description of the layout, and a second description is
+    // a thing that can drift. Walking the entries means the only way this can
+    // disagree with what was drawn is if the loop above changes and this one
+    // does not, which is one file and one review away rather than two.
+    const int stride = plan.rows;
+    for (int i = 0; i < count; ++i) {
+        const int column = i / stride;
+        const int row = i % stride;
+        if (column >= plan.columns || row >= plan.rows) {
+            break;
+        }
+        const int x0 = rect.x + metric.widthOf(column * plan.stride);
+        const int y0 = rect.y + metric.heightOf(row);
+        if (px >= x0 && px < x0 + metric.widthOf(plan.columnCells) && py >= y0 &&
+            py < y0 + metric.cellH()) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
+// the block list
+// ---------------------------------------------------------------------------
+
+std::vector<OptionBlock> planOptionBlocks(const std::vector<PanelOption>& options,
+                                          const PanelRect& rect, const PanelMetric& metric,
+                                          const OptionBlockStyle& style) {
+    std::vector<OptionBlock> out;
+    out.reserve(options.size());
+    const int cells = metric.cellsIn(rect.w);
+    const int rows = metric.rowsIn(rect.h);
+    if (cells <= 0 || rows <= 0) {
+        out.resize(options.size());
+        return out;
+    }
+    int keyCells = 0;
+    if (style.showKeys) {
+        for (const PanelOption& option : options) {
+            keyCells = std::max(keyCells, cellsOf(option.key));
+        }
+        if (keyCells > 0) {
+            keyCells += 1;
+        }
+    }
+    const int textCells = std::max(1, cells - keyCells);
+    int y = rect.y;
+    // ONCE ONE ENTRY DOES NOT FIT, NOTHING AFTER IT DOES EITHER -- and that is a
+    // rule about ORDER, not about space. Letting a shorter entry further down
+    // the list jump into the gap a long one could not use would print entry 3
+    // above entry 2, which makes the printed numbers a lie and makes the
+    // selection model and the screen disagree about what "the next one down"
+    // means. The list stops where it stops.
+    bool stopped = false;
+    for (const PanelOption& option : options) {
+        OptionBlock block;
+        block.lines = wrapText(shout(option.label), static_cast<std::size_t>(textCells));
+        if (block.lines.empty()) {
+            block.lines.push_back(std::string{});
+        }
+        const int want = std::max(static_cast<int>(block.lines.size()), std::max(1, style.minRows));
+        const int roomRows = metric.rowsIn(rect.y + metric.heightOf(rows) - y);
+        if (stopped || roomRows < want) {
+            stopped = true;
+            // DOES NOT FIT: handed back with rows == 0 rather than squeezed or
+            // dropped. A half-drawn answer is worse than an absent one, and the
+            // index has to survive either way so the caller's cursor and this
+            // vector cannot disagree about what entry 4 is.
+            block.rows = 0;
+            out.push_back(std::move(block));
+            continue;
+        }
+        block.rows = want;
+        block.rect = PanelRect{rect.x, y, rect.w, metric.heightOf(want)};
+        y += metric.heightOf(want + std::max(0, style.gapRows));
+        out.push_back(std::move(block));
+    }
+    return out;
+}
+
+void drawOptionBlocks(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
+                      const std::vector<PanelOption>& options, int selected,
+                      const OptionBlockStyle& style, float alpha) {
+    if (alpha <= 0.0F || rect.empty() || options.empty()) {
+        return;
+    }
+    const std::vector<OptionBlock> blocks = planOptionBlocks(options, rect, metric, style);
+    const int cells = metric.cellsIn(rect.w);
+    int keyCells = 0;
+    if (style.showKeys) {
+        for (const PanelOption& option : options) {
+            keyCells = std::max(keyCells, cellsOf(option.key));
+        }
+        if (keyCells > 0) {
+            keyCells += 1;
+        }
+    }
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+        const OptionBlock& block = blocks[i];
+        if (block.rows <= 0) {
+            continue;
+        }
+        const PanelOption& option = options[i];
+        const bool picked = static_cast<int>(i) == selected && option.selectable;
+        if (picked) {
+            // THE SAME INVERTED FILL, AT BLOCK SCALE. The selection idiom does
+            // not change because the entry got longer -- it spans every row the
+            // answer wrapped to, so a three-line answer is as unmistakably
+            // picked as a one-line one.
+            for (int r = 0; r < block.rows; ++r) {
+                drawInvertedFill(target, block.rect, metric, 0, r, cells, option.accent, alpha);
+            }
+        }
+        const Rgb labelInk = picked ? kInk.knockout
+                                    : (option.labelTakesAccent
+                                           ? option.accent
+                                           : (option.selectable ? kInk.prose : kInk.dim));
+        if (keyCells > 0 && !option.key.empty()) {
+            if (picked) {
+                drawCellTextKnockout(target, block.rect, metric, 0, 0, option.key, kInk.knockout,
+                                     alpha);
+            } else {
+                drawCellText(target, block.rect, metric, 0, 0, option.key, kInk.key, alpha);
+            }
+        }
+        for (int r = 0; r < block.rows && r < static_cast<int>(block.lines.size()); ++r) {
+            if (picked) {
+                drawCellTextKnockout(target, block.rect, metric, keyCells, r, block.lines[
+                                         static_cast<std::size_t>(r)], labelInk, alpha);
+            } else {
+                drawCellText(target, block.rect, metric, keyCells, r,
+                             block.lines[static_cast<std::size_t>(r)], labelInk, alpha);
+            }
+        }
+        if (!option.value.empty()) {
+            const std::string value = shout(option.value);
+            if (picked) {
+                drawCellTextRight(target, block.rect, metric, 0, 0, value, kInk.knockout, alpha);
+            } else {
+                drawCellTextRight(target, block.rect, metric, 0, 0, value, inkFor(option.valueInk),
+                                  alpha);
+            }
+        }
+    }
+}
+
+int optionBlockAt(const std::vector<OptionBlock>& blocks, int px, int py) noexcept {
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+        const OptionBlock& block = blocks[i];
+        if (block.rows <= 0 || block.rect.empty()) {
+            continue;
+        }
+        if (px >= block.rect.x && px < block.rect.right() && py >= block.rect.y &&
+            py < block.rect.bottom()) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
+// bars
+// ---------------------------------------------------------------------------
+
+int drawBars(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
+             const std::vector<PanelBar>& bars, int barCells, float alpha) {
+    if (alpha <= 0.0F || rect.empty() || bars.empty()) {
+        return 0;
+    }
+    const int cells = metric.cellsIn(rect.w);
+    const int rows = metric.rowsIn(rect.h);
+    if (cells <= 0 || rows <= 0) {
+        return 0;
+    }
+    int labelCells = 0;
+    int valueCells = 0;
+    for (const PanelBar& bar : bars) {
+        labelCells = std::max(labelCells, cellsOf(shout(bar.label)));
+        valueCells = std::max(valueCells, cellsOf(shout(bar.value)));
+    }
+    labelCells += 1;
+    if (valueCells > 0) {
+        valueCells += 1;
+    }
+    // The bar gets what is left, never less than three cells and never more
+    // than it was asked for -- so the same block reads at 320x180 and does not
+    // sprawl into a runway at 1920x1080.
+    const int wide = std::clamp(cells - labelCells - valueCells, 0, std::max(0, barCells));
+    int used = 0;
+    for (const PanelBar& bar : bars) {
+        if (used >= rows) {
+            break;
+        }
+        drawCellText(target, rect, metric, 0, used, shout(bar.label), kInk.prose, alpha);
+        if (wide > 0) {
+            const int total = std::max(1, static_cast<int>(bar.total));
+            const int filled = std::clamp(
+                static_cast<int>((static_cast<std::int64_t>(bar.filled) * wide + total - 1) /
+                                 total),
+                0, wide);
+            const int y = rect.y + metric.heightOf(used);
+            // FILLED: a solid block run in the bar's own colour, one pixel of
+            // air between cells so it reads as a run of blocks rather than one
+            // long slab -- the reference's `████` and not a progress bar.
+            for (int i = 0; i < filled; ++i) {
+                const int x = rect.x + metric.widthOf(labelCells + i);
+                target.fillRect(x, y + metric.scale, metric.cellW() - metric.scale,
+                                metric.cellH() - 3 * metric.scale, bar.accent, alpha);
+            }
+            // REMAINDER: the dotted track, never an empty gap. Same instinct as
+            // the stippled panel grounds -- emptiness is textured.
+            if (filled < wide) {
+                const PanelRect track{rect.x + metric.widthOf(labelCells + filled), y,
+                                      metric.widthOf(wide - filled), metric.cellH()};
+                drawStipple(target, track, metric, kInk.rule, 0.55F * alpha);
+            }
+        }
+        if (!bar.value.empty()) {
+            drawCellText(target, rect, metric, labelCells + wide + 1, used, shout(bar.value),
+                         kInk.number, alpha);
+        }
+        ++used;
+    }
+    return used;
 }
 
 // ---------------------------------------------------------------------------

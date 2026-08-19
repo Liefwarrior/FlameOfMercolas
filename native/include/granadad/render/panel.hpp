@@ -523,6 +523,109 @@ void drawOptionListPlanned(Framebuffer& target, const PanelRect& rect, const Pan
                            const std::vector<PanelOption>& options, int selected,
                            const OptionListPlan& plan, float alpha);
 
+/// Which entry of a drawn column list a pixel lands on, or -1 for none.
+///
+/// THIS IS WHAT MAKES A MOUSE A FIRST-CLASS INPUT rather than a bolt-on. The
+/// geometry a list is drawn at is already a pure function of (rect, metric,
+/// plan) -- drawOptionListPlanned does nothing else -- so the inverse is a pure
+/// function too, and it belongs beside the drawing rather than re-derived by
+/// every screen that wants to be clickable. A screen that draws a list with
+/// this vocabulary gets hover and click for free and cannot get them subtly out
+/// of register with what it drew, which is exactly the bug a hand-rolled
+/// hit-test in each screen would eventually ship.
+///
+/// `count` is how many entries were actually drawn (a page, not the whole
+/// list); the index returned is into that same run.
+[[nodiscard]] int optionListAt(const PanelRect& rect, const PanelMetric& metric,
+                               const OptionListPlan& plan, int count, int px, int py) noexcept;
+
+// ---------------------------------------------------------------------------
+// the BLOCK list -- a numbered list whose entries are sentences
+// ---------------------------------------------------------------------------
+
+/// WHY THIS EXISTS, in one line: the reference's option lists are lists of
+/// NAMES (`Water`, `Earth`, `Homunculus Theory`) and some of ours are lists of
+/// SENTENCES.
+///
+/// The chargen quiz and the biography both ask a question and offer answers a
+/// hundred glyphs long. Run through drawOptionList they clip to their column --
+/// which is precisely the defect the owner hit: `1 YOU TOLD THE.` is not a
+/// choice anybody can make. Wrapping them instead is not a different grammar,
+/// it is the SAME grammar at a different scale: still numbered, still
+/// direct-select, still an inverted fill in the entity's accent for the
+/// selection -- the fill simply spans the whole wrapped block rather than one
+/// row.
+///
+/// GEOMETRY IS STILL STABLE. Every block's height comes from its own text and
+/// nothing else, so moving the cursor between them moves no block by a pixel.
+struct OptionBlockStyle {
+    /// Blank rows between one block and the next.
+    int gapRows = 1;
+    /// Print the key in a hanging column to the left of the wrapped text, so
+    /// continuation lines indent under the text and not under the number.
+    bool showKeys = true;
+    /// Never fewer rows than this per block -- so a one-line answer beside a
+    /// three-line one still reads as an equal-weight choice rather than a
+    /// footnote.
+    int minRows = 1;
+};
+
+/// Where one entry of a block list sits. `rows` is 0 for an entry that did not
+/// fit the pane -- the index is still handed back so a caller's selection model
+/// and this vector never disagree about what entry 4 is.
+struct OptionBlock {
+    PanelRect rect;
+    int rows = 0;
+    /// The wrapped label, already shouted and broken to the text column.
+    std::vector<std::string> lines;
+};
+
+/// PURE. Same contract as planOptionList and for the same reason: a case can
+/// pin how a 130-glyph answer breaks at 320x180 and at 1920x1080 without
+/// rendering a pixel, and a mouse hit-test can be exact without a framebuffer.
+[[nodiscard]] std::vector<OptionBlock> planOptionBlocks(const std::vector<PanelOption>& options,
+                                                        const PanelRect& rect,
+                                                        const PanelMetric& metric,
+                                                        const OptionBlockStyle& style);
+
+void drawOptionBlocks(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
+                      const std::vector<PanelOption>& options, int selected,
+                      const OptionBlockStyle& style, float alpha);
+
+/// Which block a pixel lands in, or -1. See optionListAt on why the inverse of
+/// a layout lives beside the layout.
+[[nodiscard]] int optionBlockAt(const std::vector<OptionBlock>& blocks, int px, int py) noexcept;
+
+// ---------------------------------------------------------------------------
+// bars
+// ---------------------------------------------------------------------------
+
+/// One measured quantity, drawn as shape AND figure at once -- the reference's
+/// own character sheet: `Strength 8 ###......`, the filled run in the stat's own
+/// colour and the REMAINDER AS A DOTTED TRACK rather than an empty gap. Same
+/// instinct as the stippled art grounds: emptiness is textured, not blank.
+///
+/// This is also the honest answer to "show the consequence" that
+/// UI-REFERENCE-TERMINAL.md asks for by name -- a player watching an answer move
+/// a skill should SEE the bar move, which beats a line of text reporting a
+/// delta.
+struct PanelBar {
+    std::string label;
+    /// Printed after the bar. The exact figure beside the shape.
+    std::string value;
+    std::int32_t filled = 0;
+    std::int32_t total = 0;
+    /// EVERY STAT CARRIES ITS OWN COLOUR, so a sheet is scannable by hue before
+    /// a word of it is read.
+    Rgb accent = panelInk().accent;
+};
+
+/// Labels in one column, bars `barCells` wide at a shared left edge, values in
+/// one column after them. Rows past the bottom of `rect` are not drawn.
+/// Returns the rows used.
+int drawBars(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
+             const std::vector<PanelBar>& bars, int barCells, float alpha);
+
 // ---------------------------------------------------------------------------
 // aligned key/value rows
 // ---------------------------------------------------------------------------

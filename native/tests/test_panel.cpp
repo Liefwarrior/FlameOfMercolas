@@ -462,3 +462,143 @@ TEST_CASE("knocked-out text carries no drop shadow, which is what makes it reada
         }
     }
 }
+
+// ===========================================================================
+// #93. THE BLOCK LIST, THE BARS, AND THE HIT-TESTS
+// ===========================================================================
+//
+// Three primitives the chargen pass needed and the vocabulary did not have.
+// The interesting contracts, again, are the ones later screens will code
+// against rather than "does it draw":
+//
+//   * a list of SENTENCES wraps instead of clipping, and the blocks do not
+//     overlap or run off the pane,
+//   * the inverse of a layout agrees with the layout, which is the only reason
+//     a mouse can be trusted to click the row a player is looking at,
+//   * a bar is shape AND figure, with the unfilled part textured rather than
+//     empty.
+
+namespace {
+
+[[nodiscard]] std::vector<PanelOption> sentenceOptions() {
+    std::vector<PanelOption> out;
+    out.push_back(PanelOption{"1", "THEY PAID CLEAN, EVERY QUARTER, THE WAY THEY ALWAYS HAD.",
+                              "", panelInk().accent});
+    out.push_back(PanelOption{"2", "THEY WERE ROOFED, AND YOU GREW UP ON A DECK.", "",
+                              panelInk().accent});
+    out.push_back(PanelOption{"3", "NOTHING. NOBODY CAME.", "", panelInk().accent});
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("a list of sentences wraps into blocks instead of clipping, and the blocks stack") {
+    // THE DEFECT THIS EXISTS TO KILL: the old chargen grid clipped every quiz
+    // and biography answer at eighteen glyphs INCLUDING the row number, so a
+    // choice read "1 THEY PAID CLEAN," and a player could not make it.
+    const PanelMetric metric{2};
+    const PanelRect pane{0, 0, metric.widthOf(30), metric.heightOf(20)};
+    OptionBlockStyle style;
+    const std::vector<OptionBlock> blocks = planOptionBlocks(sentenceOptions(), pane, metric, style);
+    REQUIRE(blocks.size() == 3);
+    // The longest answer does not fit 30 cells, so it must have taken more than
+    // one row -- that is the whole point.
+    CHECK(blocks[0].rows > 1);
+    CHECK(blocks[0].lines.size() == static_cast<std::size_t>(blocks[0].rows));
+    for (const OptionBlock& block : blocks) {
+        REQUIRE(block.rows > 0);
+        CHECK(block.rect.bottom() <= pane.bottom());
+        for (const std::string& line : block.lines) {
+            // Nothing was cut: every wrapped line fits the text column.
+            CHECK(line.size() <= 30U);
+        }
+    }
+    // Stacked with a gap, never overlapping.
+    CHECK(blocks[1].rect.y >= blocks[0].rect.bottom());
+    CHECK(blocks[2].rect.y >= blocks[1].rect.bottom());
+}
+
+TEST_CASE("an entry that will not fit is reported as unfittable, not half-drawn") {
+    const PanelMetric metric{2};
+    // Two rows of pane for three multi-line answers.
+    const PanelRect pane{0, 0, metric.widthOf(20), metric.heightOf(2)};
+    const std::vector<OptionBlock> blocks =
+        planOptionBlocks(sentenceOptions(), pane, metric, OptionBlockStyle{});
+    // The index survives even when the block does not, so a caller's cursor and
+    // this vector can never disagree about what entry 2 is -- and NOTHING after
+    // the first unfittable entry is drawn either, because a short entry jumping
+    // into the gap a long one could not use would print entry 3 above entry 2.
+    REQUIRE(blocks.size() == 3);
+    CHECK(blocks[0].rows == 0);
+    CHECK(blocks[1].rows == 0);
+    CHECK(blocks.back().rows == 0);
+}
+
+TEST_CASE("the block hit-test agrees with the block layout, which is what a mouse rides on") {
+    const PanelMetric metric{2};
+    const PanelRect pane{40, 25, metric.widthOf(30), metric.heightOf(20)};
+    const std::vector<OptionBlock> blocks =
+        planOptionBlocks(sentenceOptions(), pane, metric, OptionBlockStyle{});
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+        REQUIRE(blocks[i].rows > 0);
+        const PanelRect& r = blocks[i].rect;
+        CHECK(optionBlockAt(blocks, r.x, r.y) == static_cast<int>(i));
+        CHECK(optionBlockAt(blocks, r.x + r.w / 2, r.y + r.h - 1) == static_cast<int>(i));
+    }
+    // Outside every block is nothing, not the nearest row.
+    CHECK(optionBlockAt(blocks, pane.x - 1, pane.y) == -1);
+    CHECK(optionBlockAt(blocks, pane.x, pane.bottom() + 200) == -1);
+}
+
+TEST_CASE("the column hit-test agrees with the column layout at every window size") {
+    // The list is drawn COLUMN-MAJOR and re-columns with the width, so the
+    // inverse has to as well -- a hit-test written as arithmetic solved
+    // backwards would drift the first time the layout did.
+    std::vector<PanelOption> options;
+    for (int i = 0; i < 12; ++i) {
+        options.push_back(PanelOption{std::to_string(i + 1), "SKILL " + std::to_string(i + 1),
+                                      "MAJ", panelInk().accent});
+    }
+    for (const Size& window : kSizes) {
+        const PanelMetric metric = panelMetric(window.h);
+        const PanelRect pane{0, 0, metric.widthOf(metric.cellsIn(window.w) - 2),
+                             metric.heightOf(8)};
+        OptionListStyle style;
+        style.maxColumns = 3;
+        const OptionListPlan plan = planOptionList(options, pane, metric, style);
+        const int drawn = std::min(static_cast<int>(options.size()), plan.columns * plan.rows);
+        INFO("window ", window.w, "x", window.h);
+        for (int i = 0; i < drawn; ++i) {
+            const int column = i / plan.rows;
+            const int row = i % plan.rows;
+            const int x = pane.x + metric.widthOf(column * plan.stride);
+            const int y = pane.y + metric.heightOf(row);
+            CHECK(optionListAt(pane, metric, plan, drawn, x, y) == i);
+            CHECK(optionListAt(pane, metric, plan, drawn, x + metric.cellW() / 2,
+                               y + metric.cellH() - 1) == i);
+        }
+        CHECK(optionListAt(pane, metric, plan, drawn, pane.x - 5, pane.y) == -1);
+    }
+}
+
+TEST_CASE("a bar is shape and figure, and the unfilled part is textured rather than empty") {
+    const PanelMetric metric{2};
+    const PanelRect pane{0, 0, metric.widthOf(40), metric.heightOf(4)};
+
+    const auto litFor = [&](std::int32_t filled) {
+        Framebuffer target(metric.widthOf(40), metric.heightOf(4));
+        target.clear(Rgb{0.0F, 0.0F, 0.0F});
+        const std::vector<PanelBar> bars{
+            PanelBar{"MIGHT", std::to_string(40 + filled), filled, 15, Rgb{1.0F, 0.3F, 0.3F}}};
+        const int rows = drawBars(target, pane, metric, bars, 12, 1.0F);
+        CHECK(rows == 1);
+        return inkCount(target);
+    };
+    // An empty bar is not an empty strip: the dotted track is drawn, so there
+    // is ink even at zero.
+    const int atZero = litFor(0);
+    CHECK(atZero > 0);
+    // And a fuller bar lights more of it. Solid blocks beat a dot field.
+    CHECK(litFor(15) > atZero);
+    CHECK(litFor(15) > litFor(4));
+}
