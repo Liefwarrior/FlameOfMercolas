@@ -304,6 +304,13 @@ add_library(granadad-render STATIC
     src/render/controls.cpp
     src/render/hud.cpp
     src/render/dialogue_view.cpp
+    # PANES PASS -- the terminal-panel drawing vocabulary every later UI phase
+    # composes its screens out of: the +~-~- rules and alternating |/! edges,
+    # the breadcrumb header, the tab row, the numbered option list with
+    # inverted-fill selection, the master/detail split, aligned key/value rows
+    # and the bullet hierarchy. Width-aware from the first line; NOT modular.
+    # See the header, and docs/design/UI-REFERENCE-TERMINAL.md for the grammar.
+    src/render/panel.cpp
     # Morrowind round -- the tiled Menu (Character/Map/Letters top, Journal
     # full-width bottom, all four drawn at once). See the file's own header.
     src/render/menu_view.cpp
