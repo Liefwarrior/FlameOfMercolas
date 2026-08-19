@@ -2499,15 +2499,23 @@ for (kz, kx0, ky0, kx1, ky1) in COURTYARD_FARMS:
 # provided it says what it checked, so the next pass does not check it again.
 #
 # THE ROOF RULE (gazetteer 2.1: "thatch inland, tile near the tar yard -- see 7 fire map").
-# Checked over every one of the 39 K-sites and 4 compounds, by reading the baked FLOOR
-# cells at each site's own roof bands and grouping them by material. Result: the rule holds
-# everywhere and the archetype pass left NO gap in it.
+# Checked over all 35 signed K-sites and the four compounds, by reading the baked FLOOR
+# cells at each site's own roof bands and grouping them by material. (K35 the Skyrunner's
+# Roost is not in that roster and needs no row: it is unsigned by binding law and stands ON
+# C4's roof-slum deck, so it has no roof cap of its own.) Result: the rule holds everywhere
+# and the archetype pass left NO gap in it.
 #   * Nothing thatched stands anywhere near the tar yard. K09 Pitchfield's fenced yard is
 #     x2-29/y36-58; every site whose footprint comes within twelve tiles of it is either
 #     hard-capped (K08 Brann's brick, K26 Sailmaker's brick, K27 Hardtack brick) or
 #     deliberately uncapped by the archetype pass's own workshop/market bucket rule (K09
 #     itself, K10 Dawnstalls, K11 Salt Row, K22 Netmenders, K23 Cooper's, K07 Ropewalk).
-#     The nearest thatch in the ward is thirty-four tiles clear of the fence.
+#     The nearest thatch ROOF cell in the ward is K05 the Lantern Room's, twenty-nine tiles
+#     clear of the fence. (Measured as a cell-to-rect Chebyshev distance over the baked
+#     bytes, restricted to FLOOR cells on a roof band. Thatch also appears as a MATERIAL on
+#     interior furniture -- FURN_STOCK's alternate is a fibre bale -- and the nearest of
+#     those is fifteen tiles out, inside K08 Brann's. A bale on a chandler's floor is not a
+#     roof and 2.1 does not speak to it, but the distinction is worth writing down, because
+#     the first cut of this audit measured all thatch cells and got the wrong number.)
 #   * Thatch IS the inland register, and it is where the fire map wants it: K03 the Gull,
 #     K04 the Bilge, K05 the Lantern Room, K19 the Rows, C4's Gullet roofs and the Band-C
 #     hovel rows -- gazetteer 7.3 files taverns, the Rows and up-slope thatch at MEDIUM by
