@@ -684,6 +684,15 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     full.lockLabel = "LOCK  PINS ***--  DEPTH ....+....  PICKS 2";
     full.roomLabel = "THE GULL  14 IN  LOUD";
     full.alert = "KLED TARBECK: THAT IS YOUR ONE. OUT OF THIS HOUSE, OR I PUT YOU OUT.";
+    // DISTRICT PHASE D: the threshold plate, at the longest name docks.hpp's
+    // kPlaces can produce and at full strength, sitting at the LOWEST point
+    // its own drift can put it -- the one instant it comes closest to the
+    // exclusion rectangle. It is a centred element in a HUD whose whole rule
+    // is that the middle stays empty, so it belongs in the case that lights
+    // everything at once rather than only in its own file.
+    full.placePlate = "THE GILDED GULL - ROOMS";
+    full.placePlateFade = 1.0F;
+    full.placePlateDrift = -1.0F;
 
     for (const auto& [width, height] : {std::pair{320, 180}, std::pair{640, 360},
                                         std::pair{960, 540}}) {

@@ -279,6 +279,59 @@ struct HudState {
     /// what every caller before this field existed drew, and what this one
     /// draws again a few frames after any warning.
     float alertPulse = 0.0F;
+    /// DISTRICT PHASE D: THE THRESHOLD MOMENT. The name of the place the
+    /// player has JUST CROSSED INTO -- "SALTGATE RISE" the step they walk out
+    /// of the Quayward's east gate -- announced once, briefly, on a plate
+    /// centred over the compass ribbon, and then gone.
+    ///
+    /// IT IS NOT A SECOND locationLabel AND IT MUST NEVER BECOME ONE.
+    /// locationLabel (above) is REFERENCE: the sub-label of the compass, up
+    /// every frame, dim, small, read when you want it. This is an EVENT --
+    /// crossing a boundary -- and the whole of what it adds is that the
+    /// crossing is legible AT THE MOMENT IT HAPPENS instead of only by
+    /// noticing that a dim row two sizes down has quietly changed its words.
+    /// Both are drawn from the same fact (sim::docks::placeNameAt); neither
+    /// is derived from the other, because one is a state and the other is an
+    /// edge, exactly the distinction anim.hpp draws between EasedToggle and
+    /// ImpactPulse.
+    ///
+    /// TOP BAND, NOT THE MIDDLE, and that is this file's own rule and not a
+    /// preference -- see the header. A place-name announcement is the single
+    /// most obvious candidate in this game for a big centred title card in
+    /// the play space, which is exactly why it gets a plate on the edge under
+    /// the ribbon that already says where you are. It is DROPPED outright
+    /// rather than drawn if the frame is too short to hold it clear of the
+    /// exclusion rectangle -- BottomBand::take()'s own rule, applied at the
+    /// other edge.
+    ///
+    /// Empty draws nothing, and so does a zero fade: every hand-built
+    /// HudState that predates these three fields is pixel-identical.
+    std::string_view placePlate;
+    /// 0 (gone) .. 1 (full strength). Session's own EasedToggle per the
+    /// settled convention (DECISIONS.md UI rule 1), NOT shared with any row:
+    /// crossing a boundary has nothing to do with a purse changing.
+    ///
+    /// DEFAULTS TO 0, NOT 1. Every *Fade field above defaults to 1 because
+    /// its row's ordinary state is "on screen"; this one's ordinary state is
+    /// "not on screen at all", the same reasoning quickBarFade already
+    /// defaults to 0 for.
+    float placePlateFade = 0.0F;
+    /// WHERE THE PLATE IS IN ITS OWN RISE, as a signed fraction of one lift:
+    /// -1 is fully below its settled row (the instant of the crossing), 0 is
+    /// settled, +1 is fully above it (the end of the fade). The plate RISES
+    /// THROUGH its resting place rather than sliding in and back out the way
+    /// it came -- a notice that lifts off the compass and is gone, which is
+    /// the one motion that reads as an announcement rather than as a row
+    /// appearing.
+    ///
+    /// A SIGNED CONTINUOUS DRIFT AND NOT A DIRECTION FLAG, per DECISIONS.md
+    /// UI rule 4: the same continuous EasedToggle value drives both the alpha
+    /// and the offset, so the plate can never be caught bright and mid-slide
+    /// or settled and half-faded. Session derives the sign from the toggle's
+    /// own target(); nothing here has to know which way it is going.
+    /// Defaults to 0 (settled), which is what a caller that only sets
+    /// placePlate/placePlateFade means.
+    float placePlateDrift = 0.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the

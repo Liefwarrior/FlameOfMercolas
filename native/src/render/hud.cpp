@@ -376,6 +376,37 @@ void drawFatigue(Framebuffer& target, const HudState& state, const BottomBand& b
     }
 }
 
+/// THE TOP BAND'S OWN THREE ROWS, COMPUTED ONCE.
+///
+/// DISTRICT PHASE D pulled these four numbers out of drawCompass rather than
+/// re-deriving them a second time next door, and the reason is this file's own
+/// header: every collision this HUD has ever shipped -- the lock row through
+/// the guild row, a clue through the case row -- was two functions computing
+/// the same offset by hand and only one of them remembering when it moved. The
+/// threshold plate has to sit directly under the place-name sub-label; it now
+/// asks where that is instead of knowing.
+struct TopBand {
+    /// The compass ribbon's own top edge, three scale units off the frame.
+    int stripY;
+    /// The ribbon's height, drop shadow included.
+    int stripH;
+    /// The place-name sub-label's own top edge, one scale unit under it.
+    int labelY;
+    /// The first pixel row below everything the ribbon block draws.
+    int bottom;
+};
+
+[[nodiscard]] TopBand topBand(int height) noexcept {
+    const int scale = hudScale(height);
+    const int minor = hudMinorScale(height);
+    TopBand band{};
+    band.stripY = 3 * scale;
+    band.stripH = rowHeight(scale) + scale;
+    band.labelY = band.stripY + band.stripH + scale;
+    band.bottom = band.labelY + kGlyphH * minor;
+    return band;
+}
+
 void drawCompass(Framebuffer& target, const HudState& state) {
     const int scale = hudScale(target.height());
     const int minor = hudMinorScale(target.height());
@@ -385,9 +416,12 @@ void drawCompass(Framebuffer& target, const HudState& state) {
     // a place name under it. A quarter of the width still shows a hundred and
     // eighty degrees of arc with every point on it legible.
     const int stripW = std::min(target.width() / 4, 120 * scale);
-    const int stripH = rowHeight(scale) + scale;
+    // DISTRICT PHASE D: OFF topBand(), NOT re-derived here. Identical values,
+    // one owner -- see the struct's own header on which defect that is about.
+    const TopBand band = topBand(target.height());
+    const int stripH = band.stripH;
     const int x = (target.width() - stripW) / 2;
-    const int y = 3 * scale;
+    const int y = band.stripY;
 
     target.fillRect(x - scale, y - scale, stripW + 2 * scale, stripH + 2 * scale, kFrame, 0.45F);
     target.fillRect(x, y, stripW, stripH, Rgb{0.05F, 0.05F, 0.07F}, 0.70F);
@@ -426,7 +460,7 @@ void drawCompass(Framebuffer& target, const HudState& state) {
     // what a hierarchy looks like when it is doing its job.
     if (!state.locationLabel.empty()) {
         const int width = textWidth(state.locationLabel, minor);
-        drawText(target, (target.width() - width) / 2, y + stripH + scale, state.locationLabel,
+        drawText(target, (target.width() - width) / 2, band.labelY, state.locationLabel,
                  Rgb{0.70F, 0.68F, 0.60F}, 0.85F, minor);
     }
 }
@@ -442,7 +476,20 @@ void drawCompass(Framebuffer& target, const HudState& state) {
 /// play space the moment the Watch had heard about you and there was something
 /// in your sack. Nothing caught it, because no case ever filled more than three
 /// of the six rows at once.
-void drawTopRight(Framebuffer& target, const HudState& state) {
+///
+/// DISTRICT PHASE D: RETURNS THE WIDTH IT ACTUALLY CLAIMED, and that return
+/// value is load-bearing rather than informational. The threshold plate is
+/// CENTRED and this stack is RIGHT-ANCHORED, and both live in the top band --
+/// so the one question the plate has to be able to ask is "how far left does
+/// the corner reach this frame". Every row here is clipped to `width - 2 *
+/// margin`, which means a single heat line at its longest can reach past the
+/// centre of the frame; a plate that assumed a fixed reserve (hudTopRightReserve
+/// deliberately measures only what survives a conversation, which is the clock
+/// and the purse) would have been the same class of guess that shipped the
+/// lock row through the guild row. This is the measurement, not an estimate:
+/// the widest row this call really drew, after the rank-order drops, in pixels.
+/// 0 when the corner drew nothing at all.
+int drawTopRight(Framebuffer& target, const HudState& state) {
     const int scale = hudScale(target.height());
     const int minor = hudMinorScale(target.height());
     const int margin = 6 * scale;
@@ -450,6 +497,11 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
     // The same three scale units from the edge the compass ribbon starts at, so
     // the two top blocks share a line.
     int y = 3 * scale;
+    // DISTRICT PHASE D. The widest row this call actually puts on the frame --
+    // see the header on why the threshold plate needs it measured and not
+    // guessed. Every drawText below feeds it, so a row added later cannot
+    // forget to.
+    int claimed = 0;
 
     if (state.timeOfDaySeconds >= 0 && y + rowHeight(scale) <= ceiling) {
         const int hour = (state.timeOfDaySeconds / 3600) % 24;
@@ -461,6 +513,7 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
                               static_cast<char>(48 + minute % 10),
                               0};
         const std::string_view clock(text);
+        claimed = std::max(claimed, textWidth(clock, scale));
         drawText(target, target.width() - margin - textWidth(clock, scale), y, clock, kInk, 0.9F,
                  scale);
         y += rowHeight(scale) + 1;
@@ -574,10 +627,103 @@ void drawTopRight(Framebuffer& target, const HudState& state) {
         --count;
     }
     for (std::size_t i = 0; i < count; ++i) {
+        claimed = std::max(claimed, textWidth(rows[i].text, minor));
         drawText(target, target.width() - margin - textWidth(rows[i].text, minor), y, rows[i].text,
                  rows[i].ink, rows[i].alpha, minor);
         y += step;
     }
+    return claimed;
+}
+
+/// DISTRICT PHASE D: THE THRESHOLD MOMENT -- the place the player has just
+/// crossed into, announced once and briefly. See HudState::placePlate for what
+/// it is and, more to the point, what it deliberately is not.
+///
+/// UNDER THE RIBBON, ON THE RIBBON'S OWN BAND. The compass already owns the
+/// top centre and its sub-label already carries this exact string as reference
+/// material; the plate is the same fact said once, LOUDLY, at the instant it
+/// becomes true, and then it gets out of the way. Putting it anywhere else
+/// would have meant either a title card in the play space (which this file's
+/// own header forbids outright) or a second place-name element somewhere the
+/// eye has no reason to be.
+///
+/// IT GIVES WAY TO THE CORNER, NOT THE OTHER WAY ROUND. `rightBlock` is the
+/// width drawTopRight just measured for itself, and the plate's whole budget
+/// is what is left between two of them -- symmetric, because the plate is
+/// centred and a plate that stays centred by eating its own left margin is not
+/// centred. When the corner is full the plate is drawn a size down, then
+/// clipped, and then dropped; the hour, the sack and a warrant are up every
+/// frame and this is up for two seconds.
+///
+/// AND IT IS DROPPED RATHER THAN DRAWN LOW. The lowest the drift can put it
+/// (drift == -1, the instant of the crossing) is what gets checked against the
+/// exclusion rectangle, so a frame short enough for the plate's own travel to
+/// reach the play space simply does not get one -- BottomBand::take()'s rule,
+/// applied at the other edge and for the same reason.
+void drawPlacePlate(Framebuffer& target, const HudState& state, int rightBlock) {
+    const float fade = std::clamp(state.placePlateFade, 0.0F, 1.0F);
+    if (state.placePlate.empty() || fade <= 0.0F) {
+        return;
+    }
+    const int width = target.width();
+    const int height = target.height();
+    const int scale = hudScale(height);
+    const int margin = 6 * scale;
+    // THE PLATE'S OWN PADDING IS INSIDE THE BUDGET, at the widest it can be
+    // (padX below is 2 * plateScale, and plateScale never exceeds scale). A
+    // budget that measured only the text would have let the black field and
+    // its bone rail stick two or three pixels into the corner -- the whole
+    // point of measuring instead of estimating, lost on the last four pixels.
+    const int budget = width - 2 * (margin + std::max(0, rightBlock) + 2 * scale);
+    if (budget <= 0) {
+        return;
+    }
+    // THE ALERT ROW'S LADDER FOR ITS FIRST STEP AND NOT ITS SECOND: a size
+    // smaller beats a cut, and here a cut is worse than nothing at all.
+    //
+    // WHOLE OR NOT AT ALL, and that is a real difference from the alert row
+    // rather than an oversight. The alert is a SENTENCE, and clipToWidth
+    // exists because the front of a bouncer's warning still carries the
+    // warning ("KLED TARBECK: THAT IS YOUR ONE..."). A place name is four
+    // words and the front of it is not a shorter name -- "THE GILDED GULL -
+    // ROOMS" cut to what a full corner leaves at 1280x720 is "TH..", which is
+    // not an announcement of anywhere. So the plate takes the largest size the
+    // whole name fits at, and if the whole name fits at no size it is dropped,
+    // exactly as it is dropped when the band is too short.
+    int plateScale = scale;
+    while (plateScale > 1 && textWidth(state.placePlate, plateScale) > budget) {
+        --plateScale;
+    }
+    const int drawn = textWidth(state.placePlate, plateScale);
+    if (drawn > budget) {
+        return;
+    }
+    const int textX = (width - drawn) / 2;
+
+    const TopBand band = topBand(height);
+    // THE WHOLE TRAVEL FITS UNDER THE RIBBON BLOCK, NOT JUST THE SETTLED ROW.
+    // The plate keeps rising as it fades, so its HIGHEST point (drift == +1,
+    // the last frame of the fade) is `lift` above where it settles -- and the
+    // first version of this measured the gap from the settled row only, which
+    // put the top of the plate through the place-name sub-label's own drop
+    // shadow on the last frame of every announcement. The clearance is
+    // measured from the top of the travel: one full lift plus a register row
+    // of air, which is more than the sub-label's minor row and shadow can be.
+    const int lift = 3 * scale;
+    const int settledY = band.bottom + lift + 3 * scale;
+    const int padX = plateScale * 2;
+    const int padY = std::max(1, plateScale / 2);
+    const int lowest = settledY + lift + kGlyphH * plateScale + padY;
+    if (lowest >= hudCentreRect(width, height).y0) {
+        return;
+    }
+    const float drift = std::clamp(state.placePlateDrift, -1.0F, 1.0F);
+    const int y = settledY - static_cast<int>(std::round(drift * static_cast<float>(lift)));
+    drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
+                  y + kGlyphH * plateScale + padY, std::max(1, plateScale / 2), fade);
+    // kInk, not the alert's amber. This is the HUD's own register saying where
+    // you are, not the house telling you to get out.
+    drawText(target, textX, y, state.placePlate, kInk, 0.95F * fade, plateScale);
 }
 
 /// The bottom band: the room you are standing in, and then every row that is
@@ -856,7 +1002,16 @@ void drawHud(Framebuffer& target, const HudState& state) {
     if (state.showCompass) {
         drawCompass(target, state);
     }
-    drawTopRight(target, state);
+    // DISTRICT PHASE D. THE CORNER FIRST, THEN THE PLATE THAT HAS TO CLEAR IT
+    // -- drawTopRight returns the width it claimed, and the plate's budget is
+    // what is left of the top band between two of them. See drawPlacePlate.
+    //
+    // NOT GATED ON showCompass. The plate carries its own fade and Session
+    // puts that to zero for precisely the cases showCompass is false for (a
+    // panel owns the screen), so a gate here would be the same test written
+    // twice in two places -- which is the drift conversingNow() exists to stop.
+    const int rightBlock = drawTopRight(target, state);
+    drawPlacePlate(target, state, rightBlock);
     drawBottomBand(target, state, band);
 }
 
