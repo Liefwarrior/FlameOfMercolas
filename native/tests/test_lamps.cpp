@@ -154,12 +154,25 @@ TEST_CASE("the shipped Docks bake carries the 27 authored light sources") {
             ++fire;
         }
     }
-    // Overwhelmingly a quayside district: 21 lights on Tarwalk and the piers,
-    // 2 on the mid slope, 4 up the rise.
-    CHECK(byBand[granadad::sim::docks::kBandQuayside] == 21);
+    // Overwhelmingly a quayside district: 20 lights on Tarwalk and the piers,
+    // 2 on the mid slope, 4 up the rise -- and, since District Phase B, ONE
+    // above the roofline.
+    //
+    // The quayside count was 21 and the band count was 3. Phase B (Thresholds)
+    // raised the Mission of the Flame a lantern-turret and took its doctrinal
+    // night lamp up with it, z19 -> z23: same lamp, same name (which is what
+    // keeps world_renderer.cpp's beacon exception finding it), same (x, y)
+    // bracket cell, four bands higher. So one light leaves the quayside row and
+    // arrives on a band of its own -- and z23 is the top authorable level of
+    // this world, which is the whole point: the ward's doctrinal flame is now
+    // the highest lit thing in it. The ward's other beacon, lamp_weighhouse_mast,
+    // is already a z21 signal-mast lamp rather than a door lamp; this is that
+    // same idea carried as far as the format allows.
+    CHECK(byBand[granadad::sim::docks::kBandQuayside] == 20);
     CHECK(byBand[granadad::sim::docks::kBandMidSlope] == 2);
     CHECK(byBand[granadad::sim::docks::kBandUpper] == 4);
-    CHECK(byBand.size() == 3);
+    CHECK(byBand[23] == 1);
+    CHECK(byBand.size() == 4);
     // Eight open flames -- four braziers, a cauldron, an oven, the shrine
     // candles and the watchpost brazier. The rest are shielded lanterns.
     CHECK(fire == 8);
@@ -181,6 +194,20 @@ TEST_CASE("the shipped Docks bake carries the 27 authored light sources") {
     CHECK(mast->y == 67);
     CHECK(mast->z == 21);
     CHECK(mast->luminance == 26);  // the brightest thing in the district
+
+    // The other beacon, and since Phase B the HIGHEST authored light in the
+    // world. Pinned by name and by band because both are load-bearing: the name
+    // is what world_renderer.cpp's fog exception matches on, and the band is the
+    // deliverable -- a beacon at the skyline rather than over a doorway.
+    const Lamp* mission = find("lamp_mission_night");
+    REQUIRE(mission != nullptr);
+    CHECK(mission->x == 120);
+    CHECK(mission->y == 97);
+    CHECK(mission->z == 23);
+    CHECK(mission->warmth == LampWarmth::Lantern);
+    for (const Lamp& lamp : lamps) {
+        CHECK(lamp.z <= mission->z);
+    }
 
     const Lamp* eelpot = find("lamp_eelpot_01");
     REQUIRE(eelpot != nullptr);

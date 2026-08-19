@@ -417,9 +417,25 @@ TEST_CASE("the skyline backdrop stands in the southern sky and the night swallow
     // to prove: the backdrop writes sky pixels only and the world pass
     // unconditionally overwrites the pixels it draws geometry into, so any
     // frame with skyPixels == 0 provably carries zero backdrop pixels.
+    //
+    // THE CAMERA WENT UP TWO BANDS IN DISTRICT PHASE B, AND THE REASON IS THE
+    // POINT OF THAT PASS. This stood at bandSurface(26), which with the default
+    // levelsBelow of 4 puts the z-window's floor at world z22 -- and that was
+    // all sky only because the Docks had nothing that tall within
+    // RenderSettings::maxDistance of the spawn. Phase B gave the Mission of the
+    // Flame a lantern-turret whose crown reaches world z23, fifty-two tiles from
+    // the spawn, and 477 pixels of it walked into this frame and turned the
+    // REQUIRE below red. That is the deliverable arriving, not a regression: the
+    // ward is supposed to have a landmark you can see across it now.
+    //
+    // So the camera goes to bandSurface(28), where the window's floor is z24.
+    // World z23 is the LAST interior band this format has (a 4-chunk-deep world
+    // with a one-chunk VOID border), so from up here the window is provably
+    // above everything anything can ever author into this map -- a structural
+    // guarantee rather than a standing bet on the ward staying short.
     Session session(docksAt(12));
     Camera aloft = session.camera();
-    aloft.z = bandSurface(26);
+    aloft.z = bandSurface(28);
     aloft.pitch = 0.0F;
 
     constexpr float kSouth = 3.14159265F;

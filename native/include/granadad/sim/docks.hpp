@@ -142,18 +142,48 @@ inline constexpr std::int32_t kQuayApproachY = 60;
 /// reachability -- is UNCHANGED and green: no actor's home or job route crosses any of these
 /// roof cells, so this is a district-wide walkability-audit number moving for a documented
 /// reason, not a sealed route.
-inline constexpr std::int32_t kReachableFromSpawn = 16922;
+///
+/// RE-DERIVED for DISTRICT PHASE B (Thresholds: the Saltgate gate-house, the four compound
+/// gate frames, the Mission's lantern-turret). This pass raises masonry and never removes
+/// any, so every number below can only fall, and the accounting is cell-exact.
+///
+/// TWENTY-TWO standable cells were built over, and they split cleanly in two:
+///
+///   * SIXTEEN roof cells, (86-89, 66-69) on K17's z12 roof cap (world z20), taken by the
+///     lantern-turret's 4x4 shaft. Every one of them was a roof deck with no walking route
+///     onto it, so kReachableFromSpawn does not move by a single tile for the turret -- only
+///     kStandableOnMidSlope and kReachableWithRoofMoves do.
+///   * SIX street cells at the gate-house, and these are the only cells in the district this
+///     pass takes OUT of the walking map: (80,115) and (81,115) on the z12 Terrace Walk
+///     frontage under the east tower (world z20), and (70,116)/(71,116)/(80,116)/(81,116) on
+///     the z13 band-edge ledge under both towers (world z21).
+///
+/// So kStandableOnMidSlope is -18 (16 roof + 2 street), kStandableOnUpper is -4, and
+/// kReachableFromSpawn is -6 and NOT -22. Quayside, BelowQuay and the roof-slum plane
+/// (kStandableOnRoofs) do not move by one tile, because the pass authored nothing on them.
+///
+/// THE OATH, DISCHARGED BY MEASUREMENT AND NOT BY ARGUMENT. A flood fill over stepBand from
+/// the spawn, run against the old bytes and the new ones and differenced, loses exactly those
+/// six cells and gains none -- zero collateral, no pocket sealed anywhere else in the ward. No
+/// marker, script_anchor, patrol waypoint, garbage bin, victualler stand or guard post stands
+/// on any of the 128 changed cells, and not one script_anchor in the map changes standability.
+/// The single route this genuinely costs is named rather than hidden: the 1-tile-deep ledge at
+/// x62-69, y116 (C1's ring wall north of it, K21's north wall south of it) loses its east end
+/// onto the Rise and becomes a dead end, while staying reachable along its whole length from
+/// the west. The Rise itself -- roadway, both kerbs and all eight ramp cells at (72-79, 116)
+/// -- is untouched, which is the whole point of a gate you walk through rather than a door.
+inline constexpr std::int32_t kReachableFromSpawn = 16916;
 inline constexpr std::int32_t kReachableOnQuayside = 11089;
-inline constexpr std::int32_t kReachableOnMidSlope = 2911;
-inline constexpr std::int32_t kReachableOnUpper = 2031;
+inline constexpr std::int32_t kReachableOnMidSlope = 2909;
+inline constexpr std::int32_t kReachableOnUpper = 2027;
 /// Under the piers and down at the strand — one level below the quay.
 inline constexpr std::int32_t kReachableBelowQuay = 891;
 
 /// Tiles a body can stand on, per band, over the whole district. S1: 11,310 /
 /// 7,369 / 3,901, before the doorway lintels counted as standable.
 inline constexpr std::int32_t kStandableOnQuayside = 11432;
-inline constexpr std::int32_t kStandableOnMidSlope = 6526;
-inline constexpr std::int32_t kStandableOnUpper = 3921;
+inline constexpr std::int32_t kStandableOnMidSlope = 6508;
+inline constexpr std::int32_t kStandableOnUpper = 3917;
 
 // --- S5: the roofs ----------------------------------------------------------
 //
@@ -208,8 +238,16 @@ inline constexpr std::int32_t kStandableOnRoofs = 1706;
 /// number), so removing them moves this number by the identical amount. Nothing on the
 /// compound roof-slum plane (kStandableOnRoofs, kRoofReachableOnRoofs) or the upper band
 /// moved at all -- this pass never touched a compound.
-inline constexpr std::int32_t kReachableWithRoofMoves = 24027;
-inline constexpr std::int32_t kRoofReachableOnUpper = 3864;
+/// RE-DERIVED for DISTRICT PHASE B, and this is the number that shows the turret up. The
+/// walking fill loses 6 cells; this one loses 22 -- the same 6, plus the 16 cells of K17's
+/// roof cap the lantern-turret's shaft stands on, which were mantle-reachable and nothing
+/// else. That gap between -6 and -22 IS the statement that the turret took a roof and not a
+/// street. kRoofReachableOnUpper falls by the 4 ledge cells at (70,116)/(71,116)/(80,116)/
+/// (81,116); kRoofReachableOnRoofs does not move by one tile, because the shaft rises from a
+/// z12 roof cap and the roof-slum plane is z14 -- this pass, like the archetype pass before
+/// it, never touched a compound roof.
+inline constexpr std::int32_t kReachableWithRoofMoves = 24005;
+inline constexpr std::int32_t kRoofReachableOnUpper = 3860;
 inline constexpr std::int32_t kRoofReachableOnRoofs = 1664;
 
 /// The lowest band a roof move may put a body on in THIS district. Everything

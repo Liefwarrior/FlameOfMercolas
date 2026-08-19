@@ -50,17 +50,27 @@ struct BakedWorldFacts {
 // did not, because the raws themselves are unchanged -- only which existing materials get
 // painted where, and several roof-cap frect() calls were added or removed (FLOOR<->OPEN, not a
 // footprint change, so chunk shape/count are identical too).
+//
+// REBAKED AGAIN by District Phase B (Thresholds, 2026-08-19): the Saltgate gate-house, the
+// four compound gate frames and the Mission's lantern-turret. 128 authored cells changed
+// across FIVE chunks and no others, which is why META is untouched a second time -- the raws,
+// the dimensions and the chunk count cannot move when the pass only repaints cells inside
+// chunks that already exist. wrldUncompressedLen is +602, and that number is not a mystery:
+// the WRLD section is a per-chunk RLE frame per lane, and diffing the two decompressed
+// sections frame by frame gives 123 (+328, the Mission turret), 125 (-2, C2's gate frame),
+// 126 (+6, C4's), 131 (+250, the gate-house and C1's frame) and 132 (+20, C3's) -- summing to
+// exactly +602, with the other 187 chunk frames byte-identical.
 inline constexpr BakedWorldFacts kDocksSurface{
     /*name=*/"docks_surface",
-    /*fileBytes=*/17709,
+    /*fileBytes=*/17902,
     /*chunksX=*/8,
     /*chunksY=*/6,
     /*chunksZ=*/4,
     /*chunkCount=*/192,
     /*metaCrc32c=*/0x12FBB6D6u,
-    /*wrldCrc32c=*/0x39F6DAA0u,
+    /*wrldCrc32c=*/0x0E7949C2u,
     /*metaUncompressedLen=*/77,
-    /*wrldUncompressedLen=*/86076,
+    /*wrldUncompressedLen=*/86678,
 };
 
 inline constexpr BakedWorldFacts kTavernFixture{

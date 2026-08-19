@@ -274,8 +274,14 @@ TEST_CASE("a step up needs a ramp or a stair, and mostly there is not one") {
     // or removed (see docks.hpp's kReachableFromSpawn comment) -- some of those cells sat at
     // one-level rises this loop counts, and both totals dropped by a handful without moving
     // the ratio (refused > allowed * 40 still holds, by a wide margin).
-    CHECK(allowed == 108);
-    CHECK(refused == 4368);
+    // RE-DERIVED AGAIN for District Phase B (Thresholds). The same 22 cells that pass turns
+    // from FLOOR into WALL -- K17's roof cap under the lantern-turret and six street cells at
+    // the Saltgate gate-house -- are cells this loop was counting on both sides of the
+    // question: as bodies standing next to a rise, and as the standable top of one. Both
+    // totals fall, and the guard's margin WIDENS rather than narrows: 4,368 > 108*40 = 4,320
+    // (a margin of 48) becomes 4,353 > 106*40 = 4,240 (a margin of 113).
+    CHECK(allowed == 106);
+    CHECK(refused == 4353);
     // The point: the overwhelming majority of one-level rises in this district
     // are walls, and the body cannot walk up them.
     CHECK(refused > allowed * 40);

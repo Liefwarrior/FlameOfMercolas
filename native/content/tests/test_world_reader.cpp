@@ -200,10 +200,22 @@ TEST_CASE("docks_surface loads completely") {
     // never had) -- FLOOR <-> OPEN cells at the roof z-slice, no footprint/wall change, which is
     // exactly why Wall/Ramp/Stair/Void below are untouched but Open/Floor moved by the same
     // 933-cell delta in opposite directions.
+    //
+    // REBAKED AGAIN by District Phase B (Thresholds): the Saltgate gate-house, four compound
+    // gate frames, and the Mission's lantern-turret. This pass only ever BUILDS, so every
+    // delta is a cell arriving at WALL, and the ledger closes exactly:
+    //
+    //     OPEN  -> WALL   100 cells   (masonry raised into air)
+    //     FLOOR -> WALL    22 cells   (masonry raised through a roof deck or a street)
+    //     WALL  -> WALL     6 cells   (repainted only: 4 dirt substrate and 2 of C1's ring
+    //                                  wall become the gate-house's granite)
+    //
+    // so Open is -100, Floor is -22, Wall is +100+22 = +122, and Ramp/Stair/Void cannot move
+    // because this pass authored no ramp, no stair and nothing outside the interior chunks.
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Void)) == 1179648);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Open)) == 92820);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Floor)) == 28477);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Wall)) == 271785);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Open)) == 92720);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Floor)) == 28455);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Wall)) == 271907);
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Ramp)) == 82);
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Stair)) == 52);
     // All six forms present — this world exercises the whole enum.
@@ -236,11 +248,34 @@ TEST_CASE("docks_surface loads completely") {
     // roof caps removed for the workshop/market buckets, which the DoD's bucket table calls
     // for); brick and oak rise the most (new/changed roof caps and wall swaps in the shop
     // bucket); dirt/reman_concrete/ash are untouched -- nothing in this pass painted them.
+    //
+    // REBAKED AGAIN by District Phase B (Thresholds). Distinct material count stays 15 for the
+    // same reason as last time: every material this pass paints was already in use somewhere in
+    // the ward. The per-material ledger over the 128 changed cells closes to the digit:
+    //
+    //   granite       +84 = +70 raised into air (turret shaft z13/z15 and its z14 crown, the
+    //                       gate towers' z14 course, the 16-cell lintel band)
+    //                       +12 K17 roof cap taken by the turret's z12 course
+    //                       +4  band-C dirt substrate repainted under the towers
+    //                       -2  Terrace Walk paving taken by the east tower's facade course
+    //   granite_facade +14 = +6 raised into air (tower z13 downhill faces, the 2-cell Flame-
+    //                       window suggestion at the turret's z14 street course)
+    //                       +4 K17 roof cap taken by the turret's z12 colonnade course
+    //                       +2 C1 ring wall repainted at the west tower's foot
+    //                       +2 Terrace Walk paving taken by the east tower
+    //   reman_concrete +18 = +20 raised into air (C1's, C2's and C3's gate frames)
+    //                       -2 of C1's ring wall repainted granite_facade
+    //   brick          -12 = -16 K17 roof cap taken by the turret, +4 C4's gate frame
+    //   dirt            -4 = the band-C substrate cells the towers repaint granite
+    //
+    // thatch, oak, trudgeon_wood and ash do NOT move, and that is deliberate rather than
+    // lucky: the C2 and C4 gate frames are authored as the OPENING ONLY precisely so their end
+    // posts do not eat the flanking units' reman and thatch roof decks.
     CHECK(materials.size() == 15);
-    CHECK(materials.at(fx::kMaterialGranite) == 178385);
-    CHECK(materials.at(fx::kMaterialDirt) == 102876);
-    CHECK(materials.at(fx::kMaterialRemanConcrete) == 6234);
-    CHECK(materials.at(fx::kMaterialBrick) == 5555);
+    CHECK(materials.at(fx::kMaterialGranite) == 178469);
+    CHECK(materials.at(fx::kMaterialDirt) == 102872);
+    CHECK(materials.at(fx::kMaterialRemanConcrete) == 6252);
+    CHECK(materials.at(fx::kMaterialBrick) == 5543);
     CHECK(materials.at(fx::kMaterialOak) == 2795);
     CHECK(materials.at(fx::kMaterialThatch) == 1551);
     CHECK(materials.at(fx::kMaterialTrudgeonWood) == 2051);
@@ -254,8 +289,21 @@ TEST_CASE("docks_surface loads completely") {
     // --- FLAGS lane --------------------------------------------------------
     const auto flags = histogram(world.byteLane(kFlagsLane));
     CHECK(flags.size() == 2);
-    CHECK(flags.at(0) == 121431);
-    CHECK(flags.at(flag_bits::kBlocksMove | flag_bits::kBlocksLight) == 1451433);
+    // Only two values, and they are the FORM histogram above read a second way:
+    // every material this ward paints is opaque, so a cell either blocks both
+    // movement and light or blocks neither.
+    //
+    //   blocks nothing   = Open + Floor + Ramp + Stair
+    //                    = 92,720 + 28,455 + 82 + 52 = 121,309
+    //   blocks both      = Void + Wall
+    //                    = 1,179,648 + 271,907 = 1,451,555
+    //
+    // District Phase B moved both by exactly 122, in opposite directions, and
+    // 122 is precisely the Wall delta above: the gate-house, the four compound
+    // gate frames and the Mission's lantern-turret are 122 cells of new masonry
+    // and nothing else. (Before the pass: 121,431 and 1,451,433.)
+    CHECK(flags.at(0) == 121309);
+    CHECK(flags.at(flag_bits::kBlocksMove | flag_bits::kBlocksLight) == 1451555);
 
     // --- FLUID lane: the harbour ------------------------------------------
     std::map<int, std::size_t> depths;
