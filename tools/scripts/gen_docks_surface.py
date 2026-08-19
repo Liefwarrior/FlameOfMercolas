@@ -1957,7 +1957,23 @@ T[13][113][114] = OAK_STAIR_UP
 T[14][113][114] = OAK_STAIR_DOWN
 C3_HUTS = [
     (100, 110, 104, 114, CLOTH_WALL, (104, 112)),   # roofhut_11
-    (126, 109, 131, 114, LEATHER_WALL, (126, 111)),  # roofhut_12
+    # DEV (District Phase C roof-road audit): roofhut_12 SHRUNK by one row, y109 -> y110.
+    # As authored it spanned x126-131 by y109-114, and the deck it stands on is exactly
+    # y109-114 between its own parapets at y108 and y115 -- so the hut's east wall column
+    # x131 ran the full depth of the roof and WALLED THE DECK IN TWO. The 42 cells east of
+    # it (x132-138, y109-114, c06's own share of the roof slum) could not be got to by
+    # walking, mantling, leaping or dropping from anywhere in the world: they are precisely
+    # the 42-cell gap between kStandableOnRoofs (1,706) and kRoofReachableOnRoofs (1,664)
+    # that has sat in docks.hpp since S5 counted it. Shrinking the hut one row north opens
+    # the y109 row as a continuous walk from x97 to x138 -- and it makes hut 12 sit on this
+    # deck exactly the way hut 11 already does (hut 11 also starts at y110 and leaves y109
+    # as the deck's north lane), which is why this is a gap-fill and not a redesign. The
+    # hut keeps its 2-wide west door at (126,111)/(126,112); it loses one row of floor. Its
+    # unit_anchor is center-derived and therefore moves with it, (128,111) -> (128,112) --
+    # still inside its own hut, still walkable, and referenced by NO coordinate anywhere in
+    # the C++ or Java trees (checked, not assumed: the roster's authored coordinates carry
+    # no cmp3 roofhut cell).
+    (126, 110, 131, 114, LEATHER_WALL, (126, 111)),  # roofhut_12
 ]
 for i, (x0, y0, x1, y1, wall, d) in enumerate(C3_HUTS):
     frect(14, x0, y0, x1, y1, DIRT_FLOOR)
@@ -2508,6 +2524,192 @@ for (kz, kx0, ky0, kx1, ky1) in COURTYARD_FARMS:
 # owner ruled is authored identity. C2's lamp_cmp2_roof at (158,84) is inside the NETTERS'
 # compound, six tiles west of the Gullet's own G3 lane, and stays. One hole was found and
 # it was Phase B's own flagged one; it is filled at K17 in section 3, not here.
+
+# ======================================================================
+# 5.96 DISTRICT PHASE C: THE ROOF ROAD (Quarters, 2026-08-19). S5 gave the body three
+# verbs and called the roofs a road; this pass asks whether the road actually joins up,
+# and fixes the places where it does not. The audit is a second Python implementation of
+# TiledWorldImporter + tile_query.cpp + test_roofrun.cpp's fill, validated by reproducing
+# all 31 committed pins before a single new number was believed.
+#
+# WHAT THE AUDIT FOUND, and two of the three findings correct the brief rather than
+# confirming it. Over the sixteen authored compound roof decks (2,591 standable cells) the
+# S5 rules -- walk, mantle, leap 3, drop 3 -- leave SIXTEEN separate islands:
+#
+#   * "the z22 roof plane" is not where three of the four compounds live. World z22 is
+#     local z14, and only C1's terrace, C3's south wing, K21's slab and the Band-C hovel
+#     caps are on it. C2 and C4 are Band A compounds: their roof planes are local z12 and
+#     z13 (world z20/z21). There is no single band that holds C2, C3 and C4.
+#   * C2 -> C4 cannot be joined by tuning a gap, and the reason is arithmetic, not taste.
+#     Their roofs face each other across the 2-cell Gullet G3 lane, but C2's slum deck is
+#     z13 and C4's thatch is z12, and leapLanding checks its whole reach at the LAUNCH band
+#     first and only then walks the tiles again looking one and two bands down, nearest
+#     tile first. There is no same-band landing, so the nearest tile wins -- and the
+#     nearest tile's two-band drop is the LANE. Every leap either way lands in the street.
+#     A roof-to-roof crossing over a public lane needs the two roofs on one band, or a deck
+#     built out over the lane; both are structures, not gaps, and both are flagged instead.
+#   * C2 -> C3 is farther still: C3's decks are seven rows south across Backwall Alley and
+#     a whole band-climb. No S5 move reaches it and none was authored to.
+#
+# So the deliverable is the road that CAN exist: each compound's own roof made continuous,
+# and the ward's one genuinely unreachable roof island opened. Three tunings, and the
+# second is one idea spent on the pair of frames Phase B built as a pair.
+#
+# THE ROAD, COUNTED BEFORE AND AFTER. Components of the S5 move graph restricted to the
+# compound roof decks themselves (a body that never comes down to a street):
+#
+#            before                                   after
+#   16 islands over 2,591 deck cells        13 islands over 2,602
+#     C2   three (576 | 80 | 210)              C2   two  663 mansion+c01+c02+c03 | 209 slum
+#     C4    five (208 | 110 | 22/13/10/8)      C4   two  322 thatch plane | the 4 slum pockets
+#     C3    four (180 | 112 | 178 | 42)        C3 three  180 | 112 | 221  (the 42 rejoined)
+#     C1   three (374 | 252 | 216)             C1 three  unchanged -- this pass never touched it
+#
+# C4's roof slum stays four pockets ON PURPOSE: those walls are roofhut_07-10 and the K35
+# Skyrunner's Roost, and the Roost's binding law is no new door and no sign. A warren is
+# what a concealed lair is made of; opening it would be the redesign the brief forbids.
+#
+# TUNING 1 lives with C3_HUTS in section 4 (roofhut_12 shrunk one row): it opens the 42
+# cells that are exactly the standing gap between kStandableOnRoofs and
+# kRoofReachableOnRoofs, which makes the whole world-z22 plane reachable for the first
+# time since it was authored.
+#
+# TUNING 2 -- THE GATE LINTELS BECOME BRIDGES. Phase B put a one-band frame across C2's and
+# C4's courtyard mouths, at the exact band their flanking units' roof decks sit on, because
+# at those two compounds "the jamb tops are already roofed". That left a wall standing
+# between two roofs at the same level: a body on C2 c01's deck faces the frame across the
+# mouth and neither leaps it (8 cells) nor mantles it (nothing to stand on). Roofing the
+# frame itself turns each mouth from a barrier into the one crossing it always looked like.
+# A body mantles the frame from the flanking deck, walks the span, and steps down onto the
+# far deck -- the gate below is untouched, air the whole way, because a floor laid on top
+# of a wall changes nothing under it. This is the "you are inside the architecture" beat
+# read upward: the compound's own gate is the roof road's bridge.
+frect(13, 136, 66, 143, 66, REMAN_FLOOR)            # C2: over the frame at (136-143,66,z12)
+frect(13, 176, 66, 179, 66, BRICK_FLOOR)            # C4: over the frame at (176-179,66,z12)
+# TUNING 3 WAS TRIED, AND THE WARD REFUSED IT. The plan was one broken parapet -- the
+# idiom C4's roof slum already ships at (190,84) -- taking two cells out of C2's unbroken
+# west parapet at (152,74)/(152,75), where the slum deck (z13) stands one band over c02's
+# roof deck (z12) with nothing between them. It joined the two decks and made C2's roofs a
+# single 874-cell circuit, which is exactly what the brief asked for. IT ALSO DRAINED THE
+# ROOF SLUM, and the gate found it before this comment did:
+#
+#   ward=656 -> 655 and roof=8/8 -> 7/7 on the built .exe, and the --street=priest capture
+#   stopped finding Father Maell at all (test_ward_voice, "the street line reaches three
+#   trades and gets three different voices"). Re-derived on the bytes: the C2 roof-slum
+#   plane's own walking region went from 210 cells on band 13 ALONE to 17,208 cells across
+#   bands 10-13 -- the whole district. One of the eight roof tenants walked off the roof.
+#
+# WHY, and this is the rule the pass ends up teaching. UP over that broken course is a
+# MANTLE, which is a PLAYER verb; DOWN is stepBand's ordinary down-clause, which every body
+# in the ward has. So the break was one-way for everyone except the player, and the way it
+# pointed was OFF the roof-slum plane -- straight through gazetteer 2.5's social rule (the
+# rooftops are where the poor and the Skyrunners live BECAUSE nobody else goes up there)
+# and 2.6's ("roof-slum planes whose same-z isolation is the point").
+#
+#   THE ROOF ROAD IS A PLAYER ROAD. A tuning may only join two roofs by a move the ward's
+#   own bodies cannot make -- a mantle or a leap -- or it must be two-way for a walker too.
+#   A parapet gap over a lower deck is neither: it is a one-way drain.
+#
+# The two gate-lintel bridges above pass that test by construction: getting onto them needs
+# a mantle from a roof deck, so no walking body can ever be on one, and no walking body's
+# region changes by a cell. The roofhut_12 shrink passes it too -- everything it opens is
+# inside C3's own parapets on its own band. Both are proved rather than asserted, by the
+# guard at the end of this section.
+#
+# WHAT IT COSTS TO LEAVE IT OUT, stated so the owner can rule: C2's four ground-level roof
+# decks are one circuit, and its roof slum stays the separate 210-cell plane it was
+# designed to be. Making the slum part of the circuit safely needs a real vertical
+# connector -- a stair pair off c02's roof, two more cells and a new authored connector --
+# which is the redesign this brief rules out. Flagged in the phase report, not authored.
+# THE CACHES -- three of them, and the Cache Row law applies verbatim: a find, not a sign.
+# No place name is authored, no lamp, no sign, no shell and no door; each is one lashed
+# crate against a corner the road turns at, with a script_anchor on the deck beside it so
+# something later can bind to a cell that a body can actually stand on. Corner-sited on
+# purpose: a solid cell in the middle of a deck can pinch a route, and a solid cell in a
+# corner cannot -- the fill is differenced afterwards to prove it rather than to assume it.
+# WHAT THESE CANNOT CARRY, flagged rather than invented: a cache's CONTENTS are sim state,
+# and this map format has no container. A marker carries a name, a class and int/string
+# properties; there is no inventory lane, no loot table binding and no chest object. So
+# these are the three places a cache IS, and what is in them is a question for the owner
+# and a later system, not something this pass may make up.
+ROOF_CACHES = [
+    # (z, crate x, crate y, anchor x, anchor y, where)
+    (13, 162, 75, 161, 75),   # C2 slum deck, the east corner of the open y74-75 band
+    (12, 144, 75, 145, 75),   # C2 c02's roof, the corner the lintel bridge leads to
+    (14, 138, 114, 137, 114),  # C3, inside the 42 cells roofhut_12 had sealed
+]
+for i, (cz, cx, cy, ax, ay) in enumerate(ROOF_CACHES):
+    T[cz][cy][cx] = FURN_STOCK
+    mk(cz, "script_anchor", "roof_cache_%02d_anchor" % (i + 1), ax, ay)
+
+
+# THE GUARD, so the lesson above cannot be un-learned by a later pass. Every compound
+# roof-slum plane must stay ITS OWN WALKING REGION: a body that starts on it, using the
+# ordinary walking rule and nothing else, must not end up on another band or outside the
+# deck's own footprint. This is gazetteer 2.5/2.6 expressed as an assertion instead of a
+# paragraph, and it is what turns "the roof road is a player road" from a comment into a
+# thing the generator refuses to violate.
+ROOF_PLANES = [
+    # (label, z, x0, y0, x1, y1, probe x, probe y)
+    ("C1 terrace",    14,   8,  97,  31, 115,  20, 105),
+    ("C2 roof slum",  13, 152,  66, 163,  93, 157,  80),
+    ("C3 roof slum",  14,  96, 108, 139, 115, 110, 112),
+    ("C4 roof slum",  13, 184,  76, 190,  93, 185,  84),
+]
+_WALL_GIDS = {GRANITE_WALL, DIRT_WALL, OAK_WALL, THATCH_WALL, TRUDGEON_WALL, GETILIA_WALL,
+              STEEL_WALL, BRICK_WALL, REMAN_WALL, LEATHER_WALL, CLOTH_WALL,
+              GRANITE_FACADE_WALL, BRICK_FACADE_WALL, REMAN_FACADE_WALL}
+_CLIMB_GIDS = {GRANITE_STAIR_UP, GRANITE_STAIR_DOWN, GRANITE_RAMP, OAK_STAIR_UP,
+               OAK_STAIR_DOWN, DIRT_RAMP, BRICK_RAMP}
+
+
+def _form(x, y, z):
+    """VOID / WALL / WALK(able) / OPEN, the collapse tile_query.cpp works in."""
+    if not (0 <= x < W and 0 <= y < H and 0 <= z < ZCOUNT):
+        return "VOID"
+    t = T[z][y][x]
+    if t:
+        return "WALL" if t in _WALL_GIDS else "WALK"
+    return "WALK" if F[z][y][x] else "OPEN"
+
+
+def _walkable(x, y, z):
+    # Fluid deep enough to block never pools on a roof; the decks above carry none.
+    return _form(x, y, z) == "WALK" and _form(x, y, z + 1) != "VOID"
+
+
+def _step(fx, fy, fz, x, y):
+    if _walkable(x, y, fz):
+        return fz
+    if _form(x, y, fz) != "WALL" and _form(x, y, fz) != "VOID" and _walkable(x, y, fz - 1):
+        return fz - 1
+    if _walkable(x, y, fz + 1) and (T[fz][fy][fx] in _CLIMB_GIDS
+                                    or T[fz + 1][y][x] in _CLIMB_GIDS):
+        return fz + 1
+    return None
+
+
+for (label, pz, px0, py0, px1, py1, sx, sy) in ROOF_PLANES:
+    seen = {(sx, sy, pz)}
+    stack = [(sx, sy, pz)]
+    while stack:
+        cx, cy, cz = stack.pop()
+        for (ddx, ddy) in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nb = _step(cx, cy, cz, cx + ddx, cy + ddy)
+            if nb is not None and (cx + ddx, cy + ddy, nb) not in seen:
+                seen.add((cx + ddx, cy + ddy, nb))
+                stack.append((cx + ddx, cy + ddy, nb))
+    escaped = [c for c in seen
+               if c[2] != pz or not (px0 <= c[0] <= px1 and py0 <= c[1] <= py1)]
+    if escaped:
+        escaped.sort()
+        raise SystemExit(
+            "%s leaks: a walking body starting at (%d,%d,z%d) reaches %d cells off the "
+            "plane, first at (%d,%d,z%d). A roof-slum plane must stay its own walking "
+            "region (DOCKS-GAZETTEER 2.5/2.6); join roofs with a mantle or a leap, never "
+            "with a parapet gap over a lower deck."
+            % (label, sx, sy, pz, len(escaped), escaped[0][0], escaped[0][1], escaped[0][2]))
+
 
 # ======================================================================
 # 5.9 THE STOOPS (quality slice 4). Eli: "buildings, actors, and the environment all
