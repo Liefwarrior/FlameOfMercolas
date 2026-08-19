@@ -2012,7 +2012,17 @@ struct ThresholdLineResult {
     std::string to;
     /// The body genuinely ended the walk standing inside `to`.
     bool crossed = false;
-    /// The plate was WANTED at the shutter, and what it was saying.
+    /// The plate was WANTED WHEN THE WALK ENDED, and what it was saying.
+    ///
+    /// WHEN THE WALK ENDED, NOT AT THE SHUTTER, and the difference is a real
+    /// capture rather than a quibble. runSmoke runs this line BEFORE the
+    /// menu-opening flags on purpose, so `--threshold=piers --map-overlay`
+    /// arms the plate by a real walk and then hands the screen to a page --
+    /// and that run reports `up=yes` beside a frame with no plate on it,
+    /// which is exactly right: the plate WAS wanted, and the stand-down rule
+    /// is what the picture is evidence of. A field that answered for the
+    /// shutter instead could not tell that frame apart from one where the
+    /// crossing never fired at all.
     bool announced = false;
     std::string plate;
 };

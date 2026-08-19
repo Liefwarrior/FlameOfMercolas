@@ -493,7 +493,7 @@ COMBINED WORLD HASH: 0x2646C1AAA2BA38DF      <- unchanged from Phase C
 
 `run A` and `run B` identical, report text byte-identical at **18,772 bytes** — the same
 count Phase C recorded — taken with `dist\granadad-twin-gate.exe` on the gate whose stamp
-names this tree (`district-phase-d-presentation-1787162275`, 100% of 72 suites / 860 ctest
+names this tree (`district-phase-d-presentation-1787163007`, 100% of 72 suites / 860 ctest
 cases green, `verify-windows.ps1` PASS with both fingerprint reports byte-identical
 linux/gcc vs mingw/windows).
 
