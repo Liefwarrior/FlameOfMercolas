@@ -374,3 +374,97 @@ times) on the gate whose stamp names this tree. The predecessor for a like-for-l
 comparison is the archetype-buildings number `0x4365e04522472019` in the section above,
 taken with the same tool and the same arguments. The pre-S8 number at the top of this file is
 **not** re-blessed to this one — that one is the pre-arc reference and stays that.
+
+---
+
+## The District Phase C (Quarters) drift, on the record
+
+District Phase C (2026-08-19: the quarter-register audit and its one light-law gap-fill,
+the Quayward compound's second gate, and the roof-road continuity pass) moved the number
+again. This section says exactly where, in this file's own discipline, so a later reader
+can tell a deliberate step from a regression.
+
+### What drifted, and why it had to
+
+**One thing changed the world, and it is a REBAKE** — the same class of change every pass
+in the sections above made. `content/maps/src/docks_surface.tmx` was regenerated from
+`tools/scripts/gen_docks_surface.py` and rebaked to
+`content/maps/baked/docks_surface.trojsav` via `import-map`. `WorldHasher.hashWorld` reads
+decoded lane values, so moving masonry moves the number by construction.
+
+It is **27 authored cells**, and unlike Phase B they do not all go one way — this is the
+first ward pass that opens more masonry than it raises:
+
+| change | cells |
+| --- | --- |
+| OPEN → FLOOR (two gate-lintel roof bridges, C2 8 and C4 4) | 12 |
+| WALL → FLOOR (roofhut_12's old north wall, off the deck it was sealing) | 6 |
+| WALL → RAMP (the Quayward compound's second gate) | 2 |
+| FLOOR → WALL (that hut's new north wall, 4, and three cache crates) | 7 |
+
+Net: Wall **−1**, Floor **+11**, Open **−12**, Ramp **+2**. Those 27 cells fall inside FIVE
+chunks and no others, which is why the META section — raws fingerprint, dimensions, chunk
+count — is byte-identical either side of the rebake for the third rebake running.
+
+The lamp roster moved too (27 → 28: `lamp_mission_door`, the 7.2 light-law gap-fill Phase B
+flagged and declined to author), but a marker is not world state — the importer bakes tile
+layers and markers ride `docks_surface.lamps.json`, so that change moves the sidecar and not
+one byte of the hash.
+
+### What was proved INERT
+
+* **Every other world.** `tools/golden/generate.ps1` reran the real Java `WorldHasher`
+  against all three baked worlds: `compound_block` (`8431f8ddb4a77bd9`) and `tavern_fixture`
+  (`62063c420daf54fa`) came back byte-identical for the second pass running, and only the
+  `docks_surface` row moved (`6fb5778456fb02d8` → `5ae0e361b4a70f12`).
+* **The rebake is deterministic.** Two `import-map` runs from the same `.tmx` produce the
+  same 17,954 bytes, sha256
+  `e47da3ae11599c6dff79da2f1753bf46530c76131d66a072aef42c29e474c2ac`; regenerating the
+  `.tmx` from the generator twice reproduces sha256
+  `cceda566a4702d5638fcd84d4df90b89465155dd32c7cdb0ebf9896b237b4d1c` byte-identically. The
+  whole chain from Python to baked bytes is a pure function.
+* **The walking map.** The flood fill over `stepBand` from the spawn, differenced old
+  against new, GAINS the two gate-ramp cells and **LOSES NOTHING**. No pocket is sealed
+  anywhere in the ward, and no marker, script_anchor, patrol waypoint, bin, victualler stand
+  or guard post stands on any of the 27 changed cells.
+* **Actor home/job reachability.** `test_ward_actors.cpp` needed no golden updates and
+  stayed green throughout.
+* **Cross-toolchain.** `scripts/verify-windows.ps1` PASS: the decoded-world-state report
+  (3,884 bytes, sha256 `97850dcb…`) and the world-hash/simulation report (1,791 bytes,
+  sha256 `924f6ea6…`) are byte-for-byte identical between linux/gcc and mingw/windows, and
+  the gate stamp's `native/` digest names this tree.
+
+### What the gate CAUGHT, which belongs on the record as much as the drift
+
+A fourth tuning was authored, measured, and **removed before it shipped**. Breaking two
+cells of C2's roof-slum parapet joined its slum deck to the roof one band below and made
+C2's roofs a single 874-cell circuit — and drained the roof slum. The built `.exe` reported
+`ward=655` and `roof=7/7` against 656 and 8/8, and `test_ward_voice`'s `--street=priest`
+capture stopped finding Father Maell at the Mission at all. Re-derived on the bytes: the C2
+slum plane's own walking region went from 210 cells on band 13 alone to 17,208 cells across
+bands 10–13.
+
+The cause is a rule worth keeping: **up over a broken parapet is a MANTLE, which is a player
+verb, while down is `stepBand`'s own down-clause, which every body in the ward has.** So the
+break was one-way for everyone except the player, and the way it pointed was off the
+roof-slum plane — through DOCKS-GAZETTEER §2.5's social rule and §2.6's same-z isolation.
+`gen_docks_surface.py` now carries a generator-level guard that flood-fills the walking rule
+from each of the four compound roof planes and refuses to write a map where any of them
+escapes its own band and footprint. Verified to bite.
+
+### The post-Phase-C number
+
+```
+at branch wip/district-phase-c-quarters,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` (`run A` and `run B` identical, report text byte-identical, 18,772 bytes both
+times) on the gate whose stamp names this tree
+(`district-phase-c-quarters-1787158501`, 100% of 71 suites / 847 cases green). The
+predecessor for a like-for-like comparison is the Phase B number `0xD85542BA71D320E9` in
+the section above, taken with the same tool and the same arguments. The pre-S8 number at the
+top of this file is **not** re-blessed to this one — that one is the pre-arc reference and
+stays that.
