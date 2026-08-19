@@ -1287,6 +1287,22 @@ mk(11, "script_anchor", "clue_c1_mission_backroom", 94, 78)
 # pinned in three places, and adding an unbriefed marker to soften a briefed move is
 # exactly the kind of scope creep the phase report should flag to the owner instead.
 mk(15, "light_source", "lamp_mission_night", 88, 65, luminance=22)
+# DISTRICT PHASE C (Quarters), the section 7.2 light-law gap-fill -- and it is a GAP-FILL
+# and not a redesign, because Phase B's own report flagged this hole and declined to fill
+# it unbriefed. The audit of all 27 shipped lights against 7.2's design law
+# ("up-slope bright, waterline dim, Gullet black") found the law holding everywhere except
+# here: the Mission of the Flame is a civic almshouse on the ward's brightest island, and
+# since the beacon went up the turret its alms-hall doors have stood unlit, with the
+# nearest light lamp_guardhouse_door 22 tiles east. THE WARD ALREADY OWNS THE ANSWER: the
+# Weighhouse carries lamp_weighhouse_mast (z13, luminance 26) AND brazier_weighhouse_plaza
+# (z11, luminance 16) -- a signal high and a working light on the ground, two markers, one
+# building. This restores exactly that shape at the Mission, on the same bracket cell the
+# beacon left, and it is a NEW NAME on purpose: world_renderer.cpp's fog exception matches
+# lamp names EXACTLY ("lamp_weighhouse_mast" || "lamp_mission_night"), so a door lamp called
+# anything else cannot steal the beacon's tag. Luminance 18 puts it level with the other
+# civic door lamps (guardhouse, Gull) and deliberately BELOW its own beacon's 22, the same
+# ordering the Weighhouse pair has: the high light is the brighter one.
+mk(11, "light_source", "lamp_mission_door", 88, 65, luminance=18)
 # S6 fix (World route audit 2026-07-24): the garden marker's old cell (90,88)
 # predates K29's relocation onto that lot -- it had come to sit INSIDE the Long
 # Store on a rack wall (not walkable, not reachable), stranding the Mission's two
@@ -2410,6 +2426,39 @@ for (kz, kx0, ky0, kx1, ky1) in COURTYARD_FARMS:
             if F[kz][fy][fx] == GRANITE_FLOOR:
                 raise SystemExit("courtyard farm cell (%d,%d,z%d) is still paved"
                                  % (fx, fy, kz))
+
+# ======================================================================
+# 5.955 DISTRICT PHASE C: THE QUARTER REGISTER AUDIT (Quarters, 2026-08-19). This block
+# authors NOTHING. It is here because the audit it records is a deliverable, and a
+# verification that found nothing to change is worth exactly as much as one that did --
+# provided it says what it checked, so the next pass does not check it again.
+#
+# THE ROOF RULE (gazetteer 2.1: "thatch inland, tile near the tar yard -- see 7 fire map").
+# Checked over every one of the 39 K-sites and 4 compounds, by reading the baked FLOOR
+# cells at each site's own roof bands and grouping them by material. Result: the rule holds
+# everywhere and the archetype pass left NO gap in it.
+#   * Nothing thatched stands anywhere near the tar yard. K09 Pitchfield's fenced yard is
+#     x2-29/y36-58; every site whose footprint comes within twelve tiles of it is either
+#     hard-capped (K08 Brann's brick, K26 Sailmaker's brick, K27 Hardtack brick) or
+#     deliberately uncapped by the archetype pass's own workshop/market bucket rule (K09
+#     itself, K10 Dawnstalls, K11 Salt Row, K22 Netmenders, K23 Cooper's, K07 Ropewalk).
+#     The nearest thatch in the ward is thirty-four tiles clear of the fence.
+#   * Thatch IS the inland register, and it is where the fire map wants it: K03 the Gull,
+#     K04 the Bilge, K05 the Lantern Room, K19 the Rows, C4's Gullet roofs and the Band-C
+#     hovel rows -- gazetteer 7.3 files taverns, the Rows and up-slope thatch at MEDIUM by
+#     name, so those are canon-compliant rather than oversights.
+#   * The eleven roofless hovels are the HOVEL_KITS rotation's cloth tents (kit index 3),
+#     not missing caps; the uncapped K-sites are the bucket rule's open sheds and stalls.
+# CONCLUSION: no roof-cap material is authored by this pass. "Gap-fill, not redesign" cuts
+# both ways -- there was no gap, so nothing is filled, and the table above is the artifact.
+#
+# THE LIGHT LAW (gazetteer 7.2: "up-slope bright, waterline dim, Gullet black"). Checked
+# over all 27 shipped light_source markers. The law holds: waterline (y<=30) mean luminance
+# 14.0 against up-slope (y>=96) mean 17.5, and the Gullet box -- x160-191/y58-96, the alley
+# net around the condemned warehouse and C4 -- holds ZERO lights, which is the darkness the
+# owner ruled is authored identity. C2's lamp_cmp2_roof at (158,84) is inside the NETTERS'
+# compound, six tiles west of the Gullet's own G3 lane, and stays. One hole was found and
+# it was Phase B's own flagged one; it is filled at K17 in section 3, not here.
 
 # ======================================================================
 # 5.9 THE STOOPS (quality slice 4). Eli: "buildings, actors, and the environment all
