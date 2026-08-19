@@ -280,8 +280,27 @@ TEST_CASE("a step up needs a ramp or a stair, and mostly there is not one") {
     // question: as bodies standing next to a rise, and as the standable top of one. Both
     // totals fall, and the guard's margin WIDENS rather than narrows: 4,368 > 108*40 = 4,320
     // (a margin of 48) becomes 4,353 > 106*40 = 4,240 (a margin of 113).
-    CHECK(allowed == 106);
-    CHECK(refused == 4353);
+    // RE-DERIVED AGAIN for District Phase C (Quarters), and this time the pass ADDS a climb,
+    // so `allowed` grows for the first time. Every one of the eleven moved (cell, direction)
+    // pairs was identified rather than inferred:
+    //
+    //   allowed +2  the Quayward compound's second gate. Standing ON either new ramp cell at
+    //               (68,115)/(69,115) local and facing south, the band-edge ledge one level up
+    //               is now a climb the rule permits -- which is the deliverable, stated as an
+    //               assertion instead of a screenshot.
+    //   refused +5  roofhut_12's shrink turns six z14 cells at y109 from wall into deck, so
+    //               bodies on C3's z13 upper storey below now face a one-level rise with a
+    //               standable top where before there was nothing up there at all.
+    //   refused -6  four pairs whose standable top became that hut's NEW north wall, and two
+    //               pairs each lost to the cache crates at (138,114) and (144,75).
+    //
+    // Net: allowed 106 -> 108, refused 4,353 -> 4,352. The guard still holds and its margin
+    // NARROWS rather than widens -- 4,352 > 108*40 = 4,320, a margin of 32 against Phase B's
+    // 113 -- for the honest reason that each cell a pass makes climbable costs forty of it.
+    // Two authored ramps is what that buys, and it is worth saying out loud that this is the
+    // direction the number moves when a district gains a stair rather than a wall.
+    CHECK(allowed == 108);
+    CHECK(refused == 4352);
     // The point: the overwhelming majority of one-level rises in this district
     // are walls, and the body cannot walk up them.
     CHECK(refused > allowed * 40);

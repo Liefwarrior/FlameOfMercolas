@@ -172,18 +172,70 @@ inline constexpr std::int32_t kQuayApproachY = 60;
 /// onto the Rise and becomes a dead end, while staying reachable along its whole length from
 /// the west. The Rise itself -- roadway, both kerbs and all eight ramp cells at (72-79, 116)
 /// -- is untouched, which is the whole point of a gate you walk through rather than a door.
-inline constexpr std::int32_t kReachableFromSpawn = 16916;
+///
+/// RE-DERIVED FOR DISTRICT PHASE C (Quarters: the Quayward's second gate, two gate-lintel
+/// roof bridges, one roof hut shrunk off a deck it was sealing, three roof caches). This
+/// pass both opens and closes, twenty-seven cells in all, and the two fills move for
+/// completely different reasons -- which is the whole point of keeping both.
+///
+/// THE WALKING FILL MOVES BY TWO, AND THE TWO ARE THE GATE. C1's south ring wall is pierced
+/// at (68,115)/(69,115) local (world (100,147)/(101,147), band 20) with a pair of RAMP cells,
+/// so the band-edge ledge at y116 that District Phase B left a dead end now walks down into
+/// the compound's courtyard and out its east gate onto the Rise. Both ramp cells are
+/// themselves newly standable and newly reachable; NOTHING ELSE joins, because both ends of
+/// the gate were already reachable -- the ledge from the west, the courtyard from the Rise.
+/// The gate is a shortcut, not a rescue: from the ledge's east end to the courtyard's east
+/// end was 54 walking steps the long way round and is now 10.
+///
+/// THE ROOF FILL MOVES BY FIFTY-FIVE, and every one is a roof:
+///
+///   +43 on the roof-slum plane (band 22). roofhut_12 on C3's deck spanned the deck's whole
+///       depth and its east wall column sealed 42 cells behind it -- cells no move in the
+///       game could reach, and precisely the standing gap between kStandableOnRoofs and
+///       kRoofReachableOnRoofs. Shrinking the hut one row north opens them, plus the 6 cells
+///       of its old north wall, less the 4 its new north wall stands on and 1 cache crate.
+///   +11 on the upper band (21): the twelve cells of the two gate-lintel bridges, less one
+///       cache crate. A body mantles the bridge off the flanking roof deck, walks the span
+///       and steps down the far side -- so C2's four ground-level roof decks are one circuit
+///       and C4's thatch plane is one, where before they were three and two.
+///    +1 on the mid-slope band (20): the two gate ramps, less one cache crate.
+///
+/// AND THE NUMBER THIS PASS EXISTS FOR: kRoofReachableOnRoofs is now 1,707, which is
+/// kStandableOnRoofs exactly. The world-z22 roof-slum plane is wholly reachable for the first
+/// time since it was authored, and the last unreachable roof island in the district is gone.
+///
+/// THE OATH, DISCHARGED BY MEASUREMENT. Walking fill from the spawn, old bytes against new,
+/// differenced: it GAINS the two ramp cells and LOSES NOTHING -- no pocket sealed anywhere in
+/// the ward. The roof fill loses exactly six cells and all six are cells this pass
+/// deliberately built on: the four of roofhut_12's interior under its moved north wall, and
+/// two of the three cache crates. No marker, script_anchor, patrol waypoint, bin, victualler
+/// stand or guard post sits on any of the twenty-seven changed cells.
+///
+/// AND ONE THING THE FILLS DO NOT SAY, learned from the gate rather than from a fill: a
+/// fourth tuning was authored, tested and REMOVED. Breaking two cells of C2's roof-slum
+/// parapet joined its slum deck to c02's roof and made C2's roofs a single 874-cell circuit
+/// -- and drained the roof slum, because UP over a broken parapet is a mantle (a PLAYER verb)
+/// while DOWN is stepBand's own down-clause, which every body in the ward has. The C2 slum
+/// plane's walking region went from 210 cells on its own band to 17,208 across four bands,
+/// the built .exe reported ward=655 and roof=7/7 against 656 and 8/8, and a roof tenant who
+/// should never leave the roof (gazetteer 2.5/2.6) left it. gen_docks_surface.py now carries
+/// a generator-level guard that refuses any map where a roof-slum plane's walking region
+/// escapes its own band and footprint. THE ROOF ROAD IS A PLAYER ROAD.
+inline constexpr std::int32_t kReachableFromSpawn = 16918;
 inline constexpr std::int32_t kReachableOnQuayside = 11089;
-inline constexpr std::int32_t kReachableOnMidSlope = 2909;
+inline constexpr std::int32_t kReachableOnMidSlope = 2911;
 inline constexpr std::int32_t kReachableOnUpper = 2027;
 /// Under the piers and down at the strand — one level below the quay.
 inline constexpr std::int32_t kReachableBelowQuay = 891;
 
 /// Tiles a body can stand on, per band, over the whole district. S1: 11,310 /
 /// 7,369 / 3,901, before the doorway lintels counted as standable.
+/// PHASE C: MidSlope +1 (two gate ramps, one cache crate), Upper +11 (twelve bridge cells,
+/// one cache crate). Quayside and BelowQuay do not move by a tile -- nothing was authored
+/// on either.
 inline constexpr std::int32_t kStandableOnQuayside = 11432;
-inline constexpr std::int32_t kStandableOnMidSlope = 6508;
-inline constexpr std::int32_t kStandableOnUpper = 3917;
+inline constexpr std::int32_t kStandableOnMidSlope = 6509;
+inline constexpr std::int32_t kStandableOnUpper = 3928;
 
 // --- S5: the roofs ----------------------------------------------------------
 //
@@ -205,7 +257,10 @@ inline constexpr std::int32_t kStandableOnUpper = 3917;
 /// 1,706 standable cells were reachable from the spawn by any means.
 inline constexpr std::int32_t kBandRoofs = 22;
 
-inline constexpr std::int32_t kStandableOnRoofs = 1706;
+/// PHASE C: 1,706 -> 1,707, the first time this number has ever moved. Six cells of
+/// roofhut_12's old north wall become deck, four become its new north wall, one becomes a
+/// cache crate: +6 -4 -1 = +1.
+inline constexpr std::int32_t kStandableOnRoofs = 1707;
 
 /// Reachable from the spawn once the body can climb, leap and drop. The walk-
 /// only number is kReachableFromSpawn (17,054) and the S5 correction to the
@@ -246,9 +301,9 @@ inline constexpr std::int32_t kStandableOnRoofs = 1706;
 /// (81,116); kRoofReachableOnRoofs does not move by one tile, because the shaft rises from a
 /// z12 roof cap and the roof-slum plane is z14 -- this pass, like the archetype pass before
 /// it, never touched a compound roof.
-inline constexpr std::int32_t kReachableWithRoofMoves = 24005;
-inline constexpr std::int32_t kRoofReachableOnUpper = 3860;
-inline constexpr std::int32_t kRoofReachableOnRoofs = 1664;
+inline constexpr std::int32_t kReachableWithRoofMoves = 24060;
+inline constexpr std::int32_t kRoofReachableOnUpper = 3871;
+inline constexpr std::int32_t kRoofReachableOnRoofs = 1707;
 
 /// The lowest band a roof move may put a body on in THIS district. Everything
 /// under the harbour surface is the unbuilt dungeon -- see

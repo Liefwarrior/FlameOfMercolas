@@ -292,7 +292,7 @@ struct WorldHashVector {
 };
 inline constexpr WorldHashVector kWorldHashes[] = {
     {"compound_block", 0x8431F8DDB4A77BD9ull, 0x96726576CE2A1E58ull},
-    {"docks_surface", 0x6FB5778456FB02D8ull, 0x1D3CE3F5149EBB7Bull},
+    {"docks_surface", 0x5AE0E361B4A70F12ull, 0x861D944C0E729802ull},
     {"tavern_fixture", 0x62063C420DAF54FAull, 0x1276F7CAB633724Full},
 };
 

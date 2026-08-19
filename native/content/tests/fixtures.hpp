@@ -60,17 +60,38 @@ struct BakedWorldFacts {
 // sections frame by frame gives 123 (+328, the Mission turret), 125 (-2, C2's gate frame),
 // 126 (+6, C4's), 131 (+250, the gate-house and C1's frame) and 132 (+20, C3's) -- summing to
 // exactly +602, with the other 187 chunk frames byte-identical.
+//
+// REBAKED A THIRD TIME by District Phase C (Quarters, 2026-08-19): the Quayward's second
+// gate, two gate-lintel roof bridges, one roof hut shrunk off a wall it was sealing a deck
+// with, and three roof caches. TWENTY-SEVEN authored cells across FIVE chunks and no others,
+// so META is untouched for the third time and for the third time for the same reason -- the
+// raws, the dimensions and the chunk count cannot move when a pass only repaints cells inside
+// chunks that already exist. wrldUncompressedLen is +29, decomposed frame by frame off the two
+// decompressed sections, and every changed frame is a chunk one of the twenty-seven cells
+// lands in:
+//
+//   chunk 125 (local x128-159 y64-95 z8-15)  +27   C2's 8-cell lintel bridge + 1 cache crate
+//   chunk 126 (local x160-191 y64-95 z8-15)  +22   C4's 4-cell lintel bridge + 1 cache crate
+//   chunk 131 (local x64-95  y96-127 z8-15)  +16   the Quayward gate's 2 ramp cells
+//   chunk 132 (local x96-127 y96-127 z8-15)  -24   3 cells of the roofhut_12 shrink
+//   chunk 133 (local x128-159 y96-127 z8-15) -12   8 cells of the shrink + 1 cache crate
+//                                            ---
+//                                            +29   the other 187 frames byte-identical
+//
+// The two NEGATIVE frames are the shrink paying for itself: turning a six-cell leather wall
+// run into deck-material floor merges it with the runs either side, so those lanes encode in
+// FEWER RLE runs than before. A pass that only ever built could not do that.
 inline constexpr BakedWorldFacts kDocksSurface{
     /*name=*/"docks_surface",
-    /*fileBytes=*/17902,
+    /*fileBytes=*/17954,
     /*chunksX=*/8,
     /*chunksY=*/6,
     /*chunksZ=*/4,
     /*chunkCount=*/192,
     /*metaCrc32c=*/0x12FBB6D6u,
-    /*wrldCrc32c=*/0x0E7949C2u,
+    /*wrldCrc32c=*/0xA82FE35Au,
     /*metaUncompressedLen=*/77,
-    /*wrldUncompressedLen=*/86678,
+    /*wrldUncompressedLen=*/86707,
 };
 
 inline constexpr BakedWorldFacts kTavernFixture{

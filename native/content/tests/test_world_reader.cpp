@@ -212,11 +212,22 @@ TEST_CASE("docks_surface loads completely") {
     //
     // so Open is -100, Floor is -22, Wall is +100+22 = +122, and Ramp/Stair/Void cannot move
     // because this pass authored no ramp, no stair and nothing outside the interior chunks.
+    // REBAKED A THIRD TIME by District Phase C (Quarters). Unlike Phase B this pass does NOT
+    // only build -- it opens as well as closes, which is why Wall FALLS by one and the ledger
+    // has four columns instead of three:
+    //
+    //     OPEN  -> FLOOR   12 cells   two gate-lintel roof bridges (C2 8, C4 4)
+    //     WALL  -> FLOOR    6 cells   roofhut_12's old north wall, off the deck it sealed
+    //     WALL  -> RAMP     2 cells   the Quayward compound's second gate
+    //     FLOOR -> WALL     7 cells   roofhut_12's new north wall (4) + three cache crates
+    //
+    // so Open is -12, Floor is +12+6-7 = +11, Wall is +7-6-2 = -1, Ramp is +2, and Stair and
+    // Void cannot move because this pass authored no stair and nothing outside the interior.
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Void)) == 1179648);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Open)) == 92720);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Floor)) == 28455);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Wall)) == 271907);
-    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Ramp)) == 82);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Open)) == 92708);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Floor)) == 28466);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Wall)) == 271906);
+    CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Ramp)) == 84);
     CHECK(forms.at(static_cast<std::uint8_t>(TileForm::Stair)) == 52);
     // All six forms present — this world exercises the whole enum.
     CHECK(forms.size() == 6);
@@ -271,12 +282,27 @@ TEST_CASE("docks_surface loads completely") {
     // thatch, oak, trudgeon_wood and ash do NOT move, and that is deliberate rather than
     // lucky: the C2 and C4 gate frames are authored as the OPENING ONLY precisely so their end
     // posts do not eat the flanking units' reman and thatch roof decks.
+    //
+    // REBAKED A THIRD TIME by District Phase C (Quarters). Distinct count stays 15 for the
+    // third time and the third time for the same reason -- every material this pass paints was
+    // already in use somewhere in the ward. The ledger over the 27 changed cells:
+    //
+    //   reman_concrete  +9 = +8 C2's lintel bridge, +6 deck floor where roofhut_12's north
+    //                        wall was, -2 to the gate ramps, -3 to the cache crates
+    //   brick           +4 = C4's lintel bridge
+    //   oak             +3 = the three cache crates (FURN_STOCK is oak; a lashed crate)
+    //   granite         +2 = the Quayward gate's two ramp cells
+    //   dirt            -4 = the four hut-interior cells roofhut_12's new north wall stands on
+    //   leather         -2 = that hut's wall: six cells given up at y109, four taken at y110
+    //
+    // thatch, trudgeon_wood and ash do NOT move: no roof CAP material was authored at all this
+    // pass, because the register audit found the gazetteer 2.1 roof rule already satisfied.
     CHECK(materials.size() == 15);
-    CHECK(materials.at(fx::kMaterialGranite) == 178469);
-    CHECK(materials.at(fx::kMaterialDirt) == 102872);
-    CHECK(materials.at(fx::kMaterialRemanConcrete) == 6252);
-    CHECK(materials.at(fx::kMaterialBrick) == 5543);
-    CHECK(materials.at(fx::kMaterialOak) == 2795);
+    CHECK(materials.at(fx::kMaterialGranite) == 178471);
+    CHECK(materials.at(fx::kMaterialDirt) == 102868);
+    CHECK(materials.at(fx::kMaterialRemanConcrete) == 6261);
+    CHECK(materials.at(fx::kMaterialBrick) == 5547);
+    CHECK(materials.at(fx::kMaterialOak) == 2798);
     CHECK(materials.at(fx::kMaterialThatch) == 1551);
     CHECK(materials.at(fx::kMaterialTrudgeonWood) == 2051);
     CHECK(materials.at(fx::kMaterialAsh) == 86);
@@ -301,9 +327,18 @@ TEST_CASE("docks_surface loads completely") {
     // District Phase B moved both by exactly 122, in opposite directions, and
     // 122 is precisely the Wall delta above: the gate-house, the four compound
     // gate frames and the Mission's lantern-turret are 122 cells of new masonry
-    // and nothing else. (Before the pass: 121,431 and 1,451,433.)
-    CHECK(flags.at(0) == 121309);
-    CHECK(flags.at(flag_bits::kBlocksMove | flag_bits::kBlocksLight) == 1451555);
+    // and nothing else. (Before that pass: 121,431 and 1,451,433.)
+    //
+    // District Phase C moves both by exactly ONE, and one is again precisely the
+    // Wall delta above -- this time NEGATIVE, because Phase C is the first ward
+    // pass that opens more masonry than it raises:
+    //
+    //   blocks nothing   = Open + Floor + Ramp + Stair
+    //                    = 92,708 + 28,466 + 84 + 52 = 121,310
+    //   blocks both      = Void + Wall
+    //                    = 1,179,648 + 271,906 = 1,451,554
+    CHECK(flags.at(0) == 121310);
+    CHECK(flags.at(flag_bits::kBlocksMove | flag_bits::kBlocksLight) == 1451554);
 
     // --- FLUID lane: the harbour ------------------------------------------
     std::map<int, std::size_t> depths;

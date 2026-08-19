@@ -138,10 +138,10 @@ TEST_CASE("a missing or broken bake degrades to darkness, never to a crash") {
     CHECK_THROWS(readLampBake("{\"schemaVersion\":1}"));
 }
 
-TEST_CASE("the shipped Docks bake carries the 27 authored light sources") {
+TEST_CASE("the shipped Docks bake carries the 28 authored light sources") {
     const std::vector<Lamp> lamps =
         loadLamps(granadad::content::contentDir(), granadad::sim::docks::kWorldName);
-    REQUIRE(lamps.size() == 27);
+    REQUIRE(lamps.size() == 28);
 
     std::map<std::int32_t, int> byBand;
     int fire = 0;
@@ -168,15 +168,29 @@ TEST_CASE("the shipped Docks bake carries the 27 authored light sources") {
     // the highest lit thing in it. The ward's other beacon, lamp_weighhouse_mast,
     // is already a z21 signal-mast lamp rather than a door lamp; this is that
     // same idea carried as far as the format allows.
-    CHECK(byBand[granadad::sim::docks::kBandQuayside] == 20);
+    //
+    // DISTRICT PHASE C (Quarters) adds the twenty-eighth, and it is the one Phase B's own
+    // report flagged and declined to author. The 7.2 light-law audit found the law holding
+    // everywhere (waterline mean luminance 14.0 against up-slope 17.5, and ZERO lights inside
+    // the Gullet box, which is the darkness the owner ruled is authored identity) except at
+    // the Mission of the Flame, whose alms-hall doors went dark when the doctrinal beacon
+    // rode the turret up to z23. lamp_mission_door restores the ward's own answer to that
+    // shape: the Weighhouse has carried a mast lamp AND a ground brazier since it was
+    // authored. Same bracket cell the beacon left, quayside band, so the quayside row goes
+    // 20 -> 21 and no other band moves. The name is deliberately NOT the beacon's --
+    // world_renderer.cpp's fog exception matches lamp names exactly, and a door lamp must not
+    // be able to steal the tag.
+    CHECK(byBand[granadad::sim::docks::kBandQuayside] == 21);
     CHECK(byBand[granadad::sim::docks::kBandMidSlope] == 2);
     CHECK(byBand[granadad::sim::docks::kBandUpper] == 4);
     CHECK(byBand[23] == 1);
     CHECK(byBand.size() == 4);
     // Eight open flames -- four braziers, a cauldron, an oven, the shrine
-    // candles and the watchpost brazier. The rest are shielded lanterns.
+    // candles and the watchpost brazier. The rest are shielded lanterns, and the
+    // new Mission door lamp is one of them: "lamp_mission_door" carries none of
+    // the fire words isFireLampName matches on, so the fire count does not move.
     CHECK(fire == 8);
-    CHECK(static_cast<int>(lamps.size()) - fire == 19);
+    CHECK(static_cast<int>(lamps.size()) - fire == 20);
 
     // Named landmarks, at the tiles the authored map puts them on. If the
     // border offset or the pixel-to-tile floor ever drifts, these move.
@@ -208,6 +222,18 @@ TEST_CASE("the shipped Docks bake carries the 27 authored light sources") {
     for (const Lamp& lamp : lamps) {
         CHECK(lamp.z <= mission->z);
     }
+
+    // The ground half of the Mission's pair: same (x, y) as the beacon, four bands
+    // under it, and dimmer on purpose -- the Weighhouse's mast (26) outshines its
+    // plaza brazier (16), and this pair keeps that ordering at 22 against 18.
+    const Lamp* missionDoor = find("lamp_mission_door");
+    REQUIRE(missionDoor != nullptr);
+    CHECK(missionDoor->x == mission->x);
+    CHECK(missionDoor->y == mission->y);
+    CHECK(missionDoor->z == granadad::sim::docks::kBandQuayside);
+    CHECK(missionDoor->luminance == 18);
+    CHECK(missionDoor->luminance < mission->luminance);
+    CHECK(missionDoor->warmth == LampWarmth::Lantern);
 
     const Lamp* eelpot = find("lamp_eelpot_01");
     REQUIRE(eelpot != nullptr);

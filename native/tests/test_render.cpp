@@ -97,7 +97,7 @@ TEST_CASE("the day curve is committed dark and the lamps carry the night") {
 TEST_CASE("a lamp lights a pool around itself and nothing far from it") {
     const Session session(docksAt(20));
     const LampGlow& glow = session.renderer().glow();
-    REQUIRE(session.lampCount() == 27);
+    REQUIRE(session.lampCount() == 28);
     CHECK(glow.litCellCount() > 1000);
 
     const std::vector<Lamp>& lamps = session.renderer().lamps();
@@ -1023,7 +1023,7 @@ TEST_CASE("the capture path produces a PNG with no window anywhere in sight") {
 
     const SmokeRunResult result = runSmoke(config);
     CHECK(result.ok);
-    CHECK(result.lampCount == 27);
+    CHECK(result.lampCount == 28);
     CHECK(result.stats.worldPixels > 5000);
     REQUIRE(std::filesystem::exists(config.screenshot));
     // A real PNG, not an empty file: the 8-byte signature plus a chunk or two.
