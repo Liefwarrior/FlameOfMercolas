@@ -1302,3 +1302,380 @@ TEST_CASE("drawCreation survives every Daggerfall screen at both resolutions") {
     REQUIRE(past.step() == render::CreationStep::Background);
     drawBoth(past);
 }
+
+// ===========================================================================
+// #93. THE COMPOSED PAGE, AND THE MOUSE
+// ===========================================================================
+//
+// What the owner said about this screen, verbatim: he spent real choices --
+// skills, coin, faction standing, a named actor's disposition -- "with no idea
+// what they bought", and the interface was the thing he did not like. These
+// cases are what "he can see what it costs" means as an assertion, plus the
+// half of input parity that can be proved without an SDL window: a pointer's
+// hit-test agreeing with what was drawn.
+
+namespace {
+
+/// The strings THIS SCREEN authors -- its own copy, not the raws-authored prose
+/// it is showing.
+///
+/// The distinction matters and it is not laziness: every authored prompt,
+/// answer and one-liner is already swept, on the LOADED registries, by the
+/// em-dash-fold case further up this file. What that case cannot catch is a
+/// LABEL, a VERB, a CRUMB or a READOUT that a UI pass invented. That is what
+/// this gathers, and it is the half this pass can actually break.
+[[nodiscard]] std::vector<std::string> pageStrings(const render::CreationPage& page) {
+    std::vector<std::string> out;
+    for (const std::string& crumb : page.crumbs) {
+        out.push_back(crumb);
+    }
+    out.push_back(page.title);
+    out.push_back(page.readout);
+    out.push_back(page.detailBadge);
+    out.push_back(page.detailStatus);
+    out.push_back(page.commitVerb);
+    out.push_back(page.commitCost);
+    for (const render::PanelTab& tab : page.tabs) {
+        out.push_back(tab.key);
+        out.push_back(tab.name);
+    }
+    for (const render::CreationPageRow& row : page.rows) {
+        out.push_back(row.key);
+        out.push_back(row.value);
+    }
+    for (const render::PanelFact& fact : page.facts) {
+        out.push_back(fact.label);
+    }
+    for (const render::PanelBar& bar : page.bars) {
+        out.push_back(bar.label);
+        out.push_back(bar.value);
+    }
+    for (const render::PanelOption& option : page.nav) {
+        out.push_back(option.key);
+        out.push_back(option.label);
+    }
+    return out;
+}
+
+/// Every row of a page, reached by POINTER: the pixel is found by asking the
+/// page's own layout where the list is and then asking its own hit-test what is
+/// under each candidate. Nothing is a coordinate typed in by hand.
+[[nodiscard]] bool pixelOfRow(const render::CreationPage& page, int w, int h, int row, int* px,
+                              int* py) {
+    const render::CreationLayout layout = render::creationLayout(page, w, h);
+    if (!layout.usable) {
+        return false;
+    }
+    for (int y = layout.listRect.y; y < layout.listRect.bottom(); ++y) {
+        for (int x = layout.listRect.x; x < layout.listRect.right(); x += layout.metric.cellW()) {
+            const render::CreationHit hit = render::creationPageHitTest(page, w, h, x, y);
+            if (hit.zone == render::CreationHit::Zone::Row && hit.index == row) {
+                *px = x;
+                *py = y;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/// The flow parked on each step in turn, so a case can sweep all of them rather
+/// than asserting about one and hoping.
+[[nodiscard]] render::CreationFlow atOrigin() { return fresh(); }
+
+[[nodiscard]] render::CreationFlow atCalling() {
+    render::CreationFlow flow = fresh();
+    flow.chooseOrigin();
+    return flow;
+}
+
+[[nodiscard]] render::CreationFlow atQuiz(int answers) {
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(1);
+    flow.chooseOrigin();
+    for (int i = 0; i < answers; ++i) {
+        flow.chooseChoice();
+    }
+    return flow;
+}
+
+[[nodiscard]] render::CreationFlow atBackground() {
+    render::CreationFlow flow = fresh();
+    flow.chooseOrigin();
+    flow.chooseChoice();  // take the first calling, which lands on the biography
+    return flow;
+}
+
+[[nodiscard]] render::CreationFlow atSheet() {
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(2);  // CUSTOM
+    flow.chooseOrigin();
+    return flow;
+}
+
+}  // namespace
+
+TEST_CASE("every step composes a page, and every string on it can actually be drawn") {
+    // The panel vocabulary draws five glyphs the font does not have; everything
+    // else on this screen goes through the font, so a page that quietly grew a
+    // character the font cannot draw would render as a gap. test_copy.cpp holds
+    // the rest of the game to this; the creation flow is held to it here.
+    std::vector<render::CreationFlow> steps;
+    steps.push_back(atOrigin());
+    steps.push_back(atCalling());
+    steps.push_back(atQuiz(4));
+    steps.push_back(atBackground());
+    steps.push_back(atSheet());
+    render::CreationFlow verdict = atQuiz(0);
+    const std::size_t questions = verdict.quiz().questions().size();
+    for (std::size_t i = 0; i < questions; ++i) {
+        verdict.chooseChoice();
+    }
+    REQUIRE(verdict.quizVerdict().has_value());
+    steps.push_back(std::move(verdict));
+
+    for (const render::CreationFlow& flow : steps) {
+        const render::CreationPage page = flow.page();
+        INFO("step ", static_cast<int>(flow.step()));
+        CHECK_FALSE(page.crumbs.empty());
+        CHECK_FALSE(page.instruction.empty());
+        CHECK_FALSE(page.rows.empty());
+        CHECK_FALSE(page.nav.empty());
+        // EVERY PANEL CARRIES A HEADER and every step names where it is in the
+        // flow -- the reference's own rule, and the reason a deeply nested text
+        // menu stays navigable.
+        CHECK(page.currentTab >= 0);
+        CHECK(page.tabs.size() == 4U);
+        for (const std::string& text : pageStrings(page)) {
+            mustReadAsEnglish("creation page", text);
+        }
+    }
+}
+
+TEST_CASE("a quiz answer reaches the screen WHOLE -- the eighteen-glyph clip is gone") {
+    // THE DEFECT, NAMED: the old topic grid clipped every answer at eighteen
+    // glyphs including its row number, so a hundred-glyph moral choice arrived
+    // as "1 YOU TOLD THE." and the renderer printed the hovered one three times
+    // per frame to compensate.
+    const render::CreationFlow flow = atQuiz(0);
+    REQUIRE(flow.quiz().loaded());
+    const render::CreationPage page = flow.page();
+    REQUIRE(page.rows.size() == 3U);
+    const sim::QuizQuestion& question = flow.quiz().questions().front();
+    const std::array<int, 3> order = render::quizDisplayOrder(0);
+    bool sawLongOne = false;
+    for (std::size_t i = 0; i < page.rows.size(); ++i) {
+        const std::string& authored = question.answers[static_cast<std::size_t>(order[i])].text;
+        CHECK(page.rows[i].label == authored);
+        sawLongOne = sawLongOne || authored.size() > 18U;
+    }
+    // If none of them were long, this case would be proving nothing.
+    CHECK(sawLongOne);
+    // And the question itself is the instruction row, not a clipped header.
+    CHECK(page.instruction == question.prompt);
+}
+
+TEST_CASE("the quiz says what an answer buys: the axis, the meters, and the trade it points at") {
+    const render::CreationFlow flow = atQuiz(3);
+    REQUIRE(flow.quiz().loaded());
+    REQUIRE(flow.callings().loaded());
+    const render::CreationPage page = flow.page();
+    // The subject of the detail pane is the AXIS the hovered answer scores.
+    CHECK_FALSE(page.detailBadge.empty());
+    CHECK(page.bars.size() == flow.quiz().axes().size());
+    // The meters show the tally AS IF this answer had been given -- exactly one
+    // more point than the running tally, which is the consequence made visual.
+    std::int32_t drawnTotal = 0;
+    for (const render::PanelBar& bar : page.bars) {
+        drawnTotal += bar.filled;
+    }
+    std::int32_t liveTotal = 0;
+    for (const std::int32_t count : flow.quizTallySoFar()) {
+        liveTotal += count;
+    }
+    CHECK(drawnTotal == liveTotal + 1);
+    // And the provisional verdict is named, which is the direct answer to
+    // spending choices blind.
+    bool headingFor = false;
+    for (const render::PanelFact& fact : page.facts) {
+        headingFor = headingFor || fact.label == "HEADING FOR";
+    }
+    CHECK(headingFor);
+}
+
+TEST_CASE("a biography answer's cost is spelled out in names and numbers, never in ids") {
+    render::CreationFlow flow = atBackground();
+    REQUIRE(flow.biography().loaded());
+    REQUIRE(flow.step() == render::CreationStep::Background);
+    const std::vector<sim::BiographyQuestion>& questions = flow.biography().questions();
+
+    // Walk every answer of every question: whatever an answer does shows up in
+    // the detail pane, one bullet per effect and never fewer.
+    for (std::size_t q = 0; q < questions.size(); ++q) {
+        for (std::size_t a = 0; a < questions[q].answers.size(); ++a) {
+            flow.setChoiceCursor(static_cast<int>(a));
+            const render::CreationPage page = flow.page();
+            const std::vector<sim::ChargenEffect>& effects = questions[q].answers[a].effects;
+            std::size_t bullets = 0;
+            for (const render::PanelLine& line : page.lines) {
+                if (line.bullet != render::Bullet::None) {
+                    ++bullets;
+                }
+            }
+            INFO("question ", questions[q].id, " answer ", a);
+            CHECK(bullets == effects.size());
+            // A skill delta names the skill the way the sheet does. The raws'
+            // own id never reaches a player.
+            for (const sim::ChargenEffect& effect : effects) {
+                if (effect.kind != sim::ChargenEffectKind::SkillDelta) {
+                    continue;
+                }
+                const sim::SkillTrack::Entry* entry = flow.skills().find(effect.target);
+                REQUIRE(entry != nullptr);
+                bool named = false;
+                for (const render::PanelLine& line : page.lines) {
+                    named = named || line.name == entry->displayName;
+                }
+                CHECK(named);
+            }
+        }
+        flow.setChoiceCursor(0);
+        flow.chooseChoice();
+    }
+}
+
+TEST_CASE("state changes the verb rather than greying it out, on the row and on the sheet") {
+    render::CreationFlow flow = atSheet();
+    // BEGIN with no name typed: the verb SAYS what is missing, and pressing it
+    // goes and fixes that -- there is no disabled button in this vocabulary.
+    const int last = static_cast<int>(flow.view().topics.size()) - 1;
+    flow.setCustomizeCursor(last);
+    const render::CreationPage blank = flow.page();
+    CHECK(blank.commitVerb.find("NAME") != std::string::npos);
+    flow.chooseCustomizeRow();
+    CHECK(flow.editingName());
+    flow.typeNameChar('E');
+    flow.typeNameChar('L');
+    flow.chooseCustomizeRow();
+    CHECK_FALSE(flow.editingName());
+    flow.setCustomizeCursor(last);
+    const render::CreationPage named = flow.page();
+    CHECK(named.commitVerb != blank.commitVerb);
+
+    // A skill row's verb follows its designation, and the restatement under it
+    // says which tiers still have room BEFORE the key is pressed.
+    flow.setCustomizeCursor(2);
+    const render::CreationPage undesignated = flow.page();
+    flow.adjustCustomizeRow(1);
+    const render::CreationPage designated = flow.page();
+    CHECK(undesignated.commitVerb != designated.commitVerb);
+    CHECK_FALSE(designated.commitCost.empty());
+}
+
+TEST_CASE("a fixed sheet says it is fixed in the verb, not by refusing silently") {
+    render::CreationFlow flow = fresh();
+    flow.moveOriginCursor(3);  // GABRI
+    flow.chooseOrigin();
+    REQUIRE(flow.chosenCompanion() != nullptr);
+    flow.setCustomizeCursor(2);
+    const render::CreationPage page = flow.page();
+    CHECK(page.commitVerb == "A FIXED SHEET");
+    CHECK_FALSE(page.commitCost.empty());
+}
+
+TEST_CASE("every row of every step is reachable by pointer, and the pointer mirrors the cursor") {
+    // THE MOUSE HALF OF INPUT PARITY, proved without an SDL window. The pad and
+    // the keyboard reach these rows through CreationFlow's own move/choose
+    // calls, which the rest of this file already exercises; what could not be
+    // proved before is that a POINTER lands on the row a player is looking at.
+    struct Step {
+        const char* what;
+        render::CreationFlow flow;
+    };
+    std::vector<Step> steps;
+    steps.push_back(Step{"origin", atOrigin()});
+    steps.push_back(Step{"calling", atCalling()});
+    steps.push_back(Step{"quiz", atQuiz(2)});
+    steps.push_back(Step{"background", atBackground()});
+    steps.push_back(Step{"sheet", atSheet()});
+
+    for (const Step& step : steps) {
+        const render::CreationPage page = step.flow.page();
+        INFO("step ", step.what);
+        for (int row = 0; row < static_cast<int>(page.rows.size()); ++row) {
+            if (!page.rows[static_cast<std::size_t>(row)].selectable) {
+                continue;
+            }
+            int px = 0;
+            int py = 0;
+            INFO("row ", row, " of ", page.rows.size());
+            REQUIRE(pixelOfRow(page, 960, 540, row, &px, &py));
+            const render::CreationHit hit = render::creationHitTest(step.flow, 960, 540, px, py);
+            CHECK(hit.zone == render::CreationHit::Zone::Row);
+            CHECK(hit.index == row);
+        }
+    }
+}
+
+TEST_CASE("the pointer moves the one cursor every device shares") {
+    render::CreationFlow flow = atCalling();
+    const render::CreationPage page = flow.page();
+    REQUIRE(page.rows.size() > 2U);
+    int px = 0;
+    int py = 0;
+    REQUIRE(pixelOfRow(page, 960, 540, 2, &px, &py));
+    const render::CreationHit hit = render::creationHitTest(flow, 960, 540, px, py);
+    REQUIRE(hit.zone == render::CreationHit::Zone::Row);
+    flow.setChoiceCursor(hit.index);
+    CHECK(flow.choiceCursor() == 2);
+    // The same row a keyboard would reach with two DOWNs, and the same detail
+    // pane behind it -- one cursor, three devices.
+    render::CreationFlow keyboard = atCalling();
+    keyboard.moveChoiceCursor(1);
+    keyboard.moveChoiceCursor(1);
+    CHECK(keyboard.choiceCursor() == flow.choiceCursor());
+    CHECK(keyboard.page().detailBadge == flow.page().detailBadge);
+}
+
+TEST_CASE("the composed page holds its geometry at every window size the game runs at") {
+    const render::CreationFlow flow = atQuiz(2);
+    const render::CreationPage page = flow.page();
+    constexpr int kFrames[][2] = {{320, 180}, {640, 360}, {960, 540}, {1280, 720}, {1920, 1080}};
+    for (const auto& size : kFrames) {
+        INFO("window ", size[0], "x", size[1]);
+        const render::CreationLayout layout = render::creationLayout(page, size[0], size[1]);
+        CHECK(layout.usable);
+        // The bands add back up and stay inside the frame -- the "aligned
+        // edges" half of clean, made structural rather than hoped for.
+        CHECK(layout.interior.x >= layout.bounds.x);
+        CHECK(layout.bodyBand.bottom() <= layout.interior.bottom());
+        CHECK(layout.navBand.bottom() <= layout.interior.bottom());
+        CHECK(layout.listRect.right() <= layout.bodyBand.right());
+        render::Framebuffer frame(size[0], size[1]);
+        render::drawCreation(frame, flow);
+        int lit = 0;
+        for (const std::uint32_t pixel : frame.pixels()) {
+            if ((pixel & 0x00FFFFFFU) != 0U) {
+                ++lit;
+            }
+        }
+        CHECK(lit > 0);
+    }
+}
+
+TEST_CASE("moving the cursor moves nothing but the highlight and the detail pane") {
+    // PANES HOLD THEIR HEIGHT. A list whose layout jumps as you arrow through
+    // it feels broken, and the reference says so in as many words.
+    render::CreationFlow flow = atCalling();
+    const render::CreationLayout first = render::creationLayout(flow.page(), 960, 540);
+    flow.moveChoiceCursor(3);
+    const render::CreationLayout later = render::creationLayout(flow.page(), 960, 540);
+    CHECK(first.bounds.x == later.bounds.x);
+    CHECK(first.bounds.w == later.bounds.w);
+    CHECK(first.bodyBand.y == later.bodyBand.y);
+    CHECK(first.bodyBand.h == later.bodyBand.h);
+    CHECK(first.listRect.w == later.listRect.w);
+    CHECK(first.detailRect.x == later.detailRect.x);
+    CHECK(first.navBand.y == later.navBand.y);
+    CHECK(first.ruleRows == later.ruleRows);
+}

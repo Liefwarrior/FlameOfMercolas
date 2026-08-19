@@ -337,6 +337,7 @@ add_library(granadad-render STATIC
     # screens, BG3/DOS2-shaped, drawn with no Session and no world underneath
     # them -- see the file's own header on why.
     src/render/creation.cpp
+    src/render/creation_page.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.

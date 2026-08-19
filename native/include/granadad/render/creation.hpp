@@ -86,12 +86,15 @@
 #include <vector>
 
 #include "granadad/render/anim.hpp"
+#include "granadad/render/creation_page.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/sim/appearance.hpp"
 #include "granadad/sim/attributes.hpp"
 #include "granadad/sim/chargen.hpp"
 #include "granadad/sim/chargen_raws.hpp"
 #include "granadad/sim/companions.hpp"
+#include "granadad/sim/faction.hpp"
+#include "granadad/sim/notables.hpp"
 #include "granadad/sim/social.hpp"
 
 namespace granadad::render {
@@ -411,6 +414,34 @@ public:
     [[nodiscard]] const sim::Chargen& chargen() const noexcept { return chargen_; }
     [[nodiscard]] const sim::SkillTrack& skills() const noexcept { return skills_; }
 
+    /// WHERE THE CURSOR IS PUT DIRECTLY, which is what a MOUSE needs and a
+    /// keyboard never did. move*Cursor() are deltas and ring round; a pointer
+    /// does not arrive as a delta -- it arrives as "this row" -- so these take
+    /// the row and clamp it. Hover and click both go through them, which is
+    /// what makes hovering MIRROR the cursor rather than run a second,
+    /// parallel highlight of its own that the keyboard cannot see.
+    ///
+    /// Out-of-range is clamped, never wrapped: a pointer that slid off the end
+    /// of a list has not asked to be teleported to the other end of it.
+    void setOriginCursor(int row) noexcept;
+    void setChoiceCursor(int row) noexcept;
+    void setCustomizeCursor(int row) noexcept;
+
+    /// The step the flow is currently on, as the composed terminal panel it is
+    /// drawn as: breadcrumb, tab row, master list, detail pane, commit verb and
+    /// global nav. See render/creation_page.hpp on why this is a MODEL and not
+    /// a widget -- chiefly, that the pointer hit-test and the drawing then come
+    /// from the same composition and cannot point at different rows.
+    [[nodiscard]] CreationPage page() const;
+
+    /// What the biography has cost SO FAR -- the answered questions only,
+    /// accumulated through the same sim::accumulateEffects every finished
+    /// biography goes through. Zero before the first answer. This is what the
+    /// biography screen's persistent readout shows: the owner spent coin, heat
+    /// and standing without ever being told, and a running total is the
+    /// cheapest possible answer to that.
+    [[nodiscard]] sim::ChargenEffects effectsSoFar() const;
+
     /// Builds the exact struct session.hpp's own dialogueView() builds for
     /// every other page this build has -- render::drawDialogue draws it with
     /// no further translation. Origin select's three cards are its topics,
@@ -483,6 +514,53 @@ private:
     [[nodiscard]] std::vector<std::string> sheetPreview(
         const sim::CallingTemplate& calling) const;
 
+    // --- the composed page, step by step ---------------------------------
+    //
+    // page() is the switch; everything below is one piece of one step, kept
+    // separate so a case can assert what a step SAYS without a framebuffer.
+    /// The review/customize step, which is the one every door converges on.
+    [[nodiscard]] CreationPage pageForSheet() const;
+    /// One sheet row as LABEL and VALUE rather than labelFor()'s one jammed
+    /// string -- this screen has a common value column and labelFor() predates
+    /// it. labelFor() is untouched: DialogueViewState still wants the old shape.
+    [[nodiscard]] CreationPageRow pageRowFor(const CustomizeRow& row) const;
+    /// An effect target's HUMAN name -- "THE HARBOUR WATCH", never
+    /// "watch_docks". Empty for the kinds that take no target.
+    [[nodiscard]] std::string pageEffectName(const sim::ChargenEffect& effect) const;
+    /// A biography answer's whole cost, as bullets: flavour is already above
+    /// them, the named effect takes the accent, the number takes green. An
+    /// answer that costs nothing SAYS SO rather than drawing an empty pane.
+    [[nodiscard]] std::vector<PanelLine> pageEffectLines(
+        const std::vector<sim::ChargenEffect>& effects, const Rgb& accent) const;
+    /// The three axis meters, each in its own colour, filled to the counts
+    /// passed in -- which the quiz screen sets to the tally AS IF the hovered
+    /// answer had been given, so a player sees the meter it would move.
+    [[nodiscard]] std::vector<PanelBar> pageAxisBars(
+        const std::array<std::int32_t, sim::kChargenAxisCount>& counts) const;
+    /// One calling's attribute spend as bars, so a trade can be compared to the
+    /// one above it by shape before a number is read.
+    [[nodiscard]] std::vector<PanelBar> pageCallingBars(
+        const sim::CallingTemplate& calling) const;
+    /// The sheet the flow is actually holding, as bars.
+    [[nodiscard]] std::vector<PanelBar> pageSheetBars() const;
+    /// PRIMARY / MAJOR / MINOR as three named-effect bullets.
+    [[nodiscard]] std::vector<PanelLine> pageTierLines(const sim::CallingTemplate& calling,
+                                                       const Rgb& accent) const;
+    /// "THE MUDLARK" -- the axis identity raws own name for it.
+    [[nodiscard]] std::string pageAxisName(sim::ChargenAxis axis) const;
+    /// "HAND 4  MUDLARK 3  DISCIPLE 3", for the header readout.
+    [[nodiscard]] std::string pageTallyReadout(
+        const std::array<std::int32_t, sim::kChargenAxisCount>& counts) const;
+    /// What the past has cost so far, for the header readout.
+    [[nodiscard]] std::string pagePastReadout() const;
+    /// The same, spelled out as bullets on the review pane.
+    [[nodiscard]] std::vector<PanelLine> pagePastLines() const;
+    /// The slot counts and the point pool, for the header readout.
+    [[nodiscard]] std::string pageSheetReadout() const;
+    /// Which tiers still have room, restated under the commit verb so a
+    /// refusal is never a mystery.
+    [[nodiscard]] std::string pageSlotCost() const;
+
     sim::SkillTrack skills_;
     sim::Chargen chargen_;
     /// The Daggerfall flow's content, loaded once at construction through
@@ -490,6 +568,16 @@ private:
     /// any of them closes its door -- see chooseOrigin().
     sim::CallingRegistry callings_;
     sim::ChargenQuiz quiz_;
+    /// KEPT, not discarded after validating the biography. The biography's
+    /// effects name factions and notables by ID, and a detail pane that told a
+    /// player they had lost standing with "watch_docks" would be showing them
+    /// the machine's name for something -- the exact thing test_copy.cpp exists
+    /// to stop. These are how an id becomes "THE HARBOUR WATCH".
+    sim::FactionRegistry factions_;
+    sim::NotableRegistry notables_;
+    /// DECLARED AFTER the two registries above ON PURPOSE: members initialise
+    /// in declaration order, and the biography loader validates every effect
+    /// target against them as it reads.
     sim::BiographyRegistry biography_;
     /// DEVIN's and GABRI's fixed sheets, loaded once at construction --
     /// there are only ever two of them, so there is nothing to gain from
@@ -527,5 +615,11 @@ private:
 /// render::drawDialogue(target, flow.view()) -- kept as one call so a caller
 /// in src/client/main.cpp does not need to know DialogueViewState exists.
 void drawCreation(Framebuffer& target, const CreationFlow& flow);
+
+/// What a pointer at (px, py) in FRAMEBUFFER pixels is over. Built off
+/// flow.page() and render::creationPageHitTest, so it can only ever agree with
+/// what was drawn.
+[[nodiscard]] CreationHit creationHitTest(const CreationFlow& flow, int frameWidth,
+                                          int frameHeight, int px, int py);
 
 }  // namespace granadad::render
