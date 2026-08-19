@@ -1723,6 +1723,55 @@ for x in range(68, 72):
 for y in range(97, 116):
     if not 104 <= y <= 107:                         # gate pierce onto Saltgate
         T[12][y][71] = REMAN_WALL
+# DISTRICT PHASE C (Quarters): THE QUAYWARD'S SECOND GATE -- the courtyard stops being a
+# pocket and becomes a way through. Until now C1 had exactly ONE opening, the east ring
+# pierce at (71,104-107) onto Saltgate Rise, so the compound's courtyard was a 39x6 cul-de-
+# sac: you entered and left by the same mouth. The canton beat the owner asked for is the
+# opposite -- you are INSIDE the architecture because the architecture is the road.
+#
+# WHERE IT CAN GO, which is not a preference but an enumeration. C1 fills x8-71, y97-115.
+# The mansion owns the whole west (x8-31), the six condo wings own y97-103 and y110-115
+# across x32-67, and every one of those is somebody's dwelling -- piercing any of them
+# would drive the public through a tenant's rooms. That leaves exactly three runs of ring
+# wall that belong to nobody: x68-71 at y97, x68-71 at y115, and the east column x71
+# (already pierced). So the second gate is on the SOUTH run, and the south run is the one
+# worth having, because of what is on the other side of it.
+#
+# WHAT IS ON THE OTHER SIDE. y116 at z13 is the band-edge ledge -- the same 1-deep shelf
+# District Phase B turned into a dead end when the gate-house's west tower took (70,116)
+# and (71,116). Phase B named that cost in its own report and offered to move the tower;
+# this is the better answer, because it costs the skyline nothing (the tower does not move,
+# the frame does not change) and it gives the ledge somewhere to GO instead of merely
+# somewhere to come from. Measured on the baked bytes, walking rule, before and after:
+# from the ledge's east end (69,116,z13) to the courtyard's east end (68,107,z12) was 54
+# steps the long way round by the Rise; through this gate it is 10.
+#
+# WHY IT IS A RAMP AND NOT A HOLE. The ledge is Band C (z13) and the courtyard is Band B
+# (z12): C1's south wall is a retaining wall, and a plain pierced gate here would be
+# ONE-WAY. stepBand's down-clause lets a body drop from the ledge onto an opened z12 cell,
+# but its up-clause needs a RAMP or STAIR at one end or the other, so without one you could
+# fall into the compound and never climb back out -- the exact shape of trapdoor the S5
+# landing-floor rule exists to refuse. Two RAMP cells make it two-way, and a ramp is also
+# what the ward already uses at every other band edge (the Rise's own eight at (72-79,116),
+# the Pitch Lane four at (4-7,116)): a gate a cart goes through wants a slope, not a step.
+# GRANITE_RAMP rather than a reman one because there is no reman ramp tile in the vocabulary
+# and granite is the register the stoop pass already lays at a threshold onto bare earth.
+#
+# StairRampPass, satisfied by construction rather than by hope: the ramp's own column one
+# level up -- (68,115) and (69,115) at z13 -- is OPEN air and stays that way (which is also
+# why this gate gets NO overhead frame, unlike C1's east gate: a frame band would put fill
+# directly over a ramp and the validator would refuse it, correctly). The ramp's exit test
+# wants one orthogonal neighbour walkable at z13, and (68,116)/(69,116) -- the ledge itself
+# -- are FLOOR. And the opening reads as framed anyway without a cell being spent on it:
+# C1's own south-wing upper storey closes it to the west at x<=67, and Phase B's west gate
+# tower closes it to the east at x70-71, both already solid at z13.
+#
+# TWO WIDE, and the doors ruling is met on both of C1's gates: this one is 2, the east ring
+# pierce is 4. NOT SIGNED and NOT LIT: the compound's plaque hangs at its one named gate
+# (c1_quayward, at (72,105)) and the ward's lamp roster is 7.2's business, not a threshold's.
+# NOT A LEDGER CHANGE either -- no anchor, no unit, no tenure record moves; a gate is map.
+for gx in (68, 69):
+    T[12][115][gx] = GRANITE_RAMP
 mk(12, "script_anchor", "cmp1_courtyard_anchor", 43, 107)
 mk(12, "light_source", "lamp_cmp1_gate", 70, 105, luminance=18)
 
