@@ -311,3 +311,66 @@ pre-S8 number at the top of this file is **not** re-blessed to it — that one i
 reference and stays that, and in any case predates the C++ port and cannot be reproduced by the
 tool that made this one. Use this one when a later C++-side slice wants to prove itself inert
 against the ward as the archetype-buildings pass left it.
+
+---
+
+## The District Phase B (Thresholds) drift, on the record
+
+District Phase B (2026-08-19: the Saltgate gate-house, gate frames on all four compounds,
+and the Mission of the Flame's lantern-turret) moved the number. This section says exactly
+where, in this file's own discipline, so a later reader can tell a deliberate step from a
+regression.
+
+### What drifted, and why it had to
+
+**One thing changed the world, and it is a REBAKE** — the same class of change the quality
+pass and the archetype pass above made. `content/maps/src/docks_surface.tmx` was regenerated
+from `tools/scripts/gen_docks_surface.py` and rebaked to
+`content/maps/baked/docks_surface.trojsav` via `import-map`. `WorldHasher.hashWorld` reads
+decoded lane values, so raising masonry moves the number by construction.
+
+It is 128 authored cells, and they only ever go one way — this pass builds and never
+demolishes:
+
+| change | cells |
+| --- | --- |
+| OPEN → WALL (masonry raised into air) | 100 |
+| FLOOR → WALL (through a roof deck or a street) | 22 |
+| WALL → WALL (repaint only: dirt substrate and C1's ring-wall corner become the gate's granite) | 6 |
+
+Those 128 cells fall inside FIVE chunks and no others, which is why the META section — raws
+fingerprint, dimensions, chunk count — is byte-identical either side of the rebake.
+
+### What was proved INERT
+
+* **Every other world.** `tools/golden/generate.ps1` reran the real Java `WorldHasher`
+  against all three baked worlds: `compound_block` (`8431f8ddb4a77bd9`) and `tavern_fixture`
+  (`62063c420daf54fa`) came back byte-identical, and only the `docks_surface` row moved. A
+  pass that claims to have touched one world, proving it against the other two.
+* **The rebake is deterministic.** Two `import-map` runs from the same `.tmx` produce the
+  same 17,902 bytes, sha256 `e4bdd3259b12c0dd8271b82606d2d65670eb52513903386bfa5cfbc08cf82959`
+  — and regenerating the `.tmx` from the generator twice reproduces it byte-identically too,
+  so the whole chain from Python to baked bytes is a pure function.
+* **Actor home/job reachability.** `test_ward_actors.cpp` needed no golden updates and
+  stayed green throughout. The walking flood fill loses exactly six cells against the old
+  bytes and gains none; no actor's home or work anchor is among them, and no marker, anchor,
+  patrol waypoint, garbage bin or guard post stands on any of the 128.
+* **Cross-toolchain.** `scripts/verify-windows.ps1` PASS: the decoded-world-state report and
+  the world-hash/simulation report are byte-for-byte identical between linux/gcc and
+  mingw/windows, so the new baseline is the same number on both toolchains rather than a
+  Linux number the shipping build happens to agree with.
+
+### The post-Phase-B number
+
+```
+at branch wip/district-phase-b-thresholds,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xD85542BA71D320E9
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` (`run A` and `run B` identical, report text byte-identical, 18,771 bytes both
+times) on the gate whose stamp names this tree. The predecessor for a like-for-like
+comparison is the archetype-buildings number `0x4365e04522472019` in the section above,
+taken with the same tool and the same arguments. The pre-S8 number at the top of this file is
+**not** re-blessed to this one — that one is the pre-arc reference and stays that.
