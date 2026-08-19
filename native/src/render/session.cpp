@@ -141,25 +141,6 @@ constexpr float kBackShade = 0.55F;
     }
 }
 
-/// THE ROWS THE KEYS PAGE ADDS TO THE BINDINGS, and the only ones it still
-/// hard-codes.
-///
-/// Everything a key is BOUND to is generated from ControlSettings by
-/// Session::keyRows -- see the note there. These four are not bindings: they are
-/// what W, S, SPACE and F while a WIRE IS IN A LOCK do, which is a mode the
-/// simulation is in rather than a verb with a key of its own.
-///
-/// AND EVERY ROW FITS ITS COLUMN. The grid is three columns of eighteen glyphs
-/// (render/dialogue_view.hpp) and the first S10 capture of this page shipped
-/// "SPACE  UP: MANT." and "E  TALK TO WHOE.". A controls page that arrives
-/// truncated is worse than none, because a player reads the truncation as the
-/// binding.
-const char* const kLockRows[] = {
-    "LOCK: W S  AIM",
-    "LOCK: SPACE TRY",
-    "LOCK: F  FORCE",
-    "LOCK: ESC  OUT",
-};
 
 /// TASK #82. "DAY 2 08:14" out of a Casebook::heardAt() value -- the
 /// dateline a detective's log actually carries. NEGATIVE (never yet heard)
@@ -874,7 +855,82 @@ void Session::setFov(int degrees) {
     controls_.fovDegrees = degrees < kMinFov ? kMinFov : (degrees > kMaxFov ? kMaxFov : degrees);
 }
 
-std::vector<std::string> Session::keyRows() const {
+namespace {
+
+/// WHICH FAMILY A VERB BELONGS TO, and therefore what colour its row is on the
+/// controls page. Movement, the things you do, the screens you open, the quick
+/// bar. See render/keys_page.hpp -- one accent per family is what makes a
+/// thirty-row page scannable before a word of it is read.
+[[nodiscard]] int keyGroupFor(Action action) noexcept {
+    switch (action) {
+        case Action::Forward:
+        case Action::Back:
+        case Action::StrafeLeft:
+        case Action::StrafeRight:
+        case Action::TurnLeft:
+        case Action::TurnRight:
+            return kKeysGroupMove;
+        case Action::Menu:
+        case Action::PagePrev:
+        case Action::PageNext:
+        case Action::Pause:
+        case Action::Map:
+        case Action::Screenshot:
+            return kKeysGroupScreen;
+        case Action::QuickWheel:
+        case Action::QuickNext:
+        case Action::QuickPrev:
+            return kKeysGroupQuick;
+        default:
+            break;
+    }
+    if (action >= Action::QuickSlot1 && action <= Action::QuickSlot0) {
+        return kKeysGroupQuick;
+    }
+    return kKeysGroupAct;
+}
+
+/// THE ROWS THE CONTROLS PAGE ADDS TO THE BINDINGS, and the only ones it still
+/// hard-codes.
+///
+/// Everything a key is BOUND to is generated from ControlSettings -- see the
+/// note in keyPageRows(). These five are not bindings: they are what walking
+/// into a ledge does, and what W, S, SPACE and F do WHILE A WIRE IS IN A LOCK,
+/// which is a mode the simulation is in rather than a verb with a key of its
+/// own. They carry bindable=false, and the detail pane says so with a state
+/// label where the rebind verb would otherwise be.
+///
+/// `listRow` is the exact string the flat keyRows() list has always printed for
+/// them, kept because two cases assert on it and because the one-line wording
+/// genuinely differs from the two-column wording -- see KeysPageRow::listRow.
+[[nodiscard]] std::vector<KeysPageRow> contextualRows() {
+    std::vector<KeysPageRow> rows;
+    rows.push_back(KeysPageRow{"WALK", "CLIMB A LEDGE", "",
+                               "THERE IS NO KEY FOR THIS, WHICH IS THE POINT OF IT. WALK "
+                               "STRAIGHT AT A LOW LEDGE AND YOU HAUL YOURSELF UP IT.",
+                               false, "WALK AT A LEDGE", kKeysGroupNote});
+    rows.push_back(KeysPageRow{"W  S", "AIM THE WIRE", "",
+                               "TURNS THE WIRE IN THE LOCK. THE WARDS ARE NOT ALL AT THE "
+                               "SAME DEPTH AND YOU HAVE TO FEEL FOR EACH ONE.",
+                               false, "LOCK: W S  AIM", kKeysGroupNote});
+    rows.push_back(KeysPageRow{"SPACE", "TRY THE PIN", "",
+                               "PUSHES AT THE PIN YOU ARE AIMED AT. GET IT WRONG AND THE "
+                               "WIRE COMPLAINS, LOUDLY, TO ANYBODY IN THE ROOM.",
+                               false, "LOCK: SPACE TRY", kKeysGroupNote});
+    rows.push_back(KeysPageRow{"F", "FORCE IT", "",
+                               "STOPS BEING SUBTLE. FAST, CRUDE, AND IT COSTS YOU THE WIRE "
+                               "MORE OFTEN THAN NOT.",
+                               false, "LOCK: F  FORCE", kKeysGroupNote});
+    rows.push_back(KeysPageRow{"ESC", "LEAVE THE LOCK", "",
+                               "TAKES THE WIRE BACK OUT. THE LOCK REMEMBERS NOTHING AND "
+                               "NEITHER DOES THE WATCH, IF YOU ARE QUICK.",
+                               false, "LOCK: ESC  OUT", kKeysGroupNote});
+    return rows;
+}
+
+}  // namespace
+
+std::vector<KeysPageRow> Session::keyPageRows() const {
     // GENERATED FROM THE LIVE BINDINGS, and that is the whole point of the
     // change. This page used to be a static array of strings sitting a hundred
     // lines away from a switch statement in the client, and its own comment
@@ -882,34 +938,74 @@ std::vector<std::string> Session::keyRows() const {
     // rebinds one without looking down". It could not help drifting: nothing
     // connected the two. Now a rebinding shows up here by construction, because
     // this IS the binding table read out loud.
-    std::vector<std::string> rows;
+    std::vector<KeysPageRow> rows;
     rows.reserve(kActionCount + 8);
-    rows.emplace_back("MOUSE  LOOK");
+    rows.push_back(KeysPageRow{"MOUSE", "LOOK", "",
+                               "WHERE YOU POINT IS WHERE YOU LOOK. RAW, WITH NO SMOOTHING "
+                               "AND NO ACCELERATION -- THE SENSITIVITY IS ON THE OPTIONS "
+                               "PAGE.",
+                               false, "MOUSE  LOOK", kKeysGroupMove});
     for (std::size_t i = 0; i < kActionCount; ++i) {
         const Action action = static_cast<Action>(i);
         // THE QUICK BAR IS ONE ROW, NOT TEN. Ten near-identical rows would push
-        // everything a player is actually looking for onto page four. The
+        // everything a player is actually looking for down the page. The
         // OPTIONS page still lists all ten, because that is where you go to
         // change one.
         if (action >= Action::QuickSlot2 && action <= Action::QuickSlot0) {
             continue;
         }
-        std::string row;
+        KeysPageRow row;
+        row.verb = std::string(actionLabel(action));
+        row.help = std::string(actionHelp(action));
+        row.group = keyGroupFor(action);
+        row.bindable = true;
         if (action == Action::QuickSlot1) {
-            row = std::string(keyName(controls_.primary[i])) + "-" +
-                  std::string(keyName(controls_.primary[static_cast<std::size_t>(
-                      Action::QuickSlot0)])) +
-                  "  QUICK BAR";
+            row.binding =
+                std::string(keyName(controls_.primary[i])) + "-" +
+                std::string(keyName(controls_.primary[static_cast<std::size_t>(
+                    Action::QuickSlot0)]));
+            row.verb = "QUICK BAR";
+            row.help = "THE NUMBER ROW READIES A CRAFTING WITHOUT OPENING ANYTHING. THE "
+                       "OPTIONS PAGE LISTS ALL TEN SEPARATELY.";
         } else {
-            row = std::string(keyName(controls_.primary[i])) + "  " +
-                  std::string(actionLabel(action));
+            row.binding = std::string(keyName(controls_.primary[i]));
+            const Key second = controls_.secondary[i];
+            if (second != Key::None) {
+                row.alternate = std::string(keyName(second));
+            }
         }
-        rows.push_back(row);
+        rows.push_back(std::move(row));
     }
-    rows.emplace_back("WALK AT A LEDGE");
-    rows.emplace_back("  TO CLIMB IT");
-    for (const char* row : kLockRows) {
-        rows.emplace_back(row);
+    for (KeysPageRow& row : contextualRows()) {
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+KeysPageState Session::keysPageState() const {
+    KeysPageState state;
+    state.open = keysOpen_;
+    state.title = "CONTROLS";
+    // AND THE BUILD, HERE, WHERE A PLAYER GOES LOOKING FOR IT -- right-aligned
+    // in the tab row, which is where the reference puts the number you want on
+    // screen while you read the page. It used to be burnt into the top-left
+    // corner of every captured frame at full HUD scale.
+    state.readout = "GRANADAD " + std::string(sim::build_info().version);
+    state.instruction =
+        "EVERY KEY THIS GAME ANSWERS TO. THE ONE UNDER THE CURSOR IS SPELT OUT ON THE "
+        "RIGHT. F1 PUTS THIS DOWN.";
+    state.rows = keyPageRows();
+    state.cursor = caseCursor_;
+    return state;
+}
+
+std::vector<std::string> Session::keyRows() const {
+    // DERIVED, NOT WRITTEN TWICE. See KeysPageRow::listRow: the flat list and
+    // the drawn page were separate once, and separate lists of different
+    // lengths is how a cursor ends up able to select a row nothing draws.
+    std::vector<std::string> rows;
+    for (const KeysPageRow& row : keyPageRows()) {
+        rows.push_back(row.listRow.empty() ? row.binding + "  " + row.verb : row.listRow);
     }
     return rows;
 }
@@ -5017,6 +5113,37 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         }
         return stats;
     }
+    // PANES PASS: THE CONTROLS PAGE IS THE FIRST SURFACE DRAWN IN THE
+    // TERMINAL-PANEL REGISTER (render/keys_page.hpp, on render/panel.hpp's
+    // vocabulary) rather than through the single conversation panel. It is a
+    // FULL-PAGE composition, like the tiled Menu and like every one of the
+    // owner's reference frames, and for the same reason menu_view.hpp already
+    // gives: nobody is standing in front of you while you read your own key
+    // bindings, so there is nothing in the centre of the frame to leave clear.
+    //
+    // THE CLOCK AND THE PURSE STAND DOWN WHILE IT IS UP. That is this build's
+    // existing rule about overlays, applied to a new one: the top-right stack
+    // is drawn AFTER the panel and would otherwise land in the tab row, on top
+    // of the build readout that row right-aligns. Nothing is being discussed
+    // and no door is about to shut, so the hour and the purse have nothing to
+    // say for the few seconds this page is open. Everything else about the HUD
+    // is untouched, and a warning still outranks the page -- it is routed into
+    // the page's own header band instead of being painted over it.
+    if (keysOpen_) {
+        KeysPageState page = keysPageState();
+        page.openAmount = panelAnim_.value();
+        page.open = page.open || panelAnim_.value() > 0.0F;
+        if (warned) {
+            page.alert = std::string(tavern_->lastWarning());
+        }
+        hud.timeOfDaySeconds = -1;
+        hud.coin = -1;
+        if (config_.hud) {
+            drawKeysPage(target, page);
+            drawHud(target, hud);
+        }
+        return stats;
+    }
     // MORROWIND ROUND: THE TILED MENU IS A DIFFERENT SURFACE FROM THE SINGLE
     // CONVERSATION PANEL, drawn by a different function (menu_view.hpp's
     // drawMenuTiles rather than dialogue_view.hpp's drawDialogue) because it
@@ -7542,6 +7669,14 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     if (config.cursorRow > 0 && session.talking()) {
         const int want = config.cursorRow - 1;
         session.moveTopicCursor(want - session.topicCursor());
+    }
+    // PANES PASS: THE SAME IDEA ON THE CONVERTED CONTROLS PAGE -- see
+    // SmokeRunConfig::keysRow on why it is its own flag. moveTopicCursor
+    // already routes to the keys page's own cursor (its keysOpen_ branch), so
+    // this is the identical call the arrow keys make and there is no
+    // capture-only path through the drawing.
+    if (config.keysRow > 0 && session.keysOpen()) {
+        session.moveTopicCursor(config.keysRow - 1);
     }
 
     // VERIFICATION. See SmokeRunConfig::settle's own header. Zero-input

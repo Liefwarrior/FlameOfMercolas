@@ -210,16 +210,34 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
     CHECK_FALSE(session.keysOpen());
 }
 
-TEST_CASE("the keys page still respects the HUD rule; the tiled Menu is a full overview and does not") {
-    // MORROWIND ROUND: HALF OF THIS CASE'S OWN CLAIM FLIPPED, ON PURPOSE. The
-    // keys page is unchanged -- still the single-panel conversation surface,
-    // still centre-clear, exactly as every S10 surface always was. The
-    // notes are not: they are the Journal tile of a Morrowind-style tiled
-    // Menu now (Character/Map/Letters/Journal, all drawn at once), and that
-    // tiled overview is deliberately EXEMPT from the centre-clear rule --
-    // see menu_view.hpp's own header on why ("there is nobody TO look at
-    // while it is up"). This proves both halves at once: Keys still leaves
-    // the centre alone, and the tiled Menu genuinely does not.
+TEST_CASE("the two full-page overviews cover the middle, and the rule they are exempt from still holds everywhere else") {
+    // THE SECOND HALF OF THIS CASE'S CLAIM HAS NOW FLIPPED TOO, ON PURPOSE.
+    //
+    // The Morrowind round flipped the first half: the notes became the Journal
+    // tile of a tiled Menu (Character/Map/Letters/Journal, drawn at once), and
+    // that overview is deliberately EXEMPT from the centre-clear rule -- see
+    // menu_view.hpp's header on why ("there is nobody TO look at while it is
+    // up").
+    //
+    // The PANES PASS flips the other half for the identical reason. The keys
+    // page is a full-page composed surface now (render/keys_page.hpp, drawn on
+    // render/panel.hpp's vocabulary) instead of a conversation panel with a
+    // 3x4 topic grid in the bottom band, and it covers the middle exactly as
+    // the tiled Menu does. Nobody is standing in front of you while you read
+    // your own key bindings; the strip of street the old layout left visible
+    // between its two bands was not doing anything for anybody, and it cost
+    // the page three quarters of its own list (nine rows of twenty-nine, over
+    // four pages).
+    //
+    // THE RULE IS NOT WEAKENED, ONLY SCOPED. It exists for surfaces drawn
+    // while the world still matters -- a live conversation with somebody
+    // standing in front of you, the HUD, the lockpicking overlay, the pause
+    // menu -- and every one of those is still held to it, by
+    // test_tavern_render.cpp, test_render.cpp, test_lockpick.cpp,
+    // test_pause.cpp and test_map.cpp. What this case now proves is that the
+    // two deliberate full-page overviews really do take the frame, which is
+    // the thing that would silently stop being true if somebody put either of
+    // them back inside the old edge budget.
     render::SessionConfig config = fresh();
     render::Session session(config);
     session.stepMany(MoveInput{}, 4);
@@ -243,17 +261,20 @@ TEST_CASE("the keys page still respects the HUD rule; the tiled Menu is a full o
 
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
     bool notesDiffer = false;
+    bool keysDiffer = false;
     for (int y = centre.y0; y < centre.y1; ++y) {
         for (int x = centre.x0; x < centre.x1; ++x) {
             if (withNotes.pixels()[withNotes.index(x, y)] != plain.pixels()[plain.index(x, y)]) {
                 notesDiffer = true;
             }
-            // KEYS: STILL UNCHANGED, STILL CENTRE-CLEAR.
-            REQUIRE(withKeys.pixels()[withKeys.index(x, y)] == plain.pixels()[plain.index(x, y)]);
+            if (withKeys.pixels()[withKeys.index(x, y)] != plain.pixels()[plain.index(x, y)]) {
+                keysDiffer = true;
+            }
         }
     }
-    // THE TILED MENU: NOW GENUINELY COVERS THE MIDDLE.
+    // BOTH OVERVIEWS GENUINELY COVER THE MIDDLE.
     CHECK(notesDiffer);
+    CHECK(keysDiffer);
 }
 
 TEST_CASE("the two surfaces are exclusive, and neither opens over a conversation") {

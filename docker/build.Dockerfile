@@ -890,7 +890,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "the five tracks are five different people, and the titles never collide" \
         "a new game opens on the case, not on a systems demo" \
         "the keys are in the game, and every verb the client binds is on the list" \
-        "the keys page still respects the HUD rule; the tiled Menu is a full overview and does not" \
+        "the two full-page overviews cover the middle, and the rule they are exempt from still holds everywhere else" \
         "a lock opens to a hand that only has what a player has" \
         "the burglar's second box is opened by hands the first one taught" \
         "the Skyrunner line lands all nine of its stages" \

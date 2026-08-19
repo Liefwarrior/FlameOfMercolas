@@ -1,0 +1,464 @@
+// THE FRAME PRIMITIVES AND THE COMPOSITION RULES.
+//
+// Four phases of UI work draw into render/panel.hpp after this one, so the
+// interesting failures here are not "does it put ink on the screen" -- they are
+// the CONTRACTS those phases will be coding against:
+//
+//   * the panel grid is the FONT'S grid, so text laid out in cells lands where
+//     drawText puts it,
+//   * a span split adds back up to its bounds and lands on the grid, so edges
+//     align and gutters are shared,
+//   * the |/! alternation runs through interior dividers as well as the border,
+//     because that texture is the register and it is not optional,
+//   * an option list picks its COLUMN COUNT FROM THE CONTENT against the width
+//     available, at every resolution the game runs at,
+//   * a pane HOLDS ITS HEIGHT when its content shrinks, and a list drawn
+//     against a plan keeps its geometry when the page turns,
+//   * the value column is common across a block and is computed rather than
+//     typed in.
+//
+// And then the same composition, resolved at 320x180, 640x360, 960x540,
+// 1280x720 and 1920x1080, because "width-aware" is a claim and these are the
+// numbers that make it one.
+
+#include <doctest/doctest.h>
+
+#include <algorithm>
+#include <string>
+#include <vector>
+
+#include "granadad/render/framebuffer.hpp"
+#include "granadad/render/hud.hpp"
+#include "granadad/render/keys_page.hpp"
+#include "granadad/render/panel.hpp"
+
+using namespace granadad::render;
+
+namespace {
+
+/// Every window size this suite claims the composition holds at. The 960x540
+/// baseline is the one docs/HUD-REAL-ESTATE.md measures at; the other four are
+/// the ends of the range the game actually runs in.
+struct Size {
+    int w;
+    int h;
+};
+constexpr Size kSizes[] = {{320, 180}, {640, 360}, {960, 540}, {1280, 720}, {1920, 1080}};
+
+[[nodiscard]] std::vector<PanelOption> namedOptions(const std::vector<std::string>& labels) {
+    std::vector<PanelOption> out;
+    out.reserve(labels.size());
+    for (const std::string& label : labels) {
+        PanelOption option;
+        option.label = label;
+        out.push_back(option);
+    }
+    return out;
+}
+
+[[nodiscard]] int inkCount(const Framebuffer& frame) {
+    int lit = 0;
+    for (const std::uint32_t pixel : frame.pixels()) {
+        if ((pixel & 0x00FFFFFFU) != 0U) {
+            ++lit;
+        }
+    }
+    return lit;
+}
+
+}  // namespace
+
+TEST_CASE("the panel grid is the font's own grid") {
+    // panel.cpp restates the font's cell metric because hud.cpp does not export
+    // it. THIS is what stops the restatement drifting: a cell is exactly one
+    // glyph advance wide, and a row is the glyph plus the drop shadow under it.
+    for (int scale = 1; scale <= 6; ++scale) {
+        const PanelMetric metric{scale};
+        // textWidth is (n * advance - 1) * scale, so two glyphs minus one
+        // glyph is exactly one advance.
+        CHECK(textWidth("AA", scale) - textWidth("A", scale) == metric.cellW());
+        CHECK(metric.cellH() == metric.cellW() / 5 * 7);
+        CHECK(metric.widthOf(metric.cellsIn(1000)) <= 1000);
+    }
+    // And the metric a composed screen picks is the register hud.hpp reserves
+    // for reference material, at every size the game runs at.
+    for (const Size& size : kSizes) {
+        CHECK(panelMetric(size.h).scale == hudMinorScale(size.h));
+    }
+}
+
+TEST_CASE("a span split adds up to its bounds and lands on the grid") {
+    const PanelMetric metric{2};
+    const PanelRect bounds{10, 20, metric.widthOf(97), metric.heightOf(41)};
+
+    const std::vector<PanelRect> rows =
+        splitRows(bounds, metric, {spanCells(1), spanCells(2), spanWeight(3), spanWeight(1),
+                                   spanCells(1)});
+    REQUIRE(rows.size() == 5);
+    int total = 0;
+    int y = bounds.y;
+    for (const PanelRect& row : rows) {
+        // Every band starts where the last one ended -- that is the whole of
+        // "aligned edges" -- and every band is a whole number of rows.
+        CHECK(row.y == y);
+        CHECK(row.h % metric.cellH() == 0);
+        CHECK(row.x == bounds.x);
+        CHECK(row.w == bounds.w);
+        y += row.h;
+        total += row.h;
+    }
+    // Nothing is lost and nothing is invented: the remainder that does not
+    // divide evenly goes to the last weighted band rather than vanishing.
+    CHECK(total == metric.heightOf(41));
+    CHECK(rows[0].h == metric.heightOf(1));
+    CHECK(rows[1].h == metric.heightOf(2));
+    CHECK(rows[4].h == metric.heightOf(1));
+
+    const std::vector<PanelRect> cols =
+        splitColumns(bounds, metric, {spanWeight(2), spanCells(1), spanWeight(3)});
+    REQUIRE(cols.size() == 3);
+    CHECK(cols[1].w == metric.widthOf(1));
+    CHECK(cols[0].right() == cols[1].x);
+    CHECK(cols[1].right() == cols[2].x);
+    CHECK(cols[0].w + cols[1].w + cols[2].w == metric.widthOf(97));
+}
+
+TEST_CASE("a composition asking for more than the window has is trimmed, never overlapped") {
+    const PanelMetric metric{3};
+    // Six fixed rows into a four-row window. The first four are honoured in the
+    // order they were declared and the rest come out empty -- what must NOT
+    // happen is two bands landing on the same pixels.
+    const PanelRect tiny{0, 0, metric.widthOf(20), metric.heightOf(4)};
+    const std::vector<PanelRect> rows = splitRows(
+        tiny, metric,
+        {spanCells(1), spanCells(1), spanCells(1), spanCells(1), spanCells(1), spanCells(1)});
+    REQUIRE(rows.size() == 6);
+    CHECK(rows[3].h == metric.heightOf(1));
+    CHECK(rows[4].h == 0);
+    CHECK(rows[5].h == 0);
+    for (std::size_t i = 1; i < rows.size(); ++i) {
+        CHECK(rows[i].y == rows[i - 1].y + rows[i - 1].h);
+    }
+}
+
+TEST_CASE("the vertical edges alternate, and the alternation runs through an interior divider") {
+    // THE TEXTURE IS THE REGISTER. `!` has a gap at glyph row 4 and `|` does
+    // not, which is the whole one-pixel flicker -- so this asks the frame which
+    // motif each row wears rather than counting pixels, and then asks whether
+    // the divider agrees with the border on every row.
+    const PanelMetric metric{2};
+    Framebuffer frame(400, 300);
+    FrameStyle style;
+    PanelFrame panel(frame, PanelRect{0, 0, 400, 300}, metric, style);
+    REQUIRE(panel.rowCount() > 4);
+    const auto edge = [&panel](int r) { return static_cast<int>(panel.edgeAt(r)); };
+    CHECK(edge(0) == static_cast<int>(Motif::Bang));
+    CHECK(edge(1) == static_cast<int>(Motif::Bar));
+    CHECK(edge(2) == static_cast<int>(Motif::Bang));
+    for (int r = 0; r + 1 < panel.rowCount(); ++r) {
+        CHECK(edge(r) != edge(r + 1));
+    }
+
+    // rowPhase is what lets a nested frame stay in step with its parent rather
+    // than restarting the flicker halfway down a screen.
+    FrameStyle shifted = style;
+    shifted.rowPhase = 1;
+    PanelFrame nested(frame, PanelRect{0, 0, 400, 300}, metric, shifted);
+    CHECK(static_cast<int>(nested.edgeAt(0)) == static_cast<int>(Motif::Bar));
+    CHECK(static_cast<int>(nested.edgeAt(1)) == static_cast<int>(Motif::Bang));
+}
+
+TEST_CASE("a frame draws its border and leaves an interior a caller can trust") {
+    const PanelMetric metric{2};
+    Framebuffer frame(400, 300);
+    frame.clear(Rgb{0.0F, 0.0F, 0.0F});
+    FrameStyle style;
+    style.junction = Motif::Diamond;
+    PanelFrame panel(frame, PanelRect{0, 0, 400, 300}, metric, style);
+    panel.addRule(3);
+    panel.addDivider(10, 4, panel.rowCount() - 4);
+    panel.draw();
+    CHECK(inkCount(frame) > 0);
+
+    // The interior sits one cell in and one row down, and holds exactly the
+    // rows the frame says it does.
+    CHECK(panel.interior().x == metric.cellW());
+    CHECK(panel.interior().y == metric.cellH());
+    CHECK(panel.interior().h == metric.heightOf(panel.rowCount()));
+    // A band is clamped to the interior rather than running past it, so a
+    // composition that over-asks gets a short band and not a buffer overrun.
+    const PanelRect over = panel.band(panel.rowCount() - 1, 40);
+    CHECK(over.h == metric.heightOf(1));
+    CHECK(panel.band(0, 3).h == metric.heightOf(3));
+}
+
+TEST_CASE("an option list picks its column count from the content, not from a setting") {
+    const PanelMetric metric{2};
+    OptionListStyle style;
+    style.showKeys = false;
+    style.maxColumns = 4;
+
+    // The reference's own example: four short elemental names take two columns
+    // and nine long ones take one, at the SAME width.
+    const PanelRect pane{0, 0, metric.widthOf(40), metric.heightOf(12)};
+    const std::vector<PanelOption> shortNames =
+        namedOptions({"WATER", "EARTH", "FIRE", "AIR"});
+    const std::vector<PanelOption> longNames =
+        namedOptions({"HOMUNCULUS THEORY", "MARTIAL PRACTICES", "WILDSPEAKING",
+                      "SANGUINE GEOMETRY", "TIDEREADING", "DROWNED CARTOGRAPHY",
+                      "LINKCRAFT", "STREETWISE", "CHANNELLING"});
+    CHECK(planOptionList(shortNames, pane, metric, style).columns >= 2);
+    CHECK(planOptionList(longNames, pane, metric, style).columns <
+          planOptionList(shortNames, pane, metric, style).columns);
+    // Narrow the pane and the long list is down to the one column the
+    // reference draws it in.
+    const PanelRect narrowPane{0, 0, metric.widthOf(24), metric.heightOf(12)};
+    CHECK(planOptionList(longNames, narrowPane, metric, style).columns == 1);
+
+    // And the count follows the WIDTH: the identical list re-columns as the
+    // pane grows. This is the whole width-awareness claim, in one assertion.
+    int previous = 0;
+    for (const int cells : {12, 24, 40, 60, 90}) {
+        const PanelRect wider{0, 0, metric.widthOf(cells), metric.heightOf(12)};
+        const int columns = planOptionList(shortNames, wider, metric, style).columns;
+        CHECK(columns >= previous);
+        previous = columns;
+    }
+    CHECK(previous > planOptionList(shortNames, PanelRect{0, 0, metric.widthOf(12),
+                                                          metric.heightOf(12)},
+                                    metric, style)
+                         .columns);
+    // maxColumns is a ceiling and not a target.
+    const PanelRect huge{0, 0, metric.widthOf(400), metric.heightOf(12)};
+    CHECK(planOptionList(shortNames, huge, metric, style).columns <= style.maxColumns);
+    CHECK(planOptionList(shortNames, huge, metric, style).columns <= 4);
+}
+
+TEST_CASE("a pane holds its height when the list inside it shrinks") {
+    // STABLE GEOMETRY. A list that loses entries must not drag the rule under
+    // it upwards, and a list drawn against a plan made for the WHOLE list must
+    // keep its column stride when only a page of it is on screen.
+    const PanelMetric metric{2};
+    const PanelRect pane{0, 0, metric.widthOf(60), metric.heightOf(16)};
+    OptionListStyle style;
+    style.showKeys = false;
+    style.minRows = 14;
+
+    const std::vector<PanelOption> full =
+        namedOptions({"ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT"});
+    const std::vector<PanelOption> fewer = namedOptions({"ONE", "TWO"});
+    CHECK(planOptionList(full, pane, metric, style).rows == 14);
+    CHECK(planOptionList(fewer, pane, metric, style).rows == 14);
+
+    // And without minRows the pane is honest about how tall it needs to be.
+    OptionListStyle loose = style;
+    loose.minRows = 0;
+    CHECK(planOptionList(fewer, pane, metric, loose).rows < 14);
+
+    // Overflow is REPORTED rather than silently truncated.
+    OptionListStyle tight;
+    tight.showKeys = false;
+    tight.maxColumns = 1;
+    const PanelRect narrow{0, 0, metric.widthOf(20), metric.heightOf(4)};
+    CHECK(planOptionList(full, narrow, metric, tight).overflowed);
+    CHECK_FALSE(planOptionList(fewer, pane, metric, style).overflowed);
+}
+
+TEST_CASE("the value column is common across a block and is computed, not typed in") {
+    const PanelMetric metric{2};
+    const PanelRect pane{0, 0, metric.widthOf(60), metric.heightOf(8)};
+    const std::vector<PanelFact> facts{
+        PanelFact{"FACTION", "INDEPENDENTS"},
+        PanelFact{"MAJOR RELIGION", "AGNOSTICISM"},
+        PanelFact{"TERRAIN", "DESERT"},
+    };
+    const int column = factValueColumn(facts, pane, metric);
+    // One clear of the longest label -- "MAJOR RELIGION" is fourteen.
+    CHECK(column == 16);
+    // A runaway label cannot push every value on the screen to the margin.
+    std::vector<PanelFact> runaway = facts;
+    runaway.push_back(PanelFact{std::string(90, 'X'), "1"});
+    CHECK(factValueColumn(runaway, pane, metric) <= 30);
+}
+
+TEST_CASE("the master/detail split collapses honestly instead of making two unreadable panes") {
+    const PanelMetric metric{2};
+    const PanelRect wide{0, 0, metric.widthOf(94), metric.heightOf(20)};
+    const MasterDetail split = splitMasterDetail(wide, metric, 58, 18, 30);
+    CHECK(split.split);
+    CHECK(split.master.x == wide.x);
+    // A cell of air, the divider, a cell of air -- so no text ever touches the
+    // flicker column.
+    CHECK(split.detail.x > split.master.right());
+    CHECK(metric.cellsIn(split.master.w) + metric.cellsIn(split.detail.w) < 94);
+    CHECK(split.dividerCell > metric.cellsIn(split.master.w) - 1);
+
+    const PanelRect thin{0, 0, metric.widthOf(40), metric.heightOf(20)};
+    const MasterDetail one = splitMasterDetail(thin, metric, 58, 18, 30);
+    CHECK_FALSE(one.split);
+    CHECK(one.master.w == thin.w);
+    CHECK(one.detail.w == 0);
+}
+
+TEST_CASE("the controls page composes at every window size the game runs at") {
+    // THE PROOF THAT THE FOUNDATION HOLDS. The same declared composition, five
+    // resolutions, and at every one of them: a frame with a usable interior, a
+    // list that fits more of itself than the four-page topic grid ever did, and
+    // ink on the screen that did not come from the world underneath.
+    KeysPageState state;
+    state.open = true;
+    state.title = "CONTROLS";
+    state.readout = "GRANADAD 0.10.0";
+    state.instruction =
+        "EVERY KEY THIS GAME ANSWERS TO. THE ONE UNDER THE CURSOR IS SPELT OUT ON THE RIGHT.";
+    for (int i = 0; i < 29; ++i) {
+        KeysPageRow row;
+        row.binding = i % 3 == 0 ? "LSHIFT" : "W";
+        row.verb = i % 2 == 0 ? "FORWARD" : "QUICK WHEEL";
+        row.help = "ONE SENTENCE ABOUT WHAT THIS KEY DOES, LONG ENOUGH TO NEED WRAPPING IN "
+                   "ANY PANE THIS PAGE WILL EVER GIVE IT.";
+        row.group = i % kKeysGroupCount;
+        state.rows.push_back(row);
+    }
+
+    for (const Size& size : kSizes) {
+        INFO("size " << size.w << "x" << size.h);
+        Framebuffer frame(size.w, size.h);
+        frame.clear(Rgb{0.0F, 0.0F, 0.0F});
+        state.cursor = 0;
+        drawKeysPage(frame, state);
+        CHECK(inkCount(frame) > 0);
+
+        const KeysPageScroll scroll = keysPageScroll(state, size.w, size.h);
+        CHECK(scroll.perScreen > 0);
+        CHECK(scroll.screens >= 1);
+        // THE NUMBER THAT MADE THIS WORTH DOING. The surface this replaced
+        // showed NINE rows per page whatever the window was, which is four
+        // pages for this list. Every size here beats that, and 960x540 shows
+        // the whole list at once.
+        CHECK(scroll.perScreen > 9);
+        CHECK(scroll.screens <= 2);
+
+        // The cursor on the last row lands on the last screenful, and the
+        // first row lands on the first: the page follows the cursor rather
+        // than the player having to find the cursor.
+        state.cursor = static_cast<int>(state.rows.size()) - 1;
+        const KeysPageScroll end = keysPageScroll(state, size.w, size.h);
+        CHECK(end.screen == end.screens - 1);
+        CHECK(end.firstRow <= state.cursor);
+    }
+
+    // At the baseline the whole list is on one screen -- no page turn at all,
+    // which is the thing the old layout could not do at any resolution.
+    state.cursor = 0;
+    CHECK(keysPageScroll(state, 960, 540).screens == 1);
+}
+
+TEST_CASE("a closed page and a zero ease draw nothing at all") {
+    // The contract every overlay in this build keeps: a state that never heard
+    // of the page is pixel-identical to no page.
+    KeysPageState state;
+    state.open = false;
+    state.rows.push_back(KeysPageRow{"W", "FORWARD", "", "WALK.", true, "", 0});
+    Framebuffer closed(960, 540);
+    closed.clear(Rgb{0.1F, 0.1F, 0.1F});
+    const std::vector<std::uint32_t> before = closed.pixels();
+    drawKeysPage(closed, state);
+    CHECK(closed.pixels() == before);
+
+    state.open = true;
+    state.openAmount = 0.0F;
+    drawKeysPage(closed, state);
+    CHECK(closed.pixels() == before);
+}
+
+TEST_CASE("prose wraps to its pane and never draws past it") {
+    // A pane two rows tall handed a paragraph that needs ten draws two rows.
+    // The alternative -- a primitive that writes past its rect -- is how a
+    // detail pane ends up printed through the rule under it.
+    const PanelMetric metric{2};
+    Framebuffer frame(400, 300);
+    const PanelRect pane{0, 0, metric.widthOf(20), metric.heightOf(2)};
+    const std::vector<PanelLine> lines{
+        PanelLine{Bullet::Dot, "BURNING SPIRIT:",
+                  "YOUR DEVOTEES GAIN A COMBAT DAMAGE BONUS EQUAL TO THEIR FAITH, WHICH IS "
+                  "A GREAT DEAL MORE TEXT THAN TWO ROWS CAN HOLD.",
+                  InkRole::Number}};
+    CHECK(drawProse(frame, pane, metric, lines, 1.0F) <= 2);
+
+    // Given room, it uses what it needs and reports it, so a caller can put
+    // something under it.
+    const PanelRect roomy{0, 0, metric.widthOf(30), metric.heightOf(20)};
+    const int used = drawProse(frame, roomy, metric, lines, 1.0F);
+    CHECK(used > 2);
+    CHECK(used < 20);
+}
+
+TEST_CASE("a column is as wide as its content, and the columns are spread across the pane") {
+    // THE FIRST CAPTURE OF THE CONVERTED PAGE GOT THIS WRONG. A column that
+    // takes its whole share of a wide pane puts the value column at the far
+    // right margin, forty cells past the label it belongs to, with nothing in
+    // between -- a dot leader with no dots. The column is the CONTENT's width;
+    // the columns are then spread so the gutters are even and the last one
+    // still ends at the pane's right edge.
+    const PanelMetric metric{2};
+    OptionListStyle style;
+    style.showKeys = false;
+    style.maxColumns = 3;
+
+    std::vector<PanelOption> options = namedOptions({"FORWARD", "BACK", "STEP LEFT", "SNEAK",
+                                                     "QUICK WHEEL", "CLIMB A LEDGE"});
+    for (PanelOption& option : options) {
+        option.value = "LSHIFT";
+    }
+    const PanelRect wide{0, 0, metric.widthOf(90), metric.heightOf(20)};
+    const OptionListPlan spread = planOptionList(options, wide, metric, style);
+    // key 0 + label 13 + (value 6 + 2 gutter) = 21 cells of content, and the
+    // column is that and not thirty.
+    CHECK(spread.columnCells == 21);
+    CHECK(spread.columnCells < 90 / spread.columns);
+    // The last column's content ends flush with the right edge, give or take
+    // the cell that does not divide evenly among the gutters.
+    const int rightEdge = (spread.columns - 1) * spread.stride + spread.columnCells;
+    CHECK(rightEdge <= 90);
+    CHECK(rightEdge >= 90 - spread.columns);
+    // And no column can reach into the next one.
+    CHECK(spread.stride > spread.columnCells);
+
+    // One column and a pane far wider than it needs: the content stays tight
+    // on the left rather than being stretched across the whole pane.
+    OptionListStyle single = style;
+    single.maxColumns = 1;
+    const OptionListPlan alone = planOptionList(options, wide, metric, single);
+    CHECK(alone.stride == 0);
+    CHECK(alone.columnCells == 21);
+}
+
+TEST_CASE("knocked-out text carries no drop shadow, which is what makes it readable on a fill") {
+    // drawText's one-pixel dark shadow is invisible on this build's near-black
+    // panels and essential over a pale sky. Over a BRIGHT accent fill with dark
+    // text it is a second dark copy of every glyph, and at hudMinorScale the
+    // two run together. The knockout path draws the ink and nothing else, so it
+    // must light strictly FEWER pixels than the ordinary path for the same run.
+    const PanelMetric metric{2};
+    const PanelRect pane{0, 0, metric.widthOf(20), metric.heightOf(2)};
+
+    Framebuffer plain(200, 40);
+    plain.clear(Rgb{0.0F, 0.0F, 0.0F});
+    drawCellText(plain, pane, metric, 0, 0, "QUICK WHEEL", Rgb{1.0F, 1.0F, 1.0F}, 1.0F);
+
+    Framebuffer knocked(200, 40);
+    knocked.clear(Rgb{0.0F, 0.0F, 0.0F});
+    const int cells = drawCellTextKnockout(knocked, pane, metric, 0, 0, "QUICK WHEEL",
+                                           Rgb{1.0F, 1.0F, 1.0F}, 1.0F);
+    CHECK(cells == 11);
+    CHECK(inkCount(knocked) > 0);
+    CHECK(inkCount(knocked) < inkCount(plain));
+    // And it is the SAME glyphs: every pixel the knockout lit, the ordinary
+    // path lit too. It is the font, not a second font.
+    for (std::size_t i = 0; i < knocked.pixels().size(); ++i) {
+        if ((knocked.pixels()[i] & 0x00FFFFFFU) != 0U) {
+            REQUIRE((plain.pixels()[i] & 0x00FFFFFFU) != 0U);
+        }
+    }
+}

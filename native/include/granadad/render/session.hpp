@@ -34,6 +34,7 @@
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
+#include "granadad/render/keys_page.hpp"
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
@@ -524,7 +525,20 @@ public:
     [[nodiscard]] const ControlSettings& controls() const noexcept { return controls_; }
     void setControls(const ControlSettings& settings);
 
-    /// The keys page, one row a verb, built from the live bindings.
+    /// THE CONTROLS PAGE, as the terminal-panel surface actually draws it:
+    /// binding, verb, second binding, one sentence of help, and which family
+    /// the row belongs to. Built from the live bindings, so a rebinding shows
+    /// up here by construction. See render/keys_page.hpp.
+    [[nodiscard]] std::vector<KeysPageRow> keyPageRows() const;
+
+    /// The whole page, ready to draw: the rows above plus the title, the build
+    /// readout, the instruction and the cursor.
+    [[nodiscard]] KeysPageState keysPageState() const;
+
+    /// The keys page as a flat list of one-line strings -- what the old
+    /// topic-grid layout read, and what two cases still assert against.
+    /// DERIVED from keyPageRows() rather than built a second time, so the two
+    /// can never come out different lengths.
     [[nodiscard]] std::vector<std::string> keyRows() const;
 
     /// THE OPTIONS PAGE. Sensitivity, invert-Y, field of view and the pad's
@@ -1638,6 +1652,21 @@ struct SmokeRunConfig {
     /// the row that does not fit. Without this, the frame that proves the fix
     /// cannot be taken and the claim goes back to being a paragraph.
     int cursorRow = 0;
+    /// PANES PASS. Put the CONTROLS page's cursor on this row (1-based) so the
+    /// converted master/detail layout can be photographed with the detail pane
+    /// showing something other than its first entry.
+    ///
+    /// A SEPARATE FLAG FROM cursorRow, AND IT HAD TO BE. `--cursor` implies
+    /// `--talk` (main.cpp sets both, because a topic cursor with no
+    /// conversation open names nothing), and a conversation REFUSES to let the
+    /// keys page open over it -- so `--pause=controls --cursor=27` photographs
+    /// a conversation, which is exactly what the first attempt produced. This
+    /// flag implies `--pause=controls` instead.
+    ///
+    /// The whole claim of a master/detail layout is that moving the cursor
+    /// swaps the detail pane and MOVES NOTHING ELSE, and a claim like that is
+    /// settled by two frames at two cursor rows or it is not settled.
+    int keysRow = 0;
     /// Close whatever conversation is open and start it again. This is how a
     /// capture shows the SAME person greeting you differently after you have
     /// done something to them -- rob them, then say hello.

@@ -234,6 +234,17 @@ inline constexpr std::size_t kActionCount = static_cast<std::size_t>(Action::Cou
 /// What the keys page calls it. Short, because it shares a row with a key name.
 [[nodiscard]] std::string_view actionLabel(Action action) noexcept;
 
+/// One sentence on what the key actually does, for the controls page's detail
+/// pane (render/keys_page.hpp).
+///
+/// THE LABEL IS NOT ENOUGH ANY MORE AND HAS NOT BEEN SINCE #85. "USE" is
+/// Interact + Examine + Steal + Lift + Rest + the lockpick verb, resolved by
+/// stance and by what is faced; "JUMP" is Jump + Traverse + DropDown. A page
+/// that prints six characters beside a key cannot say that, and the old page
+/// printed exactly six characters beside a key. This is what the master/detail
+/// layout put a pane there for.
+[[nodiscard]] std::string_view actionHelp(Action action) noexcept;
+
 /// Parses `actionKey`. Action::Count for anything unrecognised, so an old
 /// settings file with a dropped action is ignored rather than fatal.
 [[nodiscard]] Action actionFromKey(std::string_view name) noexcept;

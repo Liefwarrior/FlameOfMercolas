@@ -16,6 +16,16 @@ struct ActionNames {
     Action action;
     std::string_view key;
     std::string_view label;
+    /// ONE SENTENCE SAYING WHAT THE KEY ACTUALLY DOES, for the controls page's
+    /// detail pane. The page used to be a list of `KEY  VERB` pairs and nothing
+    /// else, so "USE" and "JUMP" -- two verbs that each swallowed five or six
+    /// older ones -- told a new player almost nothing about what they had been
+    /// consolidated into. The label is what fits beside a key; this is what a
+    /// reader gets when they put the cursor on the row.
+    ///
+    /// DRAWABLE CHARACTERS ONLY. test_copy.cpp sweeps every player-facing
+    /// surface for glyphs the 4x6 font does not have, and this is one now.
+    std::string_view help;
 };
 
 // The table. One row per action, and the ORDER IS THE KEYS PAGE'S ORDER --
@@ -51,47 +61,79 @@ struct ActionNames {
 // rather than left for somebody to wonder whether a save format changed out
 // from under them.
 constexpr ActionNames kActions[] = {
-    {Action::Forward, "forward", "FORWARD"},
-    {Action::Back, "back", "BACK"},
-    {Action::StrafeLeft, "strafe_left", "STEP LEFT"},
-    {Action::StrafeRight, "strafe_right", "STEP RIGHT"},
-    {Action::TurnLeft, "turn_left", "TURN L"},
-    {Action::TurnRight, "turn_right", "TURN R"},
-    {Action::Attack, "attack", "ATTACK"},
-    {Action::Interact, "interact", "USE"},
-    {Action::Crouch, "crouch", "SNEAK"},
-    {Action::Vertical, "vertical", "JUMP"},
-    {Action::Sprint, "sprint", "RUN"},
-    {Action::Menu, "menu", "MENU"},
-    {Action::PagePrev, "page_prev", "PAGE <"},
-    {Action::PageNext, "page_next", "PAGE >"},
-    {Action::Pause, "pause", "PAUSE"},
-    {Action::QuickWheel, "quick_wheel", "QUICK WHEEL"},
-    {Action::QuickSlot1, "quick_1", "SLOT 1"},
-    {Action::QuickSlot2, "quick_2", "SLOT 2"},
-    {Action::QuickSlot3, "quick_3", "SLOT 3"},
-    {Action::QuickSlot4, "quick_4", "SLOT 4"},
-    {Action::QuickSlot5, "quick_5", "SLOT 5"},
-    {Action::QuickSlot6, "quick_6", "SLOT 6"},
-    {Action::QuickSlot7, "quick_7", "SLOT 7"},
-    {Action::QuickSlot8, "quick_8", "SLOT 8"},
-    {Action::QuickSlot9, "quick_9", "SLOT 9"},
-    {Action::QuickSlot0, "quick_0", "SLOT 10"},
-    {Action::QuickNext, "quick_next", "NEXT"},
-    {Action::QuickPrev, "quick_prev", "PREV"},
-    {Action::Screenshot, "screenshot", "SCREENSHOT"},
+    {Action::Forward, "forward", "FORWARD",
+     "WALK. HOLD RUN WITH IT TO SPRINT, AND WALK STRAIGHT INTO A LOW LEDGE TO HAUL YOURSELF OVER IT."},
+    {Action::Back, "back", "BACK",
+     "WALK BACKWARDS, SLOWER THAN YOU CAME, AND WITH NO IDEA WHAT IS BEHIND YOU."},
+    {Action::StrafeLeft, "strafe_left", "STEP LEFT",
+     "SIDESTEP LEFT WITHOUT TURNING YOUR HEAD. WORTH KNOWING IN A DOORWAY AND IN A BRAWL."},
+    {Action::StrafeRight, "strafe_right", "STEP RIGHT",
+     "SIDESTEP RIGHT WITHOUT TURNING YOUR HEAD."},
+    {Action::TurnLeft, "turn_left", "TURN L",
+     "TURN LEFT ON THE SPOT. THE MOUSE DOES THIS BETTER; THE ARROWS ARE HERE FOR PLAYING WITHOUT ONE."},
+    {Action::TurnRight, "turn_right", "TURN R",
+     "TURN RIGHT ON THE SPOT. AN ACCESSIBILITY FALLBACK, NOT THE INTENDED FEEL."},
+    {Action::Attack, "attack", "ATTACK",
+     "SWING WHATEVER IS IN THE HAND. A FIST DOES WELL ENOUGH ON MOST OF THE ROWS."},
+    {Action::Interact, "interact", "USE",
+     "ONE BUTTON FOR EVERYTHING IN REACH. IT TALKS, OPENS, LIFTS, PICKS AND ROBS, AND WHICH OF THOSE IT DOES DEPENDS ON YOUR STANCE AND ON WHAT YOU ARE FACING."},
+    {Action::Crouch, "crouch", "SNEAK",
+     "DROP INTO A CROUCH. QUIETER, LOWER, AND THE STANCE EVERY THEFT IN THIS GAME RESOLVES OFF."},
+    {Action::Vertical, "vertical", "JUMP",
+     "GO UP, OR GO DOWN. A JUMP, A HAUL OVER A LEDGE, OR A DROP OFF A ROOF, WHICHEVER THE GROUND AHEAD ALLOWS."},
+    {Action::Sprint, "sprint", "RUN",
+     "HOLD IT TO SPRINT. TAP IT TO WALK, AND TAP IT AGAIN TO STOP WALKING."},
+    {Action::Menu, "menu", "MENU",
+     "YOUR OWN PAPERS: THE CASEBOOK, THE SHEET, THE CHART AND THE LETTERS, ALL ON ONE SCREEN."},
+    {Action::PagePrev, "page_prev", "PAGE <",
+     "MOVES THE FOCUS BACK ONE PANEL ON THE MENU. THE OTHER THREE KEEP WHATEVER THEY WERE SHOWING."},
+    {Action::PageNext, "page_next", "PAGE >",
+     "MOVES THE FOCUS ON ONE PANEL ON THE MENU."},
+    {Action::Pause, "pause", "PAUSE",
+     "RESUME, SETTINGS, QUIT. THE DOCKS KEEP RUNNING WHILE YOU DECIDE, SO DO NOT TAKE ALL NIGHT."},
+    {Action::QuickWheel, "quick_wheel", "QUICK WHEEL",
+     "HOLD IT AND STEP THE QUICK BAR WITH THE PAD. LET GO AND THE PICK STANDS."},
+    {Action::QuickSlot1, "quick_1", "SLOT 1",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE FIRST SLOT."},
+    {Action::QuickSlot2, "quick_2", "SLOT 2",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE SECOND SLOT."},
+    {Action::QuickSlot3, "quick_3", "SLOT 3",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE THIRD SLOT."},
+    {Action::QuickSlot4, "quick_4", "SLOT 4",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE FOURTH SLOT."},
+    {Action::QuickSlot5, "quick_5", "SLOT 5",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE FIFTH SLOT."},
+    {Action::QuickSlot6, "quick_6", "SLOT 6",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE SIXTH SLOT."},
+    {Action::QuickSlot7, "quick_7", "SLOT 7",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE SEVENTH SLOT."},
+    {Action::QuickSlot8, "quick_8", "SLOT 8",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE EIGHTH SLOT."},
+    {Action::QuickSlot9, "quick_9", "SLOT 9",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE NINTH SLOT."},
+    {Action::QuickSlot0, "quick_0", "SLOT 10",
+     "READIES WHATEVER THE GRIMOIRE BOUND TO THE TENTH SLOT."},
+    {Action::QuickNext, "quick_next", "NEXT",
+     "STEPS THE QUICK BAR FORWARD. THE WHEEL DOES IT WITHOUT LOOKING DOWN."},
+    {Action::QuickPrev, "quick_prev", "PREV",
+     "STEPS THE QUICK BAR BACK."},
+    {Action::Screenshot, "screenshot", "SCREENSHOT",
+     "WRITES A PNG BESIDE THE GAME. A CAPTURE TOOL, NOT A GAMEPLAY CONTROL."},
     // APPENDED, NOT INSERTED "near Attack". actionKey()/actionLabel() index
     // this table BY ENUM VALUE, so its order must mirror the enum's order --
     // and the enum's insert-only rule puts new actions on the END. The
     // static_assert below only counts rows; it cannot catch a reorder.
-    {Action::Cast, "cast", "CAST"},
-    {Action::Block, "block", "BLOCK"},
+    {Action::Cast, "cast", "CAST",
+     "CASTS WHAT THE GRIMOIRE HAS READIED. IT REFUSES OUT LOUD RATHER THAN DOING NOTHING QUIETLY."},
+    {Action::Block, "block", "BLOCK",
+     "HELD, NEVER LATCHED. SOFTENS WHAT LANDS ON YOU, SCALED BY YOUR SHIELDWALL."},
     // #13, THE WARD MAP. "map" was also a pre-#85 retired action name (the
     // old map PAGE, folded into Menu); reintroducing it means a surviving
     // pre-#85 file's "bind map ..." line parses again and lands here --
     // which is the old map key opening the new map, the right outcome, and
     // those files were declared unprotected by #85's clean break anyway.
-    {Action::Map, "map", "MAP"},
+    {Action::Map, "map", "MAP",
+     "THE WARD MAP: WHERE YOU ARE, WHERE THE NAMED PLACES ARE, AND HOW TO GET FROM ONE TO THE OTHER."},
 };
 static_assert(sizeof(kActions) / sizeof(kActions[0]) == kActionCount,
               "every action needs a name and a label, or the keys page lies");
@@ -242,6 +284,11 @@ std::string_view actionKey(Action action) noexcept {
 std::string_view actionLabel(Action action) noexcept {
     const std::size_t index = static_cast<std::size_t>(action);
     return index < kActionCount ? kActions[index].label : std::string_view{"?"};
+}
+
+std::string_view actionHelp(Action action) noexcept {
+    const std::size_t index = static_cast<std::size_t>(action);
+    return index < kActionCount ? kActions[index].help : std::string_view{};
 }
 
 Action actionFromKey(std::string_view name) noexcept {

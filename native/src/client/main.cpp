@@ -333,6 +333,10 @@ void print_usage() {
         "  --offer=N            name this number across a counter\n"
         "  --cursor=N           put the topic cursor on row N without picking\n"
         "                       it, so a frame can be taken OF a long label\n"
+        "  --keys-row=N         open the CONTROLS page (implies --pause=controls)\n"
+        "                       with its cursor on row N, so the converted\n"
+        "                       master/detail layout can be photographed with\n"
+        "                       a row other than its first one showing\n"
         "  --again              close the conversation and open it again\n"
         "  --pause[=WHERE]      open the pause menu before the shutter goes.\n"
         "                       WHERE is menu (freshly opened), controls\n"
@@ -802,6 +806,15 @@ void print_usage() {
         } else if (starts_with(arg, "--cursor=", &value)) {
             options.smoke.cursorRow = std::max(0, std::atoi(value));
             options.smoke.talk = true;
+        } else if (starts_with(arg, "--keys-row=", &value)) {
+            // PANES PASS. Implies --pause=controls, because the row it names
+            // is a row of that page -- and does NOT imply --talk, which is
+            // what --cursor does and what makes --cursor useless here: a
+            // conversation refuses to let the keys page open over it.
+            options.smoke.keysRow = std::max(0, std::atoi(value));
+            options.smoke.pause = true;
+            options.smoke.pauseEnd = "controls";
+            options.wantsSmoke = true;
         } else if (starts_with(arg, "--offer=", &value)) {
             options.smoke.offer = std::atoi(value);
             options.smoke.talk = true;

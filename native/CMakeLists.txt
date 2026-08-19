@@ -311,6 +311,9 @@ add_library(granadad-render STATIC
     # and the bullet hierarchy. Width-aware from the first line; NOT modular.
     # See the header, and docs/design/UI-REFERENCE-TERMINAL.md for the grammar.
     src/render/panel.cpp
+    # ...and the first real surface drawn with it: the controls page, converted
+    # off the conversation widget's four-page 3x4 topic grid.
+    src/render/keys_page.cpp
     # Morrowind round -- the tiled Menu (Character/Map/Letters top, Journal
     # full-width bottom, all four drawn at once). See the file's own header.
     src/render/menu_view.cpp
@@ -472,6 +475,12 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_questline.cpp
         tests/test_step_pump.cpp
         tests/test_controls.cpp
+        # PANES PASS -- the frame primitives and the composition rules: the
+        # cell grid against the font's own, the span splits, the |/! alternation
+        # through interior dividers, the option list re-columning by width, the
+        # common value column, panes holding their height, and the controls page
+        # composed at every window size the game runs at.
+        tests/test_panel.cpp
         # Task #83 -- the steps-based ease every panel's open/close and the
         # HUD's own alert row animate through.
         tests/test_anim.cpp
