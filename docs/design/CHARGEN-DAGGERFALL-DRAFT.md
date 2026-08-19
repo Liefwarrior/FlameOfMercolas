@@ -328,109 +328,118 @@ base. No item grants: no item lever exists in chargen, so none is used.
 
 **B1. Who taught you your letters?**
 - a) No one. The quay taught your hands instead. → kit_keeping +6, coin +5.
-- b) The Mission's catechism, between soup and soup. → linkcraft +4, channeling +2;
-  temple +4, merchants −2, skyrunners −2; seed Maell +10 (`notables.json:35-42`).
-- c) A copy-clerk on the counting-row, a half-Royal a month. → linkcraft +6,
-  streetwise +2; coin −5; seed Widow Sedge +10 (`notables.json:405-412`).
-- d) Yourself, off the public shelf. → linkcraft +8; coin −5.
+- b) The Mission taught you its catechism, between one bowl of soup and the next. →
+  linkcraft +4, channeling +2; temple +4, merchants −2, skyrunners −2;
+  seed Maell +10 (`notables.json:35-42`).
+- c) A copy-clerk on the counting-row taught you, for half a Royal a month. →
+  linkcraft +6, streetwise +2; coin −5; seed Widow Sedge +10 (`notables.json:405-412`).
+- d) You taught yourself, off the public shelf. → linkcraft +8; coin −5.
 
-**B2. Quarter-day, the year it went wrong. Your family —**
-- a) paid clean, every quarter, always. → coin +10; merchants +2, dockhands +2,
-  skyrunners −4.
-- b) went bondsworn; you worked your father's bond beside him
+**B2. The Quarter-day it went wrong. What did your family do?**
+- a) They paid clean, every quarter, the way they always had. → coin +10;
+  merchants +2, dockhands +2, skyrunners −4.
+- b) They went bondsworn, and you worked your father's bond beside him
   (`DOCKS-GAZETTEER.md:188-196`). → grit +6, fieldcraft +4; coin −10; dockhands +6,
   watch −2, merchants −4.
-- c) was roofed; you grew up on a roof deck (`DOCKS-GAZETTEER.md:311-318`). →
-  skyrunning +6, streetwise +2; hpMax −2; skyrunners +6, watch −4, merchants −2;
-  seed Finch +5 (`notables.json:218-225`).
-- d) squatted the glebe, token alms in place of a penny (`DOCKS-GAZETTEER.md:245`). →
-  fieldcraft +6, fishing +2; coin −5; temple +4, dockhands −2, merchants −2;
-  seed Maell +5.
+- c) They were roofed — turned out of the house — and you grew up on a roof deck
+  (`DOCKS-GAZETTEER.md:311-318`). → skyrunning +6, streetwise +2; hpMax −2;
+  skyrunners +6, watch −4, merchants −2; seed Finch +5 (`notables.json:218-225`).
+- d) They squatted the glebe and paid token alms instead of the ground penny
+  (`DOCKS-GAZETTEER.md:245`). → fieldcraft +6, fishing +2; coin −5; temple +4,
+  dockhands −2, merchants −2; seed Maell +5.
 
-**B3. Your first wage went —**
-- a) into the household jar, every copper. → grit +2; coin +5; dockhands +2,
+**B3. Where did your first wage go?**
+- a) Every copper of it went into the household jar. → grit +2; coin +5; dockhands +2,
   skyrunners −2.
-- b) across Fenner's counter, against your mother's pledge-paper. → streetwise +2;
-  coin −5; seed Fenner +10 (he remembers punctual blood, `notables.json:116-123`).
-- c) down your throat at the Bilge in one pay-night. → streetwise +4; coin −10;
+- b) Fenner took it across his counter, against your mother's pledge-paper. →
+  streetwise +2; coin −5; seed Fenner +10 (he remembers punctual blood,
+  `notables.json:116-123`).
+- c) You drank it at the Bilge in a single pay-night. → streetwise +4; coin −10;
   heat +5; seed Redda +10 (`notables.json:228-235`).
-- d) on a knife you still carry. → sidearms +4; coin −5.
+- d) It bought the knife you still carry. → sidearms +4; coin −5.
 
-**B4. The Watch knows your face because —**
-- a) you ran messages up the Rise for the post. → kit_keeping +2; watch +6,
+**B4. Why does the Watch know your face?**
+- a) You ran messages up the Rise for the post. → kit_keeping +2; watch +6,
   skyrunners −4, dockhands −2; seed Sergeant Vess +10 (`notables.json:15-22`),
   seed Sergeant Brakk +5 (`notables.json:395-402`).
-- b) they wrote your name down once, and you made them wrong. → skyrunning +4;
+- b) They wrote your name down once, and you made them wrong. → skyrunning +4;
   heat +10; skyrunners +4, watch −4.
-- c) they don't. You have kept it that way on purpose. → streetwise +4.
-- d) your father's name is on the Drowned-Name Wall, and Vess remembers him. →
+- c) They don't, and you have worked to keep it that way. → streetwise +4.
+- d) Your father's name is on the Drowned-Name Wall, and Vess remembers him. →
   grit +4; temple +2, watch +2, skyrunners −4; seed Vess +5.
 
 **B5. What has the sea taken from you?**
-- a) A father, off a hull that never berthed again. → grit +6; temple +2,
+- a) A father. His hull went out and never berthed again. → grit +6; temple +2,
   merchants −2; seed Grandmother Withy +5 (the Arcade remembers every loss,
   `notables.json:288-295`).
 - b) Nothing yet. You are careful with it, and it knows you are. → seacraft +4,
   fishing +2.
-- c) A season's wages when the hull went over — you were aboard. → seacraft +6,
+- c) A season's wages. The hull went over with you aboard. → seacraft +6,
   grit +2; hpMax −2; coin −5.
 - d) Your nerve. You do not go out past the fishbone. → fieldcraft +4, streetwise +2;
   hpMax +2.
 
-**B6. The roofs over your family's bed (`DOCKS-GAZETTEER.md:221-232`) —**
-- a) paid YOUR family — you were the house-owner's child, and the lodgers' rent bought
+**B6. Who owned the roof over your family's bed? (`DOCKS-GAZETTEER.md:221-232`)**
+- a) Your family did. You were the house-owner's child, and the lodgers' rent paid for
   your letters. → linkcraft +2; coin +10; merchants +2, dockhands +2, skyrunners −4.
-- b) held your family — you were the lodgers, and the quiet tenant next door taught you
+- b) Another family did. You were the lodgers, and the quiet tenant next door taught you
   the crawl-gap. → skyrunning +6; heat +5; skyrunners +4, watch −4; seed Finch +10.
-- c) were nobody's — you slept in the Rows, a hammock by the night. → grit +4;
+- c) Nobody did. You slept in the Rows, in a hammock rented by the night. → grit +4;
   coin −5; seed Keeper Vetch +10 (he remembers every face, `notables.json:278-285`).
 
-**B7. Your one debt, still open —**
+**B7. Which of your debts is still open?**
 - a) Fenner holds your paper: fifteen Royals against a start of forty. → coin +15;
   seed Fenner +5. (The repayment seam is a quest hook, not a chargen lever; the only
   mechanical effects are these two.)
 - b) You owe Mother Sethra a secret, not coin. → streetwise +2; seed Sethra +10
   (`notables.json:25-32`).
-- c) You owe the Mission a winter. → temple +4, dockhands −2, merchants −2;
-  seed Onna +10 (`notables.json:45-53`).
+- c) You owe the Mission a winter. They fed you through one, and you never paid it back.
+  → temple +4, dockhands −2, merchants −2; seed Onna +10 (`notables.json:45-53`).
 - d) Nothing. You pay as you go, and it costs you. → grit +2; coin −5; seed Master
   Gilt +5 (arithmetic respects arithmetic, `notables.json:208-215`).
 
-**B8. The ward already knows one thing about you. Pick your poison**
+**B8. The ward already knows one thing about you. What is it?**
 (the mandatory-malus device, `ELDER-SCROLLS-REFERENCE.md:311-313`):
 - a) A name for trouble. → heat +15.
 - b) A soft chest — the wet cough every strand child knows. → hpMax −4.
 - c) Empty pockets. → coin −20.
 - d) A face the roofs remember badly. → skyrunners −8, dockhands +4, watch +4.
 
+(B8's answers stay noun phrases on purpose. "What is it?" is answered by a noun in
+modern English, they were never welded to the old prompt, and a "You have a…"
+scaffold cost eleven of the topic grid's eighteen glyphs and collapsed a) and b)
+into `1 YOU HAVE A NAME.` / `2 YOU HAVE A SOFT.`. Photographed, then reverted —
+`docs/frames/voice-bio/v2-probe-B8.png`.)
+
 **B9. Who fed you the winter the boats stayed in?**
-- a) The Mission's night soup. → temple +4, merchants −2, dockhands −2; seed Onna +10,
-  seed Maell +5.
-- b) Herdis's goats, and Herdis's silence. → fieldcraft +4; seed Herdis +15
+- a) The Mission did, out of its night soup. → temple +4, merchants −2, dockhands −2;
+  seed Onna +10, seed Maell +5.
+- b) Herdis did, with her goats and her silence. → fieldcraft +4; seed Herdis +15
   (`notables.json:356-363`).
-- c) The tide-line. → fishing +4, streetwise +2; seed Tarry Jek +10 (you worked his
-  strand and he let you, `notables.json:66-73`).
+- c) The tide-line did. You worked the strand and nobody chased you off. → fishing +4,
+  streetwise +2; seed Tarry Jek +10 (you worked his strand and he let you,
+  `notables.json:66-73`).
 - d) No one. You went hungry and you remember it. → grit +6; hpMax −2.
 
-**B10. The night you saw a ship come in dark — you were younger then too. You —**
-- a) told the Watch, and stood by it. → watch +4, skyrunners −4; seed Brakk +5.
-- b) kept it. You still know which berth. → streetwise +4; heat +5; seed Sethra +5
-  (she knows you know something).
-- c) sold it at the Wrackhouse. → coin +10; heat +5; skyrunners +4, watch −2,
-  temple −2; seed Dagny +10 (`notables.json:76-83`).
-- d) saw nothing. You were asleep. Everyone was asleep. → hpMax +2. (Pure flavor,
+**B10. A ship came in dark. You were young. What did you do?**
+- a) You told the Watch, and you stood by it. → watch +4, skyrunners −4; seed Brakk +5.
+- b) You kept it to yourself. You still know which berth. → streetwise +4; heat +5;
+  seed Sethra +5 (she knows you know something).
+- c) You sold what you saw at the Wrackhouse. → coin +10; heat +5; skyrunners +4,
+  watch −2, temple −2; seed Dagny +10 (`notables.json:76-83`).
+- d) You saw nothing. You were asleep. Everyone was asleep. → hpMax +2. (Pure flavor,
   and a lie the biography records.)
 
-**B11. At the Drowned-Name Wall (`DOCKS-GAZETTEER.md:355`) you —**
-- a) tend a name. → grit +2; seed Withy +5.
-- b) scratch nothing. The sea is not owed your grief. → grit +4.
-- c) read the new names before the bodies are found, and think about what that means. →
-  streetwise +4, linkcraft +2.
-- d) leave a candle for a name nobody else tends. → temple +4, dockhands −2,
+**B11. What do you do at the Drowned-Name Wall? (`DOCKS-GAZETTEER.md:355`)**
+- a) You tend a name there. → grit +2; seed Withy +5.
+- b) You scratch nothing. The sea is not owed your grief. → grit +4.
+- c) You read the new names before the bodies turn up, and you think hard about who
+  wrote them. → streetwise +4, linkcraft +2.
+- d) You leave a candle for a name nobody else tends. → temple +4, dockhands −2,
   merchants −2; seed Maell +5.
 
-**B12. Dawn, the first day you answer for yourself. Why today?**
-- a) The muster bell. Work is work. → coin +5.
+**B12. Dawn, and you answer to nobody but yourself. Why today?**
+- a) The muster bell rang. Work is work. → coin +5.
 - b) The tide is at slack low an hour after dawn, and slack water is a door. →
   fishing +2.
 - c) A letter came, and you can read it. → linkcraft +2.

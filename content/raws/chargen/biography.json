@@ -21,7 +21,7 @@
           ]
         },
         {
-          "text": "The Mission's catechism, between soup and soup.",
+          "text": "The Mission taught you its catechism, between one bowl of soup and the next.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -56,7 +56,7 @@
           ]
         },
         {
-          "text": "A copy-clerk on the counting-row, a half-Royal a month.",
+          "text": "A copy-clerk on the counting-row taught you, for half a Royal a month.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -80,7 +80,7 @@
           ]
         },
         {
-          "text": "Yourself, off the public shelf.",
+          "text": "You taught yourself, off the public shelf.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -97,10 +97,10 @@
     },
     {
       "id": "B2",
-      "prompt": "Quarter-day, the year it went wrong. Your family —",
+      "prompt": "The Quarter-day it went wrong. What did your family do?",
       "answers": [
         {
-          "text": "paid clean, every quarter, always.",
+          "text": "They paid clean, every quarter, the way they always had.",
           "effects": [
             {
               "kind": "coinDelta",
@@ -124,7 +124,7 @@
           ]
         },
         {
-          "text": "went bondsworn; you worked your father's bond beside him.",
+          "text": "They went bondsworn, and you worked your father's bond beside him.",
           "note": "DOCKS-GAZETTEER.md:188-196.",
           "effects": [
             {
@@ -159,7 +159,7 @@
           ]
         },
         {
-          "text": "was roofed; you grew up on a roof deck.",
+          "text": "They were roofed — turned out of the house — and you grew up on a roof deck.",
           "note": "DOCKS-GAZETTEER.md:311-318.",
           "effects": [
             {
@@ -199,7 +199,7 @@
           ]
         },
         {
-          "text": "squatted the glebe, token alms in place of a penny.",
+          "text": "They squatted the glebe and paid token alms instead of the ground penny.",
           "note": "DOCKS-GAZETTEER.md:245.",
           "effects": [
             {
@@ -242,10 +242,10 @@
     },
     {
       "id": "B3",
-      "prompt": "Your first wage went —",
+      "prompt": "Where did your first wage go?",
       "answers": [
         {
-          "text": "into the household jar, every copper.",
+          "text": "Every copper of it went into the household jar.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -269,7 +269,7 @@
           ]
         },
         {
-          "text": "across Fenner's counter, against your mother's pledge-paper.",
+          "text": "Fenner took it across his counter, against your mother's pledge-paper.",
           "note": "He remembers punctual blood, notables.json:116-123.",
           "effects": [
             {
@@ -289,7 +289,7 @@
           ]
         },
         {
-          "text": "down your throat at the Bilge in one pay-night.",
+          "text": "You drank it at the Bilge in a single pay-night.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -312,7 +312,7 @@
           ]
         },
         {
-          "text": "on a knife you still carry.",
+          "text": "It bought the knife you still carry.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -329,10 +329,10 @@
     },
     {
       "id": "B4",
-      "prompt": "The Watch knows your face because —",
+      "prompt": "Why does the Watch know your face?",
       "answers": [
         {
-          "text": "you ran messages up the Rise for the post.",
+          "text": "You ran messages up the Rise for the post.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -367,7 +367,7 @@
           ]
         },
         {
-          "text": "they wrote your name down once, and you made them wrong.",
+          "text": "They wrote your name down once, and you made them wrong.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -391,7 +391,7 @@
           ]
         },
         {
-          "text": "they don't. You have kept it that way on purpose.",
+          "text": "They don't, and you have worked to keep it that way.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -401,7 +401,7 @@
           ]
         },
         {
-          "text": "your father's name is on the Drowned-Name Wall, and Vess remembers him.",
+          "text": "Your father's name is on the Drowned-Name Wall, and Vess remembers him.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -437,7 +437,7 @@
       "prompt": "What has the sea taken from you?",
       "answers": [
         {
-          "text": "A father, off a hull that never berthed again.",
+          "text": "A father. His hull went out and never berthed again.",
           "note": "The Arcade remembers every loss, notables.json:288-295.",
           "effects": [
             {
@@ -478,7 +478,7 @@
           ]
         },
         {
-          "text": "A season's wages when the hull went over — you were aboard.",
+          "text": "A season's wages. The hull went over with you aboard.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -523,11 +523,11 @@
     },
     {
       "id": "B6",
-      "prompt": "The roofs over your family's bed —",
+      "prompt": "Who owned the roof over your family's bed?",
       "note": "DOCKS-GAZETTEER.md:221-232.",
       "answers": [
         {
-          "text": "paid YOUR family — you were the house-owner's child, and the lodgers' rent bought your letters.",
+          "text": "Your family did. You were the house-owner's child, and the lodgers' rent paid for your letters.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -556,7 +556,7 @@
           ]
         },
         {
-          "text": "held your family — you were the lodgers, and the quiet tenant next door taught you the crawl-gap.",
+          "text": "Another family did. You were the lodgers, and the quiet tenant next door taught you the crawl-gap.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -585,7 +585,7 @@
           ]
         },
         {
-          "text": "were nobody's — you slept in the Rows, a hammock by the night.",
+          "text": "Nobody did. You slept in the Rows, in a hammock rented by the night.",
           "note": "He remembers every face, notables.json:278-285.",
           "effects": [
             {
@@ -608,7 +608,7 @@
     },
     {
       "id": "B7",
-      "prompt": "Your one debt, still open —",
+      "prompt": "Which of your debts is still open?",
       "answers": [
         {
           "text": "Fenner holds your paper: fifteen Royals against a start of forty.",
@@ -641,7 +641,7 @@
           ]
         },
         {
-          "text": "You owe the Mission a winter.",
+          "text": "You owe the Mission a winter. They fed you through one, and you never paid it back.",
           "effects": [
             {
               "kind": "factionStanding",
@@ -689,7 +689,7 @@
     },
     {
       "id": "B8",
-      "prompt": "The ward already knows one thing about you. Pick your poison",
+      "prompt": "The ward already knows one thing about you. What is it?",
       "note": "The mandatory-malus device, ELDER-SCROLLS-REFERENCE.md:311-313.",
       "answers": [
         {
@@ -746,7 +746,7 @@
       "prompt": "Who fed you the winter the boats stayed in?",
       "answers": [
         {
-          "text": "The Mission's night soup.",
+          "text": "The Mission did, out of its night soup.",
           "effects": [
             {
               "kind": "factionStanding",
@@ -776,7 +776,7 @@
           ]
         },
         {
-          "text": "Herdis's goats, and Herdis's silence.",
+          "text": "Herdis did, with her goats and her silence.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -791,7 +791,7 @@
           ]
         },
         {
-          "text": "The tide-line.",
+          "text": "The tide-line did. You worked the strand and nobody chased you off.",
           "note": "You worked his strand and he let you, notables.json:66-73.",
           "effects": [
             {
@@ -829,10 +829,10 @@
     },
     {
       "id": "B10",
-      "prompt": "The night you saw a ship come in dark — you were younger then too. You —",
+      "prompt": "A ship came in dark. You were young. What did you do?",
       "answers": [
         {
-          "text": "told the Watch, and stood by it.",
+          "text": "You told the Watch, and you stood by it.",
           "effects": [
             {
               "kind": "factionStanding",
@@ -852,7 +852,7 @@
           ]
         },
         {
-          "text": "kept it. You still know which berth.",
+          "text": "You kept it to yourself. You still know which berth.",
           "note": "She knows you know something.",
           "effects": [
             {
@@ -872,7 +872,7 @@
           ]
         },
         {
-          "text": "sold it at the Wrackhouse.",
+          "text": "You sold what you saw at the Wrackhouse.",
           "effects": [
             {
               "kind": "coinDelta",
@@ -905,7 +905,7 @@
           ]
         },
         {
-          "text": "saw nothing. You were asleep. Everyone was asleep.",
+          "text": "You saw nothing. You were asleep. Everyone was asleep.",
           "note": "Pure flavor, and a lie the biography records.",
           "effects": [
             {
@@ -918,11 +918,11 @@
     },
     {
       "id": "B11",
-      "prompt": "At the Drowned-Name Wall you —",
+      "prompt": "What do you do at the Drowned-Name Wall?",
       "note": "DOCKS-GAZETTEER.md:355.",
       "answers": [
         {
-          "text": "tend a name.",
+          "text": "You tend a name there.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -937,7 +937,7 @@
           ]
         },
         {
-          "text": "scratch nothing. The sea is not owed your grief.",
+          "text": "You scratch nothing. The sea is not owed your grief.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -947,7 +947,7 @@
           ]
         },
         {
-          "text": "read the new names before the bodies are found, and think about what that means.",
+          "text": "You read the new names before the bodies turn up, and you think hard about who wrote them.",
           "effects": [
             {
               "kind": "skillDelta",
@@ -962,7 +962,7 @@
           ]
         },
         {
-          "text": "leave a candle for a name nobody else tends.",
+          "text": "You leave a candle for a name nobody else tends.",
           "effects": [
             {
               "kind": "factionStanding",
@@ -990,10 +990,10 @@
     },
     {
       "id": "B12",
-      "prompt": "Dawn, the first day you answer for yourself. Why today?",
+      "prompt": "Dawn, and you answer to nobody but yourself. Why today?",
       "answers": [
         {
-          "text": "The muster bell. Work is work.",
+          "text": "The muster bell rang. Work is work.",
           "effects": [
             {
               "kind": "coinDelta",
