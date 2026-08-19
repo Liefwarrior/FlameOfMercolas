@@ -105,3 +105,75 @@ than five fields of `HudState` at once, and the defect needs eleven.
 at 320x180, 640x360 and 960x540. *"the HUD costs a fraction of the frame, and
 the fraction is pinned"* holds a fully lit HUD under 6.5% of the frame; it
 measures 5.78%.
+
+## District Phase D: the threshold plate
+
+A new drawn element, and it is in this file because a new drawn element is
+exactly the thing this file exists to hold to account.
+
+**What it is.** Crossing into a named place — out of the Quayward compound's
+east gate onto Saltgate Rise, in at the Gilded Gull's door — puts the place's
+name on a plate centred under the compass ribbon for two seconds, rising as it
+fades. `HudState::placePlate` / `placePlateFade` / `placePlateDrift`, drawn by
+`drawPlacePlate` in `hud.cpp`, driven by `Session::placePlateAnim_`.
+
+**Why it is not just the location row.** `locationLabel` — the ribbon's own dim
+sub-label — is REFERENCE: up every frame, one size down, read when you want it.
+This is an EVENT. The ward's authored names (`docks.hpp` `kPlaces`) used to
+announce themselves by quietly changing four small words nobody is looking at.
+Both are drawn off the same `placeNameAt`; neither is derived from the other,
+because one is a state and the other is an edge.
+
+**What it costs.** Nothing at rest — `placePlateFade` defaults to 0 and an
+untouched `HudState` is pixel-identical, which is proved rather than asserted
+(*"a HudState that never heard of the plate is pixel-identical"*). While it is
+up, at 960x540 with `hudScale` 3:
+
+```
+"SALTGATE RISE"   13 glyphs x 5 advance - 1  = 64 units
+                  x scale 3                  = 192 px of text
+                  + 2 x padX (2 x scale)     = 204 px wide
+kGlyphH 6 x 3 + 2 x padY (1)                 =  20 px tall
+                                               4,080 px = 0.79% of the frame
+```
+
+for two seconds after a crossing and for no other reason. It is the only
+element on this HUD that is neither furniture nor a response to a keypress.
+
+**Where it may not go.** The centre-clear rule is unchanged and this element is
+the most obvious candidate in the game for breaking it — a place-name
+announcement wants to be a big centred title card. It is not one. It sits in
+the top band under the ribbon, and:
+
+- it is **dropped** rather than drawn if the frame is too short for its whole
+  travel to clear the exclusion rectangle (`BottomBand::take()`'s rule at the
+  other edge);
+- it is **drawn a size down and then dropped** rather than overlapping the
+  top-right stack. `drawTopRight` now returns the width it actually claimed —
+  every row up there is clipped to `width - 2 * margin`, so a single heat line
+  at its longest reaches past the middle of the frame and a fixed reserve would
+  have been a guess. At 320x180 with the corner at its widest there is no
+  centre channel left at all, and the honest answer is nothing;
+- it is **whole or not at all**. The alert row clips because the front of a
+  bouncer's warning still carries the warning; the front of a place name is not
+  a shorter place name.
+
+**When it does not draw.** While any panel owns the screen — a conversation,
+the tiled Menu, the ward map, the keys or options page, the pause menu — on the
+same `conversingNow()` test `showCompass` already uses, because the plate lives
+in the compass's band and obeys the compass's rule. It stands down rather than
+pausing: the countdown is zeroed, so nothing pops the instant a menu closes.
+
+**Photographing it.** `--threshold=WHERE` walks the body across one of four
+measured crossings and `--threshold-end=back` turns it round to look at what it
+came through:
+
+```
+dist\granadad.exe --smoke=0 --hold --threshold=saltgate --threshold-end=back \
+    --time=13 --width=960 --height=720 --fov=100 \
+    --screenshot=docs\frames\district-d-saltgate-gate-frame.png
+```
+
+The run prints `threshold saltgate from="-" to="SALTGATE RISE" crossed=yes
+plate="SALTGATE RISE" up=yes` beside the frame, because a picture of a plate
+that never fired looks exactly like a picture of a street.

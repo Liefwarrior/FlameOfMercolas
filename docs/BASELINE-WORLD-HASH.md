@@ -468,3 +468,38 @@ predecessor for a like-for-like comparison is the Phase B number `0xD85542BA71D3
 the section above, taken with the same tool and the same arguments. The pre-S8 number at the
 top of this file is **not** re-blessed to this one — that one is the pre-arc reference and
 stays that.
+
+---
+
+## District Phase D — the number that did NOT move (2026-08-19)
+
+Phase D is the presentation half of the district programme: a threshold plate that
+announces a named place when the player crosses into it. **It is pure render, and this
+section exists to say so with a number rather than with a paragraph.**
+
+Nothing under `content/` changed, `content/maps/src/docks_surface.tmx` was not regenerated
+and `content/maps/baked/docks_surface.trojsav` was not rebaked. No golden was re-blessed:
+`native/tests/golden_java_vectors.hpp`, `native/content/tests/fixtures.hpp`,
+`native/content/tests/test_world_reader.cpp` and `native/include/granadad/sim/docks.hpp`
+are byte-identical to Phase C. The entire change is `HudState`, `hud.cpp`,
+`render::Session` and one capture flag — none of which `PhasedEngine` can see and none of
+which is hashed.
+
+```
+at branch wip/district-phase-d-presentation,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF      <- unchanged from Phase C
+```
+
+`run A` and `run B` identical, report text byte-identical at **18,772 bytes** — the same
+count Phase C recorded — taken with `dist\granadad-twin-gate.exe` on the gate whose stamp
+names this tree (`district-phase-d-presentation-1787162275`, 100% of 72 suites / 860 ctest
+cases green, `verify-windows.ps1` PASS with both fingerprint reports byte-identical
+linux/gcc vs mingw/windows).
+
+The docks `WRLD` chunk hash in the world-hash report likewise still reads
+`0x861D944C0E729802`, exactly as the Phase C section above records it.
+
+**A pass that draws something new and moves this number has done something it did not say it
+was doing.** This one did not, and the identical hash and the identical byte count are the
+proof rather than the claim.
