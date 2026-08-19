@@ -348,6 +348,17 @@ void print_usage() {
         "  --map-overlay        open the WARD MAP (the full-screen district\n"
         "                       plan the M key opens) before the shutter\n"
         "                       goes, so it is photographable headless\n"
+        "  --threshold=WHERE    VERIFICATION ONLY: walk the body across one\n"
+        "                       authored place boundary so the THRESHOLD\n"
+        "                       PLATE is on the frame at the shutter. WHERE\n"
+        "                       is saltgate (out of the Quayward's east gate\n"
+        "                       onto Saltgate Rise, under the district gate\n"
+        "                       frame), gull (in at the Gilded Gull's door),\n"
+        "                       piers (north over the quay lip) or gallows\n"
+        "                       (east off Gallows Row onto the Rise)\n"
+        "  --threshold-end=HOW  where the camera is left: in (default, facing\n"
+        "                       the way you walked) or back (turned round to\n"
+        "                       look at the gate you came through)\n"
         "  --sprint=N           VERIFICATION ONLY: hold forward+sprint for N\n"
         "                       real steps before the shutter -- the fatigue\n"
         "                       bar's mid/empty states and the winded refusal\n"
@@ -632,6 +643,17 @@ void print_usage() {
         } else if (std::strcmp(arg, "--map-overlay") == 0) {
             // CORE ACTION #13. See SmokeRunConfig::mapOverlay's own header.
             options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--threshold=", &value)) {
+            // DISTRICT PHASE D. VERIFICATION ONLY. See
+            // SmokeRunConfig::threshold's own header -- the plate is up for
+            // two seconds after a crossing and for no other reason, so
+            // without this there is no headless path to a picture of it.
+            options.smoke.threshold = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--threshold-end=", &value)) {
+            // Only read when --threshold is also given.
+            options.smoke.thresholdEnd = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--sprint=", &value)) {
             // VERIFICATION ONLY. See SmokeRunConfig::sprintSteps's own header.

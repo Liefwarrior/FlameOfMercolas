@@ -367,6 +367,15 @@ Session::Session(const SessionConfig& config)
     // immediately, exactly as they always have. See EasedToggle::snapTo.
     panelAnim_.snapTo(conversingNow());
     alertAnim_.snapTo(!message_.empty());
+    // DISTRICT PHASE D. SEEDED FROM WHERE THE BODY ACTUALLY IS, BEFORE
+    // syncPanelAnim() BELOW EVER RUNS -- lastPlayerHp_'s own reasoning,
+    // verbatim: a session that boots the player already standing in Tarwalk
+    // (or, with --spawn, anywhere else that has a name) has not CROSSED into
+    // it, and an empty lastPlaceName_ here would read the very first
+    // syncPanelAnim() call as a crossing and open the game on a plate nobody
+    // walked through a gate to earn. Nothing announces on frame one, ever.
+    lastPlaceName_.assign(
+        sim::docks::placeNameAt(body_->tileX(), body_->tileY(), body_->band()));
     syncTavernToBody();
     // HARDENING PASS. THE SAME SNAP, GENERALIZED. syncPanelAnim() below sets
     // the target and caches the text for every other row this pass eases too
@@ -406,6 +415,10 @@ Session::Session(const SessionConfig& config)
     // today, but the rule is "snap to whatever syncPanelAnim() just chose",
     // not "assume closed".
     districtMapAnim_.snapTo(districtMapAnim_.target());
+    // DISTRICT PHASE D. The same snap, and with lastPlaceName_ seeded above
+    // the target syncPanelAnim() just computed is always closed -- which is
+    // the point: the plate cannot arm its own opening bump on frame one.
+    placePlateAnim_.snapTo(placePlateAnim_.target());
     // INNOVATION SPRINT ITEM #2. SNAPPED, FOR THE IDENTICAL REASON THE ROWS
     // ABOVE ARE. NOT a hardcoded "journal starts focused" -- syncPanelAnim()
     // just computed the real answer off casebookOpen_/menuFocus_ (both true
@@ -2008,6 +2021,16 @@ void Session::step(const sim::MoveInput& input) {
         --quickBarShowSteps_;
     }
     quickBarAnim_.advance();
+    // DISTRICT PHASE D. The plate's own countdown and ease -- the strip's
+    // shape directly above, for the strip's reason. The countdown runs down
+    // HERE and only here, once a step: syncPanelAnim() can be called several
+    // times in one step (every toggle calls it) and a decrement in there would
+    // make the plate's two seconds depend on how many keys were pressed
+    // during them.
+    if (placePlateShowSteps_ > 0) {
+        --placePlateShowSteps_;
+    }
+    placePlateAnim_.advance();
     // INNOVATION SPRINT ITEM #2. THE SAME PER-STEP ADVANCE, ONE PER TILE.
     characterFocusAnim_.advance();
     mapFocusAnim_.advance();
@@ -4459,6 +4482,48 @@ void Session::syncPanelAnim() noexcept {
         }
     }
     quickBarAnim_.setTarget(barWanted);
+
+    // DISTRICT PHASE D: THE THRESHOLD MOMENT.
+    //
+    // THE RISING EDGE ONLY, the identical shape alertPulse_ uses above and for
+    // the identical reason: `here` is re-read on every call (this function runs
+    // once a step AND out of every toggle, see its own header), so what fires
+    // the plate has to be the CHANGE and never the state. Standing still in
+    // Tarwalk must not re-arm it sixty times a second.
+    //
+    // NAMED PLACES ONLY. placeNameAt is empty for the two thirds of the
+    // district that is compounds, yards and back lanes -- see its own note --
+    // and lastPlaceName_ deliberately does not record those (see its header):
+    // an unnamed tile is a gap between places, not a place, and treating it as
+    // one would re-announce TARWALK every time the player stepped into an
+    // alley and back out, and re-announce SALTGATE RISE at every seam between
+    // the three rectangles that road is authored as.
+    const std::string_view here =
+        sim::docks::placeNameAt(body_->tileX(), body_->tileY(), body_->band());
+    // THE STAND-DOWN, and it is the same list every other overlay stands down
+    // for. A panel owns the screen: the plate does not draw over the topic
+    // list, the tiled Menu, the ward map, the keys page or the pause menu, and
+    // a crossing walked while one of them is up is simply not announced --
+    // stood down rather than queued, because a notice that pops the instant a
+    // menu closes is a notice about the menu.
+    const bool suppressed = conversingNow();
+    if (!here.empty() && here != lastPlaceName_) {
+        lastPlaceName_.assign(here);
+        if (!suppressed) {
+            // THE NEWEST CROSSING WINS, say()'s own rule: a second boundary
+            // crossed while the first plate is still up swaps the words and
+            // re-arms the hold rather than queueing. It does NOT restart the
+            // rise -- the toggle is already open and setTarget is idempotent --
+            // so the plate reads as one notice being corrected, not as two
+            // notices fighting.
+            placePlateName_.assign(here);
+            placePlateShowSteps_ = kPlacePlateShowSteps;
+        }
+    }
+    if (suppressed) {
+        placePlateShowSteps_ = 0;
+    }
+    placePlateAnim_.setTarget(placePlateShowSteps_ > 0);
 }
 
 std::string Session::rivalLine() const {
@@ -4879,6 +4944,25 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.rivalLabel = std::string_view{rivalCache_};
     hud.rivalFade = rivalAnim_.value();
     hud.showCompass = !conversing;
+    // DISTRICT PHASE D: THE THRESHOLD MOMENT, under the ribbon it shares a
+    // band with. See HudState::placePlate and drawPlacePlate.
+    //
+    // `conversing ? 0 : ...` IS THE SAME LINE showCompass JUST WROTE, on
+    // purpose. The plate lives in the compass's own band and it stands down
+    // under the compass's own rule: while a panel owns the screen there is no
+    // ribbon for it to sit under and nothing up there but somebody else's
+    // page. syncPanelAnim() has already put the toggle's target down for the
+    // same cases (and zeroed the countdown, so nothing resurfaces when the
+    // panel closes); this is what stops the handful of frames it spends easing
+    // out from being painted over the panel that suppressed it.
+    hud.placePlate = std::string_view{placePlateName_};
+    hud.placePlateFade = conversing ? 0.0F : placePlateAnim_.value();
+    // THE SIGN COMES OFF THE TOGGLE'S OWN TARGET, so the plate rises THROUGH
+    // its settled row rather than sliding back down the way it came -- see
+    // HudState::placePlateDrift. Rising (target true): still below, closing on
+    // zero. Fading (target false): already past, drifting on up and out.
+    hud.placePlateDrift = placePlateAnim_.target() ? -(1.0F - placePlateAnim_.value())
+                                                   : (1.0F - placePlateAnim_.value());
     // A bouncer's warning outranks anything the player did to themselves: it is
     // the one line in this game they must not miss.
     const bool warned = !tavern_->lastWarning().empty() &&
@@ -6556,6 +6640,125 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
     return out;
 }
 
+namespace {
+
+/// DISTRICT PHASE D. ONE AUTHORED CROSSING: a pair of world tiles either side
+/// of a docks::kPlaces boundary, on one band.
+///
+/// EVERY ONE OF THESE FOUR WAS MEASURED OFF THE SHIPPED BINARY, not read off
+/// the table and hoped for. `granadad --smoke=0 --hold --spawn=X,Y,Z` prints
+/// placeLabel() for the tile it stood on, so each pair below is two runs: the
+/// near tile answering one thing and the far tile answering another. The
+/// crossings a reader might expect to find here and does not are the point of
+/// the exercise as much as the ones that are -- see the note on `saltgate`.
+struct Threshold {
+    const char* word;
+    /// The near side: OUTSIDE the place being entered.
+    std::int32_t fromX;
+    std::int32_t fromY;
+    /// The far side: inside it.
+    std::int32_t toX;
+    std::int32_t toY;
+    std::int32_t band;
+};
+
+constexpr Threshold kThresholds[] = {
+    // THE PAYOFF SHOT. Out of the Quayward compound's courtyard, east through
+    // its ring gate, onto Saltgate Rise -- and the gate's mouth (103,136-139)
+    // wears DISTRICT PHASE B's own one-band reman frame at world z21, directly
+    // overhead as the body passes under it. (104,137) is the first tile of the
+    // Rise's mid-slope leg; (103,137) is compound ground and has no name at
+    // all, which is why walking IN through this gate announces nothing and
+    // walking OUT announces the road.
+    //
+    // AND IT IS THIS GATE AND NOT THE SALTGATE GATE-HOUSE, which is the
+    // structure Phase B named the phase after. That gate-house straddles the
+    // Rise at y147-148 -- the road runs THROUGH it, so both sides of it are
+    // SALTGATE RISE and crossing it is not crossing a boundary. The plate is
+    // honest about that: there is nothing to announce, so it says nothing.
+    // Flagged in the phase report rather than worked around here.
+    {"saltgate", 101, 137, 105, 137, sim::docks::kBandMidSlope},
+    // Off the working spine, through the Gilded Gull's door. The one crossing
+    // in this table that is a BUILDING rather than a reach of street, and the
+    // one a player meets first: the Gull is four seconds from the spawn.
+    {"gull", 153, 64, 153, 67, sim::docks::kBandQuayside},
+    // North off the Tarwalk, over the quay lip, onto the finger piers. Two
+    // tiles of unnamed apron in between (y58-59), which is exactly the gap
+    // lastPlaceName_ is written to ignore.
+    {"piers", 156, 60, 156, 57, sim::docks::kBandQuayside},
+    // East along Gallows Row onto the head of Saltgate Rise, up where the
+    // watch-post and the gibbet are. The only crossing here that starts on
+    // NAMED ground, and it is in the table on purpose: it is the one that
+    // proves the placement's own plate is run out before the walk begins.
+    {"gallows", 103, 153, 107, 153, sim::docks::kBandUpper},
+};
+
+}  // namespace
+
+ThresholdLineResult runThresholdLine(Session& session, const std::string& which,
+                                     const std::string& end) {
+    ThresholdLineResult out;
+    const Threshold* crossing = nullptr;
+    for (const Threshold& candidate : kThresholds) {
+        if (which == candidate.word) {
+            crossing = &candidate;
+        }
+    }
+    if (crossing == nullptr) {
+        return out;
+    }
+    out.found = true;
+    out.from.assign(sim::docks::placeNameAt(crossing->fromX, crossing->fromY, crossing->band));
+    out.to.assign(sim::docks::placeNameAt(crossing->toX, crossing->toY, crossing->band));
+
+    // THE ONE PLACEMENT, and runStreetLine's own reasoning for it applies
+    // unchanged: the capture harness's router box is the Gilded Gull and its
+    // street, and walking the body to the head of Saltgate Rise would be
+    // photographing the pathfinder. Everything after this line is the game.
+    session.body().placeAt(crossing->fromX, crossing->fromY, crossing->band);
+    const std::int32_t dx = crossing->toX - crossing->fromX;
+    const std::int32_t dy = crossing->toY - crossing->fromY;
+    const sim::Angle inward = (dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy)
+                                  ? (dx > 0 ? sim::kFacingEast : sim::kFacingWest)
+                                  : (dy > 0 ? sim::kFacingSouth : sim::kFacingNorth);
+    session.body().setYaw(inward);
+    const sim::MoveInput still{};
+    session.stepMany(still, 1);
+
+    // THE PLACEMENT IS NOT A CROSSING, AND THE CAPTURE MUST NOT BE ABLE TO
+    // CLAIM IT WAS. Landing on named ground -- `gallows` starts on Gallows Row
+    // -- is a change of place as far as syncPanelAnim() can tell, and it fires
+    // the plate. That is CORRECT for the machinery (a body that teleports has
+    // arrived somewhere) and completely wrong for the photograph, which is
+    // supposed to be evidence of a walk. So the placement's plate is run all
+    // the way out through real steps, and its fade after it, before the walk
+    // begins: whatever is on the frame at the shutter got there by walking.
+    for (int guard = 0; guard < 400 && session.placePlateWanted(); ++guard) {
+        session.stepMany(still, 1);
+    }
+    session.stepMany(still, 16);
+
+    // THE CROSSING, WALKED -- the same movement steps a held forward key
+    // produces, through the same Session::step(), collided against the same
+    // geometry. This is the only part of the run the frame is evidence of.
+    walkStraightTo(session, crossing->toX, crossing->toY);
+    const std::string_view landed = sim::docks::placeNameAt(
+        session.body().tileX(), session.body().tileY(), session.body().band());
+    out.crossed = !out.to.empty() && landed == out.to;
+    out.announced = session.placePlateWanted();
+    out.plate.assign(session.placePlateLabel());
+
+    // "back" TURNS AND LOOKS AT WHAT IT JUST CAME THROUGH. For `saltgate` that
+    // is Phase B's gate frame standing over the mouth, with the plate up --
+    // which is the whole composition this flag exists to make possible. A
+    // half-turn only: the body has not moved, so nothing about the crossing
+    // this result reports can change.
+    if (end == "back") {
+        session.body().setYaw(inward + sim::kTurnHalf);
+    }
+    return out;
+}
+
 PetitionLineResult runPetitionLine(Session& session, bool grantCoin) {
     PetitionLineResult out;
 
@@ -7226,6 +7429,26 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += result.skyrunStages;
     }
 
+    // DISTRICT PHASE D. THE CROSSING, AFTER every scripted line above it and
+    // BEFORE the menu-opening flags below -- which is the only order that lets
+    // `--threshold=saltgate --map-overlay` photograph the stand-down rule
+    // itself: the plate is armed by a real walk and then a page takes the
+    // screen, and the frame proves it does not draw over one. See
+    // SmokeRunConfig::threshold.
+    if (!config.threshold.empty()) {
+        result.thresholdResult =
+            runThresholdLine(session, config.threshold, config.thresholdEnd);
+        // THREE BEATS, AND THE THIRD IS THE DELIVERABLE: the crossing is in
+        // the table, the body genuinely ended up on the far side of it, and
+        // the plate was live when the shutter went. A capture that walks the
+        // walk and announces nothing is the failure this counter exists to
+        // make loud rather than leave for somebody to notice in a PNG.
+        result.scriptedWanted += 3;
+        result.scriptedLanded += result.thresholdResult.found ? 1 : 0;
+        result.scriptedLanded += result.thresholdResult.crossed ? 1 : 0;
+        result.scriptedLanded += result.thresholdResult.announced ? 1 : 0;
+    }
+
     // SHEETS BUILD: THE MENU-OPENING FLAGS RUN HERE NOW, AFTER every scripted
     // line -- see the note where they used to sit, above `--punch` -- so a
     // capture can finally photograph a tile WITH the state a line just drove
@@ -7473,6 +7696,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " taken=" << (job.taken ? "yes" : "no")
                 << " journal=" << (job.journal ? "yes" : "no")
                 << " brief=\"" << job.brief << "\"";
+    }
+    if (!config.threshold.empty()) {
+        // DISTRICT PHASE D: WHICH BOUNDARY, WHICH WAY, AND WHETHER THE PLATE
+        // WAS ACTUALLY UP. A screenshot of a plate that never fired is
+        // indistinguishable from a screenshot of a street, so the one thing a
+        // PNG cannot report about itself is printed beside it.
+        const ThresholdLineResult& cross = result.thresholdResult;
+        summary << " | threshold " << config.threshold
+                << " from=\"" << (cross.from.empty() ? "-" : cross.from) << "\""
+                << " to=\"" << (cross.to.empty() ? "-" : cross.to) << "\""
+                << " crossed=" << (cross.crossed ? "yes" : "no")
+                << " plate=\"" << cross.plate << "\""
+                << " up=" << (cross.announced ? "yes" : "no")
+                << " end=" << config.thresholdEnd;
     }
     if (config.wait) {
         summary << " | wait open=" << (session.waitOpen() ? "yes" : "no")

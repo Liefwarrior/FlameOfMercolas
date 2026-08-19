@@ -525,6 +525,14 @@ if(GRANADAD_BUILD_TESTS)
         # free, and -- the acceptance sentence -- able to place the Mission
         # of the Flame from the authored spawn.
         tests/test_map_view.cpp
+        # DISTRICT PHASE D -- THE THRESHOLD MOMENT. Crossing into a named place
+        # announces it, once, on a plate over the compass ribbon: the edge that
+        # fires it (and the four ways it must NOT fire -- a spawn, a seam
+        # between two rects of one road, a band change on the same street, a
+        # body standing still), the stand-down every other overlay obeys, and
+        # the geometry asserted in pixels, because this HUD's two shipped
+        # collisions were both found in a PNG by a person.
+        tests/test_place_plate.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.

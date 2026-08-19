@@ -738,6 +738,48 @@ public:
     /// can assert on.
     [[nodiscard]] bool quickBarWanted() const noexcept { return quickBarShowSteps_ > 0; }
 
+    // --- the threshold plate (DISTRICT PHASE D) -------------------------------
+    //
+    // CROSSING INTO A NAMED PLACE IS AN EVENT AND THIS BUILD HAS NEVER SAID SO.
+    // placeLabel() has answered "where am I" since S2 and the HUD has drawn it
+    // as the compass ribbon's own dim sub-label ever since -- correct for a
+    // fact you look up, and it means the ward's authored names (docks.hpp's
+    // kPlaces) announce themselves by quietly changing four small words that
+    // nobody is looking at. The plate is the same fact, said once, at the
+    // moment it becomes true.
+    //
+    // PURE RENDER. Nothing here reaches PhasedEngine, nothing here is hashed,
+    // and the world it reads is the baked map's own authored table. A session
+    // that never draws behaves identically with and without it.
+
+    /// What the threshold plate is currently announcing, or empty. The last
+    /// name it FIRED on -- held through the fade, the identical reason every
+    /// *Cache_ member exists, so the plate finishes fading with its own words
+    /// still on it rather than with the words of wherever you have got to
+    /// since.
+    [[nodiscard]] std::string_view placePlateLabel() const noexcept {
+        return std::string_view{placePlateName_};
+    }
+    /// True while the plate is WANTED -- the couple of seconds after a
+    /// crossing, and no longer. The drawn alpha is its EasedToggle's business;
+    /// this is the target a test can assert on, exactly as quickBarWanted() is
+    /// for the strip.
+    [[nodiscard]] bool placePlateWanted() const noexcept { return placePlateShowSteps_ > 0; }
+    /// The last NAMED place the body stood in -- what the next crossing is
+    /// compared against. Empty only before the body has ever stood in one.
+    ///
+    /// IT REMEMBERS NAMES AND NEVER THE GAPS BETWEEN THEM, and that is the
+    /// whole restraint of this feature. Two thirds of the district is
+    /// compounds, yards and back lanes nobody has named (placeNameAt's own
+    /// note), and Tarwalk itself is authored as three abutting rectangles;
+    /// updating this on an unnamed tile would re-announce TARWALK every time
+    /// the player stepped into an alley and back out, and re-announce SALTGATE
+    /// RISE at every seam. Only a non-empty name ever lands here, so walking
+    /// TARWALK -> an alley -> TARWALK is one place, once, which is what it is.
+    [[nodiscard]] std::string_view lastPlaceName() const noexcept {
+        return std::string_view{lastPlaceName_};
+    }
+
     // --- the Grimoire page (SPELLS BUILD) ------------------------------------
     //
     // OWNER RULING: QuickWheel + a Grimoire list page, NO new Menu tile. The
@@ -1399,6 +1441,30 @@ private:
     static constexpr int kQuickBarShowSteps = 120;
     int quickBarShowSteps_ = 0;
     std::array<std::string, 10> quickBarNames_{};
+    /// DISTRICT PHASE D. The threshold plate's own ease -- its OWN toggle per
+    /// the settled convention (DECISIONS.md UI rule 1): crossing a boundary
+    /// has nothing to do with any other row's trigger, and sharing one would
+    /// restart somebody else's fade every time the player walked round a
+    /// corner.
+    ///
+    /// AN EasedToggle AND NOT AN ImpactPulse, deliberately, and the brief said
+    /// so. A crossing IS an event -- which is exactly what ImpactPulse is for
+    /// -- but what the plate does is not a flash: it is a notice that comes up,
+    /// STAYS UP long enough to be read, and then goes. That is a held state
+    /// with a countdown holding it, which is what the quick bar strip right
+    /// above already is, so it is built the way the strip is built.
+    EasedToggle placePlateAnim_;
+    /// Two seconds at the 60 Hz step cadence, the strip's own number and for
+    /// the strip's own reason: long enough to read a place name, short enough
+    /// that it can never be mistaken for furniture. The brief's "a couple of
+    /// seconds", in the one unit this engine measures animation in (steps, not
+    /// milliseconds -- anim.hpp's header on why).
+    static constexpr int kPlacePlateShowSteps = 120;
+    int placePlateShowSteps_ = 0;
+    /// What the plate says, cached on the FIRING edge -- see placePlateLabel().
+    std::string placePlateName_;
+    /// The last named place the body stood in -- see lastPlaceName().
+    std::string lastPlaceName_;
     /// The last non-empty text each row above showed, held onto through the
     /// row's own fade-out -- the identical reason message_ outlives
     /// messageSteps_ (see step()'s own note by the alert's clear): an alpha
@@ -1893,6 +1959,62 @@ struct SmokeRunConfig {
     /// "taken" -- the default -- presses it and proves the board moved and
     /// the journal shows the errand (three beats).
     std::string radiantEnd = "taken";
+
+    /// DISTRICT PHASE D, VERIFICATION ONLY: WALK ACROSS A NAMED BOUNDARY, so
+    /// the threshold plate is actually on the frame when the shutter goes.
+    ///
+    /// WHY A FLAG AT ALL, for the hundredth time in this struct and for the
+    /// same reason every time: the plate is up for two seconds after a
+    /// crossing and for no other reason. There is no page to open, no key to
+    /// press and no conversation to have. Without this, the one element this
+    /// pass adds could be unit-tested for its state and NEVER LOOKED AT --
+    /// which is the exact hole `character`, `map` and `punch` each state for
+    /// themselves.
+    ///
+    /// The value names one of a small table of authored crossings (see
+    /// kThresholds in session.cpp), each of which is one pair of world tiles
+    /// either side of a docks::kPlaces boundary:
+    ///
+    ///   saltgate  out of the Quayward compound's east gate onto Saltgate Rise
+    ///             -- UNDER DISTRICT PHASE B'S OWN GATE FRAME, which is the
+    ///             frame this capture exists to photograph the plate in
+    ///   gull      off the Tarwalk through the Gilded Gull's door
+    ///   piers     off the Tarwalk north over the quay lip onto the Long Piers
+    ///   gallows   west along Gallows Row onto the head of Saltgate Rise
+    ///
+    /// ONE PLACEMENT AND THEN A REAL WALK -- runStreetLine's own shape and its
+    /// own reasoning (the capture router's box is the Gilded Gull, and walking
+    /// a hundred and thirty tiles would be photographing the pathfinder). The
+    /// body is PLACED on the near side, the placement's own plate is then run
+    /// all the way out through real steps so nothing left over from it can be
+    /// mistaken for the crossing, and the crossing itself is walked with the
+    /// same movement steps a player's key produces. The frame is evidence of
+    /// the walk, not of the placement.
+    std::string threshold;
+    /// Where the camera is left pointing once the crossing is walked. "in"
+    /// (the default) keeps facing the way the body walked, looking into the
+    /// place just entered; "back" turns a half circle to look at the doorway
+    /// or gate just come through -- which for `saltgate` is the Phase B gate
+    /// frame itself, standing over the mouth, with the plate up. Only read
+    /// when `threshold` is set.
+    std::string thresholdEnd = "in";
+};
+
+/// DISTRICT PHASE D. What a `--threshold` run actually did, so a case can
+/// assert the crossing -- stood outside it, walked in, and the plate fired
+/// with the right words -- rather than reading pixels.
+struct ThresholdLineResult {
+    /// The crossing keyword was one this table knows.
+    bool found = false;
+    /// The place the near tile was in (empty for unnamed ground), and the one
+    /// the far tile is in.
+    std::string from;
+    std::string to;
+    /// The body genuinely ended the walk standing inside `to`.
+    bool crossed = false;
+    /// The plate was WANTED at the shutter, and what it was saying.
+    bool announced = false;
+    std::string plate;
 };
 
 /// RADIANT BUILD. What a `--radiant` run actually did, so a case can assert
@@ -2050,6 +2172,12 @@ struct SmokeRunResult {
     /// RADIANT BUILD: what a --radiant run found and did, printed in the
     /// summary for the identical reason.
     RadiantLineResult radiantResult;
+    /// DISTRICT PHASE D: what a --threshold run walked and whether the plate
+    /// actually fired, printed in the summary for the identical reason. A
+    /// screenshot of a plate that is not there looks exactly like a screenshot
+    /// of a street, which is precisely the failure mode a picture cannot
+    /// report on itself.
+    ThresholdLineResult thresholdResult;
     [[nodiscard]] bool scriptFellShort() const noexcept {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }
@@ -2096,5 +2224,13 @@ PetitionLineResult runPetitionLine(Session& session, bool grantCoin);
 /// and a journal that shows it, and a case asserts those directly.
 /// `takeIt` false stops with the offer on the open list (the "offer" end).
 RadiantLineResult runRadiantLine(Session& session, bool takeIt);
+
+/// DISTRICT PHASE D. Walks the body across one authored place boundary -- see
+/// SmokeRunConfig::threshold. Exposed for exactly runStreetLine's reason: the
+/// evidence that crossing into a named place announces itself is a pair of
+/// place names and a live plate, and a case asserts those directly rather than
+/// counting pixels in a PNG.
+ThresholdLineResult runThresholdLine(Session& session, const std::string& which,
+                                     const std::string& end);
 
 }  // namespace granadad::render
