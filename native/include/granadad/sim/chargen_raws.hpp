@@ -232,6 +232,27 @@ struct QuizTally {
 [[nodiscard]] std::optional<QuizTally> tallyQuiz(const ChargenQuiz& quiz,
                                                  const std::vector<std::int32_t>& chosenAnswers);
 
+/// What a set of per-axis counts MEANS -- dominant axis, pure or not, and the
+/// calling it lands on. tallyQuiz() is this function plus the counting, and
+/// calls it, so there is exactly one implementation of the three rules that
+/// decide a verdict (the last-answer tie-break, the pure threshold, and the
+/// ">= earlier axis" secondary).
+///
+/// EXPOSED BECAUSE A PARTIAL TALLY IS A REAL QUESTION. The creation screen shows
+/// the player which trade the ward is currently heading toward while they are
+/// still answering -- the owner's complaint was spending choices blind, and
+/// "if it judged you now: THE NETTER" is the most direct answer there is. That
+/// needs the verdict rules over an INCOMPLETE count, which tallyQuiz cannot
+/// give (it refuses a short answer vector, correctly, because a real verdict off
+/// a half-answered quiz would be a lie). The alternative was a second copy of
+/// these rules in the render layer.
+///
+/// `lastAxis` is the axis the most recent answer scored, for the tie-break;
+/// std::nullopt when nothing has been answered yet.
+[[nodiscard]] QuizTally tallyFromCounts(const ChargenQuiz& quiz,
+                                        const std::array<std::int32_t, kChargenAxisCount>& counts,
+                                        std::optional<ChargenAxis> lastAxis);
+
 // ---------------------------------------------------------------------------
 // the biography, and the closed effect vocabulary
 // ---------------------------------------------------------------------------

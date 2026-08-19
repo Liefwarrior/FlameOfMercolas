@@ -447,25 +447,11 @@ ChargenQuiz ChargenQuiz::loadFromFile(const std::filesystem::path& file,
     return out;
 }
 
-std::optional<QuizTally> tallyQuiz(const ChargenQuiz& quiz,
-                                   const std::vector<std::int32_t>& chosenAnswers) {
-    const std::vector<QuizQuestion>& questions = quiz.questions();
-    if (questions.empty() || chosenAnswers.size() != questions.size()) {
-        return std::nullopt;
-    }
-
+QuizTally tallyFromCounts(const ChargenQuiz& quiz,
+                          const std::array<std::int32_t, kChargenAxisCount>& counts,
+                          std::optional<ChargenAxis> lastAxis) {
     QuizTally tally;
-    std::optional<ChargenAxis> lastAxis;
-    for (std::size_t i = 0; i < questions.size(); ++i) {
-        const std::int32_t chosen = chosenAnswers[i];
-        if (chosen < 0 ||
-            chosen >= static_cast<std::int32_t>(questions[i].answers.size())) {
-            return std::nullopt;
-        }
-        const ChargenAxis axis = questions[i].answers[static_cast<std::size_t>(chosen)].axis;
-        ++tally.counts[static_cast<std::size_t>(axis)];
-        lastAxis = axis;
-    }
+    tally.counts = counts;
 
     // Dominant: the highest count. Tie: the tied axis the last question's
     // answer scored; else fixed order A > B > C -- which is exactly what the
@@ -506,6 +492,37 @@ std::optional<QuizTally> tallyQuiz(const ChargenQuiz& quiz,
     }
     tally.calling = row.withSecondary[static_cast<std::size_t>(*secondary)];
     return tally;
+}
+
+std::optional<QuizTally> tallyQuiz(const ChargenQuiz& quiz,
+                                   const std::vector<std::int32_t>& chosenAnswers) {
+    const std::vector<QuizQuestion>& questions = quiz.questions();
+    if (questions.empty() || chosenAnswers.size() != questions.size()) {
+        return std::nullopt;
+    }
+
+    std::array<std::int32_t, kChargenAxisCount> counts{};
+    std::optional<ChargenAxis> lastAxis;
+    for (std::size_t i = 0; i < questions.size(); ++i) {
+        const std::int32_t chosen = chosenAnswers[i];
+        if (chosen < 0 ||
+            chosen >= static_cast<std::int32_t>(questions[i].answers.size())) {
+            return std::nullopt;
+        }
+        const ChargenAxis axis = questions[i].answers[static_cast<std::size_t>(chosen)].axis;
+        ++counts[static_cast<std::size_t>(axis)];
+        lastAxis = axis;
+    }
+    // ONE PLACE DECIDES WHAT A TALLY MEANS. The verdict rules -- the
+    // last-answer tie-break, the pure threshold, the ">= earlier axis"
+    // secondary -- used to live inside this function, where only a COMPLETE
+    // set of answers could reach them. The chargen screen needs the same
+    // answer for a PARTIAL set (it shows the player where the quiz is heading
+    // while they are still in it, which is the whole point of showing a
+    // consequence at all), and the alternative was a second copy of these
+    // three rules in the render layer, drifting quietly from this one the
+    // first time a rule changed.
+    return tallyFromCounts(quiz, counts, lastAxis);
 }
 
 // ---------------------------------------------------------------------------
