@@ -1366,7 +1366,8 @@ namespace {
     if (!layout.usable) {
         return false;
     }
-    for (int y = layout.listRect.y; y < layout.listRect.bottom(); ++y) {
+    const int stepY = std::max(1, layout.metric.cellH() / 2);
+    for (int y = layout.listRect.y; y < layout.listRect.bottom(); y += stepY) {
         for (int x = layout.listRect.x; x < layout.listRect.right(); x += layout.metric.cellW()) {
             const render::CreationHit hit = render::creationPageHitTest(page, w, h, x, y);
             if (hit.zone == render::CreationHit::Zone::Row && hit.index == row) {

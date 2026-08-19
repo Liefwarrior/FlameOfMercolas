@@ -126,8 +126,50 @@ CreationLayout creationLayout(const CreationPage& page, int frameWidth, int fram
     out.ruleRows = {rowOf(bands[1]), rowOf(bands[3]), rowOf(bands[5])};
 
     if (page.hasDetail) {
-        out.body = splitMasterDetail(out.bodyBand, out.metric, page.masterShare, kMinMasterCells,
-                                     kMinDetailCells);
+        // THE MASTER SHARE IS A GUESS, SO IT IS ALLOWED ONE CORRECTION.
+        //
+        // Still a FIXED composition: this responds to the window and to the
+        // length of the list, never to a player. The defect it fixes is real
+        // and was photographed -- the custom sheet's longest value is an
+        // appearance label ("SHOPKEEPER"), which pushed one entry width past
+        // half the master pane and dropped a twenty-five-row list into a single
+        // tall column with a whole empty column beside it. Widening the master
+        // by a notch buys the second column back.
+        //
+        // Fewest ROWS wins, ties go to the NARROWEST share, and a share that
+        // would collapse the detail pane is never taken -- so a list that cannot
+        // use more width (every one-column list on this screen) keeps the share
+        // it asked for and nothing moves.
+        int bestRows = -1;
+        bool have = false;
+        for (const int share : {page.masterShare, page.masterShare + 6, page.masterShare + 12}) {
+            const MasterDetail candidate = splitMasterDetail(out.bodyBand, out.metric, share,
+                                                             kMinMasterCells, kMinDetailCells);
+            if (!candidate.split) {
+                continue;
+            }
+            if (page.shape != CreationListShape::Columns || page.rows.empty()) {
+                if (!have) {
+                    out.body = candidate;
+                    have = true;
+                }
+                break;
+            }
+            const OptionListPlan plan =
+                planOptionList(listOptions(page), candidate.master, out.metric, columnStyle(page));
+            if (!have || plan.rows < bestRows) {
+                out.body = candidate;
+                bestRows = plan.rows;
+                have = true;
+            }
+        }
+        if (!have) {
+            // Every share collapsed, which is the honest answer at a small
+            // window: one pane, and the caller composes its fallback off
+            // body.split rather than guessing a pixel breakpoint.
+            out.body = splitMasterDetail(out.bodyBand, out.metric, page.masterShare,
+                                         kMinMasterCells, kMinDetailCells);
+        }
     } else {
         out.body = MasterDetail{out.bodyBand, PanelRect{}, 0, false};
     }

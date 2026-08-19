@@ -244,3 +244,79 @@ apart. Every pixel outside `x 10..950, y 88..466` — which is to say the border
 all three rules, the column divider, the tab row, the instruction header and the
 global nav row — is IDENTICAL between them. Only the inside of the body pane
 changes when the cursor moves.
+
+---
+
+## The creation flow (#93) — a full-screen surface measured against itself
+
+Seven steps, `docs/frames/chargen/`, all at 960x540 with `--scale=1`.
+
+**The `--nohud` method does not apply here and the section above already says
+why**: there is no world underneath this screen, so a diff against the same
+scene without the interface is a diff against nothing and both numbers come out
+at 100%. The base used instead is the screen's own **clear colour**, so INK is
+every pixel the composition put on top of the backdrop and CLAIMED is the
+ruler's own closing (15, 3) and bounding-box pass over that mask, **unioned**
+rather than summed — a full-screen composition has overlapping blobs, and
+summing their areas reports more than a hundred per cent of a screen, which is
+not a number anybody can act on.
+
+| step | ink before | ink after | claimed before | claimed after |
+|---|---|---|---|---|
+| door (origin)  | 146,062 (28.18%) | **54,892 (10.59%)** | 509,760 (98.33%) | **489,600 (94.44%)** |
+| calling roster | 153,767 (29.66%) | **69,060 (13.32%)** | 509,760 (98.33%) | **489,600 (94.44%)** |
+| quiz           | 159,434 (30.76%) | **79,220 (15.28%)** | 512,640 (98.89%) | **489,600 (94.44%)** |
+| verdict        | 161,388 (31.13%) | **60,172 (11.61%)** | 512,640 (98.89%) | **489,600 (94.44%)** |
+| your past      | 140,699 (27.14%) | **68,352 (13.19%)** | 509,760 (98.33%) | **489,600 (94.44%)** |
+| review         | 142,954 (27.58%) | **67,776 (13.07%)** | 509,760 (98.33%) | **489,600 (94.44%)** |
+| custom sheet   | 142,375 (27.46%) | **73,476 (14.17%)** | 512,640 (98.89%) | **489,600 (94.44%)** |
+| Gabri's sheet  | 137,335 (26.49%) | **57,696 (11.13%)** | 509,760 (98.33%) | **489,600 (94.44%)** |
+
+Both numbers went DOWN on every step, and the second one is the interesting one.
+The old screen **already claimed 98% of the frame** — a hand-painted warm light
+pool tinted every pixel of it — while only a quarter of that carried any ink at
+all. It was claiming the whole screen to show almost nothing on it. The composed
+frame claims 94% (the grid, less the margin the window's leftover pixels take)
+and puts two to three times more information inside the same box while lighting
+half as many pixels.
+
+**What the pixels bought.** Ink is only half the ruler; what the interface
+delivers per pixel is the other half.
+
+| | before | after |
+|---|---|---|
+| sheet rows visible at 960x540 | 9 of 25, then `0 MORE (1/3)` | **25 of 25** |
+| pages to see the whole sheet | 3 | **1** |
+| longest quiz answer as drawn | clipped at 18 glyphs *including its row number* | **whole, wrapped** |
+| copies of the hovered answer per frame | 3 (detail row, centre line, grid row) | **1** |
+| what an answer costs | nothing shown | the named effects and their numbers, beside the choice |
+| where the quiz is heading | nothing shown | `HEADING FOR  NETTER`, off the real tally rules |
+
+**Across the window sizes**, from the same directory:
+
+| window | grid | quiz layout | sheet layout |
+|---|---|---|---|
+| 320x180   | 64x25 cells  | detail pane collapses, answers take the body | list takes the body |
+| 640x360   | 128x51 cells | master/detail | master/detail, 2 columns |
+| 960x540   | 96x38 cells  | master/detail | master/detail, 2 columns |
+| 1280x720  | 85x34 cells  | master/detail | master/detail, 2 columns |
+| 1920x1080 | 76x30 cells  | master/detail | master/detail, 2 columns |
+
+At 320x180 the split collapses and the consequence pane is not shown. That is
+the honest limit of this composition rather than two panes too thin to read, and
+it is what `MasterDetail::split` exists to let a screen say out loud.
+
+**The HUD is untouched.** Nothing in this pass reaches `hud.cpp`, the world
+render or the street overlay; the ambient street HUD is unchanged at ink 17,781
+(3.43%) / claimed 24,939 (4.81%). The one sibling surface that moved is the
+CONTROLS page, and only because the shared `drawTabRow` now keeps a cell of air
+between its right-aligned readout and the frame's own edge — flush against it,
+`GRANADAD 0.10.0` and `NAMELESS` both read as if the border were punctuation.
+
+**Input parity, as a comparison rather than a sentence.**
+`parity-keyboard-960.png`, `parity-pad-960.png` and `parity-mouse-960.png` are
+the same journey — open the quiz door, answer four questions, hover the second
+answer — driven by three different devices through the one dispatch the SDL loop
+uses. The mouse walk finds its own pixels by asking the screen's own hit-test
+where a row is. All three files have SHA-256
+`7eea92f398c303bc0f43fe8c489ca4b42c4ed9827d94084b1c42e74a9afc0f49`.
