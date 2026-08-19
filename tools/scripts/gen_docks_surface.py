@@ -1233,10 +1233,60 @@ T[11][75][95] = 0                                   # PASS 9: door standard (>=2
 # deliberate fix here is the roof-cap material only; K17/K21/K34/K36 all keep their existing
 # single-story-plus-roof-slab silhouette.
 frect(12, 82, 66, 98, 80, BRICK_FLOOR)
+# DISTRICT PHASE B (Thresholds; owner ruling 2026-08-18): THE WARD TOWER GOES TO THE
+# MISSION -- a lantern-turret over the alms-hall doors, a 4x4 solid granite shaft on
+# bands z12-z15 (world z20-z23). z15 is the max authorable band: ZCOUNT is 16, world
+# z23 is the last interior level before the VOID border chunk, and z15 held not one
+# authored cell district-wide before this pass (counted, not assumed).
+# HOW FAR IT ACTUALLY STANDS PROUD, corrected from the first draft of this comment,
+# which claimed "2+ bands over every roof plane" and was wrong: local z is absolute,
+# and 1,920 columns of this ward already top out at z14 (C1's terrace parapet, C3's
+# and C2's and C4's roof-slum decks, K21's roof slab). The turret's crown is therefore
+# ONE band over the ward's tallest existing masonry and THREE bands over K17's own z12
+# roof cap and every other single-storey roof plane -- which is the brief's "1-2 bands
+# over every roof", and is why the turret reads over the roofline from the quayside by
+# day without pretending to be a cathedral.
+# The z12 course of the street face continues K17's own z11 colonnade frontage upward
+# in the same facade material. The canon circular-Flame-window motif (novel L2411,
+# miniaturized): the material vocabulary has no round-window tile and no sub-tile
+# ornament, so the motif is SUGGESTED as facade patterning -- the centre pair of the
+# z14 street-face course in GRANITE_FACADE_WALL against plain granite, an ornament
+# band under the crown. That is a 2x1 patch, not a circle; the honest limit is stated
+# in the phase report rather than dressed up here.
+# The turret stands over the doors (88,66)/(89,66): the S2 lintel ruling guarantees the
+# doorway under the new z12+ masonry still walks, and the flood fill confirms it (the
+# door cells never leave the reachable set).
+# Reachability arithmetic, re-derived: the 16 roof-slab cells (86-89,66-69) at z12 go
+# from FLOOR to WALL and leave the standable set. Every one of them was roof -- ZERO of
+# them was walk-reachable from the spawn, so kReachableFromSpawn does not move by a
+# single tile for this shaft; they were mantle-reachable, so kReachableWithRoofMoves
+# loses exactly 16. The rest of K17's 17x15 roof stays one connected deck: the shaft
+# touches the roof's north edge (y66) so there is nothing to strand north of it, and
+# x82-85 and x90-98 meet again across y70-80.
+trect(12, 86, 66, 89, 69, GRANITE_WALL)
+trect(13, 86, 66, 89, 69, GRANITE_WALL)
+trect(14, 86, 66, 89, 69, GRANITE_WALL)
+trect(15, 86, 66, 89, 69, GRANITE_WALL)
+trect(12, 86, 66, 89, 66, GRANITE_FACADE_WALL)      # colonnade course, street face
+cells(14, [(87, 66), (88, 66)], GRANITE_FACADE_WALL)  # the Flame-window suggestion
 mk(11, "script_anchor", "business_k17_mission_anchor", 88, 71)
 mk(11, "script_anchor", "mission_bunks_anchor", 85, 78)
 mk(11, "script_anchor", "clue_c1_mission_backroom", 94, 78)
-mk(11, "light_source", "lamp_mission_night", 88, 65, luminance=22)
+# PHASE B: the Mission's doctrinal night lamp RIDES UP THE TURRET -- same name (the
+# render beacon exception finds lamps BY NAME, world_renderer.cpp lampSprites; the
+# owner's ruling is to keep the lamp's identity so the exception still finds it), same
+# (x,y) bracket cell one tile north of the street face, z11 -> z15: the beacon now
+# burns at the ward's highest authorable band, a point at the skyline after dark.
+# The precedent is the ward's OTHER beacon: lamp_weighhouse_mast is already a z13
+# signal-mast lamp, not a door lamp, and this is the same object one band-set higher.
+# WHAT IT COSTS, stated rather than hidden: LampGlow's vertical reach is 2 bands with
+# each band weighted 3 tiles (render/lighting.cpp), so a lamp four bands up cannot
+# light the ground it left. The Mission's own doorway therefore loses its street-level
+# light, and the nearest remaining lamp is lamp_guardhouse_door 18 tiles east. This
+# pass does NOT invent a replacement door lamp -- the shipped lamp count is 27 and
+# pinned in three places, and adding an unbriefed marker to soften a briefed move is
+# exactly the kind of scope creep the phase report should flag to the owner instead.
+mk(15, "light_source", "lamp_mission_night", 88, 65, luminance=22)
 # S6 fix (World route audit 2026-07-24): the garden marker's old cell (90,88)
 # predates K29's relocation onto that lot -- it had come to sit INSIDE the Long
 # Store on a rack wall (not walkable, not reachable), stranding the Mission's two
@@ -2258,6 +2308,96 @@ pave_dirt(12, 144, 96, 191,115, GRANITE_FLOOR) # Band-B east field connective la
 pave_dirt(13,  96,119, 107,123, GRANITE_FLOOR) # Gallows Row well plaza
 pave_dirt(13,   0,116, 191,119, GRANITE_FLOOR) # N hovel-row connective lanes
 pave_dirt(13,   0,123, 191,127, GRANITE_FLOOR) # S hovel-row connective lanes
+
+# ======================================================================
+# 5.95 DISTRICT PHASE B: THRESHOLDS (2026-08-18). The novel's gates are passport
+# checkpoints with flanking towers; a threshold crossing is an EVENT -- geometry
+# narrows, a name is asserted, space opens again. Two deliverables here (the third,
+# the Mission lantern-turret, lives with K17 in section 3):
+#
+# 1. THE SALTGATE GATE-HOUSE, at Saltgate Rise's head -- the B->C climb at y115-116,
+#    where the road crests onto the band that holds the watch-post, the notice board
+#    and the gibbet. Two 2x2 granite towers flank the road OUTSIDE its kerbs (the
+#    roadway x72-79 stays full-width and OPEN -- a frame you pass through, not a
+#    door), with a granite lintel band spanning the whole opening at z14. Clearance,
+#    counted in cells rather than asserted: over the y115 roadbed (a FLOOR at z12)
+#    the cells z12 and z13 are both non-solid and z14 is the lintel, so the soffit
+#    sits two cells above the road; over the y116 ramp cells the body crests to z13
+#    with the lintel directly overhead, which is exactly the doorway case the S2
+#    lintel ruling makes standable -- and the flood fill below confirms not one
+#    roadway cell left the reachable set. The west tower rises off C1's own ring-wall
+#    corner (solid stays solid: (70,115)/(71,115) were already REMAN ring wall,
+#    repainted to the gate's granite); the east tower stands on open Terrace Walk
+#    frontage. Downhill faces (the y115 rows, z12-z13) carry GRANITE_FACADE_WALL --
+#    the civic material, same register as the Weighhouse/watch-post frontages -- and
+#    the crown course stays plain granite, flush with the lintel: one monumental
+#    flat-topped frame, a full band BELOW the Mission turret's crown (the owner gave
+#    the ward tower to the Mission; the gate does not compete). K21's east door
+#    (71,120)/(71,121), the notice board (73,119) and the gibbet (80,119) are all 3+
+#    tiles uphill of the frame -- untouched.
+#    SIGHTLINE: the Rise runs due N-S and the camera's yaw convention is 0 north /
+#    90 east / clockwise, so the view up the roadway from downhill is azimuth 180 --
+#    and the backdrop palace's main mass spans azimuth 175.5-184.5 (world_renderer.cpp
+#    kSkyline), dead centre in the gate's opening. The palace silhouette is LOW
+#    (height 0.155 = tan of elevation, about 8.8 degrees), so how much of it stands
+#    inside the frame depends on range: the lintel soffit is ~1.4 tiles over the eye,
+#    which subtends 8.8 degrees at about nine tiles out, so the whole mass shows in
+#    the opening from close to the gate and the lintel crops its top from further
+#    down the Rise. Photographed in the phase report rather than argued.
+#    Reachability arithmetic (the oath), re-derived cell by cell against the baked
+#    geometry, not asserted: the two towers are 8 columns x 3 bands = 24 cells, of
+#    which 6 were ALREADY SOLID ((70,115)/(71,115) C1 ring wall at z12, and
+#    (70,116)/(71,116)/(80,116)/(81,116) band-C dirt substrate at z12), 12 were open
+#    air (all four columns at z14, and (70,115)/(71,115)/(80,115)/(81,115) at z13),
+#    and 6 were STANDABLE and are now walled: (80,115)/(81,115) on the z12 Terrace
+#    Walk frontage and (70,116)/(71,116)/(80,116)/(81,116) on the z13 band-edge
+#    ledge. A flood fill over stepBand from the spawn loses exactly those 6 cells and
+#    NOTHING ELSE -- no collateral, no sealed pocket. The 1-deep ledge x62-69,y116
+#    (C1's ring wall to its north, K21's north wall to its south) does lose its east
+#    end and becomes a dead end, and stays reachable along its own length from the
+#    west; the west hovel rows keep their direct z13 link to the Rise along the paved
+#    y127 row south of K21, plus the Pitch Lane ramps (x4-7,y116). The road, its
+#    kerbs and all 8 ramp cells (x72-79,y116) are untouched, and no marker, anchor,
+#    patrol waypoint, garbage bin or victualler stand sits on any walled cell.
+#
+# 2. COMPOUND GATE FRAMES on C1-C4: a one-band overhead frame at each compound's
+#    gate, where the tenure plaques already hang -- modest, a frame, not a fortress,
+#    in each compound's own wall material. Two shapes, because the compounds are two
+#    shapes, and the difference is load-bearing:
+#      * C1 and C3 pierce a ONE-STOREY ring wall, so the band above the gate is open
+#        air the whole way across. The frame spans the opening PLUS one cell at each
+#        end, and those two end cells stand directly on the ring wall below them --
+#        the jamb tops a real lintel would bear on. All twelve cells were air.
+#      * C2 and C4 pierce the gap between two units that carry a roof deck at the
+#        frame's own band. There the jamb tops are already roofed, so the frame is
+#        the OPENING ONLY: adding end posts would have overwritten two roof-deck
+#        FLOOR cells per compound with wall (and, at C4, repainted thatch as brick),
+#        destroying four standable roof cells to build something the roof already
+#        provides. The band reads as the roofline closing over the gate.
+#    Every gate's walk cells stay exactly as authored (lintel ruling again).
+#    NOT SIGNED: no new place names are authored here. If the gate-house itself
+#    earns a name ("Saltgate" is promoted to canon), that is flagged in the phase
+#    report for the owner, never invented on the map.
+# ======================================================================
+# 1. The Saltgate gate-house.
+for (gx0, gx1) in ((70, 71), (80, 81)):             # west tower | east tower, 2x2 each
+    trect(12, gx0, 115, gx1, 116, GRANITE_WALL)
+    trect(13, gx0, 115, gx1, 116, GRANITE_WALL)
+    trect(14, gx0, 115, gx1, 116, GRANITE_WALL)
+    trect(12, gx0, 115, gx1, 115, GRANITE_FACADE_WALL)  # downhill street face,
+    trect(13, gx0, 115, gx1, 115, GRANITE_FACADE_WALL)  # two facade courses
+trect(14, 72, 115, 79, 116, GRANITE_WALL)           # the lintel band over the roadway
+# 2. Compound gate frames (C1-C4), one band over each gate's opening.
+trect(13, 71, 103, 71, 108, REMAN_WALL)             # C1: ring gate x71,y104-107 (z12);
+#                                                     posts at y103/y108 on the ring wall
+trect(12, 136, 66, 143, 66, REMAN_WALL)             # C2: courtyard mouth x136-143,y66 (z11);
+#                                                     opening only -- c01/c02 roof decks
+#                                                     already close (135,66)/(144,66)
+trect(13, 109, 101, 114, 101, REMAN_WALL)           # C3: ring gate x110-113,y101 (z12);
+#                                                     posts at x109/x114 on the ring wall
+trect(12, 176, 66, 179, 66, BRICK_WALL)             # C4: courtyard mouth x176-179,y66 (z11);
+#                                                     opening only -- c03/c04 thatch decks
+#                                                     already close (175,66)/(180,66)
 
 # The courtyard farms are proved unpaved HERE, before 5.9 lays doorsteps on them: after
 # the stoop pass each condo door onto a courtyard has three deliberate paver cells in front
