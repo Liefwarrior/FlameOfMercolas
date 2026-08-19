@@ -177,3 +177,70 @@ dist\granadad.exe --smoke=0 --hold --threshold=saltgate --threshold-end=back \
 The run prints `threshold saltgate from="-" to="SALTGATE RISE" crossed=yes
 plate="SALTGATE RISE" up=yes` beside the frame, because a picture of a plate
 that never fired looks exactly like a picture of a street.
+
+## Panes pass: the controls page, and the honest number
+
+A new drawn surface, so it is in this file, and the number went the wrong way.
+Say it first and argue afterwards.
+
+| scene (960x540) | ink | claimed |
+|---|---|---|
+| controls page, before (`--pause=controls`) | 187,200 (36.11%) | 187,200 (36.11%) |
+| controls page, after                       | 510,720 (98.52%) | 510,720 (98.52%) |
+
+The old page was a conversation panel: a top band, a 3x4 topic grid in the
+bottom band, and a strip of street between them. The new one is a full-page
+composed frame and it takes the frame.
+
+**Why that is the right trade here, and where the line is.**
+
+The ruler exists because of one sentence — *"I love the vibe of the UI but just
+be more careful with real estate"* — and that sentence is about the HUD: the
+thing that is on screen while you are playing, that you did not ask for, and
+that you cannot put down. **The HUD is untouched by this pass.** The only line
+this pass adds to `HudState` construction is inside `if (keysOpen_)`, so any
+frame in which the controls page is not open is bit-identical. The ambient
+street HUD measures ink 17,781 (3.43%) / claimed 24,939 (4.81%) at 960x540 with
+this build, which is where the previous pass left it.
+
+The controls page is the other kind of surface: one you open on purpose, read,
+and put down with the same key. The tiled Menu is already exempt from the
+centre-clear rule for exactly this reason (`menu_view.hpp`: "there is nobody TO
+look at while it is up"), and the owner's own reference frames are all
+full-screen compositions.
+
+**What the extra pixels bought**, which is the number that actually answers
+*"use screen real estate more efficiently"*:
+
+| | before | after |
+|---|---|---|
+| binding rows visible at 960x540 | 9 of 29 | **29 of 29** |
+| pages to see the whole list | 4 | **1** |
+| explanation of the highlighted row | none | a full paragraph, beside the list |
+| claimed pixels per row shown | 20,800 | **17,611** |
+
+Per row of information delivered the page is *cheaper* than it was, and it
+stopped hiding three quarters of itself behind a MORE key. A player looking for
+the map key no longer has to turn three pages to find out this game has one.
+
+**At every other window size**, from `docs/frames/panes/`:
+
+| window | grid | list layout | pages |
+|---|---|---|---|
+| 320x180   | 64x25 cells  | detail pane collapses, list takes the body, 2 columns | 1 |
+| 640x360   | 128x51 cells | master/detail, 2 columns | 1 |
+| 960x540   | 96x38 cells  | master/detail, 2 columns | 1 |
+| 1280x720  | 85x34 cells  | master/detail, 2 columns | 1 |
+| 1920x1080 | 76x30 cells  | master/detail, 1 column  | 2 |
+
+The biggest window is the narrowest in CELLS, because `hudMinorScale` steps up
+with the frame height — 1920x1080 has 76 cells across where 960x540 has 96. That
+inversion is why the composition's minimum detail width is 26 cells and not 30,
+and it is why 1920 is the one size that still pages.
+
+**Stable geometry, measured rather than asserted.** `keys-960x540.png` and
+`keys-960-cursor-lock.png` are the same page with the cursor eighteen rows
+apart. Every pixel outside `x 10..950, y 88..466` — which is to say the border,
+all three rules, the column divider, the tab row, the instruction header and the
+global nav row — is IDENTICAL between them. Only the inside of the body pane
+changes when the cursor moves.
