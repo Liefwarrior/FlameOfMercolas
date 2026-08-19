@@ -1440,6 +1440,232 @@ constexpr PadRow kPadTable[] = {
 }
 
 // ---------------------------------------------------------------------------
+// #93. ONE DISPATCH, THREE DEVICES -- controller, mouse and keyboard parity
+// ---------------------------------------------------------------------------
+//
+// WHAT WAS WRONG. run_creation_window() opened with SDL_Init(SDL_INIT_VIDEO)
+// and read SDL_EVENT_KEY_DOWN. That is the whole story: the first screen of the
+// game could not be driven by a pad at all -- the subsystem was not even
+// initialised -- and the mouse did nothing whatsoever. A player who picked up a
+// controller to start a new game got a window that ignored them.
+//
+// WHAT THIS IS. Every device funnels into ONE function, creation_input(), which
+// is the only place that knows what a key MEANS on this screen. A keyboard
+// arrow, a d-pad press, a left-stick push and a mouse click on a row all end up
+// calling the same CreationFlow method with the same argument. Parity is not
+// three parallel handlers kept in sync by discipline; it is one handler with
+// three doors into it, so a verb cannot exist for one device and not another.
+//
+// AND THE POINTER MIRRORS THE CURSOR rather than running beside it. Hovering a
+// row calls the same set*Cursor() a d-pad press would; there is no second
+// "hovered" highlight the keyboard cannot see and no way for the two to
+// disagree about which row is live. That is why CreationFlow grew clamping
+// setters (creation.hpp) instead of this file keeping a pointer-row of its own.
+
+/// A digit key, 1-9, or 0 for anything else. DIRECT SELECT is the reference's
+/// own idiom -- "Numbered rows, direct-select" -- and the numbers the screen
+/// prints beside its rows have to actually do something or they are decoration.
+[[nodiscard]] int creation_digit_of_key(render::Key key) noexcept {
+    if (key >= render::Key::Num1 && key <= render::Key::Num9) {
+        return 1 + (static_cast<int>(key) - static_cast<int>(render::Key::Num1));
+    }
+    return 0;
+}
+
+/// What a key MEANS here, whatever device it arrived from. The pad's face
+/// buttons take the platform-conventional roles (south confirms, east backs
+/// out) and the d-pad doubles the arrows; WASD doubles them too, because this
+/// screen is the one place in the game where a player may not yet have found
+/// the arrow keys.
+enum class CreationVerb : std::uint8_t { None, Up, Down, Left, Right, Confirm, Cancel };
+
+[[nodiscard]] CreationVerb creation_verb_of_key(render::Key key) noexcept {
+    switch (key) {
+        case render::Key::Up:
+        case render::Key::W:
+        case render::Key::PadUp:
+            return CreationVerb::Up;
+        case render::Key::Down:
+        case render::Key::S:
+        case render::Key::PadDown:
+            return CreationVerb::Down;
+        case render::Key::Left:
+        case render::Key::A:
+        case render::Key::PadLeft:
+            return CreationVerb::Left;
+        case render::Key::Right:
+        case render::Key::D:
+        case render::Key::PadRight:
+            return CreationVerb::Right;
+        case render::Key::Enter:
+        case render::Key::Space:
+        case render::Key::PadSouth:
+        case render::Key::PadStart:
+            return CreationVerb::Confirm;
+        case render::Key::Escape:
+        case render::Key::PadEast:
+        case render::Key::PadBack:
+            return CreationVerb::Cancel;
+        default:
+            return CreationVerb::None;
+    }
+}
+
+/// One input, applied. Returns false when the player asked to leave the screen
+/// entirely (cancel at the front door), which is the one thing the flow itself
+/// has no way to express.
+bool creation_input(render::CreationFlow& flow, render::Key key) {
+    // TEXT ENTRY OWNS THE INPUT WHOLE, on every device -- the same rule the
+    // options page's own awaitingKey() keeps for a binding. WASD have to be
+    // letters here, not arrows, which is exactly why this branch comes first.
+    if (flow.step() == render::CreationStep::Customize && flow.editingName()) {
+        if (key == render::Key::Enter || key == render::Key::PadSouth ||
+            key == render::Key::PadStart) {
+            flow.chooseCustomizeRow();
+            return true;
+        }
+        if (key == render::Key::Escape || key == render::Key::PadEast) {
+            flow.backToOrigin();
+            return true;
+        }
+        if (key == render::Key::Backspace || key == render::Key::PadWest) {
+            flow.backspaceName();
+            return true;
+        }
+        const char typed = name_char_of_key(key);
+        if (typed != '\0') {
+            flow.typeNameChar(typed);
+        }
+        return true;
+    }
+
+    const CreationVerb verb = creation_verb_of_key(key);
+    const int digit = creation_digit_of_key(key);
+    const render::CreationStep step = flow.step();
+
+    if (step == render::CreationStep::Origin) {
+        switch (verb) {
+            case CreationVerb::Up:
+                flow.moveOriginCursor(-1);
+                return true;
+            case CreationVerb::Down:
+                flow.moveOriginCursor(1);
+                return true;
+            case CreationVerb::Confirm:
+                flow.chooseOrigin();
+                return true;
+            case CreationVerb::Cancel:
+                return false;
+            default:
+                break;
+        }
+        if (digit > 0 && digit <= static_cast<int>(render::originTemplates().size())) {
+            flow.setOriginCursor(digit - 1);
+            flow.chooseOrigin();
+        }
+        return true;
+    }
+
+    if (step == render::CreationStep::Calling || step == render::CreationStep::Quiz ||
+        step == render::CreationStep::Background) {
+        switch (verb) {
+            case CreationVerb::Up:
+                flow.moveChoiceCursor(-1);
+                return true;
+            case CreationVerb::Down:
+                flow.moveChoiceCursor(1);
+                return true;
+            case CreationVerb::Confirm:
+                flow.chooseChoice();
+                return true;
+            case CreationVerb::Cancel:
+                flow.back();
+                return true;
+            default:
+                break;
+        }
+        if (digit > 0) {
+            // DIRECT SELECT. The row numbers are printed; pressing one picks
+            // that row and commits it, which is what a printed number means in
+            // this register. setChoiceCursor clamps, so a digit past the end of
+            // a five-answer question moves nothing and commits nothing new.
+            flow.setChoiceCursor(digit - 1);
+            if (flow.choiceCursor() == digit - 1) {
+                flow.chooseChoice();
+            }
+        }
+        return true;
+    }
+
+    // The sheet.
+    switch (verb) {
+        case CreationVerb::Up:
+            flow.moveCustomizeCursor(-1);
+            return true;
+        case CreationVerb::Down:
+            flow.moveCustomizeCursor(1);
+            return true;
+        case CreationVerb::Left:
+            flow.adjustCustomizeRow(-1);
+            return true;
+        case CreationVerb::Right:
+            flow.adjustCustomizeRow(1);
+            return true;
+        case CreationVerb::Confirm:
+            flow.chooseCustomizeRow();
+            return true;
+        case CreationVerb::Cancel:
+            flow.backToOrigin();
+            return true;
+        default:
+            return true;
+    }
+}
+
+/// A pointer at (px, py) in FRAMEBUFFER pixels. `click` false is a hover, which
+/// moves the cursor and nothing else.
+bool creation_pointer(render::CreationFlow& flow, int frameWidth, int frameHeight, int px, int py,
+                      bool click) {
+    const render::CreationHit hit = render::creationHitTest(flow, frameWidth, frameHeight, px, py);
+    switch (hit.zone) {
+        case render::CreationHit::Zone::Row:
+            // HOVER MIRRORS THE CURSOR. Same setter a d-pad press reaches, so
+            // there is exactly one live row on this screen and every device
+            // agrees which one it is.
+            switch (flow.step()) {
+                case render::CreationStep::Origin:
+                    flow.setOriginCursor(hit.index);
+                    break;
+                case render::CreationStep::Customize:
+                    flow.setCustomizeCursor(hit.index);
+                    break;
+                default:
+                    flow.setChoiceCursor(hit.index);
+                    break;
+            }
+            if (click) {
+                return creation_input(flow, render::Key::Enter);
+            }
+            return true;
+        case render::CreationHit::Zone::Commit:
+            // The commit verb at the foot of the detail pane is a real target:
+            // it says what ENTER does, so clicking it does that.
+            if (click) {
+                return creation_input(flow, render::Key::Enter);
+            }
+            return true;
+        case render::CreationHit::Zone::Back:
+            if (click) {
+                return creation_input(flow, render::Key::Escape);
+            }
+            return true;
+        case render::CreationHit::Zone::None:
+        default:
+            return true;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // #80. THE ORIGIN-SELECT/CUSTOMIZE FLOW, CAPTURED WITH NO WINDOW.
 // ---------------------------------------------------------------------------
 //
@@ -1490,7 +1716,79 @@ int run_creation_capture(const Options& options) {
         }
         flow.chooseChoice();
     };
-    if (options.creationStep == "customize") {
+    // #93. THE PARITY WALKS. Three devices, ONE journey, and the proof is that
+    // the three frames come out byte-identical.
+    //
+    // A claim that a screen is drivable by controller, mouse and keyboard is
+    // worth nothing without a frame behind it, and a real SDL window cannot be
+    // driven inside a headless gate. So each of these replays the SAME journey
+    // -- open the quiz door, answer four questions, hover the second answer --
+    // through creation_input()/creation_pointer(), which is the EXACT code the
+    // SDL loop calls; the only thing skipped is SDL's event pump handing them
+    // the key. Different keys, different device, same destination.
+    //
+    // The mouse walk finds its own pixels by asking the screen's own hit-test
+    // where a row is, so it is clicking what a player would click and not a
+    // coordinate typed in by hand.
+    const auto pixelOfRow = [](const render::CreationFlow& flow, int w, int h, int row, int* px,
+                               int* py) {
+        const render::CreationPage page = flow.page();
+        const render::CreationLayout layout = render::creationLayout(page, w, h);
+        if (!layout.usable) {
+            return false;
+        }
+        const int stepY = std::max(1, layout.metric.cellH() / 2);
+        const int stepX = std::max(1, layout.metric.cellW());
+        for (int y = layout.listRect.y; y < layout.listRect.bottom(); y += stepY) {
+            for (int x = layout.listRect.x; x < layout.listRect.right(); x += stepX) {
+                const render::CreationHit hit = render::creationPageHitTest(page, w, h, x, y);
+                if (hit.zone == render::CreationHit::Zone::Row && hit.index == row) {
+                    *px = x;
+                    *py = y;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    if (options.creationStep == "input-keyboard" || options.creationStep == "input-pad" ||
+        options.creationStep == "input-mouse") {
+        const int w = std::max(64, options.smoke.session.width);
+        const int h = std::max(64, options.smoke.session.height);
+        if (options.creationStep == "input-mouse") {
+            const auto press = [&](int row) {
+                int px = 0;
+                int py = 0;
+                if (!pixelOfRow(flow, w, h, row, &px, &py)) {
+                    std::printf("granadad: no pixel found for row %d\n", row);
+                    return;
+                }
+                std::printf("granadad: pointer row %d at (%d,%d)\n", row, px, py);
+                (void)creation_pointer(flow, w, h, px, py, false);
+                (void)creation_pointer(flow, w, h, px, py, true);
+            };
+            press(1);  // ANSWER FOR YOURSELF
+            for (int i = 0; i < 4; ++i) {
+                press(0);
+            }
+            int px = 0;
+            int py = 0;
+            if (pixelOfRow(flow, w, h, 1, &px, &py)) {
+                std::printf("granadad: hover row 1 at (%d,%d)\n", px, py);
+                (void)creation_pointer(flow, w, h, px, py, false);
+            }
+        } else {
+            const bool viaPad = options.creationStep == "input-pad";
+            const render::Key down = viaPad ? render::Key::PadDown : render::Key::Down;
+            const render::Key confirm = viaPad ? render::Key::PadSouth : render::Key::Enter;
+            (void)creation_input(flow, down);
+            (void)creation_input(flow, confirm);
+            for (int i = 0; i < 4; ++i) {
+                (void)creation_input(flow, confirm);
+            }
+            (void)creation_input(flow, down);
+        }
+    } else if (options.creationStep == "customize") {
         flow.moveOriginCursor(2);  // CUSTOM
         flow.chooseOrigin();
         for (int i = 0; i < 3; ++i) {
@@ -1597,7 +1895,7 @@ int run_creation_capture(const Options& options) {
 render::CreationResult run_creation_window(const Options& options) {
     render::CreationFlow flow(granadad::content::contentDir());
 
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         std::printf("SDL_Init (creation) failed: %s\n", SDL_GetError());
         return {};
     }
@@ -1619,6 +1917,7 @@ render::CreationResult run_creation_window(const Options& options) {
                          height * options.windowScale, SDL_WINDOW_RESIZABLE);
     if (window == nullptr) {
         std::printf("SDL_CreateWindow (creation) failed: %s\n", SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return {};
     }
@@ -1626,6 +1925,7 @@ render::CreationResult run_creation_window(const Options& options) {
     if (renderer == nullptr) {
         std::printf("SDL_CreateRenderer (creation) failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
+        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return {};
     }
@@ -1638,6 +1938,29 @@ render::CreationResult run_creation_window(const Options& options) {
         SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
     }
 
+    // #93. A PAD THAT IS PLUGGED IN SHOULD JUST WORK, on the FIRST screen of
+    // the game and not only after it. Opened here and hot-plugged below, the
+    // same way run_client() already does it for the world.
+    SDL_Gamepad* pad = nullptr;
+    {
+        int count = 0;
+        SDL_JoystickID* ids = SDL_GetGamepads(&count);
+        if (ids != nullptr) {
+            if (count > 0) {
+                pad = SDL_OpenGamepad(ids[0]);
+            }
+            SDL_free(ids);
+        }
+    }
+    // THE STICK IS A CURSOR, NOT A CAMERA, on this screen. An analog axis has
+    // no press event, so it is latched: one step when it crosses the deadzone,
+    // and nothing more until it comes back under. Without the latch a leaned
+    // stick would scroll a list at the frame rate, which is unusable.
+    constexpr Sint16 kStickOn = 18000;
+    constexpr Sint16 kStickOff = 9000;
+    bool stickVertical = false;
+    bool stickHorizontal = false;
+
     render::Framebuffer frame(width, height);
     bool cancelled = false;
 
@@ -1648,67 +1971,85 @@ render::CreationResult run_creation_window(const Options& options) {
                 cancelled = true;
                 continue;
             }
+            switch (event.type) {
+                case SDL_EVENT_GAMEPAD_ADDED:
+                    if (pad == nullptr) {
+                        pad = SDL_OpenGamepad(event.gdevice.which);
+                    }
+                    continue;
+                case SDL_EVENT_GAMEPAD_REMOVED:
+                    if (pad != nullptr &&
+                        SDL_GetGamepadID(pad) == event.gdevice.which) {
+                        SDL_CloseGamepad(pad);
+                        pad = nullptr;
+                    }
+                    continue;
+                case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
+                    const render::Key key = key_of_pad_button(event.gbutton.button);
+                    if (key != render::Key::None && !creation_input(flow, key)) {
+                        cancelled = true;
+                    }
+                    continue;
+                }
+                case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+                    const Sint16 value = event.gaxis.value;
+                    const Sint16 magnitude =
+                        static_cast<Sint16>(value < 0 ? -std::max<int>(value, -32767) : value);
+                    if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) {
+                        if (!stickVertical && magnitude >= kStickOn) {
+                            stickVertical = true;
+                            (void)creation_input(flow, value < 0 ? render::Key::Up
+                                                                 : render::Key::Down);
+                        } else if (stickVertical && magnitude <= kStickOff) {
+                            stickVertical = false;
+                        }
+                    } else if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX) {
+                        if (!stickHorizontal && magnitude >= kStickOn) {
+                            stickHorizontal = true;
+                            (void)creation_input(flow, value < 0 ? render::Key::Left
+                                                                 : render::Key::Right);
+                        } else if (stickHorizontal && magnitude <= kStickOff) {
+                            stickHorizontal = false;
+                        }
+                    }
+                    continue;
+                }
+                case SDL_EVENT_MOUSE_MOTION:
+                case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                    // INTO FRAMEBUFFER PIXELS FIRST. The window is presented
+                    // with SDL_SetRenderLogicalPresentation at an integer
+                    // scale, so a window coordinate is not a frame coordinate;
+                    // SDL's own conversion is the only correct way across every
+                    // scale and every letterbox.
+                    SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                    const bool click = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+                    const float fx = click ? event.button.x : event.motion.x;
+                    const float fy = click ? event.button.y : event.motion.y;
+                    if (click && event.button.button == SDL_BUTTON_RIGHT) {
+                        // RIGHT-CLICK IS BACK, everywhere. The one gesture a
+                        // mouse has that nothing else on this screen wants.
+                        if (!creation_input(flow, render::Key::Escape)) {
+                            cancelled = true;
+                        }
+                        continue;
+                    }
+                    if (click && event.button.button != SDL_BUTTON_LEFT) {
+                        continue;
+                    }
+                    if (!creation_pointer(flow, width, height, static_cast<int>(fx),
+                                          static_cast<int>(fy), click)) {
+                        cancelled = true;
+                    }
+                    continue;
+                }
+                default:
+                    break;
+            }
             if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) {
                 continue;
             }
-            const render::Key key = key_of_scancode(event.key.scancode);
-            if (flow.step() == render::CreationStep::Origin) {
-                if (key == render::Key::Up || key == render::Key::W) {
-                    flow.moveOriginCursor(-1);
-                } else if (key == render::Key::Down || key == render::Key::S) {
-                    flow.moveOriginCursor(1);
-                } else if (key == render::Key::Enter) {
-                    flow.chooseOrigin();
-                } else if (key == render::Key::Escape) {
-                    cancelled = true;
-                }
-                continue;
-            }
-            // TASK #92: the calling roster, the ward's questions and the
-            // biography all share one cursor and one verb set -- see
-            // CreationFlow::choiceCursor()'s own header.
-            if (flow.step() == render::CreationStep::Calling ||
-                flow.step() == render::CreationStep::Quiz ||
-                flow.step() == render::CreationStep::Background) {
-                if (key == render::Key::Up || key == render::Key::W) {
-                    flow.moveChoiceCursor(-1);
-                } else if (key == render::Key::Down || key == render::Key::S) {
-                    flow.moveChoiceCursor(1);
-                } else if (key == render::Key::Enter) {
-                    flow.chooseChoice();
-                } else if (key == render::Key::Escape) {
-                    flow.back();
-                }
-                continue;
-            }
-            // Customize.
-            if (flow.editingName()) {
-                if (key == render::Key::Enter) {
-                    flow.chooseCustomizeRow();
-                } else if (key == render::Key::Escape) {
-                    flow.backToOrigin();
-                } else if (key == render::Key::Backspace) {
-                    flow.backspaceName();
-                } else {
-                    const char typed = name_char_of_key(key);
-                    if (typed != '\0') {
-                        flow.typeNameChar(typed);
-                    }
-                }
-                continue;
-            }
-            if (key == render::Key::Up || key == render::Key::W) {
-                flow.moveCustomizeCursor(-1);
-            } else if (key == render::Key::Down || key == render::Key::S) {
-                flow.moveCustomizeCursor(1);
-            } else if (key == render::Key::Left || key == render::Key::A) {
-                flow.adjustCustomizeRow(-1);
-            } else if (key == render::Key::Right || key == render::Key::D) {
-                flow.adjustCustomizeRow(1);
-            } else if (key == render::Key::Enter) {
-                flow.chooseCustomizeRow();
-            } else if (key == render::Key::Escape) {
-                flow.backToOrigin();
+            if (!creation_input(flow, key_of_scancode(event.key.scancode))) {
+                cancelled = true;
             }
         }
 
@@ -1725,11 +2066,15 @@ render::CreationResult run_creation_window(const Options& options) {
 
     const render::CreationResult result = flow.done() ? flow.result() : render::CreationResult{};
 
+    if (pad != nullptr) {
+        SDL_CloseGamepad(pad);
+    }
     if (texture != nullptr) {
         SDL_DestroyTexture(texture);
     }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
     return result;
 }
