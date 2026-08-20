@@ -352,6 +352,11 @@ void print_usage() {
         "  --map-overlay        open the WARD MAP (the full-screen district\n"
         "                       plan the M key opens) before the shutter\n"
         "                       goes, so it is photographable headless\n"
+        "  --map-place=NAME     put the ward map's cursor on an authored\n"
+        "                       place name (\"The Weighhouse\"). THE MAP\n"
+        "                       PASS; implies --map-overlay\n"
+        "  --map-tab=VIEW       overview, people, index or legend\n"
+        "  --map-zoom=N         rungs in from the whole ward, 0..3\n"
         "  --threshold=WHERE    VERIFICATION ONLY: walk the body across one\n"
         "                       authored place boundary so the THRESHOLD\n"
         "                       PLATE is on the frame at the shutter. WHERE\n"
@@ -646,6 +651,20 @@ void print_usage() {
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--map-overlay") == 0) {
             // CORE ACTION #13. See SmokeRunConfig::mapOverlay's own header.
+            options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--map-place=", &value)) {
+            // THE MAP PASS. See SmokeRunConfig::mapPlace's own header for why
+            // the page's cursor needs a capture path of its own.
+            options.smoke.mapPlace = value;
+            options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--map-tab=", &value)) {
+            options.smoke.mapTab = value;
+            options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--map-zoom=", &value)) {
+            options.smoke.mapZoom = std::atoi(value);
             options.smoke.mapOverlay = true;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--threshold=", &value)) {
@@ -1052,13 +1071,63 @@ void print_usage() {
     }
 
     if (session.districtMapOpen()) {
-        // THE WARD MAP IS A STATIC PAGE (v1: no pan, no zoom). The digits are
-        // swallowed rather than routed -- the pause branch's own reasoning: a
-        // number pressed over a full-screen page must not fall through to the
-        // quick bar behind it. Everything else falls through, so M toggles it
-        // off (an ordinary binding), ESC closes it (the Pause branch), and a
-        // game verb dismisses it exactly like every other overlay.
-        if (numbered || pageKey) {
+        // THE MAP PASS. THE WARD MAP IS DRIVEN NOW. It was a static picture
+        // (v1: no pan, no zoom, digits swallowed) and the owner's complaint
+        // about it -- "Makes it hard to figure out where the place you're
+        // looking for is" -- is answered by a cursor, four views over the
+        // selection and a zoom ladder, so every one of those has to reach it.
+        //
+        // The arrows walk PLACES rather than tiles (map_view.hpp's
+        // mapPlaceToward), which is why plain arrow keys are enough and there
+        // is no separate "cursor speed": four presses cross the ward.
+        if (up) {
+            session.moveDistrictMapCursor(render::MapStep::North);
+            return true;
+        }
+        if (downward) {
+            session.moveDistrictMapCursor(render::MapStep::South);
+            return true;
+        }
+        if (leftward) {
+            session.moveDistrictMapCursor(render::MapStep::West);
+            return true;
+        }
+        if (rightward) {
+            session.moveDistrictMapCursor(render::MapStep::East);
+            return true;
+        }
+        if (key == render::Key::Tab) {
+            // TAB CYCLES THE VIEWS while the map is up, and does NOT open the
+            // casebook underneath it. The key that means "the next tab" on
+            // every other tabbed surface in the world means it here too, and a
+            // page that let its own tab key fall through to a different page
+            // would be the split-brain bug toggleOptions' comment describes.
+            session.cycleDistrictMapTab(1);
+            return true;
+        }
+        if (key == render::Key::Equals) {
+            session.adjustDistrictMapZoom(1);
+            return true;
+        }
+        if (key == render::Key::Minus) {
+            session.adjustDistrictMapZoom(-1);
+            return true;
+        }
+        if (confirm) {
+            // The commit verb at the foot of the detail pane: turn to face the
+            // selection and put the map away.
+            session.faceDistrictMapSelection();
+            return true;
+        }
+        if (numbered) {
+            // THE PRINTED DIGITS ON THE TAB ROW ACTUALLY SELECT. Four tabs,
+            // `1` through `4`; the rest are swallowed rather than routed, for
+            // the pause branch's own reason -- a number pressed over a
+            // full-screen page must not reach the quick bar behind it.
+            session.setDistrictMapTab(slot);
+            return true;
+        }
+        if (pageKey) {
             return true;
         }
         return false;
