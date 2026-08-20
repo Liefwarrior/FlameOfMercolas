@@ -990,6 +990,36 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: #80's roof and food-chain cases are all registered"; \
     \
+    # THE CROSSHAIR PASS. The owner's note was one sentence -- "The 'E' button
+    # shouldn't have that label text be at the bottom of the screen... hover a
+    # bit to the top-right of the center crosshair" -- and the element it moved
+    # is the one thing on this HUD a player looks at every second of play.
+    #
+    # THE THREE TO WATCH. "naming it does not read it" is the one that could
+    # quietly finish somebody's investigation for them by drawing a label;
+    # "stays in its fence" is what keeps the deliberate exemption from the
+    # centre-clear rule an exemption rather than a precedent; and "the verb row
+    # holds its place" is the difference between a prompt and a flicker.
+    for case in \
+        "the crosshair names the person the key would actually speak to" \
+        "the crosshair names the box, and state changes the note with the verb" \
+        "the crosshair names a lead the book has heard of, and naming it does not read it" \
+        "the crosshair names the building it is pointed at, and only that one" \
+        "the aim prompt stands down whole when a page owns the keyboard" \
+        "the aim prompt is the only thing in the play space, and it stays in its fence" \
+        "the verb row holds its place when a subject arrives and when it goes" \
+        "an empty verb draws no reticle and no prompt at all" \
+        "no row of the aim prompt ever says the same word twice"; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the crosshair pass is judged on -- a prompt"; \
+                 echo "       that names what it is about to act on, stays out of the"; \
+                 echo "       play space it is allowed one corner of, and never reads"; \
+                 echo "       the case by being drawn."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the crosshair pass's cases are all registered"; \
+    \
     # ---------------------------------------------------------------------
     # AND THE SUITE RUNS IN PARALLEL, WHICH IS NOT A SUBSTITUTE FOR ANYTHING.
     # ---------------------------------------------------------------------

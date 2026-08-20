@@ -693,6 +693,15 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     full.placePlate = "THE GILDED GULL - ROOMS";
     full.placePlateFade = 1.0F;
     full.placePlateDrift = -1.0F;
+    // THE CROSSHAIR PASS: aimVerb/aimSubject/aimNote ARE THE ONE GROUP OF
+    // FIELDS THIS CASE DELIBERATELY LEAVES DARK, and that is the point rather
+    // than an omission. They are the documented exemption from the rule this
+    // case exists to prove (hud.hpp's own header, and the owner's own
+    // sentence), so lighting them here would turn a hard zero into a
+    // negotiation. With the aim prompt down, drawHud() must still put ZERO
+    // pixels in the play space with all sixteen other rows lit -- exactly the
+    // guarantee this case has always made -- and the next case is what holds
+    // the aim prompt itself to its own fence.
 
     for (const auto& [width, height] : {std::pair{320, 180}, std::pair{640, 360},
                                         std::pair{960, 540}}) {
@@ -1419,4 +1428,167 @@ TEST_CASE("the workbench draws where a conversation is allowed to be") {
         }
     }
     CHECK(saysWhy);
+}
+
+// ===========================================================================
+// THE CROSSHAIR PASS -- the one element allowed in the middle, fenced
+// ===========================================================================
+
+namespace {
+
+/// Every pixel drawHud() changed over a flat field, as a list of coordinates.
+[[nodiscard]] std::vector<std::pair<int, int>> hudInk(const HudState& state, int width,
+                                                      int height) {
+    Framebuffer bare(width, height);
+    bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+    Framebuffer dressed(width, height);
+    dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+    drawHud(dressed, state);
+    std::vector<std::pair<int, int>> out;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if (bare.pixels()[bare.index(x, y)] != dressed.pixels()[dressed.index(x, y)]) {
+                out.emplace_back(x, y);
+            }
+        }
+    }
+    return out;
+}
+
+/// The aim prompt at its loudest, with the longest strings session.cpp can
+/// actually hand it: the casebook's longest authored `what` and a ward trade.
+[[nodiscard]] HudState loudAim() {
+    HudState aim;
+    aim.showHealth = false;
+    aim.showCompass = false;
+    aim.timeOfDaySeconds = -1;
+    aim.coin = -1;
+    aim.aimKey = "E";
+    aim.aimVerb = "PICKPOCKET";
+    aim.aimSubject = "THE BODY, AND WHOEVER FOUND IT";
+    aim.aimNote = "ALREADY READ";
+    aim.aimKind = static_cast<int>(AimKind::Clue);
+    return aim;
+}
+
+}  // namespace
+
+TEST_CASE("the aim prompt is the only thing in the play space, and it stays in its fence") {
+    // THE OWNER'S OWN INSTRUCTION, HELD TO A RECTANGLE. "when shown hover a
+    // bit to the top-right of the center crosshair" is a direct order to break
+    // the centre-clear rule, so it is broken in exactly one place and that
+    // place is a clamp rather than a comment -- see hudAimRect().
+    for (const auto& [width, height] : {std::pair{320, 180}, std::pair{640, 360},
+                                        std::pair{960, 540}, std::pair{1920, 1080}}) {
+        const HudState aim = loudAim();
+        const CentreRect fence = hudAimRect(width, height);
+        const std::vector<std::pair<int, int>> lit = hudInk(aim, width, height);
+
+        INFO("at ", width, "x", height);
+        // NOT VACUOUS: it drew something.
+        CHECK(lit.size() > 200);
+        std::size_t escaped = 0;
+        for (const auto& [x, y] : lit) {
+            if (x < fence.x0 || x >= fence.x1 || y < fence.y0 || y >= fence.y1) {
+                ++escaped;
+            }
+        }
+        CHECK(escaped == 0);
+
+        // UP AND TO THE RIGHT, LITERALLY. Everything the PROMPT draws is above
+        // the horizontal centre line and right of the vertical one; the only
+        // ink below or left of centre belongs to the reticle's own two ticks,
+        // which is what the prompt is hanging off.
+        const int cx = width / 2;
+        const int cy = height / 2;
+        std::size_t textLeftOfCentre = 0;
+        for (const auto& [x, y] : lit) {
+            if (y < cy - hudMinorScale(height) * 4 && x < cx) {
+                ++textLeftOfCentre;
+            }
+        }
+        CHECK(textLeftOfCentre == 0);
+
+        // AND THE EXACT AIM PIXEL IS NEVER PAINTED. A reticle that covered the
+        // thing it points at would be a worse crosshair than none.
+        Framebuffer bare(width, height);
+        bare.clear(Rgb{0.20F, 0.18F, 0.16F});
+        Framebuffer dressed(width, height);
+        dressed.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(dressed, aim);
+        CHECK(bare.pixels()[bare.index(cx, cy)] == dressed.pixels()[dressed.index(cx, cy)]);
+    }
+}
+
+TEST_CASE("the verb row holds its place when a subject arrives and when it goes") {
+    // THE REFERENCE'S "PANES HOLD THEIR HEIGHT", ON THE SMALLEST SURFACE IN
+    // THE GAME. Sweeping the crosshair across a doorway changes what the
+    // subject row says and whether there IS one; if that moved the verb, the
+    // one row a player reads every second of play would jitter under their
+    // eye. So the subject grows UPWARD off a verb row that never moves.
+    constexpr int kWidth = 960;
+    constexpr int kHeight = 540;
+
+    HudState bare = loudAim();
+    bare.aimSubject = {};
+    bare.aimNote = {};
+    bare.aimKind = static_cast<int>(AimKind::Nothing);
+
+    const HudState named = loudAim();
+
+    const auto lowestRow = [](const std::vector<std::pair<int, int>>& lit, int cy) {
+        // The lowest text row: the ticks live within a few units of centre, so
+        // anything above them is prompt.
+        int top = 1 << 30;
+        for (const auto& [x, y] : lit) {
+            (void)x;
+            if (y < cy - 8 && y < top) {
+                top = y;
+            }
+        }
+        return top;
+    };
+
+    const std::vector<std::pair<int, int>> withoutSubject = hudInk(bare, kWidth, kHeight);
+    const std::vector<std::pair<int, int>> withSubject = hudInk(named, kWidth, kHeight);
+    CHECK(withSubject.size() > withoutSubject.size());
+
+    // THE VERB ROW'S OWN BAND IS PIXEL-IDENTICAL BETWEEN THE TWO. Compared as
+    // a band rather than as a y, because the subject row genuinely does draw
+    // above it and would otherwise be counted as movement.
+    const CentreRect band = hudAimVerbRow(kWidth, kHeight);
+    Framebuffer a(kWidth, kHeight);
+    a.clear(Rgb{0.20F, 0.18F, 0.16F});
+    drawHud(a, bare);
+    Framebuffer b(kWidth, kHeight);
+    b.clear(Rgb{0.20F, 0.18F, 0.16F});
+    drawHud(b, named);
+    // THE BAND'S OWN COLUMNS, NOT THE WHOLE ROW. hudAimVerbRow starts at the
+    // prompt's left edge on purpose: the reticle's upper tick shares these
+    // pixel rows and it is SUPPOSED to change -- it takes the subject's accent
+    // when there is one, which is the reference's "highlight the current
+    // interaction target". What must hold still is the verb's own text.
+    std::size_t moved = 0;
+    for (int y = band.y0; y < band.y1; ++y) {
+        for (int x = band.x0; x < band.x1; ++x) {
+            moved += a.pixels()[a.index(x, y)] != b.pixels()[b.index(x, y)] ? 1U : 0U;
+        }
+    }
+    CHECK(moved == 0);
+
+    // And the subject really did land ABOVE it rather than pushing it down.
+    CHECK(lowestRow(withSubject, kHeight / 2) < lowestRow(withoutSubject, kHeight / 2));
+}
+
+TEST_CASE("an empty verb draws no reticle and no prompt at all") {
+    // THIS IS WHAT KEEPS THE OLD GUARANTEE TRUE. Session empties the verb for
+    // every page in the game (conversingNow), so under a menu, a map or a
+    // conversation the middle of the screen is exactly as clear as it was
+    // before this pass existed.
+    HudState quiet = loudAim();
+    quiet.aimVerb = {};
+    for (const auto& [width, height] : {std::pair{320, 180}, std::pair{960, 540}}) {
+        INFO("at ", width, "x", height);
+        CHECK(hudInk(quiet, width, height).empty());
+    }
 }
