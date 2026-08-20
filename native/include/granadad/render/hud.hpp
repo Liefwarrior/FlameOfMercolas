@@ -56,6 +56,46 @@
 //
 // and the area those rows CLAIM -- glyphs closed up into the rows that own
 // them, which is the space actually lost -- 8.19% -> 5.13% on the street.
+//
+// ---------------------------------------------------------------------------
+// THE CROSSHAIR PASS: THE ONE ELEMENT THAT IS ALLOWED IN THE MIDDLE, AND WHY.
+//
+// The owner played the build and said, verbatim: "The 'E' button shouldn't have
+// that label text be at the bottom of the screen. It needs to be improved to be
+// properly contextual and when shown hover a bit to the top-right of the center
+// crosshair."
+//
+// That is a direct instruction to break the rule at the top of this file, in
+// one place, deliberately. So it is broken in exactly one place, it is named
+// (hudAimRect below), it is CLAMPED to that rectangle rather than trusted to
+// stay in it, and the old guarantee still holds for every other row: with the
+// aim fields empty, drawHud() puts nothing at all inside hudCentreRect, and
+// test_render.cpp still proves it with all sixteen other rows lit at once.
+//
+// Two things go in there and they are one element:
+//
+//   1. THE RETICLE. There was not one. The owner's sentence assumes a "center
+//      crosshair" and the prompt has to hang off something, so the aim point
+//      is now marked -- four short ticks around an open centre, so the pixel
+//      you are actually aiming at stays visible. It takes the subject's own
+//      accent when something is in reach and sits dim when nothing is, which
+//      is the reference frame's "the spatial view HIGHLIGHTS the current
+//      interaction target" (docs/design/UI-REFERENCE-TERMINAL.md) in the
+//      cheapest form this view can carry.
+//
+//   2. THE AIM PROMPT, up and to the right of it. NOT a framed pane -- the
+//      spec's own "what NOT to carry" closes with "full-screen takeover for
+//      things that should be glanceable... the crosshair prompt and the alert
+//      row must stay light", so there is no border motif on this, no plate and
+//      no panel grid. Two rows of the ordinary 4x6 font:
+//
+//          GERTA SALTCOTTE  BARTENDER      <- what you are looking at
+//          E  TALK                         <- what the key will do to it
+//
+//      The VERB ROW IS THE ANCHOR and never moves; the subject row appears
+//      above it. That is the reference's "panes hold their height" applied to
+//      the smallest surface in the game: sweeping the crosshair across a
+//      doorway must not make the verb jump a row.
 
 #include <array>
 #include <cstdint>
@@ -182,15 +222,31 @@ struct HudState {
     /// strain on it and how many picks are left. Bottom edge, above the alert
     /// row, and empty whenever no lock is open.
     std::string_view lockLabel;
-    /// #85. THE RESOLVED VERB Interact is about to run -- "[E] TALK" changing
-    /// to "[E] PICKPOCKET" the instant the player crouches facing somebody.
-    /// Bottom edge, above the alert row: the element the whole consolidation
-    /// exists to make honest, so it sits where the alert (the loudest thing
-    /// on this edge besides a bouncer's warning) already trains the eye to
-    /// look. Empty draws nothing -- see Session::interactPrompt() for when
-    /// that is (a page already owns the keyboard, or nothing at all resolves
-    /// within reach, which cannot happen: LOOK is always the floor).
-    std::string_view interactLabel;
+    /// THE CROSSHAIR PASS. THE AIM PROMPT, and it is FOUR fields rather than
+    /// one composed string because the three of them are coloured by three
+    /// different roles and the fourth is not text at all.
+    ///
+    /// #85 shipped this as a single "E  TALK" row centred along the bottom
+    /// edge. It was honest and it was in the wrong place -- the owner's own
+    /// sentence is at the top of this file. What replaced it hangs off the
+    /// reticle (hudAimRect) and NAMES ITS OBJECT:
+    ///
+    ///     aimSubject   "GERTA SALTCOTTE"   what is in reach, in its own accent
+    ///     aimNote      "BARTENDER"         the qualifier, dim, beside it
+    ///     aimVerb      "TALK"              what the key runs, in the key colour
+    ///     aimKey       "E"                 the binding, drawn as a key cap
+    ///
+    /// aimVerb empty draws NOTHING AT ALL, reticle included -- see
+    /// Session::interactTarget() for when that is (a page already owns the
+    /// keyboard). aimSubject empty draws the verb row alone, which is the
+    /// honest floor: LOOK at ground with nothing authored on it names nothing,
+    /// because inventing a name for it would be the machine talking.
+    std::string_view aimKey;
+    std::string_view aimVerb;
+    std::string_view aimSubject;
+    std::string_view aimNote;
+    /// Which accent the subject and the reticle take. See AimKind.
+    int aimKind = 0;
     /// S10: where the bloodletter trail stands and where it wants you next --
     /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row. Empty only when
     /// casebook.json is missing.
@@ -242,10 +298,13 @@ struct HudState {
     /// alert row in and out and left every other row on this HUD popping --
     /// see this file's own header on the rule these rows draw under and
     /// Session::syncPanelAnim() for how each of these is driven by its OWN
-    /// render::EasedToggle, not a shared one, because interactLabel and
+    /// render::EasedToggle, not a shared one, because the aim prompt and
     /// stealthLabel (for instance) appear and disappear on completely
     /// unrelated triggers. Each defaults to 1, the same no-op reasoning as
     /// alertFade: a HudState nobody eased draws exactly as it always has.
+    /// THE AIM PROMPT'S OWN EasedToggle, as it always was -- the field kept
+    /// its name through the crosshair pass because the toggle behind it
+    /// (Session::interactAnim_) is the same one, driven off the same verb.
     float interactFade = 1.0F;
     float lockFade = 1.0F;
     float caseFade = 1.0F;
@@ -370,6 +429,49 @@ struct CentreRect {
 };
 
 [[nodiscard]] CentreRect hudCentreRect(int width, int height) noexcept;
+
+/// What the crosshair is on, and therefore what colour the reticle and the
+/// subject line take. The reference's colour discipline is one colour per
+/// ROLE, not per element (docs/design/UI-REFERENCE-TERMINAL.md), and these are
+/// the roles a first-person crosshair can land on in this ward.
+enum class AimKind : int {
+    /// Nothing named in reach. The floor: LOOK, dim, no subject row.
+    Nothing = 0,
+    /// A body you can talk to or take from.
+    Person = 1,
+    /// A door or a building the sign table names.
+    Place = 2,
+    /// A thing with a lid, a lock or a price -- a strongbox, your own bed.
+    Thing = 3,
+    /// SOMETHING THE CASE IS ABOUT. Its own colour, because the whole game is
+    /// this one and a player who cannot tell it from a doorway is the player
+    /// who thought the Bloodletter trail ended at the Weighhouse.
+    Clue = 4,
+};
+
+/// THE ONE REGION OF THE PLAY SPACE THE HUD MAY ENTER, and it is a clamp
+/// rather than a description: drawHud() intersects every pixel of the reticle
+/// and the aim prompt with this rectangle, so the prompt cannot creep however
+/// long a name the ward hands it.
+///
+/// Anchored on the exact frame centre -- the reticle sits astride it, and the
+/// prompt runs up and to the right of it, per the owner's own sentence. The
+/// right edge is the HUD's ordinary margin, so a very long name is CLIPPED
+/// rather than allowed to run off the frame the way the S6 alert did.
+[[nodiscard]] CentreRect hudAimRect(int width, int height) noexcept;
+
+/// The band the VERB row of the aim prompt occupies, and it is the whole
+/// reason the prompt is composed from the bottom up.
+///
+/// A first-person crosshair sweeps continuously and the subject under it
+/// appears and vanishes several times a second. If that moved the verb row,
+/// the one line a player reads every second of play would jitter under their
+/// eye -- the reference's "a list whose layout jumps as you arrow through it
+/// feels broken", on the smallest surface in this game. So the subject grows
+/// UPWARD off a verb row whose y is a function of the frame alone, and this is
+/// public so a case can prove those pixels do not move rather than a comment
+/// claiming it.
+[[nodiscard]] CentreRect hudAimVerbRow(int width, int height) noexcept;
 
 /// Draws the whole HUD over a rendered frame.
 void drawHud(Framebuffer& target, const HudState& state);

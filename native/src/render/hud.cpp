@@ -190,6 +190,88 @@ CentreRect hudCentreRect(int width, int height) noexcept {
     return CentreRect{marginX, marginY, width - marginX, height - marginY};
 }
 
+namespace {
+
+/// THE RETICLE AND THE PROMPT, RESOLVED ONCE.
+///
+/// hudAimRect() promises a rectangle and drawAim() writes pixels; if those two
+/// were computed from two different pieces of arithmetic the promise would be
+/// a comment rather than a clamp. Both call this.
+///
+/// Everything is in units of hudMinorScale -- the register the player reads
+/// DELIBERATELY, which this is: you are pointing at something and asking what
+/// it is. Drawing it at hudScale would put the loudest type in the game in the
+/// middle of the play space, which is the failure this whole file is against.
+struct AimBox {
+    int unit = 1;
+    /// The frame centre. The reticle sits astride it and the aim point IS it.
+    int cx = 0;
+    int cy = 0;
+    /// A tick is `arm` long and `unit` thick, standing `gap` clear of centre,
+    /// so the pixel actually being aimed at is never painted over.
+    int gap = 1;
+    int arm = 2;
+    int reach = 3;
+    int rowStep = 7;
+    /// The prompt's left edge and the top of each of its two rows. UP AND TO
+    /// THE RIGHT, per the owner's own sentence: every pixel of both rows is
+    /// above the horizontal centre line and right of the vertical one, so the
+    /// prompt never sits on the thing it is naming.
+    int textX = 0;
+    int verbY = 0;
+    int subjectY = 0;
+    /// The HUD's ordinary margin. A long name is clipped here rather than run
+    /// off the frame -- the S6 alert's own lesson, in the one element that
+    /// takes an arbitrary proper noun straight off the sign table.
+    int rightEdge = 0;
+};
+
+[[nodiscard]] AimBox aimBox(int width, int height) noexcept {
+    AimBox box;
+    box.unit = hudMinorScale(height);
+    box.cx = width / 2;
+    box.cy = height / 2;
+    box.gap = box.unit;
+    box.arm = 2 * box.unit;
+    box.reach = box.gap + box.arm;
+    box.rowStep = rowHeight(box.unit);
+    // Two units of air past the tick, so the prompt reads as ATTACHED to the
+    // reticle without touching it. Chosen off captures at 320x180, 960x540 and
+    // 1920x1080, not from a constant that looked right in one of them.
+    box.textX = box.cx + box.reach + 2 * box.unit;
+    box.verbY = box.cy - 2 * box.unit - box.rowStep;
+    box.subjectY = box.verbY - box.rowStep;
+    box.rightEdge = width - 6 * hudScale(height);
+    return box;
+}
+
+}  // namespace
+
+CentreRect hudAimRect(int width, int height) noexcept {
+    const AimBox box = aimBox(width, height);
+    // `subjectY - unit` and not `subjectY`: the row's own scrim stands a unit
+    // of air above its glyphs, and a fence that cut it would clip the top of
+    // the very thing it exists to bound.
+    // `+ unit` on the bottom: the lowest tick carries the font's own one-unit
+    // drop shadow (see drawAim) and a fence that stopped at the tick would
+    // shave it off on the one edge where nothing else is drawn.
+    return CentreRect{box.cx - box.reach, std::min(box.subjectY - box.unit, box.cy - box.reach),
+                      std::max(box.rightEdge, box.cx + box.reach + 1),
+                      box.cy + box.reach + box.unit + 1};
+}
+
+CentreRect hudAimVerbRow(int width, int height) noexcept {
+    const AimBox box = aimBox(width, height);
+    // THE GLYPH BAND, NOT THE SCRIM'S. The two rows' scrims deliberately meet
+    // and overlap by their shared unit of air, so a band that included the
+    // verb scrim's top margin would report the SUBJECT row appearing as the
+    // verb row moving. What must not move is the verb's own ink, and this is
+    // exactly the band that holds it.
+    return CentreRect{box.textX - box.unit, box.verbY,
+                      std::max(box.rightEdge, box.textX + box.unit),
+                      box.verbY + box.rowStep};
+}
+
 int textWidth(std::string_view text, int scale) noexcept {
     if (text.empty()) {
         return 0;
@@ -726,6 +808,235 @@ void drawPlacePlate(Framebuffer& target, const HudState& state, int rightBlock) 
     drawText(target, textX, y, state.placePlate, kInk, 0.95F * fade, plateScale);
 }
 
+// ---------------------------------------------------------------------------
+// THE CROSSHAIR PASS -- the reticle, and the prompt hanging off it
+// ---------------------------------------------------------------------------
+
+/// Keys and verbs are yellow. The reference's colour table (the "Colour
+/// discipline" section of docs/design/UI-REFERENCE-TERMINAL.md) gives one
+/// colour per ROLE, and this row is entirely role: a binding and the verb it
+/// runs.
+constexpr Rgb kAimVerb{0.92F, 0.80F, 0.38F};
+/// The qualifier beside the subject -- a trade, a state, what you came for.
+/// Deliberately the quietest ink on the frame: it is the third thing read.
+constexpr Rgb kAimNote{0.60F, 0.58F, 0.52F};
+
+/// ONE ACCENT PER KIND OF THING A CROSSHAIR CAN LAND ON. Scannable by hue
+/// before a word of it is read, which is the whole argument for entity accents
+/// in the reference, applied to the one element that appears every second of
+/// play.
+[[nodiscard]] Rgb aimAccent(int kind) noexcept {
+    switch (static_cast<AimKind>(kind)) {
+        case AimKind::Person:
+            return Rgb{0.90F, 0.72F, 0.58F};  // warm, because it is a body
+        case AimKind::Place:
+            return Rgb{0.78F, 0.84F, 0.90F};  // cool stone
+        case AimKind::Thing:
+            return Rgb{0.88F, 0.78F, 0.50F};  // brass and lids
+        case AimKind::Clue:
+            // THE CASE HAS ITS OWN COLOUR AND NOTHING ELSE ON THIS HUD USES
+            // IT. The reference bracket-labels a check in magenta for exactly
+            // this reason; a player has to be able to tell "this is the
+            // investigation" from "this is a door" without reading.
+            return Rgb{0.76F, 0.58F, 0.88F};
+        case AimKind::Nothing:
+        default:
+            return Rgb{0.74F, 0.72F, 0.66F};
+    }
+}
+
+/// The reticle, and the two rows up and to the right of it.
+///
+/// NOT A FRAMED PANE, on purpose and per the spec: no border motif, no rule,
+/// no plate, no panel grid. What it does carry is a SCRIM -- a soft dark field
+/// behind each row at low alpha, no border -- because this is the one surface
+/// in the game guaranteed to be drawn over whatever the player happens to be
+/// looking at, and the 1px drop shadow that carries the bottom band over a
+/// street does not carry a name over a lit sky.
+///
+/// EVERY PIXEL IS CLAMPED TO hudAimRect. The prompt takes a proper noun
+/// straight off the sign table and a trade off the roster; neither has a
+/// length this file controls.
+void drawAim(Framebuffer& target, const HudState& state) {
+    if (state.aimVerb.empty()) {
+        return;
+    }
+    const float alpha = std::clamp(state.interactFade, 0.0F, 1.0F);
+    if (alpha <= 0.0F) {
+        return;
+    }
+    const int width = target.width();
+    const int height = target.height();
+    const AimBox box = aimBox(width, height);
+    const CentreRect fence = hudAimRect(width, height);
+    const Rgb accent = aimAccent(state.aimKind);
+    const bool onSomething = static_cast<AimKind>(state.aimKind) != AimKind::Nothing;
+
+    // Clamped fill. Everything below goes through it, reticle included.
+    const auto fill = [&](int x, int y, int w, int h, const Rgb& colour, float a) {
+        const int x0 = std::max(x, fence.x0);
+        const int y0 = std::max(y, fence.y0);
+        const int x1 = std::min(x + w, fence.x1);
+        const int y1 = std::min(y + h, fence.y1);
+        if (x1 > x0 && y1 > y0) {
+            target.fillRect(x0, y0, x1 - x0, y1 - y0, colour, a);
+        }
+    };
+
+    // THE RETICLE. Four ticks around an open centre. It brightens and takes
+    // the subject's accent when something is in reach and sits back to a dim
+    // bone when nothing is -- the reference frame's "the spatial view
+    // highlights the current interaction target", in eight small rectangles.
+    const float tickAlpha = (onSomething ? 0.85F : 0.40F) * alpha;
+    const int half = box.unit / 2;
+    const int ticks[4][4] = {
+        {box.cx - box.reach, box.cy - half, box.arm, box.unit},
+        {box.cx + box.gap, box.cy - half, box.arm, box.unit},
+        {box.cx - half, box.cy - box.reach, box.unit, box.arm},
+        {box.cx - half, box.cy + box.gap, box.unit, box.arm},
+    };
+    for (const auto& tick : ticks) {
+        // THE FONT'S OWN DROP SHADOW, ON A SHAPE THAT IS NOT A GLYPH. The
+        // first bright capture of this pass (docs/frames/crosshair/) put a
+        // warm reticle over a pale noon sea and it very nearly vanished --
+        // the same failure drawText's one-pixel shadow exists to stop, on the
+        // one element that has to survive being pointed at anything.
+        fill(tick[0] + box.unit, tick[1] + box.unit, tick[2], tick[3], kShadow,
+             tickAlpha * 0.75F);
+    }
+    for (const auto& tick : ticks) {
+        fill(tick[0], tick[1], tick[2], tick[3], accent, tickAlpha);
+    }
+
+    // A row's own scrim: sized to what is about to be drawn on it, one unit of
+    // air around it, and no border. Drawn first so it never paints over ink.
+    //
+    // AND IT IS PAID FOR BY THE PIXEL, NOT BY THE FRAME.
+    //
+    // The first measurement of this pass put the street HUD's claimed area up
+    // by three points of the frame, nearly all of it this rectangle -- which
+    // is the exact thing the owner's "just be more careful with real estate"
+    // was about. But the capture over a noon sea (docs/frames/crosshair/) is
+    // just as real: the 4x6 font's own drop shadow carries a row over a dark
+    // street and does NOT carry a name over a pale sky.
+    //
+    // So the scrim reads the ground it is about to sit on and charges for
+    // exactly as much as that ground costs. Over the ward at night it is
+    // effectively not there; over sky, sea or a lit doorway it comes up. The
+    // ramp is CONTINUOUS rather than a threshold on purpose -- a step would
+    // pop the plate on and off as the player turned, which is worse than
+    // either state.
+    const auto groundLuma = [&](int x, int y, int w, int h) {
+        const int x0 = std::clamp(x, 0, width - 1);
+        const int y0 = std::clamp(y, 0, height - 1);
+        const int x1 = std::clamp(x + w, x0 + 1, width);
+        const int y1 = std::clamp(y + h, y0 + 1, height);
+        // Every fourth pixel each way: this is a brightness question, not a
+        // measurement, and the answer does not change in the samples between.
+        float sum = 0.0F;
+        int taken = 0;
+        for (int py = y0; py < y1; py += 4) {
+            for (int px = x0; px < x1; px += 4) {
+                const Rgb ground = unpackRgb(target.pixels()[target.index(px, py)]);
+                sum += 0.299F * ground.r + 0.587F * ground.g + 0.114F * ground.b;
+                ++taken;
+            }
+        }
+        return taken > 0 ? sum / static_cast<float>(taken) : 0.0F;
+    };
+    const auto scrim = [&](int x, int y, int w) {
+        if (w <= 0) {
+            return;
+        }
+        const int sx = x - box.unit;
+        const int sy = y - box.unit;
+        const int sw = w + 2 * box.unit;
+        // ONE UNIT OF AIR ABOVE AND NONE BELOW, so the two rows' plates MEET
+        // rather than overlap: an overlap would make the lower one's sampled
+        // ground depend on whether the upper one drew, which is the same
+        // stability bug from the other direction. The glyph's own drop shadow
+        // is the air below.
+        const int sh = kGlyphH * box.unit + box.unit;
+        const float luma = groundLuma(sx, sy, sw, sh);
+        // BOTH NUMBERS CAME OFF THE CAPTURES, NOT OFF TASTE. Measured under
+        // this exact rectangle in the --nohud control: the ward's lamplit
+        // Tarwalk reads 0.24 and the drop shadow carries the row over it
+        // unaided, so nothing is spent there; the noon sea off the rooftops
+        // reads 0.67 and the row is unreadable without help, so it gets all
+        // of it. Full weight by 0.46, which is a bright wall in daylight.
+        const float need = std::clamp((luma - 0.26F) / 0.20F, 0.0F, 1.0F);
+        if (need <= 0.0F) {
+            return;
+        }
+        fill(sx, sy, sw, sh, kPlateBlack, 0.55F * need * alpha);
+    };
+
+    // LAY BOTH ROWS OUT FIRST, THEN PAINT.
+    //
+    // The scrims read the ground under them (see above), so every one of them
+    // has to be measured against the WORLD rather than against whatever this
+    // same call has already drawn -- otherwise the verb row's own plate gets
+    // darker on the frames a subject happens to be present, and the one row
+    // that must never move under the player's eye moves.
+    //
+    // TWO UNITS OF SLACK ON THE BUDGET, NOT ONE. drawText hangs a one-unit
+    // drop shadow off the right of the last glyph it draws and clipToWidth
+    // measures the glyphs alone, so a budget of exactly the room available
+    // puts the shadow of the final letter one pixel past the fence. Found by
+    // the case that counts escaped pixels, which is what it is for.
+    const int budget = fence.x1 - box.textX - 2 * box.unit;
+    if (budget <= 0) {
+        return;
+    }
+
+    // THE SUBJECT ROW, above the verb. Absent when nothing in reach has a name
+    // -- and absent is the honest answer, not a bug: LOOK at open cobbles is
+    // LOOK at open cobbles, and inventing a label for it would be the machine
+    // talking rather than the ward.
+    const int gutter = 2 * kGlyphAdvance * box.unit;
+    std::string subject;
+    std::string note;
+    int subjectW = 0;
+    if (!state.aimSubject.empty()) {
+        subject = clipToWidth(state.aimSubject, budget, box.unit);
+        subjectW = textWidth(subject, box.unit);
+        // The note takes what is left after the subject and a gutter of two
+        // glyph advances, and is DROPPED WHOLE rather than cut to a stub: a
+        // qualifier reading "ALREADY R.." qualifies nothing.
+        const int left = budget - subjectW - gutter;
+        if (!state.aimNote.empty() && left >= 6 * kGlyphAdvance * box.unit) {
+            note = clipToWidth(state.aimNote, left, box.unit);
+        }
+    }
+    const int noteW = note.empty() ? 0 : textWidth(note, box.unit);
+
+    // THE VERB ROW, AND IT IS THE ANCHOR. "E - TALK", the reference's own key
+    // grammar (`e - Establish`, `0 - Back`), in the key colour. Its y never
+    // moves: the subject row grows upward off it, so sweeping the crosshair
+    // across a doorway does not make the verb jump a row under the player's
+    // eye. That is "panes hold their height" on the smallest surface here.
+    std::string verb(state.aimKey);
+    if (!verb.empty()) {
+        verb += " - ";
+    }
+    verb += std::string(state.aimVerb);
+    const std::string verbRow = clipToWidth(verb, budget, box.unit);
+
+    if (!subject.empty()) {
+        scrim(box.textX, box.subjectY, subjectW + (note.empty() ? 0 : gutter + noteW));
+    }
+    scrim(box.textX, box.verbY, textWidth(verbRow, box.unit));
+
+    if (!subject.empty()) {
+        drawText(target, box.textX, box.subjectY, subject, accent, 0.95F * alpha, box.unit);
+        if (!note.empty()) {
+            drawText(target, box.textX + subjectW + gutter, box.subjectY, note, kAimNote,
+                     0.90F * alpha, box.unit);
+        }
+    }
+    drawText(target, box.textX, box.verbY, verbRow, kAimVerb, 0.95F * alpha, box.unit);
+}
+
 /// The bottom band: the room you are standing in, and then every row that is
 /// about you, each one handed a slot out of the space between the health bar
 /// and the exclusion rectangle.
@@ -750,7 +1061,7 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // THE SHARED SHAPE EVERY ROW BELOW BUT THE ALERT ALREADY HAD: skip an
     // empty label before it can cost a slot, take one, clip to the row's own
     // pixel budget, draw. Three lambdas rather than one, because where the
-    // row lands is not negotiable -- centred (interactLabel, lockLabel),
+    // row lands is not negotiable -- centred (lockLabel, blockLabel),
     // left-anchored (caseLabel, guildLabel, objectiveLabel) and right-anchored
     // (rivalLabel) are three different promises to the exclusion rectangle and
     // collapsing them into a single "anchor" flag would be one more thing a
@@ -926,17 +1237,14 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             }
         }
     }
-    // #85. THE RESOLVED INTERACT VERB. Right after the alert, ahead of the
-    // lock -- the two never draw together (interactLabel is empty exactly
-    // while a lock is open, Session::interactPrompt() stands down for
-    // picking() the same way it does for talking()), but the alert (a
-    // bouncer's own warning) still outranks everything on this edge.
+    // THE CROSSHAIR PASS TOOK A ROW OFF THIS BAND AND DID NOT REPLACE IT.
     //
-    // HARDENING PASS: EASED, LIKE THE ALERT ABOVE. state.interactFade is
-    // Session's own render::EasedToggle for this row -- see hud.hpp's own
-    // note on why it is not the alert's alertFade reused.
-    takeCentred(state.interactLabel, Rgb{0.85F, 0.80F, 0.60F},
-                0.92F * std::clamp(state.interactFade, 0.0F, 1.0F));
+    // #85's "E  TALK" sat here, centred, right after the alert. The owner's
+    // note -- "The 'E' button shouldn't have that label text be at the bottom
+    // of the screen" -- is why it is gone from the bottom edge entirely rather
+    // than moved a slot up it. It is drawn by drawAim(), on the reticle, and
+    // the slot it used to take is now free for the lock and the guard.
+    //
     // The lock under the wire. A lockpicking minigame is exactly the element
     // that would otherwise become a panel in the middle of the screen, which is
     // the failure this HUD is built against; it gets one row on an edge.
@@ -1013,6 +1321,13 @@ void drawHud(Framebuffer& target, const HudState& state) {
     const int rightBlock = drawTopRight(target, state);
     drawPlacePlate(target, state, rightBlock);
     drawBottomBand(target, state, band);
+    // LAST, AND IN THE MIDDLE. The one documented exemption from the rule at
+    // the top of hud.hpp, clamped to hudAimRect and drawn after everything
+    // else so nothing on an edge can be painted over it. With no verb to
+    // show it draws nothing at all, which is what keeps the old guarantee --
+    // "the HUD leaves the centre completely clear" -- true for every other
+    // row on this frame.
+    drawAim(target, state);
 }
 
 }  // namespace granadad::render
