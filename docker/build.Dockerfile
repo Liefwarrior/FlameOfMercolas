@@ -1020,6 +1020,35 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: the crosshair pass's cases are all registered"; \
     \
+    # THE CASEBOOK PASS. The owner followed the Bloodletter to Crell at the
+    # Weighhouse and it "seemed to stop there". It did not: the ledger opens
+    # three leads and the simulation opened all three. Nothing on the frame
+    # said so, and he concluded the content had run out.
+    #
+    # THE THREE TO WATCH. "says so, once" is the notice itself and the rule
+    # that keeps it from becoming a nag; "never reads a lead by being drawn"
+    # is the one bug on this surface that could quietly finish somebody's
+    # investigation for them; and "every authored lead resolves to a named
+    # place" is what stops "show me where" ever being a key that does nothing.
+    for case in \
+        "three leads open at the Weighhouse and the frame says so, once" \
+        "a lead that opens nothing new announces nothing" \
+        "every authored lead resolves to a named place on the ward map" \
+        "the route hands the ward map its own cursor and its own view" \
+        "standing on an unread lead, the commit verb looks instead of routing" \
+        "state changes the row, the label and the verb together" \
+        "the casebook page never reads a lead by being drawn" \
+        "the page holds its geometry while the cursor walks the book" \
+        "no row of the book is clipped at any window the game runs at"; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the casebook pass is judged on -- a book"; \
+                 echo "       that announces what it just gained, says where a lead"; \
+                 echo "       is, and cannot read the case by being looked at."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the casebook pass's cases are all registered"; \
+    \
     # ---------------------------------------------------------------------
     # AND THE SUITE RUNS IN PARALLEL, WHICH IS NOT A SUBSTITUTE FOR ANYTHING.
     # ---------------------------------------------------------------------
