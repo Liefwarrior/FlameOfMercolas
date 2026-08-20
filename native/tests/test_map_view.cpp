@@ -4,12 +4,20 @@
 // mission, let's give the player a map that they can press M to see." What a
 // headless case can prove of that page: the plan's cell classification reads
 // the REAL baked Docks honestly (walls where movement collides, floor where
-// bodies walk, the harbour as water, the VOID border as nothing), the palette
-// is DERIVED from the atlas rather than invented beside it, the label
-// declutter is deterministic and never overprints -- and the acceptance
-// sentence itself: standing on the authored spawn, the Mission of the Flame's
-// name is ON the placed-label list. What a case cannot prove -- legibility --
-// is the mandatory screenshot's job.
+// bodies walk, the harbour as water, the VOID border as nothing), and the
+// palette is DERIVED from the atlas rather than invented beside it.
+//
+// THE MAP PASS rewrote everything after that, because the owner played the
+// build and said: "Names are stacking up on the map view. Makes it hard to
+// figure out where the place you're looking for is." The floating-nameplate
+// declutter solver those cases used to pin is GONE, and what replaced it is
+// what they pin now: ONE label rule that sets a name INSIDE the shape that owns
+// it or answers nothing at all, a deduped place table with the mapper's own
+// footprints in it, a viewport that fits the whole ward and then follows the
+// cursor as it zooms, a cursor that steps PLACES rather than tiles, and a
+// People view that answers who is standing in the selection right now.
+//
+// What a case cannot prove -- legibility -- is the mandatory screenshot's job.
 
 #include <doctest/doctest.h>
 
@@ -25,6 +33,7 @@
 #include "granadad/render/session.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/docks_signs_generated.hpp"
+#include "granadad/sim/stealth.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 using namespace granadad::render;
@@ -126,53 +135,65 @@ TEST_CASE("the plan's palette is derived from the atlas, walls low and floors li
     CHECK(palette.water.b > palette.water.r);
 }
 
-TEST_CASE("label declutter: deterministic, never overprinting, ways deduped -- "
-          "and the Mission of the Flame places from the authored spawn") {
-    const sim::TileQuery tiles(bakedDocks());
-    const MapBounds bounds = mapContentBounds(tiles);
-    const MapFrame frame = mapFrameFor(640, 360, bounds);
-    const float playerX = static_cast<float>(sim::docks::kSpawnTileX) + 0.5F;
-    const float playerY = static_cast<float>(sim::docks::kSpawnTileY) + 0.5F;
-    const int textScale = std::max(1, hudMinorScale(360));
+TEST_CASE("the one label rule: shout, drop the article, wrap into the shape, "
+          "or answer nothing at all") {
+    // THE MAP PASS. The old page carried a twenty-four-seat label-AVOIDANCE
+    // solver that hung floating plates around a small map -- plates, clearance
+    // rings, corner-leaning variants, displacement rows, and a drop rule for
+    // anything that still could not find a hole. This one function replaced all
+    // of it, and it is applied identically to a sixty-four-tile rope shed and a
+    // seven-tile pawnshop.
+    const int scale = 1;
+    const int glyph = 5 * scale;
+    const int rowPx = 7 * scale;
 
-    const std::vector<PlacedMapLabel> labels =
-        placeMapLabels(frame, playerX, playerY, textScale);
-    REQUIRE(!labels.empty());
+    // SHOUTED, and the leading article DROPPED -- four glyphs that name nothing
+    // on a map face. It is the ONLY word the rule ever removes.
+    const std::vector<std::string> gull =
+        fitFootprintLabel("The Gilded Gull", 12 * glyph, 4 * rowPx, scale);
+    REQUIRE(gull.size() == 1);
+    CHECK(gull[0] == "GILDED GULL");
 
-    // DETERMINISTIC: the same stand produces the identical list, in order.
-    const std::vector<PlacedMapLabel> again =
-        placeMapLabels(frame, playerX, playerY, textScale);
-    REQUIRE(labels.size() == again.size());
-    for (std::size_t i = 0; i < labels.size(); ++i) {
-        CHECK(labels[i].text == again[i].text);
-        CHECK(labels[i].x == again[i].x);
-        CHECK(labels[i].y == again[i].y);
-        CHECK(labels[i].way == again[i].way);
+    // WRAPPED ON WORD BOUNDARIES when the shape is narrow and tall.
+    const std::vector<std::string> mission =
+        fitFootprintLabel("Mission of the Flame", 8 * glyph, 4 * rowPx, scale);
+    REQUIRE(mission.size() >= 2);
+    for (const std::string& line : mission) {
+        CHECK(static_cast<int>(line.size()) <= 8);
     }
-
-    // NEVER OVERPRINTING: no two placed glyph boxes intersect. The plates may
-    // abut (each carries its own border); the text itself may not collide.
-    for (std::size_t a = 0; a < labels.size(); ++a) {
-        const int aw = textWidth(labels[a].text, textScale);
-        const int ah = 6 * textScale;
-        for (std::size_t b = a + 1; b < labels.size(); ++b) {
-            const int bw = textWidth(labels[b].text, textScale);
-            const int bh = 6 * textScale;
-            const bool apart = labels[a].x + aw <= labels[b].x ||
-                               labels[b].x + bw <= labels[a].x ||
-                               labels[a].y + ah <= labels[b].y ||
-                               labels[b].y + bh <= labels[a].y;
-            INFO("labels '", labels[a].text, "' and '", labels[b].text, "'");
-            CHECK(apart);
+    std::string rejoined;
+    for (const std::string& line : mission) {
+        if (!rejoined.empty()) {
+            rejoined += ' ';
         }
+        rejoined += line;
     }
+    // NEVER A WORD CUT IN HALF: the wrap is a rearrangement of the whole name,
+    // never a truncation of it. "THE SLOP-CH" names nothing.
+    CHECK(rejoined == "MISSION OF THE FLAME");
 
-    // WAYS DEDUPED: a street signed along its whole reach gets ONE label.
-    // Tarwalk has nine authored posts; the plan says the name once.
-    const auto count = [&labels](const char* name) {
+    // THE FALLBACK, AND IT IS DELIBERATE: a shape that cannot hold the name at
+    // any wrapping answers NOTHING, and the page draws no floating plate for
+    // it. A word wider than the shape refuses the whole name...
+    CHECK(fitFootprintLabel("Wrackhouse", 6 * glyph, 40 * rowPx, scale).empty());
+    // ...and so does a shape too short for the rows the wrap needs.
+    CHECK(fitFootprintLabel("Cooper and Blockmaker", 7 * glyph, 1 * rowPx, scale).empty());
+    // The Drowned-Name Wall is a 3x3 shrine and is the hardest case in the
+    // district: at the whole-ward scale it gets a door dot and the cursor.
+    CHECK(fitFootprintLabel("The Drowned-Name Wall", 3 * glyph, 3 * rowPx, scale).empty());
+}
+
+TEST_CASE("the named places: deduped by name, largest footprint wins, alphabetical") {
+    const std::vector<MapPlace>& places = mapPlaces();
+    REQUIRE(!places.empty());
+
+    // DEDUPED. Tarwalk is signed nine times along its reach and Saltgate Rise
+    // six; the plan says each name once. This is the one rule the old declutter
+    // pass had that was worth keeping.
+    const auto count = [&places](const char* name) {
         int n = 0;
-        for (const PlacedMapLabel& label : labels) {
-            if (label.text == name) {
+        for (const MapPlace& place : places) {
+            if (place.name == name) {
                 ++n;
             }
         }
@@ -181,28 +202,346 @@ TEST_CASE("label declutter: deterministic, never overprinting, ways deduped -- "
     CHECK(count("Tarwalk") == 1);
     CHECK(count("Ropewynd") == 1);
     CHECK(count("Saltgate Rise") == 1);
+    CHECK(count("Flame ground") == 1);
 
-    // THE ACCEPTANCE SENTENCE. The owner's own example of what could not be
-    // located is the label this page exists to place: standing on the
-    // authored spawn, "Mission of the Flame" is on the map.
-    CHECK(count("Mission of the Flame") == 1);
+    // ALPHABETICAL, so the Index reads as an index and a captured frame is
+    // reproducible.
+    for (std::size_t i = 1; i < places.size(); ++i) {
+        CHECK(places[i - 1].name <= places[i].name);
+    }
 
-    // And the near doors a spawn-stand reads first are all named too --
-    // nearest-first is the tie rule, so the Gull (four seconds away) is
-    // never the label that got dropped.
-    CHECK(count("The Gilded Gull") == 1);
+    // THE ACCEPTANCE SENTENCE. The place the owner could not find is a place
+    // with a SHAPE, and the shape is the mapper's own -- which is what this
+    // whole pass turns on and what the old page never once read.
+    const int mission = mapPlaceIndex("Mission of the Flame");
+    REQUIRE(mission >= 0);
+    CHECK(places[static_cast<std::size_t>(mission)].tilesX() == 17);
+    CHECK(places[static_cast<std::size_t>(mission)].tilesY() == 15);
+    CHECK_FALSE(places[static_cast<std::size_t>(mission)].way);
 
-    // A healthy fraction of the 40 door names lands at this scale. Not all
-    // 83 signs fit 640x360 and the rule is to drop rather than overprint --
-    // but a map that placed fewer than half its doors would be decluttered
-    // into uselessness.
-    int doorLabels = 0;
-    for (const PlacedMapLabel& label : labels) {
-        if (!label.way) {
-            ++doorLabels;
+    // LARGEST SEGMENT WINS for a deduped street -- the label has to fit INSIDE
+    // the shape now, so the segment with the most room in it carries the name.
+    // (The old page picked the segment nearest the cluster centroid, which was
+    // right when the label floated and is wrong now that it does not.)
+    const int rise = mapPlaceIndex("Saltgate Rise");
+    REQUIRE(rise >= 0);
+    std::int64_t widest = 0;
+    for (std::size_t i = 0; i < sim::docks::kSignCount; ++i) {
+        const sim::docks::Sign& sign = sim::docks::kSigns[i];
+        if (std::string(sign.place) != "Saltgate Rise") {
+            continue;
+        }
+        widest = std::max<std::int64_t>(
+            widest, static_cast<std::int64_t>(sign.x1 - sign.x0 + 1) *
+                        static_cast<std::int64_t>(sign.y1 - sign.y0 + 1));
+    }
+    CHECK(places[static_cast<std::size_t>(rise)].area() == widest);
+
+    // ...AND EVERY OTHER SEGMENT IS KEPT rather than thrown away, so the cursor
+    // can light the whole street and the page can answer "is the body on the
+    // Tarwalk" about all nine blocks of it. Only the NAME is deduped.
+    const int tarwalk = mapPlaceIndex("Tarwalk");
+    REQUIRE(tarwalk >= 0);
+    const MapPlace& street = places[static_cast<std::size_t>(tarwalk)];
+    CHECK(street.segments.size() == 9);
+    // The authored spawn stands on the Tarwalk, in a block that is NOT the one
+    // the label went to -- which is the exact case that made the first capture
+    // draw its cursor fifty tiles from the body.
+    CHECK(street.contains(156, 63));
+    const bool inTheNamedBlock = MapRect{street.x0, street.y0, street.x1, street.y1}
+                                     .contains(156, 63);
+    CHECK_FALSE(inTheNamedBlock);
+    // A door has exactly one segment and nothing changes for it.
+    CHECK(places[static_cast<std::size_t>(mission)].segments.size() == 1);
+
+    // NESTED FOOTPRINTS RESOLVE INWARD. The Netter house sits inside The
+    // Netters' Compound, and a finger on that ground means the house.
+    const int house = mapPlaceIndex("The Netter house");
+    REQUIRE(house >= 0);
+    const MapPlace& inner = places[static_cast<std::size_t>(house)];
+    CHECK(mapPlaceUnder((inner.x0 + inner.x1) / 2, (inner.y0 + inner.y1) / 2) == house);
+
+    // AND A DOOR KNOWS ITS STREET. "Go to the Gilded Gull" means "walk the
+    // Tarwalk", and the authored way footprints already knew it -- so the
+    // Overview says it instead of leaving the reader to work it out off the
+    // picture.
+    //
+    // THIS IS WHY mapWayUnder WALKS THE RAW SIGN TABLE. The gate caught the
+    // first version of it, which asked mapPlaces(): that table keeps ONE
+    // segment per street name (the roomiest, because a label has to fit inside
+    // the shape), and the Tarwalk it keeps is the worn eastern stretch. The
+    // Gull's own door stands on the Tarwalk in a segment the deduped table does
+    // not hold, so the deduped answer was -1 for a door that is plainly on the
+    // street. A street's identity is its NAME and every segment carries it.
+    const int gull = mapPlaceIndex("The Gilded Gull");
+    REQUIRE(gull >= 0);
+    const MapPlace& tavern = places[static_cast<std::size_t>(gull)];
+    const int onWay = mapWayUnder(static_cast<std::int32_t>(tavern.anchorX),
+                                  static_cast<std::int32_t>(tavern.anchorY), 6);
+    REQUIRE(onWay >= 0);
+    CHECK(places[static_cast<std::size_t>(onWay)].way);
+    CHECK(places[static_cast<std::size_t>(onWay)].name == "Tarwalk");
+    // Out in the harbour there is no signed way at all, and the answer is -1
+    // rather than the nearest street half the district away.
+    CHECK(mapWayUnder(60, 40, 6) == -1);
+}
+
+TEST_CASE("names go INSIDE their shapes, and enough of them do to be worth having") {
+    // The number the scale ruling in map_view.hpp's header rests on, pinned: at
+    // the whole-ward fit scale of the 960x540 composition, a majority of the
+    // forty authored doors name themselves inside their own footprint. If this
+    // ever drops, the page has quietly gone back to being unreadable and the
+    // ruling that justified defaulting to the whole ward stops holding.
+    DistrictMapState state;
+    state.bounds = mapContentBounds(sim::TileQuery(bakedDocks()));
+    const MapPageLayout layout = mapPageLayout(960, 540, state);
+    REQUIRE(layout.usable);
+    REQUIRE(layout.split);
+    const int labelScale = mapLabelScale(540);
+
+    int named = 0;
+    int doors = 0;
+    for (const MapPlace& place : mapPlaces()) {
+        if (place.way) {
+            continue;
+        }
+        ++doors;
+        if (!fitFootprintLabel(place.name, place.tilesX() * layout.viewport.scale,
+                               place.tilesY() * layout.viewport.scale, labelScale)
+                 .empty()) {
+            ++named;
         }
     }
-    CHECK(doorLabels >= 20);
+    CHECK(doors == 40);
+    CHECK(named >= 20);
+
+    // AND ZOOMING IN NAMES MORE OF THEM, which is the whole reason the ladder
+    // exists -- his "buildings are large and use more screen" delivered on
+    // demand rather than at the cost of orientation.
+    DistrictMapState zoomed = state;
+    zoomed.zoom = mapZoomSteps() - 1;
+    const MapPageLayout far = mapPageLayout(960, 540, zoomed);
+    int namedFar = 0;
+    for (const MapPlace& place : mapPlaces()) {
+        if (place.way) {
+            continue;
+        }
+        if (!fitFootprintLabel(place.name, place.tilesX() * far.viewport.scale,
+                               place.tilesY() * far.viewport.scale, labelScale)
+                 .empty()) {
+            ++namedFar;
+        }
+    }
+    CHECK(far.viewport.scale > layout.viewport.scale);
+    CHECK(namedFar > named);
+}
+
+TEST_CASE("the viewport: fits the ward at step 0, follows the cursor beyond it") {
+    DistrictMapState state;
+    state.bounds = mapContentBounds(sim::TileQuery(bakedDocks()));
+    const MapBounds bounds = state.bounds;
+
+    const MapPageLayout fit = mapPageLayout(960, 540, state);
+    REQUIRE(fit.usable);
+    // STEP 0 IS THE WHOLE WARD: every corner of the district is inside the pane.
+    CHECK(fit.viewport.pxOfX(static_cast<float>(bounds.minX)) >= fit.viewport.pane.x);
+    CHECK(fit.viewport.pxOfY(static_cast<float>(bounds.minY)) >= fit.viewport.pane.y);
+    CHECK(fit.viewport.pxOfX(static_cast<float>(bounds.maxX) + 1.0F) <=
+          fit.viewport.pane.right());
+    CHECK(fit.viewport.pxOfY(static_cast<float>(bounds.maxY) + 1.0F) <=
+          fit.viewport.pane.bottom());
+
+    // THE VIEW FOLLOWS THE CURSOR. Zoomed in, the selected place is on screen
+    // wherever it stands in the ward -- there is no pan state that can disagree
+    // with the selection, because there is no pan state at all.
+    for (int step = 1; step < mapZoomSteps(); ++step) {
+        for (const char* name : {"The Weighhouse", "The Gullet Compound", "Pitchfield",
+                                 "Saltgate Watch-Post"}) {
+            DistrictMapState at = state;
+            at.zoom = step;
+            at.selected = mapPlaceIndex(name);
+            REQUIRE(at.selected >= 0);
+            const MapPageLayout layout = mapPageLayout(960, 540, at);
+            const MapPlace& place = mapPlaces()[static_cast<std::size_t>(at.selected)];
+            const int cx = layout.viewport.pxOfX(
+                (static_cast<float>(place.x0) + static_cast<float>(place.x1) + 1.0F) * 0.5F);
+            const int cy = layout.viewport.pxOfY(
+                (static_cast<float>(place.y0) + static_cast<float>(place.y1) + 1.0F) * 0.5F);
+            INFO(name, " at zoom ", step);
+            CHECK(cx >= layout.viewport.pane.x);
+            CHECK(cx < layout.viewport.pane.right());
+            CHECK(cy >= layout.viewport.pane.y);
+            CHECK(cy < layout.viewport.pane.bottom());
+        }
+    }
+
+    // THE MOUSE IS THE INVERSE OF WHAT WAS DRAWN rather than a second
+    // description of it: a pixel inside a footprint hit-tests to that
+    // footprint, and a pixel off the pane hits nothing at all.
+    const int gull = mapPlaceIndex("The Gilded Gull");
+    REQUIRE(gull >= 0);
+    const MapPlace& place = mapPlaces()[static_cast<std::size_t>(gull)];
+    const int px = fit.viewport.pxOfX(static_cast<float>(place.x0) + 0.5F);
+    const int py = fit.viewport.pxOfY(static_cast<float>(place.y0) + 0.5F);
+    CHECK(mapPlaceAtPixel(fit.viewport, px, py) == gull);
+    CHECK(mapPlaceAtPixel(fit.viewport, fit.viewport.pane.x - 4, py) == -1);
+}
+
+TEST_CASE("the cursor walks places, and a handful of presses crosses the ward") {
+    const std::vector<MapPlace>& places = mapPlaces();
+    const auto centreX = [&places](int i) {
+        return (places[static_cast<std::size_t>(i)].x0 + places[static_cast<std::size_t>(i)].x1) /
+               2;
+    };
+
+    const int gull = mapPlaceIndex("The Gilded Gull");
+    REQUIRE(gull >= 0);
+    // A step in a direction lands on something ELSE, and on the same thing
+    // every run -- the cursor cannot drift between captures.
+    const int west = mapPlaceToward(gull, MapStep::West);
+    CHECK(west != gull);
+    CHECK(mapPlaceToward(gull, MapStep::West) == west);
+    // And it really is westward, which is the only thing the arrow promised.
+    CHECK(centreX(west) < centreX(gull));
+
+    // THE WARD IS CROSSABLE. Walking west from its eastern edge reaches the
+    // western edge in a handful of presses, which is the point of a cursor that
+    // steps PLACES rather than tiles: a tile cursor would want a hundred and
+    // ninety of them.
+    int at = mapPlaceIndex("The Gullet Compound");
+    REQUIRE(at >= 0);
+    int presses = 0;
+    while (presses < 40) {
+        const int next = mapPlaceToward(at, MapStep::West);
+        if (next == at) {
+            break;
+        }
+        at = next;
+        ++presses;
+    }
+    CHECK(centreX(at) < 60);
+    CHECK(presses < 25);
+}
+
+TEST_CASE("the page's own cursor: opens where you stand, tabs cycle, zoom clamps") {
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.width = 960;
+    config.height = 540;
+    Session session(config);
+
+    session.toggleDistrictMap();
+    REQUIRE(session.districtMapOpen());
+    // OPENS WHERE YOU STAND. The first thing the page says is true of the
+    // ground under the body's feet, so the plan is already panned to the
+    // player's own quarter -- "the map opened somewhere else" is the exact
+    // disorientation this pass exists to remove.
+    const int here = mapPlaceUnder(session.body().tileX(), session.body().tileY());
+    if (here >= 0) {
+        CHECK(session.districtMapSelected() == here);
+    } else {
+        CHECK(session.districtMapSelected() >= 0);
+    }
+
+    // The tabs cycle and wrap, and the printed digits select directly.
+    CHECK(session.districtMapTab() == MapTab::Overview);
+    session.cycleDistrictMapTab(1);
+    CHECK(session.districtMapTab() == MapTab::People);
+    session.cycleDistrictMapTab(-1);
+    CHECK(session.districtMapTab() == MapTab::Overview);
+    session.cycleDistrictMapTab(-1);
+    CHECK(session.districtMapTab() == MapTab::Legend);
+    session.setDistrictMapTab(2);
+    CHECK(session.districtMapTab() == MapTab::Index);
+
+    // The zoom ladder CLAMPS at both ends rather than wrapping -- a map that
+    // jumped from the closest rung back to the whole ward on one more press
+    // would lose the reader's place.
+    CHECK(session.districtMapZoom() == 0);
+    session.adjustDistrictMapZoom(-1);
+    CHECK(session.districtMapZoom() == 0);
+    for (int i = 0; i < 12; ++i) {
+        session.adjustDistrictMapZoom(1);
+    }
+    CHECK(session.districtMapZoom() == mapZoomSteps() - 1);
+
+    // Selecting by name is what an Index row and the capture flag both call,
+    // and a name matching nothing changes nothing.
+    CHECK(session.selectDistrictMapPlace("The Weighhouse"));
+    CHECK(session.districtMapSelected() == mapPlaceIndex("The Weighhouse"));
+    CHECK_FALSE(session.selectDistrictMapPlace("The House That Is Not There"));
+    CHECK(session.districtMapSelected() == mapPlaceIndex("The Weighhouse"));
+
+    // THE COMMIT VERB. ENTER turns the body to face the selection and puts the
+    // page away -- the honest first half of "going to a place", since you
+    // cannot walk somewhere you cannot face.
+    const MapPlace& want =
+        mapPlaces()[static_cast<std::size_t>(mapPlaceIndex("The Weighhouse"))];
+    session.faceDistrictMapSelection();
+    CHECK_FALSE(session.districtMapOpen());
+    std::int32_t aimX = 0;
+    std::int32_t aimY = 0;
+    mapAimPoint(want, session.body().tileX(), session.body().tileY(), aimX, aimY);
+    CHECK(session.body().yaw() ==
+          sim::bearingTo(session.body().tileX(), session.body().tileY(), aimX, aimY));
+    // A door has ONE signed point and the aim IS that point -- the door you
+    // knock on, which is also the dot the plan draws.
+    CHECK(aimX == static_cast<std::int32_t>(want.anchorX));
+    CHECK(aimY == static_cast<std::int32_t>(want.anchorY));
+
+    // A STREET HAS NO SINGLE POINT, and the aim is the nearest bit of it. The
+    // Tarwalk is signed at its eastern end and runs the whole width of the
+    // ward; standing on it outside the Gilded Gull, the nearest bit of it is
+    // underfoot, not fifty tiles east where the post stands.
+    const MapPlace& street = mapPlaces()[static_cast<std::size_t>(mapPlaceIndex("Tarwalk"))];
+    mapAimPoint(street, 156, 63, aimX, aimY);
+    CHECK(aimX == 156);
+    CHECK(aimY == 63);
+    CHECK(aimX != static_cast<std::int32_t>(street.anchorX));
+}
+
+TEST_CASE("the People view answers 'who is in there', off the live roster") {
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.width = 960;
+    config.height = 540;
+    // Mid-morning, when the ward is at work and the roster is in its places.
+    config.timeOfDay = 10 * 3600;
+    config.timeOfDayGiven = true;
+    Session session(config);
+    session.stepMany(sim::MoveInput{}, 8);
+    session.toggleDistrictMap();
+    REQUIRE(session.districtMapOpen());
+
+    int withPeople = 0;
+    for (const char* name : {"The Gilded Gull", "The Weighhouse", "Mission of the Flame",
+                             "The Rows", "The Ropewalk", "Pitchfield", "The Long Store"}) {
+        REQUIRE(session.selectDistrictMapPlace(name));
+        const DistrictMapState state = session.districtMapState();
+        const MapPlace& place =
+            mapPlaces()[static_cast<std::size_t>(session.districtMapSelected())];
+        // Whoever the page reports as being inside the selection really is
+        // inside it, by the same rectangle the plan drew.
+        for (const MapPersonRow& row : state.people) {
+            INFO(name, " reports ", row.name);
+            CHECK(place.contains(row.x, row.y));
+            CHECK_FALSE(row.name.empty());
+            CHECK_FALSE(row.what.empty());
+        }
+        if (!state.people.empty()) {
+            ++withPeople;
+        }
+        // NAME ORDER, so a page turn is stable and a capture reproducible. The
+        // roster's own index order is BAKE order, which means a body walking
+        // out of a room would reshuffle every row under it.
+        for (std::size_t i = 1; i < state.people.size(); ++i) {
+            CHECK(state.people[i - 1].name <= state.people[i].name);
+        }
+    }
+    // The ward has six hundred people in it at ten in the morning. If NONE of
+    // seven of its busiest addresses had anybody in them, the view would be
+    // answering the wrong question.
+    CHECK(withPeople >= 1);
 }
 
 TEST_CASE("the ward map page: toggles, exclusivity, ESC, and the frame it draws") {
