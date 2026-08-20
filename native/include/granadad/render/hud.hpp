@@ -391,6 +391,39 @@ struct HudState {
     /// Defaults to 0 (settled), which is what a caller that only sets
     /// placePlate/placePlateFade means.
     float placePlateDrift = 0.0F;
+
+    /// THE CASEBOOK PASS: THE MOMENT LEADS OPEN.
+    ///
+    /// "3 NEW LEADS  TAB YOUR CASEBOOK", said once, at the instant it becomes
+    /// true, and then gone. The owner followed the Bloodletter to Crell at the
+    /// Weighhouse, three leads opened, and the only thing on the frame that
+    /// said so was a dim grey corner row changing from CASE 4/6 to CASE 4/9 --
+    /// docs/frames/casebook/before-weighhouse-960.png. He concluded the content
+    /// had run out.
+    ///
+    /// THE SAME THREE FIELDS AS placePlate, THE SAME DRAWING, THE SAME SLOT,
+    /// AND IT OUTRANKS IT. Both are announcements of an edge; both rise through
+    /// one resting place under the compass ribbon and leave; and two plates
+    /// stacked in one band is two notices fighting. So drawHud draws THIS one
+    /// when it has anything to say and the place plate otherwise -- Session
+    /// already guarantees only one is non-empty at a time, and hud.cpp enforces
+    /// it anyway rather than trusting a caller.
+    ///
+    /// IT IS NOT A SECOND caseLabel. caseLabel is REFERENCE -- the bottom-left
+    /// row that is up every frame and says where the trail stands. This is an
+    /// EVENT. The same distinction placePlate draws against locationLabel, for
+    /// the same reason, and it is why this is a plate and not a brighter
+    /// corner: a row nobody is looking at cannot announce anything by changing.
+    ///
+    /// Empty draws nothing, and so does a zero fade: every hand-built HudState
+    /// that predates these three fields is pixel-identical.
+    std::string_view casePlate;
+    /// 0 (gone) .. 1 (full strength). Session's own EasedToggle. Defaults to 0
+    /// for placePlateFade's reason: this row's ordinary state is "not there".
+    float casePlateFade = 0.0F;
+    /// Where the plate is in its own rise, signed. See placePlateDrift: the
+    /// identical contract, driven off the identical toggle shape.
+    float casePlateDrift = 0.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the

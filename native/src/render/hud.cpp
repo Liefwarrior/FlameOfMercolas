@@ -742,9 +742,18 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
 /// exclusion rectangle, so a frame short enough for the plate's own travel to
 /// reach the play space simply does not get one -- BottomBand::take()'s rule,
 /// applied at the other edge and for the same reason.
-void drawPlacePlate(Framebuffer& target, const HudState& state, int rightBlock) {
-    const float fade = std::clamp(state.placePlateFade, 0.0F, 1.0F);
-    if (state.placePlate.empty() || fade <= 0.0F) {
+///
+/// THE CASEBOOK PASS MADE IT SERVE TWO NOTICES rather than one. The lead-opened
+/// plate (HudState::casePlate) is the same shape saying the same kind of thing
+/// -- an edge, once, then gone -- and it wants the same slot, so the text, the
+/// fade, the drift and the ink arrive as arguments and drawHud picks which
+/// notice is on the frame. Two announcements stacked in one band is two notices
+/// fighting; the case plate OUTRANKS the crossing, because a lead opening is
+/// rarer and is the thing that was never visible at all.
+void drawAnnouncePlate(Framebuffer& target, std::string_view text, float rawFade, float rawDrift,
+                       const Rgb& ink, int rightBlock) {
+    const float fade = std::clamp(rawFade, 0.0F, 1.0F);
+    if (text.empty() || fade <= 0.0F) {
         return;
     }
     const int width = target.width();
@@ -773,10 +782,10 @@ void drawPlacePlate(Framebuffer& target, const HudState& state, int rightBlock) 
     // whole name fits at, and if the whole name fits at no size it is dropped,
     // exactly as it is dropped when the band is too short.
     int plateScale = scale;
-    while (plateScale > 1 && textWidth(state.placePlate, plateScale) > budget) {
+    while (plateScale > 1 && textWidth(text, plateScale) > budget) {
         --plateScale;
     }
-    const int drawn = textWidth(state.placePlate, plateScale);
+    const int drawn = textWidth(text, plateScale);
     if (drawn > budget) {
         return;
     }
@@ -799,13 +808,13 @@ void drawPlacePlate(Framebuffer& target, const HudState& state, int rightBlock) 
     if (lowest >= hudCentreRect(width, height).y0) {
         return;
     }
-    const float drift = std::clamp(state.placePlateDrift, -1.0F, 1.0F);
+    const float drift = std::clamp(rawDrift, -1.0F, 1.0F);
     const int y = settledY - static_cast<int>(std::round(drift * static_cast<float>(lift)));
     drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
                   y + kGlyphH * plateScale + padY, std::max(1, plateScale / 2), fade);
     // kInk, not the alert's amber. This is the HUD's own register saying where
     // you are, not the house telling you to get out.
-    drawText(target, textX, y, state.placePlate, kInk, 0.95F * fade, plateScale);
+    drawText(target, textX, y, text, ink, 0.95F * fade, plateScale);
 }
 
 // ---------------------------------------------------------------------------
@@ -1319,7 +1328,22 @@ void drawHud(Framebuffer& target, const HudState& state) {
     // panel owns the screen), so a gate here would be the same test written
     // twice in two places -- which is the drift conversingNow() exists to stop.
     const int rightBlock = drawTopRight(target, state);
-    drawPlacePlate(target, state, rightBlock);
+    // THE CASEBOOK PASS. ONE ANNOUNCEMENT SLOT, AND THE CASE OUTRANKS THE
+    // CROSSING. Both notices are edges announced once in the same band; two of
+    // them stacked would be two notices fighting. Session already guarantees
+    // only one is non-empty at a time -- this is the guarantee enforced rather
+    // than trusted, which is what keeps a future caller from discovering the
+    // collision in a screenshot.
+    if (!state.casePlate.empty() && state.casePlateFade > 0.0F) {
+        // The number ink, not the HUD's bone: this is the ward's own good news
+        // and it is the one place on the frame where green means "the trail
+        // grew". The place plate stays bone, because a boundary is not news.
+        drawAnnouncePlate(target, state.casePlate, state.casePlateFade, state.casePlateDrift,
+                          Rgb{0.62F, 0.88F, 0.56F}, rightBlock);
+    } else {
+        drawAnnouncePlate(target, state.placePlate, state.placePlateFade, state.placePlateDrift,
+                          kInk, rightBlock);
+    }
     drawBottomBand(target, state, band);
     // LAST, AND IN THE MIDDLE. The one documented exemption from the rule at
     // the top of hud.hpp, clamped to hudAimRect and drawn after everything
