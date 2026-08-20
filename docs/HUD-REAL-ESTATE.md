@@ -440,3 +440,135 @@ the place plate, the clock and the purse are suppressed while the map is up,
 because the compass prints the ward's own street name across the top centre and
 the clock stack sits top right — exactly where this composition's breadcrumb row
 and its right-aligned readout now live.
+
+## The crosshair pass: moving the E prompt, and what it cost
+
+The owner's note, verbatim:
+
+> *"The 'E' button shouldn't have that label text be at the bottom of the
+> screen. It needs to be improved to be properly contextual and when shown
+> hover a bit to the top-right of the center crosshair."*
+
+`docs/frames/crosshair/before-street-960.png` is what he was looking at: `E
+TALK`, centred along the very bottom edge, four hundred pixels away from the
+thing it was talking about. What replaced it is two rows hanging off the
+reticle:
+
+```
+                    OX QUERNSTONE  WATCH        <- what is under the crosshair
+                 -+-E - TALK                    <- what the key does to it
+```
+
+**This is the only element in the game allowed inside `hudCentreRect`**, and it
+is a clamp rather than a promise: `hudAimRect()` names the rectangle and every
+pixel of the reticle and both rows is intersected with it before it is drawn.
+With no verb to show, `drawHud()` puts nothing there at all — so under a
+conversation, the ward map, the casebook, the keys page, options or the pause
+menu the middle of the screen is exactly as clear as it was before this pass
+existed, and `test_render.cpp` still proves zero trespass with all sixteen
+other rows lit at once.
+
+### The numbers, at 960x540
+
+| scene | ink before | ink after | claimed before | claimed after |
+|---|---|---|---|---|
+| street (`--smoke=30`, a person in reach) | 17,781 (3.43%) | **19,427 (3.75%)** | 24,939 (4.81%) | **37,804 (7.29%)** |
+
+Ink went up by 1,646 pixels — a third of one per cent of the frame — and
+claimed by 12,865, which is two and a half. Neither is hidden and both are
+decomposed below, because the second one is mostly not what it looks like.
+
+**The ink delta is the element and nothing else.** Measured over the same
+`--nohud` control, the old bottom-edge row lit 420 pixels and the new
+two-row prompt plus its reticle lights 2,066: a difference of 1,646, which is
+the whole-frame figure exactly. Every other row on this HUD is bit-identical.
+The 1,646 is the second row — the old element was a verb, the new one names its
+object, and `OX QUERNSTONE  WATCH` is twenty glyphs where `E TALK` was six.
+There is no version of "name what you are looking at" that costs fewer pixels
+than the name.
+
+**The claimed delta is two thirds ruler artefact.** Listing the blobs the ruler
+actually boxes:
+
+| blob | before | after |
+|---|---|---|
+| the aim prompt (reticle + both rows) | — | **6,540** (474,238)-(687,277), in two boxes |
+| `E TALK` on the bottom edge | 560 | — |
+| the case row | 4,340 | *merged* |
+| the health and wind bars | 5,850 | *merged* |
+| case row **+** bars, as one blob | — | **17,215** |
+
+Removing the interact row freed a slot in the bottom band, so the case row
+dropped into it — and landed within the ruler's own three-pixel vertical
+closing distance of the health bar, which merges two boxes that used to be
+counted separately into one box with the gap between them inside it. That
+accounts for **+6,465** of the +12,865, and it is not one new pixel of
+interface: the ink in that corner did not change at all. The prompt's own
+claim is **6,540 px, 1.26% of the frame**, against the 560 the old row held.
+
+### The scrim is paid for by the pixel, not by the frame
+
+The first cut drew a flat dark scrim behind both rows so they would survive
+being drawn over anything. It measured ink 21,771 (4.20%) and claimed 40,252
+(7.76%) — a three-point jump in claimed area, which is precisely the thing
+*"I love the vibe of the UI but just be more careful with real estate"* was
+about.
+
+But the capture over a noon sea is just as real: the 4x6 font's own one-pixel
+drop shadow carries a row over a dark street and does **not** carry a name over
+a pale sky. So the scrim reads the ground it is about to sit on and charges for
+exactly as much as that ground costs, on a **continuous** ramp — a threshold
+would pop the plate on and off as the player turned, which is worse than either
+state.
+
+Measured under that exact rectangle in the `--nohud` control:
+
+| ground | luma | scrim |
+|---|---|---|
+| the Tarwalk under lamps, 20:00 | 0.24 | **none** — the drop shadow carries it |
+| the harbour from the rooftops, 12:00 | 0.67 | **full** |
+
+`after-person-960.png` and `after-bright-960.png` are the same element on both
+grounds. On the street there is no plate at all and the row still reads; over
+the sea there is one, and without it the row does not. That change took 2,344
+pixels of ink and 2,448 of claimed area back off the street frame.
+
+The reticle keeps a shadow unconditionally, and that was also a capture and not
+a guess: the first noon-sea frame had a warm reticle over pale water that very
+nearly disappeared.
+
+### What the pixels bought
+
+| | before | after |
+|---|---|---|
+| where it is | bottom edge, centre, a slot in the bottom band | **up and right of the reticle** |
+| what it says | the verb | **the verb, and what the verb will act on** |
+| a person | `E TALK` | `GERTA SALTCOTTE  BARTENDER` / `E - PICKPOCKET` |
+| a door | `E LOOK` | `THE WEIGHHOUSE` / `E - LOOK` |
+| a lead the case is about | `E LOOK` | `THE BODY, AND WHOEVER FOUND IT` / `E - LOOK`, in its own colour |
+| a stranger's box | `E PICK LOCK` | `THE STRONGBOX  ROOM 2  LOCKED` / `E - PICK LOCK` |
+| a reticle | none at all | four ticks around an open centre, in the subject's accent |
+| slots taken in the bottom band | one | **none** |
+
+The bottom band got a slot back, which is not nothing: the alert, the lock, the
+guard, the case, the rival, the rung and the errand all queue for that space and
+at 320x180 the band is three rows deep.
+
+### Across the window sizes
+
+Everything is in units of `hudMinorScale` — the register this HUD draws things
+you read *deliberately* at, which is what a crosshair prompt is. Drawing it at
+`hudScale` would put the loudest type in the game in the middle of the play
+space.
+
+| window | unit | reticle | room for the subject row |
+|---|---|---|---|
+| 320x180 | 1 | 6x6 px, ticks 2x1 | 29 glyphs |
+| 960x540 | 2 | 12x12 px, ticks 4x2 | 44 glyphs |
+| 1920x1080 | 5 | 30x30 px, ticks 10x5 | 35 glyphs |
+
+The biggest window has the least room, and that is the same inversion the panel
+pass documented: `hudMinorScale` steps up with height, so the glyphs grow faster
+than the frame does. A name too long for the room is clipped, and the qualifier
+beside it is **dropped whole** rather than cut to a stub — `ALREADY R..`
+qualifies nothing.
