@@ -1,12 +1,13 @@
 # The terminal-panel register
 
 The owner named the target and then showed it: **CultGame** (Steam 2345980), plus
-the Warsimlike family generally. This file is the grammar read off **nine** of his
+the Warsimlike family generally. This file is the grammar read off **ten** of his
 reference frames, so no phase has to guess at it: the Dominion/Fire stacked panel,
-the Summon Demon art panel, the tile-selection map frame, the master/detail
-Theology screen in both its unowned and its owned state, the longer Beliefs list,
-the actor sheet, and — most directly applicable of all — two frames of the game
-actually being played, showing a skill check resolving and a pending decision.
+the Summon Demon art panel, the Create Homunculus art panel, the tile-selection
+map frame, the master/detail Theology screen in both its unowned and its owned
+state, the longer Beliefs list, the actor sheet, and — most directly applicable of
+all — two frames of the game actually being played, showing a skill check
+resolving and a pending decision.
 
 Binding context, in his words: *"I know we have a first person view but it can
 work with ASCII menus."* The first-person world render **stays**. These panels
@@ -64,13 +65,35 @@ header states the task instead, as an instruction:
 The largest region — roughly half to two-thirds of the vertical space — holding
 either large ASCII art of the current subject, or the map.
 
-Two details worth stealing:
+Details worth stealing:
 
-- **The art is coloured by its subject.** The fire dominion is drawn in red; the
-  demon in white against black.
-- **The panel has a background texture.** The Summon Demon frame fills its dead
-  space with a faint field of `.` and `'` marks and draws the art over it. Empty
-  black reads as unfinished; a stipple reads as deliberate.
+- **Art takes its subject's colour when the subject has one, and is plain
+  otherwise.** The fire dominion is drawn in red; the summoned demon and the
+  homunculus apparatus are plain white on black. Colour is meaningful here, not
+  decorative — do not tint art that has no identity colour to claim.
+- **A stippled ground is an option, not a rule.** The Summon Demon frame fills
+  its dead space with a faint field of `.` and `'` marks and draws the art over
+  it; the Create Homunculus frame, same panel type, leaves plain black. Reach for
+  the stipple when a piece of art would otherwise float in a large empty panel;
+  skip it when the art fills its space. (An earlier draft of this file stated the
+  stipple as a rule. It is not — two reference frames of the same panel type
+  disagree, so it is a per-scene judgement.)
+- **Art can carry structure, not just silhouette.** The homunculus frame draws an
+  apparatus — rails, corner clusters, a table, an egg — using `@@`/`@Oo@` corner
+  blocks, `|`/`I`/`1` as uprights and `___`/`===` as rails. Text art here depicts
+  a *mechanism* the player is about to operate, which is a better use of a hero
+  panel than a decorative emblem.
+
+### Panels size to content at the bottom of a stacked frame
+
+The Create Homunculus frame ends immediately after its two-line action list;
+there is no padding out to a fixed height. Contrast the master/detail frames,
+which *do* hold their height with empty bordered rows.
+
+The rule is about cursor movement, not about panels in general: **hold height
+where moving the cursor swaps the content** (so nothing jumps as you arrow
+through a list), and **size to content where the content is static** (a stacked
+frame you entered deliberately and will leave deliberately).
 
 ### 3. The prose panel
 
