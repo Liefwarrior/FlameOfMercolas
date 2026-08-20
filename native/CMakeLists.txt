@@ -338,6 +338,11 @@ add_library(granadad-render STATIC
     # them -- see the file's own header on why.
     src/render/creation.cpp
     src/render/creation_page.cpp
+    # THE CASEBOOK PASS -- the investigation's own book, converted off the tiled
+    # Menu's bottom strip into the master/detail frame the spec names it for.
+    # This is the surface the owner's playthrough stalled on: three leads opened
+    # at the Weighhouse and nothing on the screen said so. See the header.
+    src/render/casebook_page.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
@@ -542,6 +547,12 @@ if(GRANADAD_BUILD_TESTS)
         # free, and -- the acceptance sentence -- able to place the Mission
         # of the Flame from the authored spawn.
         tests/test_map_view.cpp
+        # THE CASEBOOK PASS -- the book as the master/detail frame, the moment
+        # leads open, and the route from a lead to where it is. The defect
+        # these cases exist for is the one the owner's own playthrough found:
+        # three leads opened at the Weighhouse and nothing on the frame said
+        # so. See the file header.
+        tests/test_casebook_page.cpp
         # DISTRICT PHASE D -- THE THRESHOLD MOMENT. Crossing into a named place
         # announces it, once, on a plate over the compass ribbon: the edge that
         # fires it (and the four ways it must NOT fire -- a spawn, a seam
