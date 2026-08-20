@@ -414,10 +414,22 @@ rather than dropped in silence.
 
 | window | grid | composition |
 |---|---|---|
-| 320x180   | 64x25 cells | master/detail holds; plan at 1 px/tile, pans to the cursor; `LEGEND` drops off the tab row |
-| 960x540   | 96x38 cells | master/detail, plan at 3 px/tile, the whole ward |
-| 1280x720  | 85x34 cells | master/detail, the whole ward |
-| 1920x1080 | 76x30 cells | master/detail, plan at 5 px/tile, the whole ward |
+| 320x180   | 64x25 cells | master/detail holds; plan at 1 px/tile, pans to the cursor; `LEGEND` drops off the tab row; the nav band takes two rows |
+| 960x540   | 96x38 cells | master/detail, plan at 3 px/tile, the whole ward, 30 names on its face |
+| 1280x720  | 85x34 cells | master/detail, plan at **4** px/tile, 35 names on its face |
+| 1920x1080 | 76x30 cells | master/detail, plan at 5 px/tile, 40 names on its face |
+
+Two of those numbers are the composition asking a question rather than assuming
+an answer, and both were worth asking. The MAP PANE`S SHARE of the body is the
+first: the plan only ever grows in whole pixels per tile, so a pane one cell
+short of the next rung is a pane whose extra cells do nothing for the picture
+and are worth more to the facts beside it. The composition tries three shares
+and takes the one that buys a whole pixel, narrowest on a tie. The NAV BAND`S
+HEIGHT is the second: two rows are needed at 320x180, where the four verbs
+cannot make four columns and a one-row band clips `M - CLOSE` off the page --
+and two rows cost the plan a whole pixel per tile at 1280x720, where they fit on
+one and the row is the twenty-one pixels between three px/tile and four. So the
+band asks the list how many rows it needs. Neither responds to a player.
 
 **The HUD is untouched.** Nothing in this pass reaches `hud.cpp`, the world
 render or the street overlay — the ambient street HUD measures ink 17,709

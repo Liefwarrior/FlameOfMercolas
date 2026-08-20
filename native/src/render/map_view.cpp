@@ -589,6 +589,70 @@ constexpr int kMinMapCells = 30;
 /// exactly what twenty-four did.
 constexpr int kMinDetailCells = 22;
 
+[[nodiscard]] std::string_view tabName(MapTab tab) noexcept {
+    switch (tab) {
+        case MapTab::People:
+            return "PEOPLE";
+        case MapTab::Index:
+            return "INDEX";
+        case MapTab::Legend:
+            return "LEGEND";
+        case MapTab::Overview:
+        default:
+            return "OVERVIEW";
+    }
+}
+
+/// The four verbs along the foot of the page. Built in one place because the
+/// COMPOSITION has to know how wide they are before it can decide how many rows
+/// to give them -- see navRowsFor.
+[[nodiscard]] std::vector<PanelOption> navOptions(const DistrictMapState& state) {
+    return {
+        PanelOption{"ARROWS", "NEXT PLACE", "", kCursorTone, InkRole::Dim, false},
+        PanelOption{"TAB", std::string(tabName(state.tab)), "", kCursorTone, InkRole::Dim,
+                    false},
+        PanelOption{"+ -",
+                    "ZOOM " + std::to_string(state.zoom + 1) + "/" +
+                        std::to_string(mapZoomSteps()),
+                    "", kCursorTone, InkRole::Dim, false},
+        PanelOption{"M", "CLOSE", "", kCursorTone, InkRole::Dim, false},
+    };
+}
+
+[[nodiscard]] OptionListStyle navListStyle() {
+    OptionListStyle style;
+    style.showKeys = true;
+    style.maxColumns = 4;
+    style.gutterCells = 2;
+    // NO minRows: the BAND decides the height, and navRowsFor decides the band.
+    style.minRows = 0;
+    return style;
+}
+
+/// HOW MANY ROWS THE NAV BAND TAKES -- ONE IF THE FOUR VERBS FIT ON ONE.
+///
+/// This is a row of the plan's own height and it is worth asking for. A fixed
+/// two-row band is what a one-row band costs you at 320x180, where the four
+/// verbs cannot make four columns (the widest is seventeen cells and four of
+/// those want seventy-six of sixty-two), drawOptionList falls to three columns,
+/// the fourth entry goes to a second row, and a one-row band CLIPS IT. The
+/// clipped entry was "M - CLOSE": the key that shuts the page, missing from the
+/// page, at the one size where a player most needs telling.
+///
+/// But a fixed TWO-row band costs the plan a whole pixel per tile at 1280x720,
+/// where the four verbs do fit on one row and the twenty-one pixels the second
+/// one takes are exactly the twenty-one that stood between the district at
+/// three pixels per tile and the district at four. So the band asks the list.
+/// Still a fixed composition: it responds to the window and to the length of
+/// four words, never to a player.
+[[nodiscard]] int navRowsFor(const DistrictMapState& state, const PanelRect& interior,
+                             const PanelMetric& metric) {
+    const PanelRect oneRow{interior.x, interior.y, interior.w, metric.cellH()};
+    const OptionListPlan plan =
+        planOptionList(navOptions(state), oneRow, metric, navListStyle());
+    return plan.columns * plan.rows >= 4 ? 1 : 2;
+}
+
 }  // namespace
 
 MapPageLayout mapPageLayout(int frameWidth, int frameHeight, const DistrictMapState& state) {
@@ -614,6 +678,7 @@ MapPageLayout mapPageLayout(int frameWidth, int frameHeight, const DistrictMapSt
     // frame has width to spare and height it cannot spare -- every row of
     // chrome is a row the plan does not get, and the plan's fit scale is bound
     // by height at every window size this build runs at.
+    const int navRows = navRowsFor(state, out.interior, out.metric);
     const std::vector<PanelRect> bands = splitRows(out.interior, out.metric,
                                                    {
                                                        spanCells(1),   // the breadcrumb
@@ -623,7 +688,7 @@ MapPageLayout mapPageLayout(int frameWidth, int frameHeight, const DistrictMapSt
                                                        spanCells(1),   // rule
                                                        spanCells(1),   // the selection, named
                                                        spanCells(1),   // rule
-                                                       spanCells(2),   // global nav
+                                                       spanCells(navRows),  // global nav
                                                    });
     const auto rowOf = [&out](const PanelRect& band) {
         return (band.y - out.interior.y) / out.metric.cellH();
@@ -821,20 +886,6 @@ struct PxRect {
         }
     }
     return n;
-}
-
-[[nodiscard]] std::string_view tabName(MapTab tab) noexcept {
-    switch (tab) {
-        case MapTab::People:
-            return "PEOPLE";
-        case MapTab::Index:
-            return "INDEX";
-        case MapTab::Legend:
-            return "LEGEND";
-        case MapTab::Overview:
-        default:
-            return "OVERVIEW";
-    }
 }
 
 }  // namespace
@@ -1245,9 +1296,8 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
                 const PanelFact second =
                     place.way || onSelf
                         ? PanelFact{"SIGNED", std::to_string(signPostsNamed(place.name)) +
-                                                  (signPostsNamed(place.name) == 1
-                                                       ? " POST"
-                                                       : " POSTS ALONG IT"),
+                                                  (signPostsNamed(place.name) == 1 ? " POST"
+                                                                                   : " POSTS"),
                                     InkRole::Number}
                         : PanelFact{"STANDS ON",
                                     onWay >= 0
@@ -1456,31 +1506,8 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
     }
 
     // --- global nav, below its own rule ------------------------------------
-    const std::vector<PanelOption> nav{
-        PanelOption{"ARROWS", "NEXT PLACE", "", kCursorTone, InkRole::Dim, false},
-        PanelOption{"TAB", std::string(tabName(state.tab)), "", kCursorTone, InkRole::Dim,
-                    false},
-        PanelOption{"+ -", "ZOOM " + std::to_string(state.zoom + 1) + "/" +
-                               std::to_string(mapZoomSteps()),
-                    "", kCursorTone, InkRole::Dim, false},
-        PanelOption{"M", "CLOSE", "", kCursorTone, InkRole::Dim, false},
-    };
-    OptionListStyle navStyle;
-    navStyle.showKeys = true;
-    navStyle.maxColumns = 4;
-    navStyle.gutterCells = 2;
-    // NO minRows, AND TWO ROWS OF BAND. The nav band holds two rows at every
-    // window size and spends one of them at most of them, which looks like
-    // waste until you shrink the window: at 320x180 the four verbs cannot make
-    // four columns (the widest is seventeen cells and four of those want
-    // seventy-six of sixty-two), so drawOptionList falls to three columns, puts
-    // the fourth entry on a second row, and a one-row band CLIPS IT. The
-    // clipped entry was "M - CLOSE": the key that shuts the page, missing from
-    // the page, at the one size where a player most needs telling. Two rows
-    // cost the plan nothing -- the fit scale is unchanged at 320x180, 960x540,
-    // 1280x720 and 1920x1080 alike, because a whole pixel per tile is a bigger
-    // step than one text row.
-    navStyle.minRows = 0;
+    const std::vector<PanelOption> nav = navOptions(state);
+    OptionListStyle navStyle = navListStyle();
     drawOptionList(target, layout.navBand, metric, nav, -1, navStyle, alpha);
 }
 
