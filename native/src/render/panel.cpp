@@ -1100,7 +1100,23 @@ void drawFacts(Framebuffer& target, const PanelRect& rect, const PanelMetric& me
         if (row >= rows) {
             break;
         }
-        drawCellText(target, rect, metric, 0, row, facts[i].label, kInk.dim, alpha);
+        // THE LABEL NEVER REACHES ITS OWN VALUE. factValueColumn clamps the
+        // column to half the pane so one runaway label cannot push every value
+        // on screen to the margin -- but when that clamp BITES, the label it
+        // clamped for is longer than the column it was clamped to, and the two
+        // print into each other. The map page's People view found it: a
+        // fifteen-glyph name in a thirty-three-cell pane rendered as "GERTA
+        // SALTCOTTEBARTENDER", one word made of two facts
+        // (docs/frames/map/after-people-960.png, first version).
+        //
+        // Only when there IS a value: a fact with an empty value has the whole
+        // row and is welcome to it.
+        const std::string_view label = facts[i].label;
+        drawCellText(target, rect, metric, 0, row,
+                     facts[i].value.empty() ? label
+                                            : clipToWidth(label, metric.widthOf(column - 1),
+                                                          metric.scale),
+                     kInk.dim, alpha);
         drawCellText(target, rect, metric, column, row, facts[i].value, inkFor(facts[i].valueInk),
                      alpha);
     }
