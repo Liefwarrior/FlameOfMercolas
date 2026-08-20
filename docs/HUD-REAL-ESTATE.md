@@ -572,3 +572,86 @@ pass documented: `hudMinorScale` steps up with height, so the glyphs grow faster
 than the frame does. A name too long for the room is clipped, and the qualifier
 beside it is **dropped whole** rather than cut to a stub — `ALREADY R..`
 qualifies nothing.
+
+## The casebook pass — the book, and the moment leads open
+
+The complaint this answers is not about pixels at all. The owner followed the
+Bloodletter case to Crell at the Weighhouse and it *"seemed to stop there."* It
+did not: `weighhouse-ledger` opens three leads and `sim/casebook.cpp` opened all
+three, correctly, every time. **`docs/frames/casebook/before-weighhouse-960.png`
+is the frame he was looking at when it happened** — and the only thing on it
+that says anything about three leads is the bottom-left row reading `CASE 4/9`
+in dim grey, which a moment earlier read `CASE 4/6`.
+
+So there are two measurements here, and they pull in opposite directions.
+
+### The street, where the notice fires
+
+| scene, 960x540 | ink | claimed |
+|---|---|---|
+| street, no notice up (`--smoke=30`) | 19,427 (3.75%) | 37,804 (7.29%) |
+| the Weighhouse, the instant the ledger is read, **before** | 31,599 (6.10%) | 83,692 (16.14%) |
+| the Weighhouse, the instant the ledger is read, **after** | 41,139 (7.94%) | 93,790 (18.09%) |
+
+**The HUD is bit-identical when the notice is down.** The first row is the
+crosshair pass's own settled figure to the pixel — 19,427 and 37,804 — which is
+what "this pass adds nothing to the ordinary frame" looks like when it is
+measured rather than asserted.
+
+What the notice costs is **+9,540 ink and +10,098 claimed, for three seconds**,
+once, on the rising edge of a look that opened something. It cannot repeat by
+standing still: `LookResult::opened` counts leads that were *not already known*,
+so a lead the trail converges on opens nothing new the second time and fires
+nothing. Nothing queues it, and it stands down whole under a page or a
+conversation rather than popping when one closes.
+
+It is the same slot the threshold plate uses and it **outranks** it: two
+announcements stacked in one band would be two notices fighting.
+
+### The book itself
+
+The ruler's `--nohud` method applies (the Menu is an overlay over a rendered
+frame), and it says the number went the wrong way:
+
+| scene, 960x540 | ink | claimed |
+|---|---|---|
+| the casebook, **before** (the tiled Menu, Journal focused) | 468,819 (90.44%) | 477,360 (92.08%) |
+| the casebook, **after** (the composed page) | 510,720 (98.52%) | 510,720 (98.52%) |
+
+Both figures are equal in the "after" row because it is a filled panel — the
+same degenerate case the conversation surface and the controls page already
+record.
+
+**+6.44 points of claimed area, and the defence is what is in it.** The old
+frame gave the casebook the bottom third and spent the other 56% on three tiles
+the player did not open the book to read:
+
+| | before | after |
+|---|---|---|
+| lead rows on screen | 7 of 12, with `0 MORE (1/2)` | **all 12, no page to turn** |
+| what the highlighted lead says | its short name, and nothing else | **place, witness, what they are, dateline, bearing, the clue, the paragraph behind it, and every lead it opened, by name** |
+| where a lead is | nowhere on the frame | **a bearing and a distance, and `ENTER` puts the ward map's cursor on it** |
+| state of a lead | `?` / `X` / `*` in front of the name | **the row's colour, its glyphless value column, the badge in the detail pane, and the verb at the foot of it** |
+| the case itself | one line of dread band | **its own view: the hook, the count, the dead ends, the ward's nerve as a bar** |
+| screen spent on the casebook | about a third | all of it |
+
+Per unit of information the page is far cheaper than the strip it replaces; per
+unit of *screen* it is a full takeover, exactly like every one of the owner's
+own reference frames and like the controls page and the ward map before it.
+
+### Where the composition gives way
+
+| window | interior cells | the split (master / detail) | the nav band | the list |
+|---|---|---|---|---|
+| 320x180 | 62 | **collapses** — the list takes the whole body | two rows | all 12 leads, no detail pane |
+| 640x360 | 126 | 63 / 61 | one row | all 12 |
+| 960x540 | 94 | 47 / 45 | one row | all 12 |
+| 1280x720 | 83 | 41 / 40 | **two rows** | all 12 |
+| 1920x1080 | 74 | 37 / 35 | **two rows** | all 12 |
+
+The biggest window is the narrowest in cells — `hudMinorScale` steps up with
+height, so 1920x1080 has 74 interior cells where 960x540 has 94 — and both of
+the adaptive decisions above are that inversion being paid for. A case pins
+every one of them, including that the nav band still names the key that closes
+the book after it re-columns, because the one-row band silently dropped that
+entry at 1920x1080 and a screenshot is what found it.
