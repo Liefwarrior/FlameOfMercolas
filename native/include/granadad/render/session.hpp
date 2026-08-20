@@ -30,6 +30,7 @@
 #include "granadad/render/actor_sheet.hpp"
 #include "granadad/render/anim.hpp"
 #include "granadad/render/atlas.hpp"
+#include "granadad/render/casebook_page.hpp"
 #include "granadad/render/controls.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
@@ -456,6 +457,90 @@ public:
     /// meaningful sense in which one tile is "open" and the others are not --
     /// menuFocus() is the only thing that still distinguishes them.
     [[nodiscard]] bool casebookOpen() const noexcept { return casebookOpen_; }
+    // --- THE CASEBOOK PASS: the book as the master/detail frame ---------------
+    //
+    // THE DEFECT THIS ANSWERS is the owner's own playthrough: he followed the
+    // Bloodletter to Crell at the Weighhouse and it "seemed to stop there". It
+    // did not -- `weighhouse-ledger` opens three leads and the simulation opened
+    // all three -- but the only thing on the frame that said so was a dim grey
+    // corner row changing from CASE 4/6 to CASE 4/9. See casebook_page.hpp.
+    //
+    // The book is DRAWN as a composed page (render::drawCasebookPage) whenever
+    // the tiled Menu is focused on the Journal tile, which is the tile it opens
+    // on and the one the Menu key reaches. The other three tiles are unchanged
+    // and still drawn by menu_view.hpp.
+    //
+    // ALL OF IT IS PURE RENDER STATE. Nothing below reaches PhasedEngine and
+    // nothing below is hashed -- commitCasebookLead() is the one method that
+    // can change the world, and the only way it does is by calling examine(),
+    // which is the same call the look key already makes.
+
+    /// True while the composed casebook page is what the Menu is drawing.
+    [[nodiscard]] bool casebookPageOpen() const noexcept {
+        return casebookOpen_ && menuFocus_ == kMenuFocusJournal;
+    }
+    /// Which view is over the selection: the lead, or the case.
+    [[nodiscard]] CasebookTab casebookTab() const noexcept { return casebookTab_; }
+    /// Which lead the page's cursor is on -- an index into Casebook::known(),
+    /// which is the same order the page lists.
+    ///
+    /// ITS OWN FIELD, NOT the Journal TILE's caseCursor_. The tile's list is
+    /// leads PLUS the contract and log rows under them (journalWorkRows), and
+    /// two lists of different lengths sharing one cursor is how a cursor ends
+    /// up selecting a row nothing draws.
+    [[nodiscard]] int casebookLeadCursor() const noexcept { return casePageCursor_; }
+    /// UP/DOWN. Wraps, so holding one direction walks the whole book.
+    void moveCasebookCursor(int delta);
+    /// A printed digit, or a mouse click. Clamped; out of range does nothing.
+    void setCasebookCursor(int index);
+    /// LEFT/RIGHT. Wraps between the two views. See casebook_page.hpp on why
+    /// the views are not on a printed hotkey.
+    void cycleCasebookTab(int delta);
+    /// Puts the cursor on a lead by its casebook.json id. False when no lead of
+    /// that id is in the book -- which is what a capture flag with a typo in it
+    /// should do rather than silently photograph a different lead.
+    [[nodiscard]] bool selectCasebookLead(std::string_view leadId);
+    /// ENTER, the commit verb at the foot of the detail pane. STATE CHOOSES:
+    /// standing in reach of an unread lead it LOOKS (the same examine() the
+    /// look key calls); anywhere else it routes to the ward map.
+    void commitCasebookLead();
+    /// THE ROUTE. Closes the book, opens the WARD MAP and puts the map's own
+    /// cursor on the lead's place -- handing off to the map pass's selection
+    /// machinery rather than building a second way to point at a building.
+    /// False when the plan has no named place for that lead.
+    bool showLeadOnMap(std::int32_t leadIndex);
+    /// Which named place on the ward map a lead belongs to, or -1. Public
+    /// because a case asserts every authored lead resolves to one -- a lead the
+    /// map cannot point at is a lead the player cannot be sent to.
+    [[nodiscard]] int mapPlaceForLead(std::int32_t leadIndex) const;
+    /// The whole page, ready to draw. Public for keysPageState()'s own reason:
+    /// a case reads it instead of a screenshot.
+    [[nodiscard]] CasebookPageState casebookPageState() const;
+
+    // --- THE MOMENT LEADS OPEN ------------------------------------------------
+    //
+    // A NOTICE, NOT A NAG. It fires on the RISING EDGE of a look that opened
+    // something -- Session::examine() is the only place that arms it -- holds
+    // for a couple of seconds and is gone. Nothing re-arms it, nothing queues
+    // it, and every stand-down rule the threshold plate keeps it keeps too
+    // (see syncPanelAnim): a page owning the keyboard suppresses it outright
+    // rather than storing it up to pop when the page closes.
+    //
+    // It borrows the threshold plate's EXACT idiom -- HudState::casePlate, one
+    // line, rising through its resting place under the compass ribbon -- and
+    // outranks it, because a lead opening is rarer and is the thing this
+    // programme exists to make visible. Only one of the two is ever on a frame.
+
+    /// What the plate is announcing, or empty. Held through the fade so the
+    /// notice finishes with its own words on it.
+    [[nodiscard]] std::string_view casePlateLabel() const noexcept {
+        return std::string_view{casePlateText_};
+    }
+    /// True while it is WANTED -- the couple of seconds after a look that
+    /// opened something. The drawn alpha is its EasedToggle's business; this is
+    /// the target a case asserts on.
+    [[nodiscard]] bool casePlateWanted() const noexcept { return casePlateShowSteps_ > 0; }
+
     /// "CASE 4/12  COLD 1  THE WARD IS TALKING", or empty before the trail
     /// starts. Bottom-left, one row, on the edge.
     [[nodiscard]] std::string caseLine() const;
@@ -1041,6 +1126,11 @@ public:
     /// Flame's eye) so the crosshair names exactly what the key would find.
     /// PUBLIC so the reach rule is a claim a case can make.
     [[nodiscard]] int leadInLookReach() const;
+    /// THE CASEBOOK PASS. True when the body could LOOK at this lead from where
+    /// it is standing right now -- the same reach examine() uses, boon
+    /// included. Read by the page to choose between its two commit verbs; see
+    /// CasebookLeadRow::here on why it must mean exactly what LOOK means.
+    [[nodiscard]] bool bodyCanLookAt(const sim::Lead& lead) const;
     /// "THE WARD WANTS YOU GONE", or empty exactly when reputationLabel()
     /// reads kReputationUnremarkable -- the identical "absence costs
     /// nothing" rule every other row on this stack already keeps. PLANNING
@@ -1417,6 +1507,23 @@ private:
     int caseCursor_ = 0;
     int casePage_ = 0;
     int caseEntry_ = -1;
+    /// THE CASEBOOK PASS. The COMPOSED PAGE's own cursor and view -- kept apart
+    /// from caseCursor_/casePage_ above for the reason casebookLeadCursor()
+    /// states: the tile's list is longer than the page's, and one cursor over
+    /// two lists of different lengths is a cursor that can select a row nothing
+    /// draws. Both are pure UI state and neither is hashed.
+    ///
+    /// KEPT BETWEEN OPENINGS, exactly as districtMapSelected_ is, so a book put
+    /// down on the ledger opens on the ledger.
+    int casePageCursor_ = 0;
+    CasebookTab casebookTab_ = CasebookTab::Leads;
+    /// THE CASEBOOK PASS. The lead-opened notice: what it says, how many steps
+    /// it is still wanted for, and its own ease. The threshold plate's exact
+    /// three fields (placePlateName_/placePlateShowSteps_/placePlateAnim_) for
+    /// the identical reason -- an EVENT is a countdown plus a toggle, and the
+    /// string is held through the fade so the notice ends with its own words.
+    std::string casePlateText_;
+    int casePlateShowSteps_ = 0;
     /// THE CHARACTER TILE'S OWN CURSOR AND PAGE. Read-only (nothing on this
     /// tile is a choice to make), so there is no "entry" to remember.
     int characterCursor_ = 0;
@@ -1582,6 +1689,16 @@ private:
     /// milliseconds -- anim.hpp's header on why).
     static constexpr int kPlacePlateShowSteps = 120;
     int placePlateShowSteps_ = 0;
+    /// THE CASEBOOK PASS. The lead-opened notice's own ease, built exactly the
+    /// way placePlateAnim_ above is built and for exactly its reasons -- a held
+    /// state with a countdown holding it, on its OWN toggle because a lead
+    /// opening has nothing to do with a boundary being crossed.
+    EasedToggle casePlateAnim_;
+    /// THREE seconds and not the plate's two. This notice carries a COUNT and a
+    /// key to press, which is two facts rather than one name, and it is the
+    /// thing the whole pass exists to make unmissable -- so it is given the
+    /// extra second and nothing else. It is still a notice that leaves.
+    static constexpr int kCasePlateShowSteps = 180;
     /// What the plate says, cached on the FIRING edge -- see placePlateLabel().
     std::string placePlateName_;
     /// The last named place the body stood in -- see lastPlaceName().
@@ -2083,6 +2200,25 @@ struct SmokeRunConfig {
     /// is the game: the real topics, the real Ward::petitionForCharge, the
     /// real purse. See PetitionLineResult for what it reports.
     bool petition = false;
+
+    /// THE CASEBOOK PASS, VERIFICATION ONLY. The book is a composed page with
+    /// a cursor, two views and a commit verb, and without these three a
+    /// headless capture could only ever photograph the state opening it lands
+    /// on -- the identical reason `mapPlace`/`mapTab`/`mapZoom` exist.
+    ///
+    /// EVERY ONE OF THEM GOES THROUGH THE SAME PUBLIC METHOD A KEY PRESS
+    /// CALLS: selectCasebookLead, cycleCasebookTab, commitCasebookLead. A
+    /// captured frame is a picture of the game and not of a capture path that
+    /// happens to look like it.
+    ///
+    /// `caseLead` is a casebook.json lead id ("weighhouse-ledger"); it OPENS
+    /// the book if nothing else has. `caseTab` is leads or case. `caseRoute`
+    /// presses the commit verb, which is how the route from a lead to its place
+    /// on the ward map gets photographed at all -- there is no other headless
+    /// path to it.
+    std::string caseLead;
+    std::string caseTab;
+    bool caseRoute = false;
 
     /// THE WARD MAP (core action #13), VERIFICATION ONLY: open the district
     /// map through the same Session::toggleDistrictMap() the M key calls,

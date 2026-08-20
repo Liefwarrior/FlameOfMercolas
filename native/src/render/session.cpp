@@ -400,6 +400,11 @@ Session::Session(const SessionConfig& config)
     // the target syncPanelAnim() just computed is always closed -- which is
     // the point: the plate cannot arm its own opening bump on frame one.
     placePlateAnim_.snapTo(placePlateAnim_.target());
+    // THE CASEBOOK PASS. The same snap, and with nothing ever having been
+    // looked at on frame one the target syncPanelAnim() just chose is always
+    // closed -- which is the point: the notice cannot arm its own opening bump
+    // on the first frame of a session.
+    casePlateAnim_.snapTo(casePlateAnim_.target());
     // INNOVATION SPRINT ITEM #2. SNAPPED, FOR THE IDENTICAL REASON THE ROWS
     // ABOVE ARE. NOT a hardcoded "journal starts focused" -- syncPanelAnim()
     // just computed the real answer off casebookOpen_/menuFocus_ (both true
@@ -868,6 +873,28 @@ void Session::examine() {
     // would be a game telling you not to look.
     const bool cold = saw.found && saw.opened == 0;
     say(cold ? saw.line + "  (COLD)" : saw.line);
+    // THE CASEBOOK PASS: THE MOMENT LEADS OPEN, ANNOUNCED.
+    //
+    // `saw.opened` has been computed correctly since S10 and thrown away
+    // everywhere but the (COLD) suffix above. This is the whole of the defect
+    // the owner's playthrough found: he read Crell's ledger, THREE leads went
+    // into the book, and the only thing on the frame that said so was a dim
+    // grey corner row changing from CASE 4/6 to CASE 4/9.
+    //
+    // THE RISING EDGE AND NOTHING ELSE. `saw.opened` counts leads that were not
+    // already known (Casebook::hear's own return), so a lead the trail
+    // CONVERGES on -- the Drowned Hold is named by four separate leads -- opens
+    // nothing new the second time and fires nothing. Looking at an
+    // already-read site returns before any of this. There is no way to make
+    // this notice repeat by standing still and pressing the key.
+    if (saw.opened > 0) {
+        casePlateText_ = std::to_string(saw.opened) +
+                         (saw.opened == 1 ? " NEW LEAD  " : " NEW LEADS  ") +
+                         std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)])) +
+                         " YOUR CASEBOOK";
+        casePlateShowSteps_ = kCasePlateShowSteps;
+        syncPanelAnim();
+    }
 }
 
 /// PUTS THE NOTES AND THE KEY LIST DOWN. Called by every verb that acts on the
@@ -2033,6 +2060,295 @@ void Session::toggleMap() { toggleMenuFocused(kMenuFocusMap); }
 void Session::toggleLetters() { toggleMenuFocused(kMenuFocusLetters); }
 
 // ---------------------------------------------------------------------------
+// THE CASEBOOK PASS: the book as a composed master/detail page, and the route
+// out of it to where a lead actually is
+// ---------------------------------------------------------------------------
+//
+// See render/casebook_page.hpp for the defect and the composition. Everything
+// below is pure UI state plus two handoffs -- examine() (the look key's own
+// call) and the ward map's own cursor -- so nothing here can move the world
+// hash and nothing here is a second way to do anything.
+
+namespace {
+
+/// SHOUTED, because every authored string on this surface already is and a
+/// notable's name is the one that is not.
+[[nodiscard]] std::string shoutName(std::string_view text) {
+    std::string out(text);
+    for (char& c : out) {
+        if (c >= 'a' && c <= 'z') {
+            c = static_cast<char>(c - 'a' + 'A');
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+int Session::mapPlaceForLead(std::int32_t leadIndex) const {
+    if (casebook_.raws() == nullptr || leadIndex < 0 ||
+        static_cast<std::size_t>(leadIndex) >= casebook_.raws()->leads().size()) {
+        return -1;
+    }
+    const sim::Lead& lead = casebook_.raws()->leads()[static_cast<std::size_t>(leadIndex)];
+    // BY THE AUTHORED NAME FIRST, case-folded -- because that is what the two
+    // files actually agree on. casebook.json shouts its `place` ("THE
+    // WEIGHHOUSE") and the .tmx sign table spells it as a proper noun ("The
+    // Weighhouse"); every one of the twelve leads matches a sign that way, and
+    // a case pins that so a renamed building goes red here rather than silently
+    // routing a player to the wrong door.
+    const std::vector<MapPlace>& places = mapPlaces();
+    const std::string want = shoutName(lead.place);
+    for (std::size_t i = 0; i < places.size(); ++i) {
+        if (shoutName(places[i].name) == want) {
+            return static_cast<int>(i);
+        }
+    }
+    // AND THE GEOMETRY AS THE FALLBACK: the smallest authored footprint the
+    // lead's own site stands in. A name that has drifted is still a coordinate
+    // that has not.
+    return mapPlaceUnder(lead.site.x, lead.site.y);
+}
+
+bool Session::bodyCanLookAt(const sim::Lead& lead) const {
+    if (lead.site.band != body_->band()) {
+        return false;
+    }
+    // THE SAME REACH examine() ACTUALLY USES, boon included -- this flag changes
+    // a verb that says LOOK, so it has to mean what LOOK means or the page
+    // offers a key that would do nothing.
+    const std::int32_t reach = sim::kLookRangeTiles + legend().lookRangeBonus();
+    const std::int32_t dx = lead.site.x - body_->tileX();
+    const std::int32_t dy = lead.site.y - body_->tileY();
+    return (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) <= reach;
+}
+
+void Session::moveCasebookCursor(int delta) {
+    const int count = static_cast<int>(casebook_.known().size());
+    if (count <= 0) {
+        casePageCursor_ = 0;
+        return;
+    }
+    // WRAPS, so holding one direction walks the whole book -- the same rule
+    // every other list in this build keeps.
+    casePageCursor_ = ((casePageCursor_ + delta) % count + count) % count;
+}
+
+void Session::setCasebookCursor(int index) {
+    const int count = static_cast<int>(casebook_.known().size());
+    if (count <= 0 || index < 0 || index >= count) {
+        return;
+    }
+    casePageCursor_ = index;
+}
+
+void Session::cycleCasebookTab(int delta) {
+    int at = static_cast<int>(casebookTab_) + delta;
+    while (at < 0) {
+        at += kCasebookTabCount;
+    }
+    casebookTab_ = static_cast<CasebookTab>(at % kCasebookTabCount);
+}
+
+bool Session::selectCasebookLead(std::string_view leadId) {
+    if (casebook_.raws() == nullptr) {
+        return false;
+    }
+    const std::int32_t want = casebook_.raws()->indexOf(leadId);
+    if (want < 0) {
+        return false;
+    }
+    const std::vector<std::int32_t> heard = casebook_.known();
+    for (std::size_t i = 0; i < heard.size(); ++i) {
+        if (heard[i] == want) {
+            casePageCursor_ = static_cast<int>(i);
+            return true;
+        }
+    }
+    // IN THE FILE BUT NOT IN THE BOOK is a real answer and not a typo: a lead
+    // the player has not been told about is not selectable, which is the whole
+    // gate the investigation runs on.
+    return false;
+}
+
+bool Session::showLeadOnMap(std::int32_t leadIndex) {
+    const int place = mapPlaceForLead(leadIndex);
+    if (place < 0) {
+        return false;
+    }
+    // THE HANDOFF, AND IT IS THE MAP'S OWN CURSOR. The map pass made a PLACE
+    // the unit of selection, gave it a plan with the names inside the shapes, a
+    // detail pane and a People view; the casebook's answer to "where is Harl's
+    // Yard" is that page, arrived at from the book, rather than a second
+    // navigation surface that would drift from it.
+    //
+    // The stand-down list is toggleDistrictMap()'s own, minus the part that
+    // would undo the point: that method puts the cursor where the BODY is
+    // standing, which is exactly what a player who just pressed "show me" does
+    // not want.
+    casebookOpen_ = false;
+    keysOpen_ = false;
+    grimoireOpen_ = false;
+    waitOpen_ = false;
+    optionsOpen_ = false;
+    pauseOpen_ = false;
+    quitArmed_ = false;
+    awaitingKey_ = false;
+    menuFocus_ = kMenuFocusJournal;
+    districtMapOpen_ = true;
+    districtMapSelected_ = place;
+    // OVERVIEW, ALWAYS, whatever tab the map was left on. The question this
+    // route asks is "where is it", and Overview is the view that answers it --
+    // arriving on the Legend because that is where the map was last put down
+    // would be the page answering somebody else's question.
+    districtMapTab_ = MapTab::Overview;
+    districtMapDetailFirst_ = 0;
+    firstRun_ = false;
+    syncPanelAnim();
+    return true;
+}
+
+void Session::commitCasebookLead() {
+    const std::vector<std::int32_t> heard = casebook_.known();
+    if (heard.empty() || casebook_.raws() == nullptr) {
+        return;
+    }
+    const int at = std::clamp(casePageCursor_, 0, static_cast<int>(heard.size()) - 1);
+    const std::int32_t index = heard[static_cast<std::size_t>(at)];
+    const sim::Lead& lead = casebook_.raws()->leads()[static_cast<std::size_t>(index)];
+    // STATE CHOOSES THE VERB, and the page has already printed which one this
+    // is going to be -- see drawLeadDetail. Standing in reach of a lead nobody
+    // has stood over yet, the useful act is to LOOK; the map would be the page
+    // telling you to go where you already are.
+    if (bodyCanLookAt(lead) && casebook_.state(index) == sim::LeadState::Open) {
+        // CLOSED FIRST, because examine() refuses while the book is up (it
+        // treats the look key as "put the notes down") -- so the page hands
+        // over rather than fighting for the same key.
+        casebookOpen_ = false;
+        syncPanelAnim();
+        examine();
+        return;
+    }
+    (void)showLeadOnMap(index);
+}
+
+CasebookPageState Session::casebookPageState() const {
+    CasebookPageState page;
+    page.open = true;
+    page.openAmount = panelAnim_.value();
+    page.title = "THE CASEBOOK";
+    page.caseTitle = std::string(caseRaws_.title());
+    page.tab = casebookTab_;
+    page.hook = std::string(caseRaws_.hook());
+    page.closeLine = std::string(caseRaws_.close());
+    page.closed = casebook_.closed();
+    page.dread = casebook_.dread();
+    page.dreadBand = std::string(caseRaws_.dreadLabel(casebook_.dread()));
+    page.read = casebook_.readCount();
+    page.cold = casebook_.coldCount();
+    page.calledYou = std::string(legend().title());
+    page.closeKey = std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)]));
+    page.lookKey =
+        std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]));
+
+    const std::vector<std::int32_t> heard = casebook_.known();
+    page.known = static_cast<std::int32_t>(heard.size());
+    page.total = static_cast<std::int32_t>(caseRaws_.leads().size());
+    page.rows.reserve(heard.size());
+
+    const std::int32_t px = body_->tileX();
+    const std::int32_t py = body_->tileY();
+    for (const std::int32_t index : heard) {
+        const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
+        const sim::LeadState what = casebook_.state(index);
+        CasebookLeadRow row;
+        row.brief = lead.brief.empty() ? lead.place : lead.brief;
+        row.place = lead.place;
+        row.what = lead.what;
+        row.close = lead.close;
+        row.state = what == sim::LeadState::Followed ? CasebookLeadState::Followed
+                    : what == sim::LeadState::Cold   ? CasebookLeadState::Cold
+                                                     : CasebookLeadState::Open;
+        if (!lead.who.empty() && who_) {
+            if (const sim::Notable* person = who_->find(lead.who); person != nullptr) {
+                row.who = shoutName(person->name);
+                row.whoWhat = shoutName(person->epithet);
+            }
+        }
+        // THE CLUE IS NOT SHOWN UNTIL IT HAS BEEN STOOD OVER, and that is the
+        // same rule the crosshair pass wrote down: a book that printed
+        // `found`/`detail` for an Open lead would hand the player the answer
+        // for having been TOLD the lead exists, which turns an investigation
+        // into a reading exercise. Nothing on this page calls look().
+        if (what != sim::LeadState::Open) {
+            row.found = lead.found;
+            row.detail = lead.detail;
+            for (const std::string& id : lead.opens) {
+                const std::int32_t opened = caseRaws_.indexOf(id);
+                if (opened < 0) {
+                    continue;
+                }
+                const sim::Lead& next = caseRaws_.leads()[static_cast<std::size_t>(opened)];
+                row.opened.push_back(next.brief.empty() ? next.place : next.brief);
+            }
+        }
+        row.heard = formatCaseDay(casebook_.heardAt(index));
+        for (const std::int32_t from : caseRaws_.openedBy(index)) {
+            const sim::Lead& opener = caseRaws_.leads()[static_cast<std::size_t>(from)];
+            if (!row.from.empty()) {
+                row.from += ", ";
+            }
+            row.from += opener.brief.empty() ? opener.place : opener.brief;
+        }
+        row.here = bodyCanLookAt(lead);
+        // THE BEARING IS TO THE LEAD'S OWN SITE and not to the place's door,
+        // because the site is where the key works -- the Mission's flagstones
+        // and the Mission's back room are two leads in one building, and one
+        // bearing to the building would be the same arrow for both.
+        const double dx = static_cast<double>(lead.site.x) - static_cast<double>(px);
+        const double dy = static_cast<double>(lead.site.y) - static_cast<double>(py);
+        const std::int32_t paces =
+            static_cast<std::int32_t>(std::lround(std::sqrt(dx * dx + dy * dy)));
+        row.bearing =
+            std::string(sim::compass_point(sim::bearingTo(px, py, lead.site.x, lead.site.y))) +
+            "  " + std::to_string(paces) + " PACES";
+        if (lead.site.band != body_->band()) {
+            // A LEAD ON ANOTHER PLANE SAYS SO. Two of the twelve are one band
+            // down; a bearing and a distance with no band on them would send a
+            // player walking into the seawall.
+            row.bearing += "  BAND " + std::to_string(lead.site.band);
+        }
+        row.routable = mapPlaceForLead(index) >= 0;
+        page.rows.push_back(std::move(row));
+    }
+
+    page.cursor = page.rows.empty()
+                      ? 0
+                      : std::clamp(casePageCursor_, 0, static_cast<int>(page.rows.size()) - 1);
+    // THE READOUT: how far the case has got and what the ward's nerve is at.
+    // The reference's persistent resource readout, and on this surface the
+    // resource being spent is the investigation itself.
+    page.readout = "READ " + std::to_string(page.read) + "/" + std::to_string(page.known) +
+                   "   DREAD " + std::to_string(page.dread);
+    // THE INSTRUCTION ROW SAYS WHAT THE PAGE IS FOR rather than repeating the
+    // tab row, and it changes with the state of the book because the useful
+    // sentence changes with it.
+    if (page.rows.empty()) {
+        page.instruction = "NOTHING IN THE BOOK YET.";
+    } else if (page.closed) {
+        page.instruction = "THE TRAIL IS WALKED OUT.";
+    } else if (page.read == 0) {
+        page.instruction = "PICK A LEAD AND PRESS ENTER TO SEE WHERE IT IS.";
+    } else {
+        const std::int32_t waiting = page.known - page.read > 0 ? page.known - page.read : 0;
+        page.instruction = std::to_string(waiting) +
+                           (waiting == 1 ? " LEAD IS STILL WAITING TO BE WALKED TO."
+                                         : " LEADS ARE STILL WAITING TO BE WALKED TO.");
+    }
+    return page;
+}
+
+// ---------------------------------------------------------------------------
 // Morrowind round: one Menu, four tiles (Keys and Options moved to Pause)
 // ---------------------------------------------------------------------------
 
@@ -2378,6 +2694,14 @@ void Session::step(const sim::MoveInput& input) {
         --placePlateShowSteps_;
     }
     placePlateAnim_.advance();
+    // THE CASEBOOK PASS. The lead-opened notice, on the identical countdown and
+    // for the identical reason: run down HERE and only here, once a step, so
+    // its three seconds do not depend on how many keys were pressed during
+    // them.
+    if (casePlateShowSteps_ > 0) {
+        --casePlateShowSteps_;
+    }
+    casePlateAnim_.advance();
     // INNOVATION SPRINT ITEM #2. THE SAME PER-STEP ADVANCE, ONE PER TILE.
     characterFocusAnim_.advance();
     mapFocusAnim_.advance();
@@ -5060,7 +5384,26 @@ void Session::syncPanelAnim() noexcept {
     if (suppressed) {
         placePlateShowSteps_ = 0;
     }
+    // THE CASEBOOK PASS. THE SAME STAND-DOWN, AND IT IS NOT A COURTESY.
+    // examine() is the one thing that arms this notice and examine() refuses
+    // while a page or a conversation owns the keyboard, so in practice the
+    // plate is armed with the world on screen -- but the rule is stated here
+    // anyway, in the one place every other overlay's stand-down is stated, so
+    // a later caller that arms it from somewhere else cannot quietly put a
+    // notice over a topic list. STOOD DOWN, never queued: a notice that pops
+    // the instant a menu closes is a notice about the menu.
+    if (suppressed) {
+        casePlateShowSteps_ = 0;
+    }
+    // AND THE TWO NOTICES DO NOT SHARE A FRAME. There is one announcement slot
+    // under the ribbon (hud.cpp's drawAnnouncePlate) and the case outranks the
+    // crossing, so a lead opened on the step the body walked into a named place
+    // takes the band and the crossing is dropped rather than drawn under it.
+    if (casePlateShowSteps_ > 0) {
+        placePlateShowSteps_ = 0;
+    }
     placePlateAnim_.setTarget(placePlateShowSteps_ > 0);
+    casePlateAnim_.setTarget(casePlateShowSteps_ > 0);
 }
 
 std::string Session::rivalLine() const {
@@ -5501,6 +5844,12 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // panel closes); this is what stops the handful of frames it spends easing
     // out from being painted over the panel that suppressed it.
     hud.placePlate = std::string_view{placePlateName_};
+    // THE CASEBOOK PASS. The lead-opened notice, on the identical three fields
+    // and the identical conversing gate -- see HudState::casePlate.
+    hud.casePlate = std::string_view{casePlateText_};
+    hud.casePlateFade = conversing ? 0.0F : casePlateAnim_.value();
+    hud.casePlateDrift = casePlateAnim_.target() ? -(1.0F - casePlateAnim_.value())
+                                                 : (1.0F - casePlateAnim_.value());
     hud.placePlateFade = conversing ? 0.0F : placePlateAnim_.value();
     // THE SIGN COMES OFF THE TOGGLE'S OWN TARGET, so the plate rises THROUGH
     // its settled row rather than sliding back down the way it came -- see
@@ -5560,6 +5909,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         hud.coin = -1;
         hud.showCompass = false;
         hud.placePlateFade = 0.0F;
+        hud.casePlateFade = 0.0F;
         hud.showHealth = false;
         hud.showAlert = false;
         if (warned) {
@@ -5613,6 +5963,46 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // other overlay in this build still does -- see menu_view.hpp's own
     // header on why a Morrowind-style overview is exempt and a live
     // conversation is not.
+    // THE CASEBOOK PASS. THE JOURNAL TILE IS A COMPOSED PAGE NOW, drawn by
+    // casebook_page.hpp in the terminal-panel register rather than as the
+    // bottom third of four tiles.
+    //
+    // WHY THE OTHER THREE TILES ARE UNTOUCHED, said plainly rather than left to
+    // be discovered: this phase is contracted for the casebook and the casebook
+    // alone, and converting Character/Chart/Letters would be three more surfaces
+    // this pass has no frames of and no cases for. The seam that leaves is real
+    // -- the book is a composed page and its three siblings are still tiles --
+    // and a player only ever sees one of the two at a time, because the Menu
+    // draws whichever tile has FOCUS. The bumpers still step between them and
+    // the book's own nav band says so.
+    //
+    // THE HUD STANDS DOWN THE SAME WAY IT DOES UNDER THE WARD MAP, and for the
+    // same reason: this composition's breadcrumb runs across the top left and
+    // its readout is right-aligned in the tab row, which is exactly where the
+    // compass ribbon and the clock/purse stack live. A warning still outranks
+    // the page -- it is routed into the page's own header band, which the
+    // composition holds open regardless, so nothing under it moves when a
+    // bouncer starts talking.
+    if (casebookPageOpen()) {
+        CasebookPageState page = casebookPageState();
+        page.openAmount = panelAnim_.value();
+        page.open = page.open || panelAnim_.value() > 0.0F;
+        if (warned) {
+            page.alert = std::string(tavern_->lastWarning());
+        }
+        hud.timeOfDaySeconds = -1;
+        hud.coin = -1;
+        hud.showCompass = false;
+        hud.placePlateFade = 0.0F;
+        hud.casePlateFade = 0.0F;
+        hud.showHealth = false;
+        hud.showAlert = false;
+        if (config_.hud) {
+            drawCasebookPage(target, page);
+            drawHud(target, hud);
+        }
+        return stats;
+    }
     if (casebookOpen_) {
         MenuTileState tiles;
         tiles.open = true;
@@ -6711,6 +7101,15 @@ std::int32_t gTrailUnreached = 0;
         }
         if (ending == "weighhouse" && lead.id == "weighhouse-ledger") {
             break;
+        }
+        // THE CASEBOOK PASS. `opened` STOPS ON THE STEP THE NOTICE FIRES and
+        // does nothing afterwards -- no walk back, no page opened. It exists
+        // because the lead-opened plate is up for three seconds and for no
+        // other reason, so without it there is no headless path to a picture of
+        // the one moment this whole pass is about. Same hole `--threshold`
+        // states for the crossing plate, same answer.
+        if (ending == "opened" && lead.id == "weighhouse-ledger") {
+            return gTrailRead;
         }
         if (ending == "hold" && lead.id == "drowned-hold") {
             break;
@@ -8061,6 +8460,64 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.toggleMap();
         result.scriptedWanted += 1;
         result.scriptedLanded += session.mapOpen() ? 1 : 0;
+    }
+
+    // THE CASEBOOK PASS. The book's own cursor, view and commit verb, each
+    // through the same public method a key press calls. Runs BEFORE the ward
+    // map's flags on purpose: `--case-route` OPENS the ward map, so a command
+    // line that asks for both gets the route's answer rather than a map the
+    // route then overwrote.
+    if (!config.caseLead.empty() || !config.caseTab.empty() || config.caseRoute) {
+        if (!session.casebookPageOpen()) {
+            // THE SAME CALL THE MENU KEY MAKES.
+            session.toggleCasebook();
+        }
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.casebookPageOpen() ? 1 : 0;
+        if (!config.caseLead.empty()) {
+            result.scriptedWanted += 1;
+            result.scriptedLanded += session.selectCasebookLead(config.caseLead) ? 1 : 0;
+        }
+        if (!config.caseTab.empty()) {
+            std::string want = config.caseTab;
+            for (char& c : want) {
+                if (c >= 'A' && c <= 'Z') {
+                    c = static_cast<char>(c - 'A' + 'a');
+                }
+            }
+            result.scriptedWanted += 1;
+            if (want == "leads") {
+                while (session.casebookTab() != CasebookTab::Leads) {
+                    session.cycleCasebookTab(1);
+                }
+                result.scriptedLanded += 1;
+            } else if (want == "case") {
+                while (session.casebookTab() != CasebookTab::Case) {
+                    session.cycleCasebookTab(1);
+                }
+                result.scriptedLanded += 1;
+            }
+        }
+        if (config.caseRoute) {
+            // ENTER ON THE COMMIT VERB. What LANDED is the ward map being open
+            // on the lead's own place -- a route that quietly did nothing is
+            // exactly the failure this flag exists to catch.
+            const std::vector<std::int32_t> book = session.casebook().known();
+            std::int32_t lead = -1;
+            if (!book.empty()) {
+                const int at = std::clamp(session.casebookLeadCursor(), 0,
+                                          static_cast<int>(book.size()) - 1);
+                lead = book[static_cast<std::size_t>(at)];
+            }
+            const int wanted = session.mapPlaceForLead(lead);
+            session.commitCasebookLead();
+            result.scriptedWanted += 1;
+            result.scriptedLanded +=
+                (wanted >= 0 && session.districtMapOpen() &&
+                 session.districtMapSelected() == wanted)
+                    ? 1
+                    : 0;
+        }
     }
 
     if (config.mapOverlay) {
