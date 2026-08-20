@@ -272,6 +272,47 @@ public:
     /// built around -- a person (TALK/PICKPOCKET) and a lock ("facing a
     /// lock=pick it") -- are both exact.
     [[nodiscard]] std::string interactPrompt() const;
+    /// THE CROSSHAIR PASS. THE SAME WALK, ANSWERING WHAT IT IS ABOUT TO ACT
+    /// ON as well as what it is about to do.
+    ///
+    /// The owner's note: "It needs to be improved to be properly contextual."
+    /// #85 already resolved the VERB exactly -- TALK/PICKPOCKET/PICK LOCK --
+    /// and that is half of contextual. A bare verb still cannot tell a player
+    /// which of three bodies in a doorway is the one in reach, or that the
+    /// box under the crosshair is their own, or that the thing they are about
+    /// to LOOK at is the lead the casebook has been asking them to find. So
+    /// the walk now also names its object, in the ward's own words, off the
+    /// same read-only queries the verb came from.
+    ///
+    /// interactPrompt() ABOVE IS THIS METHOD'S `verb` AND NOTHING ELSE, so
+    /// there is exactly one description of the resolution order in this file
+    /// and the HUD cannot be shown a verb the key would not run.
+    ///
+    /// STILL CONST AND STILL READ-ONLY. The one query added is the casebook's
+    /// -- and it is a walk over Lead::site and Casebook::state(), NOT a call
+    /// to look(), which mutates the book by construction. Naming a lead must
+    /// not read it.
+    struct InteractTarget {
+        /// "TALK", "PICK LOCK", "LOOK" ... or empty while a page owns the
+        /// keyboard, exactly as interactPrompt() has always answered.
+        std::string verb;
+        /// "GERTA SALTCOTTE", "THE MISSION", "THE GILDED GULL", or empty when
+        /// nothing in reach has a name worth printing.
+        std::string subject;
+        /// The qualifier: a trade, a state, what the lead is for. May be empty
+        /// with a subject present.
+        std::string note;
+        /// Which accent the reticle and the subject take. See AimKind.
+        AimKind kind = AimKind::Nothing;
+    };
+    [[nodiscard]] InteractTarget interactTarget() const;
+    /// The raw walk, before interactTarget() tidies what it answered. Split
+    /// out for one reason and it is a real one: the walk has eight exits and a
+    /// rule that applies to all eight (the note must not repeat the subject --
+    /// see saysTheSame in session.cpp) written at each of them is eight places
+    /// for the ninth exit to forget it. Nothing outside interactTarget() has
+    /// any business calling this.
+    [[nodiscard]] InteractTarget resolveInteract() const;
     /// #85. Was Jump + Traverse + DropDown. ONE BUTTON, RESOLVED BY WHAT IS
     /// DIRECTLY AHEAD OR BELOW: climb (mantle, or the leap it falls back to)
     /// first, a drop if there is a ledge to step off, an ordinary standing
@@ -989,6 +1030,17 @@ public:
     /// What the questline in progress wants next, and empty for the same
     /// reason while the wire is in.
     [[nodiscard]] std::string objectiveLine() const;
+    /// THE CROSSHAIR PASS. WHICH LEAD A LOOK FROM HERE WOULD BE A LOOK AT, or
+    /// -1. The index into CasebookRaws::leads().
+    ///
+    /// IT MUST NOT BE Casebook::look(). That call READS the lead -- it opens
+    /// what the lead opens, stamps heardAt() and moves the ward's dread -- and
+    /// a HUD label that read the case by being drawn would finish the trail
+    /// for a player who walked past a door. So this is a walk over Lead::site
+    /// and nothing else, with examine()'s own reach (kLookRangeTiles plus the
+    /// Flame's eye) so the crosshair names exactly what the key would find.
+    /// PUBLIC so the reach rule is a claim a case can make.
+    [[nodiscard]] int leadInLookReach() const;
     /// "THE WARD WANTS YOU GONE", or empty exactly when reputationLabel()
     /// reads kReputationUnremarkable -- the identical "absence costs
     /// nothing" rule every other row on this stack already keeps. PLANNING
@@ -1541,6 +1593,16 @@ private:
     /// actually finished easing to closed, not the instant the row's own
     /// condition goes false -- see step()'s clearIfClosed.
     std::string interactCache_;
+    /// THE CROSSHAIR PASS. The other three parts of the aim prompt, cached on
+    /// the identical edge and cleared by the identical rule -- see
+    /// interactCache_ directly above, which is now the VERB alone. Three
+    /// strings rather than one composed row because the HUD colours them by
+    /// three different roles, and a pre-joined string cannot be un-joined
+    /// without the renderer parsing what Session wrote, which is exactly the
+    /// kind of second description of a layout the panel pass banned.
+    std::string interactSubjectCache_;
+    std::string interactNoteCache_;
+    AimKind interactKindCache_ = AimKind::Nothing;
     std::string lockCache_;
     std::string caseCache_;
     std::string roomCache_;
@@ -2046,6 +2108,22 @@ struct SmokeRunConfig {
     std::string mapPlace;
     std::string mapTab;
     int mapZoom = 0;
+
+    /// THE CROSSHAIR PASS, VERIFICATION ONLY: TURN THE BODY TOWARD AN AUTHORED
+    /// PLACE and leave it standing there, with no page open.
+    ///
+    /// The aim prompt only says anything about a door when a door is under the
+    /// crosshair, and "under the crosshair" is a yaw -- there is no page to
+    /// open, no key to press and no conversation to have, which is the same
+    /// hole `threshold` states for the plate. Pair it with `--spawn` to stand
+    /// somewhere and this names what you are looking at from there.
+    ///
+    /// It goes through the SAME selectDistrictMapPlace + faceDistrictMapSelection
+    /// the ward map's own `ENTER - FACE IT` calls, so a captured frame is a
+    /// picture of the game rather than of a capture path beside it. A name
+    /// matching nothing is REPORTED (scriptedWanted moves, scriptedLanded does
+    /// not) rather than silently photographing the wrong direction.
+    std::string face;
 
     /// RADIANT BUILD, VERIFICATION ONLY: play a radiant errand -- read the
     /// board the session's own tavern posted off the live ward, find an

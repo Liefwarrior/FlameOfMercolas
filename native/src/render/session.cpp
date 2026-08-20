@@ -766,6 +766,60 @@ std::int64_t Session::caseNowSeconds() const noexcept {
     return static_cast<std::int64_t>(config_.timeOfDay) + elapsedSeconds_;
 }
 
+int Session::leadInLookReach() const {
+    // THE SAME WALK examine() MAKES, WITH THE HANDS KEPT STILL. See this
+    // method's own header in session.hpp on why it cannot simply call look().
+    //
+    // Casebook::look picks the nearest lead by MANHATTAN distance within
+    // kLookRangeTiles, at the body's own band, ties broken on the earlier
+    // authored index; and examine() widens that by standing the look at four
+    // axis offsets, one ring at a time, up to the Flame's own bonus. Both
+    // halves are reproduced here rather than approximated, because a
+    // crosshair that named a lead the key would not find is worse than one
+    // that named nothing.
+    if (casebook_.raws() == nullptr) {
+        return -1;
+    }
+    const std::vector<sim::Lead>& leads = casebook_.raws()->leads();
+    const std::int32_t band = body_->band();
+    const auto nearestFrom = [&](std::int32_t fromX, std::int32_t fromY) {
+        int best = -1;
+        std::int32_t bestDistance = 0;
+        for (std::size_t i = 0; i < leads.size(); ++i) {
+            const sim::Lead& lead = leads[i];
+            if (lead.site.band != band) {
+                continue;
+            }
+            const std::int32_t dx = lead.site.x - fromX;
+            const std::int32_t dy = lead.site.y - fromY;
+            const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+            if (distance > sim::kLookRangeTiles) {
+                continue;
+            }
+            if (best < 0 || distance < bestDistance) {
+                best = static_cast<int>(i);
+                bestDistance = distance;
+            }
+        }
+        return best;
+    };
+    const std::int32_t tileX = body_->tileX();
+    const std::int32_t tileY = body_->tileY();
+    if (const int here = nearestFrom(tileX, tileY); here >= 0) {
+        return here;
+    }
+    const std::int32_t bonus = legend().lookRangeBonus();
+    for (std::int32_t ring = 1; ring <= bonus; ++ring) {
+        const std::int32_t offsets[4][2] = {{ring, 0}, {-ring, 0}, {0, ring}, {0, -ring}};
+        for (const auto& offset : offsets) {
+            if (const int found = nearestFrom(tileX + offset[0], tileY + offset[1]); found >= 0) {
+                return found;
+            }
+        }
+    }
+    return -1;
+}
+
 void Session::examine() {
     if (talking() || picking()) {
         return;
@@ -2409,6 +2463,14 @@ void Session::step(const sim::MoveInput& input) {
         }
     };
     clearIfClosed(interactAnim_, interactCache_);
+    // THE CROSSHAIR PASS. The aim prompt's other three parts, cleared on the
+    // identical edge and by the identical rule -- one element, one toggle, so
+    // a name must not survive the verb it hung off.
+    clearIfClosed(interactAnim_, interactSubjectCache_);
+    clearIfClosed(interactAnim_, interactNoteCache_);
+    if (interactAnim_.settled() && !interactAnim_.target()) {
+        interactKindCache_ = AimKind::Nothing;
+    }
     clearIfClosed(lockAnim_, lockCache_);
     clearIfClosed(caseAnim_, caseCache_);
     clearIfClosed(roomAnim_, roomCache_);
@@ -2610,8 +2672,75 @@ void Session::interact() {
 }
 
 std::string Session::interactPrompt() const {
-    // #85. THE LABEL Interact IS ABOUT TO RESOLVE TO -- see this method's own
-    // header in session.hpp for the verification gap (the bale, the rat and
+    // ONE DESCRIPTION OF THE RESOLUTION ORDER, NOT TWO. The crosshair pass
+    // needed the walk to answer WHAT as well as WHICH VERB, and a second copy
+    // of the order in this file is precisely the drift that lets the HUD start
+    // lying about the key -- see interact()'s own header. So the walk moved
+    // whole into interactTarget() and this is the half of its answer every
+    // caller before the crosshair pass wanted.
+    return interactTarget().verb;
+}
+
+namespace {
+
+/// THE FURTHEST A CROSSHAIR REACHES FOR A BUILDING'S NAME, in tiles.
+///
+/// FIVE, and it is the same measurement kLookRangeTiles is: a shop in this
+/// ward is seven by eight (DOCKS-GAZETTEER 3.1), so five tiles down the line
+/// of sight is "the frontage I am standing at" and not "the warehouse across
+/// the quay". It is deliberately one tile longer than the look range, because
+/// a player reads a door from the pavement and looks at a lead from inside.
+constexpr std::int32_t kAimPlaceReachTiles = 5;
+
+/// Whether two labels say the same word, ignoring case.
+///
+/// THE WARD HAS BODIES WHOSE NAME IS THEIR TRADE. A mouse is named "MOUSE" and
+/// its trade is "MOUSE", and the first capture of the crosshair over one read
+/// "MOUSE  MOUSE" -- a qualifier qualifying nothing, which is the same "absence
+/// costs nothing" rule the top-right stack has kept since polish-1, missed in
+/// a new place. See interactTarget().
+[[nodiscard]] bool saysTheSame(std::string_view a, std::string_view b) noexcept {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        const char lhs = a[i] >= 'a' && a[i] <= 'z' ? static_cast<char>(a[i] - 32) : a[i];
+        const char rhs = b[i] >= 'a' && b[i] <= 'z' ? static_cast<char>(b[i] - 32) : b[i];
+        if (lhs != rhs) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// A Q16 offset, rounded to the nearest whole tile in both directions.
+/// Truncation toward zero would make a body facing due west name a place one
+/// tile east of the one it is looking at.
+[[nodiscard]] std::int32_t tilesFromQ16(std::int32_t q16, std::int32_t steps) noexcept {
+    const std::int64_t scaled = static_cast<std::int64_t>(q16) * steps;
+    const std::int64_t half = sim::kTrigOne / 2;
+    return static_cast<std::int32_t>(scaled >= 0 ? (scaled + half) / sim::kTrigOne
+                                                 : (scaled - half) / sim::kTrigOne);
+}
+
+}  // namespace
+
+Session::InteractTarget Session::interactTarget() const {
+    InteractTarget out = resolveInteract();
+    // ONE RULE OVER ALL EIGHT EXITS OF THE WALK -- see resolveInteract()'s own
+    // header. A note that repeats its subject is a row of the HUD holding
+    // twice the width to say one thing, which is the exact defect polish-1
+    // deleted "NOBODY IN PARTICULAR" for.
+    if (saysTheSame(out.subject, out.note)) {
+        out.note.clear();
+    }
+    return out;
+}
+
+Session::InteractTarget Session::resolveInteract() const {
+    InteractTarget out;
+    // #85. THE LABEL Interact IS ABOUT TO RESOLVE TO -- see interactPrompt()'s
+    // own header in session.hpp for the verification gap (the bale, the rat and
     // buyPicks() are not previewed) and for why the order below has to track
     // interact()'s own order exactly.
     if (talking() || picking() || pauseOpen() || menuOpen() || waitOpen()) {
@@ -2624,7 +2753,7 @@ std::string Session::interactPrompt() const {
         // say the same thing twice in two different places on the same
         // frame. waitOpen() joined the list with the Wait page, whose rows
         // print their own numbers the same way.
-        return {};
+        return out;
     }
     const bool sneaking = stance() == sim::Stance::Crouched;
 
@@ -2634,7 +2763,11 @@ std::string Session::interactPrompt() const {
     if (!sneaking && tavern_->rentedRoom() >= 0 && body_->band() == sim::gull::kUpperBand) {
         const sim::gull::GuestRoom& room = sim::gull::kRooms[tavern_->rentedRoom()];
         if (body_->tileX() == room.standX && body_->tileY() == room.standY) {
-            return "REST";
+            out.verb = "REST";
+            out.subject = "YOUR BED";
+            out.note = "ROOM " + std::to_string(tavern_->rentedRoom() + 1);
+            out.kind = AimKind::Thing;
+            return out;
         }
     }
 
@@ -2643,15 +2776,36 @@ std::string Session::interactPrompt() const {
     // liftFrom()'s. Nearest is a read-only query on both Tavern and
     // WardPopulation; neither talks to anybody by being asked.
     const std::int32_t reach = sneaking ? sim::kLiftReachQ8 : sim::kReachQ8;
-    const bool personHere =
-        tavern_->nearestTo(body_->x(), body_->y(), reach) != nullptr ||
-        (!sneaking && people_->nearestTo(body_->tileX(), body_->tileY(), body_->band(),
-                                        kWardTalkReachTiles) != nullptr);
-    if (personHere) {
+    // NAMED IN THE ORDER interact() WOULD REACH THEM. The taproom's own roster
+    // is asked first because talkTo() is, so the body the crosshair names is
+    // the body the key would actually speak to -- a prompt that named the
+    // wrong one of two people in a doorway would be worse than the bare verb
+    // it replaced.
+    if (const sim::Actor* inHouse = tavern_->nearestTo(body_->x(), body_->y(), reach);
+        inHouse != nullptr) {
         // Pickpocketing a WARD actor is not implemented (lift() only ever
         // reached the Tavern's own roster) -- matched here rather than
         // previewing a verb the button cannot actually perform.
-        return sneaking ? "PICKPOCKET" : "TALK";
+        out.verb = sneaking ? "PICKPOCKET" : "TALK";
+        out.subject = inHouse->name();
+        out.note = std::string(sim::actorRoleName(inHouse->role()));
+        out.kind = AimKind::Person;
+        return out;
+    }
+    if (!sneaking) {
+        if (const sim::WardActor* outside = people_->nearestTo(
+                body_->tileX(), body_->tileY(), body_->band(), kWardTalkReachTiles);
+            outside != nullptr) {
+            out.verb = "TALK";
+            // #79's own point, on the HUD at last: the ward HAS names. A body
+            // the bake never named is "SOMEBODY", which is the ward map's own
+            // wording for the same gap rather than a second invention.
+            const sim::WardIdentity& who = people_->identity(outside->id);
+            out.subject = who.name.empty() ? std::string("SOMEBODY") : who.name;
+            out.note = std::string(sim::wardTypeName(outside->type));
+            out.kind = AimKind::Person;
+            return out;
+        }
     }
 
     // 3. THE BOX -- the one item this can preview exactly, because its
@@ -2662,22 +2816,103 @@ std::string Session::interactPrompt() const {
         const std::int32_t room = sim::gull::roomAtStand(body_->tileX(), body_->tileY());
         if (room >= 0) {
             const std::int32_t bit = 1 << room;
+            out.subject = "THE STRONGBOX";
+            out.note = "ROOM " + std::to_string(room + 1);
+            out.kind = AimKind::Thing;
             if (room == tavern_->rentedRoom()) {
                 // Resolves to a refusal ("THAT ONE IS YOURS"), but the box is
                 // still what the press is about, so the button still names
-                // an action rather than falling back to LOOK.
-                return "TAKE";
+                // an action rather than falling back to LOOK. STATE CHANGES
+                // THE NOTE, which is the reference's own rule -- and it is
+                // the difference between "that key does nothing" and "that
+                // one is mine".
+                out.verb = "TAKE";
+                out.note += "  YOURS";
+                return out;
             }
             if ((tavern_->crackedBoxes() & bit) == 0) {
                 if ((tavern_->openedLocks() & bit) == 0) {
-                    return "PICK LOCK";
+                    out.verb = "PICK LOCK";
+                    out.note += "  LOCKED";
+                    return out;
                 }
-                return sneaking ? "TAKE QUIETLY" : "TAKE";
+                out.verb = sneaking ? "TAKE QUIETLY" : "TAKE";
+                out.note += "  OPEN";
+                return out;
             }
+            // Cracked already. LOOK is what the key falls through to, and the
+            // note says why rather than leaving the player to press it twice.
+            out.note += "  EMPTIED";
         }
     }
 
-    return "LOOK";
+    // 4. THE LOOK, AND WHAT IT WOULD BE LOOKING AT.
+    //
+    // interactPrompt() has answered a bare "LOOK" here since #85 and that is
+    // the single biggest reason the owner could not tell a failed search from
+    // absent content -- his Bloodletter run stalled at the Weighhouse. The
+    // verb is unchanged; what is new is that the crosshair NAMES THE LEAD when
+    // one is standing under it.
+    out.verb = "LOOK";
+    if (out.subject.empty()) {
+        if (const int lead = leadInLookReach(); lead >= 0 && casebook_.raws() != nullptr) {
+            const sim::Lead& site = casebook_.raws()->leads()[static_cast<std::size_t>(lead)];
+            const sim::LeadState state = casebook_.state(static_cast<std::int32_t>(lead));
+            // AN UNHEARD LEAD IS NOT NAMED, and that is a design line rather
+            // than an oversight. Unheard means nobody has told the player this
+            // exists; a crosshair that named it would hand them the trail for
+            // walking past a door and turn an investigation into a sweep. Once
+            // it IS in the book -- which is what `start` and every `opens` list
+            // do -- naming it is exactly what the owner's stall at the
+            // Weighhouse needed.
+            if (state != sim::LeadState::Unheard) {
+                // `what` and not `short`: the authored line is the OBJECT, in
+                // the ward's own words -- "THE HARBORMASTER'S LEDGER", "THE
+                // SEWER MOUTH IN THE SEAWALL", "THE BODY, AND WHOEVER FOUND
+                // IT". `short` is a casebook ROW label ("THE BODY"), authored
+                // for a three-column grid, and pairing the two would print the
+                // same noun twice on one row.
+                out.subject = site.what.empty() ? site.place : site.what;
+                // STATE CHANGES THE NOTE, which is the reference's own rule
+                // and the whole point here: a player sweeping a room they have
+                // already worked must not be sent round it a second time.
+                // ABSENCE COSTS NOTHING (this file's own polish-1 rule) -- an
+                // unread lead says nothing extra, because "not read" is what
+                // the ordinary case is.
+                if (state != sim::LeadState::Open) {
+                    out.note = "ALREADY READ";
+                }
+                out.kind = AimKind::Clue;
+                return out;
+            }
+        }
+    }
+    if (out.subject.empty()) {
+        // THE DOOR YOU ARE ACTUALLY FACING. The ward map pass built the
+        // district's own place index off the authored footprints -- see
+        // mapPlaceUnder -- so "what building is this" is a lookup here rather
+        // than a second walk over the sign table. WAYS ARE SKIPPED: the
+        // compass ribbon already prints the street's name every frame, and a
+        // crosshair repeating it would be the HUD saying one thing twice.
+        const std::int32_t fx = sim::forward_x_q16(body_->yaw());
+        const std::int32_t fy = sim::forward_y_q16(body_->yaw());
+        for (std::int32_t step = 0; step <= kAimPlaceReachTiles; ++step) {
+            const std::int32_t tx = body_->tileX() + tilesFromQ16(fx, step);
+            const std::int32_t ty = body_->tileY() + tilesFromQ16(fy, step);
+            const int place = mapPlaceUnder(tx, ty);
+            if (place < 0) {
+                continue;
+            }
+            const MapPlace& named = mapPlaces()[static_cast<std::size_t>(place)];
+            if (named.way) {
+                continue;
+            }
+            out.subject = named.name;
+            out.kind = AimKind::Place;
+            break;
+        }
+    }
+    return out;
 }
 
 void Session::moveTopicCursor(int delta) {
@@ -4714,18 +4949,27 @@ void Session::syncPanelAnim() noexcept {
         }
         anim.setTarget(visible);
     };
-    // #85's OWN "<key>  <label>" COMPOSITION, MOVED HERE FROM drawFrame()
-    // RATHER THAN DUPLICATED. interactPrompt() answers the bare verb
-    // ("TALK"); the key name off the same primary binding keyRows() prints
-    // is prefixed here, once, so drawFrame() reading interactCache_ back
-    // gets the exact row it used to build inline.
-    std::string prompt;
-    if (const std::string verb = interactPrompt(); !verb.empty()) {
-        prompt = std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]));
-        prompt += "  ";
-        prompt += verb;
+    // THE CROSSHAIR PASS. THE AIM PROMPT'S FOUR PARTS, ON THE ONE TOGGLE.
+    //
+    // #85 composed a single "<key>  <label>" row here. The renderer now
+    // colours the verb, the subject and the note by three different roles, so
+    // Session hands over three strings and a kind and joins nothing -- a
+    // pre-joined row would have to be taken apart again in hud.cpp, which is
+    // the second-description-of-a-layout defect the panel pass banned.
+    //
+    // ONE EasedToggle STILL, and interactAnim_ is still it: the four parts
+    // appear and disappear together because they are one element. The subject
+    // and the note ride interactCache_'s own visibility so a name cannot
+    // outlive the verb it belongs to mid-fade.
+    const InteractTarget aim = interactTarget();
+    const bool aimVisible = !conversing && !aim.verb.empty();
+    if (aimVisible) {
+        interactCache_ = aim.verb;
+        interactSubjectCache_ = aim.subject;
+        interactNoteCache_ = aim.note;
+        interactKindCache_ = aim.kind;
     }
-    sync(interactAnim_, interactCache_, std::move(prompt));
+    interactAnim_.setTarget(aimVisible);
     sync(lockAnim_, lockCache_, lockLine());
     sync(caseAnim_, caseCache_, caseLine());
     sync(roomAnim_, roomCache_, roomLine());
@@ -5203,13 +5447,21 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.stealthFade = stealthAnim_.value();
     hud.lockLabel = std::string_view{lockCache_};
     hud.lockFade = lockAnim_.value();
-    // #85. THE RESOLVED INTERACT VERB. "E  TALK" changing to "E  PICKPOCKET"
-    // the instant the player crouches facing somebody -- Eli's own brief,
-    // verbatim: "the player must SEE what pressing it will do before they
-    // press it." interactCache_ already carries the composed "<key>  <label>"
-    // row -- see syncPanelAnim()'s own note on why that composition moved
-    // there instead of staying here.
-    hud.interactLabel = std::string_view{interactCache_};
+    // THE CROSSHAIR PASS. THE AIM PROMPT, on the reticle rather than along the
+    // bottom edge -- the owner's own sentence is at the top of hud.hpp. The
+    // verb still changes to PICKPOCKET the instant the player crouches facing
+    // somebody (#85's whole point, and Eli's brief: "the player must SEE what
+    // pressing it will do before they press it"); what the crosshair pass adds
+    // is the name of whoever that is.
+    //
+    // THE KEY NAME IS READ HERE AND NOWHERE ELSE, off the same primary binding
+    // the CONTROLS page prints, so a rebound Interact renames itself on the
+    // crosshair by the act of being rebound.
+    hud.aimKey = keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]);
+    hud.aimVerb = std::string_view{interactCache_};
+    hud.aimSubject = std::string_view{interactSubjectCache_};
+    hud.aimNote = std::string_view{interactNoteCache_};
+    hud.aimKind = static_cast<int>(interactKindCache_);
     hud.interactFade = interactAnim_.value();
     // The rung, and what the line wants next. Bottom-left, over the health bar.
     hud.guildLabel = std::string_view{guildCache_};
@@ -7848,6 +8100,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             session.adjustDistrictMapZoom(config.mapZoom);
             result.scriptedWanted += 1;
             result.scriptedLanded += session.districtMapZoom() == config.mapZoom ? 1 : 0;
+        }
+    }
+
+    // THE CROSSHAIR PASS. TURN AND STAND. See SmokeRunConfig::face's own
+    // header: this is how a door gets photographed with its name on the
+    // crosshair. It runs AFTER the menu flags and closes the ward map by
+    // construction (faceDistrictMapSelection does), so `--face` and
+    // `--map-overlay` in the same command line resolve the way a player
+    // pressing ENTER on the map does rather than fighting.
+    if (!config.face.empty()) {
+        result.scriptedWanted += 1;
+        if (session.selectDistrictMapPlace(config.face)) {
+            session.faceDistrictMapSelection();
+            result.scriptedLanded += 1;
         }
     }
 
