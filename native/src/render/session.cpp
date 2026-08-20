@@ -1420,9 +1420,206 @@ void Session::toggleDistrictMap() {
         quitArmed_ = false;
         awaitingKey_ = false;
         menuFocus_ = kMenuFocusJournal;
+        // THE MAP PASS. OPENING PUTS THE CURSOR WHERE YOU ARE STANDING, so the
+        // first thing the page says is true of the ground under your feet and
+        // the plan is already panned to your quarter. A body standing on no
+        // named footprint at all (mid-harbour, on a roof) gets the nearest
+        // place instead -- never a stale index from the last time it was open,
+        // because "the map opened somewhere else" is the exact disorientation
+        // this pass exists to remove.
+        // A footprint first (the building you are standing in), then the
+        // STREET you are standing on -- mapWayUnder walks every authored
+        // segment, not the one segment mapPlaces() kept for its label, so a
+        // body anywhere along the Tarwalk selects the Tarwalk. Only a stand on
+        // neither (mid-harbour, a roof deck) falls back to the nearest place.
+        int here = mapPlaceUnder(body_->tileX(), body_->tileY());
+        if (here < 0) {
+            here = mapWayUnder(body_->tileX(), body_->tileY(), 0);
+        }
+        districtMapSelected_ = here >= 0 ? here : nearestDistrictMapPlace();
+        districtMapDetailFirst_ = 0;
     }
     firstRun_ = false;
     syncPanelAnim();
+}
+
+// ---------------------------------------------------------------------------
+// THE MAP PASS: the page's cursor
+// ---------------------------------------------------------------------------
+
+int Session::nearestDistrictMapPlace() const {
+    const std::vector<MapPlace>& places = mapPlaces();
+    if (places.empty()) {
+        return 0;
+    }
+    const std::int32_t px = body_->tileX();
+    const std::int32_t py = body_->tileY();
+    int best = 0;
+    std::int64_t bestD = 0;
+    for (std::size_t i = 0; i < places.size(); ++i) {
+        const std::int64_t dx = static_cast<std::int64_t>(places[i].anchorX) - px;
+        const std::int64_t dy = static_cast<std::int64_t>(places[i].anchorY) - py;
+        const std::int64_t d = dx * dx + dy * dy;
+        if (i == 0 || d < bestD) {
+            best = static_cast<int>(i);
+            bestD = d;
+        }
+    }
+    return best;
+}
+
+void Session::moveDistrictMapCursor(MapStep step) {
+    const std::vector<MapPlace>& places = mapPlaces();
+    if (places.empty()) {
+        return;
+    }
+    const int count = static_cast<int>(places.size());
+    districtMapSelected_ = std::clamp(districtMapSelected_, 0, count - 1);
+    if (districtMapTab_ == MapTab::Index &&
+        (step == MapStep::North || step == MapStep::South)) {
+        // ON A LIST, AN ARROW WALKS THE LIST. The Index is the same selection
+        // the plan shows, read alphabetically, and a reader arrowing down it
+        // means "the next name", not "the next place northward". Left and right
+        // still step the ward, so the geographic cursor is never out of reach.
+        districtMapSelected_ =
+            std::clamp(districtMapSelected_ + (step == MapStep::North ? -1 : 1), 0, count - 1);
+        return;
+    }
+    districtMapSelected_ = mapPlaceToward(districtMapSelected_, step);
+}
+
+void Session::cycleDistrictMapTab(int delta) {
+    int at = static_cast<int>(districtMapTab_) + delta;
+    while (at < 0) {
+        at += kMapTabCount;
+    }
+    districtMapTab_ = static_cast<MapTab>(at % kMapTabCount);
+    districtMapDetailFirst_ = 0;
+}
+
+void Session::setDistrictMapTab(int index) {
+    if (index < 0 || index >= kMapTabCount) {
+        return;
+    }
+    districtMapTab_ = static_cast<MapTab>(index);
+    districtMapDetailFirst_ = 0;
+}
+
+void Session::adjustDistrictMapZoom(int delta) {
+    districtMapZoom_ = std::clamp(districtMapZoom_ + delta, 0, mapZoomSteps() - 1);
+}
+
+bool Session::selectDistrictMapPlace(std::string_view name) {
+    const int at = mapPlaceIndex(name);
+    if (at < 0) {
+        return false;
+    }
+    districtMapSelected_ = at;
+    districtMapDetailFirst_ = 0;
+    return true;
+}
+
+void Session::faceDistrictMapSelection() {
+    const std::vector<MapPlace>& places = mapPlaces();
+    if (places.empty()) {
+        return;
+    }
+    const MapPlace& place =
+        places[static_cast<std::size_t>(std::clamp(districtMapSelected_, 0,
+                                                   static_cast<int>(places.size()) - 1))];
+    // TURNING IS NOT SIMULATION STATE THAT CAN DIVERGE -- setYaw is the same
+    // call every scripted line in this file already makes to point the body at
+    // somebody before it talks to them, and yaw is integer BAM.
+    // THE SAME POINT THE PANE PRINTED A BEARING TO -- mapAimPoint, once, so
+    // the body cannot turn one way while the page says another.
+    std::int32_t aimX = 0;
+    std::int32_t aimY = 0;
+    mapAimPoint(place, body_->tileX(), body_->tileY(), aimX, aimY);
+    body_->setYaw(sim::bearingTo(body_->tileX(), body_->tileY(), aimX, aimY));
+    districtMapOpen_ = false;
+    syncPanelAnim();
+}
+
+DistrictMapState Session::districtMapState() const {
+    DistrictMapState plan;
+    plan.tiles = tiles_.get();
+    plan.palette = &mapPalette_;
+    plan.bounds = mapBounds_;
+    plan.playerX = static_cast<float>(body_->x()) / static_cast<float>(sim::kSubOne);
+    plan.playerY = static_cast<float>(body_->y()) / static_cast<float>(sim::kSubOne);
+    plan.band = body_->band();
+    plan.yawBam = body_->yaw();
+    plan.title = placeLabel();
+    plan.openAmount = districtMapAnim_.value();
+    plan.selected = districtMapSelected_;
+    plan.zoom = districtMapZoom_;
+    plan.tab = districtMapTab_;
+    plan.detailFirst = districtMapDetailFirst_;
+    // THE READOUT: the clock and the band, right-aligned and permanent. The
+    // two facts a map reader wants on screen the whole time -- the hour because
+    // the ward's people move by it, and the band because this plan is a plan of
+    // ONE band and a reader on the roofs is looking at a different district
+    // from a reader on the quay.
+    const int hour = ((timeOfDay_ / 3600) % 24 + 24) % 24;
+    plan.readout = (hour < 10 ? std::string("0") : std::string()) + std::to_string(hour) +
+                   ":00   BAND " + std::to_string(body_->band());
+
+    // WHO IS IN THERE RIGHT NOW -- the People view, and the direct answer to
+    // "finding the person or thing I want at that place". A const walk over the
+    // already-public roster; nothing is written and nothing is hashed.
+    const std::vector<MapPlace>& places = mapPlaces();
+    if (!places.empty() && people_) {
+        const MapPlace& place =
+            places[static_cast<std::size_t>(std::clamp(districtMapSelected_, 0,
+                                                       static_cast<int>(places.size()) - 1))];
+        const std::vector<sim::WardActor>& roster = people_->actors();
+        for (const sim::WardActor& actor : roster) {
+            if (!actor.visible() || !place.contains(actor.x, actor.y)) {
+                continue;
+            }
+            // ANY BAND, deliberately. A footprint is a claim on the GROUND and
+            // everything standing on it -- the same rule plotIndexUnderfoot
+            // already uses for tenure -- and a reader asking "who is in the
+            // Gilded Gull" means the taproom and the rooms over it alike.
+            MapPersonRow row;
+            const sim::WardIdentity& who = people_->identity(actor.id);
+            row.name = who.name.empty() ? std::string("SOMEBODY") : who.name;
+            row.what = std::string(sim::wardTypeName(actor.type));
+            row.x = actor.x;
+            row.y = actor.y;
+            plan.people.push_back(std::move(row));
+        }
+        // AND THE TAPROOM'S OWN PEOPLE, WHICH THE ROSTER DELIBERATELY DOES NOT
+        // HOLD. WardPopulation spawns nobody inside the Gilded Gull -- its own
+        // header says so, because the Gull already had seventeen bodies of its
+        // own before the ward had any -- so a People view built off the roster
+        // alone reported "NOBODY IS IN THERE" for the one address in the
+        // district a player is most likely to be looking somebody up in. The
+        // first capture of this page said exactly that at one in the
+        // afternoon. Two systems, one question, one list.
+        for (const sim::Actor& actor : tavern_->actors()) {
+            if (!actor.present() || !place.contains(actor.tileX(), actor.tileY())) {
+                continue;
+            }
+            MapPersonRow row;
+            row.name = actor.name();
+            row.what = std::string(sim::actorRoleName(actor.role()));
+            row.x = actor.tileX();
+            row.y = actor.tileY();
+            plan.people.push_back(std::move(row));
+        }
+        // NAME ORDER, so a page turn is stable and a capture reproducible. The
+        // roster's own index order is bake order, which means a body that walks
+        // out of a room reshuffles every row under it.
+        std::sort(plan.people.begin(), plan.people.end(),
+                  [](const MapPersonRow& a, const MapPersonRow& b) {
+                      if (a.name != b.name) {
+                          return a.name < b.name;
+                      }
+                      return a.what < b.what;
+                  });
+    }
+    return plan;
 }
 
 std::vector<std::string> Session::grimoireRows() const {
@@ -5092,21 +5289,34 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // taken the frame -- conversingNow() is false only when nothing else is
     // up, so a map closed INTO the tiled Menu hands over immediately.
     if (districtMapOpen_ || (districtMapAnim_.value() > 0.0F && !conversing)) {
-        DistrictMapState plan;
-        plan.tiles = tiles_.get();
-        plan.palette = &mapPalette_;
-        plan.bounds = mapBounds_;
-        plan.playerX = static_cast<float>(body_->x()) / static_cast<float>(sim::kSubOne);
-        plan.playerY = static_cast<float>(body_->y()) / static_cast<float>(sim::kSubOne);
-        plan.band = body_->band();
-        plan.yawBam = body_->yaw();
-        plan.title = label;
+        // THE MAP PASS. The page is a COMPOSED PANE with a cursor now, so the
+        // state it draws from is built in one place (districtMapState()) that a
+        // case can read, rather than assembled inline where nothing but a
+        // screenshot could ever check it.
+        DistrictMapState plan = districtMapState();
+        // THE HUD STANDS DOWN UNDER IT, which the old static page could get
+        // away with not doing and this one cannot. The compass ribbon prints
+        // the place name across the top centre and the clock/purse stack sits
+        // top right -- exactly where this composition's breadcrumb row and its
+        // right-aligned readout now live, and the first capture of this page
+        // had the ward's own street name printed straight through its
+        // breadcrumb. Same ruling the controls page already made and for the
+        // same reason: nothing is being discussed and no door is about to shut
+        // while a map is up, and a warning still outranks the page -- it is
+        // routed into the page's own header band rather than painted over it.
+        hud.timeOfDaySeconds = -1;
+        hud.coin = -1;
+        hud.showCompass = false;
+        hud.placePlateFade = 0.0F;
+        hud.showHealth = false;
+        hud.showAlert = false;
         if (warned) {
             // The bouncer's warning outranks a map read -- the same routing
-            // the tiled Menu gives its journal tile, below.
+            // the tiled Menu gives its journal tile, below. It takes the
+            // breadcrumb row, which the composition holds open regardless, so
+            // nothing under it moves when a bouncer starts talking.
             plan.alert = tavern_->lastWarning();
         }
-        plan.openAmount = districtMapAnim_.value();
         if (config_.hud) {
             drawDistrictMap(target, plan);
             drawHud(target, hud);
@@ -7607,6 +7817,38 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.toggleDistrictMap();
         result.scriptedWanted += 1;
         result.scriptedLanded += session.districtMapOpen() ? 1 : 0;
+        // THE MAP PASS. The page has a cursor, four views and a zoom ladder,
+        // and every one of them goes through the SAME public method a key
+        // press calls -- selectDistrictMapPlace, setDistrictMapTab,
+        // adjustDistrictMapZoom -- so a captured frame is a picture of the game
+        // and not of a capture path that happens to look like it.
+        if (!config.mapPlace.empty()) {
+            result.scriptedWanted += 1;
+            result.scriptedLanded += session.selectDistrictMapPlace(config.mapPlace) ? 1 : 0;
+        }
+        if (!config.mapTab.empty()) {
+            std::string want = config.mapTab;
+            for (char& c : want) {
+                if (c >= 'A' && c <= 'Z') {
+                    c = static_cast<char>(c - 'A' + 'a');
+                }
+            }
+            const int index = want == "overview" ? 0
+                              : want == "people" ? 1
+                              : want == "index"  ? 2
+                              : want == "legend" ? 3
+                                                 : -1;
+            result.scriptedWanted += 1;
+            if (index >= 0) {
+                session.setDistrictMapTab(index);
+                result.scriptedLanded += 1;
+            }
+        }
+        if (config.mapZoom > 0) {
+            session.adjustDistrictMapZoom(config.mapZoom);
+            result.scriptedWanted += 1;
+            result.scriptedLanded += session.districtMapZoom() == config.mapZoom ? 1 : 0;
+        }
     }
 
     // PLANNING SPRINT (item #1). THE GAP `--character --map` COULD NEVER

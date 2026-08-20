@@ -714,6 +714,50 @@ public:
     void toggleDistrictMap();
     [[nodiscard]] bool districtMapOpen() const noexcept { return districtMapOpen_; }
 
+    // --- THE MAP PASS: the page is driven now, not read -----------------------
+    //
+    // The owner's second complaint about it, verbatim: "Names are stacking up
+    // on the map view. Makes it hard to figure out where the place you're
+    // looking for is." The page it produced was a static picture with eighty
+    // three floating nameplates fighting for room. It is a COMPOSED PANE now
+    // (map_view.hpp) with a cursor that walks named PLACES, a tab row of views
+    // over the selection, and a detail pane -- so the six methods below are the
+    // whole of what a key, a pad button or a mouse click can do to it.
+    //
+    // The cursor is an index into map_view.hpp's mapPlaces(): every named place
+    // in the ward, deduped and alphabetical. Still pure render state; nothing
+    // here reaches the simulation and the world hash cannot move.
+
+    /// Which named place the cursor is on -- an index into mapPlaces().
+    [[nodiscard]] int districtMapSelected() const noexcept { return districtMapSelected_; }
+    /// Which view is over the selection.
+    [[nodiscard]] MapTab districtMapTab() const noexcept { return districtMapTab_; }
+    /// Which rung of the zoom ladder. 0 is the whole ward.
+    [[nodiscard]] int districtMapZoom() const noexcept { return districtMapZoom_; }
+
+    /// An arrow press: moves to the nearest named place that way. On the Index
+    /// tab, UP/DOWN walk the list in its own alphabetical order instead, which
+    /// is what a list you are reading should do under an arrow key.
+    void moveDistrictMapCursor(MapStep step);
+    /// TAB (delta +1) and shift-TAB (-1). Wraps.
+    void cycleDistrictMapTab(int delta);
+    /// The printed digits 1-4 on the tab row, which really do select.
+    void setDistrictMapTab(int index);
+    /// `+` and `-`. Clamped to the ladder.
+    void adjustDistrictMapZoom(int delta);
+    /// Puts the cursor on a place by its authored name. Does nothing if there
+    /// is no such place -- which is what a capture flag with a typo in it
+    /// should do rather than silently photograph the wrong building.
+    [[nodiscard]] bool selectDistrictMapPlace(std::string_view name);
+    /// ENTER: turns the body to face the selected place and closes the page.
+    /// The commit verb at the foot of the detail pane, and the honest first
+    /// half of "going to a place" -- you cannot walk somewhere you cannot face.
+    void faceDistrictMapSelection();
+
+    /// The whole page, ready to draw. Public because a case reads it and
+    /// because it is the same shape keysPageState() already has.
+    [[nodiscard]] DistrictMapState districtMapState() const;
+
     /// A STANDING JUMP. Half a metre, and it gets you onto nothing -- see
     /// sim::PlayerBody::jump. Bound to space, which is where a jump goes.
     ///
@@ -1383,6 +1427,17 @@ private:
     /// Both computed once in the constructor -- see map_view.hpp.
     MapPalette mapPalette_;
     MapBounds mapBounds_;
+    /// THE MAP PASS. The page's own cursor: which named place is selected,
+    /// which view is over it, which rung of the zoom ladder, and where a
+    /// scrolling tab has been paged to. UI state, never hashed, exactly like
+    /// districtMapOpen_ above -- and deliberately KEPT between openings, so a
+    /// map closed while reading the Weighhouse opens on the Weighhouse.
+    int districtMapSelected_ = 0;
+    MapTab districtMapTab_ = MapTab::Overview;
+    int districtMapZoom_ = 0;
+    int districtMapDetailFirst_ = 0;
+    /// The named place nearest the body, for a stand that is on none of them.
+    [[nodiscard]] int nearestDistrictMapPlace() const;
 
     /// Task #83. The panel widget's own open/close ease -- see
     /// conversingNow()/syncPanelAnim() -- and the HUD alert row's fade in and
@@ -1974,6 +2029,23 @@ struct SmokeRunConfig {
     /// and `map` (the tiled Menu's Chart tile) have flags. `--map-overlay`
     /// on the CLI, following --creation/--tile-page's precedent.
     bool mapOverlay = false;
+
+    /// THE MAP PASS, VERIFICATION ONLY, and the same reason every other flag in
+    /// this struct exists: the page has a cursor, four views and a zoom ladder
+    /// now, and without these a headless capture could only ever photograph the
+    /// one state opening it lands on. A screenshot is this project's evidence,
+    /// so every state a player can reach has to be reachable by the shutter.
+    ///
+    /// `mapPlace` is an authored place name, exactly as the .tmx spells it
+    /// ("The Weighhouse", "Fenner's Pawn"); it goes through the same
+    /// Session::selectDistrictMapPlace an Index row calls, and a name matching
+    /// nothing is REPORTED rather than silently photographing the wrong
+    /// building. `mapTab` is overview/people/index/legend. `mapZoom` is a rung
+    /// of the ladder, 0 (the whole ward) up. All three are inert without
+    /// `mapOverlay`.
+    std::string mapPlace;
+    std::string mapTab;
+    int mapZoom = 0;
 
     /// RADIANT BUILD, VERIFICATION ONLY: play a radiant errand -- read the
     /// board the session's own tavern posted off the live ward, find an
