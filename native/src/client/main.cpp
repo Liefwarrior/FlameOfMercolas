@@ -357,6 +357,12 @@ void print_usage() {
         "                       PASS; implies --map-overlay\n"
         "  --map-tab=VIEW       overview, people, index or legend\n"
         "  --map-zoom=N         rungs in from the whole ward, 0..3\n"
+        "  --face=NAME          VERIFICATION ONLY: turn the body toward an\n"
+        "                       authored place (\"The Gilded Gull\") and leave\n"
+        "                       it standing there with no page open, so the\n"
+        "                       CROSSHAIR PROMPT can be photographed naming a\n"
+        "                       door. Pair it with --spawn to choose where\n"
+        "                       you are looking from\n"
         "  --threshold=WHERE    VERIFICATION ONLY: walk the body across one\n"
         "                       authored place boundary so the THRESHOLD\n"
         "                       PLATE is on the frame at the shutter. WHERE\n"
@@ -666,6 +672,12 @@ void print_usage() {
         } else if (starts_with(arg, "--map-zoom=", &value)) {
             options.smoke.mapZoom = std::atoi(value);
             options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--face=", &value)) {
+            // THE CROSSHAIR PASS. See SmokeRunConfig::face's own header: the
+            // aim prompt names a door only when a door is under the reticle,
+            // and "under the reticle" is a yaw with no key that sets it.
+            options.smoke.face = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--threshold=", &value)) {
             // DISTRICT PHASE D. VERIFICATION ONLY. See
