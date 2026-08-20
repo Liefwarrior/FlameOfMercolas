@@ -357,6 +357,13 @@ void print_usage() {
         "                       PASS; implies --map-overlay\n"
         "  --map-tab=VIEW       overview, people, index or legend\n"
         "  --map-zoom=N         rungs in from the whole ward, 0..3\n"
+        "  --case-lead=ID       THE CASEBOOK PASS: open the casebook page with\n"
+        "                       its cursor on this casebook.json lead id\n"
+        "                       (weighhouse-ledger)\n"
+        "  --case-tab=VIEW      leads or case\n"
+        "  --case-route         press the casebook's commit verb, which routes\n"
+        "                       the highlighted lead onto the ward map. The\n"
+        "                       only headless path to a picture of the route\n"
         "  --face=NAME          VERIFICATION ONLY: turn the body toward an\n"
         "                       authored place (\"The Gilded Gull\") and leave\n"
         "                       it standing there with no page open, so the\n"
@@ -495,8 +502,10 @@ void print_usage() {
         "                       casebook open), start (the opening page of a\n"
         "                       new game), mission, weighhouse, hold, letters\n"
         "                       (Maell's own letters, opened after his second\n"
-        "                       lead is read), or keys (the in-game controls\n"
-        "                       page)\n"
+        "                       lead is read), opened (THE CASEBOOK PASS: stop\n"
+        "                       on the step the Weighhouse ledger opens three\n"
+        "                       leads, so the lead-opened notice is on the\n"
+        "                       frame), or keys (the in-game controls page)\n"
         "  --nohud              draw the world and NOTHING over it -- no HUD,\n"
         "                       no conversation surface, no build stamp. It is\n"
         "                       a ruler: capture a scene twice, once with it\n"
@@ -668,6 +677,18 @@ void print_usage() {
         } else if (starts_with(arg, "--map-tab=", &value)) {
             options.smoke.mapTab = value;
             options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--case-lead=", &value)) {
+            // THE CASEBOOK PASS. See SmokeRunConfig::caseLead's own header: the
+            // book is a composed page with a cursor now, and a capture needs a
+            // way to put that cursor somewhere on purpose.
+            options.smoke.caseLead = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--case-tab=", &value)) {
+            options.smoke.caseTab = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--case-route") == 0) {
+            options.smoke.caseRoute = true;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--map-zoom=", &value)) {
             options.smoke.mapZoom = std::atoi(value);
@@ -1252,6 +1273,58 @@ void print_usage() {
             session.interact();
             return true;
         }
+        return false;
+    }
+
+    if (session.casebookPageOpen()) {
+        // THE CASEBOOK PASS. The book is a composed master/detail page now and
+        // every one of its verbs has to reach it -- the cursor, the two views,
+        // the printed digits and the commit.
+        //
+        // LEFT AND RIGHT STEP THE VIEWS, AND THAT IS A CONFLICT WRITTEN DOWN
+        // RATHER THAN FUDGED. Every other tabbed surface in this build steps
+        // its tabs with TAB; here TAB is Action::Menu, the key that OPENED this
+        // page, and "the key that opened it closes it" is a rule this build
+        // keeps everywhere. So the views move on the arrows the single-column
+        // list does not use, the tabs print no hotkey (casebook_page.hpp on
+        // why), and the nav band along the foot says LEFT RIGHT out loud.
+        if (up) {
+            session.moveCasebookCursor(-1);
+            return true;
+        }
+        if (downward) {
+            session.moveCasebookCursor(1);
+            return true;
+        }
+        if (leftward) {
+            session.cycleCasebookTab(-1);
+            return true;
+        }
+        if (rightward) {
+            session.cycleCasebookTab(1);
+            return true;
+        }
+        if (numbered) {
+            // THE PRINTED DIGITS BESIDE THE FIRST NINE LEADS ACTUALLY SELECT.
+            // Rows past the ninth print no number at all, so there is no digit
+            // here that answers to nothing.
+            session.setCasebookCursor(slot);
+            return true;
+        }
+        if (confirm) {
+            // The commit verb at the foot of the detail pane. State chooses
+            // which one it is -- see Session::commitCasebookLead.
+            session.commitCasebookLead();
+            return true;
+        }
+        if (pageKey) {
+            // SWALLOWED, NOT ROUTED, the pause branch's own reason: the list
+            // follows its cursor rather than turning pages, so `0` has nothing
+            // to do here and must not reach the quick bar behind the page.
+            return true;
+        }
+        // Anything else falls through to the ordinary bindings, and every verb
+        // down there puts the page away first.
         return false;
     }
 
