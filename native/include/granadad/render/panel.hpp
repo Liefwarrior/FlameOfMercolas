@@ -691,6 +691,19 @@ struct PanelLine {
 int drawProse(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
               const std::vector<PanelLine>& lines, float alpha);
 
+/// HOW TALL THAT BLOCK WANTS TO BE, in rows, at `rect`'s WIDTH. The rect's
+/// height is deliberately ignored: this is what a caller asks BEFORE it decides
+/// how much room to give the block.
+///
+/// PURE, and the same walk drawProse makes rather than a second description of
+/// it -- see planOptionList and optionListAt for the same argument. The case it
+/// exists for: a detail pane that must pin its CONSEQUENCE block immediately
+/// above the commit verb and let the flavour above it take whatever is left,
+/// so that a pane one row short drops the end of a paragraph rather than the
+/// line naming what a clue opened.
+[[nodiscard]] int measureProse(const PanelRect& rect, const PanelMetric& metric,
+                               const std::vector<PanelLine>& lines);
+
 // ---------------------------------------------------------------------------
 // the master/detail split
 // ---------------------------------------------------------------------------

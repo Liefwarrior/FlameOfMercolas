@@ -1193,13 +1193,27 @@ namespace {
 
 }  // namespace
 
-int drawProse(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
-              const std::vector<PanelLine>& lines, float alpha) {
-    if (alpha <= 0.0F || rect.empty()) {
+namespace {
+
+/// Tall enough that measureProse() is never the thing that truncates a block:
+/// a detail pane is tens of rows and this is thousands.
+inline constexpr int kProseMeasureCeiling = 4096;
+
+/// ONE WALK, DRAWN OR MERELY COUNTED.
+///
+/// measureProse() and drawProse() are the same function with the framebuffer
+/// made optional, for the reason creation_page.cpp's own handoff gives about
+/// optionListAt: a measurement written as a second description of a layout IS a
+/// second description, and a second description drifts. A caller that needs to
+/// know how tall a block will be before it decides where to put it -- which is
+/// what pinning a consequence block above a commit verb needs -- gets the
+/// answer off the identical walk that will draw it.
+int walkProse(Framebuffer* target, const PanelRect& rect, const PanelMetric& metric,
+              const std::vector<PanelLine>& lines, float alpha, int maxRows) {
+    if (alpha <= 0.0F || rect.w <= 0) {
         return 0;
     }
     const int cells = metric.cellsIn(rect.w);
-    const int maxRows = metric.rowsIn(rect.h);
     if (cells <= 0 || maxRows <= 0) {
         return 0;
     }
@@ -1216,8 +1230,8 @@ int drawProse(Framebuffer& target, const PanelRect& rect, const PanelMetric& met
         const std::string body = shout(line.body);
         const std::string name = shout(line.name);
 
-        if (line.bullet != Bullet::None) {
-            drawMotif(target, rect.x + (indent - 2) * metric.cellW(),
+        if (line.bullet != Bullet::None && target != nullptr) {
+            drawMotif(*target, rect.x + (indent - 2) * metric.cellW(),
                       rect.y + used * metric.cellH(),
                       line.bullet == Bullet::Ring ? Motif::Ring : Motif::Dot,
                       line.bullet == Bullet::Ring ? kInk.dim : line.nameInk, alpha, metric.scale);
@@ -1228,8 +1242,12 @@ int drawProse(Framebuffer& target, const PanelRect& rect, const PanelMetric& met
         // after that: a hanging indent, so a named effect reads as one item.
         int nameCells = 0;
         if (!name.empty()) {
-            nameCells = drawCellText(target, rect, metric, indent, used, name, line.nameInk,
-                                     alpha) +
+            // MEASURED THE SAME WAY IT IS DRAWN: cellsOf clamped to the text
+            // column is exactly what drawCellText returns, and a name longer
+            // than its own column has already spent the row either way.
+            nameCells = (target != nullptr ? drawCellText(*target, rect, metric, indent, used,
+                                                          name, line.nameInk, alpha)
+                                           : std::min(cellsOf(name), textCells)) +
                         1;
         }
         if (body.empty()) {
@@ -1248,8 +1266,10 @@ int drawProse(Framebuffer& target, const PanelRect& rect, const PanelMetric& met
                 break;
             }
             const int cell = w == 0 ? indent + nameCells : indent;
-            drawCellText(target, rect, metric, cell, used, wrapped[w], inkFor(line.bodyInk),
-                         alpha);
+            if (target != nullptr) {
+                drawCellText(*target, rect, metric, cell, used, wrapped[w], inkFor(line.bodyInk),
+                             alpha);
+            }
             ++used;
         }
         // A name with nothing left of its own row to wrap into still spent
@@ -1259,6 +1279,24 @@ int drawProse(Framebuffer& target, const PanelRect& rect, const PanelMetric& met
         }
     }
     return used;
+}
+
+}  // namespace
+
+int drawProse(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
+              const std::vector<PanelLine>& lines, float alpha) {
+    if (rect.empty()) {
+        return 0;
+    }
+    return walkProse(&target, rect, metric, lines, alpha, metric.rowsIn(rect.h));
+}
+
+int measureProse(const PanelRect& rect, const PanelMetric& metric,
+                 const std::vector<PanelLine>& lines) {
+    // THE WIDTH DECIDES THE WRAP AND THE HEIGHT IS DELIBERATELY IGNORED: the
+    // question this answers is "how tall does this block WANT to be", which is
+    // what a caller asks before it decides how much room to give it.
+    return walkProse(nullptr, rect, metric, lines, 1.0F, kProseMeasureCeiling);
 }
 
 // ---------------------------------------------------------------------------
