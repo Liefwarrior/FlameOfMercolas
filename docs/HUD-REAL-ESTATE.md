@@ -320,3 +320,111 @@ answer — driven by three different devices through the one dispatch the SDL lo
 uses. The mouse walk finds its own pixels by asking the screen's own hit-test
 where a row is. All three files have SHA-256
 `7eea92f398c303bc0f43fe8c489ca4b42c4ed9827d94084b1c42e74a9afc0f49`.
+
+## The map pass — the ward map, and the number that would not move
+
+`docs/frames/map/`, all at 960x540 with `--scale=1` at 13:00 on the authored
+spawn, so before and after are the same scene at the same second.
+
+**The `--nohud` method DOES apply here** — unlike the creation flow and the
+controls page, the ward map is an overlay over a rendered first-person frame,
+and `--nohud` draws that frame without it (`Session::drawFrame` gates the whole
+page on `config_.hud`). `nohud-ward.png` is that control.
+
+| scene, 960x540 | ink | claimed |
+|---|---|---|
+| ward map, **before** | 518,400 (100.00%) | 518,400 (100.00%) |
+| ward map, **after**  | 510,720 ( 98.52%) | 510,720 ( 98.52%) |
+| street HUD (untouched by this pass) | 17,709 (3.42%) | 24,831 (4.79%) |
+
+**Both numbers are useless here and it is worth saying why rather than dressing
+them up.** The old page opened by filling every pixel of the frame with its own
+backdrop at 0.88 alpha, so it touched 100% of the screen by construction; the
+new one is a composed panel whose grid leaves a few rows of margin, so it
+touches 98.52%. Neither number is about legibility, both are the degenerate
+full-frame case this document already records twice, and a two-point move in it
+tells nobody anything.
+
+### What the ruler cannot see, measured instead
+
+The owner's complaint was not "the map is too big". It was *"Names are stacking
+up on the map view. Makes it hard to figure out where the place you're looking
+for is."* So the number that matters is **how much of the district the names
+were covering**, and where they were sitting.
+
+Method: `drawTextPlate` lays a hard-edged **pure-black** field under every label
+it draws, and the plan's own material tones are never that dark — the `--nohud`
+control reads 0.36% of the plan at the same threshold, which is the harbour and
+the void showing through. So counting near-black pixels inside the plan's own
+rectangle counts nameplate, and only nameplate.
+
+| | plan rect at 960x540 | nameplate field inside the plan |
+|---|---|---|
+| control (`--nohud`, no interface at all) | 192,79–768,460 | 784 (0.36%) — the floor |
+| **before** | 192,79–768,460 | **22,618 (10.31%)** |
+| **after**  | 32,65–608,446   | **255 (0.12%)** |
+
+**A tenth of the district was underneath a nameplate**, and the plates were
+opaque: whatever ground they covered was not merely dimmed, it was gone. They
+also spilled off the plan entirely — 3,997 further pixels of plate sat in the
+margin around it, naming buildings by pointing at them from outside.
+
+The new labels are set INSIDE the shape they name, over a translucent scrim
+rather than an opaque plate, so they do not register at that threshold at all.
+Computed analytically from the label rule instead (the box each placed name
+occupies, summed):
+
+| zoom | places named on the plan | doors named | label boxes as a share of the plan |
+|---|---|---|---|
+| **fit — the whole ward** | 30 of 55 | 24 of 40 | at most 6.40% |
+| 2x | 44 of 55 | 35 of 40 | at most 2.50% |
+| 3x | 53 of 55 | 39 of 40 | at most 1.37% |
+| 4x | 53 of 55 | 39 of 40 | at most 0.75% |
+
+Those percentages fall as you zoom because the plan grows faster than the type
+does — and every one of those boxes is inside a building it names, so it hides
+its own floor and nothing else. The two places never named on the plan face at any
+zoom are The Drowned-Name Wall (a 3x3 shrine) and Wormwood Pier (3 tiles wide,
+against an eight-glyph word); both keep their door dot, both are named by the
+cursor and in the Index, and
+`after-too-small-fallback.png` is the Wall photographed at the closest zoom with
+no label and its cursor box around it. That is the fallback, deliberately, and
+not a quiet return to stacking.
+
+### What the pixels bought
+
+| | before | after |
+|---|---|---|
+| plan size at 960x540 | 576x381 (42.3% of the frame) | **576x381 (42.3%)** — unchanged |
+| names on the plan | one per distinct name, every one on a floating opaque plate, seated by a twenty-four-position avoidance solver | **30, set inside the shapes that own them; nothing floats** |
+| district hidden under a name | 10.31% of the plan | **0.12%** |
+| a name that could not find room | dropped, silently | named by the cursor, the selection line and the Index |
+| what is at the place you are pointing at | nothing shown | name, flavour, kind, street, footprint, band, bearing, distance |
+| who is at that place right now | nothing shown | **the People view**, off the live roster and the taproom |
+| finding a place you were told the name of | read the plates | **the Index**, alphabetical, 55 entries |
+| what the map costs the HUD | — | **nothing: `hud.cpp` is untouched** |
+
+The plan is exactly the same size and carries fewer names on its face — and it
+is the first version of this page you can read the district off, because the
+names that remain lie inside the buildings that own them instead of on top of
+the ones that do not, and the ones that are gone are a keypress away in a list
+rather than dropped in silence.
+
+### Across the window sizes
+
+| window | grid | composition |
+|---|---|---|
+| 320x180   | 64x25 cells | master/detail holds; plan at 1 px/tile, pans to the cursor; `LEGEND` drops off the tab row |
+| 960x540   | 96x38 cells | master/detail, plan at 3 px/tile, the whole ward |
+| 1280x720  | 85x34 cells | master/detail, the whole ward |
+| 1920x1080 | 76x30 cells | master/detail, plan at 5 px/tile, the whole ward |
+
+**The HUD is untouched.** Nothing in this pass reaches `hud.cpp`, the world
+render or the street overlay — the ambient street HUD measures ink 17,709
+(3.42%) / claimed 24,831 (4.79%), and the only line the page adds to `HudState`
+sits inside the ward map's own branch, so a frame with the map shut is unchanged
+by construction. What that branch does add is a STAND-DOWN: the compass ribbon,
+the place plate, the clock and the purse are suppressed while the map is up,
+because the compass prints the ward's own street name across the top centre and
+the clock stack sits top right — exactly where this composition's breadcrumb row
+and its right-aligned readout now live.
