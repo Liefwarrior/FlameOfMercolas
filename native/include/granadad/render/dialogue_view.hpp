@@ -11,17 +11,36 @@
 // A dialogue surface is the obvious thing to break it with, because the obvious
 // design is a big box in the middle. So this one is not:
 //
-//     TOP BAND     who is talking, what they think of you, and what they just
-//                  said. Wrapped to three lines.
-//     BOTTOM BAND  the topics, in two columns, with a cursor.
+//     TOP BAND     a bordered pane hugging the top edge: the header, in the
+//                  reference's `subject > status` shape -- the speaker's name
+//                  knocked out of an inverted fill IN THEIR OWN ATTITUDE
+//                  COLOUR, then their standing, with the epithet as the
+//                  right-aligned readout -- then what they just said, then an
+//                  alert if one was shouted, then a dateline if there is one.
+//                  Sized from what it draws and clamped to the exclusion rect.
+//     BOTTOM BAND  a bordered pane hugging the bottom edge: the topics as a
+//                  numbered direct-select list whose COLUMN COUNT COMES FROM
+//                  ITS OWN LONGEST LABEL, selection an INVERTED FILL in the
+//                  speaker's accent, and an instruction header riding the
+//                  pane's top rule so it costs no row at all.
 //     THE MIDDLE   the person you are talking to. Untouched.
 //
 // That is better design as well as compliance: you look at their face while
 // they talk, which is the entire reason the game is first person.
 //
-// dialogueCentreIsClear() exists so a test can PROVE it rather than trust it,
-// and the test drives it with the longest speaker name, the longest authored
-// line and a full twelve-topic list at once.
+// BUILT ON panel.hpp, WHICH IS THE POINT. Every rule, edge, junction, header,
+// list and fill above is a call into the shared terminal vocabulary, so this
+// surface is the same register as the creation flow, the map, the casebook and
+// the controls page rather than a fourth dialect of it. What it looked like
+// before that conversion is on record: no border motif, no header, the
+// selection drawn as a `>` arrow the spec forbids by name, and every topic cut
+// to an eighteen-glyph column -- "4 PICK THEIR POCK.", "8 SELL WHAT YOU.",
+// "2 THE VANISHED." -- on the busiest surface in the build.
+//
+// The centre-clear guarantee is PROVEN rather than trusted, by cases in
+// test_render.cpp and test_tavern_render.cpp that drive it with the longest
+// speaker name, the longest authored line and a full twelve-topic list at
+// once, at every size the game runs at.
 
 #include <cstdint>
 #include <string>
@@ -29,6 +48,7 @@
 
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
+#include "granadad/render/panel.hpp"
 
 namespace granadad::render {
 
@@ -185,13 +205,22 @@ struct DialogueViewState {
     std::string forgeProblem;
 };
 
-/// The topic grid. Four rows is what the bottom band can hold at 640x360
-/// without crossing into the exclusion rectangle -- it is a measurement, not a
-/// preference -- and three columns is what it takes to show all twelve of
-/// Master Venn's, who has the longest list in the game: his own business,
-/// three authored micro-histories, the ward, the vanished clerk, his trade,
-/// buying a bed, arguing about the price of one, standing him a drink, a hand
-/// in his purse, and leaving.
+/// The topic grid, AS IT WAS AUTHORED AND AS IT IS NO LONGER DRAWN.
+///
+/// Four rows of three columns was the fixed layout this surface used at every
+/// resolution, and three columns of an eighteen-glyph budget is exactly why it
+/// shipped "4 PICK THEIR POCK.". UI-REFERENCE-TERMINAL.md rules against it in
+/// as many words -- "Column count follows content, not a fixed setting ... Pick
+/// the count from the longest entry against the available width" -- so
+/// drawDialogue now asks panel.hpp's planOptionList, which does exactly that,
+/// and NOTHING IN THE RENDERER READS THESE THREE ANY MORE.
+///
+/// They survive as the SIZE OF A FULL PAGE, which several cases measure
+/// against, and as the number a capacity argument is given when a caller wants
+/// "as many rows as this list can have". Twelve is Master Venn's list, which is
+/// the longest in the game: his own business, three authored micro-histories,
+/// the ward, the vanished clerk, his trade, buying a bed, arguing about the
+/// price of one, standing him a drink, a hand in his purse, and leaving.
 inline constexpr int kTopicRows = 4;
 inline constexpr int kTopicColumns = 3;
 inline constexpr int kTopicSlots = kTopicRows * kTopicColumns;
@@ -224,8 +253,20 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state);
 /// unless the word alone is longer than the column.
 [[nodiscard]] std::vector<std::string> wrapText(const std::string& text, std::size_t columns);
 
-/// The full, UNCUT label of the row the cursor is on -- what the detail line
-/// under the grid prints.
+/// The full, UNCUT label of the row the cursor is on.
+///
+/// ITS JOB HAS SHRUNK, AND THAT IS THE FIX WORKING. This existed because a
+/// topic column was eighteen glyphs at every resolution and some labels are
+/// longer than that however they are worded, so the picked row needed a line of
+/// its own to be readable at all. The list now sizes its columns to its own
+/// longest label, so at 640x360 and above nothing is cut and the restatement is
+/// not needed -- the bottom pane's header carries the instruction instead.
+/// drawDialogue still falls back to this, on the rule above the list, when a
+/// window is narrow enough that a label genuinely does not fit its column
+/// (320x180 is a smoke size, not a play size). A row nobody can read outranks a
+/// header saying what the panel is for.
+///
+/// The original argument, kept because it is what the fallback is for:
 ///
 /// WHY THIS EXISTS. A topic column is eighteen glyphs at every resolution this
 /// game runs at, and some labels are longer than that no matter how they are
@@ -247,8 +288,15 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state);
 /// is not drawn.
 [[nodiscard]] std::string dialogueDetailLine(const DialogueViewState& state);
 
-/// Cuts a topic label to the room its column has, ON A WORD BOUNDARY, and says
-/// out loud that it cut.
+/// Cuts a label to the room its column has, ON A WORD BOUNDARY, and says out
+/// loud that it cut.
+///
+/// THE CONVERSATION SURFACE NO LONGER CALLS THIS, which is the right fix rather
+/// than a cleverer cut: eighteen glyphs was never going to hold "PICK THEIR
+/// POCKET" and no rule can make it. drawDialogue's topic list picks its column
+/// count from the longest label it actually holds. This is still menu_view.cpp's
+/// (the tiled Menu's four smaller panels) and creation.cpp's, and a case in
+/// test_tavern_render.cpp pins every one of its cuts.
 ///
 /// S5 shipped `label.resize(room)`, which cuts mid-word, and its own headline
 /// frame docs/frames/s5-skyrunner-line.png has "6 THE VANISHED CLE" and "7 ASK
@@ -287,10 +335,52 @@ struct TopicRow {
 [[nodiscard]] std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int page,
                                                  int cursor, int capacity);
 
+/// WHAT THE BOTTOM BAND WILL ACTUALLY DRAW, at this frame size, with no
+/// framebuffer involved.
+///
+/// PUBLIC AND PURE, AND THAT IS THE POINT. The defect this pass closed --
+/// "4 PICK THEIR POCK." on the busiest surface in the build -- was a LAYOUT
+/// defect, and the only evidence against it up to now was a screenshot. A
+/// screenshot proves one resolution on one day. This lets a case assert, at
+/// every size the game runs at, that the page holds every row it was given and
+/// that no label on it was cut -- which is the claim, stated as a claim.
+///
+/// It is also the shape of the lesson from the S4 review: the paging fix was
+/// tested through arithmetic that the drawing code did not call, the review
+/// then reinstated the bug INSIDE drawDialogue, and the whole gate stayed
+/// green. drawDialogue calls this and draws what it returns, so a case over
+/// this is a case over the drawing path.
+struct TopicLayout {
+    /// The rows, exactly as they will be printed -- key, label and accent.
+    /// Empty when the band has no room at all.
+    std::vector<PanelOption> options;
+    /// The column count, row count and label column planOptionList settled on.
+    OptionListPlan plan;
+    /// Index into `options` of the picked row, or -1.
+    int selected = -1;
+    /// True when what will be printed is NOT the whole label -- which is the
+    /// one case the picked row still gets spelled out in full above the list.
+    /// False at every size the game is actually played at.
+    bool abbreviated = false;
+};
+
+[[nodiscard]] TopicLayout dialogueTopicLayout(const DialogueViewState& state, int width,
+                                              int height);
+
 /// The picked row's highlight: a soft band under the label and a bright
-/// hairline where the cursor arrow sits. EXPOSED (moved out of
-/// dialogue_view.cpp's own anonymous namespace) so the tiled Menu
-/// (menu_view.cpp) can draw the identical "this one is selected" shape inside
+/// hairline where the cursor arrow sits.
+///
+/// NOT USED BY drawDialogue ANY MORE. UI-REFERENCE-TERMINAL.md forbids the
+/// arrow by name -- "Selection is an inverted highlight ... Not an arrow, not a
+/// bracket. The fill is the affordance" -- and the conversation panel's own
+/// verifier photographed `>1 TELL ME ABOUT...`. The topic list selects with
+/// panel.hpp's drawInvertedFill in the speaker's own attitude accent now. This
+/// shape survives only for menu_view.cpp's four tiled panels, which were not in
+/// that pass's scope and are the next surface to convert.
+///
+/// EXPOSED (moved out of dialogue_view.cpp's own anonymous namespace) so the
+/// tiled Menu (menu_view.cpp) can draw the identical "this one is selected"
+/// shape inside
 /// each of its four smaller panels instead of re-implementing it -- see that
 /// file's own header. Parameterised by `scale` rather than tied to the one
 /// register drawDialogue() itself draws at, so a caller drawing at

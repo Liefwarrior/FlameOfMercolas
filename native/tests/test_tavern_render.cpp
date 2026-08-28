@@ -735,6 +735,91 @@ TEST_CASE("a topic label too long for its column stops at a word, not mid-word")
     CHECK(clipLabel("anything", 0).empty());
 }
 
+TEST_CASE("no topic is cut, and none is dropped, at any size the game is played at") {
+    // THE DEFECT THIS CLOSES, PHOTOGRAPHED BEFORE IT WAS CLOSED:
+    // docs/frames/conversation/before-640x360.png has "4 SQUALL - 4 FLOW.",
+    // "7 PICK THEIR POCK.", "8 SELL WHAT YOU." and "2 THE VANISHED." on it,
+    // and a `>` arrow beside the picked row that UI-REFERENCE-TERMINAL.md
+    // forbids by name. The cause was a FIXED layout -- three columns of
+    // eighteen glyphs at every resolution, because kTopicColumns said 3 and
+    // the arithmetic said 18 -- against labels nobody could shorten further.
+    //
+    // The fix is that the column count now comes from the longest label the
+    // page actually holds (panel.hpp's planOptionList), and this is the claim
+    // stated as a claim rather than as a screenshot: at every size this game
+    // is played at, EVERY row of the page is on screen and EVERY one of them
+    // is its whole label.
+    //
+    // 320x180 is deliberately not in the list. The bottom band may not begin
+    // above the exclusion rectangle, which leaves it five rows there, and the
+    // documented fallback below is what happens instead.
+    DialogueViewState state;
+    state.open = true;
+    state.speaker = "MASTER VENN";
+    state.epithet = "LANDLORD OF THE GILDED GULL";
+    state.attitude = "WARM";
+    state.line = "A BED IS TWELVE AND IT COMES WITH THE DOOR BOLTED.";
+    // Finch's real list, the one the before-frame was taken of, plus the
+    // longest label the contract board can build.
+    state.topics = {"TELL ME ABOUT...",  "THE VANISHED CLERK",  "ASK TO BE MADE ROBBER",
+                    "SQUALL - 4 FLOWER", "LUFF - 3 FLOWER",     "BUY THEM A DRINK",
+                    "PICK THEIR POCKET", "SELL WHAT YOU TOOK 0", "SAY NO MORE"};
+    state.cursor = 2;
+
+    for (const int height : {360, 540, 720, 1080}) {
+        const int width = height * 16 / 9;
+        const TopicLayout layout = dialogueTopicLayout(state, width, height);
+        INFO(width, "x", height, ": ", layout.plan.columns, " columns x ", layout.plan.rows,
+             " rows, label column ", layout.plan.labelCells);
+        // Every topic of the page is on screen. A page that silently loses
+        // rows is the failure paging exists to prevent.
+        REQUIRE(layout.options.size() == state.topics.size());
+        // ...and every one of them is WHOLE. This is the assertion that goes
+        // red if anybody re-authors a fixed column count.
+        for (std::size_t i = 0; i < layout.options.size(); ++i) {
+            INFO("row ", i, " printed as '", layout.options[i].label, "'");
+            REQUIRE(layout.options[i].label == state.topics[i]);
+            REQUIRE(layout.plan.labelCells >= static_cast<int>(state.topics[i].size()));
+        }
+        // The key printed beside it is the key that picks it, and the cursor
+        // lands on the row it is actually on.
+        CHECK(layout.options[2].key == "3");
+        CHECK(layout.selected == 2);
+        // Nothing was abbreviated, so the rule above the list is free to carry
+        // the instruction rather than a restatement.
+        CHECK_FALSE(layout.abbreviated);
+        // The whole page fits the columns it was planned into.
+        CHECK(layout.plan.columns * layout.plan.rows >= static_cast<int>(layout.options.size()));
+    }
+
+    // THE NARROW-WINDOW FALLBACK, AND ITS ORDER, PINNED. At 320x180 the page
+    // does not fit at full width. What must NOT happen is what the first
+    // version of this pass did there: show six of the nine and print a
+    // "0 MORE (1/1)" that turns to a page which does not exist. Labels are
+    // abbreviated -- by clipLabel, which marks its cut -- before a single row
+    // is given up.
+    const TopicLayout small = dialogueTopicLayout(state, 320, 180);
+    INFO("320x180: ", small.plan.columns, " columns x ", small.plan.rows, " rows");
+    CHECK(small.options.size() == state.topics.size());
+    CHECK(small.abbreviated);
+    for (const PanelOption& option : small.options) {
+        INFO("row '", option.label, "'");
+        // Cut, but never wider than the column it was cut for, and never
+        // silently: a shortened label ends in the mark.
+        REQUIRE(static_cast<int>(option.label.size()) <= small.plan.labelCells);
+        REQUIRE_FALSE(option.label.empty());
+    }
+    // A twelve-topic list still pages, and the row that turns the page is
+    // still on screen with the key that turns it printed beside it.
+    DialogueViewState many = state;
+    many.topics.assign(20, std::string("ASK ABOUT SOMETHING RATHER LONG NUMBER"));
+    many.cursor = 0;
+    const TopicLayout paged = dialogueTopicLayout(many, 640, 360);
+    REQUIRE_FALSE(paged.options.empty());
+    CHECK(paged.options.back().key == "0");
+    CHECK(paged.options.back().label.rfind("MORE (1/", 0) == 0);
+}
+
 TEST_CASE("the sack and the job are one line each, on the edge, and empty when there is nothing") {
     // THE HUD RULE, applied to the two things S6 added to it. An inventory in
     // this game is a line in a corner until it has earned more -- the Java

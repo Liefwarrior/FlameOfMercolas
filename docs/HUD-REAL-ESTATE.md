@@ -51,6 +51,38 @@ shadow at 960x540. They scale with the capture.)
 The conversation's two figures are equal because the surface is a filled panel:
 every pixel of the band is claimed and inked at once.
 
+### The conversation again, after the panel-vocabulary conversion
+
+The row above is the polish-1 pass. The conversation surface was rebuilt on
+`panel.hpp` afterwards — bordered panes, a `subject > status` header, and a
+topic list whose column count comes from its own longest label instead of a
+fixed three columns of eighteen glyphs. Same scene, same ruler, measured
+against the same `--nohud` capture (byte-identical between the two binaries,
+which is what proves the world render was not touched):
+
+| size | ink before | ink after | claimed before | claimed after |
+|---|---|---|---|---|
+| **640x360** | 72,960 (31.67%) | **47,151 (20.46%)** | 72,960 (31.67%) | **48,860 (21.21%)** |
+| **960x540** | 164,160 (31.67%) | **153,436 (29.60%)** | 164,160 (31.67%) | **159,810 (30.83%)** |
+
+Two things worth reading off that table rather than skipping:
+
+- **The gain is a third of the surface at 640x360 and barely a twelfth at
+  960x540**, because the body is drawn at `hudMinorScale`, which is 1 at
+  640x360 and 2 at 960x540 — so the same rows cost twice the pixels at the
+  larger size. The 960 band is already down to five rows plus its border and
+  there is nothing left to cut that is not content.
+- **`claimed` is now slightly LARGER than `ink`**, where before they were
+  equal. That is the border motif doing its job: the `+~-~-` rules and the
+  `|`/`!` edges are separate marks with gaps between them, so the closing pass
+  has something to close. A solid filled band has no gaps and measures the
+  same both ways.
+- **The before column is not what a player lost.** Both bands used to drop
+  content silently when they ran out of room — the top band cut the tail off
+  any line longer than two rows, and the topic grid cut every label to
+  eighteen glyphs. The after column holds MORE text in LESS space; see
+  `docs/frames/conversation/before-640x360.png` beside `after-640x360.png`.
+
 The world render is bit-identical across the change — the smoke line's own
 `world px / sky px / sprite px / luma / colours` fields are computed before the
 HUD is drawn, and all three scenes print exactly the same values before and
