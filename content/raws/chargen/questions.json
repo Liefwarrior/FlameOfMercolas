@@ -14,83 +14,83 @@
   },
   "questions": [
     {
-      "prompt": "Quarter-day, and your family's ground penny is short by three Royals. The Den Duke's man is at the gate. You —",
+      "prompt": "Quarter-day. Your family's ground penny is short by three Royals and the Den Duke's man is at the gate. What do you do?",
       "answers": [
-        { "axis": "A", "text": "meet him at the gate and say it plain: the penny is short, and your hands will make up the difference — a debt owned out loud is half worked off." },
-        { "axis": "B", "text": "take the roofs to the strand. The tide is out, and three Royals of wrack lies on the mud for whoever beats the gulls to it." },
-        { "axis": "C", "text": "fetch the household's rent-book and walk it to the Mission — the arrears are wrong by the roll's own arithmetic, and a priest will weigh a page over a fist." }
+        { "axis": "A", "text": "You meet him at the gate and say it plain: the penny is short, and your hands will make up the difference. A debt owned out loud is half worked off." },
+        { "axis": "B", "text": "You take the roofs to the strand. The tide is out, and three Royals of wrack lies on the mud for whoever beats the gulls to it." },
+        { "axis": "C", "text": "You fetch the household's rent-book and walk it to the Mission. The arrears are wrong by the roll's own arithmetic, and a priest will weigh a page over a fist." }
       ]
     },
     {
-      "prompt": "The crane gang's boss pays you a child's wage for a hand's work, and both of you know it. You —",
+      "prompt": "The crane gang's boss pays you a child's wage for a hand's work, and you both know it. What do you do?",
       "answers": [
-        { "axis": "A", "text": "put down the hook and tell him so, in front of the gang. A wage argued in the open stays argued." },
-        { "axis": "B", "text": "take the wage and learn which nights the tally-clerk leaves early. Knowing a yard's habits is worth more than a day's difference." },
-        { "axis": "C", "text": "count the crates yourself for a week and show him his own tally. A boss cheats a child who cannot add." }
+        { "axis": "A", "text": "You put down the hook and tell him so, in front of the gang. A wage argued in the open stays argued." },
+        { "axis": "B", "text": "You take the wage and learn which nights the tally-clerk leaves early. Knowing a yard's habits is worth more than a day's difference." },
+        { "axis": "C", "text": "You count the crates yourself for a week, then show him his own tally. A boss cheats a child who cannot add." }
       ]
     },
     {
-      "prompt": "An older Gullet tough takes your basket at the Bottom link every dusk this quarter. You —",
+      "prompt": "An older Gullet tough has taken your basket at the Bottom link every dusk this quarter. What do you do?",
       "answers": [
-        { "axis": "A", "text": "stand once and take the beating that comes with keeping it. He needs to win every dusk; you only need to cost him one." },
-        { "axis": "B", "text": "go home a different way each night. The Gullet has more roofs than he has evenings." },
-        { "axis": "C", "text": "ask Gullet Mag what he answers to. Every tough in the Gullet pays respects to someone, and respects can be spoken to." }
+        { "axis": "A", "text": "You stand once and take the beating that comes with keeping it. He needs to win every dusk; you only need to cost him one." },
+        { "axis": "B", "text": "You go home a different way each night. The Gullet has more roofs than he has evenings." },
+        { "axis": "C", "text": "You ask Gullet Mag what he answers to. Every tough in the Gullet pays respects to someone, and respects can be spoken to." }
       ]
     },
     {
-      "prompt": "Old Cobb's best rat-dog slipped its cage and hangs snagged in the outfall grate, and the tide is rising. You —",
+      "prompt": "Old Cobb's best rat-dog slipped its cage and hangs snagged in the outfall grate. The tide is rising. What do you do?",
       "answers": [
-        { "axis": "A", "text": "wade in and take her out now. Cold water forgives the quick and drowns the careful." },
-        { "axis": "B", "text": "use what you know: the grate lifts on a pin the mudlarks keep quiet, and the tide gives you until the turn. So does the dog." },
-        { "axis": "C", "text": "run for Cobb. A dog in a panic bites its rescuer; it will let its own man touch it, and you know exactly where he drinks." }
+        { "axis": "A", "text": "You wade in and take her out now. Cold water forgives the quick and drowns the careful." },
+        { "axis": "B", "text": "You use what you know. The grate lifts on a pin the mudlarks keep quiet, and the tide gives you until the turn. So does the dog." },
+        { "axis": "C", "text": "You run for Cobb. A dog in a panic bites its rescuer, it will let its own man touch it, and you know exactly where he drinks." }
       ]
     },
     {
-      "prompt": "Brann's counter-hand miscounts your mother's change, a half-Royal in your favor, and no one has seen it. You —",
+      "prompt": "Brann's counter-hand miscounts your mother's change, a half-Royal in your favor, and nobody sees it. What do you do?",
       "answers": [
-        { "axis": "A", "text": "hand it back across the counter before you have decided anything. What is done in the open cannot be held against you." },
-        { "axis": "B", "text": "keep it. The counter has kept plenty of yours, and the sea does not hand things back either." },
-        { "axis": "C", "text": "return it quietly at shutter-time. A chandler who trusts your family's tally will carry them through a lean quarter, and lean quarters come." }
+        { "axis": "A", "text": "You hand it back across the counter before you have decided anything. What is done in the open cannot be held against you." },
+        { "axis": "B", "text": "You keep it. The counter has kept plenty of yours, and the sea does not hand things back either." },
+        { "axis": "C", "text": "You return it quietly at shutter-time. A chandler who trusts your family's tally will carry them through a lean quarter, and lean quarters come." }
       ]
     },
     {
-      "prompt": "Pay-night at the Bilge, and your father is drunk with the whole packet on him. A crimp is working the room. You —",
+      "prompt": "Pay-night at the Bilge. Your father is drunk with the packet on him and a crimp works the room. What do you do?",
       "answers": [
-        { "axis": "A", "text": "walk in and carry him home yourself, past whoever objects. Let the room watch." },
-        { "axis": "B", "text": "wait in the arcade shadow until the crimp picks his man, and be the reason your father is not it — out the back, before anyone chooses him." },
-        { "axis": "C", "text": "pay Redda's hand a copper to bunk him upstairs till morning. The Bilge keeps what it is paid to keep, and a copper is cheaper than a wage." }
+        { "axis": "A", "text": "You walk in and carry him home yourself, past whoever objects. Let the room watch." },
+        { "axis": "B", "text": "You wait in the arcade shadow until the crimp picks his man, and you make sure it is not your father. Out the back, before anyone chooses him." },
+        { "axis": "C", "text": "You pay Redda's hand a copper to bunk him upstairs till morning. The Bilge keeps what it is paid to keep, and a copper is cheaper than a wage." }
       ]
     },
     {
-      "prompt": "The Watch nails a warrant to the notice board naming a Rows lodger you know was at sea that night. You —",
+      "prompt": "The Watch nails a warrant to the notice board naming a Rows lodger you know was at sea that night. What do you do?",
       "answers": [
-        { "axis": "A", "text": "climb the Rise and tell the sergeant his paper is wrong, and give your name when he asks for it." },
-        { "axis": "B", "text": "say nothing to the post. Word can cross the roofs and meet the man's ship before the Watch meets the berth." },
-        { "axis": "C", "text": "copy the warrant's dates and walk them against the Weighhouse berth ledger. Paper argues best with paper." }
+        { "axis": "A", "text": "You climb the Rise and tell the sergeant his paper is wrong, and you give your name when he asks for it." },
+        { "axis": "B", "text": "You say nothing to the post. Word can cross the roofs and meet the man's ship before the Watch meets the berth." },
+        { "axis": "C", "text": "You copy the warrant's dates and walk them against the Weighhouse berth ledger. Paper argues best with paper." }
       ]
     },
     {
-      "prompt": "A hungry quarter, and the Mission's soup line is long. You are in it, and a bigger kid shoves in ahead of a smaller one. You —",
+      "prompt": "A hungry quarter, and the Mission's soup line is long. A bigger kid shoves in ahead of a smaller one. What do you do?",
       "answers": [
-        { "axis": "A", "text": "put him back where he was. A line only works if someone is willing to hold it." },
-        { "axis": "B", "text": "leave the line to those who cannot do otherwise — the strand feeds whoever works the low water, and the tide is out." },
-        { "axis": "C", "text": "take the ladle end and serve. The last bowl always finds the one who served, and the priest's eye finds them too." }
+        { "axis": "A", "text": "You put him back where he was. A line only works if someone is willing to hold it." },
+        { "axis": "B", "text": "You leave the line to those who cannot do otherwise. The strand feeds whoever works the low water, and the tide is out." },
+        { "axis": "C", "text": "You take the ladle end and serve. The last bowl always finds the one who served, and the priest's eye finds them too." }
       ]
     },
     {
-      "prompt": "On the roof-decks you find a dropped purse by the crawl-gap: heavy, not yours, and roof-money belongs to whoever asks about it least. You —",
+      "prompt": "A heavy purse lies by the crawl-gap on the roof-decks. It is not yours, and nobody is asking after it. What do you do?",
       "answers": [
-        { "axis": "A", "text": "call \"whose is this?\" down the deck, and hold it up. A thing done in the open cannot be made into something else later." },
-        { "axis": "B", "text": "leave it exactly where it lies and remember who comes back for it. What crosses the roofs matters more than what it weighs." },
-        { "axis": "C", "text": "carry it to Gullet Mag and let the ruin's gray voice judge. A favor with the judge outlasts any purse." }
+        { "axis": "A", "text": "You call \"whose is this?\" down the deck and hold it up. A thing done in the open cannot be made into something else later." },
+        { "axis": "B", "text": "You leave it exactly where it lies and remember who comes back for it. Roof-money goes to whoever asks after it least, and what crosses the roofs is worth more than the weight." },
+        { "axis": "C", "text": "You carry it to Gullet Mag and let the ruin's gray voice judge. A favor with the judge outlasts any purse." }
       ]
     },
     {
-      "prompt": "You wake at black tide and see a hull berth with no lights and no bell. In the morning everyone says no ship came in. You —",
+      "prompt": "At black tide you see a hull berth with no lights and no bell. By morning everyone says no ship came in. What do you do?",
       "answers": [
-        { "axis": "A", "text": "tell the Watch at first bell, and stand by it when they ask how you know." },
-        { "axis": "B", "text": "say nothing — and be on the quay, unseen, at the next black tide." },
-        { "axis": "C", "text": "mark what you could read of her name and look for it in the Weighhouse's posted list. A ship that is not on the list is a fact worth keeping." }
+        { "axis": "A", "text": "You tell the Watch at first bell, and you stand by it when they ask how you know." },
+        { "axis": "B", "text": "You say nothing, and you are on the quay, unseen, at the next black tide." },
+        { "axis": "C", "text": "You mark what you could read of her name and look for it in the Weighhouse's posted list. A ship that is not on the list is a fact worth keeping." }
       ]
     }
   ]
