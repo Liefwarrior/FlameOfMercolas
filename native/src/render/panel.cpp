@@ -296,12 +296,42 @@ void drawStipple(Framebuffer& target, const PanelRect& rect, const PanelMetric& 
             // frame counter -- so the field is identical every frame and a
             // capture is reproducible. A stipple that shimmers is worse than
             // no stipple.
-            const int h = (cell * 7 + row * 13) % 11;
-            if (h != 0 && h != 5) {
+            //
+            // A HASH, NOT A MODULUS OF A SUM. The old field was
+            // `(cell*7 + row*13) % 11`, which is LINEAR: h is constant along
+            // every (dc,dr) with 7dc + 13dr = 0 (mod 11), so the marks lay on
+            // parallel diagonals. That is invisible at 0.77% coverage and
+            // becomes a corduroy of diagonal stripes the moment the field is
+            // dense enough to see, which is the direction this is going. So
+            // the residue comes off a bit-mixer instead and the field has no
+            // grain of its own to notice.
+            unsigned k = (static_cast<unsigned>(cell) * 73856093U) ^
+                         (static_cast<unsigned>(row) * 19349663U);
+            k ^= k >> 13U;
+            k *= 2654435761U;
+            k ^= k >> 16U;
+            const unsigned h = k & 15U;
+            // THREE WEIGHTS, not one. A field of identical dots reads as a
+            // regular grid -- a screen door -- and the reference's does not:
+            // its marks vary, so the eye takes the whole as a texture rather
+            // than counting the dots. Half the cells carry a mark; half do
+            // not, which is what keeps it a stipple and not a wash.
+            const char* mark = nullptr;
+            float weight = 0.0F;
+            if (h < 3U) {
+                mark = ".";
+                weight = 1.0F;
+            } else if (h < 6U) {
+                mark = "'";
+                weight = 0.66F;
+            } else if (h < 8U) {
+                mark = ".";
+                weight = 0.42F;
+            } else {
                 continue;
             }
-            drawText(target, rect.x + cell * metric.cellW(), rect.y + row * metric.cellH(),
-                     h == 0 ? "." : "'", colour, alpha, metric.scale);
+            drawText(target, rect.x + cell * metric.cellW(), rect.y + row * metric.cellH(), mark,
+                     colour, alpha * weight, metric.scale);
         }
     }
 }
@@ -364,7 +394,7 @@ void PanelFrame::draw() {
                     metric_.heightOf(rows_ + 2), style_.ground,
                     style_.groundAlpha * style_.alpha);
     if (style_.stipple) {
-        drawStipple(target, interior_, metric_, style_.rule, 0.28F * style_.alpha);
+        drawStipple(target, interior_, metric_, style_.rule, kPaneStippleAlpha * style_.alpha);
     }
 
     // Which interior cells a rule at content row `r` should wear a junction on:

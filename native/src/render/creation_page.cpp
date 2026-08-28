@@ -200,7 +200,10 @@ void drawCreationPage(Framebuffer& target, const CreationPage& page) {
     // This screen runs before there is a world at all: there is nothing behind
     // it for a translucent ground to reveal, so it is very nearly opaque and the
     // near-black reads as a deliberate backdrop rather than an uncleared buffer.
-    style.groundAlpha = 0.98F;
+    // It takes kPageGroundAlpha anyway, because a full-screen page having its
+    // own number is exactly the drift that constant exists to end -- and this
+    // one is reachable from the pause menu, where there IS a world behind it.
+    style.groundAlpha = kPageGroundAlpha;
 
     PanelFrame frame(target, layout.bounds, metric, style);
     for (const int r : layout.ruleRows) {
@@ -232,12 +235,41 @@ void drawCreationPage(Framebuffer& target, const CreationPage& page) {
     // --- the master list ---------------------------------------------------
     const std::vector<PanelOption> options = listOptions(page);
     if (!options.empty()) {
+        // How many rows the list will actually spend, asked of the SAME pure
+        // planner the draw call walks -- not a second description of it. (The
+        // S4 lesson, and the reason both shapes have a plan* twin at all.)
+        int usedRows = 0;
         if (page.shape == CreationListShape::Blocks) {
+            for (const OptionBlock& block : planOptionBlocks(options, layout.listRect, metric,
+                                                             blockStyle())) {
+                if (block.rows > 0) {
+                    usedRows = std::max(usedRows, metric.rowsIn(block.rect.y + block.rect.h -
+                                                               layout.listRect.y));
+                }
+            }
             drawOptionBlocks(target, layout.listRect, metric, options, page.cursor, blockStyle(),
                              alpha);
         } else {
+            usedRows = planOptionList(options, layout.listRect, metric, columnStyle(page)).rows;
             drawOptionList(target, layout.listRect, metric, options, page.cursor,
                            columnStyle(page), alpha);
+        }
+        // THE MASTER PANE'S OWN DEAD SPACE, TEXTURED -- which it was not.
+        //
+        // The detail pane has had the field since it was written; the master
+        // pane never did, and the master pane is the one that empties out. The
+        // quiz is the case that proves it: three answers spend eight rows of a
+        // forty-one-row block list at 640x360, so 104,000 pixels -- roughly two
+        // thirds of the pane -- were flat black with nothing in them at all.
+        // Same rule, same alpha, same one blank row of breathing space between
+        // content and field that the detail pane leaves.
+        const int listRows = metric.rowsIn(layout.listRect.h);
+        const int spare = listRows - usedRows;
+        if (page.stipple && spare >= 3) {
+            const PanelRect rest{layout.listRect.x,
+                                 layout.listRect.y + metric.heightOf(usedRows + 1),
+                                 layout.listRect.w, metric.heightOf(spare - 1)};
+            drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
         }
     }
 
@@ -289,7 +321,7 @@ void drawCreationPage(Framebuffer& target, const CreationPage& page) {
         if (page.stipple && spare >= 3) {
             const PanelRect rest{detail.x, detail.y + metric.heightOf(at + used + 1), detail.w,
                                  metric.heightOf(spare - 1)};
-            drawStipple(target, rest, metric, ink.rule, 0.20F * alpha);
+            drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
         }
         if (!page.commitVerb.empty()) {
             drawCommitVerb(target, detail, metric, page.commitVerb, page.commitCost, ink.key,

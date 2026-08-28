@@ -918,7 +918,7 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
     // signage came through the panel: the first 1920x1080 capture of this page
     // has "THE GILDE" legible in the empty left third of the map pane, which is
     // a place name printed on a map where no such place stands.
-    style.groundAlpha = 0.995F;
+    style.groundAlpha = kPageGroundAlpha;
     PanelFrame frame(target, layout.bounds, metric, style);
     for (const int r : layout.ruleRows) {
         frame.addRule(r);
@@ -1331,7 +1331,7 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
                 if (spare >= 3) {
                     const PanelRect rest{proseRect.x, proseRect.y + metric.heightOf(wrote + 1),
                                          proseRect.w, metric.heightOf(spare - 1)};
-                    drawStipple(target, rest, metric, ink.rule, 0.22F * alpha);
+                    drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
                 }
                 break;
             }

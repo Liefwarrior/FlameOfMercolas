@@ -151,9 +151,11 @@ struct BandGeometry {
     // register and not four dialects of it.
     style.junction = Motif::Diamond;
     style.alpha = fade;
-    // The first-person view is behind these panels and is allowed to show
-    // through a little; this is the opacity the two bands have always had.
-    style.groundAlpha = 0.86F;
+    // A BAND, NOT A PAGE. The first-person view is behind these panels and is
+    // allowed to show through -- you are meant to still see who is talking.
+    // kBandGroundAlpha rather than kPageGroundAlpha, and the two are named so
+    // the difference reads as a decision instead of as more drift.
+    style.groundAlpha = kBandGroundAlpha;
     style.rule = parchment ? kParchmentEdge : kEdge;
     style.ground = parchment ? kParchmentPanel : kPanel;
     return style;

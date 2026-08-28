@@ -272,6 +272,49 @@ void drawRuleRun(Framebuffer& target, int x, int y, int cells, const PanelMetric
 void drawStipple(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
                  const Rgb& colour, float alpha);
 
+/// THE ONE ALPHA AN EMPTY PANE'S GROUND FIELD IS DRAWN AT.
+///
+/// There used to be four -- 0.20 in the creation detail pane, 0.22 in the
+/// casebook, the keys page and the map, 0.28 on PanelFrame's own ground -- and
+/// nobody could have told you why any of them was the number it was. Same drift
+/// the four groundAlphas were, and the same answer: pick one, and let a screen
+/// that genuinely wants a different weight pass its own and say so.
+///
+/// 0.55 rather than the old 0.22 because the field was MEASURED and it was not
+/// working: 0.77% coverage at a 21/255 luma delta over the near-black ground,
+/// which is a stipple only to somebody who has been told there is one. The
+/// spec's whole argument for texturing dead space is the 640x360 window, and at
+/// 640x360 it was reading as flat black.
+inline constexpr float kPaneStippleAlpha = 0.55F;
+
+/// THE ONE GROUND OPACITY A FULL-SCREEN PAGE IS DRAWN AT.
+///
+/// There used to be four of these too -- 0.995 on the ward map, 0.99 in the
+/// casebook, 0.98 in creation, 0.97 on the controls page -- each with its own
+/// paragraph explaining a number nobody had measured against the others. Three
+/// of those paragraphs say the SAME thing in different words ("the ward's own
+/// hanging signage reads straight through"), which is how you know it is drift
+/// and not four judgements.
+///
+/// 0.97 was demonstrably not enough. The controls page's own comment records
+/// the author catching "THE GILDED GULL" through the bindings list and
+/// answering it by going from the vocabulary default to 0.97 -- and two frames
+/// committed AFTER that still have the sign legible across the middle of the
+/// list. A lamplit street sign is high-contrast against near-black: 3% of it is
+/// still a readable word. 0.5% is not, which is why the map -- the page that
+/// paid for a capture and then measured it -- landed here.
+///
+/// NOT 1.0, deliberately. The half per cent is what keeps a page feeling like a
+/// surface over a world rather than a modal box that replaced it; at 0.995 the
+/// world contributes tone and never a glyph.
+inline constexpr float kPageGroundAlpha = 0.995F;
+
+/// What a BAND over the live world is drawn at -- the conversation panel, the
+/// dialogue rows. A different number for a different job, and the difference is
+/// the point: you are meant to still see who you are talking to. Named so the
+/// next reader can tell this apart from the drift above at a glance.
+inline constexpr float kBandGroundAlpha = 0.86F;
+
 // ---------------------------------------------------------------------------
 // the frame
 // ---------------------------------------------------------------------------

@@ -270,12 +270,15 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
     style.junction = Motif::Diamond;
     style.alpha = alpha;
     style.stipple = false;
-    // A LITTLE DENSER THAN THE DEFAULT. This page takes the whole frame, and at
-    // the default ground the ward's own signage reads straight through a column
-    // of key names -- "THE GILDED GULL" was legible through the middle of the
-    // list in the first capture. Six per cent of a lamplit street is not
-    // atmosphere behind text this small; three is.
-    style.groundAlpha = 0.97F;
+    // THE WHOLE FRAME, so the whole ground -- kPageGroundAlpha.
+    //
+    // This comment used to end "six per cent of a lamplit street is not
+    // atmosphere behind text this small; three is." It is not. The fix that
+    // sentence describes -- default down to 0.97 -- shipped, and "THE GILDED
+    // GULL" is still legible across the middle of the bindings list in two
+    // committed frames. A lamplit sign is the highest-contrast thing in the
+    // ward and 3% of it still spells a word. 0.5% does not.
+    style.groundAlpha = kPageGroundAlpha;
 
     PanelFrame frame(target, comp.bounds, metric, style);
     for (const int r : comp.ruleRows) {
@@ -320,6 +323,24 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
     drawOptionListPlanned(target, listRect, metric, page,
                           std::clamp(state.cursor, 0, std::max(0, count - 1)) - first, plan,
                           alpha);
+
+    // THE MASTER PANE'S OWN DEAD SPACE, TEXTURED. The detail pane opposite has
+    // had the field since this page was written and the list side never did --
+    // and the list side is the one that ends halfway down, because the columns
+    // are as tall as the LONGEST column and the last one is short.
+    {
+        const int columns = std::max(1, plan.columns);
+        const int shown = static_cast<int>(page.size());
+        // Rows the drawn slice actually spends: the planner's row count is for
+        // the whole list, and a scrolled page may hold less than that.
+        const int usedRows = std::min(plan.rows, (shown + columns - 1) / columns);
+        const int spare = listRows - usedRows;
+        if (spare >= 3) {
+            const PanelRect rest{listRect.x, listRect.y + metric.heightOf(usedRows + 1), listRect.w,
+                                 metric.heightOf(spare - 1)};
+            drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
+        }
+    }
 
     // The indicator row at the foot of the master pane holds its place whether
     // or not there is anything to say, so the rule under the body never moves.
@@ -389,7 +410,7 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
         if (spare >= 3) {
             const PanelRect rest{prose.x, prose.y + metric.heightOf(used + 1), prose.w,
                                  metric.heightOf(spare - 1)};
-            drawStipple(target, rest, metric, ink.rule, 0.22F * alpha);
+            drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
         }
 
         // STATE CHANGES THE VERB, not the button's enabled-ness. A row that is

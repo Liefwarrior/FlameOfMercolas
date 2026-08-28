@@ -442,7 +442,7 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
     if (spare >= 3) {
         const PanelRect rest{prose.x, prose.y + metric.heightOf(used + 1), prose.w,
                              metric.heightOf(spare - 1)};
-        drawStipple(target, rest, metric, ink.rule, 0.22F * alpha);
+        drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
     }
 
     // STATE CHANGES THE VERB. Three states, three verbs, no greyed-out button:
@@ -534,7 +534,7 @@ void drawCaseDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
     if (spare >= 3) {
         const PanelRect rest{under.x, under.y + metric.heightOf(used + 1), under.w,
                              metric.heightOf(spare - 1)};
-        drawStipple(target, rest, metric, ink.rule, 0.22F * alpha);
+        drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
     }
     drawCommitVerb(target, detail, metric, "LEFT - BACK TO THE LEADS", "", ink.key, alpha);
 }
@@ -645,10 +645,11 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
     style.junction = Motif::Diamond;
     style.alpha = alpha;
     style.stipple = false;
-    // A FULL TAKEOVER, so the ground is dense. The map page paid a capture to
-    // learn this: at the vocabulary's default the ward's own hanging signage
-    // reads straight through a column of text.
-    style.groundAlpha = 0.99F;
+    // A FULL TAKEOVER, so the ground is dense -- kPageGroundAlpha, the one
+    // number every full-screen page now uses. See its own header: this file
+    // used to say 0.99 for the same reason the map said 0.995 and the controls
+    // page said 0.97, which is three spellings of one rule.
+    style.groundAlpha = kPageGroundAlpha;
 
     PanelFrame frame(target, comp.bounds, metric, style);
     for (const int r : comp.ruleRows) {
@@ -727,7 +728,7 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
         if (spare >= 3) {
             const PanelRect rest{listRect.x, listRect.y + metric.heightOf(drawnRows + 1),
                                  listRect.w, metric.heightOf(spare - 1)};
-            drawStipple(target, rest, metric, ink.rule, 0.22F * alpha);
+            drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
         }
     }
 
