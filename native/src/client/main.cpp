@@ -24,15 +24,18 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "granadad/audio/backend_sdl.hpp"
 #include "granadad/content/content_dir.hpp"
 #include "granadad/content/world_reader.hpp"
 #include "granadad/sim/compound.hpp"
 #include "granadad/render/capture.hpp"
+#include "granadad/render/casebook_page.hpp"
 #include "granadad/render/controls.hpp"
 #include "granadad/render/creation.hpp"
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/map_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/step_pump.hpp"
 #include "granadad/sim/angle.hpp"
@@ -290,6 +293,315 @@ struct Options {
     /// creationStep is "origin" or "customize".
     bool wantsCreation = false;
     std::string creationStep = "origin";
+    /// THE PARITY PASS, VERIFICATION ONLY. A comma-separated pad script -- see
+    /// PadScript below. Empty means no virtual pad is attached at all and the
+    /// windowed loop is byte-for-byte the shipped one.
+    std::string padScript;
+    /// The same, for the CHARACTER SCREEN -- the window a windowed launch opens
+    /// first. Separate because they are separate windows with separate SDL
+    /// lifetimes; see PadDriver.
+    std::string padCreation;
+    /// Where a pad script's `shot:NAME` beats land.
+    std::filesystem::path padShotDir;
+};
+
+// ---------------------------------------------------------------------------
+// the virtual pad
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS, AND WHAT IT IS NOT.
+//
+// scripts/drive-windowed.ps1 proves the keyboard and the mouse by pressing real
+// keys through Win32 SendInput -- real scancodes, real relative motion, the same
+// path a physical device goes down. There is no SendInput for a gamepad. A
+// verifier with no controller plugged in therefore had NO way to photograph the
+// pad driving anything, which is precisely how "the D-pad is bound to nothing"
+// survived into a shipping build with a nav band on screen advertising it.
+//
+// SDL's own virtual joystick closes that. SDL_AttachVirtualJoystick creates a
+// device SDL itself reports through SDL_EVENT_GAMEPAD_ADDED, opens as a real
+// SDL_Gamepad, delivers as real SDL_EVENT_GAMEPAD_BUTTON_DOWN events, and
+// answers SDL_GetGamepadAxis for. So the frame loop below is not stubbed, not
+// branched and does not know this is happening: `pad`, `route_menu_key`,
+// `key_of_pad_button`, the stick latch and the trigger edges are the SHIPPED
+// code paths, exercised whole.
+//
+// WHAT IT DOES NOT PROVE: that a particular physical controller enumerates, or
+// that Steam Input routes to it. Those need a hand on a real pad. This proves
+// everything between SDL's gamepad layer and the screen, which is where all of
+// this pass's defects were.
+
+struct PadBeat {
+    enum class Kind : std::uint8_t { Button, Stick, Wait, Shot } kind = Kind::Wait;
+    SDL_GamepadButton button = SDL_GAMEPAD_BUTTON_INVALID;
+    /// Stick beats: which axis, and which way past the deadzone.
+    SDL_GamepadAxis axis = SDL_GAMEPAD_AXIS_LEFTX;
+    Sint16 value = 0;
+    int millis = 0;
+    std::string name;
+};
+
+/// Parses "back,wait:400,down,down,shot:pad-map,a" into beats. Unknown words are
+/// reported and refuse the run rather than being skipped -- a capture that
+/// quietly dropped the press it was taken to prove is worse than no capture.
+[[nodiscard]] bool parse_pad_script(const std::string& text, std::vector<PadBeat>& out) {
+    struct Named {
+        const char* word;
+        SDL_GamepadButton button;
+    };
+    static constexpr Named kButtons[] = {
+        {"a", SDL_GAMEPAD_BUTTON_SOUTH},          {"b", SDL_GAMEPAD_BUTTON_EAST},
+        {"x", SDL_GAMEPAD_BUTTON_WEST},           {"y", SDL_GAMEPAD_BUTTON_NORTH},
+        {"back", SDL_GAMEPAD_BUTTON_BACK},        {"start", SDL_GAMEPAD_BUTTON_START},
+        {"lb", SDL_GAMEPAD_BUTTON_LEFT_SHOULDER}, {"rb", SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER},
+        {"up", SDL_GAMEPAD_BUTTON_DPAD_UP},       {"down", SDL_GAMEPAD_BUTTON_DPAD_DOWN},
+        {"left", SDL_GAMEPAD_BUTTON_DPAD_LEFT},   {"right", SDL_GAMEPAD_BUTTON_DPAD_RIGHT},
+    };
+    struct NamedStick {
+        const char* word;
+        SDL_GamepadAxis axis;
+        Sint16 value;
+    };
+    // PAST kNavStickOn (18000) BY A MARGIN, so the latch in the frame loop is
+    // being crossed and not grazed.
+    static constexpr NamedStick kSticks[] = {
+        {"lsup", SDL_GAMEPAD_AXIS_LEFTY, -28000},
+        {"lsdown", SDL_GAMEPAD_AXIS_LEFTY, 28000},
+        {"lsleft", SDL_GAMEPAD_AXIS_LEFTX, -28000},
+        {"lsright", SDL_GAMEPAD_AXIS_LEFTX, 28000},
+        // THE TRIGGERS ARE AXES, NOT BUTTONS, and that is SDL's rule rather
+        // than this harness's: S13's own note in the frame loop is that
+        // SDL reports LT/RT through SDL_GAMEPAD_AXIS_*_TRIGGER and never as a
+        // button, which is why the game synthesizes their press edges by
+        // polling. So they are driven here the way the game reads them --
+        // well past the shipped triggerDeadzonePercent, and back to rest on
+        // the release beat, which is the release edge.
+        {"lt", SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 28000},
+        {"rt", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 28000},
+    };
+
+    std::size_t at = 0;
+    while (at <= text.size()) {
+        const std::size_t comma = text.find(',', at);
+        const std::string word =
+            text.substr(at, comma == std::string::npos ? std::string::npos : comma - at);
+        at = comma == std::string::npos ? text.size() + 1 : comma + 1;
+        if (word.empty()) {
+            continue;
+        }
+        PadBeat beat;
+        if (word.rfind("wait:", 0) == 0) {
+            beat.kind = PadBeat::Kind::Wait;
+            beat.millis = std::atoi(word.c_str() + 5);
+            out.push_back(beat);
+            continue;
+        }
+        if (word.rfind("shot:", 0) == 0) {
+            beat.kind = PadBeat::Kind::Shot;
+            beat.name = word.substr(5);
+            out.push_back(beat);
+            continue;
+        }
+        bool found = false;
+        for (const Named& row : kButtons) {
+            if (word == row.word) {
+                beat.kind = PadBeat::Kind::Button;
+                beat.button = row.button;
+                out.push_back(beat);
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            continue;
+        }
+        for (const NamedStick& row : kSticks) {
+            if (word == row.word) {
+                beat.kind = PadBeat::Kind::Stick;
+                beat.axis = row.axis;
+                beat.value = row.value;
+                out.push_back(beat);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            std::printf("granadad: --padscript: unknown beat '%s'\n", word.c_str());
+            (void)std::fflush(stdout);
+            return false;
+        }
+    }
+    return true;
+}
+
+/// The virtual device and the playhead over a script. ONE OF THESE PER WINDOW,
+/// because a windowed launch opens two -- the character screen and then the
+/// world -- and each runs its own SDL_Init/SDL_Quit pair, which a virtual
+/// joystick cannot survive. Sharing the struct is what keeps the two capture
+/// paths from being two different harnesses that could disagree.
+struct PadDriver {
+    std::vector<PadBeat> beats;
+    SDL_Joystick* device = nullptr;
+    SDL_JoystickID id = 0;
+    std::filesystem::path shotDir;
+    std::size_t at = 0;
+    Uint64 until = 0;
+    bool held = false;
+
+    [[nodiscard]] bool live() const { return device != nullptr && !beats.empty(); }
+
+    /// Attaches and returns true when `script` is non-empty and parsed.
+    bool attach(const std::string& script, std::filesystem::path shots) {
+        shotDir = std::move(shots);
+        if (script.empty() || !parse_pad_script(script, beats)) {
+            beats.clear();
+            return false;
+        }
+        SDL_VirtualJoystickDesc desc{};
+        desc.version = static_cast<Uint32>(sizeof(desc));
+        desc.type = static_cast<Uint16>(SDL_JOYSTICK_TYPE_GAMEPAD);
+        desc.naxes = static_cast<Uint16>(SDL_GAMEPAD_AXIS_COUNT);
+        desc.nbuttons = static_cast<Uint16>(SDL_GAMEPAD_BUTTON_COUNT);
+        // WITHOUT THE MASKS SDL BUILDS A MAPPING WITH NOTHING ON IT. They are
+        // what tells the auto-generated gamepad mapping which of the declared
+        // axes and buttons actually exist, and an empty mask is a pad that
+        // enumerates, opens, and reports every button unpressed forever --
+        // which would look exactly like the bug being tested for.
+        desc.button_mask = (1U << SDL_GAMEPAD_BUTTON_COUNT) - 1U;
+        desc.axis_mask = (1U << SDL_GAMEPAD_AXIS_COUNT) - 1U;
+        desc.name = "Granadad Verification Pad";
+        id = SDL_AttachVirtualJoystick(&desc);
+        if (id == 0) {
+            std::printf("granadad: --padscript: SDL_AttachVirtualJoystick failed: %s\n",
+                        SDL_GetError());
+            beats.clear();
+            return false;
+        }
+        device = SDL_OpenJoystick(id);
+        std::printf("granadad: --padscript: virtual pad attached, %d beats\n",
+                    static_cast<int>(beats.size()));
+        // FLUSHED, EVERY LINE. A harness whose progress is invisible until it
+        // exits is a harness you cannot debug when it does not exit -- and
+        // mingw's stdout to a pipe is fully buffered, so a run stopped on a
+        // timeout handed back an EMPTY log however far it had actually got.
+        (void)std::fflush(stdout);
+        return device != nullptr;
+    }
+
+    /// A BUTTON EDGE, PUSHED ONTO SDL'S OWN EVENT QUEUE -- and this is the one
+    /// place the harness is not the device.
+    ///
+    /// MEASURED, NOT ASSUMED: SDL 3.4.12's virtual joystick delivers AXES and
+    /// does NOT deliver BUTTONS. With a 400 ms hold and a per-frame poll,
+    /// SDL_SetJoystickVirtualButton returned true every time while
+    /// SDL_GetGamepadButton stayed 0 and no SDL_EVENT_JOYSTICK_BUTTON_DOWN was
+    /// ever queued -- while SDL_SetJoystickVirtualAxis on the same device, in
+    /// the same frame, moved SDL_GetGamepadAxis to 28000 and arrived as a real
+    /// SDL_EVENT_GAMEPAD_AXIS_MOTION. The generated mapping was correct and
+    /// complete (`a:b0 ... dpdown:b12 ... lefty:a1`), so this is SDL's own
+    /// device layer, not the mapping and not this file.
+    ///
+    /// WHAT THE PUSH THEREFORE PROVES, EXACTLY: everything from SDL's event
+    /// queue onward -- key_of_pad_button, route_menu_key, every branch under
+    /// it, the pages themselves. That is where every defect this pass fixed
+    /// was. WHAT IT DOES NOT PROVE: SDL's own translation from a physical HID
+    /// report into that event, which is SDL's job, is not code in this repo,
+    /// and IS exercised end-to-end by the stick beats above -- the same device,
+    /// the same open gamepad, the same frame loop.
+    void pushButton(SDL_GamepadButton button, bool down) const {
+        SDL_Event out{};
+        out.type = down ? SDL_EVENT_GAMEPAD_BUTTON_DOWN : SDL_EVENT_GAMEPAD_BUTTON_UP;
+        out.gbutton.timestamp = SDL_GetTicksNS();
+        out.gbutton.which = id;
+        out.gbutton.button = static_cast<Uint8>(button);
+        out.gbutton.down = down;
+        (void)SDL_PushEvent(&out);
+    }
+
+    void detach() {
+        if (device != nullptr) {
+            SDL_CloseJoystick(device);
+            device = nullptr;
+        }
+        if (id != 0) {
+            (void)SDL_DetachVirtualJoystick(id);
+            id = 0;
+        }
+    }
+
+    /// One beat's worth of progress. CALLED AFTER THE PRESENT, so a `shot:`
+    /// beat photographs the frame that has just been drawn -- every press
+    /// before it accounted for, none after it -- and the next press is set on
+    /// the device before the next poll reads it. A button is HELD for one
+    /// advance and released on the next, which is what makes SDL emit a genuine
+    /// DOWN and then a genuine UP.
+    ///
+    /// Returns false when the script has run out: the caller closes its window,
+    /// so the harness terminates itself rather than needing a kill.
+    bool advance(const render::Framebuffer& frame) {
+        if (!live()) {
+            return true;
+        }
+        const Uint64 now = SDL_GetTicks();
+        if (now < until) {
+            return true;
+        }
+        if (held) {
+            // RELEASE. Both kinds return to rest through the same beat, so a
+            // stick beat crosses the latch's lower threshold and re-arms it
+            // exactly as a thumb coming off the stick does.
+            const PadBeat& beat = beats[at];
+            if (beat.kind == PadBeat::Kind::Button) {
+                pushButton(beat.button, false);
+            } else if (beat.kind == PadBeat::Kind::Stick) {
+                (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(beat.axis), 0);
+            }
+            held = false;
+            ++at;
+            until = now + 90;
+            return true;
+        }
+        if (at >= beats.size()) {
+            std::printf("granadad: --padscript: script complete\n");
+            (void)std::fflush(stdout);
+            return false;
+        }
+        const PadBeat& beat = beats[at];
+        switch (beat.kind) {
+            case PadBeat::Kind::Button:
+                pushButton(beat.button, true);
+                held = true;
+                until = now + 90;
+                break;
+            case PadBeat::Kind::Stick:
+                (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(beat.axis), beat.value);
+                held = true;
+                until = now + 90;
+                break;
+            case PadBeat::Kind::Wait:
+                until = now + static_cast<Uint64>(std::max(beat.millis, 0));
+                ++at;
+                break;
+            case PadBeat::Kind::Shot: {
+                std::filesystem::path out =
+                    shotDir.empty() ? std::filesystem::path(".") : shotDir;
+                std::error_code ec;
+                std::filesystem::create_directories(out, ec);
+                out /= beat.name + ".png";
+                // THE FRAMEBUFFER ITSELF, NOT THE WINDOW. The deliverable is
+                // judged at the render size (640x360 by default), and upscaling
+                // it first would hide exactly the thing the size is judged for.
+                const bool ok = render::writePng(frame, out.string());
+                std::printf("granadad: --padscript: %s %s\n", ok ? "wrote" : "FAILED to write",
+                            out.string().c_str());
+                (void)std::fflush(stdout);
+                ++at;
+                until = now + 40;
+                break;
+            }
+        }
+        return true;
+    }
 };
 
 [[nodiscard]] bool starts_with(const char* text, const char* prefix, const char** rest) {
@@ -414,6 +726,24 @@ void print_usage() {
         "                       slot 3 through the Grimoire page, close it and\n"
         "                       press the number, so the bottom-centre strip\n"
         "                       and the CAST row are photographed agreeing\n"
+        "  --padscript=BEATS    VERIFICATION ONLY: attach an SDL VIRTUAL\n"
+        "                       GAMEPAD and play a comma-separated script of\n"
+        "                       beats through it, so the pad's own code path\n"
+        "                       can be photographed on a machine with no\n"
+        "                       controller plugged in. Beats: a b x y back\n"
+        "                       start lb rb up down left right (buttons),\n"
+        "                       lsup lsdown lsleft lsright (a left-stick push\n"
+        "                       past the deadzone and back), lt rt (the\n"
+        "                       triggers, which SDL reports as axes and not\n"
+        "                       as buttons), wait:MS, shot:NAME. An unknown\n"
+        "                       beat REFUSES THE WHOLE SCRIPT rather than\n"
+        "                       being skipped -- a capture that quietly\n"
+        "                       dropped the press it was taken to prove is\n"
+        "                       worse than no capture. Windowed runs only\n"
+        "  --padcreation=BEATS  the same, for the CHARACTER SCREEN -- the\n"
+        "                       window a windowed launch opens first, and so\n"
+        "                       the one a --padscript has to get past\n"
+        "  --padshots=DIR       where a --padscript shot:NAME beat writes\n"
         "  --creation[=STEP]    capture the character-creation flow with no\n"
         "                       window and no world. STEP is origin (default),\n"
         "                       calling (the nine-trade roster), quiz (question\n"
@@ -757,6 +1087,14 @@ void print_usage() {
             // VERIFICATION ONLY. See SmokeRunConfig::quickbar's own header.
             options.smoke.quickbar = true;
             options.wantsSmoke = true;
+        } else if (starts_with(arg, "--padscript=", &value)) {
+            // THE PARITY PASS, VERIFICATION ONLY -- see PadScript's header. It
+            // does nothing at all outside the windowed loop.
+            options.padScript = value;
+        } else if (starts_with(arg, "--padcreation=", &value)) {
+            options.padCreation = value;
+        } else if (starts_with(arg, "--padshots=", &value)) {
+            options.padShotDir = value;
         } else if (std::strcmp(arg, "--creation") == 0) {
             options.wantsCreation = true;
         } else if (starts_with(arg, "--creation=", &value)) {
@@ -943,16 +1281,51 @@ void print_usage() {
         return false;
     }
 
+    // THE PARITY PASS. B IS BACK, on every page, and it is done by REMAPPING
+    // rather than by a new branch in each of the nine surfaces below.
+    //
+    // The pad had no way out of a page once the D-pad started navigating one.
+    // PadUp was the casebook's only pad exit (it carries Action::Menu, the pad's
+    // Tab) and the moment "up" means "up the list" -- which is the whole point
+    // of this pass -- that exit is gone. PadEast carries Action::Crouch, and
+    // crouching is meaningless while a page owns the input: `listening` in the
+    // frame loop has already stood the movement keys down. So while any surface
+    // below is open, East is Escape -- and Escape is a key every one of these
+    // branches ALREADY has an answer for, either its own (the workbench's
+    // endForge) or the deliberate fall-through to Action::Pause, which "backs
+    // out of whatever is open".
+    //
+    // LOCAL, so the caller still calls pressed() with the real PadEast: with no
+    // page open not one branch below runs, the remap is invisible, and B is
+    // crouch in the world exactly as it has always been.
+    if (key == render::Key::PadEast) {
+        key = render::Key::Escape;
+    }
+
     const render::Action action = session.controls().actionFor(key);
     // The five list movements, in the vocabulary of intent. Arrows always work
     // as well, bound or not, because a list is the one place arrow keys are
     // unambiguous.
-    const bool up = key == render::Key::Up || action == render::Action::Forward ||
-                    action == render::Action::QuickPrev;
-    const bool downward = key == render::Key::Down || action == render::Action::Back ||
-                          action == render::Action::QuickNext;
-    const bool leftward = key == render::Key::Left || action == render::Action::StrafeLeft;
-    const bool rightward = key == render::Key::Right || action == render::Action::StrafeRight;
+    //
+    // AND SO DOES THE D-PAD, for exactly the same reason and by exactly the
+    // same mechanism -- the raw key, ahead of any binding. THE PARITY PASS
+    // FOUND THIS DEAD: of the four D-pad directions only PadUp carried an
+    // action at all (Menu, since the ward map took PadBack), so PadDown,
+    // PadLeft and PadRight resolved to Action::Count here, took no branch, fell
+    // through to pressed() and did NOTHING -- while the nav band along the foot
+    // of the map said ARROWS NEXT PLACE and the casebook's said UP DOWN NEXT
+    // LEAD. Every one of those bands was advertising a verb the pad could not
+    // perform. A page is the one place the D-pad is as unambiguous as an arrow
+    // key, so it is read the same way and outranks its own binding there --
+    // which is what takes PadUp off Menu for as long as a list is up.
+    const bool up = key == render::Key::Up || key == render::Key::PadUp ||
+                    action == render::Action::Forward || action == render::Action::QuickPrev;
+    const bool downward = key == render::Key::Down || key == render::Key::PadDown ||
+                          action == render::Action::Back || action == render::Action::QuickNext;
+    const bool leftward = key == render::Key::Left || key == render::Key::PadLeft ||
+                          action == render::Action::StrafeLeft;
+    const bool rightward = key == render::Key::Right || key == render::Key::PadRight ||
+                           action == render::Action::StrafeRight;
     const bool confirm = key == render::Key::Enter || action == render::Action::Interact;
     // The printed number beside a row. Ten of them, and the tenth turns the page
     // -- see kTopicPageSize.
@@ -1138,11 +1511,41 @@ void print_usage() {
             session.cycleDistrictMapTab(1);
             return true;
         }
+        // THE PARITY PASS: THE BUMPERS ARE THE PAD'S TAB KEY. Tab above is a
+        // keyboard key and the pad's Tab (PadUp, Action::Menu) is now the
+        // cursor's own UP -- so without this the four views the tab row prints
+        // were reachable by keyboard and mouse and by no pad button at all.
+        // PagePrev/PageNext is where "the next page of this thing" already
+        // lives, LB/RB is where a thumb expects a tab, and `[`/`]` come along
+        // for free on the keyboard side.
+        if (action == render::Action::PageNext) {
+            session.cycleDistrictMapTab(1);
+            return true;
+        }
+        if (action == render::Action::PagePrev) {
+            session.cycleDistrictMapTab(-1);
+            return true;
+        }
         if (key == render::Key::Equals) {
             session.adjustDistrictMapZoom(1);
             return true;
         }
         if (key == render::Key::Minus) {
+            session.adjustDistrictMapZoom(-1);
+            return true;
+        }
+        // THE ZOOM LADDER, ON THE TRIGGERS. Same argument as the bumpers: `=`
+        // and `-` are keyboard keys, and the owner's own complaint about this
+        // page -- "hard to figure out where the place you're looking for is" --
+        // was answered by a zoom a pad could not reach. Cast/Block are the two
+        // pad keys a full-screen map has no other use for (S13 gave them RT and
+        // LT), and this is the same "a verb wearing a different mode's clothes"
+        // the haggle branch below already spends PageNext on.
+        if (action == render::Action::Cast) {
+            session.adjustDistrictMapZoom(1);
+            return true;
+        }
+        if (action == render::Action::Block) {
             session.adjustDistrictMapZoom(-1);
             return true;
         }
@@ -1355,6 +1758,106 @@ void print_usage() {
         return false;
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// the pointer
+// ---------------------------------------------------------------------------
+//
+// THE PARITY PASS. WHAT WAS WRONG: the window was opened with
+// SDL_SetWindowRelativeMouseMode(window, true) and never left that mode except
+// through the F3 escape hatch, so while a full-screen page was up there was no
+// pointer on screen AT ALL. That is not "the mouse does not select"; it is "the
+// mouse does not exist". Meanwhile mapPlaceAtPixel() and casebookLeadAtPixel()
+// had both been written, both documented as "the inverse of what was drawn",
+// and both given cases in test_map_view.cpp and test_casebook_page.cpp -- and
+// NOTHING IN THE PROGRAM CALLED EITHER OF THEM. Two tested hit-tests, dead.
+//
+// AND THE POINTER MIRRORS THE CURSOR rather than running beside it -- the rule
+// run_creation_window() already keeps for the character screen (see its own
+// header). Hovering a lead calls the same setCasebookCursor() a D-pad press
+// calls; hovering a building calls the same selection a d-pad step calls. There
+// is no second "hovered" highlight the pad cannot see, so the three devices
+// cannot disagree about which row is live, and a click is only ever "put the
+// cursor here, then confirm".
+//
+// FRAMEBUFFER PIXELS, NOT WINDOW PIXELS. Both hit-tests are the inverse of a
+// draw into a `width x height` framebuffer that SDL then presents with
+// SDL_SetRenderLogicalPresentation at an integer scale; at the default
+// --scale=2 a window coordinate is twice a frame coordinate, and at a resized
+// window there is a letterbox as well. SDL_ConvertEventToRenderCoordinates is
+// the only correct conversion across both, and the caller does it before
+// calling in here -- same as the creation window.
+
+/// True while a page owns the input, which is the one condition under which the
+/// player gets a pointer back. Deliberately the same six flags `listening`
+/// reads in the frame loop: "is a page eating the keyboard" and "should there be
+/// a cursor on screen" are the same question, and two hand-kept copies of that
+/// list is the drift session.hpp's own menuOpen() comment warns about.
+[[nodiscard]] bool pointer_page_open(const render::Session& session) {
+    return session.menuOpen() || session.pauseOpen() || session.talking() ||
+           session.waitOpen() || session.picking();
+}
+
+/// A hover or a click at framebuffer pixel (px, py). `click` commits; a hover
+/// only moves the cursor. Returns true when the page took it -- a false says
+/// "no page wanted this pixel", and the caller then leaves the press alone.
+bool session_pointer(render::Session& session, int frameWidth, int frameHeight, int px, int py,
+                     bool click) {
+    if (session.districtMapOpen()) {
+        // THE WARD MAP. mapPageLayout() is the same layout drawDistrictMap()
+        // composes from -- map_view.hpp exposes it for exactly this reason
+        // ("a mouse, a test and the scrolling arithmetic all need the same
+        // answer the drawing used") -- so the viewport handed to mapPlaceAtPixel
+        // is the viewport the plan was drawn through, not a second guess at it.
+        const render::DistrictMapState plan = session.districtMapState();
+        const render::MapPageLayout layout =
+            render::mapPageLayout(frameWidth, frameHeight, plan);
+        if (!layout.usable) {
+            return false;
+        }
+        const int at = render::mapPlaceAtPixel(layout.viewport, px, py);
+        if (at < 0) {
+            // OFF THE PLAN IS NOT A MISS THAT FALLS THROUGH. A click on the
+            // detail pane, the tab row or the frame is still a click ON THE
+            // PAGE, and letting it reach pressed() would put a punch through a
+            // full-screen map. Taken and dropped.
+            return true;
+        }
+        const std::vector<render::MapPlace>& places = render::mapPlaces();
+        if (at >= static_cast<int>(places.size())) {
+            return true;
+        }
+        (void)session.selectDistrictMapPlace(places[static_cast<std::size_t>(at)].name);
+        if (click) {
+            // THE COMMIT VERB AT THE FOOT OF THE DETAIL PANE, which is what the
+            // page prints and what ENTER and PadSouth already do: turn to face
+            // it and put the map away. A click is a select-then-confirm, so a
+            // player who only wants to look moves the pointer and does not
+            // press.
+            session.faceDistrictMapSelection();
+        }
+        return true;
+    }
+    if (session.casebookPageOpen()) {
+        const render::CasebookPageState page = session.casebookPageState();
+        const int at = render::casebookLeadAtPixel(page, frameWidth, frameHeight, px, py);
+        if (at < 0) {
+            return true;
+        }
+        session.setCasebookCursor(at);
+        if (click) {
+            session.commitCasebookLead();
+        }
+        return true;
+    }
+    // EVERY OTHER PAGE STILL SWALLOWS THE CLICK. The keys page, the options
+    // page, the grimoire, the wait page, the pause menu and a conversation have
+    // no hit-test of their own yet (see the report: three surfaces have one,
+    // six do not), and until they do the honest behaviour is "the page is
+    // modal": a click lands on the page and stops there rather than swinging a
+    // fist at somebody through it, which is what it did before this pass.
+    return pointer_page_open(session);
 }
 
 // ---------------------------------------------------------------------------
@@ -2118,6 +2621,15 @@ render::CreationResult run_creation_window(const Options& options) {
     render::Framebuffer frame(width, height);
     bool cancelled = false;
 
+    // THE PARITY PASS. THE CHARACTER SCREEN IS THE FIRST SURFACE A PLAYER
+    // TOUCHES, and a windowed launch opens it before the world -- so a pad
+    // script aimed at the world would never reach the world without one aimed
+    // at this. Its own driver, because this window runs its own SDL_Init/
+    // SDL_Quit pair and a virtual joystick does not survive that. See
+    // PadDriver's header.
+    PadDriver creationPad;
+    (void)creationPad.attach(options.padCreation, options.padShotDir);
+
     while (!flow.done() && !cancelled) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -2216,10 +2728,18 @@ render::CreationResult run_creation_window(const Options& options) {
             SDL_RenderTexture(renderer, texture, nullptr, nullptr);
             SDL_RenderPresent(renderer);
         }
+        if (!creationPad.advance(frame)) {
+            // THE SCRIPT ENDING IS NOT A CANCEL. A pad script that walked the
+            // flow to its confirm has already set flow.done(); one that has not
+            // leaves this window the way closing it does.
+            cancelled = !flow.done();
+            break;
+        }
     }
 
     const render::CreationResult result = flow.done() ? flow.result() : render::CreationResult{};
 
+    creationPad.detach();
     if (pad != nullptr) {
         SDL_CloseGamepad(pad);
     }
@@ -2500,6 +3020,29 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
 
     bool mouseLook = true;
     SDL_SetWindowRelativeMouseMode(window, true);
+    // THE PARITY PASS. THE POINTER COMES BACK WHEN A PAGE IS UP, and this is
+    // the whole of the mechanism: one bool that says which of the two mouse
+    // modes the window is in, flipped at the top of the frame off
+    // pointer_page_open(). Relative mode is mouselook and hides the cursor;
+    // absolute mode is a pointer over a full-screen page, which is the only
+    // time the game has anything for a pointer to point AT.
+    //
+    // The owner asked for "easily navigatable with controller or mouse or
+    // keyboard" and the mouse half of that was one call away the whole time --
+    // the hit-tests were written and tested, the window was simply never taking
+    // the pointer out of the corner. F3 still forces relative mode off entirely
+    // for a player who wants their cursor to alt-tab; that is unrelated and
+    // untouched.
+    bool pointerLive = false;
+    /// What SDL was last told. Kept so the flip is an EDGE and not a call every
+    /// frame, and so F3's own toggle and the page's both read off one place.
+    bool relativeMouse = true;
+    /// The last place the pointer was seen this frame, and whether it moved --
+    /// see the MOUSE_MOTION case on why the hover is resolved once per frame
+    /// and not once per event.
+    int pointerX = 0;
+    int pointerY = 0;
+    bool pointerMoved = false;
 
     // Whichever pad turned up first. One player, one pad.
     //
@@ -2526,6 +3069,16 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     if (pad != nullptr) {
         std::printf("granadad: gamepad '%s' connected\n", SDL_GetGamepadName(pad));
     }
+
+    // --- THE VIRTUAL PAD, VERIFICATION ONLY -------------------------------
+    //
+    // ATTACHED BEFORE THE LOOP, DRIVEN INSIDE IT, and everything downstream is
+    // the shipped path -- see PadBeat's header on why that is the whole point.
+    // SDL_EVENT_GAMEPAD_ADDED fires during the first poll and the ordinary
+    // handler above opens it into `pad`, exactly as a controller plugged in
+    // mid-game does.
+    PadDriver padDriver;
+    (void)padDriver.attach(options.padScript, options.padShotDir);
 
     // The body advances on a fixed 60 Hz cadence whatever the frame rate does,
     // so what the simulation sees is a whole number of identical steps and a
@@ -2566,12 +3119,34 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // quiet behind a menu): livePad reading null is an ordinary release edge.
     bool leftTriggerDown = false;
     bool rightTriggerDown = false;
+    // THE PARITY PASS. The left stick's own latch state while a page owns the
+    // input -- see the stickNav block in the frame loop.
+    bool navStickVertical = false;
+    bool navStickHorizontal = false;
 
     bool running = true;
     std::int64_t frames = 0;
     while (running) {
         sim::MoveInput held;
         SDL_Event event;
+        // WHICH MOUSE THE WINDOW HAS, decided once, before a single event is
+        // read. Ahead of the pump on purpose: the page this pointer will click
+        // on is the page that was DRAWN last frame, so the hit-tests and the
+        // picture agree by construction rather than by a frame's luck.
+        {
+            // A PAGE OUTRANKS mouseLook, not the other way round. F3 is "give
+            // me my cursor back to alt-tab with"; a page is "there is something
+            // on screen to point at". Both want the pointer out, so the page
+            // does not need F3's permission -- and when the page closes, the
+            // window goes back to whatever F3 last left mouseLook saying.
+            const bool wantPointer = pointer_page_open(session) && !session.awaitingKey();
+            const bool wantRelative = mouseLook && !wantPointer;
+            if (wantPointer != pointerLive || wantRelative != relativeMouse) {
+                pointerLive = wantPointer;
+                relativeMouse = wantRelative;
+                SDL_SetWindowRelativeMouseMode(window, relativeMouse);
+            }
+        }
         // WHAT A KEY DOES, in one place, whatever pressed it. Called from the
         // keyboard, the mouse and the pad, so a verb bound to PAD_A and a verb
         // bound to E go down exactly the same path and cannot drift apart.
@@ -2847,8 +3422,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     // shape of bug the rest of this task was about.
                     if (key == render::Key::F3 &&
                         session.controls().actionFor(key) == render::Action::Count) {
+                        // FLIPS THE INTENT, NOT THE WINDOW. The top of the
+                        // frame owns the one SDL_SetWindowRelativeMouseMode
+                        // call now, so F3 and an open page cannot each set the
+                        // mode and disagree about which of them was last.
                         mouseLook = !mouseLook;
-                        SDL_SetWindowRelativeMouseMode(window, mouseLook);
                         break;
                     }
                     if (route_menu_key(session, key)) {
@@ -2861,6 +3439,32 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     released(key_of_scancode(event.key.scancode));
                     break;
                 case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                    // THE POINTER FIRST, WHEN THERE IS ONE. `pointerLive` is
+                    // only ever true while a page is up (see its declaration),
+                    // and while a page is up a left click is a click ON THE
+                    // PAGE -- never Action::Attack, which is what it used to be
+                    // and which meant clicking a lead in the casebook threw a
+                    // punch at whoever was standing in front of you.
+                    if (pointerLive && !session.awaitingKey()) {
+                        if (event.button.button == SDL_BUTTON_RIGHT) {
+                            // RIGHT-CLICK IS BACK, the same gesture and the
+                            // same reason as run_creation_window()'s, and the
+                            // same route the pad's B now takes.
+                            if (!route_menu_key(session, render::Key::Escape)) {
+                                pressed(render::Key::Escape);
+                            }
+                            break;
+                        }
+                        if (event.button.button != SDL_BUTTON_LEFT) {
+                            break;
+                        }
+                        SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                        if (session_pointer(session, frame.width(), frame.height(),
+                                            static_cast<int>(event.button.x),
+                                            static_cast<int>(event.button.y), true)) {
+                            break;
+                        }
+                    }
                     const render::Key key = key_of_mouse_button(event.button.button);
                     if (!route_menu_key(session, key)) {
                         pressed(key);
@@ -2884,6 +3488,28 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     break;
                 }
                 case SDL_EVENT_MOUSE_MOTION:
+                    if (pointerLive && !session.awaitingKey()) {
+                        // HOVER MIRRORS THE CURSOR. Not a second highlight the
+                        // pad cannot see -- see session_pointer's header.
+                        //
+                        // RECORDED HERE, RESOLVED ONCE PER FRAME, and that is
+                        // not a refinement -- the first version hit-tested
+                        // inside this case and FROZE THE GAME the moment the
+                        // pointer crossed the ward map. A mouse produces
+                        // motion events far faster than frames, and the map's
+                        // hit-test has to rebuild DistrictMapState (which
+                        // gathers every person standing in the selection) and
+                        // re-compose the whole page to get the viewport the
+                        // plan was drawn through. Dozens of those per frame is
+                        // a hang, and it was one. The pointer can only be in
+                        // one place when the frame is drawn, so only the last
+                        // position of the batch can matter.
+                        SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                        pointerX = static_cast<int>(event.motion.x);
+                        pointerY = static_cast<int>(event.motion.y);
+                        pointerMoved = true;
+                        break;
+                    }
                     if (mouseLook && !session.awaitingKey()) {
                         // THROUGH THE SETTINGS, AND RAW. Sensitivity and
                         // invert-Y are applied once, here, by
@@ -2900,6 +3526,16 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     break;
                 default:
                     break;
+            }
+        }
+
+        // THE HOVER, ONCE, off the last position of whatever batch of motion
+        // events this frame brought in. See the MOUSE_MOTION case.
+        if (pointerMoved) {
+            pointerMoved = false;
+            if (pointerLive && !session.awaitingKey()) {
+                (void)session_pointer(session, frame.width(), frame.height(), pointerX, pointerY,
+                                      false);
             }
         }
 
@@ -3019,16 +3655,27 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // -- its one reader. An edge, not a level, so a held trigger behaves
         // exactly like any held key: Block=LT stays down for as long as the
         // finger does, Cast=RT fires once per pull. Runs OUTSIDE the
-        // `livePad != nullptr` stick block on purpose -- a pad unplugged (or
-        // muted behind a page: `listening` nulls livePad above) mid-pull
-        // reads as an ordinary release edge instead of a stuck guard.
+        // `livePad != nullptr` stick block on purpose -- a pad unplugged
+        // mid-pull reads as an ordinary release edge instead of a stuck guard.
+        //
+        // THE PARITY PASS: `pad`, NOT `livePad`, AND A CAPTURE FOUND IT. This
+        // block's own comment above says a trigger goes down "the same route a
+        // physical button-down takes, menu router first" -- and it could not,
+        // because `listening` nulls livePad the moment any page opens, so
+        // every trigger read as RELEASED under exactly the pages the router
+        // exists for. The ward map's zoom went on the triggers in this pass;
+        // the first photograph of it came back at ZOOM 1/4 with both pulls in,
+        // which is what sent me here. Reading `pad` restores the intent, and
+        // costs nothing when no page is open: `livePad` IS `pad` then. A pad
+        // that goes away still reads as a release, because SDL_GetGamepadAxis
+        // is only consulted when the handle is non-null.
         {
             const std::int32_t threshold =
                 controls_now.pad.triggerDeadzonePercent * render::kStickMax / 100;
             const auto triggerEdge = [&](bool& wasDown, SDL_GamepadAxis axis,
                                          render::Key key) {
-                const bool isDown = livePad != nullptr &&
-                                    SDL_GetGamepadAxis(livePad, axis) > threshold;
+                const bool isDown =
+                    pad != nullptr && SDL_GetGamepadAxis(pad, axis) > threshold;
                 if (isDown == wasDown) {
                     return;
                 }
@@ -3048,6 +3695,58 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         render::Key::PadLeftTrigger);
             triggerEdge(rightTriggerDown, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
                         render::Key::PadRightTrigger);
+        }
+
+        // --- THE PARITY PASS: THE LEFT STICK WALKS A LIST -------------------
+        //
+        // WHAT WAS WRONG. `livePad` above is null for as long as a page owns
+        // the input, which is right for the two analogue readers -- a leaned
+        // stick must not walk the body around underneath an open map -- but it
+        // also meant the stick was the one pad control that went completely
+        // silent exactly when the player was most likely to be pushing it.
+        // With the D-pad unbound as well (see route_menu_key), a pad could OPEN
+        // the ward map and could FACE a building, and could not move the cursor
+        // between them by any means at all.
+        //
+        // `pad`, NOT `livePad`, and gated on `listening` -- the mirror image of
+        // the block above. Below a page the stick steers the body and this does
+        // nothing; under one it steers the list and the body reader is the part
+        // that is quiet. The two can never both be reading it.
+        //
+        // A LATCH, NOT A LEVEL, and the same two thresholds run_creation_window
+        // already uses: one step when the push crosses kStickOn, and nothing
+        // more until it comes back under kStickOff. An axis produces no press
+        // event, so without the latch a leaned stick scrolls a list at the
+        // frame rate, which is unusable -- the character screen learned that
+        // first and this is the same lesson, not a second guess at it.
+        //
+        // THROUGH route_menu_key, AS THE D-PAD KEY IT STANDS FOR. Not through a
+        // parallel set of Session calls: a verb that exists for the stick and
+        // not for the D-pad is exactly the drift this whole pass is about.
+        if (pad != nullptr && listening) {
+            constexpr Sint16 kNavStickOn = 18000;
+            constexpr Sint16 kNavStickOff = 9000;
+            const auto stickNav = [&](bool& latched, SDL_GamepadAxis axis, render::Key negative,
+                                      render::Key positive) {
+                const int value = SDL_GetGamepadAxis(pad, axis);
+                const int magnitude = value < 0 ? -std::max(value, -32767) : value;
+                if (!latched && magnitude >= kNavStickOn) {
+                    latched = true;
+                    (void)route_menu_key(session, value < 0 ? negative : positive);
+                } else if (latched && magnitude <= kNavStickOff) {
+                    latched = false;
+                }
+            };
+            stickNav(navStickVertical, SDL_GAMEPAD_AXIS_LEFTY, render::Key::PadUp,
+                     render::Key::PadDown);
+            stickNav(navStickHorizontal, SDL_GAMEPAD_AXIS_LEFTX, render::Key::PadLeft,
+                     render::Key::PadRight);
+        } else {
+            // CLEARED THE MOMENT THE PAGE CLOSES, so a stick still leaned when
+            // the map goes away does not arrive at the next page already
+            // latched and swallow its first push.
+            navStickVertical = false;
+            navStickHorizontal = false;
         }
 
         held.crouch = crouch.active();
@@ -3090,6 +3789,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             SDL_RenderTexture(renderer, texture, nullptr, nullptr);
             SDL_RenderPresent(renderer);
         }
+
+        if (!padDriver.advance(frame)) {
+            running = false;
+        }
     }
 
     // THE BORROW ENDS BEFORE THE LENDER DOES. `audio` (declared after
@@ -3111,6 +3814,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     if (pad != nullptr) {
         SDL_CloseGamepad(pad);
     }
+    padDriver.detach();
     if (texture != nullptr) {
         SDL_DestroyTexture(texture);
     }
