@@ -32,7 +32,12 @@
         ctrl:MS      hold crouch
         alt:MS       hold walk
         tap:KEY      press and release KEY (space, e, q, tab, f1, f2, v, x,
+                     m, j, enter, esc, up, down, left, right,
                      lbracket, rbracket -- PagePrev/PageNext's own bindings)
+        hover:XxY    put the pointer at framebuffer pixel X,Y (THE PARITY
+                     PASS -- scaled by -FrameScale). `x` separates the two
+                     numbers because the script itself is comma-separated
+        click:XxY    the same, and left-click there
         look:DX,DY   move the mouse DX,DY counts, relative
         turn:DEG     look, in degrees, using the shipped sensitivity
         wait:MS      do nothing
@@ -48,6 +53,9 @@ param(
     [string]$ExeArgs = "--width=960 --height=540 --scale=1 --time=10",
     [Parameter(Mandatory = $true)][string]$Script,
     [string]$OutDir = "docs\frames\p77-controls",
+    # THE PARITY PASS. What `click:X,Y` and `hover:X,Y` multiply their
+    # framebuffer coordinates by -- the --scale the game was launched at.
+    [int]$FrameScale = 1,
     [int]$BootMs = 2500
 )
 
@@ -105,6 +113,8 @@ public static class Drive {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr p);
     [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT r);
+    [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
 
     /// WINDOWS WILL NOT SIMPLY GIVE A BACKGROUND PROCESS THE FOREGROUND, and a
     /// harness that types into whatever happens to be in front instead of into
@@ -144,6 +154,30 @@ public static class Drive {
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X; public int Y; }
+
+    /// THE PARITY PASS. A pointer put somewhere inside the game's CLIENT AREA,
+    /// in client pixels -- not window pixels. GetWindowRect includes the border
+    /// and the title bar, so a click computed off it lands a couple of rows
+    /// high, which on a list of 8-pixel rows is a different row. GetClientRect
+    /// plus ClientToScreen is the pair that answers the question actually being
+    /// asked: where on screen is the top-left of the picture.
+    public static void PointAtClient(IntPtr hWnd, int cx, int cy) {
+        POINT origin = new POINT();
+        ClientToScreen(hWnd, ref origin);
+        SetCursorPos(origin.X + cx, origin.Y + cy);
+    }
+
+    public static void ClickHere() {
+        INPUT[] click = new INPUT[2];
+        click[0].type = INPUT_MOUSE;
+        click[0].u.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        click[1] = click[0];
+        click[1].u.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        SendInput(2, click, Marshal.SizeOf(typeof(INPUT)));
+    }
+
     public static void Key(ushort scan, bool down, bool extended) {
         INPUT[] input = new INPUT[1];
         input[0].type = INPUT_KEYBOARD;
@@ -165,6 +199,17 @@ public static class Drive {
 }
 '@
 Add-Type -TypeDefinition $signature -Language CSharp
+
+# DPI FIRST, BEFORE ANY COORDINATE IS ASKED FOR OR SET.
+#
+# THE PARITY PASS FOUND THIS DECLARED AND NEVER CALLED, and it is the reason
+# the first mouse run of this pass clicked on nothing: this machine runs at
+# 150%, so an un-aware process is handed VIRTUALISED coordinates -- ClientToScreen
+# reports the window 1.5x smaller than it is and SetCursorPos scales what it is
+# given right back up. Every hover and click landed two thirds of the way to
+# where it was aimed, and the game was entirely right to ignore them. SDL is
+# DPI-aware, so the only way the two agree is for this to be as well.
+[void][Drive]::SetProcessDPIAware()
 
 # PS/2 set-1 scancodes. What the hardware sends and what SDL turns back into
 # SDL_SCANCODE_*.
@@ -286,13 +331,28 @@ foreach ($beat in $Script.Split(',')) {
     # One re-fetch of MainWindowHandle and one more ForceForeground handles
     # it; a script that is ACTUALLY looking at something else still stops
     # here exactly as before.
+    #
+    # THE PARITY PASS WIDENED THE RE-ACQUIRE INTO A WAIT. #85's version asked
+    # ONCE, immediately -- and the creation window closes several seconds
+    # before the client's own window exists, because the whole ward loads in
+    # between. One look at MainWindowHandle in that gap sees the OLD handle (or
+    # none), gives up, and the script stops on "LOST FOCUS" with the game
+    # perfectly alive and about to appear. So: ask for up to eight seconds,
+    # which is longer than the world has ever taken to load and still short
+    # enough that a genuinely lost foreground stops the run.
     if ([Drive]::GetForegroundWindow() -ne $hwnd) {
-        $proc.Refresh()
-        $freshHwnd = $proc.MainWindowHandle
-        if ($freshHwnd -ne [IntPtr]::Zero -and $freshHwnd -ne $hwnd) {
-            Write-Host "  window handle changed (creation -> client) -- re-acquiring"
-            $hwnd = $freshHwnd
-            [Drive]::ForceForeground($hwnd)
+        $deadline = (Get-Date).AddSeconds(8)
+        while ((Get-Date) -lt $deadline) {
+            $proc.Refresh()
+            if ($proc.HasExited) { break }
+            $freshHwnd = $proc.MainWindowHandle
+            if ($freshHwnd -ne [IntPtr]::Zero -and $freshHwnd -ne $hwnd) {
+                Write-Host "  window handle changed (creation -> client) -- re-acquiring"
+                $hwnd = $freshHwnd
+                [Drive]::ForceForeground($hwnd)
+                Start-Sleep -Milliseconds 500
+            }
+            if ([Drive]::GetForegroundWindow() -eq $hwnd) { break }
             Start-Sleep -Milliseconds 400
         }
     }
@@ -308,6 +368,28 @@ foreach ($beat in $Script.Split(',')) {
             Start-Sleep -Milliseconds 60
             Send-Key $arg $false
             Start-Sleep -Milliseconds 250
+            continue
+        }
+        '^hover$' {
+            # THE PARITY PASS. X,Y are FRAMEBUFFER pixels -- the coordinates the
+            # renderer drew in, and the coordinates mapPlaceAtPixel and
+            # casebookLeadAtPixel are the inverse of -- multiplied up by the
+            # window scale the game was launched at.
+            # X-SEPARATED, NOT COMMA-SEPARATED, because the whole script is one
+            # comma-separated string -- `hover:87,260` splits into two beats and
+            # the second one is looked up as a key name. `look:` and `turn:`
+            # predate that trap by taking a single argument.
+            $fx, $fy = $arg.Split('x')
+            [Drive]::PointAtClient($hwnd, ([int]$fx * $FrameScale), ([int]$fy * $FrameScale))
+            Start-Sleep -Milliseconds 250
+            continue
+        }
+        '^click$' {
+            $fx, $fy = $arg.Split('x')
+            [Drive]::PointAtClient($hwnd, ([int]$fx * $FrameScale), ([int]$fy * $FrameScale))
+            Start-Sleep -Milliseconds 200
+            [Drive]::ClickHere()
+            Start-Sleep -Milliseconds 350
             continue
         }
         '^look$' {
