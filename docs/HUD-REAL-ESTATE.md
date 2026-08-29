@@ -687,3 +687,81 @@ the adaptive decisions above are that inversion being paid for. A case pins
 every one of them, including that the nav band still names the key that closes
 the book after it re-columns, because the one-row band silently dropped that
 entry at 1920x1080 and a screenshot is what found it.
+
+---
+
+## The polish pass: the stipple, the ground, and one sign that stopped being cut in half
+
+Everything below was measured at **640x360**, the default render size, and not
+sampled at 960x540 and assumed down.
+
+### The street, where the ruler means what it says
+
+There is a world behind this scene, so `--nohud` is a real control and INK and
+CLAIMED are the honest numbers:
+
+| scene, 640x360 | ink | claimed |
+|---|---|---|
+| street, **before** | 7,917 (3.44%) | 13,231 (5.74%) |
+| street, **after** | 7,587 (3.29%) | 12,431 (5.40%) |
+
+**Both went down.** The change on this scene removes a label rather than adding
+one: the ward's own hanging signage is drawn before the HUD and could not see
+it, so on the Tarwalk "THE BILGE" and the crosshair's own "HEMP CAT" row landed
+on the same pixels and the prompt won by being second, cutting a street name
+through the middle. `SignageSettings::exclusion` hands the sign pass the
+prompt's own footprint and the existing nearest-first rule does the rest.
+
+### The pages, where it does not
+
+Four of the five scenes this pass touched are **full-screen surfaces over no
+world**, which is this document's own documented degenerate case: the ink mask
+against a `--nohud` control is the whole page, CLAIMED reads ~100%, and the
+number means nothing. So what is reported here instead is **ink density** — the
+fraction of the frame carrying anything above the panel ground — measured on
+the shipped binary before and after:
+
+| page, 640x360 | ink density before | after |
+|---|---|---|
+| creation door | 4.10% | **5.01%** |
+| the quiz | 6.53% | **7.45%** |
+| controls | 5.92% | **6.71%** |
+| casebook | 5.04% | **5.77%** |
+| ward map | 45.54% | **45.76%** |
+
+Roughly nine tenths of a point each, and all of it is the stipple.
+
+### What the stipple actually was, and what it is now
+
+Measured inside the casebook's empty lead pane and the quiz's empty answer
+pane, at 640x360, on the ground the marks sit on (luma 8):
+
+| | coverage | peak luma | mean lit luma |
+|---|---|---|---|
+| casebook pane, before | 0.76% | 29 | 29 |
+| casebook pane, after | **1.92%** | **60** | **44** |
+| quiz pane, before | **0.00%** | — | — |
+| quiz pane, after | **1.83%** | **60** | **43** |
+
+The quiz row is the finding. Its master pane had no stipple at all: three
+answers spend about eight rows of the block list, so roughly two thirds of the
+pane — about 104,000 pixels — was genuinely flat black. Only the *detail* panes
+ever carried the field, and the master pane is the one that empties out.
+
+Coverage 2.5x and delta 3.9x, so the signal is about ten times what it was. The
+field is now a bit-mixer rather than `(cell*7 + row*13) % 11`, which is linear
+and lays its marks on parallel diagonals — invisible at 0.77% and visible
+corduroy at the density this needed.
+
+### One ground alpha, not four
+
+0.995 on the ward map, 0.99 in the casebook, 0.98 in creation, 0.97 on the
+controls page. Three of the four comments defending those numbers say the same
+thing in different words. `kPageGroundAlpha` is 0.995 for all four; the
+conversation band keeps 0.86 as `kBandGroundAlpha`, which is a different job and
+is named so it reads as a decision.
+
+0.97 was measurably not enough: the controls page's own comment records the
+author catching "THE GILDED GULL" through the bindings list and answering it by
+moving to 0.97, and frames committed *after* that still have the sign legible
+across the middle of the list.
