@@ -329,6 +329,55 @@ public:
     void typeNameChar(char c) noexcept;
     void backspaceName() noexcept;
 
+    // --- THE ON-SCREEN KEYBOARD --------------------------------------------
+    //
+    // A PAD CANNOT TYPE, AND THAT IS WHY THIS EXISTS. Until it did, a
+    // controller-only player reached the sheet, pressed A on NAME, and had
+    // nothing left to press: canConfirm() is gated on a non-empty name and
+    // there was no pad input in the build that could put a glyph in it. That is
+    // the difference between "controller supported" and "controller supported
+    // except you cannot start the game", and it is the one gap that stopped a
+    // pad-only verifier reaching a single world surface.
+    //
+    // IT IS THE SAME COMPOSITION AS EVERY OTHER STEP. Not a new widget: a
+    // CreationPage whose master list happens to hold thirty single-glyph rows
+    // (six columns by five, see kOskColumns) and whose detail pane names the
+    // glyph under the cursor and holds the name so far. Selection is the same
+    // inverted fill; the commit verb sits at the foot restating its cost; the
+    // mouse gets hover and click for free out of creationPageHitTest, because
+    // the hit-test is the inverse of the one composition both of them read.
+    //
+    // SOMEONE TYPING NEVER SEES IT. It opens only when a PAD asks -- main.cpp
+    // routes a pad confirm on the NAME row here and a keyboard confirm nowhere
+    // near it -- and typeNameChar(), which is the only way a real keystroke
+    // reaches the name, closes it on the way past. The keyboard path is what it
+    // always was.
+    [[nodiscard]] bool oskOpen() const noexcept { return osk_; }
+    /// No-op unless a name is actually being edited: the keyboard is the name
+    /// field's, not a mode of its own.
+    void openOsk() noexcept;
+    void closeOsk() noexcept { osk_ = false; }
+
+    /// The grid in READING order -- across, then down. A..Z, then the three
+    /// punctuation glyphs typeNameChar() actually accepts, then the rub-out.
+    /// `_` prints for a space and `<` for a backspace, because every cell is
+    /// one glyph wide and that is what keeps the grid a grid.
+    ///
+    /// The cursor walks THIS order. pageForOsk() reorders into the column-major
+    /// order drawOptionList lays a list out in, so the grid reads across while
+    /// the vocabulary underneath is untouched.
+    static constexpr int kOskColumns = 6;
+    static constexpr int kOskRows = 5;
+    [[nodiscard]] static const std::vector<std::string>& oskCells();
+    [[nodiscard]] int oskCursor() const noexcept { return oskCursor_; }
+    void setOskCursor(int index) noexcept;
+    /// Wraps on both axes, so no direction is ever a dead press.
+    void moveOskCursor(int dx, int dy) noexcept;
+    /// Takes the glyph under the cursor, or rubs one out. Does NOT close the
+    /// keyboard -- finishing is the commit verb at the foot, which is where the
+    /// reference puts a commit and where this page says it is.
+    void commitOsk() noexcept;
+
     /// Row 0 is NAME. Row 1 is LOOK, off sim/appearance.hpp's eleven
     /// options -- present for CUSTOM always, present for DEVIN/GABRI only
     /// when their own CompanionTemplate::appearanceType() actually authors
@@ -520,6 +569,8 @@ private:
     // separate so a case can assert what a step SAYS without a framebuffer.
     /// The review/customize step, which is the one every door converges on.
     [[nodiscard]] CreationPage pageForSheet() const;
+    /// The sheet's NAME row, opened out into its own grid. See oskCells().
+    [[nodiscard]] CreationPage pageForOsk() const;
     /// One sheet row as LABEL and VALUE rather than labelFor()'s one jammed
     /// string -- this screen has a common value column and labelFor() predates
     /// it. labelFor() is untouched: DialogueViewState still wants the old shape.
@@ -595,6 +646,8 @@ private:
     std::string name_;
     bool nameIsDefault_ = true;
     bool editingName_ = false;
+    bool osk_ = false;
+    int oskCursor_ = 0;
     /// The shared Calling/Quiz/Background cursor -- see choiceCursor().
     int choiceCursor_ = 0;
     std::string chosenCallingId_;

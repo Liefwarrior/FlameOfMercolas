@@ -801,6 +801,66 @@ void CreationFlow::typeNameChar(char c) noexcept {
     }
     name_.push_back(upper);
     nameIsDefault_ = false;
+    // A REAL KEYSTROKE PUTS THE ON-SCREEN KEYBOARD AWAY. This is the whole of
+    // the "someone typing never sees it" guarantee, and it lives here rather
+    // than in main.cpp because this is the one funnel every typed glyph goes
+    // through -- a second copy of the rule beside the SDL loop is a rule that
+    // will eventually disagree with itself. commitOsk() is the one caller that
+    // is NOT a keystroke, and it restores the flag over the top.
+    osk_ = false;
+}
+
+const std::vector<std::string>& CreationFlow::oskCells() {
+    static const std::vector<std::string> cells = [] {
+        std::vector<std::string> out;
+        out.reserve(static_cast<std::size_t>(kOskColumns) * static_cast<std::size_t>(kOskRows));
+        for (char c = 'A'; c <= 'Z'; ++c) {
+            out.emplace_back(1, c);
+        }
+        // Exactly what typeNameChar() accepts and nothing else, so no cell on
+        // this grid is a cell that does nothing when you press it.
+        out.emplace_back("-");
+        out.emplace_back("'");
+        out.emplace_back("_");
+        out.emplace_back("<");
+        return out;
+    }();
+    return cells;
+}
+
+void CreationFlow::openOsk() noexcept {
+    if (!editingName_) {
+        return;
+    }
+    osk_ = true;
+}
+
+void CreationFlow::setOskCursor(int index) noexcept {
+    if (index < 0 || index >= static_cast<int>(oskCells().size())) {
+        return;
+    }
+    oskCursor_ = index;
+}
+
+void CreationFlow::moveOskCursor(int dx, int dy) noexcept {
+    const int col = ((oskCursor_ % kOskColumns) + dx % kOskColumns + kOskColumns) % kOskColumns;
+    const int row = ((oskCursor_ / kOskColumns) + dy % kOskRows + kOskRows) % kOskRows;
+    oskCursor_ = row * kOskColumns + col;
+}
+
+void CreationFlow::commitOsk() noexcept {
+    const std::vector<std::string>& cells = oskCells();
+    if (oskCursor_ < 0 || oskCursor_ >= static_cast<int>(cells.size())) {
+        return;
+    }
+    const std::string& cell = cells[static_cast<std::size_t>(oskCursor_)];
+    if (cell == "<") {
+        backspaceName();
+        return;
+    }
+    const bool wasOpen = osk_;
+    typeNameChar(cell == "_" ? ' ' : cell[0]);
+    osk_ = wasOpen;
 }
 
 void CreationFlow::backspaceName() noexcept {
@@ -814,8 +874,10 @@ void CreationFlow::backspaceName() noexcept {
 void CreationFlow::backToOrigin() noexcept {
     if (editingName_) {
         editingName_ = false;
+        osk_ = false;
         return;
     }
+    osk_ = false;
     step_ = CreationStep::Origin;
 }
 
@@ -1620,7 +1682,69 @@ CreationPage CreationFlow::page() const {
     }
 
     // ------------------------------------------------------------- the sheet
+    if (osk_ && editingName_) {
+        return pageForOsk();
+    }
     return pageForSheet();
+}
+
+CreationPage CreationFlow::pageForOsk() const {
+    CreationPage out;
+    out.title = "CREATION";
+    out.tabs = stageTabs();
+    out.currentTab = 3;
+    out.accent = panelInk().accent;
+    out.shape = CreationListShape::Columns;
+    out.maxColumns = kOskColumns;
+    // The grid is thirty single glyphs and the detail pane holds a name, two
+    // facts and a verb: the detail is the wider half of this one.
+    out.masterShare = 42;
+    // THE GRID IS STATIC UNDER THE CURSOR -- moving does not swap a row for a
+    // taller one -- so five rows is the floor and the floor is the content.
+    out.bodyHoldRows = kOskRows;
+    out.crumbs = {"NEW GAME", chosenOrigin().name, "THE NAME"};
+    out.instruction = "PICK THE LETTERS ONE AT A TIME. NO KEYBOARD NEEDED.";
+    out.readout = std::to_string(name_.size()) + " OF " + std::to_string(kMaxNameLength);
+
+    // DISPLAY ORDER IN, DRAW ORDER OUT. drawOptionList runs column-major (entry
+    // 0 is the top of the first column) which would set the alphabet reading
+    // DOWN; the grid is transposed here so it reads ACROSS, and the cursor
+    // index is transposed with it. Both transposes are the same expression, so
+    // the fill cannot land on a different glyph than the one the pane names.
+    const std::vector<std::string>& cells = oskCells();
+    out.rows.resize(cells.size());
+    for (int display = 0; display < static_cast<int>(cells.size()); ++display) {
+        const int drawIndex = (display % kOskColumns) * kOskRows + (display / kOskColumns);
+        CreationPageRow& row = out.rows[static_cast<std::size_t>(drawIndex)];
+        row.label = cells[static_cast<std::size_t>(display)];
+        row.accent = out.accent;
+    }
+    out.cursor = (oskCursor_ % kOskColumns) * kOskRows + (oskCursor_ / kOskColumns);
+
+    const std::string& under = cells[static_cast<std::size_t>(
+        std::clamp(oskCursor_, 0, static_cast<int>(cells.size()) - 1))];
+    out.detailBadge = "NAME";
+    out.detailStatus = under == "<"   ? "RUB OUT"
+                       : under == "_" ? "A SPACE"
+                                      : "THE LETTER " + under;
+    // The caret is part of the value, not a separate row: the field is one
+    // line and what it shows is what has been taken so far.
+    out.facts = {PanelFact{"SO FAR", name_.empty() ? std::string("NOTHING YET") : name_ + "_",
+                           name_.empty() ? InkRole::Dim : InkRole::Accent},
+                 PanelFact{"ROOM FOR",
+                           std::to_string(kMaxNameLength - name_.size()) + " MORE",
+                           InkRole::Number}};
+    PanelLine line;
+    line.body = "EVERY LINE THIS GAME SPEAKS FROM HERE ON HAS THIS WELDED INTO IT.";
+    out.lines.push_back(std::move(line));
+    // STATE CHANGES THE VERB. A blank name does not grey this out; it says what
+    // is missing, and pressing it does nothing because there is nothing yet to
+    // take -- the same rule BEGIN keeps two screens along.
+    out.commitVerb = name_.empty() ? "START - PICK A LETTER FIRST" : "START - THAT IS THE NAME";
+    out.commitCost = name_.empty() ? "" : "(" + name_ + ", FOR GOOD)";
+    out.nav = {navOf("B", "BACK"), navOf("PAD", "MOVE"), navOf("A", "TAKE"),
+               navOf("START", "DONE")};
+    return out;
 }
 
 CreationPage CreationFlow::pageForSheet() const {

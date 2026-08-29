@@ -2198,6 +2198,28 @@ enum class CreationVerb : std::uint8_t { None, Up, Down, Left, Right, Confirm, C
     }
 }
 
+/// Did this key come off a PAD? The on-screen keyboard is opened by that fact
+/// and by nothing else, which is what keeps a typing player from ever seeing
+/// it: a keyboard ENTER on the NAME row opens text entry exactly as it always
+/// did, and only a pad confirm opens the grid as well.
+[[nodiscard]] bool creation_key_is_pad(render::Key key) noexcept {
+    switch (key) {
+        case render::Key::PadSouth:
+        case render::Key::PadEast:
+        case render::Key::PadWest:
+        case render::Key::PadNorth:
+        case render::Key::PadStart:
+        case render::Key::PadBack:
+        case render::Key::PadUp:
+        case render::Key::PadDown:
+        case render::Key::PadLeft:
+        case render::Key::PadRight:
+            return true;
+        default:
+            return false;
+    }
+}
+
 /// One input, applied. Returns false when the player asked to leave the screen
 /// entirely (cancel at the front door), which is the one thing the flow itself
 /// has no way to express.
@@ -2206,8 +2228,66 @@ bool creation_input(render::CreationFlow& flow, render::Key key) {
     // options page's own awaitingKey() keeps for a binding. WASD have to be
     // letters here, not arrows, which is exactly why this branch comes first.
     if (flow.step() == render::CreationStep::Customize && flow.editingName()) {
-        if (key == render::Key::Enter || key == render::Key::PadSouth ||
-            key == render::Key::PadStart) {
+        // THE ON-SCREEN KEYBOARD, WHEN IT IS UP, OWNS THE INPUT IN ITS TURN.
+        // Nested inside text entry rather than beside it, because it is the
+        // name field's own grid and not a seventh step of the flow.
+        if (flow.oskOpen()) {
+            switch (key) {
+                case render::Key::Up:
+                case render::Key::PadUp:
+                    flow.moveOskCursor(0, -1);
+                    return true;
+                case render::Key::Down:
+                case render::Key::PadDown:
+                    flow.moveOskCursor(0, 1);
+                    return true;
+                case render::Key::Left:
+                case render::Key::PadLeft:
+                    flow.moveOskCursor(-1, 0);
+                    return true;
+                case render::Key::Right:
+                case render::Key::PadRight:
+                    flow.moveOskCursor(1, 0);
+                    return true;
+                case render::Key::PadSouth:
+                    flow.commitOsk();
+                    return true;
+                case render::Key::PadWest:
+                    flow.backspaceName();
+                    return true;
+                case render::Key::PadStart:
+                case render::Key::Enter:
+                    // THE COMMIT VERB AT THE FOOT, pressed. Puts the keyboard
+                    // away and closes text entry with the name kept -- which is
+                    // exactly what chooseCustomizeRow() on the NAME row does.
+                    flow.closeOsk();
+                    flow.chooseCustomizeRow();
+                    return true;
+                case render::Key::PadEast:
+                case render::Key::Escape:
+                    flow.closeOsk();
+                    flow.backToOrigin();
+                    return true;
+                default:
+                    break;
+            }
+            // A REAL KEYSTROKE STILL TYPES, and typeNameChar() puts the grid
+            // away as it goes. Somebody who reaches for the keyboard mid-way
+            // gets the keyboard.
+            const char typedOnGrid = name_char_of_key(key);
+            if (typedOnGrid != '\0') {
+                flow.typeNameChar(typedOnGrid);
+            }
+            return true;
+        }
+        if (key == render::Key::PadSouth || key == render::Key::PadStart) {
+            // A PAD ASKING TO TYPE GETS SOMETHING IT CAN TYPE WITH. Before this
+            // the same press closed text entry again, which is why a pad-only
+            // player could reach the NAME row and never put a glyph in it.
+            flow.openOsk();
+            return true;
+        }
+        if (key == render::Key::Enter) {
             flow.chooseCustomizeRow();
             return true;
         }
@@ -2300,6 +2380,14 @@ bool creation_input(render::CreationFlow& flow, render::Key key) {
             return true;
         case CreationVerb::Confirm:
             flow.chooseCustomizeRow();
+            // WHICHEVER ROW OPENED TEXT ENTRY -- NAME directly, or BEGIN
+            // refusing a blank name and putting the cursor there -- a PAD that
+            // opened it gets the on-screen keyboard with it, in the same press.
+            // A keyboard confirm does not, and that is the whole of the "a
+            // typist never sees it" rule at this end.
+            if (creation_key_is_pad(key) && flow.editingName()) {
+                flow.openOsk();
+            }
             return true;
         case CreationVerb::Cancel:
             flow.backToOrigin();
@@ -2430,6 +2518,20 @@ bool creation_pointer(render::CreationFlow& flow, int frameWidth, int frameHeigh
             // HOVER MIRRORS THE CURSOR. Same setter a d-pad press reaches, so
             // there is exactly one live row on this screen and every device
             // agrees which one it is.
+            if (flow.oskOpen()) {
+                // The grid's rows come out of pageForOsk() transposed into
+                // draw order, so the hit-test answers in draw order too and the
+                // inverse transpose puts it back on the cursor's own axes. One
+                // expression, written once each way, three lines apart.
+                const int drawIndex = hit.index;
+                flow.setOskCursor((drawIndex % render::CreationFlow::kOskRows) *
+                                      render::CreationFlow::kOskColumns +
+                                  drawIndex / render::CreationFlow::kOskRows);
+                if (click) {
+                    flow.commitOsk();
+                }
+                return true;
+            }
             switch (flow.step()) {
                 case render::CreationStep::Origin:
                     flow.setOriginCursor(hit.index);
@@ -2593,6 +2695,24 @@ int run_creation_capture(const Options& options) {
             flow.moveCustomizeCursor(1);
             flow.adjustCustomizeRow(1);
         }
+    } else if (options.creationStep == "osk") {
+        // THE ON-SCREEN KEYBOARD, WALKED BY THE PAD'S OWN CALLS. Nothing here
+        // reaches past the public surface a d-pad reaches: the cursor is moved
+        // and committed, never the name assigned.
+        flow.moveOriginCursor(2);  // CUSTOM
+        flow.chooseOrigin();
+        flow.chooseCustomizeRow();  // the cursor lands on NAME; this opens entry
+        flow.openOsk();
+        // Rub out the template's suggested name, then spell four letters.
+        for (int i = 0; i < static_cast<int>(render::kMaxNameLength); ++i) {
+            flow.setOskCursor(29);  // the rub-out
+            flow.commitOsk();
+        }
+        for (const int cell : {12, 0, 17, 11}) {  // M A R L
+            flow.setOskCursor(cell);
+            flow.commitOsk();
+        }
+        flow.setOskCursor(4);  // the cursor rests on E, one press from MARLE
     } else if (options.creationStep == "devin") {
         flow.moveOriginCursor(4);
         flow.chooseOrigin();

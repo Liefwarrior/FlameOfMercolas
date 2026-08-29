@@ -1680,3 +1680,139 @@ TEST_CASE("moving the cursor moves nothing but the highlight and the detail pane
     CHECK(first.navBand.y == later.navBand.y);
     CHECK(first.ruleRows == later.ruleRows);
 }
+
+// ---------------------------------------------------------------------------
+// THE ON-SCREEN KEYBOARD
+// ---------------------------------------------------------------------------
+//
+// The bar it has to clear is one sentence: a pad completes character creation
+// with no keyboard in the room. Everything below is that sentence taken apart.
+
+TEST_CASE("a pad spells a name with no keystroke, and canConfirm turns over") {
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();  // the cursor opens on NAME; this opens entry
+    CHECK(flow.editingName());
+    flow.openOsk();
+    CHECK(flow.oskOpen());
+
+    // Rub the suggested name out, one press of the grid's last cell each time.
+    const int rubOut = static_cast<int>(render::CreationFlow::oskCells().size()) - 1;
+    CHECK(render::CreationFlow::oskCells()[static_cast<std::size_t>(rubOut)] == "<");
+    for (int i = 0; i < static_cast<int>(render::kMaxNameLength) + 1; ++i) {
+        flow.setOskCursor(rubOut);
+        flow.commitOsk();
+    }
+    CHECK(flow.name().empty());
+    CHECK_FALSE(flow.canConfirm());
+    // ...and the grid is still up, because rubbing out is not finishing.
+    CHECK(flow.oskOpen());
+
+    for (const int cell : {12, 0, 17, 11, 4}) {  // M A R L E
+        flow.setOskCursor(cell);
+        flow.commitOsk();
+    }
+    CHECK(flow.name() == "MARLE");
+    CHECK(flow.canConfirm());
+    CHECK(flow.oskOpen());
+}
+
+TEST_CASE("the on-screen keyboard is reachable by moving alone, and wraps") {
+    // A pad has a d-pad and no random access, so every cell has to be walkable
+    // to. Walking the whole grid by moves alone proves both the wrap and that
+    // no cell is stranded.
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();
+    flow.openOsk();
+    flow.setOskCursor(0);
+    std::vector<bool> seen(render::CreationFlow::oskCells().size(), false);
+    for (int row = 0; row < render::CreationFlow::kOskRows; ++row) {
+        for (int col = 0; col < render::CreationFlow::kOskColumns; ++col) {
+            seen[static_cast<std::size_t>(flow.oskCursor())] = true;
+            flow.moveOskCursor(1, 0);
+        }
+        // Six rights wrapped back to the column it started in.
+        CHECK(flow.oskCursor() % render::CreationFlow::kOskColumns == 0);
+        flow.moveOskCursor(0, 1);
+    }
+    for (bool cell : seen) {
+        CHECK(cell);
+    }
+    // Five downs wrapped back to the top row.
+    CHECK(flow.oskCursor() == 0);
+}
+
+TEST_CASE("somebody typing never sees the on-screen keyboard") {
+    // The one regression that would make this feature a net loss. A real
+    // keystroke closes the grid on its way through -- and the ONLY caller that
+    // is not a keystroke, commitOsk(), keeps it up.
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();
+    CHECK(flow.editingName());
+    // Opening text entry does not open the grid. Only openOsk() does, and
+    // main.cpp calls that on a pad confirm and on nothing else.
+    CHECK_FALSE(flow.oskOpen());
+    flow.openOsk();
+    CHECK(flow.oskOpen());
+    flow.typeNameChar('X');
+    CHECK_FALSE(flow.oskOpen());
+    // And the grid never opens over a screen that is not taking a name.
+    render::CreationFlow other = atSheet();
+    other.openOsk();
+    CHECK_FALSE(other.oskOpen());
+}
+
+TEST_CASE("the grid reads across and the fill lands on the glyph the pane names") {
+    // drawOptionList is column-major; the grid is transposed into it so it
+    // reads ACROSS. Both transposes have to be the same expression or the
+    // inverted fill highlights a different letter than the detail pane names.
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();
+    flow.openOsk();
+    for (int display = 0; display < static_cast<int>(render::CreationFlow::oskCells().size());
+         ++display) {
+        INFO("cell ", display);
+        flow.setOskCursor(display);
+        const render::CreationPage page = flow.page();
+        REQUIRE(page.cursor >= 0);
+        REQUIRE(page.cursor < static_cast<int>(page.rows.size()));
+        CHECK(page.rows[static_cast<std::size_t>(page.cursor)].label ==
+              render::CreationFlow::oskCells()[static_cast<std::size_t>(display)]);
+    }
+    // Reading ACROSS: the first six labels of the first display row are A..F,
+    // which in draw order are entries 0, 5, 10, 15, 20, 25.
+    const render::CreationPage page = flow.page();
+    const std::array<const char*, 6> across = {"A", "B", "C", "D", "E", "F"};
+    for (int col = 0; col < 6; ++col) {
+        CHECK(page.rows[static_cast<std::size_t>(col * render::CreationFlow::kOskRows)].label ==
+              across[static_cast<std::size_t>(col)]);
+    }
+}
+
+TEST_CASE("the on-screen keyboard is clickable, and the click lands where it is drawn") {
+    // The mouse gets this page for free out of creationPageHitTest, which is
+    // the inverse of the SAME composition the drawing reads. Proving it means
+    // asking the layout where a cell was drawn and hit-testing that pixel.
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();
+    flow.openOsk();
+    const render::CreationPage page = flow.page();
+    constexpr int kFrames[][2] = {{640, 360}, {960, 540}, {1280, 720}};
+    for (const auto& size : kFrames) {
+        INFO("window ", size[0], "x", size[1]);
+        const render::CreationLayout layout = render::creationLayout(page, size[0], size[1]);
+        REQUIRE(layout.usable);
+        // The grid's first column starts at the pane's own left edge and the
+        // list is drawn COLUMN-MAJOR, so the top-left glyph is entry 0 and the
+        // one below it is entry 1. Probing those two pins both that the page is
+        // clickable at all and that the click is in register with the picture:
+        // a hit-test a row out would answer 1 for the top cell.
+        for (int row = 0; row < render::CreationFlow::kOskRows; ++row) {
+            INFO("row ", row);
+            const render::CreationHit hit = render::creationPageHitTest(
+                page, size[0], size[1], layout.listRect.x + layout.metric.cellW() / 2,
+                layout.listRect.y + layout.metric.heightOf(row) + layout.metric.cellH() / 2);
+            CHECK(hit.zone == render::CreationHit::Zone::Row);
+            CHECK(hit.index == row);
+        }
+    }
+}
