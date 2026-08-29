@@ -322,6 +322,11 @@ add_library(granadad-render STATIC
     # the file's own header on why it is navigation, not the Chart tile.
     src/render/map_view.cpp
     src/render/capture.cpp
+    # THE DEMO PASS -- the curated, self-running route through the ward: a
+    # table of beats and the playhead that walks it, driving the session
+    # through the same public calls a keyboard makes. See the header on why it
+    # is here and not another --smoke flag.
+    src/render/demo.cpp
     src/render/session.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp
@@ -512,6 +517,10 @@ if(GRANADAD_BUILD_TESTS)
         # dead ends, the coordinates checked against the baked world rather
         # than against a comment, and the five tracks the ward remembers you by.
         tests/test_casebook.cpp
+        # THE DEMO PASS -- the scripted route: its shape, the ground under
+        # every coordinate in it, that it finishes by its own hand, and that
+        # two runs of it end in the same place at the same second.
+        tests/test_demo.cpp
         # #82 -- the bloodletter trail's own leads, read as the letters
         # somebody actually wrote: that the file loads, that every `lead`
         # it names is a real casebook.json lead, and that the Wielder's own

@@ -34,6 +34,7 @@
 #include "granadad/render/casebook_page.hpp"
 #include "granadad/render/controls.hpp"
 #include "granadad/render/creation.hpp"
+#include "granadad/render/demo.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/session.hpp"
@@ -303,6 +304,15 @@ struct Options {
     std::string padCreation;
     /// Where a pad script's `shot:NAME` beats land.
     std::filesystem::path padShotDir;
+    /// THE DEMO. Plays the curated route in render/demo.hpp, unattended, at a
+    /// fixed cadence, and closes itself when the route ends. `demoSection`
+    /// empty starts at the top; naming one skips straight to it, which is how
+    /// the route was iterated on without watching the whole thing each time.
+    bool demo = false;
+    std::string demoSection;
+    /// Where `--demo-capture=DIR` writes the route's own frames. Empty takes
+    /// no pictures and is the ordinary way to watch it.
+    std::filesystem::path demoShotDir;
 };
 
 // ---------------------------------------------------------------------------
@@ -744,6 +754,18 @@ void print_usage() {
         "                       window a windowed launch opens first, and so\n"
         "                       the one a --padscript has to get past\n"
         "  --padshots=DIR       where a --padscript shot:NAME beat writes\n"
+        "  --demo[=SECTION]     PLAY THE SCRIPTED DEMO: a curated route\n"
+        "                       through the ward that runs itself, paced for\n"
+        "                       a human eye, and ends on a card rather than\n"
+        "                       dumping you mid-street. Deterministic: a fixed\n"
+        "                       number of simulation steps per rendered frame,\n"
+        "                       so demo frame N is the same picture on every\n"
+        "                       machine. Drives the character screen too.\n"
+        "                       SECTION skips into the route -- quay,\n"
+        "                       saltgate, case, map, night, end\n"
+        "  --demo-capture=DIR   the same route, writing a PNG of each of its\n"
+        "                       named shots into DIR, so a trailer or a\n"
+        "                       screenshot set falls out of the same run\n"
         "  --creation[=STEP]    capture the character-creation flow with no\n"
         "                       window and no world. STEP is origin (default),\n"
         "                       calling (the nine-trade roster), quiz (question\n"
@@ -1095,6 +1117,14 @@ void print_usage() {
             options.padCreation = value;
         } else if (starts_with(arg, "--padshots=", &value)) {
             options.padShotDir = value;
+        } else if (std::strcmp(arg, "--demo") == 0) {
+            options.demo = true;
+        } else if (starts_with(arg, "--demo=", &value)) {
+            options.demo = true;
+            options.demoSection = value;
+        } else if (starts_with(arg, "--demo-capture=", &value)) {
+            options.demo = true;
+            options.demoShotDir = value;
         } else if (std::strcmp(arg, "--creation") == 0) {
             options.wantsCreation = true;
         } else if (starts_with(arg, "--creation=", &value)) {
@@ -2279,6 +2309,117 @@ bool creation_input(render::CreationFlow& flow, render::Key key) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// THE DEMO'S FIRST BEAT: the character screen, walked
+// ---------------------------------------------------------------------------
+//
+// THE BRIEF'S FIRST BEAT IS THE QUIZ, and the quiz lives on the FIRST window a
+// launch opens, not on the world one. So the demo needs a driver here too --
+// separate from the world's DemoDirector for exactly the reason PadDriver is
+// separate from PadDriver: this window runs its own SDL_Init/SDL_Quit pair and
+// its own flow object, and nothing survives between them.
+//
+// A STATE MACHINE, NOT A KEY LIST. The obvious version -- "Down, Enter, Enter,
+// Enter, ..." -- is a second, silent description of how many questions the quiz
+// has and how many rows the sheet has, and it goes wrong the day content adds a
+// question. This looks at the flow each tick and decides the next key from what
+// is actually on screen, which is what a player does. It presses NOTHING the
+// keyboard cannot press: every key goes through creation_input(), the same call
+// SDL_EVENT_KEY_DOWN makes.
+//
+// PACED. The first three questions are answered slowly, with the cursor visibly
+// walking to the answer first, because the beat being shown is AN ANSWER'S
+// CONSEQUENCE LANDING -- the four meters stepping as each one commits. The
+// remaining seven go by at a reading pace: this is a taste of the flow, not the
+// whole flow, and a demo that sat through ten identical questions would lose
+// the room before it reached the ward.
+struct CreationReel {
+    /// The name typed into the sheet. THE GAME'S OWN WORD for the player --
+    /// DOCKS-GAZETTEER calls the protagonist the Wielder -- so the demo invents
+    /// no name any more than it invents a place.
+    static constexpr const char* kName = "WIELDER";
+
+    bool active = false;
+    int wait = 0;
+    int answered = 0;
+    std::size_t nameAt = 0;
+    bool nameDone = false;
+    bool onBegin = false;
+    int guard = 0;
+
+    /// One frame's worth. Returns the key to press, or None.
+    [[nodiscard]] render::Key next(const render::CreationFlow& flow) {
+        if (!active || flow.done()) {
+            return render::Key::None;
+        }
+        if (wait > 0) {
+            --wait;
+            return render::Key::None;
+        }
+        // A HARD CEILING. A flow that somehow stopped answering to keys must
+        // not spin the reel forever with a window open and nothing happening;
+        // past this the demo simply stops driving and the screen is the
+        // player's, which is a visible failure rather than a hang.
+        if (++guard > 4000) {
+            active = false;
+            return render::Key::None;
+        }
+        switch (flow.step()) {
+            case render::CreationStep::Origin:
+                // Row 1 is ANSWER FOR YOURSELF -- the quiz door.
+                if (flow.originCursor() != 1) {
+                    wait = 26;
+                    return render::Key::Down;
+                }
+                wait = 60;
+                return render::Key::Enter;
+            case render::CreationStep::Quiz: {
+                const bool slow = answered < 3;
+                if (slow && flow.choiceCursor() != answered % 3) {
+                    wait = 22;
+                    return render::Key::Down;
+                }
+                ++answered;
+                wait = slow ? 78 : 26;
+                return render::Key::Enter;
+            }
+            case render::CreationStep::Calling:
+            case render::CreationStep::Background:
+                wait = 22;
+                return render::Key::Enter;
+            case render::CreationStep::Customize:
+                break;
+        }
+        if (flow.editingName()) {
+            if (nameAt < std::strlen(kName)) {
+                const char c = kName[nameAt++];
+                wait = 7;
+                return static_cast<render::Key>(
+                    static_cast<int>(render::Key::A) + (c - 'A'));
+            }
+            nameDone = true;
+            wait = 40;
+            return render::Key::Enter;
+        }
+        if (!nameDone) {
+            // The cursor lands on NAME (row 0) when the sheet opens, and ENTER
+            // on that row is what opens text entry.
+            wait = 34;
+            return render::Key::Enter;
+        }
+        if (!onBegin) {
+            // BEGIN IS THE LAST ROW and the cursor wraps, so ONE press of UP
+            // from NAME reaches it whatever the sheet's length -- which is the
+            // whole reason this is a state machine and not a count of Downs.
+            onBegin = true;
+            wait = 46;
+            return render::Key::Up;
+        }
+        wait = 30;
+        return render::Key::Enter;
+    }
+};
+
 /// A pointer at (px, py) in FRAMEBUFFER pixels. `click` false is a hover, which
 /// moves the cursor and nothing else.
 bool creation_pointer(render::CreationFlow& flow, int frameWidth, int frameHeight, int px, int py,
@@ -2630,6 +2771,15 @@ render::CreationResult run_creation_window(const Options& options) {
     PadDriver creationPad;
     (void)creationPad.attach(options.padCreation, options.padShotDir);
 
+    // THE DEMO'S FIRST BEAT. See CreationReel's header. When it is not asked
+    // for, `active` is false and next() returns None on every frame, so this
+    // window is byte-for-byte the shipped one.
+    CreationReel reel;
+    reel.active = options.demo;
+    std::string lastShot;
+    int shotIn = -1;
+    Uint64 reelLastNs = 0;
+
     while (!flow.done() && !cancelled) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -2719,14 +2869,68 @@ render::CreationResult run_creation_window(const Options& options) {
             }
         }
 
+        if (reel.active) {
+            const render::Key key = reel.next(flow);
+            if (key != render::Key::None && !creation_input(flow, key)) {
+                cancelled = true;
+            }
+        }
+
         flow.advance();
         render::drawCreation(frame, flow);
+        // THE DEMO'S OWN SHUTTER on this screen, taken a beat AFTER the state
+        // it names arrives -- the answer-commit pulse and the panel fades are
+        // steps-based, so a frame grabbed on the instant of a change is a
+        // photograph of something half-open.
+        if (reel.active && !options.demoShotDir.empty()) {
+            std::string want;
+            switch (flow.step()) {
+                case render::CreationStep::Origin:
+                    want = "creation-origin";
+                    break;
+                case render::CreationStep::Quiz:
+                    want = reel.answered >= 3 ? "creation-quiz-answered" : "creation-quiz";
+                    break;
+                case render::CreationStep::Customize:
+                    want = reel.nameDone ? "creation-sheet" : "creation-name";
+                    break;
+                default:
+                    break;
+            }
+            if (!want.empty() && want != lastShot) {
+                lastShot = want;
+                shotIn = 40;
+            }
+            if (shotIn == 0) {
+                std::error_code ec;
+                std::filesystem::create_directories(options.demoShotDir, ec);
+                (void)render::writePng(frame,
+                                       (options.demoShotDir / (lastShot + ".png")).string());
+            }
+            if (shotIn >= 0) {
+                --shotIn;
+            }
+        }
         if (texture != nullptr) {
             SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
             SDL_RenderTexture(renderer, texture, nullptr, nullptr);
             SDL_RenderPresent(renderer);
+        }
+        if (reel.active) {
+            // The same 60 Hz floor the world loop keeps while the demo is up,
+            // and for the same reason: the reel's pacing is counted in frames,
+            // so a 144 Hz panel would otherwise play the character screen at
+            // two and a half times speed.
+            constexpr Uint64 kBudgetNs = 1'000'000'000ULL / 60ULL;
+            const Uint64 nowNs = SDL_GetTicksNS();
+            reelLastNs = reelLastNs == 0 || nowNs > reelLastNs + kBudgetNs
+                             ? nowNs + kBudgetNs
+                             : reelLastNs + kBudgetNs;
+            for (Uint64 t = SDL_GetTicksNS(); t < reelLastNs; t = SDL_GetTicksNS()) {
+                SDL_DelayNS(reelLastNs - t);
+            }
         }
         if (!creationPad.advance(frame)) {
             // THE SCRIPT ENDING IS NOT A CANCEL. A pad script that walked the
@@ -3080,6 +3284,38 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     PadDriver padDriver;
     (void)padDriver.attach(options.padScript, options.padShotDir);
 
+    // --- THE SCRIPTED DEMO -------------------------------------------------
+    //
+    // See render/demo.hpp. Three things change while it is running and nothing
+    // changes when it is not:
+    //
+    //   1. THE CADENCE IS FIXED. One simulation step per rendered frame,
+    //      instead of StepPump's wall-clock catch-up, so demo frame N is the
+    //      same picture on a 60 Hz laptop, a 144 Hz desktop and inside a
+    //      capture. The wall clock is used only to SLEEP so the route does not
+    //      play at double speed; it cannot change what is drawn.
+    //   2. THE PLAYER'S HANDS ARE OFF IT. `listening` below is forced true, so
+    //      no key, stick, trigger or held movement reaches the session, and
+    //      mouse look is off. ESCAPE ends the run -- the one input that still
+    //      does anything, because a demo you cannot stop is a demo nobody dares
+    //      start.
+    //   3. THE ROUTE OWNS MoveInput. The director hands back the same struct a
+    //      held W does, which is why the walk in the demo is the walk in the
+    //      game and not a camera on rails.
+    std::unique_ptr<render::DemoDirector> demo;
+    if (options.demo) {
+        demo = std::make_unique<render::DemoDirector>(options.demoSection, options.demoShotDir);
+        mouseLook = false;
+        std::printf("granadad: DEMO -- %d frames from '%s' at %d steps/frame\n",
+                    render::demoFrameCount(options.demoSection),
+                    options.demoSection.empty() ? "the top" : options.demoSection.c_str(), 1);
+        if (!options.demoShotDir.empty()) {
+            std::printf("granadad: DEMO -- frames to %s\n",
+                        options.demoShotDir.string().c_str());
+        }
+        (void)std::fflush(stdout);
+    }
+
     // The body advances on a fixed 60 Hz cadence whatever the frame rate does,
     // so what the simulation sees is a whole number of identical steps and a
     // slow machine plays the same game as a fast one. StepPump owns that, and
@@ -3126,6 +3362,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
 
     bool running = true;
     std::int64_t frames = 0;
+    /// The demo's next frame deadline. See the throttle at the foot of the loop.
+    Uint64 demoDeadlineNs = 0;
     while (running) {
         sim::MoveInput held;
         SDL_Event event;
@@ -3346,6 +3584,18 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         };
 
         while (SDL_PollEvent(&event)) {
+            // THE DEMO OWNS THE INPUT, and this is the one place that has to
+            // say so -- ahead of every handler, so nothing below can be reached
+            // by accident. The close button and ESCAPE still work, because an
+            // unattended route the watcher cannot stop is worse than no route.
+            if (demo != nullptr) {
+                if (event.type == SDL_EVENT_QUIT ||
+                    (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                     event.key.scancode == SDL_SCANCODE_ESCAPE)) {
+                    running = false;
+                }
+                continue;
+            }
             switch (event.type) {
                 case SDL_EVENT_QUIT:
                     running = false;
@@ -3568,7 +3818,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // and in every toggle*()), so this only widens the gap for that exact
         // window and closes again the moment anything else happens.
         const bool listening =
-            session.talking() || session.picking() ||
+            demo != nullptr || session.talking() || session.picking() ||
             (session.menuOpen() && !session.firstRun()) || session.pauseOpen() ||
             session.waitOpen();
         const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
@@ -3759,13 +4009,29 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             running = false;
         }
 
+        // THE DEMO'S OWN TICK, ahead of the step so the input it hands back is
+        // the input this frame is stepped with.
+        if (demo != nullptr) {
+            const render::DemoDirector::Tick tick = demo->advance(session);
+            held = tick.move;
+            if (!tick.running) {
+                // THE ROUTE ENDS THE RUN, and it ends it on the end card's own
+                // last frame rather than on a street corner -- which is the
+                // difference between a demo finishing and a demo stopping.
+                running = false;
+            }
+        }
+
         const Clock::time_point now = Clock::now();
         const double frameSeconds = std::chrono::duration<double>(now - last).count();
         last = now;
-        const std::int32_t steps = pump.advance(frameSeconds);
+        // ONE STEP PER FRAME WHILE THE DEMO IS UP. See the director's
+        // declaration: this is the whole of the demo's determinism, and it
+        // costs the ordinary game nothing because the branch is never taken.
+        const std::int32_t steps = demo != nullptr ? 1 : pump.advance(frameSeconds);
         for (std::int32_t i = 0; i < steps; ++i) {
             ++stepClock;
-            session.step(pump.nextStepInput(held));
+            session.step(demo != nullptr ? held : pump.nextStepInput(held));
         }
 
         // AUDIO, PER FRAME, per the plan: the clock for the beds' day/night
@@ -3779,6 +4045,13 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         }
 
         session.drawFrame(frame);
+        // THE CARD AND THE CAPTION GO ON LAST, over the finished frame, and
+        // the shutter goes after them -- so what a capture holds is exactly
+        // what the window presented, furniture included.
+        if (demo != nullptr) {
+            demo->drawOverlay(frame, session);
+            demo->shutter(frame);
+        }
         ++frames;
 
         if (texture != nullptr) {
@@ -3788,6 +4061,32 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             SDL_RenderClear(renderer);
             SDL_RenderTexture(renderer, texture, nullptr, nullptr);
             SDL_RenderPresent(renderer);
+        }
+
+        // PACED FOR AN EYE, NOT FOR A BENCHMARK. VSync alone is whatever the
+        // monitor happens to be, so a 144 Hz panel would run the route at 2.4x
+        // and a capture with no window at several hundred. One step per frame
+        // plus this floor is what makes the demo play at the same speed
+        // everywhere -- and it is the ONLY place wall clock touches the demo,
+        // which is why it cannot change a pixel.
+        //
+        // A DEADLINE, NOT A PER-FRAME SLEEP, and the difference was measured:
+        // the first version slept `budget - spent` each frame and the route
+        // came out at about 71 frames a second, because SDL_DelayNS on Windows
+        // returns early and every frame kept its own error. Accumulating the
+        // deadline makes the error self-correcting, and the short loop absorbs
+        // an undersleep instead of banking it. A frame that genuinely overran
+        // resets the deadline rather than trying to claw the time back, which
+        // is what stops a hitch turning into a sprint.
+        if (demo != nullptr) {
+            constexpr Uint64 kBudgetNs = 1'000'000'000ULL / 60ULL;
+            const Uint64 nowNs = SDL_GetTicksNS();
+            demoDeadlineNs = demoDeadlineNs == 0 || nowNs > demoDeadlineNs + kBudgetNs
+                                 ? nowNs + kBudgetNs
+                                 : demoDeadlineNs + kBudgetNs;
+            for (Uint64 t = SDL_GetTicksNS(); t < demoDeadlineNs; t = SDL_GetTicksNS()) {
+                SDL_DelayNS(demoDeadlineNs - t);
+            }
         }
 
         if (!padDriver.advance(frame)) {
