@@ -1293,6 +1293,13 @@ CreationPage CreationFlow::page() const {
         out.shape = CreationListShape::Columns;
         out.maxColumns = 1;
         out.masterShare = 40;
+        // FIVE DOORS IN A TWENTY-EIGHT-ROW PANE was the shape of this screen,
+        // and it is the first screen anybody sees. The frame now ends after the
+        // taller of its two halves; this floor is what the DETAIL half can
+        // reach -- badge, the three-step summary, a line of prose and the
+        // commit verb -- held constant so arrowing the doors moves nothing but
+        // the fill. See CreationPage::bodyHoldRows.
+        out.bodyHoldRows = 13;
         const std::vector<OriginTemplate>& doors = originTemplates();
         for (std::size_t i = 0; i < doors.size(); ++i) {
             CreationPageRow row;
@@ -1353,6 +1360,11 @@ CreationPage CreationFlow::page() const {
         out.maxColumns = 1;
         out.masterShare = 40;
         out.accent = panelInk().accent;
+        // The tallest sheet any of the nine trades puts in the detail pane:
+        // badge, four attribute bars, a line of flavour and three skill
+        // bullets that can each wrap once at a narrow window, then the commit
+        // verb. Held so the roster does not breathe as you arrow it.
+        out.bodyHoldRows = 17;
         for (std::size_t i = 0; i < roster.size(); ++i) {
             CreationPageRow row;
             row.key = std::to_string(i + 1);
@@ -1402,6 +1414,11 @@ CreationPage CreationFlow::page() const {
         out.shape = CreationListShape::Columns;
         out.maxColumns = 1;
         out.masterShare = 34;
+        // TWO ROWS OF MASTER, so the card in the detail pane sets this height
+        // by itself: badge, three tally bars, the reading and its three skill
+        // lines, the commit verb. Two rows of master in a twenty-eight-row
+        // pane was the worst ratio in the flow.
+        out.bodyHoldRows = 13;
         const sim::CallingTemplate* calling = callings_.find(verdict_->calling);
         out.accent = calling != nullptr ? axisAccent(calling->dominantAxis) : panelInk().accent;
         out.readout = pageTallyReadout(verdict_->counts);
@@ -1461,6 +1478,14 @@ CreationPage CreationFlow::page() const {
         // of these at eighteen glyphs INCLUDING the row number.
         out.shape = CreationListShape::Blocks;
         out.masterShare = 58;
+        // THE ONE THIS PROGRAM WAS SENT AT. Three answers spend eight to ten
+        // rows of a forty-one-row block list at 640x360 -- two thirds of the
+        // master pane was flat black on the first screen of the game. The
+        // answers are static while the cursor moves within them, so the master
+        // half sizes to them; this floor covers what the CONSEQUENCE half can
+        // reach for any one of the three -- badge, two facts, three axis bars,
+        // and up to three effect lines.
+        out.bodyHoldRows = 15;
         const std::array<std::int32_t, sim::kChargenAxisCount> counts = quizTallySoFar();
         out.readout = pageTallyReadout(counts);
         if (at < questions.size()) {
@@ -1531,6 +1556,9 @@ CreationPage CreationFlow::page() const {
         out.accent = Rgb{0.86F, 0.74F, 0.52F};
         out.shape = CreationListShape::Blocks;
         out.masterShare = 58;
+        // Same shape as the quiz, and a biography answer buys named skills, so
+        // the detail half can run a row or two longer.
+        out.bodyHoldRows = 16;
         out.crumbs = {"NEW GAME", "YOUR OWN PAST",
                       at < questions.size() ? questions[at].id + " - " + std::to_string(at + 1) +
                                                   " OF " + std::to_string(questions.size())

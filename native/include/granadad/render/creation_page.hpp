@@ -117,6 +117,23 @@ struct CreationPage {
     /// A ceiling on the column count for a Columns list. The actual count comes
     /// from the content against the window, as it must.
     int maxColumns = 2;
+    /// THE BODY BAND'S FLOOR, IN GRID ROWS, AND THE REASON THE FRAME CAN SIZE
+    /// TO ITS CONTENT WITHOUT TWITCHING.
+    ///
+    /// The frame ends after the taller of its two panes rather than padding out
+    /// to the window -- the reference's own rule, which is about cursor
+    /// movement and not about panels in general: hold height where moving the
+    /// cursor SWAPS the content, size to content where the content is static.
+    /// The master list is static as the cursor moves within it. The DETAIL pane
+    /// is not, so it may not be allowed to set the height on its own, or the
+    /// frame would grow and shrink a row at a time as you arrow.
+    ///
+    /// This is the step's answer: one number, chosen once against the tallest
+    /// thing any row of that step can put in the detail pane. Same kind of
+    /// per-step composition decision `masterShare` already is. The detail's
+    /// real height still enters the maximum, so a floor set too low costs a
+    /// small jump and never a clipped line.
+    int bodyHoldRows = 0;
 
     // --- the detail pane --------------------------------------------------
     bool hasDetail = true;

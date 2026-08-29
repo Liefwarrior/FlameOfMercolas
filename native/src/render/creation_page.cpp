@@ -80,21 +80,76 @@ inline constexpr int kMinMasterCells = 18;
     return style;
 }
 
-}  // namespace
+/// The rows the MASTER list actually wants, asked of the SAME pure planner the
+/// draw call walks rather than a second description of it.
+[[nodiscard]] int masterContentRows(const CreationPage& page, const PanelRect& master,
+                                    const PanelMetric& metric) {
+    const std::vector<PanelOption> options = listOptions(page);
+    if (options.empty() || master.empty()) {
+        return 0;
+    }
+    if (page.shape == CreationListShape::Blocks) {
+        int used = 0;
+        for (const OptionBlock& block : planOptionBlocks(options, master, metric, blockStyle())) {
+            if (block.rows > 0) {
+                used = std::max(used, metric.rowsIn(block.rect.y + block.rect.h - master.y));
+            }
+        }
+        return used;
+    }
+    return planOptionList(options, master, metric, columnStyle(page)).rows;
+}
 
-CreationLayout creationLayout(const CreationPage& page, int frameWidth, int frameHeight) {
+/// The rows the DETAIL pane wants, walked in exactly the order the draw call
+/// lays it out -- badge, facts, bars, prose, and the two rows the commit verb
+/// and its restatement own at the foot.
+[[nodiscard]] int detailContentRows(const CreationPage& page, const PanelRect& detail,
+                                    const PanelMetric& metric) {
+    if (detail.empty()) {
+        return 0;
+    }
+    int at = 0;
+    if (!page.detailBadge.empty()) {
+        at += 2;
+    }
+    if (!page.facts.empty()) {
+        at += static_cast<int>(page.facts.size()) + 1;
+    }
+    if (!page.bars.empty()) {
+        at += static_cast<int>(page.bars.size()) + 1;
+    }
+    if (!page.lines.empty()) {
+        at += measureProse(detail, metric, page.lines);
+    }
+    if (!page.commitVerb.empty()) {
+        at += 2;
+    }
+    return at;
+}
+
+/// Below this a body band is not a pane, it is a slot.
+inline constexpr int kMinBodyRows = 6;
+
+/// ONE COMPOSITION AT A CHOSEN HEIGHT. Everything creationLayout() used to do,
+/// with the grid's row count handed in rather than taken from the window --
+/// which is the whole mechanism behind sizing the frame to its content. The
+/// body is the only `spanWeight` in the stack, so a grid one row shorter is a
+/// BODY one row shorter and every rule above it stays exactly where it was.
+[[nodiscard]] CreationLayout composeCreation(const CreationPage& page, int frameWidth,
+                                             int frameHeight, int gridRows, int topY) {
     CreationLayout out;
     out.metric = panelMetric(frameHeight);
     const int cells = out.metric.cellsIn(frameWidth);
-    const int rows = out.metric.rowsIn(frameHeight);
+    const int rows = gridRows;
     if (cells < 8 || rows < 10) {
         return out;
     }
     // The grid is CENTRED in the window rather than pinned to the top left, so
     // the pixels that do not divide into whole cells are split between the two
-    // margins instead of all landing on one edge.
-    out.bounds = PanelRect{(frameWidth - out.metric.widthOf(cells)) / 2,
-                           (frameHeight - out.metric.heightOf(rows)) / 2,
+    // margins instead of all landing on one edge. The TOP is handed in and is
+    // always the top the full-height grid would have taken, so shortening the
+    // frame moves its foot and never its head.
+    out.bounds = PanelRect{(frameWidth - out.metric.widthOf(cells)) / 2, topY,
                            out.metric.widthOf(cells), out.metric.heightOf(rows)};
     out.interior =
         PanelRect{out.bounds.x + out.metric.cellW(), out.bounds.y + out.metric.cellH(),
@@ -179,6 +234,47 @@ CreationLayout creationLayout(const CreationPage& page, int frameWidth, int fram
     return out;
 }
 
+}  // namespace
+
+CreationLayout creationLayout(const CreationPage& page, int frameWidth, int frameHeight) {
+    const PanelMetric metric = panelMetric(frameHeight);
+    const int rows = metric.rowsIn(frameHeight);
+    const int topY = (frameHeight - metric.heightOf(rows)) / 2;
+
+    // PASS ONE: the whole window, which is what this screen used to ship as.
+    // It is measured at full height on purpose -- a planner asked against a
+    // pane too short to hold its content answers with the pane, not with the
+    // content, and the answer we want here is the content.
+    const CreationLayout full = composeCreation(page, frameWidth, frameHeight, rows, topY);
+    if (!full.usable) {
+        return full;
+    }
+
+    // SIZE TO CONTENT, WHICH THE REFERENCE LICENSES BY NAME. Its rule is about
+    // cursor movement, not about panels in general: hold height where moving
+    // the cursor SWAPS the content, size to content where the content is
+    // static. A quiz answer set does not change while the cursor moves within
+    // it, and neither does a nine-trade roster -- so the master list sizes.
+    //
+    // The detail pane is the half the cursor DOES swap, so it may not set the
+    // height on its own: it enters the max so nothing is ever clipped, and
+    // CreationPage::bodyHoldRows is the step's own floor, chosen once against
+    // the tallest thing any row of that step can put in the pane. That floor is
+    // what keeps the frame still while you arrow -- it is the same kind of
+    // per-step composition decision masterShare already is, and
+    // test_creation's "moving the cursor moves nothing" case is its guard.
+    const int need = std::max({masterContentRows(page, full.listRect, full.metric),
+                               detailContentRows(page, full.detailRect, full.metric),
+                               page.bodyHoldRows});
+    // One blank row of breathing space under the taller pane -- the same the
+    // panes already leave between their content and their stippled field.
+    const int want = std::clamp(need + 1, kMinBodyRows, full.bodyRows);
+    if (want >= full.bodyRows) {
+        return full;
+    }
+    return composeCreation(page, frameWidth, frameHeight, rows - (full.bodyRows - want), topY);
+}
+
 void drawCreationPage(Framebuffer& target, const CreationPage& page) {
     const CreationLayout layout = creationLayout(page, target.width(), target.height());
     if (!layout.usable) {
@@ -204,6 +300,15 @@ void drawCreationPage(Framebuffer& target, const CreationPage& page) {
     // own number is exactly the drift that constant exists to end -- and this
     // one is reachable from the pause menu, where there IS a world behind it.
     style.groundAlpha = kPageGroundAlpha;
+
+    // AND THE TAKEOVER IS THE PAGE'S, NOT THE BORDER'S. The frame now ends
+    // after its content, and this screen is reachable from the pause menu where
+    // there IS a world behind it -- so the ground takes the whole frame and the
+    // border takes only what it has to enclose. Over a new game there is
+    // nothing behind it and this paints the same near-black the empty rows were
+    // already going to be. Same ruling as casebook_page.cpp's, same reason.
+    target.fillRect(0, 0, target.width(), target.height(), style.ground,
+                    style.groundAlpha * alpha);
 
     PanelFrame frame(target, layout.bounds, metric, style);
     for (const int r : layout.ruleRows) {
