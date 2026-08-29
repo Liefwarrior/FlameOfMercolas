@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <string>
 
@@ -330,8 +331,20 @@ void drawStipple(Framebuffer& target, const PanelRect& rect, const PanelMetric& 
             } else {
                 continue;
             }
+            // AND THE FIELD HAS A FALLOFF, which is the other half of making
+            // dead space read as a surface rather than as a hole. A uniform
+            // blanket of marks is flat; the reference's grounds are heavier at
+            // the frame and thin toward the middle, the way a lit panel is. The
+            // ramp is a quarter of the field's strength across the pane's own
+            // half-height -- gentle enough that you would not name it if asked,
+            // and enough that the pane has a centre.
+            const float mid = static_cast<float>(rows) * 0.5F;
+            const float off = mid <= 0.0F
+                                  ? 1.0F
+                                  : std::abs(static_cast<float>(row) + 0.5F - mid) / mid;
+            const float lit = 0.78F + 0.22F * off;
             drawText(target, rect.x + cell * metric.cellW(), rect.y + row * metric.cellH(), mark,
-                     colour, alpha * weight, metric.scale);
+                     colour, alpha * weight * lit, metric.scale);
         }
     }
 }
@@ -492,11 +505,41 @@ void drawInvertedFill(Framebuffer& target, const PanelRect& rect, const PanelMet
     if (wide <= 0 || row < 0 || row >= metric.rowsIn(rect.h)) {
         return;
     }
+    const int x = rect.x + cell * metric.cellW();
+    const int y = rect.y + row * metric.cellH();
+    const int w = metric.widthOf(wide);
+    // A HAIRLINE OF THE ACCENT ABOVE AND BELOW THE BLOCK, and this is the one
+    // piece of pure eye candy in the vocabulary.
+    //
+    // Every reference frame's selection is a hard rectangle and this does not
+    // change that: the block itself is untouched, the same solid fill at the
+    // same alpha on the same cells. What is added is one scaled pixel of the
+    // SAME accent at a fifth strength on the two long edges -- so the row reads
+    // as lit rather than as pasted on, and a selection moving down a list
+    // leaves a suggestion of the light it carried rather than snapping between
+    // two states of a checkbox.
+    //
+    // ONE PIXEL, ONE FIFTH, AND ONLY THE LONG EDGES. Not a blur, not a bloom,
+    // not a second ring: the terminal register is crisp and a soft halo would
+    // read as a rendering fault rather than as depth. Drawn BEFORE the block so
+    // it can never lighten the block's own edge.
+    //
+    // NOT CLIPPED TO `rect`, DELIBERATELY, and this was found by looking. A
+    // block list hands this function the block's OWN rect, so its first row's
+    // top edge and its last row's bottom edge ARE the rect's edges -- a guard
+    // against leaving the rect suppressed the halo on exactly the selection it
+    // was written for. The row above and the row below belong to the same pane;
+    // one scaled pixel at a fifth strength on them is the point.
+    const int lip = std::max(1, metric.scale);
+    const float halo = alpha * 0.20F;
+    if (halo > 0.0F) {
+        target.fillRect(x, y - lip, w, lip, accent, halo);
+        target.fillRect(x, y + metric.cellH(), w, lip, accent, halo);
+    }
     // The fill covers the glyph box and the row of shadow under it, so a
     // knocked-out row is a solid block rather than a block with a dark seam
     // along the bottom of every glyph.
-    target.fillRect(rect.x + cell * metric.cellW(), rect.y + row * metric.cellH(),
-                    metric.widthOf(wide), metric.cellH(), accent, alpha);
+    target.fillRect(x, y, w, metric.cellH(), accent, alpha);
 }
 
 int drawCellTextKnockout(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
