@@ -162,16 +162,50 @@ inline constexpr int kDirectSelectRows = 9;
     return style;
 }
 
-[[nodiscard]] Composition compose(int frameWidth, int frameHeight, int navRows) {
+/// THE TWO HALVES OF THIS BODY ARE NOT THE SAME KIND OF THING, and the
+/// reference's rule sorts them: hold height where moving the cursor SWAPS the
+/// content, size to content where the content is static.
+///
+///   * THE LEAD LIST is static under the cursor. It grows -- one lead on a new
+///     game, twelve by the end -- but it grows when the WORLD opens a lead, not
+///     when you press down, so it may set the height. On a new game it was one
+///     row in a forty-one-row pane at 640x360, which is the second screen a
+///     stranger touches and the second-largest "unfinished" tell in the build.
+///
+///   * THE DETAIL PANE is exactly what the cursor swaps, and two leads' clues
+///     do not wrap to the same number of lines. If it set the height the frame
+///     would grow and shrink a row at a time as you arrowed the list, which is
+///     the defect the rule exists to prevent.
+///
+/// So the detail half is HELD at a floor and the master half is free to push
+/// past it. The floor is the tallest thing EITHER VIEW can reach -- the case
+/// tab's badge, hook, two fact blocks, nerve and commit verb, which is the
+/// deeper of the two -- and it is ONE number rather than one per tab on
+/// purpose: LEFT/RIGHT is a cursor over views, so a per-tab floor would move
+/// the frame's foot every time you crossed the tab row. test_casebook_page's
+/// "the two views swap the detail pane and nothing else" is the guard, and it
+/// caught exactly that on the first run of this change.
+
+inline constexpr int kDetailHoldRows = 20;
+
+/// Below this a body is not two panes, it is two slots.
+inline constexpr int kMinBodyRows = 8;
+
+[[nodiscard]] Composition compose(int frameWidth, int frameHeight, int navRows,
+                                  int gridRowsOverride = -1) {
     Composition out;
     out.metric = panelMetric(frameHeight);
     const int cells = out.metric.cellsIn(frameWidth);
-    const int rows = out.metric.rowsIn(frameHeight);
+    const int full = out.metric.rowsIn(frameHeight);
+    const int rows = gridRowsOverride > 0 ? gridRowsOverride : full;
     if (cells < 8 || rows < 10) {
         return out;
     }
+    // The TOP is always the top the full-height grid would have taken, so a
+    // frame that ends early moves its foot and never its head -- walking LEADS
+    // to THE CASE cannot make the breadcrumb jump.
     out.bounds = PanelRect{(frameWidth - out.metric.widthOf(cells)) / 2,
-                           (frameHeight - out.metric.heightOf(rows)) / 2,
+                           (frameHeight - out.metric.heightOf(full)) / 2,
                            out.metric.widthOf(cells), out.metric.heightOf(rows)};
     out.interior = PanelRect{out.bounds.x + out.metric.cellW(), out.bounds.y + out.metric.cellH(),
                              out.metric.widthOf(cells - 2), out.metric.heightOf(rows - 2)};
@@ -256,6 +290,12 @@ inline constexpr int kDirectSelectRows = 9;
     return style;
 }
 
+[[nodiscard]] PanelRect listRectOf(const Composition& comp) {
+    const int listRows = std::max(0, comp.bodyRows - kIndicatorRows);
+    return PanelRect{comp.body.master.x, comp.body.master.y, comp.body.master.w,
+                     comp.metric.heightOf(listRows)};
+}
+
 /// One row if the whole nav list fits in one, two if it does not. Still a FIXED
 /// composition: it responds to the window and to the length of its own list,
 /// never to a player.
@@ -266,19 +306,35 @@ inline constexpr int kDirectSelectRows = 9;
         return out;
     }
     const std::vector<PanelOption> nav = navOptionsFor(state);
+    int navRows = 1;
     if (planOptionList(nav, out.navBand, out.metric, navStyleOf()).overflowed) {
         Composition taller = compose(frameWidth, frameHeight, 2);
         if (taller.usable) {
-            return taller;
+            out = taller;
+            navRows = 2;
         }
     }
-    return out;
-}
 
-[[nodiscard]] PanelRect listRectOf(const Composition& comp) {
-    const int listRows = std::max(0, comp.bodyRows - kIndicatorRows);
-    return PanelRect{comp.body.master.x, comp.body.master.y, comp.body.master.w,
-                     comp.metric.heightOf(listRows)};
+    // SIZE THE BODY TO WHAT IS IN IT. The list is measured against the FULL
+    // pane on purpose: a planner asked against a pane too short to hold its
+    // content answers with the pane, and the answer wanted here is the content.
+    const int listNeed =
+        state.rows.empty()
+            ? 1
+            : planOptionList(optionsFor(state.rows), listRectOf(out), out.metric, listStyle()).rows;
+    const int hold = kDetailHoldRows;
+    // One blank row of breathing space under the taller half -- the same the
+    // panes already leave between their content and their stippled field.
+    const int want =
+        std::clamp(std::max(listNeed + kIndicatorRows + 1, hold), kMinBodyRows, out.bodyRows);
+    if (want >= out.bodyRows) {
+        return out;
+    }
+    // The body is the only spanWeight in the stack, so a grid this many rows
+    // shorter is a BODY that many rows shorter and nothing above it moves.
+    const int gridRows = out.metric.rowsIn(frameHeight) - (out.bodyRows - want);
+    const Composition sized = compose(frameWidth, frameHeight, navRows, gridRows);
+    return sized.usable ? sized : out;
 }
 
 /// THE CONSEQUENCE BLOCK -- what told you to come here, and what this lead
@@ -650,6 +706,20 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
     // used to say 0.99 for the same reason the map said 0.995 and the controls
     // page said 0.97, which is three spellings of one rule.
     style.groundAlpha = kPageGroundAlpha;
+
+    // A FULL TAKEOVER IS STILL A FULL TAKEOVER WHEN THE FRAME ENDS EARLY.
+    //
+    // The book now sizes its body to what is in it (see composeFor), which is
+    // right -- a one-lead book in a forty-one-row pane was the second-largest
+    // "unfinished" tell in the build. But this page is opened FROM THE WORLD,
+    // and the first capture of the sized frame had the panel across the top of
+    // the screen and the Tarwalk at full daylight brightness across the bottom
+    // half of it, with the HUD already stood down: a bright, busy band under a
+    // near-black page. The takeover is a property of the PAGE, not of how many
+    // rows its content happens to spend, so the ground takes the whole frame
+    // and the border takes only what it has to enclose.
+    target.fillRect(0, 0, target.width(), target.height(), style.ground,
+                    style.groundAlpha * alpha);
 
     PanelFrame frame(target, comp.bounds, metric, style);
     for (const int r : comp.ruleRows) {
