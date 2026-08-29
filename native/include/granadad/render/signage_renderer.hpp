@@ -25,6 +25,7 @@
 // it).
 
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/hud.hpp"
 #include "granadad/render/world_renderer.hpp"
 
 namespace granadad::render {
@@ -41,6 +42,24 @@ struct SignageSettings {
     /// Alpha eases from 1 to 0 across this last stretch before maxDistance,
     /// so a sign disappears as you back away rather than popping off.
     float fadeSpan = 5.0F;
+    /// A SCREEN RECTANGLE THE INTERFACE HAS ALREADY CLAIMED, which a label
+    /// must not land on. Empty by default, so nothing changes for a caller
+    /// that does not pass one.
+    ///
+    /// This file has always had an anti-overlap rule -- nearest first, and a
+    /// label whose box collides with one already placed is skipped rather than
+    /// shoved. It just could not see the HUD, which is drawn AFTER it and
+    /// therefore wins every argument by painting over: on the street the ward's
+    /// own "TARWALK" and the crosshair's "E - TALK" landed on the same pixels
+    /// and the result was a sign cut through mid-word by a prompt. Seeding the
+    /// same rule with the prompt's own rectangle (see hudAimPromptRect) makes
+    /// the interface just another box the signs place around, which is the
+    /// answer this file already knew for two signs.
+    ///
+    /// THE PROMPT'S BOX, NOT THE WHOLE FENCE. hudAimRect spans the entire
+    /// right half of the centre band; excluding all of it would drop signs that
+    /// were never in the prompt's way.
+    CentreRect exclusion{0, 0, 0, 0};
 };
 
 /// Draws every Docks sign that is in range, facing the right way to be seen,

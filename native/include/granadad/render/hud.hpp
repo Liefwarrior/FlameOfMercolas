@@ -493,6 +493,24 @@ enum class AimKind : int {
 /// rather than allowed to run off the frame the way the S6 alert did.
 [[nodiscard]] CentreRect hudAimRect(int width, int height) noexcept;
 
+/// WHERE THE AIM PROMPT WILL ACTUALLY LAND, given what is under the reticle
+/// this frame -- the union of the two rows and their scrim air, not the whole
+/// fence above. Empty (all zero) when nothing would be drawn.
+///
+/// hudAimRect is a CLAMP and covers the entire right half of the centre band;
+/// keeping a whole band of the street clear of a prompt that occupies a
+/// fraction of it would cost signs that were never in its way. This is the
+/// fraction, and it is measured by the same pure layout drawAim draws from
+/// rather than by a second copy of that arithmetic living in the caller.
+///
+/// THE COLLISION IT EXISTS FOR: the world's hanging signage is drawn before
+/// the HUD and knows nothing about it, so "TARWALK" and "E - TALK" landed on
+/// the same pixels on the street and the prompt won by painting over a sign
+/// mid-word. drawSignage takes this as an exclusion and skips a label that
+/// would collide, which is the rule it already applies between one sign and
+/// another.
+[[nodiscard]] CentreRect hudAimPromptRect(const HudState& state, int width, int height);
+
 /// The band the VERB row of the aim prompt occupies, and it is the whole
 /// reason the prompt is composed from the bottom up.
 ///

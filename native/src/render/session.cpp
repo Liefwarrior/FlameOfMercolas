@@ -5640,7 +5640,35 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // below so none of them paint over a legible sign. See
     // signage_renderer.hpp's own header for why occlusion needs the depth
     // buffer renderFrame just wrote and nothing drawn after it yet.
-    drawSignage(target, view);
+    // AND THE ONE THING ON THE SCREEN THE SIGNS COULD NOT SEE.
+    //
+    // Signage is drawn before the HUD so nothing paints over a legible sign --
+    // and the consequence was that the HUD painted over one. The crosshair
+    // prompt sits at the exact centre of the frame, which is where you are
+    // looking, which is where the nearest sign projects: on the Tarwalk the
+    // ward's own "TARWALK" and the prompt's "E - TALK" landed on the same
+    // pixels and the prompt won by being second, cutting a street name through
+    // the middle.
+    //
+    // The signage renderer already knew how to place labels around each other.
+    // It just needed to be told the interface is on the screen too. The
+    // rectangle is the prompt's OWN footprint this frame -- built from the same
+    // aim fields the HUD is about to be handed, four lines below -- and not the
+    // whole clamp fence, which would cost every sign in the centre band.
+    //
+    // A frame with nothing under the reticle hands back an empty rect and the
+    // signs are placed exactly as they were before this existed.
+    SignageSettings signage;
+    {
+        HudState aim;
+        aim.aimKey = keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]);
+        aim.aimVerb = std::string_view{interactCache_};
+        aim.aimSubject = std::string_view{interactSubjectCache_};
+        aim.aimNote = std::string_view{interactNoteCache_};
+        aim.interactFade = interactAnim_.value();
+        signage.exclusion = hudAimPromptRect(aim, target.width(), target.height());
+    }
+    drawSignage(target, view, signage);
 
     // INNOVATION SPRINT ITEM #3. A BRAWL FINALLY HAS SOME PHYSICAL WEIGHT.
     // Two brief, low-alpha washes over the WORLD -- drawn here, before the

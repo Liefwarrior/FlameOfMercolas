@@ -86,7 +86,15 @@ void drawSignage(Framebuffer& target, const Camera& camera, const SignageSetting
     const int glyphH = 6 * scale;
 
     std::vector<ScreenRect> drawn;
-    drawn.reserve(candidates.size());
+    drawn.reserve(candidates.size() + 1);
+    // THE INTERFACE GOES IN FIRST, as just another box already on the screen.
+    // Everything below it is the rule this file already had; it simply could
+    // not see the HUD before. See SignageSettings::exclusion.
+    if (settings.exclusion.x1 > settings.exclusion.x0 &&
+        settings.exclusion.y1 > settings.exclusion.y0) {
+        drawn.push_back(ScreenRect{settings.exclusion.x0, settings.exclusion.y0,
+                                   settings.exclusion.x1, settings.exclusion.y1});
+    }
 
     for (const Candidate& candidate : candidates) {
         const float relX = candidate.worldX - camera.x;

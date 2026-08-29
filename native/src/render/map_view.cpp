@@ -1179,6 +1179,48 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
                        1);
             strokeRect(target, clipToPane(box, plan), kCursorTone, alpha, 2);
         }
+
+        // THE CURSOR NAMES WHAT IT IS ON, when the footprint could not.
+        //
+        // THE ONE LABEL RULE is right and it stays: a name is printed inside
+        // the shape that owns it or it is not printed at all, because
+        // "WEIGHHOU" names nothing and a plate floating on a neighbour names
+        // the wrong building. But the Weighhouse is the building this demo's
+        // investigation turns on, its shape is too narrow for its name at every
+        // default zoom, and what a player saw was a cursor sitting on a blank
+        // block with IMPOUND YARD -- a DIFFERENT place -- labelled underneath
+        // it. Correct by the rule, and it reads as an oversight.
+        //
+        // So the tag belongs to the CURSOR, not to the map: one name, for the
+        // one shape you are pointing at, gone the moment you point elsewhere.
+        // The static map face is untouched, nothing is printed for a place you
+        // have not selected, and no unselected footprint gains a plate.
+        const PanelRect shape = footprintRect(view, place);
+        if (fitFootprintLabel(place.name, shape.w, shape.h, labelScale).empty()) {
+            const int rowPx = 7 * labelScale;
+            const std::string tag = shout(place.name);
+            const int tw = textWidth(tag, labelScale);
+            // Centred on the shape, then pushed back inside the plan rather
+            // than clipped -- a half-printed name is the thing the rule exists
+            // to prevent and that does not stop being true here.
+            int tx = shape.x + (shape.w - tw) / 2;
+            tx = std::clamp(tx, plan.x + 1, std::max(plan.x + 1, plan.right() - tw - 1));
+            // Above the cursor box by preference: the shapes that refuse a
+            // label are small, and above keeps the tag off the footprint you
+            // are trying to look at. Below when there is no room above.
+            int ty = shape.y - 3 - rowPx;
+            if (ty < plan.y + 1) {
+                ty = shape.bottom() + 3;
+            }
+            if (ty >= plan.y && ty + rowPx <= plan.bottom() && tw > 0) {
+                // The same thin scrim the footprint labels use, so a cursor tag
+                // and a map label read as the same kind of mark rather than as
+                // two typographies.
+                target.fillRect(tx - 1, ty - 1, tw + 2, rowPx, Rgb{0.04F, 0.035F, 0.05F},
+                                0.72F * alpha);
+                drawText(target, tx, ty, tag, kCursorTone, alpha, labelScale);
+            }
+        }
     }
 
     // --- the player, as a facing wedge -------------------------------------

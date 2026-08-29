@@ -245,7 +245,103 @@ struct AimBox {
     return box;
 }
 
+/// WHAT THE TWO PROMPT ROWS ACTUALLY COME TO, WITHOUT DRAWING ANYTHING.
+///
+/// drawAim lays out its rows from this and the signage renderer asks it for
+/// the rectangle to keep clear, so there is ONE description of where the
+/// prompt is. The alternative -- signage carrying its own copy of "textX plus
+/// the verb's width" -- is the S4 mistake in miniature: a paging fix tested
+/// through arithmetic the draw code never called.
+///
+/// PURE. No framebuffer. `draws` is false when drawAim would return early, so
+/// a caller can ask about a frame with nothing under the reticle.
+struct AimRows {
+    bool draws = false;
+    int textX = 0;
+    int subjectY = 0;
+    int verbY = 0;
+    int unit = 1;
+    int gutter = 0;
+    int subjectW = 0;
+    int noteW = 0;
+    int verbW = 0;
+    std::string subject;
+    std::string note;
+    std::string verbRow;
+};
+
+[[nodiscard]] AimRows aimRows(const HudState& state, int width, int height) {
+    AimRows out;
+    if (state.aimVerb.empty() || std::clamp(state.interactFade, 0.0F, 1.0F) <= 0.0F) {
+        return out;
+    }
+    const AimBox box = aimBox(width, height);
+    const CentreRect fence = hudAimRect(width, height);
+    // TWO UNITS OF SLACK ON THE BUDGET, NOT ONE. drawText hangs a one-unit
+    // drop shadow off the right of the last glyph it draws and clipToWidth
+    // measures the glyphs alone, so a budget of exactly the room available
+    // puts the shadow of the final letter one pixel past the fence. Found by
+    // the case that counts escaped pixels, which is what it is for.
+    const int budget = fence.x1 - box.textX - 2 * box.unit;
+    if (budget <= 0) {
+        return out;
+    }
+    out.draws = true;
+    out.textX = box.textX;
+    out.subjectY = box.subjectY;
+    out.verbY = box.verbY;
+    out.unit = box.unit;
+    // THE SUBJECT ROW, above the verb. Absent when nothing in reach has a name
+    // -- and absent is the honest answer, not a bug: LOOK at open cobbles is
+    // LOOK at open cobbles, and inventing a label for it would be the machine
+    // talking rather than the ward.
+    out.gutter = 2 * kGlyphAdvance * box.unit;
+    if (!state.aimSubject.empty()) {
+        out.subject = clipToWidth(state.aimSubject, budget, box.unit);
+        out.subjectW = textWidth(out.subject, box.unit);
+        // The note takes what is left after the subject and a gutter of two
+        // glyph advances, and is DROPPED WHOLE rather than cut to a stub: a
+        // qualifier reading "ALREADY R.." qualifies nothing.
+        const int left = budget - out.subjectW - out.gutter;
+        if (!state.aimNote.empty() && left >= 6 * kGlyphAdvance * box.unit) {
+            out.note = clipToWidth(state.aimNote, left, box.unit);
+        }
+    }
+    out.noteW = out.note.empty() ? 0 : textWidth(out.note, box.unit);
+
+    // THE VERB ROW, AND IT IS THE ANCHOR. "E - TALK", the reference's own key
+    // grammar (`e - Establish`, `0 - Back`), in the key colour. Its y never
+    // moves: the subject row grows upward off it, so sweeping the crosshair
+    // across a doorway does not make the verb jump a row under the player's
+    // eye. That is "panes hold their height" on the smallest surface here.
+    std::string verb(state.aimKey);
+    if (!verb.empty()) {
+        verb += " - ";
+    }
+    verb += std::string(state.aimVerb);
+    out.verbRow = clipToWidth(verb, budget, box.unit);
+    out.verbW = textWidth(out.verbRow, box.unit);
+    return out;
+}
+
 }  // namespace
+
+CentreRect hudAimPromptRect(const HudState& state, int width, int height) {
+    const AimRows rows = aimRows(state, width, height);
+    if (!rows.draws) {
+        return CentreRect{0, 0, 0, 0};
+    }
+    // The union of both rows INCLUDING each row's scrim air -- one unit out on
+    // every side, which is what scrim() adds. A caller keeping clear of this
+    // keeps clear of what is actually painted, not of the glyph boxes alone.
+    const int subjectRowW =
+        rows.subject.empty() ? 0 : rows.subjectW + (rows.note.empty() ? 0 : rows.gutter + rows.noteW);
+    const int widest = std::max(subjectRowW, rows.verbW);
+    const int top = rows.subject.empty() ? rows.verbY : rows.subjectY;
+    return CentreRect{rows.textX - rows.unit, top - rows.unit,
+                      rows.textX + widest + rows.unit,
+                      rows.verbY + kGlyphH * rows.unit + rows.unit};
+}
 
 CentreRect hudAimRect(int width, int height) noexcept {
     const AimBox box = aimBox(width, height);
@@ -980,56 +1076,20 @@ void drawAim(Framebuffer& target, const HudState& state) {
         fill(sx, sy, sw, sh, kPlateBlack, 0.55F * need * alpha);
     };
 
-    // LAY BOTH ROWS OUT FIRST, THEN PAINT.
-    //
-    // The scrims read the ground under them (see above), so every one of them
-    // has to be measured against the WORLD rather than against whatever this
-    // same call has already drawn -- otherwise the verb row's own plate gets
-    // darker on the frames a subject happens to be present, and the one row
-    // that must never move under the player's eye moves.
-    //
-    // TWO UNITS OF SLACK ON THE BUDGET, NOT ONE. drawText hangs a one-unit
-    // drop shadow off the right of the last glyph it draws and clipToWidth
-    // measures the glyphs alone, so a budget of exactly the room available
-    // puts the shadow of the final letter one pixel past the fence. Found by
-    // the case that counts escaped pixels, which is what it is for.
-    const int budget = fence.x1 - box.textX - 2 * box.unit;
-    if (budget <= 0) {
+    // LAY BOTH ROWS OUT FIRST, THEN PAINT -- and lay them out THROUGH THE SAME
+    // PURE FUNCTION the signage renderer asks for the prompt's footprint. See
+    // aimRows()'s own header: two descriptions of one layout is how a fix gets
+    // tested against arithmetic the draw code never calls.
+    const AimRows rows = aimRows(state, width, height);
+    if (!rows.draws) {
         return;
     }
-
-    // THE SUBJECT ROW, above the verb. Absent when nothing in reach has a name
-    // -- and absent is the honest answer, not a bug: LOOK at open cobbles is
-    // LOOK at open cobbles, and inventing a label for it would be the machine
-    // talking rather than the ward.
-    const int gutter = 2 * kGlyphAdvance * box.unit;
-    std::string subject;
-    std::string note;
-    int subjectW = 0;
-    if (!state.aimSubject.empty()) {
-        subject = clipToWidth(state.aimSubject, budget, box.unit);
-        subjectW = textWidth(subject, box.unit);
-        // The note takes what is left after the subject and a gutter of two
-        // glyph advances, and is DROPPED WHOLE rather than cut to a stub: a
-        // qualifier reading "ALREADY R.." qualifies nothing.
-        const int left = budget - subjectW - gutter;
-        if (!state.aimNote.empty() && left >= 6 * kGlyphAdvance * box.unit) {
-            note = clipToWidth(state.aimNote, left, box.unit);
-        }
-    }
-    const int noteW = note.empty() ? 0 : textWidth(note, box.unit);
-
-    // THE VERB ROW, AND IT IS THE ANCHOR. "E - TALK", the reference's own key
-    // grammar (`e - Establish`, `0 - Back`), in the key colour. Its y never
-    // moves: the subject row grows upward off it, so sweeping the crosshair
-    // across a doorway does not make the verb jump a row under the player's
-    // eye. That is "panes hold their height" on the smallest surface here.
-    std::string verb(state.aimKey);
-    if (!verb.empty()) {
-        verb += " - ";
-    }
-    verb += std::string(state.aimVerb);
-    const std::string verbRow = clipToWidth(verb, budget, box.unit);
+    const int gutter = rows.gutter;
+    const std::string& subject = rows.subject;
+    const std::string& note = rows.note;
+    const int subjectW = rows.subjectW;
+    const int noteW = rows.noteW;
+    const std::string& verbRow = rows.verbRow;
 
     if (!subject.empty()) {
         scrim(box.textX, box.subjectY, subjectW + (note.empty() ? 0 : gutter + noteW));
