@@ -146,6 +146,22 @@ class DemoDirector {
     };
     [[nodiscard]] Tick advance(Session& session);
 
+    /// THE CARD OWNS THE FRAME while this is true.
+    ///
+    /// Every composed page in this build already stands the HUD down when it
+    /// takes the screen -- the ward map, the controls page and the casebook all
+    /// do it, and for the same reason: a full-screen surface with its own
+    /// header and its own readout does not want a compass ribbon and a clock
+    /// landing in them. The card is the one full-screen surface the SESSION
+    /// does not own -- the director draws it after drawFrame has already
+    /// returned -- so it cannot stand the HUD down from the inside and has to
+    /// say so from the outside. The client asks this before it draws.
+    ///
+    /// The threshold is the same one drawOverlay uses to decide the card is on
+    /// screen at all, so the furniture is gone for exactly the frames the card
+    /// is up and not one either side.
+    [[nodiscard]] bool cardOwnsFrame() const noexcept;
+
     /// The card and the caption, drawn over the finished frame.
     void drawOverlay(Framebuffer& target, const Session& session) const;
 

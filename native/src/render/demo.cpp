@@ -593,6 +593,10 @@ void DemoDirector::shutter(const Framebuffer& target) {
     (void)writePng(target, (shotDir_ / (name + ".png")).string());
 }
 
+bool DemoDirector::cardOwnsFrame() const noexcept {
+    return card_.value() > 0.01F && !cardLine_.empty();
+}
+
 void DemoDirector::drawOverlay(Framebuffer& target, const Session& session) const {
     const PanelMetric metric = panelMetric(target.height());
     const PanelInk& ink = panelInk();

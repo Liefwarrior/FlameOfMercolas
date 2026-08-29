@@ -124,6 +124,25 @@ public:
     explicit Session(const SessionConfig& config);
 
     [[nodiscard]] const SessionConfig& config() const noexcept { return config_; }
+
+    /// A FULL-SCREEN SURFACE THIS SESSION DOES NOT OWN IS UP; stand the
+    /// furniture down for it.
+    ///
+    /// Every composed page in here already does this from the inside -- the
+    /// ward map, the controls page and the casebook each zero the compass, the
+    /// clock, the purse and the plates before they draw, because their own
+    /// breadcrumb and their own right-aligned readout live exactly where those
+    /// sit. The demo's title card is the same kind of surface with one
+    /// difference: it is drawn by the director AFTER drawFrame has returned, so
+    /// it cannot stand anything down from the inside. This is how it says so.
+    ///
+    /// It takes the WORLD SIGNAGE with it, which config_.hud deliberately does
+    /// not. Signage is world content and the --nohud instrument must keep
+    /// measuring it -- but a card is a presentation surface and a building name
+    /// hanging off its border is the same collision the compass makes, one step
+    /// further out.
+    void setHudStandDown(bool down) noexcept { hudStandDown_ = down; }
+    [[nodiscard]] bool hudStandDown() const noexcept { return hudStandDown_; }
     [[nodiscard]] const sim::TileQuery& tiles() const noexcept { return *tiles_; }
     [[nodiscard]] sim::PlayerBody& body() noexcept { return *body_; }
     [[nodiscard]] const sim::PlayerBody& body() const noexcept { return *body_; }
@@ -1410,6 +1429,8 @@ private:
     void syncPanelAnim() noexcept;
 
     SessionConfig config_;
+    /// See setHudStandDown. Frame-scoped: the client sets it every frame.
+    bool hudStandDown_ = false;
     content::World world_;
     std::unique_ptr<sim::TileQuery> tiles_;
     TileAtlas atlas_;

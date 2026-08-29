@@ -4055,6 +4055,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             audio->update(static_cast<float>(frameSeconds));
         }
 
+        // THE CARD OWNS THE FRAME. Asked BEFORE drawFrame, because the card is
+        // drawn after it and the HUD it would sit under is drawn inside it --
+        // see Session::setHudStandDown and DemoDirector::cardOwnsFrame. Without
+        // this the end card, which is the last thing a viewer of the demo ever
+        // sees, carried a compass, a clock, a case trail with a green bar and a
+        // building name hanging off its right border.
+        if (demo != nullptr) {
+            session.setHudStandDown(demo->cardOwnsFrame());
+        }
         session.drawFrame(frame);
         // THE CARD AND THE CAPTION GO ON LAST, over the finished frame, and
         // the shutter goes after them -- so what a capture holds is exactly

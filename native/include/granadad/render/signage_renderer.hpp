@@ -24,6 +24,8 @@
 // is not in view at all from here) or something nearer (a wall in front of
 // it).
 
+#include <string_view>
+
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/world_renderer.hpp"
@@ -60,6 +62,28 @@ struct SignageSettings {
     /// right half of the centre band; excluding all of it would drop signs that
     /// were never in the prompt's way.
     CentreRect exclusion{0, 0, 0, 0};
+    /// THE BUILDING THE CROSSHAIR IS ALREADY NAMING, so the ward does not name
+    /// it twice in the same breath.
+    ///
+    /// Two frames of the demo caught this exactly -- `night-beacon` and
+    /// `quay-turret` both read `MERLE'S BOATS` as a world sign and `MERLE'S
+    /// BOATS / E - LOOK` as the prompt two rows under it. The anti-overlap rule
+    /// above cannot help: the two do not collide, they are neighbours, and
+    /// neighbours saying the same word is worse than an overlap because it
+    /// reads as a bug rather than as clutter.
+    ///
+    /// THE SIGN IS THE ONE THAT YIELDS, and the prompt stays. The sign exists
+    /// to answer "what is that over there" at a distance; the prompt answers
+    /// "what is this and what key opens it", carries a VERB and a KEY the sign
+    /// does not have, and is the one the player summoned by aiming. When both
+    /// are on screen the prompt is strictly the better of the two, so the sign
+    /// steps back for exactly as long as the prompt is naming its building --
+    /// and is back the moment the crosshair moves off, which is the one frame
+    /// the player needs it again.
+    ///
+    /// Empty suppresses nothing, so a caller that does not pass one is
+    /// pixel-identical to before this existed.
+    std::string_view namedByPrompt;
 };
 
 /// Draws every Docks sign that is in range, facing the right way to be seen,

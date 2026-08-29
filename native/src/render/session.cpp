@@ -5658,8 +5658,24 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     //
     // A frame with nothing under the reticle hands back an empty rect and the
     // signs are placed exactly as they were before this existed.
+    //
+    // THE FURNITURE, IN ONE PLACE. `config_.hud` is the --nohud instrument and
+    // `hudStandDown_` is a card owning the frame (see Session::setHudStandDown);
+    // below, every interface pass reads THIS rather than testing the two
+    // itself, so the two switches cannot drift apart one branch at a time.
+    const bool furniture = config_.hud && !hudStandDown_;
+
     SignageSettings signage;
-    {
+    // ...AND THE EXCLUSION IS COMPUTED ONLY WHEN THERE IS A PROMPT TO EXCLUDE.
+    //
+    // It used to be computed unconditionally, so under --nohud the signs still
+    // stepped around an aim prompt that was never drawn. Zero gameplay impact
+    // and a real measurement one: --nohud is the RULER this project takes every
+    // interface number with, and a ruler that moves the world it is measuring
+    // overstates every reading it gives. 368 to 656 pixels of a 640x360 frame
+    // (0.16-0.29%) were counted as interface that were signs standing somewhere
+    // else. See docs/HUD-REAL-ESTATE.md.
+    if (config_.hud) {
         HudState aim;
         aim.aimKey = keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]);
         aim.aimVerb = std::string_view{interactCache_};
@@ -5667,8 +5683,20 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         aim.aimNote = std::string_view{interactNoteCache_};
         aim.interactFade = interactAnim_.value();
         signage.exclusion = hudAimPromptRect(aim, target.width(), target.height());
+        // ...AND THE NAME IT IS ALREADY SAYING. See
+        // SignageSettings::namedByPrompt: the prompt carries the verb and the
+        // key, so where the two would say the same building the SIGN yields.
+        // Gated on the prompt actually being on screen (interactFade), or a
+        // sign would vanish for a subject the crosshair had already left.
+        if (aim.interactFade > 0.0F) {
+            signage.namedByPrompt = aim.aimSubject;
+        }
     }
-    drawSignage(target, view, signage);
+    // Signage is WORLD CONTENT and stays outside config_.hud -- the ruler has
+    // to keep measuring it. A card is the one thing it yields to.
+    if (!hudStandDown_) {
+        drawSignage(target, view, signage);
+    }
 
     // INNOVATION SPRINT ITEM #3. A BRAWL FINALLY HAS SOME PHYSICAL WEIGHT.
     // Two brief, low-alpha washes over the WORLD -- drawn here, before the
@@ -5947,7 +5975,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             // nothing under it moves when a bouncer starts talking.
             plan.alert = tavern_->lastWarning();
         }
-        if (config_.hud) {
+        if (furniture) {
             drawDistrictMap(target, plan);
             drawHud(target, hud);
         }
@@ -5978,7 +6006,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         }
         hud.timeOfDaySeconds = -1;
         hud.coin = -1;
-        if (config_.hud) {
+        if (furniture) {
             drawKeysPage(target, page);
             drawHud(target, hud);
         }
@@ -6025,7 +6053,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         hud.casePlateFade = 0.0F;
         hud.showHealth = false;
         hud.showAlert = false;
-        if (config_.hud) {
+        if (furniture) {
             drawCasebookPage(target, page);
             drawHud(target, hud);
         }
@@ -6061,7 +6089,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         tiles.mapFocus = mapFocusAnim_.value();
         tiles.lettersFocus = lettersFocusAnim_.value();
         tiles.journalFocus = journalFocusAnim_.value();
-        if (config_.hud) {
+        if (furniture) {
             drawMenuTiles(target, tiles);
             drawHud(target, hud);
         }
@@ -6094,7 +6122,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     panel.open = panel.open || panelAnim_.value() > 0.0F;
     // The panel FIRST, the HUD over it: a bouncer's warning has to survive
     // being told mid-conversation, and it is the one line that outranks a menu.
-    if (config_.hud) {
+    if (furniture) {
         drawDialogue(target, panel);
         drawHud(target, hud);
     }

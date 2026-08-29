@@ -97,6 +97,10 @@ void drawSignage(Framebuffer& target, const Camera& camera, const SignageSetting
     }
 
     for (const Candidate& candidate : candidates) {
+        // ALREADY SAID, ONCE, BETTER. See SignageSettings::namedByPrompt.
+        if (!settings.namedByPrompt.empty() && candidate.text == settings.namedByPrompt) {
+            continue;
+        }
         const float relX = candidate.worldX - camera.x;
         const float relY = candidate.worldY - camera.y;
         const float lateral = relX * rightX + relY * rightY;
