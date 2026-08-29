@@ -2770,6 +2770,7 @@ int run_creation_capture(const Options& options) {
     } else if (options.creationStep != "origin") {
         std::printf(
             "granadad: --creation wants origin, calling, quiz, verdict, background, "
+            "osk, "
             "review, customize, devin or gabri\n");
         return 2;
     }
@@ -3808,6 +3809,32 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         // call now, so F3 and an open page cannot each set the
                         // mode and disagree about which of them was last.
                         mouseLook = !mouseLook;
+                        break;
+                    }
+                    // F1 AND F2 WERE ADVERTISED AND UNBOUND. --help says "F1
+                    // lists every key and F2 rebinds them" and the ship note
+                    // repeats it; a live verifier pressed F1 twice and got
+                    // nothing, and could not tell a dropped keystroke from a
+                    // real gap. It was a real gap: #85 folded the keys page
+                    // into the pause menu's CONTROLS row and retired the
+                    // Action that used to carry it, and nothing was left
+                    // holding the F-key the documentation kept promising.
+                    // Session::toggleKeys()/toggleOptions() were still there
+                    // and still reachable from the pause menu -- only the
+                    // shortcut had gone.
+                    //
+                    // SAME YIELD RULE AS F3, and for the same reason: these are
+                    // hard-coded convenience keys, so a verb bound to F1 by the
+                    // rebinding screen has to outrank them or the rebinding
+                    // screen is a liar.
+                    if ((key == render::Key::F1 || key == render::Key::F2) &&
+                        session.controls().actionFor(key) == render::Action::Count &&
+                        !session.awaitingKey()) {
+                        if (key == render::Key::F1) {
+                            session.toggleKeys();
+                        } else {
+                            session.toggleOptions();
+                        }
                         break;
                     }
                     if (route_menu_key(session, key)) {
