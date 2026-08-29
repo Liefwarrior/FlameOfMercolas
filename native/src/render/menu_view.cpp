@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "granadad/render/hud.hpp"
+#include "granadad/render/panel.hpp"
 
 namespace granadad::render {
 
@@ -124,8 +125,7 @@ int drawWrappedProse(Framebuffer& target, const Rect& r, int margin, int y,
 /// tile's cursor row picked out by drawPickHighlight, the identical shape
 /// dialogue_view.cpp already uses for "this one is selected".
 void drawPanelRows(Framebuffer& target, const Rect& r, int margin, int bodyTop,
-                   const DialogueViewState& view, int bodyScale, bool focused, float phase,
-                   float fade) {
+                   const DialogueViewState& view, int bodyScale, bool focused, float fade) {
     const int rowStep = (6 + 1) * bodyScale;
     const int glyphAdvance = 5 * bodyScale;
     const int bottom = r.y + r.h - margin;
@@ -143,20 +143,30 @@ void drawPanelRows(Framebuffer& target, const Rect& r, int margin, int bodyTop,
         const std::string label = clipLabel(row.label, room);
         const int x = r.x + margin + glyphAdvance;
         if (row.picked) {
-            // Only the FOCUSED tile breathes and draws the bright cursor
-            // hairline -- an unfocused tile still shows where its own cursor
-            // last sat (Morrowind's own four panes hold their scroll
-            // position while unfocused), just without claiming the keyboard
-            // is listening to it right now.
-            if (focused) {
-                drawPickHighlight(target, x, y, rowStep, glyphAdvance, bodyScale,
-                                  textWidth(label, bodyScale), static_cast<int>(room) * glyphAdvance,
-                                  phase);
-            }
-            drawText(target, x - glyphAdvance / 2, y, ">", kTopicPicked, focused ? 0.95F : 0.55F,
-                     bodyScale);
-            drawText(target, x + glyphAdvance / 2, y, label, kTopicPicked,
-                     (focused ? 0.98F : 0.75F) * fade, bodyScale);
+            // THE FILL IS THE AFFORDANCE -- and this was the last surface in
+            // the build that had not been told. UI-REFERENCE-TERMINAL.md
+            // forbids the arrow BY NAME ("Selection is an inverted highlight
+            // ... Not an arrow, not a bracket. The fill is the affordance"),
+            // the conversation panel was converted a pass ago and
+            // drawPickHighlight's own header has said since then that these
+            // four tiled panels are "the next surface to convert". They are
+            // converted here: a solid band in the accent with the label knocked
+            // out of it, which is the identical shape drawOptionList draws for
+            // every other list in the game.
+            //
+            // AN UNFOCUSED TILE STILL SHOWS WHERE ITS CURSOR SAT -- Morrowind's
+            // own four panes hold their place while unfocused -- so the fill
+            // dims rather than disappearing. State moves the whole row
+            // together; nothing is greyed out and nothing is dropped.
+            const int fillX = x - glyphAdvance / 2;
+            const int fillW = std::max(
+                glyphAdvance, std::min(static_cast<int>(room + 2) * glyphAdvance,
+                                       textWidth(label, bodyScale) + 2 * glyphAdvance));
+            target.fillRect(fillX, y - bodyScale, fillW, rowStep, kTopicPicked,
+                            (focused ? 0.92F : 0.20F) * fade);
+            drawText(target, x + glyphAdvance / 2, y, label,
+                     focused ? panelInk().knockout : kTopicPicked,
+                     (focused ? 0.98F : 0.85F) * fade, bodyScale);
         } else {
             drawText(target, x + glyphAdvance / 2, y, label, kTopicInk, 0.82F * fade, bodyScale);
         }
@@ -205,8 +215,8 @@ void drawLetterBody(Framebuffer& target, const Rect& r, int margin, int bodyTop,
 }
 
 void drawTile(Framebuffer& target, const Rect& r, const DialogueViewState& view, bool focused,
-             float focusAmount, int edgeScale, int headerScale, int bodyScale, float phase,
-             float fade, bool showProse) {
+             float focusAmount, int edgeScale, int headerScale, int bodyScale, float fade,
+             bool showProse) {
     drawPanelFrame(target, r, focusAmount, edgeScale, fade);
     if (!view.open) {
         return;
@@ -224,7 +234,7 @@ void drawTile(Framebuffer& target, const Rect& r, const DialogueViewState& view,
         y = drawWrappedProse(target, r, margin, y, view.caseRef, bodyScale, 1, kCaseRefInk, fade);
     }
     y += edgeScale;
-    drawPanelRows(target, r, margin, y, view, bodyScale, focused, phase, fade);
+    drawPanelRows(target, r, margin, y, view, bodyScale, focused, fade);
 }
 
 }  // namespace
@@ -279,17 +289,17 @@ void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
     // `view.letter`'s own branch in drawTile -- this flag only governs the
     // TITLE-LIST state.
     drawTile(target, characterRect, state.character, state.focus == kMenuFocusCharacter,
-             state.characterFocus, edgeScale, headerScale, bodyScale, state.phase, fade, false);
+             state.characterFocus, edgeScale, headerScale, bodyScale, fade, false);
     drawTile(target, mapRect, state.map, state.focus == kMenuFocusMap, state.mapFocus, edgeScale,
-             headerScale, bodyScale, state.phase, fade, false);
+             headerScale, bodyScale, fade, false);
     drawTile(target, lettersRect, state.letters, state.focus == kMenuFocusLetters,
-             state.lettersFocus, edgeScale, headerScale, bodyScale, state.phase, fade, false);
+             state.lettersFocus, edgeScale, headerScale, bodyScale, fade, false);
     // JOURNAL: full width along the bottom, the tile with the most room, and
     // the one whose prose (the hook, the ward's dread, a picked lead's own
     // found/detail text, its dateline) is the actual point of the page -- so
     // it keeps showing it, wrapped to two lines and marked when cut.
     drawTile(target, journalRect, state.journal, state.focus == kMenuFocusJournal,
-             state.journalFocus, edgeScale, headerScale, bodyScale, state.phase, fade, true);
+             state.journalFocus, edgeScale, headerScale, bodyScale, fade, true);
 }
 
 }  // namespace granadad::render
