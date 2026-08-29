@@ -19,9 +19,19 @@ To get the frames as well as the show:
 .\dist\granadad.exe --demo-capture=docs\frames\demo
 ```
 
-Twenty-three PNGs at the render size (640x360 by default), one per named shot on
-the route. A trailer or a screenshot set falls out of the same run that a person
-watches.
+Twenty-two or twenty-three PNGs at the render size (640x360 by default), one per
+named shot on the route. A trailer or a screenshot set falls out of the same run
+that a person watches.
+
+**`creation-origin.png` is captured by a race and is often missed.** The
+character screen's shutter arms 40 frames after a step is entered, and the
+route can leave the Origin step before those 40 frames are up, so the first
+shot of the set is written on some runs and not others -- the SHIP pass got it
+on three runs out of seven, from the same binary both ways. Only the shutter is
+affected: `--demo` itself plays that beat every time, and the committed
+`docs/frames/demo/creation-origin.png` is a real frame of it. The durable fix is
+the guard the world's own director already has -- take the picture when the beat
+ends if it has not been taken yet.
 
 To iterate on one section without sitting through the whole thing:
 
