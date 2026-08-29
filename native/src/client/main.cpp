@@ -3175,7 +3175,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // the gamepad count above states for itself. The scripted/headless paths
     // (--smoke/--screenshot, every test) never reach this function, so none
     // of them ever open a device.
-    const std::unique_ptr<granadad::audio::AudioEngine> audio =
+    //
+    // NOT const: the shutdown at the foot of this function has to drop the
+    // engine BEFORE SDL_Quit(), not on the way out of scope after it. See the
+    // comment there for the crash that ordering caused.
+    std::unique_ptr<granadad::audio::AudioEngine> audio =
         granadad::audio::createSdlAudioEngine();
     if (audio != nullptr) {
         std::printf("granadad: audio %s\n",
@@ -3190,8 +3194,13 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     const int windowH = start.height * options.windowScale;
     SDL_Window* window =
         SDL_CreateWindow("Granadad: The Darkstreets", windowW, windowH, SDL_WINDOW_RESIZABLE);
+    // The two failure paths below open no window worth keeping, but they DO
+    // run after the engine exists -- so they take the same order the normal
+    // shutdown does. Detach, drop the engine, then let SDL go.
     if (window == nullptr) {
         std::printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
+        session.setAudio(nullptr);
+        audio.reset();
         SDL_Quit();
         return 1;
     }
@@ -3199,6 +3208,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     if (renderer == nullptr) {
         std::printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
+        session.setAudio(nullptr);
+        audio.reset();
         SDL_Quit();
         return 1;
     }
@@ -4119,6 +4130,29 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+
+    // THE ENGINE GOES BEFORE SDL DOES, and this is the contract setAudio()'s
+    // own header in session.hpp states -- "main.cpp detaches (setAudio(nullptr))
+    // before its engine goes away." It never did. `audio` is a function-scope
+    // unique_ptr, so its destructor used to run on `return`, which is AFTER
+    // SDL_Quit() has already torn down the audio subsystem and the callback
+    // thread the engine's stream belongs to. Closing a stream SDL has freed is
+    // a use-after-free, and it announced itself exactly the way one does: the
+    // windowed client exited 0xC0000374 (heap corruption) or 0xC0000005
+    // (access violation) -- never during play, always on the way out.
+    //
+    // It was invisible for as long as nothing exercised a full windowed
+    // session that ended by itself: --smoke and every test are headless and
+    // never open a device, and a human closing the window got the same crash
+    // after the window had already gone, where it reads as Windows tidying up.
+    // `--demo` is what made it reproducible, because it plays to the end and
+    // then quits on its own.
+    //
+    // Detach first so the Session cannot touch a dead engine, then drop the
+    // engine, then let SDL go. Ordering only -- no hook, no sound and no sim
+    // state changes, which is why the world hash cannot feel this.
+    session.setAudio(nullptr);
+    audio.reset();
     SDL_Quit();
     return 0;
 }
