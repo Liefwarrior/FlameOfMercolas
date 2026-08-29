@@ -765,3 +765,58 @@ is named so it reads as a decision.
 author catching "THE GILDED GULL" through the bindings list and answering it by
 moving to 0.97, and frames committed *after* that still have the sign legible
 across the middle of the list.
+
+---
+
+## Every CLAIMED figure above is overstated (2026-08-29, ship phase)
+
+`signage.exclusion` — the box the world's street signs step around so they do
+not collide with the aim prompt — was computed **unconditionally**, including
+under `--nohud`. So the `--nohud` baseline had its signs shoved aside by a
+prompt that was never drawn, and every pixel they moved counted as interface in
+the diff. Fixed in `bb223cb` (sprint 1, item 5) by gating it on `config_.hud`.
+
+**The `INK` figures are unaffected in kind but the `CLAIMED` figures above were
+inflated by the 368–656 px this accounted for.** Do not re-derive anything from
+them; re-measure instead.
+
+### The first correct measurement, at the default render size
+
+640x360, the size the game actually opens at and the size every frame in this
+document should have been judged at:
+
+```
+dist\granadad.exe --smoke=30 --width=640 --height=360 --scale=1 --screenshot=DIR\after-street.png
+dist\granadad.exe --smoke=30 --width=640 --height=360 --scale=1 --nohud --screenshot=DIR\nohud-street.png
+python scripts\hud-real-estate.py DIR 10 2
+```
+
+(10 and 2, not 15 and 3: the closing gaps are one glyph advance and one shadow
+row, and they scale with the capture.)
+
+| scene | INK | CLAIMED |
+|---|---|---|
+| street (`--smoke=30`), 640x360, revision `581d8fe` | 8,072 (**3.50%**) | 13,971 (**6.06%**) |
+
+Frames: `docs/frames/ship/ship-ruler-after-street-640.png` and
+`docs/frames/ship/ship-ruler-nohud-street-640.png`.
+
+### The ruler is degenerate over a full-screen page
+
+A creation step or the casebook covers the world entirely, so the diff returns
+the whole frame and says nothing. For those, measure **ink density of content
+inside the composed panel**, and — since sprint 1 taught the pages to stop at
+their content — **how much of the frame is left dead beneath it**, which is now
+the number that decides whether a page looks placed or looks like it ran out:
+
+| surface at 640x360 | panel | dead below | ink in panel |
+|---|---|---|---|
+| creation — THE DOOR | 164px (45.6%) | 194px (53.9%) | 8.06% |
+| creation — YOUR PAST | 185px (51.4%) | 173px (48.1%) | 8.61% |
+| creation — THE SHEET | 164px (45.6%) | 194px (53.9%) | 9.55% |
+| creation — THE NAME (on-screen keyboard) | 129px (35.8%) | 229px (63.6%) | 7.72% |
+| casebook, new game | 199px (55.3%) | 159px (44.2%) | 6.80% |
+| the ward map | 360px (100%) | 0px | 23.67% |
+
+The map row is the benchmark: same vocabulary, same size, fills its frame at
+nearly three times the ink of any page above it.
