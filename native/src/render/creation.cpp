@@ -571,7 +571,7 @@ std::string CreationFlow::labelFor(const CustomizeRow& row) const {
 
 std::string CreationFlow::statusLine() const {
     if (chosenCompanion() != nullptr) {
-        return "A FIXED SHEET -- NOT ADJUSTABLE HERE.";
+        return "A FIXED SHEET -- THEIRS, NOT YOURS TO SPEND.";
     }
     // THE DAGGER READOUT, doc section 5's one currency, shown wherever the
     // sheet is spendable. Points are 0 in this build -- the advantage shop's
@@ -1651,9 +1651,7 @@ CreationPage CreationFlow::page() const {
                 out.detailBadge = "AT RANDOM";
                 out.detailStatus = "THE WHOLE PAST";
                 PanelLine line;
-                line.body =
-                    "ANSWER NOTHING MORE. THE REST OF YOUR PAST IS ROLLED FOR YOU, ALL "
-                    "TWELVE QUESTIONS AT ONCE.";
+                line.body = "ANSWER NOTHING MORE. THE REST OF YOUR PAST IS ROLLED IN ONE THROW.";
                 out.lines.push_back(std::move(line));
                 out.commitVerb = "ENTER - ROLL THE REST";
                 out.commitCost = "(YOU CANNOT UNROLL IT)";
@@ -1741,7 +1739,7 @@ CreationPage CreationFlow::pageForOsk() const {
                            std::to_string(kMaxNameLength - name_.size()) + " MORE",
                            InkRole::Number}};
     PanelLine line;
-    line.body = "EVERY LINE THIS GAME SPEAKS FROM HERE ON HAS THIS WELDED INTO IT.";
+    line.body = "THE WARD WILL USE IT TO YOUR FACE FROM HERE ON.";
     out.lines.push_back(std::move(line));
     // STATE CHANGES THE VERB. A blank name does not grey this out; it says what
     // is missing, and pressing it does nothing because there is nothing yet to
@@ -1799,7 +1797,7 @@ CreationPage CreationFlow::pageForSheet() const {
                          PanelFact{"ROOM FOR", std::to_string(kMaxNameLength) + " LETTERS",
                                    InkRole::Number}};
             PanelLine line;
-            line.body = "EVERY LINE THIS GAME SPEAKS FROM HERE ON HAS THIS WELDED INTO IT.";
+            line.body = "THE WARD WILL USE IT TO YOUR FACE FROM HERE ON.";
             out.lines.push_back(std::move(line));
             out.commitVerb = editingName_ ? "ENTER - THAT IS MY NAME" : "ENTER - TYPE A NAME";
             out.commitCost = editingName_ ? "(BACKSPACE RUBS OUT)" : "";
@@ -1821,8 +1819,7 @@ CreationPage CreationFlow::pageForSheet() const {
                           std::to_string(sim::appearanceOptions().size()) + " IN THE WARD",
                           InkRole::Number}};
             PanelLine line;
-            line.body = "THE WARD DRAWS YOU OUT OF ITS OWN SPRITE VOCABULARY. THIS IS THE "
-                        "ONE IT WILL USE.";
+            line.body = "THE WARD HAS ONLY SO MANY FACES TO GIVE OUT. THIS ONE IS YOURS.";
             out.lines.push_back(std::move(line));
             out.commitVerb = fixed ? "A FIXED LOOK" : "LEFT RIGHT - CHANGE";
             out.commitCost = fixed ? "(THEIRS, NOT YOURS TO MOVE)" : "";

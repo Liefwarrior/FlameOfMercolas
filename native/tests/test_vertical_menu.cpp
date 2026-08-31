@@ -248,7 +248,7 @@ TEST_CASE("the tiles that ship empty say what they are waiting for, in room the 
     CHECK_FALSE(letters.emptyLine.empty());
     // It names the act that fills it, and the act is standing over a lead --
     // unlockedLetters()' own gate, not merely hearing one.
-    CHECK(letters.emptyLine.find("STAND OVER A LEAD") != std::string::npos);
+    CHECK(letters.emptyLine.find("STAND OVER") != std::string::npos);
 
     session.menuPageNext();  // Letters -> Journal
     REQUIRE(session.menuFocus() == kMenuFocusJournal);

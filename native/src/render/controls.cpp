@@ -72,7 +72,7 @@ constexpr ActionNames kActions[] = {
     {Action::TurnLeft, "turn_left", "TURN L",
      "TURN LEFT ON THE SPOT. THE MOUSE DOES THIS BETTER; THE ARROWS ARE HERE FOR PLAYING WITHOUT ONE."},
     {Action::TurnRight, "turn_right", "TURN R",
-     "TURN RIGHT ON THE SPOT. AN ACCESSIBILITY FALLBACK, NOT THE INTENDED FEEL."},
+     "TURN RIGHT ON THE SPOT, FOR WHOEVER PLAYS WITHOUT A MOUSE."},
     {Action::Attack, "attack", "ATTACK",
      "SWING WHATEVER IS IN THE HAND. A FIST DOES WELL ENOUGH ON MOST OF THE ROWS."},
     {Action::Interact, "interact", "USE",

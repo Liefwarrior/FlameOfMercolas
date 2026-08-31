@@ -118,8 +118,7 @@ namespace granadad::render {
 /// of the detail pane already offers ("ENTER - LOOK AT IT"), and the key that
 /// does it out there is printed beside that verb rather than guessed at here.
 inline constexpr std::string_view kBookWaitingLine =
-    "THE REST OF THE BOOK IS STILL BLANK. STAND OVER A LEAD AND LOOK. WHAT IT OPENS IS "
-    "WRITTEN IN HERE.";
+    "THE REST OF THE BOOK IS WAITING ON YOU. STAND OVER A LEAD AND LOOK.";
 
 /// Which view is over the selection. Two, and both earn their space: the lead
 /// you are pointing at, and the case the leads belong to.

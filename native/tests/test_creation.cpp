@@ -538,7 +538,7 @@ TEST_CASE("the status line says the sheet is fixed, for DEVIN and GABRI") {
     render::CreationFlow flow = fresh();
     flow.moveOriginCursor(4);  // DEVIN
     flow.chooseOrigin();
-    CHECK(flow.view().line == "A FIXED SHEET -- NOT ADJUSTABLE HERE.");
+    CHECK(flow.view().line == "A FIXED SHEET -- THEIRS, NOT YOURS TO SPEND.");
     mustReadAsEnglish("companion status line", flow.view().line);
 }
 

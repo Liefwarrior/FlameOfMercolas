@@ -987,8 +987,8 @@ namespace {
 [[nodiscard]] std::vector<KeysPageRow> contextualRows() {
     std::vector<KeysPageRow> rows;
     rows.push_back(KeysPageRow{"WALK", "CLIMB A LEDGE", "",
-                               "THERE IS NO KEY FOR THIS, WHICH IS THE POINT OF IT. WALK "
-                               "STRAIGHT AT A LOW LEDGE AND YOU HAUL YOURSELF UP IT.",
+                               "NO KEY FOR THIS -- THAT IS THE POINT. WALK AT A LOW LEDGE "
+                               "AND YOU HAUL YOURSELF UP.",
                                false, "WALK AT A LEDGE", kKeysGroupNote});
     rows.push_back(KeysPageRow{"W  S", "AIM THE WIRE", "",
                                "TURNS THE WIRE IN THE LOCK. THE WARDS ARE NOT ALL AT THE "
@@ -1046,8 +1046,8 @@ std::vector<KeysPageRow> Session::keyPageRows() const {
                 std::string(keyName(controls_.primary[static_cast<std::size_t>(
                     Action::QuickSlot0)]));
             row.verb = "QUICK BAR";
-            row.help = "THE NUMBER ROW READIES A CRAFTING WITHOUT OPENING ANYTHING. THE "
-                       "OPTIONS PAGE LISTS ALL TEN SEPARATELY.";
+            row.help = "THE NUMBER ROW READIES A CRAFTING WITH NOTHING OPEN. THE "
+                       "OPTIONS PAGE LISTS ALL TEN.";
         } else {
             row.binding = std::string(keyName(controls_.primary[i]));
             const Key second = controls_.secondary[i];
@@ -1072,9 +1072,7 @@ KeysPageState Session::keysPageState() const {
     // screen while you read the page. It used to be burnt into the top-left
     // corner of every captured frame at full HUD scale.
     state.readout = "GRANADAD " + std::string(sim::build_info().version);
-    state.instruction =
-        "EVERY KEY THIS GAME ANSWERS TO. THE ONE UNDER THE CURSOR IS SPELT OUT ON THE "
-        "RIGHT. F1 PUTS THIS DOWN.";
+    state.instruction = "EVERY KEY THE GAME ANSWERS TO. F1 PUTS THIS DOWN.";
     state.rows = keyPageRows();
     state.cursor = caseCursor_;
     return state;
@@ -2338,7 +2336,7 @@ CasebookPageState Session::casebookPageState() const {
     } else if (page.closed) {
         page.instruction = "THE TRAIL IS WALKED OUT.";
     } else if (page.read == 0) {
-        page.instruction = "PICK A LEAD AND PRESS ENTER TO SEE WHERE IT IS.";
+        page.instruction = "PICK A LEAD. ENTER SHOWS YOU WHERE.";
     } else {
         const std::int32_t waiting = page.known - page.read > 0 ? page.known - page.read : 0;
         page.instruction = std::to_string(waiting) +
@@ -3801,9 +3799,7 @@ DialogueViewState Session::characterPanelView() const {
     view.speaker = "CHARACTER";
     const std::string title = legendLine();
     view.epithet = title.empty() ? std::string(sim::kReputationUnremarkable) : title;
-    view.line =
-        "WHAT THE STREETS HAVE MADE OF YOU, ON FIVE TRACKS AT ONCE, AND THE HANDS THAT "
-        "DID IT.";
+    view.line = "WHAT THE STREETS HAVE MADE OF YOU, AND THE HANDS THAT DID IT.";
     for (const std::string& row : characterRows()) {
         view.topics.push_back(row);
     }
@@ -3828,9 +3824,7 @@ DialogueViewState Session::mapPanelView() const {
     // reading of the book, and the book is what the player fills. True at
     // every point in a run, which is why it is not gated on the row count:
     // this panel is never finished until the case is.
-    view.emptyLine =
-        "EVERY LINE HERE IS DRAWN OUT OF THE CASEBOOK. HEAR A LEAD AND ITS GROUND, ITS "
-        "BEARING AND ITS NAME COME WITH IT.";
+    view.emptyLine = "THE CHART KNOWS WHAT THE CASEBOOK KNOWS, AND NOT A STREET MORE.";
     for (const std::string& row : mapRows()) {
         view.topics.push_back(row);
     }
@@ -3886,7 +3880,7 @@ DialogueViewState Session::lettersPanelView() const {
         view.epithet = "READ, NOT RECEIVED";
         view.line = unlocked.empty()
                         ? "YOU HAVE READ NOBODY'S POST YET."
-                        : "A DOCUMENT SOMEBODY ELSE WROTE. PICK ONE TO READ IT WHOLE.";
+                        : "OTHER PEOPLE'S PAPER. PICK ONE AND READ IT WHOLE.";
         // THE ONE PANEL IN THE BUILD THAT SHIPS WITH NOTHING IN IT AT ALL, and
         // the tile draws no `line`, so until this the first thing a stranger
         // saw here was a title over a quarter-screen of black. The gate is
@@ -3897,12 +3891,12 @@ DialogueViewState Session::lettersPanelView() const {
         //
         // "READ, NOT RECEIVED" is the epithet above it, and the wording keeps
         // faith with it: none of these five documents is addressed to the
-        // player, which is why the empty state says READ rather than RECEIVED.
+        // player, so the copy talks about paper the leads keep, never about
+        // post the player was sent.
         view.emptyLine =
             unlocked.empty()
-                ? "YOU HAVE READ NOBODY'S POST YET. STAND OVER A LEAD AND WHATEVER PAPER "
-                  "IT KEEPS TURNS UP HERE, IN THE HAND THAT WROTE IT."
-                : "STAND OVER MORE LEADS. WHATEVER PAPER THEY KEEP TURNS UP HERE.";
+                ? "THE LEADS KEEP THEIR OWN PAPER. STAND OVER ONE AND IT TURNS UP HERE."
+                : "STAND OVER MORE LEADS. WHAT PAPER THEY KEEP TURNS UP HERE.";
         view.page = lettersPage_;
     }
     for (const std::int32_t index : unlocked) {
@@ -4170,9 +4164,7 @@ DialogueViewState Session::dialogueView() const {
         // options, and a menu that promised a freeze the game does not deliver
         // would be exactly the class of bug the copy bar exists to catch. Said
         // once, here, where a player opening this for the first time reads it.
-        view.line =
-            "THE DOCKS KEEP RUNNING WHILE YOU DECIDE. NOTHING HERE IS LOST -- SETTINGS SAVE "
-            "THEMSELVES.";
+        view.line = "THE DOCKS DO NOT WAIT ON YOU. SETTINGS KEEP THEMSELVES.";
         for (const std::string& row : pauseRows()) {
             view.topics.push_back(row);
         }
@@ -4192,8 +4184,7 @@ DialogueViewState Session::dialogueView() const {
         // THREE LINES IS WHAT THE TOP BAND WRAPS TO, so this is written to fit
         // in two. The first version ran to four and lost its own last sentence.
         view.line =
-            "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS WHETHER YOU WATCH IT "
-            "OR NOT. F1 PUTS THIS DOWN.";
+            "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS. F1 PUTS THIS DOWN.";
         for (const std::string& row : keyRows()) {
             view.topics.push_back(row);
         }
@@ -4216,8 +4207,8 @@ DialogueViewState Session::dialogueView() const {
             view.line = "NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES.";
         } else {
             view.line =
-                "EVERY CRAFTING THE HAND KNOWS. D IS WHAT THE LINK ASKS OF YOUR "
-                "LINKCRAFT; A SLOT PUTS IT ON THE NUMBER ROW.";
+                "EVERY CRAFTING THE HAND KNOWS. D IS WHAT THE LINK ASKS. A SLOT PUTS "
+                "IT ON THE NUMBER ROW.";
         }
         for (const std::string& row : rows) {
             view.topics.push_back(row);
@@ -4252,7 +4243,7 @@ DialogueViewState Session::dialogueView() const {
         view.speaker = "OPTIONS";
         view.epithet = awaitingKey_ ? "PRESS A KEY  (ESC CANCELS)" : "LEFT RIGHT CHANGE  ENTER REBIND";
         view.line =
-            "MOUSE LOOK IS RAW -- NO SMOOTHING AND NO ACCELERATION. A KEY YOU BIND IS TAKEN "
+            "MOUSE LOOK IS RAW -- NO SMOOTHING, NO ACCELERATION. A KEY YOU BIND IS TAKEN "
             "OFF WHATEVER HAD IT. F2 PUTS THIS DOWN.";
         for (const std::string& row : optionRows()) {
             view.topics.push_back(row);

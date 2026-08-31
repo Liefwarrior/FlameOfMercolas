@@ -133,7 +133,7 @@ const DemoBeat kRoute[] = {
      -1},
     {"saltgate", DemoAct::Pan, 40, 0, 0, 0, 180, nullptr, nullptr, nullptr, nullptr, -1},
     {"saltgate", DemoAct::Hold, 180, 0, 0, 0, 0, nullptr, nullptr,
-     "GEOMETRY NARROWS, A NAME IS ASSERTED, SPACE OPENS AGAIN.", "gate-10", -1},
+     "THE ROAD NARROWS, SAYS ITS NAME, AND OPENS AGAIN.", "gate-10", -1},
 
     // -----------------------------------------------------------------------
     // 3. THE INVESTIGATION -- the beat the whole route is built to reach
