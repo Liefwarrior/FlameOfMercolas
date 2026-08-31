@@ -1681,6 +1681,15 @@ void print_usage() {
                 session.takeAskingPrice();
                 return true;
             }
+            // SHIP NOTE MOVE 3, in passing: the band has advertised
+            // "T - TAKE THEIR PRICE" since the haggle shipped, and T was
+            // never routed -- only PageNext above was. The advertised key
+            // now does the advertised thing; PageNext stays for the pad's
+            // RB, which is what the band prints with a pad in hand.
+            if (key == render::Key::T) {
+                session.takeAskingPrice();
+                return true;
+            }
             return false;
         }
         if (up) {
@@ -2919,6 +2928,10 @@ render::CreationResult run_creation_window(const Options& options) {
                     continue;
                 case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
                     const render::Key key = key_of_pad_button(event.gbutton.button);
+                    // SHIP NOTE MOVE 3: the feet re-word for the pad before
+                    // this press is even routed -- see CreationFlow::
+                    // promptDevice().
+                    flow.noteInputDevice(render::InputDevice::Pad);
                     if (key != render::Key::None && !creation_input(flow, key)) {
                         cancelled = true;
                     }
@@ -2931,6 +2944,9 @@ render::CreationResult run_creation_window(const Options& options) {
                     if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) {
                         if (!stickVertical && magnitude >= kStickOn) {
                             stickVertical = true;
+                            // A stick push past the on-threshold is a
+                            // discrete, deliberate list step -- a press.
+                            flow.noteInputDevice(render::InputDevice::Pad);
                             (void)creation_input(flow, value < 0 ? render::Key::Up
                                                                  : render::Key::Down);
                         } else if (stickVertical && magnitude <= kStickOff) {
@@ -2939,6 +2955,7 @@ render::CreationResult run_creation_window(const Options& options) {
                     } else if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX) {
                         if (!stickHorizontal && magnitude >= kStickOn) {
                             stickHorizontal = true;
+                            flow.noteInputDevice(render::InputDevice::Pad);
                             (void)creation_input(flow, value < 0 ? render::Key::Left
                                                                  : render::Key::Right);
                         } else if (stickHorizontal && magnitude <= kStickOff) {
@@ -2956,6 +2973,11 @@ render::CreationResult run_creation_window(const Options& options) {
                     // scale and every letterbox.
                     SDL_ConvertEventToRenderCoordinates(renderer, &event);
                     const bool click = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+                    if (click) {
+                        // A click is a press; bare motion deliberately is
+                        // not -- Session::promptDevice() states the rule.
+                        flow.noteInputDevice(render::InputDevice::KeyboardMouse);
+                    }
                     const float fx = click ? event.button.x : event.motion.x;
                     const float fy = click ? event.button.y : event.motion.y;
                     if (click && event.button.button == SDL_BUTTON_RIGHT) {
@@ -2981,6 +3003,7 @@ render::CreationResult run_creation_window(const Options& options) {
             if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) {
                 continue;
             }
+            flow.noteInputKey(key_of_scancode(event.key.scancode));
             if (!creation_input(flow, key_of_scancode(event.key.scancode))) {
                 cancelled = true;
             }
@@ -3772,6 +3795,9 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     break;
                 }
                 case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+                    // SHIP NOTE MOVE 3: a pad press flips every prompt into
+                    // pad vocabulary, live -- see Session::promptDevice().
+                    session.noteInputDevice(render::InputDevice::Pad);
                     if (!route_menu_key(session, key_of_pad_button(event.gbutton.button))) {
                         pressed(key_of_pad_button(event.gbutton.button));
                     }
@@ -3781,6 +3807,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     break;
                 case SDL_EVENT_KEY_DOWN: {
                     const render::Key key = key_of_scancode(event.key.scancode);
+                    // SHIP NOTE MOVE 3 -- through noteInputKey, so an
+                    // unmapped scancode (Key::None) is nobody, not the
+                    // keyboard.
+                    session.noteInputKey(key);
                     if (event.key.repeat) {
                         // A held key is not a stream of presses. The one place
                         // repeat is wanted is walking a long list, and the menu
@@ -3843,6 +3873,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     released(key_of_scancode(event.key.scancode));
                     break;
                 case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                    // SHIP NOTE MOVE 3: mouse and keyboard are one device.
+                    session.noteInputDevice(render::InputDevice::KeyboardMouse);
                     // THE POINTER FIRST, WHEN THERE IS ONE. `pointerLive` is
                     // only ever true while a page is up (see its declaration),
                     // and while a page is up a left click is a click ON THE
@@ -3884,6 +3916,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     if (event.wheel.y == 0) {
                         break;
                     }
+                    session.noteInputDevice(render::InputDevice::KeyboardMouse);
                     const render::Key key =
                         event.wheel.y > 0 ? render::Key::WheelUp : render::Key::WheelDown;
                     if (!route_menu_key(session, key)) {
