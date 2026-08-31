@@ -328,6 +328,8 @@ enum class InputDevice : std::uint8_t { KeyboardMouse = 0, Pad };
 /// keyName(), and nothing parses this vocabulary back.
 [[nodiscard]] std::string_view promptKeyName(Key key) noexcept;
 
+struct ControlSettings;  // declared below, with the rest of the binding table
+
 /// The half of an action's two bindings that belongs to `device` -- the
 /// binding table already knows both keys per Action, and this is the
 /// draw-time read of it. Primary is preferred over secondary within a
