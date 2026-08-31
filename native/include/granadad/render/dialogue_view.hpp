@@ -166,6 +166,30 @@ struct DialogueViewState {
     /// silence.
     std::string caseRef;
 
+    /// WHAT THE BLANK ROWS UNDER THE LIST ARE WAITING FOR.
+    ///
+    /// UI-REFERENCE-TERMINAL.md rules on this by name: "Empty states are
+    /// worded, not blank -- `no trinket`, `Luck 0`. Absence is stated so the
+    /// reader knows it was considered." Three of the tiled Menu's four panels
+    /// ship a stranger a header over a void -- THE LETTERS holds nothing at
+    /// all until a lead has been stood over, THE CHART holds three rows, the
+    /// casebook tile holds one -- and a quarter-screen panel with nothing in
+    /// it reads as a page that failed rather than as a case nobody has worked
+    /// yet.
+    ///
+    /// NOT `line`, and the distinction is the point. `line` says WHAT THE
+    /// PANEL IS, is authored once per panel, and the three top tiles
+    /// deliberately suppress it (see drawMenuTiles' own note on spending a
+    /// quarter of the frame on rows rather than on a sentence already read).
+    /// This says WHAT WOULD BE IN IT AND HOW THE PLAYER PUTS IT THERE, and it
+    /// is drawn ONLY into room the rows did not want -- so it is gone the
+    /// moment the list has earned the space, and it never competes with
+    /// content for a row.
+    ///
+    /// The wording is per-state and belongs to the caller: a tile that already
+    /// holds one letter must not still say nobody has written to you.
+    std::string emptyLine;
+
     /// TASK #82. A LETTER IS A DOCUMENT, NOT A MENU: an authored page in
     /// somebody else's hand, addressed and signed, read in full -- not a
     /// wrapped sentence competing with the top band's own two-row ceiling.

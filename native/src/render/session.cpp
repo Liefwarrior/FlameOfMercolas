@@ -3822,6 +3822,15 @@ DialogueViewState Session::mapPanelView() const {
     // WHERE YOU ARE, right where a map's own "you are here" would go.
     view.epithet = placeLabel();
     view.line = "KNOWN GROUND, OPEN LEADS AND WHO WILL TALK, RECKONED FROM WHERE YOU STAND.";
+    // AND WHAT THE BLANK HALF OF THE PANEL IS WAITING FOR. All three sections
+    // above are built out of casebook_.known() and nothing else -- see
+    // mapRows' own header -- so the honest sentence is that the chart is a
+    // reading of the book, and the book is what the player fills. True at
+    // every point in a run, which is why it is not gated on the row count:
+    // this panel is never finished until the case is.
+    view.emptyLine =
+        "EVERY LINE HERE IS DRAWN OUT OF THE CASEBOOK. HEAR A LEAD AND ITS GROUND, ITS "
+        "BEARING AND ITS NAME COME WITH IT.";
     for (const std::string& row : mapRows()) {
         view.topics.push_back(row);
     }
@@ -3876,8 +3885,24 @@ DialogueViewState Session::lettersPanelView() const {
         view.speaker = "THE LETTERS";
         view.epithet = "READ, NOT RECEIVED";
         view.line = unlocked.empty()
-                        ? "NOBODY HAS HANDED YOU ANYTHING WORTH KEEPING YET."
+                        ? "YOU HAVE READ NOBODY'S POST YET."
                         : "A DOCUMENT SOMEBODY ELSE WROTE. PICK ONE TO READ IT WHOLE.";
+        // THE ONE PANEL IN THE BUILD THAT SHIPS WITH NOTHING IN IT AT ALL, and
+        // the tile draws no `line`, so until this the first thing a stranger
+        // saw here was a title over a quarter-screen of black. The gate is
+        // unlockedLetters()' own -- a letter turns up when its lead has been
+        // stood over, never merely heard -- so the sentence names exactly the
+        // act that fills the panel, and stops claiming nobody has written to
+        // you the moment somebody has.
+        //
+        // "READ, NOT RECEIVED" is the epithet above it, and the wording keeps
+        // faith with it: none of these five documents is addressed to the
+        // player, which is why the empty state says READ rather than RECEIVED.
+        view.emptyLine =
+            unlocked.empty()
+                ? "YOU HAVE READ NOBODY'S POST YET. STAND OVER A LEAD AND WHATEVER PAPER "
+                  "IT KEEPS TURNS UP HERE, IN THE HAND THAT WROTE IT."
+                : "STAND OVER MORE LEADS. WHATEVER PAPER THEY KEEP TURNS UP HERE.";
         view.page = lettersPage_;
     }
     for (const std::int32_t index : unlocked) {
@@ -4083,6 +4108,21 @@ DialogueViewState Session::journalPanelView() const {
     // guard) still means the lead it always meant.
     for (std::string& row : journalWorkRows()) {
         view.topics.push_back(std::move(row));
+    }
+    // AND THE BAND UNDER THEM IS WORDED RATHER THAN BLACK. On a new game this
+    // is ONE row -- THE BODY -- across the full width of the frame, and it is
+    // the panel the world opens onto with no input at all about three and a
+    // half seconds in, so it is the second thing a stranger reads in this
+    // game. The same sentence the casebook PAGE's own master list carries, for
+    // the same reason and in the same words: two surfaces showing one list
+    // should not word its emptiness two different ways.
+    //
+    // GONE ONCE IT WOULD BE A LIE. Not when the trail is closed, and not once
+    // every lead in the file is in the book -- there is nothing left to open
+    // in either case, and a note promising more would be the "no shitty
+    // English anywhere" bar failing in the one place a player rereads.
+    if (!casebook_.closed() && heard.size() < caseRaws_.leads().size()) {
+        view.emptyLine = std::string(kBookWaitingLine);
     }
     view.cursor = caseCursor_;
     view.page = casePage_;

@@ -223,3 +223,88 @@ TEST_CASE("Pause stays a separate system from Menu, per controls.hpp's own note"
     CHECK_FALSE(session.optionsOpen());
     CHECK_FALSE(session.menuOpen());
 }
+
+// ===========================================================================
+// THE EMPTY STATES -- three of these four tiles ship a stranger a header over
+// a void, and UI-REFERENCE-TERMINAL.md rules on that by name
+// ===========================================================================
+
+TEST_CASE("the tiles that ship empty say what they are waiting for, in room the rows did not want") {
+    // THE LETTERS holds NOTHING on a new game -- a quarter-screen panel with a
+    // title and black under it. THE CHART holds three rows and the casebook
+    // tile holds one. `line` cannot answer this: the three top tiles suppress
+    // it on purpose (see drawMenuTiles), and it says what the panel IS rather
+    // than what would be in it. So each carries its own `emptyLine`.
+    Session session(onTheStreet());
+    session.stepMany(sim::MoveInput{}, 2);
+
+    session.toggleLetters();
+    REQUIRE(session.menuFocus() == kMenuFocusLetters);
+    const DialogueViewState letters = session.dialogueView();
+    REQUIRE(letters.speaker == "THE LETTERS");
+    // THE ONE PANEL THAT IS GENUINELY EMPTY. Not vacuous: if a letter ever
+    // ships unlocked this case is measuring the wrong state.
+    REQUIRE(letters.topics.empty());
+    CHECK_FALSE(letters.emptyLine.empty());
+    // It names the act that fills it, and the act is standing over a lead --
+    // unlockedLetters()' own gate, not merely hearing one.
+    CHECK(letters.emptyLine.find("STAND OVER A LEAD") != std::string::npos);
+
+    session.menuPageNext();  // Letters -> Journal
+    REQUIRE(session.menuFocus() == kMenuFocusJournal);
+    const DialogueViewState book = session.dialogueView();
+    REQUIRE(book.speaker == "THE CASEBOOK");
+    REQUIRE(book.topics.size() >= 1);
+    CHECK_FALSE(book.emptyLine.empty());
+    // ONE STRING, TWO SURFACES: the tile and the full-screen page word the same
+    // absence with the same sentence rather than drifting apart.
+    CHECK(book.emptyLine == std::string(kBookWaitingLine));
+
+    session.menuPageNext();  // Journal -> Character
+    session.menuPageNext();  // Character -> Map
+    REQUIRE(session.menuFocus() == kMenuFocusMap);
+    const DialogueViewState chart = session.dialogueView();
+    REQUIRE(chart.speaker == "THE CHART");
+    CHECK_FALSE(chart.emptyLine.empty());
+    CHECK(chart.emptyLine.find("CASEBOOK") != std::string::npos);
+
+    // AND THE TILES ACTUALLY DRAW IT. Everything else about the two frames is
+    // identical, so the difference IS the sentences.
+    MenuTileState tiles;
+    tiles.open = true;
+    tiles.map = chart;
+    tiles.letters = letters;
+    tiles.journal = book;
+    for (const int height : {180, 360, 540, 1080}) {
+        const int width = height * 16 / 9;
+        Framebuffer worded(width, height);
+        drawMenuTiles(worded, tiles);
+        MenuTileState blank = tiles;
+        blank.map.emptyLine.clear();
+        blank.letters.emptyLine.clear();
+        blank.journal.emptyLine.clear();
+        Framebuffer silent(width, height);
+        drawMenuTiles(silent, blank);
+        INFO("at ", width, "x", height);
+        CHECK(worded.pixels() != silent.pixels());
+    }
+}
+
+TEST_CASE("a tile stops claiming it is empty once it is not") {
+    // THE WORDING IS PER-STATE AND BELONGS TO THE CALLER -- a Letters tile
+    // holding a document must not still say you have read nobody's post. The
+    // casebook tile's gate is the harder one: it goes silent when every lead
+    // in the file is already in the book, because then there is nothing left
+    // for a lead to open.
+    Session session(onTheStreet());
+    session.stepMany(sim::MoveInput{}, 2);
+    session.toggleCasebook();
+    REQUIRE(session.menuFocus() == kMenuFocusJournal);
+    const std::size_t before = session.dialogueView().topics.size();
+    for (int i = 0; i < 64; ++i) {
+        (void)session.casebook().hear(i);
+    }
+    const DialogueViewState book = session.dialogueView();
+    REQUIRE(book.topics.size() > before);
+    CHECK(book.emptyLine.empty());
+}

@@ -90,12 +90,36 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/panel.hpp"
 
 namespace granadad::render {
+
+/// WHAT THE BLANK ROWS OF THE LEAD LIST ARE WAITING FOR, in one sentence.
+///
+/// UI-REFERENCE-TERMINAL.md, by name: "Empty states are worded, not blank --
+/// `no trinket`, `Luck 0`. Absence is stated so the reader knows it was
+/// considered." On a new game the book holds ONE lead against a pane held at
+/// kDetailHoldRows, and that pane is the second surface a stranger ever meets
+/// -- the world opens straight onto it with no input at all. A stippled field
+/// under a single row reads as a list that failed to load; this reads as a
+/// case nobody has worked yet, which is what it is.
+///
+/// ONE STRING, TWO SURFACES. The full-screen casebook PAGE draws it under its
+/// master list and the tiled Menu's casebook TILE draws it under the same
+/// list; wording the same absence two different ways in two places that show
+/// the same twelve leads is exactly the drift the shared vocabulary exists to
+/// stop. Both wrap it to their own pane rather than authoring line breaks.
+///
+/// It names the act, not the key: LOOK is the verb the commit line at the foot
+/// of the detail pane already offers ("ENTER - LOOK AT IT"), and the key that
+/// does it out there is printed beside that verb rather than guessed at here.
+inline constexpr std::string_view kBookWaitingLine =
+    "THE REST OF THE BOOK IS STILL BLANK. STAND OVER A LEAD AND LOOK. WHAT IT OPENS IS "
+    "WRITTEN IN HERE.";
 
 /// Which view is over the selection. Two, and both earn their space: the lead
 /// you are pointing at, and the case the leads belong to.

@@ -124,14 +124,18 @@ int drawWrappedProse(Framebuffer& target, const Rect& r, int margin, int y,
 /// of three -- see menu_view.hpp's own density note), with the focused
 /// tile's cursor row picked out by drawPickHighlight, the identical shape
 /// dialogue_view.cpp already uses for "this one is selected".
-void drawPanelRows(Framebuffer& target, const Rect& r, int margin, int bodyTop,
-                   const DialogueViewState& view, int bodyScale, bool focused, float fade) {
+///
+/// Returns the y the row after the last drawn one would have started at, so
+/// the caller can word whatever room the list did not want -- see
+/// DialogueViewState::emptyLine.
+int drawPanelRows(Framebuffer& target, const Rect& r, int margin, int bodyTop,
+                  const DialogueViewState& view, int bodyScale, bool focused, float fade) {
     const int rowStep = (6 + 1) * bodyScale;
     const int glyphAdvance = 5 * bodyScale;
     const int bottom = r.y + r.h - margin;
     const int capacity = std::max(0, (bottom - bodyTop) / rowStep);
     if (capacity <= 0) {
-        return;
+        return bodyTop;
     }
     const std::vector<TopicRow> rows =
         topicRowsFor(view.topics, view.page, view.cursor,
@@ -175,6 +179,34 @@ void drawPanelRows(Framebuffer& target, const Rect& r, int margin, int bodyTop,
             break;
         }
     }
+    return y;
+}
+
+/// WHAT THE BLANK ROWS ARE WAITING FOR, worded, in whatever room the list did
+/// not want -- UI-REFERENCE-TERMINAL.md's "Empty states are worded, not blank"
+/// applied to the three tiles that ship a stranger a header over a void.
+///
+/// TWO RULES KEEP IT FROM BECOMING CLUTTER. It is drawn only where the rows
+/// left at least two whole rows spare, so a tile whose list has grown into its
+/// pane loses it without anything else moving; and it takes the EPITHET's ink
+/// rather than the body's, because it is a note about the panel and not a row
+/// of the panel's content.
+void drawEmptyState(Framebuffer& target, const Rect& r, int margin, int rowsBottom,
+                    const DialogueViewState& view, int bodyScale, float fade) {
+    if (view.emptyLine.empty()) {
+        return;
+    }
+    // A BLANK ROW ABOVE THE NOTE, WHETHER OR NOT THERE WERE ROWS. A tile with
+    // nothing in it at all is the one that needs it most: the note would
+    // otherwise butt straight against the epithet and read as a third line of
+    // the header rather than as what the panel is waiting for.
+    const int rowStep = (6 + 1) * bodyScale;
+    const int y = rowsBottom + rowStep;
+    const int room = (r.y + r.h - margin - y) / rowStep;
+    if (room < 2) {
+        return;
+    }
+    drawWrappedProse(target, r, margin, y, view.emptyLine, bodyScale, room, kEpithetInk, fade);
 }
 
 /// An open letter's own wrapped, paged body -- the tile-sized equivalent of
@@ -234,7 +266,8 @@ void drawTile(Framebuffer& target, const Rect& r, const DialogueViewState& view,
         y = drawWrappedProse(target, r, margin, y, view.caseRef, bodyScale, 1, kCaseRefInk, fade);
     }
     y += edgeScale;
-    drawPanelRows(target, r, margin, y, view, bodyScale, focused, fade);
+    const int rowsBottom = drawPanelRows(target, r, margin, y, view, bodyScale, focused, fade);
+    drawEmptyState(target, r, margin, rowsBottom, view, bodyScale, fade);
 }
 
 }  // namespace

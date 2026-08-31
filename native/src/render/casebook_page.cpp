@@ -796,17 +796,37 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
         drawCellText(target, listRect, metric, 0, 0, "NOTHING IN THE BOOK YET", ink.dim, alpha);
     }
 
-    // DELIBERATE EMPTINESS, TEXTURED -- the same call the detail pane makes. A
-    // twelve-row book in a thirty-row pane is composition, and the reference
-    // leaves exactly this kind of area blank; but blank and BLACK are different
-    // things, and the faint `.`/`'` field is what says the space was left rather
-    // than forgotten.
+    // AND THE BLANK ROWS UNDER IT ARE WORDED BEFORE THEY ARE TEXTURED.
+    //
+    // A stipple says "this space was left rather than forgotten", which is the
+    // right thing to say about a twelve-row book in a thirty-row pane and the
+    // WRONG thing to say about a ONE-row book on a new game: at 640x360 that is
+    // a single lead over nineteen rows of faint dots, and a stranger reads it
+    // as a list that failed to load. See kBookWaitingLine -- one sentence
+    // saying what the rest of the pane is for and what puts something in it,
+    // and it is gone the instant it would be a lie (the trail closed, or every
+    // lead in the file already in the book).
     if (count > 0) {
+        const int listRows = metric.rowsIn(listRect.h);
         const int drawnRows = std::min(count, scroll.perScreen);
-        const int spare = metric.rowsIn(listRect.h) - drawnRows;
+        int used = drawnRows;
+        const bool waiting = !state.closed && state.known < state.total;
+        if (waiting && listRows - used >= 4) {
+            const PanelRect say{listRect.x, listRect.y + metric.heightOf(used + 1), listRect.w,
+                                metric.heightOf(listRows - used - 1)};
+            const std::vector<PanelLine> lines{PanelLine{
+                Bullet::None, "", std::string(kBookWaitingLine), InkRole::Dim, ink.dim}};
+            used += 1 + drawProse(target, say, metric, lines, alpha);
+        }
+        // DELIBERATE EMPTINESS, TEXTURED -- the same call the detail pane makes,
+        // now under whatever the sentence above did not use. The reference
+        // leaves exactly this kind of area blank; but blank and BLACK are
+        // different things, and the faint `.`/`'` field is what says the space
+        // was left rather than forgotten.
+        const int spare = listRows - used;
         if (spare >= 3) {
-            const PanelRect rest{listRect.x, listRect.y + metric.heightOf(drawnRows + 1),
-                                 listRect.w, metric.heightOf(spare - 1)};
+            const PanelRect rest{listRect.x, listRect.y + metric.heightOf(used + 1), listRect.w,
+                                 metric.heightOf(spare - 1)};
             drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
         }
     }

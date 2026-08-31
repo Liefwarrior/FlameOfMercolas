@@ -29,7 +29,9 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -666,5 +668,123 @@ TEST_CASE("a lead never silently reports fewer things than it opened") {
             CHECK(geo.effectRowsWanted > 0);
             CHECK(geo.effectRows == geo.effectRowsWanted);
         }
+    }
+}
+
+// ===========================================================================
+// THE EMPTY STATES -- the blank rows are worded, and stop being worded the
+// moment the words would be a lie
+// ===========================================================================
+
+TEST_CASE("a book with room left in it says so, and a finished one stops saying it") {
+    // THE SECOND SURFACE A STRANGER MEETS. A new game opens the world with this
+    // page already up, holding ONE lead against a pane held at twenty rows --
+    // and, before this pass, nineteen rows of stipple under it. A stipple says
+    // "left on purpose", which is the right thing to say about a twelve-row
+    // book in a thirty-row pane and the wrong thing to say about a one-row one:
+    // it reads as a list that failed to load.
+    //
+    // NOTHING BUT THE SENTENCE MOVES. With the LEADS tab up, `known`, `total`
+    // and `closed` reach no other drawing on this page (the CASE tab's own
+    // readout is the only other reader of them), so a pixel diff between the
+    // waiting state and the finished one IS the sentence and nothing else.
+    Session session(configAt("mission-backroom"));
+    session.stepMany(sim::MoveInput{}, 2);
+    CasebookPageState page = session.casebookPageState();
+    page.tab = CasebookTab::Leads;
+    // The page's ease is Session's shared panel toggle and this one was never
+    // opened, so it is sitting at zero -- every draw below would be at alpha 0.
+    page.openAmount = 1.0F;
+    // A NEW GAME IS ONE LEAD. Not vacuous: if the raws ever start the player
+    // with the whole book this case is measuring nothing.
+    REQUIRE(page.rows.size() == 1);
+    REQUIRE(page.known == 1);
+    REQUIRE(page.total > page.known);
+    REQUIRE_FALSE(page.closed);
+
+    for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
+                             std::pair{1920, 1080}}) {
+        Framebuffer waiting(size.first, size.second);
+        drawCasebookPage(waiting, page);
+
+        // EVERY LEAD ALREADY IN THE BOOK: there is nothing left to open, so the
+        // sentence would be promising something the file cannot deliver.
+        CasebookPageState full = page;
+        full.known = full.total;
+        Framebuffer quiet(size.first, size.second);
+        drawCasebookPage(quiet, full);
+
+        // AND THE TRAIL WALKED OUT: same silence, by the other gate.
+        CasebookPageState shut = page;
+        shut.closed = true;
+        Framebuffer done(size.first, size.second);
+        drawCasebookPage(done, shut);
+
+        const CasebookPageMetrics geo = casebookPageMetrics(page, size.first, size.second);
+        REQUIRE(geo.usable);
+        std::size_t differing = 0;
+        int minX = size.first;
+        int maxX = 0;
+        int minY = size.second;
+        int maxY = 0;
+        for (int y = 0; y < size.second; ++y) {
+            for (int x = 0; x < size.first; ++x) {
+                const std::size_t at = waiting.index(x, y);
+                if (waiting.pixels()[at] == quiet.pixels()[at]) {
+                    continue;
+                }
+                ++differing;
+                minX = std::min(minX, x);
+                maxX = std::max(maxX, x);
+                minY = std::min(minY, y);
+                maxY = std::max(maxY, y);
+            }
+        }
+        INFO("at ", size.first, "x", size.second, " differing ", differing, " box (", minX, ",",
+             minY, ")..(", maxX, ",", maxY, ") master x ", geo.master.x, " w ", geo.master.w,
+             " y ", geo.master.y);
+        // THE SENTENCE IS DRAWN.
+        CHECK(differing > 0);
+        // AND NOWHERE BUT THE MASTER PANE, under the row the one lead took: it
+        // is allowed to spend room the list did not want and nothing else.
+        CHECK(minX >= geo.master.x);
+        CHECK(maxX < geo.master.x + geo.master.w);
+        CHECK(minY >= geo.master.y + geo.metric.cellH());
+        CHECK(maxY < geo.master.y + geo.master.h);
+        // The two silences are the SAME frame -- one suppression, two reasons,
+        // not two different drawings that happen to both look empty.
+        CHECK(done.pixels() == quiet.pixels());
+    }
+}
+
+TEST_CASE("the one-lead book and the twelve-lead book compose to the same geometry") {
+    // THE SENTENCE IS DRAWN INTO ROOM THAT WAS ALREADY THERE. It is not allowed
+    // to push the frame's foot down, move the nav band or change what the mouse
+    // answers -- the detail half is HELD at kDetailHoldRows and the whole point
+    // of that floor is that the book's own growth does not move the seat until
+    // it outgrows the floor.
+    Session session(configAt("mission-backroom"));
+    session.stepMany(sim::MoveInput{}, 2);
+    CasebookPageState waiting = session.casebookPageState();
+    waiting.tab = CasebookTab::Leads;
+    CasebookPageState quiet = waiting;
+    quiet.known = quiet.total;
+
+    for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
+                             std::pair{1920, 1080}}) {
+        const CasebookPageMetrics a = casebookPageMetrics(waiting, size.first, size.second);
+        const CasebookPageMetrics b = casebookPageMetrics(quiet, size.first, size.second);
+        INFO("at ", size.first, "x", size.second);
+        REQUIRE(a.usable);
+        CHECK(a.metric.cellH() == b.metric.cellH());
+        CHECK(a.master.y == b.master.y);
+        CHECK(a.master.h == b.master.h);
+        CHECK(a.detail.h == b.detail.h);
+        CHECK(a.navRows == b.navRows);
+        CHECK(a.listRows == b.listRows);
+        // And the mouse still answers for the one row there is.
+        CHECK(casebookLeadAtPixel(waiting, size.first, size.second,
+                                  a.master.x + a.metric.cellW() / 2,
+                                  a.master.y + a.metric.cellH() / 2) == 0);
     }
 }
