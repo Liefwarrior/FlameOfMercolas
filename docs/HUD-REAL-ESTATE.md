@@ -820,3 +820,115 @@ the number that decides whether a page looks placed or looks like it ran out:
 
 The map row is the benchmark: same vocabulary, same size, fills its frame at
 nearly three times the ink of any page above it.
+
+## The placement pass: where the composed page SITS
+
+Sprint 1 of the last program taught these pages to STOP at their content and
+never told them where to START, so every one of them hung off the top edge with
+two pixels of margin above it. The ship note's own words for it were that THE
+DOOR "reads as a panel that *ran out*, not one that was *placed*."
+
+`panelSeatY()` in `render/panel.hpp` is now the one place that decides, read by
+`creation_page.cpp` and `casebook_page.cpp` alike. It is **not** a true half:
+`kPanelSeatAbove` is 45, so the spare goes 45 above and 55 below.
+
+**That number came off frames, not off arithmetic.** The ground outside these
+panels is flat, so the same captured panel re-seated at another ratio is an
+exact mock of what the binary would draw, and all three were looked at at
+640x360:
+
+| split | above / below on THE DOOR | how it reads |
+|---|---|---|
+| 50 / 50 | 97 / 97 | sits visibly LOW — the optical centre of a box of type is above its geometric one |
+| **45 / 55** | **87 / 109** | **placed** |
+| 40 / 60 | 77 / 117 | top-heavy; the foot floats and the gap under it reads as a page that stopped |
+
+Measured on the shipped binary, at 640x360, above/below in pixels:
+
+| surface at 640x360 | panel | above | below | ink in panel |
+|---|---|---|---|---|
+| creation — THE DOOR | 164px (45.6%) | **87px** | **109px (30.3%)** | 8.85% |
+| creation — THE CALLING | 192px (53.3%) | 74px | 94px (26.1%) | 9.19% |
+| creation — the quiz | 178px (49.4%) | 81px | 101px (28.1%) | 13.69% |
+| creation — THE VERDICT | 164px (45.6%) | 87px | 109px (30.3%) | 9.18% |
+| creation — YOUR PAST | 185px (51.4%) | 77px | 98px (27.2%) | 10.72% |
+| creation — the review | 164px (45.6%) | 87px | 109px (30.3%) | 10.04% |
+| creation — THE SHEET | 164px (45.6%) | 87px | 109px (30.3%) | 10.94% |
+| creation — GABRI's sheet | 136px (37.8%) | 100px | 124px (34.4%) | 10.16% |
+| creation — THE NAME (on-screen keyboard) | 129px (35.8%) | 103px | 128px (35.6%) | 8.13% |
+| casebook, new game | 199px (55.3%) | 71px | 90px (25.0%) | 10.20% |
+| the ward map | 360px (100%) | 0px | 0px | 44.17% |
+| the controls page | 360px (100%) | 0px | 0px | 6.97% |
+
+**The pages that already fill the frame are untouched, and by construction
+rather than by a special case**: the map and the controls page compose at full
+height, so their spare is the two or three pixels that do not divide into whole
+cells and `panelSeatY()` returns exactly what the old expression did. Both are
+byte-identical across the change.
+
+**Read the "below" column against the old one.** Nothing here got smaller — the
+panels are the same heights they were. What moved is that the dead space is now
+*margin on both sides* instead of *a hole underneath*, and that is the whole
+difference between a window and a page that ran out.
+
+## The keyboard's own grid
+
+`THE NAME` was the worst-composed screen in the build and it is on the critical
+path for every controller player. The grid was thirty rows of an option list
+capped at six columns, so it inherited `planOptionList`'s **spread** rule — the
+one that makes the last column of a pane end at its right edge, which is right
+for four callings and wrong for thirty letters.
+
+| at 640x360 | before | after |
+|---|---|---|
+| grid | 6 columns x 5 rows | **10 x 3** |
+| column stride | **10 cells (50px)**, against 7px rows | **2 cells (10px)** |
+| the block | 195 x 21 px | **95 x 21 px** |
+| the master pane's share | 42% of the body | **28%** |
+| what it reads as | five sparse vertical strings | a keyboard block |
+
+`render/panel.hpp` gains a **key grid** beside the option list and the block
+list — same three-function shape (`planKeyGrid` / `drawKeyGrid` / `keyGridAt`),
+so the mouse stays the inverse of the drawing rather than a second description
+of it. The one rule that differs is the advance: **the widest a key can afford,
+not the pane divided by the columns.**
+
+Padding is zero, and that was measured too: a padded cap (` A `) doubles the
+advance on a one-glyph grid and puts the columns twenty pixels apart against
+seven-pixel rows, which is the same defect one notch milder. Frames of both said
+so.
+
+**The frame did not get shorter and the ship note guessed that it would.** The
+NAME page's height is set by its DETAIL pane — badge, two facts, a paragraph and
+the commit verb, about nine rows — not by the grid, so dropping the grid from
+five rows to three bought nothing in height. The panel is 129px before and
+after. What the tight grid bought is the master pane's width (42% -> 28%) and a
+block that reads as a keyboard.
+
+**320x180 is the one window that pays.** `splitMasterDetail` floors the master
+pane at eighteen cells and ten keys with a gap between them want nineteen, so
+the smallest window the game runs at spends the gap and sets the alphabet
+shoulder to shoulder. That is the honest answer there: the alternative is
+drawing fewer columns than the cursor walks, and then the inverted fill names a
+different letter than the detail pane does.
+
+### The frames
+
+`docs/frames/placement/`, all at 640x360 with `--scale=1` except where the name
+says otherwise:
+
+```
+before-door-640.png      after-door-640.png
+before-name-640.png      after-name-640.png
+before-casebook-640.png  after-casebook-640.png
+seat-50-50-door-640.png  seat-40-60-door-640.png   the two seats not taken
+after-name-320.png       after-name-1920.png       the grid at both ends
+pad-spelling-640.png     pad-named-begin-640.png   a virtual pad, mid-name and done
+```
+
+The two pad frames are a real `SDL_AttachVirtualJoystick` through
+`--padcreation`, not a mock: `pad-spelling-640.png` is `ABC` being taken off the
+new grid one D-pad move and one A press per letter with the detail pane naming
+`THE LETTER C`, and `pad-named-begin-640.png` is the sheet afterwards with
+`NAME ABC` and `BEGIN` gone `READY`. The run that follows them reaches
+`granadad: playing as ABC (custom)`.
