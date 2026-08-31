@@ -157,6 +157,77 @@ struct PanelMetric {
 /// out of 100. See panelSeatY.
 inline constexpr int kPanelSeatAbove = 45;
 
+/// WHERE A PAGE THAT MEASURED ITS WIDTH SITS ACROSS THE WINDOW -- the mirror of
+/// panelSeatY(), the same judgement turned ninety degrees.
+///
+/// panelSeatY() exists because the pages that size their HEIGHT to content were
+/// never told where to start; the identical defect existed sideways, one worse:
+/// nothing sized the WIDTH at all, so every full-screen page drew 639px wide at
+/// a 640px window whatever it held -- THE DOOR was five short rows running the
+/// whole frame, a letterbox rather than a composition. The pages now measure
+/// their widest row (see panelMeasureCells) and this is the one rule that
+/// decides where the measured panel sits.
+///
+/// NOT A TRUE HALF, deliberately: `kPanelSeatLeft` of the spare goes LEFT of
+/// the panel and the rest right, slightly left-weighted to mirror the vertical
+/// seat's slightly-high judgement -- reading starts at the left edge, and a
+/// block of ragged-right type centred by arithmetic reads as drifting toward
+/// the trailing margin. Same number as the vertical share on purpose: one
+/// judgement, two axes.
+///
+/// A panel that measured out at the whole window has a spare of a few pixels
+/// and comes out exactly where the old centring put it.
+[[nodiscard]] int panelSeatX(int frameWidth, int panelWidth) noexcept;
+
+/// The share of the leftover width that goes LEFT of a measured panel, out of
+/// 100. See panelSeatX.
+inline constexpr int kPanelSeatLeft = 45;
+
+/// THE WIDTH A COMPOSITION THAT MEASURED ITS ROWS ACTUALLY TAKES, in grid
+/// cells -- the mirror of the height rule the pages already keep ("end after
+/// your content, then be seated").
+///
+/// `wantCells` is the widest row the page will actually draw -- header, tab
+/// row, list rows at their natural column count, the master/detail body via
+/// masterDetailCellsFor -- plus its border cells. This clamps it twice:
+///
+///   * NEVER PAST THE WINDOW. A page whose content earns the whole frame gets
+///     the whole frame BY CONSTRUCTION -- there is no full-width special case,
+///     the clamp simply lands there (which is how the ward map and the
+///     controls page stay exactly what they were).
+///   * NEVER UNDER kPanelMeasureFloorCells. A full-screen page narrower than
+///     that reads as a toast that wandered to mid-screen, and prose wrapped
+///     into it stops being a paragraph.
+///
+/// A window too small to hold even the floor gets the window -- the floor is a
+/// composition judgement, not a reason to draw past the frame.
+[[nodiscard]] int panelMeasureCells(int windowCells, int wantCells) noexcept;
+
+/// THE FLOOR A MEASURED PAGE NEVER GOES UNDER, in cells, border included.
+///
+/// 49 is not taste, it is this vocabulary's own narrowest legal master/detail
+/// composition read back out of splitMasterDetail: an 18-cell master (the
+/// floor the on-screen keyboard's ten-column grid survives 320x180 on), the
+/// 3 cells of divider chrome, a 26-cell detail pane (creation's "a wrapped
+/// sentence that still reads"), and the 2 border cells. Anything under that
+/// could not hold the grammar's own body, so it is where "panel" stops and
+/// "toast" begins.
+inline constexpr int kPanelMeasureFloorCells = 18 + 3 + 26 + 2;
+
+/// THE MEASURE PROSE-SHAPED CONTENT WRAPS TO WHEN IT IS THE WIDTH-SETTER, in
+/// cells.
+///
+/// Prose does not get a vote in panelMeasureCells' widest-row maximum -- it
+/// wraps to whatever the facts and lists settled on, which is what "natural
+/// wrap" means. But a page whose MASTER LIST is itself sentences (the quiz,
+/// the biography -- OptionBlocks) has nothing else to set the width, and
+/// unwrapped hundred-glyph answers would ask for the whole frame back. So a
+/// block list measures as min(longest entry, THIS): 46 cells is the low end
+/// of the typographic 45-75 glyph measure, three lines out of a hundred-glyph
+/// answer instead of one unreadable ribbon -- and comfortably above the
+/// 26-cell floor that merely still reads.
+inline constexpr int kPanelProseMeasureCells = 46;
+
 // ---------------------------------------------------------------------------
 // geometry
 // ---------------------------------------------------------------------------
@@ -448,6 +519,15 @@ class PanelFrame {
 int drawBreadcrumb(Framebuffer& target, const PanelRect& row, const PanelMetric& metric,
                    const std::vector<std::string>& crumbs, const Rgb& leafInk, float alpha);
 
+/// The cells a PATH wants on one row: every crumb whole with ` / ` between --
+/// the width at which drawBreadcrumb stops truncating ancestors. A page
+/// measuring itself hands this its LONGEST possible leaf (the widest lead
+/// name, not the current one), because the crumb follows the cursor and the
+/// cursor may not move the frame. A single crumb is an instruction and wraps;
+/// its answer here is just its own length, and it is the caller's judgement
+/// whether that belongs in a width maximum at all.
+[[nodiscard]] int breadcrumbCells(const std::vector<std::string>& crumbs) noexcept;
+
 // ---------------------------------------------------------------------------
 // the tab row
 // ---------------------------------------------------------------------------
@@ -473,6 +553,14 @@ struct PanelTab {
 void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& metric,
                 std::string_view title, const std::vector<PanelTab>& tabs, int current,
                 std::string_view readout, const Rgb& accent, float alpha);
+
+/// The cells the whole tab row wants so that NOTHING is dropped -- the title,
+/// every tab at its spacing, and the readout with its cell of air. The same
+/// costing walk drawTabRow makes before it starts dropping siblings, exposed
+/// so a page measuring its width (panelMeasureCells) never composes a frame
+/// its own tab row has to shed tabs to fit.
+[[nodiscard]] int tabRowCells(std::string_view title, const std::vector<PanelTab>& tabs,
+                              std::string_view readout) noexcept;
 
 // ---------------------------------------------------------------------------
 // the numbered option list
@@ -592,6 +680,15 @@ void drawOptionListPlanned(Framebuffer& target, const PanelRect& rect, const Pan
                            const std::vector<PanelOption>& options, int selected,
                            const OptionListPlan& plan, float alpha);
 
+/// HOW WIDE THE PLANNED LIST'S CONTENT ACTUALLY IS, in cells: every column at
+/// its content width plus the style's own gutter between them -- the width the
+/// block would take if the pane hugged it, which is exactly what a page
+/// measuring itself for panelMeasureCells wants to know. The same fields the
+/// drawing walks (columnCells, columns), not a second description of them.
+/// Plan against a roomy rect first so the answer is the content's and not the
+/// pane's.
+[[nodiscard]] int optionListNaturalCells(const OptionListPlan& plan, int gutterCells) noexcept;
+
 /// Which entry of a drawn column list a pixel lands on, or -1 for none.
 ///
 /// THIS IS WHAT MAKES A MOUSE A FIRST-CLASS INPUT rather than a bolt-on. The
@@ -701,6 +798,13 @@ void drawKeyGrid(Framebuffer& target, const PanelRect& rect, const PanelMetric& 
 /// the same walk for the same reason optionListAt is.
 [[nodiscard]] int keyGridAt(const PanelRect& rect, const PanelMetric& metric,
                             const KeyGridPlan& plan, int count, int px, int py) noexcept;
+
+/// HOW WIDE THE PLANNED BLOCK ACTUALLY IS, in cells: the last cap ends the
+/// block, so it is the stride times the columns minus the trailing gap. The
+/// key grid's own measure for panelMeasureCells -- ten one-glyph keys at a
+/// one-cell gap answer 19, which is why THE NAME stops asking for a whole
+/// frame. 0 for a plan that is not usable.
+[[nodiscard]] int keyGridNaturalCells(const KeyGridPlan& plan) noexcept;
 
 // ---------------------------------------------------------------------------
 // the BLOCK list -- a numbered list whose entries are sentences
@@ -896,6 +1000,50 @@ struct MasterDetail {
 [[nodiscard]] MasterDetail splitMasterDetail(const PanelRect& interior, const PanelMetric& metric,
                                              int masterShare, int minMasterCells,
                                              int minDetailCells);
+
+/// THE INVERSE OF THE SPLIT: the narrowest interior, in cells, whose
+/// splitMasterDetail at this share hands the master at least `masterCells` and
+/// the detail at least `detailCells`.
+///
+/// This is what makes a measured page's split a property of its OWN width
+/// rather than the window's: the page measures what each half needs, asks this
+/// for the interior, and the split it then makes of that interior holds both
+/// halves whole by construction -- the master's rows uncut, the detail at the
+/// held width its bodyHoldRows-style floors were judged against. Note the
+/// share REDISTRIBUTES whatever it is given (a 50-share master takes half of
+/// any interior, not its content width), so the answer is often wider than
+/// master + chrome + detail -- that surplus is the fixed share doing its job,
+/// and the alternative is a share that responds to content, which is the drift
+/// the fixed composition rule exists to end.
+///
+/// Written as a closed form CHECKED AGAINST THE REAL CLAMP -- the last step
+/// walks splitMasterDetail's own arithmetic upward until both halves hold, so
+/// this cannot quietly disagree with the split it is the inverse of.
+[[nodiscard]] int masterDetailCellsFor(int masterShare, int minMasterCells, int masterCells,
+                                       int detailCells) noexcept;
+
+/// THE NARROWEST INTERIOR A FULL-WIDTH PAGE EVER HAD, in cells. hudMinorScale
+/// steps up with the frame height, so THE BIGGEST WINDOW IS THE NARROWEST IN
+/// CELLS: 1920x1080 has 76 across and 74 inside the border, against 960x540's
+/// 94. Every held-height floor in this build -- CreationPage::bodyHoldRows,
+/// the casebook's kDetailHoldRows -- was judged against detail panes the
+/// full-width compositions dealt, and the narrowest of those was dealt HERE.
+inline constexpr int kPanelNarrowestFullInteriorCells = 74;
+
+/// THE WIDTH A MEASURED PAGE HOLDS ITS DETAIL PANE AT, at least: what
+/// splitMasterDetail would deal this share at the narrowest full-width
+/// interior the game runs.
+///
+/// The detail pane is the half the cursor SWAPS, so its content gets no vote
+/// in a width measure (the mirror of "it may not set the height on its own")
+/// -- it takes what the master's share arithmetic leaves it, floored by THIS.
+/// The floor is not taste: wrap rows only grow as a pane narrows, and every
+/// bodyHoldRows-style height floor was judged against panes at least this
+/// wide -- so a measure that never deals a narrower detail than the narrowest
+/// window would have lets every existing hold keep its promise, with no
+/// re-judging of seven steps and two views. Pinned against splitMasterDetail
+/// itself in test_panel.cpp.
+[[nodiscard]] int panelHeldDetailCells(int masterShare, int minMasterCells) noexcept;
 
 /// The commit action at the FOOT of a detail pane, restating what it costs --
 /// `e - Establish (Cost: 200*)`. The irreversible act sits adjacent to the

@@ -120,6 +120,23 @@ int panelSeatY(int frameHeight, int panelHeight) noexcept {
     return (spare * kPanelSeatAbove) / 100;
 }
 
+int panelSeatX(int frameWidth, int panelWidth) noexcept {
+    // The identical arithmetic to panelSeatY, on the other axis -- one
+    // judgement, two applications, and a case pins that they stay in step.
+    const int spare = std::max(0, frameWidth - panelWidth);
+    return (spare * kPanelSeatLeft) / 100;
+}
+
+int panelMeasureCells(int windowCells, int wantCells) noexcept {
+    if (windowCells <= kPanelMeasureFloorCells) {
+        // The floor is a composition judgement, not a licence to overrun a
+        // window smaller than it. 320x180 comes out here full-width, exactly
+        // as it always did.
+        return std::max(0, windowCells);
+    }
+    return std::clamp(wantCells, kPanelMeasureFloorCells, windowCells);
+}
+
 PanelRect PanelRect::inset(int dx, int dy) const noexcept {
     PanelRect out{x + dx, y + dy, w - 2 * dx, h - 2 * dy};
     if (out.w < 0) {
@@ -640,6 +657,19 @@ int drawBreadcrumb(Framebuffer& target, const PanelRect& row, const PanelMetric&
     return used;
 }
 
+int breadcrumbCells(const std::vector<std::string>& crumbs) noexcept {
+    // The same costing the path branch of drawBreadcrumb spends cell by cell:
+    // every crumb whole, ` / ` (three cells) between each pair.
+    int cells = 0;
+    for (std::size_t i = 0; i < crumbs.size(); ++i) {
+        if (i > 0) {
+            cells += 3;
+        }
+        cells += cellsOf(crumbs[i]);
+    }
+    return cells;
+}
+
 // ---------------------------------------------------------------------------
 // the tab row
 // ---------------------------------------------------------------------------
@@ -739,6 +769,32 @@ void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& me
         }
         cell += wide + 2;
     }
+}
+
+int tabRowCells(std::string_view title, const std::vector<PanelTab>& tabs,
+                std::string_view readout) noexcept {
+    // THE SAME COSTING drawTabRow MAKES before it starts dropping siblings --
+    // title plus two, every tab (key, ` - ` when it has both halves, name)
+    // plus two, and the readout with its three cells of air and margin. A
+    // frame at least this wide sheds nothing.
+    int want = 0;
+    if (!title.empty()) {
+        want += cellsOf(title) + 2;
+    }
+    for (const PanelTab& tab : tabs) {
+        int wide = cellsOf(tab.key);
+        if (!tab.name.empty()) {
+            if (wide > 0) {
+                wide += 3;
+            }
+            wide += cellsOf(tab.name);
+        }
+        want += wide + 2;
+    }
+    if (!readout.empty()) {
+        want += cellsOf(readout) + 3;
+    }
+    return want;
 }
 
 // ---------------------------------------------------------------------------
@@ -916,6 +972,16 @@ void drawOptionListPlanned(Framebuffer& target, const PanelRect& rect, const Pan
     }
 }
 
+int optionListNaturalCells(const OptionListPlan& plan, int gutterCells) noexcept {
+    if (plan.columns <= 0 || plan.columnCells <= 0) {
+        return 0;
+    }
+    // Every column at its CONTENT width -- columnCells is already that, see
+    // planOptionList -- and the style's own gutter between each pair. This is
+    // the width at which the spread rule has nothing left to spread.
+    return plan.columns * plan.columnCells + (plan.columns - 1) * std::max(0, gutterCells);
+}
+
 int optionListAt(const PanelRect& rect, const PanelMetric& metric, const OptionListPlan& plan,
                  int count, int px, int py) noexcept {
     if (rect.empty() || plan.rows <= 0 || plan.columns <= 0 || count <= 0) {
@@ -1056,6 +1122,15 @@ int keyGridAt(const PanelRect& rect, const PanelMetric& metric, const KeyGridPla
         }
     }
     return -1;
+}
+
+int keyGridNaturalCells(const KeyGridPlan& plan) noexcept {
+    if (!plan.usable || plan.columns <= 0) {
+        return 0;
+    }
+    // The block ends where its last cap ends: columns strides minus the one
+    // trailing gap that has no key after it.
+    return plan.columns * plan.strideCells - (plan.strideCells - plan.capCells);
 }
 
 // ---------------------------------------------------------------------------
@@ -1521,6 +1596,45 @@ MasterDetail splitMasterDetail(const PanelRect& interior, const PanelMetric& met
                            metric.widthOf(cells - detailCell), interior.h};
     out.split = true;
     return out;
+}
+
+int masterDetailCellsFor(int masterShare, int minMasterCells, int masterCells,
+                         int detailCells) noexcept {
+    const int share = std::clamp(masterShare, 1, 66);
+    const int master = std::max(masterCells, std::max(1, minMasterCells));
+    const int detail = std::max(1, detailCells);
+    // The closed form, both constraints at once: enough interior that the
+    // share's slice reaches the master's content, and enough that what the
+    // share does NOT take still covers the detail and the 3 cells of divider
+    // chrome.
+    int cells = std::max((master * 100 + share - 1) / share,
+                         ((detail + 3) * 100 + (100 - share) - 1) / (100 - share));
+    cells = std::max(cells, master + 3 + detail);
+    // AND THEN THE REAL CLAMP GETS THE LAST WORD. splitMasterDetail floors the
+    // master at minMasterCells and caps it at two thirds, and integer division
+    // rounds -- so rather than restating that arithmetic as inequalities (a
+    // second description, which drifts), walk it forward until both halves
+    // hold. Terminates in a handful of steps: each added cell goes somewhere.
+    for (int guard = 0; guard < 200; ++guard) {
+        const int slice = std::clamp(cells * share / 100, minMasterCells,
+                                     std::max(minMasterCells, cells * 2 / 3));
+        if (slice >= master && cells - slice - 3 >= detail) {
+            break;
+        }
+        ++cells;
+    }
+    return cells;
+}
+
+int panelHeldDetailCells(int masterShare, int minMasterCells) noexcept {
+    // splitMasterDetail's own slice arithmetic at the narrowest full-width
+    // interior -- the same walk, not a second description of it.
+    const int interior = kPanelNarrowestFullInteriorCells;
+    const int share = std::clamp(masterShare, 1, 66);
+    const int minMaster = std::max(1, minMasterCells);
+    const int slice = std::clamp(interior * share / 100, minMaster,
+                                 std::max(minMaster, interior * 2 / 3));
+    return std::max(1, interior - slice - 3);
 }
 
 void drawCommitVerb(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
