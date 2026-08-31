@@ -1982,3 +1982,62 @@ TEST_CASE("a page that earns the window keeps it by construction, not by special
         CHECK(layout.bounds.x <= layout.metric.cellW());
     }
 }
+
+// ---------------------------------------------------------------------------
+// ship note move 3: the feet name the device holding them
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The nav band's "KEY LABEL" pairs as one searchable line.
+[[nodiscard]] std::string navLine(const render::CreationPage& page) {
+    std::string out;
+    for (const render::PanelOption& option : page.nav) {
+        out += option.key + " " + option.label + "  ";
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("the creation feet re-word for the pad, live, on every step") {
+    render::CreationFlow flow = fresh();
+
+    // The door, keyboard first -- the shipped wording, unchanged.
+    CHECK(flow.promptDevice() == render::InputDevice::KeyboardMouse);
+    std::string kb = navLine(flow.page());
+    CHECK(kb.find("ESC LEAVE") != std::string::npos);
+    CHECK(kb.find("UP DOWN MOVE") != std::string::npos);
+    CHECK(kb.find("ENTER OPEN") != std::string::npos);
+    CHECK(kb.find("1-5 PICK") != std::string::npos);
+    CHECK(flow.page().commitVerb == "ENTER - OPEN THIS DOOR");
+
+    // One pad press: the SAME page re-words -- no reopen, no menu visit. And
+    // the digit entry is GONE, because a pad has no number row to press.
+    flow.noteInputDevice(render::InputDevice::Pad);
+    std::string pad = navLine(flow.page());
+    CHECK(pad.find("B LEAVE") != std::string::npos);
+    CHECK(pad.find("D-PAD MOVE") != std::string::npos);
+    CHECK(pad.find("A OPEN") != std::string::npos);
+    CHECK(pad.find("PICK") == std::string::npos);
+    CHECK(flow.page().commitVerb == "A - OPEN THIS DOOR");
+
+    // The sheet -- the critical path the ship note shot keyboard-worded
+    // around a pad (pad-sheet-begin-640.png). WALK YOUR OWN PATH is two
+    // DOWNs and a confirm from the door, per the note's own fastest path.
+    flow.moveOriginCursor(1);
+    flow.moveOriginCursor(1);
+    flow.chooseOrigin();
+    if (flow.step() == render::CreationStep::Customize) {
+        pad = navLine(flow.page());
+        CHECK(pad.find("B BACK") != std::string::npos);
+        CHECK(pad.find("D-PAD MOVE") != std::string::npos);
+        CHECK(pad.find("LEFT RIGHT SPEND") != std::string::npos);
+        CHECK(pad.find("A OPEN") != std::string::npos);
+        // And back to the keyboard the instant a key speaks.
+        flow.noteInputKey(render::Key::S);
+        kb = navLine(flow.page());
+        CHECK(kb.find("ESC BACK") != std::string::npos);
+        CHECK(kb.find("ENTER OPEN") != std::string::npos);
+    }
+}

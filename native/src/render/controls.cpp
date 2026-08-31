@@ -321,6 +321,96 @@ Key keyFromName(std::string_view name) noexcept {
 }
 
 // ---------------------------------------------------------------------------
+// which device is holding the prompt
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The prompt vocabulary for the sixteen pad keys -- the OSK's own spoken
+/// names, and the same letters kKeys already carries after its "PAD_"
+/// prefix, so the controls page's "PAD_A" and a street prompt's "A" are one
+/// fact in two registers rather than two facts. PadBack is "SELECT" because
+/// that is what everyone calls the button (and what the ship notes have
+/// always called it); "BACK" on a prompt would read as a verb.
+///
+/// DRAWABLE CHARACTERS ONLY, same contract as kActions' help strings:
+/// letters, digits, '-' and space are all in hud.cpp's 4x6 font.
+constexpr KeyName kPadPromptNames[] = {
+    {Key::PadSouth, "A"},          {Key::PadEast, "B"},
+    {Key::PadWest, "X"},           {Key::PadNorth, "Y"},
+    {Key::PadLeftBumper, "LB"},    {Key::PadRightBumper, "RB"},
+    {Key::PadLeftTrigger, "LT"},   {Key::PadRightTrigger, "RT"},
+    {Key::PadLeftStick, "LS"},     {Key::PadRightStick, "RS"},
+    {Key::PadStart, "START"},      {Key::PadBack, "SELECT"},
+    {Key::PadUp, "D-PAD UP"},      {Key::PadDown, "D-PAD DOWN"},
+    {Key::PadLeft, "D-PAD LEFT"},  {Key::PadRight, "D-PAD RIGHT"},
+};
+
+}  // namespace
+
+bool keyIsPad(Key key) noexcept { return key >= Key::PadSouth && key <= Key::PadRight; }
+
+InputDevice deviceOfKey(Key key) noexcept {
+    return keyIsPad(key) ? InputDevice::Pad : InputDevice::KeyboardMouse;
+}
+
+std::string_view promptKeyName(Key key) noexcept {
+    for (const KeyName& row : kPadPromptNames) {
+        if (row.key == key) {
+            return row.name;
+        }
+    }
+    // The 4x6 font has no bracket glyphs -- see the header. "<" and ">" are
+    // in its table and are what the keys page already prints for the pair.
+    if (key == Key::LeftBracket) {
+        return "<";
+    }
+    if (key == Key::RightBracket) {
+        return ">";
+    }
+    return keyName(key);
+}
+
+Key promptKey(const ControlSettings& settings, Action action, InputDevice device) noexcept {
+    if (action == Action::Count) {
+        return Key::None;
+    }
+    const std::size_t index = static_cast<std::size_t>(action);
+    const Key first = settings.primary[index];
+    const Key second = settings.secondary[index];
+    // The device's own half first, primary before secondary -- actionFor()'s
+    // own resolution order, so the key a prompt names is the key a press
+    // resolves through.
+    if (first != Key::None && deviceOfKey(first) == device) {
+        return first;
+    }
+    if (second != Key::None && deviceOfKey(second) == device) {
+        return second;
+    }
+    // The other device's half rather than nothing: the verb IS reachable and
+    // the prompt's job is to say how, even when the how is on the other hand.
+    return first != Key::None ? first : second;
+}
+
+std::string_view promptLabel(const ControlSettings& settings, Action action,
+                             InputDevice device) noexcept {
+    const Key key = promptKey(settings, action, device);
+    return key == Key::None ? std::string_view{"--"} : promptKeyName(key);
+}
+
+std::string_view promptConfirmKey(InputDevice device) noexcept {
+    return device == InputDevice::Pad ? "A" : "ENTER";
+}
+
+std::string_view promptBackKey(InputDevice device) noexcept {
+    return device == InputDevice::Pad ? "B" : "ESC";
+}
+
+std::string_view promptMoveKeys(InputDevice device) noexcept {
+    return device == InputDevice::Pad ? "D-PAD" : "UP DOWN";
+}
+
+// ---------------------------------------------------------------------------
 // hold and toggle
 // ---------------------------------------------------------------------------
 

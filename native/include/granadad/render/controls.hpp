@@ -296,6 +296,64 @@ enum class Key : std::int32_t {
 [[nodiscard]] Key keyFromName(std::string_view name) noexcept;
 
 // ---------------------------------------------------------------------------
+// which device is holding the prompt
+// ---------------------------------------------------------------------------
+
+/// The two vocabularies a prompt can speak. MOUSE AND KEYBOARD ARE ONE
+/// DEVICE: nobody puts the mouse down to press E, and a prompt that flapped
+/// between "E - TALK" and "MOUSE1 - ATTACK" wordings as the hand moved
+/// between them would be churn, not information. The pad is the other one.
+///
+/// This is CLIENT state -- which hand last spoke is a fact about the person
+/// at the desk, never about the simulation, so nothing here may ever feed a
+/// hash or a MoveInput. Session holds the current value (see
+/// Session::noteInputDevice) and every prompt reads it at draw time.
+enum class InputDevice : std::uint8_t { KeyboardMouse = 0, Pad };
+
+/// True for the sixteen pad keys and nothing else.
+[[nodiscard]] bool keyIsPad(Key key) noexcept;
+
+/// The device a key belongs to. Pad keys answer Pad; every keyboard and
+/// mouse key -- and Key::None, which belongs to nobody -- answers
+/// KeyboardMouse, the shipped default vocabulary.
+[[nodiscard]] InputDevice deviceOfKey(Key key) noexcept;
+
+/// What a PROMPT calls a key. keyName()'s vocabulary for keyboard and mouse
+/// keys ("E", "TAB", "MOUSE1"), and the spoken names for pad keys -- "A",
+/// "START", "SELECT", "LB", "D-PAD UP" -- the OSK's own manners ("B BACK /
+/// A TAKE / START DONE") applied everywhere. Two deliberate keyboard
+/// exceptions: the brackets print "<" and ">", because hud.cpp's 4x6 font
+/// has no glyph for '[' or ']' and the keys page already labels the pair
+/// "PAGE <"/"PAGE >". NEVER a file format: toText()/fromText() still speak
+/// keyName(), and nothing parses this vocabulary back.
+[[nodiscard]] std::string_view promptKeyName(Key key) noexcept;
+
+/// The half of an action's two bindings that belongs to `device` -- the
+/// binding table already knows both keys per Action, and this is the
+/// draw-time read of it. Primary is preferred over secondary within a
+/// device, the same order actionFor() resolves in. When the action has no
+/// key on the asked-for device the OTHER device's key is returned rather
+/// than Key::None: a prompt that hides a reachable verb because it is bound
+/// on the other hand is lying by omission.
+[[nodiscard]] Key promptKey(const ControlSettings& settings, Action action,
+                            InputDevice device) noexcept;
+
+/// promptKeyName(promptKey(...)), or "--" when the action holds no key at
+/// all -- keyName()'s own unbound answer, so the two surfaces agree.
+[[nodiscard]] std::string_view promptLabel(const ControlSettings& settings, Action action,
+                                           InputDevice device) noexcept;
+
+/// The page grammar the client's router hard-codes rather than binds --
+/// main.cpp's route_menu_key: ENTER confirms and A confirms (PadSouth via
+/// Action::Interact), ESC backs out and B backs out (PadEast is remapped to
+/// Escape while any page is open -- the parity pass), arrows move a list
+/// and so does the D-pad, raw, ahead of any binding. Said ONCE, here, so a
+/// nav band and the router cannot drift apart one wording at a time.
+[[nodiscard]] std::string_view promptConfirmKey(InputDevice device) noexcept;  // "ENTER" / "A"
+[[nodiscard]] std::string_view promptBackKey(InputDevice device) noexcept;     // "ESC" / "B"
+[[nodiscard]] std::string_view promptMoveKeys(InputDevice device) noexcept;    // "UP DOWN" / "D-PAD"
+
+// ---------------------------------------------------------------------------
 // hold AND toggle, which is two features and one control
 // ---------------------------------------------------------------------------
 

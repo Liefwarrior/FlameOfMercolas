@@ -744,14 +744,16 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         // NAV VERBS IN THE SAME LIST AS CONTENT OPTIONS, keyed, in aligned
         // columns -- the reference's command palette, in place of the one
         // crammed sixty-glyph line this used to print.
+        // SHIP NOTE MOVE 3: the keys arrive on the state, worded for
+        // whichever device last spoke; defaults are the old literals.
         options.push_back(PanelOption{"LEFT RIGHT", "NAME A NUMBER", "", accent,
                                       InkRole::Number, true, false});
         options.push_back(
-            PanelOption{"ENTER", "OFFER IT", "", accent, InkRole::Number, true, false});
+            PanelOption{state.confirmKey, "OFFER IT", "", accent, InkRole::Number, true, false});
+        options.push_back(PanelOption{state.takeKey, "TAKE THEIR PRICE", "", accent,
+                                      InkRole::Number, true, false});
         options.push_back(
-            PanelOption{"T", "TAKE THEIR PRICE", "", accent, InkRole::Number, true, false});
-        options.push_back(
-            PanelOption{"ESC", "WALK AWAY", "", accent, InkRole::Number, true, false});
+            PanelOption{state.backKey, "WALK AWAY", "", accent, InkRole::Number, true, false});
     }
 
     // The band is as deep as what it holds and no deeper -- the rule the top
@@ -828,10 +830,16 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
             drawCellText(target, body, metric, 0, static_cast<int>(i - first), allLines[i],
                          kParchmentInk, 0.94F * fade);
         }
-        const std::string foot = pages > 1 ? "0 MORE (" + std::to_string(page + 1) + "/" +
-                                                 std::to_string(pages) + ")   ESC BACK   " +
-                                                 "L PUTS IT DOWN"
-                                           : std::string("ESC BACK   L PUTS IT DOWN");
+        // SHIP NOTE MOVE 3: the foot names the device's own keys. With the
+        // state's defaults this is character-for-character the old string.
+        std::string foot;
+        if (pages > 1) {
+            foot = "0 MORE (" + std::to_string(page + 1) + "/" + std::to_string(pages) + ")   ";
+        }
+        foot += state.backKey + " BACK";
+        if (!state.letterDownLine.empty()) {
+            foot += "   " + state.letterDownLine;
+        }
         drawCellText(target, body, metric, 0, band.rowCount() - 1, foot, kParchmentInk,
                      0.68F * fade);
         return;

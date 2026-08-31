@@ -607,15 +607,18 @@ constexpr int kMinDetailCells = 22;
 /// COMPOSITION has to know how wide they are before it can decide how many rows
 /// to give them -- see navRowsFor.
 [[nodiscard]] std::vector<PanelOption> navOptions(const DistrictMapState& state) {
+    // SHIP NOTE MOVE 3: the keys arrive on the state, worded for whichever
+    // device last spoke -- see DistrictMapState's own note. The defaults are
+    // this function's old literals, so nothing hand-built moves a pixel.
     return {
-        PanelOption{"ARROWS", "NEXT PLACE", "", kCursorTone, InkRole::Dim, false},
-        PanelOption{"TAB", std::string(tabName(state.tab)), "", kCursorTone, InkRole::Dim,
-                    false},
-        PanelOption{"+ -",
+        PanelOption{state.navMoveKeys, "NEXT PLACE", "", kCursorTone, InkRole::Dim, false},
+        PanelOption{state.navTabKeys, std::string(tabName(state.tab)), "", kCursorTone,
+                    InkRole::Dim, false},
+        PanelOption{state.navZoomKeys,
                     "ZOOM " + std::to_string(state.zoom + 1) + "/" +
                         std::to_string(mapZoomSteps()),
                     "", kCursorTone, InkRole::Dim, false},
-        PanelOption{"M", "CLOSE", "", kCursorTone, InkRole::Dim, false},
+        PanelOption{state.navCloseKey, "CLOSE", "", kCursorTone, InkRole::Dim, false},
     };
 }
 
@@ -1542,8 +1545,8 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
             const std::string way(sim::compass_point(
                 sim::bearingTo(static_cast<std::int32_t>(state.playerX),
                                static_cast<std::int32_t>(state.playerY), ax, ay)));
-            drawCommitVerb(target, pane, metric, "ENTER - FACE IT", "(" + shout(way) + ")",
-                           ink.key, alpha);
+            drawCommitVerb(target, pane, metric, state.commitKey + " - FACE IT",
+                           "(" + shout(way) + ")", ink.key, alpha);
         }
     }
 

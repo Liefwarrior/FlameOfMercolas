@@ -234,6 +234,20 @@ void pickCursorIfVisible(int& cursor, int page, int slot, std::size_t total) noe
     return out;
 }
 
+/// SHIP NOTE MOVE 3. The opening hint, GENERATED from the live bindings in
+/// the live device's vocabulary -- which closes the S3 verification gap the
+/// constructor stated out loud (a hand-written "TAB YOUR NOTES..." that went
+/// stale the moment Menu was rebound off Tab). On the shipped keyboard table
+/// this is character-for-character the string it replaces: promptKeyName
+/// prints '<'/'>' for the two brackets the 4x6 font cannot draw, the same
+/// glyphs the old literal chose for the same reason.
+[[nodiscard]] std::string openingHintLine(const ControlSettings& controls, InputDevice device) {
+    return std::string(promptLabel(controls, Action::Menu, device)) + " YOUR NOTES  " +
+           std::string(promptLabel(controls, Action::PagePrev, device)) + " " +
+           std::string(promptLabel(controls, Action::PageNext, device)) + " MORE PAGES  " +
+           std::string(promptLabel(controls, Action::Interact, device)) + " USE";
+}
+
 }  // namespace
 
 Session::Session(const SessionConfig& config)
@@ -327,19 +341,13 @@ Session::Session(const SessionConfig& config)
         casebookOpen_ = true;
         // #85. UPDATED FOR THE CONSOLIDATED SCHEME: Keys and Options are pages
         // inside Menu now rather than their own F1/F2, and Examine is folded
-        // into Interact. VERIFICATION GAP (S3, still open): this is still a
-        // hand-written string rather than one built from actionLabel()/
-        // keyName(), so a player who rebinds Menu off Tab still gets a stale
-        // prompt -- the same gap the keys page itself closed by generating
-        // its rows from controls_ instead of a static array. Not closed here;
-        // stated rather than left for somebody to find by rebinding Tab and
-        // reading this line.
-        // NOT '[' / ']' -- hud.cpp's 4x6 font has no glyph for either (see its
-        // own header on why: it carries only the characters the authored
-        // barks actually use). '<'/'>' are in the table and are the same
-        // glyphs the keys page prints for PagePrev/PageNext (kActions'
-        // "PAGE <"/"PAGE >" labels), so this reads consistently with them.
-        message_ = "TAB YOUR NOTES  < > MORE PAGES  E USE";
+        // into Interact. SHIP NOTE MOVE 3 CLOSED THE S3 VERIFICATION GAP this
+        // comment used to state: the hint is GENERATED from the live bindings
+        // now (openingHintLine, above), so a rebound Menu renames itself here
+        // by construction -- and noteInputDevice() re-words it live when a
+        // pad speaks while it is still up. On the shipped table this is the
+        // identical "TAB YOUR NOTES  < > MORE PAGES  E USE".
+        message_ = openingHintLine(controls_, promptDevice_);
         messageSteps_ = 60 * 12;
     }
     // TASK #83. SNAPPED, NOT EASED. Nobody pressed a key to reach whichever of
@@ -924,6 +932,29 @@ void Session::dismissOverlays() noexcept {
 // #77: the controls, and the page that changes them
 // ---------------------------------------------------------------------------
 
+void Session::noteInputDevice(InputDevice device) {
+    if (device == promptDevice_) {
+        return;
+    }
+    // THE ONE STORED PROMPT. Every other prompt in this file is assembled at
+    // draw time and re-words itself by construction; the opening hint is
+    // state with a twelve-second life, so the hand-over re-words it in
+    // place -- but ONLY while it is still the opening hint. A bark or an
+    // alert that has since taken message_ is not this function's to touch.
+    const bool hintUp = !message_.empty() && message_ == openingHintLine(controls_, promptDevice_);
+    promptDevice_ = device;
+    if (hintUp) {
+        message_ = openingHintLine(controls_, promptDevice_);
+    }
+}
+
+void Session::noteInputKey(Key key) {
+    if (key == Key::None) {
+        return;  // nobody spoke; Key::None must not read as the keyboard
+    }
+    noteInputDevice(deviceOfKey(key));
+}
+
 void Session::setControls(const ControlSettings& settings) {
     controls_ = settings;
     controls_.sanitise();
@@ -1072,7 +1103,14 @@ KeysPageState Session::keysPageState() const {
     // screen while you read the page. It used to be burnt into the top-left
     // corner of every captured frame at full HUD scale.
     state.readout = "GRANADAD " + std::string(sim::build_info().version);
-    state.instruction = "EVERY KEY THE GAME ANSWERS TO. F1 PUTS THIS DOWN.";
+    // SHIP NOTE MOVE 3, and a decision: the PAGE keeps printing BOTH
+    // devices' bindings side by side (binding + alternate columns -- the
+    // table's two slots ARE the two devices now), because this page's whole
+    // job is the table. Only the way OUT changes hands: F1 is a hard-coded
+    // keyboard convenience; a pad closes with B.
+    state.instruction = promptDevice_ == InputDevice::Pad
+                            ? "EVERY KEY THE GAME ANSWERS TO. B PUTS THIS DOWN."
+                            : "EVERY KEY THE GAME ANSWERS TO. F1 PUTS THIS DOWN.";
     state.rows = keyPageRows();
     state.cursor = caseCursor_;
     return state;
@@ -1268,7 +1306,9 @@ std::vector<std::string> Session::pauseRows() const {
         "WAIT",
         "CONTROLS",
         "SETTINGS",
-        quitArmed_ ? "QUIT -- SURE? ENTER" : "QUIT GRANADAD",
+        // SHIP NOTE MOVE 3: the armed row names the device's own confirm.
+        quitArmed_ ? "QUIT -- SURE? " + std::string(promptConfirmKey(promptDevice_))
+                   : std::string("QUIT GRANADAD"),
     };
 }
 
@@ -1642,6 +1682,21 @@ DistrictMapState Session::districtMapState() const {
     const int hour = ((timeOfDay_ / 3600) % 24 + 24) % 24;
     plan.readout = (hour < 10 ? std::string("0") : std::string()) + std::to_string(hour) +
                    ":00   BAND " + std::to_string(body_->band());
+
+    // SHIP NOTE MOVE 3: the nav band's keys, in the device's own vocabulary.
+    // Each pad wording is what main.cpp's map branch ACTUALLY routes: the
+    // D-pad walks places, LB/RB (PagePrev/PageNext) cycle the views, RT/LT
+    // (Cast/Block) ride the zoom ladder, SELECT (Action::Map's own pad half)
+    // shuts the page, A commits. The keyboard strings are the old literals.
+    if (promptDevice_ == InputDevice::Pad) {
+        plan.navMoveKeys = "D-PAD";
+        plan.navTabKeys = std::string(promptLabel(controls_, Action::PagePrev, promptDevice_)) +
+                          " " + std::string(promptLabel(controls_, Action::PageNext, promptDevice_));
+        plan.navZoomKeys = std::string(promptLabel(controls_, Action::Cast, promptDevice_)) + " " +
+                           std::string(promptLabel(controls_, Action::Block, promptDevice_));
+    }
+    plan.navCloseKey = std::string(promptLabel(controls_, Action::Map, promptDevice_));
+    plan.commitKey = std::string(promptConfirmKey(promptDevice_));
 
     // WHO IS IN THERE RIGHT NOW -- the People view, and the direct answer to
     // "finding the person or thing I want at that place". A const walk over the
@@ -2245,9 +2300,17 @@ CasebookPageState Session::casebookPageState() const {
     page.read = casebook_.readCount();
     page.cold = casebook_.coldCount();
     page.calledYou = std::string(legend().title());
-    page.closeKey = std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)]));
-    page.lookKey =
-        std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]));
+    // SHIP NOTE MOVE 3. NOT promptLabel(Menu, Pad) for the pad's close key,
+    // deliberately: Menu's pad half is D-PAD UP, but while the book is open
+    // the parity pass reads the D-pad as list movement, raw, ahead of the
+    // binding (route_menu_key's own header) -- so the key that ACTUALLY
+    // closes the book on a pad is B, the universal back. The keyboard half
+    // keeps the live Menu binding, exactly as before.
+    page.closeKey =
+        promptDevice_ == InputDevice::Pad
+            ? std::string(promptBackKey(InputDevice::Pad))
+            : std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)]));
+    page.lookKey = std::string(promptLabel(controls_, Action::Interact, promptDevice_));
 
     const std::vector<std::int32_t> heard = casebook_.known();
     page.known = static_cast<std::int32_t>(heard.size());
@@ -2336,7 +2399,8 @@ CasebookPageState Session::casebookPageState() const {
     } else if (page.closed) {
         page.instruction = "THE TRAIL IS WALKED OUT.";
     } else if (page.read == 0) {
-        page.instruction = "PICK A LEAD. ENTER SHOWS YOU WHERE.";
+        page.instruction = "PICK A LEAD. " + std::string(promptConfirmKey(promptDevice_)) +
+                           " SHOWS YOU WHERE.";
     } else {
         const std::int32_t waiting = page.known - page.read > 0 ? page.known - page.read : 0;
         page.instruction = std::to_string(waiting) +
@@ -4125,6 +4189,24 @@ DialogueViewState Session::journalPanelView() const {
 
 DialogueViewState Session::dialogueView() const {
     DialogueViewState view;
+    // SHIP NOTE MOVE 3. Assembled fresh every frame, so every wording below
+    // switches live the moment the other hand speaks. `confirm`/`back` are
+    // the page grammar main.cpp's router hard-codes (ENTER/A, ESC/B); the
+    // keyboard strings are character-for-character what this function always
+    // printed, so a keyboard session draws byte-identical frames.
+    const InputDevice dev = promptDevice_;
+    const std::string confirm(promptConfirmKey(dev));
+    const std::string back(promptBackKey(dev));
+    view.confirmKey = confirm;
+    view.backKey = back;
+    // The haggle's third verb rides Action::PageNext in the router ("]"
+    // carries no glyph in the 4x6 font; T is the advertised key and now
+    // routed too -- see main.cpp's haggle branch); the pad's half is RB.
+    if (dev == InputDevice::Pad) {
+        view.takeKey = std::string(promptLabel(controls_, Action::PageNext, dev));
+        // The pad has no L; its B BACK already names the way out of a letter.
+        view.letterDownLine.clear();
+    }
     // The panel's own small motion -- the picked row's highlight breathes
     // with it. The identical role body_->stepCount()/60 already plays for the
     // lamp flicker in drawFrame: a pure function of simulated steps, so a
@@ -4138,7 +4220,7 @@ DialogueViewState Session::dialogueView() const {
         // name the same door before a key is ever pressed.
         view.open = true;
         view.speaker = waitSleep_ ? "SLEEP" : "WAIT";
-        view.epithet = "ENTER PASSES THE HOURS  ESC BACKS OUT";
+        view.epithet = confirm + " PASSES THE HOURS  " + back + " BACKS OUT";
         if (waitSleep_) {
             view.line = "THE BED IS PAID FOR. SLEEP MENDS. PICK THE HOUR TO WAKE.";
         } else {
@@ -4158,7 +4240,14 @@ DialogueViewState Session::dialogueView() const {
     if (pauseOpen_) {
         view.open = true;
         view.speaker = "MENU";
-        view.epithet = quitArmed_ ? "ENTER QUITS  ESC CANCELS" : "ENTER SELECTS  ESC RESUMES";
+        // The resume key is Pause's OWN binding -- ESC, or START, the key
+        // that opened the page (this file's "the key that opened it closes
+        // it" rule); the cancel on an armed QUIT is the universal back (B on
+        // a pad -- see route_menu_key's parity-pass remap).
+        view.epithet =
+            quitArmed_ ? confirm + " QUITS  " + back + " CANCELS"
+                       : confirm + " SELECTS  " +
+                             std::string(promptLabel(controls_, Action::Pause, dev)) + " RESUMES";
         // NOT "PAUSED", DELIBERATELY. This page does not stop PhasedEngine --
         // nothing in this build does, not the casebook, not the keys page, not
         // options, and a menu that promised a freeze the game does not deliver
@@ -4183,8 +4272,10 @@ DialogueViewState Session::dialogueView() const {
         view.epithet = "GRANADAD: THE DARKSTREETS  " + std::string(sim::build_info().version);
         // THREE LINES IS WHAT THE TOP BAND WRAPS TO, so this is written to fit
         // in two. The first version ran to four and lost its own last sentence.
-        view.line =
-            "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS. F1 PUTS THIS DOWN.";
+        // F1 is a keyboard convenience key (main.cpp hard-codes it); a pad
+        // player backed in through the pause menu and backs out with B.
+        view.line = "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS. " +
+                    (dev == InputDevice::Pad ? back : std::string("F1")) + " PUTS THIS DOWN.";
         for (const std::string& row : keyRows()) {
             view.topics.push_back(row);
         }
@@ -4199,7 +4290,9 @@ DialogueViewState Session::dialogueView() const {
         // rolled against, which is information, never a discount.
         view.open = true;
         view.speaker = "GRIMOIRE";
-        view.epithet = "LEFT RIGHT BIND A SLOT  ENTER READIES";
+        // LEFT RIGHT is honest on both devices -- the D-pad IS the pad's
+        // left and right on a list; only the commit verb changes hands.
+        view.epithet = "LEFT RIGHT BIND A SLOT  " + confirm + " READIES";
         const std::vector<std::string> rows = grimoireRows();
         if (rows.empty()) {
             // THE COMMON STATE, in the cast refusal's own words: the page and
@@ -4226,25 +4319,46 @@ DialogueViewState Session::dialogueView() const {
         // this round) keeps seeing exactly the content it always did,
         // because the Menu still opens focused on the Journal tile by
         // default, same as #85's Menu always opened on the casebook first.
+        DialogueViewState tile;
         switch (menuFocus_) {
             case kMenuFocusCharacter:
-                return characterPanelView();
+                tile = characterPanelView();
+                break;
             case kMenuFocusMap:
-                return mapPanelView();
+                tile = mapPanelView();
+                break;
             case kMenuFocusLetters:
-                return lettersPanelView();
+                tile = lettersPanelView();
+                break;
             case kMenuFocusJournal:
             default:
-                return journalPanelView();
+                tile = journalPanelView();
+                break;
         }
+        // SHIP NOTE MOVE 3: the tile views build their own state, so the
+        // device wording set at the top of this function has to be restated
+        // on the one that is actually returned -- an open letter's foot in
+        // particular (backKey/letterDownLine).
+        tile.confirmKey = confirm;
+        tile.backKey = back;
+        if (dev == InputDevice::Pad) {
+            tile.takeKey = std::string(promptLabel(controls_, Action::PageNext, dev));
+            tile.letterDownLine.clear();
+        }
+        return tile;
     }
     if (optionsOpen_) {
         view.open = true;
         view.speaker = "OPTIONS";
-        view.epithet = awaitingKey_ ? "PRESS A KEY  (ESC CANCELS)" : "LEFT RIGHT CHANGE  ENTER REBIND";
-        view.line =
-            "MOUSE LOOK IS RAW -- NO SMOOTHING, NO ACCELERATION. A KEY YOU BIND IS TAKEN "
-            "OFF WHATEVER HAD IT. F2 PUTS THIS DOWN.";
+        // The awaiting line stays "ESC CANCELS" on BOTH devices, deliberately:
+        // the capture is raw (main.cpp's bindAwaited eats the next key ahead
+        // of every remap), so a pad's B would be CAPTURED as the binding, and
+        // ESC really is the one cancel there is.
+        view.epithet = awaitingKey_ ? "PRESS A KEY  (ESC CANCELS)"
+                                    : "LEFT RIGHT CHANGE  " + confirm + " REBIND";
+        view.line = "MOUSE LOOK IS RAW -- NO SMOOTHING, NO ACCELERATION. A KEY YOU BIND IS TAKEN "
+                    "OFF WHATEVER HAD IT. " +
+                    (dev == InputDevice::Pad ? back : std::string("F2")) + " PUTS THIS DOWN.";
         for (const std::string& row : optionRows()) {
             view.topics.push_back(row);
         }
@@ -5708,7 +5822,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // else. See docs/HUD-REAL-ESTATE.md.
     if (config_.hud) {
         HudState aim;
-        aim.aimKey = keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]);
+        // SHIP NOTE MOVE 3: the half of Interact's row that belongs to the
+        // device that last spoke -- "E" or "A" on the shipped table. Must
+        // match the HUD's own read four blocks below, or the signage would
+        // step around a prompt of a different width than the one drawn.
+        aim.aimKey = promptKeyName(promptKey(controls_, Action::Interact, promptDevice_));
         aim.aimVerb = std::string_view{interactCache_};
         aim.aimSubject = std::string_view{interactSubjectCache_};
         aim.aimNote = std::string_view{interactNoteCache_};
@@ -5884,10 +6002,12 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // pressing it will do before they press it"); what the crosshair pass adds
     // is the name of whoever that is.
     //
-    // THE KEY NAME IS READ HERE AND NOWHERE ELSE, off the same primary binding
-    // the CONTROLS page prints, so a rebound Interact renames itself on the
-    // crosshair by the act of being rebound.
-    hud.aimKey = keyName(controls_.primary[static_cast<std::size_t>(Action::Interact)]);
+    // THE KEY NAME IS READ off the same binding row the CONTROLS page
+    // prints, so a rebound Interact renames itself on the crosshair by the
+    // act of being rebound -- and SHIP NOTE MOVE 3 made it the half of that
+    // row belonging to the device that last spoke: "E - TALK" with a
+    // keyboard in hand, "A - TALK" the moment a pad button lands, live.
+    hud.aimKey = promptKeyName(promptKey(controls_, Action::Interact, promptDevice_));
     hud.aimVerb = std::string_view{interactCache_};
     hud.aimSubject = std::string_view{interactSubjectCache_};
     hud.aimNote = std::string_view{interactNoteCache_};

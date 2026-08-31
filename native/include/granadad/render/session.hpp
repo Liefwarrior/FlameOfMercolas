@@ -670,6 +670,27 @@ public:
     [[nodiscard]] const ControlSettings& controls() const noexcept { return controls_; }
     void setControls(const ControlSettings& settings);
 
+    // --- ship note move 3: the prompts name the device holding them ---------
+
+    /// The device whose vocabulary every prompt speaks this frame -- the
+    /// most recently active one. "Active" means A PRESS: the last keyboard
+    /// key, mouse button, wheel notch or pad button the client translated
+    /// into a Key, with mouse and keyboard counting as one device (see
+    /// InputDevice). Analogue motion deliberately does not count -- a
+    /// nudged mouse or a stick resting a hair past its deadzone would flap
+    /// every label on screen, and a discrete press is an unambiguous claim.
+    ///
+    /// CLIENT STATE, NEVER SIM STATE. Read at draw time by every prompt
+    /// assembly site, so the labels switch live the moment the other hand
+    /// speaks -- no menu visit, no reopen.
+    [[nodiscard]] InputDevice promptDevice() const noexcept { return promptDevice_; }
+    /// The client's note that a device spoke. Cheap and idempotent; called
+    /// from main.cpp's event loop on every translated press.
+    void noteInputDevice(InputDevice device);
+    /// Convenience: classify `key` and note its device. Key::None is nobody
+    /// and is ignored rather than counted as the keyboard.
+    void noteInputKey(Key key);
+
     /// THE CONTROLS PAGE, as the terminal-panel surface actually draws it:
     /// binding, verb, second binding, one sentence of help, and which family
     /// the row belongs to. Built from the live bindings, so a rebinding shows
@@ -1575,6 +1596,12 @@ private:
     int menuFocus_ = kMenuFocusJournal;
     /// #77. The live bindings, the options page and the row it is on.
     ControlSettings controls_ = ControlSettings::defaults();
+    /// Ship note move 3. Which device last pressed something -- see
+    /// promptDevice(). CLIENT state: never hashed, never fed to MoveInput,
+    /// and the keyboard vocabulary is the shipped default, so every caller
+    /// that never heard of it (every test, every capture flag) draws the
+    /// exact frames it always drew.
+    InputDevice promptDevice_ = InputDevice::KeyboardMouse;
     bool optionsOpen_ = false;
     int optionCursor_ = 0;
     int optionPage_ = 0;

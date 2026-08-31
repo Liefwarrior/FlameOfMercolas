@@ -86,6 +86,7 @@
 #include <vector>
 
 #include "granadad/render/anim.hpp"
+#include "granadad/render/controls.hpp"
 #include "granadad/render/creation_page.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/sim/appearance.hpp"
@@ -218,6 +219,24 @@ public:
     explicit CreationFlow(const std::filesystem::path& contentDir);
 
     [[nodiscard]] CreationStep step() const noexcept { return step_; }
+
+    // --- ship note move 3: the feet name the device holding them ---------
+    //
+    // The same client-state rule Session::promptDevice() states: which hand
+    // last PRESSED something, mouse and keyboard as one device, analogue
+    // motion not counted, never sim state. The creation window has no
+    // Session yet, so the flow holds its own copy; main.cpp's creation loop
+    // notes each translated press. Every pageFor*() reads it at build time,
+    // so the feet re-word live -- the exact frames the ship note shot
+    // keyboard-worded around a pad (pad-sheet-begin-640, pad-quiz-640).
+    [[nodiscard]] InputDevice promptDevice() const noexcept { return promptDevice_; }
+    void noteInputDevice(InputDevice device) noexcept { promptDevice_ = device; }
+    /// Classifies `key` and notes its device; Key::None is nobody, ignored.
+    void noteInputKey(Key key) noexcept {
+        if (key != Key::None) {
+            promptDevice_ = deviceOfKey(key);
+        }
+    }
 
     // --- origin select --------------------------------------------------
 
@@ -653,6 +672,9 @@ private:
     bool editingName_ = false;
     bool osk_ = false;
     int oskCursor_ = 0;
+    /// Ship note move 3 -- see promptDevice(). Client state; the keyboard
+    /// default keeps every capture flag's frames byte-identical.
+    InputDevice promptDevice_ = InputDevice::KeyboardMouse;
     /// The shared Calling/Quiz/Background cursor -- see choiceCursor().
     int choiceCursor_ = 0;
     std::string chosenCallingId_;

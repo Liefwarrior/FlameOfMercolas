@@ -948,3 +948,193 @@ TEST_CASE("round-1's own regression case still holds under the whole-file fix") 
          loaded.actionFor(loaded.secondary[pauseIndex]) == Action::Pause);
     CHECK(pauseReachableByKeyboard);
 }
+
+// ---------------------------------------------------------------------------
+// the device-aware prompt lookup -- ship note move 3
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a prompt names the device holding it, off the shipped table") {
+    const ControlSettings keys = ControlSettings::defaults();
+
+    // The exact frame the ship note photographed: the street prompt. E on a
+    // keyboard, A on a pad -- both halves of Interact's own row, not a
+    // parallel table.
+    CHECK(promptLabel(keys, Action::Interact, InputDevice::KeyboardMouse) == "E");
+    CHECK(promptLabel(keys, Action::Interact, InputDevice::Pad) == "A");
+
+    // The casebook's close key and the ward map's, both halves each.
+    CHECK(promptLabel(keys, Action::Menu, InputDevice::KeyboardMouse) == "TAB");
+    CHECK(promptLabel(keys, Action::Menu, InputDevice::Pad) == "D-PAD UP");
+    CHECK(promptLabel(keys, Action::Map, InputDevice::KeyboardMouse) == "M");
+    CHECK(promptLabel(keys, Action::Map, InputDevice::Pad) == "SELECT");
+    CHECK(promptLabel(keys, Action::Pause, InputDevice::KeyboardMouse) == "ESC");
+    CHECK(promptLabel(keys, Action::Pause, InputDevice::Pad) == "START");
+
+    // The page pair prints the glyphs the 4x6 font can actually draw, never
+    // the bracket names -- and the pad half is the bumpers.
+    CHECK(promptLabel(keys, Action::PagePrev, InputDevice::KeyboardMouse) == "<");
+    CHECK(promptLabel(keys, Action::PageNext, InputDevice::KeyboardMouse) == ">");
+    CHECK(promptLabel(keys, Action::PagePrev, InputDevice::Pad) == "LB");
+    CHECK(promptLabel(keys, Action::PageNext, InputDevice::Pad) == "RB");
+
+    // The map's zoom pair on a pad: the triggers, exactly what main.cpp
+    // routes (Cast/Block while the map is up).
+    CHECK(promptLabel(keys, Action::Cast, InputDevice::Pad) == "RT");
+    CHECK(promptLabel(keys, Action::Block, InputDevice::Pad) == "LT");
+}
+
+TEST_CASE("the prompt lookup falls back to the other hand rather than lying") {
+    ControlSettings keys = ControlSettings::defaults();
+
+    // Quick slot 1 has no pad half in the shipped table: the pad asks and the
+    // keyboard answers, because a reachable verb must never print "--".
+    CHECK(promptLabel(keys, Action::QuickSlot1, InputDevice::Pad) == "1");
+
+    // Strip Interact to its pad half alone; the keyboard asks and the pad
+    // answers, same rule the other way round.
+    keys.primary[static_cast<std::size_t>(Action::Interact)] = Key::None;
+    CHECK(promptLabel(keys, Action::Interact, InputDevice::KeyboardMouse) == "A");
+
+    // No key at all is "--", keyName()'s own unbound answer.
+    keys.secondary[static_cast<std::size_t>(Action::Interact)] = Key::None;
+    CHECK(promptLabel(keys, Action::Interact, InputDevice::Pad) == "--");
+    CHECK(promptLabel(keys, Action::Interact, InputDevice::KeyboardMouse) == "--");
+}
+
+TEST_CASE("a rebinding renames the prompt on BOTH devices by construction") {
+    ControlSettings keys = ControlSettings::defaults();
+    // The player moves Interact to F and PadNorth: the lookup reads the same
+    // slots bind() wrote, so there is nothing to keep in step.
+    keys.bind(Action::Interact, Key::F, /*asSecondary=*/false);
+    keys.bind(Action::Interact, Key::PadNorth, /*asSecondary=*/true);
+    CHECK(promptLabel(keys, Action::Interact, InputDevice::KeyboardMouse) == "F");
+    CHECK(promptLabel(keys, Action::Interact, InputDevice::Pad) == "Y");
+}
+
+TEST_CASE("the device of a key, and the pad's spoken vocabulary") {
+    // Mouse and keyboard are ONE device; every pad key is the other.
+    CHECK(deviceOfKey(Key::E) == InputDevice::KeyboardMouse);
+    CHECK(deviceOfKey(Key::MouseLeft) == InputDevice::KeyboardMouse);
+    CHECK(deviceOfKey(Key::WheelUp) == InputDevice::KeyboardMouse);
+    CHECK(deviceOfKey(Key::None) == InputDevice::KeyboardMouse);
+    CHECK(deviceOfKey(Key::PadSouth) == InputDevice::Pad);
+    CHECK(deviceOfKey(Key::PadRight) == InputDevice::Pad);
+    for (int k = static_cast<int>(Key::PadSouth); k <= static_cast<int>(Key::PadRight); ++k) {
+        CHECK(keyIsPad(static_cast<Key>(k)));
+    }
+    CHECK_FALSE(keyIsPad(Key::WheelDown));
+
+    // The spoken names are the controls page's own letters, unprefixed --
+    // "PAD_A" on the reference page, "A" on a prompt, one fact twice.
+    CHECK(promptKeyName(Key::PadSouth) == "A");
+    CHECK(promptKeyName(Key::PadEast) == "B");
+    CHECK(promptKeyName(Key::PadWest) == "X");
+    CHECK(promptKeyName(Key::PadNorth) == "Y");
+    CHECK(promptKeyName(Key::PadStart) == "START");
+    CHECK(promptKeyName(Key::PadBack) == "SELECT");
+    CHECK(promptKeyName(Key::PadUp) == "D-PAD UP");
+    // And a keyboard key is exactly keyName()'s answer.
+    CHECK(promptKeyName(Key::E) == keyName(Key::E));
+    CHECK(promptKeyName(Key::Tab) == keyName(Key::Tab));
+
+    // The page grammar the router hard-codes, said once.
+    CHECK(promptConfirmKey(InputDevice::KeyboardMouse) == "ENTER");
+    CHECK(promptConfirmKey(InputDevice::Pad) == "A");
+    CHECK(promptBackKey(InputDevice::KeyboardMouse) == "ESC");
+    CHECK(promptBackKey(InputDevice::Pad) == "B");
+    CHECK(promptMoveKeys(InputDevice::KeyboardMouse) == "UP DOWN");
+    CHECK(promptMoveKeys(InputDevice::Pad) == "D-PAD");
+}
+
+TEST_CASE("the live session re-words its prompts the moment the other hand speaks") {
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    Session session(config);
+
+    // The shipped default: a session that has never heard a press speaks
+    // keyboard, which is also what every capture flag and every case written
+    // before this existed gets -- byte-identical frames.
+    CHECK(session.promptDevice() == InputDevice::KeyboardMouse);
+
+    // THE PAUSE HEADER -- the exact string the ship note photographed with a
+    // pad connected (pad-pause-640.png: "ENTER SELECTS  ESC RESUMES").
+    session.togglePause();
+    CHECK(session.dialogueView().epithet == "ENTER SELECTS  ESC RESUMES");
+
+    // One pad press. No menu visit, no reopen: the SAME open page re-words.
+    session.noteInputDevice(InputDevice::Pad);
+    CHECK(session.dialogueView().epithet == "A SELECTS  START RESUMES");
+
+    // And straight back the moment a key speaks -- noteInputKey classifies.
+    session.noteInputKey(Key::E);
+    CHECK(session.dialogueView().epithet == "ENTER SELECTS  ESC RESUMES");
+    // Key::None is nobody and moves nothing.
+    session.noteInputDevice(InputDevice::Pad);
+    session.noteInputKey(Key::None);
+    CHECK(session.promptDevice() == InputDevice::Pad);
+    session.togglePause();
+
+    // THE CASEBOOK PAGE: the foot's close key and the look key, both hands.
+    // On a pad the close is B -- the parity pass reads the D-pad as list
+    // movement while the book is up, so Menu's own D-PAD UP cannot close it.
+    session.noteInputKey(Key::W);
+    CasebookPageState kb = session.casebookPageState();
+    CHECK(kb.closeKey == "TAB");
+    CHECK(kb.lookKey == "E");
+    session.noteInputDevice(InputDevice::Pad);
+    CasebookPageState pad = session.casebookPageState();
+    CHECK(pad.closeKey == "B");
+    CHECK(pad.lookKey == "A");
+    if (!pad.rows.empty() && pad.read == 0 && !pad.closed) {
+        CHECK(pad.instruction == "PICK A LEAD. A SHOWS YOU WHERE.");
+    }
+
+    // THE WARD MAP'S NAV BAND: what main.cpp actually routes on a pad --
+    // D-pad walks, the bumpers tab, the triggers zoom, SELECT closes, A
+    // commits -- and the old literals with a keyboard in hand.
+    DistrictMapState padMap = session.districtMapState();
+    CHECK(padMap.navMoveKeys == "D-PAD");
+    CHECK(padMap.navTabKeys == "LB RB");
+    CHECK(padMap.navZoomKeys == "RT LT");
+    CHECK(padMap.navCloseKey == "SELECT");
+    CHECK(padMap.commitKey == "A");
+    session.noteInputKey(Key::M);
+    DistrictMapState kbMap = session.districtMapState();
+    CHECK(kbMap.navMoveKeys == "ARROWS");
+    CHECK(kbMap.navTabKeys == "TAB");
+    CHECK(kbMap.navZoomKeys == "+ -");
+    CHECK(kbMap.navCloseKey == "M");
+    CHECK(kbMap.commitKey == "ENTER");
+
+    // THE DIALOGUE WIDGET'S OWN KEYS ride the state the same way.
+    session.noteInputDevice(InputDevice::Pad);
+    const DialogueViewState padView = session.dialogueView();
+    CHECK(padView.confirmKey == "A");
+    CHECK(padView.backKey == "B");
+    CHECK(padView.takeKey == "RB");
+    CHECK(padView.letterDownLine.empty());
+    session.noteInputKey(Key::Space);
+    const DialogueViewState kbView = session.dialogueView();
+    CHECK(kbView.confirmKey == "ENTER");
+    CHECK(kbView.backKey == "ESC");
+    CHECK(kbView.takeKey == "T");
+    CHECK(kbView.letterDownLine == "L PUTS IT DOWN");
+}
+
+TEST_CASE("the opening hint is generated from the bindings and re-words live") {
+    // The S3 verification gap, closed: the hint is openingHintLine() off the
+    // live table now, so the shipped keyboard wording is provably the exact
+    // old literal, and a pad press while it is still up re-words it.
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.openingPage = true;
+    Session session(config);
+    if (session.lastMessage().empty()) {
+        return;  // no authored case in this content dir; nothing to word
+    }
+    CHECK(session.lastMessage() == "TAB YOUR NOTES  < > MORE PAGES  E USE");
+    session.noteInputDevice(InputDevice::Pad);
+    CHECK(session.lastMessage() == "D-PAD UP YOUR NOTES  LB RB MORE PAGES  A USE");
+    session.noteInputKey(Key::A);
+    CHECK(session.lastMessage() == "TAB YOUR NOTES  < > MORE PAGES  E USE");
+}
