@@ -1045,3 +1045,96 @@ TEST_CASE("the device of a key, and the pad's spoken vocabulary") {
     CHECK(promptMoveKeys(InputDevice::KeyboardMouse) == "UP DOWN");
     CHECK(promptMoveKeys(InputDevice::Pad) == "D-PAD");
 }
+
+TEST_CASE("the live session re-words its prompts the moment the other hand speaks") {
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    Session session(config);
+
+    // The shipped default: a session that has never heard a press speaks
+    // keyboard, which is also what every capture flag and every case written
+    // before this existed gets -- byte-identical frames.
+    CHECK(session.promptDevice() == InputDevice::KeyboardMouse);
+
+    // THE PAUSE HEADER -- the exact string the ship note photographed with a
+    // pad connected (pad-pause-640.png: "ENTER SELECTS  ESC RESUMES").
+    session.togglePause();
+    CHECK(session.dialogueView().epithet == "ENTER SELECTS  ESC RESUMES");
+
+    // One pad press. No menu visit, no reopen: the SAME open page re-words.
+    session.noteInputDevice(InputDevice::Pad);
+    CHECK(session.dialogueView().epithet == "A SELECTS  START RESUMES");
+
+    // And straight back the moment a key speaks -- noteInputKey classifies.
+    session.noteInputKey(Key::E);
+    CHECK(session.dialogueView().epithet == "ENTER SELECTS  ESC RESUMES");
+    // Key::None is nobody and moves nothing.
+    session.noteInputDevice(InputDevice::Pad);
+    session.noteInputKey(Key::None);
+    CHECK(session.promptDevice() == InputDevice::Pad);
+    session.togglePause();
+
+    // THE CASEBOOK PAGE: the foot's close key and the look key, both hands.
+    // On a pad the close is B -- the parity pass reads the D-pad as list
+    // movement while the book is up, so Menu's own D-PAD UP cannot close it.
+    session.noteInputKey(Key::W);
+    CasebookPageState kb = session.casebookPageState();
+    CHECK(kb.closeKey == "TAB");
+    CHECK(kb.lookKey == "E");
+    session.noteInputDevice(InputDevice::Pad);
+    CasebookPageState pad = session.casebookPageState();
+    CHECK(pad.closeKey == "B");
+    CHECK(pad.lookKey == "A");
+    if (!pad.rows.empty() && pad.read == 0 && !pad.closed) {
+        CHECK(pad.instruction == "PICK A LEAD. A SHOWS YOU WHERE.");
+    }
+
+    // THE WARD MAP'S NAV BAND: what main.cpp actually routes on a pad --
+    // D-pad walks, the bumpers tab, the triggers zoom, SELECT closes, A
+    // commits -- and the old literals with a keyboard in hand.
+    DistrictMapState padMap = session.districtMapState();
+    CHECK(padMap.navMoveKeys == "D-PAD");
+    CHECK(padMap.navTabKeys == "LB RB");
+    CHECK(padMap.navZoomKeys == "RT LT");
+    CHECK(padMap.navCloseKey == "SELECT");
+    CHECK(padMap.commitKey == "A");
+    session.noteInputKey(Key::M);
+    DistrictMapState kbMap = session.districtMapState();
+    CHECK(kbMap.navMoveKeys == "ARROWS");
+    CHECK(kbMap.navTabKeys == "TAB");
+    CHECK(kbMap.navZoomKeys == "+ -");
+    CHECK(kbMap.navCloseKey == "M");
+    CHECK(kbMap.commitKey == "ENTER");
+
+    // THE DIALOGUE WIDGET'S OWN KEYS ride the state the same way.
+    session.noteInputDevice(InputDevice::Pad);
+    const DialogueViewState padView = session.dialogueView();
+    CHECK(padView.confirmKey == "A");
+    CHECK(padView.backKey == "B");
+    CHECK(padView.takeKey == "RB");
+    CHECK(padView.letterDownLine.empty());
+    session.noteInputKey(Key::Space);
+    const DialogueViewState kbView = session.dialogueView();
+    CHECK(kbView.confirmKey == "ENTER");
+    CHECK(kbView.backKey == "ESC");
+    CHECK(kbView.takeKey == "T");
+    CHECK(kbView.letterDownLine == "L PUTS IT DOWN");
+}
+
+TEST_CASE("the opening hint is generated from the bindings and re-words live") {
+    // The S3 verification gap, closed: the hint is openingHintLine() off the
+    // live table now, so the shipped keyboard wording is provably the exact
+    // old literal, and a pad press while it is still up re-words it.
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.openingPage = true;
+    Session session(config);
+    if (session.lastMessage().empty()) {
+        return;  // no authored case in this content dir; nothing to word
+    }
+    CHECK(session.lastMessage() == "TAB YOUR NOTES  < > MORE PAGES  E USE");
+    session.noteInputDevice(InputDevice::Pad);
+    CHECK(session.lastMessage() == "D-PAD UP YOUR NOTES  LB RB MORE PAGES  A USE");
+    session.noteInputKey(Key::A);
+    CHECK(session.lastMessage() == "TAB YOUR NOTES  < > MORE PAGES  E USE");
+}

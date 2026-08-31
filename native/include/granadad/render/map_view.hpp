@@ -488,6 +488,27 @@ struct DistrictMapState {
     /// Right-aligned in the tab row. The clock and the band -- the two facts a
     /// map reader wants permanently on screen.
     std::string readout;
+
+    // --- ship note move 3: the prompts name the device holding them --------
+    //
+    // The nav band's keys in the vocabulary of whichever device last spoke,
+    // assembled by Session off the live binding table (promptLabel and
+    // friends in controls.hpp). THE DEFAULTS ARE THE EXACT LITERALS THIS
+    // PAGE ALWAYS PRINTED, so a hand-built state -- every test written
+    // before these fields existed -- draws byte-identical frames.
+    /// "ARROWS", or "D-PAD" with a pad in hand.
+    std::string navMoveKeys = "ARROWS";
+    /// "TAB", or "LB RB" -- the bumpers are the pad's tab key on this page
+    /// (main.cpp routes PagePrev/PageNext to cycleDistrictMapTab).
+    std::string navTabKeys = "TAB";
+    /// "+ -", or "RT LT" -- the triggers carry the zoom ladder on a pad
+    /// (main.cpp routes Cast/Block to adjustDistrictMapZoom).
+    std::string navZoomKeys = "+ -";
+    /// The key that shuts the page: Action::Map's own half for the device --
+    /// "M", or "SELECT".
+    std::string navCloseKey = "M";
+    /// The commit verb's key: "ENTER", or "A".
+    std::string commitKey = "ENTER";
 };
 
 /// Where every part of the page landed. Exposed because a mouse, a test and the

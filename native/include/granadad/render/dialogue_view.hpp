@@ -227,6 +227,24 @@ struct DialogueViewState {
     /// Empty when the composition is legal; the refusal in short words when it
     /// is not, so the bench says WHY before the priest has to.
     std::string forgeProblem;
+
+    // --- ship note move 3: the prompts name the device holding them --------
+    //
+    // The keys this view prints, in the vocabulary of whichever device last
+    // spoke -- assembled by Session off controls.hpp's prompt lookup. THE
+    // DEFAULTS ARE THE EXACT LITERALS THIS VIEW ALWAYS PRINTED, so a
+    // hand-built state draws byte-identical frames.
+    /// "ENTER", or "A". The haggle's OFFER IT key.
+    std::string confirmKey = "ENTER";
+    /// "ESC", or "B". The haggle's WALK AWAY key and the letter foot's BACK.
+    std::string backKey = "ESC";
+    /// The haggle's take-their-price key: "T", or "RB" (main.cpp routes
+    /// Action::PageNext -- and now the raw T -- to takeAskingPrice).
+    std::string takeKey = "T";
+    /// The letter foot's closing clause. Keyboard: "L PUTS IT DOWN". Empty
+    /// drops the clause -- the pad has no L, and its B BACK already names
+    /// the way out.
+    std::string letterDownLine = "L PUTS IT DOWN";
 };
 
 /// The topic grid, AS IT WAS AUTHORED AND AS IT IS NO LONGER DRAWN.
