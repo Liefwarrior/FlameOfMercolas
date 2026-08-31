@@ -1730,14 +1730,14 @@ TEST_CASE("the on-screen keyboard is reachable by moving alone, and wraps") {
             seen[static_cast<std::size_t>(flow.oskCursor())] = true;
             flow.moveOskCursor(1, 0);
         }
-        // Six rights wrapped back to the column it started in.
+        // A row's worth of rights wrapped back to the column it started in.
         CHECK(flow.oskCursor() % render::CreationFlow::kOskColumns == 0);
         flow.moveOskCursor(0, 1);
     }
     for (bool cell : seen) {
         CHECK(cell);
     }
-    // Five downs wrapped back to the top row.
+    // A column's worth of downs wrapped back to the top row.
     CHECK(flow.oskCursor() == 0);
 }
 
@@ -1762,9 +1762,10 @@ TEST_CASE("somebody typing never sees the on-screen keyboard") {
 }
 
 TEST_CASE("the grid reads across and the fill lands on the glyph the pane names") {
-    // drawOptionList is column-major; the grid is transposed into it so it
-    // reads ACROSS. Both transposes have to be the same expression or the
-    // inverted fill highlights a different letter than the detail pane names.
+    // The keyboard is a CreationListShape::Keys grid, which draws ROW-MAJOR --
+    // so the cursor index IS the grid position and the transpose this case was
+    // written to guard no longer exists. It still earns its keep: it is what
+    // proves the page's cursor and its rows agree, whatever the shape does.
     render::CreationFlow flow = atSheet();
     flow.chooseCustomizeRow();
     flow.openOsk();
@@ -1778,14 +1779,19 @@ TEST_CASE("the grid reads across and the fill lands on the glyph the pane names"
         CHECK(page.rows[static_cast<std::size_t>(page.cursor)].label ==
               render::CreationFlow::oskCells()[static_cast<std::size_t>(display)]);
     }
-    // Reading ACROSS: the first six labels of the first display row are A..F,
-    // which in draw order are entries 0, 5, 10, 15, 20, 25.
+    // Reading ACROSS: the first row of the grid is the first `kOskColumns`
+    // letters of the alphabet, in order, at consecutive indices.
     const render::CreationPage page = flow.page();
-    const std::array<const char*, 6> across = {"A", "B", "C", "D", "E", "F"};
-    for (int col = 0; col < 6; ++col) {
-        CHECK(page.rows[static_cast<std::size_t>(col * render::CreationFlow::kOskRows)].label ==
-              across[static_cast<std::size_t>(col)]);
+    for (int col = 0; col < render::CreationFlow::kOskColumns; ++col) {
+        CHECK(page.rows[static_cast<std::size_t>(col)].label ==
+              std::string(1, static_cast<char>('A' + col)));
     }
+    // ...and the row under it starts where that one stopped.
+    CHECK(page.rows[static_cast<std::size_t>(render::CreationFlow::kOskColumns)].label ==
+          std::string(1, static_cast<char>('A' + render::CreationFlow::kOskColumns)));
+    // The rub-out is the last cell of the last row, which is where a hand
+    // looks for it.
+    CHECK(page.rows.back().label == "<");
 }
 
 TEST_CASE("the on-screen keyboard is clickable, and the click lands where it is drawn") {
@@ -1801,18 +1807,65 @@ TEST_CASE("the on-screen keyboard is clickable, and the click lands where it is 
         INFO("window ", size[0], "x", size[1]);
         const render::CreationLayout layout = render::creationLayout(page, size[0], size[1]);
         REQUIRE(layout.usable);
-        // The grid's first column starts at the pane's own left edge and the
-        // list is drawn COLUMN-MAJOR, so the top-left glyph is entry 0 and the
-        // one below it is entry 1. Probing those two pins both that the page is
-        // clickable at all and that the click is in register with the picture:
-        // a hit-test a row out would answer 1 for the top cell.
-        for (int row = 0; row < render::CreationFlow::kOskRows; ++row) {
-            INFO("row ", row);
+        // The grid took its own shape at this window -- not the option list's.
+        REQUIRE(layout.grid.usable);
+        CHECK(layout.grid.columns == render::CreationFlow::kOskColumns);
+        CHECK(layout.grid.rows == render::CreationFlow::kOskRows);
+        // EVERY cell, not a sample: the grid reads ACROSS, so a hit-test that
+        // still thought it was column-major would answer for a different letter
+        // on all but the first, and one probe of a corner would not catch it.
+        for (int i = 0; i < static_cast<int>(page.rows.size()); ++i) {
+            INFO("cell ", i);
+            const int column = i % layout.grid.columns;
+            const int row = i / layout.grid.columns;
             const render::CreationHit hit = render::creationPageHitTest(
-                page, size[0], size[1], layout.listRect.x + layout.metric.cellW() / 2,
-                layout.listRect.y + layout.metric.heightOf(row) + layout.metric.cellH() / 2);
+                page, size[0], size[1],
+                layout.listRect.x + layout.metric.widthOf(column * layout.grid.strideCells) +
+                    layout.metric.cellW() / 2,
+                layout.listRect.y + layout.metric.heightOf(row * layout.grid.strideRows) +
+                    layout.metric.cellH() / 2);
             CHECK(hit.zone == render::CreationHit::Zone::Row);
-            CHECK(hit.index == row);
+            CHECK(hit.index == i);
         }
+    }
+}
+
+TEST_CASE("the keyboard is a block, not a spread list, at every window size") {
+    // THE DEFECT THIS PINS. The grid used to be a Columns list capped at six,
+    // which inherited planOptionList's spread rule -- the last column's content
+    // ends at the pane's right edge -- so at 640x360 six one-glyph keys came
+    // out on a TEN-cell stride and the alphabet read as sparse vertical
+    // strings. A key grid's advance is the cap plus a gap and nothing else.
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();
+    flow.openOsk();
+    const render::CreationPage page = flow.page();
+    constexpr int kFrames[][2] = {{320, 180}, {640, 360}, {960, 540}, {1280, 720}, {1920, 1080}};
+    for (const auto& size : kFrames) {
+        INFO("window ", size[0], "x", size[1]);
+        const render::CreationLayout layout = render::creationLayout(page, size[0], size[1]);
+        REQUIRE(layout.usable);
+        REQUIRE(layout.grid.usable);
+        // A key is one glyph, and the next one starts ONE OR TWO cells past
+        // it -- never ten, which is what the spread rule made it at 640x360.
+        CHECK(layout.grid.capCells == 1);
+        CHECK(layout.grid.strideCells >= 1);
+        CHECK(layout.grid.strideCells <= 2);
+        // The whole block fits the pane it was planned against, and does not
+        // reach for the far edge of it.
+        const int blockCells = layout.grid.columns * layout.grid.strideCells -
+                               (layout.grid.strideCells - layout.grid.capCells);
+        CHECK(blockCells <= layout.metric.cellsIn(layout.listRect.w));
+        // Every cell of the grid is drawn, in the shape the cursor walks.
+        CHECK(layout.grid.columns == render::CreationFlow::kOskColumns);
+        CHECK(layout.grid.columns * layout.grid.rows >=
+              static_cast<int>(render::CreationFlow::oskCells().size()));
+        // 320x180 IS THE ONE THAT PAYS. splitMasterDetail floors the master
+        // pane at eighteen cells, and ten keys with a gap between each want
+        // nineteen -- so the smallest window the game runs at spends the gap
+        // and sets the alphabet shoulder to shoulder. That is the honest
+        // answer there: the alternative is drawing fewer columns than the
+        // cursor walks, and then the fill names the wrong letter.
+        CHECK(layout.grid.strideCells == (size[1] <= 180 ? 1 : 2));
     }
 }

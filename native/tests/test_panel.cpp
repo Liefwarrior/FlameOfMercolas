@@ -192,6 +192,101 @@ TEST_CASE("a frame draws its border and leaves an interior a caller can trust") 
     CHECK(panel.band(0, 3).h == metric.heightOf(3));
 }
 
+TEST_CASE("a key grid is a block at a constant advance, and never a spread list") {
+    // The defect, stated as a number: an option list SPREADS its columns so
+    // the last one ends at the pane's right edge, which turned thirty
+    // one-glyph keys into six sparse vertical strings on a ten-cell stride.
+    // A grid spends the pane on the keys and stops.
+    const PanelMetric metric{1};
+    std::vector<std::string> letters;
+    for (char c = 'A'; c <= 'Z'; ++c) {
+        letters.emplace_back(1, c);
+    }
+    letters.insert(letters.end(), {"-", "'", "_", "<"});
+    const std::vector<PanelOption> keys = namedOptions(letters);
+    KeyGridStyle style;
+    style.columns = 10;
+
+    // A WIDE pane does not stretch the block: the stride is the cap plus one,
+    // and on a grid of single glyphs that is TWO cells however wide the pane
+    // is. Nineteen of ninety cells, and the block ends there.
+    const PanelRect wide{0, 0, metric.widthOf(90), metric.heightOf(8)};
+    const KeyGridPlan roomy = planKeyGrid(keys, wide, metric, style);
+    CHECK(roomy.usable);
+    CHECK(roomy.columns == 10);
+    CHECK(roomy.rows == 3);
+    CHECK(roomy.capCells == 1);
+    CHECK(roomy.strideCells == 2);
+    CHECK(roomy.columns * roomy.capCells + (roomy.columns - 1) == 19);
+
+    // Padding is what a caller with word-length keys spends width on, and it
+    // is what makes the advance grow -- which is why the keyboard leaves it at
+    // zero. See KeyGridStyle::padCells.
+    KeyGridStyle padded = style;
+    padded.padCells = 1;
+    CHECK(planKeyGrid(keys, wide, metric, padded).capCells == 3);
+    CHECK(planKeyGrid(keys, wide, metric, padded).strideCells == 4);
+
+    // The SAME list through the option list, at the same pane, is the thing
+    // this replaces: its stride runs to the far edge.
+    OptionListStyle spread;
+    spread.showKeys = false;
+    spread.maxColumns = 10;
+    CHECK(planOptionList(keys, wide, metric, spread).stride > roomy.strideCells);
+
+    // A NARROW pane keeps the column count -- the caller's cursor walks a
+    // fixed rectangle -- and pays for it out of the padding instead of
+    // dropping to fewer columns the way an option list would.
+    const PanelRect narrow{0, 0, metric.widthOf(19), metric.heightOf(8)};
+    const KeyGridPlan tight = planKeyGrid(keys, narrow, metric, padded);
+    CHECK(tight.usable);
+    CHECK(tight.columns == 10);
+    CHECK(tight.capCells == 1);
+    CHECK(tight.strideCells == 2);
+
+    // Narrower than the keys THEMSELVES -- gap and padding both gone -- and it
+    // says so rather than drawing a grid of the wrong shape. Ten columns need
+    // ten cells and this pane has nine.
+    const PanelRect impossible{0, 0, metric.widthOf(9), metric.heightOf(8)};
+    CHECK_FALSE(planKeyGrid(keys, impossible, metric, style).usable);
+    // At exactly ten it keeps all ten columns and pays with the gap, because
+    // fewer columns than the cursor walks is the one thing it may not do.
+    const PanelRect exact{0, 0, metric.widthOf(10), metric.heightOf(8)};
+    const KeyGridPlan squeezed = planKeyGrid(keys, exact, metric, style);
+    CHECK(squeezed.usable);
+    CHECK(squeezed.columns == 10);
+    CHECK(squeezed.strideCells == 1);
+    // ...and so does a pane too short for the rows.
+    const PanelRect flat{0, 0, metric.widthOf(90), metric.heightOf(2)};
+    CHECK_FALSE(planKeyGrid(keys, flat, metric, style).usable);
+}
+
+TEST_CASE("a key grid's hit-test is the inverse of its drawing, cell for cell") {
+    const PanelMetric metric{2};
+    std::vector<std::string> letters;
+    for (char c = 'A'; c <= 'Z'; ++c) {
+        letters.emplace_back(1, c);
+    }
+    const std::vector<PanelOption> keys = namedOptions(letters);
+    KeyGridStyle style;
+    style.columns = 7;
+    const PanelRect pane{11, 23, metric.widthOf(40), metric.heightOf(8)};
+    const KeyGridPlan plan = planKeyGrid(keys, pane, metric, style);
+    REQUIRE(plan.usable);
+    const int count = static_cast<int>(keys.size());
+    for (int i = 0; i < count; ++i) {
+        INFO("key ", i);
+        const int x = pane.x + metric.widthOf((i % plan.columns) * plan.strideCells) +
+                      metric.cellW() / 2;
+        const int y = pane.y + metric.heightOf((i / plan.columns) * plan.strideRows) +
+                      metric.cellH() / 2;
+        CHECK(keyGridAt(pane, metric, plan, count, x, y) == i);
+    }
+    // Outside the block is nobody, not the nearest key.
+    CHECK(keyGridAt(pane, metric, plan, count, pane.x - 4, pane.y + 2) == -1);
+    CHECK(keyGridAt(pane, metric, plan, count, pane.x + 2, pane.bottom() + 4) == -1);
+}
+
 TEST_CASE("an option list picks its column count from the content, not from a setting") {
     const PanelMetric metric{2};
     OptionListStyle style;

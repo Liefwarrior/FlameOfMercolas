@@ -72,6 +72,12 @@ inline constexpr int kMinMasterCells = 18;
     return style;
 }
 
+[[nodiscard]] KeyGridStyle gridStyle(const CreationPage& page) {
+    KeyGridStyle style;
+    style.columns = std::max(1, page.maxColumns);
+    return style;
+}
+
 [[nodiscard]] OptionBlockStyle blockStyle() {
     OptionBlockStyle style;
     style.gapRows = 1;
@@ -96,6 +102,14 @@ inline constexpr int kMinMasterCells = 18;
             }
         }
         return used;
+    }
+    if (page.shape == CreationListShape::Keys) {
+        const KeyGridPlan grid = planKeyGrid(options, master, metric, gridStyle(page));
+        if (grid.usable) {
+            return (grid.rows - 1) * grid.strideRows + 1;
+        }
+        // The grid could not take the pane's shape, so the fallback is the one
+        // that gets drawn and the one that gets measured. See drawCreationPage.
     }
     return planOptionList(options, master, metric, columnStyle(page)).rows;
 }
@@ -231,6 +245,13 @@ inline constexpr int kMinBodyRows = 6;
     }
     out.listRect = out.body.master;
     out.detailRect = out.body.split ? out.body.detail : PanelRect{};
+    if (page.shape == CreationListShape::Keys && !page.rows.empty()) {
+        // PLANNED ONCE, HERE. The drawing and the hit-test both read this
+        // field rather than each calling planKeyGrid themselves, which is the
+        // same reason CreationLayout exists at all: two descriptions of one
+        // layout is a thing that can drift.
+        out.grid = planKeyGrid(listOptions(page), out.listRect, out.metric, gridStyle(page));
+    }
     out.usable = out.bodyRows > 0;
     return out;
 }
@@ -353,7 +374,11 @@ void drawCreationPage(Framebuffer& target, const CreationPage& page) {
         // planner the draw call walks -- not a second description of it. (The
         // S4 lesson, and the reason both shapes have a plan* twin at all.)
         int usedRows = 0;
-        if (page.shape == CreationListShape::Blocks) {
+        const KeyGridPlan& grid = layout.grid;
+        if (grid.usable) {
+            usedRows = (grid.rows - 1) * grid.strideRows + 1;
+            drawKeyGrid(target, layout.listRect, metric, options, page.cursor, grid, alpha);
+        } else if (page.shape == CreationListShape::Blocks) {
             for (const OptionBlock& block : planOptionBlocks(options, layout.listRect, metric,
                                                              blockStyle())) {
                 if (block.rows > 0) {
@@ -463,7 +488,10 @@ CreationHit creationPageHitTest(const CreationPage& page, int frameWidth, int fr
     const std::vector<PanelOption> options = listOptions(page);
     if (!options.empty()) {
         int index = -1;
-        if (page.shape == CreationListShape::Blocks) {
+        if (layout.grid.usable) {
+            index = keyGridAt(layout.listRect, layout.metric, layout.grid,
+                              static_cast<int>(options.size()), px, py);
+        } else if (page.shape == CreationListShape::Blocks) {
             index = optionBlockAt(planOptionBlocks(options, layout.listRect, layout.metric,
                                                    blockStyle()),
                                   px, py);

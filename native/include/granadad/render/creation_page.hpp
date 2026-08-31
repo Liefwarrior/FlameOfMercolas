@@ -84,6 +84,12 @@ enum class CreationListShape : std::uint8_t {
     /// block. The quiz and the biography, whose answers run past a hundred
     /// glyphs and cannot be a column of names without becoming unreadable.
     Blocks,
+    /// Rows are KEYS. A tight character grid at a constant advance, read
+    /// ACROSS -- the on-screen keyboard, and nothing else so far. Same grammar
+    /// again: framed pane, header, inverted-fill selection, commit verb at the
+    /// foot. What differs is one layout rule, and panel.hpp's KeyGridStyle
+    /// header says why a keyboard cannot borrow the list's spread.
+    Keys,
 };
 
 /// Everything one creation step puts on screen. Built by CreationFlow::page().
@@ -116,6 +122,10 @@ struct CreationPage {
     int masterShare = 50;
     /// A ceiling on the column count for a Columns list. The actual count comes
     /// from the content against the window, as it must.
+    ///
+    /// For a Keys grid it is EXACT rather than a ceiling -- the cursor walks a
+    /// fixed rectangle, so the drawn grid has to be the shape that cursor
+    /// believes in. See KeyGridStyle.
     int maxColumns = 2;
     /// THE BODY BAND'S FLOOR, IN GRID ROWS, AND THE REASON THE FRAME CAN SIZE
     /// TO ITS CONTENT WITHOUT TWITCHING.
@@ -179,6 +189,11 @@ struct CreationLayout {
     /// answer at a small window, rather than two panes too thin to read.
     PanelRect listRect;
     PanelRect detailRect;
+    /// The key grid, for a Keys page and nothing else -- `usable` false on
+    /// every other shape, and on a Keys page whose pane could not take the
+    /// grid's shape (the drawing and the hit-test both fall back to the column
+    /// list on that one, together, because they read this same field).
+    KeyGridPlan grid;
     int tabRow = 0;
     int headerRow = 0;
     int bodyRow = 0;

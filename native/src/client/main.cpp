@@ -2519,14 +2519,10 @@ bool creation_pointer(render::CreationFlow& flow, int frameWidth, int frameHeigh
             // there is exactly one live row on this screen and every device
             // agrees which one it is.
             if (flow.oskOpen()) {
-                // The grid's rows come out of pageForOsk() transposed into
-                // draw order, so the hit-test answers in draw order too and the
-                // inverse transpose puts it back on the cursor's own axes. One
-                // expression, written once each way, three lines apart.
-                const int drawIndex = hit.index;
-                flow.setOskCursor((drawIndex % render::CreationFlow::kOskRows) *
-                                      render::CreationFlow::kOskColumns +
-                                  drawIndex / render::CreationFlow::kOskRows);
+                // The grid reads ACROSS and is now DRAWN across, so the
+                // hit-test answers in the cursor's own order and the transpose
+                // that used to live here is gone. See CreationFlow::oskCells().
+                flow.setOskCursor(hit.index);
                 if (click) {
                     flow.commitOsk();
                 }

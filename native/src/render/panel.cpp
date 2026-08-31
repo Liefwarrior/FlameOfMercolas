@@ -945,6 +945,120 @@ int optionListAt(const PanelRect& rect, const PanelMetric& metric, const OptionL
 }
 
 // ---------------------------------------------------------------------------
+// the key grid
+// ---------------------------------------------------------------------------
+
+KeyGridPlan planKeyGrid(const std::vector<PanelOption>& keys, const PanelRect& rect,
+                        const PanelMetric& metric, const KeyGridStyle& style) {
+    KeyGridPlan plan;
+    const int count = static_cast<int>(keys.size());
+    const int cells = metric.cellsIn(rect.w);
+    const int rowsAvailable = metric.rowsIn(rect.h);
+    if (count <= 0 || cells <= 0 || rowsAvailable <= 0) {
+        return plan;
+    }
+    // THE CAP IS SIZED FOR THE WIDEST KEY, so every advance is equal even when
+    // one cell of the grid is `<` and another is a two-glyph label.
+    int glyph = 1;
+    for (const PanelOption& key : keys) {
+        glyph = std::max(glyph, cellsOf(shout(key.label)));
+    }
+    plan.columns = std::clamp(style.columns, 1, count);
+    plan.rows = (count + plan.columns - 1) / plan.columns;
+    plan.strideRows = 1 + std::max(0, style.rowGapRows);
+
+    // THE ADVANCE IS THE WIDEST THE PANE CAN AFFORD, and this is the whole
+    // difference from planOptionList: the block is not stretched to the pane,
+    // the pane is spent on the block until it runs out.
+    //
+    // WHAT GETS SQUEEZED, IN ORDER. Padding first -- a key with no air inside
+    // it is still a key. Then the gap, down to nothing, because the alternative
+    // at a very small window is to draw FEWER COLUMNS than the caller's cursor
+    // walks, and a grid whose shape disagrees with the cursor puts the fill on
+    // a different glyph than the pane names. Letters shoulder to shoulder is
+    // what a terminal does when it runs out of room, and only one key is ever
+    // filled, so no two fills touch.
+    int pad = std::max(0, style.padCells);
+    int gap = std::max(0, style.gapCells);
+    const auto widthAt = [&](int p, int g) {
+        return plan.columns * (glyph + 2 * p) + (plan.columns - 1) * g;
+    };
+    while (pad > 0 && widthAt(pad, gap) > cells) {
+        --pad;
+    }
+    while (gap > 0 && widthAt(pad, gap) > cells) {
+        --gap;
+    }
+    plan.padCells = pad;
+    plan.capCells = glyph + 2 * pad;
+    plan.strideCells = plan.capCells + gap;
+    plan.usable = widthAt(pad, gap) <= cells &&
+                  (plan.rows - 1) * plan.strideRows + 1 <= rowsAvailable;
+    return plan;
+}
+
+void drawKeyGrid(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
+                 const std::vector<PanelOption>& keys, int selected, const KeyGridPlan& plan,
+                 float alpha) {
+    if (alpha <= 0.0F || rect.empty() || keys.empty() || !plan.usable) {
+        return;
+    }
+    const int count = static_cast<int>(keys.size());
+    for (int i = 0; i < count; ++i) {
+        // ROW-MAJOR: reading order is draw order. See KeyGridStyle's header.
+        const int row = i / plan.columns;
+        const int column = i % plan.columns;
+        if (row >= plan.rows) {
+            break;
+        }
+        const PanelOption& key = keys[static_cast<std::size_t>(i)];
+        const int cell = column * plan.strideCells;
+        const int gridRow = row * plan.strideRows;
+        const bool picked = i == selected && key.selectable;
+        if (picked) {
+            // SELECTION IS AN INVERTED FILL IN THE ENTITY'S OWN ACCENT, and it
+            // spans the whole cap rather than the one glyph, which is what
+            // makes a pressed key read as a key.
+            drawInvertedFill(target, rect, metric, cell, gridRow, plan.capCells, key.accent,
+                             alpha);
+            drawCellTextKnockout(target, rect, metric, cell + plan.padCells, gridRow, key.label,
+                                 kInk.knockout, alpha);
+        } else {
+            const Rgb glyphInk =
+                key.labelTakesAccent ? key.accent : (key.selectable ? kInk.prose : kInk.dim);
+            drawCellText(target, rect, metric, cell + plan.padCells, gridRow, key.label, glyphInk,
+                         alpha);
+        }
+    }
+}
+
+int keyGridAt(const PanelRect& rect, const PanelMetric& metric, const KeyGridPlan& plan, int count,
+              int px, int py) noexcept {
+    if (rect.empty() || count <= 0 || !plan.usable) {
+        return -1;
+    }
+    // The same walk as the drawing, for the same reason optionListAt is: solved
+    // backwards it would be a second description of the layout.
+    for (int i = 0; i < count; ++i) {
+        const int row = i / plan.columns;
+        const int column = i % plan.columns;
+        if (row >= plan.rows) {
+            break;
+        }
+        const int x0 = rect.x + metric.widthOf(column * plan.strideCells);
+        const int y0 = rect.y + metric.heightOf(row * plan.strideRows);
+        // The click target is the cap PLUS its gap, so the cell between two
+        // keys belongs to the key on its left rather than to nothing -- a
+        // one-cell dead lane between every pair of keys is a mouse that misses.
+        if (px >= x0 && px < x0 + metric.widthOf(plan.strideCells) && py >= y0 &&
+            py < y0 + metric.heightOf(plan.strideRows)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
 // the block list
 // ---------------------------------------------------------------------------
 

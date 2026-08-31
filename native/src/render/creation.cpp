@@ -1694,32 +1694,38 @@ CreationPage CreationFlow::pageForOsk() const {
     out.tabs = stageTabs();
     out.currentTab = 3;
     out.accent = panelInk().accent;
-    out.shape = CreationListShape::Columns;
+    // A KEYBOARD IS A BLOCK, NOT A SPACED LIST. This used to be a Columns list
+    // capped at six, which inherited planOptionList's spread rule and came out
+    // at 640x360 as six one-glyph columns on a ten-cell stride -- five sparse
+    // vertical strings rather than a keyboard. See panel.hpp's KeyGridStyle.
+    out.shape = CreationListShape::Keys;
     out.maxColumns = kOskColumns;
-    // The grid is thirty single glyphs and the detail pane holds a name, two
-    // facts and a verb: the detail is the wider half of this one.
-    out.masterShare = 42;
+    // The block is ten keys wide and the detail pane holds a name, two facts, a
+    // paragraph and a verb: the detail is still the wider half of this one, but
+    // the master no longer needs half the pane to hold thirty letters.
+    out.masterShare = 28;
     // THE GRID IS STATIC UNDER THE CURSOR -- moving does not swap a row for a
-    // taller one -- so five rows is the floor and the floor is the content.
+    // taller one -- so three rows is the floor and the floor is the content.
     out.bodyHoldRows = kOskRows;
     out.crumbs = {"NEW GAME", chosenOrigin().name, "THE NAME"};
     out.instruction = "PICK THE LETTERS ONE AT A TIME. NO KEYBOARD NEEDED.";
     out.readout = std::to_string(name_.size()) + " OF " + std::to_string(kMaxNameLength);
 
-    // DISPLAY ORDER IN, DRAW ORDER OUT. drawOptionList runs column-major (entry
-    // 0 is the top of the first column) which would set the alphabet reading
-    // DOWN; the grid is transposed here so it reads ACROSS, and the cursor
-    // index is transposed with it. Both transposes are the same expression, so
-    // the fill cannot land on a different glyph than the one the pane names.
+    // AND THE TRANSPOSE IS GONE. drawOptionList runs column-major, so putting
+    // an alphabet through it meant reordering the cells on the way in and
+    // reordering the cursor index the same way -- two expressions that had to
+    // stay identical, plus a third, inverse one in main.cpp for the mouse. A
+    // key grid reads ACROSS by construction, so the cursor index IS the grid
+    // position and there is nothing left to keep in step.
     const std::vector<std::string>& cells = oskCells();
-    out.rows.resize(cells.size());
-    for (int display = 0; display < static_cast<int>(cells.size()); ++display) {
-        const int drawIndex = (display % kOskColumns) * kOskRows + (display / kOskColumns);
-        CreationPageRow& row = out.rows[static_cast<std::size_t>(drawIndex)];
-        row.label = cells[static_cast<std::size_t>(display)];
+    out.rows.reserve(cells.size());
+    for (const std::string& cell : cells) {
+        CreationPageRow row;
+        row.label = cell;
         row.accent = out.accent;
+        out.rows.push_back(std::move(row));
     }
-    out.cursor = (oskCursor_ % kOskColumns) * kOskRows + (oskCursor_ / kOskColumns);
+    out.cursor = oskCursor_;
 
     const std::string& under = cells[static_cast<std::size_t>(
         std::clamp(oskCursor_, 0, static_cast<int>(cells.size()) - 1))];

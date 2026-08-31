@@ -609,6 +609,100 @@ void drawOptionListPlanned(Framebuffer& target, const PanelRect& rect, const Pan
                                const OptionListPlan& plan, int count, int px, int py) noexcept;
 
 // ---------------------------------------------------------------------------
+// the KEY GRID -- a block of single-glyph keys, laid out like a keyboard
+// ---------------------------------------------------------------------------
+
+/// WHY THIS EXISTS, in one line: a keyboard is a BLOCK and drawOptionList lays
+/// out a LIST.
+///
+/// The on-screen keyboard shipped as a thirty-row option list capped at six
+/// columns, and inherited planOptionList's spread rule -- the one that makes
+/// the last column of a wide pane end at its right edge so the gutters come out
+/// even. That rule is right for four callings and wrong for thirty letters: at
+/// 640x360 the six columns came out at a ten-cell stride carrying one glyph
+/// each, so the alphabet read as five sparse vertical strings with 63.6% of the
+/// frame dead beneath it. It looked like a list that happened to contain
+/// letters.
+///
+/// So the grid gets its own rule and the list keeps its own. The difference is
+/// one line of arithmetic and it is the whole point: THE ADVANCE IS THE WIDEST
+/// A KEY CAN AFFORD, NOT THE PANE DIVIDED BY THE COLUMNS. Keys sit a cell
+/// apart, every advance is equal, and the block ends where its last key ends
+/// instead of being stretched to the margin.
+///
+/// EVERYTHING ELSE IS THE REGISTER IT ALWAYS WAS: the block sits in a framed,
+/// headed pane, the selection is an inverted fill in the entity's accent (never
+/// an arrow), and the commit verb is at the foot of the detail pane restating
+/// its cost. This is a layout rule, not a second grammar.
+///
+/// READING ORDER IS THE DRAW ORDER. Unlike drawOptionList -- which runs
+/// column-major so a numbered list's hotkeys read down a column -- a grid of
+/// letters has no numbers and must read ACROSS. Entry 0 is the top left and
+/// entry `columns` is the start of the second row, so a caller's cursor index
+/// IS the grid position and there is no transpose to keep in step.
+struct KeyGridStyle {
+    /// EXACT, not a ceiling. The caller's cursor walks a fixed rectangle
+    /// (left/right wraps a row, up/down wraps a column) so the drawn grid must
+    /// have the shape that cursor believes in, or the fill lands on a different
+    /// glyph than the pane names.
+    int columns = 10;
+    /// Cells of air inside a key's cap, each side, when the pane can afford it
+    /// -- a cap wider than its glyph reads as a key TOP rather than as one
+    /// highlighted character.
+    ///
+    /// ZERO, AND THAT WAS MEASURED. On a one-glyph grid every cell of padding
+    /// also doubles the horizontal advance, and pulling the alphabet apart is
+    /// the exact defect this whole struct exists to end: at 640x360 a padded
+    /// cap puts the columns twenty pixels apart against seven-pixel rows, and
+    /// the block goes back to reading as ten vertical strings. Frames of both,
+    /// at the default render size, said so. So the fill hugs its glyph -- the
+    /// same rule drawOptionList's own fill already keeps -- and a caller whose
+    /// keys are words rather than letters can afford to raise it.
+    int padCells = 0;
+    /// Cells between one cap and the next. Squeezed to nothing before the
+    /// column count is ever touched -- see planKeyGrid.
+    int gapCells = 1;
+    /// Blank rows between key rows. Zero: a keyboard's rows are adjacent, and
+    /// the caps' own vertical padding is the row of drop shadow under the font.
+    int rowGapRows = 0;
+};
+
+/// What drawKeyGrid worked out, without drawing anything.
+struct KeyGridPlan {
+    int columns = 0;
+    int rows = 0;
+    /// One key's fill width in cells -- glyph plus whatever padding the pane
+    /// could afford. This is what the inverted fill spans.
+    int capCells = 0;
+    /// Cells from one key's left edge to the next one's, and it is CONSTANT.
+    int strideCells = 0;
+    /// Rows from one key row's top to the next one's.
+    int strideRows = 1;
+    /// Where the glyph sits inside its cap.
+    int padCells = 0;
+    /// False when the pane cannot hold `columns` keys even with the padding
+    /// squeezed out, or cannot hold the rows. The caller falls back rather than
+    /// drawing a grid of the wrong shape.
+    bool usable = false;
+};
+
+/// PURE. Same contract as planOptionList: no framebuffer, so a case can pin the
+/// block's shape at 320x180 and at 1920x1080 without rendering a pixel.
+[[nodiscard]] KeyGridPlan planKeyGrid(const std::vector<PanelOption>& keys, const PanelRect& rect,
+                                      const PanelMetric& metric, const KeyGridStyle& style);
+
+/// `selected` is an index into `keys`, in reading order. Out of range selects
+/// nothing.
+void drawKeyGrid(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric,
+                 const std::vector<PanelOption>& keys, int selected, const KeyGridPlan& plan,
+                 float alpha);
+
+/// Which key a pixel lands on, or -1. The inverse of drawKeyGrid, written as
+/// the same walk for the same reason optionListAt is.
+[[nodiscard]] int keyGridAt(const PanelRect& rect, const PanelMetric& metric,
+                            const KeyGridPlan& plan, int count, int px, int py) noexcept;
+
+// ---------------------------------------------------------------------------
 // the BLOCK list -- a numbered list whose entries are sentences
 // ---------------------------------------------------------------------------
 

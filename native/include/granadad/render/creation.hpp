@@ -363,11 +363,16 @@ public:
     /// `_` prints for a space and `<` for a backspace, because every cell is
     /// one glyph wide and that is what keeps the grid a grid.
     ///
-    /// The cursor walks THIS order. pageForOsk() reorders into the column-major
-    /// order drawOptionList lays a list out in, so the grid reads across while
-    /// the vocabulary underneath is untouched.
-    static constexpr int kOskColumns = 6;
-    static constexpr int kOskRows = 5;
+    /// The cursor walks THIS order and so does the drawing: pageForOsk() builds
+    /// a CreationListShape::Keys grid, which reads across by construction, so
+    /// there is no transpose between the two any more.
+    ///
+    /// TEN BY THREE, NOT SIX BY FIVE. Thirty cells divide either way; ten
+    /// across is the shape of a keyboard's own rows and it is what makes the
+    /// block read as one. It also puts the rub-out at the bottom right, which
+    /// is where a hand already looks for it.
+    static constexpr int kOskColumns = 10;
+    static constexpr int kOskRows = 3;
     [[nodiscard]] static const std::vector<std::string>& oskCells();
     [[nodiscard]] int oskCursor() const noexcept { return oskCursor_; }
     void setOskCursor(int index) noexcept;
