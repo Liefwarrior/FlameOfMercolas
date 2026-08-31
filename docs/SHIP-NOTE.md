@@ -440,7 +440,7 @@ page, plus the Menu at 320x180 and the page at 1920x1080.
   proof the street HUD and the ruler did not move.
   `creation-origin.png` **dropped for the tenth run in a row**.
 
-## The three things I would do next, in order
+## The last note's three moves, all three closed
 
 1. ~~**Centre the composed panel in the frame.**~~ **DONE** — `24fa403`, seated
    45/55 rather than the 97/97 this line guessed at, because 50/50 reads low.
@@ -453,7 +453,7 @@ page, plus the Menu at 320x180 and the page at 1920x1080.
    blank under their single lead. One sentence each, and each one gone the
    moment it would be a lie.
 
-## The three things I would do next, in order (after the empty-state pass)
+## The three things I would do next, in order
 
 1. **Give the CHARACTER tile the same treatment for the opposite reason.** It
    is not empty — it has twenty-odd rows — but `topicRowsFor` caps a tile at
