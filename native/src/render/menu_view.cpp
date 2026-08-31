@@ -1,338 +1,441 @@
 #include "granadad/render/menu_view.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "granadad/render/hud.hpp"
 #include "granadad/render/panel.hpp"
 
 namespace granadad::render {
 
 namespace {
 
-// SAME PALETTE dialogue_view.cpp DRAWS THE OTHER SEVEN PAGES WITH. A player
-// who has already read a conversation, the casebook or the keys page should
-// not have to learn a second colour language for this one.
-constexpr Rgb kPanel{0.04F, 0.04F, 0.05F};
-constexpr Rgb kEdge{0.44F, 0.40F, 0.31F};
-constexpr Rgb kHeaderInk{0.94F, 0.88F, 0.70F};
-constexpr Rgb kEpithetInk{0.60F, 0.58F, 0.50F};
-constexpr Rgb kBodyInk{0.88F, 0.86F, 0.80F};
-constexpr Rgb kTopicInk{0.66F, 0.68F, 0.66F};
-constexpr Rgb kTopicPicked{0.98F, 0.86F, 0.42F};
-constexpr Rgb kCaseRefInk{0.58F, 0.56F, 0.48F};
+/// THE LETTERS TILE'S OWN ACCENT -- the "parchment-style panel" out of this
+/// engine's pixel-ink vocabulary (DialogueViewState::letter's own header), the
+/// identical value the old drawing used for an open letter's body. The tile's
+/// badge and its selection fill take it too, because the reference fills a row
+/// in the ENTITY'S own accent and this tile's entity is paper.
 constexpr Rgb kParchmentInk{0.86F, 0.74F, 0.52F};
 
-struct Rect {
-    int x = 0;
-    int y = 0;
-    int w = 0;
-    int h = 0;
-};
+/// A warning routed into the Journal tile (Session's own choice of landing
+/// site -- see the drawMenuTiles call site) outranks the tile's epithet for
+/// its row. The same orange casebook_page.cpp already prints an alert in, so
+/// a bouncer sounds like one bouncer on both surfaces.
+constexpr Rgb kAlertInk{0.90F, 0.52F, 0.30F};
 
-/// The panel's own frame: a near-opaque fill, a hairline edge, and -- for the
-/// tile that currently has (or is easing toward/away from) input focus -- a
-/// brighter, thicker border in the SAME accent colour drawPickHighlight
-/// already means "this one is selected" with everywhere else in this widget
-/// family. That reuse is deliberate: a player who has read one page of this
-/// game already knows what that colour means before they ever see four boxes
-/// at once.
+/// The rect covering content rows [first, first + count) of a pane -- the
+/// same arithmetic PanelFrame::band does for the frame's own interior,
+/// re-done here because a tile pane is a slice of that interior with its own
+/// row 0.
+[[nodiscard]] PanelRect rowBand(const PanelRect& pane, const PanelMetric& metric, int first,
+                                int count) {
+    const int rows = metric.rowsIn(pane.h);
+    const int start = std::clamp(first, 0, rows);
+    const int end = std::clamp(first + count, start, rows);
+    return PanelRect{pane.x, pane.y + metric.heightOf(start), pane.w,
+                     metric.heightOf(end - start)};
+}
+
+/// The Journal tile's prose: the entry (or the hook, or the ward's nerve) as
+/// up to two wrapped rows with the cut MARKED -- the convention this file has
+/// always kept, "a label that stops in the middle of a word reads as a
+/// rendering bug" -- and then the dateline/cross-reference as a single
+/// `•` bulleted row, clipped out loud by clipLabel. The bullet is the
+/// reference's own hierarchy: the sentence is flavour, the dateline is the
+/// mechanical record under it.
 ///
-/// INNOVATION SPRINT ITEM #2. `focusAmount` (0 unfocused .. 1 focused) used
-/// to be a bare bool, and border colour and thickness both switched on the
-/// exact step focus moved -- a hard cut every time PageNext/PagePrev stepped
-/// to a new tile. Both are interpolated off the SAME continuous amount now
-/// (Session eases it with a short render::EasedToggle -- see MenuTileState's
-/// own header on why it is snappy rather than leisurely), so a tile's border
-/// visibly grows in and brightens as focus arrives and does the reverse as it
-/// leaves, instead of the old on/off swap. `focusAmount` at exactly 0 or 1 --
-/// what a hand-built MenuTileState already means and what a settled frame
-/// always reaches -- draws bit-for-bit the same border the old bool gave.
-void drawPanelFrame(Framebuffer& target, const Rect& r, float focusAmount, int edgeScale,
-                    float fade) {
-    target.fillRect(r.x, r.y, r.w, r.h, kPanel, 0.88F * fade);
-    const float amount = std::clamp(focusAmount, 0.0F, 1.0F);
-    const Rgb edgeColour = lerp(kEdge, kTopicPicked, amount);
-    const float edgeAlpha = (0.55F + 0.40F * amount) * fade;
-    // Unfocused is edgeScale, focused is 2*edgeScale -- the exact two values
-    // the old bool switch drew, now the two ends of a lerp instead of a jump.
-    const int thickness =
-        std::max(edgeScale, static_cast<int>(std::round(static_cast<float>(edgeScale) *
-                                                        (1.0F + amount))));
-    target.fillRect(r.x, r.y, r.w, thickness, edgeColour, edgeAlpha);
-    target.fillRect(r.x, r.y + r.h - thickness, r.w, thickness, edgeColour, edgeAlpha);
-    target.fillRect(r.x, r.y, thickness, r.h, edgeColour, edgeAlpha);
-    target.fillRect(r.x + r.w - thickness, r.y, thickness, r.h, edgeColour, edgeAlpha);
-}
-
-/// The title (hudScale -- this game's own chunky 90s register, which Eli
-/// explicitly said to keep) and, under it, the epithet (hudMinorScale --
-/// "reference material read deliberately"). Returns the y a caller should
-/// start drawing the body at.
-int drawPanelHeader(Framebuffer& target, const Rect& r, int margin, const DialogueViewState& view,
-                    int headerScale, int bodyScale, float fade) {
-    int y = r.y + margin;
-    const int roomPx = r.w - 2 * margin;
-    drawText(target, r.x + margin, y, clipToWidth(view.speaker, roomPx, headerScale), kHeaderInk,
-             0.98F * fade, headerScale);
-    y += (6 + 1) * headerScale;
-    if (!view.epithet.empty()) {
-        drawText(target, r.x + margin, y, clipToWidth(view.epithet, roomPx, bodyScale), kEpithetInk,
-                 0.85F * fade, bodyScale);
-        y += (6 + 1) * bodyScale;
-    }
-    return y;
-}
-
-/// Up to `maxLines` wrapped lines of prose, the same word-boundary wrap the
-/// rest of this widget family already uses (dialogue_view.hpp's wrapText),
-/// with the last line marked "..." when there was more than fit -- the exact
-/// convention DialogueViewState::speechRevealChars uses for a cut mid-reveal,
-/// reused here for a cut that will never un-cut.
-int drawWrappedProse(Framebuffer& target, const Rect& r, int margin, int y,
-                     const std::string& text, int bodyScale, int maxLines, const Rgb& ink,
-                     float fade) {
-    if (text.empty()) {
-        return y;
-    }
-    const int roomPx = r.w - 2 * margin;
-    const std::size_t columns = static_cast<std::size_t>(std::max(4, roomPx / (5 * bodyScale)));
-    std::vector<std::string> lines = wrapText(text, columns);
-    const int step = (6 + 1) * bodyScale;
-    for (int i = 0; i < static_cast<int>(lines.size()) && i < maxLines; ++i) {
-        std::string line = lines[static_cast<std::size_t>(i)];
-        if (i == maxLines - 1 && static_cast<int>(lines.size()) > maxLines) {
-            // Marks the cut rather than silently dropping the rest -- the
-            // same rule clipLabel() and the speech reveal both already keep.
-            while (line.size() + 3 > columns && !line.empty()) {
-                line.pop_back();
+/// Returns the row after the last one drawn.
+[[nodiscard]] int drawJournalProse(Framebuffer& target, const PanelRect& pane,
+                                   const PanelMetric& metric, const DialogueViewState& view,
+                                   int row, const Rgb& accent, float fade) {
+    const PanelInk& ink = panelInk();
+    const int paneRows = metric.rowsIn(pane.h);
+    const std::size_t cols = static_cast<std::size_t>(std::max(4, metric.cellsIn(pane.w)));
+    if (!view.line.empty()) {
+        const std::vector<std::string> lines = wrapText(view.line, cols);
+        constexpr int kLineRows = 2;
+        for (int i = 0; i < static_cast<int>(lines.size()) && i < kLineRows && row < paneRows;
+             ++i) {
+            std::string text = lines[static_cast<std::size_t>(i)];
+            if (i == kLineRows - 1 && static_cast<int>(lines.size()) > kLineRows) {
+                // Marks the cut rather than silently dropping the rest -- the
+                // same rule clipLabel() and the speech reveal both keep.
+                while (!text.empty() && text.size() + 3 > cols) {
+                    text.pop_back();
+                }
+                text += "...";
             }
-            line += "...";
+            drawCellText(target, pane, metric, 0, row, text, ink.prose, 0.92F * fade);
+            ++row;
         }
-        drawText(target, r.x + margin, y, line, ink, 0.90F * fade, bodyScale);
-        y += step;
     }
-    return y;
+    if (!view.caseRef.empty() && row < paneRows) {
+        drawMotif(target, pane.x, pane.y + metric.heightOf(row), Motif::Dot, accent, 0.90F * fade,
+                  metric.scale);
+        drawCellText(target, pane, metric, 2, row,
+                     clipLabel(view.caseRef,
+                               static_cast<std::size_t>(std::max(1, metric.cellsIn(pane.w) - 2))),
+                     ink.dim, 0.85F * fade);
+        ++row;
+    }
+    return row;
 }
 
-/// The single-column row list every tile but an open Letters document draws:
-/// numbered, clipped to the panel's own width (WIDER per row than the old
-/// three-column grid ever gave a label, because a tile is one column instead
-/// of three -- see menu_view.hpp's own density note), with the focused
-/// tile's cursor row picked out by drawPickHighlight, the identical shape
-/// dialogue_view.cpp already uses for "this one is selected".
+/// An open letter's wrapped, paged body -- a DOCUMENT in somebody else's hand,
+/// parchment-toned, paged by the rows THIS pane actually holds at THIS window
+/// size (Session has no window to wrap against; see
+/// DialogueViewState::letterLines). `view.page` is clamped into the range the
+/// wrap produces, which is why Session may increment it blind.
 ///
-/// Returns the y the row after the last drawn one would have started at, so
-/// the caller can word whatever room the list did not want -- see
-/// DialogueViewState::emptyLine.
-int drawPanelRows(Framebuffer& target, const Rect& r, int margin, int bodyTop,
-                  const DialogueViewState& view, int bodyScale, bool focused, float fade) {
-    const int rowStep = (6 + 1) * bodyScale;
-    const int glyphAdvance = 5 * bodyScale;
-    const int bottom = r.y + r.h - margin;
-    const int capacity = std::max(0, (bottom - bodyTop) / rowStep);
-    if (capacity <= 0) {
-        return bodyTop;
-    }
-    const std::vector<TopicRow> rows =
-        topicRowsFor(view.topics, view.page, view.cursor,
-                     std::min(capacity, kTopicPageSize + 1));
-    const std::size_t room =
-        static_cast<std::size_t>(std::max(1, (r.w - 2 * margin) / glyphAdvance - 2));
-    int y = bodyTop;
-    for (const TopicRow& row : rows) {
-        const std::string label = clipLabel(row.label, room);
-        const int x = r.x + margin + glyphAdvance;
-        if (row.picked) {
-            // THE FILL IS THE AFFORDANCE -- and this was the last surface in
-            // the build that had not been told. UI-REFERENCE-TERMINAL.md
-            // forbids the arrow BY NAME ("Selection is an inverted highlight
-            // ... Not an arrow, not a bracket. The fill is the affordance"),
-            // the conversation panel was converted a pass ago and
-            // drawPickHighlight's own header has said since then that these
-            // four tiled panels are "the next surface to convert". They are
-            // converted here: a solid band in the accent with the label knocked
-            // out of it, which is the identical shape drawOptionList draws for
-            // every other list in the game.
-            //
-            // AN UNFOCUSED TILE STILL SHOWS WHERE ITS CURSOR SAT -- Morrowind's
-            // own four panes hold their place while unfocused -- so the fill
-            // dims rather than disappearing. State moves the whole row
-            // together; nothing is greyed out and nothing is dropped.
-            const int fillX = x - glyphAdvance / 2;
-            const int fillW = std::max(
-                glyphAdvance, std::min(static_cast<int>(room + 2) * glyphAdvance,
-                                       textWidth(label, bodyScale) + 2 * glyphAdvance));
-            target.fillRect(fillX, y - bodyScale, fillW, rowStep, kTopicPicked,
-                            (focused ? 0.92F : 0.20F) * fade);
-            drawText(target, x + glyphAdvance / 2, y, label,
-                     focused ? panelInk().knockout : kTopicPicked,
-                     (focused ? 0.98F : 0.85F) * fade, bodyScale);
-        } else {
-            drawText(target, x + glyphAdvance / 2, y, label, kTopicInk, 0.82F * fade, bodyScale);
-        }
-        y += rowStep;
-        if (y + (6 + 1) * bodyScale > bottom + rowStep) {
-            break;
-        }
-    }
-    return y;
-}
-
-/// WHAT THE BLANK ROWS ARE WAITING FOR, worded, in whatever room the list did
-/// not want -- UI-REFERENCE-TERMINAL.md's "Empty states are worded, not blank"
-/// applied to the three tiles that ship a stranger a header over a void.
-///
-/// TWO RULES KEEP IT FROM BECOMING CLUTTER. It is drawn only where the rows
-/// left at least two whole rows spare, so a tile whose list has grown into its
-/// pane loses it without anything else moving; and it takes the EPITHET's ink
-/// rather than the body's, because it is a note about the panel and not a row
-/// of the panel's content.
-void drawEmptyState(Framebuffer& target, const Rect& r, int margin, int rowsBottom,
-                    const DialogueViewState& view, int bodyScale, float fade) {
-    if (view.emptyLine.empty()) {
-        return;
-    }
-    // A BLANK ROW ABOVE THE NOTE, WHETHER OR NOT THERE WERE ROWS. A tile with
-    // nothing in it at all is the one that needs it most: the note would
-    // otherwise butt straight against the epithet and read as a third line of
-    // the header rather than as what the panel is waiting for.
-    const int rowStep = (6 + 1) * bodyScale;
-    const int y = rowsBottom + rowStep;
-    const int room = (r.y + r.h - margin - y) / rowStep;
-    if (room < 2) {
-        return;
-    }
-    drawWrappedProse(target, r, margin, y, view.emptyLine, bodyScale, room, kEpithetInk, fade);
-}
-
-/// An open letter's own wrapped, paged body -- the tile-sized equivalent of
-/// dialogue_view.cpp's `state.letter` bottom band, just confined to one
-/// panel's rect instead of the whole frame width.
-void drawLetterBody(Framebuffer& target, const Rect& r, int margin, int bodyTop,
-                    const DialogueViewState& view, int bodyScale, float fade) {
-    const int roomPx = r.w - 2 * margin;
-    const std::size_t columns = static_cast<std::size_t>(std::max(4, roomPx / (5 * bodyScale)));
-    std::vector<std::string> allLines;
+/// The foot keeps its `0` -- unlike a title list's MORE marker below, the 0
+/// key really does turn an open letter's page (session.cpp increments
+/// lettersBodyPage_ on it), so the printed key is the key that works.
+void drawLetterPane(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
+                    const DialogueViewState& view, int row, float fade) {
+    const int paneRows = metric.rowsIn(pane.h);
+    const std::size_t cols = static_cast<std::size_t>(std::max(4, metric.cellsIn(pane.w)));
+    std::vector<std::string> all;
     for (const std::string& paragraph : view.letterLines) {
         if (paragraph.empty()) {
-            allLines.emplace_back();
+            all.emplace_back();
             continue;
         }
-        for (std::string& row : wrapText(paragraph, columns)) {
-            allLines.push_back(std::move(row));
+        for (std::string& line : wrapText(paragraph, cols)) {
+            all.push_back(std::move(line));
         }
     }
-    const int rowStep = (6 + 1) * bodyScale;
-    const int footY = r.y + r.h - margin - (6 + 1) * bodyScale;
-    const int rowsAvail = std::max(1, (footY - bodyTop) / rowStep);
+    // The last row is the foot's whether or not there is a page to turn, so
+    // the body never gains a row when the foot goes -- geometry holds.
+    const int rowsAvail = std::max(1, paneRows - row - 1);
     const int pages =
-        std::max(1, (static_cast<int>(allLines.size()) + rowsAvail - 1) / rowsAvail);
+        std::max(1, (static_cast<int>(all.size()) + rowsAvail - 1) / rowsAvail);
     const int page = std::clamp(view.page, 0, pages - 1);
     const std::size_t first = static_cast<std::size_t>(page) * static_cast<std::size_t>(rowsAvail);
-    int y = bodyTop;
-    for (std::size_t i = first; i < allLines.size() && i < first + static_cast<std::size_t>(rowsAvail);
+    for (std::size_t i = first; i < all.size() && i < first + static_cast<std::size_t>(rowsAvail);
          ++i) {
-        drawText(target, r.x + margin, y, allLines[i], kParchmentInk, 0.92F * fade, bodyScale);
-        y += rowStep;
+        drawCellText(target, pane, metric, 0, row, all[i], kParchmentInk, 0.92F * fade);
+        ++row;
     }
     if (pages > 1) {
-        const std::string foot = "0 MORE (" + std::to_string(page + 1) + "/" +
-                                 std::to_string(pages) + ")";
-        drawText(target, r.x + margin, footY, foot, kParchmentInk, 0.62F * fade, bodyScale);
+        drawCellText(target, pane, metric, 0, paneRows - 1,
+                     "0 MORE (" + std::to_string(page + 1) + "/" + std::to_string(pages) + ")",
+                     kParchmentInk, 0.62F * fade);
     }
 }
 
-void drawTile(Framebuffer& target, const Rect& r, const DialogueViewState& view, bool focused,
-             float focusAmount, int edgeScale, int headerScale, int bodyScale, float fade,
-             bool showProse) {
-    drawPanelFrame(target, r, focusAmount, edgeScale, fade);
-    if (!view.open) {
+/// ONE TILE, in the register. The pane is a slice of the SHARED frame's
+/// interior -- the frame itself (rules, edges, dividers, junctions) is drawn
+/// once by drawMenuTiles; this draws only content.
+///
+///   row 0    the subject badge -- the speaker knocked out of an inverted
+///            accent fill, brightest on the focused tile (`focusAmount` eases
+///            it, the job the old hairline border's thickness lerp did), with
+///            the state word (`OPEN`/`CLOSED`) right-aligned a cell off the
+///            frame edge, the reference's own "subject then status".
+///   row 1    the epithet, dim -- or a routed alert, which outranks it.
+///   row 2    air (spent by the Journal's prose instead, which is its own
+///            separation).
+///   then     the list, paged by the pane (menuTilePageFor), selection an
+///            INVERTED FILL in the tile's accent -- never an arrow -- full on
+///            the focused tile and dim-but-present on the others, so an
+///            unfocused tile still shows where its cursor sat.
+///   then     the empty-state sentence, in room the rows did not want, and a
+///            stippled field under whatever is left -- emptiness textured,
+///            not blank.
+void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
+              const DialogueViewState& view, bool focused, float focusAmount, float fade,
+              bool journal, const Rgb& accent) {
+    const PanelInk& ink = panelInk();
+    const int paneRows = metric.rowsIn(pane.h);
+    const int paneCells = metric.cellsIn(pane.w);
+    if (!view.open || paneRows < 4 || paneCells < 8) {
         return;
     }
-    const int margin = 2 * edgeScale;
-    int y = drawPanelHeader(target, r, margin, view, headerScale, bodyScale, fade);
+    const float amount = std::clamp(focusAmount, 0.0F, 1.0F);
+
+    // --- row 0: the badge ---------------------------------------------------
+    if (!view.speaker.empty()) {
+        const std::string name =
+            clipLabel(view.speaker, static_cast<std::size_t>(std::max(1, paneCells - 2)));
+        const int badge = static_cast<int>(name.size()) + 2;
+        drawInvertedFill(target, pane, metric, 0, 0, badge, accent,
+                         (0.18F + 0.74F * amount) * fade);
+        if (amount >= 0.5F) {
+            drawCellTextKnockout(target, pane, metric, 1, 0, name, ink.knockout, fade);
+        } else {
+            drawCellText(target, pane, metric, 1, 0, name, accent, 0.95F * fade);
+        }
+        // A cell of air off the frame's own edge -- a value flush against the
+        // border reads as punctuated by the `|`/`!` flicker.
+        if (!view.attitude.empty() &&
+            badge + static_cast<int>(view.attitude.size()) + 3 <= paneCells) {
+            drawCellTextRight(target, pane, metric, 1, 0, view.attitude, ink.dim, 0.85F * fade);
+        }
+    }
+
+    // --- row 1: the epithet, or a warning, which outranks it ----------------
+    int row = 1;
+    if (!view.alert.empty()) {
+        drawCellText(target, pane, metric, 0, row,
+                     clipLabel(view.alert, static_cast<std::size_t>(paneCells)), kAlertInk, fade);
+    } else if (!view.epithet.empty()) {
+        drawCellText(target, pane, metric, 0, row,
+                     clipLabel(view.epithet, static_cast<std::size_t>(paneCells)), ink.dim,
+                     0.85F * fade);
+    }
+    ++row;
+
+    // --- the letter branch: a document, not a menu --------------------------
     if (view.letter) {
-        drawLetterBody(target, r, margin, y, view, bodyScale, fade);
+        drawLetterPane(target, pane, metric, view, row, fade);
         return;
     }
-    if (showProse && !view.line.empty()) {
-        y = drawWrappedProse(target, r, margin, y, view.line, bodyScale, 2, kBodyInk, fade);
+
+    if (journal) {
+        row = drawJournalProse(target, pane, metric, view, row, accent, fade);
     }
-    if (showProse && !view.caseRef.empty()) {
-        y = drawWrappedProse(target, r, margin, y, view.caseRef, bodyScale, 1, kCaseRefInk, fade);
+    // One row of air between the header (or the prose) and the list.
+    ++row;
+
+    // --- the list, paged by the pane ----------------------------------------
+    const int capacity = paneRows - row;
+    if (capacity <= 0) {
+        return;
     }
-    y += edgeScale;
-    const int rowsBottom = drawPanelRows(target, r, margin, y, view, bodyScale, focused, fade);
-    drawEmptyState(target, r, margin, rowsBottom, view, bodyScale, fade);
+    const MenuTilePage page = menuTilePageFor(view.topics, view.page, view.cursor, capacity);
+    const PanelRect listRect = rowBand(pane, metric, row, capacity);
+    int used = 0;
+    if (!page.rows.empty()) {
+        std::vector<PanelOption> options;
+        options.reserve(page.rows.size());
+        for (const MenuTileRow& tileRow : page.rows) {
+            PanelOption option;
+            option.key = tileRow.key;
+            option.label = tileRow.label;
+            option.accent = accent;
+            // AN UNFOCUSED TILE STILL SHOWS WHERE ITS CURSOR SAT -- the
+            // picked label takes the accent while the fill under it is dim,
+            // so state moves the whole row together and nothing is dropped.
+            option.labelTakesAccent = tileRow.picked && !focused;
+            options.push_back(std::move(option));
+        }
+        OptionListStyle style;
+        style.maxColumns = 1;
+        style.gutterCells = 2;
+        style.minRows = 0;
+        style.alignValues = true;
+        style.showKeys = true;
+        // PLANNED AGAINST THE WHOLE LIST, drawn against the page -- panel.hpp's
+        // own instruction, so the fill's width and the label column are sized
+        // for the widest row that EXISTS and do not jump when the screen
+        // turns. The synthetic keys only carry the key column's width, which
+        // is one digit on every screen.
+        std::vector<PanelOption> whole;
+        whole.reserve(view.topics.size());
+        for (const std::string& topic : view.topics) {
+            PanelOption option;
+            option.key = "1";
+            option.label = topic;
+            option.accent = accent;
+            whole.push_back(std::move(option));
+        }
+        const OptionListPlan plan = planOptionList(whole, listRect, metric, style);
+        if (page.selected >= 0 && !focused) {
+            // The dim fill, exactly the 0.20 the pre-conversion drawing used
+            // for the same statement.
+            drawInvertedFill(target, listRect, metric, 0, page.selected, plan.columnCells, accent,
+                             0.20F * fade);
+        }
+        drawOptionListPlanned(target, listRect, metric, options, focused ? page.selected : -1,
+                              plan, fade);
+        used = static_cast<int>(page.rows.size());
+        if (page.more) {
+            // NO PRINTED KEY, deliberately -- the 0 key steps Session's
+            // nine-topic windows, not these pane-sized screens, and a printed
+            // key that does something adjacent to what it says is worse than
+            // an unkeyed marker. The cursor pages this list: the screen shown
+            // follows it. Same unkeyed shape casebook_page.cpp's own MORE
+            // indicator settled on.
+            drawCellText(target, listRect, metric, 0, capacity - 1,
+                         "MORE (" + std::to_string(page.screen + 1) + "/" +
+                             std::to_string(page.screens) + ")",
+                         ink.dim, 0.75F * fade);
+            used = capacity;
+        }
+    }
+
+    // --- the empty state, in room the rows did not want ----------------------
+    // A blank row above the note, whether or not there were rows -- a tile
+    // with nothing in it is the one that needs the gap most, or the note
+    // reads as a third line of the header. Two whole rows spare or nothing,
+    // the same anti-clutter rule the pre-conversion drawing kept.
+    int spare = capacity - used;
+    if (!view.emptyLine.empty() && spare >= 2) {
+        const PanelRect say = rowBand(pane, metric, row + used + 1, spare - 1);
+        const std::vector<PanelLine> lines{
+            PanelLine{Bullet::None, "", view.emptyLine, InkRole::Dim, accent}};
+        used += 1 + drawProse(target, say, metric, lines, fade);
+        spare = capacity - used;
+    }
+
+    // --- deliberate emptiness, textured --------------------------------------
+    if (spare >= 3) {
+        drawStipple(target, rowBand(pane, metric, row + used + 1, spare - 1), metric, ink.rule,
+                    kPaneStippleAlpha * fade);
+    }
 }
 
 }  // namespace
+
+MenuTileLayout menuTileLayout(int width, int height) {
+    MenuTileLayout out;
+    out.metric = panelMetric(height);
+    const int cells = out.metric.cellsIn(width);
+    const int rows = out.metric.rowsIn(height);
+    // Below this there is no composition: four panes need a border, a rule,
+    // two dividers and something to say. 320x180 (64x25 cells, the smoke
+    // size) clears it with room to spare.
+    if (cells < 24 || rows < 12) {
+        return out;
+    }
+    out.bounds = PanelRect{(width - out.metric.widthOf(cells)) / 2,
+                           panelSeatY(height, out.metric.heightOf(rows)), out.metric.widthOf(cells),
+                           out.metric.heightOf(rows)};
+    const PanelRect interior{out.bounds.x + out.metric.cellW(), out.bounds.y + out.metric.cellH(),
+                             out.metric.widthOf(cells - 2), out.metric.heightOf(rows - 2)};
+
+    // THE BOTTOM BAND (Journal) TAKES ROUGHLY A THIRD -- 9/25 of the interior,
+    // the same 36 percent the pre-conversion layout gave it, so the two
+    // frames of this screen agree about where the Journal lives.
+    const std::vector<PanelRect> bands = splitRows(interior, out.metric,
+                                                   {
+                                                       spanWeight(16),  // the three tiles
+                                                       spanCells(1),    // the rule
+                                                       spanWeight(9),   // the Journal
+                                                   });
+    out.topRows = out.metric.rowsIn(bands[0].h);
+    out.ruleRow = (bands[1].y - interior.y) / out.metric.cellH();
+    out.journal = bands[2];
+
+    // Three columns over the top band, split by two one-cell dividers that
+    // the shared frame draws in step with its own edges.
+    const std::vector<PanelRect> cols = splitColumns(bands[0], out.metric,
+                                                     {
+                                                         spanWeight(1),  // Character
+                                                         spanCells(1),   // divider
+                                                         spanWeight(1),  // Map
+                                                         spanCells(1),   // divider
+                                                         spanWeight(1),  // Letters
+                                                     });
+    out.character = cols[0];
+    out.map = cols[2];
+    out.letters = cols[4];
+    out.dividerCellA = (cols[1].x - interior.x) / out.metric.cellW();
+    out.dividerCellB = (cols[3].x - interior.x) / out.metric.cellW();
+    out.usable = true;
+    return out;
+}
+
+MenuTilePage menuTilePageFor(const std::vector<std::string>& topics, int page, int cursor,
+                             int capacity) {
+    MenuTilePage out;
+    const int total = static_cast<int>(topics.size());
+    if (total <= 0 || capacity <= 0) {
+        return out;
+    }
+    // THE NINE-KEY WINDOW SESSION'S DIRECT-SELECT BELIEVES IN. `page` tracks
+    // the cursor on every tile (wrapCursorAndPage/advancePage both keep
+    // page == cursor / kTopicPageSize), and a number key resolves
+    // page * kTopicPageSize + slot -- so digits are printed on that window
+    // and on nothing else, wherever the pane-sized screen happens to sit.
+    const int window =
+        std::clamp(page, 0, topicPageCount(topics.size()) - 1) * kTopicPageSize;
+    int first = 0;
+    int last = total;
+    if (total > capacity) {
+        // One of the pane's rows is spent on the MORE foot; the rest are the
+        // screen. Anchored on the CURSOR, so the row being driven is always
+        // the one on show.
+        const int perScreen = std::max(1, capacity - 1);
+        out.screens = (total + perScreen - 1) / perScreen;
+        out.screen = std::clamp(cursor, 0, total - 1) / perScreen;
+        first = out.screen * perScreen;
+        last = std::min(total, first + perScreen);
+        out.more = true;
+    }
+    for (int i = first; i < last; ++i) {
+        const int slot = i - window;
+        MenuTileRow row;
+        if (slot >= 0 && slot < kTopicPageSize) {
+            row.key = std::to_string(slot + 1);
+        }
+        row.label = topics[static_cast<std::size_t>(i)];
+        row.picked = i == cursor;
+        if (row.picked) {
+            out.selected = i - first;
+        }
+        out.rows.push_back(std::move(row));
+    }
+    return out;
+}
 
 void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
     if (!state.open) {
         return;
     }
     const float fade = std::clamp(state.openAmount, 0.0F, 1.0F);
-    const int width = target.width();
-    const int height = target.height();
-    const int edgeScale = std::max(1, height / 180);
-    const int headerScale = hudScale(height);
-    const int bodyScale = hudMinorScale(height);
-    const int margin = 4 * edgeScale;
-    const int gutter = 3 * edgeScale;
+    if (fade <= 0.0F) {
+        return;
+    }
+    const PanelInk& ink = panelInk();
+    // A FULL TAKEOVER IS A FULL TAKEOVER: the ground covers the whole frame at
+    // the one opacity every full-screen page uses, and the border encloses
+    // only what it has to -- the identical call casebook_page.cpp (this same
+    // Menu, one bumper away on the Journal) makes, so stepping focus between
+    // the book and the tiles never changes what the street behind them is
+    // doing.
+    target.fillRect(0, 0, target.width(), target.height(), ink.ground, kPageGroundAlpha * fade);
 
-    const int outerX0 = margin;
-    const int outerX1 = width - margin;
-    const int outerY0 = margin;
-    const int outerY1 = height - margin;
+    const MenuTileLayout comp = menuTileLayout(target.width(), target.height());
+    if (!comp.usable) {
+        return;
+    }
 
-    // THE BOTTOM PANEL (Journal) TAKES ROUGHLY A THIRD OF THE FRAME. Bounded
-    // below so a tiny capture resolution still leaves the list panel
-    // something to draw in, and above so the top row never starves.
-    const int span = outerY1 - outerY0;
-    const int bottomH = std::clamp(static_cast<int>(static_cast<float>(span) * 0.36F),
-                                   10 * edgeScale, span - gutter - 1);
-    const int topH = span - bottomH - gutter;
-    const int topY = outerY0;
-    const int bottomY = outerY1 - bottomH;
+    // ONE FRAME, FOUR PANES -- the reference's "one full-screen frame,
+    // divided into stacked panels", not four boxes. `◆` at every corner and
+    // junction, consistently, the same choice the casebook page made; one
+    // interior rule under the three tiles; two dividers alternating `|`/`!`
+    // in step with the outer edges, because the texture runs through the
+    // whole frame.
+    FrameStyle style;
+    style.junction = Motif::Diamond;
+    style.alpha = fade;
+    style.stipple = false;
+    style.groundAlpha = kPageGroundAlpha;
+    PanelFrame frame(target, comp.bounds, comp.metric, style);
+    frame.addRule(comp.ruleRow);
+    frame.addDivider(comp.dividerCellA, 0, comp.topRows);
+    frame.addDivider(comp.dividerCellB, 0, comp.topRows);
+    frame.draw();
 
-    const int topW = outerX1 - outerX0;
-    const int colW = (topW - 2 * gutter) / 3;
-    const int col0X = outerX0;
-    const int col1X = col0X + colW + gutter;
-    const int col2X = col1X + colW + gutter;
-    const int col2W = outerX1 - col2X;
-
-    const Rect characterRect{col0X, topY, colW, topH};
-    const Rect mapRect{col1X, topY, colW, topH};
-    const Rect lettersRect{col2X, topY, col2W, topH};
-    const Rect journalRect{outerX0, bottomY, topW, bottomH};
-
-    // CHARACTER, MAP, LETTERS: the three top tiles skip their own
-    // instructional `line` prose (each already said once, in full, on the
-    // page that first taught a new player to open this) so a quarter of the
-    // frame is spent on ROWS -- the actual state a player opened the Menu to
-    // read -- instead of a repeat of the sentence the opening casebook page
-    // already put on screen. Letters' own `line` reappears the moment a
-    // letter is picked, as that document's own first line of body text, via
-    // `view.letter`'s own branch in drawTile -- this flag only governs the
-    // TITLE-LIST state.
-    drawTile(target, characterRect, state.character, state.focus == kMenuFocusCharacter,
-             state.characterFocus, edgeScale, headerScale, bodyScale, fade, false);
-    drawTile(target, mapRect, state.map, state.focus == kMenuFocusMap, state.mapFocus, edgeScale,
-             headerScale, bodyScale, fade, false);
-    drawTile(target, lettersRect, state.letters, state.focus == kMenuFocusLetters,
-             state.lettersFocus, edgeScale, headerScale, bodyScale, fade, false);
-    // JOURNAL: full width along the bottom, the tile with the most room, and
-    // the one whose prose (the hook, the ward's dread, a picked lead's own
-    // found/detail text, its dateline) is the actual point of the page -- so
-    // it keeps showing it, wrapped to two lines and marked when cut.
-    drawTile(target, journalRect, state.journal, state.focus == kMenuFocusJournal,
-             state.journalFocus, edgeScale, headerScale, bodyScale, fade, true);
+    // CHARACTER, MAP, LETTERS: the three top tiles keep suppressing their own
+    // instructional `line` prose (each already said once, in full, on the page
+    // that first taught a new player to open this) so their rows -- the state
+    // a player opened the Menu to read -- get the pane. Letters' own prose
+    // reappears the moment a letter is picked, as that document's own body,
+    // via the letter branch. The Journal keeps its prose: the hook, the
+    // ward's dread, a picked lead's found text and its `•` dateline are the
+    // point of the page.
+    drawTile(target, comp.character, comp.metric, state.character,
+             state.focus == kMenuFocusCharacter, state.characterFocus, fade, false, ink.accent);
+    drawTile(target, comp.map, comp.metric, state.map, state.focus == kMenuFocusMap,
+             state.mapFocus, fade, false, ink.accent);
+    drawTile(target, comp.letters, comp.metric, state.letters, state.focus == kMenuFocusLetters,
+             state.lettersFocus, fade, false, kParchmentInk);
+    drawTile(target, comp.journal, comp.metric, state.journal, state.focus == kMenuFocusJournal,
+             state.journalFocus, fade, true, ink.accent);
 }
 
 }  // namespace granadad::render
