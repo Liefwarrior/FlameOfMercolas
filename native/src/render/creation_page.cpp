@@ -144,27 +144,29 @@ inline constexpr int kMinMasterCells = 18;
 /// Below this a body band is not a pane, it is a slot.
 inline constexpr int kMinBodyRows = 6;
 
-/// ONE COMPOSITION AT A CHOSEN HEIGHT. Everything creationLayout() used to do,
-/// with the grid's row count handed in rather than taken from the window --
-/// which is the whole mechanism behind sizing the frame to its content. The
-/// body is the only `spanWeight` in the stack, so a grid one row shorter is a
-/// BODY one row shorter and every rule above it stays exactly where it was.
+/// ONE COMPOSITION AT A CHOSEN WIDTH AND HEIGHT. Everything creationLayout()
+/// used to do, with the grid's cell count AND row count handed in rather than
+/// taken from the window -- which is the whole mechanism behind sizing the
+/// frame to its content, now on both axes. The body is the only `spanWeight`
+/// in the stack, so a grid one row shorter is a BODY one row shorter and
+/// every rule above it stays exactly where it was.
 [[nodiscard]] CreationLayout composeCreation(const CreationPage& page, int frameWidth,
-                                             int frameHeight, int gridRows, int topY) {
+                                             int frameHeight, int gridCells, int gridRows,
+                                             int topY) {
     CreationLayout out;
     out.metric = panelMetric(frameHeight);
-    const int cells = out.metric.cellsIn(frameWidth);
+    const int cells = gridCells;
     const int rows = gridRows;
     if (cells < 8 || rows < 10) {
         return out;
     }
-    // The grid is CENTRED in the window rather than pinned to the top left, so
-    // the pixels that do not divide into whole cells are split between the two
-    // margins instead of all landing on one edge. The TOP is handed in --
-    // creationLayout() seats it with panelSeatY() once it knows how tall the
-    // page actually came out, which is what turns "the panel ran out" into
-    // "the panel was placed".
-    out.bounds = PanelRect{(frameWidth - out.metric.widthOf(cells)) / 2, topY,
+    // AND NOW IT KNOWS HOW WIDE IT IS, SO IT CAN SIT SOMEWHERE ACROSS TOO.
+    // The TOP is handed in -- creationLayout() seats it with panelSeatY() once
+    // it knows how tall the page actually came out -- and the LEFT is the
+    // mirror rule, panelSeatX() off the measured width. A full-width grid has
+    // a spare of a few sub-cell pixels and lands where the old centring put
+    // it; a measured one is PLACED, 45/55, matching the vertical judgement.
+    out.bounds = PanelRect{panelSeatX(frameWidth, out.metric.widthOf(cells)), topY,
                            out.metric.widthOf(cells), out.metric.heightOf(rows)};
     out.interior =
         PanelRect{out.bounds.x + out.metric.cellW(), out.bounds.y + out.metric.cellH(),
@@ -256,20 +258,110 @@ inline constexpr int kMinBodyRows = 6;
     return out;
 }
 
+/// THE WIDTH MEASURE -- the widest row this page will actually draw, plus its
+/// border, clamped by panelMeasureCells. The mirror of the row measure below:
+/// masterContentRows asks "how tall does the content want to be", this asks
+/// "how wide", and both ask the SAME pure planners the drawing walks.
+///
+/// What gets a vote and what does not, per the reference's own cursor rule:
+///
+///   * THE MASTER LIST votes at its natural width -- it is static under the
+///     cursor. A key grid is its block, a column list is its columns at
+///     content width, and a BLOCK list (sentences) votes at the prose measure
+///     rather than at its unwrapped length, because a hundred-glyph answer
+///     asking for the whole frame back is not a measurement.
+///   * THE DETAIL PANE does not vote AT ALL -- it is the half the cursor
+///     swaps, so a frame that widened when the cursor reached the wordiest
+///     trade would be the twitch bodyHoldRows exists to prevent, and a commit
+///     cost that grows as a name is typed must not drag the border with it.
+///     It takes what the master share's arithmetic leaves it, held at
+///     panelHeldDetailCells (the width its bodyHoldRows floors were judged
+///     against -- see that function), and its prose re-wraps into that: the
+///     row measure below runs AFTER this one, which is the wrap feedback that
+///     makes a narrower page honestly taller.
+///   * The tab row, the crumb path and the one-row nav band vote in full --
+///     each is a single row that must shed nothing, and the nav names the way
+///     out.
+[[nodiscard]] int measuredGridCells(const CreationPage& page, const CreationLayout& full,
+                                    int frameWidth) {
+    const PanelMetric& metric = full.metric;
+    const std::vector<PanelOption> options = listOptions(page);
+    int master = 0;
+    if (!options.empty()) {
+        if (full.grid.usable) {
+            master = keyGridNaturalCells(full.grid);
+        } else if (page.shape == CreationListShape::Blocks) {
+            int key = 0;
+            int label = 0;
+            for (const PanelOption& option : options) {
+                key = std::max(key, static_cast<int>(option.key.size()));
+                label = std::max(label, static_cast<int>(option.label.size()));
+            }
+            master = (key > 0 ? key + 1 : 0) + std::min(label, kPanelProseMeasureCells);
+        } else {
+            const OptionListStyle style = columnStyle(page);
+            const OptionListPlan plan = planOptionList(options, full.listRect, metric, style);
+            master = optionListNaturalCells(plan, style.gutterCells);
+        }
+    }
+    int want = master;
+    if (page.hasDetail && full.body.split) {
+        const int heldDetail =
+            std::max(kMinDetailCells, panelHeldDetailCells(page.masterShare, kMinMasterCells));
+        want = masterDetailCellsFor(page.masterShare, kMinMasterCells,
+                                    std::max(master, kMinMasterCells), heldDetail);
+    }
+    want = std::max(want, tabRowCells(page.title, page.tabs, page.readout));
+    if (page.crumbs.size() > 1) {
+        want = std::max(want, breadcrumbCells(page.crumbs));
+    }
+    if (!page.nav.empty()) {
+        // The nav band is ONE fixed row in this composition (unlike the
+        // casebook's, which may take two), so a frame its list overflows
+        // silently drops the last verb -- which is the way back. It votes.
+        OptionListStyle navStyle;
+        navStyle.showKeys = true;
+        navStyle.maxColumns = static_cast<int>(page.nav.size());
+        navStyle.gutterCells = 2;
+        navStyle.minRows = 1;
+        const OptionListPlan navPlan = planOptionList(page.nav, full.navBand, metric, navStyle);
+        want = std::max(want, optionListNaturalCells(navPlan, navStyle.gutterCells));
+    }
+    return panelMeasureCells(metric.cellsIn(frameWidth), want + 2);
+}
+
 }  // namespace
 
 CreationLayout creationLayout(const CreationPage& page, int frameWidth, int frameHeight) {
     const PanelMetric metric = panelMetric(frameHeight);
+    const int fullCells = metric.cellsIn(frameWidth);
     const int rows = metric.rowsIn(frameHeight);
     const int topY = panelSeatY(frameHeight, metric.heightOf(rows));
 
     // PASS ONE: the whole window, which is what this screen used to ship as.
-    // It is measured at full height on purpose -- a planner asked against a
+    // It is measured at full size on purpose -- a planner asked against a
     // pane too short to hold its content answers with the pane, not with the
     // content, and the answer we want here is the content.
-    const CreationLayout full = composeCreation(page, frameWidth, frameHeight, rows, topY);
+    CreationLayout full = composeCreation(page, frameWidth, frameHeight, fullCells, rows, topY);
     if (!full.usable) {
         return full;
+    }
+
+    // THE MEASURE, WIDTH FIRST -- then the height measure runs against the
+    // measured panes, so prose that re-wraps taller in a narrower detail pane
+    // is COUNTED taller. That ordering is the wrap feedback; without it a
+    // measured page would clip the exact lines the height rule exists to keep.
+    int gridCells = measuredGridCells(page, full, frameWidth);
+    if (gridCells < fullCells) {
+        const CreationLayout sized =
+            composeCreation(page, frameWidth, frameHeight, gridCells, rows, topY);
+        if (sized.usable) {
+            full = sized;
+        } else {
+            gridCells = fullCells;
+        }
+    } else {
+        gridCells = fullCells;
     }
 
     // SIZE TO CONTENT, WHICH THE REFERENCE LICENSES BY NAME. Its rule is about
@@ -299,9 +391,9 @@ CreationLayout creationLayout(const CreationPage& page, int frameWidth, int fram
     // is how THE DOOR came out as a 164px panel with 2px above it and 194px of
     // black below. panelSeatY() splits that remainder -- one rule, shared with
     // the casebook, and slightly top-weighted because a box of type centred by
-    // arithmetic reads low.
+    // arithmetic reads low. The width keeps the cells the measure chose.
     const int shortRows = rows - (full.bodyRows - want);
-    return composeCreation(page, frameWidth, frameHeight, shortRows,
+    return composeCreation(page, frameWidth, frameHeight, gridCells, shortRows,
                            panelSeatY(frameHeight, metric.heightOf(shortRows)));
 }
 

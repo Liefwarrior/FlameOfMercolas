@@ -676,6 +676,163 @@ TEST_CASE("the column hit-test agrees with the column layout at every window siz
     }
 }
 
+// ===========================================================================
+// THE MEASURE -- the width rule, the mirror of panelSeatY
+// ===========================================================================
+//
+// Ship note move 1: nothing decided a composed page's WIDTH, so every page
+// drew 639px wide at a 640px window whatever it held. These cases pin the new
+// rules the way panelSeatY's own numbers are pinned above the pages: exact
+// arithmetic, at the sizes the frames were judged at.
+
+TEST_CASE("the panel seat splits the spare 45/55 on both axes, and they agree") {
+    // THE DOOR's own numbers at 640x360: a 168px frame seats 86 above, and a
+    // 360px-wide measured frame seats 126 left -- the same judgement turned
+    // ninety degrees, one constant each, pinned so neither drifts.
+    CHECK(panelSeatY(360, 168) == 86);
+    CHECK(panelSeatX(640, 360) == 126);
+    // THE NAME's measured width at 640x360.
+    CHECK(panelSeatX(640, 350) == 130);
+    CHECK(kPanelSeatLeft == kPanelSeatAbove);
+    // Slightly leading-edge weighted: never more left of the panel than right.
+    for (const int wide : {100, 350, 500, 639}) {
+        const int seat = panelSeatX(640, wide);
+        CHECK(seat <= (640 - wide) - seat);
+    }
+    // A full or over-full panel sits at zero rather than off-screen.
+    CHECK(panelSeatX(640, 640) == 0);
+    CHECK(panelSeatX(640, 700) == 0);
+}
+
+TEST_CASE("the measure clamps between the toast floor and the window") {
+    // The floor is the vocabulary's own narrowest legal master/detail
+    // composition, read back out of splitMasterDetail: 18-cell master floor,
+    // 3 cells of divider chrome, 26-cell detail floor, 2 border cells.
+    CHECK(kPanelMeasureFloorCells == 18 + 3 + 26 + 2);
+    // Content inside the range keeps its own number -- which is the whole "a
+    // page that earns full width keeps it BY CONSTRUCTION" claim: the clamp
+    // lands at the window, there is no full-width special case to write.
+    CHECK(panelMeasureCells(128, 70) == 70);
+    CHECK(panelMeasureCells(128, 400) == 128);
+    // Under the floor reads as a toast, so the floor wins...
+    CHECK(panelMeasureCells(128, 30) == kPanelMeasureFloorCells);
+    // ...except at a window smaller than the floor itself (320x180's 64 cells
+    // is above it; this guards the principle): the window always wins.
+    CHECK(panelMeasureCells(40, 70) == 40);
+    CHECK(panelMeasureCells(40, 10) == 40);
+}
+
+TEST_CASE("masterDetailCellsFor is the inverse of splitMasterDetail, and both halves hold") {
+    const PanelMetric metric{1};
+    struct Want {
+        int share;
+        int minMaster;
+        int master;
+        int detail;
+    };
+    // The five shapes the measured pages actually ask for -- the door, the
+    // on-screen keyboard, the quiz, the casebook, the verdict card.
+    for (const Want& w : {Want{40, 18, 28, 42}, Want{28, 18, 19, 51}, Want{58, 18, 48, 29},
+                          Want{50, 22, 33, 40}, Want{34, 18, 18, 46}}) {
+        INFO("share ", w.share, " master ", w.master, " detail ", w.detail);
+        const int cells = masterDetailCellsFor(w.share, w.minMaster, w.master, w.detail);
+        const PanelRect interior{0, 0, metric.widthOf(cells), metric.heightOf(20)};
+        const MasterDetail split =
+            splitMasterDetail(interior, metric, w.share, w.minMaster, w.detail);
+        // The split of the answered width holds both halves whole -- the
+        // "split the panel's OWN measured width" contract, by construction.
+        CHECK(split.split);
+        CHECK(metric.cellsIn(split.master.w) >= w.master);
+        CHECK(metric.cellsIn(split.detail.w) >= w.detail);
+    }
+    // And the exact numbers, pinned: THE DOOR (share 40, 28-cell list, detail
+    // held at 42) wants a 75-cell interior; THE NAME's keyboard (share 28,
+    // 19-cell block, detail held at 51) also lands on 75; the casebook (share
+    // 50, 40-cell detail) wants 86. These are the widths the frames at
+    // 640x360 were judged at -- 385px, 385px and 440px with the border on.
+    CHECK(masterDetailCellsFor(40, 18, 28, 42) == 75);
+    CHECK(masterDetailCellsFor(28, 18, 19, 51) == 75);
+    CHECK(masterDetailCellsFor(50, 22, 33, 40) == 86);
+    // A share REDISTRIBUTES: the quiz's 58-share master takes its slice of
+    // whatever interior exists, so the answer is wider than content + chrome.
+    CHECK(masterDetailCellsFor(58, 18, 48, 29) == 83);
+    CHECK(masterDetailCellsFor(34, 18, 18, 46) == 75);
+}
+
+TEST_CASE("the held detail width is what the narrowest window would have dealt the share") {
+    // 1920x1080 is 76 cells across, 74 inside the border -- the narrowest
+    // interior any full-width page ever had, and the panes every height hold
+    // in this build was judged against. The held width is splitMasterDetail's
+    // own deal at that interior: pinned here against the split itself so the
+    // two cannot drift.
+    const PanelMetric metric{1};
+    const PanelRect narrowest{0, 0, metric.widthOf(kPanelNarrowestFullInteriorCells),
+                              metric.heightOf(20)};
+    for (const auto& [share, minMaster] : {std::pair{40, 18}, std::pair{28, 18}, std::pair{58, 18},
+                                           std::pair{52, 18}, std::pair{50, 22}}) {
+        INFO("share ", share, " minMaster ", minMaster);
+        const MasterDetail dealt = splitMasterDetail(narrowest, metric, share, minMaster, 1);
+        REQUIRE(dealt.split);
+        // The held width is one under the dealt pane (the divider's own air
+        // cell), never over it -- so a measured page's detail is at least what
+        // the narrowest full-width window gave it.
+        CHECK(panelHeldDetailCells(share, minMaster) == metric.cellsIn(dealt.detail.w) - 1);
+    }
+    // The exact numbers the pages hold at.
+    CHECK(panelHeldDetailCells(40, 18) == 42);   // the door, the calling roster
+    CHECK(panelHeldDetailCells(28, 18) == 51);   // the on-screen keyboard
+    CHECK(panelHeldDetailCells(58, 18) == 29);   // the quiz and the biography
+    CHECK(panelHeldDetailCells(50, 22) == 34);   // the casebook
+}
+
+TEST_CASE("the natural widths are the drawing's own arithmetic, not a second description") {
+    const PanelMetric metric{2};
+    // The option list: the same options the spread case above pins -- three
+    // 21-cell columns and two 2-cell gutters is 67 cells of content.
+    OptionListStyle style;
+    style.showKeys = false;
+    style.maxColumns = 3;
+    std::vector<PanelOption> options = namedOptions({"FORWARD", "BACK", "STEP LEFT", "SNEAK",
+                                                     "QUICK WHEEL", "CLIMB A LEDGE"});
+    for (PanelOption& option : options) {
+        option.value = "LSHIFT";
+    }
+    const PanelRect wide{0, 0, metric.widthOf(90), metric.heightOf(20)};
+    const OptionListPlan plan = planOptionList(options, wide, metric, style);
+    CHECK(optionListNaturalCells(plan, style.gutterCells) ==
+          plan.columns * plan.columnCells + (plan.columns - 1) * 2);
+    CHECK(optionListNaturalCells(plan, style.gutterCells) == 67);
+
+    // The key grid: ten one-glyph caps at a one-cell gap is 19 cells -- the
+    // number that lets THE NAME stop asking for a whole frame.
+    std::vector<std::string> letters;
+    for (char c = 'A'; c <= 'Z'; ++c) {
+        letters.emplace_back(1, c);
+    }
+    letters.insert(letters.end(), {"-", "'", "_", "<"});
+    KeyGridStyle grid;
+    grid.columns = 10;
+    const PanelMetric one{1};
+    const KeyGridPlan block =
+        planKeyGrid(namedOptions(letters), PanelRect{0, 0, one.widthOf(90), one.heightOf(8)}, one,
+                    grid);
+    REQUIRE(block.usable);
+    CHECK(keyGridNaturalCells(block) == 19);
+    CHECK(keyGridNaturalCells(KeyGridPlan{}) == 0);
+
+    // The tab row: creation's own row -- CREATION, four bare-name stage tabs,
+    // NAMELESS on the right -- costs 46 cells, the same walk drawTabRow makes.
+    const std::vector<PanelTab> stages{PanelTab{"", "DOOR"}, PanelTab{"", "PATH"},
+                                       PanelTab{"", "PAST"}, PanelTab{"", "SHEET"}};
+    CHECK(tabRowCells("CREATION", stages, "NAMELESS") == 46);
+    // A tab with both halves spends the ` - ` between them.
+    CHECK(tabRowCells("", {PanelTab{"D", "DOMINIONS"}}, "") == 1 + 3 + 9 + 2);
+
+    // The crumb path: every crumb whole, ` / ` between.
+    CHECK(breadcrumbCells({"NEW GAME", "THE DOOR"}) == 19);
+    CHECK(breadcrumbCells({"ONE"}) == 3);
+}
+
 TEST_CASE("a bar is shape and figure, and the unfilled part is textured rather than empty") {
     const PanelMetric metric{2};
     const PanelRect pane{0, 0, metric.widthOf(40), metric.heightOf(4)};

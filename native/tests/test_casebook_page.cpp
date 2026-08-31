@@ -788,3 +788,68 @@ TEST_CASE("the one-lead book and the twelve-lead book compose to the same geomet
                                   a.master.y + a.metric.cellH() / 2) == 0);
     }
 }
+
+// ===========================================================================
+// THE MEASURE -- the book takes the width its widest row earns, not the window
+// ===========================================================================
+
+TEST_CASE("the book measures its width off its own rows, and nothing a cursor does moves it") {
+    // SHIP NOTE MOVE 1. The book drew 639px wide at a 640px window whatever it
+    // held -- 56.1% of the frame black around a full-width letterbox. It now
+    // asks masterDetailCellsFor for the interior its own widest master row and
+    // widest detail row (EITHER view, ANY lead) survive in, and panelSeatX
+    // seats the remainder 45/55.
+    Session session(configAt("mission-backroom"));
+    session.stepMany(sim::MoveInput{}, 2);
+    for (std::size_t i = 0; i < raws().leads().size(); ++i) {
+        (void)session.casebook().hear(static_cast<std::int32_t>(i));
+    }
+    CasebookPageState page = session.casebookPageState();
+    const int count = static_cast<int>(page.rows.size());
+    REQUIRE(count >= 12);
+
+    const CasebookPageMetrics geo = casebookPageMetrics(page, 640, 360);
+    REQUIRE(geo.usable);
+    REQUIRE(geo.split);
+    // The interior is master + 2 (a cell of air, the divider) + detail, plus
+    // the two border cells -- splitMasterDetail's own arithmetic.
+    const int panelCells = geo.masterCells + geo.detailCells + 4;
+    // MEASURED, NOT THE WINDOW -- and never under the vocabulary's floor.
+    CHECK(panelCells < geo.metric.cellsIn(640));
+    CHECK(panelCells >= kPanelMeasureFloorCells);
+    // SEATED 45/55 ACROSS: the master pane starts one border cell past the
+    // seat the measured width earns.
+    CHECK(geo.master.x ==
+          panelSeatX(640, geo.metric.widthOf(panelCells)) + geo.metric.cellW());
+    CHECK(geo.master.x > 0);
+    // The detail half is held at least as wide as the split's own floor, so
+    // the fact block and the commit line the measure walked stay whole.
+    CHECK(geo.detailCells >= 30);
+
+    // AND THE BORDER BELONGS TO THE BOOK, NOT TO THE CURSOR. Every lead, and
+    // both views, compose to the identical panes -- the width measure is a
+    // maximum over the whole book, the same discipline kDetailHoldRows keeps
+    // for the height.
+    for (int at = 0; at < count; ++at) {
+        page.cursor = at;
+        const CasebookPageMetrics again = casebookPageMetrics(page, 640, 360);
+        INFO("cursor ", at);
+        CHECK(again.master.x == geo.master.x);
+        CHECK(again.master.w == geo.master.w);
+        CHECK(again.detail.x == geo.detail.x);
+        CHECK(again.detail.w == geo.detail.w);
+    }
+    page.tab = CasebookTab::Case;
+    const CasebookPageMetrics caseView = casebookPageMetrics(page, 640, 360);
+    CHECK(caseView.master.x == geo.master.x);
+    CHECK(caseView.detail.w == geo.detail.w);
+
+    // 320x180 is already narrower than anything the measure would choose: it
+    // comes out exactly as it always did, one full-width pane, the honest
+    // answer at a small window.
+    const CasebookPageMetrics small = casebookPageMetrics(page, 320, 180);
+    REQUIRE(small.usable);
+    CHECK_FALSE(small.split);
+    CHECK(small.metric.cellsIn(small.master.w) ==
+          small.metric.cellsIn(320) - 2);
+}

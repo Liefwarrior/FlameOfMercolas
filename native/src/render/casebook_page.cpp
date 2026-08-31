@@ -192,28 +192,33 @@ inline constexpr int kDetailHoldRows = 20;
 inline constexpr int kMinBodyRows = 8;
 
 [[nodiscard]] Composition compose(int frameWidth, int frameHeight, int navRows,
-                                  int gridRowsOverride = -1) {
+                                  int gridRowsOverride = -1, int gridCellsOverride = -1) {
     Composition out;
     out.metric = panelMetric(frameHeight);
-    const int cells = out.metric.cellsIn(frameWidth);
+    const int cells = gridCellsOverride > 0 ? gridCellsOverride : out.metric.cellsIn(frameWidth);
     const int full = out.metric.rowsIn(frameHeight);
     const int rows = gridRowsOverride > 0 ? gridRowsOverride : full;
     if (cells < 8 || rows < 10) {
         return out;
     }
-    // A FRAME THAT ENDED EARLY IS SEATED, NOT PINNED. It used to take the top
-    // the full-height grid would have taken, which left the book as a 199px
-    // panel with 159px of black under it. panelSeatY() splits the remainder off
-    // the height this composition actually came out at -- the same rule
-    // creation_page.cpp seats on, so the two first surfaces of the game agree.
+    // A FRAME THAT ENDED EARLY IS SEATED, NOT PINNED -- on BOTH axes now. It
+    // used to take the top the full-height grid would have taken, which left
+    // the book as a 199px panel with 159px of black under it; panelSeatY()
+    // splits that remainder. And it used to take the whole window's width
+    // whatever the book held, which left it a full-frame letterbox;
+    // measuredCells() (see composeFor) now hands in the width its own widest
+    // row earns and panelSeatX() splits THAT remainder, 45/55, the same
+    // slightly-leading-edge judgement -- the same two rules creation_page.cpp
+    // seats on, so the two first surfaces of the game agree.
     //
     // Walking LEADS to THE CASE still cannot make the breadcrumb jump, and that
     // is now load-bearing rather than incidental: the detail half is HELD at
-    // kDetailHoldRows and the list is the same list in both views, so both tabs
-    // compose to the same height and therefore to the same seat.
+    // kDetailHoldRows, the measure reads BOTH views' content wherever the
+    // cursor is, and the list is the same list in both views, so both tabs
+    // compose to the same width and height and therefore to the same seat.
     // test_casebook_page's "the two views swap the detail pane and nothing
     // else" is the guard.
-    out.bounds = PanelRect{(frameWidth - out.metric.widthOf(cells)) / 2,
+    out.bounds = PanelRect{panelSeatX(frameWidth, out.metric.widthOf(cells)),
                            panelSeatY(frameHeight, out.metric.heightOf(rows)),
                            out.metric.widthOf(cells), out.metric.heightOf(rows)};
     out.interior = PanelRect{out.bounds.x + out.metric.cellW(), out.bounds.y + out.metric.cellH(),
@@ -305,6 +310,136 @@ inline constexpr int kMinBodyRows = 8;
                      comp.metric.heightOf(listRows)};
 }
 
+/// THE LEAD VIEW'S FACT BLOCK, built in one place so the drawing and the width
+/// measure walk the SAME list -- see panel.hpp's optionListAt on why the
+/// alternative (a measurement that re-describes a layout) is a thing that
+/// drifts.
+///
+/// WHAT IS A FACT AND WHAT IS A SENTENCE, decided by measuring rather than by
+/// taste. The first capture of this pane put `what` ("WHAT THE SEA SPAT UP,
+/// AND WHO SOLD IT", 37 glyphs) and `openedBy` (four names for the Drowned
+/// Hold, 47) in this block and drawFacts clipped both -- "THE BODY, AND
+/// WHOEVER FOU..". Those are sentences and they are in the prose block below,
+/// wrapped. What is left is five short answers, and the witness takes two
+/// rows rather than one because "BONDSMAN GRIEVE, OF THE KING'S BOND" is
+/// thirty-five glyphs against a twenty-three-cell value column.
+///
+/// EVERY EMPTY STATE IS WORDED. The Outfall has no witness at all; a blank
+/// row there reads as a bug and "NOBODY -- IT IS A PLACE" reads as an answer.
+/// That is the reference's own `no trinket`.
+[[nodiscard]] std::vector<PanelFact> leadFactsFor(const CasebookLeadRow& row) {
+    return {
+        PanelFact{"WHERE", row.place, InkRole::Prose},
+        PanelFact{"WHO", row.who.empty() ? std::string("NOBODY -- IT IS A PLACE") : row.who,
+                  row.who.empty() ? InkRole::Dim : InkRole::Prose},
+        PanelFact{"THEY ARE", row.whoWhat.empty() ? std::string("--") : row.whoWhat,
+                  row.whoWhat.empty() ? InkRole::Dim : InkRole::Prose},
+        PanelFact{"HEARD", row.heard.empty() ? std::string("--") : row.heard, InkRole::Number},
+        PanelFact{"FROM YOU", row.here ? std::string("YOU ARE STANDING IN IT") : row.bearing,
+                  row.here ? InkRole::Number : InkRole::Prose},
+    };
+}
+
+/// THE CASE VIEW'S FACT BLOCK, shared for the identical reason.
+///
+/// THE COUNT, WORDED HONESTLY. "READ 4 OF 9 IN THE BOOK" and not "4 OF 12":
+/// twelve is how many leads casebook.json holds and the player has no way to
+/// know that number, so printing it would tell them how much they have not
+/// found -- which is the one thing an investigation must not hand over.
+[[nodiscard]] std::vector<PanelFact> caseFactsFor(const CasebookPageState& state) {
+    return {
+        PanelFact{"LEADS READ", std::to_string(state.read) + " OF " + std::to_string(state.known) +
+                                    " IN THE BOOK",
+                  InkRole::Number},
+        PanelFact{"STILL WAITING", std::to_string(std::max(0, state.known - state.read)),
+                  InkRole::Number},
+        PanelFact{"DEAD ENDS", std::to_string(state.cold), InkRole::Dim},
+        PanelFact{"THEY CALL YOU", state.calledYou, InkRole::Prose},
+    };
+}
+
+/// A fact block's natural width: the longest label, the two-cell gutter
+/// factValueColumn spends after it, the longest value.
+[[nodiscard]] int factsNaturalCells(const std::vector<PanelFact>& facts) {
+    int label = 0;
+    int value = 0;
+    for (const PanelFact& fact : facts) {
+        label = std::max(label, static_cast<int>(fact.label.size()));
+        value = std::max(value, static_cast<int>(fact.value.size()));
+    }
+    return label + 2 + value;
+}
+
+/// THE WIDTH MEASURE -- the widest row EITHER VIEW of this book will draw for
+/// ANY lead, plus the border, through panelMeasureCells. The mirror of the
+/// body-height sizing in composeFor, and cursor-proof the same way
+/// kDetailHoldRows is: everything here is a maximum over the whole book and
+/// over both tabs, so arrowing the list, crossing the tab row or walking the
+/// ward (a bearing is never the longest value on its row) moves no border.
+/// What CAN move it is the world putting a new lead in the book -- which is
+/// the same event that is already allowed to move the height.
+[[nodiscard]] int measuredCells(const CasebookPageState& state, const PanelMetric& metric,
+                                int frameWidth) {
+    // THE MASTER at its natural width: the one-column plan's own content
+    // cells, planned against a deliberately roomy rect so the answer is the
+    // content's and not the pane's. Floored at the split's own master floor.
+    int master = kMinMasterCells;
+    if (!state.rows.empty()) {
+        const PanelRect roomy{0, 0, metric.widthOf(200), metric.heightOf(80)};
+        const OptionListPlan plan =
+            planOptionList(optionsFor(state.rows), roomy, metric, listStyle());
+        master = std::max(master, optionListNaturalCells(plan, listStyle().gutterCells));
+    }
+
+    // THE DETAIL at the widest thing it can be asked to hold -- badge rows,
+    // fact blocks, the commit verb's widest fixed wording -- across every
+    // lead AND the case view. Prose gets no vote (it wraps; the four-row hook
+    // pane is the one wrap whose row count is pinned by the composition, so
+    // it votes at a quarter of its length). Floored at the split's own detail
+    // floor AND at the width kDetailHoldRows was judged against
+    // (panelHeldDetailCells), so the held height keeps its promise at any
+    // width the measure chooses.
+    int detail = std::max(kMinDetailCells, panelHeldDetailCells(kMasterShare, kMinMasterCells));
+    for (const CasebookLeadRow& row : state.rows) {
+        const std::string label = row.brief.empty() ? row.place : row.brief;
+        detail = std::max(detail, static_cast<int>(label.size()) + 2 + 2 +
+                                      static_cast<int>(stateWord(row).size()) + 1);
+        detail = std::max(detail, factsNaturalCells(leadFactsFor(row)));
+    }
+    detail = std::max(detail, static_cast<int>(state.caseTitle.size()) + 2 + 2 +
+                                  static_cast<int>(std::string_view("CLOSED").size()) + 1);
+    detail = std::max(detail, factsNaturalCells(caseFactsFor(state)));
+    detail = std::max(detail, (static_cast<int>(state.hook.size()) + 3) / 4);
+    // The commit line's widest FIXED variant -- "ENTER - LOOK AT IT" plus the
+    // restated look key -- rather than the per-lead bearing variants, which
+    // are both shorter and would put a walking body's changing bearing into
+    // the frame's width.
+    const std::string look = "ENTER - LOOK AT IT (" + state.lookKey + " DOES IT OUT THERE)";
+    detail = std::max(detail, static_cast<int>(look.size()));
+
+    int want = masterDetailCellsFor(kMasterShare, kMinMasterCells, master, detail);
+
+    // The single rows that must shed nothing: the tab row and the crumb path
+    // at its LONGEST leaf, because the leaf follows the cursor and the cursor
+    // may not move the frame. The nav band gets no vote -- unlike creation's
+    // one-row band it already knows how to take a second row, and does.
+    const std::vector<PanelTab> tabs{PanelTab{"", "LEADS"}, PanelTab{"", "THE CASE"}};
+    want = std::max(want, tabRowCells(state.title, tabs, state.readout));
+    int leaf = static_cast<int>(std::string_view("THE CASE").size());
+    for (const CasebookLeadRow& row : state.rows) {
+        const std::string& label = row.brief.empty() ? row.place : row.brief;
+        leaf = std::max(leaf, static_cast<int>(label.size()));
+    }
+    std::vector<std::string> crumbs{state.title};
+    if (!state.caseTitle.empty()) {
+        crumbs.push_back(state.caseTitle);
+    }
+    crumbs.push_back(std::string(static_cast<std::size_t>(leaf), 'X'));
+    want = std::max(want, breadcrumbCells(crumbs));
+
+    return panelMeasureCells(metric.cellsIn(frameWidth), want + 2);
+}
+
 /// One row if the whole nav list fits in one, two if it does not. Still a FIXED
 /// composition: it responds to the window and to the length of its own list,
 /// never to a player.
@@ -314,10 +449,27 @@ inline constexpr int kMinBodyRows = 8;
     if (!out.usable) {
         return out;
     }
+
+    // THE MEASURE, WIDTH FIRST -- so the nav-row check and the body-height
+    // sizing below both run against the panes the page will actually draw,
+    // which is the wrap feedback: a narrower frame takes its nav in two rows
+    // and its prose taller, and both are counted rather than discovered.
+    int gridCells = measuredCells(state, out.metric, frameWidth);
+    if (gridCells < out.metric.cellsIn(frameWidth)) {
+        const Composition sized = compose(frameWidth, frameHeight, 1, -1, gridCells);
+        if (sized.usable) {
+            out = sized;
+        } else {
+            gridCells = -1;
+        }
+    } else {
+        gridCells = -1;
+    }
+
     const std::vector<PanelOption> nav = navOptionsFor(state);
     int navRows = 1;
     if (planOptionList(nav, out.navBand, out.metric, navStyleOf()).overflowed) {
-        Composition taller = compose(frameWidth, frameHeight, 2);
+        Composition taller = compose(frameWidth, frameHeight, 2, -1, gridCells);
         if (taller.usable) {
             out = taller;
             navRows = 2;
@@ -342,7 +494,7 @@ inline constexpr int kMinBodyRows = 8;
     // The body is the only spanWeight in the stack, so a grid this many rows
     // shorter is a BODY that many rows shorter and nothing above it moves.
     const int gridRows = out.metric.rowsIn(frameHeight) - (out.bodyRows - want);
-    const Composition sized = compose(frameWidth, frameHeight, navRows, gridRows);
+    const Composition sized = compose(frameWidth, frameHeight, navRows, gridRows, gridCells);
     return sized.usable ? sized : out;
 }
 
@@ -432,31 +584,12 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
     // punctuated by the `|`/`!` flicker -- "WASTREL!".
     drawCellTextRight(target, panes[0], metric, 1, 0, stateWord(row), ink.dim, alpha);
 
-    // FACTS, NOT PARAGRAPHS: labels left, values at one shared column.
-    //
-    // WHAT IS A FACT AND WHAT IS A SENTENCE, decided by measuring rather than by
-    // taste. The first capture of this pane put `what` ("WHAT THE SEA SPAT UP,
-    // AND WHO SOLD IT", 37 glyphs) and `openedBy` (four names for the Drowned
-    // Hold, 47) in this block and drawFacts clipped both -- "THE BODY, AND
-    // WHOEVER FOU..". Those are sentences and they are in the prose block below,
-    // wrapped. What is left is five short answers, and the witness takes two
-    // rows rather than one because "BONDSMAN GRIEVE, OF THE KING'S BOND" is
-    // thirty-five glyphs against a twenty-three-cell value column.
-    //
-    // EVERY EMPTY STATE IS WORDED. The Outfall has no witness at all; a blank
-    // row there reads as a bug and "NOBODY -- IT IS A PLACE" reads as an answer.
-    // That is the reference's own `no trinket`.
-    const std::vector<PanelFact> facts{
-        PanelFact{"WHERE", row.place, InkRole::Prose},
-        PanelFact{"WHO", row.who.empty() ? std::string("NOBODY -- IT IS A PLACE") : row.who,
-                  row.who.empty() ? InkRole::Dim : InkRole::Prose},
-        PanelFact{"THEY ARE", row.whoWhat.empty() ? std::string("--") : row.whoWhat,
-                  row.whoWhat.empty() ? InkRole::Dim : InkRole::Prose},
-        PanelFact{"HEARD", row.heard.empty() ? std::string("--") : row.heard, InkRole::Number},
-        PanelFact{"FROM YOU", row.here ? std::string("YOU ARE STANDING IN IT") : row.bearing,
-                  row.here ? InkRole::Number : InkRole::Prose},
-    };
-    drawFacts(target, panes[2], metric, facts, -1, alpha);
+    // FACTS, NOT PARAGRAPHS: labels left, values at one shared column. Built
+    // by leadFactsFor -- see its header for what is a fact and what is a
+    // sentence, and note the width measure walks the same list, which is what
+    // keeps "BONDSMAN GRIEVE, OF THE KING'S BOND" whole at every width the
+    // measure can choose.
+    drawFacts(target, panes[2], metric, leadFactsFor(row), -1, alpha);
 
     // THE PROSE, IN TWO BLOCKS, AND THE CONSEQUENCE IS THE ONE THAT IS PINNED.
     //
@@ -565,20 +698,10 @@ void drawCaseDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
     drawProse(target, panes[2], metric,
               {PanelLine{Bullet::None, "", state.hook, InkRole::Prose, accent}}, alpha);
 
-    // THE COUNT, WORDED HONESTLY. "READ 4 OF 9 IN THE BOOK" and not "4 OF 12":
-    // twelve is how many leads casebook.json holds and the player has no way to
-    // know that number, so printing it would tell them how much they have not
-    // found -- which is the one thing an investigation must not hand over.
-    const std::vector<PanelFact> facts{
-        PanelFact{"LEADS READ", std::to_string(state.read) + " OF " + std::to_string(state.known) +
-                                    " IN THE BOOK",
-                  InkRole::Number},
-        PanelFact{"STILL WAITING", std::to_string(std::max(0, state.known - state.read)),
-                  InkRole::Number},
-        PanelFact{"DEAD ENDS", std::to_string(state.cold), InkRole::Dim},
-        PanelFact{"THEY CALL YOU", state.calledYou, InkRole::Prose},
-    };
-    drawFacts(target, panes[4], metric, facts, -1, alpha);
+    // The count and the name the ward has for you, via caseFactsFor -- one
+    // list, walked by this drawing and by the width measure both. Its header
+    // carries the honesty note about "OF 9" versus "OF 12".
+    drawFacts(target, panes[4], metric, caseFactsFor(state), -1, alpha);
 
     // THE WARD'S NERVE AS A BAR, because the reference's own answer to "show
     // the consequence" is shape and figure together rather than a line of text
