@@ -1,19 +1,20 @@
 # Ship note — read this first
 
-**Nothing is broken — but the build phase shipped nothing.** This program
-dispatched three parallel builders at the last note's three next moves
-(the panel measure rule, the Menu's grammar, device-aware prompts) and
-**all three produced zero commits**. The integrator confirmed it: no ref, no
-dangling commit, nothing to merge. The only pass that landed is the **voice
-pass** — twenty functional strings tightened to city cadence, not one raw
-touched. So the three next moves below are **the same three, unimplemented**,
-and the first-contact numbers in the verdict are re-measured, not moved.
+**The three moves landed this time.** The retry demanded proof of life and got
+it: three lanes, twelve commits, one merge conflict, one one-line compile fix,
+and every layout claim in the builders' reports re-verified here **by
+measurement off fresh captures**, not by reading the reports back. The panel
+MEASURE exists and every creation/casebook step is a card seated 45/55 on both
+axes; the tiled Menu is on the terminal grammar at every size; every prompt
+names the device that is holding it and re-words **live, mid-frame, no menu
+visit** — photographed switching both directions in one process.
 
-Gate: **green, both halves, twice over**, revision `fdbd177`.
+Gate: **green, both halves, twice over**, digest `6165af5d…`.
 World hash: **`0x2646C1AAA2BA38DF`** — regenerated, rebaked, twin-gated, unmoved.
 Demo: **run twice, watched, exit 0 both times**, 5780 frames, body at
-(150,63,z19) both runs. Capture is deterministic and **not one committed
-frame moved**.
+(150,63,z19) both runs. Six committed demo frames legitimately moved (the
+measure lane's creation and casebook beats) and were re-blessed; **the street,
+world, night and end-card frames did not move a byte.**
 
 ## Run the demo
 
@@ -22,40 +23,28 @@ frame moved**.
 ```
 
 Two minutes, plays itself, ends on a card and closes its own window. ESC stops
-it early. `dist\` already holds the gate-certified binaries — nothing to build,
-and this phase proved those bytes are the exact bytes a fresh isolated
-checkout goes green with.
+it early. `dist\` holds the gate-certified binaries — byte-identical, all
+four, to the set a fresh isolated checkout goes green with (re-proven this
+phase in `C:\repositories\granadad-ship-9d4fa02`).
 
-Want the stills too? `.\dist\granadad.exe --demo-capture=DIR`
-Want one section? `.\dist\granadad.exe --demo=case` (`quay saltgate case map night end`)
+Play it normally with `.\dist\granadad.exe`. Keyboard fastest path unchanged:
+**DOWN DOWN ENTER**, ENTER on NAME, type, ENTER, **UP** (wraps to BEGIN),
+ENTER, twelve ENTERs, UP, ENTER. On a pad the screen now tells you itself —
+`B LEAVE / D-PAD MOVE / A OPEN`, `A - THAT IS WHAT HAPPENED` — because the
+feet finally read the hand: **A** on NAME raises the OSK, **START** commits,
+twelve **A**s, BEGIN. In the world: **M**/**SELECT** map, **TAB**/**D-pad Up**
+casebook, **E**/**A** talk, **ESC**/**START** pause.
 
-Play it normally with `.\dist\granadad.exe`. Character screen, fastest path:
-**DOWN DOWN ENTER** (WALK YOUR OWN PATH) → **ENTER** on NAME, type a name,
-**ENTER**, **UP** (the cursor wraps straight to BEGIN — you do not need the
-25 DOWNs the old note counted), **ENTER**, twelve questions each answered
-with **ENTER**, then — the cursor is back on NAME — **UP, ENTER** on BEGIN
-again. In the world: **M** map, **TAB** casebook, **E** talk, **F1** keys,
-**ESC** pause.
-
-**On a pad**: **A** confirms, **A** on NAME raises the on-screen keyboard,
-**START** commits the name, **UP** wraps to BEGIN, **A**, twelve **A**s for
-the past, **UP, A** on BEGIN. In the world: **D-pad Up** casebook, **SELECT**
-map, **START** pause (first press dismisses whatever is open), **B** crouch.
-
-> Note for whoever drives this next: **the creation window does not answer
-> F12**, so `drive-windowed.ps1` shot beats only work once the world window
-> exists — in creation, photograph through `--creation=STEP` or
-> `--padcreation`'s own `shot:` beats. And during `--demo` the game swallows
-> everything but ESC. Both cost this phase several blind runs to learn.
+> Still true: the creation window does not answer F12 (photograph creation
+> through `--creation=STEP` or `--padcreation`'s `shot:` beats), and `--demo`
+> swallows everything but ESC.
 
 ---
 
 ## The gate, in full
 
-Run in a **fresh isolated worktree** at `C:\repositories\granadad-ship-fdbd177`
-with the four audio directories the sound bank names (`Foley Sounds` 87,
-`Impact Sounds` 132, `Interface Sounds` 102, `RPG Audio` 53 — 374 files)
-**real-copied** — they are gitignored, a checkout does not carry them.
+Run in a **fresh isolated worktree** at `C:\repositories\granadad-ship-9d4fa02`
+with the four gitignored audio directories real-copied (374 files).
 
 | half | where | result |
 |---|---|---|
@@ -64,236 +53,167 @@ with the four audio directories the sound bank names (`Foley Sounds` 87,
 | `scripts\verify-windows.ps1` | main repo, re-verified | **=== PASS ===**, exit 0 |
 
 ```
-gate executed:  2026-08-31T21:34:36Z UTC
-revision:       fdbd177 (stamp says "docker"; the digest is the identity)
-native/ digest: 6dac953634118c1ac8e51d86b3081580f6b84d18fb39b425e04937cb72161799
-ctest cases:    942 (floor 537)
-native/ files:  270
+revision:       9d4fa02 (17 commits past f4f8e19: 12 lane + 3 merges + 1 fix + 1 frames)
+native/ digest: 6165af5d0ef8ebff5fcdc071913aa37d731e95561804f6df7158a815f6160759
+                (stamped and here, both trees)
+ctest cases:    967 (floor 537; +25 from the three lanes)
+native/ files:  271
 ```
 
-The two comparators, byte-for-byte identical linux/gcc vs mingw/windows, in
-BOTH trees:
+Comparators byte-for-byte identical linux/gcc vs mingw/windows in BOTH trees:
+decoded world state 3884 bytes sha256 `97850DCB…C8B2179`; world hash + sim run
+1791 bytes sha256 `924F6EA6…B7B8468B`. The four `dist\` binaries
+(`granadad.exe`, `-tests`, `-twin-gate`, `-content-tests`) hashed main repo vs
+fresh worktree: **byte-identical, all four.**
 
-```
-decoded world state   3884 bytes  sha256 97850DCB…C8B2179   IDENTICAL
-world hash + sim run  1791 bytes  sha256 924F6EA6…B7B8468B  IDENTICAL
-gate stamp            matches the main repo's own native/ tree
-```
-
-**`dist\` in the main repo carries the certified binaries** — `granadad.exe`,
-`granadad-tests.exe`, `granadad-twin-gate.exe`, `granadad-content-tests.exe`
-each hashed against the fresh worktree's published set: **byte-identical, all
-four.** The thing the owner runs is the thing that went green in isolation.
-
-`test_demo` explicitly: `dist\granadad-tests.exe -sf="*test_demo*"` →
-**6 cases, 209 assertions, all passed, exit 0.**
+`test_demo` explicitly: **6 cases, 209 assertions, all passed, exit 0.**
 
 ## The world hash did not move — regenerated and rebaked, not asserted
 
 ```
 1. regenerate   python tools\scripts\gen_docks_surface.py
-                content/maps/src/docks_surface.tmx
-                sha256 CCEDA566…237B4D1C BEFORE and AFTER — git status clean
-
+                docks_surface.tmx sha256 CCEDA566…237B4D1C before AND after, tree clean
 2. rebake       gradlew :tools:run --args="import-map … --raws content/raws"
                 17,954 bytes, sha256 E47DA3AE…E474C2AC
                 vs content/maps/baked/docks_surface.trojsav: IDENTICAL
-
 3. twin-gate    dist\granadad-twin-gate.exe --population --population-hour 16 --ticks 7200
-                run twice: 0x2646C1AAA2BA38DF all four hashes,
-                report 18,772 bytes IDENTICAL, both console outputs
-                byte-identical to each other
-
-4. no re-bless  golden_java_vectors.hpp, content/tests/fixtures.hpp,
-                test_world_reader.cpp, sim/docks.hpp, docks_surface.tmx,
-                docks_surface.trojsav, BASELINE-WORLD-HASH.md
-                — all seven byte-identical to the program's first commit (d32942e)
+                run twice: 0x2646C1AAA2BA38DF both runs, report 18,772 bytes
+                IDENTICAL, the two console outputs byte-identical to each other
+4. no re-bless  golden_java_vectors.hpp, fixtures.hpp, test_world_reader.cpp,
+                docks_surface.tmx, docks_surface.trojsav, BASELINE-WORLD-HASH.md
+                — all byte-identical to the program's first commit (d32942e)
 ```
 
-`git diff --name-only 107b646..HEAD -- content/` is **empty**. The voice pass
-touched five render .cpp/.hpp, two test files, and docs frames. Nothing else.
+`git diff --name-only f4f8e19..HEAD -- content/` is **empty**. Three
+render-only lanes; the sim never had a way to move.
 
 ## The demo
-
-Two full windowed runs, watched, exit code checked:
 
 ```
 run 1   5780 frame(s), body ended at (150,63,z19)   exit 0
 run 2   5780 frame(s), body ended at (150,63,z19)   exit 0
 ```
 
-One `--demo-capture` run afterwards: **22 frames, every one byte-identical to
-the committed set in `docs/frames/demo/`** — which is the set the voice pass
-re-committed, so the five copy-moved frames (case-book, case-book-harls,
-creation-name, creation-sheet, gate-10) are already in it and **nothing moved
-beyond them. The street, world, night and end-card frames did not move**,
-which is also the proof the prompts builder's no-op touched nothing: there was
-no relabeling to touch them with.
+`--demo-capture`: 22 frames. **Exactly six moved** — case-book,
+case-book-harls, creation-name, creation-sheet, creation-quiz,
+creation-quiz-answered — the measure lane's beats, which SHOULD move, and did,
+onto the new cards. **All sixteen street/world/night/end frames byte-identical**
+— the proof the prompt sweep relabels nothing under keyboard drive. The six
+are re-blessed in `docs/frames/demo/`. `creation-origin.png` dropped again
+(thirteenth run, thirteenth drop — the known shutter race); the committed copy
+is the byte-exact `--creation=origin` substitute, now showing the measured
+card.
 
-The 23rd, `creation-origin.png`, **dropped again** (twelfth capture run,
-twelfth drop — the known shutter race). Re-taken through
-`--creation=origin --width=640 --height=360 --scale=1`: sha256 `5650B135…`,
-**byte-identical to the committed frame.**
+## Driving it, this phase
 
-## Driving every input, this phase
+* **Pad, full run, one process** (`--padcreation` + `--padscript`, pristine
+  bindings): door → A on NAME → `DAD` off the 10x3 grid → START → BEGIN →
+  twelve As → BEGIN → the ward → casebook → pause → QUIT armed → cancelled →
+  ward map → **quit through the pad's own armed-QUIT confirm**. 521 frames,
+  exit 0.
+* **The live switch, one process, no menu visit** — the frame the last two
+  notes asked for (`docs/frames/ship4/sw-*.png`): keyboard finishes creation,
+  the street serf reads `E - TALK`; **one D-pad press** → the crosshair reads
+  `A - TALK`; **one arrow key** → `E - TALK` again. 2856 frames, exit 0.
+* A pre-press bonus determinism point: the windowed pad run's door frame,
+  taken before any pad press, is **byte-identical** to the headless
+  `--creation=origin` capture.
 
-All three devices completed creation and reached the ward on the certified
-binary. All three exited 0.
+## The measured state at 640x360 — verified against the builders' arithmetic
 
-**Keyboard — real SendInput scancodes through `scripts\drive-windowed.ps1`.**
-Door → CLAW typed → UP to BEGIN → twelve ENTERs → BEGIN → the ward, then the
-casebook, the ward map, F1 and a street shot with a serf's `E - TALK` prompt
-on it: `granadad: playing as CLAW (custom)`, 1225 frames, exit 0.
+Threshold calibrated to reproduce the last note's 71.9% exactly (rows/cols
+with no pixel above 16).
 
-**Pad — a real `SDL_AttachVirtualJoystick`, creation AND world, one process.**
-Door → A on NAME → `DAD` off the 10x3 key grid → START → UP, A on BEGIN →
-twelve As → BEGIN → the ward → D-pad Up casebook → START START pause:
-407 frames, exit 0.
+| surface | before (ship3) | now (measured fresh) | builder claim |
+|---|---|---|---|
+| THE DOOR | 639px full-width band, 63.9% dark rows, ~0 dark cols, 3.90:1 | card lit x[114..497], y[87..250]; dark cols **0→288 (45.0%)**; **2.34:1**; dark rows 63.9% (unchanged — rows are the height rule's axis) | 385×168 @ (114,86) — **CONFIRMED** (lit bbox 384 wide; the border's outer column sits under threshold) |
+| THE NAME (OSK) | **71.9% dark rows**, 114 dark cols, 4.96:1 letterbox | **still 71.9% dark rows — the number was NOT beaten, exactly as the measure lane predicted**; the win is the other axis: dark cols **114→320 (50.0%)**, lit band a **2.98:1 card** at x[114..497], y[103..231] | 385×133 @ (114,102), 2.9:1 — **CONFIRMED** |
+| casebook | 639px, 56.1% dark rows | card x[90..528] (439), y[71..269]; dark cols ~0→**246 (38.4%)**; 2.21:1; dark rows 56.1% (unchanged, same reason) | 440×203 @ (90,70) — **CONFIRMED** |
+| quiz | 640-wide | 424 wide @ x=96, 2.29:1 | ~425 @ x=96 — **CONFIRMED, dead on** |
+| sheet | 640-wide | 509 lit width x[58..566] (kb, typing); the pad sheet 394 | builder's ~415 estimate **wrong** (the two-column master out-votes it) — the *rule* held; the integrator's ~575 was also off at the calibrated threshold |
+| tiled Menu | hairline rectangles, ten rows + `0 MORE (1/2)` in a 27-row pane | one `+~-~-`/`◆` frame, digits on exactly rows 1–9, the full list, stipple in the spare rows; at 320x180 the list paginates with a MORE foot instead of clipping | **CONFIRMED** at both sizes, byte-identical recapture |
+| regressions | — | kb-wardmap, kb-keys, origin-320, sheet-1920, menu-320: fresh captures **byte-identical to the committed parallel2 set**, all 13 shots | clamp/never-calls-measure claims **hold** (the integrator's 1px-left find at 1920 stands noted) |
 
-**Mouse — real relative motion and real clicks.** Hovering the ward map at
-(85,260) selects THE QUAYWARD COMPOUND — footprint rect lit, detail pane
-`KIND DOOR / STANDS ON SALTGATE RISE / FOOTPRINT 64X19 TILES / BAND 20 /
-FROM YOU SW 90 PACES / INSIDE NOW 39 PEOPLE`, status
-`SELECTED (104,137) THE QUAYWARD COMPOUND`, foot `ENTER - FACE IT (SW)` —
-**the same selection ship2 recorded, reproduced by measurement.** 1047
-frames, exit 0.
+**Prompts, every claim photographed on pristine bindings**: pause header
+`A SELECTS  START RESUMES`; armed `A QUITS  B CANCELS` + `5 QUIT -- SURE? A`;
+casebook `PICK A LEAD. A SHOWS YOU WHERE.`; ward map band `D-PAD NEXT PLACE /
+LB RB OVERVIEW / RT LT ZOOM / SELECT CLOSE`; door/sheet/quiz feet `B BACK /
+D-PAD MOVE / A …` with the digit row gone; street `A - TALK` / `A - LOOK`.
+And the fallback is honest: under this repo's own cfg (`interact E MOUSE2`,
+no pad half) the crosshair keeps saying `E` on a pad — the other-hand rule,
+by design, seen live.
 
-### And what the driving photographed, because the builders shipped nothing
-
-* **With the pad connected and driving, the pause header still reads
-  `ENTER SELECTS  ESC RESUMES`,** the casebook's foot still reads
-  `ENTER GO TO IT / TAB CLOSE`, the street still says `E - TALK`
-  (`docs/frames/ship3/pad-pause-640.png`, `pad-casebook-640.png`). Worse than
-  the last note knew: **creation's sheet and quiz feet are keyboard-worded
-  too** — `ESC BACK / ENTER OPEN`, `1-9 PICK` — on the critical path of every
-  pad player (`pad-sheet-begin-640.png`, `pad-quiz-640.png`). The one
-  pad-aware surface is the OSK itself (`B BACK / PAD MOVE / A TAKE / START
-  DONE`). The drawing site is a fixed string (`session.cpp:4161` and friends);
-  no device lookup exists.
-* **THE NAME re-measured off a fresh pad capture: 259 of 360 rows carry no
-  lit pixel — 71.9%, the exact number the note said to beat.** Lit band rows
-  103–231 (the 129px letterbox), 114 fully dark columns. Unbeaten because
-  untouched.
-* **THE DOOR: 63.9% black rows** (230/360, band 87–250) — the committed frame
-  re-measured, and `--creation=origin` still reproduces it byte-exactly.
-* **The tiled Menu, captured fresh at 640x360 AND 320x180**
-  (`docs/frames/ship3/menu-character-320.png`): still four solid hairline
-  rectangles, not the `+~-~-` grammar; the CHARACTER tile still draws ten
-  rows and `0 MORE (1/2)` into a pane twice that deep. `menu_view.cpp` has a
-  zero-byte diff this program.
-
-### Builders' arithmetic, verified
-
-**There was none to verify.** All three builder reports were null; no layout
-claim, no commit, no branch. Every number above is this phase's own
-measurement of the unchanged surfaces.
+Frames: `docs/frames/ship4/` (this phase's pad set + the switch triptych),
+`docs/frames/parallel2/` (the integrator's 21, all re-reproduced
+byte-identically here), `docs/frames/demo/` (re-blessed).
 
 ---
 
-## The verdict: still NOT near ready for early access
+## The verdict: closer by a real step — and still not near ready
 
-The last note said "forward half a step." This program moved it **a sliver,
-and only in the prose** — the geometry a stranger meets is the same to the
-pixel, because the phase that was supposed to move it silently produced
-nothing. I will not dress that up: the parallel dispatch failed and the
-program's three stated goals are exactly as unimplemented as they were.
+The standing verdict was "not near ready — moved a sliver, prose only." This
+program moved the thing itself, and I measured it rather than took anyone's
+word: **every surface a stranger meets in the first sixty seconds is now a
+measured card on one grammar, seated 45/55 on both axes, with prompts that
+follow the hand holding the machine.** Door, name, quiz, sheet, casebook,
+pause, map, Menu — one register, no letterbox, no hairline rectangles, no
+keyboard verbs under a pad player's thumbs. The Menu was the worst screen in
+the game for three notes running; it now looks like it belongs to the same
+program as the ward map.
 
-**A stranger's first sixty seconds, today:** a well-set, well-seated DOOR
-that is still a 639px-wide letterbox with 63.9% of the frame dark; on a pad,
-THE NAME at 71.9% black with keyboard verbs on the sheet around it; the
-casebook pushed at them (with its good waiting line); the genuinely excellent
-ward and ward map; then TAB — **and the tiled Menu is still the worst screen
-in the game**, the one surface off the terminal grammar, half its CHARACTER
-tile dark for a reason that is not emptiness.
+**A stranger's first sixty seconds, today:** a 2.3:1 DOOR card floating on
+ground-stipple; on a pad, feet that say `B LEAVE / D-PAD MOVE / A OPEN`; THE
+NAME as a 2.98:1 card whose grid answers the D-pad; the casebook card with its
+waiting line; the excellent ward and ward map; TAB — and the Menu holds the
+register. **The worst screen in the game is now the sheet** — still the widest
+(509px), still the densest, and a typed name past five glyphs visibly wiggles
+its frame in 2-cell steps while you type.
 
-**The prose, though, got there.** The owner's note was that the writing
-should read like city folk wrote it, not an assistant. Sampled on the
-surfaces a stranger actually meets: the sheet's NAME detail now says `THE
-WARD WILL USE IT TO YOUR FACE FROM HERE ON`; the chart tile says `THE CHART
-KNOWS WHAT THE CASEBOOK KNOWS, AND NOT A STREET MORE`; the pause line says
-`THE DOCKS DO NOT WAIT ON YOU. SETTINGS KEEP THEMSELVES.` The over-explaining
-is gone — no sentence left does two clauses' work where one lands. And the
-raws were rightly left alone: Father Maell's "the difference between an old
-man's nerves and a fact with a temperature" needed no assistant's help. The
-functional copy now keeps that company instead of apologizing next to it.
-That is real, it is on every panel, and it is the only thing in this program
-a player can feel.
+But the bar is "clean and near ready for early access," and honesty about the
+distance: **not near ready.** For the first time the reason is not the
+screens. It is: **one authored case, twelve leads, five letters** — an evening
+of content in a sandbox built for a season; seven pages that still swallow
+mouse clicks; a demo that never dollies; and the new pad seams below. The
+presentation debt is nearly paid. The content debt is untouched and it is the
+whole remaining distance.
 
-The unfixable one is still unfixable by layout or prose: **one authored case,
-twelve leads, five letters.**
+## Seams found by driving it (new this phase)
 
-## What this program moved, in two commits
+1. **The B that closes the casebook also toggles crouch** — the street after
+   closing the book carries a `CROUCHED` banner nobody asked for. One press,
+   two routes.
+2. **A pad player's first world screen is keyboard-worded**: the auto-opened
+   new-game casebook says `ENTER SHOWS YOU WHERE` until their first world
+   press, because creation's device note dies with `CreationFlow` instead of
+   seeding the Session it births.
+3. The casebook detail's `ENTER - SHOW ME WHERE` / foot `ENTER GO TO IT`
+   stay keyboard-worded on a pad — the known measure-lane literals, one-line
+   fixes each via `promptMoveKeys`-style state fields.
+4. The sheet's NAME-row width wiggle while typing (measure lane's own flag;
+   fix is padding the value to `kMaxNameLength` in creation.cpp).
 
-### The voice pass — `7d4366f` (copy + test pins), `fdbd177` (frames)
+## The three things to do next
 
-Twenty functional strings across `session.cpp`, `creation.cpp`,
-`controls.cpp`, `demo.cpp`, `casebook_page.hpp` — empty states, help lines,
-instructions — each cut to one clause doing the work. Zero raws changed
-(`git diff 107b646..HEAD -- content/` is empty). Two test pins updated in the
-same commit. Nine surfaces photographed at 640x360 in `docs/frames/voice/`;
-five demo frames legitimately moved by copy and were re-committed; the other
-17 stayed byte-identical.
+1. **The pointer pass: make the seven silent pages answer the mouse.** The
+   tiled Menu, pause and its pages, conversation, wait, lockpick, and the
+   casebook's tab row. The lanes left it cheap on purpose: `menuTileLayout` +
+   `optionListAt` for the tiles, a `casebookTabAtPixel` sibling beside
+   `casebookLeadAtPixel`, all on the pattern `session_pointer()`'s map branch
+   already proves. `main.cpp:1881`'s catch-all return is where the tab hit
+   slots in.
+2. **Close the pad seams in one sweep** — the B-close crouch fall-through,
+   the device note carried from creation into its Session, and the casebook's
+   three remaining keyboard literals moved onto state fields the way
+   `closeKey` already flows. All small, all found by playing, all on the pad
+   player's first five minutes.
+3. **A second authored case.** The screens no longer excuse the sandbox.
+   Twelve leads and five letters is the whole game a stranger can drain in an
+   evening, and no measure rule fixes that. This is the verdict's blocker and
+   it should be the next program's headline, not its leftovers.
 
-## The three things to do next — unchanged, because none of them happened
+## Still open, unchanged
 
-1. **Give the composed panel a MEASURE, the way the placement pass gave it a
-   seat.** One `panelSeatX()`/measure rule in `render/panel.hpp` sizing the
-   composition to the widest row it actually draws plus the master/detail
-   gutter, seated on the same 45/55 judgement, full-frame pages falling out
-   untouched by construction. **Judge it off frames at 640x360, not
-   arithmetic.** THE NAME is the acid test: **71.9% black is still the number
-   to beat** — re-confirmed this phase off a fresh capture.
-2. **Put `menu_view.cpp`'s four tiled panels on the terminal grammar, and let
-   a tile's page size follow its pane.** One job, both in `drawMenuTiles`:
-   `+~-~-` rules with `+`/`◆` junctions and alternating `|`/`!` edges, and
-   `topicRowsFor`'s ten-row cap becoming a function of the pane's height. The
-   vocabulary exists in `panel.hpp`/`panel.cpp` — use it, never hand-roll a
-   second copy.
-3. **Make the prompts name the device that is holding them** — and the
-   inventory grew: not just `E - TALK`, `ENTER SELECTS ESC RESUMES`,
-   `ENTER GO TO IT`, `TAB CLOSE` in the world, but creation's own sheet and
-   quiz feet (`ESC BACK`, `ENTER OPEN`, `1-9 PICK`) with a pad in hand. The
-   binding table knows both halves of every `Action` (`controls.cpp`'s
-   `set(Action, Key, Key)`); print the half belonging to the device that last
-   sent input. The OSK already behaves — copy its manners, not its code.
-
-## Still open, and why
-
-1. **`--demo-capture` drops `creation-origin.png`** — twelve runs, twelve
-   drops. The demo plays the beat every time; the substitution through
-   `--creation=origin --scale=1` is byte-exact. Untouched.
-2. **Seven pages swallow clicks** — the tiled Menu, the pause menu and its
-   pages, a conversation, the wait page, the lockpick, the casebook page's
-   tab row. Pattern to copy: the map branch in `session_pointer()` —
-   `mapPageLayout`/`mapPlaceAtPixel`, `creationPageHitTest`.
-3. **The input router is still in `main.cpp`'s anonymous namespace** — no
-   suite can link `route_menu_key`, `session_pointer`, `creation_input`,
-   `creation_pointer`.
-4. **No camera motion anywhere in the demo.** It cuts, walks and turns; it
-   never dollies on a still.
-5. **One authored case, twelve leads, five letters.**
-6. **New, procedural:** the parallel builder dispatch can silently no-op —
-   three null reports and zero commits looked, from the outside, exactly like
-   three busy builders. Whatever re-runs it should demand a branch name and a
-   commit SHA as proof of life before the integrate phase spins up.
-
-## The frames behind every claim above
-
-`docs/frames/ship3/`, all 640x360 (one 320x180), all off the certified binary:
-
-```
-pad-pause-640.png        pause via START, pad connected — ENTER SELECTS ESC RESUMES
-pad-casebook-640.png     casebook via D-pad Up — ENTER GO TO IT / TAB CLOSE
-pad-sheet-begin-640.png  the sheet, NAME DAD, BEGIN READY — keyboard-worded foot
-pad-quiz-640.png         question 1 of 12 — ESC BACK / ENTER ANSWER / 1-9 PICK
-pad-osk-640.png          the OSK fresh: 71.9% black rows re-measured, pad-worded
-kb-casebook-640.png      the casebook a new game opens (keyboard run)
-kb-wardmap-640.png       M — the ward map, full frame, still excellent
-kb-keys-640.png          F1 — the keys page, voice line in place
-kb-street-serf-640.png   a serf carrying E - TALK
-mouse-map-hover-640.png  real hover selecting THE QUAYWARD COMPOUND
-menu-character-320.png   the tiled Menu at 320x180 — same wrong grammar
-```
-
-Plus `docs/frames/voice/` (the voice pass's nine) and `docs/frames/demo/`
-(all 23, every one re-proven byte-identical this phase).
+`--demo-capture` drops creation-origin (13/13); the input router lives in
+`main.cpp`'s anonymous namespace, unlinkable by any suite; no camera motion in
+the demo; the 1920 sheet sits 1px left of its old centring (invisible,
+integrator-found, noted so nobody hunts it as drift).
