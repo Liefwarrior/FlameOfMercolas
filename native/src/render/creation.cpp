@@ -1175,6 +1175,29 @@ namespace {
     return option;
 }
 
+/// SHIP NOTE MOVE 3. The standard three-or-four-verb foot, worded for the
+/// device that last spoke -- promptBackKey/promptMoveKeys/promptConfirmKey
+/// are the page grammar main.cpp's creation_input actually routes (ESC/B,
+/// arrows or stick or D-pad, ENTER/A). The digit entry is KEYBOARD ONLY: a
+/// pad has no number row, and a foot advertising "1-9 PICK" at a thumb that
+/// cannot press one is the exact defect this move exists to retire.
+[[nodiscard]] std::vector<PanelOption> navFeet(InputDevice dev, std::string_view backVerb,
+                                               std::string_view confirmVerb,
+                                               std::string_view digits) {
+    std::vector<PanelOption> nav{navOf(promptBackKey(dev), backVerb),
+                                 navOf(promptMoveKeys(dev), "MOVE"),
+                                 navOf(promptConfirmKey(dev), confirmVerb)};
+    if (dev == InputDevice::KeyboardMouse && !digits.empty()) {
+        nav.push_back(navOf(digits, "PICK"));
+    }
+    return nav;
+}
+
+/// "ENTER - X", or "A - X" -- the commit verb's key half, one place.
+[[nodiscard]] std::string confirmVerbOf(InputDevice dev, std::string_view verb) {
+    return std::string(promptConfirmKey(dev)) + " - " + std::string(verb);
+}
+
 }  // namespace
 
 std::string CreationFlow::pageEffectName(const sim::ChargenEffect& effect) const {
@@ -1405,9 +1428,8 @@ CreationPage CreationFlow::page() const {
             bio.body = companion->bio();
             out.lines.push_back(std::move(bio));
         }
-        out.commitVerb = "ENTER - OPEN THIS DOOR";
-        out.nav = {navOf("ESC", "LEAVE"), navOf("UP DOWN", "MOVE"), navOf("ENTER", "OPEN"),
-                   navOf("1-5", "PICK")};
+        out.commitVerb = confirmVerbOf(promptDevice_, "OPEN THIS DOOR");
+        out.nav = navFeet(promptDevice_, "LEAVE", "OPEN", "1-5");
         return out;
     }
 
@@ -1459,11 +1481,11 @@ CreationPage CreationFlow::page() const {
                 out.lines.push_back(std::move(line));
             }
             out.bars = pageCallingBars(calling);
-            out.commitVerb = taken ? "ENTER - KEEP THIS TRADE" : "ENTER - TAKE THIS TRADE";
+            out.commitVerb =
+                confirmVerbOf(promptDevice_, taken ? "KEEP THIS TRADE" : "TAKE THIS TRADE");
             out.commitCost = taken ? "" : "(REPLACES THE WHOLE SHEET)";
         }
-        out.nav = {navOf("ESC", "BACK"), navOf("UP DOWN", "MOVE"), navOf("ENTER", "TAKE"),
-                   navOf("1-9", "PICK")};
+        out.nav = navFeet(promptDevice_, "BACK", "TAKE", "1-9");
         return out;
     }
 
@@ -1514,11 +1536,10 @@ CreationPage CreationFlow::page() const {
         // THE VERB FOLLOWS THE CURSOR, which is the reference's rule that state
         // moves the row, the label and the verb together. Nothing is ever
         // greyed out; the one action line simply says what ENTER does now.
-        out.commitVerb =
-            choiceCursor_ == 1 ? "ENTER - GO AND PICK ONE BY EYE" : "ENTER - TAKE THIS TRADE";
+        out.commitVerb = confirmVerbOf(
+            promptDevice_, choiceCursor_ == 1 ? "GO AND PICK ONE BY EYE" : "TAKE THIS TRADE");
         out.commitCost = choiceCursor_ == 1 ? "(THE ANSWERS ARE KEPT)" : "";
-        out.nav = {navOf("ESC", "LAST QUESTION"), navOf("UP DOWN", "MOVE"),
-                   navOf("ENTER", "CHOOSE"), navOf("1-2", "PICK")};
+        out.nav = navFeet(promptDevice_, "LAST QUESTION", "CHOOSE", "1-2");
         return out;
     }
 
@@ -1603,10 +1624,9 @@ CreationPage CreationFlow::page() const {
             }
         }
         out.cursor = choiceCursor_;
-        out.commitVerb = "ENTER - SAY IT";
-        out.commitCost = "(ESC TAKES IT BACK)";
-        out.nav = {navOf("ESC", "BACK"), navOf("UP DOWN", "MOVE"), navOf("ENTER", "ANSWER"),
-                   navOf("1-3", "PICK")};
+        out.commitVerb = confirmVerbOf(promptDevice_, "SAY IT");
+        out.commitCost = "(" + std::string(promptBackKey(promptDevice_)) + " TAKES IT BACK)";
+        out.nav = navFeet(promptDevice_, "BACK", "ANSWER", "1-3");
         return out;
     }
 
@@ -1653,7 +1673,7 @@ CreationPage CreationFlow::page() const {
                 PanelLine line;
                 line.body = "ANSWER NOTHING MORE. THE REST OF YOUR PAST IS ROLLED IN ONE THROW.";
                 out.lines.push_back(std::move(line));
-                out.commitVerb = "ENTER - ROLL THE REST";
+                out.commitVerb = confirmVerbOf(promptDevice_, "ROLL THE REST");
                 out.commitCost = "(YOU CANNOT UNROLL IT)";
             } else if (choiceCursor_ >= 0 &&
                        choiceCursor_ < static_cast<int>(question.answers.size())) {
@@ -1670,12 +1690,12 @@ CreationPage CreationFlow::page() const {
                 for (PanelLine& line : pageEffectLines(answer.effects, out.accent)) {
                     out.lines.push_back(std::move(line));
                 }
-                out.commitVerb = "ENTER - THAT IS WHAT HAPPENED";
-                out.commitCost = "(ESC TAKES IT BACK)";
+                out.commitVerb = confirmVerbOf(promptDevice_, "THAT IS WHAT HAPPENED");
+                out.commitCost =
+                    "(" + std::string(promptBackKey(promptDevice_)) + " TAKES IT BACK)";
             }
         }
-        out.nav = {navOf("ESC", "BACK"), navOf("UP DOWN", "MOVE"), navOf("ENTER", "ANSWER"),
-                   navOf("1-9", "PICK")};
+        out.nav = navFeet(promptDevice_, "BACK", "ANSWER", "1-9");
         return out;
     }
 
@@ -1780,8 +1800,11 @@ CreationPage CreationFlow::pageForSheet() const {
         out.rows.push_back(pageRowFor(row));
     }
     out.cursor = customizeCursor_;
-    out.nav = {navOf("ESC", editingName_ ? "STOP TYPING" : "BACK"), navOf("UP DOWN", "MOVE"),
-               navOf("LEFT RIGHT", "SPEND"), navOf("ENTER", "OPEN")};
+    // The sheet's four verbs, hand-built (LEFT RIGHT is its own fourth verb
+    // and is honest on both devices); the digit entry never applied here.
+    out.nav = {navOf(promptBackKey(promptDevice_), editingName_ ? "STOP TYPING" : "BACK"),
+               navOf(promptMoveKeys(promptDevice_), "MOVE"), navOf("LEFT RIGHT", "SPEND"),
+               navOf(promptConfirmKey(promptDevice_), "OPEN")};
 
     if (customizeCursor_ < 0 || customizeCursor_ >= static_cast<int>(rows.size())) {
         return out;
@@ -1799,7 +1822,8 @@ CreationPage CreationFlow::pageForSheet() const {
             PanelLine line;
             line.body = "THE WARD WILL USE IT TO YOUR FACE FROM HERE ON.";
             out.lines.push_back(std::move(line));
-            out.commitVerb = editingName_ ? "ENTER - THAT IS MY NAME" : "ENTER - TYPE A NAME";
+            out.commitVerb = confirmVerbOf(
+                promptDevice_, editingName_ ? "THAT IS MY NAME" : "TYPE A NAME");
             out.commitCost = editingName_ ? "(BACKSPACE RUBS OUT)" : "";
             break;
         }
@@ -1911,13 +1935,13 @@ CreationPage CreationFlow::pageForSheet() const {
             // missing and pressing it goes and fixes that -- see
             // chooseCustomizeRow().
             if (!canConfirm()) {
-                out.commitVerb = "ENTER - NAME YOURSELF FIRST";
+                out.commitVerb = confirmVerbOf(promptDevice_, "NAME YOURSELF FIRST");
                 out.commitCost = "(IT TAKES YOU TO THE NAME ROW)";
             } else if (companion == nullptr && biography_.loaded() && !bioDone_) {
-                out.commitVerb = "ENTER - ON TO YOUR PAST";
+                out.commitVerb = confirmVerbOf(promptDevice_, "ON TO YOUR PAST");
                 out.commitCost = "(TWELVE QUESTIONS, THEN BACK HERE)";
             } else {
-                out.commitVerb = "ENTER - BEGIN";
+                out.commitVerb = confirmVerbOf(promptDevice_, "BEGIN");
                 out.commitCost = "(THE WARD IS WAITING)";
             }
             break;
