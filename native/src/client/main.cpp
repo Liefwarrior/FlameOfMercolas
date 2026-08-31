@@ -1685,8 +1685,10 @@ void print_usage() {
             // "T - TAKE THEIR PRICE" since the haggle shipped, and T was
             // never routed -- only PageNext above was. The advertised key
             // now does the advertised thing; PageNext stays for the pad's
-            // RB, which is what the band prints with a pad in hand.
-            if (key == render::Key::T) {
+            // RB, which is what the band prints with a pad in hand. Same
+            // yield rule as F1/F2/F3: a verb somebody BINDS to T outranks
+            // the convenience.
+            if (key == render::Key::T && action == render::Action::Count) {
                 session.takeAskingPrice();
                 return true;
             }
