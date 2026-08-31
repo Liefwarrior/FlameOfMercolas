@@ -1869,3 +1869,116 @@ TEST_CASE("the keyboard is a block, not a spread list, at every window size") {
         CHECK(layout.grid.strideCells == (size[1] <= 180 ? 1 : 2));
     }
 }
+
+// ===========================================================================
+// THE MEASURE -- ship note move 1: the panel gets a width, the way the
+// placement pass gave it a seat
+// ===========================================================================
+
+TEST_CASE("THE DOOR measures to its own widest row and is seated 45/55 across") {
+    // The arithmetic at 640x360, in full: the door list's widest row is a
+    // one-digit key and its gap (2) + ANSWER FOR YOURSELF (19) + the value
+    // column (BUILD plus its two-cell gutter, 7) = 28 cells. Share 40 with the
+    // detail pane held at panelHeldDetailCells(40, 18) = 42 asks
+    // masterDetailCellsFor for a 75-cell interior; the tab row (46), the nav
+    // band (58) and the crumb path (19) all fit inside that; plus the border
+    // it is 77 cells -- 385 of 640px, where this page shipped at 639px
+    // whatever it held.
+    const render::CreationPage page = fresh().page();
+    const render::CreationLayout at640 = render::creationLayout(page, 640, 360);
+    REQUIRE(at640.usable);
+    CHECK(at640.metric.cellsIn(at640.bounds.w) == 77);
+    CHECK(at640.bounds.w == 385);
+    // Seated by the one rule, slightly left of centre -- 114 left, 141 right.
+    CHECK(at640.bounds.x == render::panelSeatX(640, at640.bounds.w));
+    CHECK(at640.bounds.x == 114);
+    CHECK(at640.bounds.x <= 640 - at640.bounds.right());
+    // The split is of the MEASURED width, and the held detail floor survives
+    // it -- prose wraps in there, it does not set the frame.
+    REQUIRE(at640.body.split);
+    CHECK(at640.metric.cellsIn(at640.detailRect.w) > 42);
+    CHECK(at640.listRect.right() <= at640.bounds.right());
+
+    // 320x180 is narrower than the measure would ever choose: full width,
+    // exactly as before, and the master's 18-cell floor untouched.
+    const render::CreationLayout small = render::creationLayout(page, 320, 180);
+    REQUIRE(small.usable);
+    CHECK(small.metric.cellsIn(small.bounds.w) == small.metric.cellsIn(320));
+
+    // WRAP FEEDBACK: the height measure runs AFTER the width measure, against
+    // the measured panes. DEVIN's door carries a companion bio, and at the
+    // measured detail width it wraps to more rows than the full window would
+    // have given it -- so the body must equal what measureProse says AT THE
+    // LAYOUT'S OWN DETAIL WIDTH (badge 2 + facts 4 + prose + verb 2, plus the
+    // breathing row), not the shorter full-width wrap. An implementation that
+    // measured height before width goes red here.
+    render::CreationFlow devin = fresh();
+    devin.moveOriginCursor(4);
+    const render::CreationPage quick = devin.page();
+    const render::CreationLayout tall = render::creationLayout(quick, 640, 360);
+    REQUIRE(tall.usable);
+    REQUIRE(tall.body.split);
+    const int prose = render::measureProse(
+        render::PanelRect{0, 0, tall.detailRect.w, tall.metric.heightOf(60)}, tall.metric,
+        quick.lines);
+    REQUIRE(prose >= 6);  // not vacuous: the bio genuinely wraps
+    CHECK(tall.bodyRows == 2 + 4 + prose + 2 + 1);
+}
+
+TEST_CASE("THE NAME measures to its keyboard, and the narrower prose is counted taller") {
+    // THE ACID TEST -- the 639px letterbox that measured 71.9% black. The
+    // keyboard block wants 19 cells (ten one-glyph caps, one-cell gaps);
+    // share 28 with the detail held at panelHeldDetailCells(28, 18) = 51 asks
+    // for a 75-cell interior, 77 with the border: 385 of 640px, seated 114
+    // left -- a composed card where a full-frame ribbon shipped.
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();
+    flow.openOsk();
+    const render::CreationPage page = flow.page();
+    const render::CreationLayout layout = render::creationLayout(page, 640, 360);
+    REQUIRE(layout.usable);
+    REQUIRE(layout.grid.usable);
+    CHECK(layout.metric.cellsIn(layout.bounds.w) == 77);
+    CHECK(layout.bounds.x == render::panelSeatX(640, layout.bounds.w));
+    CHECK(layout.bounds.x == 114);
+    // The body: three grid rows against a detail of badge (2), two facts and
+    // their air (3), the pane's one sentence -- whole at the held width -- and
+    // the commit verb (2), sized with a breathing row by the height measure
+    // run at the MEASURED width.
+    CHECK(layout.bodyRows == 9);
+
+    // The measure is in CELLS, so it holds at every window whose cell count
+    // affords it -- and where the window is narrower than the measure (1920's
+    // 76 cells, 320's 64) the clamp lands at the window: full width by
+    // construction, no special case.
+    for (const auto& size : {std::pair{960, 540}, std::pair{1280, 720}}) {
+        const render::CreationLayout wide =
+            render::creationLayout(page, size.first, size.second);
+        INFO("window ", size.first, "x", size.second);
+        REQUIRE(wide.usable);
+        CHECK(wide.metric.cellsIn(wide.bounds.w) == 77);
+        CHECK(wide.bounds.x == render::panelSeatX(size.first, wide.bounds.w));
+    }
+    const render::CreationLayout narrowest = render::creationLayout(page, 1920, 1080);
+    REQUIRE(narrowest.usable);
+    CHECK(narrowest.metric.cellsIn(narrowest.bounds.w) == narrowest.metric.cellsIn(1920));
+}
+
+TEST_CASE("a page that earns the window keeps it by construction, not by special case") {
+    // hudMinorScale steps with height, so THE BIGGEST WINDOW IS THE NARROWEST
+    // IN CELLS: 1920x1080 has 76 across, and every measured creation step
+    // wants 77 or more -- so at 1920 the clamp lands on the window and each
+    // page is exactly the full-width composition it always was. No
+    // is-this-page branch anywhere; that is the whole point of the clamp,
+    // and it is also why the ward map and the controls page (which never
+    // call the measure) cannot be touched by it.
+    render::CreationFlow sheet = atSheet();
+    for (const render::CreationPage& page : {fresh().page(), sheet.page()}) {
+        const render::CreationLayout layout = render::creationLayout(page, 1920, 1080);
+        REQUIRE(layout.usable);
+        CHECK(layout.metric.cellsIn(layout.bounds.w) == layout.metric.cellsIn(1920));
+        // And the seat degenerates to the sub-cell remainder, just as the
+        // centring it replaced did.
+        CHECK(layout.bounds.x <= layout.metric.cellW());
+    }
+}
