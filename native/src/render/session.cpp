@@ -4317,17 +4317,33 @@ DialogueViewState Session::dialogueView() const {
         // this round) keeps seeing exactly the content it always did,
         // because the Menu still opens focused on the Journal tile by
         // default, same as #85's Menu always opened on the casebook first.
+        DialogueViewState tile;
         switch (menuFocus_) {
             case kMenuFocusCharacter:
-                return characterPanelView();
+                tile = characterPanelView();
+                break;
             case kMenuFocusMap:
-                return mapPanelView();
+                tile = mapPanelView();
+                break;
             case kMenuFocusLetters:
-                return lettersPanelView();
+                tile = lettersPanelView();
+                break;
             case kMenuFocusJournal:
             default:
-                return journalPanelView();
+                tile = journalPanelView();
+                break;
         }
+        // SHIP NOTE MOVE 3: the tile views build their own state, so the
+        // device wording set at the top of this function has to be restated
+        // on the one that is actually returned -- an open letter's foot in
+        // particular (backKey/letterDownLine).
+        tile.confirmKey = confirm;
+        tile.backKey = back;
+        if (dev == InputDevice::Pad) {
+            tile.takeKey = std::string(promptLabel(controls_, Action::PageNext, dev));
+            tile.letterDownLine.clear();
+        }
+        return tile;
     }
     if (optionsOpen_) {
         view.open = true;
