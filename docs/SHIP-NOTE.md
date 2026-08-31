@@ -214,15 +214,18 @@ What a stranger sees in the first sixty seconds, **after the placement pass**:
 
 So: the world holds up, the map holds up, the demo holds up, **and the framing
 of the full-screen pages now holds up too** — that was the standing complaint
-against the first two things anyone touches, and it is answered. What is left on
-first contact is not layout at all. It is **emptiness**: one lead in the
-casebook's master pane, `THE LETTERS` a quarter-screen panel with a header and
-nothing in it, `THE CHART` with three rows. A well-placed frame around an empty
-pane still reads as unfinished, and no further layout work will change that —
-which is exactly what item 3 below is for, and why it is now the first thing.
+against the first two things anyone touches, and it is answered. ~~What is left
+on first contact is not layout at all. It is **emptiness**.~~ **The emptiness is
+worded now** — see "What the empty-state pass moved". The casebook says what
+the blank half of its book is for, `THE LETTERS` says what would be in it and
+what puts something there, `THE CHART` says every line in it is a reading of
+the book.
 
-Still not near ready. Closer than it was, and the reason has moved from how the
-pages are composed to what is written in them.
+Still not near ready, and the honest remaining tell is **volume**: one authored
+case, twelve leads, five letters. No sentence fixes that. What a written empty
+state buys is that a pane which has not been filled yet reads as waiting rather
+than as broken — which is a real change in whether the first minute looks
+finished, and is not the same thing as having more content.
 
 ## What the placement pass moved
 
@@ -331,6 +334,112 @@ Not touched, and not touchable by this pass: `git diff --name-only` across both
 commits reaches only `native/` and `docs/`. No map, no `content/art`, no golden
 re-blessed.
 
+## What the empty-state pass moved
+
+One item, one commit, gated on its own: `d168460`.
+
+### The four panes, and the exact copy
+
+`UI-REFERENCE-TERMINAL.md` rules on this by name — *"Empty states are worded,
+not blank — `no trinket`, `Luck 0`. Absence is stated so the reader knows it was
+considered."* **Every line below is authored copy the owner can veto.**
+
+| pane | what a stranger saw | what it says now |
+|---|---|---|
+| `THE LETTERS`, empty | a title, an epithet, and a quarter-screen of black | `YOU HAVE READ NOBODY'S POST YET. STAND OVER A LEAD AND WHATEVER PAPER IT KEEPS TURNS UP HERE, IN THE HAND THAT WROTE IT.` |
+| `THE LETTERS`, holding one | the list, and black | `STAND OVER MORE LEADS. WHATEVER PAPER THEY KEEP TURNS UP HERE.` |
+| `THE CHART` | three unexplained rows | `EVERY LINE HERE IS DRAWN OUT OF THE CASEBOOK. HEAR A LEAD AND ITS GROUND, ITS BEARING AND ITS NAME COME WITH IT.` |
+| the casebook, **both** surfaces | one lead over nineteen rows of stipple | `THE REST OF THE BOOK IS STILL BLANK. STAND OVER A LEAD AND LOOK. WHAT IT OPENS IS WRITTEN IN HERE.` |
+
+The Letters tile's title-list `line` also changed, from `NOBODY HAS HANDED YOU
+ANYTHING WORTH KEEPING YET.` to `YOU HAVE READ NOBODY'S POST YET.` — the old
+one fought the epithet directly above it (`READ, NOT RECEIVED`): none of the
+five documents is addressed to the player and nobody ever hands them over.
+
+**Four panes, not the note's three.** The casebook is TWO surfaces showing one
+list — the full-screen page behind TAB and the Menu's own casebook tile along
+the bottom — and both were blank under their single lead. They share ONE string
+(`kBookWaitingLine`), because wording one absence two different ways in two
+places that show the same twelve rows is exactly the drift the shared
+vocabulary exists to stop.
+
+### Why `line` could not do this
+
+`THE LETTERS` already carried an authored empty sentence and **the tile never
+drew it**: `drawMenuTiles` suppresses `line` on the three top tiles on purpose,
+so a quarter of the frame goes on rows rather than on a sentence the opening
+casebook page already put on screen. That is still the right call. `line` says
+WHAT THE PANEL IS; the new `DialogueViewState::emptyLine` says WHAT WOULD BE IN
+IT AND HOW THE PLAYER PUTS IT THERE, and it is drawn **only into room the rows
+did not want** — so it disappears the moment the list has earned the space and
+it never competes with content for a row.
+
+### Gone the moment it would be a lie
+
+Every one of these is state-dependent, and the gates are the simulation's own:
+
+* the book's sentence is suppressed when the trail is **closed** and when
+  **every lead in the file is already in the book** — nothing left to open,
+  either way;
+* the Letters tile stops claiming nobody has written to you the instant one
+  letter is unlocked (`unlockedLetters`' own Cold-or-Followed gate);
+* `THE CHART`'s line is true at every point in a run, because all three of its
+  sections are built out of `casebook_.known()` and nothing else.
+
+**No canon was invented.** Each sentence names an act the build already
+delivers: `Casebook::look()` opening what a lead opens, a letter unlocking when
+its lead has been stood over rather than merely heard, and the chart being a
+reading of the book. `LOOK` is the verb the detail pane's own commit line
+already offers (`ENTER - LOOK AT IT`); the key that does it in the world is
+printed beside that verb rather than guessed at in the empty state.
+
+### The geometry did not move, and that is pinned rather than claimed
+
+The sentence is drawn into spare the composition already had. `test_casebook_page`'s
+"the one-lead book and the twelve-lead book compose to the same geometry" walks
+the seat, the list rows, the nav rows and the **mouse** at 320x180, 640x360,
+960x540 and 1920x1080 and finds them identical. Its sibling case proves the
+sentence is actually DRAWN, that every pixel it moves lies **inside the master
+pane below the first row**, and that the two suppressed states are the same
+frame as each other.
+
+### What I looked at, at 640x360
+
+`docs/frames/empty/` — before and after of the tiled Menu and of the casebook
+page, plus the Menu at 320x180 and the page at 1920x1080.
+
+* **`THE LETTERS`** went from a title over nothing to a title, a blank row and
+  four dim lines. It reads as a document tray that is waiting. The bottom half
+  of the tile is still black; that is composition, not a defect.
+* **`THE CHART`** reads as a short list with a caption under it instead of three
+  orphan rows.
+* **the casebook page** has the sentence in the master pane's second and third
+  rows and the stipple resumes under it. The pane no longer reads as a list that
+  failed to load.
+* **the casebook tile** carries the same sentence full-width under its one lead.
+* At **320x180** the copy wraps to seven lines in the narrow tiles and nothing
+  clips or leaves its tile. At **1920x1080** it wraps to three and the stipple
+  still fills what is left.
+
+### Gate, hash, demo
+
+* `docker compose run --rm --build build` — **`100% tests passed, 0 tests failed
+  out of 75`**. Three runs total: one red (a new case drew at `openAmount` 0,
+  because the page's ease is Session's shared toggle and nothing had opened it),
+  one red (the first ink measure counted the panel ground, not the ink), one
+  green.
+* World hash **`0x2646C1AAA2BA38DF`**, run A == run B — the exact number
+  `docs/BASELINE-WORLD-HASH.md` records. No map, no `content/art`, no golden
+  re-blessed; `git diff --name-only` reaches only `native/` and `docs/`.
+* `--demo` watched: **exit 0**, `5780 frame(s), body ended at (150,63,z19)`,
+  117s.
+* Two `--demo-capture` runs, 22 frames each, **byte-identical to each other**.
+  **Two** committed stills moved — `case-book.png` and `case-book-harls.png`,
+  both casebook pages, both showing seven leads of twelve so the sentence is
+  still true on them. The other nineteen are byte-identical, which is also the
+  proof the street HUD and the ruler did not move.
+  `creation-origin.png` **dropped for the tenth run in a row**.
+
 ## The three things I would do next, in order
 
 1. ~~**Centre the composed panel in the frame.**~~ **DONE** — `24fa403`, seated
@@ -338,18 +447,28 @@ re-blessed.
 2. ~~**Give the on-screen keyboard its own tight grid.**~~ **DONE** — `c85622c`.
    The "lets the frame be shorter" half of this line was wrong: the detail pane
    sets that page's height, not the grid.
-3. **Write empty states for the three panes that ship empty** — the casebook's
-   lead list on a new game, the tiled Menu's `THE LETTERS`, and `THE CHART`
-   with three rows. This is content, not layout, and the previous program was
-   right that layout cannot fix it. One written line each ("NOTHING HAS COME
-   FOR YOU YET") costs nothing and removes the last "unfinished" tell.
-   **Still open, and now the first thing a stranger meets that is wrong** — the
-   framing complaint above it is answered.
+3. ~~**Write empty states for the three panes that ship empty.**~~ **DONE** —
+   `d168460`. Four panes, not three: the casebook is TWO surfaces showing one
+   list (the full-screen page and the Menu's own casebook tile) and both were
+   blank under their single lead. One sentence each, and each one gone the
+   moment it would be a lie.
+
+## The three things I would do next, in order (after the empty-state pass)
+
+1. **Give the CHARACTER tile the same treatment for the opposite reason.** It
+   is not empty — it has twenty-odd rows — but `topicRowsFor` caps a tile at
+   ten rows and a `0 MORE (1/2)` row, so at 640x360 it draws ten rows into a
+   pane forty rows deep and looks exactly as unfinished as the empty ones did.
+   This is a PAGING defect, not an emptiness one, and an empty-state sentence
+   would be a lie on it. The fix is to let a tile's page size follow its pane.
+2. **Six pages still swallow clicks** — see "Still open" below, unchanged.
+3. **The input router is still in `main.cpp`'s anonymous namespace** — see
+   "Still open" below, unchanged.
 
 ## Still open, and why
 
 1. **`--demo-capture` drops `creation-origin.png`.** A shutter race on the
-   character screen; eight runs, eight drops. The demo itself plays the beat
+   character screen; ten runs, ten drops. The demo itself plays the beat
    every time — only the capture misses it. Not touched this phase because the
    deliverable (`--demo`) is unaffected.
 2. **Six pages still swallow clicks** — the tiled Menu, the pause menu and the
