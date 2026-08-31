@@ -1306,7 +1306,9 @@ std::vector<std::string> Session::pauseRows() const {
         "WAIT",
         "CONTROLS",
         "SETTINGS",
-        quitArmed_ ? "QUIT -- SURE? ENTER" : "QUIT GRANADAD",
+        // SHIP NOTE MOVE 3: the armed row names the device's own confirm.
+        quitArmed_ ? "QUIT -- SURE? " + std::string(promptConfirmKey(promptDevice_))
+                   : std::string("QUIT GRANADAD"),
     };
 }
 
