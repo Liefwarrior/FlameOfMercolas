@@ -932,3 +932,55 @@ new grid one D-pad move and one A press per letter with the detail pane naming
 `THE LETTER C`, and `pad-named-begin-640.png` is the sheet afterwards with
 `NAME ABC` and `BEGIN` gone `READY`. The run that follows them reaches
 `granadad: playing as ABC (custom)`.
+
+---
+
+## The ship measurement, revision `7f69334` (2026-08-31)
+
+Taken off the gate-certified binary at 640x360, `--scale=1`. Frames in
+`docs/frames/ship2/`. Nothing here is copied forward from an earlier section.
+
+**The street did not move.** All 22 `--demo-capture` frames came out
+byte-identical to the committed set, which includes every world and HUD still,
+so the corrected street baseline stands untouched: **8,072 INK (3.50%)**,
+13,971 CLAIMED (6.06%) at 640x360.
+
+The full-screen surfaces, measured three ways — where the panel sits, how much
+of the frame carries no lit pixel at all, and how dense the ink is inside the
+panel:
+
+| surface at 640x360 | panel | seat (above / below) | rows with NO lit pixel | ink inside panel |
+|---|---|---|---|---|
+| creation — THE DOOR | 639 x 164 | 87 / 109 | **230 of 360 (63.9%)** | 8.84% |
+| creation — THE NAME (OSK) | 639 x 129 | 103 / 128 | **259 of 360 (71.9%)** | 8.05% |
+| creation — THE SHEET (named, BEGIN ready) | 639 x 171 | 84 / 105 | 219 of 360 (60.8%) | 9.68% |
+| casebook, new game | 639 x 199 | 71 / 90 | 202 of 360 (56.1%) | 8.42% |
+| the tiled Menu (TAB) | 640 x 360 | 0 / 0 | 0 (0.0%) | 18.32% |
+
+**The number that has not been measured before is the third column, and it is
+the one that matters now.** The seat is right — that was the placement pass and
+it holds. What the seat cannot fix is the MEASURE: every one of these panels is
+**639px wide at a 640px window regardless of what it holds**, because
+`panelSeatY()` decides the vertical placement and nothing decides the
+horizontal size.
+
+Counted per column inside the panel band, columns carrying three lit pixels or
+fewer:
+
+```
+THE DOOR              83 of 639 columns (13%)
+THE NAME (OSK)       113 of 639 columns (18%)
+THE SHEET             94 of 639 columns (15%)
+casebook, new game    85 of 639 columns (13%)
+```
+
+The master pane's longest row on THE DOOR is `3 WALK YOUR OWN PATH  BUILD` —
+27 glyphs, about 135px, in a 310px pane. The mirror of `panelSeatY()` is the
+next move; see the ship note.
+
+Read the tiled Menu's row against the rest with care. It has **no** dead rows
+and the highest ink in the build, and it is still the worst-composed screen in
+the game, because it is the one surface not drawn on the terminal grammar —
+solid hairline rectangles instead of `+~-~-` rules with alternating `|`/`!`
+edges. **Ink density is not the same measurement as whether a surface is
+finished**, and this row is the proof of it.
