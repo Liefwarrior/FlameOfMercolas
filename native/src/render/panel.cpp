@@ -115,6 +115,11 @@ PanelMetric panelMetric(int frameHeight) noexcept {
     return PanelMetric{std::max(1, hudMinorScale(std::max(1, frameHeight)))};
 }
 
+int panelSeatY(int frameHeight, int panelHeight) noexcept {
+    const int spare = std::max(0, frameHeight - panelHeight);
+    return (spare * kPanelSeatAbove) / 100;
+}
+
 PanelRect PanelRect::inset(int dx, int dy) const noexcept {
     PanelRect out{x + dx, y + dy, w - 2 * dx, h - 2 * dy};
     if (out.w < 0) {

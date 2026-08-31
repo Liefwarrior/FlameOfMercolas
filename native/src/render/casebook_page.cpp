@@ -201,11 +201,20 @@ inline constexpr int kMinBodyRows = 8;
     if (cells < 8 || rows < 10) {
         return out;
     }
-    // The TOP is always the top the full-height grid would have taken, so a
-    // frame that ends early moves its foot and never its head -- walking LEADS
-    // to THE CASE cannot make the breadcrumb jump.
+    // A FRAME THAT ENDED EARLY IS SEATED, NOT PINNED. It used to take the top
+    // the full-height grid would have taken, which left the book as a 199px
+    // panel with 159px of black under it. panelSeatY() splits the remainder off
+    // the height this composition actually came out at -- the same rule
+    // creation_page.cpp seats on, so the two first surfaces of the game agree.
+    //
+    // Walking LEADS to THE CASE still cannot make the breadcrumb jump, and that
+    // is now load-bearing rather than incidental: the detail half is HELD at
+    // kDetailHoldRows and the list is the same list in both views, so both tabs
+    // compose to the same height and therefore to the same seat.
+    // test_casebook_page's "the two views swap the detail pane and nothing
+    // else" is the guard.
     out.bounds = PanelRect{(frameWidth - out.metric.widthOf(cells)) / 2,
-                           (frameHeight - out.metric.heightOf(full)) / 2,
+                           panelSeatY(frameHeight, out.metric.heightOf(rows)),
                            out.metric.widthOf(cells), out.metric.heightOf(rows)};
     out.interior = PanelRect{out.bounds.x + out.metric.cellW(), out.bounds.y + out.metric.cellH(),
                              out.metric.widthOf(cells - 2), out.metric.heightOf(rows - 2)};

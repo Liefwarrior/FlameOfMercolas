@@ -146,9 +146,10 @@ inline constexpr int kMinBodyRows = 6;
     }
     // The grid is CENTRED in the window rather than pinned to the top left, so
     // the pixels that do not divide into whole cells are split between the two
-    // margins instead of all landing on one edge. The TOP is handed in and is
-    // always the top the full-height grid would have taken, so shortening the
-    // frame moves its foot and never its head.
+    // margins instead of all landing on one edge. The TOP is handed in --
+    // creationLayout() seats it with panelSeatY() once it knows how tall the
+    // page actually came out, which is what turns "the panel ran out" into
+    // "the panel was placed".
     out.bounds = PanelRect{(frameWidth - out.metric.widthOf(cells)) / 2, topY,
                            out.metric.widthOf(cells), out.metric.heightOf(rows)};
     out.interior =
@@ -239,7 +240,7 @@ inline constexpr int kMinBodyRows = 6;
 CreationLayout creationLayout(const CreationPage& page, int frameWidth, int frameHeight) {
     const PanelMetric metric = panelMetric(frameHeight);
     const int rows = metric.rowsIn(frameHeight);
-    const int topY = (frameHeight - metric.heightOf(rows)) / 2;
+    const int topY = panelSeatY(frameHeight, metric.heightOf(rows));
 
     // PASS ONE: the whole window, which is what this screen used to ship as.
     // It is measured at full height on purpose -- a planner asked against a
@@ -272,7 +273,15 @@ CreationLayout creationLayout(const CreationPage& page, int frameWidth, int fram
     if (want >= full.bodyRows) {
         return full;
     }
-    return composeCreation(page, frameWidth, frameHeight, rows - (full.bodyRows - want), topY);
+    // AND NOW IT KNOWS HOW TALL IT IS, SO IT CAN SIT SOMEWHERE. Sprint 1 taught
+    // this page to end after its content and left it pinned to the top, which
+    // is how THE DOOR came out as a 164px panel with 2px above it and 194px of
+    // black below. panelSeatY() splits that remainder -- one rule, shared with
+    // the casebook, and slightly top-weighted because a box of type centred by
+    // arithmetic reads low.
+    const int shortRows = rows - (full.bodyRows - want);
+    return composeCreation(page, frameWidth, frameHeight, shortRows,
+                           panelSeatY(frameHeight, metric.heightOf(shortRows)));
 }
 
 void drawCreationPage(Framebuffer& target, const CreationPage& page) {

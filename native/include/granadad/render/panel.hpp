@@ -131,6 +131,32 @@ struct PanelMetric {
 /// lining up with the rule above it.
 [[nodiscard]] PanelMetric panelMetric(int frameHeight) noexcept;
 
+/// WHERE A PAGE THAT ENDED AFTER ITS CONTENT SITS IN THE WINDOW.
+///
+/// The pages that size to content (creation_page.cpp, casebook_page.cpp) learnt
+/// to STOP at their content and were never told where to START, so they were
+/// pinned to the top: at 640x360 THE DOOR was a 164px panel with two pixels
+/// above it and a hundred and ninety-four of black below. That reads as a panel
+/// that ran out rather than one that was placed.
+///
+/// This is the one place that decides, so there is one rule and not one per
+/// page. It is NOT a true half: type sits low in a box that is geometrically
+/// centred, and the correction is to seat it a little high --
+/// `kPanelSeatAbove` of the spare above, the rest below. At 640x360 with a
+/// 168px frame that is 86 above and 106 below rather than 96/96, which is the
+/// difference between "centred" and "placed" and is a judgement made off
+/// frames rather than off arithmetic (see docs/HUD-REAL-ESTATE.md).
+///
+/// A frame that already fills the window has a spare of two or three pixels and
+/// comes out exactly where it always did -- this replaces the old
+/// `(frameHeight - heightOf(rows)) / 2` on that path rather than sitting beside
+/// it.
+[[nodiscard]] int panelSeatY(int frameHeight, int panelHeight) noexcept;
+
+/// The share of the leftover height that goes ABOVE a page that ended early,
+/// out of 100. See panelSeatY.
+inline constexpr int kPanelSeatAbove = 45;
+
 // ---------------------------------------------------------------------------
 // geometry
 // ---------------------------------------------------------------------------
