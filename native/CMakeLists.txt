@@ -634,6 +634,14 @@ if(GRANADAD_BUILD_TESTS)
         # ordinary jump) and the Menu router's page cycle, kept apart from
         # Pause.
         tests/test_vertical_menu.cpp
+        # The tiled Menu's own drawing, converted to the terminal register:
+        # the one-frame/four-pane layout, the pane-derived page size (the
+        # ship note's "ten rows into a forty-row pane" defect, pinned dead),
+        # the nine-key window's printed digits staying truthful to Session's
+        # direct-select, letter paging clamped to the pane, and the empty
+        # states surviving the reframe. Pure layout + framebuffer cases; the
+        # Menu's Session behaviour stays in test_vertical_menu.cpp above.
+        tests/test_menu_view.cpp
         # The Docks signage pass: the generated 83-sign table matches the
         # survey's own count, docks::kPlaces wins the priority order over a
         # sign's own tmx name where both exist, and a label actually draws
