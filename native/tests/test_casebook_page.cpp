@@ -942,6 +942,10 @@ TEST_CASE("the commit verbs and GO TO IT wear the state's confirm key, not a har
     CasebookPageState page = session.casebookPageState();
     REQUIRE(page.commitKey == "ENTER");  // keyboard session: the exact old literal
 
+    // GATE FIX: the book was never toggled open, so the session's panel anim
+    // reads 0 and both draws were pure black -- open the page by hand the way
+    // the geometry cases at line ~717 already do.
+    page.openAmount = 1.0F;
     Framebuffer keyboard(960, 540);
     drawCasebookPage(keyboard, page);
     page.commitKey = "A";

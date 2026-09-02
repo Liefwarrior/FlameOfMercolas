@@ -1416,8 +1416,13 @@ private:
     /// casebook.json lead id) has actually been investigated -- Cold or
     /// Followed, never merely Open -- in authored order. What the letters
     /// page lists, and what the letters navigation bounds the cursor
-    /// against.
+    /// against. MERGE FIX: public -- the courier lane's runCaseLine drive
+    /// and main.cpp's run summary both read it from outside, the same way
+    /// they read sheetBook()/sheetCarry().
+public:
     [[nodiscard]] std::vector<std::int32_t> unlockedLetters() const;
+
+private:
     /// COURIER CASE. unlockedLetters() answers in COMBINED indices now that
     /// there are two authored files: [0, letterRaws_.letters().size()) is the
     /// Bloodletter file, and everything above it is the mission sheet file at

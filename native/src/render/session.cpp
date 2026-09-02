@@ -4441,7 +4441,9 @@ DialogueViewState Session::journalPanelView() const {
     // the first thing you read in your own notes, which is also better.
     view.attitude = book.closed() ? "CLOSED" : "OPEN";
     const std::vector<std::int32_t> heard = book.known();
-    const sim::Legend book = legend();
+    // MERGE FIX: `book` is the active casebook now (courier lane); the legend
+    // -- what the ward calls you -- takes its own name.
+    const sim::Legend called = legend();
     if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < heard.size()) {
         const std::int32_t leadIndex = heard[static_cast<std::size_t>(caseEntry_)];
         const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(leadIndex)];
@@ -4508,7 +4510,7 @@ DialogueViewState Session::journalPanelView() const {
         // wraps to three lines and the S10 capture that ran to four lost
         // "OF THE FLAME" off the end of its own title.
         view.line = std::string(raws.dreadLabel(book.dread())) + ". THEY CALL YOU " +
-                    std::string(book.title()) + ".";
+                    std::string(called.title()) + ".";
     }
     for (const std::int32_t index : heard) {
         const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(index)];
@@ -8018,7 +8020,7 @@ constexpr std::int32_t kCaseBeats = 8;
     // 3. THE GULL. Walk to the door lead and look -- the map-and-casebook beat,
     // and it opens both the box and the tenant.
     const sim::Lead& door = raws.leads()[static_cast<std::size_t>(raws.indexOf("gull-door"))];
-    walkAcrossDistrict(session, door.site.x, door.site.y);
+    (void)walkAcrossDistrict(session, door.site.x, door.site.y);
     session.examine();
     mark(session.sheetBook().state(raws.indexOf("gull-door")) != sim::LeadState::Open);
 
@@ -8061,7 +8063,11 @@ constexpr std::int32_t kCaseBeats = 8;
     // he is on the boards. Looped without stepping the room between blows, so
     // the bouncer does not cross the floor mid-beat and nobody regenerates:
     // the same room a player who kept their nerve would face.
-    session.dropDown();
+    // GATE FIX: dropDown() alone refuses over the box -- no ledge ahead --
+    // and left the body on the guest floor (beats 7-8 dead, mask 0x3F). The
+    // way down is the way up: back to the stair-head and off it, the exact
+    // helper every other Gull line descends by.
+    comeDownstairs(session);
     if (session.stance() == sim::Stance::Crouched) {
         session.toggleCrouch();
     }
@@ -8095,7 +8101,7 @@ constexpr std::int32_t kCaseBeats = 8;
     // owed -- so the run steps the pump a beat at the anchor to let that fire.
     const sim::Lead& close =
         raws.leads()[static_cast<std::size_t>(raws.indexOf("bring-him-in"))];
-    walkAcrossDistrict(session, close.site.x, close.site.y);
+    (void)walkAcrossDistrict(session, close.site.x, close.site.y);
     for (int guard = 0; guard < 8 && !session.sheetBook().closed(); ++guard) {
         session.stepMany(sim::MoveInput{}, 1);
     }
