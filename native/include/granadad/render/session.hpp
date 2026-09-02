@@ -2248,6 +2248,20 @@ private:
     bool lastQuickBarUp_ = false;
     std::string wheelHintText_;
     TutorBand wheelHint_;
+    /// UI-EA contract (c), joined at integration: one tutor band per composed
+    /// page this Session itself feeds (the ward map, the casebook page, the
+    /// keys page -- creation drives its own, see CreationFlow::tutorValue()).
+    /// PAGES draws the raised verb words off each state's `tutor`; FLOW bumps
+    /// tutorWakeSerial_ on device change and unrecognized presses; step()
+    /// raises these on the page's own open edge and on any serial move, and
+    /// advances them once a step like every countdown in the family.
+    TutorBand mapTutor_;
+    TutorBand casebookTutor_;
+    TutorBand keysTutor_;
+    std::uint32_t tutorWakeSeen_ = 0;
+    bool mapTutorWasOpen_ = false;
+    bool casebookTutorWasOpen_ = false;
+    bool keysTutorWasOpen_ = false;
     /// DISTRICT PHASE D. The threshold plate's own ease -- its OWN toggle per
     /// the settled convention (DECISIONS.md UI rule 1): crossing a boundary
     /// has nothing to do with any other row's trigger, and sharing one would

@@ -2194,14 +2194,62 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         }
         return true;
     }
-    if (session.pauseOpen() || session.optionsOpen() || session.grimoireOpen() ||
-        session.waitOpen() || session.talking()) {
-        // FIVE PAGES, ONE WIDGET, ONE HIT-TEST. The pause menu, the options
-        // page, the grimoire, the wait page and a live conversation all draw
-        // their list through drawDialogue's bottom band, so
-        // dialogueTopicAtPixel is the mouse for all five -- the same economy
-        // that made them one drawing. The branch order below is dialogueView's
-        // own dispatch order, so the cursor moved is the cursor drawn.
+    if (session.stripCardOpen()) {
+        // UI-EA-SPEC 1.7, joined at integration: the pause stack (pause,
+        // wait, options, grimoire) draws as PAGES' composed card now, so the
+        // pointer inverts THAT composition -- creationPageHitTest off the
+        // same stripCard() the frame drew -- not the old strip-band geometry,
+        // which no longer matches anything on screen. The verbs mirror the
+        // keyboard router above, exactly: hover walks the cursor by delta,
+        // a click is select-then-confirm with the commit beat, and a click
+        // on the BACK keycap is the ESC it prints. The card's unselectable
+        // `+N` row reports no hit; `0` still turns the page.
+        const render::CreationPage card = session.stripCard();
+        const render::CreationHit hit =
+            render::creationPageHitTest(card, frameWidth, frameHeight, px, py);
+        if (hit.zone == render::CreationHit::Zone::Back) {
+            if (click) {
+                session.closeConversation();
+            }
+            return true;
+        }
+        if (hit.zone == render::CreationHit::Zone::Row) {
+            const int delta = hit.index - card.cursor;
+            if (delta != 0) {
+                if (session.waitOpen()) {
+                    session.moveWaitCursor(delta);
+                } else if (session.pauseOpen()) {
+                    session.movePauseCursor(delta);
+                } else if (session.grimoireOpen()) {
+                    session.moveGrimoireCursor(delta);
+                } else {
+                    session.moveOptionCursor(delta);
+                }
+            }
+            if (click) {
+                session.armCommitPulse();  // contract (b): the commit beat
+                if (session.waitOpen()) {
+                    session.chooseWaitRow(session.waitCursor() -
+                                          session.waitPage() * render::kTopicPageSize);
+                } else if (session.pauseOpen()) {
+                    session.choosePause();
+                } else if (session.grimoireOpen()) {
+                    session.chooseGrimoireRow(session.grimoireCursor() -
+                                              session.grimoirePage() * render::kTopicPageSize);
+                } else {
+                    session.chooseOption();
+                }
+            }
+        }
+        // On the page is on the page: a miss must not swing a fist through
+        // the card.
+        return true;
+    }
+    if (session.talking()) {
+        // ONE PAGE LEFT ON THE WIDGET: a live conversation still draws its
+        // list through drawDialogue's bottom band, so dialogueTopicAtPixel
+        // is its mouse. The pause stack that used to share this branch now
+        // draws as the composed card and is inverted above.
         const render::DialogueViewState view = session.dialogueView();
         if (view.haggling || view.forging || view.letter) {
             // The counter, the workbench and an open letter stay modal for

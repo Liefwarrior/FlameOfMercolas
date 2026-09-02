@@ -3721,6 +3721,46 @@ void Session::step(const sim::MoveInput& input) {
     clockAnim_.advance();
     purseAnim_.advance();
     wheelHint_.advance();
+    // UI-EA contract (c), joined at integration: the page tutor bands.
+    // Raised in full on the page's own open edge and on any wake FLOW
+    // signals (a device change, a press the page did not recognize), they
+    // hold kTutorHoldSteps and ease back down to bare keycaps. Advanced
+    // here, once a step, the family's own rule.
+    {
+        const bool mapUp = districtMapOpen_;
+        const bool bookUp = casebookPageOpen();
+        const bool keysUp = keysOpen_;
+        if (mapUp && !mapTutorWasOpen_) {
+            mapTutor_.raise();
+        }
+        if (bookUp && !casebookTutorWasOpen_) {
+            casebookTutor_.raise();
+        }
+        if (keysUp && !keysTutorWasOpen_) {
+            keysTutor_.raise();
+        }
+        mapTutorWasOpen_ = mapUp;
+        casebookTutorWasOpen_ = bookUp;
+        keysTutorWasOpen_ = keysUp;
+        if (tutorWakeSerial_ != tutorWakeSeen_) {
+            tutorWakeSeen_ = tutorWakeSerial_;
+            if (mapUp) {
+                mapTutor_.raise();
+            }
+            if (bookUp) {
+                casebookTutor_.raise();
+            }
+            if (keysUp) {
+                keysTutor_.raise();
+            }
+        }
+        mapTutor_.sync(!mapUp);
+        casebookTutor_.sync(!bookUp);
+        keysTutor_.sync(!keysUp);
+        mapTutor_.advance();
+        casebookTutor_.advance();
+        keysTutor_.advance();
+    }
     // DISTRICT PHASE D. The plate's own countdown and ease -- the strip's
     // shape directly above, for the strip's reason. The countdown runs down
     // HERE and only here, once a step: syncPanelAnim() can be called several
@@ -7653,6 +7693,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         // case can read, rather than assembled inline where nothing but a
         // screenshot could ever check it.
         DistrictMapState plan = districtMapState();
+        // Cross-lane contract (b), wired at integration: FLOW arms the pulse
+        // at commit routing, PAGES renders it off the state field -- this is
+        // the one assignment that joins them, per composition.
+        plan.commitPulse = commitPulse_.value();
+        plan.tutor = mapTutor_.value();  // contract (c): the raised verb words
         // THE HUD STANDS DOWN UNDER IT, which the old static page could get
         // away with not doing and this one cannot. The compass ribbon prints
         // the place name across the top centre and the clock/purse stack sits
@@ -7703,6 +7748,8 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // the page's own header band instead of being painted over it.
     if (keysOpen_) {
         KeysPageState page = keysPageState();
+        page.commitPulse = commitPulse_.value();  // contract (b), see the map pass
+        page.tutor = keysTutor_.value();          // contract (c)
         page.openAmount = panelAnim_.value();
         page.open = page.open || panelAnim_.value() > 0.0F;
         if (warned) {
@@ -7747,6 +7794,8 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // bouncer starts talking.
     if (casebookPageOpen()) {
         CasebookPageState page = casebookPageState();
+        page.commitPulse = commitPulse_.value();  // contract (b), see the map pass
+        page.tutor = casebookTutor_.value();      // contract (c)
         page.openAmount = panelAnim_.value();
         page.open = page.open || panelAnim_.value() > 0.0F;
         if (warned) {
@@ -7825,7 +7874,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     if (stripCardOpen()) {
         CreationPage card = stripCard();
         card.alpha = panelAnim_.value();
-        hud.timeOfDaySeconds = -1;
+        // THE CLOCK KEEPS THE PAUSE (spec #34: "rows, clock, title stay") --
+        // integration kept HUD's ruling over the family stand-down the other
+        // page passes make: the pause stack is where a player stands still to
+        // read the hour, and HUD's own earned-text logic already wakes the
+        // clock for it. The purse still has nothing to say here.
         hud.coin = -1;
         if (furniture) {
             drawCreationPage(target, card);
