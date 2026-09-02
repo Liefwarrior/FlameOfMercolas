@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -458,6 +459,148 @@ TEST_CASE("a blow takes hit points off and eventually puts somebody down") {
     CHECK(sawBloodied);
     CHECK(isDowned(target.hp));
     CHECK(target.hp == 0);  // down, and never below it
+}
+
+TEST_CASE("the evictor is a cudgel to the rule: below the line, and pinned there") {
+    // The whole point of the ordering, exercised for the new seat. If either
+    // of these moves, the eviction beating becomes the combat screen's fight
+    // and the quest it was forged for stops working -- at compile time, here.
+    static_assert(Weapon::Evictor < kFirstLethalWeapon);
+    static_assert(kFirstLethalWeapon == Weapon::Edged);
+
+    const auto twoFighters = [](Weapon aWeapon, Intent aIntent, std::int32_t aHp, Weapon bWeapon,
+                                Intent bIntent, std::int32_t bHp) {
+        return std::vector<Fighter>{Fighter{1, aWeapon, aIntent, aHp, 40},
+                                    Fighter{2, bWeapon, bIntent, bHp, 40}};
+    };
+    // B1: the Evictor out is still a brawl, from either side of it.
+    CHECK(classifyFight(twoFighters(Weapon::Evictor, Intent::Subdue, 40, Weapon::Fists,
+                                    Intent::Subdue, 40)) == FightClass::Brawl);
+    CHECK(classifyFight(twoFighters(Weapon::Fists, Intent::Subdue, 40, Weapon::Evictor,
+                                    Intent::Subdue, 40)) == FightClass::Brawl);
+    // B3 with the eviction's own shape: beating a BLOODIED man down with the
+    // Evictor, meaning only to put him out, stays the world's fight -- that
+    // is the legal beating the weapon exists for...
+    REQUIRE(isBloodied(9, 40));
+    CHECK(classifyFight(twoFighters(Weapon::Evictor, Intent::Subdue, 40, Weapon::Fists,
+                                    Intent::Subdue, 9)) == FightClass::Brawl);
+    // ...and the weapon buys NO forgiveness on B3 itself: mean a bloodied man
+    // harm while holding it and the fight leaves the world exactly as it
+    // always did.
+    CHECK(classifyFight(twoFighters(Weapon::Evictor, Intent::Harm, 40, Weapon::Fists,
+                                    Intent::Subdue, 9)) == FightClass::Lethal);
+    // The renumbered Edged still reads as the line itself.
+    CHECK(classifyFight(twoFighters(Weapon::Edged, Intent::Subdue, 40, Weapon::Evictor,
+                                    Intent::Subdue, 40)) == FightClass::Lethal);
+
+    // The vocabulary: name, cudgel-class damage, the sheet's w-slot idiom,
+    // and the id a case grants it by. UI-REFERENCE-TERMINAL.md's own
+    // "cane 1-6 Impact" grammar, this city's caps.
+    CHECK(weaponName(Weapon::Evictor) == "the evictor");
+    CHECK(baseDamage(Weapon::Evictor) == baseDamage(Weapon::Blunt));
+    CHECK(weaponSheetLine(Weapon::Evictor) == "THE EVICTOR 7-9 IMPACT");
+    CHECK(weaponSheetLine(Weapon::Fists) == "FISTS 3-5 IMPACT");
+    CHECK(weaponSheetLine(Weapon::Edged) == "EDGED 11-13 EDGE");
+    CHECK(kEvictorWeaponId == "the_evictor");
+}
+
+TEST_CASE("the crown: the head is on the roll, and only the evictor reads it") {
+    // Roll 1: lands (low three bits 001), head byte (bits 8-15) zero -- deep
+    // inside COMBAT-SPEC 4.1's 24-of-256 head band -- variance zero. The
+    // arithmetic says seven; the crown says down.
+    {
+        Fighter target{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow blow = strike(Weapon::Evictor, target, 0x1ull);
+        CHECK(blow.landed);
+        CHECK(blow.damage == 7);  // the figure stays a cudgel's...
+        CHECK(blow.crowned);
+        CHECK(blow.downed);  // ...and the man does not
+        CHECK(blow.bloodied);
+        CHECK(target.hp == 0);
+    }
+    // The same roll in any other hand is just a blow. Every shipped weapon
+    // keeps its shipped arithmetic, bit for bit -- the crown branch is gated
+    // on the weapon, not woven through the maths.
+    for (const Weapon weapon :
+         {Weapon::Fists, Weapon::Improvised, Weapon::Blunt, Weapon::Edged}) {
+        Fighter target{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow blow = strike(weapon, target, 0x1ull);
+        CHECK(blow.landed);
+        CHECK(blow.damage == baseDamage(weapon));
+        CHECK_FALSE(blow.crowned);
+        CHECK_FALSE(blow.downed);
+        CHECK(target.hp == 1000 - baseDamage(weapon));
+    }
+    // The band edge, both sides: head byte 23 is the last crown, 24 the
+    // first ordinary blow. LOC_Q8's r8 band is 0-23 and so is this one.
+    {
+        Fighter in{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow crowned = strike(Weapon::Evictor, in, 0x1ull | (23ull << 8));
+        CHECK(crowned.crowned);
+        CHECK(in.hp == 0);
+        Fighter out{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow plain = strike(Weapon::Evictor, out, 0x1ull | (24ull << 8));
+        CHECK(plain.landed);
+        CHECK_FALSE(plain.crowned);
+        CHECK_FALSE(plain.downed);
+        CHECK(out.hp == 1000 - plain.damage);
+    }
+    // A whiff cannot crown: the band is read on a blow that LANDED through
+    // both existing miss bands, never instead of them. Same roll, argued in
+    // the same order -- at a full pool this roll crowns, and exhausted the
+    // tired band takes it first. Same-roll discipline, proven at the seam.
+    {
+        Fighter never{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow whiffed = strike(Weapon::Evictor, never, 0x8ull);  // low three bits zero
+        CHECK_FALSE(whiffed.landed);
+        CHECK_FALSE(whiffed.crowned);
+        CHECK(never.hp == 1000);
+
+        const std::uint64_t tiredRoll = 0x1ull | (0x05ull << 32);  // tired band 5 of 64
+        Fighter rested{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow fresh = strike(Weapon::Evictor, rested, tiredRoll, 0, kFatigueTermFullQ8);
+        CHECK(fresh.crowned);
+        Fighter spent{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow tired = strike(Weapon::Evictor, spent, tiredRoll, 0, kFatigueTermEmptyQ8);
+        CHECK_FALSE(tired.landed);
+        CHECK_FALSE(tired.crowned);
+        CHECK(spent.hp == 1000);
+    }
+    // And the whole band, exhaustively: over the same golden-ratio sweep the
+    // fatigue build pinned its bands with, every landed evictor blow crowns
+    // exactly when bits 8-15 sit inside the 24-band, the crown always means
+    // down-at-zero, and the damage FIGURE never differs from a cudgel's on
+    // the same roll. The count lands where 24 of 256 says it should.
+    std::int32_t landed = 0;
+    std::int32_t crowns = 0;
+    for (std::uint64_t seed = 0; seed < 4096; ++seed) {
+        const std::uint64_t roll = seed * 0x9E3779B97F4A7C15ull + seed;
+        Fighter target{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow blow = strike(Weapon::Evictor, target, roll);
+        Fighter twin{1, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        const Blow cudgel = strike(Weapon::Blunt, twin, roll);
+        CHECK(blow.landed == cudgel.landed);
+        if (!blow.landed) {
+            CHECK_FALSE(blow.crowned);
+            continue;
+        }
+        ++landed;
+        CHECK(blow.damage == cudgel.damage);
+        CHECK(blow.crowned == (((roll >> kEvictorHeadRollShift) & 0xFFU) < kEvictorHeadBand256));
+        if (blow.crowned) {
+            ++crowns;
+            CHECK(blow.downed);
+            CHECK(target.hp == 0);
+        } else {
+            CHECK(target.hp == twin.hp);
+        }
+        CHECK_FALSE(cudgel.crowned);
+    }
+    CHECK(landed > 3300);  // the shipped 1-in-8 whiff, still the whole miss
+    // ~24/256 of landed blows: 336 expected of ~3580. Generous walls, same
+    // shape as the fatigue sweep's own.
+    CHECK(crowns > 220);
+    CHECK(crowns < 460);
 }
 
 TEST_CASE("blockedDamage: skill buys forgiveness, never immunity") {
@@ -902,6 +1045,99 @@ TEST_CASE("a brawl that starts with fists escalates the moment a knife comes out
     tavern.setPlayerCombat(Weapon::Edged, Intent::Kill);
     room.run(1);
     CHECK(tavern.escalated());
+}
+
+TEST_CASE("granted by its id, the evictor beats a man down and it stays the world's fight") {
+    Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    room.run(2);
+    Tavern& tavern = room.tavern();
+
+    // The grant contract, both halves: a misspelt reward refuses and leaves
+    // the hand alone; the authored id arms, and touches NOTHING else -- the
+    // intent stays the Subdue the player already meant, which is the entire
+    // reason grantPlayerWeapon exists beside setPlayerCombat.
+    REQUIRE_FALSE(tavern.grantPlayerWeapon("the_cutter"));
+    CHECK(tavern.playerWeapon() == Weapon::Fists);
+    REQUIRE(tavern.grantPlayerWeapon(kEvictorWeaponId));
+    CHECK(tavern.playerWeapon() == Weapon::Evictor);
+    REQUIRE_FALSE(tavern.currentFight().empty());
+    CHECK(tavern.currentFight().front().weapon == Weapon::Evictor);
+    CHECK(tavern.currentFight().front().intent == Intent::Subdue);
+
+    // The eviction beating, end to end: swing until somebody is on the
+    // floor. EVERY swing stays the world's fight -- the weapon sits below
+    // the line and nobody here means more than to win -- and beating the
+    // same man past bloodied with it never raises the escalation a blade
+    // raises on contact.
+    std::int32_t downedId = -1;
+    for (int swing = 0; swing < 40 && downedId < 0; ++swing) {
+        const Tavern::PunchResult punch = tavern.playerPunchNearest();
+        if (punch.swung) {
+            CHECK(punch.fight == FightClass::Brawl);
+            if (punch.blow.downed) {
+                downedId = punch.targetId;
+            }
+        }
+        room.run(1);
+    }
+    REQUIRE(downedId >= 0);
+    CHECK_FALSE(tavern.escalated());
+    CHECK(tavern.escalation() == FightClass::Brawl);
+
+    // And the DOWN machinery is exactly the one that always ran: the man the
+    // Evictor put on the floor comes round on the house's own clock and
+    // stands at a quarter of his health, headache included. Nothing about
+    // the weapon reaches past the zero it writes.
+    const int stood = room.runUntil(
+        [&tavern, downedId] {
+            const Actor* him = tavern.actorById(downedId);
+            return him != nullptr && him->activity() != Activity::Downed;
+        },
+        240);
+    REQUIRE(stood >= 0);
+    const Actor* him = tavern.actorById(downedId);
+    REQUIRE(him != nullptr);
+    CHECK(him->hp() * 4 >= him->hpMax());
+}
+
+TEST_CASE("twin rooms, twin crowns: the evictor's whole fight replays draw for draw") {
+    // TWO ROOMS, ONE SEED, ONE SCRIPT -- the same shape the guard's own twin
+    // case uses. The crown is carved off the swing's existing roll, so the
+    // entire fight, crowns included, must replay byte for byte: whether each
+    // swing swung, landed, downed, CROWNED, whom, and for how much. This is
+    // the twin-run gate's question asked at the seam the weapon added.
+    const auto fightTrace = [](Room& room) {
+        Tavern& tavern = room.tavern();
+        REQUIRE(tavern.grantPlayerWeapon(kEvictorWeaponId));
+        std::vector<std::string> trace;
+        for (int swing = 0; swing < 30; ++swing) {
+            const Tavern::PunchResult punch = tavern.playerPunchNearest();
+            std::string beat = std::to_string(punch.targetId);
+            beat += punch.swung ? ":s" : ":-";
+            beat += punch.blow.landed ? "l" : "-";
+            beat += punch.blow.downed ? "d" : "-";
+            beat += punch.blow.crowned ? "C" : "-";
+            beat += ":" + std::to_string(punch.blow.damage);
+            trace.push_back(std::move(beat));
+            room.run(1);
+        }
+        return trace;
+    };
+    Room one(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    Room two(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    one.run(2);
+    two.run(2);
+    const std::vector<std::string> first = fightTrace(one);
+    const std::vector<std::string> second = fightTrace(two);
+    REQUIRE(first.size() == second.size());
+    CHECK(first == second);
+    // The script threw real blows -- a trace of thirty whiffs would pass the
+    // equality above while proving nothing about the crown's carving.
+    bool anyLanded = false;
+    for (const std::string& beat : first) {
+        anyLanded = anyLanded || beat.find(":sl") != std::string::npos;
+    }
+    CHECK(anyLanded);
 }
 
 TEST_CASE("a brawl never kills the player, it puts them on the floor") {
