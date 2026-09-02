@@ -5160,7 +5160,14 @@ void Session::punch() {
         say("BLADE OUT - THIS IS NOT A BRAWL.");
         return;
     }
-    if (result.blow.downed) {
+    if (result.blow.crowned) {
+        // THE EVICTOR'S OWN LINE. crowned is downed by construction (see
+        // Blow), so this reads before the plain fall -- the room saw WHERE
+        // the blow went, and only this weapon ever throws one. The --smoke
+        // punch probe counts "HIT "/" GOES DOWN." and never arms the player,
+        // so this line cannot reach it.
+        say("CAUGHT " + result.targetName + " ACROSS THE CROWN. OUT COLD.");
+    } else if (result.blow.downed) {
         say(result.targetName + " GOES DOWN.");
     } else if (result.blow.landed) {
         say("HIT " + result.targetName + " FOR " + std::to_string(result.blow.damage) + ".");
@@ -5912,7 +5919,8 @@ std::vector<std::string> Session::characterRows() const {
     // neither block is ever split by a page turn a player has to go looking
     // for.
     std::vector<std::string> rows;
-    rows.reserve(sim::kLegendTracks + 4 + 5 + 3);
+    // +4, not +3: room for the IN HAND row the armed sheet adds at the end.
+    rows.reserve(sim::kLegendTracks + 4 + 5 + 4);
     const sim::Legend book = legend();
     for (std::size_t i = 0; i < sim::kLegendTracks; ++i) {
         const sim::LegendRow& row = book.rows()[i];
@@ -6025,6 +6033,18 @@ std::vector<std::string> Session::characterRows() const {
     rows.push_back("REPUTATION  " + std::string(talk.ledger().reputationLabel()));
     rows.push_back("COIN  " + std::to_string(tavern_->playerCoin()));
     rows.push_back("HEAT  " + std::to_string(talk.crimes().heat()));
+    // IN HAND -- the reference sheet's w slot ("cane 1-6 Impact"), printed
+    // ONLY once the world has actually put something in the player's hand.
+    // Not an empty-state row on purpose: this build has no item system
+    // (the header above says so out loud), and "IN HAND FISTS" would claim
+    // an equipment model nothing simulates. The moment a case beat calls
+    // grantPlayerWeapon, the sheet says what it is and what it does --
+    // eighteen rows then, seventeen until, which test_character.cpp pins
+    // from both sides. Page arithmetic: the row lands on page two, which
+    // carries eight rows bare and kTopicPageSize is nine.
+    if (tavern_->playerWeapon() != sim::Weapon::Fists) {
+        rows.push_back("IN HAND  " + sim::weaponSheetLine(tavern_->playerWeapon()));
+    }
     return rows;
 }
 

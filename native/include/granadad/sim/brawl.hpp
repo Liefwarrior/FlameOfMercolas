@@ -42,6 +42,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include "granadad/sim/fatigue.hpp"
@@ -60,12 +61,31 @@ enum class Weapon : std::uint8_t {
     Improvised = 1,
     /// A cudgel carried on purpose. A bouncer's tool, and still not a blade.
     Blunt = 2,
+    /// THE EVICTOR: a headed cudgel made for putting a man OUT rather than
+    /// open -- the eviction case's reward. A cudgel in every way the line
+    /// below cares about, and the one weapon whose landed blows read a head
+    /// band off the roll -- see strike() and kEvictorHeadBand256.
+    Evictor = 3,
     /// Made to open a man: knife, boat-hook, cutlass, marlinspike.
-    Edged = 3,
+    ///
+    /// RENUMBERED 3 -> 4 when the Evictor took the seat below the line. The
+    /// value is a hashed byte (actor.cpp's hash_into, tavern.cpp's
+    /// playerWeapon_), so this would move the world hash of any run with an
+    /// Edged hand in it -- which no gate workload has: bouncers carry Blunt,
+    /// the player boots with Fists, and a nemesis draws Edged only after
+    /// three player victories. The population baseline never registers the
+    /// Tavern at all. Stated here so the renumber is a decision on the
+    /// record, and verified by the twin gate rather than trusted.
+    Edged = 4,
 };
 
 /// The first weapon that takes a fight out of the world.
 inline constexpr Weapon kFirstLethalWeapon = Weapon::Edged;
+
+/// The id an authored case grants THE EVICTOR by -- the entire contract
+/// between a casebook reward beat and this enum, so neither side includes
+/// the other's headers. See Tavern::grantPlayerWeapon.
+inline constexpr std::string_view kEvictorWeaponId = "the_evictor";
 
 [[nodiscard]] std::string_view weaponName(Weapon weapon) noexcept;
 
@@ -133,6 +153,30 @@ inline constexpr std::int32_t kBloodiedDenominator = 4;
 /// Damage a weapon does before any roll, in hit points.
 [[nodiscard]] std::int32_t baseDamage(Weapon weapon) noexcept;
 
+/// The variance ceiling strike() carves off the roll -- (roll>>3)%3, so a
+/// landed blow is worth base .. base+this before the MGT bonus. Named for
+/// weaponSheetLine below; strike()'s own %3 stays the ruling copy.
+inline constexpr std::int32_t kStrikeVarianceMax = 2;
+
+/// The weapon as a sheet prints it -- the reference sheet's own
+/// "cane 1-6 Impact" idiom (UI-REFERENCE-TERMINAL.md): the name, the
+/// unrolled span, the class. Muscle is the MIGHT row's business, not this
+/// line's, so the span is the weapon's own.
+[[nodiscard]] std::string weaponSheetLine(Weapon weapon);
+
+/// THE HEAD IS ON THE ROLL. COMBAT-SPEC section 4.1's location table gives
+/// the head 24 of 256, and section 9's C6 rules that v1 location is a pure
+/// weighted draw, never an aim. The Evictor honours both: every landed blow
+/// it throws reads an r8 band off bits 8-15 of the SAME roll the whiff and
+/// the variance were already carved from -- the fatigue build's same-roll
+/// discipline, third carving; the whiff owns bits 0-2 and the tired band
+/// bits 32-37 -- and inside the band the blow found the head and the man
+/// goes down whatever the arithmetic left him. That is the temple-KO canon
+/// the spec's own DAZE rider cites (novel L1165, L172), turned up to the
+/// knockout this weapon was forged for. NO NEW DRAW EXISTS ANYWHERE IN THIS.
+inline constexpr int kEvictorHeadRollShift = 8;
+inline constexpr std::uint64_t kEvictorHeadBand256 = 24;
+
 /// Q8 impulse a shove imparts along the shover's facing. A shove is the
 /// bouncer's actual job: it does no damage and it moves people.
 inline constexpr std::int32_t kShoveImpulse = 96;
@@ -150,6 +194,11 @@ struct Blow {
     bool bloodied = false;
     /// True when the blow took the target to zero.
     bool downed = false;
+    /// True when an Evictor blow found the head band (kEvictorHeadBand256):
+    /// downed outright, whatever the damage arithmetic left. No other weapon
+    /// ever sets it, so every existing caller reads exactly what it always
+    /// read.
+    bool crowned = false;
 };
 
 /// Resolves one blow against `target`, mutating its hp. `roll` is a raw draw
@@ -169,6 +218,10 @@ struct Blow {
 /// bands and the variance are carved out of the one roll the caller already
 /// owned, and at kFatigueTermFullQ8 the function is bit-identical to what it
 /// replaced (test_fatigue.cpp sweeps that equivalence).
+///
+/// THE EVICTOR reads one more band off the same roll -- see
+/// kEvictorHeadBand256's own header -- and no other weapon does, so for
+/// every weapon that shipped before it this function is bit-identical.
 ///
 /// Ward brawlers call this with the defaults: they carry no pool in this
 /// build (see fatigue.hpp's header on where the player-scoped line is drawn).

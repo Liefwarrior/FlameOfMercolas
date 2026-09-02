@@ -556,6 +556,18 @@ void Tavern::setPlayerCombat(Weapon weapon, Intent intent) noexcept {
     playerIntent_ = intent;
 }
 
+bool Tavern::grantPlayerWeapon(std::string_view weaponId) noexcept {
+    // The roster is deliberately the ids the world can actually hand over,
+    // not the enum: "fists" is not a thing anyone grants, and Edged arriving
+    // through a reward string would put a fight on the combat screen's side
+    // of the line by way of a typo-sized diff. See the header.
+    if (weaponId == kEvictorWeaponId) {
+        playerWeapon_ = Weapon::Evictor;
+        return true;
+    }
+    return false;
+}
+
 std::int32_t Tavern::takePlayerShoveX() noexcept {
     return std::exchange(shoveX_, 0);
 }

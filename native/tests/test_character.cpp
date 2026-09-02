@@ -204,6 +204,30 @@ TEST_CASE("a joined ladder's sheet row carries the rank title, the standing numb
     CHECK(row.find("NEXT 22/LV5") != std::string::npos);
 }
 
+TEST_CASE("the sheet grows an IN HAND row the moment the world arms you, and not before") {
+    // EVICTOR BUILD. The reference sheet's w slot ("cane 1-6 Impact",
+    // UI-REFERENCE-TERMINAL.md) lands here the day something is actually in
+    // the player's hand -- and ONLY that day. This build has no item system,
+    // so an empty-handed sheet printing IN HAND FISTS would claim an
+    // equipment model nothing simulates; seventeen rows stays the bare
+    // truth, eighteen the armed one. Page arithmetic holds: page two carried
+    // eight rows bare against kTopicPageSize nine, so the new row turns no
+    // page anybody has to go looking for.
+    render::Session session = standing();
+    const std::vector<std::string> bare = session.characterRows();
+    REQUIRE(bare.size() == 17);
+    for (const std::string& row : bare) {
+        CHECK(row.rfind("IN HAND", 0) != 0);
+    }
+
+    // The same grant seam the eviction case's close beat calls, by the same
+    // authored id -- see Tavern::grantPlayerWeapon.
+    REQUIRE(session.tavern().grantPlayerWeapon(kEvictorWeaponId));
+    const std::vector<std::string> armed = session.characterRows();
+    REQUIRE(armed.size() == 18);
+    CHECK(armed.back() == "IN HAND  THE EVICTOR 7-9 IMPACT");
+}
+
 TEST_CASE("seventeen rows is two pages, and the character sheet turns like every other list here") {
     render::Session session = standing();
     session.toggleCharacter();

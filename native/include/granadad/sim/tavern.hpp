@@ -513,6 +513,19 @@ public:
     void setPlayer(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band) noexcept;
     void setPlayerCombat(Weapon weapon, Intent intent) noexcept;
 
+    /// Arms the player by an authored weapon id -- kEvictorWeaponId is the
+    /// whole roster today -- and touches NOTHING else: intent stays where it
+    /// stands, because a case beat that hands a man a cudgel has no business
+    /// deciding what he means to do with it (setPlayerCombat couples the two
+    /// on purpose for the tests that stage whole fights; a reward beat must
+    /// not). Unknown ids refuse rather than disarm, so a case sheet that
+    /// misspells its own reward fails its test instead of quietly emptying
+    /// the player's hand. playerWeapon_ is already a hashed byte, so a grant
+    /// is twin-run-visible the second it lands, and identical in both runs
+    /// because the beat that calls it is.
+    bool grantPlayerWeapon(std::string_view weaponId) noexcept;
+    [[nodiscard]] Weapon playerWeapon() const noexcept { return playerWeapon_; }
+
     /// A shove the room wants applied to the player's body, in Q8, or (0,0).
     /// Read and CLEARED by the caller, which owns the body -- the tavern never
     /// holds a pointer to it.
