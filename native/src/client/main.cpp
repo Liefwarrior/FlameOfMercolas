@@ -1282,6 +1282,16 @@ void print_usage() {
             options.smoke.caseRun = true;
             options.smoke.caseEnd = value;
             options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--eviction") == 0) {
+            // EVICTION CASE (lane: eviction). The owner's third case,
+            // participate path end to end -- see SmokeRunConfig::evictionRun.
+            options.smoke.evictionRun = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--eviction=", &value)) {
+            // --eviction=refused is the disrupt path; the rest are shutters.
+            options.smoke.evictionRun = true;
+            options.smoke.evictionEnd = value;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--case-watch") == 0) {
             // CASE WATCH. caseRun is set WITHOUT wantsSmoke: the drive is
             // recorded inside the client (recordCaseDrive reads the same

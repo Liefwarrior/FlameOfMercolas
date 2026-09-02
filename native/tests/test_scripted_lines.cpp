@@ -112,6 +112,33 @@ TEST_CASE("the nemesis arc lands all seven of its beats") {
     CHECK(played.summary.find("members, toll") != std::string::npos);
 }
 
+TEST_CASE("the eviction line lands both of its paths in full") {
+    // EVICTION (lane: eviction). The advertised flag must land ALL its beats
+    // on the path it names -- the participate path's nine, and the disrupt
+    // path's eight -- the same broken-promise bar every other line here is
+    // held to. The detailed state (served/weapon/twin-run) lives in
+    // test_eviction_line.cpp; this is the acceptance gate.
+    {
+        render::SmokeRunConfig run;
+        run.evictionRun = true;
+        const render::SmokeRunResult played = play(run);
+        INFO("participate: " << played.summary);
+        CHECK(played.ok);
+        CHECK_FALSE(played.scriptFellShort());
+        CHECK(played.evictBeats == 9);
+    }
+    {
+        render::SmokeRunConfig run;
+        run.evictionRun = true;
+        run.evictionEnd = "refused";
+        const render::SmokeRunResult played = play(run);
+        INFO("disrupt: " << played.summary);
+        CHECK(played.ok);
+        CHECK_FALSE(played.scriptFellShort());
+        CHECK(played.evictBeats == 8);
+    }
+}
+
 TEST_CASE("the roof line gets onto the lead and back down again, all three ways") {
     for (const char* where : {"roof", "leap", "street"}) {
         render::SmokeRunConfig run;

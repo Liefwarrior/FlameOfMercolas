@@ -1,0 +1,99 @@
+{
+  "id": "eviction",
+  "case": {
+    "id": "eviction",
+    "title": "EVICTION",
+    "hook": "THE MISSION IS HIRING HANDS, NOT ASKING QUESTIONS. A HOUSE IN THE NETTERS' MUST BE THE FLAME'S BY MORNING.",
+    "close": "THE ROLL IS SQUARED. THE WARD KEEPS ITS ORDER, AND YOU KEEP WHAT YOU DID FOR IT.",
+    "provenance": "The owner's third-case brief (working title EVICTION), verbatim spine: 'Showing the player how evictions happen and let them participate or disrupt it. A priest of the flame is looking for people with a good skill in open hand to help evict a tenant from a compound apartment. Pick the nearest compound to the mission. Should happen in the evening once people are home. The lease agreement should be involved. Rumors circle that the priest is swamped with evictions due to the latest Mercian shipment not arriving (due to the Dezdant war with Trojia).' CASTINGS, EVERY ONE FOR THE OWNER'S VETO: (1) the priest is Father Maell -- the ward's only priest, and compounds.json already names him charter priest of every plot, so canon requires him for the hearing anyway; (2) the compound is C2 THE NETTERS' -- nearest to the Mission by the street (both doors on Ropewynd, one flat lit walk east; C3 is nearer by ruler and three times the walk, rejected on the brief's own rule 5); (3) the petitioner is Widow Annis Netter, C2's own Den Duke, her hand forced by the pledge Fenner holds on her charge (compounds.json C2: tenure pledged, pledgedTo fenner -- the arrears cascade from the missed Mercian shipment lands on exactly this knife-edge); (4) THE FAMILY: the tenant is cast as Bram Marrow, called the Steady -- an EXISTING actor (the Gilded Gull's own midday patron, a serf), here given a home: the east-wing ground condo of the Netters', the door that opens onto the Gullet back-lane. This casting ADDS canon the way the courier case's Finch resolution did, and is flagged the same way: nothing anywhere said where Bram sleeps, and now something does. His household is 'four heads' in the roll's own voice -- no wife or child is named, because the roll counts heads and inventing three more names would be three more vetoes; (5) the verdict is DISTRAINT, ALREADY WEIGHED -- the petition was brought and heard before the case opens, because the sim's arrears ripen across ninety-day quarters and no organic petition can ripen inside a play session (compound.cpp boots households at zero arrears; kPetitionAt is 120). The writ the player carries is the hearing's OUTPUT, presented as sealed fact; Ward state is never mutated and never contradicted -- the roll's own numbers (ground penny 260 a quarter, petition at 120 arrears) are quoted, and the family's figures (130 behind, three quarters running) are authored to sit legally on those constants. MERCIAN AND DEZDANT are spelled per COMBAT-SPEC.md (saxe, 'Mercian press blade') and MATERIALS-CANON.md/MAGIC-CANON.md (the Du Vron Dezdant fortress Trojia already besieges in canon); the owner's phrasing 'the Dezdant war with Trojia' is used as given, and it coheres -- war on the Dezdant ground chokes what comes Mercian-bottomed.",
+    "dreadBands": [
+      { "at": 0, "label": "PAPER, SO FAR, AND PAPER IS QUIET" },
+      { "at": 12, "label": "THE LANE IS WATCHING THE DOOR" },
+      { "at": 20, "label": "THE WARD KNOWS WHOSE HAND SERVED IT" }
+    ]
+  },
+  "leads": [
+    {
+      "id": "writ-in-hand",
+      "short": "THE WRIT",
+      "place": "MISSION OF THE FLAME",
+      "what": "THE PRIEST'S PETITION-DAY DOCKET, AND YOUR PART IN IT",
+      "who": "maell",
+      "site": { "x": 120, "y": 103, "band": 19 },
+      "anchor": "Maell's own establishment anchor (ward_roster.cpp mission entry, 120/103, ground band) -- where the priest keeps his working day, standable because his body stands there",
+      "dread": 2,
+      "found": "MAELL DOES NOT DRESS IT UP: A DISTRAINT, WEIGHED AND SEALED, TO SERVE IN THE NETTERS'.",
+      "detail": "THE WIDOW BROUGHT HER PETITION AGAINST THE MARROW HOUSEHOLD AND THE FLAME HEARD IT ON PETITION-DAY. MAELL WEIGHED WHAT A PRIEST WEIGHS - THE YEARS KEPT, THE HEADS, THE QUARTERS BEHIND, THE WIDOW'S OWN PLEDGED PAPER - AND SIX ANSWERS WERE OPEN TO HIM. HE GAVE THE FIFTH. THE HOUSE PASSES TO THE DUKE; THE FAMILY IS ROOFED. HER OFFERING BOUGHT NONE OF IT. IT NEVER DOES. HE WANTS HANDS SCHOOLED IN THE OPEN HAND SO THE EVENING NEEDS NOTHING WORSE, AND HE PAYS WHEN THE WRIT COMES HOME SIGNED.",
+      "opens": ["netters-gate"]
+    },
+    {
+      "id": "netters-gate",
+      "short": "THE GATE",
+      "place": "THE NETTERS' COMPOUND",
+      "what": "THE GROUND THE WIDOW HOLDS, AND THE PAPER HELD ON HER",
+      "who": "",
+      "site": { "x": 171, "y": 99, "band": 19 },
+      "anchor": "the compound's own gate mouth on Ropewynd (docks_signs_generated.hpp C2 door 171/97, gate lamp lamp_cmp2_gate at 171/99) -- the courtyard side of the authored gate gap",
+      "dread": 3,
+      "found": "THE PLAQUE: THE CHARGE IS PLEDGED AT FENNER'S. THE WIDOW SQUEEZES BECAUSE SHE IS SQUEEZED.",
+      "detail": "FORTY DOCKWORKER FAMILIES ON GROUND THE WIDOW HOLDS AT THE FLAME'S PLEASURE AND FENNER'S. THE QUAY TALK IS ALL ONE STORY: NO MERCIAN SHIPMENT THIS QUARTER NOR LAST - THE DEZDANT WAR WITH TROJIA HAS THE LANES - SO THE WAGES STOPPED, SO THE PENNIES STOPPED, SO THE MISSION'S PETITION-DAYS RUN LONG. THE SERFS ARE ON THE QUAY UNTIL SIX AND HOME AFTER. THE MARROW DOOR IS NOT OFF THIS COURT: EAST WING, GROUND FLOOR, OPENING ON THE GULLET LANE, WHERE THE LAMPS DO NOT REACH.",
+      "opens": ["family-door"]
+    },
+    {
+      "id": "family-door",
+      "short": "THE DOOR",
+      "place": "THE NETTERS' COMPOUND",
+      "what": "THE MARROW HOUSEHOLD, EAST WING, GROUND FLOOR",
+      "who": "",
+      "site": { "x": 195, "y": 102, "band": 19 },
+      "anchor": "the east-wing condo's outer-ring door onto the Gullet back-lane (gen_docks_surface.py S4 unreachable-pocket fix, c04 door east at world 195/102) -- the lane and the door gap are walkable by that fix's own purpose",
+      "dread": 5,
+      "found": "A SERF'S DOOR ON AN UNLIT LANE. FOUR HEADS BEHIND IT, THREE QUARTERS BEHIND ON THE PENNY.",
+      "detail": "BRAM MARROW, THE ONE THEY CALL THE STEADY. NINE YEARS ON THIS GROUND AND NEVER SHORT UNTIL THE SHIPMENTS STOPPED. FOUR HEADS, ONE HUNDRED THIRTY PENNIES BEHIND ON A GROUND PENNY OF TWO HUNDRED SIXTY THE QUARTER. THEY ARE ON THE QUAY BY DAY; COME IN THE EVENING, ONCE THEY ARE HOME. KNOCK, AND DECIDE WHAT YOUR HANDS ARE FOR: SERVE THE FLAME'S PAPER, OR CARRY IT BACK TO THE PRIEST WHOLE AND LET HIM FIND HARDER HANDS. NOTHING EDGED, WHICHEVER. THE WRIT IS THE WEAPON HERE.",
+      "opens": ["roof-lodgers"]
+    },
+    {
+      "id": "roof-lodgers",
+      "short": "THE ROOF",
+      "place": "THE NETTERS' COMPOUND",
+      "what": "THE HUTS OVER THE EAST WING, AND WHO GOES WITH THE HOUSE",
+      "who": "",
+      "site": { "x": 187, "y": 111, "band": 21 },
+      "anchor": "the roof-deck stair head over the east wing (gen_docks_surface.py roof stair 186/111 band 20 to 21, huts roofhut_10 through roofhut_12) -- the deck the lodger households walk home to every night, standable because they stand on it",
+      "dread": 6,
+      "found": "LEATHER TENTS ON A RENTED DECK. THE ROLL DOES NOT WEIGH THESE; THEY GO WITH THE HOUSE.",
+      "detail": "THE ROOF PEOPLE RENT FROM THE HOUSE-OWNER BENEATH, NOT FROM THE WIDOW, SO THEY WERE NEVER PARTIES TO THE CASE AND NOBODY WEIGHED THEM. CHILDREN IN A LEATHER TENT OVER THE MARROW KITCHEN. WHEN A HOUSE IS TAKEN FOR ARREARS THE ROOF GOES WITH IT, AND THE ROOFED GO WHERE THE ROOFED GO: A COLDER DECK, OR THE GULLET. THIS PAGE POINTS NOWHERE. THAT IS WHAT IS WRONG WITH IT.",
+      "deadEnd": true,
+      "opens": []
+    },
+    {
+      "id": "served",
+      "short": "THE SERVICE",
+      "place": "MISSION OF THE FLAME",
+      "what": "THE WRIT SERVED, SIGNED, AND CARRIED HOME",
+      "who": "maell",
+      "site": { "x": 126, "y": 110, "band": 19 },
+      "anchor": "clue_c1_mission_backroom (the map's own authored script_anchor; the same site casebook.json and mission_sheet.json both already prove standable)",
+      "close": true,
+      "dread": 8,
+      "found": "DONE IS DONE. MAELL PAYS OFF THE CHARITY SHELF: OAK, LEAD-WRAPPED, CALLED THE EVICTOR.",
+      "detail": "THE PAPER CHANGED HANDS AT A DOOR THAT OPENED BECAUSE YOUR HANDS SAID IT SHOULD. NOBODY SWUNG. THAT IS WHAT THE GOOD HAND WAS HIRED FOR. THE MARROWS GO UP OR THEY GO TO THE GULLET, AND THE LODGERS OVER THEM GO TOO, WHO WERE NEVER ASKED. MAELL SIGNS THE ROLL AND DOES NOT THANK YOU - THE FLAME DOES NOT THANK A MAN FOR ORDER, IT PAYS HIM. AN OAK CUDGEL OFF THE MISSION'S OWN SHELF, OLD, TRUE, AND HONESTLY NAMED. HE SAYS IT AGAIN, ONCE, QUIETLY: ORDER KEPT IS WHY THE CITY IS SUFFERED TO STAND.",
+      "opens": []
+    },
+    {
+      "id": "stood-down",
+      "short": "STOOD DOWN",
+      "place": "MISSION OF THE FLAME",
+      "what": "THE WRIT CARRIED BACK UNSERVED",
+      "who": "maell",
+      "site": { "x": 117, "y": 110, "band": 19 },
+      "anchor": "the Mission bunks' night door (ward_roster.cpp MISSION_BUNKS dwelling, 117/110, ground band) -- where the Mission's own sleepers stand, standable because they do",
+      "close": true,
+      "dread": 4,
+      "found": "YOU GAVE IT BACK. MAELL DOES NOT CALL IT MERCY, AND DOES NOT SEND FOR THE WATCH.",
+      "detail": "THE WRIT DOES NOT DIE FOR WANT OF YOUR HANDS; IT WAITS FOR HARDER ONES, AND THE DOOR WILL LIKE THEM LESS. THE PRIEST TAKES THE PAPER BACK WHOLE AND MARKS NOTHING AGAINST YOU ON ANY ROLL - THE MISSION SIMPLY REMEMBERS WHOSE NERVE WENT, AND PAYS NOTHING, AND THE SHELF KEEPS ITS CUDGEL. IF YOU KNOCKED FIRST, THE MARROWS HAD AN EVENING'S WARNING NOBODY ELSE WOULD HAVE SOLD THEM. WHAT THAT IS WORTH IS NOT WRITTEN DOWN ANYWHERE.",
+      "opens": []
+    }
+  ],
+  "notes": "EVICTION (the owner's third authored case). SIX LEADS, TWO CLOSES: 'participate or disrupt' is the brief's own spine, so the book carries one close per path and either one shuts it - the casebook machinery already closes on any close-flagged lead, so both paths CLOSE the case and neither can strand it. NO lead carries start:true (the courier-case rule): the case enters the book through Maell's own conversation - the TakeWrit topic, gated in the open on the player's actual OPEN HAND skill at fifteen of the hundred, the major-designation line, stated to the player in the priest's refusal when their hands read under it. CHAIN, linear so no lead reads a spurious (COLD): the writ opens the gate (the ground and the pledge), the gate opens the door (the specific house), the door opens the roof (who goes with it); the roof opens nothing AND is flagged deadEnd, DELIBERATELY - 'cold is a lead that points nowhere', and pointing nowhere is the lodgers' whole situation stated as book-keeping. The two closes are heard and read ONLY by the case's own scripted beats (serving the door, or yielding the writ in conversation), never by the examine key - both sit over four tiles from every other lead so a look can never cross-read them. THE EVENING RULE IS MECHANICAL: the door answers a knock between six in the evening and midnight (the rota's own home hours), and refuses in the lane's voice outside them. WHAT IS HONESTLY ABSENT, FLAGGED NOT PAPERED: (a) no walking body stands in the doorway - the ward's roll households and its walking bodies are two systems nobody has joined (compound.hpp says so itself), so the family speaks through the wood in the session's own staged lines and through the paper, and the subdue the writ provides for CANNOT physically happen at this door today; the case says out loud that nobody swings, and MEANS it - the good hand is hired so nothing worse is needed - but a resisting body is one tavern-roster row away the day the owner wants one, and that row is specified in the lane report; (b) no lock hangs on any compound door (lockpick.hpp names the district's real doors as a later sprint), so the brief's BREAK-IN plays as the knock and the served paper, not as a picked lock - MUST/MUST NOT, builder's call, flagged for the owner's veto; (c) the roll is never mutated - the Distraint is presented as adjudicated fact and the Ward's own quarter-day machinery is left untouched, hashed state unmoved. THE REWARD is the other build lane's weapon under the agreed id the_evictor, granted at the served close through the one seam session.cpp names; the disrupt close pays nothing, which is the point. Dread stays small (28 ceiling) and the bands track how visibly the ward watched it happen. Copy discipline: no key name in any authored string; the two verbs at the door are named by the session's device-aware prompts."
+}

@@ -512,6 +512,12 @@ public:
     /// reconstructed at draw time.
     void setPlayer(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band) noexcept;
     void setPlayerCombat(Weapon weapon, Intent intent) noexcept;
+    /// EVICTION CASE. What is in the player's hands, readable -- the grant
+    /// seam's own receipt, so a scripted close (and its twin-run test) can
+    /// prove the reward landed without reaching into the room sideways.
+    /// (If the weapon lane lands its own accessor of this name, keep either;
+    /// they are the same line.)
+    [[nodiscard]] Weapon playerWeapon() const noexcept { return playerWeapon_; }
 
     /// Arms the player by an authored weapon id -- kEvictorWeaponId is the
     /// whole roster today -- and touches NOTHING else: intent stays where it
