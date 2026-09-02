@@ -564,6 +564,27 @@ public:
     /// --case scripted line uses so a headless run does not walk in place for
     /// six seconds. A no-op once the beat has fired; requires the raws loaded.
     void courierDeliverNow();
+    /// EVICTION CASE. The third book and its raws -- EVICTION, the writ
+    /// Maell's own conversation opens (TopicKind::TakeWrit; no courier, no
+    /// start lead: the hire IS the delivery). A third fixed member pair, the
+    /// courier chassis's own "two authored cases are two members" rule grown
+    /// by exactly one -- see the flagged note on activeCaseRaws() below.
+    [[nodiscard]] sim::Casebook& evictBook() noexcept { return evictBook_; }
+    [[nodiscard]] const sim::Casebook& evictBook() const noexcept { return evictBook_; }
+    [[nodiscard]] const sim::CasebookRaws& evictRaws() const noexcept { return evictRaws_; }
+    /// True while the writ is the errand in front: at least one lead heard,
+    /// close not read -- sheetCaseLive()'s exact rule over the third book.
+    [[nodiscard]] bool evictCaseLive() const noexcept {
+        return evictBook_.active() && !evictBook_.known().empty() && !evictBook_.closed();
+    }
+    /// True from the moment the paper changes hands at the Marrow door until
+    /// the case closes at the Mission -- the eviction's sheetCarry_: what the
+    /// HUD's objective swings on and what stepEvictCase() completes.
+    [[nodiscard]] bool writServed() const noexcept { return writServed_; }
+    /// True once the door has answered tonight's knock -- the serve press is
+    /// only offered on an answered door, so the choice is always spoken
+    /// before it is spent.
+    [[nodiscard]] bool evictKnocked() const noexcept { return evictKnocked_; }
     /// What the counters add up to. Derived on every call and held by nobody --
     /// see legend.hpp on why that is the design and not a shortcut.
     [[nodiscard]] sim::Legend legend() const;
@@ -1801,6 +1822,25 @@ private:
     sim::CasebookRaws sheetRaws_;
     sim::Casebook sheetBook_;
     sim::LetterRaws sheetLetterRaws_;
+    /// EVICTION CASE. The third case's raws, book and paper, held to the
+    /// sheet trio's exact contract above: ALL SESSION-SIDE AND NONE OF IT
+    /// HASHED -- the twin gate's workloads never construct a Session, and
+    /// determinism is proven the scripted way (test_eviction_line runs both
+    /// paths twice and requires identical books).
+    sim::CasebookRaws evictRaws_;
+    sim::Casebook evictBook_;
+    sim::LetterRaws evictLetterRaws_;
+    /// True from the paper changing hands at the door until the Mission
+    /// close -- sheetCarry_'s sibling, worn by the objective row, completed
+    /// by stepEvictCase().
+    bool writServed_ = false;
+    /// Tonight's knock: false until the door answers, cleared when the
+    /// serve lands or the evening gate refuses. The serve press is only
+    /// offered on an answered door.
+    bool evictKnocked_ = false;
+    /// The one-per-arming nudge naming the door verbs -- sheetTakeSaid_'s
+    /// sibling, re-armed when the player steps out of reach.
+    bool evictDoorSaid_ = false;
     /// Where the courier beat has got to (0 unfired / 1 hailed / 2 said the
     /// follow-up), and the countdown of world-steps before it fires. The
     /// countdown starts once the opening page is down (firstRun_ false) and
@@ -1831,11 +1871,42 @@ private:
     [[nodiscard]] bool caseTakeReady() const;
     [[nodiscard]] const sim::Actor* sheetQuarry() const;
     [[nodiscard]] int sheetLeadInLookReach() const;
+    /// EVICTION CASE, the errand's own moving parts, each the courier
+    /// machinery's exact sibling: stepEvictCase() is the per-step machine
+    /// (the return-to-Mission close and the Evictor grant); evictDoorReady()
+    /// answers whether the knock/serve press is the verb right now (case
+    /// live, writ unserved, within reach of the family-door lead's own
+    /// site); evictLeadInLookReach() is sheetLeadInLookReach()'s walk over
+    /// the third book; syncEvictionTopics() feeds the dialogue director the
+    /// case's stage (the setGroundPlot contract) so Maell's writ topics
+    /// appear and retire honestly; settleTakeWrit()/settleYieldWrit() are
+    /// the session halves of the two intent replies.
+    void stepEvictCase();
+    [[nodiscard]] bool evictDoorReady() const;
+    [[nodiscard]] int evictLeadInLookReach() const;
+    void syncEvictionTopics();
+    void settleTakeWrit();
+    void settleYieldWrit();
+    /// EVICTION CASE. THE REWARD SEAM, and the one place in this build that
+    /// arms the player at all: the agreed weapon id is "the_evictor", the
+    /// weapon itself is the weapon lane's to define. Until that lane's enum
+    /// lands, this grants the class the brawl already has on the Evictor's
+    /// own side of the lethal line -- Blunt, Subdue intent (the player's
+    /// default, so nothing meaningful is stomped) -- and the integrate step
+    /// is one identifier swap HERE and nowhere else.
+    void grantEvictor();
+    /// COURIER CASE + EVICTION CASE: the one case-switching rule, applied
+    /// everywhere a page, a row or the HUD reads "the case". THREE books
+    /// now: the eviction fronts while it lives (it begins by an explicit
+    /// deed mid-play, so it is always the newest thing the player did),
+    /// then the courier's errand, then the Bloodletter. Still fixed members
+    /// in fixed declaration order, still no switcher UI -- the same flagged
+    /// scope cut, one book deeper.
     [[nodiscard]] const sim::CasebookRaws& activeCaseRaws() const noexcept {
-        return sheetCaseLive() ? sheetRaws_ : caseRaws_;
+        return evictCaseLive() ? evictRaws_ : (sheetCaseLive() ? sheetRaws_ : caseRaws_);
     }
     [[nodiscard]] const sim::Casebook& activeCasebook() const noexcept {
-        return sheetCaseLive() ? sheetBook_ : casebook_;
+        return evictCaseLive() ? evictBook_ : (sheetCaseLive() ? sheetBook_ : casebook_);
     }
     bool keysOpen_ = false;
     /// SPELLS BUILD. The Grimoire page: whether it is up, which crafting the
@@ -2566,6 +2637,21 @@ struct SmokeRunConfig {
     /// whole errand delivered.
     bool caseRun = false;
     std::string caseEnd;
+    /// EVICTION CASE (lane: eviction). PLAY THE OWNER'S THIRD CASE, both
+    /// paths, through the same Session verbs a keypress makes: the hire off
+    /// Father Maell's evening table (the open-hand measure read live), the
+    /// writ on the Letters tile, the walk east to the Netters' gate, the
+    /// knock at the Marrow door once they are home, and then EITHER the
+    /// serve and the walk back for The Evictor, OR the walk-back unserved.
+    /// `evictionEnd` is where the shutter goes: "writ" (stop with the writ
+    /// open on the Letters tile), "gate" (stop after the gate lead, book
+    /// open), "knock" (stop at the answered door, the choice live), "served"
+    /// (stop the moment the paper changes hands, before the walk home), or
+    /// "refused" (the DISRUPT path: knock, then carry the writ back whole --
+    /// the case closes with no weapon granted). Empty serves and returns:
+    /// the whole participate path, The Evictor in hand.
+    bool evictionRun = false;
+    std::string evictionEnd;
     /// Run the Priest of the Flame line end to end and capture wherever it
     /// finishes: the oath, the night pot, the captain's word, the report, the
     /// teaching, and a crafting composed at the bench. Driven through the same
@@ -2917,6 +3003,9 @@ struct SmokeRunResult {
     /// discipline, for the same S4-review reason it has it.
     std::int32_t caseBeats = 0;
     std::int32_t caseBeatMask = 0;
+    /// EVICTION CASE: how many of the --eviction beats landed, and which.
+    std::int32_t evictBeats = 0;
+    std::int32_t evictBeatMask = 0;
     /// WHICH of them landed, one bit each, in order. A count says how many; a
     /// mask says which, and a case that cares about one specific claim -- beat
     /// 2, "somebody awake was in reach and did not make me out" -- can name it.

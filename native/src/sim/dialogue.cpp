@@ -141,6 +141,10 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "take errand";
         case TopicKind::SettleRadiant:
             return "settle errand";
+        case TopicKind::TakeWrit:
+            return "take the writ";
+        case TopicKind::YieldWrit:
+            return "yield the writ";
     }
     return "?";
 }
@@ -308,6 +312,19 @@ void DialogueDirector::setVacantCharge(std::int32_t plotIndex, std::string name)
     // A petition settled mid-conversation takes its own row off the list the
     // reply that announced it -- the roll no longer carries a vacant charge,
     // so the topic no longer exists.
+    if (open_) {
+        rebuildCurrentLevel();
+    }
+}
+
+void DialogueDirector::setEvictionCase(std::int32_t stage, bool quietWork) {
+    if (evictionStage_ == stage && evictionQuietWork_ == quietWork) {
+        return;
+    }
+    evictionStage_ = stage;
+    evictionQuietWork_ = quietWork;
+    // A writ taken or yielded mid-conversation moves its own row on or off
+    // the list with the reply that announced it -- setVacantCharge's rule.
     if (open_) {
         rebuildCurrentLevel();
     }
@@ -807,6 +824,28 @@ void DialogueDirector::buildTopics() {
         topic.kind = TopicKind::Petition;
         topic.label = "PETITION FOR " + vacantPlotName_;
         topic.payload = vacantPlot_;
+        topics_.push_back(std::move(topic));
+    }
+
+    // 9d. EVICTION CASE -- the writ, offered and retrieved. The case's own
+    //     priest and nobody else (kEvictionPriestId: the ward's only priest,
+    //     and compounds.json's charter priest of every plot -- canon's
+    //     casting, one constant to recast), in the stage the session says
+    //     the case is in: dormant offers the hire, live-and-unserved offers
+    //     the walk-back, done offers neither. The open-hand gate is
+    //     deliberately NOT here: a topic that hid itself below the bar
+    //     would be a secret check, and the design wants the measure SAID --
+    //     choose() states the bar and the player's own number out loud.
+    if (speaker_.notableId == kEvictionPriestId && evictionStage_ == 0) {
+        Topic topic;
+        topic.kind = TopicKind::TakeWrit;
+        topic.label = "THE MISSION'S WRIT";
+        topics_.push_back(std::move(topic));
+    }
+    if (speaker_.notableId == kEvictionPriestId && evictionStage_ == 1) {
+        Topic topic;
+        topic.kind = TopicKind::YieldWrit;
+        topic.label = "GIVE THE WRIT BACK";
         topics_.push_back(std::move(topic));
     }
 
@@ -1627,6 +1666,52 @@ Reply DialogueDirector::choose(std::size_t index) {
             // tenure and purse itself, and its answer -- Done or any of the
             // refusals -- is the line the settlement writes back.
             out = reply(TopicKind::Petition, {});
+            break;
+        }
+        case TopicKind::TakeWrit: {
+            // EVICTION CASE. THE ONE SKILL CHECK IN THE BUILD THAT IS SAID
+            // OUT LOUD. The gazetteer's law bans persuasion rolls from the
+            // TRAIL; this is not the trail -- it is a hiring, the brief's own
+            // "good skill in open hand" -- and it is deterministic: the live
+            // SkillTrack read against a named bar, no draw, stated to the
+            // player in the refusal with both numbers. Passing does not
+            // spend anything; a player refused can train and return, and
+            // the topic stands.
+            const std::int32_t hand = skills_.level(kOpenHandSkill);
+            if (hand < kEvictionOpenHandBar) {
+                out = reply(TopicKind::TakeWrit,
+                            "THE MEASURE IS OPEN HAND AT " +
+                                std::to_string(kEvictionOpenHandBar) +
+                                " OF THE HUNDRED. YOURS READS " + std::to_string(hand) +
+                                ". THE FLAME DOES NOT HIRE HOPE.");
+                out.ok = false;
+                break;
+            }
+            // The speech is the priest's; the CASE is the session's -- an
+            // ok reply of this kind is the intent the casebook's owner
+            // settles, exactly ReadRoll's split. The one line of continuity
+            // the design allows rides the flag the session set.
+            std::string line = evictionQuietWork_
+                                   ? "YOUR HANDS HAVE DONE THE MISSION'S QUIET WORK BEFORE. "
+                                   : "";
+            line +=
+                "SERVE IT IN THE EVENING, ONCE THEY ARE HOME, AND NOTHING EDGED. "
+                "A POOR FAMILY AND AN IMPOSSIBLE ASK. DO IT ANYWAY. "
+                "ORDER KEPT IS WHY THE CITY IS SUFFERED TO STAND.";
+            out = reply(TopicKind::TakeWrit, std::move(line));
+            break;
+        }
+        case TopicKind::YieldWrit: {
+            // EVICTION CASE. The disrupt path's settlement. WalkedOut is the
+            // ledger's own price for a bargain struck and handed back -- a
+            // REAL consequence through the deed table the whole ward already
+            // runs on, not a bespoke penalty -- and the priest's regard
+            // falls exactly as far as walking out on any other deal moves
+            // anybody's. The session closes the book off this reply.
+            recordDeed(Deed::WalkedOut);
+            out = reply(TopicKind::YieldWrit,
+                        "THEN IT FINDS HARDER HANDS, AND THE DOOR WILL LIKE THEM LESS. "
+                        "THE MISSION REMEMBERS WHOSE NERVE WENT.");
             break;
         }
         case TopicKind::Rival: {

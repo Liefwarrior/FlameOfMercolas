@@ -150,5 +150,11 @@ private:
 /// per-letter `handed` flag above).
 [[nodiscard]] std::filesystem::path missionSheetLetterRawsPath(
     const std::filesystem::path& contentDir);
+/// content/raws/quests/eviction_letters.json -- the eviction case's paper
+/// (top level "letters", same shape as the other two files): the writ of
+/// distraint (`handed`, the mission sheet's own contract), the widow's
+/// petition, and the served notice in the roll's voice.
+[[nodiscard]] std::filesystem::path evictionLetterRawsPath(
+    const std::filesystem::path& contentDir);
 
 }  // namespace granadad::sim

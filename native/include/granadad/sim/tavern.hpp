@@ -512,6 +512,12 @@ public:
     /// reconstructed at draw time.
     void setPlayer(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band) noexcept;
     void setPlayerCombat(Weapon weapon, Intent intent) noexcept;
+    /// EVICTION CASE. What is in the player's hands, readable -- the grant
+    /// seam's own receipt, so a scripted close (and its twin-run test) can
+    /// prove the reward landed without reaching into the room sideways.
+    /// (If the weapon lane lands its own accessor of this name, keep either;
+    /// they are the same line.)
+    [[nodiscard]] Weapon playerWeapon() const noexcept { return playerWeapon_; }
 
     /// A shove the room wants applied to the player's body, in Q8, or (0,0).
     /// Read and CLEARED by the caller, which owns the body -- the tavern never
