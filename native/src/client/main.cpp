@@ -839,6 +839,12 @@ void print_usage() {
         "                       purse, up the stair, wire into a guest's box\n"
         "                       and empty it. WHERE is box, lock (the wire in\n"
         "                       the next box), taproom or street\n"
+        "  --case[=WHERE]       play THE QUIET TENANT end to end -- the\n"
+        "                       courier's sheet, the Gull by day, the wait to\n"
+        "                       the small hours, the box, the brawl, TAKE HIM\n"
+        "                       UP and the Mission's back room. WHERE is\n"
+        "                       sheet, gull, night, down, or empty for the\n"
+        "                       whole errand delivered\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --ward[=DAYS]        run the ward's compounds -- courtyard farms,\n"
         "                       ground rents, bonds and the priest's hearings\n"
@@ -1215,6 +1221,15 @@ void print_usage() {
         } else if (starts_with(arg, "--burgle=", &value)) {
             options.smoke.burgle = true;
             options.smoke.burgleEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--case") == 0) {
+            // COURIER CASE (lane: case). THE QUIET TENANT end to end -- see
+            // SmokeRunConfig::caseRun.
+            options.smoke.caseRun = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--case=", &value)) {
+            options.smoke.caseRun = true;
+            options.smoke.caseEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--skyrun") == 0) {
             options.smoke.skyrun = true;
@@ -3117,6 +3132,12 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // meant.
     render::SessionConfig start = options.smoke.session;
     start.openingPage = true;
+    // COURIER CASE (lane: case). The windowed game gets the courier; the demo
+    // does NOT -- its route and its committed frames predate the sheet, and a
+    // hail landing mid-reel would move street frames the ship note proves
+    // byte-identical. Same off-by-default-on-in-the-client pattern as
+    // openingPage, one line up.
+    start.courier = !options.demo;
     if (!start.timeOfDayGiven) {
         start.timeOfDay = 8 * 3600;
     }
