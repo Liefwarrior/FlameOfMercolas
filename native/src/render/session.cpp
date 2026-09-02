@@ -1900,6 +1900,211 @@ void Session::faceDistrictMapSelection() {
     syncPanelAnim();
 }
 
+// ---------------------------------------------------------------------------
+// FAST TRAVEL (TRAVEL lane) -- the ward map's second commit verb
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The nearest standable cell to (x, y) on `band`, searched in a fixed
+/// widening square so the answer is a pure function of the request -- the
+/// demo's own arrival rule (demo.cpp's nearestStandable), restated here
+/// because a travel lands a body the same way a Cut beat lands one: on real
+/// ground, never inside geometry. False when nothing within eight tiles will
+/// hold a body, which is a refusal and not a fudge.
+[[nodiscard]] bool travelStandable(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y,
+                                   std::int32_t band, std::int32_t* outX, std::int32_t* outY) {
+    if (tiles.standable(x, y, band)) {
+        *outX = x;
+        *outY = y;
+        return true;
+    }
+    for (std::int32_t ring = 1; ring <= 8; ++ring) {
+        for (std::int32_t dy = -ring; dy <= ring; ++dy) {
+            for (std::int32_t dx = -ring; dx <= ring; ++dx) {
+                if (dx != ring && dx != -ring && dy != ring && dy != -ring) {
+                    continue;
+                }
+                if (tiles.standable(x + dx, y + dy, band)) {
+                    *outX = x + dx;
+                    *outY = y + dy;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/// "02:14" -- the clock as the arrival line speaks it. The wait page says
+/// whole hours because it deals in them; a walk lands mid-hour and says so.
+[[nodiscard]] std::string travelClockText(int secondOfDay) {
+    const int hour = ((secondOfDay / 3600) % 24 + 24) % 24;
+    const int minute = (secondOfDay / 60) % 60;
+    std::string text = (hour < 10 ? "0" : "") + std::to_string(hour) + ":";
+    text += (minute < 10 ? "0" : "") + std::to_string(minute);
+    return text;
+}
+
+}  // namespace
+
+std::string Session::travelRefusal() const {
+    // THE CARRY CLAUSE FIRST, because it is the one refusal that is
+    // load-bearing rather than circumstantial: stepSheetCase() completes the
+    // delivery the moment the body is within look range of the back room, so
+    // a travel permitted while carrying would teleport-finish the courier
+    // case's whole final act. The nervous walk across the night district IS
+    // that case's payoff, and the line says so in the ward's voice.
+    if (sheetCarry_) {
+        return "NOT WITH THE FINCH. WALK HIM.";
+    }
+    // THE WATCH, ACTIVELY NOTICING: Closing is a watchman crossing the room
+    // about you, and you do not stroll off mid-witness. Mere heat or a
+    // warrant deliberately does NOT refuse -- the owner ruled waiting one out
+    // a tactic, and waitRefusal() ignores them for the same reason.
+    if (tavern_->watchStance() == sim::Tavern::WatchStance::Closing) {
+        return "NOT WITH THE WATCH CLOSING.";
+    }
+    // AND THE WAIT PAGE'S OWN DEFINITION OF "ANYWHERE SAFE", VERBATIM -- a
+    // travel is a wait plus a relocation, so every door that refuses the one
+    // refuses the other, in the same words.
+    return waitRefusal();
+}
+
+Session::TravelPlan Session::districtMapTravelPlan() const {
+    TravelPlan plan;
+    const std::vector<MapPlace>& places = mapPlaces();
+    if (places.empty()) {
+        return plan;
+    }
+    const MapPlace& place =
+        places[static_cast<std::size_t>(std::clamp(districtMapSelected_, 0,
+                                                   static_cast<int>(places.size()) - 1))];
+    const std::int32_t px = body_->tileX();
+    const std::int32_t py = body_->tileY();
+    if (place.contains(px, py)) {
+        plan.standingIn = true;
+        return plan;
+    }
+    // THE STATE REFUSALS FIRST -- they are cheap, they are the ones a player
+    // needs told about, and a refused plan owes no route.
+    plan.refusal = travelRefusal();
+    if (!plan.refusal.empty()) {
+        return plan;
+    }
+    // THE ARRIVAL: the same aim point the pane's bearing and FACE IT already
+    // use (the door you knock on), snapped to standable ground on the place's
+    // own band -- the demo Cut's own landing rule.
+    std::int32_t aimX = 0;
+    std::int32_t aimY = 0;
+    mapAimPoint(place, px, py, aimX, aimY);
+    if (!travelStandable(*tiles_, aimX, aimY, place.band, &plan.toX, &plan.toY)) {
+        plan.refusal = "NO GROUND TO STAND ON.";
+        return plan;
+    }
+    plan.toBand = place.band;
+    // THE WALK: the district's own PathFinder, salt 0 (no jitter,
+    // deterministic), Gait::Walk (the pace being charged). kSearchMaxSpan was
+    // sized to admit a route from one end of the district to the other and
+    // the worst measured district leg expands under 7,000 of the 10,000-node
+    // budget -- and a search that still fails is an honest refusal, not a
+    // fallback to the crow.
+    sim::PathFinder router(*tiles_);
+    std::vector<sim::PathStep> route;
+    const sim::PathStep from{px, py, body_->band()};
+    const sim::PathStep to{plan.toX, plan.toY, plan.toBand};
+    if (!router.find(from, to, 0, route)) {
+        plan.refusal = "NO WAY THERE ON FOOT.";
+        return plan;
+    }
+    plan.routeSteps = static_cast<std::int32_t>(route.size());
+    plan.units = travelRouteUnits(from, route);
+    plan.seconds = travelWalkSeconds(plan.units);
+    plan.minutes = travelClockMinutes(plan.seconds);
+    plan.available = true;
+    return plan;
+}
+
+void Session::travelDistrictMapSelection() {
+    // THE VERB LIVES ON THE PAGE. Inert with the map down, exactly as the
+    // other map commits are -- a key that teleported with no page up would be
+    // a debug verb wearing a binding.
+    if (!districtMapOpen_) {
+        return;
+    }
+    const std::vector<MapPlace>& places = mapPlaces();
+    if (places.empty()) {
+        return;
+    }
+    // RE-CHECKED ON THE PRESS, not only at draw -- chooseWaitRow's own rule: a
+    // watchman can start closing while the map is up, and the page and the key
+    // must name the same door.
+    const TravelPlan plan = districtMapTravelPlan();
+    if (plan.standingIn) {
+        return;
+    }
+    // AUDIO: the press is what is acknowledged, refusals included --
+    // chooseWaitRow's rule again.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiConfirm);
+    }
+    if (!plan.available) {
+        // REFUSED OUT LOUD, THE PAGE STAYING UP. One string, the same one the
+        // pane's verb row is printing.
+        if (!plan.refusal.empty()) {
+            say(plan.refusal);
+        }
+        return;
+    }
+    const MapPlace& place =
+        places[static_cast<std::size_t>(std::clamp(districtMapSelected_, 0,
+                                                   static_cast<int>(places.size()) - 1))];
+
+    // 1. THE PAGE GOES DOWN FIRST. syncPanelAnim() suppresses the threshold
+    // plate under any open panel and assigns lastPlaceName_ even while
+    // suppressed, so a relocate-then-close would eat the plate silently.
+    districtMapOpen_ = false;
+
+    // 2. THE WAIT MACHINERY, PLUS A RELOCATION. The clock advances by exactly
+    // the minutes the verb restated -- heat cools, the cellar restocks, the
+    // ward's calendar and all six hundred bodies settle to the new hour, all
+    // of it the same spent code every WAIT pick runs -- and the body makes
+    // the same honest jump sleeping in a rented bed already makes.
+    skipSeconds(plan.minutes * 60);
+    body_->placeAt(plan.toX, plan.toY, plan.toBand);
+
+    // 3. FACING THE DOOR. You arrive looking at the threshold you came for --
+    // the place's own anchor -- not wherever the walk left your eyes.
+    const std::int32_t doorX = static_cast<std::int32_t>(place.anchorX);
+    const std::int32_t doorY = static_cast<std::int32_t>(place.anchorY);
+    if (doorX != plan.toX || doorY != plan.toY) {
+        body_->setYaw(sim::bearingTo(plan.toX, plan.toY, doorX, doorY));
+    }
+
+    // 4. THE THRESHOLD PLATE, ARMED EXPLICITLY. A walked crossing arms it on
+    // the rising edge of the ground's own name; a travel is a crossing whose
+    // walk was elided, so it is armed by hand -- with the ground's name where
+    // the landing has one, the authored name where the ring pushed the body
+    // just outside its own footprint. If the next step's ground disagrees,
+    // syncPanelAnim()'s newest-crossing rule corrects it, exactly as it
+    // corrects a walked seam.
+    const std::string_view ground =
+        sim::docks::placeNameAt(plan.toX, plan.toY, plan.toBand);
+    lastPlaceName_.assign(!ground.empty() ? std::string(ground) : upperAscii(place.name));
+    placePlateName_ = lastPlaceName_;
+    placePlateShowSteps_ = kPlacePlateShowSteps;
+
+    // 5. THE SEAM. Snapped fully black on the commit frame -- the origin is
+    // never seen again after the press -- easing up on the destination with
+    // the plate and the arrival line already on it. The owner called the raw
+    // cut "teleporting"; this is the difference.
+    travelFadeAnim_.snapTo(true);
+    travelFadeAnim_.setTarget(false);
+
+    say("WALKED TO " + upperAscii(place.name) + ". " + travelClockText(timeOfDay_) + ".");
+    syncPanelAnim();
+}
+
 DistrictMapState Session::districtMapState() const {
     DistrictMapState plan;
     plan.tiles = tiles_.get();
@@ -3055,6 +3260,9 @@ void Session::step(const sim::MoveInput& input) {
     fatigueAnim_.advance();
     // THE WARD MAP (core action #13). THE SAME PER-STEP ADVANCE.
     districtMapAnim_.advance();
+    // FAST TRAVEL's arrival seam eases back down here, one step at a time,
+    // exactly like every sibling -- see travelFadeAnim_'s own header.
+    travelFadeAnim_.advance();
     // SPELLS BUILD. The strip's own countdown and ease -- see showQuickBar().
     if (quickBarShowSteps_ > 0) {
         --quickBarShowSteps_;
@@ -5789,9 +5997,11 @@ std::string Session::heatLine() const {
     // COURIER CASE. The man in hand rides the same row the bale does -- a
     // carried thing the ward would mind, worn on the HUD until the back room
     // takes him. The rendered over-the-shoulder body is flagged follow-up
-    // work; this line is the honest interim.
+    // work; this line is the honest interim. TRAVEL LANE RENAME, flagged for
+    // the owner: he read "FINCH IN HAND" as unclear, so the row now says what
+    // the body is doing rather than naming an idiom.
     if (sheetCarry_) {
-        line += "  FINCH IN HAND";
+        line += "  CARRYING FINCH";
     }
     return clip(std::move(line), 34);
 }
@@ -6181,6 +6391,23 @@ std::string Session::standingLine() const {
     }
     return std::string(standing);
 }
+
+namespace {
+
+/// FAST TRAVEL's arrival seam: the finished frame dipped toward black by
+/// `amount`, whatever was composed under it -- the world, the map's own close
+/// tail, or a page opened mid-fade. The last act of every drawFrame() return
+/// path, so the commit frame is already dark and the destination eases up
+/// from under it. Render-only; nothing here is read back.
+void dipTravelSeam(Framebuffer& target, float amount) {
+    if (amount <= 0.0F) {
+        return;
+    }
+    target.fillRect(0, 0, target.width(), target.height(), Rgb{0.0F, 0.0F, 0.0F},
+                    amount > 1.0F ? 1.0F : amount);
+}
+
+}  // namespace
 
 FrameStats Session::drawFrame(Framebuffer& target) const {
     // The flicker phase is a pure function of the body's step count, so the
@@ -6597,6 +6824,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         if (furniture) {
             drawDistrictMap(target, plan);
             drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
         }
         return stats;
     }
@@ -6628,6 +6856,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         if (furniture) {
             drawKeysPage(target, page);
             drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
         }
         return stats;
     }
@@ -6675,6 +6904,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         if (furniture) {
             drawCasebookPage(target, page);
             drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
         }
         return stats;
     }
@@ -6711,6 +6941,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         if (furniture) {
             drawMenuTiles(target, tiles);
             drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
         }
         return stats;
     }
@@ -6744,6 +6975,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     if (furniture) {
         drawDialogue(target, panel);
         drawHud(target, hud);
+        dipTravelSeam(target, travelFadeAnim_.value());
     }
     return stats;
 }

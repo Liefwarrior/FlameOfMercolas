@@ -977,6 +977,68 @@ public:
     /// half of "going to a place" -- you cannot walk somewhere you cannot face.
     void faceDistrictMapSelection();
 
+    // --- FAST TRAVEL (TRAVEL lane) -------------------------------------------
+    //
+    // THE OWNER'S ASK, this session: he read the ward map's cursor, named
+    // selection and FACE IT as a fast-travel screen, was told it is only a
+    // compass, and said plainly he wants the real thing -- Daggerfall's map
+    // travels. So the page gets a second commit verb, TRAVEL, built out of
+    // parts already spent: the cost is the route the district's own PathFinder
+    // answers, priced at the shipped walking pace (the travel* functions at
+    // the bottom of this file); the clock advances through skipSeconds() --
+    // THE WAIT MACHINERY PLUS A RELOCATION, one time system, not two; the body
+    // lands by the same PlayerBody::placeAt the rented bed and the Watch's
+    // morning release already make; and the threshold plate announces the
+    // arrival exactly as a walked crossing would be announced.
+    //
+    // WHAT REFUSES, AND WHY IT IS THE WAIT PAGE'S OWN LIST PLUS TWO. Every
+    // waitRefusal() clause holds verbatim (a travel IS a wait). On top:
+    // carrying the courier case's man -- stepSheetCase() completes the
+    // delivery the moment the body is near the back room, so a permitted
+    // travel-while-carrying would teleport-finish the case's whole final act;
+    // and WatchStance::Closing -- you do not stroll off mid-witness. Mere
+    // heat or a warrant deliberately does NOT refuse, consistent with the
+    // owner's wait ruling that waiting one out is a tactic.
+
+    /// Everything the TRAVEL verb knows about the current selection: the cost
+    /// if the walk is honest, or the one-line reason it is not.
+    struct TravelPlan {
+        /// The selection contains the body: nothing to travel to, no verb --
+        /// the foot's "YOU ARE STANDING IN IT" already words it.
+        bool standingIn = false;
+        /// Route found, ground standable, nothing refusing: the verb is live.
+        bool available = false;
+        /// Why not, in the city register, or empty. ONE string for the pane's
+        /// verb row and the press's spoken line, so the page and the key can
+        /// never name different doors -- waitRefusal()'s own contract.
+        std::string refusal;
+        /// The route the cost was derived from: steps, octile units, honest
+        /// seconds, and the whole minutes the clock will actually advance.
+        std::int32_t routeSteps = 0;
+        std::int32_t units = 0;
+        std::int32_t seconds = 0;
+        std::int32_t minutes = 0;
+        /// Where the body lands: the selection's own aim point (the door you
+        /// knock on) snapped to the nearest standable tile on the place's
+        /// band -- never inside geometry.
+        std::int32_t toX = 0;
+        std::int32_t toY = 0;
+        std::int32_t toBand = 0;
+    };
+    /// The plan for the cursor's place, recomputed on demand -- a pure read;
+    /// nothing moves until travelDistrictMapSelection() spends it.
+    [[nodiscard]] TravelPlan districtMapTravelPlan() const;
+    /// Why travel is refused here and now, or "" -- the carry clause first
+    /// (the one refusal that is load-bearing for the courier case), then the
+    /// Watch closing, then waitRefusal()'s own list verbatim. Re-checked on
+    /// the press, not only at draw, exactly as the wait page re-checks.
+    [[nodiscard]] std::string travelRefusal() const;
+    /// The TRAVEL commit: refuses out loud (the page staying up), or advances
+    /// the clock by the plan's exact minutes through the wait machinery,
+    /// relocates, faces the door, arms the threshold plate, dips the frame to
+    /// black to ease up at the destination, and says the arrival line.
+    void travelDistrictMapSelection();
+
     /// The whole page, ready to draw. Public because a case reads it and
     /// because it is the same shape keysPageState() already has.
     [[nodiscard]] DistrictMapState districtMapState() const;
@@ -1825,6 +1887,18 @@ private:
     /// convention (DECISIONS.md UI rule 1), driven from syncPanelAnim() and
     /// advanced in step() exactly like every sibling above.
     EasedToggle districtMapAnim_;
+    /// FAST TRAVEL's arrival seam (TRAVEL lane). The owner called the demo's
+    /// raw placeAt cuts "teleporting", so a travel does not snap: the commit
+    /// SNAPS this toggle fully open -- the first frame after the press is
+    /// already black, so the origin is never seen again -- and eases it back
+    /// down over half a second while the destination, its place plate and the
+    /// arrival line come up underneath. drawFrame() dips its finished
+    /// composition by value() as its last act on every path. NEW RENDER
+    /// VOCABULARY -- no full-screen fade existed anywhere in the build before
+    /// this -- flagged for the owner's eye. Render-only, hash-free, advanced
+    /// in step() like every sibling.
+    static constexpr int kTravelFadeSteps = 36;
+    EasedToggle travelFadeAnim_{8, kTravelFadeSteps};
     /// SPELLS BUILD. The bottom-centre quick bar strip's own ease -- per the
     /// pinned convention, its OWN toggle: the strip appearing (a wheel held,
     /// a slot picked) has nothing to do with any other row's trigger. The
