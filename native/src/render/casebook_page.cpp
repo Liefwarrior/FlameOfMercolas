@@ -147,7 +147,10 @@ inline constexpr int kDirectSelectRows = 9;
         PanelOption{"UP DOWN", "NEXT LEAD", "", accent, InkRole::Dim, false},
         PanelOption{"LEFT RIGHT", state.tab == CasebookTab::Leads ? "THE CASE" : "THE LEADS", "",
                     accent, InkRole::Dim, false},
-        PanelOption{"ENTER", "GO TO IT", "", accent, InkRole::Dim, false},
+        // SHIP NOTE SEAM 3: the confirm is the state's device-worded key, not
+        // a hardcoded ENTER -- a pad reads A GO TO IT here, live.
+        PanelOption{state.confirmKey.empty() ? std::string("ENTER") : state.confirmKey, "GO TO IT",
+                    "", accent, InkRole::Dim, false},
         PanelOption{state.closeKey.empty() ? std::string("TAB") : state.closeKey, "CLOSE", "",
                     accent, InkRole::Dim, false},
     };
@@ -410,11 +413,14 @@ inline constexpr int kMinBodyRows = 8;
                                   static_cast<int>(std::string_view("CLOSED").size()) + 1);
     detail = std::max(detail, factsNaturalCells(caseFactsFor(state)));
     detail = std::max(detail, (static_cast<int>(state.hook.size()) + 3) / 4);
-    // The commit line's widest FIXED variant -- "ENTER - LOOK AT IT" plus the
-    // restated look key -- rather than the per-lead bearing variants, which
-    // are both shorter and would put a walking body's changing bearing into
-    // the frame's width.
-    const std::string look = "ENTER - LOOK AT IT (" + state.lookKey + " DOES IT OUT THERE)";
+    // The commit line's widest FIXED variant -- the confirm key plus "- LOOK
+    // AT IT" plus the restated look key -- rather than the per-lead bearing
+    // variants, which are both shorter and would put a walking body's changing
+    // bearing into the frame's width. The confirm is the state's own
+    // device-worded key (seam 3), so the measure walks the words the pane
+    // will actually print on either device.
+    const std::string look = (state.confirmKey.empty() ? std::string("ENTER") : state.confirmKey) +
+                             " - LOOK AT IT (" + state.lookKey + " DOES IT OUT THERE)";
     detail = std::max(detail, static_cast<int>(look.size()));
 
     int want = masterDetailCellsFor(kMasterShare, kMinMasterCells, master, detail);
@@ -648,8 +654,13 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
     //   standing in it, still open   LOOK AT IT -- the one thing worth doing
     //   anywhere else                SHOW ME ON THE MAP, with the bearing
     //   no such place on the plan    said out loud, rather than a dead key
+    // SHIP NOTE SEAM 3: both commit verbs print the state's device-worded
+    // confirm key -- "ENTER" on a keyboard, "A" in a pad's hands, live --
+    // instead of the two hardcoded ENTER literals the measure lane flagged.
+    const std::string confirm =
+        state.confirmKey.empty() ? std::string("ENTER") : state.confirmKey;
     if (row.here && row.state == CasebookLeadState::Open) {
-        drawCommitVerb(target, detail, metric, "ENTER - LOOK AT IT",
+        drawCommitVerb(target, detail, metric, confirm + " - LOOK AT IT",
                        "(" + state.lookKey + " DOES IT OUT THERE)", ink.key, alpha);
     } else if (row.routable) {
         // THE RESTATEMENT IS THE WALK, not the name. The place is already on the
@@ -660,7 +671,7 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
         // four lines above already reads YOU ARE STANDING IN IT; a commit line
         // that says it a second time is the clutter the composition rules say
         // to cut rather than shrink.
-        drawCommitVerb(target, detail, metric, "ENTER - SHOW ME WHERE",
+        drawCommitVerb(target, detail, metric, confirm + " - SHOW ME WHERE",
                        row.here ? std::string() : "(" + row.bearing + ")", ink.key, alpha);
     } else {
         const int lastRow = metric.rowsIn(detail.h) - 1;
@@ -798,6 +809,23 @@ CasebookPageMetrics casebookPageMetrics(const CasebookPageState& state, int fram
     out.columns = plan.columns;
     out.listRows = plan.rows;
     return out;
+}
+
+int casebookTabAtPixel(const CasebookPageState& state, int frameWidth, int frameHeight, int px,
+                       int py) {
+    const Composition comp = composeFor(state, frameWidth, frameHeight);
+    if (!comp.usable) {
+        return -1;
+    }
+    // The exact band the drawing hands drawTabRow -- frame.band(comp.tabRow, 1)
+    // over the same interior the composition worked out -- and the exact
+    // title, tabs, current and readout, so tabRowTabAt is answering for the
+    // pixels the row actually printed on.
+    const PanelRect band{comp.interior.x, comp.interior.y + comp.metric.heightOf(comp.tabRow),
+                         comp.interior.w, comp.metric.cellH()};
+    const std::vector<PanelTab> tabs{PanelTab{"", "LEADS"}, PanelTab{"", "THE CASE"}};
+    return tabRowTabAt(band, comp.metric, state.title, tabs, static_cast<int>(state.tab),
+                       state.readout, px, py);
 }
 
 int casebookLeadAtPixel(const CasebookPageState& state, int frameWidth, int frameHeight, int px,

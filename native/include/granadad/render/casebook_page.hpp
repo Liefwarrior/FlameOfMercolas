@@ -229,6 +229,13 @@ struct CasebookPageState {
     /// And the real bound key for the look verb, which the commit line names
     /// when the body is already standing on the lead.
     std::string lookKey = "E";
+    /// THE POINTER PASS, in passing: the page grammar's confirm, worded for
+    /// whichever device last spoke -- "ENTER", or "A" (promptConfirmKey).
+    /// The commit verbs and the nav band's GO TO IT print THIS instead of the
+    /// hardcoded ENTER the ship note flagged, so a pad reads pad words. The
+    /// default is the exact literal the page always printed, so a hand-built
+    /// state draws byte-identical frames.
+    std::string confirmKey = "ENTER";
 };
 
 /// Draws the whole page over a rendered frame.
@@ -297,5 +304,14 @@ struct CasebookPageMetrics {
 /// by every screen that wants a mouse.
 [[nodiscard]] int casebookLeadAtPixel(const CasebookPageState& state, int frameWidth,
                                       int frameHeight, int px, int py);
+
+/// Which of the two view tabs (LEADS / THE CASE, as CasebookTab values) a
+/// pixel of the tab row lands on, or -1. The sibling casebookLeadAtPixel was
+/// always meant to have -- the ship note names the tab row by name: keyboard
+/// LEFT/RIGHT steps the views and clicking them did nothing. Built on
+/// panel.hpp's tabRowTabAt against the SAME band, title, tabs and readout the
+/// drawing hands drawTabRow, through the same composition.
+[[nodiscard]] int casebookTabAtPixel(const CasebookPageState& state, int frameWidth,
+                                     int frameHeight, int px, int py);
 
 }  // namespace granadad::render
