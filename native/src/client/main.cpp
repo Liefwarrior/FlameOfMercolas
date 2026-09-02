@@ -790,13 +790,15 @@ void print_usage() {
         "  --demo-capture=DIR   the same route, writing a PNG of each of its\n"
         "                       named shots into DIR, so a trailer or a\n"
         "                       screenshot set falls out of the same run\n"
-        "  --framedump=DIR      VERIFICATION ONLY: while --demo or --case-watch\n"
-        "                       is driving, write EVERY presented frame into\n"
-        "                       DIR as f<NNNNN>.png -- consecutive frames, so a\n"
-        "                       transition (a cut, a fade, a plate easing in)\n"
-        "                       can be read frame by frame instead of argued\n"
-        "                       about. The shot is the framebuffer after the\n"
-        "                       overlays, exactly what the window presented\n"
+        "  --framedump=DIR      VERIFICATION ONLY: write EVERY presented frame\n"
+        "                       into DIR as f<NNNNN>.png -- consecutive frames,\n"
+        "                       so a transition (a cut, a fade, a plate easing\n"
+        "                       in, a page opening) can be read frame by frame\n"
+        "                       instead of argued about. Works in the ordinary\n"
+        "                       windowed session as well as under --demo and\n"
+        "                       --case-watch; keep the run short. The shot is\n"
+        "                       the framebuffer after the overlays, exactly\n"
+        "                       what the window presented\n"
         "  --creation[=STEP]    capture the character-creation flow with no\n"
         "                       window and no world. STEP is origin (default),\n"
         "                       calling (the nine-trade roster), quiz (question\n"
@@ -4821,8 +4823,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         }
         // THE FRAME DUMP, LAST -- after every overlay and both shutters, so
         // what lands on disk is exactly what the window is about to present.
-        // Scripted runs only: an interactive session would write PNGs forever.
-        if (!options.frameDumpDir.empty() && (demo != nullptr || watch != nullptr)) {
+        // UI-EA-SPEC ship checklist (FLOW): NO LONGER SCRIPTED-RUNS-ONLY.
+        // The transition grammar's evidence -- the boot veil rising, a page
+        // easing open, a back-to-opener swap, the commit beat -- lives in
+        // the ORDINARY windowed session, which the demo and the watch never
+        // drive. The flag is still explicit opt-in, still VERIFICATION ONLY
+        // (an hour of play would write two hundred thousand PNGs -- point it
+        // at a scratch dir and keep the run short), and a run that never
+        // passes it is byte-for-byte untouched.
+        if (!options.frameDumpDir.empty()) {
             std::error_code frameDumpEc;
             std::filesystem::create_directories(options.frameDumpDir, frameDumpEc);
             char frameName[16];
