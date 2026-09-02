@@ -3885,9 +3885,13 @@ void Session::say(std::string line) {
         line += "..";
     }
     message_ = std::move(line);
-    // Six seconds on screen. Long enough to read at a glance, short enough that
-    // the bottom of the frame is usually empty.
-    messageSteps_ = 6 * sim::kStepsPerSecond;
+    // UI-EA (LANE HUD): FOUR SECONDS, the spec's own message-row narration
+    // hold (sec. 2, EVENT tier). Six was the pre-diet number; a line the
+    // player is reading is re-armed by the next line anyway, and the bottom
+    // of the frame is meant to be empty more than it is full. A bouncer's
+    // WARNING is not on this clock -- `warned` holds the alert up for as
+    // long as the house is still saying it (syncPanelAnim's own rule).
+    messageSteps_ = 4 * sim::kStepsPerSecond;
     // TASK #83. EAGER, so the very first frame drawn after whichever verb
     // called this -- most of them do not call step() first, and the caller
     // here could be a test that never does -- already shows the prompt easing
@@ -6761,10 +6765,13 @@ void Session::syncPanelAnim() noexcept {
     syncWake(objectiveAnim_, objectiveCache_, objectiveNow, objectiveShowSteps_);
     // The clock and the purse draw live numbers (no cache -- fatigueAnim_'s
     // reasoning). The clock is additionally up for the life of the wait
-    // page: its rows price the very hours it shows. Neither is gated on
-    // `conversing` -- a full page zeroes the fields at assembly, and an hour
-    // striking or a price being paid mid-conversation is still an event.
-    clockAnim_.setTarget(waitOpen_ || clockShowSteps_ > 0);
+    // page (its rows price the very hours it shows) and the pause stack --
+    // the spec's own #34 keeps "rows, clock, title" on the pause, and the
+    // hour before quitting is exactly a fact a player came to check. Neither
+    // is gated on `conversing` -- a full page zeroes the fields at assembly,
+    // and an hour striking or a price being paid mid-conversation is still
+    // an event.
+    clockAnim_.setTarget(waitOpen_ || pauseOpen_ || clockShowSteps_ > 0);
     purseAnim_.setTarget(purseShowSteps_ > 0);
     // PLANNING SPRINT (item #2, the sweep). THE SAME sync() SHAPE, FOR THE
     // TOP-RIGHT STACK'S THREE REMAINING ROWS -- see standingAnim_'s own

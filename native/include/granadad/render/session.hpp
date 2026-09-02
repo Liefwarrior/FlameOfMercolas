@@ -1234,10 +1234,11 @@ public:
     // deal quickBarWanted()/placePlateWanted() already offer.
 
     /// True while the clock is WANTED: ~2.5s after an hour tick or a time
-    /// charge (travel, a wait pick, a sleep), and for the life of the wait
-    /// page, whose rows price the very hours the clock shows.
+    /// charge (travel, a wait pick, a sleep), for the life of the wait page
+    /// (whose rows price the very hours the clock shows), and on the pause
+    /// stack (the spec's #34 keeps rows, clock and title there).
     [[nodiscard]] bool clockWanted() const noexcept {
-        return waitOpen_ || clockShowSteps_ > 0;
+        return waitOpen_ || pauseOpen_ || clockShowSteps_ > 0;
     }
     /// True while the purse is WANTED: ~2.5s after any coin delta.
     [[nodiscard]] bool purseWanted() const noexcept { return purseShowSteps_ > 0; }
