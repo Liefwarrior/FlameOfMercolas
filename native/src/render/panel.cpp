@@ -57,6 +57,17 @@ constexpr MotifGlyph kBar{{0x4, 0x4, 0x4, 0x4, 0x4, 0x4}};
 constexpr MotifGlyph kDiamond{{0x0, 0x6, 0xF, 0x6, 0x0, 0x0}};
 constexpr MotifGlyph kDot{{0x0, 0x0, 0x6, 0x6, 0x0, 0x0}};
 constexpr MotifGlyph kRing{{0x0, 0x6, 0x9, 0x6, 0x0, 0x0}};
+// THE KEYCAP MOTIFS (UI-EA-SPEC sec. 5). Solid arrowheads on the diamond's own
+// rows -- a 2-wide apex, because a 4-wide cell has no centre column and a
+// 1-wide point reads lopsided. The return hook is the classic bent arrow:
+// stem down the right, shaft across, a 2-pixel head at the left. The cross is
+// the d-pad read as a heavy plus.
+constexpr MotifGlyph kArrowUp{{0x0, 0x6, 0xF, 0xF, 0x0, 0x0}};
+constexpr MotifGlyph kArrowDown{{0x0, 0xF, 0xF, 0x6, 0x0, 0x0}};
+constexpr MotifGlyph kArrowLeft{{0x0, 0x3, 0xF, 0x3, 0x0, 0x0}};
+constexpr MotifGlyph kArrowRight{{0x0, 0xC, 0xF, 0xC, 0x0, 0x0}};
+constexpr MotifGlyph kReturn{{0x0, 0x1, 0x5, 0xF, 0x4, 0x0}};
+constexpr MotifGlyph kCross{{0x0, 0x6, 0xF, 0xF, 0x6, 0x0}};
 
 void blitMotif(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const Rgb& colour,
                float alpha, int scale) {
@@ -73,6 +84,60 @@ void blitMotif(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const
             target.fillRect(x + col * scale + scale, y + row * scale + scale, scale, scale, kShadow,
                             alpha * 0.75F);
             target.fillRect(x + col * scale, y + row * scale, scale, scale, colour, alpha);
+        }
+    }
+}
+
+/// blitMotif without the drop shadow -- for a motif knocked out of an inverted
+/// fill, where the shadow is a second dark copy of the mark one pixel out
+/// (drawCellTextKnockout's whole reason to exist, and the same fix here).
+void blitMotifInk(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const Rgb& colour,
+                  float alpha, int scale) {
+    for (int row = 0; row < kGlyphRows; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            const bool on = (glyph.rows[static_cast<std::size_t>(row)] >> (3 - col)) & 1U;
+            if (on) {
+                target.fillRect(x + col * scale, y + row * scale, scale, scale, colour, alpha);
+            }
+        }
+    }
+}
+
+/// The sentinel table, one place. See panel.hpp's contract note.
+[[nodiscard]] const MotifGlyph* sentinelGlyph(char c) noexcept {
+    switch (c) {
+        case kSentinelArrowUp:
+            return &kArrowUp;
+        case kSentinelArrowDown:
+            return &kArrowDown;
+        case kSentinelArrowLeft:
+            return &kArrowLeft;
+        case kSentinelArrowRight:
+            return &kArrowRight;
+        case kSentinelReturn:
+            return &kReturn;
+        case kSentinelCross:
+            return &kCross;
+        default:
+            return nullptr;
+    }
+}
+
+/// The sentinel overlay every text drawer runs after drawText: the font drew
+/// nothing for a sentinel byte and advanced one cell, so the motif lands in
+/// exactly the blank the run left for it. `shadow` false for knocked-out runs.
+void overlaySentinels(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
+                      float alpha, int scale, bool shadow) {
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const MotifGlyph* glyph = sentinelGlyph(text[i]);
+        if (glyph == nullptr) {
+            continue;
+        }
+        const int cx = x + static_cast<int>(i) * kAdvance * scale;
+        if (shadow) {
+            blitMotif(target, cx, y, *glyph, colour, alpha, scale);
+        } else {
+            blitMotifInk(target, cx, y, *glyph, colour, alpha, scale);
         }
     }
 }
@@ -281,6 +346,49 @@ void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour
         case Motif::Ring:
             blitMotif(target, x, y, kRing, colour, alpha, scale);
             return;
+        case Motif::ArrowUp:
+            blitMotif(target, x, y, kArrowUp, colour, alpha, scale);
+            return;
+        case Motif::ArrowDown:
+            blitMotif(target, x, y, kArrowDown, colour, alpha, scale);
+            return;
+        case Motif::ArrowLeft:
+            blitMotif(target, x, y, kArrowLeft, colour, alpha, scale);
+            return;
+        case Motif::ArrowRight:
+            blitMotif(target, x, y, kArrowRight, colour, alpha, scale);
+            return;
+        case Motif::Return:
+            blitMotif(target, x, y, kReturn, colour, alpha, scale);
+            return;
+        case Motif::Cross:
+            blitMotif(target, x, y, kCross, colour, alpha, scale);
+            return;
+    }
+}
+
+bool motifForSentinel(char c, Motif& out) noexcept {
+    switch (c) {
+        case kSentinelArrowUp:
+            out = Motif::ArrowUp;
+            return true;
+        case kSentinelArrowDown:
+            out = Motif::ArrowDown;
+            return true;
+        case kSentinelArrowLeft:
+            out = Motif::ArrowLeft;
+            return true;
+        case kSentinelArrowRight:
+            out = Motif::ArrowRight;
+            return true;
+        case kSentinelReturn:
+            out = Motif::Return;
+            return true;
+        case kSentinelCross:
+            out = Motif::Cross;
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -500,8 +608,11 @@ int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& 
     // mid-glyph and reads as a rendering bug rather than as a line that was too
     // long. The pane knows its own width; this takes it.
     const std::string cut = clipToWidth(shout(text), metric.widthOf(cells), metric.scale);
-    drawText(target, rect.x + cell * metric.cellW(), rect.y + row * metric.cellH(), cut, colour,
-             alpha, metric.scale);
+    const int x = rect.x + cell * metric.cellW();
+    const int y = rect.y + row * metric.cellH();
+    drawText(target, x, y, cut, colour, alpha, metric.scale);
+    // The keycap motifs land in the blanks the font left for their sentinels.
+    overlaySentinels(target, x, y, cut, colour, alpha, metric.scale, true);
     return cellsOf(cut);
 }
 
@@ -600,6 +711,9 @@ int drawCellTextKnockout(Framebuffer& target, const PanelRect& rect, const Panel
             target.fillRect(originX + px, originY + py, 1, 1, colour, alpha);
         }
     }
+    // Sentinels left blanks in the scratch pass (the font has no glyph for
+    // them); their motifs draw here shadowless, same as the rest of the run.
+    overlaySentinels(target, originX, originY, cut, colour, alpha, scale, false);
     return cellsOf(cut);
 }
 
@@ -1734,6 +1848,34 @@ void drawCommitVerb(Framebuffer& target, const PanelRect& pane, const PanelMetri
     const int wide = drawCellText(target, pane, metric, 0, row, verb, accent, alpha);
     if (!cost.empty()) {
         drawCellText(target, pane, metric, wide + 1, row, cost, panelInk().number, alpha);
+    }
+}
+
+void drawCommitPulse(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
+                     std::string_view verb, std::string_view cost, const Rgb& accent, float alpha,
+                     float pulse) {
+    if (pulse <= 0.0F || alpha <= 0.0F || pane.empty() || verb.empty()) {
+        return;
+    }
+    const int rows = metric.rowsIn(pane.h);
+    if (rows <= 0) {
+        return;
+    }
+    // THE SAME PLACEMENT WALK drawCommitVerb makes, so the flash lands exactly
+    // on the row the verb holds -- including the moved-restatement case, where
+    // the flash covers the verb's row only (the cost above it is information,
+    // not the act).
+    const int row = rows - 1;
+    const int cells = metric.cellsIn(pane.w);
+    const int want = cellsOf(verb) + 1 + cellsOf(cost);
+    const bool stacked = !cost.empty() && want > cells && row > 0;
+    const int fillCells = std::min(cells, stacked ? cellsOf(verb) + 1 : want + 1);
+    const float lit = alpha * std::min(1.0F, pulse);
+    drawInvertedFill(target, pane, metric, 0, row, fillCells, accent, lit);
+    drawCellTextKnockout(target, pane, metric, 0, row, verb, panelInk().knockout, lit);
+    if (!stacked && !cost.empty()) {
+        drawCellTextKnockout(target, pane, metric, cellsOf(verb) + 1, row, cost,
+                             panelInk().knockout, lit);
     }
 }
 
