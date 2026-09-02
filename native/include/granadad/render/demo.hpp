@@ -120,6 +120,19 @@ struct DemoBeat {
     int shotAt = -1;
 };
 
+/// The demo's lower-left commentary pane and its centred title card, exposed
+/// so the case-watch overlay (case_watch.hpp) draws the exact panes the demo
+/// draws instead of growing a second vocabulary for the same two ideas. Both
+/// are pure draws: state (what the text is, how far the fade has got) stays
+/// with whichever director owns the run.
+void drawRouteCaption(Framebuffer& target, const std::string& caption, float alpha);
+void drawRouteCard(Framebuffer& target, const std::string& line, const std::string& sub,
+                   const std::string& foot, float alpha);
+/// True while a page, a conversation or the case plate owns the pixels a
+/// caption would take -- the demo's own stand-down rule, shared for the same
+/// reason the draws are.
+[[nodiscard]] bool routeOverlayStandsDown(const Session& session);
+
 /// The route, in order. Exposed so a test can walk it without a window.
 [[nodiscard]] const std::vector<DemoBeat>& demoRoute();
 
