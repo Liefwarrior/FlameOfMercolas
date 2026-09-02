@@ -1489,6 +1489,11 @@ namespace {
         case Action::Pause:
         case Action::Map:
         case Action::Screenshot:
+        // Violation #5 (FLOW): the two F-key pages are screens, and they
+        // file with the screens -- two case labels, PAGES' grouped page
+        // takes it from here.
+        case Action::KeysPage:
+        case Action::OptionsPage:
             return kKeysGroupScreen;
         case Action::QuickWheel:
         case Action::QuickNext:

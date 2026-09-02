@@ -1092,10 +1092,11 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     // before this existed gets -- byte-identical frames.
     CHECK(session.promptDevice() == InputDevice::KeyboardMouse);
 
-    // THE PAUSE HEADER -- the exact string the ship note photographed with a
-    // pad connected (pad-pause-640.png: "ENTER SELECTS  ESC RESUMES").
+    // THE PAUSE HEADER -- the composition the ship note photographed, with
+    // the keyboard confirm speaking the return motif now (UI-EA-SPEC sec. 5;
+    // the ENTER word died at the choke point).
     session.togglePause();
-    CHECK(session.dialogueView().epithet == "ENTER SELECTS  ESC RESUMES");
+    CHECK(session.dialogueView().epithet == "\x01 SELECTS  ESC RESUMES");
 
     // One pad press. No menu visit, no reopen: the SAME open page re-words.
     session.noteInputDevice(InputDevice::Pad);
@@ -1103,7 +1104,7 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
 
     // And straight back the moment a key speaks -- noteInputKey classifies.
     session.noteInputKey(Key::E);
-    CHECK(session.dialogueView().epithet == "ENTER SELECTS  ESC RESUMES");
+    CHECK(session.dialogueView().epithet == "\x01 SELECTS  ESC RESUMES");
     // Key::None is nobody and moves nothing.
     session.noteInputDevice(InputDevice::Pad);
     session.noteInputKey(Key::None);

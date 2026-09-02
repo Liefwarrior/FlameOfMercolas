@@ -1744,8 +1744,12 @@ void print_usage() {
             // `1` through `4`; the rest are swallowed rather than routed, for
             // the pause branch's own reason -- a number pressed over a
             // full-screen page must not reach the quick bar behind it.
-            // Transition rule 2: a tab step answers with the pulse.
-            session.armCommitPulse();
+            // Transition rule 2: a LANDING tab step answers with the pulse --
+            // a dead digit (5-9, which setDistrictMapTab refuses) must not
+            // beat for a press that did nothing.
+            if (slot < render::kMapTabCount) {
+                session.armCommitPulse();
+            }
             session.setDistrictMapTab(slot);
             return true;
         }
