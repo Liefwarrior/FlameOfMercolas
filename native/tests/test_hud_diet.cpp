@@ -27,6 +27,7 @@
 #include "granadad/render/hud.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/angle.hpp"
+#include "granadad/sim/casebook.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/player.hpp"
 
@@ -290,7 +291,7 @@ TEST_CASE("the lead-opened notice keeps the case row down -- one piece of news, 
         return;  // no authored case in this content dir; nothing to announce
     }
     const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(ledger)];
-    SessionConfig config = quietDocks();
+    SessionConfig config = quietDocks(8);
     config.spawnX = lead.site.x;
     config.spawnY = lead.site.y;
     config.spawnBand = lead.site.band;

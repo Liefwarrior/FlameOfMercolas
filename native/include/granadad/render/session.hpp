@@ -2431,7 +2431,11 @@ struct SmokeRunConfig {
     std::filesystem::path screenshot;
     /// Integer upscale applied to the captured PNG. 1 writes the raw buffer.
     int captureScale = 2;
-    /// A one-line stamp burnt into the corner of the capture.
+    /// UI-EA (LANE HUD): RETIRED, ACCEPTED AS A NO-OP. This used to burn
+    /// "GRANADAD <version>" into the corner of every capture; the word diet
+    /// deleted the stamp outright (it rides the pause/keys title rule only),
+    /// and the census transcribes captures, so it had to leave this path too.
+    /// The field stays so every existing caller and capture script parses.
     bool stamp = true;
     /// Walk the scripted route forward. Off holds position, which is what a
     /// capture of a room wants.
