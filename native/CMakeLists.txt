@@ -537,6 +537,17 @@ if(GRANADAD_BUILD_TESTS)
         # sim's blood oath keeps, applied to a session-scripted case.
         tests/test_mission_sheet.cpp
         tests/test_case_line.cpp
+        # EVICTION -- the owner's third authored case. The raws' own invariants
+        # (zero starts, TWO closes for participate/disrupt, the four
+        # investigation leads reachable from the hire and the two closes from
+        # their scripted beats, sites standable in the baked Docks, the gate on
+        # C2's own ground, the lease agreement rendered in the roll's
+        # vocabulary and never as a dwelling-lease), and both paths driven end
+        # to end through the same verbs a keypress makes, twice, to
+        # byte-identical books -- with the open-hand hire gate proved to refuse
+        # below its bar and pass at it.
+        tests/test_eviction.cpp
+        tests/test_eviction_line.cpp
         # CASE WATCH -- the errand made watchable: the recorded drive is the
         # harness's own route (twice, to the op), the replay reproduces the
         # drive's end state exactly with zero extra simulation steps, and the

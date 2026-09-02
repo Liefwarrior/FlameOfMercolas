@@ -346,6 +346,15 @@ Session::Session(const SessionConfig& config)
     sheetBook_.begin(sheetRaws_, caseNowSeconds());
     sheetLetterRaws_ =
         sim::LetterRaws::loadFile(sim::missionSheetLetterRawsPath(config_.contentDir));
+    // EVICTION CASE. THE THIRD CASE AND ITS PAPER, the courier trio's exact
+    // contract: never-throws loaders, begin() with no start lead so every
+    // lead sits Unheard and the errand is invisible until Maell's own
+    // conversation opens it (settleTakeWrit). A missing eviction.json is a
+    // session with two cases in it, exactly as before this build.
+    evictRaws_ = sim::CasebookRaws::loadFile(sim::evictionRawsPath(config_.contentDir));
+    evictBook_.begin(evictRaws_, caseNowSeconds());
+    evictLetterRaws_ =
+        sim::LetterRaws::loadFile(sim::evictionLetterRawsPath(config_.contentDir));
     // THE FIRST RUN OPENS ON THE HOOK.
     //
     // Every sprint before this one dropped the player onto the Tarwalk facing a
@@ -969,6 +978,15 @@ void Session::examine() {
     if (saw.lead < 0) {
         saw = lookIn(sheetBook_);
     }
+    // EVICTION CASE. And the third book third, the same member-order
+    // tiebreak one book deeper. Its two close leads never ride this key
+    // either -- both are heard and read only by the case's own scripted
+    // beats (stepEvictCase, settleYieldWrit) -- and every non-close lead of
+    // its sits over four tiles from every lead of the other two books, so
+    // the order here can never actually decide anything a player sees.
+    if (saw.lead < 0) {
+        saw = lookIn(evictBook_);
+    }
     // THE CLUE IS THE MESSAGE. It is what the player walked here for, so it
     // gets the row whole; how many leads it opened is on the CASE row, which is
     // permanent and where a count belongs. A DEAD END SAYS SO OUT LOUD, though
@@ -1177,6 +1195,220 @@ void Session::stepSheetCase() {
                 casePlateShowSteps_ = kCasePlateShowSteps;
                 syncPanelAnim();
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// EVICTION CASE: the writ, the door, and the two ways it closes
+// ---------------------------------------------------------------------------
+
+namespace {
+/// The evening the door will answer a knock -- the rota's own home hours.
+/// Serfs are on the quay to six and walk home after (ward_actors.cpp Anchor
+/// window 07:00-18:00; ReturnHome night term at 22:00), so from six the
+/// family is arriving and by midnight abed. Knock outside this and the lane
+/// answers instead of the door -- the brief's "once people are home" made a
+/// gate rather than a suggestion.
+constexpr int kEvictHomeFromHour = 18;
+constexpr int kEvictHomeUntilHour = 24;
+/// How close the door verbs reach: the family-door lead's own look range, an
+/// arm's length from the wood, the same measure every lead is stood at.
+constexpr std::int32_t kEvictDoorReachTiles = sim::kLookRangeTiles;
+}  // namespace
+
+void Session::syncEvictionTopics() {
+    // THE STAGE, HANDED TO THE DIRECTOR the way the ground plot is: 0 offers
+    // the hire, 1 offers the walk-back, 2 offers neither -- and the one line
+    // of continuity the design note allows rides the courier case having
+    // closed. Fed before every conversation opens (interact, below), so
+    // Maell's writ row is built knowing where the errand stands. A missing
+    // eviction.json (the loader's never-throws contract) reads as stage 2:
+    // no case, no topic, exactly the empty-trail state a missing file leaves
+    // everywhere else.
+    const int stage =
+        !evictRaws_.loaded() ? 2 : (evictBook_.closed() ? 2 : (evictCaseLive() ? 1 : 0));
+    tavern_->dialogue().setEvictionCase(stage, sheetBook_.closed());
+}
+
+void Session::settleTakeWrit() {
+    // THE HIRE. The director already read the open-hand bar and answered the
+    // speech (dialogue.cpp TakeWrit); this is the CASE half of the intent,
+    // the ReadRoll/Petition split one book further. Hearing the first lead
+    // is the whole delivery, exactly the courier's courierDeliverNow: the
+    // errand lands in the book, and the writ letter is `handed`, so the same
+    // act puts it on the Letters tile (unlockedLetters derives it).
+    if (evictCaseLive() || evictBook_.closed() || !evictRaws_.loaded()) {
+        return;
+    }
+    const std::int32_t first = evictRaws_.indexOf("writ-in-hand");
+    if (first < 0) {
+        return;
+    }
+    (void)evictBook_.hear(first, caseNowSeconds());
+    syncEvictionTopics();
+    casePlateText_ =
+        "A WRIT OF DISTRAINT  " +
+        std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
+        " YOUR LETTERS";
+    casePlateShowSteps_ = kCasePlateShowSteps;
+    syncPanelAnim();
+}
+
+void Session::settleYieldWrit() {
+    // THE DISRUPT CLOSE. The director already priced the walk-back through
+    // the ledger's own WalkedOut (dialogue.cpp YieldWrit); this closes the
+    // book on the stood-down lead -- read HERE, never by the examine key,
+    // the same scripted-look contract the courier's delivery keeps. The
+    // family got whatever warning the knock bought them, and no weapon is
+    // granted: the point of the path.
+    if (!evictCaseLive() || evictBook_.closed()) {
+        return;
+    }
+    const std::int32_t close = evictRaws_.indexOf("stood-down");
+    if (close < 0) {
+        return;
+    }
+    const sim::Lead& lead = evictRaws_.leads()[static_cast<std::size_t>(close)];
+    const std::int64_t now = caseNowSeconds();
+    (void)evictBook_.hear(close, now);
+    const sim::LookResult done = evictBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
+    say(done.line);
+    syncEvictionTopics();
+    casePlateText_ =
+        "THE WRIT IS GIVEN BACK  " +
+        std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
+        " YOUR CASEBOOK";
+    casePlateShowSteps_ = kCasePlateShowSteps;
+    syncPanelAnim();
+}
+
+int Session::evictLeadInLookReach() const {
+    // sheetLeadInLookReach()'s exact walk over the third book, so the
+    // crosshair names the eviction's sites with the identical honesty. The
+    // two close leads are excluded here for the same reason the examine key
+    // never reads them: they belong to the scripted beats, not to a look.
+    if (evictBook_.raws() == nullptr) {
+        return -1;
+    }
+    const std::vector<sim::Lead>& leads = evictBook_.raws()->leads();
+    const std::int32_t band = body_->band();
+    const auto nearestFrom = [&](std::int32_t fromX, std::int32_t fromY) {
+        int best = -1;
+        std::int32_t bestDistance = 0;
+        for (std::size_t i = 0; i < leads.size(); ++i) {
+            const sim::Lead& lead = leads[i];
+            if (lead.site.band != band || lead.close) {
+                continue;
+            }
+            const std::int32_t dx = lead.site.x - fromX;
+            const std::int32_t dy = lead.site.y - fromY;
+            const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+            if (distance > sim::kLookRangeTiles) {
+                continue;
+            }
+            if (best < 0 || distance < bestDistance) {
+                best = static_cast<int>(i);
+                bestDistance = distance;
+            }
+        }
+        return best;
+    };
+    return nearestFrom(body_->tileX(), body_->tileY());
+}
+
+bool Session::evictDoorReady() const {
+    // THE KNOCK/SERVE VERB IS LIVE when the writ is out and unserved, the body
+    // is within an arm's length of the Marrow door, and it is evening -- the
+    // rota's own home hours, the brief's "once people are home". Gated on the
+    // case being LIVE (hired) rather than on the door lead being heard: the
+    // writ letter names the door outright, so a hired hand can serve it
+    // whether or not they walked the gate lead first. Outside the hours the
+    // door is there but nobody is: interact falls through to its ordinary
+    // meaning and the nudge says why.
+    if (!evictCaseLive() || writServed_ || !evictRaws_.loaded()) {
+        return false;
+    }
+    const std::int32_t door = evictRaws_.indexOf("family-door");
+    if (door < 0) {
+        return false;
+    }
+    const sim::Lead& lead = evictRaws_.leads()[static_cast<std::size_t>(door)];
+    if (lead.site.band != body_->band()) {
+        return false;
+    }
+    const std::int32_t dx = lead.site.x - body_->tileX();
+    const std::int32_t dy = lead.site.y - body_->tileY();
+    if ((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) > kEvictDoorReachTiles) {
+        return false;
+    }
+    const int hour = static_cast<int>((timeOfDay_ / 3600) % 24);
+    return hour >= kEvictHomeFromHour && hour < kEvictHomeUntilHour;
+}
+
+void Session::grantEvictor() {
+    // THE ONE PLACE THIS BUILD ARMS THE PLAYER. The weapon is the other
+    // lane's to define under the agreed id "the_evictor"; the seam is this
+    // call, and the integrate step is one identifier here. Until that enum
+    // lands, the class granted is the one the brawl already carries on the
+    // Evictor's own side of the lethal line -- Blunt, kept to Subdue (the
+    // player's default intent, so the grant stomps nothing that was chosen).
+    // setPlayerCombat couples weapon and intent, which is why the intent is
+    // named rather than left to chance: a weapon-only setter is the cleaner
+    // seam the flag in the report asks the weapon lane to publish.
+    tavern_->setPlayerCombat(sim::Weapon::Blunt, sim::Intent::Subdue);
+}
+
+void Session::stepEvictCase() {
+    if (!evictRaws_.loaded() || !evictBook_.active()) {
+        return;
+    }
+    // THE DOOR NUDGE, named when it is live and re-armed when the player
+    // steps away -- caseTakeReady's own once-per-arming rule. Two verbs at
+    // one press: knock first, serve second, the nudge naming whichever is
+    // next.
+    if (evictDoorReady()) {
+        if (!evictDoorSaid_) {
+            const std::string verb =
+                std::string(promptLabel(controls_, Action::Interact, promptDevice_));
+            say(evictKnocked_ ? "THE MARROWS ARE AT THE DOOR. " + verb + " SERVES THE WRIT."
+                              : "A LIGHT UNDER THE MARROW DOOR. " + verb + " KNOCKS.");
+            evictDoorSaid_ = true;
+        }
+    } else {
+        evictDoorSaid_ = false;
+        // The knock is a fact about tonight; a player who wandered off the
+        // step loses the answered door and must knock again.
+        if (!writServed_) {
+            evictKnocked_ = false;
+        }
+    }
+    // THE PARTICIPATE CLOSE. Walking back into the Mission with the served
+    // writ IS the delivery -- no press owed, stepSheetCase's own contract --
+    // so the book closes through the one scripted look, and The Evictor is
+    // paid on the same step the roll is signed.
+    if (writServed_ && !evictBook_.closed()) {
+        const std::int32_t close = evictRaws_.indexOf("served");
+        if (close < 0) {
+            return;
+        }
+        const sim::Lead& lead = evictRaws_.leads()[static_cast<std::size_t>(close)];
+        const std::int32_t dx = lead.site.x - body_->tileX();
+        const std::int32_t dy = lead.site.y - body_->tileY();
+        if (lead.site.band == body_->band() &&
+            (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) <= sim::kLookRangeTiles) {
+            const std::int64_t now = caseNowSeconds();
+            (void)evictBook_.hear(close, now);
+            const sim::LookResult done =
+                evictBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
+            grantEvictor();
+            say(done.line);
+            casePlateText_ =
+                "THE EVICTOR IS YOURS  " +
+                std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
+                " YOUR CASEBOOK";
+            casePlateShowSteps_ = kCasePlateShowSteps;
+            syncPanelAnim();
         }
     }
 }
@@ -3079,15 +3311,43 @@ std::vector<std::int32_t> Session::unlockedLetters() const {
             out.push_back(base + static_cast<std::int32_t>(i));
         }
     }
+    // EVICTION CASE. The third file rides the same shelf above the sheet's,
+    // gated on ITS OWN book by the identical handed/read-not-received rule:
+    // the writ is `handed` (readable the moment the hire lead is heard); the
+    // widow's petition and the served notice keep the Cold-or-Followed gate,
+    // so they surface only once the gate and door leads are actually walked.
+    const std::int32_t evictBase =
+        base + static_cast<std::int32_t>(sheetLetterRaws_.letters().size());
+    for (std::size_t i = 0; i < evictLetterRaws_.letters().size(); ++i) {
+        const sim::Letter& letter = evictLetterRaws_.letters()[i];
+        const std::int32_t lead = evictRaws_.indexOf(letter.lead);
+        if (lead < 0) {
+            continue;
+        }
+        const sim::LeadState state = evictBook_.state(lead);
+        const bool readable =
+            letter.handed
+                ? state != sim::LeadState::Unheard
+                : (state == sim::LeadState::Cold || state == sim::LeadState::Followed);
+        if (readable) {
+            out.push_back(evictBase + static_cast<std::int32_t>(i));
+        }
+    }
     return out;
 }
 
 const sim::Letter& Session::letterAt(std::int32_t combined) const {
-    // COURIER CASE. One shelf over two files: the Bloodletter's letters keep
-    // their own indices and the sheet file sits above them, in fixed member
-    // order. Callers only ever hand back indices unlockedLetters() produced,
-    // so the subscripts below hold by construction.
+    // COURIER + EVICTION CASE. One shelf over THREE files, in fixed member
+    // order: the Bloodletter's letters, then the sheet's, then the
+    // eviction's above both. Callers only ever hand back indices
+    // unlockedLetters() produced, so the subscripts below hold by
+    // construction.
     const std::int32_t base = static_cast<std::int32_t>(letterRaws_.letters().size());
+    const std::int32_t evictBase =
+        base + static_cast<std::int32_t>(sheetLetterRaws_.letters().size());
+    if (combined >= evictBase) {
+        return evictLetterRaws_.letters()[static_cast<std::size_t>(combined - evictBase)];
+    }
     if (combined >= base) {
         return sheetLetterRaws_.letters()[static_cast<std::size_t>(combined - base)];
     }
@@ -3096,7 +3356,8 @@ const sim::Letter& Session::letterAt(std::int32_t combined) const {
 
 std::int32_t Session::letterCount() const noexcept {
     return static_cast<std::int32_t>(letterRaws_.letters().size() +
-                                     sheetLetterRaws_.letters().size());
+                                     sheetLetterRaws_.letters().size() +
+                                     evictLetterRaws_.letters().size());
 }
 
 bool Session::picking() const noexcept { return tavern_->picking().open(); }
@@ -3539,6 +3800,9 @@ void Session::step(const sim::MoveInput& input) {
     // finished taking, and anything they say() eases in on the next frame
     // exactly as every other verb's message does.
     stepSheetCase();
+    // EVICTION CASE, alongside the courier's for the identical reason: the
+    // door nudge and the scripted delivery read the step just finished.
+    stepEvictCase();
 }
 
 void Session::stepMany(const sim::MoveInput& input, int steps) {
@@ -3693,12 +3957,42 @@ void Session::interact() {
         say("YOU HAVE HIM. THE MISSION'S BACK ROOM, AND NOTHING EDGED ON THE WAY.");
         return;
     }
+    // EVICTION CASE, checked ahead of TALK for caseTakeReady's own reason:
+    // a served door is the one thing this press could mean that nothing else
+    // here could also mean. Knock first, serve second -- two acts, one verb,
+    // and the serve is never forced: a player who means to disrupt knocks
+    // (or does not) and walks back to the priest to give the writ up.
+    if (!sneaking && evictDoorReady()) {
+        if (!evictKnocked_) {
+            evictKnocked_ = true;
+            evictDoorSaid_ = false;
+            say("YOU KNOCK. A CHAIR SCRAPES. THE MARROW DOOR OPENS ON A TIRED MAN AND THE "
+                "SMELL OF THIN SOUP.");
+            return;
+        }
+        // THE SERVE. The paper changes hands; nobody swings, which is what
+        // the good hand was hired to make true. The objective swings to the
+        // Mission on this press -- the book learns where the errand ends the
+        // moment the writ is served.
+        writServed_ = true;
+        evictDoorSaid_ = false;
+        const std::int32_t served = evictRaws_.indexOf("served");
+        if (served >= 0) {
+            (void)evictBook_.hear(served, caseNowSeconds());
+        }
+        say("THE WRIT INTO HIS HAND. HE READS THE ROLL'S OWN WORDS AND DOES NOT ARGUE WITH "
+            "PAPER. CARRY IT BACK SIGNED.");
+        return;
+    }
     if (!sneaking) {
         // TIME-AND-TENURE BUILD: the director is told what ground the feet
         // are on BEFORE the conversation opens, so a priest's topic list is
         // built knowing whether there is a roll to read here. See
         // syncGroundPlot().
         syncGroundPlot();
+        // EVICTION CASE: and the writ's stage, so Maell's own list carries
+        // the hire (or the walk-back) the moment his conversation opens.
+        syncEvictionTopics();
         if (tavern_->talkTo() || talkToWard()) {
             topicCursor_ = 0;
             haggleOffer_ = 0;
@@ -3846,6 +4140,15 @@ Session::InteractTarget Session::resolveInteract() const {
         out.kind = AimKind::Person;
         return out;
     }
+    // EVICTION CASE, mirrored where interact() checks it: the knock, then the
+    // serve, named on the frame the key would perform it.
+    if (!sneaking && evictDoorReady()) {
+        out.verb = evictKnocked_ ? "SERVE THE WRIT" : "KNOCK";
+        out.subject = "THE MARROW DOOR";
+        out.note = evictKnocked_ ? "THEY ARE AT THE DOOR" : "A LIGHT IS ON";
+        out.kind = AimKind::Place;
+        return out;
+    }
     // NAMED IN THE ORDER interact() WOULD REACH THEM. The taproom's own roster
     // is asked first because talkTo() is, so the body the crosshair names is
     // the body the key would actually speak to -- a prompt that named the
@@ -3964,6 +4267,24 @@ Session::InteractTarget Session::resolveInteract() const {
         if (const int lead = sheetLeadInLookReach(); lead >= 0 && sheetBook_.raws() != nullptr) {
             const sim::Lead& site = sheetBook_.raws()->leads()[static_cast<std::size_t>(lead)];
             const sim::LeadState state = sheetBook_.state(static_cast<std::int32_t>(lead));
+            if (state != sim::LeadState::Unheard) {
+                out.subject = site.what.empty() ? site.place : site.what;
+                if (state != sim::LeadState::Open) {
+                    out.note = "ALREADY READ";
+                }
+                out.kind = AimKind::Clue;
+                return out;
+            }
+        }
+    }
+    // EVICTION CASE. The third book's sites, the same member-order tiebreak
+    // one book deeper -- its two close leads are excluded by
+    // evictLeadInLookReach itself, so a look here can only ever name an
+    // investigation lead.
+    if (out.subject.empty()) {
+        if (const int lead = evictLeadInLookReach(); lead >= 0 && evictBook_.raws() != nullptr) {
+            const sim::Lead& site = evictBook_.raws()->leads()[static_cast<std::size_t>(lead)];
+            const sim::LeadState state = evictBook_.state(static_cast<std::int32_t>(lead));
             if (state != sim::LeadState::Unheard) {
                 out.subject = site.what.empty() ? site.place : site.what;
                 if (state != sim::LeadState::Open) {
@@ -4295,6 +4616,14 @@ void Session::chooseTopic(std::size_t index) {
     } else if (reply.ok && reply.kind == sim::TopicKind::Petition) {
         reply.line = settleGroundPetition();
         tavern_->dialogue().speakResolved(reply.line);
+    } else if (reply.ok && reply.kind == sim::TopicKind::TakeWrit) {
+        // EVICTION CASE. The director answered the speech (and gated the
+        // open-hand bar); the CASE half is the session's, the ReadRoll split
+        // one book on. The priest's own line is already in reply.line -- the
+        // book opens under it.
+        settleTakeWrit();
+    } else if (reply.ok && reply.kind == sim::TopicKind::YieldWrit) {
+        settleYieldWrit();
     }
     if (!reply.ok && reply.line.empty()) {
         return;
@@ -8578,6 +8907,176 @@ constexpr std::int32_t kCaseBeats = 8;
     return landed;
 }
 
+/// EVICTION CASE. The mask of which --eviction beats landed, for the summary.
+std::int32_t gEvictBeatMask = 0;
+
+/// How many beats runEvictionLine tries to land on the PARTICIPATE path: the
+/// hire off Maell (the writ heard, the open-hand bar passed), the writ read
+/// on the Letters tile, the Netters' gate lead read, the wait to the evening
+/// the door will answer, the Marrow door lead read, the knock, the serve, and
+/// the walk back to the Mission with the writ -- The Evictor in hand and the
+/// book closed. Nine.
+constexpr std::int32_t kEvictBeats = 9;
+/// The DISRUPT path owes fewer: everything up to and including the knock (six
+/// beats), then the walk-back-unserved to Maell and the yield -- eight, and
+/// no weapon.
+constexpr std::int32_t kEvictRefuseBeats = 8;
+
+/// EVICTION CASE. PLAYS THE OWNER'S THIRD CASE END TO END, both paths, through
+/// exactly the Session verbs a keypress makes -- speakTo/pick for the hire and
+/// the yield, walkAcrossDistrict for the ward crossings, skipToHour for the
+/// evening the rota brings the family home, interact for the knock and the
+/// serve. Nothing reaches into the sim sideways: the open-hand skill is set
+/// the one honest way a hired hand has it (the brawl does not train it yet --
+/// the flagged gap), and every other beat is the real machinery.
+[[nodiscard]] int runEvictionLine(Session& session, const std::string& ending) {
+    gEvictBeatMask = 0;
+    int landed = 0;
+    std::int32_t beat = 0;
+    const auto mark = [&](bool ok) {
+        session.watchBeatLanded(beat, ok);
+        if (ok) {
+            gEvictBeatMask |= 1 << beat;
+            ++landed;
+        }
+        ++beat;
+    };
+    const auto chapter = [&]() { session.watchChapter(beat); };
+    const sim::CasebookRaws& raws = session.evictRaws();
+    if (!raws.loaded()) {
+        return 0;
+    }
+
+    // THE HIRED HAND HAS THE SKILL. The priest's bar is open hand at fifteen
+    // of the hundred, the major-designation line; a hired hand qualifies, so
+    // the drive seeds it the one way it can be seeded today -- chargen writes
+    // this level and nothing in play yet raises it (the flagged progression
+    // gap). test_eviction_line proves the gate REFUSES below the bar
+    // separately, so this is arming a qualifying character, not dodging a
+    // check.
+    (void)session.tavern().dialogue().skills().setLevel(sim::kOpenHandSkill,
+                                                        sim::kEvictionOpenHandBar);
+
+    chapter();
+    // 1. THE HIRE, at Maell's evening table in the Gull. The writ tops his
+    // topic list only for the case's own priest and only while it is dormant
+    // -- speakTo opens the conversation (syncEvictionTopics ran in interact),
+    // pick chooses TakeWrit, and the session settles the case half.
+    if (speakTo(session, "Father Maell")) {
+        pick(session, sim::TopicKind::TakeWrit);
+        session.closeConversation();
+    }
+    mark(session.evictCaseLive());
+
+    chapter();
+    // 2. THE WRIT READ. The handed document unfolds on the Letters tile the
+    // moment the hire lead is heard -- no walk owed, the mission sheet's own
+    // contract. A `writ` shutter stops here with it open.
+    session.toggleLetters();
+    session.chooseVisibleTopic(0);
+    const bool writRead = !session.unlockedLetters().empty();
+    mark(writRead);
+
+    if (ending == "writ") {
+        return landed;
+    }
+    session.toggleLetters();  // put the paper down, get the world back
+
+    chapter();
+    // 3. THE GATE. Walk east to the Netters' gate and look -- the roll and
+    // the pledge, the compound the writ names. Reading it opens the roof.
+    const sim::Lead& gate = raws.leads()[static_cast<std::size_t>(raws.indexOf("netters-gate"))];
+    (void)walkAcrossDistrict(session, gate.site.x, gate.site.y);
+    session.examine();
+    mark(session.evictBook().state(raws.indexOf("netters-gate")) != sim::LeadState::Open);
+
+    if (ending == "gate") {
+        session.toggleCasebook();
+        return landed;
+    }
+
+    chapter();
+    // 4. THE WAIT. To eight in the evening, when the rota has walked the
+    // family home off the quay -- skipToHour, the clock a WAIT pick spends,
+    // the brief's "once people are home" reached the way the game reaches it.
+    session.skipToHour(20);
+    mark(session.timeOfDay() / 3600 == 20);
+
+    chapter();
+    // 5. THE DOOR LEAD. Walk to the Marrow door on the Gullet lane and look:
+    // the family, the four heads, the arrears -- the case's turn read as a
+    // place stood over, and the lead the knock verb watches for.
+    const sim::Lead& door = raws.leads()[static_cast<std::size_t>(raws.indexOf("family-door"))];
+    (void)walkAcrossDistrict(session, door.site.x, door.site.y);
+    session.examine();
+    mark(session.evictBook().state(raws.indexOf("family-door")) != sim::LeadState::Open);
+
+    chapter();
+    // 6. THE KNOCK. Stand at the door in the evening and press interact --
+    // evictDoorReady is live (case running, writ unserved, in reach, the
+    // hour home), so the first press knocks and the door answers.
+    walkToTile(session, door.site.x, door.site.y);
+    session.interact();
+    mark(session.evictKnocked());
+
+    if (ending == "knock") {
+        return landed;
+    }
+
+    // THE FORK. "refused" is the disrupt path: carry the writ back to Maell
+    // whole and give it up. Everything else serves.
+    if (ending == "refused") {
+        chapter();
+        // 7r. THE WALK BACK, UNSERVED, and the yield in the priest's own
+        // conversation -- YieldWrit tops his list only while the case runs
+        // unserved. Maell keeps his evening hour in the Gull, so the
+        // walk-back is to wherever his body actually stands: the district
+        // router carries the long leg, and speakTo makes the final approach
+        // and opens the conversation. The book closes on the stood-down
+        // lead; no weapon.
+        if (const sim::Actor* priest = actorNamed(session, "Father Maell")) {
+            (void)walkAcrossDistrict(session, priest->tileX(), priest->tileY());
+        }
+        if (speakTo(session, "Father Maell")) {
+            pick(session, sim::TopicKind::YieldWrit);
+            session.closeConversation();
+        }
+        mark(session.evictBook().closed());
+        // 8r. AND NO EVICTOR: the disrupt path's whole point, asserted as a
+        // beat so a run that quietly armed the player would go red.
+        mark(session.tavern().playerWeapon() == sim::Weapon::Fists);
+        return landed;
+    }
+
+    chapter();
+    // 7. THE SERVE. A second press at the answered door: the paper changes
+    // hands, nobody swings, and the objective swings to the Mission.
+    session.interact();
+    mark(session.writServed());
+
+    if (ending == "served") {
+        return landed;
+    }
+
+    chapter();
+    // 8. TO THE MISSION, THE WRIT SIGNED. Walking into the back room IS the
+    // delivery -- stepEvictCase closes the book and pays The Evictor on
+    // arrival, no press owed -- so the run steps the pump a beat at the
+    // anchor to let that fire.
+    const sim::Lead& close = raws.leads()[static_cast<std::size_t>(raws.indexOf("served"))];
+    (void)walkAcrossDistrict(session, close.site.x, close.site.y);
+    for (int guard = 0; guard < 8 && !session.evictBook().closed(); ++guard) {
+        session.stepMany(sim::MoveInput{}, 1);
+    }
+    mark(session.evictBook().closed());
+
+    chapter();
+    // 9. THE REWARD IN HAND. The Evictor granted through the one seam -- the
+    // participate path's payoff, asserted so the grant cannot silently drop.
+    mark(session.tavern().playerWeapon() != sim::Weapon::Fists);
+    return landed;
+}
+
 [[nodiscard]] int runSkyrunLine(Session& session, const std::string& ending) {
     const sim::DialogueDirector& talk = session.tavern().dialogue();
     const std::string questId = "skyrunner-tenant";
@@ -9287,6 +9786,16 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.caseRun) {
         return 20;
     }
+    // EVICTION CASE. Eight in the evening: Father Maell takes his hour in the
+    // Gull between seven and half past nine (the courier and flame lines lean
+    // on the same fact), so the hire is answerable at the start, and the
+    // family-door beat wants the rota to have walked the serfs home -- which
+    // eight is past. runEvictionLine skips forward to the door hour on its
+    // own if the run started earlier, but starting IN Maell's hour is what
+    // lets the hire be the first thing that happens.
+    if (config.evictionRun) {
+        return 20;
+    }
     // The roof line needs the door open and nobody in particular.
     return -1;
 }
@@ -9639,6 +10148,27 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                                   : config.caseEnd == "down"  ? 6
                                   : config.caseEnd == "taken" ? 7
                                                               : kCaseBeats;
+        result.scriptedWanted += owed;
+        result.scriptedLanded += landed;
+        result.talking = session.talking();
+    }
+
+    if (config.evictionRun) {
+        // EVICTION CASE. A short `ending` owes only the beats up to its
+        // shutter, and the two paths owe different totals -- the participate
+        // path nine, the disrupt path eight -- so the fell-short warning
+        // never fires over a run that stopped where it was told to, on either
+        // fork.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runEvictionLine(session, config.evictionEnd));
+        result.evictBeats = landed;
+        result.evictBeatMask = gEvictBeatMask;
+        const std::int32_t owed = config.evictionEnd == "writ"    ? 2
+                                  : config.evictionEnd == "gate"  ? 3
+                                  : config.evictionEnd == "knock" ? 6
+                                  : config.evictionEnd == "served" ? 7
+                                  : config.evictionEnd == "refused" ? kEvictRefuseBeats
+                                                                    : kEvictBeats;
         result.scriptedWanted += owed;
         result.scriptedLanded += landed;
         result.talking = session.talking();
@@ -10170,6 +10700,27 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " carry=" << (session.sheetCarry() ? "yes" : "no")
                 << " closed=" << (book.closed() ? "yes" : "no")
                 << " live=" << (session.sheetCaseLive() ? "yes" : "no")
+                << " letters=" << session.unlockedLetters().size();
+    }
+    if (config.evictionRun) {
+        // EVICTION CASE. The errand's own summary, the courier segment's
+        // twin: beats and the mask, the live book's read/known, whether the
+        // door was knocked and the writ served, whether the book closed, and
+        // -- the fact both paths are judged on -- what is in the player's
+        // hands. `served=no weapon=fists closed=yes` is the disrupt path
+        // proved; `served=yes weapon=armed closed=yes` is the participate
+        // path proved.
+        const sim::Casebook& book = session.evictBook();
+        summary << " | evict beats=" << result.evictBeats << '/' << kEvictBeats
+                << " mask=" << gEvictBeatMask
+                << " read=" << book.readCount() << '/' << book.known().size()
+                << " dread=" << book.dread()
+                << " knocked=" << (session.evictKnocked() ? "yes" : "no")
+                << " served=" << (session.writServed() ? "yes" : "no")
+                << " closed=" << (book.closed() ? "yes" : "no")
+                << " live=" << (session.evictCaseLive() ? "yes" : "no")
+                << " weapon="
+                << (session.tavern().playerWeapon() == sim::Weapon::Fists ? "fists" : "armed")
                 << " letters=" << session.unlockedLetters().size();
     }
     if (config.nemesis) {
