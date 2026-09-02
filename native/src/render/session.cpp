@@ -1048,9 +1048,18 @@ void Session::courierDeliverNow() {
     say("ONNA, AT YOUR ELBOW: PAPER FOR YOU, OUT OF THE MISSION. IT COULD NOT WAIT.");
     // The lead-opened plate, in its own words -- the same field, the same
     // countdown, the same live Menu binding the new-leads notice builds from.
+    // THROUGH promptLabel, NOT keyName(primary[Menu]): the tutorial's own
+    // plate has to name the key in the hand that is holding the machine --
+    // "J YOUR LETTERS" on a keyboard, "D-PAD UP YOUR LETTERS" on a pad -- the
+    // same device-aware wording the Bloodletter lead-opened plate above
+    // (saw.opened) already keeps. The raw primary slot is keyboard-only
+    // wording, so a pad player was told "J" for a key their pad has not got;
+    // on a tutorial built to teach which key to press, that is the exact
+    // confusion the device-aware machinery exists to prevent (Ship phase,
+    // found by driving the courier on a pad).
     casePlateText_ =
         "A MISSION SHEET  " +
-        std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)])) +
+        std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
         " YOUR LETTERS";
     casePlateShowSteps_ = kCasePlateShowSteps;
     courierStage_ = 1;
@@ -1136,10 +1145,11 @@ void Session::stepSheetCase() {
                     sheetBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
                 sheetCarry_ = false;
                 say(done.line);
+                // Device-aware, the courier plate's twin: "D-PAD UP YOUR
+                // CASEBOOK" on a pad, not the raw keyboard "J" (Ship phase).
                 casePlateText_ =
                     "THE ERRAND IS PAID  " +
-                    std::string(keyName(
-                        controls_.primary[static_cast<std::size_t>(Action::Menu)])) +
+                    std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
                     " YOUR CASEBOOK";
                 casePlateShowSteps_ = kCasePlateShowSteps;
                 syncPanelAnim();

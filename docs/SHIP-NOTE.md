@@ -1,39 +1,45 @@
 # Ship note — read this first
 
-**The three moves landed this time.** The retry demanded proof of life and got
-it: three lanes, twelve commits, one merge conflict, one one-line compile fix,
-and every layout claim in the builders' reports re-verified here **by
-measurement off fresh captures**, not by reading the reports back. The panel
-MEASURE exists and every creation/casebook step is a card seated 45/55 on both
-axes; the tiled Menu is on the terminal grammar at every size; every prompt
-names the device that is holding it and re-words **live, mid-frame, no menu
-visit** — photographed switching both directions in one process.
+**The three moves landed, and the tutorial reads right on both hands now.** The
+retry's four lanes merged clean (twelve builder commits + three merges + the
+integrator's compile/drive fixes) and every claim in their reports was
+re-verified here **by driving the built game and measuring the frames**, not by
+reading the reports back. J opens the journal, the seven silent pages answer the
+mouse, the B that closed the casebook no longer crouches, a pad player's first
+world screen is pad-worded before they touch anything, and the sheet's NAME row
+holds still while you type. The second authored case — **THE QUIET TENANT**, the
+courier's tutorial errand — plays end to end, teaches through device-aware
+prompts, and does not move the population baseline a bit.
 
-Gate: **green, both halves, twice over**, digest `6165af5d…`.
+**One seam found by driving, and closed this phase:** the courier case's two
+notice plates (`A MISSION SHEET … YOUR LETTERS`, `THE ERRAND IS PAID … YOUR
+CASEBOOK`) named the key with `keyName(primary[Menu])` — the raw keyboard slot —
+so a **pad** player being taught the game was told to press **J**, a key their
+pad has not got. The device-aware `promptLabel(…, promptDevice_)` the Bloodletter
+plate uses three lines away is the fix; both plates now read `D-PAD UP YOUR
+LETTERS` / `… CASEBOOK` on a pad and the unchanged `J …` on a keyboard.
+Render-only, keyboard-byte-identical, sim untouched. Photographed before and
+after: `docs/frames/parallel4/courier-plate-SEAM-keyboardworded.png` vs
+`…-FIXED-deviceaware.png`.
+
+Gate: **green, both halves**, native digest `ae5a7d15…`.
 World hash: **`0x2646C1AAA2BA38DF`** — regenerated, rebaked, twin-gated, unmoved.
-Demo: **run twice, watched, exit 0 both times**, 5780 frames, body at
-(150,63,z19) both runs. Six committed demo frames legitimately moved (the
-measure lane's creation and casebook beats) and were re-blessed; **the street,
-world, night and end-card frames did not move a byte.**
+Demo: **run twice, exit 0 both**, 5780 frames, body (150,63,z19) both. Demo
+frames: **22/22 byte-identical** to the committed set (the courier is off under
+`--demo`, so the fix cannot touch them).
 
-## Run the demo
+## Run it
 
 ```
-.\dist\granadad.exe --demo
+.\dist\granadad.exe --demo      # two minutes, plays itself, ends on a card
+.\dist\granadad.exe             # play it: DOWN DOWN ENTER, name, UP, ENTER, twelve ENTERs, UP, ENTER
+.\dist\granadad.exe --case      # drive THE QUIET TENANT end to end, headless, and print the errand's state
 ```
 
-Two minutes, plays itself, ends on a card and closes its own window. ESC stops
-it early. `dist\` holds the gate-certified binaries — byte-identical, all
-four, to the set a fresh isolated checkout goes green with (re-proven this
-phase in `C:\repositories\granadad-ship-9d4fa02`).
-
-Play it normally with `.\dist\granadad.exe`. Keyboard fastest path unchanged:
-**DOWN DOWN ENTER**, ENTER on NAME, type, ENTER, **UP** (wraps to BEGIN),
-ENTER, twelve ENTERs, UP, ENTER. On a pad the screen now tells you itself —
-`B LEAVE / D-PAD MOVE / A OPEN`, `A - THAT IS WHAT HAPPENED` — because the
-feet finally read the hand: **A** on NAME raises the OSK, **START** commits,
-twelve **A**s, BEGIN. In the world: **M**/**SELECT** map, **TAB**/**D-pad Up**
-casebook, **E**/**A** talk, **ESC**/**START** pause.
+In the world: **J** casebook (per the owner's "use J for journal"), **M** map,
+**E** talk, **ESC** pause, **F1** keys, **F2** rebind. On a pad the screen tells
+you itself — the prompts name the hand that is holding the machine and re-word
+live.
 
 > Still true: the creation window does not answer F12 (photograph creation
 > through `--creation=STEP` or `--padcreation`'s `shot:` beats), and `--demo`
@@ -43,177 +49,234 @@ casebook, **E**/**A** talk, **ESC**/**START** pause.
 
 ## The gate, in full
 
-Run in a **fresh isolated worktree** at `C:\repositories\granadad-ship-9d4fa02`
-with the four gitignored audio directories real-copied (374 files).
+`docker compose run --rm --build build` was run twice this phase: once on a
+**fresh isolated worktree** at `C:\repositories\granadad-ship-7b1904e` (the four
+gitignored audio dirs real-copied, 374 files) at the merged HEAD `7b1904e`, and
+once in the **main repo** on the one-line fix. Both green; `verify-windows.ps1`
+green in the fresh worktree and (both before and after the fix) in the main repo.
 
 | half | where | result |
 |---|---|---|
-| `docker compose run --rm --build build` | fresh worktree | **exit 0** |
-| `scripts\verify-windows.ps1` | fresh worktree | **=== PASS ===**, exit 0 |
-| `scripts\verify-windows.ps1` | main repo, re-verified | **=== PASS ===**, exit 0 |
+| `docker compose run --rm --build build` | fresh worktree @7b1904e | **exit 0** |
+| `scripts\verify-windows.ps1` | fresh worktree | **=== PASS ===** |
+| `docker compose run --rm --build build` | main repo, with the fix | **exit 0** |
+| `scripts\verify-windows.ps1` | main repo, with the fix | **=== PASS ===** |
 
 ```
-revision:       9d4fa02 (17 commits past f4f8e19: 12 lane + 3 merges + 1 fix + 1 frames)
-native/ digest: 6165af5d0ef8ebff5fcdc071913aa37d731e95561804f6df7158a815f6160759
-                (stamped and here, both trees)
-ctest cases:    967 (floor 537; +25 from the three lanes)
-native/ files:  271
+merged revision:  7b1904e (18 past 3181e52: 12 lane + 3 merge + 2 integrator + 1 frames)
+ship fix:         1 commit on top (the courier plate device-aware seam)
+native/ digest:   ae5a7d15df07c580b88a577c3bb30d800bf60874b4cdf3974ece7eef8126f049 (with the fix)
+ctest cases:      995 (floor 537), 78 suites, 0 failed, ~146s
 ```
 
-Comparators byte-for-byte identical linux/gcc vs mingw/windows in BOTH trees:
+Comparators byte-for-byte identical linux/gcc vs mingw/windows, **and identical
+across the fix** (the fix is render-side, which no gate hashes):
 decoded world state 3884 bytes sha256 `97850DCB…C8B2179`; world hash + sim run
-1791 bytes sha256 `924F6EA6…B7B8468B`. The four `dist\` binaries
-(`granadad.exe`, `-tests`, `-twin-gate`, `-content-tests`) hashed main repo vs
-fresh worktree: **byte-identical, all four.**
+1791 bytes sha256 `924F6EA6…B7B8468B` — the same values before and after the
+courier-plate fix. The four `dist\` binaries hashed main-repo vs fresh-worktree
+at the merged HEAD: **byte-identical, all four** (proven before the fix; the fix
+then rebuilt `dist\` in the main repo, which is now the certified set).
 
-`test_demo` explicitly: **6 cases, 209 assertions, all passed, exit 0.**
-
-## The world hash did not move — regenerated and rebaked, not asserted
+## The world hash did not move — regenerated, rebaked, twin-gated
 
 ```
 1. regenerate   python tools\scripts\gen_docks_surface.py
-                docks_surface.tmx sha256 CCEDA566…237B4D1C before AND after, tree clean
-2. rebake       gradlew :tools:run --args="import-map … --raws content/raws"
-                17,954 bytes, sha256 E47DA3AE…E474C2AC
-                vs content/maps/baked/docks_surface.trojsav: IDENTICAL
+                docks_surface.tmx sha256 CCEDA566…237B4D1C, tree clean (reproduced the committed TMX)
+2. rebake       gradlew :tools:run --args="import-map …docks_surface.tmx <tmp> --raws content/raws"
+                17,954-byte trojsav sha256 E47DA3AE…E474C2AC == content/maps/baked/docks_surface.trojsav
+                (baked with BOTH new quest JSONs present in content/raws — they do not enter the bake)
 3. twin-gate    dist\granadad-twin-gate.exe --population --population-hour 16 --ticks 7200
-                run twice: 0x2646C1AAA2BA38DF both runs, report 18,772 bytes
-                IDENTICAL, the two console outputs byte-identical to each other
-4. no re-bless  golden_java_vectors.hpp, fixtures.hpp, test_world_reader.cpp,
-                docks_surface.tmx, docks_surface.trojsav, BASELINE-WORLD-HASH.md
-                — all byte-identical to the program's first commit (d32942e)
+                run twice: 0x2646C1AAA2BA38DF both runs, reports IDENTICAL, the two console
+                outputs byte-identical to each other. Re-run after the fix: same hash.
+4. content diff git diff --name-only 3181e52..HEAD -- content/maps content/art  ->  EMPTY
+                -- content/  ->  the two add-only quest JSONs and nothing else
 ```
 
-`git diff --name-only f4f8e19..HEAD -- content/` is **empty**. Three
-render-only lanes; the sim never had a way to move.
+`content/raws/quests/mission_sheet.json` + `mission_sheet_letters.json` carry
+top-level `case`/`leads`/`letters`, never `stages`/`templates`, so every hashed
+loader skips them. No re-bless: the baseline never had a way to move.
 
 ## The demo
 
 ```
-run 1   5780 frame(s), body ended at (150,63,z19)   exit 0
-run 2   5780 frame(s), body ended at (150,63,z19)   exit 0
+run 1 (@7b1904e)   5780 frame(s), (150,63,z19)   exit 0
+run 2 (@7b1904e)   5780 frame(s), (150,63,z19)   exit 0
+run 3 (with fix)   5780 frame(s), (150,63,z19)   exit 0
 ```
 
-`--demo-capture`: 22 frames. **Exactly six moved** — case-book,
-case-book-harls, creation-name, creation-sheet, creation-quiz,
-creation-quiz-answered — the measure lane's beats, which SHOULD move, and did,
-onto the new cards. **All sixteen street/world/night/end frames byte-identical**
-— the proof the prompt sweep relabels nothing under keyboard drive. The six
-are re-blessed in `docs/frames/demo/`. `creation-origin.png` dropped again
-(thirteenth run, thirteenth drop — the known shutter race); the committed copy
-is the byte-exact `--creation=origin` substitute, now showing the measured
-card.
+`--demo-capture`: **22/22 byte-identical** to `docs/frames/demo/`, both at the
+merged HEAD and with the fix. `creation-origin.png` reproduces byte-identical via
+`--creation=origin --scale=1` (the known `--demo-capture` shutter-race drop; the
+committed copy is the substitute). The Bloodletter demo route is intact.
 
-## Driving it, this phase
+## Driving it, this phase — every claim photographed at 640x360
 
-* **Pad, full run, one process** (`--padcreation` + `--padscript`, pristine
-  bindings): door → A on NAME → `DAD` off the 10x3 grid → START → BEGIN →
-  twelve As → BEGIN → the ward → casebook → pause → QUIT armed → cancelled →
-  ward map → **quit through the pad's own armed-QUIT confirm**. 521 frames,
-  exit 0.
-* **The live switch, one process, no menu visit** — the frame the last two
-  notes asked for (`docs/frames/ship4/sw-*.png`): keyboard finishes creation,
-  the street serf reads `E - TALK`; **one D-pad press** → the crosshair reads
-  `A - TALK`; **one arrow key** → `E - TALK` again. 2856 frames, exit 0.
-* A pre-press bonus determinism point: the windowed pad run's door frame,
-  taken before any pad press, is **byte-identical** to the headless
-  `--creation=origin` capture.
+Frames in `docs/frames/parallel4/`. Driven through the **real windowed build**
+with real keyboard/mouse (`scripts\drive-windowed.ps1`, SendInput scancodes +
+client-area pointer) and the **virtual pad** (`--padcreation` + `--padscript`).
 
-## The measured state at 640x360 — verified against the builders' arithmetic
+**The courier case, driven headless twice** (`--case`, the errand's own scripted
+line): `beats=8/8 mask=255 read=3/4 closed=yes carry=no`, the `| case …` summary
+segment **byte-identical across runs**, the two output PNGs byte-identical. Every
+beat looked at:
+- `case-sheet` — Maell's sheet open on the Letters tile (parchment, `handed`).
+- `case-gull` — casebook on THE QUIET TENANT, the door lead read, READ 1/3.
+- `case-night` — crouched/HIDDEN on the dark guest floor, the box lead read.
+- `case-down` — Finch on the boards, crosshair `FINCH — DOWN, AND COMING WITH
+  YOU / E - TAKE HIM UP`, message row device-aware. **The brawl line held:** the
+  drive carries fists, `mask=63` at the down shutter with `tenant=down` and no
+  Watch — nothing edged, subdue by the house's own law (`classifyFight`).
+- `case-done` — `THE ERRAND IS PAID … YOUR CASEBOOK`, book closed, at the
+  Mission back room.
 
-Threshold calibrated to reproduce the last note's 71.9% exactly (rows/cols
-with no pixel above 16).
+**As a pad player** (the tutorial read the owner asked for): `--padcreation`
+takes a character off the DOOR/PATH/PAST/SHEET screens (A picks a calling, twelve
+A's answer the biography, the 10x3 OSK spells the name, START commits, BEGIN);
+`--padscript` then drives the world. The first world frame, **pre-press**, reads
+`PICK A LEAD. A SHOWS YOU WHERE.` with foot `A - SHOW ME WHERE` and `A GO TO IT`
+— pad-worded with no world press, the device seeded from creation
+(`pad-world-prepress`). The courier hail then lands with the plate `A MISSION
+SHEET  D-PAD UP YOUR LETTERS` — **the seam this phase fixed**, now naming the
+pad's own key (`courier-plate-FIXED-deviceaware.png`; the pre-fix
+`…-SEAM-keyboardworded.png` shows the `J` it used to print).
 
-| surface | before (ship3) | now (measured fresh) | builder claim |
-|---|---|---|---|
-| THE DOOR | 639px full-width band, 63.9% dark rows, ~0 dark cols, 3.90:1 | card lit x[114..497], y[87..250]; dark cols **0→288 (45.0%)**; **2.34:1**; dark rows 63.9% (unchanged — rows are the height rule's axis) | 385×168 @ (114,86) — **CONFIRMED** (lit bbox 384 wide; the border's outer column sits under threshold) |
-| THE NAME (OSK) | **71.9% dark rows**, 114 dark cols, 4.96:1 letterbox | **still 71.9% dark rows — the number was NOT beaten, exactly as the measure lane predicted**; the win is the other axis: dark cols **114→320 (50.0%)**, lit band a **2.98:1 card** at x[114..497], y[103..231] | 385×133 @ (114,102), 2.9:1 — **CONFIRMED** |
-| casebook | 639px, 56.1% dark rows | card x[90..528] (439), y[71..269]; dark cols ~0→**246 (38.4%)**; 2.21:1; dark rows 56.1% (unchanged, same reason) | 440×203 @ (90,70) — **CONFIRMED** |
-| quiz | 640-wide | 424 wide @ x=96, 2.29:1 | ~425 @ x=96 — **CONFIRMED, dead on** |
-| sheet | 640-wide | 509 lit width x[58..566] (kb, typing); the pad sheet 394 | builder's ~415 estimate **wrong** (the two-column master out-votes it) — the *rule* held; the integrator's ~575 was also off at the calibrated threshold |
-| tiled Menu | hairline rectangles, ten rows + `0 MORE (1/2)` in a 27-row pane | one `+~-~-`/`◆` frame, digits on exactly rows 1–9, the full list, stipple in the spare rows; at 320x180 the list paginates with a MORE foot instead of clipping | **CONFIRMED** at both sizes, byte-identical recapture |
-| regressions | — | kb-wardmap, kb-keys, origin-320, sheet-1920, menu-320: fresh captures **byte-identical to the committed parallel2 set**, all 13 shots | clamp/never-calls-measure claims **hold** (the integrator's 1px-left find at 1920 stands noted) |
+**The mechanical items:**
+- **Pointer, the silent pages.** Photographed answering the mouse: pause (hover
+  inverts the row under the pointer, `WAIT` filled), the wait page (click a row →
+  the clock advances, `WAITED UNTIL 13:00`), the CONTROLS/keys page (hover moves
+  the fill **and the detail pane follows the pointer** to the RUN row —
+  `ptr-controls-hover`), the options page (SETTINGS click opens it), and the
+  casebook TAB row — clicking `THE CASE` swaps the detail pane with the list and
+  frame dead still (stable-geometry), the frame **byte-identical to the
+  committed `ptr-tab-thecase.png`**, and `LEADS` clicks back. The tiled Menu's
+  four tiles (`--character`) and the conversation topic list share the
+  `menuTileHitAtPixel` / `dialogueTopicAtPixel` inverses proven on their
+  siblings and green under `test_menu_view`/`test_tavern_render`.
+- **Regression:** a left-click on the open street with nothing up **punches**
+  (`NOBODY IN REACH` — the world verb, not swallowed): the pointer branch only
+  runs on `pointer_page_open` (`ptr-street-punch`).
+- **J opens the journal**, and the copy says J: a fresh-defaults windowed run
+  writes `bind menu J PAD_UP`, the keys page reads `MENU  J`, the opening hint
+  reads `J YOUR NOTES  < > MORE PAGES  E USE`, and pressing J closes the
+  auto-opened new-game casebook to that hint. (`E USE` is the honest fallback
+  under a cfg with no pad `interact` half — the other-hand rule.)
+- **The B seam, closed:** on a pad, one **B** closes the casebook to the street
+  with **no CROUCHED banner** (`pad-after-b-nocrouch`).
+- **The NAME wiggle, gone:** the pad OSK typed to 2 / 6 / 12 glyphs holds its
+  outer frame at exactly x[114..497] all three times (`pad-name12-nowiggle`); the
+  keyboard sheet is proven by the green `test_creation` cap-measure case and by
+  `creation-name.png` staying byte-identical.
 
-**Prompts, every claim photographed on pristine bindings**: pause header
-`A SELECTS  START RESUMES`; armed `A QUITS  B CANCELS` + `5 QUIT -- SURE? A`;
-casebook `PICK A LEAD. A SHOWS YOU WHERE.`; ward map band `D-PAD NEXT PLACE /
-LB RB OVERVIEW / RT LT ZOOM / SELECT CLOSE`; door/sheet/quiz feet `B BACK /
-D-PAD MOVE / A …` with the digit row gone; street `A - TALK` / `A - LOOK`.
-And the fallback is honest: under this repo's own cfg (`interact E MOUSE2`,
-no pad half) the crosshair keeps saying `E` on a pad — the other-hand rule,
-by design, seen live.
+## Copy review — the case reads in the city register
 
-Frames: `docs/frames/ship4/` (this phase's pad set + the switch triptych),
-`docs/frames/parallel2/` (the integrator's 21, all re-reproduced
-byte-identically here), `docs/frames/demo/` (re-blessed).
+Every player-facing line of THE QUIET TENANT was read against the register
+(brief, urbane, salted, no AI-ish over-explaining). **It holds, and at its best
+it is very good.** The strongest lines earn their place: *the close* "THE MISSION
+HAS ITS MAN. THE FLAME KEEPS ITS OWN COUNSEL."; *the delivery* "MAELL DOES NOT
+THANK YOU FOR IT, AND DOES NOT PRETEND IT WAS NOT ASKED FOR."; *the brawl teach*
+"A BRAWL IS THE HOUSE'S OWN LAW, STEEL IS THE WATCH'S. THE BOUNCER ANSWERS THE
+FIRST SWING, SO ANSWER HIM FIRST."; *the follow-up* "MAELL DOES NOT WRITE TWICE."
+Maell's sheet ("I know what this sheet is. I have written it anyway…") takes the
+weight of the order in the author's own hand, exactly as the brief asked.
+
+The lines that teach a mechanic carry the most instructional load — "EVERY PROBE
+IS NOISE. … CROUCH, AND KEEP OFF THE LIT TILES." is the closest any line comes to
+a tutorial voice — but they stay imperative and in-fiction, and none clunk. No
+line reads as AI-ish or over-explained. **Nothing flagged for a rewrite.**
+
+## The canon choices stand, flagged for the owner's veto (unchanged)
+
+The case lane chose from existing actors/buildings and flagged each; nothing here
+overrode them. For the owner to accept or veto:
+- **Courier = Onna**, **author = Father Maell**, **target = Finch** (the
+  Skyrunner on the Gull roster), **site = the Gilded Gull**, delivery at the
+  Mission back room. All existing.
+- **⚠ The one canon ADDITION:** the case resolves casebook.json's deliberately
+  ambiguous tarry-jek line ("A THIN FELLOW WALKED IN THROUGH A GAP NO MAN FITS")
+  as **Finch**, paid to open the Drowned Hold from inside. Clean fit, but it
+  *interprets* an open Bloodletter thread. Reject it and only the snug-stool
+  `found` line needs softening; the case still works.
+- **Gabri never appears** — "word has come from Gabri" is word, through the
+  Mission, from off-map; the sheet says outright it will not put down from where.
+  (Pre-existing tension the case lane raised and did not touch:
+  `bloodletter_letters.json`'s `gabri-dispatch` is written in-ward at the Drowned
+  Hold. Reconcile at your discretion.)
+
+## Honest leftovers (the case lane's own flags, still true)
+
+- **No carried-body render.** TAKE HIM UP sets a bale-shaped session flag (`FINCH
+  IN HAND` on the HUD) and the delivery closes on arrival; there is no
+  over-the-shoulder body drawn. Follow-up render work.
+- **No stay-down state.** A downed patron recovers at quarter health, so the
+  kidnap is honestly "put him down and take him up promptly" — the crosshair
+  prompts the instant he is down; dawdle and he rises and you re-subdue. Once
+  taken, the carry flag persists.
+- **No manual case-switcher.** The courier case takes over the active-case
+  surfaces until delivered, then the Bloodletter returns (`sheetCaseLive()`).
+  Correct for a focused tutorial; no third tab this pass.
+- `case-night`'s crosshair rests on the bouncer (`E - PICKPOCKET`) rather than
+  the box — a scripted-drive aim, not a bug; the box lead is read regardless
+  (READ 1/3 in `case-gull`).
 
 ---
 
-## The verdict: closer by a real step — and still not near ready
+## The verdict: closer again — the first minutes now teach and pull — and still not near ready
 
-The standing verdict was "not near ready — moved a sliver, prose only." This
-program moved the thing itself, and I measured it rather than took anyone's
-word: **every surface a stranger meets in the first sixty seconds is now a
-measured card on one grammar, seated 45/55 on both axes, with prompts that
-follow the hand holding the machine.** Door, name, quiz, sheet, casebook,
-pause, map, Menu — one register, no letterbox, no hairline rectangles, no
-keyboard verbs under a pad player's thumbs. The Menu was the worst screen in
-the game for three notes running; it now looks like it belongs to the same
-program as the ward map.
+The standing verdict was "closer by a real step — still not near ready; the
+blocker moved to content and reach." This phase moved the blocker's near edge:
+there is now a **second authored case that is a real tutorial**, and it works.
 
-**A stranger's first sixty seconds, today:** a 2.3:1 DOOR card floating on
-ground-stipple; on a pad, feet that say `B LEAVE / D-PAD MOVE / A OPEN`; THE
-NAME as a 2.98:1 card whose grid answers the D-pad; the casebook card with its
-waiting line; the excellent ward and ward map; TAB — and the Menu holds the
-register. **The worst screen in the game is now the sheet** — still the widest
-(509px), still the densest, and a typed name past five glyphs visibly wiggles
-its frame in 2-cell steps while you type.
+**A stranger's first sixty seconds, today:** creation on one measured grammar
+(door, calling, quiz, the sheet — the NAME wiggle now gone), then the world with
+the casebook waiting and the `J YOUR NOTES` hint. And roughly six seconds in, the
+courier: *"ONNA, AT YOUR ELBOW: PAPER FOR YOU, OUT OF THE MISSION."* — an
+inciting incident, in the register, that hands the newcomer a sheet and a reason.
+That is a genuinely better first minute than a lone Bloodletter waiting to be
+noticed.
 
-But the bar is "clean and near ready for early access," and honesty about the
-distance: **not near ready.** For the first time the reason is not the
-screens. It is: **one authored case, twelve leads, five letters** — an evening
-of content in a sandbox built for a season; seven pages that still swallow
-mouse clicks; a demo that never dollies; and the new pad seams below. The
-presentation debt is nearly paid. The content debt is untouched and it is the
-whole remaining distance.
+**The first thirty minutes, now:** the courier's errand is a guided line — read
+the sheet, find the Gull on the map, wait for the dark hours, cross the guest
+floor crouched, put Finch down with fists, carry him to the Mission — and each
+lead teaches one system in the ward's own words. It hands off to the Bloodletter,
+the twelve-lead investigation. So the arc is real: a short linear tutorial that
+opens into the sandbox's one open case. That is the shape an early-access opening
+wants.
 
-## Seams found by driving it (new this phase)
+**But the bar is "clean and near ready for early access," and the honest
+distance is still content and reach.** Two authored cases — one four-lead
+tutorial, one twelve-lead investigation — is an evening, maybe two, and then the
+authored well is dry; the scripted lines (skyrun, nemesis, contract, burgle,
+roofs) are system demos, not narrative. The tutorial is linear and short and
+gives up its own last page early (the sheet names the delivery before you take
+him). No line clunks and no screen is broken — the **presentation debt is paid**
+— but a sandbox built for a season still holds an evening of authored play. **Not
+near ready.** The reason is no longer the screens or the prompts; it is that
+there is not enough game behind them yet.
 
-1. **The B that closes the casebook also toggles crouch** — the street after
-   closing the book carries a `CROUCHED` banner nobody asked for. One press,
-   two routes.
-2. **A pad player's first world screen is keyboard-worded**: the auto-opened
-   new-game casebook says `ENTER SHOWS YOU WHERE` until their first world
-   press, because creation's device note dies with `CreationFlow` instead of
-   seeding the Session it births.
-3. The casebook detail's `ENTER - SHOW ME WHERE` / foot `ENTER GO TO IT`
-   stay keyboard-worded on a pad — the known measure-lane literals, one-line
-   fixes each via `promptMoveKeys`-style state fields.
-4. The sheet's NAME-row width wiggle while typing (measure lane's own flag;
-   fix is padding the value to `kMaxNameLength` in creation.cpp).
+**The worst screen** is no longer a screen with a defect — the sheet's wiggle is
+gone, the Menu is on the register, every page answers the mouse. The least
+polished surface left is the **options overlay** (F2/SETTINGS): a bottom-strip
+HUD list rather than a full master/detail card like the CONTROLS page beside it —
+functional, in-register, but the one place the reference's card grammar is not
+fully spent.
 
 ## The three things to do next
 
-1. **The pointer pass: make the seven silent pages answer the mouse.** The
-   tiled Menu, pause and its pages, conversation, wait, lockpick, and the
-   casebook's tab row. The lanes left it cheap on purpose: `menuTileLayout` +
-   `optionListAt` for the tiles, a `casebookTabAtPixel` sibling beside
-   `casebookLeadAtPixel`, all on the pattern `session_pointer()`'s map branch
-   already proves. `main.cpp:1881`'s catch-all return is where the tab hit
-   slots in.
-2. **Close the pad seams in one sweep** — the B-close crouch fall-through,
-   the device note carried from creation into its Session, and the casebook's
-   three remaining keyboard literals moved onto state fields the way
-   `closeKey` already flows. All small, all found by playing, all on the pad
-   player's first five minutes.
-3. **A second authored case.** The screens no longer excuse the sandbox.
-   Twelve leads and five letters is the whole game a stranger can drain in an
-   evening, and no measure rule fixes that. This is the verdict's blocker and
-   it should be the next program's headline, not its leftovers.
+1. **Authored content, in bulk — the whole remaining distance.** Not one more
+   case: a spread of them, and the reach to drain them over more than an evening.
+   Every screen and prompt is ready to carry it; nothing else is the blocker.
+2. **Finish the courier case's honest leftovers into real mechanics** — a
+   carried-body render for TAKE HIM UP, and a stay-down (or bound) state so a
+   kidnap is a haul across the district rather than a prompt-race. These are the
+   two places the tutorial teaches a verb the sim only half-simulates.
+3. **The options page onto the master/detail card**, to spend the reference's
+   grammar in the one surface that still runs a HUD strip — and, cheaply, a
+   camera dolly in the demo so the trailer moves.
 
 ## Still open, unchanged
 
-`--demo-capture` drops creation-origin (13/13); the input router lives in
-`main.cpp`'s anonymous namespace, unlinkable by any suite; no camera motion in
-the demo; the 1920 sheet sits 1px left of its old centring (invisible,
-integrator-found, noted so nobody hunts it as drift).
+`--demo-capture` drops `creation-origin` (the shutter race; the `--creation`
+substitute is byte-exact); the creation window does not answer F12; the input
+router lives in `main.cpp`'s anonymous namespace, unlinkable by any suite; no
+camera motion in the demo; the 1920 sheet sits 1px left of its old centring
+(invisible, integrator-found, noted so nobody hunts it as drift).
