@@ -974,7 +974,7 @@ TEST_CASE("a prompt names the device holding it, off the shipped table") {
     // the owner's "use J for journal since that's how it's done by
     // convention".
     CHECK(promptLabel(keys, Action::Menu, InputDevice::KeyboardMouse) == "J");
-    CHECK(promptLabel(keys, Action::Menu, InputDevice::Pad) == "D-PAD UP");
+    CHECK(promptLabel(keys, Action::Menu, InputDevice::Pad) == "\x06\x02");  // the d-pad cross + up motif
     CHECK(promptLabel(keys, Action::Map, InputDevice::KeyboardMouse) == "M");
     CHECK(promptLabel(keys, Action::Map, InputDevice::Pad) == "SELECT");
     CHECK(promptLabel(keys, Action::Pause, InputDevice::KeyboardMouse) == "ESC");
@@ -1042,18 +1042,18 @@ TEST_CASE("the device of a key, and the pad's spoken vocabulary") {
     CHECK(promptKeyName(Key::PadNorth) == "Y");
     CHECK(promptKeyName(Key::PadStart) == "START");
     CHECK(promptKeyName(Key::PadBack) == "SELECT");
-    CHECK(promptKeyName(Key::PadUp) == "D-PAD UP");
+    CHECK(promptKeyName(Key::PadUp) == "\x06\x02");  // UI-EA-SPEC sec. 5: cross + triangle
     // And a keyboard key is exactly keyName()'s answer.
     CHECK(promptKeyName(Key::E) == keyName(Key::E));
     CHECK(promptKeyName(Key::Tab) == keyName(Key::Tab));
 
     // The page grammar the router hard-codes, said once.
-    CHECK(promptConfirmKey(InputDevice::KeyboardMouse) == "ENTER");
+    CHECK(promptConfirmKey(InputDevice::KeyboardMouse) == "\x01");  // the return motif
     CHECK(promptConfirmKey(InputDevice::Pad) == "A");
     CHECK(promptBackKey(InputDevice::KeyboardMouse) == "ESC");
     CHECK(promptBackKey(InputDevice::Pad) == "B");
-    CHECK(promptMoveKeys(InputDevice::KeyboardMouse) == "UP DOWN");
-    CHECK(promptMoveKeys(InputDevice::Pad) == "D-PAD");
+    CHECK(promptMoveKeys(InputDevice::KeyboardMouse) == "\x02\x03");  // the triangle pair
+    CHECK(promptMoveKeys(InputDevice::Pad) == "\x06");  // the bare cross
 }
 
 TEST_CASE("the B seam: East is Escape while a page is up, itself otherwise") {
@@ -1119,7 +1119,7 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     CHECK(kb.lookKey == "E");
     // And the commit verb's key -- the "ENTER - SHOW ME WHERE" / "ENTER GO
     // TO IT" literals of the ship note's seam list, on a state field now.
-    CHECK(kb.commitKey == "ENTER");
+    CHECK(kb.commitKey == "\x01");  // the return motif -- UI-EA-SPEC sec. 5
     session.noteInputDevice(InputDevice::Pad);
     CasebookPageState pad = session.casebookPageState();
     CHECK(pad.closeKey == "B");
@@ -1144,7 +1144,7 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     CHECK(kbMap.navTabKeys == "TAB");
     CHECK(kbMap.navZoomKeys == "+ -");
     CHECK(kbMap.navCloseKey == "M");
-    CHECK(kbMap.commitKey == "ENTER");
+    CHECK(kbMap.commitKey == "\x01");
 
     // THE DIALOGUE WIDGET'S OWN KEYS ride the state the same way.
     session.noteInputDevice(InputDevice::Pad);
@@ -1155,7 +1155,7 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     CHECK(padView.letterDownLine.empty());
     session.noteInputKey(Key::Space);
     const DialogueViewState kbView = session.dialogueView();
-    CHECK(kbView.confirmKey == "ENTER");
+    CHECK(kbView.confirmKey == "\x01");
     CHECK(kbView.backKey == "ESC");
     CHECK(kbView.takeKey == "T");
     CHECK(kbView.letterDownLine == "L PUTS IT DOWN");
@@ -1174,7 +1174,93 @@ TEST_CASE("the opening hint is generated from the bindings and re-words live") {
     }
     CHECK(session.lastMessage() == "J YOUR NOTES  < > MORE PAGES  E USE");
     session.noteInputDevice(InputDevice::Pad);
-    CHECK(session.lastMessage() == "D-PAD UP YOUR NOTES  LB RB MORE PAGES  A USE");
+    CHECK(session.lastMessage() == "\x06\x02 YOUR NOTES  LB RB MORE PAGES  A USE");
     session.noteInputKey(Key::A);
     CHECK(session.lastMessage() == "J YOUR NOTES  < > MORE PAGES  E USE");
+}
+
+// ---------------------------------------------------------------------------
+// UI-EA-SPEC sec. 5: the motif sentinels, and sec. 4 violation #5: F1/F2
+// become real actions. FLOW lane.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the six motif sentinels are exactly 0x01-0x06 and nothing else") {
+    CHECK(kMotifReturn == '\x01');
+    CHECK(kMotifUp == '\x02');
+    CHECK(kMotifDown == '\x03');
+    CHECK(kMotifLeft == '\x04');
+    CHECK(kMotifRight == '\x05');
+    CHECK(kMotifDPad == '\x06');
+    for (int c = 0; c < 128; ++c) {
+        const bool inRange = c >= 1 && c <= 6;
+        CHECK(isMotifSentinel(static_cast<char>(c)) == inRange);
+    }
+}
+
+TEST_CASE("the prompt choke points speak motifs for the long key names only") {
+    // THE SUBSTITUTION TABLE, PINNED: ENTER and the four arrows become their
+    // motifs; ESC, letters, digits, TAB, the face buttons and the shoulder
+    // pair stay the short iconic words they already were. Every one of these
+    // reaches the screen through promptKeyName/promptConfirmKey/
+    // promptMoveKeys, so pinning the choke points pins every foot at once.
+    CHECK(promptKeyName(Key::Enter) == "\x01");
+    CHECK(promptKeyName(Key::Up) == "\x02");
+    CHECK(promptKeyName(Key::Down) == "\x03");
+    CHECK(promptKeyName(Key::Left) == "\x04");
+    CHECK(promptKeyName(Key::Right) == "\x05");
+    CHECK(promptKeyName(Key::PadUp) == "\x06\x02");
+    CHECK(promptKeyName(Key::PadDown) == "\x06\x03");
+    CHECK(promptKeyName(Key::PadLeft) == "\x06\x04");
+    CHECK(promptKeyName(Key::PadRight) == "\x06\x05");
+    // Unchanged, deliberately -- short and iconic beats a motif.
+    CHECK(promptKeyName(Key::Escape) == "ESC");
+    CHECK(promptKeyName(Key::Tab) == "TAB");
+    CHECK(promptKeyName(Key::PadSouth) == "A");
+    CHECK(promptKeyName(Key::E) == "E");
+    // The device grammar: keyboard confirm is the return motif, keyboard
+    // move is the triangle pair, pad move is the bare cross; back stays
+    // ESC/B on both hands.
+    CHECK(promptConfirmKey(InputDevice::KeyboardMouse) == "\x01");
+    CHECK(promptConfirmKey(InputDevice::Pad) == "A");
+    CHECK(promptMoveKeys(InputDevice::KeyboardMouse) == "\x02\x03");
+    CHECK(promptMoveKeys(InputDevice::Pad) == "\x06");
+    CHECK(promptBackKey(InputDevice::KeyboardMouse) == "ESC");
+    CHECK(promptBackKey(InputDevice::Pad) == "B");
+    // AND THE FILE FORMAT NEVER DOES: keyName() is what toText()/fromText()
+    // speak, and a settings file with a control byte in it would be the
+    // exact corruption the prompt vocabulary is documented never to cause.
+    CHECK(keyName(Key::Enter) == "ENTER");
+    CHECK(keyName(Key::Up) == "UP");
+    CHECK(keyName(Key::PadUp) == "PAD_UP");
+}
+
+TEST_CASE("violation #5: F1 and F2 are real, bindable, defaulted actions now") {
+    // --help has said "F1 lists every key and F2 rebinds them" since #85, and
+    // until this pass both were hard-coded in main.cpp's event loop -- absent
+    // from the very page F1 opens, unreachable by the rebinding screen. They
+    // are ordinary actions now: named, labelled, defaulted, stealable.
+    const ControlSettings keys = ControlSettings::defaults();
+    CHECK(keys.bound(Action::KeysPage, Key::F1));
+    CHECK(keys.bound(Action::OptionsPage, Key::F2));
+    CHECK(keys.actionFor(Key::F1) == Action::KeysPage);
+    CHECK(keys.actionFor(Key::F2) == Action::OptionsPage);
+    // The settings-file vocabulary and the page labels.
+    CHECK(actionKey(Action::KeysPage) == "keys_page");
+    CHECK(actionKey(Action::OptionsPage) == "options_page");
+    CHECK(actionFromKey("keys_page") == Action::KeysPage);
+    CHECK(actionFromKey("options_page") == Action::OptionsPage);
+    CHECK(actionLabel(Action::KeysPage) == "KEYS");
+    CHECK(actionLabel(Action::OptionsPage) == "OPTIONS");
+    // NOT CORE: the pad's door to both pages is the pause menu's own rows,
+    // so neither spends a pad default -- and the 13-count case above stays
+    // exactly 13.
+    CHECK_FALSE(keyIsPad(keys.primary[static_cast<std::size_t>(Action::KeysPage)]));
+    CHECK(keys.secondary[static_cast<std::size_t>(Action::KeysPage)] == Key::None);
+    CHECK(keys.secondary[static_cast<std::size_t>(Action::OptionsPage)] == Key::None);
+    // And a rebind can steal them, like any other action's key -- the whole
+    // point of putting them in the table.
+    ControlSettings moved = ControlSettings::defaults();
+    moved.bind(Action::QuickSlot1, Key::F1);
+    CHECK_FALSE(moved.bound(Action::KeysPage, Key::F1));
+    CHECK(moved.actionFor(Key::F1) == Action::QuickSlot1);
 }

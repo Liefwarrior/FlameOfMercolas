@@ -3989,6 +3989,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 case render::Action::Map:
                     session.toggleDistrictMap();
                     return;
+                // UI-EA-SPEC sec. 4 violation #5: the two F-key pages, through
+                // the table like everything else. The same action closes the
+                // page it opened (toggleKeys/toggleOptions are toggles), which
+                // is the enter/back law's "the key that opened a page closes
+                // it" holding for these two by construction.
+                case render::Action::KeysPage:
+                    session.toggleKeys();
+                    return;
+                case render::Action::OptionsPage:
+                    session.toggleOptions();
+                    return;
                 case render::Action::QuickNext:
                     quickSlot = (quickSlot + 1) % 10;
                     session.selectQuickSlot(quickSlot);
@@ -4193,32 +4204,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         mouseLook = !mouseLook;
                         break;
                     }
-                    // F1 AND F2 WERE ADVERTISED AND UNBOUND. --help says "F1
-                    // lists every key and F2 rebinds them" and the ship note
-                    // repeats it; a live verifier pressed F1 twice and got
-                    // nothing, and could not tell a dropped keystroke from a
-                    // real gap. It was a real gap: #85 folded the keys page
-                    // into the pause menu's CONTROLS row and retired the
-                    // Action that used to carry it, and nothing was left
-                    // holding the F-key the documentation kept promising.
-                    // Session::toggleKeys()/toggleOptions() were still there
-                    // and still reachable from the pause menu -- only the
-                    // shortcut had gone.
-                    //
-                    // SAME YIELD RULE AS F3, and for the same reason: these are
-                    // hard-coded convenience keys, so a verb bound to F1 by the
-                    // rebinding screen has to outrank them or the rebinding
-                    // screen is a liar.
-                    if ((key == render::Key::F1 || key == render::Key::F2) &&
-                        session.controls().actionFor(key) == render::Action::Count &&
-                        !session.awaitingKey()) {
-                        if (key == render::Key::F1) {
-                            session.toggleKeys();
-                        } else {
-                            session.toggleOptions();
-                        }
-                        break;
-                    }
+                    // F1 AND F2 ARE ORDINARY ACTIONS NOW (UI-EA-SPEC sec. 4
+                    // violation #5). They were advertised in --help, hard-
+                    // coded right here with a yield-to-binding guard, and
+                    // invisible to the very page F1 opens. Action::KeysPage
+                    // and Action::OptionsPage carry them through the binding
+                    // table instead -- they print on the keys page, the
+                    // rebinding screen can move them, and the pressed()
+                    // switch below dispatches them like every other verb.
+                    // Nothing is left hard-coded here.
                     if (route_menu_key(session, key)) {
                         break;
                     }

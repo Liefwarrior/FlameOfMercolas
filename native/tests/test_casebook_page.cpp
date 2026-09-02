@@ -144,7 +144,7 @@ TEST_CASE("the lead-opened plate names the key in the hand holding the machine")
     REQUIRE(session.casePlateWanted());
     const std::string plate(session.casePlateLabel());
     INFO("plate: ", plate);
-    CHECK(plate.find("D-PAD UP YOUR CASEBOOK") != std::string::npos);
+    CHECK(plate.find("\x06\x02 YOUR CASEBOOK") != std::string::npos);  // cross+up motif, sec. 5
     CHECK(plate.find("J YOUR CASEBOOK") == std::string::npos);
 }
 
@@ -940,7 +940,7 @@ TEST_CASE("the commit verbs and GO TO IT wear the state's confirm key, not a har
     session.stepMany(sim::MoveInput{}, 2);
     session.examine();
     CasebookPageState page = session.casebookPageState();
-    REQUIRE(page.commitKey == "ENTER");  // keyboard session: the exact old literal
+    REQUIRE(page.commitKey == "\x01");  // keyboard session: the return motif, sec. 5
 
     // GATE FIX: the book was never toggled open, so the session's panel anim
     // reads 0 and both draws were pure black -- open the page by hand the way

@@ -2080,17 +2080,17 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
     CHECK(flow.promptDevice() == render::InputDevice::KeyboardMouse);
     std::string kb = navLine(flow.page());
     CHECK(kb.find("ESC LEAVE") != std::string::npos);
-    CHECK(kb.find("UP DOWN MOVE") != std::string::npos);
-    CHECK(kb.find("ENTER OPEN") != std::string::npos);
+    CHECK(kb.find("\x02\x03 MOVE") != std::string::npos);
+    CHECK(kb.find("\x01 OPEN") != std::string::npos);
     CHECK(kb.find("1-5 PICK") != std::string::npos);
-    CHECK(flow.page().commitVerb == "ENTER - OPEN THIS DOOR");
+    CHECK(flow.page().commitVerb == "\x01 - OPEN THIS DOOR");
 
     // One pad press: the SAME page re-words -- no reopen, no menu visit. And
     // the digit entry is GONE, because a pad has no number row to press.
     flow.noteInputDevice(render::InputDevice::Pad);
     std::string pad = navLine(flow.page());
     CHECK(pad.find("B LEAVE") != std::string::npos);
-    CHECK(pad.find("D-PAD MOVE") != std::string::npos);
+    CHECK(pad.find("\x06 MOVE") != std::string::npos);
     CHECK(pad.find("A OPEN") != std::string::npos);
     CHECK(pad.find("PICK") == std::string::npos);
     CHECK(flow.page().commitVerb == "A - OPEN THIS DOOR");
@@ -2104,13 +2104,13 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
     if (flow.step() == render::CreationStep::Customize) {
         pad = navLine(flow.page());
         CHECK(pad.find("B BACK") != std::string::npos);
-        CHECK(pad.find("D-PAD MOVE") != std::string::npos);
+        CHECK(pad.find("\x06 MOVE") != std::string::npos);
         CHECK(pad.find("LEFT RIGHT SPEND") != std::string::npos);
         CHECK(pad.find("A OPEN") != std::string::npos);
         // And back to the keyboard the instant a key speaks.
         flow.noteInputKey(render::Key::S);
         kb = navLine(flow.page());
         CHECK(kb.find("ESC BACK") != std::string::npos);
-        CHECK(kb.find("ENTER OPEN") != std::string::npos);
+        CHECK(kb.find("\x01 OPEN") != std::string::npos);
     }
 }

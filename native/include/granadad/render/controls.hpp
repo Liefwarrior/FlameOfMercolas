@@ -222,6 +222,22 @@ enum class Action : std::uint8_t {
     /// old map key opens the new map); #85's clean-break stance already
     /// declared those files unprotected either way.
     Map,
+
+    // --- appended for UI-EA-SPEC sec. 4 violation #5, per the insert-only
+    // rule: new actions go on the END. ---------------------------------------
+
+    /// NOT CORE -- the keyboard's plurality again, the quick slots' own
+    /// family: a desktop shortcut straight to the controls list. F1 by
+    /// default, which is what --help and the ship note have always promised
+    /// -- except until now F1 was HARD-CODED in main.cpp, outside the
+    /// binding table, so it never printed on the very page it opens and the
+    /// rebinding screen could not reach it. A pad reaches the same page
+    /// through the pause menu's CONTROLS row; no pad default is spent here.
+    KeysPage,
+    /// Its sibling: straight to the settings/rebinding page. F2 by default,
+    /// previously hard-coded beside F1 and now a bindable action for the
+    /// identical reasons. The pause menu's SETTINGS row is the pad's door.
+    OptionsPage,
     Count
 };
 
@@ -310,6 +326,48 @@ enum class Key : std::int32_t {
 /// Session::noteInputDevice) and every prompt reads it at draw time.
 enum class InputDevice : std::uint8_t { KeyboardMouse = 0, Pad };
 
+// ---------------------------------------------------------------------------
+// UI-EA-SPEC sec. 5: the motif sentinels
+// ---------------------------------------------------------------------------
+//
+// SIX GLYPHS THE 4x6 FONT DOES NOT HAVE, ENTERING THROUGH THE SANCTIONED
+// CHANNEL ONLY: a prompt string may carry the sentinel bytes below, and the
+// panel text drawer maps each one to a drawn 4x6-cell motif (panel.cpp's
+// motif table -- same cell, same advance, same shadow, NO font change). The
+// bytes are 0x01-0x06, which collide with no printable character and no
+// existing string in the build.
+//
+// WHY BYTES INSIDE STRINGS rather than a parallel markup: every keycap and
+// nav label in the game already flows through the promptKey choke points
+// below (promptKeyName / promptConfirmKey / promptMoveKeys), and a sentinel
+// that travels INSIDE the string travels wherever those strings already go
+// -- composed feet, echoed commit verbs, device-swapped labels -- with no
+// second channel to keep in step. Device-awareness survives by construction:
+// a pad still prints "A", "B", "X"; only the keyboard's ENTER and the arrow
+// vocabularies (and the pad's D-pad wordings) become motifs.
+//
+// CROSS-LANE CONTRACT (a): FLOW emits these from the choke points; PAGES
+// renders them in drawPanelText. A drawer that has not learned them yet
+// advances the cell and draws nothing -- a blank, not garbage -- which is
+// the same degradation an unknown character always had.
+
+/// Carriage-return arrow -- the ENTER keycap.
+inline constexpr char kMotifReturn = '\x01';
+/// Solid triangles: up, down, left, right -- the arrow-key keycaps.
+inline constexpr char kMotifUp = '\x02';
+inline constexpr char kMotifDown = '\x03';
+inline constexpr char kMotifLeft = '\x04';
+inline constexpr char kMotifRight = '\x05';
+/// The d-pad cross. "D-PAD UP" is the cross followed by the up triangle.
+inline constexpr char kMotifDPad = '\x06';
+
+/// True exactly for the six sentinel bytes above -- the one predicate a text
+/// drawer or a copy sweep needs to tell "motif to draw" from "character the
+/// font is missing".
+[[nodiscard]] constexpr bool isMotifSentinel(char c) noexcept {
+    return c >= kMotifReturn && c <= kMotifDPad;
+}
+
 /// True for the sixteen pad keys and nothing else.
 [[nodiscard]] bool keyIsPad(Key key) noexcept;
 
@@ -320,12 +378,18 @@ enum class InputDevice : std::uint8_t { KeyboardMouse = 0, Pad };
 
 /// What a PROMPT calls a key. keyName()'s vocabulary for keyboard and mouse
 /// keys ("E", "TAB", "MOUSE1"), and the spoken names for pad keys -- "A",
-/// "START", "SELECT", "LB", "D-PAD UP" -- the OSK's own manners ("B BACK /
-/// A TAKE / START DONE") applied everywhere. Two deliberate keyboard
-/// exceptions: the brackets print "<" and ">", because hud.cpp's 4x6 font
-/// has no glyph for '[' or ']' and the keys page already labels the pair
-/// "PAGE <"/"PAGE >". NEVER a file format: toText()/fromText() still speak
-/// keyName(), and nothing parses this vocabulary back.
+/// "START", "SELECT", "LB" -- the OSK's own manners ("B BACK / A TAKE /
+/// START DONE") applied everywhere. Deliberate exceptions, all of them cases
+/// where the word was longer than the key: the brackets print "<" and ">"
+/// (hud.cpp's 4x6 font has no glyph for '[' or ']', and the keys page
+/// already labels the pair "PAGE <"/"PAGE >"); ENTER prints the return
+/// motif (kMotifReturn); the four arrow keys print their triangle motifs;
+/// and the pad's four D-pad keys print the cross-plus-triangle pair
+/// (kMotifDPad then the direction) where they used to spell "D-PAD UP".
+/// UI-EA-SPEC sec. 5 -- the words ENTER/UP/DOWN/D-PAD were the single
+/// largest chrome spend in every foot in the census. NEVER a file format:
+/// toText()/fromText() still speak keyName(), and nothing parses this
+/// vocabulary back.
 [[nodiscard]] std::string_view promptKeyName(Key key) noexcept;
 
 struct ControlSettings;  // declared below, with the rest of the binding table
@@ -351,9 +415,13 @@ struct ControlSettings;  // declared below, with the rest of the binding table
 /// Escape while any page is open -- the parity pass), arrows move a list
 /// and so does the D-pad, raw, ahead of any binding. Said ONCE, here, so a
 /// nav band and the router cannot drift apart one wording at a time.
-[[nodiscard]] std::string_view promptConfirmKey(InputDevice device) noexcept;  // "ENTER" / "A"
+///
+/// UI-EA-SPEC sec. 5: the keyboard's halves speak motifs now -- confirm is
+/// the return sentinel, move is the up/down triangle pair -- and the pad's
+/// move is the bare d-pad cross. Back stays "ESC"/"B": short and iconic.
+[[nodiscard]] std::string_view promptConfirmKey(InputDevice device) noexcept;  // return motif / "A"
 [[nodiscard]] std::string_view promptBackKey(InputDevice device) noexcept;     // "ESC" / "B"
-[[nodiscard]] std::string_view promptMoveKeys(InputDevice device) noexcept;    // "UP DOWN" / "D-PAD"
+[[nodiscard]] std::string_view promptMoveKeys(InputDevice device) noexcept;    // triangles / cross
 
 /// The page grammar's ONE remap, stated as a function so it is testable and
 /// so the client's router and its fall-through press cannot apply it

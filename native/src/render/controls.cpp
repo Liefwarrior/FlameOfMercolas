@@ -134,6 +134,14 @@ constexpr ActionNames kActions[] = {
     // those files were declared unprotected by #85's clean break anyway.
     {Action::Map, "map", "MAP",
      "THE WARD MAP: WHERE YOU ARE, WHERE THE NAMED PLACES ARE, AND HOW TO GET FROM ONE TO THE OTHER."},
+    // UI-EA-SPEC sec. 4 violation #5: F1/F2 were advertised, hard-coded in
+    // main.cpp, and invisible to the very page F1 opens. Appended at the
+    // END, per the insert-only rule; NOT core (the pause menu's CONTROLS/
+    // SETTINGS rows are the pad's doors, so no pad default is spent).
+    {Action::KeysPage, "keys_page", "KEYS",
+     "OPENS THE LIST OF EVERY KEY. THE PAUSE MENU'S CONTROLS ROW IS THE SAME DOOR."},
+    {Action::OptionsPage, "options_page", "OPTIONS",
+     "OPENS THE SETTINGS: THE SLIDERS FIRST, EVERY REBINDABLE VERB UNDER THEM."},
 };
 static_assert(sizeof(kActions) / sizeof(kActions[0]) == kActionCount,
               "every action needs a name and a label, or the keys page lies");
@@ -333,8 +341,11 @@ namespace {
 /// that is what everyone calls the button (and what the ship notes have
 /// always called it); "BACK" on a prompt would read as a verb.
 ///
-/// DRAWABLE CHARACTERS ONLY, same contract as kActions' help strings:
-/// letters, digits, '-' and space are all in hud.cpp's 4x6 font.
+/// DRAWABLE CHARACTERS OR MOTIF SENTINELS ONLY (UI-EA-SPEC sec. 5): the
+/// four D-pad keys speak the cross-plus-triangle motif pair now -- two
+/// drawn cells where "D-PAD RIGHT" spent eleven -- through panel.cpp's
+/// motif table, no font change. Everything else stays the letters, digits,
+/// '-' and space hud.cpp's 4x6 font has always had.
 constexpr KeyName kPadPromptNames[] = {
     {Key::PadSouth, "A"},          {Key::PadEast, "B"},
     {Key::PadWest, "X"},           {Key::PadNorth, "Y"},
@@ -342,8 +353,8 @@ constexpr KeyName kPadPromptNames[] = {
     {Key::PadLeftTrigger, "LT"},   {Key::PadRightTrigger, "RT"},
     {Key::PadLeftStick, "LS"},     {Key::PadRightStick, "RS"},
     {Key::PadStart, "START"},      {Key::PadBack, "SELECT"},
-    {Key::PadUp, "D-PAD UP"},      {Key::PadDown, "D-PAD DOWN"},
-    {Key::PadLeft, "D-PAD LEFT"},  {Key::PadRight, "D-PAD RIGHT"},
+    {Key::PadUp, "\x06\x02"},      {Key::PadDown, "\x06\x03"},
+    {Key::PadLeft, "\x06\x04"},    {Key::PadRight, "\x06\x05"},
 };
 
 }  // namespace
@@ -367,6 +378,25 @@ std::string_view promptKeyName(Key key) noexcept {
     }
     if (key == Key::RightBracket) {
         return ">";
+    }
+    // UI-EA-SPEC sec. 5: the five keys whose NAMES were longer than a drawn
+    // keycap. ENTER is the return motif; the arrows are their triangles. One
+    // cell each where the words spent two to five -- and because this is the
+    // one choke point every prompt reads, the substitution reaches every
+    // foot and commit echo without any surface opting in.
+    switch (key) {
+        case Key::Enter:
+            return "\x01";
+        case Key::Up:
+            return "\x02";
+        case Key::Down:
+            return "\x03";
+        case Key::Left:
+            return "\x04";
+        case Key::Right:
+            return "\x05";
+        default:
+            break;
     }
     return keyName(key);
 }
@@ -399,7 +429,9 @@ std::string_view promptLabel(const ControlSettings& settings, Action action,
 }
 
 std::string_view promptConfirmKey(InputDevice device) noexcept {
-    return device == InputDevice::Pad ? "A" : "ENTER";
+    // UI-EA-SPEC sec. 5: the keyboard's confirm is the return motif -- one
+    // drawn cell where "ENTER" spent five. The pad's "A" was already iconic.
+    return device == InputDevice::Pad ? "A" : "\x01";
 }
 
 std::string_view promptBackKey(InputDevice device) noexcept {
@@ -407,7 +439,9 @@ std::string_view promptBackKey(InputDevice device) noexcept {
 }
 
 std::string_view promptMoveKeys(InputDevice device) noexcept {
-    return device == InputDevice::Pad ? "D-PAD" : "UP DOWN";
+    // UI-EA-SPEC sec. 5: triangles for the arrows, the bare cross for the
+    // d-pad -- two cells and one where "UP DOWN" and "D-PAD" spent words.
+    return device == InputDevice::Pad ? "\x06" : "\x02\x03";
 }
 
 Key pageBackRemap(Key key, bool pageOpen) noexcept {
@@ -658,6 +692,15 @@ ControlSettings ControlSettings::defaults() noexcept {
     // a shipped default before this; PadBack is Menu's OLD pad key, freed by
     // moving Menu to PadUp above.
     set(Action::Map, Key::M, Key::PadBack);
+
+    // UI-EA-SPEC sec. 4 violation #5: the two F-keys --help has promised
+    // since #85, finally in the table they were promised FROM. F1 and F2
+    // were hard-coded in main.cpp's event loop with a yield-to-binding
+    // guard; making them real actions means they print on the keys page,
+    // the rebinding screen can move them, and the guard becomes ordinary
+    // binding resolution instead of a special case.
+    set(Action::KeysPage, Key::F1);
+    set(Action::OptionsPage, Key::F2);
     return out;
 }
 
