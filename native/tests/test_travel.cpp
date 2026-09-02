@@ -213,33 +213,40 @@ TEST_CASE("travel refuses while carrying the courier's man, in the ward's voice"
 
 TEST_CASE("travelRefusal reads the wait page's own 'anywhere safe' list") {
     // A travel is a wait plus a relocation, so every clause of waitRefusal()
-    // refuses a travel too. Standing in water is the cheapest to stage
-    // headless: put the body in the harbour and both doors name it.
+    // refuses a travel too. The hostile-neighbour clause is the one
+    // test_pause.cpp already stages deterministically, so it is the one to
+    // pin the delegation on: standing two tiles from the bartender, turn him
+    // hostile through the ledger the attitude actually reads.
     SessionConfig config;
     config.contentDir = content::contentDir();
-    config.width = 640;
-    config.height = 360;
+    config.timeOfDay = 21 * 3600;
+    config.timeOfDayGiven = true;
+    config.spawnX = sim::gull::kBartenderX;
+    config.spawnY = sim::gull::kBarY + 2;
+    config.spawnBand = sim::gull::kGroundBand;
     Session session(config);
-    // The harbour edge north of the Long Piers -- fluid at the quayside band.
-    // Find a wet tile the honest way rather than trusting a literal.
-    bool staged = false;
-    for (std::int32_t y = 40; y < 90 && !staged; ++y) {
-        for (std::int32_t x = 120; x < 175 && !staged; ++x) {
-            if (session.tiles().fluidDepth(x, y, sim::docks::kBandQuayside) > 0) {
-                session.body().placeAt(x, y, sim::docks::kBandQuayside);
-                session.stepMany(sim::MoveInput{}, 1);
-                staged = session.tiles().fluidDepth(session.body().tileX(),
-                                                    session.body().tileY(),
-                                                    session.body().band()) > 0;
-            }
-        }
+    session.stepMany(sim::MoveInput{}, 2);
+
+    // Safe while the room likes you fine: neither door refuses.
+    REQUIRE(session.waitRefusal().empty());
+    REQUIRE(session.travelRefusal().empty());
+
+    // `neighbour`, not `near` -- `near` is a historic MSVC macro and this
+    // tree compiles on Windows too.
+    const sim::Actor* neighbour =
+        session.tavern().nearestTo(session.body().x(), session.body().y(), 6 * sim::kSubOne);
+    REQUIRE(neighbour != nullptr);
+    sim::SocialLedger& ledger = session.tavern().dialogue().ledger();
+    for (int i = 0; i < 50 && ledger.attitudeOf(neighbour->id()) != sim::Attitude::Hostile; ++i) {
+        ledger.record(neighbour->id(), sim::Deed::Robbed);
     }
-    REQUIRE(staged);
-    // The two doors name the same refusal, which is the whole contract: the
-    // travel refusal IS the wait refusal once the two state clauses above it
-    // pass.
-    CHECK(session.waitRefusal() == "NOT STANDING IN WATER.");
-    CHECK(session.travelRefusal() == "NOT STANDING IN WATER.");
+    REQUIRE(ledger.attitudeOf(neighbour->id()) == sim::Attitude::Hostile);
+
+    // Both doors now name the same refusal, in the same words -- the whole
+    // contract: once the carry and Watch clauses pass, the travel refusal IS
+    // the wait refusal.
+    CHECK(session.waitRefusal() == "NOT WITH AN ENEMY THIS CLOSE.");
+    CHECK(session.travelRefusal() == "NOT WITH AN ENEMY THIS CLOSE.");
 }
 
 TEST_CASE("mere heat does not refuse travel -- the owner's wait ruling holds") {

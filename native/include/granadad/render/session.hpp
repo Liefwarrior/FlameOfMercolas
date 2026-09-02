@@ -1690,7 +1690,9 @@ private:
     /// True from TAKE HIM UP until the Mission's back room. The bale's own
     /// shape: a flag the HUD wears, not a body the renderer carries -- the
     /// slung-over-the-shoulder drawing is flagged follow-up work, and the
-    /// heat row's "FINCH IN HAND" is the honest interim.
+    /// heat row's "CARRYING FINCH" is the honest interim. TRAVEL lane also
+    /// reads this: fast travel refuses while it is set (travelRefusal), so
+    /// the nervous walk to the Mission cannot be skipped.
     bool sheetCarry_ = false;
     /// The one-per-downing nudge that names the take verb, re-armed when the
     /// quarry is back on his feet -- see stepSheetCase().
