@@ -816,6 +816,18 @@ MapDetailScroll mapDetailScroll(const DistrictMapState& state, int frameWidth, i
 
 namespace {
 
+/// THE ONE TAB LIST. drawDistrictMap prints it and mapTabAtPixel inverts it,
+/// off the same function, so the row a click hits is the row that was drawn
+/// -- the second-description-of-a-layout defect, avoided the way the
+/// composition itself avoids pixel constants.
+[[nodiscard]] const std::vector<PanelTab>& mapViewTabs() {
+    static const std::vector<PanelTab> tabs{
+        PanelTab{"1", "OVERVIEW"}, PanelTab{"2", "PEOPLE"},
+        PanelTab{"3", "INDEX"},    PanelTab{"4", "LEGEND"},
+    };
+    return tabs;
+}
+
 /// A tiny filled triangle, for the one wedge this page draws. Edge functions
 /// over the bounding box; render-side float is legal here.
 void fillTriangle(Framebuffer& target, float x0, float y0, float x1, float y1, float x2, float y2,
@@ -902,6 +914,25 @@ struct PxRect {
 
 }  // namespace
 
+int mapTabAtPixel(const DistrictMapState& state, int frameWidth, int frameHeight, int px,
+                  int py) {
+    // FLOW lane, UI-EA-SPEC sec. 4 violation #8. The exact band the drawing
+    // hands drawTabRow -- frame.band(layout.tabRow, 1) over the interior
+    // mapPageLayout worked out (the same inset PanelFrame derives, see
+    // panel.cpp) -- and the exact title, tabs, current and readout, so
+    // tabRowTabAt is answering for the pixels the row actually printed on.
+    // casebookTabAtPixel is the precedent, mirrored member for member.
+    const MapPageLayout layout = mapPageLayout(frameWidth, frameHeight, state);
+    if (!layout.usable) {
+        return -1;
+    }
+    const PanelRect band{layout.interior.x,
+                         layout.interior.y + layout.metric.heightOf(layout.tabRow),
+                         layout.interior.w, layout.metric.cellH()};
+    return tabRowTabAt(band, layout.metric, "", mapViewTabs(), static_cast<int>(state.tab),
+                       state.readout, px, py);
+}
+
 void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
     if (state.tiles == nullptr || state.palette == nullptr || state.openAmount <= 0.0F) {
         return;
@@ -965,11 +996,8 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
     // NUMBERED, because they really are direct-select: 1 through 4 switch the
     // view and TAB cycles them. The reference prints `d - Dominions` for
     // exactly this reason -- the key on the tab is a key you can press.
-    const std::vector<PanelTab> tabs{
-        PanelTab{"1", "OVERVIEW"}, PanelTab{"2", "PEOPLE"},
-        PanelTab{"3", "INDEX"},    PanelTab{"4", "LEGEND"},
-    };
-    drawTabRow(target, frame.band(layout.tabRow, 1), metric, "", tabs,
+    // mapViewTabs() is the one list -- mapTabAtPixel inverts the same row.
+    drawTabRow(target, frame.band(layout.tabRow, 1), metric, "", mapViewTabs(),
                static_cast<int>(state.tab), state.readout, kCursorTone, alpha);
 
     // --- the plan ----------------------------------------------------------

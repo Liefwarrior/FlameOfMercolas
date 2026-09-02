@@ -670,3 +670,35 @@ TEST_CASE("--map-overlay's own beat: runSmoke opens the ward map for the shutter
     CHECK(result.scriptedWanted == 1);
     CHECK(result.scriptedLanded == 1);
 }
+
+TEST_CASE("violation #8: the map's tab row answers a pixel the way it was drawn") {
+    // FLOW lane, UI-EA-SPEC sec. 4. mapTabAtPixel is the inverse of the tab
+    // row drawDistrictMap prints -- same band, same four tabs, same readout
+    // -- through panel.hpp's tabRowTabAt, the casebook's own proven pattern.
+    // Scan the row's own scanline: all four tabs must be findable, in order,
+    // and a pixel in the map pane must answer -1 rather than a tab.
+    DistrictMapState state;
+    state.bounds = mapContentBounds(sim::TileQuery(bakedDocks()));
+    state.readout = "08:00   BAND 1";
+    const MapPageLayout layout = mapPageLayout(960, 540, state);
+    REQUIRE(layout.usable);
+
+    const int rowY = layout.interior.y + layout.metric.heightOf(layout.tabRow) +
+                     layout.metric.cellH() / 2;
+    std::vector<int> seen;
+    for (int px = layout.interior.x; px < layout.interior.x + layout.interior.w; ++px) {
+        const int tab = mapTabAtPixel(state, 960, 540, px, rowY);
+        if (tab >= 0 && (seen.empty() || seen.back() != tab)) {
+            seen.push_back(tab);
+        }
+    }
+    CHECK(seen == std::vector<int>{0, 1, 2, 3});
+
+    // Off the row: the middle of the map pane is nobody's tab.
+    const int paneX = layout.mapPane.x + layout.mapPane.w / 2;
+    const int paneY = layout.mapPane.y + layout.mapPane.h / 2;
+    CHECK(mapTabAtPixel(state, 960, 540, paneX, paneY) == -1);
+
+    // And an unusably small frame answers -1 rather than reading garbage.
+    CHECK(mapTabAtPixel(state, 8, 8, 4, 4) == -1);
+}

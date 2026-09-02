@@ -838,6 +838,20 @@ public:
     /// and is ignored rather than counted as the keyboard.
     void noteInputKey(Key key);
 
+    /// UI-EA-SPEC sec. 2, cross-lane contract (c): THE TUTOR WAKE EDGE.
+    /// FLOW's half of the tutor-band contract -- the client calls this on
+    /// the two wake events only IT can see: the prompt device changing
+    /// hands, and an unrecognized press (a key that resolved to no action
+    /// and no page verb -- the player asking a question the game did not
+    /// answer, which is the request for help). HUD's countdown/toggle
+    /// helper re-raises every tutor band whenever this serial moves; a
+    /// serial rather than a countdown so the signal composes with however
+    /// many bands exist without this side knowing their holds. CLIENT
+    /// state, promptDevice_'s own contract: never hashed, never fed to
+    /// MoveInput.
+    void noteTutorWake() noexcept { ++tutorWakeSerial_; }
+    [[nodiscard]] std::uint32_t tutorWakeSerial() const noexcept { return tutorWakeSerial_; }
+
     /// THE CONTROLS PAGE, as the terminal-panel surface actually draws it:
     /// binding, verb, second binding, one sentence of help, and which family
     /// the row belongs to. Built from the live bindings, so a rebinding shows
@@ -1987,6 +2001,8 @@ private:
     /// that never heard of it (every test, every capture flag) draws the
     /// exact frames it always drew.
     InputDevice promptDevice_ = InputDevice::KeyboardMouse;
+    /// Contract (c)'s wake edge -- see noteTutorWake(). Client state.
+    std::uint32_t tutorWakeSerial_ = 0;
     bool optionsOpen_ = false;
     int optionCursor_ = 0;
     int optionPage_ = 0;

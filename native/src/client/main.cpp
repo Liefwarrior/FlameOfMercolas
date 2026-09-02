@@ -1420,6 +1420,22 @@ void print_usage() {
     // options page is listening for a key to bind, the remap also stands
     // down, so PadEast itself can still be bound.
     const render::Action action = session.controls().actionFor(key);
+    // UI-EA-SPEC sec. 4 violation #3: THE PAGE-TOGGLE KEY ALWAYS TOGGLES.
+    // PadUp opens the tiled Menu (Action::Menu's pad default) and was then
+    // eaten as list movement inside it -- so the key that opened the page
+    // could never close it, breaking "the key that opened a page closes it"
+    // for the one surface a pad opens most. While the Menu surface is up,
+    // a PadUp that IS the Menu binding falls straight through to pressed(),
+    // whose Action::Menu case is the toggle that closes it. In-page
+    // cursor-up rides the left stick (the stickNav block synthesizes raw
+    // arrow keys now) and the other three D-pad directions stay list
+    // movement everywhere; on pages PadUp did NOT open -- the map, the
+    // pause family -- it stays cursor-up too, because there it is not the
+    // toggle of anything on screen.
+    if (key == render::Key::PadUp && action == render::Action::Menu &&
+        (session.casebookOpen() || session.casebookPageOpen())) {
+        return false;
+    }
     // The five list movements, in the vocabulary of intent. Arrows always work
     // as well, bound or not, because a list is the one place arrow keys are
     // unambiguous.
@@ -1434,7 +1450,8 @@ void print_usage() {
     // LEAD. Every one of those bands was advertising a verb the pad could not
     // perform. A page is the one place the D-pad is as unambiguous as an arrow
     // key, so it is read the same way and outranks its own binding there --
-    // which is what takes PadUp off Menu for as long as a list is up.
+    // which is what takes PadUp off Menu for as long as a NON-Menu list is up
+    // (the violation-#3 rule above carves out the Menu surface itself).
     const bool up = key == render::Key::Up || key == render::Key::PadUp ||
                     action == render::Action::Forward || action == render::Action::QuickPrev;
     const bool downward = key == render::Key::Down || key == render::Key::PadDown ||
@@ -1493,6 +1510,18 @@ void print_usage() {
     }
 
     if (session.optionsOpen()) {
+        // UI-EA-SPEC sec. 4 violation #2: KEYS AND OPTIONS ARE SIBLING TABS,
+        // stepped on TAB and the bumpers like every other tabbed pair --
+        // they were only ever reachable from each other by the F-keys, which
+        // no foot could honestly print for a pad. Two siblings, so either
+        // direction lands the other one. The pause-return note travels with
+        // the swap: toggleKeys/toggleOptions re-derive it from pauseReturn_
+        // (see Session::pageOpenedFromPause_'s own header).
+        if (key == render::Key::Tab || action == render::Action::PageNext ||
+            action == render::Action::PagePrev) {
+            session.toggleKeys();
+            return true;
+        }
         if (up) {
             session.moveOptionCursor(-1);
             return true;
@@ -1700,6 +1729,10 @@ void print_usage() {
             return true;
         }
         if (pageKey) {
+            // UI-EA-SPEC sec. 4 violation #6: `0` = MORE where a list pages.
+            // The People and Index tabs page (mapDetailScroll); when PAGES
+            // lands the ten-row roster paging (budgets #22/#23) this routes
+            // `0` to the detail page-turn. Inert-but-swallowed until then.
             return true;
         }
         return false;
@@ -1831,18 +1864,16 @@ void print_usage() {
         // every one of its verbs has to reach it -- the cursor, the two views,
         // the printed digits and the commit.
         //
-        // LEFT AND RIGHT STEP THE VIEWS, AND THAT IS A CONFLICT WRITTEN DOWN
-        // RATHER THAN FUDGED. Every other tabbed surface in this build steps
-        // its tabs with TAB; when this page was drawn TAB was Action::Menu,
-        // the key that OPENED it, and "the key that opened it closes it" is a
-        // rule this build keeps everywhere. Menu lives on J now (the owner's
-        // own "use J for journal") and Tab is unbound, but the arrows stay:
-        // they are honest on both devices where a freed Tab is not, the pad
-        // already speaks them, and re-teaching this one page a key the rest
-        // of the flow never mentions would be churn. So the views move on the
-        // arrows the single-column list does not use, the tabs print no
-        // hotkey (casebook_page.hpp on why), and the nav band along the foot
-        // says LEFT RIGHT out loud.
+        // UI-EA-SPEC sec. 4 violation #1: THE TABS STEP ON TAB AND THE
+        // BUMPERS NOW, the same grammar as the map -- one tab key across
+        // every tabbed surface, which is the whole point of a grammar. TAB
+        // was Action::Menu when this page was drawn and the arrows were the
+        // stopgap; Menu lives on J now and TAB is free, so the stopgap
+        // retires. LEFT/RIGHT are FREED for in-view movement -- taken and
+        // held inert here until the detail pane grows its paging (PAGES
+        // lane, budget #27/#28), because letting them fall through would
+        // close the page and turn the player, which is the exact class of
+        // surprise sec. 4 exists to kill.
         if (up) {
             session.moveCasebookCursor(-1);
             return true;
@@ -1851,12 +1882,16 @@ void print_usage() {
             session.moveCasebookCursor(1);
             return true;
         }
-        if (leftward) {
+        if (key == render::Key::Tab || action == render::Action::PageNext) {
+            session.cycleCasebookTab(1);
+            return true;
+        }
+        if (action == render::Action::PagePrev) {
             session.cycleCasebookTab(-1);
             return true;
         }
-        if (rightward) {
-            session.cycleCasebookTab(1);
+        if (leftward || rightward) {
+            // Reserved -- see the header note above.
             return true;
         }
         if (numbered) {
@@ -1873,9 +1908,12 @@ void print_usage() {
             return true;
         }
         if (pageKey) {
-            // SWALLOWED, NOT ROUTED, the pause branch's own reason: the list
-            // follows its cursor rather than turning pages, so `0` has nothing
-            // to do here and must not reach the quick bar behind the page.
+            // UI-EA-SPEC sec. 4 violation #6: `0` IS MORE WHERE A LIST PAGES,
+            // INERT ELSEWHERE -- never BACK. Today the lead list follows its
+            // cursor, so `0` is inert here; the moment PAGES lands the
+            // eight-row paging (budget #27) this branch routes it to the
+            // page-turn, and the foot prints `0` again. Swallowed either way:
+            // a digit over a full page must not reach the quick bar.
             return true;
         }
         // Anything else falls through to the ordinary bindings, and every verb
@@ -1885,6 +1923,16 @@ void print_usage() {
 
     if (session.casebookOpen() || session.keysOpen() || session.characterOpen() ||
         session.mapOpen() || session.lettersOpen()) {
+        // UI-EA-SPEC sec. 4 violation #2, the other half: from the keys page,
+        // TAB and the bumpers step to the sibling Options page. Scoped to
+        // keysOpen -- on the tiled Menu the bumpers already step tile focus
+        // through pressed()'s PagePrev/PageNext dispatch, and that stays.
+        if (session.keysOpen() &&
+            (key == render::Key::Tab || action == render::Action::PageNext ||
+             action == render::Action::PagePrev)) {
+            session.toggleOptions();
+            return true;
+        }
         if (up) {
             session.moveTopicCursor(-1);
             return true;
@@ -1967,6 +2015,18 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
             render::mapPageLayout(frameWidth, frameHeight, plan);
         if (!layout.usable) {
             return false;
+        }
+        // UI-EA-SPEC sec. 4 violation #8: THE TAB ROW ANSWERS CLICKS NOW,
+        // through the same setDistrictMapTab a digit presses -- the casebook's
+        // own pattern, which this page took-and-dropped while its sibling
+        // answered. Click-only, like the casebook's: a pointer crossing the
+        // frame must not flip the detail pane.
+        const int tab = render::mapTabAtPixel(plan, frameWidth, frameHeight, px, py);
+        if (tab >= 0) {
+            if (click && tab != static_cast<int>(plan.tab)) {
+                session.setDistrictMapTab(tab);
+            }
+            return true;
         }
         const int at = render::mapPlaceAtPixel(layout.viewport, px, py);
         if (at < 0) {
@@ -3851,6 +3911,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // input -- see the stickNav block in the frame loop.
     bool navStickVertical = false;
     bool navStickHorizontal = false;
+    // UI-EA-SPEC sec. 2, contract (c): the device edge. noteInputDevice()
+    // is called on every press and is deliberately quiet about whether the
+    // hand actually CHANGED; the tutor bands want the change alone, so the
+    // loop keeps yesterday's answer and wakes them on the flip.
+    render::InputDevice lastPromptDevice = session.promptDevice();
 
     bool running = true;
     std::int64_t frames = 0;
@@ -4053,6 +4118,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             if (slotIndex >= 0 && slotIndex < 10) {
                 quickSlot = slotIndex;
                 session.selectQuickSlot(quickSlot);
+            }
+            // UI-EA-SPEC sec. 2, contract (c): AN UNRECOGNIZED PRESS IS THE
+            // REQUEST FOR HELP. A key that resolved to no action and was
+            // wanted by no page reached the end of everything and did
+            // nothing -- the one moment a quiet HUD earns its silence back
+            // by raising the tutor bands. Session::noteTutorWake() is the
+            // edge; HUD's band helpers hold and ease on their own clocks.
+            if (action == render::Action::Count) {
+                session.noteTutorWake();
             }
         };
 
@@ -4326,6 +4400,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             }
         }
 
+        // UI-EA-SPEC sec. 2, contract (c): THE HAND CHANGED, WAKE THE TUTORS.
+        // Once per frame, off the edge alone -- the labels already re-worded
+        // themselves live (promptDevice is read at draw time); this is the
+        // accompanying "here is what your new hand does" moment.
+        if (session.promptDevice() != lastPromptDevice) {
+            lastPromptDevice = session.promptDevice();
+            session.noteTutorWake();
+        }
+
         // Held keys move the body — unless somebody is talking to you, in which
         // case the movement keys are walking a list and must not also walk you
         // out of the room.
@@ -4507,9 +4590,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // frame rate, which is unusable -- the character screen learned that
         // first and this is the same lesson, not a second guess at it.
         //
-        // THROUGH route_menu_key, AS THE D-PAD KEY IT STANDS FOR. Not through a
-        // parallel set of Session calls: a verb that exists for the stick and
-        // not for the D-pad is exactly the drift this whole pass is about.
+        // THROUGH route_menu_key, AS THE ARROW KEY IT STANDS FOR. Not through
+        // a parallel set of Session calls: a verb that exists for the stick
+        // and not for the arrows is exactly the drift this whole pass is
+        // about. ARROWS, NOT THE D-PAD KEYS, since violation #3: a raw arrow
+        // is pure list movement on every page and can never resolve through a
+        // binding, while a synthesized PadUp would hit the Menu surface's
+        // toggle-reserved rule and a leaned stick would close the page it was
+        // trying to scroll. The D-pad's own physical presses still arrive as
+        // themselves.
         if (pad != nullptr && listening) {
             constexpr Sint16 kNavStickOn = 18000;
             constexpr Sint16 kNavStickOff = 9000;
@@ -4524,10 +4613,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     latched = false;
                 }
             };
-            stickNav(navStickVertical, SDL_GAMEPAD_AXIS_LEFTY, render::Key::PadUp,
-                     render::Key::PadDown);
-            stickNav(navStickHorizontal, SDL_GAMEPAD_AXIS_LEFTX, render::Key::PadLeft,
-                     render::Key::PadRight);
+            stickNav(navStickVertical, SDL_GAMEPAD_AXIS_LEFTY, render::Key::Up,
+                     render::Key::Down);
+            stickNav(navStickHorizontal, SDL_GAMEPAD_AXIS_LEFTX, render::Key::Left,
+                     render::Key::Right);
         } else {
             // CLEARED THE MOMENT THE PAGE CLOSES, so a stick still leaned when
             // the map goes away does not arrive at the next page already
