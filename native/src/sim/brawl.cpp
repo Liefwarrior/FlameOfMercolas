@@ -1,6 +1,7 @@
 #include "granadad/sim/brawl.hpp"
 
 #include <algorithm>
+#include <string>
 
 namespace granadad::sim {
 
@@ -12,6 +13,8 @@ std::string_view weaponName(Weapon weapon) noexcept {
             return "improvised";
         case Weapon::Blunt:
             return "cudgel";
+        case Weapon::Evictor:
+            return "the evictor";
         case Weapon::Edged:
             return "edged";
     }
@@ -76,10 +79,46 @@ std::int32_t baseDamage(Weapon weapon) noexcept {
             return 5;
         case Weapon::Blunt:
             return 7;
+        case Weapon::Evictor:
+            // A cudgel's own seven. The head band is the whole of what the
+            // forging bought -- see the enum -- so the arithmetic stays a
+            // cudgel's and the damage curve nobody re-tuned stays untouched.
+            return 7;
         case Weapon::Edged:
             return 11;
     }
     return 0;
+}
+
+std::string weaponSheetLine(Weapon weapon) {
+    std::string_view name = "?";
+    switch (weapon) {
+        case Weapon::Fists:
+            name = "FISTS";
+            break;
+        case Weapon::Improvised:
+            name = "IMPROVISED";
+            break;
+        case Weapon::Blunt:
+            name = "CUDGEL";
+            break;
+        case Weapon::Evictor:
+            name = "THE EVICTOR";
+            break;
+        case Weapon::Edged:
+            name = "EDGED";
+            break;
+    }
+    const std::int32_t base = baseDamage(weapon);
+    std::string line{name};
+    line += ' ';
+    line += std::to_string(base);
+    line += '-';
+    line += std::to_string(base + kStrikeVarianceMax);
+    // The class, on the lethal line's own polarity so a future weapon cannot
+    // read IMPACT on the sheet and EDGE to classifyFight.
+    line += weapon >= kFirstLethalWeapon ? " EDGE" : " IMPACT";
+    return line;
 }
 
 std::int32_t blockedDamage(std::int32_t damage, std::int32_t shieldwallLevel) noexcept {
@@ -122,6 +161,17 @@ Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
     blow.landed = true;
     blow.damage = std::max(1, baseDamage(weapon) + variance + damageBonus);
     target.hp = std::max(0, target.hp - blow.damage);
+    if (weapon == Weapon::Evictor &&
+        ((roll >> kEvictorHeadRollShift) & 0xFFU) < kEvictorHeadBand256) {
+        // THE CROWN. Same-roll discipline, third carving: the head band the
+        // spec already ruled (kEvictorHeadBand256's own header), read off
+        // bits nothing else claims as a primary, on a blow that has already
+        // landed through both whiff bands. Zero hp through the same door
+        // every beating uses, so Downed, the heal, and the quarter-health
+        // stand-up never need to hear the word Evictor.
+        target.hp = 0;
+        blow.crowned = true;
+    }
     blow.bloodied = !wasBloodied && isBloodied(target);
     blow.downed = isDowned(target.hp);
     return blow;
