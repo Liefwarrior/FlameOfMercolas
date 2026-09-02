@@ -252,6 +252,27 @@ KeysPageScroll keysPageScroll(const KeysPageState& state, int frameWidth, int fr
     return out;
 }
 
+int keysRowAtPixel(const KeysPageState& state, int frameWidth, int frameHeight, int px, int py) {
+    const Composition comp = composeFor(frameWidth, frameHeight, state.rows);
+    if (!comp.usable || state.rows.empty()) {
+        return -1;
+    }
+    // The same rect, the same whole-list plan and the same scroll the drawing
+    // uses, so the row answered is the row printed -- casebookLeadAtPixel's
+    // own walk, on this page's own composition.
+    const int listRows = comp.bodyRows - kIndicatorRows;
+    const PanelRect listRect{comp.body.master.x, comp.body.master.y, comp.body.master.w,
+                             comp.metric.heightOf(listRows)};
+    const OptionListPlan plan =
+        planOptionList(optionsFor(state.rows), listRect, comp.metric, listStyle());
+    const KeysPageScroll scroll = keysPageScroll(state, frameWidth, frameHeight);
+    const int count = static_cast<int>(state.rows.size());
+    const int first = std::clamp(scroll.firstRow, 0, count);
+    const int drawn = std::min(count, first + scroll.perScreen) - first;
+    const int at = optionListAt(listRect, comp.metric, plan, drawn, px, py);
+    return at < 0 ? -1 : first + at;
+}
+
 void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
     if (!state.open || state.openAmount <= 0.0F) {
         return;

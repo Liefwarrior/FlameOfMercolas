@@ -409,6 +409,57 @@ struct TopicLayout {
 [[nodiscard]] TopicLayout dialogueTopicLayout(const DialogueViewState& state, int width,
                                               int height);
 
+// ---------------------------------------------------------------------------
+// THE POINTER PASS: the bottom band's topic list, invertible
+// ---------------------------------------------------------------------------
+//
+// This one widget IS five of the ship note's silent pages -- the pause menu,
+// the options page, the grimoire, the wait page and a live conversation all
+// draw their list through drawDialogue's bottom band -- so ONE hit-test here
+// is the mouse for all five, exactly the way mapPlaceAtPixel was the mouse
+// for the ward map. Both functions below are pure and settled (openAmount is
+// taken as 1: a click mid-slide answers for where the band is landing, which
+// is where the very next frame draws it).
+
+/// WHERE THE TOPIC LIST ACTUALLY IS, at this frame size: the rect
+/// drawDialogue hands drawOptionListPlanned (the band frame's interior, rows
+/// 0..plan.rows), the plan it draws with, and how many rows are on the page.
+/// Not usable for the haggle, the workbench or an open letter -- those band
+/// bodies are not the topic list, and the honest answer for a pointer there
+/// is "the page is modal".
+struct TopicListGeometry {
+    bool usable = false;
+    PanelMetric metric;
+    /// The list's rect in framebuffer pixels -- what optionListAt inverts.
+    PanelRect list;
+    OptionListPlan plan;
+    /// Rows actually printed on this page, the MORE row included.
+    int count = 0;
+};
+[[nodiscard]] TopicListGeometry dialogueTopicListGeometry(const DialogueViewState& state,
+                                                          int width, int height);
+
+/// What a pixel of the band means, in the vocabulary the router speaks.
+struct DialogueTopicHit {
+    /// Index into the drawn page's rows, or -1 for "not on a row".
+    int row = -1;
+    /// The topic's index into state.topics, or -1 (off-list, or the MORE row).
+    int index = -1;
+    /// The nine-key slot the row answers to on this page -- what
+    /// chooseVisibleTopic and its per-page siblings take. -1 with `index`.
+    int slot = -1;
+    /// True when the pixel is on the MORE row that turns the page.
+    bool more = false;
+};
+
+/// Which row of the drawn topic list a pixel lands on. The inverse of what
+/// drawDialogue drew, built out of the same walk -- dialogueTopicLayout for
+/// the rows and the plan, the band arithmetic for the rect, optionListAt for
+/// the row -- see panel.hpp's optionListAt on why the inverse of a layout
+/// lives beside the layout.
+[[nodiscard]] DialogueTopicHit dialogueTopicAtPixel(const DialogueViewState& state, int width,
+                                                    int height, int px, int py);
+
 /// The picked row's highlight: a soft band under the label and a bright
 /// hairline where the cursor arrow sits.
 ///

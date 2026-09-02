@@ -136,4 +136,12 @@ struct KeysPageScroll {
 [[nodiscard]] KeysPageScroll keysPageScroll(const KeysPageState& state, int frameWidth,
                                             int frameHeight);
 
+/// Which row of the bindings list a pixel lands on -- an index into
+/// state.rows, or -1. THE POINTER PASS: the exact inverse of what
+/// drawKeysPage drew, built out of the same composition, the same
+/// whole-list plan and the same scroll (casebookLeadAtPixel's own shape),
+/// through panel.hpp's optionListAt.
+[[nodiscard]] int keysRowAtPixel(const KeysPageState& state, int frameWidth, int frameHeight,
+                                 int px, int py);
+
 }  // namespace granadad::render
