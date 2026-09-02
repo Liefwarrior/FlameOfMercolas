@@ -587,7 +587,6 @@ struct TopBand {
 
 void drawCompass(Framebuffer& target, const HudState& state) {
     const int scale = hudScale(target.height());
-    const int minor = hudMinorScale(target.height());
     // NARROWER, SHALLOWER, AND HARD AGAINST THE EDGE. The ribbon took a third
     // of the frame width and started five scale units down from the top, which
     // at 960x540 is a 320x27 black block hanging in the middle of the sky with
@@ -632,15 +631,12 @@ void drawCompass(Framebuffer& target, const HudState& state) {
     // it never encroaches on the view.
     target.fillRect(x + stripW / 2, y, scale, 2 * scale, Rgb{0.95F, 0.80F, 0.35F}, 1.0F);
 
-    // The place name is REFERENCE, not register: you read it when you arrive
-    // and never again until you arrive somewhere else. It is the sub-label of
-    // the ribbon now rather than a second line the same size as it, which is
-    // what a hierarchy looks like when it is doing its job.
-    if (!state.locationLabel.empty()) {
-        const int width = textWidth(state.locationLabel, minor);
-        drawText(target, (target.width() - width) / 2, band.labelY, state.locationLabel,
-                 Rgb{0.70F, 0.68F, 0.60F}, 0.85F, minor);
-    }
+    // UI-EA (LANE HUD): THE SUB-LABEL ROW IS EMPTY NOW. The place name used
+    // to be printed here every frame; the word diet deleted it -- the
+    // threshold plate announces every crossing at the moment it happens, and
+    // that plate still settles on this band's own labelY-derived row (see
+    // topBand/drawAnnouncePlate), so the geometry the blessed travel frames
+    // were taken against has not moved a pixel.
 }
 
 /// Top-right: the hour, and then everything the ward, the Watch, your pockets
@@ -681,7 +677,13 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
     // forget to.
     int claimed = 0;
 
-    if (state.timeOfDaySeconds >= 0 && y + rowHeight(scale) <= ceiling) {
+    // UI-EA (LANE HUD): THE CLOCK IS EARNED TEXT. clockFade is Session's own
+    // EasedToggle -- up on an hour tick, a time charge or the wait page,
+    // asleep otherwise -- and a fully asleep clock costs neither its row nor
+    // its width: the corner packs up as if it were never there, exactly what
+    // "absence costs nothing" has meant on this stack since polish-1.
+    const float clockFade = std::clamp(state.clockFade, 0.0F, 1.0F);
+    if (state.timeOfDaySeconds >= 0 && clockFade > 0.0F && y + rowHeight(scale) <= ceiling) {
         const int hour = (state.timeOfDaySeconds / 3600) % 24;
         const int minute = (state.timeOfDaySeconds / 60) % 60;
         const char text[6] = {static_cast<char>(48 + hour / 10),
@@ -692,8 +694,8 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
                               0};
         const std::string_view clock(text);
         claimed = std::max(claimed, textWidth(clock, scale));
-        drawText(target, target.width() - margin - textWidth(clock, scale), y, clock, kInk, 0.9F,
-                 scale);
+        drawText(target, target.width() - margin - textWidth(clock, scale), y, clock, kInk,
+                 0.9F * clockFade, scale);
         y += rowHeight(scale) + 1;
     }
 
@@ -711,8 +713,15 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
     // Ten now (was 6): the held-effects build adds up to four live-hold rows.
     std::array<Row, 10> rows{};
     std::size_t count = 0;
+    // UI-EA (LANE HUD): AN INVISIBLE ROW COSTS NOTHING. Every row's cache
+    // outlives its own fade on purpose (so the fade has words to fade), which
+    // used to mean a row eased to zero still claimed a slot and pushed live
+    // rows down the sky while drawing no ink at all. With most of this stack
+    // asleep at rest that ghost cost would be most of the corner, so a row at
+    // zero alpha is skipped before it can take a slot -- visually a no-op for
+    // every caller there has ever been.
     const auto add = [&](std::string_view text, const Rgb& ink, float alpha, int rank) {
-        if (!text.empty() && count < rows.size()) {
+        if (!text.empty() && alpha > 0.0F && count < rows.size()) {
             rows[count++] = Row{text, ink, alpha, rank};
         }
     };
@@ -729,8 +738,11 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
     const int rowBudget = std::max(0, target.width() - 2 * margin);
     std::string purse;
     if (state.coin >= 0) {
+        // UI-EA (LANE HUD): the purse wakes on a coin delta and sleeps after
+        // -- purseFade is Session's toggle, default 1 for every hand-built
+        // state, and add() above drops the row whole once it is fully asleep.
         purse = clipToWidth(std::to_string(std::min(state.coin, 99999)) + " C", rowBudget, minor);
-        add(purse, Rgb{0.82F, 0.72F, 0.38F}, 0.9F, 3);
+        add(purse, Rgb{0.82F, 0.72F, 0.38F}, 0.9F * std::clamp(state.purseFade, 0.0F, 1.0F), 3);
     }
     // PLANNING SPRINT (item #2, the sweep). `* clamp(state.*Fade)`, THE SAME
     // MULTIPLY stealthLabel already carries below -- see HudState::
@@ -1306,6 +1318,15 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             }
         }
     }
+    // UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST, directly under the strip it
+    // teaches. Session raises it the first two times the bar ever comes up
+    // and never again; it rides the bar's own countdown, takes a slot out of
+    // the same grid (so it can never land in the play space or on another
+    // row), and speaks in the quiet reference ink -- a hint, not a shout.
+    if (!state.wheelHint.empty() && state.wheelHintFade > 0.0F) {
+        takeCentred(state.wheelHint, Rgb{0.62F, 0.60F, 0.54F},
+                    0.85F * std::clamp(state.wheelHintFade, 0.0F, 1.0F));
+    }
     // THE CROSSHAIR PASS TOOK A ROW OFF THIS BAND AND DID NOT REPLACE IT.
     //
     // #85's "E  TALK" sat here, centred, right after the alert. The owner's
@@ -1346,13 +1367,14 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     }
     // The man who put you here, anchored to the right edge so a long name
     // cannot run off the frame the way S6 alert did. A hunted man should not
-    // have to read the line to notice it. Checked against the UNCLIPPED
-    // label: HUNTING is always the last word rivalLine() appends, and
-    // clipping only ever removes the tail, so the unclipped field still
-    // answers this correctly even on the frame narrow enough to have dropped
-    // the word.
+    // have to read the line to notice it -- and under the word diet he no
+    // longer CAN read it: the HUNTING word is off the label (rank 6 -> 3, the
+    // spec's own cut) and the fact arrives as rivalHunts, set by Session off
+    // the same Nemesis the line is built from. The label sniff stays as the
+    // fallback so every pre-diet hand-built HudState keeps its colour.
     {
-        const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
+        const bool hunting =
+            state.rivalHunts || state.rivalLabel.find("HUNTING") != std::string_view::npos;
         takeRight(state.rivalLabel, hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F},
                   0.90F * std::clamp(state.rivalFade, 0.0F, 1.0F));
     }

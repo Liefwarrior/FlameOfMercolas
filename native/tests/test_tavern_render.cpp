@@ -490,7 +490,6 @@ TEST_CASE("the S2 HUD still hugs the edges and leaves the centre clear") {
     HudState hud;
     hud.health = 61;
     hud.yawBam = sim::kFacingWest;
-    hud.locationLabel = "THE GILDED GULL";
     hud.timeOfDaySeconds = 21 * 3600 + 47 * 60;
     hud.coin = 12345;
     hud.roomLabel = "THE GULL  12 IN  LOUD";
@@ -1213,7 +1212,13 @@ TEST_CASE("the man who put you down is one line on an edge, and the centre stays
     INFO("rival line '", line, "'");
     CHECK_FALSE(line.empty());
     CHECK(line.find("TARN WRENHALE") != std::string::npos);
-    CHECK(line.find("HUNTING") != std::string::npos);
+    // UI-EA (LANE HUD): the diet cut the row to name and count ("rank
+    // 6 -> 3") -- no RIVAL prefix, no title, and HUNTING is carried by the
+    // row's red ink (HudState::rivalHunts), never spelled. The count is a
+    // value and values never get vaguer.
+    CHECK(line.find("x3") != std::string::npos);
+    CHECK(line.find("HUNTING") == std::string::npos);
+    CHECK(line.find("RIVAL") == std::string::npos);
 
     // On the frame: it draws, and the play space is untouched by it.
     Framebuffer without(320, 180);
