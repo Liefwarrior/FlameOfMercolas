@@ -537,6 +537,11 @@ if(GRANADAD_BUILD_TESTS)
         # sim's blood oath keeps, applied to a session-scripted case.
         tests/test_mission_sheet.cpp
         tests/test_case_line.cpp
+        # CASE WATCH -- the errand made watchable: the recorded drive is the
+        # harness's own route (twice, to the op), the replay reproduces the
+        # drive's end state exactly with zero extra simulation steps, and the
+        # planned runtime sits in the demo's neighbourhood.
+        tests/test_case_watch.cpp
         tests/test_firstrun.cpp
         # The pause menu ESC opens when nothing else has already claimed the
         # keyboard -- RESUME, SETTINGS and a QUIT that asks twice, replacing
