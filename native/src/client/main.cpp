@@ -1605,13 +1605,21 @@ void print_usage() {
             return true;
         }
         // FAST TRAVEL (TRAVEL lane). The page's second commit: T is a raw
-        // map-page key exactly as Tab/=/- are, and Interact is the pad's own
-        // half of the verb (X, unclaimed on this page -- the same "verb
-        // wearing a different mode's clothes" the zoom triggers above argue).
-        // The verb row at the detail pane's foot names whichever half is in
-        // the player's hands. Refusals are the Session's to say, out loud,
-        // with the page staying up.
-        if (key == render::Key::T || action == render::Action::Interact) {
+        // map-page key exactly as Tab/=/- are, and Attack is the pad's own
+        // half of the verb -- X (PadWest), the one face button unclaimed on
+        // this page (A is FACE IT, B backs out, Y is free but Attack is what
+        // X binds), the same "verb wearing a different mode's clothes" the
+        // zoom triggers above argue. NOT Interact: Interact's pad half is
+        // PadSouth, which is confirm/FACE IT, so travelling on it would steal
+        // the existing commit. The verb row at the detail foot names whichever
+        // half is in the player's hands. Refusals are the Session's to say,
+        // out loud, with the page staying up.
+        // The Attack half is PAD ONLY -- keyIsPad gates it -- because Attack's
+        // keyboard binding is MouseLeft, and a left-click on the map is
+        // already the pointer's select-then-FACE-IT (session_pointer below).
+        // Without the gate a mouse click would both face AND travel.
+        if (key == render::Key::T ||
+            (render::keyIsPad(key) && action == render::Action::Attack)) {
             session.travelDistrictMapSelection();
             return true;
         }

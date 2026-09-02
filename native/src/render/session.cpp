@@ -2146,12 +2146,14 @@ DistrictMapState Session::districtMapState() const {
 
     // FAST TRAVEL (TRAVEL lane): the verb's key in the device's own
     // vocabulary -- T on a keyboard (a raw map-page key, Tab/=/-'s own
-    // precedent), the Interact half on a pad (X, unclaimed on this page:
-    // "a verb wearing a different mode's clothes", the zoom triggers' own
-    // argument in main.cpp). Cost and refusal come off the SAME plan the
+    // precedent, so a literal like the nav keys' own "TAB"), the Attack half
+    // on a pad (X/PadWest, the one face button unclaimed on this page: A is
+    // FACE IT, so travel takes the "verb wearing a different mode's clothes"
+    // slot the zoom triggers already spend). Through promptLabel so a rebind
+    // of Attack re-words it. Cost and refusal come off the SAME plan the
     // commit spends, so the row and the press can never name different doors.
     plan.travelKey = promptDevice_ == InputDevice::Pad
-                         ? std::string(promptLabel(controls_, Action::Interact, promptDevice_))
+                         ? std::string(promptLabel(controls_, Action::Attack, promptDevice_))
                          : std::string("T");
     const TravelPlan travel = districtMapTravelPlan();
     if (!travel.standingIn) {
