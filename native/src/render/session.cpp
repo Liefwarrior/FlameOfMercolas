@@ -2144,6 +2144,24 @@ DistrictMapState Session::districtMapState() const {
     plan.navCloseKey = std::string(promptLabel(controls_, Action::Map, promptDevice_));
     plan.commitKey = std::string(promptConfirmKey(promptDevice_));
 
+    // FAST TRAVEL (TRAVEL lane): the verb's key in the device's own
+    // vocabulary -- T on a keyboard (a raw map-page key, Tab/=/-'s own
+    // precedent), the Interact half on a pad (X, unclaimed on this page:
+    // "a verb wearing a different mode's clothes", the zoom triggers' own
+    // argument in main.cpp). Cost and refusal come off the SAME plan the
+    // commit spends, so the row and the press can never name different doors.
+    plan.travelKey = promptDevice_ == InputDevice::Pad
+                         ? std::string(promptLabel(controls_, Action::Interact, promptDevice_))
+                         : std::string("T");
+    const TravelPlan travel = districtMapTravelPlan();
+    if (!travel.standingIn) {
+        if (!travel.refusal.empty()) {
+            plan.travelRefusal = travel.refusal;
+        } else if (travel.available) {
+            plan.travelCost = travelCostLabel(travel.minutes);
+        }
+    }
+
     // WHO IS IN THERE RIGHT NOW -- the People view, and the direct answer to
     // "finding the person or thing I want at that place". A const walk over the
     // already-public roster; nothing is written and nothing is hashed.
