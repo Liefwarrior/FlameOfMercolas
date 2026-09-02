@@ -410,6 +410,14 @@ std::string_view promptMoveKeys(InputDevice device) noexcept {
     return device == InputDevice::Pad ? "D-PAD" : "UP DOWN";
 }
 
+Key pageBackRemap(Key key, bool pageOpen) noexcept {
+    // One key, one condition, no other business -- see the header on why the
+    // whole B seam came down to this being applied in two places instead of
+    // one. ONLY East: the D-pad stays raw list movement, the face buttons
+    // keep their bindings, and Escape itself is already Escape.
+    return pageOpen && key == Key::PadEast ? Key::Escape : key;
+}
+
 // ---------------------------------------------------------------------------
 // hold and toggle
 // ---------------------------------------------------------------------------
@@ -586,15 +594,32 @@ ControlSettings ControlSettings::defaults() noexcept {
     // belongs.
     set(Action::Interact, Key::E, Key::PadSouth);
 
-    // ONE SCREEN, PAGES. Tab is where Journal always was -- the row a player
-    // already reaches for. THE PAD SIDE MOVED for action #13: PadBack (the
-    // Select button) was Menu's from #85 until the ward map arrived, and the
-    // owner's own ask -- "a map that they can press M to see... and select
-    // on controller" -- put the map there instead, the classic Start/Select
-    // split (Pause=Start, Map=Select). Menu takes PadUp, D-pad up, which no
-    // shipped action had ever used. fromText() migrates old files that still
-    // write Menu's PAD_BACK -- see the MIGRATION comment there.
-    set(Action::Menu, Key::Tab, Key::PadUp);
+    // ONE SCREEN, PAGES. J IS THE JOURNAL -- the owner's own words: "Use J
+    // for journal since that's how it's done by convention." The genre's own
+    // key (Oblivion, Skyrim, Daggerfall all answer J with the journal), and
+    // this game's Menu opens ON the journal, so J is where it belongs. Tab
+    // held the slot from #85 until now and is FREED, deliberately, to
+    // nothing: Menu's two slots are spent (J and the pad's D-pad up, which
+    // stays -- route_menu_key's parity pass is built around it), and no verb
+    // is short a key. The one Tab-shaped job in the build -- cycling a tabbed
+    // surface's views while it is up -- already reads raw Key::Tab ahead of
+    // any binding (the ward map's own branch), so it survives Tab being
+    // unbound exactly as F1/F2/F3 survive being unbound.
+    //
+    // NO MIGRATION for a settings file that still writes "bind menu TAB
+    // PAD_UP": unlike Map's PadBack move below, nothing strands -- that
+    // file's Tab still opens the journal for its author, and every prompt
+    // follows the file through promptKey and says TAB honestly. #85's
+    // clean-break stance (no released players) covers the rest.
+    //
+    // THE PAD SIDE MOVED for action #13: PadBack (the Select button) was
+    // Menu's from #85 until the ward map arrived, and the owner's own ask --
+    // "a map that they can press M to see... and select on controller" --
+    // put the map there instead, the classic Start/Select split
+    // (Pause=Start, Map=Select). Menu takes PadUp, D-pad up. fromText()
+    // migrates old files that still write Menu's PAD_BACK -- see the
+    // MIGRATION comment there.
+    set(Action::Menu, Key::J, Key::PadUp);
     set(Action::PagePrev, Key::LeftBracket, Key::PadLeftBumper);
     set(Action::PageNext, Key::RightBracket, Key::PadRightBumper);
     // RENAMED FROM Menu, UNCHANGED KEY: this was always Escape's job.

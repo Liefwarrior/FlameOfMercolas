@@ -147,8 +147,9 @@ inline constexpr int kDirectSelectRows = 9;
         PanelOption{"UP DOWN", "NEXT LEAD", "", accent, InkRole::Dim, false},
         PanelOption{"LEFT RIGHT", state.tab == CasebookTab::Leads ? "THE CASE" : "THE LEADS", "",
                     accent, InkRole::Dim, false},
-        PanelOption{"ENTER", "GO TO IT", "", accent, InkRole::Dim, false},
-        PanelOption{state.closeKey.empty() ? std::string("TAB") : state.closeKey, "CLOSE", "",
+        PanelOption{state.commitKey.empty() ? std::string("ENTER") : state.commitKey, "GO TO IT",
+                    "", accent, InkRole::Dim, false},
+        PanelOption{state.closeKey.empty() ? std::string("J") : state.closeKey, "CLOSE", "",
                     accent, InkRole::Dim, false},
     };
 }
@@ -413,7 +414,9 @@ inline constexpr int kMinBodyRows = 8;
     // The commit line's widest FIXED variant -- "ENTER - LOOK AT IT" plus the
     // restated look key -- rather than the per-lead bearing variants, which
     // are both shorter and would put a walking body's changing bearing into
-    // the frame's width.
+    // the frame's width. "ENTER" LITERALLY, not state.commitKey: the pad's
+    // "A" is shorter, and a measure that followed the device would resize
+    // the card mid-frame on a live switch. Widest variant, held.
     const std::string look = "ENTER - LOOK AT IT (" + state.lookKey + " DOES IT OUT THERE)";
     detail = std::max(detail, static_cast<int>(look.size()));
 
@@ -648,8 +651,14 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
     //   standing in it, still open   LOOK AT IT -- the one thing worth doing
     //   anywhere else                SHOW ME ON THE MAP, with the bearing
     //   no such place on the plan    said out loud, rather than a dead key
+    // THE VERB NAMES THE LIVE CONFIRM KEY (state.commitKey -- "ENTER" on a
+    // keyboard, "A" on a pad), the last of this page's keyboard literals.
+    // The WIDTH MEASURE above still votes with the widest fixed "ENTER"
+    // variant, deliberately, so the card does not resize on a live device
+    // switch -- the stable-geometry rule, one axis over.
+    const std::string commit = state.commitKey.empty() ? std::string("ENTER") : state.commitKey;
     if (row.here && row.state == CasebookLeadState::Open) {
-        drawCommitVerb(target, detail, metric, "ENTER - LOOK AT IT",
+        drawCommitVerb(target, detail, metric, commit + " - LOOK AT IT",
                        "(" + state.lookKey + " DOES IT OUT THERE)", ink.key, alpha);
     } else if (row.routable) {
         // THE RESTATEMENT IS THE WALK, not the name. The place is already on the
@@ -660,7 +669,7 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
         // four lines above already reads YOU ARE STANDING IN IT; a commit line
         // that says it a second time is the clutter the composition rules say
         // to cut rather than shrink.
-        drawCommitVerb(target, detail, metric, "ENTER - SHOW ME WHERE",
+        drawCommitVerb(target, detail, metric, commit + " - SHOW ME WHERE",
                        row.here ? std::string() : "(" + row.bearing + ")", ink.key, alpha);
     } else {
         const int lastRow = metric.rowsIn(detail.h) - 1;

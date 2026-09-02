@@ -128,6 +128,26 @@ TEST_CASE("three leads open at the Weighhouse and the frame says so, once") {
     CHECK_FALSE(session.casePlateWanted());
 }
 
+TEST_CASE("the lead-opened plate names the key in the hand holding the machine") {
+    // THE PLATE GOES THROUGH promptLabel NOW, not keyName(primary[Menu]) --
+    // the last of the plate-class literals. A pad player who reads a ledger
+    // is told the pad's own way into the book (D-PAD UP), not the keyboard's
+    // J; a keyboard player still reads J.
+    const std::int32_t ledger = raws().indexOf("weighhouse-ledger");
+    REQUIRE(ledger >= 0);
+
+    Session session(configAt("weighhouse-ledger"));
+    session.stepMany(sim::MoveInput{}, 2);
+    REQUIRE(session.casebook().hear(ledger));
+    session.noteInputDevice(InputDevice::Pad);
+    session.examine();
+    REQUIRE(session.casePlateWanted());
+    const std::string plate(session.casePlateLabel());
+    INFO("plate: ", plate);
+    CHECK(plate.find("D-PAD UP YOUR CASEBOOK") != std::string::npos);
+    CHECK(plate.find("J YOUR CASEBOOK") == std::string::npos);
+}
+
 TEST_CASE("a lead that opens nothing new announces nothing") {
     // The Outfall is a DEAD END by authorship: the grate is corroded shut from
     // outside and it opens no lead at all. A notice there would be the frame
@@ -561,7 +581,7 @@ TEST_CASE("the lead-opened notice keeps the middle of the screen clear, and outr
         both.placePlate = "THE GILDED GULL - ROOMS";
         both.placePlateFade = 1.0F;
         both.placePlateDrift = -1.0F;
-        both.casePlate = "3 NEW LEADS  TAB YOUR CASEBOOK";
+        both.casePlate = "3 NEW LEADS  J YOUR CASEBOOK";
         both.casePlateFade = 1.0F;
         // AT THE LOWEST POINT ITS OWN DRIFT CAN PUT IT -- the one instant it
         // comes closest to the play space.

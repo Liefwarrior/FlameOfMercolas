@@ -886,7 +886,7 @@ void print_usage() {
         "\n"
         "IN THE GAME: WASD moves, the mouse looks, SHIFT sprints, CTRL\n"
         "crouches (both HOLD and TAP), SPACE jumps, E talks, M opens the\n"
-        "ward map, TAB opens your casebook, F1 lists every key and F2\n"
+        "ward map, J opens your casebook, F1 lists every key and F2\n"
         "rebinds them.\n"
         "\n"
         "WALK INTO A LEDGE TO CLIMB IT. There is no climb key to learn --\n"
@@ -1311,27 +1311,23 @@ void print_usage() {
         return false;
     }
 
-    // THE PARITY PASS. B IS BACK, on every page, and it is done by REMAPPING
-    // rather than by a new branch in each of the nine surfaces below.
-    //
-    // The pad had no way out of a page once the D-pad started navigating one.
-    // PadUp was the casebook's only pad exit (it carries Action::Menu, the pad's
-    // Tab) and the moment "up" means "up the list" -- which is the whole point
-    // of this pass -- that exit is gone. PadEast carries Action::Crouch, and
-    // crouching is meaningless while a page owns the input: `listening` in the
-    // frame loop has already stood the movement keys down. So while any surface
-    // below is open, East is Escape -- and Escape is a key every one of these
-    // branches ALREADY has an answer for, either its own (the workbench's
-    // endForge) or the deliberate fall-through to Action::Pause, which "backs
-    // out of whatever is open".
-    //
-    // LOCAL, so the caller still calls pressed() with the real PadEast: with no
-    // page open not one branch below runs, the remap is invisible, and B is
-    // crouch in the world exactly as it has always been.
-    if (key == render::Key::PadEast) {
-        key = render::Key::Escape;
-    }
-
+    // THE PARITY PASS. B IS BACK, on every page -- PadEast arrives here
+    // ALREADY REMAPPED to Escape while a page owns the input, by
+    // render::pageBackRemap at the gamepad event edge (the one place a
+    // PadEast can enter). It used to be remapped LOCALLY, right here, and
+    // that was the B seam the ship note's drive found: this function would
+    // judge the ESCAPE and fall through (so the close could happen), but the
+    // caller then called pressed() with the REAL PadEast -- whose binding is
+    // Action::Crouch -- so one press closed the casebook AND toggled crouch,
+    // and the street after closing the book carried a CROUCHED banner nobody
+    // asked for. Remapping at the edge means the router and the fall-through
+    // press read the SAME key: Escape backs out (every branch below either
+    // answers it -- the workbench's endForge -- or deliberately falls through
+    // to Action::Pause, which "backs out of whatever is open"), and crouch
+    // never hears the press. With no page open the remap does not fire and B
+    // is crouch in the world exactly as it has always been; while the
+    // options page is listening for a key to bind, the remap also stands
+    // down, so PadEast itself can still be bound.
     const render::Action action = session.controls().actionFor(key);
     // The five list movements, in the vocabulary of intent. Arrows always work
     // as well, bound or not, because a list is the one place arrow keys are
@@ -1727,11 +1723,16 @@ void print_usage() {
         //
         // LEFT AND RIGHT STEP THE VIEWS, AND THAT IS A CONFLICT WRITTEN DOWN
         // RATHER THAN FUDGED. Every other tabbed surface in this build steps
-        // its tabs with TAB; here TAB is Action::Menu, the key that OPENED this
-        // page, and "the key that opened it closes it" is a rule this build
-        // keeps everywhere. So the views move on the arrows the single-column
-        // list does not use, the tabs print no hotkey (casebook_page.hpp on
-        // why), and the nav band along the foot says LEFT RIGHT out loud.
+        // its tabs with TAB; when this page was drawn TAB was Action::Menu,
+        // the key that OPENED it, and "the key that opened it closes it" is a
+        // rule this build keeps everywhere. Menu lives on J now (the owner's
+        // own "use J for journal") and Tab is unbound, but the arrows stay:
+        // they are honest on both devices where a freed Tab is not, the pad
+        // already speaks them, and re-teaching this one page a key the rest
+        // of the flow never mentions would be churn. So the views move on the
+        // arrows the single-column list does not use, the tabs print no
+        // hotkey (casebook_page.hpp on why), and the nav band along the foot
+        // says LEFT RIGHT out loud.
         if (up) {
             session.moveCasebookCursor(-1);
             return true;
@@ -3285,6 +3286,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     controls.fovDegrees = start.fovDegrees;
     controls.sanitise();
     session.setControls(controls);
+    // SHIP NOTE SEAM #2, CLOSED: THE FEET READ THE HAND FROM THE DOOR. The
+    // creation window already knew which device drove it (CreationFlow's own
+    // promptDevice), and that fact used to die with the flow -- so a pad
+    // player's first world screen, the auto-opened casebook, said ENTER
+    // SHOWS YOU WHERE until their first world press. The result carries the
+    // device now and the Session is seeded with it at spawn, AFTER
+    // setControls so the opening hint re-words against the live table. A
+    // keyboard result is the Session's own default and this is a no-op.
+    session.noteInputDevice(chosen.device);
 
     std::printf("granadad: %s loaded, %zu lamp(s), art=%s\n",
                 options.smoke.session.world.c_str(), session.lampCount(),
@@ -3796,14 +3806,27 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     std::printf("granadad: gamepad REMOVED, gamepads detected=%d\n", count);
                     break;
                 }
-                case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+                case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
                     // SHIP NOTE MOVE 3: a pad press flips every prompt into
                     // pad vocabulary, live -- see Session::promptDevice().
                     session.noteInputDevice(render::InputDevice::Pad);
-                    if (!route_menu_key(session, key_of_pad_button(event.gbutton.button))) {
-                        pressed(key_of_pad_button(event.gbutton.button));
+                    // THE B SEAM, CLOSED AT THE EDGE. While a page owns the
+                    // input, East IS Escape -- remapped ONCE, here, so the
+                    // router and the fall-through pressed() read the same
+                    // key and one press cannot both close the casebook and
+                    // reach Crouch's binding (the CROUCHED-banner seam the
+                    // ship note's drive found). Not while the options page
+                    // is listening for a key: a rebinding must capture the
+                    // real PadEast. See render::pageBackRemap and
+                    // route_menu_key's own header.
+                    const render::Key key = render::pageBackRemap(
+                        key_of_pad_button(event.gbutton.button),
+                        pointer_page_open(session) && !session.awaitingKey());
+                    if (!route_menu_key(session, key)) {
+                        pressed(key);
                     }
                     break;
+                }
                 case SDL_EVENT_GAMEPAD_BUTTON_UP:
                     released(key_of_pad_button(event.gbutton.button));
                     break;
@@ -3820,10 +3843,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         (void)route_menu_key(session, key);
                         break;
                     }
-                    // TAB IS THE JOURNAL NOW. Freeing the mouse moved to F3 --
-                    // see the keys page. A player who wants their cursor back
-                    // is almost always a player who wants to alt-tab, and
-                    // alt-tab already works.
+                    // THE JOURNAL TOOK TAB AT #85 (it is on J now, the
+                    // owner's own convention call), so freeing the mouse
+                    // moved to F3 -- see the keys page. A player who wants
+                    // their cursor back is almost always a player who wants
+                    // to alt-tab, and alt-tab already works.
                     //
                     // AND IT YIELDS TO A BINDING. F3 is unbound by default, so
                     // this is free; the moment somebody binds a verb to it, the

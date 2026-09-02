@@ -355,6 +355,28 @@ struct ControlSettings;  // declared below, with the rest of the binding table
 [[nodiscard]] std::string_view promptBackKey(InputDevice device) noexcept;     // "ESC" / "B"
 [[nodiscard]] std::string_view promptMoveKeys(InputDevice device) noexcept;    // "UP DOWN" / "D-PAD"
 
+/// The page grammar's ONE remap, stated as a function so it is testable and
+/// so the client's router and its fall-through press cannot apply it
+/// differently: while a page owns the input (`pageOpen`), the pad's East
+/// button IS Escape -- the universal back promptBackKey() already advertises
+/// as "B" -- and every other key, and East with no page open, passes through
+/// unchanged.
+///
+/// WHY IT MUST HAPPEN ONCE, AT THE EVENT EDGE, before the router AND the
+/// press that runs when the router declines: PadEast's world binding is
+/// Action::Crouch. The first parity pass remapped it privately inside the
+/// router, judged the Escape, deliberately fell through so "back out of
+/// whatever is open" could run -- and then the caller replayed the press as
+/// the RAW PadEast, which reached Crouch. One press, two handlers: the
+/// casebook closed AND the street carried a CROUCHED banner nobody asked
+/// for (the ship note's seam #1). Remap once, and the press only ever means
+/// one thing.
+///
+/// `pageOpen` is the caller's fact (main.cpp's pointer_page_open, minus a
+/// live key-rebinding capture, which must see the real PadEast); this
+/// function owns only the rule.
+[[nodiscard]] Key pageBackRemap(Key key, bool pageOpen) noexcept;
+
 // ---------------------------------------------------------------------------
 // hold AND toggle, which is two features and one control
 // ---------------------------------------------------------------------------

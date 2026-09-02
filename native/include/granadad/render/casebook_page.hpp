@@ -225,10 +225,18 @@ struct CasebookPageState {
 
     /// What the nav band prints for "put the book down": the real bound key for
     /// Action::Menu, so the page never invents one.
-    std::string closeKey = "TAB";
+    std::string closeKey = "J";
     /// And the real bound key for the look verb, which the commit line names
     /// when the body is already standing on the lead.
     std::string lookKey = "E";
+    /// The page grammar's confirm key in the live device's vocabulary --
+    /// promptConfirmKey's "ENTER" or "A" -- for the commit verb ("... - SHOW
+    /// ME WHERE" / "... - LOOK AT IT") and the nav band's GO TO IT row. The
+    /// last of this page's keyboard literals, moved onto a state field the
+    /// way closeKey already flows; the WIDTH MEASURE still votes with the
+    /// widest fixed variant (ENTER), so the frame does not resize when the
+    /// other hand speaks mid-frame.
+    std::string commitKey = "ENTER";
 };
 
 /// Draws the whole page over a rendered frame.

@@ -59,7 +59,8 @@ TEST_CASE("a new game opens on the case, not on a systems demo") {
     // pages, flipped with brackets, so the row names Menu and the page-flip
     // rather than F1/F2, which no longer open anything on their own.
     INFO(session.lastMessage());
-    CHECK(session.lastMessage().find("TAB") != std::string::npos);
+    // "J YOUR NOTES" -- J for journal, the owner's own convention call.
+    CHECK(session.lastMessage().find("J YOUR NOTES") != std::string::npos);
     CHECK(session.lastMessage().find("<") != std::string::npos);
     CHECK(session.lastMessage().find(">") != std::string::npos);
 
@@ -152,7 +153,7 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
     // proving.
     for (const char* row : {"MOUSE  LOOK", "W  FORWARD", "S  BACK", "A  STEP LEFT",
                             "D  STEP RIGHT", "MOUSE1  ATTACK", "E  USE", "LCTRL  SNEAK",
-                            "SPACE  JUMP", "LSHIFT  RUN", "TAB  MENU",
+                            "SPACE  JUMP", "LSHIFT  RUN", "J  MENU",
                             "LBRACKET  PAGE <", "RBRACKET  PAGE >", "ESC  PAUSE",
                             "Q  QUICK WHEEL", "1-0  QUICK BAR", "F12  SCREENSHOT",
                             "LOCK:"}) {

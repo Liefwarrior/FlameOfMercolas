@@ -345,8 +345,9 @@ Session::Session(const SessionConfig& config)
         // comment used to state: the hint is GENERATED from the live bindings
         // now (openingHintLine, above), so a rebound Menu renames itself here
         // by construction -- and noteInputDevice() re-words it live when a
-        // pad speaks while it is still up. On the shipped table this is the
-        // identical "TAB YOUR NOTES  < > MORE PAGES  E USE".
+        // pad speaks while it is still up. On the shipped table this reads
+        // "J YOUR NOTES  < > MORE PAGES  E USE" -- J per the owner's own
+        // "use J for journal since that's how it's done by convention".
         message_ = openingHintLine(controls_, promptDevice_);
         messageSteps_ = 60 * 12;
     }
@@ -896,9 +897,14 @@ void Session::examine() {
     // already-read site returns before any of this. There is no way to make
     // this notice repeat by standing still and pressing the key.
     if (saw.opened > 0) {
+        // THROUGH promptLabel, NOT keyName(primary[Menu]): the plate has to
+        // name the key in the hand that is holding the machine -- "J YOUR
+        // CASEBOOK" on a keyboard, "D-PAD UP YOUR CASEBOOK" on a pad -- and
+        // the raw primary slot is keyboard-only wording, the exact literal
+        // class the opening hint already left behind (openingHintLine).
         casePlateText_ = std::to_string(saw.opened) +
                          (saw.opened == 1 ? " NEW LEAD  " : " NEW LEADS  ") +
-                         std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)])) +
+                         std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
                          " YOUR CASEBOOK";
         casePlateShowSteps_ = kCasePlateShowSteps;
         syncPanelAnim();
@@ -956,8 +962,18 @@ void Session::noteInputKey(Key key) {
 }
 
 void Session::setControls(const ControlSettings& settings) {
+    // THE OPENING HINT FOLLOWS THE TABLE IT NAMES KEYS FROM -- the same
+    // still-the-hint re-wording noteInputDevice does, for the same reason:
+    // the hint is the one STORED prompt, and the constructor worded it off
+    // the shipped defaults before the settings file arrived here. Without
+    // this, a file that rebinds Menu leaves the first thing a player reads
+    // naming the old key for its twelve seconds.
+    const bool hintUp = !message_.empty() && message_ == openingHintLine(controls_, promptDevice_);
     controls_ = settings;
     controls_.sanitise();
+    if (hintUp) {
+        message_ = openingHintLine(controls_, promptDevice_);
+    }
     // The camera reads the field of view every frame off controls_, so a
     // settings file with an FOV in it is applied by the act of loading it and
     // there is no second copy to forget to update.
@@ -2309,8 +2325,12 @@ CasebookPageState Session::casebookPageState() const {
     page.closeKey =
         promptDevice_ == InputDevice::Pad
             ? std::string(promptBackKey(InputDevice::Pad))
-            : std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)]));
+            : std::string(promptLabel(controls_, Action::Menu, InputDevice::KeyboardMouse));
     page.lookKey = std::string(promptLabel(controls_, Action::Interact, promptDevice_));
+    // The page grammar's confirm, in the live hand's vocabulary -- "ENTER" /
+    // "A" -- for the commit verb and the nav band's GO TO IT. The last two
+    // keyboard literals on this page rode along as "ENTER" until now.
+    page.commitKey = std::string(promptConfirmKey(promptDevice_));
 
     const std::vector<std::int32_t> heard = casebook_.known();
     page.known = static_cast<std::int32_t>(heard.size());

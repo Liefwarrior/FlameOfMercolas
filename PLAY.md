@@ -208,7 +208,7 @@ Four keys are the rest of the game:
 |---|---|
 | **`Q`** | **look at what is here.** The investigation verb. |
 | **`E`** | **talk to whoever is in front of you.** Anyone, anywhere. |
-| **`J`** or **`TAB`** | **your casebook.** The Chart tile inside it is the *investigation's* map — known ground, open leads with a bearing from where you are actually standing, and who among the named will talk to you. |
+| **`J`** | **your casebook.** The Chart tile inside it is the *investigation's* map — known ground, open leads with a bearing from where you are actually standing, and who among the named will talk to you. |
 | **`M`** | **the ward map.** New: a full-screen top-down plan of the whole district — streets, walls, the harbour, and every authored door and way name placed on the ground where it belongs. Your own position and facing are the light wedge. `M` or `ESC` closes it. On a pad it is the Select button. |
 | **`C`** | **your character sheet.** |
 | **`F1`** | **every key**, in the game, paged. |
@@ -427,7 +427,7 @@ Reproduce any of it:
 5. **Press `M`.** The whole district, top-down, with every signed door and
    way named on the ground — find the Mission of the Flame by reading the
    map, then walk there. (The *investigation's* map — bearings and ranges to
-   open leads — is the Chart tile in your casebook, `TAB`.)
+   open leads — is the Chart tile in your casebook, `J`.)
 
 ### What works
 

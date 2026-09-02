@@ -53,6 +53,26 @@ inline constexpr int kMinMasterCells = 18;
     return out;
 }
 
+/// listOptions() with each value HELD at its row's declared measure width --
+/// see CreationPageRow::measureValueCells. This is what the width measure and
+/// the master-share walk judge, so that neither responds to a value that
+/// changes live under the player's hands. The one row that declares a width
+/// is the sheet's NAME row (the live typed name): judged at its own length,
+/// every second keystroke moved the frame a 2-cell step -- the ship note's
+/// sheet wiggle. MEASURE ONLY: every draw call still lays out listOptions()'s
+/// real values, and the held cells read as ordinary pane emptiness.
+[[nodiscard]] std::vector<PanelOption> measureListOptions(const CreationPage& page) {
+    std::vector<PanelOption> out = listOptions(page);
+    const std::size_t shared = std::min(out.size(), page.rows.size());
+    for (std::size_t i = 0; i < shared; ++i) {
+        const int hold = page.rows[i].measureValueCells;
+        if (hold > static_cast<int>(out[i].value.size())) {
+            out[i].value.append(static_cast<std::size_t>(hold) - out[i].value.size(), ' ');
+        }
+    }
+    return out;
+}
+
 [[nodiscard]] OptionListStyle columnStyle(const CreationPage& page) {
     OptionListStyle style;
     style.maxColumns = std::max(1, page.maxColumns);
@@ -90,7 +110,10 @@ inline constexpr int kMinMasterCells = 18;
 /// draw call walks rather than a second description of it.
 [[nodiscard]] int masterContentRows(const CreationPage& page, const PanelRect& master,
                                     const PanelMetric& metric) {
-    const std::vector<PanelOption> options = listOptions(page);
+    // The MEASURE copy here too -- this is the height half of the same
+    // judgement, and a row count that changed when the typed NAME crossed a
+    // column threshold would bounce the frame's foot while typing.
+    const std::vector<PanelOption> options = measureListOptions(page);
     if (options.empty() || master.empty()) {
         return 0;
     }
@@ -227,8 +250,13 @@ inline constexpr int kMinBodyRows = 6;
                 }
                 break;
             }
-            const OptionListPlan plan =
-                planOptionList(listOptions(page), candidate.master, out.metric, columnStyle(page));
+            // JUDGED ON THE MEASURE COPY (values held at their declared
+            // measure width -- measureListOptions), for the same stillness
+            // the width measure buys: a share choice that flipped when the
+            // typed NAME crossed a column threshold would move the divider
+            // under the player's hands mid-keystroke.
+            const OptionListPlan plan = planOptionList(measureListOptions(page), candidate.master,
+                                                       out.metric, columnStyle(page));
             if (!have || plan.rows < bestRows) {
                 out.body = candidate;
                 bestRows = plan.rows;
@@ -300,7 +328,11 @@ inline constexpr int kMinBodyRows = 6;
             master = (key > 0 ? key + 1 : 0) + std::min(label, kPanelProseMeasureCells);
         } else {
             const OptionListStyle style = columnStyle(page);
-            const OptionListPlan plan = planOptionList(options, full.listRect, metric, style);
+            // THE MEASURE COPY -- values held at their declared measure
+            // width, so the frame is sized once for the widest legal NAME
+            // and holds still under every keystroke. See measureListOptions.
+            const OptionListPlan plan =
+                planOptionList(measureListOptions(page), full.listRect, metric, style);
             master = optionListNaturalCells(plan, style.gutterCells);
         }
     }

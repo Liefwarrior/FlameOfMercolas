@@ -44,7 +44,14 @@ TEST_CASE("the shipped bindings are the ones a player already knows") {
     CHECK(keys.bound(Action::Crouch, Key::LeftCtrl));
     CHECK(keys.bound(Action::Vertical, Key::Space));
     CHECK(keys.bound(Action::Interact, Key::E));
-    CHECK(keys.bound(Action::Menu, Key::Tab));
+    // J FOR JOURNAL -- the owner's words: "Use J for journal since that's
+    // how it's done by convention." Tab held this from #85 and is freed to
+    // nothing (see defaults()'s own comment); it must NOT still open the
+    // book, or B-shaped muscle memory aside, two keys would claim one page.
+    CHECK(keys.bound(Action::Menu, Key::J));
+    CHECK_FALSE(keys.bound(Action::Menu, Key::Tab));
+    CHECK(keys.actionFor(Key::Tab) == Action::Count);
+    CHECK(keys.actionFor(Key::J) == Action::Menu);
     CHECK(keys.bound(Action::Pause, Key::Escape));
 
     // The number row is the quick bar, and the wheel walks it.
@@ -639,10 +646,11 @@ TEST_CASE("round 2's own hole: two full lines, neither with a second key, "
     // Reachable, not just non-empty: Escape actually resolves to Pause, since
     // Menu gave it up entirely (both its slots came back empty from parsing
     // and the validation pass restored Menu to its own full shipped default,
-    // Tab + PadUp -- PadUp since core action #13 took PadBack for the map --
-    // rather than leaving it holding a key it shares with Pause).
+    // J + PadUp -- J per the owner's "use J for journal", PadUp since core
+    // action #13 took PadBack for the map -- rather than leaving it holding
+    // a key it shares with Pause).
     CHECK(loaded.actionFor(Key::Escape) == Action::Pause);
-    CHECK(loaded.bound(Action::Menu, Key::Tab));
+    CHECK(loaded.bound(Action::Menu, Key::J));
     CHECK(loaded.bound(Action::Menu, Key::PadUp));
 }
 
@@ -962,8 +970,10 @@ TEST_CASE("a prompt names the device holding it, off the shipped table") {
     CHECK(promptLabel(keys, Action::Interact, InputDevice::KeyboardMouse) == "E");
     CHECK(promptLabel(keys, Action::Interact, InputDevice::Pad) == "A");
 
-    // The casebook's close key and the ward map's, both halves each.
-    CHECK(promptLabel(keys, Action::Menu, InputDevice::KeyboardMouse) == "TAB");
+    // The casebook's close key and the ward map's, both halves each. J per
+    // the owner's "use J for journal since that's how it's done by
+    // convention".
+    CHECK(promptLabel(keys, Action::Menu, InputDevice::KeyboardMouse) == "J");
     CHECK(promptLabel(keys, Action::Menu, InputDevice::Pad) == "D-PAD UP");
     CHECK(promptLabel(keys, Action::Map, InputDevice::KeyboardMouse) == "M");
     CHECK(promptLabel(keys, Action::Map, InputDevice::Pad) == "SELECT");
@@ -1046,6 +1056,32 @@ TEST_CASE("the device of a key, and the pad's spoken vocabulary") {
     CHECK(promptMoveKeys(InputDevice::Pad) == "D-PAD");
 }
 
+TEST_CASE("the B seam: East is Escape while a page is up, itself otherwise") {
+    // THE SHIP NOTE'S SEAM #1, pinned. The parity pass remapped PadEast to
+    // Escape INSIDE the router and then let the caller replay the raw press,
+    // so B closing the casebook also reached Crouch's binding and the street
+    // carried a CROUCHED banner. The remap is one function applied once at
+    // the event edge now; this is its whole contract.
+    //
+    // While a page owns the input, East IS the universal back...
+    CHECK(pageBackRemap(Key::PadEast, /*pageOpen=*/true) == Key::Escape);
+    // ...and with no page open it is exactly itself, so the world's B stays
+    // crouch (PadEast is Crouch's shipped secondary).
+    CHECK(pageBackRemap(Key::PadEast, /*pageOpen=*/false) == Key::PadEast);
+    CHECK(ControlSettings::defaults().actionFor(Key::PadEast) == Action::Crouch);
+    // No other key is touched, page or no page -- the D-pad stays raw list
+    // movement and Escape is already Escape.
+    for (const Key key : {Key::PadSouth, Key::PadWest, Key::PadNorth, Key::PadUp, Key::PadDown,
+                          Key::PadStart, Key::PadBack, Key::Escape, Key::E, Key::None}) {
+        CHECK(pageBackRemap(key, true) == key);
+        CHECK(pageBackRemap(key, false) == key);
+    }
+    // And the remapped key actually resolves to the action whose Pause
+    // branch backs out of whatever is open -- the close is the SAME route a
+    // keyboard ESC takes, so the two cannot drift.
+    CHECK(ControlSettings::defaults().actionFor(Key::Escape) == Action::Pause);
+}
+
 TEST_CASE("the live session re-words its prompts the moment the other hand speaks") {
     SessionConfig config;
     config.contentDir = content::contentDir();
@@ -1079,12 +1115,16 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     // movement while the book is up, so Menu's own D-PAD UP cannot close it.
     session.noteInputKey(Key::W);
     CasebookPageState kb = session.casebookPageState();
-    CHECK(kb.closeKey == "TAB");
+    CHECK(kb.closeKey == "J");
     CHECK(kb.lookKey == "E");
+    // And the commit verb's key -- the "ENTER - SHOW ME WHERE" / "ENTER GO
+    // TO IT" literals of the ship note's seam list, on a state field now.
+    CHECK(kb.commitKey == "ENTER");
     session.noteInputDevice(InputDevice::Pad);
     CasebookPageState pad = session.casebookPageState();
     CHECK(pad.closeKey == "B");
     CHECK(pad.lookKey == "A");
+    CHECK(pad.commitKey == "A");
     if (!pad.rows.empty() && pad.read == 0 && !pad.closed) {
         CHECK(pad.instruction == "PICK A LEAD. A SHOWS YOU WHERE.");
     }
@@ -1123,8 +1163,8 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
 
 TEST_CASE("the opening hint is generated from the bindings and re-words live") {
     // The S3 verification gap, closed: the hint is openingHintLine() off the
-    // live table now, so the shipped keyboard wording is provably the exact
-    // old literal, and a pad press while it is still up re-words it.
+    // live table now (J for journal, the owner's own convention call), and a
+    // pad press while it is still up re-words it.
     SessionConfig config;
     config.contentDir = content::contentDir();
     config.openingPage = true;
@@ -1132,9 +1172,9 @@ TEST_CASE("the opening hint is generated from the bindings and re-words live") {
     if (session.lastMessage().empty()) {
         return;  // no authored case in this content dir; nothing to word
     }
-    CHECK(session.lastMessage() == "TAB YOUR NOTES  < > MORE PAGES  E USE");
+    CHECK(session.lastMessage() == "J YOUR NOTES  < > MORE PAGES  E USE");
     session.noteInputDevice(InputDevice::Pad);
     CHECK(session.lastMessage() == "D-PAD UP YOUR NOTES  LB RB MORE PAGES  A USE");
     session.noteInputKey(Key::A);
-    CHECK(session.lastMessage() == "TAB YOUR NOTES  < > MORE PAGES  E USE");
+    CHECK(session.lastMessage() == "J YOUR NOTES  < > MORE PAGES  E USE");
 }

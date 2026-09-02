@@ -888,6 +888,12 @@ bool CreationFlow::confirm() noexcept {
     result_.confirmed = true;
     result_.originId = chosenOrigin().id;
     result_.name = name_;
+    // SHIP NOTE SEAM #2. The device note used to die with this flow; now the
+    // hand that finished creation rides the result, so the Session it births
+    // opens already speaking that hand's vocabulary. The commit press itself
+    // has already been noted (noteInputKey runs before confirm at every call
+    // site), so this is the truth at the moment of confirmation.
+    result_.device = promptDevice_;
     // Everything the biography added up to, in chargen_raws.hpp's closed
     // vocabulary. Default -- a no-op -- for GABRI, DEVIN and any path that
     // never reached the questions, which is exactly the contract
@@ -1962,6 +1968,12 @@ CreationPageRow CreationFlow::pageRowFor(const CustomizeRow& row) const {
             out.label = "NAME";
             out.value = name_.empty() ? "UNSET" : name_;
             out.accent = panelInk().accent;
+            // THE SHEET WIGGLE, HELD STILL: this value is the LIVE TYPED
+            // NAME, the one master-list value in the flow that changes under
+            // the player's hands, and a measure that read its length moved
+            // the frame in 2-cell steps while typing. The measure votes at
+            // the cap instead -- see CreationPageRow::measureValueCells.
+            out.measureValueCells = static_cast<int>(kMaxNameLength);
             break;
         case CustomizeRow::Kind::Appearance: {
             const sim::WardType type =

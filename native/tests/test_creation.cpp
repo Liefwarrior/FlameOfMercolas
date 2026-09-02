@@ -562,6 +562,40 @@ TEST_CASE("confirming DEVIN carries his real CompanionTemplate, and no Chargen p
     CHECK(flow.result().chargen.picks().empty());
 }
 
+TEST_CASE("the result carries the hand that drove creation -- ship note seam #2") {
+    // The flow's device note used to die with the flow, leaving a pad
+    // player's first world screen keyboard-worded until their first world
+    // press. The result carries it now; run_client seeds the Session's
+    // noteInputDevice with it at spawn.
+    {
+        render::CreationFlow flow = fresh();
+        flow.moveOriginCursor(4);  // DEVIN
+        flow.chooseOrigin();
+        REQUIRE(flow.canConfirm());
+        // A pad drove the flow: the last thing creation heard was a pad key.
+        flow.noteInputKey(render::Key::PadSouth);
+        const std::size_t rowCount = flow.view().topics.size();
+        flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
+        flow.chooseCustomizeRow();
+        REQUIRE(flow.done());
+        CHECK(flow.result().device == render::InputDevice::Pad);
+    }
+    {
+        // And a keyboard drive stays the default -- the same wording every
+        // capture and every earlier case already gets.
+        render::CreationFlow flow = fresh();
+        flow.moveOriginCursor(4);
+        flow.chooseOrigin();
+        REQUIRE(flow.canConfirm());
+        flow.noteInputKey(render::Key::Enter);
+        const std::size_t rowCount = flow.view().topics.size();
+        flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
+        flow.chooseCustomizeRow();
+        REQUIRE(flow.done());
+        CHECK(flow.result().device == render::InputDevice::KeyboardMouse);
+    }
+}
+
 // ===========================================================================
 // LOOK: the CUSTOM path's appearance/identity step, and DEVIN/GABRI's own
 // fixed one -- sim/appearance.hpp's eleven-option vocabulary, the same
@@ -1679,6 +1713,45 @@ TEST_CASE("moving the cursor moves nothing but the highlight and the detail pane
     CHECK(first.detailRect.x == later.detailRect.x);
     CHECK(first.navBand.y == later.navBand.y);
     CHECK(first.ruleRows == later.ruleRows);
+}
+
+TEST_CASE("typing a name moves nothing: the sheet is measured at the cap") {
+    // THE SHIP NOTE'S SHEET WIGGLE, PINNED. The NAME row's value is the live
+    // typed name, and it used to vote on the width measure at its own
+    // length, so a name past UNSET's five glyphs widened the frame in 2-cell
+    // steps while the player typed. The measure votes at kMaxNameLength now
+    // (CreationPageRow::measureValueCells), so the frame is sized once for
+    // the widest legal name and every keystroke lands inside it.
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();  // the cursor opens on NAME; this opens entry
+    REQUIRE(flow.editingName());
+
+    for (const int size : {360, 540, 1080}) {
+        const int width = size * 16 / 9;
+        // Rub any suggested name out so the walk below covers empty -> cap.
+        while (!flow.name().empty()) {
+            flow.backspaceName();
+        }
+        const render::CreationLayout empty = render::creationLayout(flow.page(), width, size);
+        REQUIRE(empty.usable);
+        // One glyph at a time to the cap, the frame identical at every step
+        // -- geometry, not just width: seat, panes, divider, rules, foot.
+        const char* cap = "BARTHOLOMEWDANES";  // kMaxNameLength glyphs
+        for (std::size_t i = 0; i < render::kMaxNameLength; ++i) {
+            flow.typeNameChar(cap[i]);
+            const render::CreationLayout typed =
+                render::creationLayout(flow.page(), width, size);
+            INFO("at ", width, "x", size, " after ", i + 1, " glyph(s)");
+            CHECK(typed.bounds.x == empty.bounds.x);
+            CHECK(typed.bounds.y == empty.bounds.y);
+            CHECK(typed.bounds.w == empty.bounds.w);
+            CHECK(typed.bounds.h == empty.bounds.h);
+            CHECK(typed.listRect.w == empty.listRect.w);
+            CHECK(typed.detailRect.x == empty.detailRect.x);
+            CHECK(typed.navBand.y == empty.navBand.y);
+            CHECK(typed.ruleRows == empty.ruleRows);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

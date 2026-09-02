@@ -182,6 +182,16 @@ struct CreationResult {
     /// nothing, which is the doc's own "their history is the raws' own" rule
     /// made structural.
     sim::ChargenEffects effects;
+    /// THE HAND THAT DROVE CREATION, carried across the window boundary.
+    /// CreationFlow::promptDevice() dies with the flow, and until this field
+    /// existed nothing handed it to the Session that flow births -- so a pad
+    /// player's first world screen (the auto-opened casebook) said ENTER
+    /// SHOWS YOU WHERE until their first world press (ship note seam #2).
+    /// run_client seeds Session::noteInputDevice with it at spawn. CLIENT
+    /// state, same rule as promptDevice_ itself: never hashed, never fed to
+    /// MoveInput -- the scripted/headless paths never construct a
+    /// CreationResult, so every capture keeps its keyboard default wording.
+    InputDevice device = InputDevice::KeyboardMouse;
 };
 
 /// The screens, in flow order. The three Daggerfall doors (task #92) all
