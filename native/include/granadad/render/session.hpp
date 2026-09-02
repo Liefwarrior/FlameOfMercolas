@@ -1408,10 +1408,16 @@ private:
     /// dialogueView() reads whichever one menuFocus_ names so a caller that
     /// only ever asked about "the open page" (every pre-Morrowind-round test)
     /// keeps seeing exactly the content it always did.
+    /// MERGE FIX: public -- the pointer lane's session_pointer (main.cpp)
+    /// assembles the tiled Menu's hit-test state from these four, the same
+    /// way drawFrame assembles its own; const views, no mutation offered.
+public:
     [[nodiscard]] DialogueViewState characterPanelView() const;
     [[nodiscard]] DialogueViewState mapPanelView() const;
     [[nodiscard]] DialogueViewState lettersPanelView() const;
     [[nodiscard]] DialogueViewState journalPanelView() const;
+
+private:
     /// TASK #82. Every letter whose `lead` (sim::Letter::lead, a
     /// casebook.json lead id) has actually been investigated -- Cold or
     /// Followed, never merely Open -- in authored order. What the letters
