@@ -26,6 +26,7 @@
 #include "granadad/content/world_reader.hpp"
 #include "granadad/sim/casebook.hpp"
 #include "granadad/sim/docks.hpp"
+#include "granadad/sim/docks_signs.hpp"
 #include "granadad/sim/letters.hpp"
 #include "granadad/sim/tile_query.hpp"
 
@@ -306,7 +307,9 @@ TEST_CASE("the lease agreement is rendered in the roll's own words, never as a d
     CHECK(whole.find("charge") != std::string::npos);
     CHECK(whole.find("roll") != std::string::npos);
     CHECK(whole.find("petition") != std::string::npos);
-    CHECK(whole.find("distraint") != std::string::npos || whole.find("DISTRAINT") != std::string::npos);
+    const bool distraintNamed = whole.find("distraint") != std::string::npos ||
+                                whole.find("DISTRAINT") != std::string::npos;
+    CHECK(distraintNamed);
     // And the ugliest true clause: the roof goes with the house.
     CHECK(whole.find("roof") != std::string::npos);
     // NEVER a dwelling-lease: the one word the canon-grounding paragraph says
