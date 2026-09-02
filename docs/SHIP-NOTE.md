@@ -1,283 +1,229 @@
 # Ship note — read this first
 
-**The three moves landed, and the tutorial reads right on both hands now.** The
-retry's four lanes merged clean (twelve builder commits + three merges + the
-integrator's compile/drive fixes) and every claim in their reports was
-re-verified here **by driving the built game and measuring the frames**, not by
-reading the reports back. J opens the journal, the seven silent pages answer the
-mouse, the B that closed the casebook no longer crouches, a pad player's first
-world screen is pad-worded before they touch anything, and the sheet's NAME row
-holds still while you type. The second authored case — **THE QUIET TENANT**, the
-courier's tutorial errand — plays end to end, teaches through device-aware
-prompts, and does not move the population baseline a bit.
+**Fast travel is real, and it was driven, not read about.** The ward map's
+detail pane now carries a second commit above `FACE IT`: `T - TRAVEL (2 MIN)`
+on a keyboard, `X - TRAVEL (2 MIN)` on a pad, the cost restated in the number
+ink. A press charges the clock by exactly the restated minutes through the wait
+machinery (`skipSeconds` — `Tavern::skipTo` + `syncClockAfterSkip`, the same
+pair every WAIT pick spends), relocates the body to the destination's door
+snapped to standable ground, dips the screen fully black and eases it up on the
+arrival with the threshold plate and a `WALKED TO THE ROYAL COUNTING-HOUSE.
+08:01.` line already on it. Refusals hold: carrying Finch refuses in the ward's
+voice (`NOT WITH THE FINCH. WALK HIM.` — driven, photographed), the Watch
+closing refuses, and the wait page's own list refuses in its own words. All of
+it verified this phase **by playing the windowed build with a real keyboard and
+a real virtual pad**, and by the headless probe run twice byte-identical.
 
-**One seam found by driving, and closed this phase:** the courier case's two
-notice plates (`A MISSION SHEET … YOUR LETTERS`, `THE ERRAND IS PAID … YOUR
-CASEBOOK`) named the key with `keyName(primary[Menu])` — the raw keyboard slot —
-so a **pad** player being taught the game was told to press **J**, a key their
-pad has not got. The device-aware `promptLabel(…, promptDevice_)` the Bloodletter
-plate uses three lines away is the fix; both plates now read `D-PAD UP YOUR
-LETTERS` / `… CASEBOOK` on a pad and the unchanged `J …` on a keyboard.
-Render-only, keyboard-byte-identical, sim untouched. Photographed before and
-after: `docs/frames/parallel4/courier-plate-SEAM-keyboardworded.png` vs
-`…-FIXED-deviceaware.png`.
+**Two programs landed while this phase ran, and both are green.** The travel
+merge (`c099b08` + frames `710b616`) was gated in a fresh isolated worktree by
+this phase: digest `df62622b…89af6f6`, ctest **1011/0 failed**, verify-windows
+PASS. The concurrent case-watch program then landed `c59f88f` (the owner's
+"teleporting through walls / double vision" bug: view snapping on relocation,
+one dressed seam shared with travel's fade) + frames `24e0f11`, with **its own
+gate stamp** (`ba3b34ff…`, ctest **1016/0**). This phase re-verified the tip:
+verify-windows PASS, twin-gate baseline unmoved, demo/case/case-watch exit 0,
+and the travel probe's figures **identical on both builds** — the cuts commit
+did not move travel by a byte of behaviour.
 
-Gate: **green, both halves**, native digest `ae5a7d15…`.
-World hash: **`0x2646C1AAA2BA38DF`** — regenerated, rebaked, twin-gated, unmoved.
-Demo: **run twice, exit 0 both**, 5780 frames, body (150,63,z19) both. Demo
-frames: **22/22 byte-identical** to the committed set (the courier is off under
-`--demo`, so the fix cannot touch them).
+Gate: **green, both halves, both revisions.**
+World hash: **`0x2646C1AAA2BA38DF`** — regenerated, rebaked, twin-gated twice
+on each build, unmoved.
 
 ## Run it
 
 ```
-.\dist\granadad.exe --demo      # two minutes, plays itself, ends on a card
-.\dist\granadad.exe             # play it: DOWN DOWN ENTER, name, UP, ENTER, twelve ENTERs, UP, ENTER
-.\dist\granadad.exe --case      # drive THE QUIET TENANT end to end, headless, and print the errand's state
-.\dist\granadad.exe --case-watch  # WATCH the same errand: the identical drive at the demo's pacing, ~3 minutes, ESC leaves
+.\dist\granadad.exe                # play it; M for the map, T on a named place travels
+.\dist\granadad.exe --demo         # two minutes, plays itself, ends on a card
+.\dist\granadad.exe --case         # THE QUIET TENANT end to end, headless
+.\dist\granadad.exe --case-watch   # watch the same errand at the demo's pacing
+.\dist\granadad.exe --map-overlay --travel="The Ropewalk"        # the probe: | travel ... charged=2min
+.\dist\granadad.exe --case=taken --travel="Mission of the Flame" # the carry refusal, man in hand
 ```
 
-In the world: **J** casebook (per the owner's "use J for journal"), **M** map,
-**E** talk, **ESC** pause, **F1** keys, **F2** rebind. On a pad the screen tells
-you itself — the prompts name the hand that is holding the machine and re-word
-live.
+In the world: **M** map (arrows walk the named places, four presses cross the
+ward), **T** travels to the selection, **ENTER** faces it. On a pad: **SELECT**
+map, D-pad walks places, **X** travels, **A** faces. `--travel=NAME` wants the
+roster's exact name (`"The Ropewalk"`, not `"Ropewalk"`).
 
-> Still true: the creation window does not answer F12 (photograph creation
-> through `--creation=STEP` or `--padcreation`'s `shot:` beats), and `--demo`
-> swallows everything but ESC.
+> Still true: the creation window does not answer F12, and `--demo` swallows
+> everything but ESC. New this phase: the windowed harness can drive creation
+> only through `--padcreation` (SendInput keyboard creation never confirmed a
+> sheet in four attempts — a harness limitation to fix, not a game defect: the
+> pad path proves the flow, and by hand the keyboard flow is the documented
+> DOWN DOWN ENTER line).
 
 ---
 
 ## The gate, in full
 
-`docker compose run --rm --build build` was run twice this phase: once on a
-**fresh isolated worktree** at `C:\repositories\granadad-ship-7b1904e` (the four
-gitignored audio dirs real-copied, 374 files) at the merged HEAD `7b1904e`, and
-once in the **main repo** on the one-line fix. Both green; `verify-windows.ps1`
-green in the fresh worktree and (both before and after the fix) in the main repo.
-
-| half | where | result |
-|---|---|---|
-| `docker compose run --rm --build build` | fresh worktree @7b1904e | **exit 0** |
-| `scripts\verify-windows.ps1` | fresh worktree | **=== PASS ===** |
-| `docker compose run --rm --build build` | main repo, with the fix | **exit 0** |
-| `scripts\verify-windows.ps1` | main repo, with the fix | **=== PASS ===** |
+| half | where | revision | result |
+|---|---|---|---|
+| `docker compose run --rm --build build` | fresh worktree `C:\repositories\granadad-ship-710b616` (four audio dirs real-copied, 374 files) | 710b616 | **exit 0**, stamp 2026-09-02T15:32:31Z |
+| `scripts\verify-windows.ps1` | fresh worktree | 710b616 | **=== PASS ===** |
+| `docker compose run --rm --build build` | main repo (the case-watch program's own landing gate) | 24e0f11 | **exit 0**, stamp 2026-09-02T15:37:08Z |
+| `scripts\verify-windows.ps1` | main repo, re-run by this phase | 24e0f11 | **=== PASS ===** |
 
 ```
-merged revision:  7b1904e (18 past 3181e52: 12 lane + 3 merge + 2 integrator + 1 frames)
-ship fix:         1 commit on top (the courier plate device-aware seam)
-native/ digest:   ae5a7d15df07c580b88a577c3bb30d800bf60874b4cdf3974ece7eef8126f049 (with the fix)
-ctest cases:      995 (floor 537), 78 suites, 0 failed, ~146s
+travel merge:     c099b08 (8 lane commits on 9910bec, 2 conflicts resolved) + 710b616 frames
+cuts landing:     c59f88f + 24e0f11 frames (the concurrent program's, its own gate)
+native/ digest:   df62622b0b853f5a2a50eb9e9cdb841a9425c28bf3d9219640207568289af6f6 (@710b616)
+                  ba3b34ff119c2a92085d1110673ce142ff6291c1827b864f53119e21ce58767b (@24e0f11 tip)
+ctest cases:      1011 @710b616, 1016 @tip (floor 537), 0 failed either
+comparators:      world-hash+sim 1791 bytes sha256 924F6EA6…B7B8468B, linux/gcc == mingw, both revisions
 ```
-
-Comparators byte-for-byte identical linux/gcc vs mingw/windows, **and identical
-across the fix** (the fix is render-side, which no gate hashes):
-decoded world state 3884 bytes sha256 `97850DCB…C8B2179`; world hash + sim run
-1791 bytes sha256 `924F6EA6…B7B8468B` — the same values before and after the
-courier-plate fix. The four `dist\` binaries hashed main-repo vs fresh-worktree
-at the merged HEAD: **byte-identical, all four** (proven before the fix; the fix
-then rebuilt `dist\` in the main repo, which is now the certified set).
 
 ## The world hash did not move — regenerated, rebaked, twin-gated
 
 ```
 1. regenerate   python tools\scripts\gen_docks_surface.py
                 docks_surface.tmx sha256 CCEDA566…237B4D1C, tree clean (reproduced the committed TMX)
-2. rebake       gradlew :tools:run --args="import-map …docks_surface.tmx <tmp> --raws content/raws"
-                17,954-byte trojsav sha256 E47DA3AE…E474C2AC == content/maps/baked/docks_surface.trojsav
-                (baked with BOTH new quest JSONs present in content/raws — they do not enter the bake)
+2. rebake       gradlew :tools:run --args="import-map <abs>\docks_surface.tmx <out-file> --raws <abs>\content\raws"
+                (paths must be absolute, and the second arg is the output FILE, not a dir)
+                17,954 bytes sha256 E47DA3AE…E474C2AC == content/maps/baked/docks_surface.trojsav
 3. twin-gate    dist\granadad-twin-gate.exe --population --population-hour 16 --ticks 7200
-                run twice: 0x2646C1AAA2BA38DF both runs, reports IDENTICAL, the two console
-                outputs byte-identical to each other. Re-run after the fix: same hash.
-4. content diff git diff --name-only 3181e52..HEAD -- content/maps content/art  ->  EMPTY
-                -- content/  ->  the two add-only quest JSONs and nothing else
+                run twice on the 710b616 build AND twice on the tip build:
+                0x2646C1AAA2BA38DF all four runs, each pair's console output byte-identical
+4. content diff git diff --name-only 9910bec..HEAD -- content/maps content/art  ->  EMPTY
 ```
 
-`content/raws/quests/mission_sheet.json` + `mission_sheet_letters.json` carry
-top-level `case`/`leads`/`letters`, never `stages`/`templates`, so every hashed
-loader skips them. No re-bless: the baseline never had a way to move.
+## Driving it, this phase — fast travel played, at 640x360
 
-## The demo
+Frames in `docs/frames/ship-travel/` (this phase, windowed, real input via
+`drive-windowed.ps1` + `--padcreation`/`--padscript`) and
+`docs/frames/travel1/` (the integrator's headless four).
 
-```
-run 1 (@7b1904e)   5780 frame(s), (150,63,z19)   exit 0
-run 2 (@7b1904e)   5780 frame(s), (150,63,z19)   exit 0
-run 3 (with fix)   5780 frame(s), (150,63,z19)   exit 0
-```
+**As a pad player, end to end:** virtual-pad creation (A takes a calling,
+twelve A's answer the past, one letter + START names the sheet, UP wraps to
+BEGIN), then SELECT opens the map. The pane's verb reads **`X - TRAVEL
+(1 MIN)`** over `A - FACE IT` — pad-worded with no keyboard press anywhere
+(`pw2-north`). Selecting the place you stand in reads `YOU ARE STANDING IN IT`
+and X does nothing, correctly (`pw3-east`, `pw4-traveled`). A far pick (`THE
+ROYAL COUNTING-HOUSE`, SE 34 paces, `px1-far`) travels on X: the screen dips
+black and eases up on the destination street with the plate and `WALKED TO THE
+ROYAL COUNTING-HOUSE. 08:01.` on the message row, the HUD clock moved 08:00 →
+08:01 — exactly the restated minute (`px2-fade`, `px3-arrived`).
 
-`--demo-capture`: **22/22 byte-identical** to `docs/frames/demo/`, both at the
-merged HEAD and with the fix. `creation-origin.png` reproduces byte-identical via
-`--creation=origin --scale=1` (the known `--demo-capture` shutter-race drop; the
-committed copy is the substitute). The Bloodletter demo route is intact.
+**On the keyboard, same session shape:** M re-words the page live to keyboard
+vocabulary — `T - TRAVEL (1 MIN)` over `ENTER - FACE IT (SE)`, nav band
+`ARROWS NEXT PLACE  TAB OVERVIEW  M CLOSE` (`kw2-verb`). T commits; the shot
+taken on the press's heels caught the fade mid-ease, the street readably
+darker with the plate already up (`kw3-fade`), fully lit a second later
+(`kw4-arrived`). **Is it dressed, or the teleport the owner complained about?
+Dressed — honestly.** The origin is never seen after the press, there is no
+raw cut, and the plate + arrival line + moved clock land the "you went
+somewhere" read. (The owner's separate "through walls / double vision"
+complaint was the *case-watch replay's* seam — the concurrent program
+diagnosed and closed it at `c59f88f` on true consecutive frames.)
 
-## Driving it, this phase — every claim photographed at 640x360
+**The refusals:** the carry refusal driven for real (`--case=taken
+--travel=…`): `moved=no refusal="NOT WITH THE FINCH. WALK HIM."`, case parked
+at beats=7/8, clock untouched — and the integrator's `travel-refused-carry`
+shows the line sitting in the verb row's place. Watch-closing and the five
+wait-list refusals are each pinned by `test_travel` under the green gate; a
+windowed brawl refusal was attempted but the crosshair never found a body on
+the street, so those five stand on the tests, said plainly.
 
-Frames in `docs/frames/parallel4/`. Driven through the **real windowed build**
-with real keyboard/mouse (`scripts\drive-windowed.ps1`, SendInput scancodes +
-client-area pointer) and the **virtual pad** (`--padcreation` + `--padscript`).
+**Determinism:** the probe run twice, full console output **byte-identical**
+(`| travel to="Mission of the Flame" found=yes route=54 units=604 walk=37s
+charged=1min clock=72000->72060 moved=yes plate="ROPEWYND" up=yes`).
 
-**The courier case, driven headless twice** (`--case`, the errand's own scripted
-line): `beats=8/8 mask=255 read=3/4 closed=yes carry=no`, the `| case …` summary
-segment **byte-identical across runs**, the two output PNGs byte-identical. Every
-beat looked at:
-- `case-sheet` — Maell's sheet open on the Letters tile (parchment, `handed`).
-- `case-gull` — casebook on THE QUIET TENANT, the door lead read, READ 1/3.
-- `case-night` — crouched/HIDDEN on the dark guest floor, the box lead read.
-- `case-down` — Finch on the boards, crosshair `FINCH — DOWN, AND COMING WITH
-  YOU / E - TAKE HIM UP`, message row device-aware. **The brawl line held:** the
-  drive carries fists, `mask=63` at the down shutter with `tenant=down` and no
-  Watch — nothing edged, subdue by the house's own law (`classifyFight`).
-- `case-done` — `THE ERRAND IS PAID … YOUR CASEBOOK`, book closed, at the
-  Mission back room.
+**The measured costs, and they are small:** Mission of the Flame 37s → 1 MIN;
+The Quayward Compound 67s → 2 MIN; The Ropewalk 95s → 2 MIN. The worst legs
+this phase found are **2 MIN**, not the lane's estimated 4-5. Travel is nearly
+free — which sharpens the minutes-vs-journey ruling below.
 
-**As a pad player** (the tutorial read the owner asked for): `--padcreation`
-takes a character off the DOOR/PATH/PAST/SHEET screens (A picks a calling, twelve
-A's answer the biography, the 10x3 OSK spells the name, START commits, BEGIN);
-`--padscript` then drives the world. The first world frame, **pre-press**, reads
-`PICK A LEAD. A SHOWS YOU WHERE.` with foot `A - SHOW ME WHERE` and `A GO TO IT`
-— pad-worded with no world press, the device seeded from creation
-(`pad-world-prepress`). The courier hail then lands with the plate `A MISSION
-SHEET  D-PAD UP YOUR LETTERS` — **the seam this phase fixed**, now naming the
-pad's own key (`courier-plate-FIXED-deviceaware.png`; the pre-fix
-`…-SEAM-keyboardworded.png` shows the `J` it used to print).
+## Found by driving, this phase
 
-**The mechanical items:**
-- **Pointer, the silent pages.** Photographed answering the mouse: pause (hover
-  inverts the row under the pointer, `WAIT` filled), the wait page (click a row →
-  the clock advances, `WAITED UNTIL 13:00`), the CONTROLS/keys page (hover moves
-  the fill **and the detail pane follows the pointer** to the RUN row —
-  `ptr-controls-hover`), the options page (SETTINGS click opens it), and the
-  casebook TAB row — clicking `THE CASE` swaps the detail pane with the list and
-  frame dead still (stable-geometry), the frame **byte-identical to the
-  committed `ptr-tab-thecase.png`**, and `LEADS` clicks back. The tiled Menu's
-  four tiles (`--character`) and the conversation topic list share the
-  `menuTileHitAtPixel` / `dialogueTopicAtPixel` inverses proven on their
-  siblings and green under `test_menu_view`/`test_tavern_render`.
-- **Regression:** a left-click on the open street with nothing up **punches**
-  (`NOBODY IN REACH` — the world verb, not swallowed): the pointer branch only
-  runs on `pointer_page_open` (`ptr-street-punch`).
-- **J opens the journal**, and the copy says J: a fresh-defaults windowed run
-  writes `bind menu J PAD_UP`, the keys page reads `MENU  J`, the opening hint
-  reads `J YOUR NOTES  < > MORE PAGES  E USE`, and pressing J closes the
-  auto-opened new-game casebook to that hint. (`E USE` is the honest fallback
-  under a cfg with no pad `interact` half — the other-hand rule.)
-- **The B seam, closed:** on a pad, one **B** closes the casebook to the street
-  with **no CROUCHED banner** (`pad-after-b-nocrouch`).
-- **The NAME wiggle, gone:** the pad OSK typed to 2 / 6 / 12 glyphs holds its
-  outer frame at exactly x[114..497] all three times (`pad-name12-nowiggle`); the
-  keyboard sheet is proven by the green `test_creation` cap-measure case and by
-  `creation-name.png` staying byte-identical.
+1. **The zero-paces re-travel** (`kw6-mapafter`, `kw7-press`): the arrival
+   ring lands you at the door but *outside* the place's footprint, so
+   reopening the map on your own destination reads `FROM YOU N. 0 PACES` —
+   and still offers `T - TRAVEL (1 MIN)`. The press charges a real minute,
+   moves you a step, and re-fires the plate. Honest by every rule it was
+   built under (`contains()` is strict, the floor is one minute), but it
+   reads as a vending machine selling you the doorstep you stand on. One
+   predicate (suppress the verb when the plan's landing is within a pace or
+   two) closes it. **Flagged as the top polish item.**
+2. **`quay-spawn.png` was a stale bless** — it read `TAB YOUR NOTES` because
+   every prior capture ran beside the player's own `granadad-controls.cfg`
+   (`bind menu TAB PAD_UP`, the repo-root file .gitignore #77 calls the
+   player's, not the repo's). Fresh defaults say `J YOUR NOTES` (the owner's
+   own J-for-journal ruling). Re-blessed this phase from a twin-verified
+   fresh-default capture, identical on both builds; the other 21 demo frames
+   were already byte-identical without the cfg. Capture rule going forward:
+   **set the root cfg aside before any bless.**
 
-## Copy review — the case reads in the city register
+## Copy review — the register holds
 
-Every player-facing line of THE QUIET TENANT was read against the register
-(brief, urbane, salted, no AI-ish over-explaining). **It holds, and at its best
-it is very good.** The strongest lines earn their place: *the close* "THE MISSION
-HAS ITS MAN. THE FLAME KEEPS ITS OWN COUNSEL."; *the delivery* "MAELL DOES NOT
-THANK YOU FOR IT, AND DOES NOT PRETEND IT WAS NOT ASKED FOR."; *the brawl teach*
-"A BRAWL IS THE HOUSE'S OWN LAW, STEEL IS THE WATCH'S. THE BOUNCER ANSWERS THE
-FIRST SWING, SO ANSWER HIM FIRST."; *the follow-up* "MAELL DOES NOT WRITE TWICE."
-Maell's sheet ("I know what this sheet is. I have written it anyway…") takes the
-weight of the order in the author's own hand, exactly as the brief asked.
+Every travel line read against the city register: `NOT WITH THE FINCH. WALK
+HIM.` is the best of them — brief, urbane, load-bearing. `NOT WITH THE WATCH
+CLOSING.`, `NO WAY THERE ON FOOT.`, `NO GROUND TO STAND ON.`, `WALKED TO …
+08:01.` all hold; the verb row's `T - TRAVEL (2 MIN)` matches the reference's
+`e - Establish (Cost: 200*)` grammar exactly. Nothing clunks; nothing reads
+AI-ish. The dormant `ABOUT AN HOUR` phrasing only ever prints if a journey
+scale lands (below).
 
-The lines that teach a mechanic carry the most instructional load — "EVERY PROBE
-IS NOISE. … CROUCH, AND KEEP OFF THE LIT TILES." is the closest any line comes to
-a tutorial voice — but they stay imperative and in-fiction, and none clunk. No
-line reads as AI-ish or over-explained. **Nothing flagged for a rewrite.**
+## Rulings awaiting the owner's veto — all built, all working
 
-## The canon choices stand, flagged for the owner's veto (unchanged)
+- **Minutes, not hours — and now measured at 1-2 MIN worst case.** The ward is
+  one district; the honest walk is small. If travel should *feel* like a
+  journey, an integer scale is one line (×8 ≈ 8-16 min on the measured legs;
+  the `ABOUT AN HOUR` label already handles ≥60). As shipped it is honest and
+  nearly free.
+- **Arrival = the aim-point door, snapped to standable ground; plate fires.**
+  Note: the plate names the ground you land ON (`ROPEWYND`, the street at the
+  Mission's door) while the arrival line names the destination — consistent,
+  but worth your eye once.
+- **The zero-paces re-travel** (this phase's find, above) — veto the current
+  behaviour and one predicate suppresses the verb at your own door.
+- **Heat and warrants deliberately do NOT refuse** — waiting one out is a
+  tactic, your own wait-page ruling.
+- **The black-dip fade** is new render vocabulary (and the cuts landing now
+  shares its seam) — driven, and it reads as travel, not teleport.
+- **HUD rename `FINCH IN HAND` → `CARRYING FINCH`** (you found the old label
+  unclear). Carry refusal + arrival lines are new register literals.
+- **Keyboard T, pad X** (Attack's pad half — Interact's pad half IS the FACE
+  IT confirm; the pad gate keeps mouse-left from double-firing).
+- Carried forward from the courier case, unchanged: courier=Onna,
+  author=Maell, target=Finch, site=the Gull; the tarry-jek line resolved as
+  Finch; Gabri stays off-map word.
 
-The case lane chose from existing actors/buildings and flagged each; nothing here
-overrode them. For the owner to accept or veto:
-- **Courier = Onna**, **author = Father Maell**, **target = Finch** (the
-  Skyrunner on the Gull roster), **site = the Gilded Gull**, delivery at the
-  Mission back room. All existing.
-- **⚠ The one canon ADDITION:** the case resolves casebook.json's deliberately
-  ambiguous tarry-jek line ("A THIN FELLOW WALKED IN THROUGH A GAP NO MAN FITS")
-  as **Finch**, paid to open the Drowned Hold from inside. Clean fit, but it
-  *interprets* an open Bloodletter thread. Reject it and only the snug-stool
-  `found` line needs softening; the case still works.
-- **Gabri never appears** — "word has come from Gabri" is word, through the
-  Mission, from off-map; the sheet says outright it will not put down from where.
-  (Pre-existing tension the case lane raised and did not touch:
-  `bloodletter_letters.json`'s `gabri-dispatch` is written in-ward at the Drowned
-  Hold. Reconcile at your discretion.)
+## The verdict: the reach machinery is done — the blocker is content alone now
 
-## Honest leftovers (the case lane's own flags, still true)
+The standing bar is "clean and near ready for early access," and the standing
+blocker was **content and reach**. Reach is now honestly answered: a
+stranger's first sixty seconds still land (creation on one grammar, the
+casebook hint, Onna at your elbow by six seconds), and the first thirty
+minutes now include a map you can read, walk by places, and *travel* — the
+courier's own "find the Gull, wait for dark" beats can be reached in two
+presses, and every arrival is a named threshold. The ward finally plays like
+a place you get around in rather than a corridor you re-walk.
 
-- **No carried-body render.** TAKE HIM UP sets a bale-shaped session flag (`FINCH
-  IN HAND` on the HUD) and the delivery closes on arrival; there is no
-  over-the-shoulder body drawn. Follow-up render work.
-- **No stay-down state.** A downed patron recovers at quarter health, so the
-  kidnap is honestly "put him down and take him up promptly" — the crosshair
-  prompts the instant he is down; dawdle and he rises and you re-subdue. Once
-  taken, the carry flag persists.
-- **No manual case-switcher.** The courier case takes over the active-case
-  surfaces until delivered, then the Bloodletter returns (`sheetCaseLive()`).
-  Correct for a focused tutorial; no third tab this pass.
-- `case-night`'s crosshair rests on the bouncer (`E - PICKPOCKET`) rather than
-  the box — a scripted-drive aim, not a bug; the box lead is read regardless
-  (READ 1/3 in `case-gull`).
-
----
-
-## The verdict: closer again — the first minutes now teach and pull — and still not near ready
-
-The standing verdict was "closer by a real step — still not near ready; the
-blocker moved to content and reach." This phase moved the blocker's near edge:
-there is now a **second authored case that is a real tutorial**, and it works.
-
-**A stranger's first sixty seconds, today:** creation on one measured grammar
-(door, calling, quiz, the sheet — the NAME wiggle now gone), then the world with
-the casebook waiting and the `J YOUR NOTES` hint. And roughly six seconds in, the
-courier: *"ONNA, AT YOUR ELBOW: PAPER FOR YOU, OUT OF THE MISSION."* — an
-inciting incident, in the register, that hands the newcomer a sheet and a reason.
-That is a genuinely better first minute than a lone Bloodletter waiting to be
-noticed.
-
-**The first thirty minutes, now:** the courier's errand is a guided line — read
-the sheet, find the Gull on the map, wait for the dark hours, cross the guest
-floor crouched, put Finch down with fists, carry him to the Mission — and each
-lead teaches one system in the ward's own words. It hands off to the Bloodletter,
-the twelve-lead investigation. So the arc is real: a short linear tutorial that
-opens into the sandbox's one open case. That is the shape an early-access opening
-wants.
-
-**But the bar is "clean and near ready for early access," and the honest
-distance is still content and reach.** Two authored cases — one four-lead
-tutorial, one twelve-lead investigation — is an evening, maybe two, and then the
-authored well is dry; the scripted lines (skyrun, nemesis, contract, burgle,
-roofs) are system demos, not narrative. The tutorial is linear and short and
-gives up its own last page early (the sheet names the delivery before you take
-him). No line clunks and no screen is broken — the **presentation debt is paid**
-— but a sandbox built for a season still holds an evening of authored play. **Not
-near ready.** The reason is no longer the screens or the prompts; it is that
-there is not enough game behind them yet.
-
-**The worst screen** is no longer a screen with a defect — the sheet's wiggle is
-gone, the Menu is on the register, every page answers the mouse. The least
-polished surface left is the **options overlay** (F2/SETTINGS): a bottom-strip
-HUD list rather than a full master/detail card like the CONTROLS page beside it —
-functional, in-register, but the one place the reference's card grammar is not
-fully spent.
+But the honest distance did not move: **two authored cases is an evening**,
+and the scripted lines are system demos. Fast travel makes the well easier to
+drink from; it does not fill it. The worst surface today is no longer a
+screen — it is the zero-paces re-travel wart above, one predicate deep, and
+behind it the options overlay still runs a HUD strip. **Not near ready — the
+reason is unchanged: not enough game behind the screens yet. Everything in
+front of the content is now ready to carry it.**
 
 ## The three things to do next
 
-1. **Authored content, in bulk — the whole remaining distance.** Not one more
-   case: a spread of them, and the reach to drain them over more than an evening.
-   Every screen and prompt is ready to carry it; nothing else is the blocker.
-2. **Finish the courier case's honest leftovers into real mechanics** — a
-   carried-body render for TAKE HIM UP, and a stay-down (or bound) state so a
-   kidnap is a haul across the district rather than a prompt-race. These are the
-   two places the tutorial teaches a verb the sim only half-simulates.
-3. **The options page onto the master/detail card**, to spend the reference's
-   grammar in the one surface that still runs a HUD strip — and, cheaply, a
-   camera dolly in the demo so the trailer moves.
+1. **Authored content, in bulk — still the whole remaining distance.** A
+   spread of cases with the reach to drain them over more than an evening.
+   Nothing else blocks early access.
+2. **Close the travel wart and the courier's half-simulated verbs:** suppress
+   the zero-paces travel offer; then the carried-body render and a
+   stay-down/bound state, so the kidnap is a haul rather than a prompt-race.
+   (If the owner wants journey-feel, land the one-line cost scale in the same
+   pass.)
+3. **The options page onto the master/detail card**, the one surface still on
+   a HUD strip — and the demo camera dolly so the trailer moves.
 
 ## Still open, unchanged
 
-`--demo-capture` drops `creation-origin` (the shutter race; the `--creation`
+`--demo-capture` drops `creation-origin` (the shutter race; `--creation`
 substitute is byte-exact); the creation window does not answer F12; the input
 router lives in `main.cpp`'s anonymous namespace, unlinkable by any suite; no
-camera motion in the demo; the 1920 sheet sits 1px left of its old centring
-(invisible, integrator-found, noted so nobody hunts it as drift).
+camera motion in the demo; the 1920 sheet sits 1px left of its old centring.
+New: the windowed harness cannot yet drive keyboard creation blind (pad path
+covers it); `--travel=NAME` wants the roster's exact mixed-case name.
