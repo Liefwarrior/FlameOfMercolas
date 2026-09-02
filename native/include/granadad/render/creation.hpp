@@ -541,13 +541,45 @@ public:
     /// the identical reason: a captured frame has to be a pure function of
     /// how many times this was called, never of wall-clock time. Also decays
     /// the answer-commit pulse, ImpactPulse's own once-per-step contract.
+    ///
+    /// UI-EA-SPEC sec. 3 rule 1 (FLOW lane): AND THE PAGE'S OWN EASE. A step
+    /// change -- door to roster, question to question, verdict to sheet --
+    /// re-arms pageAnim_ from its opening bump, so every screen of this flow
+    /// arrives with the same kPageEaseSteps motion every world page opens
+    /// with, replacing the unconditional alpha = 1.0F the page used to
+    /// hard-code. Detected HERE, at the one per-frame seam, rather than
+    /// instrumented into every choose*()/back*() mutation: a walk that never
+    /// advances (a headless capture, a hand-built test) keeps alpha exactly
+    /// where it was -- fully open -- so every cold-drawn frame in the suite
+    /// and every parity capture is byte-for-byte what it always was, and
+    /// only a live window (which advances every frame) plays the ease.
     void advance() noexcept {
         ++stepCount_;
         commitPulse_.advance();
+        if (step_ != lastAnimStep_) {
+            lastAnimStep_ = step_;
+            pageAnim_.snapTo(false);
+            pageAnim_.setTarget(true);  // carries its own first bump
+        }
+        pageAnim_.advance();
     }
     [[nodiscard]] float phase() const noexcept {
         return static_cast<float>(stepCount_) / 60.0F;
     }
+
+    // --- UI-EA-SPEC sec. 4 violation #7: the door's armed quit (FLOW) -----
+    //
+    // ESC at the door used to fall out of the window unarmed -- one slip of
+    // the one key every other surface backs out with, and the whole game
+    // was gone. The client's creation_input owns the EDGE (first ESC arms,
+    // second leaves, any other press disarms); this is the STATE, held here
+    // so the page can print the armed row -- `ESC AGAIN - LEAVE` -- the same
+    // way the pause menu's own QUIT row already argues for itself (PAGES
+    // owns that row copy, reading quitArmed()).
+
+    [[nodiscard]] bool quitArmed() const noexcept { return quitArmed_; }
+    void armQuit() noexcept { quitArmed_ = true; }
+    void disarmQuit() noexcept { quitArmed_ = false; }
 
 private:
     /// One row of the customize screen's topic list, and what it means to
@@ -698,6 +730,24 @@ private:
     ImpactPulse commitPulse_;
     CreationResult result_;
     std::int64_t stepCount_ = 0;
+
+    // --- UI-EA-SPEC sec. 3 rule 1: the page ease (FLOW lane) ---------------
+    /// The screen's own open ease, kPageEaseSteps like every world page.
+    /// Constructed SETTLED OPEN -- see the initializer -- so a flow that is
+    /// never advanced (headless captures, hand-built tests) draws at the
+    /// full alpha the old hard-coded 1.0F gave, byte for byte; advance()
+    /// re-arms it from the opening bump on every step change, which is the
+    /// only place the ease is ever played.
+    EasedToggle pageAnim_ = [] {
+        EasedToggle anim;
+        anim.snapTo(true);
+        return anim;
+    }();
+    /// The step advance() last saw, so a change re-arms the ease exactly
+    /// once. Starts at the flow's own starting step.
+    CreationStep lastAnimStep_ = CreationStep::Origin;
+    /// Violation #7: the door's armed quit -- see quitArmed() above.
+    bool quitArmed_ = false;
 };
 
 /// Clears the frame and draws whichever of the two screens the flow is

@@ -1371,7 +1371,12 @@ CreationPage CreationFlow::page() const {
     CreationPage out;
     out.title = "CREATION";
     out.tabs = stageTabs();
-    out.alpha = 1.0F;
+    // UI-EA-SPEC sec. 3 rule 1 (FLOW): the page's own ease, no longer an
+    // unconditional 1.0F. Settled open at construction and re-armed only by
+    // advance() on a step change -- see pageAnim_'s own header -- so every
+    // cold-drawn frame is exactly what it always was and a live window gets
+    // the same kPageEaseSteps motion every world page opens with.
+    out.alpha = pageAnim_.value();
 
     // ------------------------------------------------------------------ door
     if (step_ == CreationStep::Origin) {
@@ -2146,9 +2151,12 @@ void drawCreation(Framebuffer& target, const CreationFlow& flow) {
     // clear is now only the backstop for the handful of pixels a window whose
     // height does not divide into whole rows leaves outside the grid.
     target.clear(Rgb{0.04F, 0.04F, 0.05F});
-    // STILL NEVER EASES OPEN -- this file's own documented rule. This screen is
-    // not an overlay over a running world; it IS the screen, so there is nothing
-    // for it to ease from and nothing underneath it to reveal.
+    // UI-EA-SPEC sec. 3 rule 1: the "never eases" rule is retired. The page
+    // eases up from the clear on every STEP change (CreationPage::alpha is
+    // pageAnim_'s value now, re-armed in CreationFlow::advance()), so moving
+    // from the door to the roster to a question reads as motion rather than
+    // a swap -- while a flow that is never advanced still draws settled at
+    // full strength, which keeps every headless capture what it was.
     drawCreationPage(target, flow.page());
 }
 

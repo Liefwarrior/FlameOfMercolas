@@ -805,19 +805,19 @@ void print_usage() {
         "                       review (a taken calling converged on the\n"
         "                       customize screen), customize (CUSTOM, a few\n"
         "                       points spent), devin or gabri (fixed sheets)\n"
-        "  --settle             run a scripted overlay's open animation to\n"
-        "                       completion before the shutter, instead of\n"
-        "                       capturing the frame it opened on (this is\n"
-        "                       now the DEFAULT for a screenshot -- see\n"
-        "                       --no-settle)\n"
+        "  --settle             run to the AT-REST frame before the shutter\n"
+        "                       (the default for a screenshot): ~4s of\n"
+        "                       zero-input steps, past the page's open ease\n"
+        "                       AND the tutor bands' page-open raise easing\n"
+        "                       back down -- the frame the word budgets bind\n"
         "  --no-settle          capture the overlay's opening bump instead\n"
-        "                       of its settled, fully-open frame -- only\n"
-        "                       useful for proving the transition itself\n"
-        "                       does not flash on its first drawn frame\n"
-        "  --settle-steps=N     VERIFICATION ONLY: run exactly N zero-input\n"
-        "                       steps before the shutter instead of 16-or-0,\n"
-        "                       so a mid-transition frame of the panel/menu\n"
-        "                       eases can actually be photographed\n"
+        "                       of its settled at-rest frame -- only useful\n"
+        "                       for proving the transition itself does not\n"
+        "                       flash on its first drawn frame\n"
+        "  --settle-steps=N     run exactly N zero-input steps before the\n"
+        "                       shutter instead of the at-rest default: 0\n"
+        "                       photographs the raised state, a small N a\n"
+        "                       mid-transition frame of the panel eases\n"
         "  --refocus=TILE       VERIFICATION ONLY: after --character/--map has\n"
         "                       been given --settle-steps to genuinely finish\n"
         "                       opening, switch the tiled Menu's focus to TILE\n"
@@ -2686,22 +2686,38 @@ bool creation_input(render::CreationFlow& flow, render::Key key) {
     const render::CreationStep step = flow.step();
 
     if (step == render::CreationStep::Origin) {
+        // UI-EA-SPEC sec. 4 violation #7: ESC AT THE DOOR ARMS BEFORE IT
+        // LEAVES. One slip of the universal back key used to close the whole
+        // window unarmed -- the exact "eats your evening once and is never
+        // trusted again" the in-world quit already asks twice about. First
+        // ESC arms (the page prints `ESC AGAIN - LEAVE` off flow.quitArmed(),
+        // PAGES' row copy); a second in a row leaves; any other press is a
+        // change of mind and disarms, the pause menu's own movePauseCursor
+        // manners.
         switch (verb) {
             case CreationVerb::Up:
+                flow.disarmQuit();
                 flow.moveOriginCursor(-1);
                 return true;
             case CreationVerb::Down:
+                flow.disarmQuit();
                 flow.moveOriginCursor(1);
                 return true;
             case CreationVerb::Confirm:
+                flow.disarmQuit();
                 flow.chooseOrigin();
                 return true;
             case CreationVerb::Cancel:
+                if (!flow.quitArmed()) {
+                    flow.armQuit();
+                    return true;
+                }
                 return false;
             default:
                 break;
         }
         if (digit > 0 && digit <= static_cast<int>(render::originTemplates().size())) {
+            flow.disarmQuit();
             flow.setOriginCursor(digit - 1);
             flow.chooseOrigin();
         }
@@ -3254,6 +3270,16 @@ render::CreationResult run_creation_window(const Options& options) {
     render::Framebuffer frame(width, height);
     bool cancelled = false;
 
+    // UI-EA-SPEC sec. 3 rule 3: BOOT IS A WORLD SEAM AND WEARS THE VEIL. The
+    // first dozen frames of the first window ease up from black instead of
+    // slamming the door screen on -- the same vocabulary the travel dip and
+    // the creation->world cut below speak, windowed-only so no headless
+    // capture is touched. Counted in frames of this window's own loop
+    // (vsync'd; the reel path is already clamped to 60), not steps: there is
+    // no step pump on this screen and nothing here is captured.
+    constexpr int kCreationVeilFrames = 12;
+    int bootVeilFrame = kCreationVeilFrames;
+
     // THE PARITY PASS. THE CHARACTER SCREEN IS THE FIRST SURFACE A PLAYER
     // TOUCHES, and a windowed launch opens it before the world -- so a pad
     // script aimed at the world would never reach the world without one aimed
@@ -3417,6 +3443,15 @@ render::CreationResult run_creation_window(const Options& options) {
                 --shotIn;
             }
         }
+        // The boot veil, applied AFTER the reel's shutter reads the frame --
+        // committed reel PNGs are veil-free by construction (and the shutter
+        // waits 40 frames regardless).
+        if (bootVeilFrame > 0) {
+            --bootVeilFrame;
+            frame.fillRect(0, 0, frame.width(), frame.height(), render::Rgb{0.0F, 0.0F, 0.0F},
+                           static_cast<float>(bootVeilFrame) /
+                               static_cast<float>(kCreationVeilFrames));
+        }
         if (texture != nullptr) {
             SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -3444,6 +3479,26 @@ render::CreationResult run_creation_window(const Options& options) {
             // leaves this window the way closing it does.
             cancelled = !flow.done();
             break;
+        }
+    }
+
+    // UI-EA-SPEC sec. 3 rule 3: CREATION->WORLD IS DRESSED. Black falls over
+    // the finished sheet BEFORE the SDL window teardown -- so the seconds of
+    // window-swap that follow read as one deliberate cut to black, not as the
+    // app restarting -- and run_client dresses the other side, easing the
+    // world up from black through the travel dip's own machinery
+    // (Session::dressInstantCut). Windowed-only, played only on a COMPLETED
+    // flow: a cancel (the armed door quit) still leaves plainly.
+    if (flow.done() && !cancelled && texture != nullptr) {
+        for (int i = 1; i <= kCreationVeilFrames; ++i) {
+            render::drawCreation(frame, flow);
+            frame.fillRect(0, 0, frame.width(), frame.height(), render::Rgb{0.0F, 0.0F, 0.0F},
+                           static_cast<float>(i) / static_cast<float>(kCreationVeilFrames));
+            SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+            SDL_RenderPresent(renderer);
         }
     }
 
@@ -3510,6 +3565,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     if (!session.body().spawnedLegally()) {
         std::printf("granadad: spawn tile is not standable -- check --spawn\n");
         return 1;
+    }
+
+    // UI-EA-SPEC sec. 3 rule 3: THE WORLD EASES UP FROM BLACK AT BOOT -- the
+    // other half of the dressed creation->world cut (the creation window let
+    // black fall before its teardown; this window rises from it), through
+    // the travel dip's own machinery so boot, travel and the case-watch seam
+    // all speak one veil. NOT under --demo or --case-watch: their committed
+    // frames and byte-stable replays predate the veil, and a boot dip would
+    // move every early frame of both. Their guards stay green untouched.
+    if (!options.demo && !options.caseWatch) {
+        session.dressInstantCut();
     }
 
     // #84. THE SEAM #80 NAMED, CLOSED. run_creation_window() built a real

@@ -2114,3 +2114,56 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
         CHECK(kb.find("\x01 OPEN") != std::string::npos);
     }
 }
+
+// ===========================================================================
+// UI-EA-SPEC sec. 3 rule 1 + sec. 4 violation #7 (FLOW lane): the page ease
+// and the door's armed quit
+// ===========================================================================
+
+TEST_CASE("the creation page ease: cold draws stay full, a live window eases each step") {
+    // THE COLD-DRAW GUARANTEE. A flow that is never advanced draws settled
+    // at full alpha -- byte-for-byte the old hard-coded 1.0F -- which is
+    // what keeps every headless capture and every hand-built frame in this
+    // suite exactly what it was.
+    render::CreationFlow flow = fresh();
+    CHECK(flow.page().alpha == 1.0F);
+    flow.chooseOrigin();  // a step change, with no advance() yet
+    CHECK(flow.page().alpha == 1.0F);
+
+    // THE LIVE-WINDOW EASE. advance() notices the step change, re-arms the
+    // ease from its opening bump (never exactly zero -- EasedToggle's own
+    // first-frame rule), and settles back to exactly 1 within
+    // kPageEaseSteps.
+    flow.advance();
+    const float bump = flow.page().alpha;
+    CHECK(bump > 0.0F);
+    CHECK(bump < 1.0F);
+    for (int i = 0; i < granadad::render::kPageEaseSteps; ++i) {
+        flow.advance();
+    }
+    CHECK(flow.page().alpha == 1.0F);
+
+    // And advancing WITHOUT a step change never re-arms: the page holds
+    // its settled alpha while the player reads it.
+    flow.advance();
+    CHECK(flow.page().alpha == 1.0F);
+}
+
+TEST_CASE("violation #7: the door's quit is armed state, and any other press disarms it") {
+    // The client's creation_input owns the edge (first ESC arms, second
+    // leaves, other presses disarm); this is the state surface it drives
+    // and the page prints the armed row from. Proven here at the Session
+    // altitude the suite can reach -- the routing itself lives in main.cpp's
+    // anonymous namespace, the file's own documented gap.
+    render::CreationFlow flow = fresh();
+    CHECK_FALSE(flow.quitArmed());
+    flow.armQuit();
+    CHECK(flow.quitArmed());
+    flow.disarmQuit();
+    CHECK_FALSE(flow.quitArmed());
+    // Arming is idempotent and survives advance() -- the countdown-free
+    // pause-menu shape: armed until something disarms it, never on a timer.
+    flow.armQuit();
+    flow.advance();
+    CHECK(flow.quitArmed());
+}

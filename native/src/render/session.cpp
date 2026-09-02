@@ -10497,7 +10497,10 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // the ordinary settle logic below, which sees `config.refocus` non-empty
     // and stands down rather than spending a third, redundant round of steps.
     if (!config.refocus.empty()) {
-        const int preSteps = config.settleSteps >= 0 ? config.settleSteps : (config.settle ? 16 : 0);
+        // UI-EA-SPEC sec. 0 (FLOW): the settle default is kCaptureRestSteps
+        // now -- see the general loop below for the whole argument.
+        const int preSteps = config.settleSteps >= 0 ? config.settleSteps
+                                                     : (config.settle ? kCaptureRestSteps : 0);
         const sim::MoveInput still{};
         for (int i = 0; i < preSteps; ++i) {
             session.step(still);
@@ -10573,10 +10576,17 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // `refocusSteps` capture asked to stop at, silently finishing the swap
     // the caller wanted photographed partway through.
     if (!config.screenshot.empty() && config.refocus.empty()) {
-        // VERIFICATION ONLY. settleSteps overrides the count exactly when
-        // given; otherwise this is unchanged from before that field existed
-        // -- 16 or 0. See SmokeRunConfig::settleSteps's own header.
-        const int steps = config.settleSteps >= 0 ? config.settleSteps : (config.settle ? 16 : 0);
+        // UI-EA-SPEC sec. 0 (FLOW lane): THE DEFAULT SHUTTER IS THE AT-REST
+        // FRAME. kCaptureRestSteps (~4s of zero-input steps, anim.hpp) is
+        // past every disclosure countdown -- the tutor bands' page-open
+        // raise has held its kTutorHoldSteps and fully eased down -- and
+        // short of the kIdleWakeSteps re-raise, so what a default
+        // screenshot shows is the state the word budgets bind. It was 16:
+        // enough for the panel's own rise, nothing else. --settle-steps=N
+        // still overrides exactly (0 photographs the raised state;
+        // --no-settle still means the opening bump).
+        const int steps = config.settleSteps >= 0 ? config.settleSteps
+                                                  : (config.settle ? kCaptureRestSteps : 0);
         const sim::MoveInput still{};
         for (int i = 0; i < steps; ++i) {
             session.step(still);
