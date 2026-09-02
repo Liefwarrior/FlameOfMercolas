@@ -1593,6 +1593,17 @@ void print_usage() {
             session.adjustDistrictMapZoom(-1);
             return true;
         }
+        // FAST TRAVEL (TRAVEL lane). The page's second commit: T is a raw
+        // map-page key exactly as Tab/=/- are, and Interact is the pad's own
+        // half of the verb (X, unclaimed on this page -- the same "verb
+        // wearing a different mode's clothes" the zoom triggers above argue).
+        // The verb row at the detail pane's foot names whichever half is in
+        // the player's hands. Refusals are the Session's to say, out loud,
+        // with the page staying up.
+        if (key == render::Key::T || action == render::Action::Interact) {
+            session.travelDistrictMapSelection();
+            return true;
+        }
         if (confirm) {
             // The commit verb at the foot of the detail pane: turn to face the
             // selection and put the map away.
