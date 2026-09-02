@@ -22,6 +22,7 @@
 // the tier-3 correlation was ever going to answer -- whose ground is under
 // the feet. See plotIndexUnderfoot().
 #include "granadad/sim/docks_signs.hpp"
+#include "granadad/sim/path_finder.hpp"
 #include "granadad/sim/stealth.hpp"
 
 namespace granadad::render {
@@ -4909,6 +4910,72 @@ void Session::skipToHour(int hour) {
     const int wrapped = ((hour % 24) + 24) % 24;
     tavern_->skipTo(wrapped * 3600);
     syncClockAfterSkip();
+}
+
+void Session::skipSeconds(int seconds) {
+    // FAST TRAVEL (TRAVEL lane). skipToHour's own two calls with the truncation
+    // taken out: Tavern::skipTo already measures the jump forward round the
+    // clock face and cools heat on every second of it, and syncClockAfterSkip()
+    // runs the ward's calendar and the population to the new moment. Nothing
+    // here is a second time system -- a travel IS a wait, plus a relocation the
+    // caller makes separately.
+    if (seconds <= 0) {
+        return;
+    }
+    tavern_->skipTo((timeOfDay_ + seconds) % sim::kSecondsPerDay);
+    syncClockAfterSkip();
+}
+
+// ---------------------------------------------------------------------------
+// FAST TRAVEL: the cost of a walk, in the sim's own integers
+// ---------------------------------------------------------------------------
+
+std::int32_t travelRouteUnits(const sim::PathStep& from,
+                              const std::vector<sim::PathStep>& route) noexcept {
+    // The router's own octile currency, recomputed over the route it returned:
+    // 10 per orthogonal step, 14 per diagonal (path_finder.hpp's kStepCost
+    // pair, restated in test_travel.cpp's own pins). A walk-gait band change
+    // -- a stair -- rides its step at no surcharge, exactly as PathFinder
+    // charges it under Gait::Walk.
+    std::int32_t units = 0;
+    const sim::PathStep* at = &from;
+    for (const sim::PathStep& step : route) {
+        const std::int32_t dx = step.x > at->x ? step.x - at->x : at->x - step.x;
+        const std::int32_t dy = step.y > at->y ? step.y - at->y : at->y - step.y;
+        units += (dx != 0 && dy != 0) ? 14 : 10;
+        at = &step;
+    }
+    return units;
+}
+
+std::int32_t travelWalkSeconds(std::int32_t units) noexcept {
+    if (units <= 0) {
+        return 0;
+    }
+    // One octile unit is a tenth of a tile: 256 Q8 / 10. The body walks
+    // kWalkSpeed Q8 per movement step, kStepsPerSecond steps a second, so
+    // seconds = units * 256 / (10 * kWalkSpeed * kStepsPerSecond), rounded UP
+    // -- a walk is never free and never rounds itself shorter.
+    const std::int64_t num = static_cast<std::int64_t>(units) * 256;
+    const std::int64_t den =
+        10LL * sim::kWalkSpeed * sim::kStepsPerSecond;
+    return static_cast<std::int32_t>((num + den - 1) / den);
+}
+
+std::int32_t travelClockMinutes(std::int32_t seconds) noexcept {
+    // NEVER FREE (the owner's ruling, item 1): the floor is one whole minute,
+    // and the verb's restated minutes are exactly the minutes delivered.
+    if (seconds <= 60) {
+        return 1;
+    }
+    return (seconds + 59) / 60;
+}
+
+std::string travelCostLabel(std::int32_t minutes) {
+    if (minutes >= 60) {
+        return "ABOUT AN HOUR";
+    }
+    return std::to_string(minutes) + " MIN";
 }
 
 void Session::syncWardToCalendar() {

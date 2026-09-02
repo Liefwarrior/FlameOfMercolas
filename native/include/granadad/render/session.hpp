@@ -47,6 +47,7 @@
 #include "granadad/sim/letters.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/region_path.hpp"
 #include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
@@ -230,6 +231,13 @@ public:
     /// Jumps the clock, without simulating what happened in between. What
     /// sleeping in a rented room does, and what a capture at a named hour does.
     void skipToHour(int hour);
+    /// FAST TRAVEL (TRAVEL lane). The same jump, in whole seconds: advances
+    /// the clock THROUGH THE WAIT MACHINERY -- Tavern::skipTo plus
+    /// syncClockAfterSkip(), the identical pair skipToHour() spends -- so a
+    /// travel and a wait are ONE time system, never two. skipToHour truncates
+    /// to the top of an hour because its page prints hours; a walk is minutes,
+    /// so this twin takes the seconds whole. Zero or less does nothing.
+    void skipSeconds(int seconds);
 
     /// The camera the body is currently looking through.
     [[nodiscard]] Camera camera() const noexcept;
@@ -2011,6 +2019,44 @@ private:
     /// comparison exactly the way lastPlayerHp_ catches a blow.
     std::int32_t lastCoinForAudio_ = 0;
 };
+
+// ---------------------------------------------------------------------------
+// FAST TRAVEL (TRAVEL lane): the cost of a walk, in the sim's own integers
+// ---------------------------------------------------------------------------
+//
+// THE COST BASIS IS THE ROUTE, NEVER THE CROW. The Overview pane's "54 PACES"
+// is a render-layer float straight line and map_view.hpp bars the simulation
+// from reading anything in that file -- and the travel cost lands in
+// timeOfDay_, which the twin gate compares byte for byte. So the cost is
+// derived from the route the district's own PathFinder answers (salt 0, no
+// jitter; Gait::Walk, the pace being charged), counted in the router's own
+// octile currency (10 per straight step, 14 per diagonal), and converted at
+// the shipped walking pace through human_scale.hpp's constants. Pure integer
+// functions of their arguments, so a case pins the numbers rather than
+// adjectives.
+
+/// The octile units of a walked route: 10 per orthogonal step, 14 per
+/// diagonal -- path_finder.hpp's own kStepCost pair, recomputed from the
+/// returned route so the charge is exactly the distance the router chose.
+/// Walk-gait band changes (a stair) ride their step at no surcharge, which is
+/// what the router itself charges them under Gait::Walk.
+[[nodiscard]] std::int32_t travelRouteUnits(const sim::PathStep& from,
+                                            const std::vector<sim::PathStep>& route) noexcept;
+
+/// Seconds a walk of `units` costs at the shipped walking pace (human_scale's
+/// kWalkSpeed, 1.48 m/s), rounded UP -- travel is never free. One octile unit
+/// is 25.6 Q8 tile-widths; the body walks kWalkSpeed Q8 per movement step at
+/// kStepsPerSecond steps a second.
+[[nodiscard]] std::int32_t travelWalkSeconds(std::int32_t units) noexcept;
+
+/// The whole minutes the clock actually advances -- seconds rounded UP, never
+/// below one, so the verb's restated cost and the delivered skip are the same
+/// number: the Wait page's own honesty rule ("a list that said 1 HOUR while
+/// delivering forty minutes would be lying").
+[[nodiscard]] std::int32_t travelClockMinutes(std::int32_t seconds) noexcept;
+
+/// The verb's cost restatement: "4 MIN", or "ABOUT AN HOUR" from sixty up.
+[[nodiscard]] std::string travelCostLabel(std::int32_t minutes);
 
 /// What a scripted capture run was asked to do.
 struct SmokeRunConfig {
