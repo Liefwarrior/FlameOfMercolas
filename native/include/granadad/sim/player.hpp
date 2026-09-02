@@ -377,6 +377,11 @@ struct MoveInput {
     ///
     /// Nothing a player can press reaches this.
     bool snapVelocity = false;
+
+    /// Memberwise. What the case-watch tape's twin-run check compares -- see
+    /// render::WatchOp. No behavioural weight; two inputs are the same input
+    /// exactly when every field agrees.
+    [[nodiscard]] bool operator==(const MoveInput&) const = default;
 };
 
 // ---------------------------------------------------------------------------

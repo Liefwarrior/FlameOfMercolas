@@ -30,6 +30,18 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846F;
 
+/// CASE WATCH. Holds Session::watchDepth_ raised for one recorded verb's own
+/// body, so a verb a verb calls internally (interact()'s closing examine(),
+/// a step-pump courier) records nothing -- the replay's own top-level call
+/// will make those again. See setWatchRecorder in session.hpp.
+struct WatchDepthGuard {
+    int& depth;
+    explicit WatchDepthGuard(int& d) noexcept : depth(d) { ++depth; }
+    ~WatchDepthGuard() noexcept { --depth; }
+    WatchDepthGuard(const WatchDepthGuard&) = delete;
+    WatchDepthGuard& operator=(const WatchDepthGuard&) = delete;
+};
+
 [[nodiscard]] SessionConfig resolved(const SessionConfig& in) {
     SessionConfig out = in;
     if (out.contentDir.empty()) {
@@ -555,6 +567,8 @@ sim::RoofResult Session::tryClimb() {
 }
 
 void Session::climb() {
+    recordWatchOp(WatchOpKind::Climb);
+    const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
     if (talking()) {
         return;
@@ -586,6 +600,8 @@ sim::RoofResult Session::tryDropDown() {
 }
 
 void Session::dropDown() {
+    recordWatchOp(WatchOpKind::Drop);
+    const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
     if (talking()) {
         return;
@@ -676,6 +692,8 @@ void Session::steal() {
 // ---------------------------------------------------------------------------
 
 void Session::toggleCrouch() {
+    recordWatchOp(WatchOpKind::Crouch);
+    const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
     if (talking()) {
         return;
@@ -894,6 +912,8 @@ int Session::sheetLeadInLookReach() const {
 }
 
 void Session::examine() {
+    recordWatchOp(WatchOpKind::Examine);
+    const WatchDepthGuard watchGuard(watchDepth_);
     if (talking() || picking()) {
         return;
     }
@@ -1033,6 +1053,8 @@ constexpr std::int32_t kTakeReachTiles = 2;
 }  // namespace
 
 void Session::courierDeliverNow() {
+    recordWatchOp(WatchOpKind::CourierNow);
+    const WatchDepthGuard watchGuard(watchDepth_);
     if (courierStage_ != 0 || !sheetRaws_.loaded() || !sheetBook_.active()) {
         return;
     }
@@ -2344,13 +2366,21 @@ void Session::toggleMenuFocused(int focus) {
     syncPanelAnim();
 }
 
-void Session::toggleCasebook() { toggleMenuFocused(kMenuFocusJournal); }
+void Session::toggleCasebook() {
+    recordWatchOp(WatchOpKind::Casebook);
+    const WatchDepthGuard watchGuard(watchDepth_);
+    toggleMenuFocused(kMenuFocusJournal);
+}
 
 void Session::toggleCharacter() { toggleMenuFocused(kMenuFocusCharacter); }
 
 void Session::toggleMap() { toggleMenuFocused(kMenuFocusMap); }
 
-void Session::toggleLetters() { toggleMenuFocused(kMenuFocusLetters); }
+void Session::toggleLetters() {
+    recordWatchOp(WatchOpKind::Letters);
+    const WatchDepthGuard watchGuard(watchDepth_);
+    toggleMenuFocused(kMenuFocusLetters);
+}
 
 // ---------------------------------------------------------------------------
 // THE CASEBOOK PASS: the book as a composed master/detail page, and the route
@@ -2855,7 +2885,36 @@ void Session::settleDefeat() {
     syncWardToCalendar();
 }
 
+void Session::recordWatchOp(WatchOpKind kind, std::int32_t a, bool ok) {
+    if (watchTape_ == nullptr || watchDepth_ != 0) {
+        return;
+    }
+    WatchOp op;
+    op.kind = kind;
+    op.a = a;
+    op.ok = ok;
+    watchTape_->push_back(op);
+}
+
+void Session::watchChapter(std::int32_t index) { recordWatchOp(WatchOpKind::Chapter, index); }
+
+void Session::watchBeatLanded(std::int32_t index, bool ok) {
+    recordWatchOp(WatchOpKind::BeatLanded, index, ok);
+}
+
 void Session::step(const sim::MoveInput& input) {
+    // CASE WATCH. Recorded with the yaw the body carries INTO the step,
+    // because the scripted walker (stepToward) steers by writing yaw directly
+    // between steps -- an input tape without the yaw would replay every walk
+    // in a straight line. Replay restores the yaw, then steps.
+    if (watchTape_ != nullptr && watchDepth_ == 0) {
+        WatchOp op;
+        op.kind = WatchOpKind::Step;
+        op.move = input;
+        op.a = body_->yaw();
+        watchTape_->push_back(op);
+    }
+    const WatchDepthGuard watchGuard(watchDepth_);
     // The room moves first, then the shove it asked for is applied to the body
     // that owns its own collision, then the player's own input. That order is
     // deliberate: a bouncer's shove and a player's step in the same movement
@@ -3296,6 +3355,8 @@ bool Session::talkToWard() {
 }
 
 void Session::interact() {
+    recordWatchOp(WatchOpKind::Interact);
+    const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
     if (picking()) {
         // Not this key's mode to answer for -- main.cpp's route_menu_key
@@ -3785,6 +3846,8 @@ void Session::nextTopicPage() {
 }
 
 void Session::chooseVisibleTopic(int slot) {
+    recordWatchOp(WatchOpKind::Topic, slot);
+    const WatchDepthGuard watchGuard(watchDepth_);
     if (slot < 0 || slot >= kTopicPageSize) {
         return;
     }
@@ -4802,6 +4865,8 @@ DialogueViewState Session::dialogueView() const {
 }
 
 void Session::punch() {
+    recordWatchOp(WatchOpKind::Punch);
+    const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
     const sim::Tavern::PunchResult result = tavern_->playerPunchNearest();
     if (!result.swung) {
@@ -4906,6 +4971,8 @@ void Session::settleSleep() {
 }
 
 void Session::skipToHour(int hour) {
+    recordWatchOp(WatchOpKind::SkipHour, hour);
+    const WatchDepthGuard watchGuard(watchDepth_);
     const int wrapped = ((hour % 24) + 24) % 24;
     tavern_->skipTo(wrapped * 3600);
     syncClockAfterSkip();
@@ -7997,23 +8064,32 @@ constexpr std::int32_t kCaseBeats = 8;
     int landed = 0;
     std::int32_t beat = 0;
     const auto mark = [&](bool ok) {
+        // CASE WATCH. The verdict lands on the tape as well as in the mask, so
+        // the watch director's shutter can go on the beat's own payoff frame.
+        // Recorder-only; with no tape attached this whole line is a no-op.
+        session.watchBeatLanded(beat, ok);
         if (ok) {
             gCaseBeatMask |= 1 << beat;
             ++landed;
         }
         ++beat;
     };
+    // CASE WATCH. Announces "beat N plays now" onto the tape ahead of each
+    // block below -- the caption hook, and nothing else; see watchChapter.
+    const auto chapter = [&]() { session.watchChapter(beat); };
     const sim::CasebookRaws& raws = session.sheetRaws();
     if (!raws.loaded()) {
         return 0;
     }
 
+    chapter();
     // 1. THE SHEET INTO THE HAND. The courier's own beat, countdown skipped so
     // a headless run does not walk in place for six seconds. The book goes
     // live and the handed letter turns up on the Letters tile at once.
     session.courierDeliverNow();
     mark(session.sheetCaseLive());
 
+    chapter();
     // 2. THE SHEET READ. The first thing the errand teaches is that paper is
     // read here -- the handed document unfolds on the Letters tile the moment
     // its lead is heard, no walk owed. A `sheet` shutter stops here with it
@@ -8027,6 +8103,7 @@ constexpr std::int32_t kCaseBeats = 8;
     }
     session.toggleLetters();  // put the paper down and get the world back
 
+    chapter();
     // 3. THE GULL. Walk to the door lead and look -- the map-and-casebook beat,
     // and it opens both the box and the tenant.
     const sim::Lead& door = raws.leads()[static_cast<std::size_t>(raws.indexOf("gull-door"))];
@@ -8039,6 +8116,7 @@ constexpr std::int32_t kCaseBeats = 8;
         return landed;
     }
 
+    chapter();
     // 4. THE WAIT. To two in the morning: the doors just barred, the candles
     // out, the hearth dying, and the one hour Finch keeps the snug that the
     // room is also dark enough to work. skipToHour is exactly what a WAIT pick
@@ -8047,6 +8125,7 @@ constexpr std::int32_t kCaseBeats = 8;
     session.skipToHour(2);
     mark(session.timeOfDay() / 3600 == 2);
 
+    chapter();
     // 5. THE BOX, ON THE GUEST FLOOR. Up the stair, crouched, and a look at the
     // box lead -- the break-in taught as a place stood over in the dark. The
     // box lead sits on the upper band, so the climb is part of the beat.
@@ -8066,6 +8145,7 @@ constexpr std::int32_t kCaseBeats = 8;
         return landed;
     }
 
+    chapter();
     // 6. THE TENANT, PUT DOWN WITH FISTS. Down off the guest floor, upright
     // again (a man is taken up standing over him, not from a crouch), and to
     // Finch's own snug post. Punch -- NOTHING EDGED, the player carries fists,
@@ -8101,11 +8181,13 @@ constexpr std::int32_t kCaseBeats = 8;
         return landed;
     }
 
+    chapter();
     // 7. TAKE HIM UP. The one press the errand adds -- interact() resolves it
     // ahead of TALK when a downed tenant is in reach.
     session.interact();
     mark(session.sheetCarry());
 
+    chapter();
     // 8. TO THE MISSION. The back room the sheet named. Walking in with the man
     // IS the delivery -- stepSheetCase() closes the book on arrival, no press
     // owed -- so the run steps the pump a beat at the anchor to let that fire.
@@ -9790,6 +9872,63 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.ok = writePng(output, config.screenshot) && result.ok;
     }
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// CASE WATCH -- the drive, recorded
+// ---------------------------------------------------------------------------
+
+WatchFingerprint watchFingerprintOf(const Session& session) {
+    WatchFingerprint print;
+    print.timeOfDay = session.timeOfDay();
+    print.elapsedSeconds = session.elapsedSeconds();
+    print.tileX = session.body().tileX();
+    print.tileY = session.body().tileY();
+    print.band = session.body().band();
+    print.yaw = session.body().yaw();
+    const sim::Casebook& book = session.sheetBook();
+    print.read = book.readCount();
+    print.known = static_cast<std::int32_t>(book.known().size());
+    print.dread = book.dread();
+    print.letters = static_cast<std::int32_t>(session.unlockedLetters().size());
+    print.closed = book.closed();
+    print.live = session.sheetCaseLive();
+    print.carry = session.sheetCarry();
+    print.tenantDown = session.tenantDown();
+    return print;
+}
+
+CaseWatchDrive recordCaseDrive(const SmokeRunConfig& config) {
+    CaseWatchDrive drive;
+    // THE SAME SESSION runSmoke BUILDS for --case: same config, and the same
+    // scripted hour unless the caller named one -- a tape recorded against a
+    // different ward would be a tape of a different errand.
+    SessionConfig started = config.session;
+    if (!started.timeOfDayGiven) {
+        const int hour = scriptedStartHour(config);
+        if (hour >= 0) {
+            started.timeOfDay = hour * 3600;
+        }
+    }
+    Session session(started);
+    session.setWatchRecorder(&drive.ops);
+    drive.beats = static_cast<std::int32_t>(runCaseLine(session, config.caseEnd));
+    session.setWatchRecorder(nullptr);
+    drive.mask = gCaseBeatMask;
+    // A short ending owes only the beats up to its shutter -- runSmoke's own
+    // rule, restated here so the watch's end line says X/owed and not X/8.
+    drive.beatsWanted = config.caseEnd == "sheet"   ? 2
+                        : config.caseEnd == "gull"  ? 3
+                        : config.caseEnd == "night" ? 5
+                        : config.caseEnd == "down"  ? 6
+                                                    : kCaseBeats;
+    for (const WatchOp& op : drive.ops) {
+        if (op.kind == WatchOpKind::Step) {
+            ++drive.stepCount;
+        }
+    }
+    drive.end = watchFingerprintOf(session);
+    return drive;
 }
 
 }  // namespace granadad::render

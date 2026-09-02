@@ -126,6 +126,57 @@ struct SessionConfig {
     bool hud = true;
 };
 
+// ---------------------------------------------------------------------------
+// CASE WATCH -- the drive on tape
+// ---------------------------------------------------------------------------
+//
+// `--case` proves THE QUIET TENANT at CPU speed and `--case-watch` has to show
+// the identical errand at a human one. The only way both can be true of ONE
+// route is for the route to be recorded rather than re-invented: while the
+// scripted drive runs, every public verb it spends lands on this tape -- one
+// entry per Session::step (with the yaw the walker set before it, because
+// stepToward steers the body's head directly) and one entry per instantaneous
+// call (a punch, the letters toggle, the clock skip). Replaying the tape onto
+// a fresh Session of the same config reproduces the drive step for step, and
+// the frames a watcher spends BETWEEN entries cost the simulation nothing --
+// which is the whole determinism argument, and test_case_watch.cpp holds it.
+enum class WatchOpKind : std::uint8_t {
+    /// One Session::step. `move` is the input, `a` the body yaw the drive's
+    /// walker had set before stepping (stepToward writes yaw outside step).
+    Step,
+    Climb,
+    /// dropDown -- how comeDownstairs leaves the guest floor. Missing from
+    /// the first cut of this tape, and the twin gate caught it exactly as
+    /// designed: the replay stood at the stair-head forever, beats 6-8 dead.
+    Drop,
+    Punch,
+    Interact,
+    Examine,
+    CourierNow,
+    /// toggleLetters -- opens on the first, closes on the second.
+    Letters,
+    /// chooseVisibleTopic(a).
+    Topic,
+    Casebook,
+    /// skipToHour(a).
+    SkipHour,
+    Crouch,
+    /// Not a verb: runCaseLine announcing which of its eight beats is about
+    /// to play (`a` = beat index). The watch director hangs its caption on it.
+    Chapter,
+    /// Not a verb: a beat's own mark() verdict (`a` = beat index, `ok` = did
+    /// it land). The watch director's shutter goes here -- the payoff frame.
+    BeatLanded,
+};
+
+struct WatchOp {
+    WatchOpKind kind = WatchOpKind::Step;
+    sim::MoveInput move{};
+    std::int32_t a = 0;
+    bool ok = false;
+    [[nodiscard]] bool operator==(const WatchOp&) const = default;
+};
+
 /// A loaded, standing, drawable session.
 class Session {
 public:
@@ -216,6 +267,19 @@ public:
     /// step or toggle -- main.cpp detaches (setAudio(nullptr)) before its
     /// engine goes away.
     void setAudio(audio::AudioEngine* engine);
+
+    /// CASE WATCH. Points the recorder at a tape (null detaches, the default
+    /// every test and every ordinary run keeps -- the no-op-hook pattern
+    /// setAudio states above). While attached, every top-level public verb
+    /// this session is driven through appends one WatchOp; verbs a verb calls
+    /// internally (interact()'s own examine(), a courier the step pump fires)
+    /// are NOT recorded, because the replay's own call will make them again.
+    void setWatchRecorder(std::vector<WatchOp>* tape) noexcept { watchTape_ = tape; }
+    /// CASE WATCH. The scripted drive announcing "beat `index` plays now" /
+    /// "beat `index` landed". Recorder-only marks: with no tape attached both
+    /// are no-ops, and neither touches a byte of simulation either way.
+    void watchChapter(std::int32_t index);
+    void watchBeatLanded(std::int32_t index, bool ok);
 
     /// Advances the body by one movement step, and the world with it.
     void step(const sim::MoveInput& input);
@@ -1444,6 +1508,13 @@ private:
     /// same value, which is the whole point -- a dateline is a fact about
     /// the SIMULATED moment, not about how long a player paused there.
     [[nodiscard]] std::int64_t caseNowSeconds() const noexcept;
+    /// CASE WATCH. Appends one call-op to the attached tape, top-level calls
+    /// only -- see setWatchRecorder. The depth counter is what "top-level"
+    /// means: every recorded verb holds it raised for its own body (session.cpp,
+    /// WatchDepthGuard), so a verb reached THROUGH another verb records nothing.
+    void recordWatchOp(WatchOpKind kind, std::int32_t a = 0, bool ok = false);
+    std::vector<WatchOp>* watchTape_ = nullptr;
+    int watchDepth_ = 0;
     /// Runs the ward's day forward to the tavern's calendar. Called after every
     /// step and after every jump of the clock -- see the note on the definition
     /// for why the ward could not previously see a slept night.
@@ -2705,6 +2776,50 @@ struct SmokeRunResult {
 /// Runs a scripted session and, optionally, writes a PNG. No window, no GPU,
 /// no display server: this is the path every later sprint proves itself with.
 [[nodiscard]] SmokeRunResult runSmoke(const SmokeRunConfig& config);
+
+/// CASE WATCH. Where a session ended, in every coordinate the courier case's
+/// summary reads -- the twin-run comparator for the tape: a replay that ends
+/// equal to the drive in all of these ended equal in everything `--case`
+/// prints. Compared whole, defaulted, C++20's own memberwise rule.
+struct WatchFingerprint {
+    std::int32_t timeOfDay = 0;
+    std::int64_t elapsedSeconds = 0;
+    std::int32_t tileX = 0;
+    std::int32_t tileY = 0;
+    std::int32_t band = 0;
+    std::int32_t yaw = 0;
+    std::int32_t read = 0;
+    std::int32_t known = 0;
+    std::int32_t dread = 0;
+    std::int32_t letters = 0;
+    bool closed = false;
+    bool live = false;
+    bool carry = false;
+    bool tenantDown = false;
+    [[nodiscard]] bool operator==(const WatchFingerprint&) const = default;
+};
+
+/// The fingerprint of a session as it stands right now.
+[[nodiscard]] WatchFingerprint watchFingerprintOf(const Session& session);
+
+/// CASE WATCH. One recorded run of the courier drive: the tape, what the
+/// drive's own marks said it landed, and where it ended.
+struct CaseWatchDrive {
+    std::vector<WatchOp> ops;
+    /// Beats landed / owed and the which-one mask, exactly as `--case` counts
+    /// them (a short `ending` owes only the beats up to its shutter).
+    std::int32_t beats = 0;
+    std::int32_t beatsWanted = 0;
+    std::int32_t mask = 0;
+    /// How many of `ops` are Steps -- the watch run's minimum frame count.
+    std::int32_t stepCount = 0;
+    WatchFingerprint end;
+};
+
+/// CASE WATCH. Runs the SAME runCaseLine `--case` runs -- same session
+/// construction, same scripted hour, same verbs -- with the recorder attached,
+/// and hands back the tape. This is the drive; the watch is its replay.
+[[nodiscard]] CaseWatchDrive recordCaseDrive(const SmokeRunConfig& config);
 
 /// #79. Stands the body beside a body of the named trade out in the ward and
 /// opens a conversation. Exposed rather than buried in runSmoke so a case can
