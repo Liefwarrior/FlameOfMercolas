@@ -281,6 +281,42 @@ TEST_CASE("the Q-hold toast rides the first two quick-bar risings and then retir
     CHECK_FALSE(session.wheelHintWanted());
 }
 
+TEST_CASE("the tutor band holds, yields, and spends its countdown once a step") {
+    // The cross-lane contract (c): this lane lands the countdown/toggle
+    // helper, PAGES instantiates one per band, FLOW raises it on wake
+    // events. These are the semantics the other two lanes build against.
+    TutorBand band;
+    band.anim.snapTo(false);
+    CHECK_FALSE(band.wanted());
+    CHECK(band.value() == 0.0F);
+
+    // An event raises it in full for the tutor hold.
+    band.raise();
+    CHECK(band.wanted());
+    band.sync(false);
+    for (int i = 0; i < kTutorHoldSteps; ++i) {
+        band.sync(false);  // re-asserted many times a step, like every toggle
+        band.advance();
+    }
+    CHECK_FALSE(band.wanted());
+
+    // The newest raise wins the hold; an older, longer one is never shortened.
+    band.raise(100);
+    band.raise(10);
+    CHECK(band.showSteps == 100);
+
+    // Suppression puts the band down without spending the countdown -- a page
+    // over the top does not eat the hold.
+    band.sync(true);
+    CHECK_FALSE(band.anim.target());
+    band.sync(false);
+    CHECK(band.anim.target());
+
+    // cancel() is the page closing: down now, nothing left to show.
+    band.cancel();
+    CHECK_FALSE(band.wanted());
+}
+
 TEST_CASE("the lead-opened notice keeps the case row down -- one piece of news, once") {
     // UI-EA-SPEC 1.2 #16: "case row asleep -- the notice IS the case news."
     // Reading Crell's ledger opens three leads: the plate fires AND the case

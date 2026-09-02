@@ -102,9 +102,77 @@
 #include <string>
 #include <string_view>
 
+#include "granadad/render/anim.hpp"
 #include "granadad/render/framebuffer.hpp"
 
 namespace granadad::render {
+
+// ---------------------------------------------------------------------------
+// UI-EA (LANE HUD): THE DISCLOSURE DURATIONS, NAMED ONCE AND SHARED.
+// UI-EA-SPEC sec. 3's rule is "durations are constants, named once, shared";
+// these are the spec's own numbers in the engine's own unit (steps at 60 Hz,
+// anim.hpp's header on why never milliseconds). kPageEaseSteps is already
+// EasedToggle's default 8 and is not restated here.
+// ---------------------------------------------------------------------------
+
+/// EVENT tier: how long a plate or a woken reference row holds before easing
+/// down. The spec's kPlateHold, ~2.5s.
+inline constexpr int kPlateHoldSteps = 150;
+/// TUTOR tier: how long a raised band or hint holds. The spec's kTutorHold,
+/// ~3s.
+inline constexpr int kTutorHoldSteps = 180;
+/// TUTOR tier: how long a page sits idle before hesitation counts as a
+/// request for help and the band re-raises. The spec's kIdleWake, ~5s. The
+/// COUNTING of idleness is the input router's business (LANE FLOW signals the
+/// wake); this is only the shared number.
+inline constexpr int kIdleWakeSteps = 300;
+
+/// THE TUTOR BAND: the quickBar countdown-plus-toggle pattern, generalized --
+/// UI-EA-SPEC's cross-lane contract (c). A band of instructional text is
+/// raised in full on an event (page open, device change, an unrecognized
+/// press, idle hesitation), holds for its countdown, and eases back down to
+/// whatever its at-rest form is (keycaps, or nothing).
+///
+/// OWNERSHIP SPLIT, per the contract: LANE HUD lands this shape; LANE PAGES
+/// instantiates one per band (map band, casebook foot, keys foot, creation
+/// feet, pause legend) and draws raised/rest forms off value(); LANE FLOW
+/// calls raise() on the wake events it routes. Steps-based, render-side,
+/// unhashed, exactly like every EasedToggle in the game.
+///
+/// THE CALLING CONVENTION IS THE QUICK BAR'S, deliberately: raise() wherever
+/// the event lands (any number of times per step -- it is idempotent-ish, the
+/// newest raise wins the hold), sync(suppressed) wherever the owner's
+/// syncPanelAnim-equivalent runs (also any number of times per step), and
+/// advance() EXACTLY once per step -- a countdown spent per call would make
+/// the hold depend on how many keys were pressed during it, the defect
+/// Session::step()'s own countdown comment names.
+struct TutorBand {
+    EasedToggle anim;
+    int showSteps = 0;
+
+    /// The event: raise the band in full for `holdSteps`.
+    void raise(int holdSteps = kTutorHoldSteps) noexcept {
+        if (holdSteps > showSteps) {
+            showSteps = holdSteps;
+        }
+    }
+    /// Put it down now -- a page closing takes its bands with it.
+    void cancel() noexcept { showSteps = 0; }
+    /// Re-assert the target: up while the countdown lives and nothing owns
+    /// the frame over it. Safe to call many times per step.
+    void sync(bool suppressed) noexcept { anim.setTarget(!suppressed && showSteps > 0); }
+    /// Once per step, never from a const draw path.
+    void advance() noexcept {
+        if (showSteps > 0) {
+            --showSteps;
+        }
+        anim.advance();
+    }
+    /// 0 (at rest) .. 1 (fully raised): what the band's raised form draws at.
+    [[nodiscard]] float value() const noexcept { return anim.value(); }
+    /// True while the raise is still wanted -- the target a test asserts on.
+    [[nodiscard]] bool wanted() const noexcept { return showSteps > 0; }
+};
 
 /// What the HUD is told about the player. Nothing here is authoritative — the
 /// simulation owns all of it and the HUD only draws it.

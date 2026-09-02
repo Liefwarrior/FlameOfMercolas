@@ -1260,7 +1260,7 @@ public:
     [[nodiscard]] std::string_view wheelHintLabel() const noexcept {
         return std::string_view{wheelHintText_};
     }
-    [[nodiscard]] bool wheelHintWanted() const noexcept { return wheelHintShowSteps_ > 0; }
+    [[nodiscard]] bool wheelHintWanted() const noexcept { return wheelHint_.wanted(); }
 
     // --- the threshold plate (DISTRICT PHASE D) -------------------------------
     //
@@ -2170,9 +2170,10 @@ private:
     /// edges are detected against. hudEdgesSeeded_ is lastPlaceName_'s own
     /// reasoning for the whole family: the first syncPanelAnim() call seeds
     /// every last-value and arms nothing, so a session cannot boot with its
-    /// corner rows all announcing themselves. EVENT tier holds ~2.5s -- the
-    /// spec's kPlateHold, in steps. All render-side, none of it hashed.
-    static constexpr int kHudWakeSteps = 150;
+    /// corner rows all announcing themselves. EVENT tier holds
+    /// kPlateHoldSteps (~2.5s) -- hud.hpp's shared constant, named once per
+    /// the spec's own rule. All render-side, none of it hashed.
+    static constexpr int kHudWakeSteps = kPlateHoldSteps;
     EasedToggle clockAnim_;
     EasedToggle purseAnim_;
     int clockShowSteps_ = 0;
@@ -2196,13 +2197,15 @@ private:
     /// own button, raised on the quick bar's first TWO risings ever and
     /// riding the strip's own countdown, then retired for the session. Two
     /// exposures because one can land while the player is looking at the
-    /// street, and a third is nagging.
+    /// street, and a third is nagging. The band itself is hud.hpp's
+    /// TutorBand -- the countdown/toggle helper the cross-lane contract has
+    /// this lane land, used here first so the shape PAGES instantiates per
+    /// band and FLOW wakes is a shape that demonstrably works.
     static constexpr int kWheelHintShows = 2;
     int wheelHintShows_ = 0;
-    int wheelHintShowSteps_ = 0;
     bool lastQuickBarUp_ = false;
     std::string wheelHintText_;
-    EasedToggle wheelHintAnim_;
+    TutorBand wheelHint_;
     /// DISTRICT PHASE D. The threshold plate's own ease -- its OWN toggle per
     /// the settled convention (DECISIONS.md UI rule 1): crossing a boundary
     /// has nothing to do with any other row's trigger, and sharing one would

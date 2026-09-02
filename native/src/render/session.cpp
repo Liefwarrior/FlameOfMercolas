@@ -438,7 +438,7 @@ Session::Session(const SessionConfig& config)
     // so all three targets are the family's frame-one truth -- closed.
     clockAnim_.snapTo(clockAnim_.target());
     purseAnim_.snapTo(purseAnim_.target());
-    wheelHintAnim_.snapTo(wheelHintAnim_.target());
+    wheelHint_.anim.snapTo(wheelHint_.anim.target());
     // HELD-EFFECTS BUILD. The same snap, one per slot -- a session cannot
     // boot with a hold live today, but the rule is "snap to whatever
     // syncPanelAnim() just chose", not "assume empty".
@@ -3685,12 +3685,9 @@ void Session::step(const sim::MoveInput& input) {
     if (objectiveShowSteps_ > 0) {
         --objectiveShowSteps_;
     }
-    if (wheelHintShowSteps_ > 0) {
-        --wheelHintShowSteps_;
-    }
     clockAnim_.advance();
     purseAnim_.advance();
-    wheelHintAnim_.advance();
+    wheelHint_.advance();
     // DISTRICT PHASE D. The plate's own countdown and ease -- the strip's
     // shape directly above, for the strip's reason. The countdown runs down
     // HERE and only here, once a step: syncPanelAnim() can be called several
@@ -6824,13 +6821,13 @@ void Session::syncPanelAnim() noexcept {
     // and fall as one, and after two showings it is retired for the session.
     if (barWanted && !lastQuickBarUp_ && wheelHintShows_ < kWheelHintShows) {
         ++wheelHintShows_;
-        wheelHintShowSteps_ = kQuickBarShowSteps;
+        wheelHint_.raise(kQuickBarShowSteps);
         wheelHintText_ =
             std::string(promptLabel(controls_, Action::QuickWheel, promptDevice_)) +
             " HOLD - WHEEL";
     }
     lastQuickBarUp_ = barWanted;
-    wheelHintAnim_.setTarget(!conversing && wheelHintShowSteps_ > 0);
+    wheelHint_.sync(conversing);
 
     // DISTRICT PHASE D: THE THRESHOLD MOMENT.
     //
@@ -7355,7 +7352,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.quickBarFade = quickBarAnim_.value();
     // UI-EA (LANE HUD): the Q-hold tutor toast, riding the strip.
     hud.wheelHint = std::string_view{wheelHintText_};
-    hud.wheelHintFade = wheelHintAnim_.value();
+    hud.wheelHintFade = wheelHint_.value();
     // S9. Whether the room can see you, and the lock under the wire. Both on
     // edges, both empty when they have nothing to say -- the right-hand stack
     // for the first, the bottom band for the second. Both read their own
