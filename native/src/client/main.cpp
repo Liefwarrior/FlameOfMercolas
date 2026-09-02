@@ -682,6 +682,11 @@ void print_usage() {
         "                       PASS; implies --map-overlay\n"
         "  --map-tab=VIEW       overview, people, index or legend\n"
         "  --map-zoom=N         rungs in from the whole ward, 0..3\n"
+        "  --travel=NAME        press the ward map's TRAVEL verb on an\n"
+        "                       authored place: the clock advances by the\n"
+        "                       walk's real cost and the body arrives -- or\n"
+        "                       the refusal is printed, in its exact words,\n"
+        "                       in the summary's | travel segment\n"
         "  --case-lead=ID       THE CASEBOOK PASS: open the casebook page with\n"
         "                       its cursor on this casebook.json lead id\n"
         "                       (weighhouse-ledger)\n"
@@ -1054,6 +1059,12 @@ void print_usage() {
         } else if (starts_with(arg, "--map-zoom=", &value)) {
             options.smoke.mapZoom = std::atoi(value);
             options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--travel=", &value)) {
+            // FAST TRAVEL (TRAVEL lane). See SmokeRunConfig::travelTo: the
+            // ward map's TRAVEL verb pressed on an authored place, the
+            // summary's own `| travel` segment carrying the whole claim.
+            options.smoke.travelTo = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--face=", &value)) {
             // THE CROSSHAIR PASS. See SmokeRunConfig::face's own header: the

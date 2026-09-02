@@ -2436,8 +2436,11 @@ struct SmokeRunConfig {
     /// the shutter goes: "sheet" (stop with the mission sheet open on the
     /// Letters tile), "gull" (stop after the door lead, book open), "night"
     /// (stop crouched on the guest floor over the box lead), "down" (stop
-    /// the step Finch goes down, before the take), or empty for the whole
-    /// errand delivered.
+    /// the step Finch goes down, before the take), "taken" (TRAVEL lane:
+    /// stop with the man genuinely in hand, after TAKE HIM UP -- the one
+    /// state the errand never otherwise parks in, so the travel probe can
+    /// press its verb against the carry refusal for real), or empty for the
+    /// whole errand delivered.
     bool caseRun = false;
     std::string caseEnd;
     /// Run the Priest of the Flame line end to end and capture wherever it
@@ -2539,6 +2542,19 @@ struct SmokeRunConfig {
     std::string mapTab;
     int mapZoom = 0;
 
+    /// FAST TRAVEL (TRAVEL lane), the scripted probe: put the ward map's
+    /// cursor on this authored place name and press the TRAVEL verb, through
+    /// the same public methods the T key spends -- toggleDistrictMap,
+    /// selectDistrictMapPlace, travelDistrictMapSelection. Runs AFTER every
+    /// scripted line and the map flags, so `--case=taken --travel=...` probes
+    /// the carry refusal with the man genuinely in hand, and BEFORE `--face`,
+    /// which would close the page this needs open. The summary's own
+    /// `| travel` segment prints the plan, the clock either side of the
+    /// press, the landing and the plate -- run twice, the segment must match
+    /// to the byte, which is the twin-run check for a session-scripted
+    /// feature (test_case_line's own discipline).
+    std::string travelTo;
+
     /// THE CROSSHAIR PASS, VERIFICATION ONLY: TURN THE BODY TOWARD AN AUTHORED
     /// PLACE and leave it standing there, with no page open.
     ///
@@ -2633,6 +2649,30 @@ struct ThresholdLineResult {
     /// shutter instead could not tell that frame apart from one where the
     /// crossing never fired at all.
     bool announced = false;
+    std::string plate;
+};
+
+/// FAST TRAVEL (TRAVEL lane). What a `--travel` run planned and did, so a
+/// case asserts the whole claim -- the honest cost, the exact clock advance,
+/// the landing, the plate -- rather than reading pixels. A refusal is a real
+/// answer, not a failure: `moved` false with `refusal` filled and the clock
+/// unmoved is the feature working.
+struct TravelLineResult {
+    /// The name matched an authored place.
+    bool found = false;
+    /// What the plan said at the moment of the press.
+    Session::TravelPlan plan;
+    /// The clock either side of the press, seconds since midnight.
+    std::int32_t clockFrom = 0;
+    std::int32_t clockTo = 0;
+    /// Where the body ended, and whether that is the plan's own landing with
+    /// the page down -- i.e. a travel actually taken.
+    std::int32_t endX = 0;
+    std::int32_t endY = 0;
+    std::int32_t endBand = 0;
+    bool moved = false;
+    /// The threshold plate at the shutter: wanted, and saying what.
+    bool plateUp = false;
     std::string plate;
 };
 
@@ -2802,6 +2842,10 @@ struct SmokeRunResult {
     /// of a street, which is precisely the failure mode a picture cannot
     /// report on itself.
     ThresholdLineResult thresholdResult;
+    /// TRAVEL lane: what a --travel run planned and did, printed in the
+    /// summary for the identical reason again -- the clock moving by exactly
+    /// the restated minutes is the one claim a PNG cannot make.
+    TravelLineResult travelResult;
     [[nodiscard]] bool scriptFellShort() const noexcept {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }

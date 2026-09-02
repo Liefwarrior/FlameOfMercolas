@@ -8423,6 +8423,14 @@ constexpr std::int32_t kCaseBeats = 8;
     session.interact();
     mark(session.sheetCarry());
 
+    if (ending == "taken") {
+        // TRAVEL lane: stop with the man genuinely in hand -- the one state
+        // the errand never otherwise parks in -- so the travel probe (and the
+        // case that drives it) can press TRAVEL against the carry refusal for
+        // real rather than against a flag a test set sideways.
+        return landed;
+    }
+
     // 8. TO THE MISSION. The back room the sheet named. Walking in with the man
     // IS the delivery -- stepSheetCase() closes the book on arrival, no press
     // owed -- so the run steps the pump a beat at the anchor to let that fire.
@@ -9495,6 +9503,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                                   : config.caseEnd == "gull"  ? 3
                                   : config.caseEnd == "night" ? 5
                                   : config.caseEnd == "down"  ? 6
+                                  : config.caseEnd == "taken" ? 7
                                                               : kCaseBeats;
         result.scriptedWanted += owed;
         result.scriptedLanded += landed;
@@ -9651,6 +9660,48 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             session.adjustDistrictMapZoom(config.mapZoom);
             result.scriptedWanted += 1;
             result.scriptedLanded += session.districtMapZoom() == config.mapZoom ? 1 : 0;
+        }
+    }
+
+    // FAST TRAVEL (TRAVEL lane). The probe: cursor onto the named place and
+    // the TRAVEL verb pressed, through the same public methods the T key
+    // spends. AFTER the scripted lines on purpose, so a carry or a stance a
+    // line just drove is what the press is refused against (`--case=taken
+    // --travel=...` is the carry refusal probed for real); BEFORE `--face`,
+    // which closes the page this needs open. Two beats: the name matched,
+    // and the press RESOLVED HONESTLY -- an available plan must land the
+    // body on its own tile with the clock advanced by exactly the restated
+    // minutes, and a refused one must move nothing at all with the page
+    // still up. Anything between those is the failure this probe exists to
+    // make loud.
+    if (!config.travelTo.empty()) {
+        TravelLineResult& probe = result.travelResult;
+        if (!session.districtMapOpen()) {
+            session.toggleDistrictMap();
+        }
+        probe.found = session.selectDistrictMapPlace(config.travelTo);
+        result.scriptedWanted += 2;
+        if (probe.found) {
+            result.scriptedLanded += 1;
+            probe.plan = session.districtMapTravelPlan();
+            probe.clockFrom = session.timeOfDay();
+            session.travelDistrictMapSelection();
+            probe.clockTo = session.timeOfDay();
+            probe.endX = session.body().tileX();
+            probe.endY = session.body().tileY();
+            probe.endBand = session.body().band();
+            probe.plateUp = session.placePlateWanted();
+            probe.plate = std::string(session.placePlateLabel());
+            probe.moved = probe.plan.available && !session.districtMapOpen() &&
+                          probe.endX == probe.plan.toX && probe.endY == probe.plan.toY &&
+                          probe.endBand == probe.plan.toBand;
+            const bool clockExact =
+                (probe.clockFrom + probe.plan.minutes * 60) % sim::kSecondsPerDay ==
+                probe.clockTo;
+            const bool refusedClean = !probe.plan.available && session.districtMapOpen() &&
+                                      probe.clockFrom == probe.clockTo;
+            result.scriptedLanded +=
+                (probe.plan.available ? (probe.moved && clockExact) : refusedClean) ? 1 : 0;
         }
     }
 
@@ -9909,6 +9960,26 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         summary << " | wait open=" << (session.waitOpen() ? "yes" : "no")
                 << " rows=" << session.waitRows().size()
                 << " refusal=\"" << session.waitRefusal() << "\"";
+    }
+    if (!config.travelTo.empty()) {
+        // TRAVEL lane. The whole claim on one line, byte-comparable across
+        // two runs: the plan (route steps, octile units, honest seconds, the
+        // minutes actually charged), the clock either side of the press, the
+        // landing, the plate, and any refusal in its exact words.
+        const TravelLineResult& probe = result.travelResult;
+        summary << " | travel to=\"" << config.travelTo << "\""
+                << " found=" << (probe.found ? "yes" : "no")
+                << " route=" << probe.plan.routeSteps
+                << " units=" << probe.plan.units
+                << " walk=" << probe.plan.seconds << "s"
+                << " charged=" << probe.plan.minutes << "min"
+                << " clock=" << probe.clockFrom << "->" << probe.clockTo
+                << " body=(" << probe.endX << "," << probe.endY << "," << probe.endBand
+                << ")"
+                << " moved=" << (probe.moved ? "yes" : "no")
+                << " plate=\"" << probe.plate << "\""
+                << " up=" << (probe.plateUp ? "yes" : "no")
+                << " refusal=\"" << probe.plan.refusal << "\"";
     }
     if (config.trail) {
         const sim::Casebook& notes = session.casebook();
