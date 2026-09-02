@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/render/controls.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/session.hpp"
 
@@ -519,6 +520,13 @@ TEST_CASE("every word the pause menu can show is a sentence, not a diagnostic") 
     const auto mustRead = [](const std::string& text) {
         INFO("text: ", text);
         for (const char c : text) {
+            // A motif sentinel draws as a keycap motif through the panel
+            // text drawers (UI-EA-SPEC sec. 5) -- readable, not a
+            // diagnostic. The authored-prose sweep (test_copy) stays
+            // strict: world words never carry one.
+            if (render::isMotifSentinel(c)) {
+                continue;
+            }
             CHECK(render::isDrawableGlyph(c));
         }
         CHECK(text.find('_') == std::string::npos);

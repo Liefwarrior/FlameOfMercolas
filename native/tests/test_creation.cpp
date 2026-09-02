@@ -2016,6 +2016,11 @@ TEST_CASE("THE DOOR measures to its own widest row and is seated 45/55 across") 
     render::CreationFlow devin = fresh();
     devin.moveOriginCursor(4);
     const render::CreationPage quick = devin.page();
+    // THE FORMULA MOVED WITH THE DIET: the door's detail pane carries no
+    // key/value facts any more (the explainer prints for the highlighted row
+    // only, UI-EA-SPEC 1.1 #1), so the ask is badge + prose + verb, plus the
+    // breathing row -- the old +4 facts term counted rows the diet deleted.
+    REQUIRE(quick.facts.empty());
     const render::CreationLayout tall = render::creationLayout(quick, 640, 360);
     REQUIRE(tall.usable);
     REQUIRE(tall.body.split);
@@ -2023,7 +2028,7 @@ TEST_CASE("THE DOOR measures to its own widest row and is seated 45/55 across") 
         render::PanelRect{0, 0, tall.detailRect.w, tall.metric.heightOf(60)}, tall.metric,
         quick.lines);
     REQUIRE(prose >= 6);  // not vacuous: the bio genuinely wraps
-    CHECK(tall.bodyRows == 2 + 4 + prose + 2 + 1);
+    CHECK(tall.bodyRows == 2 + prose + 2 + 1);
 }
 
 TEST_CASE("THE NAME measures to its keyboard, and the narrower prose is counted taller") {
@@ -2043,10 +2048,11 @@ TEST_CASE("THE NAME measures to its keyboard, and the narrower prose is counted 
     CHECK(layout.bounds.x == render::panelSeatX(640, layout.bounds.w));
     CHECK(layout.bounds.x == 114);
     // The body: three grid rows against a detail of badge (2), two facts and
-    // their air (3), the pane's one sentence -- whole at the held width -- and
-    // the commit verb (2), sized with a breathing row by the height measure
-    // run at the MEASURED width.
-    CHECK(layout.bodyRows == 9);
+    // their air (3), and the commit verb (2), sized with a breathing row by
+    // the height measure run at the MEASURED width. The pane's old sentence
+    // died in the diet (OSK prose 10 -> 0, UI-EA-SPEC 1.1 #10), and its row
+    // went with it.
+    CHECK(layout.bodyRows == 8);
 
     // The measure is in CELLS, so it holds at every window whose cell count
     // affords it -- and where the window is narrower than the measure (1920's

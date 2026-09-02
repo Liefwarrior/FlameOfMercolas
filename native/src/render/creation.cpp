@@ -1163,7 +1163,7 @@ namespace {
 /// stub cuts on a word boundary, never mid-word ("1 YOU TOLD THE." is the
 /// defect this flow was rebuilt to kill, and a diet must not resurrect it).
 [[nodiscard]] std::string answerStub(const std::string& text) {
-    constexpr std::size_t kStubGlyphs = 18;
+    constexpr std::size_t kStubGlyphs = 11;
     if (text.size() <= kStubGlyphs + 2) {
         return text;
     }
@@ -1635,9 +1635,11 @@ CreationPage CreationFlow::page() const {
                 // and the running verdict are gone, and the verdict step still
                 // says the whole of it at the end.
                 out.bars = pageAxisBars(after);
+                // The delta rides a bare number-led bullet -- the BADGE
+                // already names the axis, and naming it twice on one pane is
+                // the dedup the diet's cut order goes after first.
                 PanelLine scored;
                 scored.bullet = Bullet::Dot;
-                scored.name = pageAxisName(picked.axis);
                 scored.body = "+1";
                 scored.bodyInk = InkRole::Number;
                 scored.nameInk = out.accent;

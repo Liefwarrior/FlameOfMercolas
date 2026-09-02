@@ -211,6 +211,10 @@ TEST_CASE("the pause stack's cards hold their word ceilings") {
     config.contentDir = content::contentDir();
     config.width = 640;
     config.height = 360;
+    // A new game opens on the case (the first-run rule), so the opening page
+    // must be UP for the toggle below to put it down -- the same setup
+    // test_pause's own fresh() makes.
+    config.openingPage = true;
     render::Session session(config);
     session.stepMany(sim::MoveInput{}, 2);
     session.toggleCasebook();  // put the opening page down

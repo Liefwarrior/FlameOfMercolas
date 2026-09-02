@@ -1270,8 +1270,16 @@ TEST_CASE("violation #5: F1 and F2 are real, bindable, defaulted actions now") {
     CHECK(keys.secondary[static_cast<std::size_t>(Action::KeysPage)] == Key::None);
     CHECK(keys.secondary[static_cast<std::size_t>(Action::OptionsPage)] == Key::None);
     // And a rebind can steal them, like any other action's key -- the whole
-    // point of putting them in the table.
+    // point of putting them in the table. THE COLLISION GUARD applies to
+    // them like it does to anybody (see bind()'s own header): stealing F1
+    // outright would strand the page -- one slot, no pad default -- so that
+    // bind is REFUSED and the key stays. Move the page first; then the key
+    // is anyone's.
     ControlSettings moved = ControlSettings::defaults();
+    moved.bind(Action::QuickSlot1, Key::F1);
+    CHECK(moved.bound(Action::KeysPage, Key::F1));  // refused: it would strand the page
+    moved.bind(Action::KeysPage, Key::F5);
+    CHECK(moved.bound(Action::KeysPage, Key::F5));
     moved.bind(Action::QuickSlot1, Key::F1);
     CHECK_FALSE(moved.bound(Action::KeysPage, Key::F1));
     CHECK(moved.actionFor(Key::F1) == Action::QuickSlot1);

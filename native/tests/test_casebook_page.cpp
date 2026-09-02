@@ -422,10 +422,15 @@ TEST_CASE("no row of the book is clipped at any window the game runs at") {
         // steps up with height), so 1920x1080 is the size this can fail at.
         CHECK(geo.labelCells >= static_cast<int>(widestLabel));
         CHECK(geo.valueCells >= static_cast<int>(widestValue));
-        // And the whole book fits one screenful without a page turn.
+        // THE CLAIM MOVED WITH THE DIET (UI-EA-SPEC 1.5 #27): the book PAGES
+        // at eight rows + `+N` now, so a walked case's list legitimately
+        // turns a page -- what holds at every window is the eight-row law
+        // itself, not one screenful.
         CasebookPageState paged = page;
         const CasebookPageScroll scroll = casebookPageScroll(paged, size[0], size[1]);
-        CHECK(scroll.screens == 1);
+        const int count = static_cast<int>(page.rows.size());
+        CHECK(scroll.screens == std::max(1, (count + scroll.perScreen - 1) / scroll.perScreen));
+        CHECK(scroll.perScreen <= 8);
     }
 }
 
