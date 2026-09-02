@@ -873,3 +873,79 @@ TEST_CASE("the book measures its width off its own rows, and nothing a cursor do
     CHECK(small.metric.cellsIn(small.master.w) ==
           small.metric.cellsIn(320) - 2);
 }
+
+// ===========================================================================
+// THE POINTER PASS -- the tab row, and the device-worded commit verbs
+// ===========================================================================
+
+TEST_CASE("the tab row answers the mouse: LEADS and THE CASE are findable, ordered, and steady") {
+    // The ship note names this row by name: LEFT/RIGHT stepped the views and
+    // clicking them did nothing. casebookTabAtPixel runs drawTabRow's own
+    // placement walk through the page's own composition, so the case scans
+    // the frame instead of hand-placing pixels: both tabs are found, on one
+    // text row, above the master list, LEADS left of THE CASE -- and flipping
+    // the current view does not move a single answer, because a tab target
+    // that shifts as the selection changes is the drift the shared walk ends.
+    Session session(configAt("mission-backroom"));
+    session.stepMany(sim::MoveInput{}, 2);
+    session.examine();
+    CasebookPageState page = session.casebookPageState();
+    const CasebookPageMetrics geo = casebookPageMetrics(page, 960, 540);
+    REQUIRE(geo.usable);
+
+    CasebookPageState onCase = page;
+    onCase.tab = CasebookTab::Case;
+
+    int leadsX = -1;
+    int caseX = -1;
+    int rowY = -1;
+    for (int py = 0; py < geo.master.y; py += 2) {
+        for (int px = 0; px < 960; px += 2) {
+            const int at = casebookTabAtPixel(page, 960, 540, px, py);
+            CHECK(at == casebookTabAtPixel(onCase, 960, 540, px, py));
+            if (at < 0) {
+                continue;
+            }
+            if (rowY < 0) {
+                rowY = py;
+            }
+            // One text row's worth of pixels and no more.
+            CHECK(py - rowY < geo.metric.cellH());
+            if (at == 0 && leadsX < 0) {
+                leadsX = px;
+            }
+            if (at == 1 && caseX < 0) {
+                caseX = px;
+            }
+        }
+    }
+    REQUIRE(leadsX >= 0);
+    REQUIRE(caseX >= 0);
+    CHECK(leadsX < caseX);
+    CHECK(rowY < geo.master.y);
+    // The master list still answers as itself -- the tab row took nothing
+    // from the lead hit-test.
+    CHECK(casebookLeadAtPixel(page, 960, 540, geo.master.x + geo.metric.cellW() / 2,
+                              geo.master.y + geo.metric.cellH() / 2) == 0);
+}
+
+TEST_CASE("the commit verbs and GO TO IT wear the state's confirm key, not a hardcoded ENTER") {
+    // SHIP NOTE SEAM 3. The page draws its confirm from CasebookPageState::
+    // commitKey -- promptConfirmKey's word for the hand holding the machine
+    // -- so a pad reads A - SHOW ME WHERE. Proven the way the keys page's
+    // live-switch cases prove wording: two frames differing only in the field
+    // must differ in pixels, and the default draws byte-identical to the old
+    // literal by construction (the default IS the old literal).
+    Session session(configAt("mission-backroom"));
+    session.stepMany(sim::MoveInput{}, 2);
+    session.examine();
+    CasebookPageState page = session.casebookPageState();
+    REQUIRE(page.commitKey == "ENTER");  // keyboard session: the exact old literal
+
+    Framebuffer keyboard(960, 540);
+    drawCasebookPage(keyboard, page);
+    page.commitKey = "A";
+    Framebuffer pad(960, 540);
+    drawCasebookPage(pad, page);
+    CHECK(keyboard.pixels() != pad.pixels());
+}

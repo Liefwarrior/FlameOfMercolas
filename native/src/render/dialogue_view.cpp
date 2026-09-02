@@ -435,6 +435,75 @@ TopicLayout dialogueTopicLayout(const DialogueViewState& state, int width, int h
     return layout;
 }
 
+TopicListGeometry dialogueTopicListGeometry(const DialogueViewState& state, int width,
+                                            int height) {
+    TopicListGeometry out;
+    if (!state.open || state.haggling || state.forging || state.letter) {
+        // The haggle, the workbench and an open letter put something other
+        // than the topic list in the band. A pointer there gets "modal".
+        return out;
+    }
+    const PanelMetric metric = panelMetric(height);
+    out.metric = metric;
+    const BandGeometry geometry = bandGeometryFor(metric, width, height);
+    if (!geometry.usable) {
+        return out;
+    }
+    const TopicLayout layout = dialogueTopicLayout(state, width, height);
+    if (layout.options.empty() || layout.plan.rows <= 0 || layout.plan.columns <= 0) {
+        return out;
+    }
+    // THE BAND'S OWN SEAT, the identical arithmetic drawDialogue runs at
+    // fade == 1: as deep as the page it holds plus its border, hugging the
+    // bottom edge, its interior one cell in and one row down -- PanelFrame's
+    // own border spend. Kept as ONE copy by being the SAME numbers in the
+    // same order; a case in test_tavern_render pins the two against each
+    // other so they cannot drift apart silently.
+    const int bandRows = std::clamp(layout.plan.rows + 2, 3, geometry.rows);
+    const int bandTop = height - metric.heightOf(bandRows);
+    const int listRows = std::min(layout.plan.rows, std::max(0, bandRows - 2));
+    out.list = PanelRect{metric.cellW(), bandTop + metric.cellH(),
+                         metric.widthOf(std::max(0, geometry.cells - 2)),
+                         metric.heightOf(listRows)};
+    out.plan = layout.plan;
+    out.count = static_cast<int>(layout.options.size());
+    out.usable = out.count > 0 && !out.list.empty();
+    return out;
+}
+
+DialogueTopicHit dialogueTopicAtPixel(const DialogueViewState& state, int width, int height,
+                                      int px, int py) {
+    DialogueTopicHit hit;
+    const TopicListGeometry geo = dialogueTopicListGeometry(state, width, height);
+    if (!geo.usable) {
+        return hit;
+    }
+    const int at = optionListAt(geo.list, geo.metric, geo.plan, geo.count, px, py);
+    if (at < 0) {
+        return hit;
+    }
+    hit.row = at;
+    // WHICH ROW IS THE MORE ROW, off topicRowsFor's own arithmetic: a
+    // paginating list always prints it last, and a band too short for its
+    // page forces its last surviving row into one (see topicRowsFor) -- so
+    // the last drawn row is MORE exactly when the list paginates or the page
+    // was cut.
+    const int total = static_cast<int>(state.topics.size());
+    const int pages = topicPageCount(state.topics.size());
+    const int shown = std::clamp(state.page, 0, pages - 1);
+    const int first = shown * kTopicPageSize;
+    const int realRows = std::min(total, first + kTopicPageSize) - first;
+    const int printed = realRows + (pages > 1 ? 1 : 0);
+    const bool lastIsMore = pages > 1 || geo.count < printed;
+    if (lastIsMore && at == geo.count - 1) {
+        hit.more = true;
+        return hit;
+    }
+    hit.index = first + at;
+    hit.slot = at;
+    return hit;
+}
+
 // ---------------------------------------------------------------------------
 // THE SURFACE
 // ---------------------------------------------------------------------------

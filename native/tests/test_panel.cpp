@@ -854,3 +854,100 @@ TEST_CASE("a bar is shape and figure, and the unfilled part is textured rather t
     CHECK(litFor(15) > atZero);
     CHECK(litFor(15) > litFor(4));
 }
+
+TEST_CASE("the tab-row hit-test finds each tab where it printed, and holds still as the view moves") {
+    // THE POINTER PASS. tabRowTabAt runs drawTabRow's own placement walk, so
+    // this case scans the row instead of hand-placing anything: both tabs are
+    // findable, every hit for tab 0 sits left of every hit for tab 1, the
+    // title and the readout answer -1, and flipping which tab is current does
+    // not move a single answer -- a target that shifts under the pointer as
+    // the selection changes would be the drift the shared walk exists to end.
+    const PanelMetric metric{1};
+    const PanelRect row{0, 0, metric.widthOf(70), metric.cellH()};
+    const std::vector<PanelTab> tabs{PanelTab{"F1", "KEYS"}, PanelTab{"F2", "OPTIONS"}};
+
+    int lastZero = -1;
+    int firstOne = row.right();
+    bool sawZero = false;
+    bool sawOne = false;
+    for (int px = row.x; px < row.right(); ++px) {
+        const int onCurrentZero =
+            tabRowTabAt(row, metric, "CONTROLS", tabs, 0, "V 0.10", px, row.y + 2);
+        const int onCurrentOne =
+            tabRowTabAt(row, metric, "CONTROLS", tabs, 1, "V 0.10", px, row.y + 2);
+        CHECK(onCurrentZero == onCurrentOne);
+        if (onCurrentZero == 0) {
+            sawZero = true;
+            lastZero = px;
+        }
+        if (onCurrentZero == 1) {
+            sawOne = true;
+            firstOne = std::min(firstOne, px);
+        }
+    }
+    CHECK(sawZero);
+    CHECK(sawOne);
+    CHECK(lastZero < firstOne);
+    // The title's own cells are furniture, not a view.
+    CHECK(tabRowTabAt(row, metric, "CONTROLS", tabs, 0, "V 0.10", row.x + 2, row.y + 2) == -1);
+    // Off the row's own text line is off the row.
+    CHECK(tabRowTabAt(row, metric, "CONTROLS", tabs, 0, "V 0.10", firstOne,
+                      row.y + metric.cellH() + 2) == -1);
+}
+
+TEST_CASE("the controls-page hit-test answers for every drawn binding and nothing else") {
+    // THE POINTER PASS: keysRowAtPixel is casebookLeadAtPixel's walk on this
+    // page's own composition. Scanned rather than hand-placed: at 960x540 the
+    // whole 29-row list is one screen (the composition case above pins that),
+    // so the set of indices the frame answers with must be exactly 0..28 --
+    // every row reachable, nothing off the list answering.
+    KeysPageState state;
+    state.open = true;
+    state.title = "CONTROLS";
+    state.readout = "GRANADAD 0.10.0";
+    state.instruction = "EVERY KEY THIS GAME ANSWERS TO.";
+    for (int i = 0; i < 29; ++i) {
+        KeysPageRow row;
+        row.binding = i % 3 == 0 ? "LSHIFT" : "W";
+        row.verb = i % 2 == 0 ? "FORWARD" : "QUICK WHEEL";
+        row.group = i % kKeysGroupCount;
+        state.rows.push_back(row);
+    }
+    state.cursor = 0;
+    REQUIRE(keysPageScroll(state, 960, 540).screens == 1);
+
+    std::vector<bool> found(state.rows.size(), false);
+    for (int py = 0; py < 540; py += 2) {
+        for (int px = 0; px < 960; px += 2) {
+            const int at = keysRowAtPixel(state, 960, 540, px, py);
+            if (at >= 0) {
+                REQUIRE(at < static_cast<int>(state.rows.size()));
+                found[static_cast<std::size_t>(at)] = true;
+            }
+        }
+    }
+    CHECK(std::count(found.begin(), found.end(), true) == 29);
+
+    // The cursor does not move the geometry (the scroll is the same screen),
+    // so a hover that follows the cursor cannot chase its own tail.
+    const int probe = keysRowAtPixel(state, 960, 540, 480, 270);
+    state.cursor = 17;
+    CHECK(keysRowAtPixel(state, 960, 540, 480, 270) == probe);
+
+    // A second screen answers with SECOND-SCREEN indices: the smallest row a
+    // scan finds is the scroll's own firstRow, not zero.
+    state.cursor = static_cast<int>(state.rows.size()) - 1;
+    const KeysPageScroll scroll = keysPageScroll(state, 320, 180);
+    if (scroll.screens > 1) {
+        int smallest = static_cast<int>(state.rows.size());
+        for (int py = 0; py < 180; py += 2) {
+            for (int px = 0; px < 320; px += 2) {
+                const int at = keysRowAtPixel(state, 320, 180, px, py);
+                if (at >= 0) {
+                    smallest = std::min(smallest, at);
+                }
+            }
+        }
+        CHECK(smallest == scroll.firstRow);
+    }
+}

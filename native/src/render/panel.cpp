@@ -674,45 +674,56 @@ int breadcrumbCells(const std::vector<std::string>& crumbs) noexcept {
 // the tab row
 // ---------------------------------------------------------------------------
 
-void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& metric,
-                std::string_view title, const std::vector<PanelTab>& tabs, int current,
-                std::string_view readout, const Rgb& accent, float alpha) {
-    if (alpha <= 0.0F || row.empty()) {
-        return;
+namespace {
+
+/// One placed piece of a tab row: the text as it will print, where it starts
+/// in cells, whether it is the inverted current tab, and WHICH TAB it is
+/// (-1 for the title). Shared by the drawing and the hit-test below, so the
+/// two cannot disagree about where a tab landed -- the same one-walk rule
+/// optionListAt states for lists.
+struct TabPiece {
+    std::string text;
+    bool inverted = false;
+    /// Index into `tabs`, or -1 for the title.
+    int tab = -1;
+    /// Left edge, in cells from the row's left.
+    int cell = 0;
+    int wide = 0;
+};
+
+/// THE PLACEMENT WALK drawTabRow has always made -- cost each piece, drop
+/// siblings from the right (the current tab and the title survive longest),
+/// then seat left to right -- extracted so the pointer pass's inverse is the
+/// SAME walk rather than a second description of it.
+[[nodiscard]] std::vector<TabPiece> placeTabRow(const PanelRect& row, const PanelMetric& metric,
+                                                std::string_view title,
+                                                const std::vector<PanelTab>& tabs, int current,
+                                                std::string_view readout) {
+    std::vector<TabPiece> placed;
+    if (row.empty()) {
+        return placed;
     }
     const int cells = metric.cellsIn(row.w);
     if (cells <= 0) {
-        return;
+        return placed;
     }
     const std::string readoutText = shout(readout);
     const int readoutCells = readoutText.empty() ? 0 : cellsOf(readoutText);
-    // The readout is right-aligned and is the LAST thing to be given up,
-    // because it is the number the player is watching while they choose.
-    if (readoutCells > 0) {
-        // ONE CELL OF AIR BEFORE THE EDGE. Flush against the border, the last
-        // glyph of the readout sits immediately left of the frame's own `|`/`!`
-        // and the eye reads the two together -- a first capture of the creation
-        // flow had a readout that said "NAMELESS!". The edge is furniture; it
-        // must not be able to punctuate a sentence.
-        drawCellTextRight(target, row, metric, 1, 0, readoutText, kInk.number, alpha);
-    }
     const int roomForLeft = cells - (readoutCells > 0 ? readoutCells + 3 : 0);
     if (roomForLeft <= 0) {
-        return;
+        return placed;
     }
 
-    // Cost each piece before drawing any of it, so nothing is drawn and then
+    // Cost each piece before placing any of it, so nothing is placed and then
     // discovered not to fit. The title goes first, then tabs left to right;
     // the CURRENT tab is never dropped.
     const std::string titleText = shout(title);
-    struct Piece {
-        std::string text;
-        bool inverted = false;
-    };
-    std::vector<Piece> pieces;
+    std::vector<TabPiece> pieces;
     int want = 0;
     if (!titleText.empty()) {
-        pieces.push_back(Piece{titleText, false});
+        TabPiece piece;
+        piece.text = titleText;
+        pieces.push_back(std::move(piece));
         want += cellsOf(titleText) + 2;
     }
     for (std::size_t i = 0; i < tabs.size(); ++i) {
@@ -731,8 +742,12 @@ void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& me
             }
             text += shout(tabs[i].name);
         }
-        pieces.push_back(Piece{text, static_cast<int>(i) == current});
-        want += cellsOf(text) + 2;
+        TabPiece piece;
+        piece.text = std::move(text);
+        piece.inverted = static_cast<int>(i) == current;
+        piece.tab = static_cast<int>(i);
+        pieces.push_back(std::move(piece));
+        want += cellsOf(pieces.back().text) + 2;
     }
     // Drop siblings from the right while it does not fit; then, only if it
     // still does not, drop the title. The current tab survives both.
@@ -752,23 +767,78 @@ void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& me
     }
 
     int cell = 0;
-    for (const Piece& piece : pieces) {
+    for (TabPiece& piece : pieces) {
         const int wide = cellsOf(piece.text);
         if (cell + wide > roomForLeft) {
             break;
         }
+        piece.cell = cell;
+        piece.wide = wide;
+        placed.push_back(std::move(piece));
+        cell += wide + 2;
+    }
+    return placed;
+}
+
+}  // namespace
+
+void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& metric,
+                std::string_view title, const std::vector<PanelTab>& tabs, int current,
+                std::string_view readout, const Rgb& accent, float alpha) {
+    if (alpha <= 0.0F || row.empty()) {
+        return;
+    }
+    const std::string readoutText = shout(readout);
+    // The readout is right-aligned and is the LAST thing to be given up,
+    // because it is the number the player is watching while they choose.
+    if (!readoutText.empty() && metric.cellsIn(row.w) > 0) {
+        // ONE CELL OF AIR BEFORE THE EDGE. Flush against the border, the last
+        // glyph of the readout sits immediately left of the frame's own `|`/`!`
+        // and the eye reads the two together -- a first capture of the creation
+        // flow had a readout that said "NAMELESS!". The edge is furniture; it
+        // must not be able to punctuate a sentence.
+        drawCellTextRight(target, row, metric, 1, 0, readoutText, kInk.number, alpha);
+    }
+    for (const TabPiece& piece : placeTabRow(row, metric, title, tabs, current, readout)) {
         if (piece.inverted) {
             // THE CURRENT TAB IS AN INVERTED FILL. Not a bracket, not an
             // arrow. One cell of padding either side so the fill reads as a
             // block and not as a tight box round the letters.
-            drawInvertedFill(target, row, metric, std::max(0, cell - 1), 0, wide + 2, accent,
-                             alpha);
-            drawCellTextKnockout(target, row, metric, cell, 0, piece.text, kInk.knockout, alpha);
+            drawInvertedFill(target, row, metric, std::max(0, piece.cell - 1), 0, piece.wide + 2,
+                             accent, alpha);
+            drawCellTextKnockout(target, row, metric, piece.cell, 0, piece.text, kInk.knockout,
+                                 alpha);
         } else {
-            drawCellText(target, row, metric, cell, 0, piece.text, kInk.key, alpha);
+            drawCellText(target, row, metric, piece.cell, 0, piece.text, kInk.key, alpha);
         }
-        cell += wide + 2;
     }
+}
+
+int tabRowTabAt(const PanelRect& row, const PanelMetric& metric, std::string_view title,
+                const std::vector<PanelTab>& tabs, int current, std::string_view readout, int px,
+                int py) {
+    // THE POINTER PASS. Which tab a pixel lands on -- the inverse of
+    // drawTabRow, running the identical placement walk (placeTabRow) so the
+    // answer is where the tab actually printed, not a re-derivation of it.
+    // The title and the readout answer -1: they are furniture, not views.
+    if (row.empty() || py < row.y || py >= row.y + metric.cellH()) {
+        return -1;
+    }
+    for (const TabPiece& piece : placeTabRow(row, metric, title, tabs, current, readout)) {
+        if (piece.tab < 0) {
+            continue;
+        }
+        // One cell of grace either side -- the exact span the current tab's
+        // inverted fill paints, granted to every tab so the target does not
+        // grow and shrink as the selection moves. Pieces sit two cells apart,
+        // so the grace regions touch and never overlap.
+        const int x0 = row.x + metric.widthOf(std::max(0, piece.cell - 1));
+        const int x1 = row.x + metric.widthOf(piece.cell + piece.wide + 1);
+        if (px >= x0 && px < x1) {
+            return piece.tab;
+        }
+    }
+    return -1;
 }
 
 int tabRowCells(std::string_view title, const std::vector<PanelTab>& tabs,

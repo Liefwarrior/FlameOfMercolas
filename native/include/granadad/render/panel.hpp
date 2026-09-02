@@ -562,6 +562,18 @@ void drawTabRow(Framebuffer& target, const PanelRect& row, const PanelMetric& me
 [[nodiscard]] int tabRowCells(std::string_view title, const std::vector<PanelTab>& tabs,
                               std::string_view readout) noexcept;
 
+/// Which tab of a drawn tab row a pixel lands on, or -1 for none (the title
+/// and the readout are furniture, not views, and answer -1).
+///
+/// THE INVERSE OF drawTabRow, written as the same placement walk -- see
+/// optionListAt on why the inverse of a layout lives beside the layout rather
+/// than being re-derived by every screen that wants a mouse. Every tab's hit
+/// span carries the one cell of grace either side that the current tab's
+/// inverted fill paints, so the target holds still as the selection moves.
+[[nodiscard]] int tabRowTabAt(const PanelRect& row, const PanelMetric& metric,
+                              std::string_view title, const std::vector<PanelTab>& tabs,
+                              int current, std::string_view readout, int px, int py);
+
 // ---------------------------------------------------------------------------
 // the numbered option list
 // ---------------------------------------------------------------------------

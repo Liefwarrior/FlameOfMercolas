@@ -125,6 +125,55 @@ void drawLetterPane(Framebuffer& target, const PanelRect& pane, const PanelMetri
     }
 }
 
+/// WHERE A TILE'S LIST STARTS, in pane rows -- the row spend drawTile makes
+/// before it reaches its list: the badge (row 0), the epithet's row (spent
+/// whether or not one prints), the Journal's prose (up to two wrapped rows of
+/// `line`, then the `•` dateline row -- drawJournalProse's own clamps), and
+/// the row of air over the list. THE POINTER PASS'S half of drawTile's walk:
+/// menuTileHitAtPixel inverts the list against this, and a case in
+/// test_menu_view.cpp pins the two against the drawn cursor row so they
+/// cannot drift apart silently.
+[[nodiscard]] int tileListStartRow(const DialogueViewState& view, int paneRows, int paneCells,
+                                   bool journal) {
+    int row = 2;
+    if (journal) {
+        const std::size_t cols = static_cast<std::size_t>(std::max(4, paneCells));
+        if (!view.line.empty()) {
+            constexpr int kLineRows = 2;
+            const int lines = static_cast<int>(wrapText(view.line, cols).size());
+            row += std::max(0, std::min({lines, kLineRows, paneRows - row}));
+        }
+        if (!view.caseRef.empty() && row < paneRows) {
+            ++row;
+        }
+    }
+    // One row of air between the header (or the prose) and the list.
+    return row + 1;
+}
+
+/// The whole-list plan drawTile draws its rows against -- synthetic one-digit
+/// keys, one column, the shared gutter. One function, two callers (the
+/// drawing and the hit-test), so the fill and the click cannot disagree about
+/// a row's pixels.
+[[nodiscard]] OptionListPlan tileListPlan(const std::vector<std::string>& topics,
+                                          const PanelRect& listRect, const PanelMetric& metric) {
+    std::vector<PanelOption> whole;
+    whole.reserve(topics.size());
+    for (const std::string& topic : topics) {
+        PanelOption option;
+        option.key = "1";
+        option.label = topic;
+        whole.push_back(std::move(option));
+    }
+    OptionListStyle style;
+    style.maxColumns = 1;
+    style.gutterCells = 2;
+    style.minRows = 0;
+    style.alignValues = true;
+    style.showKeys = true;
+    return planOptionList(whole, listRect, metric, style);
+}
+
 /// ONE TILE, in the register. The pane is a slice of the SHARED frame's
 /// interior -- the frame itself (rules, edges, dividers, junctions) is drawn
 /// once by drawMenuTiles; this draws only content.
@@ -221,27 +270,13 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
             option.labelTakesAccent = tileRow.picked && !focused;
             options.push_back(std::move(option));
         }
-        OptionListStyle style;
-        style.maxColumns = 1;
-        style.gutterCells = 2;
-        style.minRows = 0;
-        style.alignValues = true;
-        style.showKeys = true;
         // PLANNED AGAINST THE WHOLE LIST, drawn against the page -- panel.hpp's
         // own instruction, so the fill's width and the label column are sized
         // for the widest row that EXISTS and do not jump when the screen
         // turns. The synthetic keys only carry the key column's width, which
-        // is one digit on every screen.
-        std::vector<PanelOption> whole;
-        whole.reserve(view.topics.size());
-        for (const std::string& topic : view.topics) {
-            PanelOption option;
-            option.key = "1";
-            option.label = topic;
-            option.accent = accent;
-            whole.push_back(std::move(option));
-        }
-        const OptionListPlan plan = planOptionList(whole, listRect, metric, style);
+        // is one digit on every screen. tileListPlan is the one copy of this
+        // plan; menuTileHitAtPixel inverts against the same call.
+        const OptionListPlan plan = tileListPlan(view.topics, listRect, metric);
         if (page.selected >= 0 && !focused) {
             // The dim fill, exactly the 0.20 the pre-conversion drawing used
             // for the same statement.
@@ -288,6 +323,75 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
 }
 
 }  // namespace
+
+MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height, int px,
+                               int py) {
+    MenuTileHit hit;
+    if (!state.open) {
+        return hit;
+    }
+    const MenuTileLayout comp = menuTileLayout(width, height);
+    if (!comp.usable) {
+        return hit;
+    }
+    struct Pane {
+        int tile;
+        const PanelRect* rect;
+        const DialogueViewState* view;
+        bool journal;
+    };
+    const Pane panes[] = {
+        Pane{kMenuFocusCharacter, &comp.character, &state.character, false},
+        Pane{kMenuFocusMap, &comp.map, &state.map, false},
+        Pane{kMenuFocusLetters, &comp.letters, &state.letters, false},
+        Pane{kMenuFocusJournal, &comp.journal, &state.journal, true},
+    };
+    for (const Pane& pane : panes) {
+        const PanelRect& rect = *pane.rect;
+        if (px < rect.x || px >= rect.right() || py < rect.y || py >= rect.bottom()) {
+            continue;
+        }
+        hit.tile = pane.tile;
+        const DialogueViewState& view = *pane.view;
+        const PanelMetric& metric = comp.metric;
+        const int paneRows = metric.rowsIn(rect.h);
+        const int paneCells = metric.cellsIn(rect.w);
+        // drawTile's own refusals: nothing listed on a closed view, a pane too
+        // small to compose, or an open letter (a document, not a menu). The
+        // pane itself is still the answer -- a click there is on the TILE.
+        if (!view.open || paneRows < 4 || paneCells < 8 || view.letter) {
+            return hit;
+        }
+        const int row = tileListStartRow(view, paneRows, paneCells, pane.journal);
+        const int capacity = paneRows - row;
+        if (capacity <= 0) {
+            return hit;
+        }
+        const MenuTilePage page = menuTilePageFor(view.topics, view.page, view.cursor, capacity);
+        if (page.rows.empty()) {
+            return hit;
+        }
+        const PanelRect listRect = rowBand(rect, metric, row, capacity);
+        const OptionListPlan plan = tileListPlan(view.topics, listRect, metric);
+        const int at =
+            optionListAt(listRect, metric, plan, static_cast<int>(page.rows.size()), px, py);
+        if (at >= 0) {
+            // Back to the ABSOLUTE index Session's cursor holds --
+            // menuTilePageFor's own screen arithmetic, inverted.
+            const int perScreen = page.more ? std::max(1, capacity - 1) : capacity;
+            hit.row = page.screen * perScreen + at;
+            return hit;
+        }
+        if (page.more) {
+            const int footY = listRect.y + metric.heightOf(capacity - 1);
+            if (py >= footY && py < footY + metric.cellH()) {
+                hit.more = true;
+            }
+        }
+        return hit;
+    }
+    return hit;
+}
 
 MenuTileLayout menuTileLayout(int width, int height) {
     MenuTileLayout out;

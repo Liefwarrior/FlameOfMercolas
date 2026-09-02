@@ -235,7 +235,9 @@ struct CasebookPageState {
     /// last of this page's keyboard literals, moved onto a state field the
     /// way closeKey already flows; the WIDTH MEASURE still votes with the
     /// widest fixed variant (ENTER), so the frame does not resize when the
-    /// other hand speaks mid-frame.
+    /// other hand speaks mid-frame. (Both the input and pointer lanes built
+    /// this field independently; the input lane's name and fixed measure won
+    /// at the merge.)
     std::string commitKey = "ENTER";
 };
 
@@ -305,5 +307,14 @@ struct CasebookPageMetrics {
 /// by every screen that wants a mouse.
 [[nodiscard]] int casebookLeadAtPixel(const CasebookPageState& state, int frameWidth,
                                       int frameHeight, int px, int py);
+
+/// Which of the two view tabs (LEADS / THE CASE, as CasebookTab values) a
+/// pixel of the tab row lands on, or -1. The sibling casebookLeadAtPixel was
+/// always meant to have -- the ship note names the tab row by name: keyboard
+/// LEFT/RIGHT steps the views and clicking them did nothing. Built on
+/// panel.hpp's tabRowTabAt against the SAME band, title, tabs and readout the
+/// drawing hands drawTabRow, through the same composition.
+[[nodiscard]] int casebookTabAtPixel(const CasebookPageState& state, int frameWidth,
+                                     int frameHeight, int px, int py);
 
 }  // namespace granadad::render

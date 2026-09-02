@@ -2329,7 +2329,8 @@ CasebookPageState Session::casebookPageState() const {
     page.lookKey = std::string(promptLabel(controls_, Action::Interact, promptDevice_));
     // The page grammar's confirm, in the live hand's vocabulary -- "ENTER" /
     // "A" -- for the commit verb and the nav band's GO TO IT. The last two
-    // keyboard literals on this page rode along as "ENTER" until now.
+    // keyboard literals on this page rode along as "ENTER" until now. (Both
+    // lanes wrote this line; one field, commitKey, survives the merge.)
     page.commitKey = std::string(promptConfirmKey(promptDevice_));
 
     const std::vector<std::int32_t> heard = casebook_.known();
@@ -2465,6 +2466,22 @@ void Session::menuPageNext() {
         audio_->playOneShot(audio::SoundId::BookFlip);
     }
     menuFocus_ = ((menuFocus_ + 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
+}
+
+void Session::setMenuFocus(int focus) {
+    // THE POINTER PASS (pointer lane, flagged): the mouse's own door onto the
+    // focus the bumpers cycle -- setCasebookCursor's "a printed digit, or a
+    // mouse click" shape, applied to tiles. ONE page-turn when the focus
+    // actually moves, not one per step a cycle would have taken: a hover
+    // crossing from Character to Letters is one gesture, and three stacked
+    // BookFlips for it would be a sound bug a case cannot see.
+    if (!casebookOpen_ || focus < 0 || focus >= kMenuFocusCount || focus == menuFocus_) {
+        return;
+    }
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::BookFlip);
+    }
+    menuFocus_ = focus;
 }
 
 void Session::menuPagePrev() {

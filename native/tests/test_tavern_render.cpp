@@ -7,8 +7,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -1373,4 +1375,119 @@ TEST_CASE("the active-effect row carries a live hold's name and its countdown") 
     // continuous time-remaining, not a snapshot.
     session.stepMany(sim::MoveInput{}, 60 * 60);
     CHECK(session.effectLine(0) == "STEADY THE HAND 840S");
+}
+
+// ===========================================================================
+// THE POINTER PASS -- the bottom band's topic list, invertible
+// ===========================================================================
+//
+// One widget is five of the ship note's silent pages (pause, options,
+// grimoire, wait, a conversation), so one hit-test is the mouse for all five.
+// These cases pin dialogueTopicAtPixel to the drawing arithmetic the same way
+// test_casebook_page pins casebookLeadAtPixel: the geometry names a pixel for
+// a row, and moving the cursor onto that row has to move drawn ink UNDER that
+// exact pixel -- if the band rect or the plan ever drift from what
+// drawDialogue composes, the named pixel lands on ground that does not
+// change and the case goes red.
+
+namespace {
+
+/// The centre pixel of drawn row `i`, off the geometry's own plan --
+/// drawOptionListPlanned's column-major walk, inverted by hand once, here.
+[[nodiscard]] std::pair<int, int> topicRowPixel(const TopicListGeometry& geo, int i) {
+    const int column = i / geo.plan.rows;
+    const int row = i % geo.plan.rows;
+    const int px = geo.list.x + geo.metric.widthOf(column * geo.plan.stride) +
+                   geo.metric.widthOf(geo.plan.columnCells) / 2;
+    const int py = geo.list.y + geo.metric.heightOf(row) + geo.metric.cellH() / 2;
+    return {px, py};
+}
+
+}  // namespace
+
+TEST_CASE("the topic-band hit-test is the inverse of what the band drew") {
+    DialogueViewState state;
+    state.open = true;
+    state.speaker = "MENU";
+    state.epithet = "ENTER SELECTS  ESC RESUMES";
+    state.line = "THE DOCKS DO NOT WAIT ON YOU.";
+    state.topics = {"RESUME", "WAIT", "CONTROLS", "SETTINGS", "QUIT"};
+    state.cursor = 0;
+    state.page = 0;
+
+    const TopicListGeometry geo = dialogueTopicListGeometry(state, 640, 360);
+    REQUIRE(geo.usable);
+    REQUIRE(geo.count == 5);
+
+    for (int i = 0; i < geo.count; ++i) {
+        const auto [px, py] = topicRowPixel(geo, i);
+        INFO("row ", i, " at (", px, ",", py, ")");
+        const DialogueTopicHit hit = dialogueTopicAtPixel(state, 640, 360, px, py);
+        CHECK(hit.row == i);
+        CHECK(hit.index == i);
+        CHECK(hit.slot == i);
+        CHECK_FALSE(hit.more);
+    }
+    // Off the band entirely: no row, no index -- a click there stays modal.
+    CHECK(dialogueTopicAtPixel(state, 640, 360, 320, 40).row == -1);
+
+    // AND THE PIXEL IS WHERE THE INK IS. Putting the cursor on row 3 must
+    // change the frame at exactly the pixel the hit-test names for row 3 --
+    // the inverted fill arriving under the pointer. This is the coupling that
+    // keeps the hit-test's private band arithmetic honest against
+    // drawDialogue's own.
+    const auto [px3, py3] = topicRowPixel(geo, 3);
+    Framebuffer onZero(640, 360);
+    drawDialogue(onZero, state);
+    state.cursor = 3;
+    Framebuffer onThree(640, 360);
+    drawDialogue(onThree, state);
+    const std::size_t at = static_cast<std::size_t>(py3) * 640 + static_cast<std::size_t>(px3);
+    CHECK(onZero.pixels()[at] != onThree.pixels()[at]);
+}
+
+TEST_CASE("page two of a long list answers with page-two indices, and the MORE row says so") {
+    DialogueViewState state;
+    state.open = true;
+    state.speaker = "MASTER VENN";
+    state.attitude = "WARM";
+    state.line = "TWELVE THINGS TO SAY.";
+    for (int i = 0; i < 12; ++i) {
+        state.topics.push_back("TOPIC NUMBER " + std::to_string(i + 1));
+    }
+    state.cursor = 9;
+    state.page = 1;
+
+    const TopicListGeometry geo = dialogueTopicListGeometry(state, 640, 360);
+    REQUIRE(geo.usable);
+    // Page two of twelve: rows ten to twelve, then the MORE row.
+    REQUIRE(geo.count == 4);
+
+    for (int i = 0; i < 3; ++i) {
+        const auto [px, py] = topicRowPixel(geo, i);
+        const DialogueTopicHit hit = dialogueTopicAtPixel(state, 640, 360, px, py);
+        INFO("row ", i);
+        CHECK(hit.index == 9 + i);
+        CHECK(hit.slot == i);
+        CHECK_FALSE(hit.more);
+    }
+    const auto [mx, my] = topicRowPixel(geo, 3);
+    const DialogueTopicHit more = dialogueTopicAtPixel(state, 640, 360, mx, my);
+    CHECK(more.more);
+    CHECK(more.index == -1);
+}
+
+TEST_CASE("the haggle, the workbench and a letter stay modal to the pointer") {
+    DialogueViewState state;
+    state.open = true;
+    state.speaker = "MASTER VENN";
+    state.topics = {"A ROW"};
+    state.haggling = true;
+    CHECK_FALSE(dialogueTopicListGeometry(state, 640, 360).usable);
+    state.haggling = false;
+    state.forging = true;
+    CHECK_FALSE(dialogueTopicListGeometry(state, 640, 360).usable);
+    state.forging = false;
+    state.letter = true;
+    CHECK_FALSE(dialogueTopicListGeometry(state, 640, 360).usable);
 }

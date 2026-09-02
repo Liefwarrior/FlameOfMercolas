@@ -147,6 +147,8 @@ inline constexpr int kDirectSelectRows = 9;
         PanelOption{"UP DOWN", "NEXT LEAD", "", accent, InkRole::Dim, false},
         PanelOption{"LEFT RIGHT", state.tab == CasebookTab::Leads ? "THE CASE" : "THE LEADS", "",
                     accent, InkRole::Dim, false},
+        // SHIP NOTE SEAM 3: the confirm is the state's device-worded key, not
+        // a hardcoded ENTER -- a pad reads A GO TO IT here, live.
         PanelOption{state.commitKey.empty() ? std::string("ENTER") : state.commitKey, "GO TO IT",
                     "", accent, InkRole::Dim, false},
         PanelOption{state.closeKey.empty() ? std::string("J") : state.closeKey, "CLOSE", "",
@@ -807,6 +809,23 @@ CasebookPageMetrics casebookPageMetrics(const CasebookPageState& state, int fram
     out.columns = plan.columns;
     out.listRows = plan.rows;
     return out;
+}
+
+int casebookTabAtPixel(const CasebookPageState& state, int frameWidth, int frameHeight, int px,
+                       int py) {
+    const Composition comp = composeFor(state, frameWidth, frameHeight);
+    if (!comp.usable) {
+        return -1;
+    }
+    // The exact band the drawing hands drawTabRow -- frame.band(comp.tabRow, 1)
+    // over the same interior the composition worked out -- and the exact
+    // title, tabs, current and readout, so tabRowTabAt is answering for the
+    // pixels the row actually printed on.
+    const PanelRect band{comp.interior.x, comp.interior.y + comp.metric.heightOf(comp.tabRow),
+                         comp.interior.w, comp.metric.cellH()};
+    const std::vector<PanelTab> tabs{PanelTab{"", "LEADS"}, PanelTab{"", "THE CASE"}};
+    return tabRowTabAt(band, comp.metric, state.title, tabs, static_cast<int>(state.tab),
+                       state.readout, px, py);
 }
 
 int casebookLeadAtPixel(const CasebookPageState& state, int frameWidth, int frameHeight, int px,
