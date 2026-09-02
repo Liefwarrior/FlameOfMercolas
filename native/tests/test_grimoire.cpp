@@ -133,7 +133,8 @@ TEST_CASE("selecting a loaded quick slot equips it; an empty one says so and "
     session.selectQuickSlot(4);
     REQUIRE(session.tavern().equippedSpell() != nullptr);
     CHECK(session.tavern().equippedSpell()->id == "sting");
-    CHECK(session.lastMessage().find("READY: STING") != std::string::npos);
+    // The dieted toast (UI-EA-SPEC sec. 5): slot and name, no READY caption.
+    CHECK(session.lastMessage().find("SLOT 5 - STING") != std::string::npos);
     // The strip is up while the number row is in use -- its own EasedToggle's
     // target, which is what a headless case can honestly assert.
     CHECK(session.quickBarWanted());
@@ -143,5 +144,5 @@ TEST_CASE("selecting a loaded quick slot equips it; an empty one says so and "
     // An empty slot says so, out loud, and changes nothing.
     session.selectQuickSlot(6);
     CHECK(session.tavern().equippedSpell()->id == "sting");
-    CHECK(session.lastMessage().find("NOTHING IN IT") != std::string::npos);
+    CHECK(session.lastMessage().find("EMPTY") != std::string::npos);
 }

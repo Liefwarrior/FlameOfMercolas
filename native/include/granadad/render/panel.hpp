@@ -340,7 +340,66 @@ enum class Motif : std::uint8_t {
     Dot,
     /// `◦` -- a sub-item under an effect.
     Ring,
+    // THE KEYCAP MOTIFS (UI-EA-SPEC sec. 5) -- the six word-savers the EA diet
+    // substitutes for key WORDS: `UP DOWN` becomes two arrowheads, `ENTER`
+    // becomes the return hook, `D-PAD` becomes the cross. Same 4x6 cell, same
+    // advance, same shadow; NOT in the font (the font is untouched) and never
+    // used in prose -- they are keycaps, and they enter label strings only
+    // through the sentinel bytes below.
+    /// `▲`
+    ArrowUp,
+    /// `▼`
+    ArrowDown,
+    /// `◀`
+    ArrowLeft,
+    /// `▶`
+    ArrowRight,
+    /// `⏎` -- the return hook. The word ENTER, retired.
+    Return,
+    /// `✚` -- the d-pad cross.
+    Cross,
 };
+
+// ---------------------------------------------------------------------------
+// THE MOTIF SENTINELS -- UI-EA-SPEC sec. 5, cross-lane contract (a)
+// ---------------------------------------------------------------------------
+// Bytes 0x01-0x06 inside ANY label string drawn by this vocabulary render as
+// the keycap motifs above: the text drawers (drawCellText and its right-aligned
+// and knocked-out kin, and everything built on them -- option lists, tab rows,
+// commit verbs) map sentinel -> motif in place, one cell each, in the run's own
+// ink. drawText itself draws nothing for them and still advances the cursor,
+// so a sentinel that ever reaches the raw font is a BLANK CELL, not garbage --
+// visible in a frame, harmless to a player.
+//
+// THE MAPPING IS THE CONTRACT and it is fixed: the promptKey choke points
+// (controls.cpp -- LANE FLOW's) emit these same bytes, so device-awareness
+// survives by construction: a pad still prints `A`, `B`, `X` as words. Never
+// printable-character collisions: 0x01-0x06 are control bytes the font has no
+// glyph for and authored prose never contains (test_copy's sweep would refuse
+// them), which is what makes them safe to smuggle through std::string.
+inline constexpr char kSentinelArrowUp = '\x01';
+inline constexpr char kSentinelArrowDown = '\x02';
+inline constexpr char kSentinelArrowLeft = '\x03';
+inline constexpr char kSentinelArrowRight = '\x04';
+inline constexpr char kSentinelReturn = '\x05';
+inline constexpr char kSentinelCross = '\x06';
+
+/// The composed forms a page's own copy reaches for. `kGlyphMoveKeys` is the
+/// rest-state keycap form of `ARROWS`/`UP DOWN LEFT RIGHT`; the single glyphs
+/// compose feet like `"\x05 - FACE IT"`.
+inline constexpr std::string_view kGlyphUp = "\x01";
+inline constexpr std::string_view kGlyphDown = "\x02";
+inline constexpr std::string_view kGlyphLeft = "\x03";
+inline constexpr std::string_view kGlyphRight = "\x04";
+inline constexpr std::string_view kGlyphReturn = "\x05";
+inline constexpr std::string_view kGlyphCross = "\x06";
+inline constexpr std::string_view kGlyphMoveKeys = "\x01\x02\x03\x04";
+inline constexpr std::string_view kGlyphUpDown = "\x01\x02";
+
+/// The motif a sentinel byte names, or false for any other character. Public
+/// so a page measuring words in a label (the census, the token-count pins) can
+/// ask the same question the drawer answers.
+[[nodiscard]] bool motifForSentinel(char c, Motif& out) noexcept;
 
 /// One motif glyph on the 4x6 cell, top-left anchored, with drawText's own
 /// one-pixel drop shadow so it sits in register beside real text.
@@ -1074,6 +1133,23 @@ inline constexpr int kPanelNarrowestFullInteriorCells = 74;
 /// exists to do, and the verb is the half that must not move.
 void drawCommitVerb(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
                     std::string_view verb, std::string_view cost, const Rgb& accent, float alpha);
+
+/// THE COMMIT BEAT -- UI-EA-SPEC sec. 3 rule 5, cross-lane contract (b).
+///
+/// An ImpactPulse rendered on the inverted fill: for the few steps after a
+/// commit lands (FACE IT, TRAVEL, REBIND, BEGIN, quit-confirm), the commit row
+/// flashes as a solid accent fill with the verb knocked out dark, easing back
+/// to the plain drawCommitVerb render as `pulse` decays to zero. Draw the
+/// plain verb first, then call this over it; at pulse 0 it draws nothing at
+/// all, so an unwired page costs nothing and changes nothing.
+///
+/// PAGES render it off a `commitPulse` field on their state; LANE FLOW arms
+/// that field from the routing's own ImpactPulse at the commit press. Same
+/// last-row placement rule as drawCommitVerb, so the flash lands exactly on
+/// the row the verb holds.
+void drawCommitPulse(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
+                     std::string_view verb, std::string_view cost, const Rgb& accent, float alpha,
+                     float pulse);
 
 // ---------------------------------------------------------------------------
 // text, on the grid

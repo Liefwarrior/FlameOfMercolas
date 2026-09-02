@@ -1602,14 +1602,10 @@ KeysPageState Session::keysPageState() const {
     // screen while you read the page. It used to be burnt into the top-left
     // corner of every captured frame at full HUD scale.
     state.readout = "GRANADAD " + std::string(sim::build_info().version);
-    // SHIP NOTE MOVE 3, and a decision: the PAGE keeps printing BOTH
-    // devices' bindings side by side (binding + alternate columns -- the
-    // table's two slots ARE the two devices now), because this page's whole
-    // job is the table. Only the way OUT changes hands: F1 is a hard-coded
-    // keyboard convenience; a pad closes with B.
-    state.instruction = promptDevice_ == InputDevice::Pad
-                            ? "EVERY KEY THE GAME ANSWERS TO. B PUTS THIS DOWN."
-                            : "EVERY KEY THE GAME ANSWERS TO. F1 PUTS THIS DOWN.";
+    // The intro prose is retired (UI-EA-SPEC 1.7 #36): the tab row is the
+    // header, the table is the page, and the universal grammar (ESC/B backs
+    // out one layer) needs no sentence. The PAGE keeps printing BOTH devices'
+    // bindings side by side -- the table's two slots ARE the two devices.
     state.rows = keyPageRows();
     state.cursor = caseCursor_;
     return state;
@@ -1925,7 +1921,9 @@ void Session::selectQuickSlot(int slot) {
         if (audio_ != nullptr) {
             audio_->playOneShot(audio::SoundId::UiConfirm);
         }
-        say("SLOT " + std::to_string(slot + 1) + " -- READY: " +
+        // `SLOT 3 - CLEAR THE HEAD` (UI-EA-SPEC sec. 5): the toast is the
+        // slot and the name; READY was the toast announcing itself.
+        say("SLOT " + std::to_string(slot + 1) + " - " +
             upperAscii(tavern_->slotSpell(slot)->displayName) + ".");
         return;
     }
@@ -1933,7 +1931,7 @@ void Session::selectQuickSlot(int slot) {
     if (audio_ != nullptr) {
         audio_->playOneShot(audio::SoundId::UiTick);
     }
-    say("SLOT " + std::to_string(slot + 1) + " -- NOTHING IN IT. THE GRIMOIRE BINDS.");
+    say("SLOT " + std::to_string(slot + 1) + " - EMPTY. THE GRIMOIRE BINDS.");
 }
 
 void Session::showQuickBar() {
@@ -2427,21 +2425,25 @@ DistrictMapState Session::districtMapState() const {
     plan.tab = districtMapTab_;
     plan.detailFirst = districtMapDetailFirst_;
     // THE READOUT: the clock and the band, right-aligned and permanent. The
-    // two facts a map reader wants on screen the whole time -- the hour because
-    // the ward's people move by it, and the band because this plan is a plan of
-    // ONE band and a reader on the roofs is looking at a different district
-    // from a reader on the quay.
+    // two facts a map reader wants on screen the whole time -- and the clock
+    // prints its LIVE MINUTE (UI-EA-SPEC sec. 4 #10): the HUD says 08:01 and a
+    // header that answers 08:00 is a page disagreeing with the world it maps.
     const int hour = ((timeOfDay_ / 3600) % 24 + 24) % 24;
-    plan.readout = (hour < 10 ? std::string("0") : std::string()) + std::to_string(hour) +
-                   ":00   BAND " + std::to_string(body_->band());
+    const int minute = ((timeOfDay_ / 60) % 60 + 60) % 60;
+    plan.readout = (hour < 10 ? std::string("0") : std::string()) + std::to_string(hour) + ":" +
+                   (minute < 10 ? std::string("0") : std::string()) + std::to_string(minute) +
+                   "   BAND " + std::to_string(body_->band());
 
     // SHIP NOTE MOVE 3: the nav band's keys, in the device's own vocabulary.
     // Each pad wording is what main.cpp's map branch ACTUALLY routes: the
     // D-pad walks places, LB/RB (PagePrev/PageNext) cycle the views, RT/LT
     // (Cast/Block) ride the zoom ladder, SELECT (Action::Map's own pad half)
-    // shuts the page, A commits. The keyboard strings are the old literals.
+    // shuts the page, A commits. The movement keys are the KEYCAP MOTIFS
+    // (UI-EA-SPEC sec. 5): four arrowheads for the keyboard, the d-pad cross
+    // for the pad -- rendered by the panel drawers from the sentinel bytes.
+    plan.navMoveKeys = std::string(kGlyphMoveKeys);
     if (promptDevice_ == InputDevice::Pad) {
-        plan.navMoveKeys = "D-PAD";
+        plan.navMoveKeys = std::string(kGlyphCross);
         plan.navTabKeys = std::string(promptLabel(controls_, Action::PagePrev, promptDevice_)) +
                           " " + std::string(promptLabel(controls_, Action::PageNext, promptDevice_));
         plan.navZoomKeys = std::string(promptLabel(controls_, Action::Cast, promptDevice_)) + " " +
@@ -2647,9 +2649,10 @@ void Session::adjustGrimoireSlot(int delta) {
 
 namespace {
 
-/// One row per hour ahead, up to a half-day. Enough to reach any named hour
-/// from anywhere on the clock without a second page of arithmetic.
-constexpr int kWaitHours = 12;
+/// One row per hour ahead, round the WHOLE clock (UI-EA-SPEC 1.7 #38:
+/// 12 -> 24). Any named hour is reachable in one pick from anywhere -- the
+/// same skipSeconds machinery per row, rows offered only, no sim change.
+constexpr int kWaitHours = 24;
 
 /// "HH:00", two digits, the clock the compass row already speaks.
 [[nodiscard]] std::string hourLabel(int hour) {
@@ -2739,12 +2742,15 @@ std::vector<std::string> Session::waitRows() const {
     const int nowHour = timeOfDay_ / 3600;
     for (int ahead = 1; ahead <= kWaitHours; ++ahead) {
         const int target = (nowHour + ahead) % 24;
-        std::string row = std::to_string(ahead) + (ahead == 1 ? " HOUR" : " HOURS") +
-                          "  TO " + hourLabel(target);
+        // `1 - DAWN 06:00` (UI-EA-SPEC 1.7 #38): the hours-ahead count, the
+        // hour's name where it has one, and the clock it lands on. The unit
+        // word went; the numbers did not.
+        std::string row = std::to_string(ahead) + " - ";
         if (hourName(target)[0] != '\0') {
-            row += "  ";
             row += hourName(target);
+            row += ' ';
         }
+        row += hourLabel(target);
         rows.push_back(std::move(row));
     }
     return rows;
@@ -3168,9 +3174,12 @@ CasebookPageState Session::casebookPageState() const {
         const double dy = static_cast<double>(lead.site.y) - static_cast<double>(py);
         const std::int32_t paces =
             static_cast<std::int32_t>(std::lround(std::sqrt(dx * dx + dy * dy)));
+        // `NE 40`, the map badge's own form (UI-EA-SPEC sec. 5): the number
+        // stays exact, the unit word retires -- paces are the only distance
+        // this game ever states, so the unit was decoration.
         row.bearing =
             std::string(sim::compass_point(sim::bearingTo(px, py, lead.site.x, lead.site.y))) +
-            "  " + std::to_string(paces) + " PACES";
+            " " + std::to_string(paces);
         if (lead.site.band != body_->band()) {
             // A LEAD ON ANOTHER PLANE SAYS SO. Two of the twelve are one band
             // down; a bearing and a distance with no band on them would send a
@@ -4955,7 +4964,9 @@ DialogueViewState Session::mapPanelView() const {
     // reading of the book, and the book is what the player fills. True at
     // every point in a run, which is why it is not gated on the row count:
     // this panel is never finished until the case is.
-    view.emptyLine = "THE CHART KNOWS WHAT THE CASEBOOK KNOWS, AND NOT A STREET MORE.";
+    // Empty states run six words or fewer now (UI-EA-SPEC): the reading is
+    // the book's, said in four.
+    view.emptyLine = "WHAT THE CASEBOOK KNOWS.";
     for (const std::string& row : mapRows()) {
         view.topics.push_back(row);
     }
@@ -5039,10 +5050,10 @@ DialogueViewState Session::lettersPanelView() const {
         // faith with it: none of these five documents is addressed to the
         // player, so the copy talks about paper the leads keep, never about
         // post the player was sent.
-        view.emptyLine =
-            unlocked.empty()
-                ? "THE LEADS KEEP THEIR OWN PAPER. STAND OVER ONE AND IT TURNS UP HERE."
-                : "STAND OVER MORE LEADS. WHAT PAPER THEY KEEP TURNS UP HERE.";
+        // Six words or fewer (UI-EA-SPEC empty-state law), the same paper-
+        // not-post wording, shorter.
+        view.emptyLine = unlocked.empty() ? "NO PAPER YET. STAND OVER LEADS."
+                                          : "STAND OVER MORE LEADS.";
         view.page = lettersPage_;
     }
     for (const std::int32_t index : unlocked) {
@@ -5257,21 +5268,10 @@ DialogueViewState Session::journalPanelView() const {
     for (std::string& row : journalWorkRows()) {
         view.topics.push_back(std::move(row));
     }
-    // AND THE BAND UNDER THEM IS WORDED RATHER THAN BLACK. On a new game this
-    // is ONE row -- THE BODY -- across the full width of the frame, and it is
-    // the panel the world opens onto with no input at all about three and a
-    // half seconds in, so it is the second thing a stranger reads in this
-    // game. The same sentence the casebook PAGE's own master list carries, for
-    // the same reason and in the same words: two surfaces showing one list
-    // should not word its emptiness two different ways.
-    //
-    // GONE ONCE IT WOULD BE A LIE. Not when the trail is closed, and not once
-    // every lead in the file is in the book -- there is nothing left to open
-    // in either case, and a note promising more would be the "no shitty
-    // English anywhere" bar failing in the one place a player rereads.
-    if (!book.closed() && heard.size() < raws.leads().size()) {
-        view.emptyLine = std::string(kBookWaitingLine);
-    }
+    // THE WAITING SENTENCE IS RETIRED HERE TOO (UI-EA-SPEC 1.5, prose 14->0,
+    // and the two-surfaces-one-wording rule cuts both ways): the casebook
+    // page stopped saying it, so the tile stops with it. The stippled field
+    // still says "left on purpose"; the hook on a fresh book still leads.
     view.cursor = caseCursor_;
     view.page = casePage_;
     return view;
@@ -5505,6 +5505,124 @@ DialogueViewState Session::dialogueView() const {
         view.goods = std::string(sim::goodsName(talk.haggle().terms().goods));
     }
     return view;
+}
+
+CreationPage Session::stripCard() const {
+    // UI-EA-SPEC 1.7 (LANE PAGES, strip->card): the pause stack's four strips
+    // -- pause, wait, options, grimoire -- drawn as ONE composed card through
+    // the same generic composition every creation step already uses
+    // (drawCreationPage): framed, seated, measured, a numbered master list
+    // with an inverted-fill cursor. The SHIP NOTE's standing item ("the
+    // options page onto the master/detail card"), extended to the family.
+    //
+    // INPUT IS UNTOUCHED: rows, cursor and the nine-key digit windows keep
+    // wrapCursorAndPage's own arithmetic, so every press lands where it
+    // always did -- only the drawing changed register. The digits print on
+    // the current nine-key window and on nothing else, the same honesty the
+    // tiles and the casebook keep.
+    CreationPage out;
+    out.alpha = 1.0F;
+    out.hasDetail = false;
+    out.shape = CreationListShape::Columns;
+    out.maxColumns = 1;
+    out.stipple = false;
+    const InputDevice dev = promptDevice_;
+    const std::string back(promptBackKey(dev));
+
+    std::vector<std::string> rows;
+    int cursor = 0;
+    int window = 0;
+    if (pauseOpen_) {
+        // THE BUILD STAMP RIDES THE PAUSE TITLE (UI-EA-SPEC sec. 2) -- the
+        // HUD's own corner is quiet now, and the one page a player opens to
+        // stand still is where a version belongs.
+        out.title = "GRANADAD " + std::string(sim::build_info().version);
+        rows = pauseRows();
+        cursor = pauseCursor_;
+        out.bodyHoldRows = static_cast<int>(rows.size());
+    } else if (waitOpen_) {
+        out.title = waitSleep_ ? "SLEEP" : "WAIT";
+        // The flavour is four words (spec #38, 15 -> 4) -- or the live
+        // refusal, which outranks it and is register, not chrome. Sleep keeps
+        // its one honest clause: it is the only wait that mends.
+        const std::string refusal = waitSleep_ ? std::string() : waitRefusal();
+        if (!refusal.empty()) {
+            out.instruction = refusal;
+        } else {
+            out.instruction = waitSleep_ ? "SLEEP MENDS. PICK THE HOUR." : "TIME PASSES. HEAT COOLS.";
+        }
+        rows = waitRows();
+        cursor = waitCursor_;
+        window = waitPage_;
+        out.bodyHoldRows = 12;
+    } else if (optionsOpen_) {
+        out.title = "OPTIONS";
+        // Instruction 22 -> 4 (spec #37): the value hint, or the capture
+        // state's own modal line, which is load-bearing while the game is
+        // listening for a raw key.
+        out.instruction = awaitingKey_ ? "PRESS A KEY. ESC CANCELS." : "BINDS TRADE KEYS.";
+        rows = optionRows();
+        cursor = optionCursor_;
+        window = optionPage_;
+        out.bodyHoldRows = 14;
+    } else if (grimoireOpen_) {
+        out.title = "GRIMOIRE";
+        rows = grimoireRows();
+        // Instruction 19 -> 2: the one column that needs naming. The empty
+        // state is the cast refusal's OWN words -- the page and the C key
+        // must name the same door or one of them is lying (test_tavern pins
+        // the line), so the register literal outranks the six-word rule here.
+        out.instruction = rows.empty() ? "NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES."
+                                       : "D - THE ASK.";
+        cursor = grimoireCursor_;
+        window = grimoirePage_;
+        out.bodyHoldRows = 8;
+    }
+
+    // THE CARD PAGES AT TWELVE (UI-EA-SPEC 1.7: the wait clock over two
+    // pages, the options table likewise) -- a screenful anchored on the
+    // cursor, `+N` as the last, unselectable row saying what waits past the
+    // fold, and the digit keys printed only on the nine-key window the
+    // direct-select arithmetic really answers to.
+    constexpr int kCardRows = 12;
+    const int total = static_cast<int>(rows.size());
+    const int screen = total > kCardRows ? std::clamp(cursor, 0, total - 1) / kCardRows : 0;
+    const int first = screen * kCardRows;
+    const int last = std::min(total, first + kCardRows);
+    out.rows.reserve(static_cast<std::size_t>(last - first) + 1);
+    const int windowFirst = window * kTopicPageSize;
+    // The wait rows number THEMSELVES (`7 - DAWN 06:00`), so a printed key
+    // column would say every digit twice -- digits pick what they print, and
+    // those rows already print them.
+    const bool selfNumbered = waitOpen_;
+    for (int i = first; i < last; ++i) {
+        CreationPageRow row;
+        const int slot = i - windowFirst;
+        if (!selfNumbered && slot >= 0 && slot < kTopicPageSize) {
+            row.key = std::to_string(slot + 1);
+        }
+        row.label = rows[static_cast<std::size_t>(i)];
+        row.accent = panelInk().accent;
+        out.rows.push_back(std::move(row));
+    }
+    if (last < total) {
+        CreationPageRow more;
+        more.label = "+" + std::to_string(total - last);
+        more.accent = panelInk().dim;
+        more.selectable = false;
+        out.rows.push_back(std::move(more));
+    }
+    out.cursor = std::clamp(cursor, 0, std::max(0, total - 1)) - first;
+    // The one keycap foot every page keeps at rest; the word rides the tutor
+    // tier, which the pause stack leaves at rest -- these pages ARE their
+    // rows.
+    PanelOption backFoot;
+    backFoot.key = back;
+    backFoot.label = "BACK";
+    backFoot.valueInk = InkRole::Dim;
+    backFoot.selectable = false;
+    out.nav.push_back(std::move(backFoot));
+    return out;
 }
 
 void Session::punch() {
@@ -7617,6 +7735,25 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         tiles.journalFocus = journalFocusAnim_.value();
         if (furniture) {
             drawMenuTiles(target, tiles);
+            drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
+        }
+        return stats;
+    }
+    // UI-EA-SPEC 1.7 (LANE PAGES, strip->card): pause, wait, options and the
+    // grimoire draw as the composed card now, not as a HUD strip -- the ship
+    // note's one remaining strip surface, converted with its family. Input
+    // and close routing are untouched (the flags, cursors and digit windows
+    // are exactly the strip's own); the CLOSE fade still runs through the
+    // panel path below until the close-honesty pass (sec. 3 rule 4, LANE
+    // FLOW) teaches it to fade as what it was.
+    if (stripCardOpen()) {
+        CreationPage card = stripCard();
+        card.alpha = panelAnim_.value();
+        hud.timeOfDaySeconds = -1;
+        hud.coin = -1;
+        if (furniture) {
+            drawCreationPage(target, card);
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
         }

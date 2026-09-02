@@ -544,10 +544,37 @@ public:
     void advance() noexcept {
         ++stepCount_;
         commitPulse_.advance();
+        // THE TUTOR COUNTDOWN (UI-EA-SPEC sec. 2): entering a step raises the
+        // nav band's verb words in full, and they ease down after ~3 seconds
+        // of steps. Steps-based like everything else here, so a captured
+        // frame is a pure function of how many times this ran.
+        if (step_ != tutorStep_) {
+            tutorStep_ = step_;
+            tutorEntered_ = stepCount_;
+        }
     }
     [[nodiscard]] float phase() const noexcept {
         return static_cast<float>(stepCount_) / 60.0F;
     }
+
+    /// TUTOR tier, 0 (rest) .. 1 (raised): full for kTutorHoldSteps after a
+    /// step change, easing to 0 over kTutorFadeSteps more. What the page's
+    /// nav band draws its verb words at.
+    [[nodiscard]] float tutorValue() const noexcept {
+        const std::int64_t age = stepCount_ - tutorEntered_;
+        if (age <= kTutorHoldSteps) {
+            return 1.0F;
+        }
+        const std::int64_t fade = age - kTutorHoldSteps;
+        if (fade >= kTutorFadeSteps) {
+            return 0.0F;
+        }
+        return 1.0F - static_cast<float>(fade) / static_cast<float>(kTutorFadeSteps);
+    }
+    /// ~3 seconds up, then a second's ease down, at the 60-steps-a-second
+    /// convention every other countdown here keeps.
+    static constexpr std::int64_t kTutorHoldSteps = 180;
+    static constexpr std::int64_t kTutorFadeSteps = 60;
 
 private:
     /// One row of the customize screen's topic list, and what it means to
@@ -698,6 +725,9 @@ private:
     ImpactPulse commitPulse_;
     CreationResult result_;
     std::int64_t stepCount_ = 0;
+    /// The tutor countdown's edge detector -- see advance() and tutorValue().
+    CreationStep tutorStep_ = CreationStep::Origin;
+    std::int64_t tutorEntered_ = 0;
 };
 
 /// Clears the frame and draws whichever of the two screens the flow is

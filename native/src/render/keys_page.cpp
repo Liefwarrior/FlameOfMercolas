@@ -63,14 +63,11 @@ struct Composition {
     PanelRect bounds;
     PanelRect interior;
     int tabRow = 0;
-    int headerRow = 0;
-    int headerRows = 0;
     int bodyRow = 0;
     int bodyRows = 0;
     int navRow = 0;
     std::vector<int> ruleRows;
     MasterDetail body;
-    PanelRect headerBand;
     PanelRect bodyBand;
     PanelRect navBand;
     bool usable = false;
@@ -79,6 +76,13 @@ struct Composition {
 /// The rows the body actually gives the list, once the page-indicator row at
 /// its foot is accounted for.
 inline constexpr int kIndicatorRows = 1;
+
+/// THE PAGING CAP (UI-EA-SPEC 1.7 #36): about fourteen binding rows visible,
+/// `+N` riding the rule for the rest -- the group colours do the grouping and
+/// `0` turns the page. A seventy-four-word wall is not a reference card.
+/// Fifteen exactly, so the twenty-nine-row default table is two even screens
+/// rather than two screens and an orphan.
+inline constexpr int kKeysPageRows = 15;
 
 /// The master's share of the body, out of 100. Deliberately generous: this
 /// list's entries are short (a verb and a key), so a wide master RE-COLUMNS
@@ -122,11 +126,12 @@ constexpr int kMasterShares[] = {58, 62, 66};
     out.interior = PanelRect{out.bounds.x + out.metric.cellW(), out.bounds.y + out.metric.cellH(),
                              out.metric.widthOf(cells - 2), out.metric.heightOf(rows - 2)};
 
+    // ONE HEADER LINE (UI-EA-SPEC sec. 5): the tab row IS the header, and both
+    // of this page's old intro proses are dead (#36) -- a bouncer's warning
+    // overdraws the tab row while it lasts.
     const std::vector<PanelRect> bands = splitRows(out.interior, out.metric,
                                                    {
                                                        spanCells(1),   // the tab row
-                                                       spanCells(1),   // rule
-                                                       spanCells(2),   // the instruction
                                                        spanCells(1),   // rule
                                                        spanWeight(1),  // the body
                                                        spanCells(1),   // rule
@@ -136,15 +141,12 @@ constexpr int kMasterShares[] = {58, 62, 66};
         return (band.y - out.interior.y) / out.metric.cellH();
     };
     out.tabRow = rowOf(bands[0]);
-    out.headerBand = bands[2];
-    out.headerRow = rowOf(bands[2]);
-    out.headerRows = out.metric.rowsIn(bands[2].h);
-    out.bodyBand = bands[4];
-    out.bodyRow = rowOf(bands[4]);
-    out.bodyRows = out.metric.rowsIn(bands[4].h);
-    out.navBand = bands[6];
-    out.navRow = rowOf(bands[6]);
-    out.ruleRows = {rowOf(bands[1]), rowOf(bands[3]), rowOf(bands[5])};
+    out.bodyBand = bands[2];
+    out.bodyRow = rowOf(bands[2]);
+    out.bodyRows = out.metric.rowsIn(bands[2].h);
+    out.navBand = bands[4];
+    out.navRow = rowOf(bands[4]);
+    out.ruleRows = {rowOf(bands[1]), rowOf(bands[3])};
     out.body = splitMasterDetail(out.bodyBand, out.metric, kMasterShare, kMinMasterCells,
                                  kMinDetailCells);
     out.usable = out.bodyRows > kIndicatorRows;
@@ -244,7 +246,8 @@ KeysPageScroll keysPageScroll(const KeysPageState& state, int frameWidth, int fr
     // exists and do not shuffle when the page turns.
     const OptionListPlan plan =
         planOptionList(optionsFor(state.rows), listRect, comp.metric, listStyle());
-    out.perScreen = std::max(1, plan.columns * plan.rows);
+    // The paging cap: a tall window does not get the word wall back.
+    out.perScreen = std::max(1, std::min(kKeysPageRows, plan.columns * plan.rows));
     const int count = static_cast<int>(state.rows.size());
     out.screens = std::max(1, (count + out.perScreen - 1) / out.perScreen);
     out.screen = std::clamp(std::max(0, state.cursor) / out.perScreen, 0, out.screens - 1);
@@ -310,22 +313,18 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
     }
     frame.draw();
 
-    // --- the tab row -------------------------------------------------------
-    // F1 and F2 are the real keys; the tabs say so rather than inventing a
-    // letter that does nothing.
-    const std::vector<PanelTab> tabs{PanelTab{"F1", "KEYS"}, PanelTab{"F2", "OPTIONS"}};
-    drawTabRow(target, frame.band(comp.tabRow, 1), metric, state.title, tabs, 0, state.readout,
-               ink.accent, alpha);
-
-    // --- the instruction header -------------------------------------------
-    drawBreadcrumb(target, comp.headerBand, metric, {state.instruction}, ink.prose, alpha);
-    if (!state.alert.empty() && comp.headerRows > 1) {
-        // A warning outranks a menu, and it lands on the header's second row --
-        // which the band holds open whether or not there is one, so nothing
-        // below moves when a bouncer starts talking.
-        const PanelRect alertRow{comp.headerBand.x, comp.headerBand.y + metric.cellH(),
-                                 comp.headerBand.w, metric.cellH()};
-        drawCellText(target, alertRow, metric, 0, 0, state.alert, Rgb{0.90F, 0.52F, 0.30F}, alpha);
+    // --- THE ONE HEADER LINE -----------------------------------------------
+    // The tab row is the breadcrumb (UI-EA-SPEC sec. 5); the intro prose died
+    // with its band (#36). F1 and F2 are the real keys; the tabs say so
+    // rather than inventing a letter that does nothing. A bouncer's warning
+    // outranks the page and takes the row while it lasts.
+    if (!state.alert.empty()) {
+        drawCellText(target, frame.band(comp.tabRow, 1), metric, 0, 0, state.alert,
+                     Rgb{0.90F, 0.52F, 0.30F}, alpha);
+    } else {
+        const std::vector<PanelTab> tabs{PanelTab{"F1", "KEYS"}, PanelTab{"F2", "OPTIONS"}};
+        drawTabRow(target, frame.band(comp.tabRow, 1), metric, state.title, tabs, 0,
+                   state.readout, ink.accent, alpha);
     }
 
     // --- the master list ---------------------------------------------------
@@ -363,15 +362,16 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
         }
     }
 
-    // The indicator row at the foot of the master pane holds its place whether
-    // or not there is anything to say, so the rule under the body never moves.
-    const PanelRect indicator{comp.body.master.x, comp.body.master.y + metric.heightOf(listRows),
-                              comp.body.master.w, metric.cellH()};
-    if (scroll.screens > 1) {
-        drawCellText(target, indicator, metric, 0, 0,
-                     "MORE  " + std::to_string(scroll.screen + 1) + "/" +
-                         std::to_string(scroll.screens),
-                     ink.dim, alpha);
+    // `+N` RIDES THE RULE (UI-EA-SPEC 1.7): what waits past the fold,
+    // right-aligned over the master pane in the rule under the body -- no row
+    // spent, and `0` (the grammar's MORE key) turns the page.
+    const int below = count - std::min(count, scroll.firstRow + scroll.perScreen);
+    if (below > 0 && comp.ruleRows.size() >= 2) {
+        const PanelRect ruleBand{comp.body.master.x,
+                                 comp.interior.y + metric.heightOf(comp.ruleRows[1]),
+                                 comp.body.master.w, metric.cellH()};
+        drawCellTextRight(target, ruleBand, metric, 0, 0, "+" + std::to_string(below), ink.dim,
+                          alpha);
     }
 
     // --- the detail pane ---------------------------------------------------
@@ -398,10 +398,11 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
         drawCellTextKnockout(target, panes[0], metric, 1, 0, row.verb, ink.knockout, alpha);
         drawCellTextRight(target, panes[0], metric, 0, 0, groupName(row.group), ink.dim, alpha);
 
-        // Labels left, values at ONE column. Facts, not paragraphs.
+        // Labels left, values at ONE column. Facts, not paragraphs -- one-word
+        // labels, `--` (zero words) for the considered absences.
         const std::vector<PanelFact> facts{
-            PanelFact{"BOUND TO", row.binding.empty() ? "NOTHING" : row.binding, InkRole::Key},
-            PanelFact{"ALSO", row.alternate.empty() ? "NOTHING ELSE" : row.alternate,
+            PanelFact{"KEY", row.binding.empty() ? "--" : row.binding, InkRole::Key},
+            PanelFact{"ALSO", row.alternate.empty() ? "--" : row.alternate,
                       row.alternate.empty() ? InkRole::Dim : InkRole::Key},
         };
         // The family is already named at the right of the badge row above, in
@@ -435,35 +436,46 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
         }
 
         // STATE CHANGES THE VERB, not the button's enabled-ness. A row that is
-        // a mode rather than a binding gets a state label where the verb would
-        // be -- never a greyed-out ENTER that would do nothing.
+        // a mode rather than a binding gets the one-word state label -- the
+        // reference's own Owned idiom -- never a greyed-out ENTER.
         if (row.bindable) {
-            drawCommitVerb(target, detail, metric, "ENTER - REBIND",
-                           "(STEALS THE KEY)", ink.key, alpha);
+            drawCommitVerb(target, detail, metric, "ENTER - REBIND", "(STEALS THE KEY)", ink.key,
+                           alpha);
+            // The commit beat (contract b), armed by the routing at the press.
+            drawCommitPulse(target, detail, metric, "ENTER - REBIND", "(STEALS THE KEY)", accent,
+                            alpha, state.commitPulse);
         } else {
             const int lastRow = metric.rowsIn(detail.h) - 1;
-            drawCellText(target, detail, metric, 0, lastRow, "FIXED -- NOT A KEY", ink.dim,
-                         alpha);
+            drawCellText(target, detail, metric, 0, lastRow, "FIXED", ink.dim, alpha);
         }
     }
 
     // --- global nav, below its own rule ------------------------------------
-    // NAV VERBS LIVE IN A LIST LIKE ANY OTHER, numbered and keyed, and they
-    // re-column off the same rule everything else does: four of them take four
-    // columns at 320x180 and four columns at 1920x1080, because four short
-    // entries always fit.
+    // The Law of Earned Text (UI-EA-SPEC sec. 2): planned once against the
+    // raised form, bare keycaps at rest, the words riding state.tutor. The
+    // ENTER - REBIND duplicate is dead (the pane keeps the verb) and `0` is
+    // MORE, the universal pager, never BACK (sec. 4).
     const std::vector<PanelOption> nav{
-        PanelOption{"UP DOWN", "MOVE", "", panelInk().accent, InkRole::Dim, false},
-        PanelOption{"ENTER", "REBIND", "", panelInk().accent, InkRole::Dim, false},
+        PanelOption{std::string(kGlyphUpDown), "MOVE", "", panelInk().accent, InkRole::Dim,
+                    false},
         PanelOption{"F2", "OPTIONS", "", panelInk().accent, InkRole::Dim, false},
-        PanelOption{"0", "BACK", "", panelInk().accent, InkRole::Dim, false},
+        PanelOption{"0", "MORE", "", panelInk().accent, InkRole::Dim, false},
     };
     OptionListStyle navStyle;
     navStyle.showKeys = true;
-    navStyle.maxColumns = 4;
+    navStyle.maxColumns = static_cast<int>(nav.size());
     navStyle.gutterCells = 2;
     navStyle.minRows = 1;
-    drawOptionList(target, comp.navBand, metric, nav, -1, navStyle, alpha);
+    const OptionListPlan navPlan = planOptionList(nav, comp.navBand, metric, navStyle);
+    std::vector<PanelOption> caps = nav;
+    for (PanelOption& option : caps) {
+        option.label.clear();
+    }
+    drawOptionListPlanned(target, comp.navBand, metric, caps, -1, navPlan, alpha);
+    if (state.tutor > 0.0F) {
+        drawOptionListPlanned(target, comp.navBand, metric, nav, -1, navPlan,
+                              alpha * std::min(1.0F, state.tutor));
+    }
 }
 
 }  // namespace granadad::render

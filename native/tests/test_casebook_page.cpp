@@ -699,18 +699,14 @@ TEST_CASE("a lead never silently reports fewer things than it opened") {
 // moment the words would be a lie
 // ===========================================================================
 
-TEST_CASE("a book with room left in it says so, and a finished one stops saying it") {
-    // THE SECOND SURFACE A STRANGER MEETS. A new game opens the world with this
-    // page already up, holding ONE lead against a pane held at twenty rows --
-    // and, before this pass, nineteen rows of stipple under it. A stipple says
-    // "left on purpose", which is the right thing to say about a twelve-row
-    // book in a thirty-row pane and the wrong thing to say about a one-row one:
-    // it reads as a list that failed to load.
-    //
-    // NOTHING BUT THE SENTENCE MOVES. With the LEADS tab up, `known`, `total`
-    // and `closed` reach no other drawing on this page (the CASE tab's own
-    // readout is the only other reader of them), so a pixel diff between the
-    // waiting state and the finished one IS the sentence and nothing else.
+TEST_CASE("the fresh book spends no words on its own remaining room") {
+    // UI-EA-SPEC 1.5 #26, prose 14 -> 0: the fourteen-word waiting sentence is
+    // RETIRED. The Law of Earned Text says the book's unfilled room is not
+    // news -- the stipple already says "left on purpose" -- and the fresh
+    // book's detail pane hands a stranger the case's own hook instead. So the
+    // waiting book, the book with every lead already heard, and the walked-out
+    // book draw the LEADS view byte-identically: `known`, `total` and `closed`
+    // reach no drawing on this tab any more.
     Session session(configAt("mission-backroom"));
     session.stepMany(sim::MoveInput{}, 2);
     CasebookPageState page = session.casebookPageState();
@@ -724,59 +720,44 @@ TEST_CASE("a book with room left in it says so, and a finished one stops saying 
     REQUIRE(page.known == 1);
     REQUIRE(page.total > page.known);
     REQUIRE_FALSE(page.closed);
+    // AND THE FRESH DETAIL PANE IS THE CASE BRIEF: nothing has been read yet,
+    // so the hook is what the pane spends its prose on.
+    REQUIRE(page.read == 0);
+    REQUIRE_FALSE(page.hook.empty());
 
     for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
                              std::pair{1920, 1080}}) {
         Framebuffer waiting(size.first, size.second);
         drawCasebookPage(waiting, page);
 
-        // EVERY LEAD ALREADY IN THE BOOK: there is nothing left to open, so the
-        // sentence would be promising something the file cannot deliver.
         CasebookPageState full = page;
         full.known = full.total;
         Framebuffer quiet(size.first, size.second);
         drawCasebookPage(quiet, full);
 
-        // AND THE TRAIL WALKED OUT: same silence, by the other gate.
         CasebookPageState shut = page;
         shut.closed = true;
         Framebuffer done(size.first, size.second);
         drawCasebookPage(done, shut);
 
+        INFO("at ", size.first, "x", size.second);
+        // ONE FRAME, THREE STATES: no sentence about room left, under any of
+        // the three gates that used to word it.
+        CHECK(quiet.pixels() == waiting.pixels());
+        CHECK(done.pixels() == waiting.pixels());
+
+        // AND THE HOOK IS REALLY THE THING THE FRESH PANE DRAWS: a fresh book
+        // with a hook differs from the same book with the hook blanked --
+        // the twenty-word case brief is load-bearing, not incidental.
+        CasebookPageState hookless = page;
+        hookless.hook.clear();
+        Framebuffer bare(size.first, size.second);
+        drawCasebookPage(bare, hookless);
         const CasebookPageMetrics geo = casebookPageMetrics(page, size.first, size.second);
         REQUIRE(geo.usable);
-        std::size_t differing = 0;
-        int minX = size.first;
-        int maxX = 0;
-        int minY = size.second;
-        int maxY = 0;
-        for (int y = 0; y < size.second; ++y) {
-            for (int x = 0; x < size.first; ++x) {
-                const std::size_t at = waiting.index(x, y);
-                if (waiting.pixels()[at] == quiet.pixels()[at]) {
-                    continue;
-                }
-                ++differing;
-                minX = std::min(minX, x);
-                maxX = std::max(maxX, x);
-                minY = std::min(minY, y);
-                maxY = std::max(maxY, y);
-            }
+        if (geo.split) {
+            CHECK(bare.pixels() != waiting.pixels());
         }
-        INFO("at ", size.first, "x", size.second, " differing ", differing, " box (", minX, ",",
-             minY, ")..(", maxX, ",", maxY, ") master x ", geo.master.x, " w ", geo.master.w,
-             " y ", geo.master.y);
-        // THE SENTENCE IS DRAWN.
-        CHECK(differing > 0);
-        // AND NOWHERE BUT THE MASTER PANE, under the row the one lead took: it
-        // is allowed to spend room the list did not want and nothing else.
-        CHECK(minX >= geo.master.x);
-        CHECK(maxX < geo.master.x + geo.master.w);
-        CHECK(minY >= geo.master.y + geo.metric.cellH());
-        CHECK(maxY < geo.master.y + geo.master.h);
-        // The two silences are the SAME frame -- one suppression, two reasons,
-        // not two different drawings that happen to both look empty.
-        CHECK(done.pixels() == quiet.pixels());
     }
 }
 

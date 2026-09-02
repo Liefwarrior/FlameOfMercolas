@@ -603,21 +603,22 @@ constexpr int kMinDetailCells = 22;
     }
 }
 
-/// The four verbs along the foot of the page. Built in one place because the
-/// COMPOSITION has to know how wide they are before it can decide how many rows
-/// to give them -- see navRowsFor.
+/// The four verbs along the foot of the page, in their RAISED (tutor) form --
+/// the form the band is planned against, so its geometry holds still while the
+/// words fade (UI-EA-SPEC sec. 2: at rest the band is bare keycaps and the
+/// zoom rung; the verb words ride at state.tutor's strength). Built in one
+/// place because the COMPOSITION has to know how wide the band is before it
+/// can decide how many rows to give it -- see navRowsFor.
 [[nodiscard]] std::vector<PanelOption> navOptions(const DistrictMapState& state) {
     // SHIP NOTE MOVE 3: the keys arrive on the state, worded for whichever
-    // device last spoke -- see DistrictMapState's own note. The defaults are
-    // this function's old literals, so nothing hand-built moves a pixel.
+    // device last spoke -- see DistrictMapState's own note.
     return {
-        PanelOption{state.navMoveKeys, "NEXT PLACE", "", kCursorTone, InkRole::Dim, false},
+        PanelOption{state.navMoveKeys, "PLACE", "", kCursorTone, InkRole::Dim, false},
         PanelOption{state.navTabKeys, std::string(tabName(state.tab)), "", kCursorTone,
                     InkRole::Dim, false},
-        PanelOption{state.navZoomKeys,
-                    "ZOOM " + std::to_string(state.zoom + 1) + "/" +
-                        std::to_string(mapZoomSteps()),
-                    "", kCursorTone, InkRole::Dim, false},
+        PanelOption{state.navZoomKeys, "ZOOM",
+                    std::to_string(state.zoom + 1) + "/" + std::to_string(mapZoomSteps()),
+                    kCursorTone, InkRole::Dim, false},
         PanelOption{state.navCloseKey, "CLOSE", "", kCursorTone, InkRole::Dim, false},
     };
 }
@@ -681,15 +682,16 @@ MapPageLayout mapPageLayout(int frameWidth, int frameHeight, const DistrictMapSt
     // frame has width to spare and height it cannot spare -- every row of
     // chrome is a row the plan does not get, and the plan's fit scale is bound
     // by height at every window size this build runs at.
+    // ONE HEADER LINE (UI-EA-SPEC sec. 5, breadcrumb law): the tab row is the
+    // breadcrumb, and the SELECTED line is gone -- the detail pane's title row
+    // names the selection once. The two rows and a rule the old chrome spent
+    // go to the plan, which is bound by height at every size this build runs.
     const int navRows = navRowsFor(state, out.interior, out.metric);
     const std::vector<PanelRect> bands = splitRows(out.interior, out.metric,
                                                    {
-                                                       spanCells(1),   // the breadcrumb
                                                        spanCells(1),   // tabs + readout
                                                        spanCells(1),   // rule
                                                        spanWeight(1),  // plan | detail
-                                                       spanCells(1),   // rule
-                                                       spanCells(1),   // the selection, named
                                                        spanCells(1),   // rule
                                                        spanCells(navRows),  // global nav
                                                    });
@@ -698,15 +700,13 @@ MapPageLayout mapPageLayout(int frameWidth, int frameHeight, const DistrictMapSt
     };
     out.headerBand = bands[0];
     out.headerRow = rowOf(bands[0]);
-    out.tabRow = rowOf(bands[1]);
-    out.bodyBand = bands[3];
-    out.bodyRow = rowOf(bands[3]);
-    out.bodyRows = out.metric.rowsIn(bands[3].h);
-    out.selectionBand = bands[5];
-    out.selectionRow = rowOf(bands[5]);
-    out.navBand = bands[7];
-    out.navRow = rowOf(bands[7]);
-    out.ruleRows = {rowOf(bands[2]), rowOf(bands[4]), rowOf(bands[6])};
+    out.tabRow = rowOf(bands[0]);
+    out.bodyBand = bands[2];
+    out.bodyRow = rowOf(bands[2]);
+    out.bodyRows = out.metric.rowsIn(bands[2].h);
+    out.navBand = bands[4];
+    out.navRow = rowOf(bands[4]);
+    out.ruleRows = {rowOf(bands[1]), rowOf(bands[3])};
 
     // THE SHARE THAT BUYS THE PLAN A WHOLE PIXEL PER TILE -- see kMapShares.
     const auto planOf = [&out](const PanelRect& pane) {
@@ -761,10 +761,18 @@ MapPageLayout mapPageLayout(int frameWidth, int frameHeight, const DistrictMapSt
 namespace {
 
 /// Rows the detail pane spends on furniture rather than on content: the subject
-/// badge, a row of air under it, the page indicator, and the commit verb on the
-/// last row. Held whether or not each has something to say, so the verb never
-/// moves as the cursor runs through places with different amounts to report.
-constexpr int kDetailChromeRows = 4;
+/// badge (which now also names the bearing -- the selection named ONCE), a row
+/// of air under it, and the commit verb on the last row. Held whether or not
+/// each has something to say, so the verb never moves as the cursor runs
+/// through places with different amounts to report. The old page-indicator row
+/// is gone: `+N` rides the rule under the body instead (UI-EA-SPEC 1.4).
+constexpr int kDetailChromeRows = 3;
+
+/// THE PAGING CAPS (UI-EA-SPEC 1.4): the occupant roster pages at ten rows --
+/// the flow scout hit a 38-row wall -- and the Index at fourteen (a third of
+/// the ward per screen). `+N` riding the rule says what is below the fold.
+constexpr int kPeoplePageRows = 10;
+constexpr int kIndexPageRows = 14;
 
 /// FAST TRAVEL (TRAVEL lane): a session that offers the TRAVEL verb
 /// (travelKey non-empty) spends one more foot row on it -- held for refusals
@@ -798,7 +806,13 @@ constexpr int kDetailChromeRows = 4;
 MapDetailScroll mapDetailScroll(const DistrictMapState& state, int frameWidth, int frameHeight) {
     MapDetailScroll out;
     const MapPageLayout layout = mapPageLayout(frameWidth, frameHeight, state);
-    const int rows = detailListRows(layout, state);
+    int rows = detailListRows(layout, state);
+    // The paging caps: a tall window does not get the word wall back.
+    if (state.tab == MapTab::People) {
+        rows = std::min(rows, kPeoplePageRows);
+    } else if (state.tab == MapTab::Index) {
+        rows = std::min(rows, kIndexPageRows);
+    }
     out.perScreen = std::max(1, rows);
     const int count = scrollingCount(state);
     out.screens = std::max(1, (count + out.perScreen - 1) / out.perScreen);
@@ -940,37 +954,26 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
     }
     frame.draw();
 
-    // --- the breadcrumb ----------------------------------------------------
-    // EVERY PANEL CARRIES ONE. The ward, the ground you are standing on, and
-    // the place the cursor is pointing at -- so the page says where you are
-    // AND what you are looking at without either having to be worked out.
+    // --- THE ONE HEADER LINE ------------------------------------------------
+    // The tab row IS the breadcrumb (UI-EA-SPEC sec. 5): views over the
+    // selection, numbered because they really are direct-select -- the
+    // reference prints `d - Dominions` for exactly this reason -- with the
+    // clock and band readout right-aligned. The old separate breadcrumb line
+    // is gone; the selection is named once, on the detail pane's title row.
     // A bouncer's warning outranks a map read and takes this row while it
-    // lasts, which is the same routing every other page in this build uses.
+    // lasts, the same routing every other page in this build uses.
     if (!state.alert.empty()) {
         drawCellText(target, layout.headerBand, metric, 0, 0,
                      clipToWidth(state.alert, layout.headerBand.w, metric.scale),
                      Rgb{0.95F, 0.62F, 0.35F}, alpha);
     } else {
-        std::vector<std::string> crumbs{"THE DOCKS"};
-        if (!state.title.empty() && shout(state.title) != "THE DOCKS") {
-            crumbs.push_back(shout(state.title));
-        }
-        if (selected >= 0) {
-            crumbs.push_back(shout(places[static_cast<std::size_t>(selected)].name));
-        }
-        drawBreadcrumb(target, layout.headerBand, metric, crumbs, kCursorTone, alpha);
+        const std::vector<PanelTab> tabs{
+            PanelTab{"1", "OVERVIEW"}, PanelTab{"2", "PEOPLE"},
+            PanelTab{"3", "INDEX"},    PanelTab{"4", "LEGEND"},
+        };
+        drawTabRow(target, frame.band(layout.tabRow, 1), metric, "", tabs,
+                   static_cast<int>(state.tab), state.readout, kCursorTone, alpha);
     }
-
-    // --- the tab row: views over the selection ------------------------------
-    // NUMBERED, because they really are direct-select: 1 through 4 switch the
-    // view and TAB cycles them. The reference prints `d - Dominions` for
-    // exactly this reason -- the key on the tab is a key you can press.
-    const std::vector<PanelTab> tabs{
-        PanelTab{"1", "OVERVIEW"}, PanelTab{"2", "PEOPLE"},
-        PanelTab{"3", "INDEX"},    PanelTab{"4", "LEGEND"},
-    };
-    drawTabRow(target, frame.band(layout.tabRow, 1), metric, "", tabs,
-               static_cast<int>(state.tab), state.readout, kCursorTone, alpha);
 
     // --- the plan ----------------------------------------------------------
     const MapViewport& view = layout.viewport;
@@ -1085,6 +1088,58 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
     // onto a neighbour.
     const int labelScale = mapLabelScale(target.height());
     {
+        // ZOOM-GATED LABELS (UI-EA-SPEC 1.4 #20) -- a render filter only, zero
+        // map edits. At the default whole-ward zoom the plan says at most
+        // FOURTEEN WORDS of names, spent on the largest footprints first (the
+        // shapes the eye lands on), and every name it does say is still whole
+        // -- never abbreviated, per the deliberately-not-cut list. One zoom
+        // step in, the natural fit rule takes over and names everything whose
+        // shape can hold its name. And while the LEGEND pane is up the plan's
+        // labels sleep entirely: that pane is the colour key, and a wall of
+        // names beside a legend is the word noise this diet exists to end.
+        std::vector<char> labelAllowed(places.size(), 1);
+        if (state.tab == MapTab::Legend) {
+            std::fill(labelAllowed.begin(), labelAllowed.end(), 0);
+        } else if (state.zoom == 0) {
+            std::fill(labelAllowed.begin(), labelAllowed.end(), 0);
+            std::vector<int> byArea;
+            byArea.reserve(places.size());
+            for (std::size_t i = 0; i < places.size(); ++i) {
+                byArea.push_back(static_cast<int>(i));
+            }
+            std::sort(byArea.begin(), byArea.end(), [&places](int a, int b) {
+                const std::int64_t aa = places[static_cast<std::size_t>(a)].area();
+                const std::int64_t bb = places[static_cast<std::size_t>(b)].area();
+                if (aa != bb) {
+                    return aa > bb;
+                }
+                return places[static_cast<std::size_t>(a)].id <
+                       places[static_cast<std::size_t>(b)].id;
+            });
+            int budget = 14;
+            for (const int index : byArea) {
+                if (budget <= 0) {
+                    break;
+                }
+                const MapPlace& gate = places[static_cast<std::size_t>(index)];
+                const PanelRect shape = footprintRect(view, gate);
+                const std::vector<std::string> lines =
+                    fitFootprintLabel(gate.name, shape.w, shape.h, labelScale);
+                if (lines.empty()) {
+                    continue;
+                }
+                int words = 0;
+                for (const std::string& line : lines) {
+                    words += 1 + static_cast<int>(std::count(line.begin(), line.end(), ' '));
+                }
+                if (words > budget) {
+                    continue;  // whole names only -- try a shorter one instead
+                }
+                budget -= words;
+                labelAllowed[static_cast<std::size_t>(index)] = 1;
+            }
+        }
+
         std::vector<int> order;
         order.reserve(places.size());
         for (std::size_t i = 0; i < places.size(); ++i) {
@@ -1101,6 +1156,9 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
         std::vector<PxRect> taken;
         const int rowPx = 7 * labelScale;
         for (const int index : order) {
+            if (!labelAllowed[static_cast<std::size_t>(index)]) {
+                continue;
+            }
             const MapPlace& place = places[static_cast<std::size_t>(index)];
             const PanelRect shape = footprintRect(view, place);
             const std::vector<std::string> lines =
@@ -1260,35 +1318,45 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
         }
     }
 
-    // --- the selection, NAMED IN PROSE UNDER THE PLAN ----------------------
-    // The reference's `Selected tile: (28,13) The Poisoned Dusts`. You never
-    // have to work out what you are pointing at -- which is what makes the
-    // sixteen shapes too small to hold a name a deliberate fallback rather than
-    // a hole.
-    if (selected >= 0) {
-        const MapPlace& place = places[static_cast<std::size_t>(selected)];
-        const PanelRect row = layout.selectionBand;
-        int cell = 0;
-        cell += drawCellText(target, row, metric, cell, 0, "SELECTED", ink.dim, alpha) + 1;
-        const std::string where = "(" + std::to_string(static_cast<int>(place.anchorX)) + "," +
-                                  std::to_string(static_cast<int>(place.anchorY)) + ")";
-        cell += drawCellText(target, row, metric, cell, 0, where, ink.number, alpha) + 1;
-        cell += drawCellText(target, row, metric, cell, 0, shout(place.name),
-                             place.way ? kWayInk : kDoorInk, alpha) + 2;
-        drawCellText(target, row, metric, cell, 0, shout(place.what), ink.dim, alpha);
-    }
-
     // --- the detail pane ---------------------------------------------------
+    // THE SELECTION IS NAMED ONCE (UI-EA-SPEC 1.4): the pane's title row
+    // carries name + bearing + paces -- `TARWALK - NE 12` -- which is the
+    // reference's "named in prose underneath" with the TARWALK-times-four
+    // duplication dead. The old SELECTED line under the plan is gone; its rows
+    // went to the plan.
     if (layout.split && selected >= 0) {
         const MapPlace& place = places[static_cast<std::size_t>(selected)];
         const PanelRect pane = layout.detailPane;
         const Rgb accent = place.way ? kWayInk : kCursorTone;
         const int paneRows = metric.rowsIn(pane.h);
 
+        // WHERE YOU WOULD HEAD FOR, not where the sign stands -- see
+        // mapAimPoint. One answer for the badge, the foot and the travel
+        // predicate, so no two of them can disagree.
+        const std::int32_t px = static_cast<std::int32_t>(state.playerX);
+        const std::int32_t py = static_cast<std::int32_t>(state.playerY);
+        std::int32_t ax = 0;
+        std::int32_t ay = 0;
+        mapAimPoint(place, px, py, ax, ay);
+        const std::int32_t dx = ax - px;
+        const std::int32_t dy = ay - py;
+        const std::int32_t paces = static_cast<std::int32_t>(std::lround(
+            std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy)));
+        const std::string way(sim::compass_point(sim::bearingTo(px, py, ax, ay)));
+        const bool standingIn = place.contains(px, py);
+        // THE ZERO-PACES PREDICATE (UI-EA-SPEC sec. 4 #12, SHIP-NOTE's top
+        // polish item): within two paces of the landing, the ward stops
+        // selling you the doorstep you stand on. `HERE` is the state label --
+        // the reference's own Owned pattern -- and the travel verb sleeps.
+        const bool here = standingIn || paces <= 2;
+
         // The subject, inverted -- the same badge the controls page and the
         // creation flow wear, so a selected footprint and its detail pane read
-        // as one object seen twice.
-        const std::string badge = shout(place.name);
+        // as one object seen twice. The bearing rides it: the selection named
+        // once, with the one fact you asked the map for.
+        const std::string badge =
+            shout(place.name) + " - " +
+            (here ? std::string("HERE") : shout(way) + " " + std::to_string(paces));
         const int badgeCells = std::min(metric.cellsIn(pane.w),
                                         static_cast<int>(badge.size()) + 2);
         drawInvertedFill(target, pane, metric, 0, 0, badgeCells, accent, alpha);
@@ -1309,67 +1377,29 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
 
         switch (state.tab) {
             case MapTab::Overview: {
-                const std::int32_t px = static_cast<std::int32_t>(state.playerX);
-                const std::int32_t py = static_cast<std::int32_t>(state.playerY);
-                // WHERE YOU WOULD HEAD FOR, not where the sign stands. See
-                // mapAimPoint: the Tarwalk is signed at its eastern end and a
-                // body standing on it outside the Gull was being told E, 54
-                // PACES by a pane whose next line said YOU ARE STANDING IN IT.
-                std::int32_t ax = 0;
-                std::int32_t ay = 0;
-                mapAimPoint(place, px, py, ax, ay);
-                const std::int32_t dx = ax - px;
-                const std::int32_t dy = ay - py;
-                const std::int32_t paces =
-                    static_cast<std::int32_t>(std::lround(std::sqrt(
-                        static_cast<double>(dx) * dx + static_cast<double>(dy) * dy)));
-                const std::string way(sim::compass_point(sim::bearingTo(px, py, ax, ay)));
-                // STANDS ON: the street this door fronts, which is the thing a
-                // player can actually follow. "Go to the Gilded Gull" means
-                // "walk the Tarwalk", and the authored way footprints know it.
+                // THE DIET (UI-EA-SPEC 1.4 #20-21). Bearing and paces ride the
+                // badge; the band rides the header readout; KIND and FOOTPRINT
+                // were decoration and are gone. What is left is what a reader
+                // can ACT on: the street a door fronts ("go to the Gull" means
+                // "walk the Tarwalk"), how many bodies are inside (the People
+                // tab's own advertisement, the reference's `v - View traits`),
+                // and the sign's own line of flavour -- world words, untouched.
                 const int onWay = mapWayUnder(ax, ay, 6);
-                // PEOPLE: the count, on the Overview, so the People tab
-                // advertises what is inside it before you press it, which is
-                // the reference's own "v - View traits (Con Artist +1)": a door
-                // with a label on it, telling you the payoff before you open
-                // it. And an empty room is WORDED rather than left blank, so a
-                // reader knows the question was asked.
-                const std::string inside =
-                    state.people.empty()
-                        ? std::string("NOBODY, RIGHT NOW")
-                        : std::to_string(state.people.size()) +
-                              (state.people.size() == 1 ? " PERSON" : " PEOPLE");
-                // SIX FACTS, ALWAYS, WHATEVER IS SELECTED. The second row is
-                // the one that changes with the kind of thing, and it changes
-                // its LABEL along with its value rather than saying something
-                // untrue in a fixed one: a door STANDS ON a street, and a
-                // street does not stand on anything -- it is signed along its
-                // reach, and how many posts carry its name is the honest
-                // measure of how long it is. The row count is fixed so nothing
-                // below it moves as the cursor crosses between the two kinds.
                 const bool onSelf = onWay >= 0 && onWay == selected;
                 const PanelFact second =
                     place.way || onSelf
-                        ? PanelFact{"SIGNED", std::to_string(signPostsNamed(place.name)) +
-                                                  (signPostsNamed(place.name) == 1 ? " POST"
-                                                                                   : " POSTS"),
+                        ? PanelFact{"SIGNED", std::to_string(signPostsNamed(place.name)),
                                     InkRole::Number}
-                        : PanelFact{"STANDS ON",
+                        : PanelFact{"ON",
                                     onWay >= 0
                                         ? shout(places[static_cast<std::size_t>(onWay)].name)
-                                        : std::string("NO SIGNED WAY"),
+                                        : std::string("NO WAY"),
                                     onWay >= 0 ? InkRole::Prose : InkRole::Dim};
                 std::vector<PanelFact> facts{
-                    PanelFact{"KIND", place.way ? "STREET" : "DOOR", InkRole::Prose},
                     second,
-                    PanelFact{"FOOTPRINT",
-                              std::to_string(place.tilesX()) + "x" +
-                                  std::to_string(place.tilesY()) + " TILES",
-                              InkRole::Number},
-                    PanelFact{"BAND", std::to_string(place.band), InkRole::Number},
-                    PanelFact{"FROM YOU", shout(way) + "  " + std::to_string(paces) + " PACES",
-                              InkRole::Number},
-                    PanelFact{"INSIDE NOW", inside,
+                    PanelFact{"INSIDE",
+                              state.people.empty() ? std::string("NOBODY")
+                                                   : std::to_string(state.people.size()),
                               state.people.empty() ? InkRole::Dim : InkRole::Number},
                 };
                 drawFacts(target, bodyPane, metric, facts, -1, alpha);
@@ -1394,11 +1424,8 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
                 // THE ANSWER TO "FINDING THE PERSON I WANT AT THAT PLACE".
                 if (state.people.empty()) {
                     // EMPTY STATES ARE WORDED, NOT BLANK -- the reference's own
-                    // `no trinket`. Absence is stated so the reader knows it was
-                    // considered.
-                    drawCellText(target, bodyPane, metric, 0, 0, "NOBODY IS IN THERE", ink.dim,
-                                 alpha);
-                    drawCellText(target, bodyPane, metric, 0, 1, "RIGHT NOW.", ink.dim, alpha);
+                    // `no trinket` -- and worded in two words (spec: <= 6).
+                    drawCellText(target, bodyPane, metric, 0, 0, "NOBODY NOW.", ink.dim, alpha);
                     break;
                 }
                 // AN OPTION LIST, NOT A FACTS BLOCK, and the difference is not
@@ -1503,16 +1530,18 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
                     Rgb tone;
                     const char* what;
                 };
+                // CHIPS + CATEGORY NAMES ONLY (UI-EA-SPEC 1.4 #24). The swatch
+                // is the sentence; the word beside it is a noun, not a clause.
                 const Key keys[] = {
-                    {block, "A NAMED BUILDING"},
-                    {ground, "GROUND YOU CAN WALK"},
-                    {palette.floorTone(0) * 0.42F, "GROUND A BAND BELOW"},
-                    {palette.water, "THE HARBOUR"},
-                    {kDoorDot, "A DOOR"},
-                    {kCursorTone, "WHAT THE CURSOR HAS"},
-                    {kPlayerTone, "YOU, AND YOUR FACING"},
-                    {kDoorInk, "A BUILDING'S NAME"},
-                    {kWayInk, "A STREET'S NAME"},
+                    {block, "BUILDING"},
+                    {ground, "GROUND"},
+                    {palette.floorTone(0) * 0.42F, "LOWER GROUND"},
+                    {palette.water, "HARBOUR"},
+                    {kDoorDot, "DOOR"},
+                    {kCursorTone, "CURSOR"},
+                    {kPlayerTone, "YOU"},
+                    {kDoorInk, "DOOR NAME"},
+                    {kWayInk, "STREET NAME"},
                 };
                 const int swatchCells = 2;
                 for (std::size_t row = 0; row < sizeof(keys) / sizeof(keys[0]); ++row) {
@@ -1530,33 +1559,37 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
             }
         }
 
-        // Page indicator, directly above the commit foot so the verbs below it
-        // never move -- one row higher when the TRAVEL row is live.
-        const int indicatorRow = paneRows - (state.travelKey.empty() ? 2 : 3);
-        if (scroll.screens > 1 && indicatorRow >= 2) {
-            drawCellText(target, pane, metric, 0, indicatorRow,
-                         "MORE  " + std::to_string(scroll.screen + 1) + "/" +
-                             std::to_string(scroll.screens),
-                         ink.dim, alpha);
+        // `+N` RIDES THE RULE (UI-EA-SPEC 1.4): what a paged list holds below
+        // the fold, right-aligned in the rule under the body -- the reference's
+        // own text-on-the-divider trick, so the fact costs no row and the foot
+        // never moves. `+28` says there is more and roughly how much; `0`
+        // pages it (the grammar's MORE key).
+        const int listCount = scrollingCount(state);
+        const int below = listCount - std::min(listCount, scroll.firstRow + scroll.perScreen);
+        if (below > 0 && layout.ruleRows.size() >= 2) {
+            const PanelRect ruleBand{pane.x,
+                                     layout.interior.y + metric.heightOf(layout.ruleRows[1]),
+                                     std::max(0, pane.w - metric.cellW()), metric.cellH()};
+            drawCellTextRight(target, ruleBand, metric, 0, 0, "+" + std::to_string(below),
+                              ink.dim, alpha);
         }
 
-        // STATE CHANGES THE VERB. Standing inside the thing you have selected,
-        // there is nothing to turn toward -- so the row says so, in the same
-        // place, rather than offering a key that would do nothing.
-        const bool standingIn = place.contains(static_cast<std::int32_t>(state.playerX),
-                                               static_cast<std::int32_t>(state.playerY));
+        // STATE CHANGES THE VERB, and the state label is one word: `HERE`
+        // (UI-EA-SPEC sec. 5) -- standing inside the selection, or within two
+        // paces of its landing, there is nowhere to travel and the ward says
+        // so instead of selling you the doorstep (SHIP-NOTE's zero-paces
+        // wart, closed). FACE IT stays live at the door -- you can still turn
+        // to it -- and sleeps only when you are inside the thing itself.
         if (standingIn) {
-            drawCellText(target, pane, metric, 0, paneRows - 1, "YOU ARE STANDING IN IT",
-                         ink.number, alpha);
+            drawCellText(target, pane, metric, 0, paneRows - 1, "HERE", ink.number, alpha);
         } else {
             // FAST TRAVEL (TRAVEL lane): the page's second commit, one row
-            // above FACE IT, and its cost restated in the verb -- the commit
+            // above FACE IT, its cost restated in the verb -- the commit
             // foot's own "e - Establish (Cost: 200*)" grammar. STATE CHANGES
-            // THE VERB: when travel is refused the one-line reason takes the
-            // row itself, the reference's own state-label-where-the-price-was
-            // -- never a greyed-out key. Drawn only when the session filled
-            // travelKey, so a hand-built state keeps the old foot exactly.
-            if (!state.travelKey.empty() && paneRows >= 2) {
+            // THE VERB: a refusal takes the row itself, never a greyed-out
+            // key; and within two paces the row simply sleeps -- HERE on the
+            // badge already said why.
+            if (!state.travelKey.empty() && paneRows >= 2 && !here) {
                 if (!state.travelRefusal.empty()) {
                     drawCellText(target, pane, metric, 0, paneRows - 2, state.travelRefusal,
                                  ink.dim, alpha);
@@ -1568,22 +1601,34 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
                                  "(" + state.travelCost + ")", ink.number, alpha);
                 }
             }
-            std::int32_t ax = 0;
-            std::int32_t ay = 0;
-            mapAimPoint(place, static_cast<std::int32_t>(state.playerX),
-                        static_cast<std::int32_t>(state.playerY), ax, ay);
-            const std::string way(sim::compass_point(
-                sim::bearingTo(static_cast<std::int32_t>(state.playerX),
-                               static_cast<std::int32_t>(state.playerY), ax, ay)));
             drawCommitVerb(target, pane, metric, state.commitKey + " - FACE IT",
                            "(" + shout(way) + ")", ink.key, alpha);
+            // The commit beat (contract b): armed by the routing at the press,
+            // rendered here, gone in a few steps.
+            drawCommitPulse(target, pane, metric, state.commitKey + " - FACE IT",
+                            "(" + shout(way) + ")", kCursorTone, alpha, state.commitPulse);
         }
     }
 
     // --- global nav, below its own rule ------------------------------------
+    // THE LAW OF EARNED TEXT (UI-EA-SPEC sec. 2): planned ONCE against the
+    // raised form so the caps never move, drawn at rest as bare keycaps (plus
+    // the zoom rung, a value), the verb words fading up and down with the
+    // tutor tier. Raised on page open, device change, a press the page did
+    // not recognise, or idle -- the wake signals are the routing's; this page
+    // renders whatever strength arrives.
     const std::vector<PanelOption> nav = navOptions(state);
-    OptionListStyle navStyle = navListStyle();
-    drawOptionList(target, layout.navBand, metric, nav, -1, navStyle, alpha);
+    const OptionListPlan navPlan =
+        planOptionList(nav, layout.navBand, metric, navListStyle());
+    std::vector<PanelOption> caps = nav;
+    for (PanelOption& option : caps) {
+        option.label.clear();
+    }
+    drawOptionListPlanned(target, layout.navBand, metric, caps, -1, navPlan, alpha);
+    if (state.tutor > 0.0F) {
+        drawOptionListPlanned(target, layout.navBand, metric, nav, -1, navPlan,
+                              alpha * std::min(1.0F, state.tutor));
+    }
 }
 
 }  // namespace granadad::render

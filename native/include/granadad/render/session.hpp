@@ -32,6 +32,7 @@
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/casebook_page.hpp"
 #include "granadad/render/controls.hpp"
+#include "granadad/render/creation_page.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
@@ -1509,6 +1510,20 @@ public:
     [[nodiscard]] bool haggling() const noexcept;
     /// Everything the surface draws. Empty and closed when nobody is talking.
     [[nodiscard]] DialogueViewState dialogueView() const;
+
+    /// UI-EA-SPEC 1.7 (LANE PAGES, strip->card): true while one of the four
+    /// pause-stack strips (pause, wait, options, grimoire) is up -- the family
+    /// that now draws as ONE composed card (drawCreationPage's own generic
+    /// composition) instead of a HUD strip, the ship note's standing item
+    /// extended to the family. The card's content comes from stripCard().
+    [[nodiscard]] bool stripCardOpen() const noexcept {
+        return pauseOpen_ || waitOpen_ || optionsOpen_ || grimoireOpen_;
+    }
+    /// The composed card for whichever pause-stack page is up. Rows, cursor
+    /// and digit windows keep exactly the meaning the strip gave them --
+    /// wrapCursorAndPage's nine-key arithmetic included -- so every input
+    /// path lands where it always did; only the drawing changed register.
+    [[nodiscard]] CreationPage stripCard() const;
     /// Which topic the cursor is on. An index into the WHOLE list.
     [[nodiscard]] int topicCursor() const noexcept { return topicCursor_; }
     /// Which page of the list is showing.

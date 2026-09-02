@@ -11,13 +11,14 @@ namespace granadad::render {
 
 namespace {
 
-/// The header band holds THREE rows whether or not all three are spoken -- the
-/// breadcrumb path on the first, and TWO for the task, because on the quiz and
-/// the biography the task is the question itself and a question is allowed to
-/// need a second line at a narrow window. Holding the band open is what keeps
-/// every rule below it in exactly the same place on every step of the flow, so
+/// The header band holds TWO rows whether or not both are spoken -- the task
+/// phrase, which on the quiz and the biography is the question itself, and a
+/// question is allowed to need a second line at a narrow window. The old
+/// breadcrumb row is gone (UI-EA-SPEC sec. 5, one header line per page: the
+/// tab row is the breadcrumb here). Holding the band open is what keeps every
+/// rule below it in exactly the same place on every step of the flow, so
 /// walking origin -> calling -> quiz -> review does not make the frame twitch.
-inline constexpr int kHeaderRows = 3;
+inline constexpr int kHeaderRows = 2;
 
 /// Twenty-two cells is a wrapped sentence that still reads. Deliberately not
 /// larger: the biggest WINDOW is the narrowest in CELLS (hudMinorScale steps up
@@ -344,9 +345,6 @@ inline constexpr int kMinBodyRows = 6;
                                     std::max(master, kMinMasterCells), heldDetail);
     }
     want = std::max(want, tabRowCells(page.title, page.tabs, page.readout));
-    if (page.crumbs.size() > 1) {
-        want = std::max(want, breadcrumbCells(page.crumbs));
-    }
     if (!page.nav.empty()) {
         // The nav band is ONE fixed row in this composition (unlike the
         // casebook's, which may take two), so a frame its list overflows
@@ -477,18 +475,13 @@ void drawCreationPage(Framebuffer& target, const CreationPage& page) {
     drawTabRow(target, frame.band(layout.tabRow, 1), metric, page.title, page.tabs,
                page.currentTab, page.readout, page.accent, alpha);
 
-    // --- breadcrumb, then the task ----------------------------------------
-    const PanelRect crumbRow{layout.headerBand.x, layout.headerBand.y, layout.headerBand.w,
-                             metric.cellH()};
-    drawBreadcrumb(target, crumbRow, metric, page.crumbs, page.accent, alpha);
+    // --- the task ----------------------------------------------------------
+    // THE ONE HEADER PHRASE (UI-EA-SPEC sec. 5): the tab row above is the
+    // breadcrumb; this band carries only the task -- the question itself on
+    // the quiz and the past, wrapped whole, never clipped. A SINGLE CRUMB IS
+    // AN INSTRUCTION, drawBreadcrumb's own documented second job.
     if (!page.instruction.empty()) {
-        // A SINGLE CRUMB IS AN INSTRUCTION, drawBreadcrumb's own documented
-        // second job -- the reference's `Select a tile of the Pearl Lands...`
-        // row. It wraps, which is why the question a quiz asks can live here
-        // instead of being clipped into a header.
-        const PanelRect taskRow{layout.headerBand.x, layout.headerBand.y + metric.cellH(),
-                                layout.headerBand.w, metric.heightOf(kHeaderRows - 1)};
-        drawBreadcrumb(target, taskRow, metric, {page.instruction}, ink.prose, alpha);
+        drawBreadcrumb(target, layout.headerBand, metric, {page.instruction}, ink.prose, alpha);
     }
 
     // --- the master list ---------------------------------------------------
@@ -589,17 +582,40 @@ void drawCreationPage(Framebuffer& target, const CreationPage& page) {
         if (!page.commitVerb.empty()) {
             drawCommitVerb(target, detail, metric, page.commitVerb, page.commitCost, ink.key,
                            alpha);
+            // The commit beat (contract b): the flow's own ImpactPulse,
+            // rendered on the inverted fill for the few steps after an answer
+            // lands.
+            drawCommitPulse(target, detail, metric, page.commitVerb, page.commitCost, page.accent,
+                            alpha, page.commitPulse);
         }
     }
 
     // --- global nav, below its own rule ------------------------------------
+    // THE LAW OF EARNED TEXT (UI-EA-SPEC sec. 2): planned once against the
+    // raised form so the caps never move; at rest bare keycaps, the verb
+    // words riding page.tutor -- except where tutorLocked holds the feet
+    // worded whole (the on-screen keyboard's accessibility floor).
     if (!page.nav.empty()) {
         OptionListStyle navStyle;
         navStyle.showKeys = true;
         navStyle.maxColumns = static_cast<int>(page.nav.size());
         navStyle.gutterCells = 2;
         navStyle.minRows = 1;
-        drawOptionList(target, layout.navBand, metric, page.nav, -1, navStyle, alpha);
+        const OptionListPlan navPlan =
+            planOptionList(page.nav, layout.navBand, metric, navStyle);
+        if (page.tutorLocked) {
+            drawOptionListPlanned(target, layout.navBand, metric, page.nav, -1, navPlan, alpha);
+        } else {
+            std::vector<PanelOption> caps = page.nav;
+            for (PanelOption& option : caps) {
+                option.label.clear();
+            }
+            drawOptionListPlanned(target, layout.navBand, metric, caps, -1, navPlan, alpha);
+            if (page.tutor > 0.0F) {
+                drawOptionListPlanned(target, layout.navBand, metric, page.nav, -1, navPlan,
+                                      alpha * std::min(1.0F, page.tutor));
+            }
+        }
     }
 }
 

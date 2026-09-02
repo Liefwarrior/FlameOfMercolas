@@ -110,10 +110,13 @@ enum class CreationListShape : std::uint8_t {
 /// Everything one creation step puts on screen. Built by CreationFlow::page().
 struct CreationPage {
     // --- the header -------------------------------------------------------
-    /// The nav path -- "NEW GAME / ANSWER FOR YOURSELF / QUESTION 5". Leaf in
-    /// the step's own accent, ancestors dim. EVERY PANEL CARRIES ONE.
+    /// RETIRED FROM THE DRAWING (UI-EA-SPEC sec. 5, breadcrumb law): one
+    /// header line per page -- the tab row IS the breadcrumb on this flow,
+    /// and a task page carries its one instruction phrase instead. The field
+    /// stays so older callers still compile; nothing reads it any more.
     std::vector<std::string> crumbs;
-    /// The task, stated as an instruction on its own row underneath.
+    /// The task -- the question itself on the quiz and the past. The ONE
+    /// header phrase this flow keeps, wrapped whole, never clipped.
     std::string instruction;
     /// Left of the tab row.
     std::string title;
@@ -184,8 +187,18 @@ struct CreationPage {
     bool stipple = true;
 
     /// Global nav, below its own rule. Entry 0 is the way back, and is the one
-    /// entry a pointer may click.
+    /// entry a pointer may click. Built in the RAISED (tutor) form; at rest
+    /// the drawing blanks the labels to bare keycaps unless `tutorLocked`.
     std::vector<PanelOption> nav;
+    /// TUTOR tier (UI-EA-SPEC sec. 2): 0 rest (keycaps only) .. 1 raised
+    /// (verb words up). CreationFlow raises it on step entry and eases it
+    /// down off its own step count.
+    float tutor = 0.0F;
+    /// The accessibility floor (UI-EA-SPEC 1.1 #10): a page whose feet must
+    /// stay worded whatever the tutor tier says -- the on-screen keyboard.
+    bool tutorLocked = false;
+    /// Contract (b): the commit beat, off CreationFlow's own ImpactPulse.
+    float commitPulse = 0.0F;
     float alpha = 1.0F;
 };
 

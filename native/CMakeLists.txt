@@ -493,6 +493,11 @@ if(GRANADAD_BUILD_TESTS)
         # common value column, panes holding their height, and the controls page
         # composed at every window size the game runs at.
         tests/test_panel.cpp
+        # UI-EA-SPEC -- the word diet, pinned: the census's own token rule
+        # (whitespace-delimited, alphanumeric-bearing, keycap sentinels count
+        # zero) run over each dieted page's at-rest model, each surface held
+        # under its ceiling so a stray sentence cannot creep back in unseen.
+        tests/test_word_diet.cpp
         # Task #83 -- the steps-based ease every panel's open/close and the
         # HUD's own alert row animate through.
         tests/test_anim.cpp
