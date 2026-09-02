@@ -1245,7 +1245,16 @@ void Session::settleTakeWrit() {
     if (first < 0) {
         return;
     }
-    (void)evictBook_.hear(first, caseNowSeconds());
+    const std::int64_t now = caseNowSeconds();
+    (void)evictBook_.hear(first, now);
+    // AND READ, scripted, the same contract both closes keep: the docket is
+    // Maell's own briefing, given to your face with the writ in your hand --
+    // there is nothing left to walk to and discover about it. Reading it is
+    // what opens the Netters' gate lead (the authored chain's first link);
+    // without this the examine key at the gate reads an Unheard corner of
+    // the ward and the trail never starts.
+    const sim::Lead& lead = evictRaws_.leads()[static_cast<std::size_t>(first)];
+    (void)evictBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
     syncEvictionTopics();
     casePlateText_ =
         "A WRIT OF DISTRAINT  " +
@@ -3962,6 +3971,7 @@ void Session::interact() {
     if (!sneaking && evictDoorReady()) {
         if (!evictKnocked_) {
             evictKnocked_ = true;
+            evictEverKnocked_ = true;
             evictDoorSaid_ = false;
             say("YOU KNOCK. A CHAIR SCRAPES. THE MARROW DOOR OPENS ON A TIRED MAN AND THE "
                 "SMELL OF THIN SOUP.");
@@ -9005,7 +9015,7 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     const sim::Lead& gate = raws.leads()[static_cast<std::size_t>(raws.indexOf("netters-gate"))];
     (void)walkAcrossDistrict(session, gate.site.x, gate.site.y);
     session.examine();
-    mark(session.evictBook().state(raws.indexOf("netters-gate")) != sim::LeadState::Open);
+    mark(session.evictBook().state(raws.indexOf("netters-gate")) == sim::LeadState::Followed);
 
     if (ending == "gate") {
         session.toggleCasebook();
@@ -9026,7 +9036,7 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     const sim::Lead& door = raws.leads()[static_cast<std::size_t>(raws.indexOf("family-door"))];
     (void)walkAcrossDistrict(session, door.site.x, door.site.y);
     session.examine();
-    mark(session.evictBook().state(raws.indexOf("family-door")) != sim::LeadState::Open);
+    mark(session.evictBook().state(raws.indexOf("family-door")) == sim::LeadState::Followed);
 
     chapter();
     // 6. THE KNOCK. Stand at the door in the evening and press interact --
@@ -10732,7 +10742,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " mask=" << gEvictBeatMask
                 << " read=" << book.readCount() << '/' << book.known().size()
                 << " dread=" << book.dread()
-                << " knocked=" << (session.evictKnocked() ? "yes" : "no")
+                << " knocked=" << (session.evictEverKnocked() ? "yes" : "no")
                 << " served=" << (session.writServed() ? "yes" : "no")
                 << " closed=" << (book.closed() ? "yes" : "no")
                 << " live=" << (session.evictCaseLive() ? "yes" : "no")

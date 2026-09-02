@@ -596,8 +596,13 @@ TEST_CASE("the crown: the head is on the roll, and only the evictor reads it") {
         }
         CHECK_FALSE(cudgel.crowned);
     }
-    CHECK(landed > 3300);  // the shipped 1-in-8 whiff, still the whole miss
-    // ~24/256 of landed blows: 336 expected of ~3580. Generous walls, same
+    // The sweep's own arithmetic, not the naive 7-in-8: the multiplier
+    // (K + 1) is EVEN, so the roll's low three bits cycle 0,6,4,2 with
+    // seed -- every fourth seed whiffs, exactly, and the miss is still
+    // nothing but the whiff band (landed parity with the cudgel is checked
+    // per-roll above). 4096 * 3/4 = 3072, deterministic.
+    CHECK(landed == 3072);
+    // ~24/256 of landed blows: ~288 expected of 3072. Generous walls, same
     // shape as the fatigue sweep's own.
     CHECK(crowns > 220);
     CHECK(crowns < 460);

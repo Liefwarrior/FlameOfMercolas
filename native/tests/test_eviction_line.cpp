@@ -67,8 +67,10 @@ TEST_CASE("the participate path lands all nine beats, serves the writ and earns 
     CHECK(played.summary.find("served=yes") != std::string::npos);
     CHECK(played.summary.find("closed=yes") != std::string::npos);
     CHECK(played.summary.find("weapon=armed") != std::string::npos);
-    // Two clue sites read on foot (the gate and the door).
-    CHECK(played.summary.find("read=2/") != std::string::npos);
+    // Four leads read: the docket in Maell's own briefing (scripted, the
+    // hire's look), the gate and the door on foot, and the close's scripted
+    // look -- of five known, the roof-lodgers page left honestly unread.
+    CHECK(played.summary.find("read=4/5") != std::string::npos);
 }
 
 TEST_CASE("two runs of the participate path end with the same book, to the byte") {

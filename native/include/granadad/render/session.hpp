@@ -585,6 +585,11 @@ public:
     /// only offered on an answered door, so the choice is always spoken
     /// before it is spent.
     [[nodiscard]] bool evictKnocked() const noexcept { return evictKnocked_; }
+    /// True once the door has EVER answered -- the fact the record keeps when
+    /// the live flag re-arms as the player steps off the step. The disrupt
+    /// path's whole ledger entry ("the family had an evening's warning") reads
+    /// this, not the door's own state machine.
+    [[nodiscard]] bool evictEverKnocked() const noexcept { return evictEverKnocked_; }
     /// What the counters add up to. Derived on every call and held by nobody --
     /// see legend.hpp on why that is the design and not a shortcut.
     [[nodiscard]] sim::Legend legend() const;
@@ -1838,6 +1843,9 @@ private:
     /// serve lands or the evening gate refuses. The serve press is only
     /// offered on an answered door.
     bool evictKnocked_ = false;
+    /// The record's copy of the knock: set with the first answered knock and
+    /// never cleared, whatever the live flag does when the player steps away.
+    bool evictEverKnocked_ = false;
     /// The one-per-arming nudge naming the door verbs -- sheetTakeSaid_'s
     /// sibling, re-armed when the player steps out of reach.
     bool evictDoorSaid_ = false;
