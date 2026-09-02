@@ -64,6 +64,13 @@ namespace {
 /// other player-facing surface to.
 void mustReadAsEnglish(std::string_view what, std::string_view text) {
     for (const char c : text) {
+        // The keycap motif sentinels (panel.hpp's 0x01-0x06 contract) are
+        // drawable BY THE PANEL DRAWERS -- arrowheads, the return hook, the
+        // d-pad cross -- and legal wherever a key or verb prints.
+        render::Motif motif;
+        if (render::motifForSentinel(c, motif)) {
+            continue;
+        }
         INFO("in ", what, ": ", text);
         INFO("undrawable character: '", c, "' (", static_cast<int>(c), ")");
         CHECK(render::isDrawableGlyph(c));
@@ -1472,8 +1479,10 @@ TEST_CASE("every step composes a page, and every string on it can actually be dr
     for (const render::CreationFlow& flow : steps) {
         const render::CreationPage page = flow.page();
         INFO("step ", static_cast<int>(flow.step()));
-        CHECK_FALSE(page.crumbs.empty());
-        CHECK_FALSE(page.instruction.empty());
+        // UI-EA-SPEC sec. 5: the breadcrumb line is retired -- the tab row is
+        // the one header -- and only TASK steps (a question to answer) carry
+        // an instruction phrase.
+        CHECK(page.crumbs.empty());
         CHECK_FALSE(page.rows.empty());
         CHECK_FALSE(page.nav.empty());
         // EVERY PANEL CARRIES A HEADER and every step names where it is in the
@@ -1487,27 +1496,44 @@ TEST_CASE("every step composes a page, and every string on it can actually be dr
     }
 }
 
-TEST_CASE("a quiz answer reaches the screen WHOLE -- the eighteen-glyph clip is gone") {
-    // THE DEFECT, NAMED: the old topic grid clipped every answer at eighteen
-    // glyphs including its row number, so a hundred-glyph moral choice arrived
-    // as "1 YOU TOLD THE." and the renderer printed the hovered one three times
-    // per frame to compensate.
-    const render::CreationFlow flow = atQuiz(0);
+TEST_CASE("the stubs law: stubs never cut a word, and the full answer is behind the highlight") {
+    // UI-EA-SPEC 1.1: the answers collapse to short STUBS in the master list
+    // and the HIGHLIGHTED answer's full text prints whole in the detail pane.
+    // Nothing is deleted; it moves behind the highlight. The old defect this
+    // must never resurrect is the mid-word cut -- "1 YOU TOLD THE." was not a
+    // choice anybody could make.
+    render::CreationFlow flow = atQuiz(0);
     REQUIRE(flow.quiz().loaded());
-    const render::CreationPage page = flow.page();
-    REQUIRE(page.rows.size() == 3U);
     const sim::QuizQuestion& question = flow.quiz().questions().front();
     const std::array<int, 3> order = render::quizDisplayOrder(0);
-    bool sawLongOne = false;
-    for (std::size_t i = 0; i < page.rows.size(); ++i) {
-        const std::string& authored = question.answers[static_cast<std::size_t>(order[i])].text;
-        CHECK(page.rows[i].label == authored);
-        sawLongOne = sawLongOne || authored.size() > 18U;
+    for (int at = 0; at < 3; ++at) {
+        flow.setChoiceCursor(at);
+        const render::CreationPage page = flow.page();
+        REQUIRE(page.rows.size() == 3U);
+        const std::string& authored =
+            question.answers[static_cast<std::size_t>(order[static_cast<std::size_t>(at)])].text;
+        // The stub is the answer's own opening -- a prefix on a word
+        // boundary, marked -- or the whole short answer.
+        const std::string& stub = page.rows[static_cast<std::size_t>(at)].label;
+        if (stub != authored) {
+            REQUIRE(stub.size() > 2U);
+            const std::string prefix = stub.substr(0, stub.size() - 2);
+            CHECK(stub.compare(stub.size() - 2, 2, "..") == 0);
+            CHECK(authored.compare(0, prefix.size(), prefix) == 0);
+            // Never mid-word: the authored text continues with a space, or
+            // the cut fell on a boundary the stub kept whole.
+            CHECK((prefix.size() >= authored.size() ||
+                   authored[prefix.size()] == ' ' || prefix.back() != ' '));
+        }
+        // THE FULL ANSWER, WHOLE, in the detail pane's own lines.
+        bool whole = false;
+        for (const render::PanelLine& line : page.lines) {
+            whole = whole || line.body == authored;
+        }
+        CHECK(whole);
+        // And the question itself is the instruction row, not a clipped header.
+        CHECK(page.instruction == question.prompt);
     }
-    // If none of them were long, this case would be proving nothing.
-    CHECK(sawLongOne);
-    // And the question itself is the instruction row, not a clipped header.
-    CHECK(page.instruction == question.prompt);
 }
 
 TEST_CASE("the quiz says what an answer buys: the axis, the meters, and the trade it points at") {
@@ -1529,13 +1555,15 @@ TEST_CASE("the quiz says what an answer buys: the axis, the meters, and the trad
         liveTotal += count;
     }
     CHECK(drawnTotal == liveTotal + 1);
-    // And the provisional verdict is named, which is the direct answer to
-    // spending choices blind.
-    bool headingFor = false;
-    for (const render::PanelFact& fact : page.facts) {
-        headingFor = headingFor || fact.label == "HEADING FOR";
+    // The consequence is BARS AND A SIGNED DELTA now (UI-EA-SPEC 1.1 #3,
+    // 29 -> 8): the running HEADING FOR fact is retired -- the tallest bar
+    // says it wordlessly, and the verdict step still says the whole of it.
+    CHECK(page.facts.empty());
+    bool delta = false;
+    for (const render::PanelLine& line : page.lines) {
+        delta = delta || line.body == "+1";
     }
-    CHECK(headingFor);
+    CHECK(delta);
 }
 
 TEST_CASE("a biography answer's cost is spelled out in names and numbers, never in ids") {
@@ -1597,14 +1625,14 @@ TEST_CASE("state changes the verb rather than greying it out, on the row and on 
     const render::CreationPage named = flow.page();
     CHECK(named.commitVerb != blank.commitVerb);
 
-    // A skill row's verb follows its designation, and the restatement under it
-    // says which tiers still have room BEFORE the key is pressed.
+    // A skill row's verb follows its designation -- the slot-room restatement
+    // is retired (UI-EA-SPEC 1.1 #7: the header readout IS the slot count).
     flow.setCustomizeCursor(2);
     const render::CreationPage undesignated = flow.page();
     flow.adjustCustomizeRow(1);
     const render::CreationPage designated = flow.page();
     CHECK(undesignated.commitVerb != designated.commitVerb);
-    CHECK_FALSE(designated.commitCost.empty());
+    CHECK(designated.commitCost.empty());
 }
 
 TEST_CASE("a fixed sheet says it is fixed in the verb, not by refusing silently") {
@@ -1614,8 +1642,8 @@ TEST_CASE("a fixed sheet says it is fixed in the verb, not by refusing silently"
     REQUIRE(flow.chosenCompanion() != nullptr);
     flow.setCustomizeCursor(2);
     const render::CreationPage page = flow.page();
-    CHECK(page.commitVerb == "A FIXED SHEET");
-    CHECK_FALSE(page.commitCost.empty());
+    // One word now -- the reference's own state-label idiom (Owned -> FIXED).
+    CHECK(page.commitVerb == "FIXED");
 }
 
 TEST_CASE("every row of every step is reachable by pointer, and the pointer mirrors the cursor") {
@@ -2082,18 +2110,19 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
     CHECK(kb.find("ESC LEAVE") != std::string::npos);
     CHECK(kb.find("UP DOWN MOVE") != std::string::npos);
     CHECK(kb.find("ENTER OPEN") != std::string::npos);
-    CHECK(kb.find("1-5 PICK") != std::string::npos);
-    CHECK(flow.page().commitVerb == "ENTER - OPEN THIS DOOR");
+    // The digit foot is retired everywhere (UI-EA-SPEC sec. 5): digits pick
+    // what they print, and the rows print them.
+    CHECK(kb.find("PICK") == std::string::npos);
+    CHECK(flow.page().commitVerb == "ENTER - OPEN");
 
-    // One pad press: the SAME page re-words -- no reopen, no menu visit. And
-    // the digit entry is GONE, because a pad has no number row to press.
+    // One pad press: the SAME page re-words -- no reopen, no menu visit.
     flow.noteInputDevice(render::InputDevice::Pad);
     std::string pad = navLine(flow.page());
     CHECK(pad.find("B LEAVE") != std::string::npos);
     CHECK(pad.find("D-PAD MOVE") != std::string::npos);
     CHECK(pad.find("A OPEN") != std::string::npos);
     CHECK(pad.find("PICK") == std::string::npos);
-    CHECK(flow.page().commitVerb == "A - OPEN THIS DOOR");
+    CHECK(flow.page().commitVerb == "A - OPEN");
 
     // The sheet -- the critical path the ship note shot keyboard-worded
     // around a pad (pad-sheet-begin-640.png). WALK YOUR OWN PATH is two
@@ -2105,7 +2134,8 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
         pad = navLine(flow.page());
         CHECK(pad.find("B BACK") != std::string::npos);
         CHECK(pad.find("D-PAD MOVE") != std::string::npos);
-        CHECK(pad.find("LEFT RIGHT SPEND") != std::string::npos);
+        // The spend key wears the arrowhead keycaps now (UI-EA-SPEC sec. 5).
+        CHECK(pad.find("SPEND") != std::string::npos);
         CHECK(pad.find("A OPEN") != std::string::npos);
         // And back to the keyboard the instant a key speaks.
         flow.noteInputKey(render::Key::S);

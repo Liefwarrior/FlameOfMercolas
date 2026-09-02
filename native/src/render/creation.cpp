@@ -1156,6 +1156,24 @@ namespace {
     return (value >= 0 ? "+" : "") + std::to_string(value);
 }
 
+/// THE STUBS LAW (UI-EA-SPEC 1.1). An answer in the master list is a SHORT
+/// STUB -- its opening words and a mark -- and the highlighted answer's full
+/// text lives in the detail pane, whole. Nothing is deleted; it moves behind
+/// the highlight, which is the register's own master/detail prescription. The
+/// stub cuts on a word boundary, never mid-word ("1 YOU TOLD THE." is the
+/// defect this flow was rebuilt to kill, and a diet must not resurrect it).
+[[nodiscard]] std::string answerStub(const std::string& text) {
+    constexpr std::size_t kStubGlyphs = 18;
+    if (text.size() <= kStubGlyphs + 2) {
+        return text;
+    }
+    std::size_t cut = text.rfind(' ', kStubGlyphs);
+    if (cut == std::string::npos || cut < 6) {
+        cut = kStubGlyphs;
+    }
+    return text.substr(0, cut) + "..";
+}
+
 /// WHERE YOU ARE IN THE FLOW, as the reference's tab row.
 ///
 /// A NOTE ON HONESTY, because this is the one place the grammar had to be read
@@ -1240,13 +1258,17 @@ std::vector<PanelLine> CreationFlow::pageEffectLines(const std::vector<sim::Char
         line.bullet = Bullet::Dot;
         line.bodyInk = InkRole::Number;
         line.nameInk = accent;
+        // SIGNED NUMBERS, BARE (UI-EA-SPEC sec. 5, stat/cost delta sentences
+        // -> bars + signed numbers): the name and the delta ARE the fact; the
+        // explaining clauses are gone. The number is never vaguer -- only its
+        // caption died.
         switch (effect.kind) {
             case sim::ChargenEffectKind::SkillDelta:
                 line.name = pageEffectName(effect);
-                line.body = signed32(effect.amount) + " BEFORE YOU START";
+                line.body = signed32(effect.amount);
                 break;
             case sim::ChargenEffectKind::CoinDelta:
-                line.body = signed32(effect.amount) + " COIN IN YOUR POCKET";
+                line.body = signed32(effect.amount) + " COIN";
                 break;
             case sim::ChargenEffectKind::FactionStanding:
                 line.name = pageEffectName(effect);
@@ -1254,27 +1276,25 @@ std::vector<PanelLine> CreationFlow::pageEffectLines(const std::vector<sim::Char
                 break;
             case sim::ChargenEffectKind::ActorDisposition:
                 line.name = pageEffectName(effect);
-                line.body = signed32(effect.amount) + " DISPOSITION";
+                line.body = signed32(effect.amount);
                 break;
             case sim::ChargenEffectKind::Heat:
-                line.body = signed32(effect.amount) + " HEAT -- THE WATCH STARTS WARMER";
+                line.body = signed32(effect.amount) + " HEAT";
                 break;
             case sim::ChargenEffectKind::HpMax:
-                line.body = signed32(effect.amount) + " MAX HEALTH";
+                line.body = signed32(effect.amount) + " HEALTH";
                 break;
             case sim::ChargenEffectKind::DaggerPoints:
-                line.body = signed32(effect.amount) + " DAGGER POINTS";
+                line.body = signed32(effect.amount) + " DAGGER";
                 break;
         }
         out.push_back(std::move(line));
     }
     if (out.empty()) {
-        // EMPTY STATES ARE WORDED, NOT BLANK -- the reference's own "no
-        // trinket". Absence is stated so the reader knows it was considered,
-        // rather than leaving them to wonder whether the pane failed to draw.
+        // EMPTY STATES ARE WORDED, NOT BLANK -- and in three words (<= 6).
         PanelLine none;
         none.bullet = Bullet::None;
-        none.body = "NOTHING CHANGES HANDS. THIS ONE IS ONLY WHO YOU WERE.";
+        none.body = "NOTHING CHANGES HANDS.";
         none.bodyInk = InkRole::Dim;
         out.push_back(std::move(none));
     }
@@ -1372,14 +1392,17 @@ CreationPage CreationFlow::page() const {
     out.title = "CREATION";
     out.tabs = stageTabs();
     out.alpha = 1.0F;
+    // The Law of Earned Text and the commit beat, both off this flow's own
+    // steps-based state (UI-EA-SPEC sec. 2-3): the nav band's verb words ride
+    // the tutor countdown, and the answer-commit pulse flashes the verb row.
+    out.tutor = tutorValue();
+    out.commitPulse = commitPulse_.value();
 
     // ------------------------------------------------------------------ door
     if (step_ == CreationStep::Origin) {
         const OriginTemplate& hovered = chosenOrigin();
         out.currentTab = 0;
         out.accent = doorAccent(hovered.id);
-        out.crumbs = {"NEW GAME", "THE DOOR"};
-        out.instruction = "PICK HOW YOU WANT TO BE MADE. NONE OF THEM LOCKS BEHIND YOU.";
         out.readout = name_.empty() ? "NAMELESS" : name_;
         out.shape = CreationListShape::Columns;
         out.maxColumns = 1;
@@ -1387,55 +1410,48 @@ CreationPage CreationFlow::page() const {
         // FIVE DOORS IN A TWENTY-EIGHT-ROW PANE was the shape of this screen,
         // and it is the first screen anybody sees. The frame now ends after the
         // taller of its two halves; this floor is what the DETAIL half can
-        // reach -- badge, the three-step summary, a line of prose and the
-        // commit verb -- held constant so arrowing the doors moves nothing but
-        // the fill. See CreationPage::bodyHoldRows.
-        out.bodyHoldRows = 13;
+        // reach -- badge, the explainer, and the commit verb -- held constant
+        // so arrowing the doors moves nothing but the fill.
+        out.bodyHoldRows = 11;
         const std::vector<OriginTemplate>& doors = originTemplates();
         for (std::size_t i = 0; i < doors.size(); ++i) {
             CreationPageRow row;
             row.key = std::to_string(i + 1);
             row.label = doors[i].name;
-            row.value = (doors[i].id == "gabri" || doors[i].id == "devin") ? "QUICK" : "BUILD";
             row.accent = doorAccent(doors[i].id);
             row.labelTakesAccent = true;
             out.rows.push_back(std::move(row));
         }
         out.cursor = originCursor_;
         out.detailBadge = hovered.name;
-        out.detailStatus =
-            (hovered.id == "gabri" || hovered.id == "devin") ? "QUICK START" : "MAKE YOUR OWN";
-        // THE ROUTE, AS FACTS. A door is a commitment of TIME as much as of
-        // character, and the one thing the old cards never said was how long
-        // the road behind each of them was.
-        if (hovered.id == "calling") {
-            out.facts = {PanelFact{"FIRST", "PICK ONE OF NINE TRADES", InkRole::Prose},
-                         PanelFact{"THEN", "TWELVE QUESTIONS ABOUT YOUR PAST", InkRole::Prose},
-                         PanelFact{"LAST", "REVIEW THE SHEET, AND BEGIN", InkRole::Prose}};
-        } else if (hovered.id == "quiz") {
-            out.facts = {PanelFact{"FIRST", "TEN QUESTIONS, NO WRONG ANSWERS", InkRole::Prose},
-                         PanelFact{"THEN", "THE WARD NAMES YOUR TRADE", InkRole::Prose},
-                         PanelFact{"LAST", "YOUR PAST, THE SHEET, AND BEGIN", InkRole::Prose}};
-        } else if (hovered.id == "custom") {
-            out.facts = {PanelFact{"FIRST", "SPEND THE WHOLE SHEET YOURSELF", InkRole::Prose},
-                         PanelFact{"THEN", "TWELVE QUESTIONS ABOUT YOUR PAST", InkRole::Prose},
-                         PanelFact{"LAST", "REVIEW, AND BEGIN", InkRole::Prose}};
-        } else {
-            out.facts = {PanelFact{"SHEET", "FIXED, AND HAND-WRITTEN", InkRole::Prose},
-                         PanelFact{"PAST", "ALREADY WRITTEN", InkRole::Prose},
-                         PanelFact{"STRAIGHT TO", "THE REVIEW", InkRole::Prose}};
-        }
+        // THE EXPLAINER, FOR THE HIGHLIGHTED ROW ONLY (UI-EA-SPEC 1.1 #1):
+        // the door's own tag, then ONE route line naming NO question counts --
+        // the census's 12-versus-10 contradiction dies by never counting at
+        // all. Trimmed to what a stranger needs: what this door is, and what
+        // is on the road behind it.
         PanelLine blurb;
         blurb.body = hovered.tag;
         out.lines.push_back(std::move(blurb));
+        PanelLine route;
+        route.bodyInk = InkRole::Dim;
+        if (hovered.id == "calling") {
+            route.body = "A TRADE, YOUR PAST, THE SHEET.";
+        } else if (hovered.id == "quiz") {
+            route.body = "QUESTIONS, A VERDICT, YOUR PAST.";
+        } else if (hovered.id == "custom") {
+            route.body = "THE WHOLE SHEET, YOUR PAST.";
+        } else {
+            route.body = "A WRITTEN SHEET. STRAIGHT TO REVIEW.";
+        }
+        out.lines.push_back(std::move(route));
         const sim::CompanionTemplate* companion = chosenCompanion();
         if (companion != nullptr && !companion->bio().empty()) {
             PanelLine bio;
             bio.body = companion->bio();
             out.lines.push_back(std::move(bio));
         }
-        out.commitVerb = confirmVerbOf(promptDevice_, "OPEN THIS DOOR");
-        out.nav = navFeet(promptDevice_, "LEAVE", "OPEN", "1-5");
+        out.commitVerb = confirmVerbOf(promptDevice_, "OPEN");
+        out.nav = navFeet(promptDevice_, "LEAVE", "OPEN", "");
         return out;
     }
 
@@ -1443,8 +1459,9 @@ CreationPage CreationFlow::page() const {
     if (step_ == CreationStep::Calling) {
         const std::vector<sim::CallingTemplate>& roster = callings_.callings();
         out.currentTab = 1;
-        out.crumbs = {"NEW GAME", "TAKE A CALLING"};
-        out.instruction = "PICK A TRADE. THE SHEET IT COMES WITH IS SPELLED OUT BESIDE IT.";
+        // The instruction prose is retired (UI-EA-SPEC 1.1 #2): the roster,
+        // the highlighted trade's own pane and the commit verb say the whole
+        // of it without a sentence of stage direction.
         out.readout = name_.empty() ? "NAMELESS" : name_;
         out.shape = CreationListShape::Columns;
         out.maxColumns = 1;
@@ -1479,7 +1496,12 @@ CreationPage CreationFlow::page() const {
             const bool taken = calling.id == chosenCallingId_;
             out.accent = axisAccent(calling.dominantAxis);
             out.detailBadge = calling.name;
-            out.detailStatus = taken ? "TAKEN" : "A TRADE";
+            // The type-label ("A TRADE") is dead (UI-EA-SPEC sec. 5); TAKEN,
+            // a state, survives -- the reference's own Owned label.
+            out.detailStatus = taken ? "TAKEN" : "";
+            // The trade's own tide phrase, the skill names and the stat bars
+            // -- the sheet it comes with, shown as shape and figure, with no
+            // sentence of explanation left standing (detail 45 -> 24).
             PanelLine flavour;
             flavour.body = calling.oneLine;
             out.lines.push_back(std::move(flavour));
@@ -1487,20 +1509,19 @@ CreationPage CreationFlow::page() const {
                 out.lines.push_back(std::move(line));
             }
             out.bars = pageCallingBars(calling);
-            out.commitVerb =
-                confirmVerbOf(promptDevice_, taken ? "KEEP THIS TRADE" : "TAKE THIS TRADE");
-            out.commitCost = taken ? "" : "(REPLACES THE WHOLE SHEET)";
+            out.commitVerb = confirmVerbOf(promptDevice_, taken ? "KEEP IT" : "TAKE IT");
+            out.commitCost = taken ? "" : "(THE WHOLE SHEET)";
         }
-        out.nav = navFeet(promptDevice_, "BACK", "TAKE", "1-9");
+        out.nav = navFeet(promptDevice_, "BACK", "TAKE", "");
         return out;
     }
 
     // --------------------------------------------------------------- verdict
     if (step_ == CreationStep::Quiz && verdict_.has_value()) {
         out.currentTab = 1;
-        out.crumbs = {"NEW GAME", "ANSWER FOR YOURSELF", "THE VERDICT"};
-        out.instruction =
-            "THE WARD HAS MADE UP ITS MIND. TAKE THE TRADE, OR GO AND PICK ONE BY EYE.";
+        // Instruction 17 -> 4 (UI-EA-SPEC 1.1 #4): the two rows ARE the
+        // choice; the header only has to say whose voice this is.
+        out.instruction = "THE WARD HAS DECIDED.";
         out.shape = CreationListShape::Columns;
         out.maxColumns = 1;
         out.masterShare = 34;
@@ -1528,7 +1549,8 @@ CreationPage CreationFlow::page() const {
         out.bars = pageAxisBars(verdict_->counts);
         if (calling != nullptr) {
             out.detailBadge = calling->name;
-            out.detailStatus = verdict_->pure ? "A PURE READING" : "A MIXED READING";
+            // PURE/MIXED survives as a state word, not a clause.
+            out.detailStatus = verdict_->pure ? "PURE" : "MIXED";
             PanelLine flavour;
             flavour.body = calling->oneLine;
             out.lines.push_back(std::move(flavour));
@@ -1542,10 +1564,10 @@ CreationPage CreationFlow::page() const {
         // THE VERB FOLLOWS THE CURSOR, which is the reference's rule that state
         // moves the row, the label and the verb together. Nothing is ever
         // greyed out; the one action line simply says what ENTER does now.
-        out.commitVerb = confirmVerbOf(
-            promptDevice_, choiceCursor_ == 1 ? "GO AND PICK ONE BY EYE" : "TAKE THIS TRADE");
-        out.commitCost = choiceCursor_ == 1 ? "(THE ANSWERS ARE KEPT)" : "";
-        out.nav = navFeet(promptDevice_, "LAST QUESTION", "CHOOSE", "1-2");
+        out.commitVerb =
+            confirmVerbOf(promptDevice_, choiceCursor_ == 1 ? "PICK BY EYE" : "TAKE IT");
+        out.commitCost = choiceCursor_ == 1 ? "(ANSWERS KEPT)" : "";
+        out.nav = navFeet(promptDevice_, "BACK", "CHOOSE", "");
         return out;
     }
 
@@ -1554,29 +1576,26 @@ CreationPage CreationFlow::page() const {
         const std::size_t at = quizAnswers_.size();
         const std::vector<sim::QuizQuestion>& questions = quiz_.questions();
         out.currentTab = 1;
-        out.crumbs = {"NEW GAME", "ANSWER FOR YOURSELF",
-                      "QUESTION " + std::to_string(at + 1) + " OF " +
-                          std::to_string(questions.size())};
         out.accent = panelInk().accent;
         // THE QUESTION IS THE TASK, so it lives on the instruction row where a
-        // task lives -- wrapped, whole, and never clipped into a header.
+        // task lives -- wrapped, whole, and never clipped into a header. It is
+        // the one header line this page has (breadcrumb law), and the tally
+        // readout is the census's own `5/10` riding the header rule.
         out.instruction = at < questions.size() ? questions[at].prompt : std::string{};
-        // ANSWERS ARE SENTENCES, SO THEY GET BLOCKS. Numbered, direct-select,
-        // inverted-fill selection -- the same grammar as a list of names, at the
-        // scale a moral dilemma actually needs. The old grid clipped every one
-        // of these at eighteen glyphs INCLUDING the row number.
-        out.shape = CreationListShape::Blocks;
-        out.masterShare = 58;
-        // THE ONE THIS PROGRAM WAS SENT AT. Three answers spend eight to ten
-        // rows of a forty-one-row block list at 640x360 -- two thirds of the
-        // master pane was flat black on the first screen of the game. The
-        // answers are static while the cursor moves within them, so the master
-        // half sizes to them; this floor covers what the CONSEQUENCE half can
-        // reach for any one of the three -- badge, two facts, three axis bars,
-        // and up to three effect lines.
-        out.bodyHoldRows = 15;
+        // THE STUBS LAW (UI-EA-SPEC 1.1 #3): the three answers collapse to
+        // short stubs in the master list -- single rows now, not blocks --
+        // and the HIGHLIGHTED answer's full text prints whole in the detail
+        // pane over its consequence. Nothing deleted; moved behind the
+        // highlight. Geometry is stiller than the blocks ever were: three
+        // one-row stubs whatever the cursor does.
+        out.shape = CreationListShape::Columns;
+        out.maxColumns = 1;
+        out.masterShare = 40;
+        // The detail half's floor: the full answer wrapped (up to five rows),
+        // the three axis bars, the scored delta, and the verb.
+        out.bodyHoldRows = 14;
         const std::array<std::int32_t, sim::kChargenAxisCount> counts = quizTallySoFar();
-        out.readout = pageTallyReadout(counts);
+        out.readout = std::to_string(at + 1) + "/" + std::to_string(questions.size());
         if (at < questions.size()) {
             const sim::QuizQuestion& question = questions[at];
             const std::array<int, 3> order = quizDisplayOrder(static_cast<int>(at));
@@ -1585,16 +1604,11 @@ CreationPage CreationFlow::page() const {
                     question.answers[static_cast<std::size_t>(order[pos])];
                 CreationPageRow row;
                 row.key = std::to_string(pos + 1);
-                row.label = answer.text;
+                row.label = answerStub(answer.text);
                 // THE ANSWERS ARE NOT TINTED BY AXIS, and that is deliberate.
-                // Every other list on this screen colours its rows by identity
-                // because colour makes a list scannable -- but here the identity
-                // is the thing the display shuffle (quizDisplayOrder) exists to
-                // stop a player pattern-marking. A row in the mudlark's blue
-                // would hand back in hue exactly what the shuffle took away in
-                // position. The accent still shows up the instant the row is
-                // SELECTED, because by then the detail pane has already named
-                // the axis out loud.
+                // The identity is the thing the display shuffle exists to stop
+                // a player pattern-marking; the accent shows the instant the
+                // row is SELECTED, in the pane that names the axis out loud.
                 row.accent = axisAccent(answer.axis);
                 row.labelTakesAccent = false;
                 out.rows.push_back(std::move(row));
@@ -1606,7 +1620,15 @@ CreationPage CreationFlow::page() const {
                 std::array<std::int32_t, sim::kChargenAxisCount> after = counts;
                 ++after[static_cast<std::size_t>(picked.axis)];
                 out.detailBadge = pageAxisName(picked.axis);
-                out.detailStatus = "IF YOU SAY THIS";
+                // THE FULL ANSWER, WHOLE -- what the stub in the list stands
+                // for. World words; never cut.
+                PanelLine full;
+                full.body = picked.text;
+                out.lines.push_back(std::move(full));
+                // THE CONSEQUENCE AS BARS AND A SIGNED DELTA (29 -> 8):
+                // watching the axis bar move IS the consequence; the clauses
+                // and the running verdict are gone, and the verdict step still
+                // says the whole of it at the end.
                 out.bars = pageAxisBars(after);
                 PanelLine scored;
                 scored.bullet = Bullet::Dot;
@@ -1615,24 +1637,11 @@ CreationPage CreationFlow::page() const {
                 scored.bodyInk = InkRole::Number;
                 scored.nameInk = out.accent;
                 out.lines.push_back(std::move(scored));
-                // THE PROVISIONAL VERDICT. This is the single most direct answer
-                // to "he spent his choices blind": the ward's reading of the
-                // answers SO FAR, off sim::tallyFromCounts -- the same three
-                // rules the real verdict uses, not a second copy of them.
-                const sim::QuizTally heading = sim::tallyFromCounts(quiz_, after, picked.axis);
-                const sim::CallingTemplate* toward = callings_.find(heading.calling);
-                out.facts = {
-                    PanelFact{"ANSWERED",
-                              std::to_string(at) + " OF " + std::to_string(questions.size()),
-                              InkRole::Number},
-                    PanelFact{"HEADING FOR", toward != nullptr ? toward->name : heading.calling,
-                              InkRole::Accent}};
             }
         }
         out.cursor = choiceCursor_;
         out.commitVerb = confirmVerbOf(promptDevice_, "SAY IT");
-        out.commitCost = "(" + std::string(promptBackKey(promptDevice_)) + " TAKES IT BACK)";
-        out.nav = navFeet(promptDevice_, "BACK", "ANSWER", "1-3");
+        out.nav = navFeet(promptDevice_, "BACK", "ANSWER", "");
         return out;
     }
 
@@ -1642,15 +1651,12 @@ CreationPage CreationFlow::page() const {
         const std::vector<sim::BiographyQuestion>& questions = biography_.questions();
         out.currentTab = 2;
         out.accent = Rgb{0.86F, 0.74F, 0.52F};
-        out.shape = CreationListShape::Blocks;
-        out.masterShare = 58;
-        // Same shape as the quiz, and a biography answer buys named skills, so
-        // the detail half can run a row or two longer.
-        out.bodyHoldRows = 16;
-        out.crumbs = {"NEW GAME", "YOUR OWN PAST",
-                      at < questions.size() ? questions[at].id + " - " + std::to_string(at + 1) +
-                                                  " OF " + std::to_string(questions.size())
-                                            : std::string("DONE")};
+        // THE STUBS LAW, same as the quiz (UI-EA-SPEC 1.1 #5): stubs in the
+        // list, the highlighted answer whole in the pane over its costs.
+        out.shape = CreationListShape::Columns;
+        out.maxColumns = 1;
+        out.masterShare = 40;
+        out.bodyHoldRows = 14;
         out.readout = pagePastReadout();
         if (at < questions.size()) {
             const sim::BiographyQuestion& question = questions[at];
@@ -1658,7 +1664,7 @@ CreationPage CreationFlow::page() const {
             for (std::size_t i = 0; i < question.answers.size(); ++i) {
                 CreationPageRow row;
                 row.key = std::to_string(i + 1);
-                row.label = question.answers[i].text;
+                row.label = answerStub(question.answers[i].text);
                 row.accent = out.accent;
                 out.rows.push_back(std::move(row));
             }
@@ -1675,21 +1681,27 @@ CreationPage CreationFlow::page() const {
                 at == 0 && choiceCursor_ == static_cast<int>(question.answers.size());
             if (random) {
                 out.detailBadge = "AT RANDOM";
-                out.detailStatus = "THE WHOLE PAST";
                 PanelLine line;
-                line.body = "ANSWER NOTHING MORE. THE REST OF YOUR PAST IS ROLLED IN ONE THROW.";
+                line.body = "THE REST OF YOUR PAST, ROLLED IN ONE THROW.";
                 out.lines.push_back(std::move(line));
-                out.commitVerb = confirmVerbOf(promptDevice_, "ROLL THE REST");
-                out.commitCost = "(YOU CANNOT UNROLL IT)";
+                out.commitVerb = confirmVerbOf(promptDevice_, "ROLL IT");
+                out.commitCost = "(FOR GOOD)";
             } else if (choiceCursor_ >= 0 &&
                        choiceCursor_ < static_cast<int>(question.answers.size())) {
                 const sim::BiographyAnswer& answer =
                     question.answers[static_cast<std::size_t>(choiceCursor_)];
-                out.detailBadge = question.id;
-                out.detailStatus = "WHAT IT COSTS";
+                // The question id badges the pane; the hint clause and the
+                // WHAT IT COSTS type-label are dead (hint 9 -> 2, sec. 5).
+                out.detailBadge = question.id + " - " + std::to_string(at + 1) + "/" +
+                                  std::to_string(questions.size());
+                // THE FULL ANSWER, WHOLE, then flavour, then the costs as
+                // signed numbers (cost list 25 -> 8).
+                PanelLine full;
+                full.body = answer.text;
+                out.lines.push_back(std::move(full));
                 if (!answer.note.empty()) {
-                    // FLAVOUR FIRST, THEN THE NAMED EFFECT, THEN THE NUMBER.
                     PanelLine note;
+                    note.bodyInk = InkRole::Dim;
                     note.body = answer.note;
                     out.lines.push_back(std::move(note));
                 }
@@ -1697,11 +1709,9 @@ CreationPage CreationFlow::page() const {
                     out.lines.push_back(std::move(line));
                 }
                 out.commitVerb = confirmVerbOf(promptDevice_, "THAT IS WHAT HAPPENED");
-                out.commitCost =
-                    "(" + std::string(promptBackKey(promptDevice_)) + " TAKES IT BACK)";
             }
         }
-        out.nav = navFeet(promptDevice_, "BACK", "ANSWER", "1-9");
+        out.nav = navFeet(promptDevice_, "BACK", "ANSWER", "");
         return out;
     }
 
@@ -1731,9 +1741,11 @@ CreationPage CreationFlow::pageForOsk() const {
     // THE GRID IS STATIC UNDER THE CURSOR -- moving does not swap a row for a
     // taller one -- so three rows is the floor and the floor is the content.
     out.bodyHoldRows = kOskRows;
-    out.crumbs = {"NEW GAME", chosenOrigin().name, "THE NAME"};
-    out.instruction = "PICK THE LETTERS ONE AT A TIME. NO KEYBOARD NEEDED.";
-    out.readout = std::to_string(name_.size()) + " OF " + std::to_string(kMaxNameLength);
+    // Explainer 11 -> 4 (UI-EA-SPEC 1.1 #10); the grid itself and the worded
+    // device feet are the accessibility floor and stay whole.
+    out.instruction = "PICK THE LETTERS.";
+    out.readout = std::to_string(name_.size()) + "/" + std::to_string(kMaxNameLength);
+    out.tutorLocked = true;
 
     // AND THE TRANSPOSE IS GONE. drawOptionList runs column-major, so putting
     // an alphabet through it meant reordering the cells on the way in and
@@ -1754,25 +1766,23 @@ CreationPage CreationFlow::pageForOsk() const {
     const std::string& under = cells[static_cast<std::size_t>(
         std::clamp(oskCursor_, 0, static_cast<int>(cells.size()) - 1))];
     out.detailBadge = "NAME";
-    out.detailStatus = under == "<"   ? "RUB OUT"
-                       : under == "_" ? "A SPACE"
-                                      : "THE LETTER " + under;
+    // Only the two keys that are not letters explain themselves; a letter's
+    // own inverted cap is its whole explanation.
+    out.detailStatus = under == "<" ? "RUB OUT" : under == "_" ? "A SPACE" : "";
     // The caret is part of the value, not a separate row: the field is one
     // line and what it shows is what has been taken so far.
-    out.facts = {PanelFact{"SO FAR", name_.empty() ? std::string("NOTHING YET") : name_ + "_",
+    out.facts = {PanelFact{"SO FAR", name_.empty() ? std::string("--") : name_ + "_",
                            name_.empty() ? InkRole::Dim : InkRole::Accent},
-                 PanelFact{"ROOM FOR",
-                           std::to_string(kMaxNameLength - name_.size()) + " MORE",
+                 PanelFact{"ROOM", std::to_string(kMaxNameLength - name_.size()),
                            InkRole::Number}};
-    PanelLine line;
-    line.body = "THE WARD WILL USE IT TO YOUR FACE FROM HERE ON.";
-    out.lines.push_back(std::move(line));
     // STATE CHANGES THE VERB. A blank name does not grey this out; it says what
     // is missing, and pressing it does nothing because there is nothing yet to
     // take -- the same rule BEGIN keeps two screens along.
-    out.commitVerb = name_.empty() ? "START - PICK A LETTER FIRST" : "START - THAT IS THE NAME";
-    out.commitCost = name_.empty() ? "" : "(" + name_ + ", FOR GOOD)";
-    out.nav = {navOf("B", "BACK"), navOf("PAD", "MOVE"), navOf("A", "TAKE"),
+    out.commitVerb = name_.empty() ? "START - A LETTER FIRST" : "START - TAKE IT";
+    out.commitCost = name_.empty() ? "" : "(" + name_ + ")";
+    // THE DEVICE FEET STAY WHOLE -- the accessibility floor, tutorLocked
+    // above; the cross keycap is the pad's own d-pad (UI-EA-SPEC sec. 5).
+    out.nav = {navOf("B", "BACK"), navOf(kGlyphCross, "MOVE"), navOf("A", "TAKE"),
                navOf("START", "DONE")};
     return out;
 }
@@ -1789,15 +1799,10 @@ CreationPage CreationFlow::pageForSheet() const {
     const sim::CompanionTemplate* companion = chosenCompanion();
     const sim::CallingTemplate* taken =
         chosenCallingId_.empty() ? nullptr : callings_.find(chosenCallingId_);
-    out.crumbs = {"NEW GAME", chosenOrigin().name,
-                  taken != nullptr && companion == nullptr ? taken->name
-                                                           : std::string("THE SHEET")};
-    out.instruction =
-        editingName_
-            ? std::string("TYPE A NAME. LETTERS, SPACE, HYPHEN. ENTER WHEN DONE.")
-            : (companion != nullptr
-                   ? std::string("A FIXED SHEET. READ IT, NAME YOURSELF, AND BEGIN.")
-                   : std::string("UP AND DOWN WALK THE SHEET. LEFT AND RIGHT SPEND."));
+    // Instruction and explainer prose: retired (UI-EA-SPEC 1.1 #6-#9,
+    // 21E -> 0). The one phrase that survives is the typing state's -- a mode
+    // the player is IN wants naming.
+    out.instruction = editingName_ ? std::string("TYPE A NAME.") : std::string();
     out.readout = pageSheetReadout();
 
     const std::vector<CustomizeRow> rows = customizeRowModel();
@@ -1807,9 +1812,11 @@ CreationPage CreationFlow::pageForSheet() const {
     }
     out.cursor = customizeCursor_;
     // The sheet's four verbs, hand-built (LEFT RIGHT is its own fourth verb
-    // and is honest on both devices); the digit entry never applied here.
+    // and is honest on both devices) -- arrowhead keycaps at rest, words on
+    // the tutor tier.
     out.nav = {navOf(promptBackKey(promptDevice_), editingName_ ? "STOP TYPING" : "BACK"),
-               navOf(promptMoveKeys(promptDevice_), "MOVE"), navOf("LEFT RIGHT", "SPEND"),
+               navOf(promptMoveKeys(promptDevice_), "MOVE"),
+               navOf(std::string(kGlyphLeft) + std::string(kGlyphRight), "SPEND"),
                navOf(promptConfirmKey(promptDevice_), "OPEN")};
 
     if (customizeCursor_ < 0 || customizeCursor_ >= static_cast<int>(rows.size())) {
@@ -1820,17 +1827,14 @@ CreationPage CreationFlow::pageForSheet() const {
     switch (row.kind) {
         case CustomizeRow::Kind::Name: {
             out.detailBadge = "NAME";
-            out.detailStatus = editingName_ ? "TYPING" : "WHO YOU ARE";
-            out.facts = {PanelFact{"TYPED", name_.empty() ? "NOTHING YET" : name_,
+            out.detailStatus = editingName_ ? "TYPING" : "";
+            // Name pane 26 -> 8 (UI-EA-SPEC 1.1): the typed value and the
+            // room left. The ward-will-use-it clause is gone.
+            out.facts = {PanelFact{"TYPED", name_.empty() ? "--" : name_,
                                    name_.empty() ? InkRole::Dim : InkRole::Accent},
-                         PanelFact{"ROOM FOR", std::to_string(kMaxNameLength) + " LETTERS",
-                                   InkRole::Number}};
-            PanelLine line;
-            line.body = "THE WARD WILL USE IT TO YOUR FACE FROM HERE ON.";
-            out.lines.push_back(std::move(line));
+                         PanelFact{"ROOM", std::to_string(kMaxNameLength), InkRole::Number}};
             out.commitVerb = confirmVerbOf(
                 promptDevice_, editingName_ ? "THAT IS MY NAME" : "TYPE A NAME");
-            out.commitCost = editingName_ ? "(BACKSPACE RUBS OUT)" : "";
             break;
         }
         case CustomizeRow::Kind::Appearance: {
@@ -1840,19 +1844,15 @@ CreationPage CreationFlow::pageForSheet() const {
                     : sim::appearanceOptions()[static_cast<std::size_t>(appearanceIndex_)].type;
             const sim::AppearanceOption* option = sim::appearanceOptionFor(type);
             out.detailBadge = "LOOK";
-            out.detailStatus = fixed ? "FIXED" : "HOW YOU PRESENT";
+            out.detailStatus = fixed ? "FIXED" : "";
             out.facts = {
                 PanelFact{"SHOWING",
                           option != nullptr ? std::string(option->label) : std::string("UNKNOWN"),
                           InkRole::Accent},
-                PanelFact{"ONE OF",
-                          std::to_string(sim::appearanceOptions().size()) + " IN THE WARD",
+                PanelFact{"OF", std::to_string(sim::appearanceOptions().size()),
                           InkRole::Number}};
-            PanelLine line;
-            line.body = "THE WARD HAS ONLY SO MANY FACES TO GIVE OUT. THIS ONE IS YOURS.";
-            out.lines.push_back(std::move(line));
-            out.commitVerb = fixed ? "A FIXED LOOK" : "LEFT RIGHT - CHANGE";
-            out.commitCost = fixed ? "(THEIRS, NOT YOURS TO MOVE)" : "";
+            out.commitVerb =
+                fixed ? "FIXED" : std::string(kGlyphLeft) + std::string(kGlyphRight) + " - CHANGE";
             break;
         }
         case CustomizeRow::Kind::Skill: {
@@ -1860,41 +1860,31 @@ CreationPage CreationFlow::pageForSheet() const {
             const sim::SkillDesignation tier = chargen_.designationOf(row.skillId);
             out.detailBadge = entry != nullptr ? entry->displayName : row.skillId;
             out.accent = fixed ? panelInk().accent : designationAccent(tier);
-            out.detailStatus = "A SKILL";
             const std::string governed =
                 entry != nullptr && entry->governingAttribute.has_value()
                     ? std::string(sim::attributeName(*entry->governingAttribute))
-                    : std::string("NOTHING");
+                    : std::string("--");
+            // Tier prose 17 -> 0 (UI-EA-SPEC 1.1 #7): the facts and the
+            // readout carry the whole of it; the lecture is gone. The slot
+            // cost is gone too -- the header readout IS the slot count.
             if (fixed) {
                 out.facts = {
-                    PanelFact{"STARTS AT", std::to_string(companion->startingLevel(row.skillId)),
+                    PanelFact{"STARTS", std::to_string(companion->startingLevel(row.skillId)),
                               InkRole::Number},
-                    PanelFact{"GOVERNED BY", governed, InkRole::Prose}};
-                out.commitVerb = "A FIXED SHEET";
-                out.commitCost = "(NOTHING HERE TO SPEND)";
+                    PanelFact{"GOVERNED", governed, InkRole::Prose}};
+                out.commitVerb = "FIXED";
             } else {
                 out.facts = {
-                    PanelFact{"DESIGNATION", std::string(sim::skillDesignationName(tier)),
+                    PanelFact{"TIER", std::string(sim::skillDesignationName(tier)),
                               InkRole::Accent},
-                    PanelFact{"STARTS AT", std::to_string(sim::startingLevelFor(tier)),
+                    PanelFact{"STARTS", std::to_string(sim::startingLevelFor(tier)),
                               InkRole::Number},
-                    PanelFact{"GOVERNED BY", governed, InkRole::Prose},
-                    PanelFact{"APTITUDE",
-                              entry != nullptr
-                                  ? std::string(sim::aptitudeTierName(entry->aptitudeTier))
-                                  : std::string("UNKNOWN"),
-                              InkRole::Prose}};
-                PanelLine line;
-                line.body = "A HIGHER TIER STARTS HIGHER AND CLIMBS FASTER. THE TIERS ARE THE "
-                            "SCARCE THING, NOT THE SKILLS.";
-                out.lines.push_back(std::move(line));
-                // STATE CHANGES THE VERB. An undesignated skill is offered a
-                // tier; a designated one is offered the next one and the way
-                // back off. Never a greyed-out button.
-                out.commitVerb = tier == sim::SkillDesignation::None
-                                     ? "RIGHT - MAKE IT PRIMARY"
-                                     : "LEFT RIGHT - MOVE THE TIER";
-                out.commitCost = pageSlotCost();
+                    PanelFact{"GOVERNED", governed, InkRole::Prose}};
+                // STATE CHANGES THE VERB. Never a greyed-out button.
+                out.commitVerb =
+                    tier == sim::SkillDesignation::None
+                        ? std::string(kGlyphRight) + " - PRIMARY"
+                        : std::string(kGlyphLeft) + std::string(kGlyphRight) + " - TIER";
             }
             break;
         }
@@ -1905,18 +1895,16 @@ CreationPage CreationFlow::pageForSheet() const {
                     : sim::kAttributeBase + chargen_.attributeBonus(row.attribute);
             out.accent = attributeAccent(row.attribute);
             out.detailBadge = std::string(sim::attributeName(row.attribute));
-            out.detailStatus = "AN ATTRIBUTE";
             out.bars = pageSheetBars();
-            out.facts = {
-                PanelFact{"NOW", std::to_string(value), InkRole::Number},
-                PanelFact{"OVER BASE", signed32(value - sim::kAttributeBase), InkRole::Number}};
+            out.facts = {PanelFact{"NOW", std::to_string(value), InkRole::Number}};
             if (fixed) {
-                out.commitVerb = "A FIXED SHEET";
-                out.commitCost = "(DERIVED FROM THEIR OWN SKILLS)";
+                out.commitVerb = "FIXED";
             } else {
-                out.commitVerb = "LEFT RIGHT - SPEND A POINT";
-                out.commitCost = "(" + std::to_string(chargen_.attributePointsRemaining()) +
-                                 " OF " + std::to_string(sim::kAttributeBonusPool) + " LEFT)";
+                // Budget hint 9 -> 4: the pool as a bare tally.
+                out.commitVerb =
+                    std::string(kGlyphLeft) + std::string(kGlyphRight) + " - SPEND";
+                out.commitCost = "(" + std::to_string(chargen_.attributePointsRemaining()) + "/" +
+                                 std::to_string(sim::kAttributeBonusPool) + ")";
             }
             break;
         }
@@ -1928,7 +1916,6 @@ CreationPage CreationFlow::pageForSheet() const {
             out.facts = {
                 PanelFact{"NAME", name_.empty() ? "UNSET" : name_,
                           name_.empty() ? InkRole::Dim : InkRole::Accent},
-                PanelFact{"PATH", chosenOrigin().name, InkRole::Prose},
                 PanelFact{"TRADE",
                           taken != nullptr
                               ? taken->name
@@ -1939,13 +1926,12 @@ CreationPage CreationFlow::pageForSheet() const {
             }
             // NEVER A DEAD BUTTON. With no name typed, the verb says what is
             // missing and pressing it goes and fixes that -- see
-            // chooseCustomizeRow().
+            // chooseCustomizeRow(). No route counts, no reassurance clauses
+            // (the census's 12-versus-10 contradiction died with them).
             if (!canConfirm()) {
                 out.commitVerb = confirmVerbOf(promptDevice_, "NAME YOURSELF FIRST");
-                out.commitCost = "(IT TAKES YOU TO THE NAME ROW)";
             } else if (companion == nullptr && biography_.loaded() && !bioDone_) {
                 out.commitVerb = confirmVerbOf(promptDevice_, "ON TO YOUR PAST");
-                out.commitCost = "(TWELVE QUESTIONS, THEN BACK HERE)";
             } else {
                 out.commitVerb = confirmVerbOf(promptDevice_, "BEGIN");
                 out.commitCost = "(THE WARD IS WAITING)";
@@ -2066,14 +2052,16 @@ std::vector<PanelLine> CreationFlow::pagePastLines() const {
         line.bodyInk = InkRole::Number;
         out.push_back(std::move(line));
     };
+    // Bare signed numbers (UI-EA-SPEC sec. 5): the caption clauses are gone,
+    // the figures are not.
     if (so.coinDelta != 0) {
-        number(signed32(so.coinDelta) + " COIN OUT OF YOUR PAST");
+        number(signed32(so.coinDelta) + " COIN");
     }
     if (so.heat != 0) {
-        number(signed32(so.heat) + " HEAT BEFORE YOU HAVE DONE ANYTHING");
+        number(signed32(so.heat) + " HEAT");
     }
     if (so.hpMaxDelta != 0) {
-        number(signed32(so.hpMaxDelta) + " MAX HEALTH");
+        number(signed32(so.hpMaxDelta) + " HEALTH");
     }
     if (!so.skillDeltas.empty()) {
         PanelLine line;
@@ -2106,8 +2094,7 @@ std::vector<PanelLine> CreationFlow::pagePastLines() const {
     }
     if (out.empty()) {
         PanelLine line;
-        line.body = bioDone_ ? "YOUR PAST COST YOU NOTHING THE LEDGER CAN SEE."
-                             : "NOTHING FROM YOUR PAST YET.";
+        line.body = bioDone_ ? "NOTHING THE LEDGER CAN SEE." : "NO PAST YET.";
         line.bodyInk = InkRole::Dim;
         out.push_back(std::move(line));
     }
