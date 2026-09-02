@@ -1347,16 +1347,13 @@ bool Session::evictDoorReady() const {
 }
 
 void Session::grantEvictor() {
-    // THE ONE PLACE THIS BUILD ARMS THE PLAYER. The weapon is the other
-    // lane's to define under the agreed id "the_evictor"; the seam is this
-    // call, and the integrate step is one identifier here. Until that enum
-    // lands, the class granted is the one the brawl already carries on the
-    // Evictor's own side of the lethal line -- Blunt, kept to Subdue (the
-    // player's default intent, so the grant stomps nothing that was chosen).
-    // setPlayerCombat couples weapon and intent, which is why the intent is
-    // named rather than left to chance: a weapon-only setter is the cleaner
-    // seam the flag in the report asks the weapon lane to publish.
-    tavern_->setPlayerCombat(sim::Weapon::Blunt, sim::Intent::Subdue);
+    // THE ONE PLACE THIS BUILD ARMS THE PLAYER. The weapon lane's grant
+    // seam, under the agreed id: arms The Evictor and touches nothing else
+    // -- intent stays where the player left it (the weapon-only setter the
+    // case lane's flag asked for is exactly what grantPlayerWeapon is).
+    // Unknown ids refuse rather than disarm, so a misspelled reward fails
+    // its test instead of quietly emptying the player's hand.
+    (void)tavern_->grantPlayerWeapon(sim::kEvictorWeaponId);
 }
 
 void Session::stepEvictCase() {
