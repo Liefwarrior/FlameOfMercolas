@@ -220,7 +220,11 @@ $scan = @{
     'space' = 0x39; 'tab' = 0x0F; 'esc' = 0x01; 'enter' = 0x1C
     'shift' = 0x2A; 'ctrl' = 0x1D; 'alt' = 0x38
     'f1' = 0x3B; 'f2' = 0x3C; 'f3' = 0x3D; 'f12' = 0x58
-    '1' = 0x02; '2' = 0x03; '3' = 0x04; '0' = 0x0B
+    # EVICTION SHIP: the whole digit row, not a corner of it -- topic lists
+    # print direct-select numbers up to 9 and the hire this phase drove sits
+    # on 8, which threw "no scancode for '8'" mid-script.
+    '1' = 0x02; '2' = 0x03; '3' = 0x04; '4' = 0x05; '5' = 0x06
+    '6' = 0x07; '7' = 0x08; '8' = 0x09; '9' = 0x0A; '0' = 0x0B
     'left' = 0x4B; 'right' = 0x4D; 'up' = 0x48; 'down' = 0x50
     # MORROWIND ROUND: PagePrev/PageNext's own shipped bindings
     # (controls.cpp's defaults) -- '[' and ']', repurposed by this round to
