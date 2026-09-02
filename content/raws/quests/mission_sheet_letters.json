@@ -1,0 +1,26 @@
+{
+  "id": "mission_sheet_letters",
+  "letters": [
+    {
+      "id": "the-mission-sheet",
+      "lead": "gull-door",
+      "handed": true,
+      "from": "Father Maell, of the Mission of the Flame",
+      "to": "Put into your hand by Onna, who has not read it",
+      "dateline": "Written at the Mission of the Flame, on the Docks",
+      "salutation": "",
+      "body": [
+        "Word has come from Gabri. I will not put down how, and you will not ask. What follows is his asking in my hand, which makes it the Mission's, which makes it mine.",
+        "There is a man called Finch. The roofs know him; the Watch has never once written his name. He lodges nowhere anyone can knock, and he drinks at the Gilded Gull, in the snug by the stair, from ten of the evening until the hearth dies at three.",
+        "A thin fellow walked into the Drowned Hold through a gap no man fits, the night the crates went in, and was paid for the walking. That was Finch. Gabri needs the man who walks through gaps - needs him asked, where nobody watches the asking. A skyrunner invited politely is over the slates by morning, so he is not to be invited.",
+        "Go at night, and go in quiet. Nothing edged - the house he drinks in settles its quarrels with fists and forgives them by morning, and so, on this one matter, does the Flame. Put him down, take him up, and bring him to my back room. He is to arrive bruised at the worst. If it cannot be done clean, leave it undone and come tell me so.",
+        "He keeps a strongbox in the south room over the snug, by the stair-head. His pay is in it, and his pay names the hand that paid him. Bring that too if you can. A wire opens it; a shoulder also opens it, and wakes the house.",
+        "I know what this sheet is. I have written it anyway, and I will answer for it - to the Flame, and to whatever asks after the Flame. Not to the Watch, and neither will you."
+      ],
+      "closing": "Burn this, or bring it back.",
+      "signature": "Maell"
+    }
+  ],
+  "provenance": "COURIER CASE. The mission sheet the owner's brief names, given its actual words: authored by the local Mission (Father Maell), relaying word that HAS COME from Gabri -- the novels' own Wielder, off-map, whereabouts deliberately unstated ('I will not put down how') so nothing here locates a man the ward cannot contain. The location the brief requires is in the sheet (the Gilded Gull, the snug, the hours -- tavern.cpp's own roster entry for Finch, 22:00-03:00, post in the snug); the instruction the brief requires is in the sheet (break in at night, take him, bring him to the Mission); the courier the brief requires is Onna (notables.json, the night-soup disciple who keeps the night door -- the one Mission hand awake to carry paper after dark, and 'who has not read it' keeps her what her bio says she is). Every mechanical claim in the sheet is a simulated fact: the hearth dying at three and the doors shutting at two are tavern.hpp's kFireLitUntil/kClosesAt; fists-not-steel is brawl.hpp's classifyFight, the ward's own law; the wire, the shoulder and the noise are lockpick.hpp (probe 18, force 88); the strongbox in the south room by the stair-head is gull::kRooms[3] and its one ward is strongboxWards(3). The one canon addition -- the thin fellow of casebook.json's tarry-jek lead resolved as Finch, paid to open the Hold from inside -- is FLAGGED in mission_sheet.json's provenance for the owner's veto. MAGIC-CANON.md's six-never-seven rule is not touched: no count of anything arcane appears here.",
+  "notes": "One document, not five: a mission sheet is the whole of the paper this errand produces, and inventing replies or receipts for a job whose point is that it goes unwritten would be the exact invention the Bloodletter letters file warns against. `handed` is true and it is the field's first use: this is post the player was SENT -- put into their hand by the courier beat -- so it unlocks the moment its lead is heard rather than waiting for the read-not-received gate, and Session::unlockedLetters says so. The `lead` is mission_sheet.json's own first lead (gull-door), the same string cross-reference discipline bloodletter_letters.json keeps with casebook.json; test_mission_sheet.cpp cross-loads both files and checks it resolves. Maell's voice here is his letters' voice (bloodletter_letters.json): plain declarative sentences, the conscience stated once and not wrung -- 'I know what this sheet is. I have written it anyway.' The moral texture is deliberate and written straight, per the owner's brief: the Mission orders a kidnapping, names it nothing softer, and takes the weight of it in the author's own hand."
+}
