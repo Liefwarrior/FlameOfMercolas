@@ -410,6 +410,14 @@ std::string_view promptMoveKeys(InputDevice device) noexcept {
     return device == InputDevice::Pad ? "D-PAD" : "UP DOWN";
 }
 
+Key pageBackRemap(Key key, bool pageOpen) noexcept {
+    // One key, one condition, no other business -- see the header on why the
+    // whole B seam came down to this being applied in two places instead of
+    // one. ONLY East: the D-pad stays raw list movement, the face buttons
+    // keep their bindings, and Escape itself is already Escape.
+    return pageOpen && key == Key::PadEast ? Key::Escape : key;
+}
+
 // ---------------------------------------------------------------------------
 // hold and toggle
 // ---------------------------------------------------------------------------

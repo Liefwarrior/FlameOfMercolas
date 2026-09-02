@@ -1311,27 +1311,23 @@ void print_usage() {
         return false;
     }
 
-    // THE PARITY PASS. B IS BACK, on every page, and it is done by REMAPPING
-    // rather than by a new branch in each of the nine surfaces below.
-    //
-    // The pad had no way out of a page once the D-pad started navigating one.
-    // PadUp was the casebook's only pad exit (it carries Action::Menu, the pad's
-    // Tab) and the moment "up" means "up the list" -- which is the whole point
-    // of this pass -- that exit is gone. PadEast carries Action::Crouch, and
-    // crouching is meaningless while a page owns the input: `listening` in the
-    // frame loop has already stood the movement keys down. So while any surface
-    // below is open, East is Escape -- and Escape is a key every one of these
-    // branches ALREADY has an answer for, either its own (the workbench's
-    // endForge) or the deliberate fall-through to Action::Pause, which "backs
-    // out of whatever is open".
-    //
-    // LOCAL, so the caller still calls pressed() with the real PadEast: with no
-    // page open not one branch below runs, the remap is invisible, and B is
-    // crouch in the world exactly as it has always been.
-    if (key == render::Key::PadEast) {
-        key = render::Key::Escape;
-    }
-
+    // THE PARITY PASS. B IS BACK, on every page -- PadEast arrives here
+    // ALREADY REMAPPED to Escape while a page owns the input, by
+    // render::pageBackRemap at the gamepad event edge (the one place a
+    // PadEast can enter). It used to be remapped LOCALLY, right here, and
+    // that was the B seam the ship note's drive found: this function would
+    // judge the ESCAPE and fall through (so the close could happen), but the
+    // caller then called pressed() with the REAL PadEast -- whose binding is
+    // Action::Crouch -- so one press closed the casebook AND toggled crouch,
+    // and the street after closing the book carried a CROUCHED banner nobody
+    // asked for. Remapping at the edge means the router and the fall-through
+    // press read the SAME key: Escape backs out (every branch below either
+    // answers it -- the workbench's endForge -- or deliberately falls through
+    // to Action::Pause, which "backs out of whatever is open"), and crouch
+    // never hears the press. With no page open the remap does not fire and B
+    // is crouch in the world exactly as it has always been; while the
+    // options page is listening for a key to bind, the remap also stands
+    // down, so PadEast itself can still be bound.
     const render::Action action = session.controls().actionFor(key);
     // The five list movements, in the vocabulary of intent. Arrows always work
     // as well, bound or not, because a list is the one place arrow keys are
@@ -3801,14 +3797,27 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     std::printf("granadad: gamepad REMOVED, gamepads detected=%d\n", count);
                     break;
                 }
-                case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+                case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
                     // SHIP NOTE MOVE 3: a pad press flips every prompt into
                     // pad vocabulary, live -- see Session::promptDevice().
                     session.noteInputDevice(render::InputDevice::Pad);
-                    if (!route_menu_key(session, key_of_pad_button(event.gbutton.button))) {
-                        pressed(key_of_pad_button(event.gbutton.button));
+                    // THE B SEAM, CLOSED AT THE EDGE. While a page owns the
+                    // input, East IS Escape -- remapped ONCE, here, so the
+                    // router and the fall-through pressed() read the same
+                    // key and one press cannot both close the casebook and
+                    // reach Crouch's binding (the CROUCHED-banner seam the
+                    // ship note's drive found). Not while the options page
+                    // is listening for a key: a rebinding must capture the
+                    // real PadEast. See render::pageBackRemap and
+                    // route_menu_key's own header.
+                    const render::Key key = render::pageBackRemap(
+                        key_of_pad_button(event.gbutton.button),
+                        pointer_page_open(session) && !session.awaitingKey());
+                    if (!route_menu_key(session, key)) {
+                        pressed(key);
                     }
                     break;
+                }
                 case SDL_EVENT_GAMEPAD_BUTTON_UP:
                     released(key_of_pad_button(event.gbutton.button));
                     break;

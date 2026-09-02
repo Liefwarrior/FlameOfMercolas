@@ -1056,6 +1056,32 @@ TEST_CASE("the device of a key, and the pad's spoken vocabulary") {
     CHECK(promptMoveKeys(InputDevice::Pad) == "D-PAD");
 }
 
+TEST_CASE("the B seam: East is Escape while a page is up, itself otherwise") {
+    // THE SHIP NOTE'S SEAM #1, pinned. The parity pass remapped PadEast to
+    // Escape INSIDE the router and then let the caller replay the raw press,
+    // so B closing the casebook also reached Crouch's binding and the street
+    // carried a CROUCHED banner. The remap is one function applied once at
+    // the event edge now; this is its whole contract.
+    //
+    // While a page owns the input, East IS the universal back...
+    CHECK(pageBackRemap(Key::PadEast, /*pageOpen=*/true) == Key::Escape);
+    // ...and with no page open it is exactly itself, so the world's B stays
+    // crouch (PadEast is Crouch's shipped secondary).
+    CHECK(pageBackRemap(Key::PadEast, /*pageOpen=*/false) == Key::PadEast);
+    CHECK(ControlSettings::defaults().actionFor(Key::PadEast) == Action::Crouch);
+    // No other key is touched, page or no page -- the D-pad stays raw list
+    // movement and Escape is already Escape.
+    for (const Key key : {Key::PadSouth, Key::PadWest, Key::PadNorth, Key::PadUp, Key::PadDown,
+                          Key::PadStart, Key::PadBack, Key::Escape, Key::E, Key::None}) {
+        CHECK(pageBackRemap(key, true) == key);
+        CHECK(pageBackRemap(key, false) == key);
+    }
+    // And the remapped key actually resolves to the action whose Pause
+    // branch backs out of whatever is open -- the close is the SAME route a
+    // keyboard ESC takes, so the two cannot drift.
+    CHECK(ControlSettings::defaults().actionFor(Key::Escape) == Action::Pause);
+}
+
 TEST_CASE("the live session re-words its prompts the moment the other hand speaks") {
     SessionConfig config;
     config.contentDir = content::contentDir();
