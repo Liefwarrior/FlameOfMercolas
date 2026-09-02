@@ -217,4 +217,24 @@ struct MenuTilePage {
 /// has.
 void drawMenuTiles(Framebuffer& target, const MenuTileState& state);
 
+/// THE POINTER PASS: what a pixel of the tiled Menu is pointing at.
+struct MenuTileHit {
+    /// kMenuFocus* of the pane the pixel is inside, or -1 outside all four.
+    int tile = -1;
+    /// The list row under the pixel as an ABSOLUTE index into that tile's
+    /// topics (the same index Session's cursor holds), or -1 -- in the pane
+    /// but not on a row, an open letter, a tile with nothing listed.
+    int row = -1;
+    /// True when the pixel is on the tile's unkeyed MORE foot.
+    bool more = false;
+};
+
+/// The inverse of drawTile's list, through the SAME walk: menuTileLayout for
+/// the panes, the badge/epithet/journal-prose row spend for where the list
+/// starts, menuTilePageFor for which screenful is showing, and panel.hpp's
+/// optionListAt against the identical whole-list plan the drawing uses. See
+/// optionListAt on why the inverse of a layout lives beside the layout.
+[[nodiscard]] MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height,
+                                             int px, int py);
+
 }  // namespace granadad::render

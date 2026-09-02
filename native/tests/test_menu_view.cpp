@@ -18,6 +18,8 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -287,4 +289,174 @@ TEST_CASE("the empty-state sentence draws in room the rows did not want, at ever
         drawMenuTiles(silent, blank);
         CHECK(worded.pixels() != silent.pixels());
     }
+}
+
+// ===========================================================================
+// THE POINTER PASS -- the tiles, invertible
+// ===========================================================================
+
+TEST_CASE("the tile hit-test names the pane, the row and the MORE foot the drawing printed") {
+    // The ship note's tiled Menu was mouse-silent. menuTileHitAtPixel inverts
+    // drawTile's own walk -- badge row, epithet row, a row of air, then the
+    // pane-paged list -- so a case can name a row's pixel off the layout the
+    // way test_casebook_page does, and then prove ink moves UNDER that pixel
+    // when the cursor takes the row.
+    MenuTileState tiles;
+    tiles.open = true;
+    tiles.focus = kMenuFocusCharacter;
+    tiles.characterFocus = 1.0F;
+    tiles.journalFocus = 0.0F;
+    tiles.character = listTile(12, 0);
+
+    const MenuTileLayout layout = menuTileLayout(640, 360);
+    REQUIRE(layout.usable);
+    const int capacity = layout.metric.rowsIn(layout.character.h) - 3;
+    REQUIRE(capacity >= 12);
+
+    // Every row of the list answers with its own absolute index. The list
+    // starts on pane row 3: badge, epithet, air -- drawTile's own spend.
+    for (int i = 0; i < 12; ++i) {
+        const int px = layout.character.x + layout.metric.cellW() * 3;
+        const int py = layout.character.y + layout.metric.heightOf(3 + i) +
+                       layout.metric.cellH() / 2;
+        INFO("row ", i, " at (", px, ",", py, ")");
+        const MenuTileHit hit = menuTileHitAtPixel(tiles, 640, 360, px, py);
+        CHECK(hit.tile == kMenuFocusCharacter);
+        CHECK(hit.row == i);
+        CHECK_FALSE(hit.more);
+    }
+
+    // The badge row is in the pane but on no row; the frame's border is on
+    // no pane at all.
+    const MenuTileHit badge = menuTileHitAtPixel(tiles, 640, 360, layout.character.x + 4,
+                                                 layout.character.y + 2);
+    CHECK(badge.tile == kMenuFocusCharacter);
+    CHECK(badge.row == -1);
+    CHECK(menuTileHitAtPixel(tiles, 640, 360, 1, 1).tile == -1);
+
+    // AND THE PIXEL IS WHERE THE INK IS: moving the cursor onto row 7 changes
+    // the frame at exactly the pixel the hit-test names for row 7 -- the
+    // coupling that keeps the mirrored row-walk honest against drawTile's.
+    const int px7 = layout.character.x + layout.metric.cellW() * 3;
+    const int py7 =
+        layout.character.y + layout.metric.heightOf(3 + 7) + layout.metric.cellH() / 2;
+    Framebuffer onZero(640, 360);
+    drawMenuTiles(onZero, tiles);
+    tiles.character = listTile(12, 7);
+    Framebuffer onSeven(640, 360);
+    drawMenuTiles(onSeven, tiles);
+    const std::size_t at = static_cast<std::size_t>(py7) * 640 + static_cast<std::size_t>(px7);
+    CHECK(onZero.pixels()[at] != onSeven.pixels()[at]);
+}
+
+TEST_CASE("the journal tile's prose moves its list, and the hit-test moves with it") {
+    // The Journal spends rows on its prose (up to two wrapped rows of `line`,
+    // then the dateline) before its list -- the one tile whose list start is
+    // content-dependent, and therefore the one place the mirrored walk could
+    // drift. Same coupling proof: the hit-test names a pixel for row 0, and
+    // the cursor arriving on row 0's neighbour moves ink under the pixel it
+    // names for that neighbour.
+    MenuTileState tiles;
+    tiles.open = true;
+    tiles.focus = kMenuFocusLetters;  // journal unfocused, exactly as the live Menu shows it
+    tiles.lettersFocus = 1.0F;
+    tiles.journalFocus = 0.0F;
+    tiles.journal = listTile(4, 0);
+    tiles.journal.speaker = "THE CASEBOOK";
+    tiles.journal.line = "A HOOK SENTENCE LONG ENOUGH TO WRAP ACROSS THE FULL-WIDTH JOURNAL BAND "
+                         "MORE THAN TWICE AT SIX-FORTY, SO THE TWO-ROW CLAMP AND THE MARKED CUT "
+                         "BOTH GENUINELY RUN, WHICH IS THE ARITHMETIC THIS CASE EXISTS TO PIN "
+                         "AGAINST THE MIRRORED WALK IN THE HIT-TEST, WORD FOR WORD AND ROW FOR "
+                         "ROW, HOWEVER THE WRAP FALLS.";
+    tiles.journal.caseRef = "DAY 1 21:40  FROM THE BODY";
+
+    const MenuTileLayout layout = menuTileLayout(640, 360);
+    REQUIRE(layout.usable);
+    const std::size_t cols = static_cast<std::size_t>(
+        std::max(4, layout.metric.cellsIn(layout.journal.w)));
+    const int proseRows =
+        std::min(2, static_cast<int>(wrapText(tiles.journal.line, cols).size())) + 1;
+    const int startRow = 2 + proseRows + 1;
+
+    const int px = layout.journal.x + layout.metric.cellW() * 3;
+    const int py0 =
+        layout.journal.y + layout.metric.heightOf(startRow) + layout.metric.cellH() / 2;
+    const MenuTileHit hit = menuTileHitAtPixel(tiles, 640, 360, px, py0);
+    CHECK(hit.tile == kMenuFocusJournal);
+    CHECK(hit.row == 0);
+
+    // A pixel on the prose is the pane, not a row.
+    const MenuTileHit prose = menuTileHitAtPixel(
+        tiles, 640, 360, px, layout.journal.y + layout.metric.heightOf(2) + 2);
+    CHECK(prose.tile == kMenuFocusJournal);
+    CHECK(prose.row == -1);
+
+    const int py1 =
+        layout.journal.y + layout.metric.heightOf(startRow + 1) + layout.metric.cellH() / 2;
+    Framebuffer onZero(640, 360);
+    drawMenuTiles(onZero, tiles);
+    tiles.journal.cursor = 1;
+    tiles.journal.page = 0;
+    Framebuffer onOne(640, 360);
+    drawMenuTiles(onOne, tiles);
+    const std::size_t at1 = static_cast<std::size_t>(py1) * 640 + static_cast<std::size_t>(px);
+    CHECK(onZero.pixels()[at1] != onOne.pixels()[at1]);
+}
+
+TEST_CASE("a paginating tile answers with the shown screen's indices and its MORE foot") {
+    // 320x180: the top tiles are shallow enough that twelve rows paginate
+    // (the pane-sized paginator case above). The hit-test must answer with
+    // the ABSOLUTE index of the visible screenful -- the cursor's own model
+    // -- and name the unkeyed MORE foot for what it is.
+    const MenuTileLayout layout = menuTileLayout(320, 180);
+    REQUIRE(layout.usable);
+    const int capacity = layout.metric.rowsIn(layout.character.h) - 3;
+    REQUIRE(capacity < 12);
+    const int perScreen = capacity - 1;
+
+    MenuTileState tiles;
+    tiles.open = true;
+    tiles.focus = kMenuFocusCharacter;
+    tiles.characterFocus = 1.0F;
+    tiles.journalFocus = 0.0F;
+    // Cursor deep enough to be on the second screen.
+    tiles.character = listTile(12, perScreen);
+
+    const int px = layout.character.x + layout.metric.cellW() * 2;
+    const int pyFirst =
+        layout.character.y + layout.metric.heightOf(3) + layout.metric.cellH() / 2;
+    const MenuTileHit first = menuTileHitAtPixel(tiles, 320, 180, px, pyFirst);
+    CHECK(first.tile == kMenuFocusCharacter);
+    // The first visible row is the second screen's first, not row zero.
+    CHECK(first.row == perScreen);
+
+    const int pyFoot = layout.character.y + layout.metric.heightOf(3 + capacity - 1) +
+                       layout.metric.cellH() / 2;
+    const MenuTileHit foot = menuTileHitAtPixel(tiles, 320, 180, px, pyFoot);
+    CHECK(foot.more);
+    CHECK(foot.row == -1);
+}
+
+TEST_CASE("an open letter answers as a pane with no rows -- a document is not a menu") {
+    DialogueViewState letter;
+    letter.open = true;
+    letter.speaker = "FATHER MAELL";
+    letter.letter = true;
+    letter.letterLines = {"A PARAGRAPH."};
+
+    MenuTileState tiles;
+    tiles.open = true;
+    tiles.focus = kMenuFocusLetters;
+    tiles.lettersFocus = 1.0F;
+    tiles.journalFocus = 0.0F;
+    tiles.letters = letter;
+
+    const MenuTileLayout layout = menuTileLayout(640, 360);
+    REQUIRE(layout.usable);
+    const MenuTileHit hit = menuTileHitAtPixel(
+        tiles, 640, 360, layout.letters.x + layout.letters.w / 2,
+        layout.letters.y + layout.letters.h / 2);
+    CHECK(hit.tile == kMenuFocusLetters);
+    CHECK(hit.row == -1);
+    CHECK_FALSE(hit.more);
 }
