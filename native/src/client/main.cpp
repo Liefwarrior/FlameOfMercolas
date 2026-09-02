@@ -691,6 +691,11 @@ void print_usage() {
         "                       PASS; implies --map-overlay\n"
         "  --map-tab=VIEW       overview, people, index or legend\n"
         "  --map-zoom=N         rungs in from the whole ward, 0..3\n"
+        "  --travel=NAME        press the ward map's TRAVEL verb on an\n"
+        "                       authored place: the clock advances by the\n"
+        "                       walk's real cost and the body arrives -- or\n"
+        "                       the refusal is printed, in its exact words,\n"
+        "                       in the summary's | travel segment\n"
         "  --case-lead=ID       THE CASEBOOK PASS: open the casebook page with\n"
         "                       its cursor on this casebook.json lead id\n"
         "                       (weighhouse-ledger)\n"
@@ -1075,6 +1080,12 @@ void print_usage() {
         } else if (starts_with(arg, "--map-zoom=", &value)) {
             options.smoke.mapZoom = std::atoi(value);
             options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--travel=", &value)) {
+            // FAST TRAVEL (TRAVEL lane). See SmokeRunConfig::travelTo: the
+            // ward map's TRAVEL verb pressed on an authored place, the
+            // summary's own `| travel` segment carrying the whole claim.
+            options.smoke.travelTo = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--face=", &value)) {
             // THE CROSSHAIR PASS. See SmokeRunConfig::face's own header: the
@@ -1627,6 +1638,25 @@ void print_usage() {
         }
         if (action == render::Action::Block) {
             session.adjustDistrictMapZoom(-1);
+            return true;
+        }
+        // FAST TRAVEL (TRAVEL lane). The page's second commit: T is a raw
+        // map-page key exactly as Tab/=/- are, and Attack is the pad's own
+        // half of the verb -- X (PadWest), the one face button unclaimed on
+        // this page (A is FACE IT, B backs out, Y is free but Attack is what
+        // X binds), the same "verb wearing a different mode's clothes" the
+        // zoom triggers above argue. NOT Interact: Interact's pad half is
+        // PadSouth, which is confirm/FACE IT, so travelling on it would steal
+        // the existing commit. The verb row at the detail foot names whichever
+        // half is in the player's hands. Refusals are the Session's to say,
+        // out loud, with the page staying up.
+        // The Attack half is PAD ONLY -- keyIsPad gates it -- because Attack's
+        // keyboard binding is MouseLeft, and a left-click on the map is
+        // already the pointer's select-then-FACE-IT (session_pointer below).
+        // Without the gate a mouse click would both face AND travel.
+        if (key == render::Key::T ||
+            (render::keyIsPad(key) && action == render::Action::Attack)) {
+            session.travelDistrictMapSelection();
             return true;
         }
         if (confirm) {

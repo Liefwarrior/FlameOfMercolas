@@ -22,6 +22,7 @@
 // the tier-3 correlation was ever going to answer -- whose ground is under
 // the feet. See plotIndexUnderfoot().
 #include "granadad/sim/docks_signs.hpp"
+#include "granadad/sim/path_finder.hpp"
 #include "granadad/sim/stealth.hpp"
 
 namespace granadad::render {
@@ -1921,6 +1922,211 @@ void Session::faceDistrictMapSelection() {
     syncPanelAnim();
 }
 
+// ---------------------------------------------------------------------------
+// FAST TRAVEL (TRAVEL lane) -- the ward map's second commit verb
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The nearest standable cell to (x, y) on `band`, searched in a fixed
+/// widening square so the answer is a pure function of the request -- the
+/// demo's own arrival rule (demo.cpp's nearestStandable), restated here
+/// because a travel lands a body the same way a Cut beat lands one: on real
+/// ground, never inside geometry. False when nothing within eight tiles will
+/// hold a body, which is a refusal and not a fudge.
+[[nodiscard]] bool travelStandable(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y,
+                                   std::int32_t band, std::int32_t* outX, std::int32_t* outY) {
+    if (tiles.standable(x, y, band)) {
+        *outX = x;
+        *outY = y;
+        return true;
+    }
+    for (std::int32_t ring = 1; ring <= 8; ++ring) {
+        for (std::int32_t dy = -ring; dy <= ring; ++dy) {
+            for (std::int32_t dx = -ring; dx <= ring; ++dx) {
+                if (dx != ring && dx != -ring && dy != ring && dy != -ring) {
+                    continue;
+                }
+                if (tiles.standable(x + dx, y + dy, band)) {
+                    *outX = x + dx;
+                    *outY = y + dy;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/// "02:14" -- the clock as the arrival line speaks it. The wait page says
+/// whole hours because it deals in them; a walk lands mid-hour and says so.
+[[nodiscard]] std::string travelClockText(int secondOfDay) {
+    const int hour = ((secondOfDay / 3600) % 24 + 24) % 24;
+    const int minute = (secondOfDay / 60) % 60;
+    std::string text = (hour < 10 ? "0" : "") + std::to_string(hour) + ":";
+    text += (minute < 10 ? "0" : "") + std::to_string(minute);
+    return text;
+}
+
+}  // namespace
+
+std::string Session::travelRefusal() const {
+    // THE CARRY CLAUSE FIRST, because it is the one refusal that is
+    // load-bearing rather than circumstantial: stepSheetCase() completes the
+    // delivery the moment the body is within look range of the back room, so
+    // a travel permitted while carrying would teleport-finish the courier
+    // case's whole final act. The nervous walk across the night district IS
+    // that case's payoff, and the line says so in the ward's voice.
+    if (sheetCarry_) {
+        return "NOT WITH THE FINCH. WALK HIM.";
+    }
+    // THE WATCH, ACTIVELY NOTICING: Closing is a watchman crossing the room
+    // about you, and you do not stroll off mid-witness. Mere heat or a
+    // warrant deliberately does NOT refuse -- the owner ruled waiting one out
+    // a tactic, and waitRefusal() ignores them for the same reason.
+    if (tavern_->watchStance() == sim::Tavern::WatchStance::Closing) {
+        return "NOT WITH THE WATCH CLOSING.";
+    }
+    // AND THE WAIT PAGE'S OWN DEFINITION OF "ANYWHERE SAFE", VERBATIM -- a
+    // travel is a wait plus a relocation, so every door that refuses the one
+    // refuses the other, in the same words.
+    return waitRefusal();
+}
+
+Session::TravelPlan Session::districtMapTravelPlan() const {
+    TravelPlan plan;
+    const std::vector<MapPlace>& places = mapPlaces();
+    if (places.empty()) {
+        return plan;
+    }
+    const MapPlace& place =
+        places[static_cast<std::size_t>(std::clamp(districtMapSelected_, 0,
+                                                   static_cast<int>(places.size()) - 1))];
+    const std::int32_t px = body_->tileX();
+    const std::int32_t py = body_->tileY();
+    if (place.contains(px, py)) {
+        plan.standingIn = true;
+        return plan;
+    }
+    // THE STATE REFUSALS FIRST -- they are cheap, they are the ones a player
+    // needs told about, and a refused plan owes no route.
+    plan.refusal = travelRefusal();
+    if (!plan.refusal.empty()) {
+        return plan;
+    }
+    // THE ARRIVAL: the same aim point the pane's bearing and FACE IT already
+    // use (the door you knock on), snapped to standable ground on the place's
+    // own band -- the demo Cut's own landing rule.
+    std::int32_t aimX = 0;
+    std::int32_t aimY = 0;
+    mapAimPoint(place, px, py, aimX, aimY);
+    if (!travelStandable(*tiles_, aimX, aimY, place.band, &plan.toX, &plan.toY)) {
+        plan.refusal = "NO GROUND TO STAND ON.";
+        return plan;
+    }
+    plan.toBand = place.band;
+    // THE WALK: the district's own PathFinder, salt 0 (no jitter,
+    // deterministic), Gait::Walk (the pace being charged). kSearchMaxSpan was
+    // sized to admit a route from one end of the district to the other and
+    // the worst measured district leg expands under 7,000 of the 10,000-node
+    // budget -- and a search that still fails is an honest refusal, not a
+    // fallback to the crow.
+    sim::PathFinder router(*tiles_);
+    std::vector<sim::PathStep> route;
+    const sim::PathStep from{px, py, body_->band()};
+    const sim::PathStep to{plan.toX, plan.toY, plan.toBand};
+    if (!router.find(from, to, 0, route)) {
+        plan.refusal = "NO WAY THERE ON FOOT.";
+        return plan;
+    }
+    plan.routeSteps = static_cast<std::int32_t>(route.size());
+    plan.units = travelRouteUnits(from, route);
+    plan.seconds = travelWalkSeconds(plan.units);
+    plan.minutes = travelClockMinutes(plan.seconds);
+    plan.available = true;
+    return plan;
+}
+
+void Session::travelDistrictMapSelection() {
+    // THE VERB LIVES ON THE PAGE. Inert with the map down, exactly as the
+    // other map commits are -- a key that teleported with no page up would be
+    // a debug verb wearing a binding.
+    if (!districtMapOpen_) {
+        return;
+    }
+    const std::vector<MapPlace>& places = mapPlaces();
+    if (places.empty()) {
+        return;
+    }
+    // RE-CHECKED ON THE PRESS, not only at draw -- chooseWaitRow's own rule: a
+    // watchman can start closing while the map is up, and the page and the key
+    // must name the same door.
+    const TravelPlan plan = districtMapTravelPlan();
+    if (plan.standingIn) {
+        return;
+    }
+    // AUDIO: the press is what is acknowledged, refusals included --
+    // chooseWaitRow's rule again.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiConfirm);
+    }
+    if (!plan.available) {
+        // REFUSED OUT LOUD, THE PAGE STAYING UP. One string, the same one the
+        // pane's verb row is printing.
+        if (!plan.refusal.empty()) {
+            say(plan.refusal);
+        }
+        return;
+    }
+    const MapPlace& place =
+        places[static_cast<std::size_t>(std::clamp(districtMapSelected_, 0,
+                                                   static_cast<int>(places.size()) - 1))];
+
+    // 1. THE PAGE GOES DOWN FIRST. syncPanelAnim() suppresses the threshold
+    // plate under any open panel and assigns lastPlaceName_ even while
+    // suppressed, so a relocate-then-close would eat the plate silently.
+    districtMapOpen_ = false;
+
+    // 2. THE WAIT MACHINERY, PLUS A RELOCATION. The clock advances by exactly
+    // the minutes the verb restated -- heat cools, the cellar restocks, the
+    // ward's calendar and all six hundred bodies settle to the new hour, all
+    // of it the same spent code every WAIT pick runs -- and the body makes
+    // the same honest jump sleeping in a rented bed already makes.
+    skipSeconds(plan.minutes * 60);
+    body_->placeAt(plan.toX, plan.toY, plan.toBand);
+
+    // 3. FACING THE DOOR. You arrive looking at the threshold you came for --
+    // the place's own anchor -- not wherever the walk left your eyes.
+    const std::int32_t doorX = static_cast<std::int32_t>(place.anchorX);
+    const std::int32_t doorY = static_cast<std::int32_t>(place.anchorY);
+    if (doorX != plan.toX || doorY != plan.toY) {
+        body_->setYaw(sim::bearingTo(plan.toX, plan.toY, doorX, doorY));
+    }
+
+    // 4. THE THRESHOLD PLATE, ARMED EXPLICITLY. A walked crossing arms it on
+    // the rising edge of the ground's own name; a travel is a crossing whose
+    // walk was elided, so it is armed by hand -- with the ground's name where
+    // the landing has one, the authored name where the ring pushed the body
+    // just outside its own footprint. If the next step's ground disagrees,
+    // syncPanelAnim()'s newest-crossing rule corrects it, exactly as it
+    // corrects a walked seam.
+    const std::string_view ground =
+        sim::docks::placeNameAt(plan.toX, plan.toY, plan.toBand);
+    lastPlaceName_.assign(!ground.empty() ? std::string(ground) : upperAscii(place.name));
+    placePlateName_ = lastPlaceName_;
+    placePlateShowSteps_ = kPlacePlateShowSteps;
+
+    // 5. THE SEAM. Snapped fully black on the commit frame -- the origin is
+    // never seen again after the press -- easing up on the destination with
+    // the plate and the arrival line already on it. The owner called the raw
+    // cut "teleporting"; this is the difference.
+    travelFadeAnim_.snapTo(true);
+    travelFadeAnim_.setTarget(false);
+
+    say("WALKED TO " + upperAscii(place.name) + ". " + travelClockText(timeOfDay_) + ".");
+    syncPanelAnim();
+}
+
 DistrictMapState Session::districtMapState() const {
     DistrictMapState plan;
     plan.tiles = tiles_.get();
@@ -1959,6 +2165,26 @@ DistrictMapState Session::districtMapState() const {
     }
     plan.navCloseKey = std::string(promptLabel(controls_, Action::Map, promptDevice_));
     plan.commitKey = std::string(promptConfirmKey(promptDevice_));
+
+    // FAST TRAVEL (TRAVEL lane): the verb's key in the device's own
+    // vocabulary -- T on a keyboard (a raw map-page key, Tab/=/-'s own
+    // precedent, so a literal like the nav keys' own "TAB"), the Attack half
+    // on a pad (X/PadWest, the one face button unclaimed on this page: A is
+    // FACE IT, so travel takes the "verb wearing a different mode's clothes"
+    // slot the zoom triggers already spend). Through promptLabel so a rebind
+    // of Attack re-words it. Cost and refusal come off the SAME plan the
+    // commit spends, so the row and the press can never name different doors.
+    plan.travelKey = promptDevice_ == InputDevice::Pad
+                         ? std::string(promptLabel(controls_, Action::Attack, promptDevice_))
+                         : std::string("T");
+    const TravelPlan travel = districtMapTravelPlan();
+    if (!travel.standingIn) {
+        if (!travel.refusal.empty()) {
+            plan.travelRefusal = travel.refusal;
+        } else if (travel.available) {
+            plan.travelCost = travelCostLabel(travel.minutes);
+        }
+    }
 
     // WHO IS IN THERE RIGHT NOW -- the People view, and the direct answer to
     // "finding the person or thing I want at that place". A const walk over the
@@ -3113,6 +3339,9 @@ void Session::step(const sim::MoveInput& input) {
     fatigueAnim_.advance();
     // THE WARD MAP (core action #13). THE SAME PER-STEP ADVANCE.
     districtMapAnim_.advance();
+    // FAST TRAVEL's arrival seam eases back down here, one step at a time,
+    // exactly like every sibling -- see travelFadeAnim_'s own header.
+    travelFadeAnim_.advance();
     // SPELLS BUILD. The strip's own countdown and ease -- see showQuickBar().
     if (quickBarShowSteps_ > 0) {
         --quickBarShowSteps_;
@@ -4978,6 +5207,72 @@ void Session::skipToHour(int hour) {
     syncClockAfterSkip();
 }
 
+void Session::skipSeconds(int seconds) {
+    // FAST TRAVEL (TRAVEL lane). skipToHour's own two calls with the truncation
+    // taken out: Tavern::skipTo already measures the jump forward round the
+    // clock face and cools heat on every second of it, and syncClockAfterSkip()
+    // runs the ward's calendar and the population to the new moment. Nothing
+    // here is a second time system -- a travel IS a wait, plus a relocation the
+    // caller makes separately.
+    if (seconds <= 0) {
+        return;
+    }
+    tavern_->skipTo((timeOfDay_ + seconds) % sim::kSecondsPerDay);
+    syncClockAfterSkip();
+}
+
+// ---------------------------------------------------------------------------
+// FAST TRAVEL: the cost of a walk, in the sim's own integers
+// ---------------------------------------------------------------------------
+
+std::int32_t travelRouteUnits(const sim::PathStep& from,
+                              const std::vector<sim::PathStep>& route) noexcept {
+    // The router's own octile currency, recomputed over the route it returned:
+    // 10 per orthogonal step, 14 per diagonal (path_finder.hpp's kStepCost
+    // pair, restated in test_travel.cpp's own pins). A walk-gait band change
+    // -- a stair -- rides its step at no surcharge, exactly as PathFinder
+    // charges it under Gait::Walk.
+    std::int32_t units = 0;
+    const sim::PathStep* at = &from;
+    for (const sim::PathStep& step : route) {
+        const std::int32_t dx = step.x > at->x ? step.x - at->x : at->x - step.x;
+        const std::int32_t dy = step.y > at->y ? step.y - at->y : at->y - step.y;
+        units += (dx != 0 && dy != 0) ? 14 : 10;
+        at = &step;
+    }
+    return units;
+}
+
+std::int32_t travelWalkSeconds(std::int32_t units) noexcept {
+    if (units <= 0) {
+        return 0;
+    }
+    // One octile unit is a tenth of a tile: 256 Q8 / 10. The body walks
+    // kWalkSpeed Q8 per movement step, kStepsPerSecond steps a second, so
+    // seconds = units * 256 / (10 * kWalkSpeed * kStepsPerSecond), rounded UP
+    // -- a walk is never free and never rounds itself shorter.
+    const std::int64_t num = static_cast<std::int64_t>(units) * 256;
+    const std::int64_t den =
+        10LL * sim::kWalkSpeed * sim::kStepsPerSecond;
+    return static_cast<std::int32_t>((num + den - 1) / den);
+}
+
+std::int32_t travelClockMinutes(std::int32_t seconds) noexcept {
+    // NEVER FREE (the owner's ruling, item 1): the floor is one whole minute,
+    // and the verb's restated minutes are exactly the minutes delivered.
+    if (seconds <= 60) {
+        return 1;
+    }
+    return (seconds + 59) / 60;
+}
+
+std::string travelCostLabel(std::int32_t minutes) {
+    if (minutes >= 60) {
+        return "ABOUT AN HOUR";
+    }
+    return std::to_string(minutes) + " MIN";
+}
+
 void Session::syncWardToCalendar() {
     // THE TAVERN'S CALENDAR IS THE WORLD'S CALENDAR, and the ward follows it.
     //
@@ -5789,9 +6084,11 @@ std::string Session::heatLine() const {
     // COURIER CASE. The man in hand rides the same row the bale does -- a
     // carried thing the ward would mind, worn on the HUD until the back room
     // takes him. The rendered over-the-shoulder body is flagged follow-up
-    // work; this line is the honest interim.
+    // work; this line is the honest interim. TRAVEL LANE RENAME, flagged for
+    // the owner: he read "FINCH IN HAND" as unclear, so the row now says what
+    // the body is doing rather than naming an idiom.
     if (sheetCarry_) {
-        line += "  FINCH IN HAND";
+        line += "  CARRYING FINCH";
     }
     return clip(std::move(line), 34);
 }
@@ -6181,6 +6478,23 @@ std::string Session::standingLine() const {
     }
     return std::string(standing);
 }
+
+namespace {
+
+/// FAST TRAVEL's arrival seam: the finished frame dipped toward black by
+/// `amount`, whatever was composed under it -- the world, the map's own close
+/// tail, or a page opened mid-fade. The last act of every drawFrame() return
+/// path, so the commit frame is already dark and the destination eases up
+/// from under it. Render-only; nothing here is read back.
+void dipTravelSeam(Framebuffer& target, float amount) {
+    if (amount <= 0.0F) {
+        return;
+    }
+    target.fillRect(0, 0, target.width(), target.height(), Rgb{0.0F, 0.0F, 0.0F},
+                    amount > 1.0F ? 1.0F : amount);
+}
+
+}  // namespace
 
 FrameStats Session::drawFrame(Framebuffer& target) const {
     // The flicker phase is a pure function of the body's step count, so the
@@ -6597,6 +6911,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         if (furniture) {
             drawDistrictMap(target, plan);
             drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
         }
         return stats;
     }
@@ -6628,6 +6943,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         if (furniture) {
             drawKeysPage(target, page);
             drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
         }
         return stats;
     }
@@ -6675,6 +6991,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         if (furniture) {
             drawCasebookPage(target, page);
             drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
         }
         return stats;
     }
@@ -6711,6 +7028,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         if (furniture) {
             drawMenuTiles(target, tiles);
             drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
         }
         return stats;
     }
@@ -6744,6 +7062,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     if (furniture) {
         drawDialogue(target, panel);
         drawHud(target, hud);
+        dipTravelSeam(target, travelFadeAnim_.value());
     }
     return stats;
 }
@@ -8187,6 +8506,14 @@ constexpr std::int32_t kCaseBeats = 8;
     session.interact();
     mark(session.sheetCarry());
 
+    if (ending == "taken") {
+        // TRAVEL lane: stop with the man genuinely in hand -- the one state
+        // the errand never otherwise parks in -- so the travel probe (and the
+        // case that drives it) can press TRAVEL against the carry refusal for
+        // real rather than against a flag a test set sideways.
+        return landed;
+    }
+
     chapter();
     // 8. TO THE MISSION. The back room the sheet named. Walking in with the man
     // IS the delivery -- stepSheetCase() closes the book on arrival, no press
@@ -9260,6 +9587,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                                   : config.caseEnd == "gull"  ? 3
                                   : config.caseEnd == "night" ? 5
                                   : config.caseEnd == "down"  ? 6
+                                  : config.caseEnd == "taken" ? 7
                                                               : kCaseBeats;
         result.scriptedWanted += owed;
         result.scriptedLanded += landed;
@@ -9416,6 +9744,48 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             session.adjustDistrictMapZoom(config.mapZoom);
             result.scriptedWanted += 1;
             result.scriptedLanded += session.districtMapZoom() == config.mapZoom ? 1 : 0;
+        }
+    }
+
+    // FAST TRAVEL (TRAVEL lane). The probe: cursor onto the named place and
+    // the TRAVEL verb pressed, through the same public methods the T key
+    // spends. AFTER the scripted lines on purpose, so a carry or a stance a
+    // line just drove is what the press is refused against (`--case=taken
+    // --travel=...` is the carry refusal probed for real); BEFORE `--face`,
+    // which closes the page this needs open. Two beats: the name matched,
+    // and the press RESOLVED HONESTLY -- an available plan must land the
+    // body on its own tile with the clock advanced by exactly the restated
+    // minutes, and a refused one must move nothing at all with the page
+    // still up. Anything between those is the failure this probe exists to
+    // make loud.
+    if (!config.travelTo.empty()) {
+        TravelLineResult& probe = result.travelResult;
+        if (!session.districtMapOpen()) {
+            session.toggleDistrictMap();
+        }
+        probe.found = session.selectDistrictMapPlace(config.travelTo);
+        result.scriptedWanted += 2;
+        if (probe.found) {
+            result.scriptedLanded += 1;
+            probe.plan = session.districtMapTravelPlan();
+            probe.clockFrom = session.timeOfDay();
+            session.travelDistrictMapSelection();
+            probe.clockTo = session.timeOfDay();
+            probe.endX = session.body().tileX();
+            probe.endY = session.body().tileY();
+            probe.endBand = session.body().band();
+            probe.plateUp = session.placePlateWanted();
+            probe.plate = std::string(session.placePlateLabel());
+            probe.moved = probe.plan.available && !session.districtMapOpen() &&
+                          probe.endX == probe.plan.toX && probe.endY == probe.plan.toY &&
+                          probe.endBand == probe.plan.toBand;
+            const bool clockExact =
+                (probe.clockFrom + probe.plan.minutes * 60) % sim::kSecondsPerDay ==
+                probe.clockTo;
+            const bool refusedClean = !probe.plan.available && session.districtMapOpen() &&
+                                      probe.clockFrom == probe.clockTo;
+            result.scriptedLanded +=
+                (probe.plan.available ? (probe.moved && clockExact) : refusedClean) ? 1 : 0;
         }
     }
 
@@ -9674,6 +10044,26 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         summary << " | wait open=" << (session.waitOpen() ? "yes" : "no")
                 << " rows=" << session.waitRows().size()
                 << " refusal=\"" << session.waitRefusal() << "\"";
+    }
+    if (!config.travelTo.empty()) {
+        // TRAVEL lane. The whole claim on one line, byte-comparable across
+        // two runs: the plan (route steps, octile units, honest seconds, the
+        // minutes actually charged), the clock either side of the press, the
+        // landing, the plate, and any refusal in its exact words.
+        const TravelLineResult& probe = result.travelResult;
+        summary << " | travel to=\"" << config.travelTo << "\""
+                << " found=" << (probe.found ? "yes" : "no")
+                << " route=" << probe.plan.routeSteps
+                << " units=" << probe.plan.units
+                << " walk=" << probe.plan.seconds << "s"
+                << " charged=" << probe.plan.minutes << "min"
+                << " clock=" << probe.clockFrom << "->" << probe.clockTo
+                << " body=(" << probe.endX << "," << probe.endY << "," << probe.endBand
+                << ")"
+                << " moved=" << (probe.moved ? "yes" : "no")
+                << " plate=\"" << probe.plate << "\""
+                << " up=" << (probe.plateUp ? "yes" : "no")
+                << " refusal=\"" << probe.plan.refusal << "\"";
     }
     if (config.trail) {
         const sim::Casebook& notes = session.casebook();

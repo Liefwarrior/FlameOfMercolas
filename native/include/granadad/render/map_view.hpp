@@ -509,6 +509,26 @@ struct DistrictMapState {
     std::string navCloseKey = "M";
     /// The commit verb's key: "ENTER", or "A".
     std::string commitKey = "ENTER";
+
+    // --- FAST TRAVEL (TRAVEL lane): the page's second commit ---------------
+    //
+    // THE DEFAULTS ARE EMPTY AND EMPTY DRAWS THE OLD PAGE EXACTLY -- the same
+    // defaults-are-old-literals rule the nav keys above follow, so every
+    // hand-built state (every test written before these fields existed) keeps
+    // its four-row detail chrome and draws byte-identical frames. A live
+    // Session always fills travelKey, so the live page always holds the row.
+
+    /// The TRAVEL verb's key: "T" on a keyboard (a raw map-page key, Tab/+/-'s
+    /// own precedent), the pad's own Interact half ("X") otherwise.
+    std::string travelKey;
+    /// The verb's cost restatement -- "4 MIN" -- when the walk is honest.
+    /// Drawn in the number ink beside the verb, the commit-foot grammar's
+    /// "e - Establish (Cost: 200*)".
+    std::string travelCost;
+    /// The one-line reason travel is refused, in the city register, or empty.
+    /// It takes the verb's own row: state changes the verb -- a state label
+    /// where the action would be, never a greyed-out key.
+    std::string travelRefusal;
 };
 
 /// Where every part of the page landed. Exposed because a mouse, a test and the

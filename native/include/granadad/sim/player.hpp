@@ -540,8 +540,14 @@ public:
     /// S6 ADDS THIS FOR ONE CALLER and it is worth naming: the Watch takes you
     /// off the taproom floor and turns you loose on the Tarwalk in the morning,
     /// and nothing between those two facts is simulated. It is the same honest
-    /// jump sleeping in a rented bed already makes. It is NOT a teleport verb
-    /// for the player -- nothing the player can press reaches it.
+    /// jump sleeping in a rented bed already makes.
+    ///
+    /// TRAVEL LANE: THE WARD MAP'S TRAVEL VERB NOW REACHES IT, knowingly --
+    /// the one player-pressable caller, and it pays first: the clock advances
+    /// by the route's real walking cost through the wait machinery before the
+    /// body moves (Session::travelDistrictMapSelection). It is still not a
+    /// free teleport: nothing the player can press moves the body without
+    /// spending the walk's own minutes.
     void placeAt(std::int32_t tileX, std::int32_t tileY, std::int32_t band) noexcept;
 
     void setYaw(Angle yaw) noexcept { yaw_ = yaw & (kTurnFull - 1); }

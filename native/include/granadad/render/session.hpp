@@ -47,6 +47,7 @@
 #include "granadad/sim/letters.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/region_path.hpp"
 #include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
@@ -294,6 +295,13 @@ public:
     /// Jumps the clock, without simulating what happened in between. What
     /// sleeping in a rented room does, and what a capture at a named hour does.
     void skipToHour(int hour);
+    /// FAST TRAVEL (TRAVEL lane). The same jump, in whole seconds: advances
+    /// the clock THROUGH THE WAIT MACHINERY -- Tavern::skipTo plus
+    /// syncClockAfterSkip(), the identical pair skipToHour() spends -- so a
+    /// travel and a wait are ONE time system, never two. skipToHour truncates
+    /// to the top of an hour because its page prints hours; a walk is minutes,
+    /// so this twin takes the seconds whole. Zero or less does nothing.
+    void skipSeconds(int seconds);
 
     /// The camera the body is currently looking through.
     [[nodiscard]] Camera camera() const noexcept;
@@ -1033,6 +1041,68 @@ public:
     /// half of "going to a place" -- you cannot walk somewhere you cannot face.
     void faceDistrictMapSelection();
 
+    // --- FAST TRAVEL (TRAVEL lane) -------------------------------------------
+    //
+    // THE OWNER'S ASK, this session: he read the ward map's cursor, named
+    // selection and FACE IT as a fast-travel screen, was told it is only a
+    // compass, and said plainly he wants the real thing -- Daggerfall's map
+    // travels. So the page gets a second commit verb, TRAVEL, built out of
+    // parts already spent: the cost is the route the district's own PathFinder
+    // answers, priced at the shipped walking pace (the travel* functions at
+    // the bottom of this file); the clock advances through skipSeconds() --
+    // THE WAIT MACHINERY PLUS A RELOCATION, one time system, not two; the body
+    // lands by the same PlayerBody::placeAt the rented bed and the Watch's
+    // morning release already make; and the threshold plate announces the
+    // arrival exactly as a walked crossing would be announced.
+    //
+    // WHAT REFUSES, AND WHY IT IS THE WAIT PAGE'S OWN LIST PLUS TWO. Every
+    // waitRefusal() clause holds verbatim (a travel IS a wait). On top:
+    // carrying the courier case's man -- stepSheetCase() completes the
+    // delivery the moment the body is near the back room, so a permitted
+    // travel-while-carrying would teleport-finish the case's whole final act;
+    // and WatchStance::Closing -- you do not stroll off mid-witness. Mere
+    // heat or a warrant deliberately does NOT refuse, consistent with the
+    // owner's wait ruling that waiting one out is a tactic.
+
+    /// Everything the TRAVEL verb knows about the current selection: the cost
+    /// if the walk is honest, or the one-line reason it is not.
+    struct TravelPlan {
+        /// The selection contains the body: nothing to travel to, no verb --
+        /// the foot's "YOU ARE STANDING IN IT" already words it.
+        bool standingIn = false;
+        /// Route found, ground standable, nothing refusing: the verb is live.
+        bool available = false;
+        /// Why not, in the city register, or empty. ONE string for the pane's
+        /// verb row and the press's spoken line, so the page and the key can
+        /// never name different doors -- waitRefusal()'s own contract.
+        std::string refusal;
+        /// The route the cost was derived from: steps, octile units, honest
+        /// seconds, and the whole minutes the clock will actually advance.
+        std::int32_t routeSteps = 0;
+        std::int32_t units = 0;
+        std::int32_t seconds = 0;
+        std::int32_t minutes = 0;
+        /// Where the body lands: the selection's own aim point (the door you
+        /// knock on) snapped to the nearest standable tile on the place's
+        /// band -- never inside geometry.
+        std::int32_t toX = 0;
+        std::int32_t toY = 0;
+        std::int32_t toBand = 0;
+    };
+    /// The plan for the cursor's place, recomputed on demand -- a pure read;
+    /// nothing moves until travelDistrictMapSelection() spends it.
+    [[nodiscard]] TravelPlan districtMapTravelPlan() const;
+    /// Why travel is refused here and now, or "" -- the carry clause first
+    /// (the one refusal that is load-bearing for the courier case), then the
+    /// Watch closing, then waitRefusal()'s own list verbatim. Re-checked on
+    /// the press, not only at draw, exactly as the wait page re-checks.
+    [[nodiscard]] std::string travelRefusal() const;
+    /// The TRAVEL commit: refuses out loud (the page staying up), or advances
+    /// the clock by the plan's exact minutes through the wait machinery,
+    /// relocates, faces the door, arms the threshold plate, dips the frame to
+    /// black to ease up at the destination, and says the arrival line.
+    void travelDistrictMapSelection();
+
     /// The whole page, ready to draw. Public because a case reads it and
     /// because it is the same shape keysPageState() already has.
     [[nodiscard]] DistrictMapState districtMapState() const;
@@ -1691,7 +1761,9 @@ private:
     /// True from TAKE HIM UP until the Mission's back room. The bale's own
     /// shape: a flag the HUD wears, not a body the renderer carries -- the
     /// slung-over-the-shoulder drawing is flagged follow-up work, and the
-    /// heat row's "FINCH IN HAND" is the honest interim.
+    /// heat row's "CARRYING FINCH" is the honest interim. TRAVEL lane also
+    /// reads this: fast travel refuses while it is set (travelRefusal), so
+    /// the nervous walk to the Mission cannot be skipped.
     bool sheetCarry_ = false;
     /// The one-per-downing nudge that names the take verb, re-armed when the
     /// quarry is back on his feet -- see stepSheetCase().
@@ -1888,6 +1960,18 @@ private:
     /// convention (DECISIONS.md UI rule 1), driven from syncPanelAnim() and
     /// advanced in step() exactly like every sibling above.
     EasedToggle districtMapAnim_;
+    /// FAST TRAVEL's arrival seam (TRAVEL lane). The owner called the demo's
+    /// raw placeAt cuts "teleporting", so a travel does not snap: the commit
+    /// SNAPS this toggle fully open -- the first frame after the press is
+    /// already black, so the origin is never seen again -- and eases it back
+    /// down over half a second while the destination, its place plate and the
+    /// arrival line come up underneath. drawFrame() dips its finished
+    /// composition by value() as its last act on every path. NEW RENDER
+    /// VOCABULARY -- no full-screen fade existed anywhere in the build before
+    /// this -- flagged for the owner's eye. Render-only, hash-free, advanced
+    /// in step() like every sibling.
+    static constexpr int kTravelFadeSteps = 36;
+    EasedToggle travelFadeAnim_{8, kTravelFadeSteps};
     /// SPELLS BUILD. The bottom-centre quick bar strip's own ease -- per the
     /// pinned convention, its OWN toggle: the strip appearing (a wheel held,
     /// a slot picked) has nothing to do with any other row's trigger. The
@@ -2082,6 +2166,44 @@ private:
     /// comparison exactly the way lastPlayerHp_ catches a blow.
     std::int32_t lastCoinForAudio_ = 0;
 };
+
+// ---------------------------------------------------------------------------
+// FAST TRAVEL (TRAVEL lane): the cost of a walk, in the sim's own integers
+// ---------------------------------------------------------------------------
+//
+// THE COST BASIS IS THE ROUTE, NEVER THE CROW. The Overview pane's "54 PACES"
+// is a render-layer float straight line and map_view.hpp bars the simulation
+// from reading anything in that file -- and the travel cost lands in
+// timeOfDay_, which the twin gate compares byte for byte. So the cost is
+// derived from the route the district's own PathFinder answers (salt 0, no
+// jitter; Gait::Walk, the pace being charged), counted in the router's own
+// octile currency (10 per straight step, 14 per diagonal), and converted at
+// the shipped walking pace through human_scale.hpp's constants. Pure integer
+// functions of their arguments, so a case pins the numbers rather than
+// adjectives.
+
+/// The octile units of a walked route: 10 per orthogonal step, 14 per
+/// diagonal -- path_finder.hpp's own kStepCost pair, recomputed from the
+/// returned route so the charge is exactly the distance the router chose.
+/// Walk-gait band changes (a stair) ride their step at no surcharge, which is
+/// what the router itself charges them under Gait::Walk.
+[[nodiscard]] std::int32_t travelRouteUnits(const sim::PathStep& from,
+                                            const std::vector<sim::PathStep>& route) noexcept;
+
+/// Seconds a walk of `units` costs at the shipped walking pace (human_scale's
+/// kWalkSpeed, 1.48 m/s), rounded UP -- travel is never free. One octile unit
+/// is 25.6 Q8 tile-widths; the body walks kWalkSpeed Q8 per movement step at
+/// kStepsPerSecond steps a second.
+[[nodiscard]] std::int32_t travelWalkSeconds(std::int32_t units) noexcept;
+
+/// The whole minutes the clock actually advances -- seconds rounded UP, never
+/// below one, so the verb's restated cost and the delivered skip are the same
+/// number: the Wait page's own honesty rule ("a list that said 1 HOUR while
+/// delivering forty minutes would be lying").
+[[nodiscard]] std::int32_t travelClockMinutes(std::int32_t seconds) noexcept;
+
+/// The verb's cost restatement: "4 MIN", or "ABOUT AN HOUR" from sixty up.
+[[nodiscard]] std::string travelCostLabel(std::int32_t minutes);
 
 /// What a scripted capture run was asked to do.
 struct SmokeRunConfig {
@@ -2387,8 +2509,11 @@ struct SmokeRunConfig {
     /// the shutter goes: "sheet" (stop with the mission sheet open on the
     /// Letters tile), "gull" (stop after the door lead, book open), "night"
     /// (stop crouched on the guest floor over the box lead), "down" (stop
-    /// the step Finch goes down, before the take), or empty for the whole
-    /// errand delivered.
+    /// the step Finch goes down, before the take), "taken" (TRAVEL lane:
+    /// stop with the man genuinely in hand, after TAKE HIM UP -- the one
+    /// state the errand never otherwise parks in, so the travel probe can
+    /// press its verb against the carry refusal for real), or empty for the
+    /// whole errand delivered.
     bool caseRun = false;
     std::string caseEnd;
     /// Run the Priest of the Flame line end to end and capture wherever it
@@ -2490,6 +2615,19 @@ struct SmokeRunConfig {
     std::string mapTab;
     int mapZoom = 0;
 
+    /// FAST TRAVEL (TRAVEL lane), the scripted probe: put the ward map's
+    /// cursor on this authored place name and press the TRAVEL verb, through
+    /// the same public methods the T key spends -- toggleDistrictMap,
+    /// selectDistrictMapPlace, travelDistrictMapSelection. Runs AFTER every
+    /// scripted line and the map flags, so `--case=taken --travel=...` probes
+    /// the carry refusal with the man genuinely in hand, and BEFORE `--face`,
+    /// which would close the page this needs open. The summary's own
+    /// `| travel` segment prints the plan, the clock either side of the
+    /// press, the landing and the plate -- run twice, the segment must match
+    /// to the byte, which is the twin-run check for a session-scripted
+    /// feature (test_case_line's own discipline).
+    std::string travelTo;
+
     /// THE CROSSHAIR PASS, VERIFICATION ONLY: TURN THE BODY TOWARD AN AUTHORED
     /// PLACE and leave it standing there, with no page open.
     ///
@@ -2584,6 +2722,30 @@ struct ThresholdLineResult {
     /// shutter instead could not tell that frame apart from one where the
     /// crossing never fired at all.
     bool announced = false;
+    std::string plate;
+};
+
+/// FAST TRAVEL (TRAVEL lane). What a `--travel` run planned and did, so a
+/// case asserts the whole claim -- the honest cost, the exact clock advance,
+/// the landing, the plate -- rather than reading pixels. A refusal is a real
+/// answer, not a failure: `moved` false with `refusal` filled and the clock
+/// unmoved is the feature working.
+struct TravelLineResult {
+    /// The name matched an authored place.
+    bool found = false;
+    /// What the plan said at the moment of the press.
+    Session::TravelPlan plan;
+    /// The clock either side of the press, seconds since midnight.
+    std::int32_t clockFrom = 0;
+    std::int32_t clockTo = 0;
+    /// Where the body ended, and whether that is the plan's own landing with
+    /// the page down -- i.e. a travel actually taken.
+    std::int32_t endX = 0;
+    std::int32_t endY = 0;
+    std::int32_t endBand = 0;
+    bool moved = false;
+    /// The threshold plate at the shutter: wanted, and saying what.
+    bool plateUp = false;
     std::string plate;
 };
 
@@ -2753,6 +2915,10 @@ struct SmokeRunResult {
     /// of a street, which is precisely the failure mode a picture cannot
     /// report on itself.
     ThresholdLineResult thresholdResult;
+    /// TRAVEL lane: what a --travel run planned and did, printed in the
+    /// summary for the identical reason again -- the clock moving by exactly
+    /// the restated minutes is the one claim a PNG cannot make.
+    TravelLineResult travelResult;
     [[nodiscard]] bool scriptFellShort() const noexcept {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }

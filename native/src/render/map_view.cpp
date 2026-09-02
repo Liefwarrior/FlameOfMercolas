@@ -766,11 +766,20 @@ namespace {
 /// moves as the cursor runs through places with different amounts to report.
 constexpr int kDetailChromeRows = 4;
 
-[[nodiscard]] int detailListRows(const MapPageLayout& layout) {
+/// FAST TRAVEL (TRAVEL lane): a session that offers the TRAVEL verb
+/// (travelKey non-empty) spends one more foot row on it -- held for refusals
+/// and costs alike, so the foot never jumps as the cursor moves. A hand-built
+/// state with the empty default keeps the exact four-row chrome this page has
+/// always drawn, byte for byte.
+[[nodiscard]] int detailChromeRowsFor(const DistrictMapState& state) {
+    return state.travelKey.empty() ? kDetailChromeRows : kDetailChromeRows + 1;
+}
+
+[[nodiscard]] int detailListRows(const MapPageLayout& layout, const DistrictMapState& state) {
     if (!layout.split) {
         return 0;
     }
-    return std::max(0, layout.metric.rowsIn(layout.detailPane.h) - kDetailChromeRows);
+    return std::max(0, layout.metric.rowsIn(layout.detailPane.h) - detailChromeRowsFor(state));
 }
 
 [[nodiscard]] int scrollingCount(const DistrictMapState& state) {
@@ -789,7 +798,7 @@ constexpr int kDetailChromeRows = 4;
 MapDetailScroll mapDetailScroll(const DistrictMapState& state, int frameWidth, int frameHeight) {
     MapDetailScroll out;
     const MapPageLayout layout = mapPageLayout(frameWidth, frameHeight, state);
-    const int rows = detailListRows(layout);
+    const int rows = detailListRows(layout, state);
     out.perScreen = std::max(1, rows);
     const int count = scrollingCount(state);
     out.screens = std::max(1, (count + out.perScreen - 1) / out.perScreen);
@@ -1294,7 +1303,8 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
         // furniture and it must not be able to punctuate a word.
         const PanelRect bodyPane{pane.x, pane.y + metric.heightOf(2),
                                  std::max(0, pane.w - metric.cellW()),
-                                 metric.heightOf(std::max(0, paneRows - kDetailChromeRows))};
+                                 metric.heightOf(std::max(
+                                     0, paneRows - detailChromeRowsFor(state)))};
         const MapDetailScroll scroll = mapDetailScroll(state, target.width(), target.height());
 
         switch (state.tab) {
@@ -1520,10 +1530,11 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
             }
         }
 
-        // Page indicator, on the pane's own second-to-last row so the commit
-        // verb below it never moves.
-        if (scroll.screens > 1 && paneRows >= 2) {
-            drawCellText(target, pane, metric, 0, paneRows - 2,
+        // Page indicator, directly above the commit foot so the verbs below it
+        // never move -- one row higher when the TRAVEL row is live.
+        const int indicatorRow = paneRows - (state.travelKey.empty() ? 2 : 3);
+        if (scroll.screens > 1 && indicatorRow >= 2) {
+            drawCellText(target, pane, metric, 0, indicatorRow,
                          "MORE  " + std::to_string(scroll.screen + 1) + "/" +
                              std::to_string(scroll.screens),
                          ink.dim, alpha);
@@ -1538,6 +1549,25 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
             drawCellText(target, pane, metric, 0, paneRows - 1, "YOU ARE STANDING IN IT",
                          ink.number, alpha);
         } else {
+            // FAST TRAVEL (TRAVEL lane): the page's second commit, one row
+            // above FACE IT, and its cost restated in the verb -- the commit
+            // foot's own "e - Establish (Cost: 200*)" grammar. STATE CHANGES
+            // THE VERB: when travel is refused the one-line reason takes the
+            // row itself, the reference's own state-label-where-the-price-was
+            // -- never a greyed-out key. Drawn only when the session filled
+            // travelKey, so a hand-built state keeps the old foot exactly.
+            if (!state.travelKey.empty() && paneRows >= 2) {
+                if (!state.travelRefusal.empty()) {
+                    drawCellText(target, pane, metric, 0, paneRows - 2, state.travelRefusal,
+                                 ink.dim, alpha);
+                } else if (!state.travelCost.empty()) {
+                    const int wide =
+                        drawCellText(target, pane, metric, 0, paneRows - 2,
+                                     state.travelKey + " - TRAVEL", ink.key, alpha);
+                    drawCellText(target, pane, metric, wide + 1, paneRows - 2,
+                                 "(" + state.travelCost + ")", ink.number, alpha);
+                }
+            }
             std::int32_t ax = 0;
             std::int32_t ay = 0;
             mapAimPoint(place, static_cast<std::int32_t>(state.playerX),
