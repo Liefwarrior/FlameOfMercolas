@@ -105,8 +105,17 @@ struct KeysPageState {
     /// be burnt into the top-left corner of every captured frame, and this is
     /// where a player goes looking for it.
     std::string readout;
-    /// The instruction header. Wraps to the frame.
+    /// RETIRED FROM THE DRAWING (UI-EA-SPEC 1.7 #36: both intro proses die) --
+    /// the tab row is the page's one header line now. Kept so older callers
+    /// still compile; nothing reads it.
     std::string instruction;
+
+    /// TUTOR tier (UI-EA-SPEC sec. 2): 0 rest (bare keycaps in the nav band)
+    /// .. 1 raised (verb words up). The countdown helper is LANE HUD's, the
+    /// wake signals LANE FLOW's; the page renders the value.
+    float tutor = 0.0F;
+    /// Contract (b): the commit beat on ENTER - REBIND, armed by the routing.
+    float commitPulse = 0.0F;
 
     std::vector<KeysPageRow> rows;
     /// Index into `rows`. The page scrolls by whole pane-fuls to keep it

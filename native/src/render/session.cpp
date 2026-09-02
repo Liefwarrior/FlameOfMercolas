@@ -1604,14 +1604,10 @@ KeysPageState Session::keysPageState() const {
     // screen while you read the page. It used to be burnt into the top-left
     // corner of every captured frame at full HUD scale.
     state.readout = "GRANADAD " + std::string(sim::build_info().version);
-    // SHIP NOTE MOVE 3, and a decision: the PAGE keeps printing BOTH
-    // devices' bindings side by side (binding + alternate columns -- the
-    // table's two slots ARE the two devices now), because this page's whole
-    // job is the table. Only the way OUT changes hands: F1 is a hard-coded
-    // keyboard convenience; a pad closes with B.
-    state.instruction = promptDevice_ == InputDevice::Pad
-                            ? "EVERY KEY THE GAME ANSWERS TO. B PUTS THIS DOWN."
-                            : "EVERY KEY THE GAME ANSWERS TO. F1 PUTS THIS DOWN.";
+    // The intro prose is retired (UI-EA-SPEC 1.7 #36): the tab row is the
+    // header, the table is the page, and the universal grammar (ESC/B backs
+    // out one layer) needs no sentence. The PAGE keeps printing BOTH devices'
+    // bindings side by side -- the table's two slots ARE the two devices.
     state.rows = keyPageRows();
     state.cursor = caseCursor_;
     return state;
@@ -1927,7 +1923,9 @@ void Session::selectQuickSlot(int slot) {
         if (audio_ != nullptr) {
             audio_->playOneShot(audio::SoundId::UiConfirm);
         }
-        say("SLOT " + std::to_string(slot + 1) + " -- READY: " +
+        // `SLOT 3 - CLEAR THE HEAD` (UI-EA-SPEC sec. 5): the toast is the
+        // slot and the name; READY was the toast announcing itself.
+        say("SLOT " + std::to_string(slot + 1) + " - " +
             upperAscii(tavern_->slotSpell(slot)->displayName) + ".");
         return;
     }
@@ -1935,7 +1933,7 @@ void Session::selectQuickSlot(int slot) {
     if (audio_ != nullptr) {
         audio_->playOneShot(audio::SoundId::UiTick);
     }
-    say("SLOT " + std::to_string(slot + 1) + " -- NOTHING IN IT. THE GRIMOIRE BINDS.");
+    say("SLOT " + std::to_string(slot + 1) + " - EMPTY. THE GRIMOIRE BINDS.");
 }
 
 void Session::showQuickBar() {
@@ -2653,9 +2651,10 @@ void Session::adjustGrimoireSlot(int delta) {
 
 namespace {
 
-/// One row per hour ahead, up to a half-day. Enough to reach any named hour
-/// from anywhere on the clock without a second page of arithmetic.
-constexpr int kWaitHours = 12;
+/// One row per hour ahead, round the WHOLE clock (UI-EA-SPEC 1.7 #38:
+/// 12 -> 24). Any named hour is reachable in one pick from anywhere -- the
+/// same skipSeconds machinery per row, rows offered only, no sim change.
+constexpr int kWaitHours = 24;
 
 /// "HH:00", two digits, the clock the compass row already speaks.
 [[nodiscard]] std::string hourLabel(int hour) {
@@ -2745,12 +2744,15 @@ std::vector<std::string> Session::waitRows() const {
     const int nowHour = timeOfDay_ / 3600;
     for (int ahead = 1; ahead <= kWaitHours; ++ahead) {
         const int target = (nowHour + ahead) % 24;
-        std::string row = std::to_string(ahead) + (ahead == 1 ? " HOUR" : " HOURS") +
-                          "  TO " + hourLabel(target);
+        // `1 - DAWN 06:00` (UI-EA-SPEC 1.7 #38): the hours-ahead count, the
+        // hour's name where it has one, and the clock it lands on. The unit
+        // word went; the numbers did not.
+        std::string row = std::to_string(ahead) + " - ";
         if (hourName(target)[0] != '\0') {
-            row += "  ";
             row += hourName(target);
+            row += ' ';
         }
+        row += hourLabel(target);
         rows.push_back(std::move(row));
     }
     return rows;
@@ -5477,6 +5479,106 @@ DialogueViewState Session::dialogueView() const {
     return view;
 }
 
+CreationPage Session::stripCard() const {
+    // UI-EA-SPEC 1.7 (LANE PAGES, strip->card): the pause stack's four strips
+    // -- pause, wait, options, grimoire -- drawn as ONE composed card through
+    // the same generic composition every creation step already uses
+    // (drawCreationPage): framed, seated, measured, a numbered master list
+    // with an inverted-fill cursor. The SHIP NOTE's standing item ("the
+    // options page onto the master/detail card"), extended to the family.
+    //
+    // INPUT IS UNTOUCHED: rows, cursor and the nine-key digit windows keep
+    // wrapCursorAndPage's own arithmetic, so every press lands where it
+    // always did -- only the drawing changed register. The digits print on
+    // the current nine-key window and on nothing else, the same honesty the
+    // tiles and the casebook keep.
+    CreationPage out;
+    out.alpha = 1.0F;
+    out.hasDetail = false;
+    out.shape = CreationListShape::Columns;
+    out.maxColumns = 1;
+    out.stipple = false;
+    const InputDevice dev = promptDevice_;
+    const std::string back(promptBackKey(dev));
+
+    std::vector<std::string> rows;
+    int cursor = 0;
+    int window = 0;
+    if (pauseOpen_) {
+        // THE BUILD STAMP RIDES THE PAUSE TITLE (UI-EA-SPEC sec. 2) -- the
+        // HUD's own corner is quiet now, and the one page a player opens to
+        // stand still is where a version belongs.
+        out.title = "GRANADAD " + std::string(sim::build_info().version);
+        rows = pauseRows();
+        cursor = pauseCursor_;
+        out.bodyHoldRows = static_cast<int>(rows.size());
+    } else if (waitOpen_) {
+        out.title = waitSleep_ ? "SLEEP" : "WAIT";
+        // The flavour is four words (spec #38, 15 -> 4) -- or the live
+        // refusal, which outranks it and is register, not chrome. Sleep keeps
+        // its one honest clause: it is the only wait that mends.
+        const std::string refusal = waitSleep_ ? std::string() : waitRefusal();
+        if (!refusal.empty()) {
+            out.instruction = refusal;
+        } else {
+            out.instruction = waitSleep_ ? "SLEEP MENDS. PICK THE HOUR." : "TIME PASSES. HEAT COOLS.";
+        }
+        rows = waitRows();
+        cursor = waitCursor_;
+        window = waitPage_;
+        // TWO COLUMNS: twenty-four hours read as two twelves side by side --
+        // the whole clock on one screen, no page turn at all.
+        out.maxColumns = 2;
+        out.bodyHoldRows = 12;
+    } else if (optionsOpen_) {
+        out.title = "OPTIONS";
+        // Instruction 22 -> 4 (spec #37): the value hint, or the capture
+        // state's own modal line, which is load-bearing while the game is
+        // listening for a raw key.
+        out.instruction = awaitingKey_ ? "PRESS A KEY. ESC CANCELS." : "BINDS TRADE KEYS.";
+        rows = optionRows();
+        cursor = optionCursor_;
+        window = optionPage_;
+        out.bodyHoldRows = 14;
+    } else if (grimoireOpen_) {
+        out.title = "GRIMOIRE";
+        rows = grimoireRows();
+        // Instruction 19 -> 2: the one column that needs naming. The empty
+        // state is the cast refusal's OWN words -- the page and the C key
+        // must name the same door or one of them is lying (test_tavern pins
+        // the line), so the register literal outranks the six-word rule here.
+        out.instruction = rows.empty() ? "NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES."
+                                       : "D - THE ASK.";
+        cursor = grimoireCursor_;
+        window = grimoirePage_;
+        out.bodyHoldRows = 8;
+    }
+
+    out.rows.reserve(rows.size());
+    const int windowFirst = window * kTopicPageSize;
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        CreationPageRow row;
+        const int slot = static_cast<int>(i) - windowFirst;
+        if (slot >= 0 && slot < kTopicPageSize) {
+            row.key = std::to_string(slot + 1);
+        }
+        row.label = rows[i];
+        row.accent = panelInk().accent;
+        out.rows.push_back(std::move(row));
+    }
+    out.cursor = cursor;
+    // The one keycap foot every page keeps at rest; the word rides the tutor
+    // tier, which the pause stack leaves at rest -- these pages ARE their
+    // rows.
+    PanelOption backFoot;
+    backFoot.key = back;
+    backFoot.label = "BACK";
+    backFoot.valueInk = InkRole::Dim;
+    backFoot.selectable = false;
+    out.nav.push_back(std::move(backFoot));
+    return out;
+}
+
 void Session::punch() {
     recordWatchOp(WatchOpKind::Punch);
     const WatchDepthGuard watchGuard(watchDepth_);
@@ -7431,6 +7533,25 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         tiles.journalFocus = journalFocusAnim_.value();
         if (furniture) {
             drawMenuTiles(target, tiles);
+            drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
+        }
+        return stats;
+    }
+    // UI-EA-SPEC 1.7 (LANE PAGES, strip->card): pause, wait, options and the
+    // grimoire draw as the composed card now, not as a HUD strip -- the ship
+    // note's one remaining strip surface, converted with its family. Input
+    // and close routing are untouched (the flags, cursors and digit windows
+    // are exactly the strip's own); the CLOSE fade still runs through the
+    // panel path below until the close-honesty pass (sec. 3 rule 4, LANE
+    // FLOW) teaches it to fade as what it was.
+    if (stripCardOpen()) {
+        CreationPage card = stripCard();
+        card.alpha = panelAnim_.value();
+        hud.timeOfDaySeconds = -1;
+        hud.coin = -1;
+        if (furniture) {
+            drawCreationPage(target, card);
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
         }

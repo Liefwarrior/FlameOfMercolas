@@ -299,13 +299,15 @@ TEST_CASE("the pause menu never opens over a conversation or a pick in progress"
     CHECK(session.talking());
 }
 
-TEST_CASE("the menu, the options it opens and the plain scene never fight over the middle of the screen") {
-    // THE SAME MEASUREMENT test_firstrun.cpp already runs for the casebook and
-    // the keys page, extended to the two ways into this one -- ESC's own menu,
-    // and the options page it opens. #77's own review found this exact class
-    // of defect on the options page nothing scripted ever opened; this is the
-    // regression guard for it happening again on the page ESC now opens by
-    // default.
+TEST_CASE("the pause stack draws as the composed card and genuinely covers the middle") {
+    // THE CLAIM FLIPPED, ON PURPOSE -- the same flip test_firstrun.cpp records
+    // for the casebook and the keys page. UI-EA-SPEC 1.7 (strip->card): pause
+    // and the options page it opens left the HUD strip for the composed
+    // master/detail card, the ship note's own standing item, so they now take
+    // the frame the way every composed page does. Nobody is standing in front
+    // of you while you read a menu of five verbs. The centre-clear rule is
+    // not weakened, only scoped: a live conversation, the HUD and the
+    // lockpicking overlay are still held to it by their own cases.
     render::SessionConfig config = fresh();
     render::Session session(config);
     session.stepMany(MoveInput{}, 4);
@@ -317,24 +319,36 @@ TEST_CASE("the menu, the options it opens and the plain scene never fight over t
 
     session.togglePause();
     REQUIRE(session.pauseOpen());
+    session.stepMany(MoveInput{}, 16);  // the card's own ease, fully open
     render::Framebuffer withPause(config.width, config.height);
     session.drawFrame(withPause);
 
     session.movePauseCursor(3);  // RESUME -> WAIT -> CONTROLS -> SETTINGS
     session.choosePause();
     REQUIRE(session.optionsOpen());
+    session.stepMany(MoveInput{}, 16);
     render::Framebuffer withSettings(config.width, config.height);
     session.drawFrame(withSettings);
 
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
+    bool pauseDiffers = false;
+    bool settingsDiffer = false;
     for (int y = centre.y0; y < centre.y1; ++y) {
         for (int x = centre.x0; x < centre.x1; ++x) {
-            REQUIRE(withPause.pixels()[withPause.index(x, y)] ==
-                    plain.pixels()[plain.index(x, y)]);
-            REQUIRE(withSettings.pixels()[withSettings.index(x, y)] ==
-                    plain.pixels()[plain.index(x, y)]);
+            if (withPause.pixels()[withPause.index(x, y)] != plain.pixels()[plain.index(x, y)]) {
+                pauseDiffers = true;
+            }
+            if (withSettings.pixels()[withSettings.index(x, y)] !=
+                plain.pixels()[plain.index(x, y)]) {
+                settingsDiffer = true;
+            }
         }
     }
+    CHECK(pauseDiffers);
+    CHECK(settingsDiffer);
+    // And the two states draw DIFFERENT cards -- five verbs is not a bindings
+    // list.
+    CHECK(withPause.pixels() != withSettings.pixels());
 }
 
 TEST_CASE("--pause reaches the menu headlessly, for an environment that cannot drive a real window") {
@@ -416,12 +430,14 @@ TEST_CASE("WAIT passes the hours anywhere safe -- clock moved, calendar synced, 
     CHECK_FALSE(session.pauseOpen());
     CHECK(session.waitRefusal().empty());
 
-    // Twelve rows, one per hour ahead, each naming the hour it lands on.
+    // The whole clock now (UI-EA-SPEC 1.7 #38): twenty-four rows, one per
+    // hour ahead, in the dieted `N - NAME HH:00` form.
     const render::DialogueViewState view = session.dialogueView();
     CHECK(view.speaker == "WAIT");
-    REQUIRE(view.topics.size() == 12);
-    CHECK(view.topics[0] == "1 HOUR  TO 00:00  MIDNIGHT");
-    CHECK(view.topics[6] == "7 HOURS  TO 06:00  DAWN");
+    REQUIRE(view.topics.size() == 24);
+    CHECK(view.topics[0] == "1 - MIDNIGHT 00:00");
+    CHECK(view.topics[6] == "7 - DAWN 06:00");
+    CHECK(view.topics[23] == "24 - 23:00");
 
     // NOTHING MENDS -- the owner's ruling, checked against a real bruise.
     const std::int32_t whole = session.tavern().playerHp();

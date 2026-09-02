@@ -427,11 +427,11 @@ TEST_CASE("the controls page composes at every window size the game runs at") {
         const KeysPageScroll scroll = keysPageScroll(state, size.w, size.h);
         CHECK(scroll.perScreen > 0);
         CHECK(scroll.screens >= 1);
-        // THE NUMBER THAT MADE THIS WORTH DOING. The surface this replaced
-        // showed NINE rows per page whatever the window was, which is four
-        // pages for this list. Every size here beats that, and 960x540 shows
-        // the whole list at once.
+        // Better than the old nine-row topic grid at every size, and CAPPED at
+        // the EA paging rule (UI-EA-SPEC 1.7 #36): about fourteen rows
+        // visible, the rest behind `+N` -- a reference card, not a wall.
         CHECK(scroll.perScreen > 9);
+        CHECK(scroll.perScreen <= 15);
         CHECK(scroll.screens <= 2);
 
         // The cursor on the last row lands on the last screenful, and the
@@ -443,10 +443,11 @@ TEST_CASE("the controls page composes at every window size the game runs at") {
         CHECK(end.firstRow <= state.cursor);
     }
 
-    // At the baseline the whole list is on one screen -- no page turn at all,
-    // which is the thing the old layout could not do at any resolution.
+    // At the baseline the table is two even screens of fifteen and fourteen --
+    // the paging rule, not the pane, decides.
     state.cursor = 0;
-    CHECK(keysPageScroll(state, 960, 540).screens == 1);
+    CHECK(keysPageScroll(state, 960, 540).screens == 2);
+    CHECK(keysPageScroll(state, 960, 540).perScreen == 15);
 }
 
 TEST_CASE("a closed page and a zero ease draw nothing at all") {
@@ -914,19 +915,23 @@ TEST_CASE("the controls-page hit-test answers for every drawn binding and nothin
         state.rows.push_back(row);
     }
     state.cursor = 0;
-    REQUIRE(keysPageScroll(state, 960, 540).screens == 1);
+    // The EA paging cap (UI-EA-SPEC 1.7 #36): screen one is the first fifteen
+    // rows; the fourteen behind `+14` answer on the second screen below.
+    const KeysPageScroll first = keysPageScroll(state, 960, 540);
+    REQUIRE(first.screens == 2);
+    REQUIRE(first.perScreen == 15);
 
     std::vector<bool> found(state.rows.size(), false);
     for (int py = 0; py < 540; py += 2) {
         for (int px = 0; px < 960; px += 2) {
             const int at = keysRowAtPixel(state, 960, 540, px, py);
             if (at >= 0) {
-                REQUIRE(at < static_cast<int>(state.rows.size()));
+                REQUIRE(at < first.perScreen);
                 found[static_cast<std::size_t>(at)] = true;
             }
         }
     }
-    CHECK(std::count(found.begin(), found.end(), true) == 29);
+    CHECK(std::count(found.begin(), found.end(), true) == first.perScreen);
 
     // The cursor does not move the geometry (the scroll is the same screen),
     // so a hover that follows the cursor cannot chase its own tail.
