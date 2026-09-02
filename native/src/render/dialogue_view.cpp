@@ -742,14 +742,11 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         // rule now: the list no longer cuts anything, so there is nothing left
         // for a restatement to rescue.
         //
-        // Only for a real conversation. On the pause menu, the controls page,
-        // the grimoire and the casebook -- the other pages this one widget is
-        // -- `epithet` is already the instruction and it is already on screen
-        // in the top band, so this side stays empty rather than saying the
-        // same thing twice at the other end of the frame.
-        if (!state.attitude.empty() && !state.speaker.empty()) {
-            header.subject = "WHAT YOU SAY TO " + state.speaker;
-        }
+        // THE TYPE-LABEL IS DEAD (UI-EA-SPEC 1.3, sec. 5): the top band
+        // already names who you are talking to, and "WHAT YOU SAY TO <NAME>"
+        // was the header saying it a second time six words longer. The band
+        // is options over a named speaker; that IS the explanation. The rule
+        // stays bare unless an abbreviated row needs spelling out below.
         const int pages = topicPageCount(state.topics.size());
         if (pages > 1) {
             header.readout = "PAGE " + std::to_string(std::clamp(state.page, 0, pages - 1) + 1) +
