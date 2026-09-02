@@ -99,6 +99,17 @@ struct SessionConfig {
     /// and drives the same code, which is the pattern SmokeRunConfig already
     /// uses for --talk and --burgle.
     bool openingPage = false;
+    /// COURIER CASE. RUN THE COURIER BEAT: a few seconds after the player's
+    /// first world verb, Onna presses the mission sheet into their hand --
+    /// the sheet lands in the Letters, the errand lands in the book, and the
+    /// second authored case (content/raws/quests/mission_sheet.json) is
+    /// live. OFF BY DEFAULT AND ON IN THE CLIENT, exactly openingPage's own
+    /// pattern and for the same reason: a Session is built by two hundred
+    /// test cases and every scripted capture, and a courier interrupting a
+    /// committed demo route would move frames that must not move. main.cpp
+    /// sets it for the windowed game (and keeps it OFF under --demo);
+    /// --case sets it for the scripted line.
+    bool courier = false;
     /// How many simulated seconds pass per simulated second of movement.
     /// 1 is real time. Raising it is how a capture reaches a different hour
     /// without running the whole afternoon.
@@ -449,6 +460,38 @@ public:
     /// The player's own notes, and the ward's nerve.
     [[nodiscard]] sim::Casebook& casebook() noexcept { return casebook_; }
     [[nodiscard]] const sim::Casebook& casebook() const noexcept { return casebook_; }
+    /// COURIER CASE. The second book and its raws -- THE QUIET TENANT, the
+    /// errand the mission sheet opens. A separate pair rather than a vector
+    /// of cases on purpose: two authored cases are two members in fixed
+    /// declaration order, which is a deterministic order nobody had to
+    /// invent a container for. Empty (no leads heard) until the courier
+    /// beat fires; see SessionConfig::courier.
+    [[nodiscard]] sim::Casebook& sheetBook() noexcept { return sheetBook_; }
+    [[nodiscard]] const sim::Casebook& sheetBook() const noexcept { return sheetBook_; }
+    [[nodiscard]] const sim::CasebookRaws& sheetRaws() const noexcept { return sheetRaws_; }
+    /// True while the errand is the one in front: at least one of its leads
+    /// heard and its close not yet read. This is the WHOLE case-switching
+    /// rule -- the casebook page, the Journal tile, the HUD's objective row
+    /// and the map's lead rows all show the live errand while it runs and
+    /// the Bloodletter otherwise. No manual switcher in this pass, and that
+    /// is a flagged scope cut, not an oversight.
+    [[nodiscard]] bool sheetCaseLive() const noexcept {
+        return sheetBook_.active() && !sheetBook_.known().empty() && !sheetBook_.closed();
+    }
+    /// Where the courier beat has got to: 0 not fired, 1 hailed (sheet in
+    /// hand, lead heard), 2 the follow-up line said. See stepSheetCase().
+    [[nodiscard]] int courierStage() const noexcept { return courierStage_; }
+    /// True from the moment Finch is taken up until the back room takes him.
+    [[nodiscard]] bool sheetCarry() const noexcept { return sheetCarry_; }
+    /// True while the quiet tenant is on the boards and can be taken up -- what
+    /// the scripted line and its twin-run test watch for. Public because the
+    /// --case line is a free function; the private sheetQuarry() is its
+    /// engine.
+    [[nodiscard]] bool tenantDown() const { return sheetQuarry() != nullptr; }
+    /// COURIER CASE. Fire the courier beat NOW, countdown skipped -- what the
+    /// --case scripted line uses so a headless run does not walk in place for
+    /// six seconds. A no-op once the beat has fired; requires the raws loaded.
+    void courierDeliverNow();
     /// What the counters add up to. Derived on every call and held by nobody --
     /// see legend.hpp on why that is the design and not a shortcut.
     [[nodiscard]] sim::Legend legend() const;
@@ -1375,6 +1418,14 @@ private:
     /// page lists, and what the letters navigation bounds the cursor
     /// against.
     [[nodiscard]] std::vector<std::int32_t> unlockedLetters() const;
+    /// COURIER CASE. unlockedLetters() answers in COMBINED indices now that
+    /// there are two authored files: [0, letterRaws_.letters().size()) is the
+    /// Bloodletter file, and everything above it is the mission sheet file at
+    /// (index - size). These two resolve a combined index back to a document
+    /// and count the whole shelf, so every consumer walks one list and the
+    /// two files stay two files. Fixed member order = deterministic order.
+    [[nodiscard]] const sim::Letter& letterAt(std::int32_t combined) const;
+    [[nodiscard]] std::int32_t letterCount() const noexcept;
     /// TASK #82. The casebook's own clock, in the unit Casebook::heardAt and
     /// Casebook::look/hear/begin all take: seconds since midnight on the day
     /// the session started PLUS every simulated second since. Two calls
@@ -1537,6 +1588,51 @@ private:
     /// investigated -- see unlockedLetters(). That is one less thing to hash
     /// and one less thing that could disagree with the book that gates it.
     sim::LetterRaws letterRaws_;
+    /// COURIER CASE. The second case's raws, book and paper, plus the whole
+    /// of the errand's own presentation state. ALL SESSION-SIDE AND NONE OF
+    /// IT HASHED: the twin gate's workloads never construct a Session (the
+    /// pinned population baseline hashes WardPopulation and the bare engine
+    /// only), sheetBook_.hashInto has no caller, and the tavern is only ever
+    /// driven through the same public verbs a keypress drives. Determinism
+    /// is proven the scripted way instead -- test_case_line runs the errand
+    /// twice and requires identical state.
+    sim::CasebookRaws sheetRaws_;
+    sim::Casebook sheetBook_;
+    sim::LetterRaws sheetLetterRaws_;
+    /// Where the courier beat has got to (0 unfired / 1 hailed / 2 said the
+    /// follow-up), and the countdown of world-steps before it fires. The
+    /// countdown starts once the opening page is down (firstRun_ false) and
+    /// only ticks while the world has the keys -- never under a menu, a
+    /// conversation or a lock.
+    int courierStage_ = 0;
+    int courierSteps_ = 0;
+    /// True from TAKE HIM UP until the Mission's back room. The bale's own
+    /// shape: a flag the HUD wears, not a body the renderer carries -- the
+    /// slung-over-the-shoulder drawing is flagged follow-up work, and the
+    /// heat row's "FINCH IN HAND" is the honest interim.
+    bool sheetCarry_ = false;
+    /// The one-per-downing nudge that names the take verb, re-armed when the
+    /// quarry is back on his feet -- see stepSheetCase().
+    bool sheetTakeSaid_ = false;
+    /// COURIER CASE, the whole errand's moving parts. stepSheetCase() is the
+    /// per-step machine (courier countdown, the take nudge, the delivery);
+    /// caseTakeReady()/sheetQuarry() answer whether TAKE HIM UP is the verb
+    /// right now (case live past the snug lead, Finch present and Downed and
+    /// in reach, nothing already in hand); sheetLeadInLookReach() is
+    /// leadInLookReach()'s exact walk over the second book, so the crosshair
+    /// can name the errand's own sites; activeCaseRaws()/activeCasebook()
+    /// are the one case-switching rule (sheetCaseLive()) applied everywhere
+    /// a page, a row or the HUD reads "the case".
+    void stepSheetCase();
+    [[nodiscard]] bool caseTakeReady() const;
+    [[nodiscard]] const sim::Actor* sheetQuarry() const;
+    [[nodiscard]] int sheetLeadInLookReach() const;
+    [[nodiscard]] const sim::CasebookRaws& activeCaseRaws() const noexcept {
+        return sheetCaseLive() ? sheetRaws_ : caseRaws_;
+    }
+    [[nodiscard]] const sim::Casebook& activeCasebook() const noexcept {
+        return sheetCaseLive() ? sheetBook_ : casebook_;
+    }
     bool keysOpen_ = false;
     /// SPELLS BUILD. The Grimoire page: whether it is up, which crafting the
     /// cursor is on, and which page of a long list is showing. The same
@@ -2200,6 +2296,19 @@ struct SmokeRunConfig {
     /// for the whole walk.
     bool trail = false;
     std::string trailEnd;
+    /// COURIER CASE. PLAY THE QUIET TENANT END TO END: the courier's sheet
+    /// into the hand, the sheet read on the Letters tile, the Gull walked to
+    /// by day, the wait to the small hours, the box lead on the guest floor,
+    /// the bouncer and the tenant put down with fists (the brawl line's own
+    /// Subdue), TAKE HIM UP, and the walk to the Mission's back room. Every
+    /// beat is the same Session verbs a keypress drives. `caseEnd` is where
+    /// the shutter goes: "sheet" (stop with the mission sheet open on the
+    /// Letters tile), "gull" (stop after the door lead, book open), "night"
+    /// (stop crouched on the guest floor over the box lead), "down" (stop
+    /// the step Finch goes down, before the take), or empty for the whole
+    /// errand delivered.
+    bool caseRun = false;
+    std::string caseEnd;
     /// Run the Priest of the Flame line end to end and capture wherever it
     /// finishes: the oath, the night pot, the captain's word, the report, the
     /// teaching, and a crafting composed at the bench. Driven through the same
@@ -2509,6 +2618,11 @@ struct SmokeRunResult {
     std::int32_t trailWalked = 0;
     /// And of the seven beats of the burglary.
     std::int32_t burgleBeats = 0;
+    /// COURIER CASE: how many of the errand's beats landed, and which, one
+    /// bit each in order -- the burglary's own count-plus-mask reporting
+    /// discipline, for the same S4-review reason it has it.
+    std::int32_t caseBeats = 0;
+    std::int32_t caseBeatMask = 0;
     /// WHICH of them landed, one bit each, in order. A count says how many; a
     /// mask says which, and a case that cares about one specific claim -- beat
     /// 2, "somebody awake was in reach and did not make me out" -- can name it.

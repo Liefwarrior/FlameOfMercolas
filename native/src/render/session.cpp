@@ -324,6 +324,15 @@ Session::Session(const SessionConfig& config)
     // no state of its own, so there is nothing to bind besides the raws
     // themselves, which unlockedLetters() reads straight off casebook_.
     letterRaws_ = sim::LetterRaws::load(config_.contentDir);
+    // COURIER CASE. THE SECOND CASE AND ITS PAPER, loaded the same never-
+    // throws way and bound the same way -- but with NO start lead in its
+    // file, begin() leaves every lead Unheard, so the errand is invisible
+    // until the courier beat calls hear(). A missing mission_sheet.json is
+    // a session with one case in it, exactly as before this build.
+    sheetRaws_ = sim::CasebookRaws::loadFile(sim::missionSheetRawsPath(config_.contentDir));
+    sheetBook_.begin(sheetRaws_, caseNowSeconds());
+    sheetLetterRaws_ =
+        sim::LetterRaws::loadFile(sim::missionSheetLetterRawsPath(config_.contentDir));
     // THE FIRST RUN OPENS ON THE HOOK.
     //
     // Every sprint before this one dropped the player onto the Tarwalk facing a
@@ -834,6 +843,56 @@ int Session::leadInLookReach() const {
     return -1;
 }
 
+int Session::sheetLeadInLookReach() const {
+    // COURIER CASE. leadInLookReach()'s exact walk over the second book --
+    // the same Manhattan pick, the same ties-to-earlier-index rule, the same
+    // ring widening -- so the crosshair can name the errand's own sites with
+    // the identical honesty. Kept a sibling rather than a parameter because
+    // the two books are two members, and a helper taking "which book" would
+    // be the only call site in the build that has to name one.
+    if (sheetBook_.raws() == nullptr) {
+        return -1;
+    }
+    const std::vector<sim::Lead>& leads = sheetBook_.raws()->leads();
+    const std::int32_t band = body_->band();
+    const auto nearestFrom = [&](std::int32_t fromX, std::int32_t fromY) {
+        int best = -1;
+        std::int32_t bestDistance = 0;
+        for (std::size_t i = 0; i < leads.size(); ++i) {
+            const sim::Lead& lead = leads[i];
+            if (lead.site.band != band) {
+                continue;
+            }
+            const std::int32_t dx = lead.site.x - fromX;
+            const std::int32_t dy = lead.site.y - fromY;
+            const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+            if (distance > sim::kLookRangeTiles) {
+                continue;
+            }
+            if (best < 0 || distance < bestDistance) {
+                best = static_cast<int>(i);
+                bestDistance = distance;
+            }
+        }
+        return best;
+    };
+    const std::int32_t tileX = body_->tileX();
+    const std::int32_t tileY = body_->tileY();
+    if (const int here = nearestFrom(tileX, tileY); here >= 0) {
+        return here;
+    }
+    const std::int32_t bonus = legend().lookRangeBonus();
+    for (std::int32_t ring = 1; ring <= bonus; ++ring) {
+        const std::int32_t offsets[4][2] = {{ring, 0}, {-ring, 0}, {0, ring}, {0, -ring}};
+        for (const auto& offset : offsets) {
+            if (const int found = nearestFrom(tileX + offset[0], tileY + offset[1]); found >= 0) {
+                return found;
+            }
+        }
+    }
+    return -1;
+}
+
 void Session::examine() {
     if (talking() || picking()) {
         return;
@@ -857,22 +916,37 @@ void Session::examine() {
     const std::int32_t tileY = body_->tileY();
     const std::int32_t band = body_->band();
     const std::int64_t now = caseNowSeconds();
-    sim::LookResult saw = casebook_.look(tileX, tileY, band, now);
-    if (!saw.found && saw.lead < 0 && reach > sim::kLookRangeTiles) {
-        // Nothing within the base reach. Walk outward one ring at a time up to
-        // the bonus, standing the look at each offset -- integer, bounded, and
-        // it cannot see anything a body one tile further along could not.
-        for (std::int32_t ring = 1; ring <= reach - sim::kLookRangeTiles && saw.lead < 0;
-             ++ring) {
-            const std::int32_t offsets[4][2] = {
-                {ring, 0}, {-ring, 0}, {0, ring}, {0, -ring}};
-            for (const auto& offset : offsets) {
-                saw = casebook_.look(tileX + offset[0], tileY + offset[1], band, now);
-                if (saw.lead >= 0) {
-                    break;
+    const auto lookIn = [&](sim::Casebook& book) {
+        sim::LookResult got = book.look(tileX, tileY, band, now);
+        if (!got.found && got.lead < 0 && reach > sim::kLookRangeTiles) {
+            // Nothing within the base reach. Walk outward one ring at a time
+            // up to the bonus, standing the look at each offset -- integer,
+            // bounded, and it cannot see anything a body one tile further
+            // along could not.
+            for (std::int32_t ring = 1; ring <= reach - sim::kLookRangeTiles && got.lead < 0;
+                 ++ring) {
+                const std::int32_t offsets[4][2] = {
+                    {ring, 0}, {-ring, 0}, {0, ring}, {0, -ring}};
+                for (const auto& offset : offsets) {
+                    got = book.look(tileX + offset[0], tileY + offset[1], band, now);
+                    if (got.lead >= 0) {
+                        break;
+                    }
                 }
             }
         }
+        return got;
+    };
+    sim::LookResult saw = lookIn(casebook_);
+    // COURIER CASE. THE SECOND BOOK GETS THE IDENTICAL LOOK, asked only when
+    // the first found nothing at all here -- member order is the tiebreak,
+    // fixed and deterministic. The two files share exactly one site (the
+    // Mission's back room), and there the Bloodletter always answers first;
+    // the errand's own close never rides this key anyway -- delivery is
+    // stepSheetCase()'s scripted arrival, because walking in with the man IS
+    // the act, and no press should be owed on top of it.
+    if (saw.lead < 0) {
+        saw = lookIn(sheetBook_);
     }
     // THE CLUE IS THE MESSAGE. It is what the player walked here for, so it
     // gets the row whole; how many leads it opened is on the CASE row, which is
@@ -932,6 +1006,146 @@ void Session::dismissOverlays() noexcept {
     // them can be the thing that closes a panel a player left open. One call
     // here catches all ten rather than repeating it at each.
     syncPanelAnim();
+}
+
+// ---------------------------------------------------------------------------
+// COURIER CASE: the quiet tenant
+// ---------------------------------------------------------------------------
+//
+// The owner's second authored case, session-scripted end to end. Everything
+// here is presentation-side state driving the SAME public verbs a keypress
+// drives -- hear() on the second book, say() on the alert row, the identical
+// plate machinery the lead-opened notice uses -- so the population baseline
+// and both gate workloads (which never construct a Session) cannot see any of
+// it. Determinism is the scripted line's business: --case runs the errand
+// through walkAcrossDistrict and the ordinary verbs, and test_case_line runs
+// it twice and requires identical books.
+
+namespace {
+/// Six seconds of world-steps between the opening page going down and Onna's
+/// hail, and the same again before the follow-up line: long enough that the
+/// street exists first, short enough that the sheet IS the first thing that
+/// happens to a new player.
+constexpr int kCourierDelaySteps = 6 * granadad::sim::kStepsPerSecond;
+/// How close TAKE HIM UP reaches, in tiles -- a body you are standing over,
+/// the same arm's length the punch that put him down was thrown at.
+constexpr std::int32_t kTakeReachTiles = 2;
+}  // namespace
+
+void Session::courierDeliverNow() {
+    if (courierStage_ != 0 || !sheetRaws_.loaded() || !sheetBook_.active()) {
+        return;
+    }
+    // THE SHEET INTO THE HAND. Hearing the first lead is the whole delivery:
+    // the errand lands in the book, and the letter is `handed`, so the same
+    // act puts the sheet itself on the Letters tile -- unlockedLetters()
+    // derives it, nothing is flagged.
+    const std::int32_t first = sheetRaws_.indexOf("gull-door");
+    if (first < 0) {
+        return;
+    }
+    (void)sheetBook_.hear(first, caseNowSeconds());
+    say("ONNA, AT YOUR ELBOW: PAPER FOR YOU, OUT OF THE MISSION. IT COULD NOT WAIT.");
+    // The lead-opened plate, in its own words -- the same field, the same
+    // countdown, the same live Menu binding the new-leads notice builds from.
+    casePlateText_ =
+        "A MISSION SHEET  " +
+        std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)])) +
+        " YOUR LETTERS";
+    casePlateShowSteps_ = kCasePlateShowSteps;
+    courierStage_ = 1;
+    courierSteps_ = 0;
+    syncPanelAnim();
+}
+
+const sim::Actor* Session::sheetQuarry() const {
+    // The quiet tenant, by ROLE rather than by name: the roster names exactly
+    // one SkyrunnerContact and the roster is never reordered. Present, on his
+    // feet gone from under him, and still where he fell.
+    for (const sim::Actor& actor : tavern_->actors()) {
+        if (actor.role() == sim::ActorRole::SkyrunnerContact && actor.present() &&
+            actor.activity() == sim::Activity::Downed) {
+            return &actor;
+        }
+    }
+    return nullptr;
+}
+
+bool Session::caseTakeReady() const {
+    if (!sheetCaseLive() || sheetCarry_) {
+        return false;
+    }
+    const sim::Actor* quarry = sheetQuarry();
+    if (quarry == nullptr || quarry->band() != body_->band()) {
+        return false;
+    }
+    const std::int32_t dx = quarry->tileX() - body_->tileX();
+    const std::int32_t dy = quarry->tileY() - body_->tileY();
+    return (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) <= kTakeReachTiles;
+}
+
+void Session::stepSheetCase() {
+    if (!sheetRaws_.loaded() || !sheetBook_.active()) {
+        return;
+    }
+    // 1. THE COURIER. Counts only while the world has the keys -- never under
+    // the opening page, a menu, a conversation or a lock -- so the hail can
+    // never land on a surface that would swallow it, and never lands in a
+    // scripted capture at all unless the config asked for a courier.
+    if (config_.courier && courierStage_ < 2 && !firstRun_ && !conversingNow() && !picking()) {
+        if (courierStage_ == 0) {
+            if (++courierSteps_ >= kCourierDelaySteps) {
+                courierDeliverNow();
+            }
+        } else if (++courierSteps_ >= kCourierDelaySteps) {
+            // The one follow-up, and then the paper does the teaching.
+            say("THE SHEET IS IN YOUR LETTERS. MAELL DOES NOT WRITE TWICE.");
+            courierStage_ = 2;
+        }
+    }
+    // 2. THE TAKE, NAMED WHEN IT IS LIVE. Once per downing: the flag re-arms
+    // when he is back on his feet, so a player who hesitated is told again
+    // the next time they earn the moment, and never told twice for standing
+    // still.
+    if (caseTakeReady()) {
+        if (!sheetTakeSaid_) {
+            say("FINCH IS ON THE BOARDS. " +
+                std::string(promptLabel(controls_, Action::Interact, promptDevice_)) +
+                " TAKES HIM UP.");
+            sheetTakeSaid_ = true;
+        }
+    } else {
+        sheetTakeSaid_ = false;
+    }
+    // 3. THE DELIVERY. Walking into the back room with the man IS the act --
+    // no press owed on top of it. The scripted look lands on the close lead's
+    // own site, which this body is within look range of, so the book closes
+    // through the one verb every lead closes through.
+    if (sheetCarry_ && !sheetBook_.closed()) {
+        const std::int32_t close = sheetRaws_.indexOf("bring-him-in");
+        if (close >= 0) {
+            const sim::Lead& lead =
+                sheetRaws_.leads()[static_cast<std::size_t>(close)];
+            const std::int32_t dx = lead.site.x - body_->tileX();
+            const std::int32_t dy = lead.site.y - body_->tileY();
+            if (lead.site.band == body_->band() &&
+                (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) <= sim::kLookRangeTiles) {
+                const std::int64_t now = caseNowSeconds();
+                (void)sheetBook_.hear(close, now);
+                const sim::LookResult done =
+                    sheetBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
+                sheetCarry_ = false;
+                say(done.line);
+                casePlateText_ =
+                    "THE ERRAND IS PAID  " +
+                    std::string(keyName(
+                        controls_.primary[static_cast<std::size_t>(Action::Menu)])) +
+                    " YOUR CASEBOOK";
+                casePlateShowSteps_ = kCasePlateShowSteps;
+                syncPanelAnim();
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2155,11 +2369,16 @@ namespace {
 }  // namespace
 
 int Session::mapPlaceForLead(std::int32_t leadIndex) const {
-    if (casebook_.raws() == nullptr || leadIndex < 0 ||
-        static_cast<std::size_t>(leadIndex) >= casebook_.raws()->leads().size()) {
+    // COURIER CASE. THE ACTIVE BOOK'S INDEX SPACE, because every caller
+    // (the page's routable flag, commitCasebookLead, showLeadOnMap) indexes
+    // the book the page is showing -- one rule, sheetCaseLive(), applied
+    // everywhere a surface reads "the case".
+    const sim::Casebook& book = activeCasebook();
+    if (book.raws() == nullptr || leadIndex < 0 ||
+        static_cast<std::size_t>(leadIndex) >= book.raws()->leads().size()) {
         return -1;
     }
-    const sim::Lead& lead = casebook_.raws()->leads()[static_cast<std::size_t>(leadIndex)];
+    const sim::Lead& lead = book.raws()->leads()[static_cast<std::size_t>(leadIndex)];
     // BY THE AUTHORED NAME FIRST, case-folded -- because that is what the two
     // files actually agree on. casebook.json shouts its `place` ("THE
     // WEIGHHOUSE") and the .tmx sign table spells it as a proper noun ("The
@@ -2193,7 +2412,7 @@ bool Session::bodyCanLookAt(const sim::Lead& lead) const {
 }
 
 void Session::moveCasebookCursor(int delta) {
-    const int count = static_cast<int>(casebook_.known().size());
+    const int count = static_cast<int>(activeCasebook().known().size());
     if (count <= 0) {
         casePageCursor_ = 0;
         return;
@@ -2204,7 +2423,7 @@ void Session::moveCasebookCursor(int delta) {
 }
 
 void Session::setCasebookCursor(int index) {
-    const int count = static_cast<int>(casebook_.known().size());
+    const int count = static_cast<int>(activeCasebook().known().size());
     if (count <= 0 || index < 0 || index >= count) {
         return;
     }
@@ -2220,14 +2439,15 @@ void Session::cycleCasebookTab(int delta) {
 }
 
 bool Session::selectCasebookLead(std::string_view leadId) {
-    if (casebook_.raws() == nullptr) {
+    const sim::Casebook& book = activeCasebook();
+    if (book.raws() == nullptr) {
         return false;
     }
-    const std::int32_t want = casebook_.raws()->indexOf(leadId);
+    const std::int32_t want = book.raws()->indexOf(leadId);
     if (want < 0) {
         return false;
     }
-    const std::vector<std::int32_t> heard = casebook_.known();
+    const std::vector<std::int32_t> heard = book.known();
     for (std::size_t i = 0; i < heard.size(); ++i) {
         if (heard[i] == want) {
             casePageCursor_ = static_cast<int>(i);
@@ -2278,18 +2498,19 @@ bool Session::showLeadOnMap(std::int32_t leadIndex) {
 }
 
 void Session::commitCasebookLead() {
-    const std::vector<std::int32_t> heard = casebook_.known();
-    if (heard.empty() || casebook_.raws() == nullptr) {
+    const sim::Casebook& book = activeCasebook();
+    const std::vector<std::int32_t> heard = book.known();
+    if (heard.empty() || book.raws() == nullptr) {
         return;
     }
     const int at = std::clamp(casePageCursor_, 0, static_cast<int>(heard.size()) - 1);
     const std::int32_t index = heard[static_cast<std::size_t>(at)];
-    const sim::Lead& lead = casebook_.raws()->leads()[static_cast<std::size_t>(index)];
+    const sim::Lead& lead = book.raws()->leads()[static_cast<std::size_t>(index)];
     // STATE CHOOSES THE VERB, and the page has already printed which one this
     // is going to be -- see drawLeadDetail. Standing in reach of a lead nobody
     // has stood over yet, the useful act is to LOOK; the map would be the page
     // telling you to go where you already are.
-    if (bodyCanLookAt(lead) && casebook_.state(index) == sim::LeadState::Open) {
+    if (bodyCanLookAt(lead) && book.state(index) == sim::LeadState::Open) {
         // CLOSED FIRST, because examine() refuses while the book is up (it
         // treats the look key as "put the notes down") -- so the page hands
         // over rather than fighting for the same key.
@@ -2302,19 +2523,25 @@ void Session::commitCasebookLead() {
 }
 
 CasebookPageState Session::casebookPageState() const {
+    // COURIER CASE. THE PAGE SHOWS THE LIVE ERRAND while one runs and the
+    // Bloodletter otherwise -- sheetCaseLive()'s one rule, no switcher UI
+    // (flagged scope cut). Every row, cross-reference and readout below is
+    // built off this pair, so the page can never mix two books' indices.
+    const sim::CasebookRaws& raws = activeCaseRaws();
+    const sim::Casebook& book = activeCasebook();
     CasebookPageState page;
     page.open = true;
     page.openAmount = panelAnim_.value();
     page.title = "THE CASEBOOK";
-    page.caseTitle = std::string(caseRaws_.title());
+    page.caseTitle = std::string(raws.title());
     page.tab = casebookTab_;
-    page.hook = std::string(caseRaws_.hook());
-    page.closeLine = std::string(caseRaws_.close());
-    page.closed = casebook_.closed();
-    page.dread = casebook_.dread();
-    page.dreadBand = std::string(caseRaws_.dreadLabel(casebook_.dread()));
-    page.read = casebook_.readCount();
-    page.cold = casebook_.coldCount();
+    page.hook = std::string(raws.hook());
+    page.closeLine = std::string(raws.close());
+    page.closed = book.closed();
+    page.dread = book.dread();
+    page.dreadBand = std::string(raws.dreadLabel(book.dread()));
+    page.read = book.readCount();
+    page.cold = book.coldCount();
     page.calledYou = std::string(legend().title());
     // SHIP NOTE MOVE 3. NOT promptLabel(Menu, Pad) for the pad's close key,
     // deliberately: Menu's pad half is D-PAD UP, but while the book is open
@@ -2333,16 +2560,16 @@ CasebookPageState Session::casebookPageState() const {
     // lanes wrote this line; one field, commitKey, survives the merge.)
     page.commitKey = std::string(promptConfirmKey(promptDevice_));
 
-    const std::vector<std::int32_t> heard = casebook_.known();
+    const std::vector<std::int32_t> heard = book.known();
     page.known = static_cast<std::int32_t>(heard.size());
-    page.total = static_cast<std::int32_t>(caseRaws_.leads().size());
+    page.total = static_cast<std::int32_t>(raws.leads().size());
     page.rows.reserve(heard.size());
 
     const std::int32_t px = body_->tileX();
     const std::int32_t py = body_->tileY();
     for (const std::int32_t index : heard) {
-        const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
-        const sim::LeadState what = casebook_.state(index);
+        const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(index)];
+        const sim::LeadState what = book.state(index);
         CasebookLeadRow row;
         row.brief = lead.brief.empty() ? lead.place : lead.brief;
         row.place = lead.place;
@@ -2366,17 +2593,17 @@ CasebookPageState Session::casebookPageState() const {
             row.found = lead.found;
             row.detail = lead.detail;
             for (const std::string& id : lead.opens) {
-                const std::int32_t opened = caseRaws_.indexOf(id);
+                const std::int32_t opened = raws.indexOf(id);
                 if (opened < 0) {
                     continue;
                 }
-                const sim::Lead& next = caseRaws_.leads()[static_cast<std::size_t>(opened)];
+                const sim::Lead& next = raws.leads()[static_cast<std::size_t>(opened)];
                 row.opened.push_back(next.brief.empty() ? next.place : next.brief);
             }
         }
-        row.heard = formatCaseDay(casebook_.heardAt(index));
-        for (const std::int32_t from : caseRaws_.openedBy(index)) {
-            const sim::Lead& opener = caseRaws_.leads()[static_cast<std::size_t>(from)];
+        row.heard = formatCaseDay(book.heardAt(index));
+        for (const std::int32_t from : raws.openedBy(index)) {
+            const sim::Lead& opener = raws.leads()[static_cast<std::size_t>(from)];
             if (!row.from.empty()) {
                 row.from += ", ";
             }
@@ -2516,7 +2743,46 @@ std::vector<std::int32_t> Session::unlockedLetters() const {
             out.push_back(static_cast<std::int32_t>(i));
         }
     }
+    // COURIER CASE. The sheet file rides the same shelf in COMBINED indices
+    // (see letterAt), gated on ITS OWN book -- and a `handed` document is
+    // post the player was SENT, readable the moment its lead is heard: the
+    // courier put it in their hand, and a gate that made them walk to the
+    // Gull before they could read the sheet that names the Gull would be
+    // the tutorial eating itself.
+    const std::int32_t base = static_cast<std::int32_t>(letterRaws_.letters().size());
+    for (std::size_t i = 0; i < sheetLetterRaws_.letters().size(); ++i) {
+        const sim::Letter& letter = sheetLetterRaws_.letters()[i];
+        const std::int32_t lead = sheetRaws_.indexOf(letter.lead);
+        if (lead < 0) {
+            continue;
+        }
+        const sim::LeadState state = sheetBook_.state(lead);
+        const bool readable =
+            letter.handed
+                ? state != sim::LeadState::Unheard
+                : (state == sim::LeadState::Cold || state == sim::LeadState::Followed);
+        if (readable) {
+            out.push_back(base + static_cast<std::int32_t>(i));
+        }
+    }
     return out;
+}
+
+const sim::Letter& Session::letterAt(std::int32_t combined) const {
+    // COURIER CASE. One shelf over two files: the Bloodletter's letters keep
+    // their own indices and the sheet file sits above them, in fixed member
+    // order. Callers only ever hand back indices unlockedLetters() produced,
+    // so the subscripts below hold by construction.
+    const std::int32_t base = static_cast<std::int32_t>(letterRaws_.letters().size());
+    if (combined >= base) {
+        return sheetLetterRaws_.letters()[static_cast<std::size_t>(combined - base)];
+    }
+    return letterRaws_.letters()[static_cast<std::size_t>(combined)];
+}
+
+std::int32_t Session::letterCount() const noexcept {
+    return static_cast<std::int32_t>(letterRaws_.letters().size() +
+                                     sheetLetterRaws_.letters().size());
 }
 
 bool Session::picking() const noexcept { return tavern_->picking().open(); }
@@ -2920,6 +3186,11 @@ void Session::step(const sim::MoveInput& input) {
         settings_.timeOfDay = timeOfDay_;
     }
     syncWardToCalendar();
+    // COURIER CASE. Last, deliberately: the courier's countdown, the take
+    // nudge and the scripted delivery all read the step the world just
+    // finished taking, and anything they say() eases in on the next frame
+    // exactly as every other verb's message does.
+    stepSheetCase();
 }
 
 void Session::stepMany(const sim::MoveInput& input, int steps) {
@@ -3057,6 +3328,21 @@ void Session::interact() {
 
     // 2. PERSON IN REACH: TALK upright, PICKPOCKET sneaking.
     wardTalkId_ = -1;
+    // COURIER CASE, checked ahead of TALK for the reason the rest-check runs
+    // first: it is the one thing this press could mean that nothing else here
+    // could also mean. A downed man is not a conversation.
+    if (!sneaking && caseTakeReady()) {
+        sheetCarry_ = true;
+        sheetTakeSaid_ = false;
+        const std::int32_t close = sheetRaws_.indexOf("bring-him-in");
+        if (close >= 0) {
+            // The book learns where this ends the moment the man is in hand,
+            // so the objective row swings to the Mission on the same press.
+            (void)sheetBook_.hear(close, caseNowSeconds());
+        }
+        say("YOU HAVE HIM. THE MISSION'S BACK ROOM, AND NOTHING EDGED ON THE WAY.");
+        return;
+    }
     if (!sneaking) {
         // TIME-AND-TENURE BUILD: the director is told what ground the feet
         // are on BEFORE the conversation opens, so a priest's topic list is
@@ -3199,6 +3485,17 @@ Session::InteractTarget Session::resolveInteract() const {
     // liftFrom()'s. Nearest is a read-only query on both Tavern and
     // WardPopulation; neither talks to anybody by being asked.
     const std::int32_t reach = sneaking ? sim::kLiftReachQ8 : sim::kReachQ8;
+    // COURIER CASE, mirrored EXACTLY where interact() checks it: ahead of the
+    // person walk, so the crosshair names the take on the same frame the key
+    // would perform it.
+    if (!sneaking && caseTakeReady()) {
+        const sim::Actor* quarry = sheetQuarry();
+        out.verb = "TAKE HIM UP";
+        out.subject = quarry == nullptr ? std::string("FINCH") : quarry->name();
+        out.note = "DOWN, AND COMING WITH YOU";
+        out.kind = AimKind::Person;
+        return out;
+    }
     // NAMED IN THE ORDER interact() WOULD REACH THEM. The taproom's own roster
     // is asked first because talkTo() is, so the body the crosshair names is
     // the body the key would actually speak to -- a prompt that named the
@@ -3310,6 +3607,23 @@ Session::InteractTarget Session::resolveInteract() const {
             }
         }
     }
+    // COURIER CASE. The second book's sites get the identical naming, asked
+    // only when the first named nothing -- the same member-order tiebreak
+    // examine() keeps.
+    if (out.subject.empty()) {
+        if (const int lead = sheetLeadInLookReach(); lead >= 0 && sheetBook_.raws() != nullptr) {
+            const sim::Lead& site = sheetBook_.raws()->leads()[static_cast<std::size_t>(lead)];
+            const sim::LeadState state = sheetBook_.state(static_cast<std::int32_t>(lead));
+            if (state != sim::LeadState::Unheard) {
+                out.subject = site.what.empty() ? site.place : site.what;
+                if (state != sim::LeadState::Open) {
+                    out.note = "ALREADY READ";
+                }
+                out.kind = AimKind::Clue;
+                return out;
+            }
+        }
+    }
     if (out.subject.empty()) {
         // THE DOOR YOU ARE ACTUALLY FACING. The ward map pass built the
         // district's own place index off the authored footprints -- see
@@ -3387,7 +3701,7 @@ void Session::moveTopicCursor(int delta) {
                 // (journalWorkRows), so the cursor can reach a contract or a
                 // log line to read it -- picking one stays a no-op.
                 wrapCursorAndPage(caseCursor_, casePage_, delta,
-                                  static_cast<int>(casebook_.known().size() +
+                                  static_cast<int>(activeCasebook().known().size() +
                                                    journalWorkRows().size()));
                 return;
         }
@@ -3448,7 +3762,7 @@ void Session::nextTopicPage() {
             case kMenuFocusJournal:
             default:
                 advancePage(casePage_, caseCursor_,
-                            casebook_.known().size() + journalWorkRows().size());
+                            activeCasebook().known().size() + journalWorkRows().size());
                 return;
         }
     }
@@ -3530,7 +3844,7 @@ void Session::chooseVisibleTopic(int slot) {
             case kMenuFocusJournal:
             default: {
                 const int index = casePage_ * kTopicPageSize + slot;
-                const int leads = static_cast<int>(casebook_.known().size());
+                const int leads = static_cast<int>(activeCasebook().known().size());
                 if (index >= leads + static_cast<int>(journalWorkRows().size())) {
                     return;
                 }
@@ -3564,7 +3878,7 @@ void Session::chooseTopic(std::size_t index) {
         // this is the one place in the game where picking a row is pure UI, and
         // it is pure UI because the trail's state changed when you LOOKED, not
         // when you read your own handwriting back.
-        if (index < casebook_.known().size()) {
+        if (index < activeCasebook().known().size()) {
             caseCursor_ = static_cast<int>(index);
             caseEntry_ = static_cast<int>(index);
             // AUDIO WIRING: opening an entry of your own notes is a page, not
@@ -3572,7 +3886,7 @@ void Session::chooseTopic(std::size_t index) {
             if (audio_ != nullptr) {
                 audio_->playOneShot(audio::SoundId::BookFlip);
             }
-        } else if (index < casebook_.known().size() + journalWorkRows().size()) {
+        } else if (index < activeCasebook().known().size() + journalWorkRows().size()) {
             // A work row under the trail -- a live contract, a finished
             // stage's log line -- is something to read, not a choice: the
             // cursor moves onto it, no entry opens and no page speaks. The
@@ -3944,9 +4258,19 @@ DialogueViewState Session::lettersPanelView() const {
     view.phase = static_cast<float>(body_->stepCount()) / 60.0F;
     view.open = true;
     const std::vector<std::int32_t> unlocked = unlockedLetters();
+    // COURIER CASE. Whether anything on the shelf right now was put into the
+    // player's own hand -- the epithet and the pick line below stop claiming
+    // "read, not received" the moment that stops being the whole truth.
+    bool anyHanded = false;
+    for (const std::int32_t index : unlocked) {
+        if (letterAt(index).handed) {
+            anyHanded = true;
+            break;
+        }
+    }
     if (lettersEntry_ >= 0 && static_cast<std::size_t>(lettersEntry_) < unlocked.size()) {
-        const sim::Letter& read = letterRaws_.letters()[static_cast<std::size_t>(
-            unlocked[static_cast<std::size_t>(lettersEntry_)])];
+        const sim::Letter& read =
+            letterAt(unlocked[static_cast<std::size_t>(lettersEntry_)]);
         view.speaker = read.from.empty() ? std::string("A LETTER") : read.from;
         view.line = "A LETTER, READ IN FULL BELOW.";
         view.letter = true;
@@ -3978,10 +4302,15 @@ DialogueViewState Session::lettersPanelView() const {
         view.page = lettersBodyPage_;
     } else {
         view.speaker = "THE LETTERS";
-        view.epithet = "READ, NOT RECEIVED";
+        // COURIER CASE. "READ, NOT RECEIVED" survives only while it is true:
+        // a handed mission sheet IS received post, so the epithet and the
+        // pick line change with the shelf rather than lying about it.
+        view.epithet = anyHanded ? "THE WARD'S PAPER" : "READ, NOT RECEIVED";
         view.line = unlocked.empty()
                         ? "YOU HAVE READ NOBODY'S POST YET."
-                        : "OTHER PEOPLE'S PAPER. PICK ONE AND READ IT WHOLE.";
+                        : (anyHanded
+                               ? "YOUR OWN PAPER, AND OTHER PEOPLE'S. PICK ONE AND READ IT WHOLE."
+                               : "OTHER PEOPLE'S PAPER. PICK ONE AND READ IT WHOLE.");
         // THE ONE PANEL IN THE BUILD THAT SHIPS WITH NOTHING IN IT AT ALL, and
         // the tile draws no `line`, so until this the first thing a stranger
         // saw here was a title over a quarter-screen of black. The gate is
@@ -4001,17 +4330,18 @@ DialogueViewState Session::lettersPanelView() const {
         view.page = lettersPage_;
     }
     for (const std::int32_t index : unlocked) {
-        const sim::Letter& letter = letterRaws_.letters()[static_cast<std::size_t>(index)];
+        const sim::Letter& letter = letterAt(index);
         // MAELL'S THREE SHARE ONE NAME, so the title list numbers them
         // against every OTHER letter tied to the same lead rather than
         // showing "FATHER MAELL" three times over with no way to tell
-        // which press opens which.
+        // which press opens which. Combined indices (letterAt) -- lead ids
+        // are per-file strings, so the count can never mix the two books.
         std::int32_t total = 0;
         std::int32_t position = 0;
-        for (std::size_t i = 0; i < letterRaws_.letters().size(); ++i) {
-            if (letterRaws_.letters()[i].lead == letter.lead) {
+        for (std::int32_t i = 0; i < letterCount(); ++i) {
+            if (letterAt(i).lead == letter.lead) {
                 ++total;
-                if (static_cast<std::int32_t>(i) == index) {
+                if (i == index) {
                     position = total;
                 }
             }
@@ -4093,24 +4423,29 @@ std::vector<std::string> Session::journalWorkRows() const {
 DialogueViewState Session::journalPanelView() const {
     // THE JOURNAL. Not a new panel and not a sheet: one more content shape on
     // the widget family every other tile already uses.
+    // COURIER CASE. The tile shows the live errand while one runs -- the
+    // identical active-case rule the composed page keeps; see
+    // casebookPageState.
+    const sim::CasebookRaws& raws = activeCaseRaws();
+    const sim::Casebook& book = activeCasebook();
     DialogueViewState view;
     view.phase = static_cast<float>(body_->stepCount()) / 60.0F;
     view.open = true;
     view.speaker = "THE CASEBOOK";
-    view.epithet = std::string(caseRaws_.title());
+    view.epithet = std::string(raws.title());
     // THE ATTITUDE FIELD IS SHORT BY CONSTRUCTION -- in a conversation it
     // holds "WARM" or "HOSTILE" -- and the top-right of that band is where
     // the HUD draws the clock over it. The first S10 capture put a
     // twenty-nine character dread band there and the clock landed in the
     // middle of it. The ward's nerve moved down onto the line, where it is
     // the first thing you read in your own notes, which is also better.
-    view.attitude = casebook_.closed() ? "CLOSED" : "OPEN";
-    const std::vector<std::int32_t> heard = casebook_.known();
+    view.attitude = book.closed() ? "CLOSED" : "OPEN";
+    const std::vector<std::int32_t> heard = book.known();
     const sim::Legend book = legend();
     if (caseEntry_ >= 0 && static_cast<std::size_t>(caseEntry_) < heard.size()) {
         const std::int32_t leadIndex = heard[static_cast<std::size_t>(caseEntry_)];
-        const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(leadIndex)];
-        const sim::LeadState what = casebook_.state(leadIndex);
+        const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(leadIndex)];
+        const sim::LeadState what = book.state(leadIndex);
         view.line = what == sim::LeadState::Open ? lead.place + ". " + lead.what + "."
                                                   : lead.found + " " + lead.detail;
         // TASK #82. THE DATELINE, AND THE CROSS-REFERENCE -- what a
@@ -4119,8 +4454,8 @@ DialogueViewState Session::journalPanelView() const {
         // followed) what it put in the book next. See
         // DialogueViewState::caseRef's own header on why this is a
         // separate row rather than folded into `line`.
-        std::string ref = formatCaseDay(casebook_.heardAt(leadIndex));
-        const std::vector<std::int32_t> from = caseRaws_.openedBy(leadIndex);
+        std::string ref = formatCaseDay(book.heardAt(leadIndex));
+        const std::vector<std::int32_t> from = raws.openedBy(leadIndex);
         if (from.empty()) {
             // THE ONE LEAD WITH NO OPENER. Not blank: a log that omits
             // the start of its own case reads as missing a page, not as
@@ -4132,7 +4467,7 @@ DialogueViewState Session::journalPanelView() const {
                 if (i > 0) {
                     ref += ", ";
                 }
-                const sim::Lead& opener = caseRaws_.leads()[static_cast<std::size_t>(from[i])];
+                const sim::Lead& opener = raws.leads()[static_cast<std::size_t>(from[i])];
                 ref += opener.brief.empty() ? opener.place : opener.brief;
             }
         }
@@ -4142,9 +4477,9 @@ DialogueViewState Session::journalPanelView() const {
                 if (i > 0) {
                     ref += ", ";
                 }
-                const std::int32_t opened = caseRaws_.indexOf(lead.opens[i]);
+                const std::int32_t opened = raws.indexOf(lead.opens[i]);
                 if (opened >= 0) {
-                    const sim::Lead& next = caseRaws_.leads()[static_cast<std::size_t>(opened)];
+                    const sim::Lead& next = raws.leads()[static_cast<std::size_t>(opened)];
                     ref += next.brief.empty() ? next.place : next.brief;
                 }
             }
@@ -4156,29 +4491,29 @@ DialogueViewState Session::journalPanelView() const {
         // unlockedLetters() -- so the casebook says where to press
         // rather than making them discover the key by accident.
         for (const std::int32_t li : unlockedLetters()) {
-            if (letterRaws_.letters()[static_cast<std::size_t>(li)].lead == lead.id) {
+            if (letterAt(li).lead == lead.id) {
                 ref += "  L READS HIS LETTERS";
                 break;
             }
         }
         view.caseRef = ref;
-    } else if (casebook_.readCount() == 0) {
+    } else if (book.readCount() == 0) {
         // THE OPENING PAGE OF A NEW GAME: the hook, and nothing else. It is
         // the first thing a player ever reads in this game and it gets the
         // band to itself.
-        view.line = std::string(caseRaws_.hook());
+        view.line = std::string(raws.hook());
     } else {
         // And afterwards: what the ward's nerve is doing, and what it calls
         // you for the work so far. TWO SHORT SENTENCES, because the band
         // wraps to three lines and the S10 capture that ran to four lost
         // "OF THE FLAME" off the end of its own title.
-        view.line = std::string(caseRaws_.dreadLabel(casebook_.dread())) + ". THEY CALL YOU " +
+        view.line = std::string(raws.dreadLabel(book.dread())) + ". THEY CALL YOU " +
                     std::string(book.title()) + ".";
     }
     for (const std::int32_t index : heard) {
-        const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
+        const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(index)];
         std::string row;
-        switch (casebook_.state(index)) {
+        switch (book.state(index)) {
             case sim::LeadState::Open:
                 row = "? ";
                 break;
@@ -4216,7 +4551,7 @@ DialogueViewState Session::journalPanelView() const {
     // every lead in the file is in the book -- there is nothing left to open
     // in either case, and a note promising more would be the "no shitty
     // English anywhere" bar failing in the one place a player rereads.
-    if (!casebook_.closed() && heard.size() < caseRaws_.leads().size()) {
+    if (!book.closed() && heard.size() < raws.leads().size()) {
         view.emptyLine = std::string(kBookWaitingLine);
     }
     view.cursor = caseCursor_;
@@ -5104,24 +5439,30 @@ std::string Session::guildLine() const {
 }
 
 std::string Session::caseLine() const {
-    if (!casebook_.active() || !caseRaws_.loaded()) {
+    // COURIER CASE. The orientation row follows the live errand -- the same
+    // one rule every case surface keeps (sheetCaseLive), so the corner names
+    // the Gull while the sheet is the work and the Bloodletter before and
+    // after.
+    const sim::CasebookRaws& raws = activeCaseRaws();
+    const sim::Casebook& book = activeCasebook();
+    if (!book.active() || !raws.loaded()) {
         return {};
     }
-    const std::vector<std::int32_t> heard = casebook_.known();
-    std::string line = "CASE " + std::to_string(casebook_.readCount()) + "/" +
+    const std::vector<std::int32_t> heard = book.known();
+    std::string line = "CASE " + std::to_string(book.readCount()) + "/" +
                        std::to_string(heard.size());
     // WHERE TO GO NEXT, ON THE SAME ROW. This is the orientation line: a player
     // who put the game down for a week and came back to a district of 692
     // people gets one line telling them where they were walking. Until this
     // sprint the corner of a new game was empty, which is exactly the "dropped
     // into a systems demo with no orientation" the demo brief names.
-    const std::int32_t lead = casebook_.nextOpen();
-    if (lead >= 0 && static_cast<std::size_t>(lead) < caseRaws_.leads().size()) {
-        line += " > " + caseRaws_.leads()[static_cast<std::size_t>(lead)].place;
-    } else if (casebook_.closed()) {
-        line += " > " + std::string(caseRaws_.close());
+    const std::int32_t lead = book.nextOpen();
+    if (lead >= 0 && static_cast<std::size_t>(lead) < raws.leads().size()) {
+        line += " > " + raws.leads()[static_cast<std::size_t>(lead)].place;
+    } else if (book.closed()) {
+        line += " > " + std::string(raws.close());
     } else {
-        const std::string_view mood = caseRaws_.dreadLabel(casebook_.dread());
+        const std::string_view mood = raws.dreadLabel(book.dread());
         line += "  ";
         line.append(mood);
     }
@@ -5270,10 +5611,14 @@ std::vector<std::string> Session::mapRows() const {
     // been here" or "have you met them" flag to invent, forget to update, or
     // let drift from the trail itself.
     std::vector<std::string> rows;
-    if (!casebook_.active()) {
+    // COURIER CASE. The map's three sections follow the live errand, the one
+    // active-case rule again -- see casebookPageState.
+    const sim::CasebookRaws& raws = activeCaseRaws();
+    const sim::Casebook& book = activeCasebook();
+    if (!book.active()) {
         return rows;
     }
-    const std::vector<std::int32_t> heard = casebook_.known();
+    const std::vector<std::int32_t> heard = book.known();
     const std::int32_t px = body_->tileX();
     const std::int32_t py = body_->tileY();
 
@@ -5284,7 +5629,7 @@ std::vector<std::string> Session::mapRows() const {
     // streets between them.
     std::vector<std::string_view> places;
     for (const std::int32_t index : heard) {
-        const std::string_view place = caseRaws_.leads()[static_cast<std::size_t>(index)].place;
+        const std::string_view place = raws.leads()[static_cast<std::size_t>(index)].place;
         if (std::find(places.begin(), places.end(), place) == places.end()) {
             places.push_back(place);
         }
@@ -5302,10 +5647,10 @@ std::vector<std::string> Session::mapRows() const {
     // casebook prints WHAT you have heard, unplaced; this prints WHERE it is
     // from where you are standing right now.
     for (const std::int32_t index : heard) {
-        if (casebook_.state(index) != sim::LeadState::Open) {
+        if (book.state(index) != sim::LeadState::Open) {
             continue;
         }
-        const sim::Lead& lead = caseRaws_.leads()[static_cast<std::size_t>(index)];
+        const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(index)];
         rows.push_back(bearingLabel(px, py, lead.site.x, lead.site.y) + "  " +
                        (lead.brief.empty() ? lead.place : lead.brief));
     }
@@ -5318,7 +5663,7 @@ std::vector<std::string> Session::mapRows() const {
     const sim::FactionRegistry& factions = tavern_->dialogue().factions();
     std::vector<std::string_view> named;
     for (const std::int32_t index : heard) {
-        const std::string_view who = caseRaws_.leads()[static_cast<std::size_t>(index)].who;
+        const std::string_view who = raws.leads()[static_cast<std::size_t>(index)].who;
         if (who.empty() || std::find(named.begin(), named.end(), who) != named.end()) {
             continue;
         }
@@ -5341,7 +5686,7 @@ std::string Session::heatLine() const {
     const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
     const sim::Stash& sack = crimes.stash();
     if (crimes.heat() <= 0 && crimes.loot() <= 0 && !crimes.carryingBale() && sack.empty() &&
-        !crimes.maimed()) {
+        !crimes.maimed() && !sheetCarry_) {
         return {};
     }
     std::string line;
@@ -5361,6 +5706,13 @@ std::string Session::heatLine() const {
     }
     if (crimes.carryingBale()) {
         line += "  BALE";
+    }
+    // COURIER CASE. The man in hand rides the same row the bale does -- a
+    // carried thing the ward would mind, worn on the HUD until the back room
+    // takes him. The rendered over-the-shoulder body is flagged follow-up
+    // work; this line is the honest interim.
+    if (sheetCarry_) {
+        line += "  FINCH IN HAND";
     }
     return clip(std::move(line), 34);
 }
@@ -7075,6 +7427,9 @@ constexpr std::int32_t kBurgleBeats = 7;
 /// many -- the S4 review's whole complaint about scripted lines that report a
 /// number and nothing else.
 std::int32_t gBurgleBeatMask = 0;
+/// COURIER CASE. Which of the errand's beats the last --case run landed, one
+/// bit each in order -- the burglary's own count-plus-mask discipline.
+std::int32_t gCaseBeatMask = 0;
 /// And how many people were awake, upright, on this floor and in range when
 /// beat 2 was judged. Zero means the beat proved nothing -- see the note there.
 std::int32_t gBurgleWatchers = 0;
@@ -7608,6 +7963,143 @@ std::int32_t gTrailUnreached = 0;
                                              box.bedX, box.bedY));
         session.body().setPitch(sim::angle_from_degrees(-8));
     }
+    return landed;
+}
+
+/// How many beats runCaseLine tries to land: the sheet in hand, the sheet
+/// read, the Gull door lead, the wait to the small hours, the box lead on the
+/// guest floor, Finch put down with fists, taken up, and delivered to the
+/// Mission. Eight.
+constexpr std::int32_t kCaseBeats = 8;
+
+/// COURIER CASE. PLAYS THE QUIET TENANT END TO END, through the same Session
+/// calls a keypress makes -- courierDeliverNow (the courier's own beat, its
+/// countdown skipped for the shutter), toggleLetters, walkAcrossDistrict, the
+/// Wait page's own skipToHour, toggleCrouch, examine, punch and interact.
+/// Nothing here reaches into the simulation sideways, which is the only thing
+/// that makes a captured frame evidence of the errand rather than a diagram of
+/// it. `ending` stops the run for a shutter of one beat; empty delivers the
+/// whole errand.
+[[nodiscard]] int runCaseLine(Session& session, const std::string& ending) {
+    gCaseBeatMask = 0;
+    int landed = 0;
+    std::int32_t beat = 0;
+    const auto mark = [&](bool ok) {
+        if (ok) {
+            gCaseBeatMask |= 1 << beat;
+            ++landed;
+        }
+        ++beat;
+    };
+    const sim::CasebookRaws& raws = session.sheetRaws();
+    if (!raws.loaded()) {
+        return 0;
+    }
+
+    // 1. THE SHEET INTO THE HAND. The courier's own beat, countdown skipped so
+    // a headless run does not walk in place for six seconds. The book goes
+    // live and the handed letter turns up on the Letters tile at once.
+    session.courierDeliverNow();
+    mark(session.sheetCaseLive());
+
+    // 2. THE SHEET READ. The first thing the errand teaches is that paper is
+    // read here -- the handed document unfolds on the Letters tile the moment
+    // its lead is heard, no walk owed. A `sheet` shutter stops here with it
+    // open; every other ending closes the menu and walks on.
+    session.toggleLetters();
+    session.chooseVisibleTopic(0);
+    mark(!session.unlockedLetters().empty());
+
+    if (ending == "sheet") {
+        return landed;
+    }
+    session.toggleLetters();  // put the paper down and get the world back
+
+    // 3. THE GULL. Walk to the door lead and look -- the map-and-casebook beat,
+    // and it opens both the box and the tenant.
+    const sim::Lead& door = raws.leads()[static_cast<std::size_t>(raws.indexOf("gull-door"))];
+    walkAcrossDistrict(session, door.site.x, door.site.y);
+    session.examine();
+    mark(session.sheetBook().state(raws.indexOf("gull-door")) != sim::LeadState::Open);
+
+    if (ending == "gull") {
+        session.toggleCasebook();
+        return landed;
+    }
+
+    // 4. THE WAIT. To two in the morning: the doors just barred, the candles
+    // out, the hearth dying, and the one hour Finch keeps the snug that the
+    // room is also dark enough to work. skipToHour is exactly what a WAIT pick
+    // spends -- the clock the tutorial teaches, driven the way the page drives
+    // it.
+    session.skipToHour(2);
+    mark(session.timeOfDay() / 3600 == 2);
+
+    // 5. THE BOX, ON THE GUEST FLOOR. Up the stair, crouched, and a look at the
+    // box lead -- the break-in taught as a place stood over in the dark. The
+    // box lead sits on the upper band, so the climb is part of the beat.
+    walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+    climbAndLand(session);
+    if (session.stance() != sim::Stance::Crouched) {
+        session.toggleCrouch();
+    }
+    const sim::Lead& box = raws.leads()[static_cast<std::size_t>(raws.indexOf("stair-box"))];
+    walkToTile(session, box.site.x, box.site.y);
+    session.examine();
+    const bool boxRead = session.sheetBook().state(raws.indexOf("stair-box")) !=
+                         sim::LeadState::Open;
+    mark(boxRead && session.stance() == sim::Stance::Crouched);
+
+    if (ending == "night") {
+        return landed;
+    }
+
+    // 6. THE TENANT, PUT DOWN WITH FISTS. Down off the guest floor, upright
+    // again (a man is taken up standing over him, not from a crouch), and to
+    // Finch's own snug post. Punch -- NOTHING EDGED, the player carries fists,
+    // so the fight resolves in the world by the brawl line's own law -- until
+    // he is on the boards. Looped without stepping the room between blows, so
+    // the bouncer does not cross the floor mid-beat and nobody regenerates:
+    // the same room a player who kept their nerve would face.
+    session.dropDown();
+    if (session.stance() == sim::Stance::Crouched) {
+        session.toggleCrouch();
+    }
+    const sim::Actor* tenant = nullptr;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (actor.role() == sim::ActorRole::SkyrunnerContact) {
+            tenant = &actor;
+            break;
+        }
+    }
+    if (tenant != nullptr) {
+        walkToTile(session, tenant->tileX(), tenant->tileY());
+        for (int guard = 0; guard < 40 && !session.tenantDown(); ++guard) {
+            session.punch();
+        }
+    }
+    const bool down = session.tenantDown();
+    mark(down);
+
+    if (ending == "down") {
+        return landed;
+    }
+
+    // 7. TAKE HIM UP. The one press the errand adds -- interact() resolves it
+    // ahead of TALK when a downed tenant is in reach.
+    session.interact();
+    mark(session.sheetCarry());
+
+    // 8. TO THE MISSION. The back room the sheet named. Walking in with the man
+    // IS the delivery -- stepSheetCase() closes the book on arrival, no press
+    // owed -- so the run steps the pump a beat at the anchor to let that fire.
+    const sim::Lead& close =
+        raws.leads()[static_cast<std::size_t>(raws.indexOf("bring-him-in"))];
+    walkAcrossDistrict(session, close.site.x, close.site.y);
+    for (int guard = 0; guard < 8 && !session.sheetBook().closed(); ++guard) {
+        session.stepMany(sim::MoveInput{}, 1);
+    }
+    mark(session.sheetBook().closed());
     return landed;
 }
 
@@ -8313,6 +8805,13 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.burgle) {
         return 2;
     }
+    // COURIER CASE. Eight in the evening: the courier hail and the door lead
+    // want the Gull open and the ward awake, and runCaseLine waits to two on
+    // its own for the break-in -- demonstrating the clock the tutorial
+    // teaches rather than skipping the lesson by starting in the dark.
+    if (config.caseRun) {
+        return 20;
+    }
     // The roof line needs the door open and nobody in particular.
     return -1;
 }
@@ -8647,6 +9146,24 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.burgleBeatMask = gBurgleBeatMask;
         result.watchersInReach = gBurgleWatchers;
         result.scriptedWanted += kBurgleBeats;
+        result.scriptedLanded += landed;
+        result.talking = session.talking();
+    }
+
+    if (config.caseRun) {
+        // COURIER CASE. A short `ending` owes only the beats up to its shutter,
+        // exactly runContractLine's `held` rule -- so the fell-short warning
+        // never fires over a run that stopped where it was told to.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runCaseLine(session, config.caseEnd));
+        result.caseBeats = landed;
+        result.caseBeatMask = gCaseBeatMask;
+        const std::int32_t owed = config.caseEnd == "sheet"  ? 2
+                                  : config.caseEnd == "gull"  ? 3
+                                  : config.caseEnd == "night" ? 5
+                                  : config.caseEnd == "down"  ? 6
+                                                              : kCaseBeats;
+        result.scriptedWanted += owed;
         result.scriptedLanded += landed;
         result.talking = session.talking();
     }
@@ -9100,6 +9617,22 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << session.tavern().dialogue().skills().level(sim::kThieverySkill)
                 << " skyrunning="
                 << session.tavern().dialogue().skills().level(sim::kRoofSkill);
+    }
+    if (config.caseRun) {
+        // COURIER CASE. The errand's own summary: beats and the mask (which
+        // one dropped, not only how many), the live book's read/known, whether
+        // the tenant is down and whether he is in hand, and where the case
+        // stands -- so a short run says exactly what it proved.
+        const sim::Casebook& book = session.sheetBook();
+        summary << " | case beats=" << result.caseBeats << '/' << kCaseBeats
+                << " mask=" << gCaseBeatMask
+                << " read=" << book.readCount() << '/' << book.known().size()
+                << " dread=" << book.dread()
+                << " tenant=" << (session.tenantDown() ? "down" : "up")
+                << " carry=" << (session.sheetCarry() ? "yes" : "no")
+                << " closed=" << (book.closed() ? "yes" : "no")
+                << " live=" << (session.sheetCaseLive() ? "yes" : "no")
+                << " letters=" << session.unlockedLetters().size();
     }
     if (config.nemesis) {
         const sim::Nemesis* worst = session.tavern().nemesis().worst();

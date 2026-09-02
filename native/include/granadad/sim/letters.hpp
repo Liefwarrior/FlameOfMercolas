@@ -109,6 +109,13 @@ struct Letter {
     /// closing sentence that is not a valediction at all.
     std::string closing;
     std::string signature;
+    /// COURIER CASE. A HANDED document is one somebody put in the player's
+    /// own hand, so it is readable the moment its lead is merely HEARD --
+    /// state Open counts -- where an ordinary letter keeps the read-not-
+    /// received gate (Cold or Followed only; see Session::unlockedLetters).
+    /// False for every letter of the Bloodletter file, whose five documents
+    /// are all paper the leads keep rather than post the player was sent.
+    bool handed = false;
 };
 
 /// The authored file, loaded. NEVER throws and never refuses to boot,
@@ -117,6 +124,11 @@ struct Letter {
 class LetterRaws {
 public:
     [[nodiscard]] static LetterRaws load(const std::filesystem::path& contentDir);
+    /// COURIER CASE. The same parse over an exact file path -- load() above is
+    /// this with letterRawsPath() filled in. A second document file is a
+    /// second FILE, bloodletter_letters.json byte-untouched, per the
+    /// file-per-content-block law this header states.
+    [[nodiscard]] static LetterRaws loadFile(const std::filesystem::path& file);
 
     [[nodiscard]] bool loaded() const noexcept { return !letters_.empty(); }
     [[nodiscard]] const std::vector<Letter>& letters() const noexcept { return letters_; }
@@ -133,5 +145,10 @@ private:
 };
 
 [[nodiscard]] std::filesystem::path letterRawsPath(const std::filesystem::path& contentDir);
+/// content/raws/quests/mission_sheet_letters.json -- the courier case's own
+/// paper (top level "letters", same shape as the Bloodletter file, plus the
+/// per-letter `handed` flag above).
+[[nodiscard]] std::filesystem::path missionSheetLetterRawsPath(
+    const std::filesystem::path& contentDir);
 
 }  // namespace granadad::sim

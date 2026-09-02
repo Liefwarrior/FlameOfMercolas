@@ -1,0 +1,70 @@
+{
+  "id": "mission_sheet",
+  "case": {
+    "id": "the-quiet-tenant",
+    "title": "THE QUIET TENANT",
+    "hook": "A SHEET OUT OF THE MISSION, IN MAELL'S OWN HAND. WORD HAS COME FROM GABRI.",
+    "close": "THE MISSION HAS ITS MAN. THE FLAME KEEPS ITS OWN COUNSEL.",
+    "provenance": "The owner's second-case brief, verbatim: 'A courier brings a mission sheet to the player. Use this as a tutorial type of thing where we walk the player through the various systems and actions that they'd take in the world. The author should come from the local mission. Word has come from Gabri, location is included, instructed to break in at night and kidnap the target, bring them to the mission.' Every person in this file is an existing actor: Father Maell and Onna (notables.json, MISSION_BUNKS), Master Venn (notables.json, K03_GILDED_GULL), Finch (notables.json, LAIR_SKYRUNNER; Gilded Gull roster, SkyrunnerContact, hours 22:00-03:00), Kled Tarbeck the Patient (the Gull's own night bouncer, tavern.cpp roster). Every place is existing authored geometry: the Gilded Gull's door, snug and guest rooms are native/include/granadad/sim/tavern.hpp's gull:: constants (door 153-154/66, snug 158-159, stair 159/77, room 3 stand 155/76 on the upper band), and the close is the same back room casebook.json's clue_c1_mission_backroom already stands a case on. The one fact this case ADDS to canon, flagged for the owner's veto: casebook.json's tarry-jek lead left 'A THIN FELLOW WALKED IN THROUGH A GAP NO MAN FITS' deliberately ambiguous; this case resolves the thin fellow as Finch, paid to open the condemned Drowned Hold from inside for the smugglers' crates -- which is exactly what a skyrunner is for (skyrunners break in through compound ceilings) and why the Watch has never written his name. Gabri is the novels' own Wielder and appears NOWHERE in person: word has come from him, through the Mission, and this file never says from where. NO lead here carries start:true -- the case enters the book by the courier's own hand (Session's scripted delivery calls Casebook::hear), so a session that never runs the courier beat never shows it.",
+    "dreadBands": [
+      { "at": 0, "label": "NOBODY'S BUSINESS BUT THE FLAME'S" },
+      { "at": 18, "label": "THE GULL WILL REMEMBER THIS" }
+    ]
+  },
+  "leads": [
+    {
+      "id": "gull-door",
+      "short": "THE GULL",
+      "place": "THE GILDED GULL",
+      "what": "WHERE THE QUIET TENANT DRINKS",
+      "who": "venn",
+      "site": { "x": 153, "y": 68, "band": 19 },
+      "anchor": "gull::kDoorX0/kDoorY, two tiles in (tavern.hpp authored geometry; standable, and lookable from the Tarwalk through the open door)",
+      "dread": 4,
+      "found": "VENN'S HOUSE. CHARTS, THE GOOD WINE, AND A SNUG BEHIND THE PARTITION WHERE A QUIET MAN DRINKS.",
+      "detail": "FINCH KEEPS THE SNUG BY THE STAIR FROM TEN OF THE EVENING UNTIL THE HEARTH DIES AT THREE. THE DOORS SHUT AT TWO. KLED THE PATIENT MINDS THE FLOOR UNTIL THREE, AND HE IS. COME IN THE DARK HOURS, AND COME SOBER.",
+      "opens": ["stair-box", "snug-stool"]
+    },
+    {
+      "id": "stair-box",
+      "short": "THE BOX",
+      "place": "THE GILDED GULL",
+      "what": "THE STRONGBOX IN THE ROOM OVER THE SNUG",
+      "who": "",
+      "site": { "x": 155, "y": 76, "band": 20 },
+      "anchor": "gull::kRooms[3].standX/standY, upper band (tavern.hpp authored geometry; the south-east guest room by the stair-head)",
+      "dread": 6,
+      "found": "A TRAVELLING BOX, THREE PINS, ONE WARD. HIS PAY IS IN IT, AND HIS PAY NAMES THE HAND THAT PAID.",
+      "detail": "THE SOUTH ROOM BY THE STAIR-HEAD. A WIRE OPENS IT OR A SHOULDER DOES, AND THE DIFFERENCE IS WHO HEARS. EVERY PROBE IS NOISE. THE HEARTH DIES AT THREE AND THE ROOM GOES DARK WITH IT - CROUCH, AND KEEP OFF THE LIT TILES.",
+      "opens": ["snug-stool"]
+    },
+    {
+      "id": "snug-stool",
+      "short": "THE TENANT",
+      "place": "THE GILDED GULL",
+      "what": "THE QUIET TENANT HIMSELF",
+      "who": "finch",
+      "site": { "x": 158, "y": 68, "band": 19 },
+      "anchor": "Finch's own roster post (tavern.cpp kStaff, 158/68, hours 22:00-03:00), in the snug behind the partition",
+      "dread": 8,
+      "found": "THERE HE SITS, TEN TILL THREE. HE WALKED INTO THE DROWNED HOLD THROUGH A GAP NO MAN FITS.",
+      "detail": "ASK HIM NICELY AND HE IS OVER THE SLATES BY MORNING, SO DO NOT ASK. NOTHING EDGED - A BRAWL IS THE HOUSE'S OWN LAW, STEEL IS THE WATCH'S. THE BOUNCER ANSWERS THE FIRST SWING, SO ANSWER HIM FIRST. WHEN FINCH IS ON THE BOARDS, TAKE HIM UP.",
+      "opens": ["bring-him-in"]
+    },
+    {
+      "id": "bring-him-in",
+      "short": "BACK ROOM",
+      "place": "MISSION OF THE FLAME",
+      "what": "THE MAN, DELIVERED",
+      "who": "maell",
+      "site": { "x": 126, "y": 110, "band": 19 },
+      "anchor": "clue_c1_mission_backroom (the map's own authored script_anchor; the same site casebook.json's mission-backroom lead already proves standable)",
+      "dread": 6,
+      "close": true,
+      "found": "DONE. MAELL DOES NOT THANK YOU FOR IT, AND DOES NOT PRETEND IT WAS NOT ASKED FOR.",
+      "detail": "THE BACK ROOM TOOK HIM. ONNA BROUGHT SOUP AND DID NOT ASK. WHAT THE FLAME WANTS ASKED IT WILL ASK WITHOUT YOU, AND THE ANSWER GOES WHERE THE WORD CAME FROM. YOUR PART IS PAID AND THE WARD NEVER SAW IT.",
+      "opens": []
+    }
+  ],
+  "notes": "COURIER CASE (the owner's second authored case, and the build's tutorial). Four leads, not twelve: the Bloodletter is the investigation and this is an errand that TEACHES -- each lead is one system said in the ward's own words. gull-door is the map, the casebook and the clock (the detail names the hours and the door policy, so WAIT is the move it teaches without naming a key); stair-box is the break-in (the guest floor is the game's one burglary: light, noise, crouch, the wire, the wards -- every sentence in its detail is a mechanic tavern.hpp/stealth.hpp/lockpick.hpp actually simulates, stated as a fact about the room); snug-stool is the brawl line (nothing edged, Subdue intent, the bouncer's door policy -- brawl.hpp classifyFight as house law); bring-him-in is the delivery. CHAIN: gull-door opens both Gull beats; stair-box corroborates snug-stool rather than going cold (a box that named the hand that paid is not a dead end); snug-stool opens bring-him-in, so the book says where this ends before the taking -- the sheet already said it, and a book that hid its own last page would be coyness, not pacing. NO deadEnd flag anywhere: an errand this short has no room for a wrong turn, and the dead ends stay the Bloodletter's own two. The box lead is DELIBERATELY not required by the close: skill buys information and forgiveness, never success, and a player who cannot pick a three-pin lock still finishes the errand -- poorer by one name. Copy discipline: no key name appears in any authored string (prompts are the device-aware promptKey machinery's business, and the three casebook literals that broke that rule are this phase's named seams); 'TAKE HIM UP' is the deed, and the crosshair names the key. Dread stays small (24 total) and the bands say what the errand is: the ward never hears about this one."
+}

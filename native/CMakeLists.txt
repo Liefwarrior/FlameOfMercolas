@@ -527,6 +527,15 @@ if(GRANADAD_BUILD_TESTS)
         # closing dispatch never claims a discovery only the unbuilt
         # undercellar delve would have made.
         tests/test_letters.cpp
+        # COURIER CASE -- THE QUIET TENANT, the owner's second authored case.
+        # The raws' own invariants (zero starts, one close, reachable-from-the-
+        # courier's-first-lead rather than from a start flag, sites standable in
+        # the baked Docks, the handed sheet cross-referenced to its lead), and
+        # the errand driven end to end through the same verbs a keypress makes,
+        # twice, ending in byte-identical books -- the twin-run discipline the
+        # sim's blood oath keeps, applied to a session-scripted case.
+        tests/test_mission_sheet.cpp
+        tests/test_case_line.cpp
         tests/test_firstrun.cpp
         # The pause menu ESC opens when nothing else has already claimed the
         # keyboard -- RESUME, SETTINGS and a QUIT that asks twice, replacing
