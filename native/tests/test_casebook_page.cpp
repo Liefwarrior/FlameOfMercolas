@@ -106,16 +106,19 @@ TEST_CASE("three leads open at the Weighhouse and the frame says so, once") {
     REQUIRE(session.casebook().readCount() == before + 1);
 
     // THE NOTICE. It names the count and the key, and it is not the corner row.
+    // UI-EA (LANE HUD): the notice grammar is the spec's own "3 NEW LEADS - J"
+    // -- news, dash, keycap. "YOUR CASEBOOK" died in the diet: the key IS the
+    // pointer.
     CHECK(session.casePlateWanted());
     const std::string plate(session.casePlateLabel());
     INFO("plate: ", plate);
-    CHECK(plate.find("3 NEW LEADS") != std::string::npos);
-    CHECK(plate.find("CASEBOOK") != std::string::npos);
+    CHECK(plate.find("3 NEW LEADS - ") == 0);
+    CHECK(plate.find("CASEBOOK") == std::string::npos);
     // The key it names is the REAL bound key for the Menu action, not a letter
     // this file typed in.
     const std::string menuKey(
         keyName(session.controls().primary[static_cast<std::size_t>(Action::Menu)]));
-    CHECK(plate.find(menuKey) != std::string::npos);
+    CHECK(plate == "3 NEW LEADS - " + menuKey);
 
     // AND IT GOES. Three seconds of steps and the notice is down.
     session.stepMany(sim::MoveInput{}, 200);
@@ -144,8 +147,8 @@ TEST_CASE("the lead-opened plate names the key in the hand holding the machine")
     REQUIRE(session.casePlateWanted());
     const std::string plate(session.casePlateLabel());
     INFO("plate: ", plate);
-    CHECK(plate.find("D-PAD UP YOUR CASEBOOK") != std::string::npos);
-    CHECK(plate.find("J YOUR CASEBOOK") == std::string::npos);
+    // UI-EA (LANE HUD): the dieted notice grammar, in the pad's own words.
+    CHECK(plate == "3 NEW LEADS - D-PAD UP");
 }
 
 TEST_CASE("a lead that opens nothing new announces nothing") {
@@ -581,7 +584,7 @@ TEST_CASE("the lead-opened notice keeps the middle of the screen clear, and outr
         both.placePlate = "THE GILDED GULL - ROOMS";
         both.placePlateFade = 1.0F;
         both.placePlateDrift = -1.0F;
-        both.casePlate = "3 NEW LEADS  J YOUR CASEBOOK";
+        both.casePlate = "3 NEW LEADS - J";
         both.casePlateFade = 1.0F;
         // AT THE LOWEST POINT ITS OWN DRIFT CAN PUT IT -- the one instant it
         // comes closest to the play space.

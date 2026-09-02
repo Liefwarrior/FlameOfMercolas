@@ -1165,6 +1165,12 @@ TEST_CASE("the opening hint is generated from the bindings and re-words live") {
     // The S3 verification gap, closed: the hint is openingHintLine() off the
     // live table now (J for journal, the owner's own convention call), and a
     // pad press while it is still up re-words it.
+    //
+    // UI-EA (LANE HUD): LIVE VERBS ONLY. The old band advertised
+    // "< > MORE PAGES" on a street where PagePrev/PageNext do nothing (flow
+    // map violation #11); the diet's hint names the three verbs a stranger
+    // can actually press where they stand -- notes, map, hand -- keycap then
+    // verb, no filler.
     SessionConfig config;
     config.contentDir = content::contentDir();
     config.openingPage = true;
@@ -1172,9 +1178,9 @@ TEST_CASE("the opening hint is generated from the bindings and re-words live") {
     if (session.lastMessage().empty()) {
         return;  // no authored case in this content dir; nothing to word
     }
-    CHECK(session.lastMessage() == "J YOUR NOTES  < > MORE PAGES  E USE");
+    CHECK(session.lastMessage() == "J NOTES  M MAP  E USE");
     session.noteInputDevice(InputDevice::Pad);
-    CHECK(session.lastMessage() == "D-PAD UP YOUR NOTES  LB RB MORE PAGES  A USE");
+    CHECK(session.lastMessage() == "D-PAD UP NOTES  SELECT MAP  A USE");
     session.noteInputKey(Key::A);
-    CHECK(session.lastMessage() == "J YOUR NOTES  < > MORE PAGES  E USE");
+    CHECK(session.lastMessage() == "J NOTES  M MAP  E USE");
 }
