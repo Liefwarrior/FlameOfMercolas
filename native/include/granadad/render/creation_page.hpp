@@ -73,6 +73,21 @@ struct CreationPageRow {
     Rgb accent = panelInk().accent;
     bool selectable = true;
     bool labelTakesAccent = false;
+    /// THE WIDTH THIS ROW'S VALUE VOTES AT MEASURE TIME, in cells, when it is
+    /// wider than the value it currently holds; 0 (the default) means the
+    /// value's own length, which is right for every row whose value only
+    /// changes when the composition would legitimately change anyway.
+    ///
+    /// The exception this exists for is the sheet's NAME row: its value is
+    /// the LIVE TYPED NAME, so a measure that reads the value's own length
+    /// wiggles the frame in 2-cell steps while the player types -- the ship
+    /// note's "worst screen in the game" tell. The NAME row sets this to
+    /// kMaxNameLength and the measure votes as if the name were already at
+    /// the cap, so the frame is sized once for the widest legal name and
+    /// holds still under every keystroke. Only the MEASURE reads it; the
+    /// draw still lays out the real value, and the spare cells are ordinary
+    /// pane emptiness.
+    int measureValueCells = 0;
 };
 
 /// How the master list lays its rows out. Both are the same grammar -- numbered,

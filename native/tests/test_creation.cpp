@@ -1715,6 +1715,45 @@ TEST_CASE("moving the cursor moves nothing but the highlight and the detail pane
     CHECK(first.ruleRows == later.ruleRows);
 }
 
+TEST_CASE("typing a name moves nothing: the sheet is measured at the cap") {
+    // THE SHIP NOTE'S SHEET WIGGLE, PINNED. The NAME row's value is the live
+    // typed name, and it used to vote on the width measure at its own
+    // length, so a name past UNSET's five glyphs widened the frame in 2-cell
+    // steps while the player typed. The measure votes at kMaxNameLength now
+    // (CreationPageRow::measureValueCells), so the frame is sized once for
+    // the widest legal name and every keystroke lands inside it.
+    render::CreationFlow flow = atSheet();
+    flow.chooseCustomizeRow();  // the cursor opens on NAME; this opens entry
+    REQUIRE(flow.editingName());
+
+    for (const int size : {360, 540, 1080}) {
+        const int width = size * 16 / 9;
+        // Rub any suggested name out so the walk below covers empty -> cap.
+        while (!flow.name().empty()) {
+            flow.backspaceName();
+        }
+        const render::CreationLayout empty = render::creationLayout(flow.page(), width, size);
+        REQUIRE(empty.usable);
+        // One glyph at a time to the cap, the frame identical at every step
+        // -- geometry, not just width: seat, panes, divider, rules, foot.
+        const char* cap = "BARTHOLOMEWDANES";  // kMaxNameLength glyphs
+        for (std::size_t i = 0; i < render::kMaxNameLength; ++i) {
+            flow.typeNameChar(cap[i]);
+            const render::CreationLayout typed =
+                render::creationLayout(flow.page(), width, size);
+            INFO("at ", width, "x", size, " after ", i + 1, " glyph(s)");
+            CHECK(typed.bounds.x == empty.bounds.x);
+            CHECK(typed.bounds.y == empty.bounds.y);
+            CHECK(typed.bounds.w == empty.bounds.w);
+            CHECK(typed.bounds.h == empty.bounds.h);
+            CHECK(typed.listRect.w == empty.listRect.w);
+            CHECK(typed.detailRect.x == empty.detailRect.x);
+            CHECK(typed.navBand.y == empty.navBand.y);
+            CHECK(typed.ruleRows == empty.ruleRows);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // THE ON-SCREEN KEYBOARD
 // ---------------------------------------------------------------------------

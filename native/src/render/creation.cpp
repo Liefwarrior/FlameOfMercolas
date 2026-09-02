@@ -1968,6 +1968,12 @@ CreationPageRow CreationFlow::pageRowFor(const CustomizeRow& row) const {
             out.label = "NAME";
             out.value = name_.empty() ? "UNSET" : name_;
             out.accent = panelInk().accent;
+            // THE SHEET WIGGLE, HELD STILL: this value is the LIVE TYPED
+            // NAME, the one master-list value in the flow that changes under
+            // the player's hands, and a measure that read its length moved
+            // the frame in 2-cell steps while typing. The measure votes at
+            // the cap instead -- see CreationPageRow::measureValueCells.
+            out.measureValueCells = static_cast<int>(kMaxNameLength);
             break;
         case CustomizeRow::Kind::Appearance: {
             const sim::WardType type =
