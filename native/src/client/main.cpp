@@ -35,8 +35,11 @@
 #include "granadad/render/controls.hpp"
 #include "granadad/render/creation.hpp"
 #include "granadad/render/demo.hpp"
+#include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/keys_page.hpp"
 #include "granadad/render/map_view.hpp"
+#include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/step_pump.hpp"
 #include "granadad/sim/angle.hpp"
@@ -1880,8 +1883,36 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         }
         return true;
     }
+    if (session.keysOpen()) {
+        // THE CONTROLS PAGE. keysRowAtPixel is the exact inverse of what
+        // drawKeysPage drew (same composition, same whole-list plan, same
+        // scroll). A row here is a reference, not a choice -- the number keys
+        // only move the cursor (chooseVisibleTopic's own keysOpen_ rule) -- so
+        // hover AND click both put the cursor on the row, through the same
+        // moveTopicCursor a W press walks, and nothing else fires.
+        const render::KeysPageState page = session.keysPageState();
+        const int at = render::keysRowAtPixel(page, frameWidth, frameHeight, px, py);
+        if (at >= 0 && at != page.cursor) {
+            // The exact delta lands exactly: the keysOpen_ cursor wraps modulo
+            // the list (wrapCursorAndPage), and |delta| < count here.
+            session.moveTopicCursor(at - page.cursor);
+        }
+        return true;
+    }
     if (session.casebookPageOpen()) {
         const render::CasebookPageState page = session.casebookPageState();
+        // THE TAB ROW FIRST -- the ship note names it: LEFT/RIGHT worked and
+        // clicking LEADS / THE CASE did nothing. Hover deliberately does NOT
+        // switch the view (the tab row is not a cursor; a pointer crossing the
+        // frame must not flip the detail pane), so this is click-only, through
+        // the same cycleCasebookTab an arrow press turns.
+        const int tab = render::casebookTabAtPixel(page, frameWidth, frameHeight, px, py);
+        if (tab >= 0) {
+            if (click && tab != static_cast<int>(page.tab)) {
+                session.cycleCasebookTab(tab - static_cast<int>(page.tab));
+            }
+            return true;
+        }
         const int at = render::casebookLeadAtPixel(page, frameWidth, frameHeight, px, py);
         if (at < 0) {
             return true;
@@ -1892,12 +1923,146 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         }
         return true;
     }
-    // EVERY OTHER PAGE STILL SWALLOWS THE CLICK. The keys page, the options
-    // page, the grimoire, the wait page, the pause menu and a conversation have
-    // no hit-test of their own yet (see the report: three surfaces have one,
-    // six do not), and until they do the honest behaviour is "the page is
-    // modal": a click lands on the page and stops there rather than swinging a
-    // fist at somebody through it, which is what it did before this pass.
+    if (session.casebookOpen()) {
+        // THE TILED MENU -- the three top tiles plus the unfocused Journal
+        // band (Journal FOCUS is the composed book page, handled above). The
+        // state handed to the hit-test is assembled from the same four public
+        // views drawFrame assembles its own from; only list geometry is read
+        // (topics, cursor, page, the Journal's prose, an open letter), so the
+        // focus eases and the alert routing the drawing also carries cannot
+        // move a row.
+        render::MenuTileState tiles;
+        tiles.open = true;
+        tiles.character = session.characterPanelView();
+        tiles.map = session.mapPanelView();
+        tiles.letters = session.lettersPanelView();
+        tiles.journal = session.journalPanelView();
+        tiles.focus = session.menuFocus();
+        const render::MenuTileHit hit =
+            render::menuTileHitAtPixel(tiles, frameWidth, frameHeight, px, py);
+        if (hit.tile < 0) {
+            // The frame, a rule, a divider: on the page, not on a tile.
+            return true;
+        }
+        if (hit.tile == render::kMenuFocusJournal) {
+            // FOCUSING THE JOURNAL SWAPS THE WHOLE SURFACE (casebookPageOpen
+            // becomes true and the composed book replaces the tiles), so it is
+            // a CLICK verb, never a hover one -- a pointer drifting across the
+            // bottom band must not tear the screen out from under itself.
+            if (click) {
+                session.setMenuFocus(render::kMenuFocusJournal);
+            }
+            return true;
+        }
+        // HOVER FOCUSES THE TILE UNDER THE POINTER -- Session's own
+        // setMenuFocus, the same focus state the bumpers cycle, so there is
+        // no second focus the pad cannot see.
+        session.setMenuFocus(hit.tile);
+        if (hit.row >= 0) {
+            const render::DialogueViewState& view = hit.tile == render::kMenuFocusCharacter
+                                                        ? tiles.character
+                                                    : hit.tile == render::kMenuFocusMap
+                                                        ? tiles.map
+                                                        : tiles.letters;
+            if (hit.row != view.cursor) {
+                // The same wrap-by-delta a held arrow walks; exact for
+                // |delta| < count.
+                session.moveTopicCursor(hit.row - view.cursor);
+            }
+            if (click) {
+                // The commit: opens a letter under the pointer; on the
+                // Character and Chart tiles chooseTopic is the same honest
+                // read-only no-op a number press is.
+                session.chooseTopic(static_cast<std::size_t>(hit.row));
+            }
+        } else if (hit.more && click) {
+            session.nextTopicPage();
+        }
+        return true;
+    }
+    if (session.picking()) {
+        // THE WIRE. Not a composed page -- the lock is one HUD row (a mode,
+        // hud.cpp's own ruling) -- so there is no geometry to invert. The
+        // pointer's verbs mirror the keys the row advertises: a click PROBES,
+        // exactly what SPACE does, and the wheel already walks the pick
+        // through route_menu_key's QuickPrev/QuickNext. Off the row or on it,
+        // the click stays on the mode.
+        if (click) {
+            session.probeLock();
+        }
+        return true;
+    }
+    if (session.pauseOpen() || session.optionsOpen() || session.grimoireOpen() ||
+        session.waitOpen() || session.talking()) {
+        // FIVE PAGES, ONE WIDGET, ONE HIT-TEST. The pause menu, the options
+        // page, the grimoire, the wait page and a live conversation all draw
+        // their list through drawDialogue's bottom band, so
+        // dialogueTopicAtPixel is the mouse for all five -- the same economy
+        // that made them one drawing. The branch order below is dialogueView's
+        // own dispatch order, so the cursor moved is the cursor drawn.
+        const render::DialogueViewState view = session.dialogueView();
+        if (view.haggling || view.forging || view.letter) {
+            // The counter, the workbench and an open letter stay modal for
+            // now: the band's body is not the topic list there, and a click
+            // must still not swing a fist through the panel.
+            return true;
+        }
+        const render::DialogueTopicHit hit =
+            render::dialogueTopicAtPixel(view, frameWidth, frameHeight, px, py);
+        if (hit.more) {
+            // The 0 MORE row: a click turns the page, exactly what 0 does.
+            if (click) {
+                if (session.waitOpen()) {
+                    session.nextWaitPage();
+                } else if (session.grimoireOpen()) {
+                    session.nextGrimoirePage();
+                } else {
+                    session.nextTopicPage();
+                }
+            }
+            return true;
+        }
+        if (hit.index < 0) {
+            return true;
+        }
+        // HOVER MIRRORS THE CURSOR -- the same per-page move a D-pad press
+        // makes, by exact delta (every one of these cursors wraps modulo its
+        // own count, and |delta| < count). Only when it actually moves, so a
+        // resting pointer costs nothing and cannot, say, disarm QUIT.
+        const int delta = hit.index - view.cursor;
+        if (delta != 0) {
+            if (session.waitOpen()) {
+                session.moveWaitCursor(delta);
+            } else if (session.pauseOpen()) {
+                session.movePauseCursor(delta);
+            } else if (session.grimoireOpen()) {
+                session.moveGrimoireCursor(delta);
+            } else if (session.optionsOpen()) {
+                session.moveOptionCursor(delta);
+            } else {
+                session.moveTopicCursor(delta);
+            }
+        }
+        if (click) {
+            // A CLICK IS SELECT-THEN-CONFIRM (the map's own rule): the commit
+            // is each page's ENTER -- pass the hours, ready the crafting,
+            // fire the pause row, nudge or arm the option, say the thing.
+            if (session.waitOpen()) {
+                session.chooseWaitRow(hit.slot);
+            } else if (session.grimoireOpen()) {
+                session.chooseGrimoireRow(hit.slot);
+            } else if (session.optionsOpen()) {
+                session.chooseOption();
+            } else {
+                session.chooseVisibleTopic(hit.slot);
+            }
+        }
+        return true;
+    }
+    // ANY PAGE STILL WITHOUT ITS OWN HIT-TEST STAYS MODAL: a click lands on
+    // the page and stops there rather than swinging a fist at somebody
+    // through it. After the pointer pass this is the closing tail of an
+    // animation and nothing else.
     return pointer_page_open(session);
 }
 

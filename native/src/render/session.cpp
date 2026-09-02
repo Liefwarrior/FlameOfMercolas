@@ -2311,6 +2311,12 @@ CasebookPageState Session::casebookPageState() const {
             ? std::string(promptBackKey(InputDevice::Pad))
             : std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::Menu)]));
     page.lookKey = std::string(promptLabel(controls_, Action::Interact, promptDevice_));
+    // SHIP NOTE SEAM 3 (pointer lane, flagged): the page's commit verbs and
+    // the nav band's GO TO IT read the page-grammar confirm for the hand that
+    // is actually holding the machine -- ENTER, or A -- through the same
+    // promptConfirmKey the dialogue widget already flows. One state field, the
+    // exact `closeKey` shape above.
+    page.confirmKey = std::string(promptConfirmKey(promptDevice_));
 
     const std::vector<std::int32_t> heard = casebook_.known();
     page.known = static_cast<std::int32_t>(heard.size());
@@ -2445,6 +2451,22 @@ void Session::menuPageNext() {
         audio_->playOneShot(audio::SoundId::BookFlip);
     }
     menuFocus_ = ((menuFocus_ + 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
+}
+
+void Session::setMenuFocus(int focus) {
+    // THE POINTER PASS (pointer lane, flagged): the mouse's own door onto the
+    // focus the bumpers cycle -- setCasebookCursor's "a printed digit, or a
+    // mouse click" shape, applied to tiles. ONE page-turn when the focus
+    // actually moves, not one per step a cycle would have taken: a hover
+    // crossing from Character to Letters is one gesture, and three stacked
+    // BookFlips for it would be a sound bug a case cannot see.
+    if (!casebookOpen_ || focus < 0 || focus >= kMenuFocusCount || focus == menuFocus_) {
+        return;
+    }
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::BookFlip);
+    }
+    menuFocus_ = focus;
 }
 
 void Session::menuPagePrev() {

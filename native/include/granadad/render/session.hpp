@@ -643,6 +643,12 @@ public:
     void menuPageNext();
     /// The same cycle, backward.
     void menuPagePrev();
+    /// THE POINTER PASS: focus by NAME rather than by cycling -- a hover or a
+    /// click landing on a tile, setCasebookCursor's "a printed digit, or a
+    /// mouse click" shape. One BookFlip when the focus actually moves; a
+    /// no-op while the tiled Menu is not open, out of range, or already
+    /// there.
+    void setMenuFocus(int focus);
     /// Which of the tiled Menu's four tiles currently has input focus --
     /// kMenuFocusCharacter/Map/Letters/Journal (menu_view.hpp). Arrow keys,
     /// the printed numbers and ENTER all act on this one; the other three
