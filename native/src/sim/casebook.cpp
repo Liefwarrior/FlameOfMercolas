@@ -63,9 +63,17 @@ std::filesystem::path casebookRawsPath(const std::filesystem::path& contentDir) 
     return contentDir / "raws" / "quests" / "casebook.json";
 }
 
+std::filesystem::path missionSheetRawsPath(const std::filesystem::path& contentDir) {
+    return contentDir / "raws" / "quests" / "mission_sheet.json";
+}
+
 CasebookRaws CasebookRaws::load(const std::filesystem::path& contentDir) {
+    return loadFile(casebookRawsPath(contentDir));
+}
+
+CasebookRaws CasebookRaws::loadFile(const std::filesystem::path& path) {
     CasebookRaws out;
-    std::ifstream file(casebookRawsPath(contentDir));
+    std::ifstream file(path);
     if (!file) {
         // SILENT, deliberately, and for the same reason every other loader in
         // this build is: a content edit must not be able to stop the game

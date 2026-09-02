@@ -144,6 +144,12 @@ struct DreadBand {
 class CasebookRaws {
 public:
     [[nodiscard]] static CasebookRaws load(const std::filesystem::path& contentDir);
+    /// THE SECOND CASE (owner's courier brief). The same parse over an exact
+    /// file path, so a second authored case is a second FILE rather than a
+    /// second schema -- the letters' own file-per-content-block law
+    /// (letters.hpp header) applied to the trail itself. load() above is this
+    /// with casebookRawsPath() filled in; nothing about the parse differs.
+    [[nodiscard]] static CasebookRaws loadFile(const std::filesystem::path& file);
 
     [[nodiscard]] bool loaded() const noexcept { return !leads_.empty(); }
     [[nodiscard]] const std::vector<Lead>& leads() const noexcept { return leads_; }
@@ -181,6 +187,13 @@ private:
 };
 
 [[nodiscard]] std::filesystem::path casebookRawsPath(const std::filesystem::path& contentDir);
+/// content/raws/quests/mission_sheet.json -- the courier case (owner's brief:
+/// "a courier brings a mission sheet to the player"). A SECOND case file with
+/// the SAME top-level shape ("case" + "leads"), never "stages" and never
+/// "templates" at top level: QuestBook::load and RadiantRaws::load both
+/// enumerate this directory keyed on exactly those two arrays, and a file that
+/// grew either would be silently loaded into a hashed system.
+[[nodiscard]] std::filesystem::path missionSheetRawsPath(const std::filesystem::path& contentDir);
 
 /// What one look produced.
 struct LookResult {

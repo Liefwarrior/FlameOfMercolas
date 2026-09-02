@@ -41,9 +41,17 @@ std::filesystem::path letterRawsPath(const std::filesystem::path& contentDir) {
     return contentDir / "raws" / "quests" / "bloodletter_letters.json";
 }
 
+std::filesystem::path missionSheetLetterRawsPath(const std::filesystem::path& contentDir) {
+    return contentDir / "raws" / "quests" / "mission_sheet_letters.json";
+}
+
 LetterRaws LetterRaws::load(const std::filesystem::path& contentDir) {
+    return loadFile(letterRawsPath(contentDir));
+}
+
+LetterRaws LetterRaws::loadFile(const std::filesystem::path& path) {
     LetterRaws out;
-    std::ifstream file(letterRawsPath(contentDir));
+    std::ifstream file(path);
     if (!file) {
         // SILENT, deliberately, and for the same reason casebook.cpp's own
         // loader is: a content edit must not be able to stop the game
@@ -75,6 +83,10 @@ LetterRaws LetterRaws::load(const std::filesystem::path& contentDir) {
         letter.body = bodyField(node);
         letter.closing = stringField(node, "closing");
         letter.signature = stringField(node, "signature");
+        // COURIER CASE. Absent reads false, so every letter authored before
+        // the flag existed keeps exactly the gate it always had.
+        const auto handed = node.find("handed");
+        letter.handed = handed != node.end() && handed->is_boolean() && handed->get<bool>();
         out.letters_.push_back(std::move(letter));
     }
     // AUTHORED ORDER IS KEPT, same as casebook.cpp's own leads_ -- nothing
