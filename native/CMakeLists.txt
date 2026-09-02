@@ -536,6 +536,14 @@ if(GRANADAD_BUILD_TESTS)
         # sim's blood oath keeps, applied to a session-scripted case.
         tests/test_mission_sheet.cpp
         tests/test_case_line.cpp
+        # FAST TRAVEL -- the ward map's second commit verb. The cost math
+        # (route length at the shipped walking pace, in integers), each
+        # refusal predicate (carrying the courier's man, the Watch closing,
+        # the wait page's own safe-spot list), a travel taken advancing the
+        # clock by exactly its restated minutes, and two identical travels
+        # ending byte-identical -- the twin-run discipline the sim's blood
+        # oath keeps, applied to a session-scripted feature.
+        tests/test_travel.cpp
         tests/test_firstrun.cpp
         # The pause menu ESC opens when nothing else has already claimed the
         # keyboard -- RESUME, SETTINGS and a QUIT that asks twice, replacing
