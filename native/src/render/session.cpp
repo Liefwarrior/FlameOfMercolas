@@ -3174,9 +3174,12 @@ CasebookPageState Session::casebookPageState() const {
         const double dy = static_cast<double>(lead.site.y) - static_cast<double>(py);
         const std::int32_t paces =
             static_cast<std::int32_t>(std::lround(std::sqrt(dx * dx + dy * dy)));
+        // `NE 40`, the map badge's own form (UI-EA-SPEC sec. 5): the number
+        // stays exact, the unit word retires -- paces are the only distance
+        // this game ever states, so the unit was decoration.
         row.bearing =
             std::string(sim::compass_point(sim::bearingTo(px, py, lead.site.x, lead.site.y))) +
-            "  " + std::to_string(paces) + " PACES";
+            " " + std::to_string(paces);
         if (lead.site.band != body_->band()) {
             // A LEAD ON ANOTHER PLANE SAYS SO. Two of the twelve are one band
             // down; a bearing and a distance with no band on them would send a

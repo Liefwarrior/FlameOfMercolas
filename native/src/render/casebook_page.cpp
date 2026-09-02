@@ -75,7 +75,7 @@ namespace {
     return place;
 }
 
-/// THE COMPOSITION. Seven bands, three of which are rules, and a master/detail
+/// THE COMPOSITION. Five bands, two of which are rules, and a master/detail
 /// split in the body -- keys_page.cpp's shape, because it is the shape the
 /// reference's master/detail frame has and this page is the second surface the
 /// spec names for it by name.
@@ -84,14 +84,11 @@ struct Composition {
     PanelRect bounds;
     PanelRect interior;
     int tabRow = 0;
-    int headerRow = 0;
-    int headerRows = 0;
     int bodyRow = 0;
     int bodyRows = 0;
     int navRow = 0;
     std::vector<int> ruleRows;
     MasterDetail body;
-    PanelRect headerBand;
     PanelRect bodyBand;
     PanelRect navBand;
     bool usable = false;
@@ -129,6 +126,12 @@ inline constexpr int kMinDetailCells = 30;
 /// cursor reaches every row regardless.
 inline constexpr int kDirectSelectRows = 9;
 
+/// THE PAGING CAP (UI-EA-SPEC 1.5 #27): the lead list pages at eight rows,
+/// `+N` riding the rule under the body saying what waits below the fold. The
+/// walked-out book was a fifty-word wall; eight leads is a screenful a reader
+/// actually reads.
+inline constexpr int kLeadPageRows = 8;
+
 /// THE NAV BAND ASKS ITS OWN LIST HOW MANY ROWS IT NEEDS, which is the pattern
 /// the map pass handed on and the reason this composition takes a row count
 /// rather than assuming one.
@@ -142,15 +145,21 @@ inline constexpr int kDirectSelectRows = 9;
 /// that quietly stops naming the way out is worse than a footer that spends a
 /// second row.
 [[nodiscard]] std::vector<PanelOption> navOptionsFor(const CasebookPageState& state) {
+    // THE RAISED (TUTOR) FORM -- the band is PLANNED against this so its
+    // geometry holds still while the verb words fade (UI-EA-SPEC sec. 2); at
+    // rest the drawing blanks the labels and bare keycaps remain. The cursor
+    // keys are the keycap motifs (sec. 5): `UP DOWN` and `LEFT RIGHT` retire
+    // for arrowheads, worth ten cells a row to the narrowest window.
     const Rgb accent = panelInk().accent;
     return {
-        PanelOption{"UP DOWN", "NEXT LEAD", "", accent, InkRole::Dim, false},
-        PanelOption{"LEFT RIGHT", state.tab == CasebookTab::Leads ? "THE CASE" : "THE LEADS", "",
-                    accent, InkRole::Dim, false},
+        PanelOption{std::string(kGlyphUpDown), "LEAD", "", accent, InkRole::Dim, false},
+        PanelOption{std::string(kGlyphLeft) + std::string(kGlyphRight),
+                    state.tab == CasebookTab::Leads ? "CASE" : "LEADS", "", accent, InkRole::Dim,
+                    false},
         // SHIP NOTE SEAM 3: the confirm is the state's device-worded key, not
         // a hardcoded ENTER -- a pad reads A GO TO IT here, live.
-        PanelOption{state.commitKey.empty() ? std::string("ENTER") : state.commitKey, "GO TO IT",
-                    "", accent, InkRole::Dim, false},
+        PanelOption{state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey,
+                    "GO TO IT", "", accent, InkRole::Dim, false},
         PanelOption{state.closeKey.empty() ? std::string("J") : state.closeKey, "CLOSE", "",
                     accent, InkRole::Dim, false},
     };
@@ -227,11 +236,14 @@ inline constexpr int kMinBodyRows = 8;
     out.interior = PanelRect{out.bounds.x + out.metric.cellW(), out.bounds.y + out.metric.cellH(),
                              out.metric.widthOf(cells - 2), out.metric.heightOf(rows - 2)};
 
+    // ONE HEADER LINE (UI-EA-SPEC sec. 5, breadcrumb law): the tab row --
+    // title, tabs, resource readout -- IS the breadcrumb. The old two-row
+    // instruction band and its rule are gone; a bouncer's warning overdraws
+    // the tab row while it lasts, and the selection is named once, on the
+    // detail pane's badge.
     const std::vector<PanelRect> bands = splitRows(out.interior, out.metric,
                                                    {
                                                        spanCells(1),   // the tab row
-                                                       spanCells(1),   // rule
-                                                       spanCells(2),   // the instruction
                                                        spanCells(1),   // rule
                                                        spanWeight(1),  // the body
                                                        spanCells(1),        // rule
@@ -241,15 +253,12 @@ inline constexpr int kMinBodyRows = 8;
         return (band.y - out.interior.y) / out.metric.cellH();
     };
     out.tabRow = rowOf(bands[0]);
-    out.headerBand = bands[2];
-    out.headerRow = rowOf(bands[2]);
-    out.headerRows = out.metric.rowsIn(bands[2].h);
-    out.bodyBand = bands[4];
-    out.bodyRow = rowOf(bands[4]);
-    out.bodyRows = out.metric.rowsIn(bands[4].h);
-    out.navBand = bands[6];
-    out.navRow = rowOf(bands[6]);
-    out.ruleRows = {rowOf(bands[1]), rowOf(bands[3]), rowOf(bands[5])};
+    out.bodyBand = bands[2];
+    out.bodyRow = rowOf(bands[2]);
+    out.bodyRows = out.metric.rowsIn(bands[2].h);
+    out.navBand = bands[4];
+    out.navRow = rowOf(bands[4]);
+    out.ruleRows = {rowOf(bands[1]), rowOf(bands[3])};
     out.body =
         splitMasterDetail(out.bodyBand, out.metric, kMasterShare, kMinMasterCells, kMinDetailCells);
     out.usable = out.bodyRows > kIndicatorRows;
@@ -331,15 +340,20 @@ inline constexpr int kMinBodyRows = 8;
 /// row there reads as a bug and "NOBODY -- IT IS A PLACE" reads as an answer.
 /// That is the reference's own `no trinket`.
 [[nodiscard]] std::vector<PanelFact> leadFactsFor(const CasebookLeadRow& row) {
+    // THE DIET (UI-EA-SPEC 1.5): three facts, one word of label each. WHO
+    // carries the trade after a comma instead of spending a THEY ARE row; the
+    // bearing left this block for the commit verb's own restatement, where the
+    // walk is the cost; `--` costs zero words and still says "considered".
+    // Three rows for EVERY row of the book, so nothing below them moves as the
+    // cursor walks it.
+    std::string who = row.who.empty() ? std::string("A PLACE") : row.who;
+    if (!row.who.empty() && !row.whoWhat.empty()) {
+        who += ", " + row.whoWhat;
+    }
     return {
-        PanelFact{"WHERE", row.place, InkRole::Prose},
-        PanelFact{"WHO", row.who.empty() ? std::string("NOBODY -- IT IS A PLACE") : row.who,
-                  row.who.empty() ? InkRole::Dim : InkRole::Prose},
-        PanelFact{"THEY ARE", row.whoWhat.empty() ? std::string("--") : row.whoWhat,
-                  row.whoWhat.empty() ? InkRole::Dim : InkRole::Prose},
+        PanelFact{"AT", row.place, InkRole::Prose},
+        PanelFact{"WHO", who, row.who.empty() ? InkRole::Dim : InkRole::Prose},
         PanelFact{"HEARD", row.heard.empty() ? std::string("--") : row.heard, InkRole::Number},
-        PanelFact{"FROM YOU", row.here ? std::string("YOU ARE STANDING IN IT") : row.bearing,
-                  row.here ? InkRole::Number : InkRole::Prose},
     };
 }
 
@@ -350,11 +364,14 @@ inline constexpr int kMinBodyRows = 8;
 /// know that number, so printing it would tell them how much they have not
 /// found -- which is the one thing an investigation must not hand over.
 [[nodiscard]] std::vector<PanelFact> caseFactsFor(const CasebookPageState& state) {
+    // Tallies as tallies (UI-EA-SPEC 1.5 #29): `4/9` is the census's own
+    // one-word form, and 9 is still `known`, never the file's total -- the
+    // count stays worded honestly, just shorter. THEY CALL YOU keeps its
+    // clause: it is the ward talking, not the machine.
     return {
-        PanelFact{"LEADS READ", std::to_string(state.read) + " OF " + std::to_string(state.known) +
-                                    " IN THE BOOK",
+        PanelFact{"READ", std::to_string(state.read) + "/" + std::to_string(state.known),
                   InkRole::Number},
-        PanelFact{"STILL WAITING", std::to_string(std::max(0, state.known - state.read)),
+        PanelFact{"WAITING", std::to_string(std::max(0, state.known - state.read)),
                   InkRole::Number},
         PanelFact{"DEAD ENDS", std::to_string(state.cold), InkRole::Dim},
         PanelFact{"THEY CALL YOU", state.calledYou, InkRole::Prose},
@@ -419,28 +436,17 @@ inline constexpr int kMinBodyRows = 8;
     // the frame's width. "ENTER" LITERALLY, not state.commitKey: the pad's
     // "A" is shorter, and a measure that followed the device would resize
     // the card mid-frame on a live switch. Widest variant, held.
-    const std::string look = "ENTER - LOOK AT IT (" + state.lookKey + " DOES IT OUT THERE)";
+    const std::string look = "ENTER - LOOK AT IT (" + state.lookKey + ")";
     detail = std::max(detail, static_cast<int>(look.size()));
 
     int want = masterDetailCellsFor(kMasterShare, kMinMasterCells, master, detail);
 
-    // The single rows that must shed nothing: the tab row and the crumb path
-    // at its LONGEST leaf, because the leaf follows the cursor and the cursor
-    // may not move the frame. The nav band gets no vote -- unlike creation's
-    // one-row band it already knows how to take a second row, and does.
+    // The one single row that must shed nothing: the tab row, which is the
+    // page's whole header now (the breadcrumb line is gone -- UI-EA-SPEC
+    // sec. 5's one-header-line law). The nav band gets no vote -- unlike
+    // creation's one-row band it already knows how to take a second row.
     const std::vector<PanelTab> tabs{PanelTab{"", "LEADS"}, PanelTab{"", "THE CASE"}};
     want = std::max(want, tabRowCells(state.title, tabs, state.readout));
-    int leaf = static_cast<int>(std::string_view("THE CASE").size());
-    for (const CasebookLeadRow& row : state.rows) {
-        const std::string& label = row.brief.empty() ? row.place : row.brief;
-        leaf = std::max(leaf, static_cast<int>(label.size()));
-    }
-    std::vector<std::string> crumbs{state.title};
-    if (!state.caseTitle.empty()) {
-        crumbs.push_back(state.caseTitle);
-    }
-    crumbs.push_back(std::string(static_cast<std::size_t>(leaf), 'X'));
-    want = std::max(want, breadcrumbCells(crumbs));
 
     return panelMeasureCells(metric.cellsIn(frameWidth), want + 2);
 }
@@ -483,11 +489,16 @@ inline constexpr int kMinBodyRows = 8;
 
     // SIZE THE BODY TO WHAT IS IN IT. The list is measured against the FULL
     // pane on purpose: a planner asked against a pane too short to hold its
-    // content answers with the pane, and the answer wanted here is the content.
+    // content answers with the pane, and the answer wanted here is the content
+    // -- CAPPED at the paging rule (UI-EA-SPEC 1.5 #27): past eight leads the
+    // list pages rather than growing the body, and `+N` on the rule says so.
     const int listNeed =
         state.rows.empty()
             ? 1
-            : planOptionList(optionsFor(state.rows), listRectOf(out), out.metric, listStyle()).rows;
+            : std::min(kLeadPageRows,
+                       planOptionList(optionsFor(state.rows), listRectOf(out), out.metric,
+                                      listStyle())
+                           .rows);
     const int hold = kDetailHoldRows;
     // One blank row of breathing space under the taller half -- the same the
     // panes already leave between their content and their stippled field.
@@ -508,21 +519,18 @@ inline constexpr int kMinBodyRows = 8;
 /// SAME list the pane will pin, rather than a second description of it.
 [[nodiscard]] std::vector<PanelLine> effectLinesFor(const CasebookLeadRow& row,
                                                     const Rgb& accent) {
+    // TERSE BULLETS (UI-EA-SPEC 1.5 #28): one-word names -- FROM, FOR, OPENED
+    // -- with the world words whole after them. The lead with no opener says
+    // nothing about it: the case badge is one pane over.
     std::vector<PanelLine> out;
-    if (row.from.empty()) {
-        // THE ONE LEAD WITH NO OPENER. Said as a whole sentence rather than as
-        // "TOLD YOU BY THE CASE OPENED HERE", which is what a named-effect
-        // bullet makes of it and which reads as two half-sentences collided.
-        out.push_back(PanelLine{Bullet::Dot, "", "THE CASE OPENED HERE.", InkRole::Dim, accent});
-    } else {
+    if (!row.from.empty()) {
         // WHAT TOLD YOU TO COME HERE is what makes a trail a trail rather than a
         // list of addresses, and it wraps because the Drowned Hold is named by
-        // FOUR separate leads -- which is what corroboration is, and a pane that
-        // showed only the first of the four would hide the shape of the case.
-        out.push_back(PanelLine{Bullet::Dot, "TOLD YOU BY", row.from, InkRole::Prose, accent});
+        // FOUR separate leads -- which is what corroboration is.
+        out.push_back(PanelLine{Bullet::Dot, "FROM", row.from, InkRole::Prose, accent});
     }
     if (row.state == CasebookLeadState::Open) {
-        out.push_back(PanelLine{Bullet::Dot, "GO FOR", row.what, InkRole::Prose, accent});
+        out.push_back(PanelLine{Bullet::Dot, "FOR", row.what, InkRole::Prose, accent});
         return out;
     }
     for (const std::string& opened : row.opened) {
@@ -530,25 +538,27 @@ inline constexpr int kMinBodyRows = 8;
         out.push_back(PanelLine{Bullet::Dot, "OPENED", opened, InkRole::Number, accent});
     }
     if (row.opened.empty()) {
-        out.push_back(row.close
-                          ? PanelLine{Bullet::Dot, "", "THE TRAIL ENDS HERE.", InkRole::Number,
-                                      accent}
-                          : PanelLine{Bullet::Dot, "", "IT OPENED NOTHING.", InkRole::Dim,
-                                      accent});
+        // Kept for the block's own invariant -- a consequence block is never
+        // empty (test_casebook_page pins it) -- and because a walked lead that
+        // paid nothing is a real answer, not scaffolding.
+        out.push_back(PanelLine{Bullet::Dot, "", "IT OPENED NOTHING.", InkRole::Dim, accent});
     }
     return out;
 }
 
-/// THE FLAVOUR BLOCK -- the clue and the paragraph behind it, or the sentence
-/// that says nobody has stood over this yet.
+/// THE FLAVOUR BLOCK -- the clue and the paragraph behind it. An OPEN lead has
+/// no clue yet and says nothing at all (the FOR bullet below already carries
+/// the errand) -- except on a FRESH book, where the pane's one job is to hand
+/// a stranger the case: the hook prints here, the spec's twenty-word case
+/// brief where fifty words of scaffolding stood.
 [[nodiscard]] std::vector<PanelLine> flavourLinesFor(const CasebookLeadRow& row,
+                                                     const CasebookPageState& state,
                                                      const Rgb& accent) {
     if (row.state == CasebookLeadState::Open) {
-        // NOT YET LOOKED AT, said out loud. The alternative is an empty half of
-        // a pane, which reads as the page failing rather than as the lead
-        // waiting.
-        return {PanelLine{Bullet::None, "", "NOBODY HAS STOOD OVER THIS YET.", InkRole::Dim,
-                          accent}};
+        if (state.read == 0 && !state.hook.empty()) {
+            return {PanelLine{Bullet::None, "", state.hook, InkRole::Prose, accent}};
+        }
+        return {};
     }
     // FLAVOUR -> NAMED EFFECT -> NUMBER, colour-sorted: the clue is what you
     // got, the paragraph is what it means, and the bulleted names in the block
@@ -572,7 +582,7 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
                                                    {
                                                        spanCells(1),   // the subject badge
                                                        spanCells(1),   // air
-                                                       spanCells(5),   // the facts
+                                                       spanCells(3),   // the facts
                                                        spanCells(1),   // air
                                                        spanWeight(1),  // prose, then the verb
                                                    });
@@ -615,7 +625,7 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
     const int proseRows = std::max(0, metric.rowsIn(panes[4].h) - 2);
     const PanelRect prose{panes[4].x, panes[4].y, panes[4].w, metric.heightOf(proseRows)};
 
-    const std::vector<PanelLine> flavour = flavourLinesFor(row, accent);
+    const std::vector<PanelLine> flavour = flavourLinesFor(row, state, accent);
     const std::vector<PanelLine> effects = effectLinesFor(row, accent);
     const int effectRows = std::min(measureProse(prose, metric, effects), proseRows);
     const int flavourRoom = std::max(0, proseRows - effectRows);
@@ -658,26 +668,29 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
     // The WIDTH MEASURE above still votes with the widest fixed "ENTER"
     // variant, deliberately, so the card does not resize on a live device
     // switch -- the stable-geometry rule, one axis over.
-    const std::string commit = state.commitKey.empty() ? std::string("ENTER") : state.commitKey;
+    const std::string commit =
+        state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey;
+    std::string verb;
+    std::string cost;
     if (row.here && row.state == CasebookLeadState::Open) {
-        drawCommitVerb(target, detail, metric, commit + " - LOOK AT IT",
-                       "(" + state.lookKey + " DOES IT OUT THERE)", ink.key, alpha);
+        // The look key restated bare -- "(E)" -- the canon KEY - VERB (COST)
+        // grammar with the explainer clause retired (UI-EA-SPEC 1.5 #28,
+        // commit 8 -> 4).
+        verb = commit + " - LOOK AT IT";
+        cost = "(" + state.lookKey + ")";
     } else if (row.routable) {
-        // THE RESTATEMENT IS THE WALK, not the name. The place is already on the
-        // WHERE row four lines above and in the breadcrumb at the top of the
-        // frame; what pressing this actually costs is crossing the ward, and
-        // that is the number worth putting next to the verb.
-        // NO RESTATEMENT WHEN THERE IS NOTHING TO RESTATE. The FROM YOU row
-        // four lines above already reads YOU ARE STANDING IN IT; a commit line
-        // that says it a second time is the clutter the composition rules say
-        // to cut rather than shrink.
-        drawCommitVerb(target, detail, metric, commit + " - SHOW ME WHERE",
-                       row.here ? std::string() : "(" + row.bearing + ")", ink.key, alpha);
+        // THE RESTATEMENT IS THE WALK, not the name -- and standing on it
+        // there is nothing to restate: HERE, the map page's own state label.
+        verb = commit + " - SHOW IT";
+        cost = row.here ? std::string("(HERE)") : "(" + row.bearing + ")";
     } else {
         const int lastRow = metric.rowsIn(detail.h) - 1;
-        drawCellText(target, detail, metric, 0, lastRow, "NO PLACE ON THE PLAN FOR THIS", ink.dim,
-                     alpha);
+        drawCellText(target, detail, metric, 0, lastRow, "NO PLACE FOR THIS", ink.dim, alpha);
+        return;
     }
+    drawCommitVerb(target, detail, metric, verb, cost, ink.key, alpha);
+    // The commit beat (contract b): armed by the routing at the press.
+    drawCommitPulse(target, detail, metric, verb, cost, accent, alpha, state.commitPulse);
 }
 
 /// THE CASE VIEW: the same pane, the case instead of the lead. The master list
@@ -735,7 +748,8 @@ void drawCaseDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
                              metric.heightOf(spare - 1)};
         drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
     }
-    drawCommitVerb(target, detail, metric, "LEFT - BACK TO THE LEADS", "", ink.key, alpha);
+    drawCommitVerb(target, detail, metric, std::string(kGlyphLeft) + " - LEADS", "", ink.key,
+                   alpha);
 }
 
 }  // namespace
@@ -752,7 +766,8 @@ CasebookPageScroll casebookPageScroll(const CasebookPageState& state, int frameW
     // shuffle when a page turns.
     const OptionListPlan plan =
         planOptionList(optionsFor(state.rows), listRectOf(comp), comp.metric, listStyle());
-    out.perScreen = std::max(1, plan.columns * plan.rows);
+    // The paging cap, same number composeFor sized the body against.
+    out.perScreen = std::max(1, std::min(kLeadPageRows, plan.columns * plan.rows));
     const int count = static_cast<int>(state.rows.size());
     out.screens = std::max(1, (count + out.perScreen - 1) / out.perScreen);
     out.screen = std::clamp(std::max(0, state.cursor) / out.perScreen, 0, out.screens - 1);
@@ -789,7 +804,7 @@ CasebookPageMetrics casebookPageMetrics(const CasebookPageState& state, int fram
         const CasebookLeadRow& row = state.rows[static_cast<std::size_t>(at)];
         const std::vector<PanelRect> panes =
             splitRows(comp.body.detail, comp.metric,
-                      {spanCells(1), spanCells(1), spanCells(5), spanCells(1), spanWeight(1)});
+                      {spanCells(1), spanCells(1), spanCells(3), spanCells(1), spanWeight(1)});
         const int proseRows = std::max(0, comp.metric.rowsIn(panes[4].h) - 2);
         const PanelRect prose{panes[4].x, panes[4].y, panes[4].w,
                               comp.metric.heightOf(proseRows)};
@@ -890,43 +905,21 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
     }
     frame.draw();
 
-    // --- the tab row -------------------------------------------------------
-    // NO PRINTED KEYS ON THE TABS. See the header: the digits are the leads'
-    // and TAB is the key that closes the book. LEFT/RIGHT step the views and
-    // the nav band says so, rather than a tab advertising a hotkey that does
-    // nothing -- the same call creation_page.cpp made for its stage tabs.
-    const std::vector<PanelTab> tabs{PanelTab{"", "LEADS"}, PanelTab{"", "THE CASE"}};
-    drawTabRow(target, frame.band(comp.tabRow, 1), metric, state.title, tabs,
-               static_cast<int>(state.tab), state.readout, ink.accent, alpha);
-
-    // --- the breadcrumb / instruction header -------------------------------
+    // --- THE ONE HEADER LINE ------------------------------------------------
+    // The tab row IS the breadcrumb (UI-EA-SPEC sec. 5): title, the two views,
+    // the case's own readout. NO PRINTED KEYS ON THE TABS -- the digits are
+    // the leads' and TAB is the key that closes the book. A bouncer's warning
+    // outranks the book and takes the row while it lasts; the old two-row
+    // instruction band is gone, and the selection is named once, on the badge.
     const int count = static_cast<int>(state.rows.size());
     const int at = count > 0 ? std::clamp(state.cursor, 0, count - 1) : -1;
-    std::vector<std::string> crumbs{state.title};
-    if (!state.caseTitle.empty()) {
-        crumbs.push_back(state.caseTitle);
-    }
-    Rgb leafInk = ink.prose;
-    if (state.tab == CasebookTab::Leads && at >= 0) {
-        const CasebookLeadRow& row = state.rows[static_cast<std::size_t>(at)];
-        crumbs.push_back(row.brief.empty() ? row.place : row.brief);
-        leafInk = stateAccent(row.state, row.close);
-    } else if (state.tab == CasebookTab::Case) {
-        crumbs.push_back("THE CASE");
-    }
-    drawBreadcrumb(target, comp.headerBand, metric, crumbs, leafInk, alpha);
-    if (comp.headerRows > 1) {
-        const PanelRect second{comp.headerBand.x, comp.headerBand.y + metric.cellH(),
-                               comp.headerBand.w, metric.cellH()};
-        if (!state.alert.empty()) {
-            // A warning outranks a menu, and it lands on the header's second
-            // row -- which the band holds open whether or not there is one, so
-            // nothing below moves when a bouncer starts talking.
-            drawCellText(target, second, metric, 0, 0, state.alert, Rgb{0.90F, 0.52F, 0.30F},
-                         alpha);
-        } else if (!state.instruction.empty()) {
-            drawCellText(target, second, metric, 0, 0, state.instruction, ink.dim, alpha);
-        }
+    if (!state.alert.empty()) {
+        drawCellText(target, frame.band(comp.tabRow, 1), metric, 0, 0, state.alert,
+                     Rgb{0.90F, 0.52F, 0.30F}, alpha);
+    } else {
+        const std::vector<PanelTab> tabs{PanelTab{"", "LEADS"}, PanelTab{"", "THE CASE"}};
+        drawTabRow(target, frame.band(comp.tabRow, 1), metric, state.title, tabs,
+                   static_cast<int>(state.tab), state.readout, ink.accent, alpha);
     }
 
     // --- the master list ---------------------------------------------------
@@ -947,33 +940,14 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
         drawCellText(target, listRect, metric, 0, 0, "NOTHING IN THE BOOK YET", ink.dim, alpha);
     }
 
-    // AND THE BLANK ROWS UNDER IT ARE WORDED BEFORE THEY ARE TEXTURED.
-    //
-    // A stipple says "this space was left rather than forgotten", which is the
-    // right thing to say about a twelve-row book in a thirty-row pane and the
-    // WRONG thing to say about a ONE-row book on a new game: at 640x360 that is
-    // a single lead over nineteen rows of faint dots, and a stranger reads it
-    // as a list that failed to load. See kBookWaitingLine -- one sentence
-    // saying what the rest of the pane is for and what puts something in it,
-    // and it is gone the instant it would be a lie (the trail closed, or every
-    // lead in the file already in the book).
+    // DELIBERATE EMPTINESS, TEXTURED. The fourteen-word waiting sentence is
+    // retired (UI-EA-SPEC 1.5, prose 14->0): the Law of Earned Text says the
+    // book's remaining room is not news, and the fresh book's detail pane now
+    // hands a stranger the case's own hook instead of scaffolding. The faint
+    // field still says "left on purpose".
     if (count > 0) {
         const int listRows = metric.rowsIn(listRect.h);
-        const int drawnRows = std::min(count, scroll.perScreen);
-        int used = drawnRows;
-        const bool waiting = !state.closed && state.known < state.total;
-        if (waiting && listRows - used >= 4) {
-            const PanelRect say{listRect.x, listRect.y + metric.heightOf(used + 1), listRect.w,
-                                metric.heightOf(listRows - used - 1)};
-            const std::vector<PanelLine> lines{PanelLine{
-                Bullet::None, "", std::string(kBookWaitingLine), InkRole::Dim, ink.dim}};
-            used += 1 + drawProse(target, say, metric, lines, alpha);
-        }
-        // DELIBERATE EMPTINESS, TEXTURED -- the same call the detail pane makes,
-        // now under whatever the sentence above did not use. The reference
-        // leaves exactly this kind of area blank; but blank and BLACK are
-        // different things, and the faint `.`/`'` field is what says the space
-        // was left rather than forgotten.
+        const int used = std::min(count, scroll.perScreen);
         const int spare = listRows - used;
         if (spare >= 3) {
             const PanelRect rest{listRect.x, listRect.y + metric.heightOf(used + 1), listRect.w,
@@ -982,14 +956,17 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
         }
     }
 
-    const PanelRect indicator{comp.body.master.x,
-                              comp.body.master.y + metric.heightOf(comp.bodyRows - kIndicatorRows),
-                              comp.body.master.w, metric.cellH()};
-    if (scroll.screens > 1) {
-        drawCellText(target, indicator, metric, 0, 0,
-                     "MORE  " + std::to_string(scroll.screen + 1) + "/" +
-                         std::to_string(scroll.screens),
-                     ink.dim, alpha);
+    // `+N` RIDES THE RULE (UI-EA-SPEC 1.5): what waits below the fold,
+    // right-aligned over the master pane in the rule under the body -- the
+    // reference's own text-on-the-divider trick, no row spent, and the digits
+    // key (`0` = MORE) pages it.
+    const int below = count - std::min(count, scroll.firstRow + scroll.perScreen);
+    if (below > 0 && comp.ruleRows.size() >= 2) {
+        const PanelRect ruleBand{comp.body.master.x,
+                                 comp.interior.y + metric.heightOf(comp.ruleRows[1]),
+                                 comp.body.master.w, metric.cellH()};
+        drawCellTextRight(target, ruleBand, metric, 0, 0, "+" + std::to_string(below), ink.dim,
+                          alpha);
     }
 
     // --- the detail pane ---------------------------------------------------
@@ -1003,16 +980,22 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
     }
 
     // --- global nav, below its own rule ------------------------------------
+    // Planned ONCE against the raised form so nothing moves as the tutor words
+    // fade; drawn at rest as bare keycaps (UI-EA-SPEC sec. 2). A CELL OF AIR
+    // OFF THE RIGHT EDGE -- "PUT IT DOWN|" reads as punctuated.
     const std::vector<PanelOption> nav = navOptionsFor(state);
-    // A CELL OF AIR OFF THE RIGHT EDGE. drawOptionList SPREADS its columns so
-    // the last one's content ends at the pane's right edge, which is right for a
-    // pane and wrong for a band that ends at the frame's own `|`/`!` flicker --
-    // "PUT IT DOWN|" reads as punctuated. Narrowed here rather than in the
-    // shared primitive, because the spread is correct everywhere it is not
-    // butted against a border.
     const PanelRect navRect{comp.navBand.x, comp.navBand.y,
                             std::max(0, comp.navBand.w - metric.cellW()), comp.navBand.h};
-    drawOptionList(target, navRect, metric, nav, -1, navStyleOf(), alpha);
+    const OptionListPlan navPlan = planOptionList(nav, navRect, metric, navStyleOf());
+    std::vector<PanelOption> navCaps = nav;
+    for (PanelOption& option : navCaps) {
+        option.label.clear();
+    }
+    drawOptionListPlanned(target, navRect, metric, navCaps, -1, navPlan, alpha);
+    if (state.tutor > 0.0F) {
+        drawOptionListPlanned(target, navRect, metric, nav, -1, navPlan,
+                              alpha * std::min(1.0F, state.tutor));
+    }
 }
 
 }  // namespace granadad::render

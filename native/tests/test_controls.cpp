@@ -1133,14 +1133,16 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     // D-pad walks, the bumpers tab, the triggers zoom, SELECT closes, A
     // commits -- and the old literals with a keyboard in hand.
     DistrictMapState padMap = session.districtMapState();
-    CHECK(padMap.navMoveKeys == "D-PAD");
+    // The movement keys are the keycap motifs now (UI-EA-SPEC sec. 5): the
+    // d-pad cross sentinel on a pad, the four arrowheads on a keyboard.
+    CHECK(padMap.navMoveKeys == std::string(kGlyphCross));
     CHECK(padMap.navTabKeys == "LB RB");
     CHECK(padMap.navZoomKeys == "RT LT");
     CHECK(padMap.navCloseKey == "SELECT");
     CHECK(padMap.commitKey == "A");
     session.noteInputKey(Key::M);
     DistrictMapState kbMap = session.districtMapState();
-    CHECK(kbMap.navMoveKeys == "ARROWS");
+    CHECK(kbMap.navMoveKeys == std::string(kGlyphMoveKeys));
     CHECK(kbMap.navTabKeys == "TAB");
     CHECK(kbMap.navZoomKeys == "+ -");
     CHECK(kbMap.navCloseKey == "M");

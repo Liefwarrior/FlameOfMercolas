@@ -239,6 +239,16 @@ struct CasebookPageState {
     /// this field independently; the input lane's name and fixed measure won
     /// at the merge.)
     std::string commitKey = "ENTER";
+
+    // --- UI-EA-SPEC sec. 2: the Law of Earned Text -------------------------
+    /// TUTOR tier, 0 (rest) .. 1 (raised). At rest the nav band prints bare
+    /// keycaps; raised, the verb words ride beside them at this strength.
+    /// The countdown helper is LANE HUD's, the wake signals LANE FLOW's; this
+    /// page only renders the value.
+    float tutor = 0.0F;
+    /// Contract (b): the commit beat, armed by the routing's ImpactPulse at
+    /// GO TO IT / LOOK AT IT. Default 0 draws nothing.
+    float commitPulse = 0.0F;
 };
 
 /// Draws the whole page over a rendered frame.
