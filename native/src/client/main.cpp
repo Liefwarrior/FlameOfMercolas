@@ -886,7 +886,7 @@ void print_usage() {
         "\n"
         "IN THE GAME: WASD moves, the mouse looks, SHIFT sprints, CTRL\n"
         "crouches (both HOLD and TAP), SPACE jumps, E talks, M opens the\n"
-        "ward map, TAB opens your casebook, F1 lists every key and F2\n"
+        "ward map, J opens your casebook, F1 lists every key and F2\n"
         "rebinds them.\n"
         "\n"
         "WALK INTO A LEDGE TO CLIMB IT. There is no climb key to learn --\n"
@@ -1727,11 +1727,16 @@ void print_usage() {
         //
         // LEFT AND RIGHT STEP THE VIEWS, AND THAT IS A CONFLICT WRITTEN DOWN
         // RATHER THAN FUDGED. Every other tabbed surface in this build steps
-        // its tabs with TAB; here TAB is Action::Menu, the key that OPENED this
-        // page, and "the key that opened it closes it" is a rule this build
-        // keeps everywhere. So the views move on the arrows the single-column
-        // list does not use, the tabs print no hotkey (casebook_page.hpp on
-        // why), and the nav band along the foot says LEFT RIGHT out loud.
+        // its tabs with TAB; when this page was drawn TAB was Action::Menu,
+        // the key that OPENED it, and "the key that opened it closes it" is a
+        // rule this build keeps everywhere. Menu lives on J now (the owner's
+        // own "use J for journal") and Tab is unbound, but the arrows stay:
+        // they are honest on both devices where a freed Tab is not, the pad
+        // already speaks them, and re-teaching this one page a key the rest
+        // of the flow never mentions would be churn. So the views move on the
+        // arrows the single-column list does not use, the tabs print no
+        // hotkey (casebook_page.hpp on why), and the nav band along the foot
+        // says LEFT RIGHT out loud.
         if (up) {
             session.moveCasebookCursor(-1);
             return true;
@@ -3820,10 +3825,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         (void)route_menu_key(session, key);
                         break;
                     }
-                    // TAB IS THE JOURNAL NOW. Freeing the mouse moved to F3 --
-                    // see the keys page. A player who wants their cursor back
-                    // is almost always a player who wants to alt-tab, and
-                    // alt-tab already works.
+                    // THE JOURNAL TOOK TAB AT #85 (it is on J now, the
+                    // owner's own convention call), so freeing the mouse
+                    // moved to F3 -- see the keys page. A player who wants
+                    // their cursor back is almost always a player who wants
+                    // to alt-tab, and alt-tab already works.
                     //
                     // AND IT YIELDS TO A BINDING. F3 is unbound by default, so
                     // this is free; the moment somebody binds a verb to it, the

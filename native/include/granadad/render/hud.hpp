@@ -394,7 +394,7 @@ struct HudState {
 
     /// THE CASEBOOK PASS: THE MOMENT LEADS OPEN.
     ///
-    /// "3 NEW LEADS  TAB YOUR CASEBOOK", said once, at the instant it becomes
+    /// "3 NEW LEADS  J YOUR CASEBOOK", said once, at the instant it becomes
     /// true, and then gone. The owner followed the Bloodletter to Crell at the
     /// Weighhouse, three leads opened, and the only thing on the frame that
     /// said so was a dim grey corner row changing from CASE 4/6 to CASE 4/9 --
