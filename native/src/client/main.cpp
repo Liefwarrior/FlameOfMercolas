@@ -790,13 +790,15 @@ void print_usage() {
         "  --demo-capture=DIR   the same route, writing a PNG of each of its\n"
         "                       named shots into DIR, so a trailer or a\n"
         "                       screenshot set falls out of the same run\n"
-        "  --framedump=DIR      VERIFICATION ONLY: while --demo or --case-watch\n"
-        "                       is driving, write EVERY presented frame into\n"
-        "                       DIR as f<NNNNN>.png -- consecutive frames, so a\n"
-        "                       transition (a cut, a fade, a plate easing in)\n"
-        "                       can be read frame by frame instead of argued\n"
-        "                       about. The shot is the framebuffer after the\n"
-        "                       overlays, exactly what the window presented\n"
+        "  --framedump=DIR      VERIFICATION ONLY: write EVERY presented frame\n"
+        "                       into DIR as f<NNNNN>.png -- consecutive frames,\n"
+        "                       so a transition (a cut, a fade, a plate easing\n"
+        "                       in, a page opening) can be read frame by frame\n"
+        "                       instead of argued about. Works in the ordinary\n"
+        "                       windowed session as well as under --demo and\n"
+        "                       --case-watch; keep the run short. The shot is\n"
+        "                       the framebuffer after the overlays, exactly\n"
+        "                       what the window presented\n"
         "  --creation[=STEP]    capture the character-creation flow with no\n"
         "                       window and no world. STEP is origin (default),\n"
         "                       calling (the nine-trade roster), quiz (question\n"
@@ -805,19 +807,19 @@ void print_usage() {
         "                       review (a taken calling converged on the\n"
         "                       customize screen), customize (CUSTOM, a few\n"
         "                       points spent), devin or gabri (fixed sheets)\n"
-        "  --settle             run a scripted overlay's open animation to\n"
-        "                       completion before the shutter, instead of\n"
-        "                       capturing the frame it opened on (this is\n"
-        "                       now the DEFAULT for a screenshot -- see\n"
-        "                       --no-settle)\n"
+        "  --settle             run to the AT-REST frame before the shutter\n"
+        "                       (the default for a screenshot): ~4s of\n"
+        "                       zero-input steps, past the page's open ease\n"
+        "                       AND the tutor bands' page-open raise easing\n"
+        "                       back down -- the frame the word budgets bind\n"
         "  --no-settle          capture the overlay's opening bump instead\n"
-        "                       of its settled, fully-open frame -- only\n"
-        "                       useful for proving the transition itself\n"
-        "                       does not flash on its first drawn frame\n"
-        "  --settle-steps=N     VERIFICATION ONLY: run exactly N zero-input\n"
-        "                       steps before the shutter instead of 16-or-0,\n"
-        "                       so a mid-transition frame of the panel/menu\n"
-        "                       eases can actually be photographed\n"
+        "                       of its settled at-rest frame -- only useful\n"
+        "                       for proving the transition itself does not\n"
+        "                       flash on its first drawn frame\n"
+        "  --settle-steps=N     run exactly N zero-input steps before the\n"
+        "                       shutter instead of the at-rest default: 0\n"
+        "                       photographs the raised state, a small N a\n"
+        "                       mid-transition frame of the panel eases\n"
         "  --refocus=TILE       VERIFICATION ONLY: after --character/--map has\n"
         "                       been given --settle-steps to genuinely finish\n"
         "                       opening, switch the tiled Menu's focus to TILE\n"
@@ -1420,6 +1422,22 @@ void print_usage() {
     // options page is listening for a key to bind, the remap also stands
     // down, so PadEast itself can still be bound.
     const render::Action action = session.controls().actionFor(key);
+    // UI-EA-SPEC sec. 4 violation #3: THE PAGE-TOGGLE KEY ALWAYS TOGGLES.
+    // PadUp opens the tiled Menu (Action::Menu's pad default) and was then
+    // eaten as list movement inside it -- so the key that opened the page
+    // could never close it, breaking "the key that opened a page closes it"
+    // for the one surface a pad opens most. While the Menu surface is up,
+    // a PadUp that IS the Menu binding falls straight through to pressed(),
+    // whose Action::Menu case is the toggle that closes it. In-page
+    // cursor-up rides the left stick (the stickNav block synthesizes raw
+    // arrow keys now) and the other three D-pad directions stay list
+    // movement everywhere; on pages PadUp did NOT open -- the map, the
+    // pause family -- it stays cursor-up too, because there it is not the
+    // toggle of anything on screen.
+    if (key == render::Key::PadUp && action == render::Action::Menu &&
+        (session.casebookOpen() || session.casebookPageOpen())) {
+        return false;
+    }
     // The five list movements, in the vocabulary of intent. Arrows always work
     // as well, bound or not, because a list is the one place arrow keys are
     // unambiguous.
@@ -1434,7 +1452,8 @@ void print_usage() {
     // LEAD. Every one of those bands was advertising a verb the pad could not
     // perform. A page is the one place the D-pad is as unambiguous as an arrow
     // key, so it is read the same way and outranks its own binding there --
-    // which is what takes PadUp off Menu for as long as a list is up.
+    // which is what takes PadUp off Menu for as long as a NON-Menu list is up
+    // (the violation-#3 rule above carves out the Menu surface itself).
     const bool up = key == render::Key::Up || key == render::Key::PadUp ||
                     action == render::Action::Forward || action == render::Action::QuickPrev;
     const bool downward = key == render::Key::Down || key == render::Key::PadDown ||
@@ -1466,6 +1485,9 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            // Contract (b): the commit beat -- RESUME, a door row, the
+            // quit-arm and the quit-confirm all answer with it.
+            session.armCommitPulse();
             session.choosePause();
             return true;
         }
@@ -1493,6 +1515,19 @@ void print_usage() {
     }
 
     if (session.optionsOpen()) {
+        // UI-EA-SPEC sec. 4 violation #2: KEYS AND OPTIONS ARE SIBLING TABS,
+        // stepped on TAB and the bumpers like every other tabbed pair --
+        // they were only ever reachable from each other by the F-keys, which
+        // no foot could honestly print for a pad. Two siblings, so either
+        // direction lands the other one. The pause-return note travels with
+        // the swap: toggleKeys/toggleOptions re-derive it from pauseReturn_
+        // (see Session::pageOpenedFromPause_'s own header).
+        if (key == render::Key::Tab || action == render::Action::PageNext ||
+            action == render::Action::PagePrev) {
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
+            session.toggleKeys();
+            return true;
+        }
         if (up) {
             session.moveOptionCursor(-1);
             return true;
@@ -1510,6 +1545,9 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            // Contract (b): the commit beat -- a slider nudge or the REBIND
+            // arm, both of them ENTER doing something.
+            session.armCommitPulse();
             session.chooseOption();
             return true;
         }
@@ -1549,6 +1587,7 @@ void print_usage() {
             return true;
         }
         if (numbered) {
+            session.armCommitPulse();  // contract (b): readying a crafting
             session.chooseGrimoireRow(slot);
             return true;
         }
@@ -1557,6 +1596,7 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            session.armCommitPulse();
             session.chooseGrimoireRow(session.grimoireCursor() -
                                       session.grimoirePage() * render::kTopicPageSize);
             return true;
@@ -1578,6 +1618,7 @@ void print_usage() {
             return true;
         }
         if (numbered) {
+            session.armCommitPulse();  // contract (b): passing hours commits
             session.chooseWaitRow(slot);
             return true;
         }
@@ -1586,6 +1627,7 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            session.armCommitPulse();
             session.chooseWaitRow(session.waitCursor() -
                                   session.waitPage() * render::kTopicPageSize);
             return true;
@@ -1625,6 +1667,7 @@ void print_usage() {
             // every other tabbed surface in the world means it here too, and a
             // page that let its own tab key fall through to a different page
             // would be the split-brain bug toggleOptions' comment describes.
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
             session.cycleDistrictMapTab(1);
             return true;
         }
@@ -1636,10 +1679,12 @@ void print_usage() {
         // lives, LB/RB is where a thumb expects a tab, and `[`/`]` come along
         // for free on the keyboard side.
         if (action == render::Action::PageNext) {
+            session.armCommitPulse();
             session.cycleDistrictMapTab(1);
             return true;
         }
         if (action == render::Action::PagePrev) {
+            session.armCommitPulse();
             session.cycleDistrictMapTab(-1);
             return true;
         }
@@ -1682,12 +1727,15 @@ void print_usage() {
         // Without the gate a mouse click would both face AND travel.
         if (key == render::Key::T ||
             (render::keyIsPad(key) && action == render::Action::Attack)) {
+            // Contract (b): the commit beat, armed at commit routing.
+            session.armCommitPulse();
             session.travelDistrictMapSelection();
             return true;
         }
         if (confirm) {
             // The commit verb at the foot of the detail pane: turn to face the
-            // selection and put the map away.
+            // selection and put the map away. Contract (b): the commit beat.
+            session.armCommitPulse();
             session.faceDistrictMapSelection();
             return true;
         }
@@ -1696,10 +1744,20 @@ void print_usage() {
             // `1` through `4`; the rest are swallowed rather than routed, for
             // the pause branch's own reason -- a number pressed over a
             // full-screen page must not reach the quick bar behind it.
+            // Transition rule 2: a LANDING tab step answers with the pulse --
+            // a dead digit (5-9, which setDistrictMapTab refuses) must not
+            // beat for a press that did nothing.
+            if (slot < render::kMapTabCount) {
+                session.armCommitPulse();
+            }
             session.setDistrictMapTab(slot);
             return true;
         }
         if (pageKey) {
+            // UI-EA-SPEC sec. 4 violation #6: `0` = MORE where a list pages.
+            // The People and Index tabs page (mapDetailScroll); when PAGES
+            // lands the ten-row roster paging (budgets #22/#23) this routes
+            // `0` to the detail page-turn. Inert-but-swallowed until then.
             return true;
         }
         return false;
@@ -1831,18 +1889,16 @@ void print_usage() {
         // every one of its verbs has to reach it -- the cursor, the two views,
         // the printed digits and the commit.
         //
-        // LEFT AND RIGHT STEP THE VIEWS, AND THAT IS A CONFLICT WRITTEN DOWN
-        // RATHER THAN FUDGED. Every other tabbed surface in this build steps
-        // its tabs with TAB; when this page was drawn TAB was Action::Menu,
-        // the key that OPENED it, and "the key that opened it closes it" is a
-        // rule this build keeps everywhere. Menu lives on J now (the owner's
-        // own "use J for journal") and Tab is unbound, but the arrows stay:
-        // they are honest on both devices where a freed Tab is not, the pad
-        // already speaks them, and re-teaching this one page a key the rest
-        // of the flow never mentions would be churn. So the views move on the
-        // arrows the single-column list does not use, the tabs print no
-        // hotkey (casebook_page.hpp on why), and the nav band along the foot
-        // says LEFT RIGHT out loud.
+        // UI-EA-SPEC sec. 4 violation #1: THE TABS STEP ON TAB AND THE
+        // BUMPERS NOW, the same grammar as the map -- one tab key across
+        // every tabbed surface, which is the whole point of a grammar. TAB
+        // was Action::Menu when this page was drawn and the arrows were the
+        // stopgap; Menu lives on J now and TAB is free, so the stopgap
+        // retires. LEFT/RIGHT are FREED for in-view movement -- taken and
+        // held inert here until the detail pane grows its paging (PAGES
+        // lane, budget #27/#28), because letting them fall through would
+        // close the page and turn the player, which is the exact class of
+        // surprise sec. 4 exists to kill.
         if (up) {
             session.moveCasebookCursor(-1);
             return true;
@@ -1851,12 +1907,18 @@ void print_usage() {
             session.moveCasebookCursor(1);
             return true;
         }
-        if (leftward) {
+        if (key == render::Key::Tab || action == render::Action::PageNext) {
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
+            session.cycleCasebookTab(1);
+            return true;
+        }
+        if (action == render::Action::PagePrev) {
+            session.armCommitPulse();
             session.cycleCasebookTab(-1);
             return true;
         }
-        if (rightward) {
-            session.cycleCasebookTab(1);
+        if (leftward || rightward) {
+            // Reserved -- see the header note above.
             return true;
         }
         if (numbered) {
@@ -1869,13 +1931,18 @@ void print_usage() {
         if (confirm) {
             // The commit verb at the foot of the detail pane. State chooses
             // which one it is -- see Session::commitCasebookLead.
+            // Contract (b): the commit beat.
+            session.armCommitPulse();
             session.commitCasebookLead();
             return true;
         }
         if (pageKey) {
-            // SWALLOWED, NOT ROUTED, the pause branch's own reason: the list
-            // follows its cursor rather than turning pages, so `0` has nothing
-            // to do here and must not reach the quick bar behind the page.
+            // UI-EA-SPEC sec. 4 violation #6: `0` IS MORE WHERE A LIST PAGES,
+            // INERT ELSEWHERE -- never BACK. Today the lead list follows its
+            // cursor, so `0` is inert here; the moment PAGES lands the
+            // eight-row paging (budget #27) this branch routes it to the
+            // page-turn, and the foot prints `0` again. Swallowed either way:
+            // a digit over a full page must not reach the quick bar.
             return true;
         }
         // Anything else falls through to the ordinary bindings, and every verb
@@ -1885,6 +1952,17 @@ void print_usage() {
 
     if (session.casebookOpen() || session.keysOpen() || session.characterOpen() ||
         session.mapOpen() || session.lettersOpen()) {
+        // UI-EA-SPEC sec. 4 violation #2, the other half: from the keys page,
+        // TAB and the bumpers step to the sibling Options page. Scoped to
+        // keysOpen -- on the tiled Menu the bumpers already step tile focus
+        // through pressed()'s PagePrev/PageNext dispatch, and that stays.
+        if (session.keysOpen() &&
+            (key == render::Key::Tab || action == render::Action::PageNext ||
+             action == render::Action::PagePrev)) {
+            session.armCommitPulse();  // rule 2
+            session.toggleOptions();
+            return true;
+        }
         if (up) {
             session.moveTopicCursor(-1);
             return true;
@@ -1968,6 +2046,19 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         if (!layout.usable) {
             return false;
         }
+        // UI-EA-SPEC sec. 4 violation #8: THE TAB ROW ANSWERS CLICKS NOW,
+        // through the same setDistrictMapTab a digit presses -- the casebook's
+        // own pattern, which this page took-and-dropped while its sibling
+        // answered. Click-only, like the casebook's: a pointer crossing the
+        // frame must not flip the detail pane.
+        const int tab = render::mapTabAtPixel(plan, frameWidth, frameHeight, px, py);
+        if (tab >= 0) {
+            if (click && tab != static_cast<int>(plan.tab)) {
+                session.armCommitPulse();  // rule 2: a tab step answers
+                session.setDistrictMapTab(tab);
+            }
+            return true;
+        }
         const int at = render::mapPlaceAtPixel(layout.viewport, px, py);
         if (at < 0) {
             // OFF THE PLAN IS NOT A MISS THAT FALLS THROUGH. A click on the
@@ -1986,7 +2077,8 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
             // page prints and what ENTER and PadSouth already do: turn to face
             // it and put the map away. A click is a select-then-confirm, so a
             // player who only wants to look moves the pointer and does not
-            // press.
+            // press. Contract (b): the commit beat.
+            session.armCommitPulse();
             session.faceDistrictMapSelection();
         }
         return true;
@@ -2017,6 +2109,7 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         const int tab = render::casebookTabAtPixel(page, frameWidth, frameHeight, px, py);
         if (tab >= 0) {
             if (click && tab != static_cast<int>(page.tab)) {
+                session.armCommitPulse();  // rule 2: a tab step answers
                 session.cycleCasebookTab(tab - static_cast<int>(page.tab));
             }
             return true;
@@ -2027,6 +2120,7 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         }
         session.setCasebookCursor(at);
         if (click) {
+            session.armCommitPulse();  // contract (b): the commit beat
             session.commitCasebookLead();
         }
         return true;
@@ -2155,6 +2249,9 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
             // A CLICK IS SELECT-THEN-CONFIRM (the map's own rule): the commit
             // is each page's ENTER -- pass the hours, ready the crafting,
             // fire the pause row, nudge or arm the option, say the thing.
+            // Contract (b): the commit beat, the same arm the keyboard's
+            // confirm gets.
+            session.armCommitPulse();
             if (session.waitOpen()) {
                 session.chooseWaitRow(hit.slot);
             } else if (session.grimoireOpen()) {
@@ -2595,22 +2692,38 @@ bool creation_input(render::CreationFlow& flow, render::Key key) {
     const render::CreationStep step = flow.step();
 
     if (step == render::CreationStep::Origin) {
+        // UI-EA-SPEC sec. 4 violation #7: ESC AT THE DOOR ARMS BEFORE IT
+        // LEAVES. One slip of the universal back key used to close the whole
+        // window unarmed -- the exact "eats your evening once and is never
+        // trusted again" the in-world quit already asks twice about. First
+        // ESC arms (the page prints `ESC AGAIN - LEAVE` off flow.quitArmed(),
+        // PAGES' row copy); a second in a row leaves; any other press is a
+        // change of mind and disarms, the pause menu's own movePauseCursor
+        // manners.
         switch (verb) {
             case CreationVerb::Up:
+                flow.disarmQuit();
                 flow.moveOriginCursor(-1);
                 return true;
             case CreationVerb::Down:
+                flow.disarmQuit();
                 flow.moveOriginCursor(1);
                 return true;
             case CreationVerb::Confirm:
+                flow.disarmQuit();
                 flow.chooseOrigin();
                 return true;
             case CreationVerb::Cancel:
+                if (!flow.quitArmed()) {
+                    flow.armQuit();
+                    return true;
+                }
                 return false;
             default:
                 break;
         }
         if (digit > 0 && digit <= static_cast<int>(render::originTemplates().size())) {
+            flow.disarmQuit();
             flow.setOriginCursor(digit - 1);
             flow.chooseOrigin();
         }
@@ -3163,6 +3276,16 @@ render::CreationResult run_creation_window(const Options& options) {
     render::Framebuffer frame(width, height);
     bool cancelled = false;
 
+    // UI-EA-SPEC sec. 3 rule 3: BOOT IS A WORLD SEAM AND WEARS THE VEIL. The
+    // first dozen frames of the first window ease up from black instead of
+    // slamming the door screen on -- the same vocabulary the travel dip and
+    // the creation->world cut below speak, windowed-only so no headless
+    // capture is touched. Counted in frames of this window's own loop
+    // (vsync'd; the reel path is already clamped to 60), not steps: there is
+    // no step pump on this screen and nothing here is captured.
+    constexpr int kCreationVeilFrames = 12;
+    int bootVeilFrame = kCreationVeilFrames;
+
     // THE PARITY PASS. THE CHARACTER SCREEN IS THE FIRST SURFACE A PLAYER
     // TOUCHES, and a windowed launch opens it before the world -- so a pad
     // script aimed at the world would never reach the world without one aimed
@@ -3326,6 +3449,15 @@ render::CreationResult run_creation_window(const Options& options) {
                 --shotIn;
             }
         }
+        // The boot veil, applied AFTER the reel's shutter reads the frame --
+        // committed reel PNGs are veil-free by construction (and the shutter
+        // waits 40 frames regardless).
+        if (bootVeilFrame > 0) {
+            --bootVeilFrame;
+            frame.fillRect(0, 0, frame.width(), frame.height(), render::Rgb{0.0F, 0.0F, 0.0F},
+                           static_cast<float>(bootVeilFrame) /
+                               static_cast<float>(kCreationVeilFrames));
+        }
         if (texture != nullptr) {
             SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -3353,6 +3485,26 @@ render::CreationResult run_creation_window(const Options& options) {
             // leaves this window the way closing it does.
             cancelled = !flow.done();
             break;
+        }
+    }
+
+    // UI-EA-SPEC sec. 3 rule 3: CREATION->WORLD IS DRESSED. Black falls over
+    // the finished sheet BEFORE the SDL window teardown -- so the seconds of
+    // window-swap that follow read as one deliberate cut to black, not as the
+    // app restarting -- and run_client dresses the other side, easing the
+    // world up from black through the travel dip's own machinery
+    // (Session::dressInstantCut). Windowed-only, played only on a COMPLETED
+    // flow: a cancel (the armed door quit) still leaves plainly.
+    if (flow.done() && !cancelled && texture != nullptr) {
+        for (int i = 1; i <= kCreationVeilFrames; ++i) {
+            render::drawCreation(frame, flow);
+            frame.fillRect(0, 0, frame.width(), frame.height(), render::Rgb{0.0F, 0.0F, 0.0F},
+                           static_cast<float>(i) / static_cast<float>(kCreationVeilFrames));
+            SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+            SDL_RenderPresent(renderer);
         }
     }
 
@@ -3419,6 +3571,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     if (!session.body().spawnedLegally()) {
         std::printf("granadad: spawn tile is not standable -- check --spawn\n");
         return 1;
+    }
+
+    // UI-EA-SPEC sec. 3 rule 3: THE WORLD EASES UP FROM BLACK AT BOOT -- the
+    // other half of the dressed creation->world cut (the creation window let
+    // black fall before its teardown; this window rises from it), through
+    // the travel dip's own machinery so boot, travel and the case-watch seam
+    // all speak one veil. NOT under --demo or --case-watch: their committed
+    // frames and byte-stable replays predate the veil, and a boot dip would
+    // move every early frame of both. Their guards stay green untouched.
+    if (!options.demo && !options.caseWatch) {
+        session.dressInstantCut();
     }
 
     // #84. THE SEAM #80 NAMED, CLOSED. run_creation_window() built a real
@@ -3851,6 +4014,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // input -- see the stickNav block in the frame loop.
     bool navStickVertical = false;
     bool navStickHorizontal = false;
+    // UI-EA-SPEC sec. 2, contract (c): the device edge. noteInputDevice()
+    // is called on every press and is deliberately quiet about whether the
+    // hand actually CHANGED; the tutor bands want the change alone, so the
+    // loop keeps yesterday's answer and wakes them on the flip.
+    render::InputDevice lastPromptDevice = session.promptDevice();
 
     bool running = true;
     std::int64_t frames = 0;
@@ -3989,6 +4157,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 case render::Action::Map:
                     session.toggleDistrictMap();
                     return;
+                // UI-EA-SPEC sec. 4 violation #5: the two F-key pages, through
+                // the table like everything else. The same action closes the
+                // page it opened (toggleKeys/toggleOptions are toggles), which
+                // is the enter/back law's "the key that opened a page closes
+                // it" holding for these two by construction.
+                case render::Action::KeysPage:
+                    session.toggleKeys();
+                    return;
+                case render::Action::OptionsPage:
+                    session.toggleOptions();
+                    return;
                 case render::Action::QuickNext:
                     quickSlot = (quickSlot + 1) % 10;
                     session.selectQuickSlot(quickSlot);
@@ -4042,6 +4221,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             if (slotIndex >= 0 && slotIndex < 10) {
                 quickSlot = slotIndex;
                 session.selectQuickSlot(quickSlot);
+            }
+            // UI-EA-SPEC sec. 2, contract (c): AN UNRECOGNIZED PRESS IS THE
+            // REQUEST FOR HELP. A key that resolved to no action and was
+            // wanted by no page reached the end of everything and did
+            // nothing -- the one moment a quiet HUD earns its silence back
+            // by raising the tutor bands. Session::noteTutorWake() is the
+            // edge; HUD's band helpers hold and ease on their own clocks.
+            if (action == render::Action::Count) {
+                session.noteTutorWake();
             }
         };
 
@@ -4193,32 +4381,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         mouseLook = !mouseLook;
                         break;
                     }
-                    // F1 AND F2 WERE ADVERTISED AND UNBOUND. --help says "F1
-                    // lists every key and F2 rebinds them" and the ship note
-                    // repeats it; a live verifier pressed F1 twice and got
-                    // nothing, and could not tell a dropped keystroke from a
-                    // real gap. It was a real gap: #85 folded the keys page
-                    // into the pause menu's CONTROLS row and retired the
-                    // Action that used to carry it, and nothing was left
-                    // holding the F-key the documentation kept promising.
-                    // Session::toggleKeys()/toggleOptions() were still there
-                    // and still reachable from the pause menu -- only the
-                    // shortcut had gone.
-                    //
-                    // SAME YIELD RULE AS F3, and for the same reason: these are
-                    // hard-coded convenience keys, so a verb bound to F1 by the
-                    // rebinding screen has to outrank them or the rebinding
-                    // screen is a liar.
-                    if ((key == render::Key::F1 || key == render::Key::F2) &&
-                        session.controls().actionFor(key) == render::Action::Count &&
-                        !session.awaitingKey()) {
-                        if (key == render::Key::F1) {
-                            session.toggleKeys();
-                        } else {
-                            session.toggleOptions();
-                        }
-                        break;
-                    }
+                    // F1 AND F2 ARE ORDINARY ACTIONS NOW (UI-EA-SPEC sec. 4
+                    // violation #5). They were advertised in --help, hard-
+                    // coded right here with a yield-to-binding guard, and
+                    // invisible to the very page F1 opens. Action::KeysPage
+                    // and Action::OptionsPage carry them through the binding
+                    // table instead -- they print on the keys page, the
+                    // rebinding screen can move them, and the pressed()
+                    // switch below dispatches them like every other verb.
+                    // Nothing is left hard-coded here.
                     if (route_menu_key(session, key)) {
                         break;
                     }
@@ -4330,6 +4501,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 (void)session_pointer(session, frame.width(), frame.height(), pointerX, pointerY,
                                       false);
             }
+        }
+
+        // UI-EA-SPEC sec. 2, contract (c): THE HAND CHANGED, WAKE THE TUTORS.
+        // Once per frame, off the edge alone -- the labels already re-worded
+        // themselves live (promptDevice is read at draw time); this is the
+        // accompanying "here is what your new hand does" moment.
+        if (session.promptDevice() != lastPromptDevice) {
+            lastPromptDevice = session.promptDevice();
+            session.noteTutorWake();
         }
 
         // Held keys move the body — unless somebody is talking to you, in which
@@ -4513,9 +4693,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // frame rate, which is unusable -- the character screen learned that
         // first and this is the same lesson, not a second guess at it.
         //
-        // THROUGH route_menu_key, AS THE D-PAD KEY IT STANDS FOR. Not through a
-        // parallel set of Session calls: a verb that exists for the stick and
-        // not for the D-pad is exactly the drift this whole pass is about.
+        // THROUGH route_menu_key, AS THE ARROW KEY IT STANDS FOR. Not through
+        // a parallel set of Session calls: a verb that exists for the stick
+        // and not for the arrows is exactly the drift this whole pass is
+        // about. ARROWS, NOT THE D-PAD KEYS, since violation #3: a raw arrow
+        // is pure list movement on every page and can never resolve through a
+        // binding, while a synthesized PadUp would hit the Menu surface's
+        // toggle-reserved rule and a leaned stick would close the page it was
+        // trying to scroll. The D-pad's own physical presses still arrive as
+        // themselves.
         if (pad != nullptr && listening) {
             constexpr Sint16 kNavStickOn = 18000;
             constexpr Sint16 kNavStickOff = 9000;
@@ -4530,10 +4716,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     latched = false;
                 }
             };
-            stickNav(navStickVertical, SDL_GAMEPAD_AXIS_LEFTY, render::Key::PadUp,
-                     render::Key::PadDown);
-            stickNav(navStickHorizontal, SDL_GAMEPAD_AXIS_LEFTX, render::Key::PadLeft,
-                     render::Key::PadRight);
+            stickNav(navStickVertical, SDL_GAMEPAD_AXIS_LEFTY, render::Key::Up,
+                     render::Key::Down);
+            stickNav(navStickHorizontal, SDL_GAMEPAD_AXIS_LEFTX, render::Key::Left,
+                     render::Key::Right);
         } else {
             // CLEARED THE MOMENT THE PAGE CLOSES, so a stick still leaned when
             // the map goes away does not arrive at the next page already
@@ -4641,8 +4827,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         }
         // THE FRAME DUMP, LAST -- after every overlay and both shutters, so
         // what lands on disk is exactly what the window is about to present.
-        // Scripted runs only: an interactive session would write PNGs forever.
-        if (!options.frameDumpDir.empty() && (demo != nullptr || watch != nullptr)) {
+        // UI-EA-SPEC ship checklist (FLOW): NO LONGER SCRIPTED-RUNS-ONLY.
+        // The transition grammar's evidence -- the boot veil rising, a page
+        // easing open, a back-to-opener swap, the commit beat -- lives in
+        // the ORDINARY windowed session, which the demo and the watch never
+        // drive. The flag is still explicit opt-in, still VERIFICATION ONLY
+        // (an hour of play would write two hundred thousand PNGs -- point it
+        // at a scratch dir and keep the run short), and a run that never
+        // passes it is byte-for-byte untouched.
+        if (!options.frameDumpDir.empty()) {
             std::error_code frameDumpEc;
             std::filesystem::create_directories(options.frameDumpDir, frameDumpEc);
             char frameName[16];

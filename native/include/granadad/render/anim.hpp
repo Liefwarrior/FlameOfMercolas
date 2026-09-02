@@ -32,6 +32,45 @@
 
 namespace granadad::render {
 
+// ---------------------------------------------------------------------------
+// UI-EA-SPEC sec. 3: THE ONE TRANSITION GRAMMAR'S DURATIONS, NAMED ONCE.
+//
+// "Everything is a veil or a plate; nothing snaps" -- and every duration in
+// that grammar is one of the four constants below, shared across the three
+// lanes (HUD's plates and tutor bands, PAGES' page compositions, FLOW's
+// open/close and commit routing) so no surface can drift onto its own private
+// timing. All of them are STEPS, per this file's own header: render-side,
+// never hashed, identical at every frame rate.
+// ---------------------------------------------------------------------------
+
+/// One page open or close: eight steps, a touch over an eighth of a second at
+/// kStepsPerSecond (60). This has been EasedToggle's shipped default since
+/// task #83; naming it makes the spec's "durations are constants, named once,
+/// shared" true by construction -- and pins it against a well-meaning tune-up
+/// that would move every committed frame in the game at once.
+inline constexpr std::int32_t kPageEaseSteps = 8;
+
+/// An EVENT-tier plate (place, case, clock, purse, room) holds this long
+/// after its edge before easing back down -- ~2.5 seconds.
+inline constexpr std::int32_t kPlateHoldSteps = 150;
+
+/// A TUTOR-tier band (nav bands, key legends, instruction copy) holds this
+/// long when raised -- on page open, on device change, on an unrecognized
+/// press -- before easing down to bare keycaps. ~3 seconds.
+inline constexpr std::int32_t kTutorHoldSteps = 180;
+
+/// Hesitation is the request for help: this much idle on a page re-raises its
+/// tutor band. ~5 seconds.
+inline constexpr std::int32_t kIdleWakeSteps = 300;
+
+/// The at-rest shutter: how many zero-input steps a default screenshot runs
+/// before capturing, so the frame it takes is the one the word budgets bind
+/// -- every tutor band raised at page-open has held its kTutorHoldSteps and
+/// eased fully down (180 + 8), and the kIdleWakeSteps re-raise has not yet
+/// arrived (300). 240 sits squarely inside that window: ~4 seconds.
+/// `--settle-steps=0` photographs the raised state instead.
+inline constexpr std::int32_t kCaptureRestSteps = 240;
+
 /// A steps-based ease between closed (0) and open (1).
 ///
 /// NEVER EXACTLY 0 THE INSTANT setTarget(true) OPENS SOMETHING THAT WAS FULLY
@@ -42,11 +81,14 @@ namespace granadad::render {
 class EasedToggle {
 public:
     /// riseSteps/fallSteps: how many step()/advance() calls a full open or
-    /// close takes. Eight is a touch over a tenth of a second at
-    /// kStepsPerSecond (60) -- long enough to read as motion, short enough
-    /// that a menu never feels laggy to open, which is the one thing polish
-    /// must never cost a player who is trying to play the game.
-    explicit EasedToggle(std::int32_t riseSteps = 8, std::int32_t fallSteps = 8) noexcept;
+    /// close takes. kPageEaseSteps (eight) is a touch over a tenth of a
+    /// second at kStepsPerSecond (60) -- long enough to read as motion, short
+    /// enough that a menu never feels laggy to open, which is the one thing
+    /// polish must never cost a player who is trying to play the game. The
+    /// default IS the named constant now, so the one transition grammar and
+    /// this class cannot quietly disagree.
+    explicit EasedToggle(std::int32_t riseSteps = kPageEaseSteps,
+                         std::int32_t fallSteps = kPageEaseSteps) noexcept;
 
     /// Snaps straight to fully open or fully closed, with no animation to
     /// play. What a Session uses at construction: a session built with the
@@ -110,7 +152,7 @@ public:
     /// moody, text-forward investigation game, not a fighting game's hit
     /// spark, and every caller of this class picks a value on the order of a
     /// tenth of a second at kStepsPerSecond (60), not longer.
-    explicit ImpactPulse(std::int32_t decaySteps = 8) noexcept;
+    explicit ImpactPulse(std::int32_t decaySteps = kPageEaseSteps) noexcept;
 
     /// Jumps straight back to full strength, even mid-decay. A flurry of
     /// punches restacks the flash rather than waiting for an earlier one to

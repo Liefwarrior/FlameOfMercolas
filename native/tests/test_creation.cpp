@@ -2108,18 +2108,19 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
     CHECK(flow.promptDevice() == render::InputDevice::KeyboardMouse);
     std::string kb = navLine(flow.page());
     CHECK(kb.find("ESC LEAVE") != std::string::npos);
-    CHECK(kb.find("UP DOWN MOVE") != std::string::npos);
-    CHECK(kb.find("ENTER OPEN") != std::string::npos);
-    // The digit foot is retired everywhere (UI-EA-SPEC sec. 5): digits pick
+    // PAGES' diet through FLOW's choke points: UP DOWN and ENTER are motifs,
+    // the digit foot is retired everywhere (UI-EA-SPEC sec. 5): digits pick
     // what they print, and the rows print them.
+    CHECK(kb.find("\x02\x03 MOVE") != std::string::npos);
+    CHECK(kb.find("\x01 OPEN") != std::string::npos);
     CHECK(kb.find("PICK") == std::string::npos);
-    CHECK(flow.page().commitVerb == "ENTER - OPEN");
+    CHECK(flow.page().commitVerb == "\x01 - OPEN");
 
     // One pad press: the SAME page re-words -- no reopen, no menu visit.
     flow.noteInputDevice(render::InputDevice::Pad);
     std::string pad = navLine(flow.page());
     CHECK(pad.find("B LEAVE") != std::string::npos);
-    CHECK(pad.find("D-PAD MOVE") != std::string::npos);
+    CHECK(pad.find("\x06 MOVE") != std::string::npos);
     CHECK(pad.find("A OPEN") != std::string::npos);
     CHECK(pad.find("PICK") == std::string::npos);
     CHECK(flow.page().commitVerb == "A - OPEN");
@@ -2133,14 +2134,68 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
     if (flow.step() == render::CreationStep::Customize) {
         pad = navLine(flow.page());
         CHECK(pad.find("B BACK") != std::string::npos);
-        CHECK(pad.find("D-PAD MOVE") != std::string::npos);
+        CHECK(pad.find("\x06 MOVE") != std::string::npos);
         // The spend key wears the arrowhead keycaps now (UI-EA-SPEC sec. 5).
-        CHECK(pad.find("SPEND") != std::string::npos);
+        CHECK(pad.find("\x04\x05 SPEND") != std::string::npos);
+        CHECK(pad.find("LEFT RIGHT") == std::string::npos);
         CHECK(pad.find("A OPEN") != std::string::npos);
         // And back to the keyboard the instant a key speaks.
         flow.noteInputKey(render::Key::S);
         kb = navLine(flow.page());
         CHECK(kb.find("ESC BACK") != std::string::npos);
-        CHECK(kb.find("ENTER OPEN") != std::string::npos);
+        CHECK(kb.find("\x01 OPEN") != std::string::npos);
     }
+}
+
+// ===========================================================================
+// UI-EA-SPEC sec. 3 rule 1 + sec. 4 violation #7 (FLOW lane): the page ease
+// and the door's armed quit
+// ===========================================================================
+
+TEST_CASE("the creation page ease: cold draws stay full, a live window eases each step") {
+    // THE COLD-DRAW GUARANTEE. A flow that is never advanced draws settled
+    // at full alpha -- byte-for-byte the old hard-coded 1.0F -- which is
+    // what keeps every headless capture and every hand-built frame in this
+    // suite exactly what it was.
+    render::CreationFlow flow = fresh();
+    CHECK(flow.page().alpha == 1.0F);
+    flow.chooseOrigin();  // a step change, with no advance() yet
+    CHECK(flow.page().alpha == 1.0F);
+
+    // THE LIVE-WINDOW EASE. advance() notices the step change, re-arms the
+    // ease from its opening bump (never exactly zero -- EasedToggle's own
+    // first-frame rule), and settles back to exactly 1 within
+    // kPageEaseSteps.
+    flow.advance();
+    const float bump = flow.page().alpha;
+    CHECK(bump > 0.0F);
+    CHECK(bump < 1.0F);
+    for (int i = 0; i < granadad::render::kPageEaseSteps; ++i) {
+        flow.advance();
+    }
+    CHECK(flow.page().alpha == 1.0F);
+
+    // And advancing WITHOUT a step change never re-arms: the page holds
+    // its settled alpha while the player reads it.
+    flow.advance();
+    CHECK(flow.page().alpha == 1.0F);
+}
+
+TEST_CASE("violation #7: the door's quit is armed state, and any other press disarms it") {
+    // The client's creation_input owns the edge (first ESC arms, second
+    // leaves, other presses disarm); this is the state surface it drives
+    // and the page prints the armed row from. Proven here at the Session
+    // altitude the suite can reach -- the routing itself lives in main.cpp's
+    // anonymous namespace, the file's own documented gap.
+    render::CreationFlow flow = fresh();
+    CHECK_FALSE(flow.quitArmed());
+    flow.armQuit();
+    CHECK(flow.quitArmed());
+    flow.disarmQuit();
+    CHECK_FALSE(flow.quitArmed());
+    // Arming is idempotent and survives advance() -- the countdown-free
+    // pause-menu shape: armed until something disarms it, never on a timer.
+    flow.armQuit();
+    flow.advance();
+    CHECK(flow.quitArmed());
 }

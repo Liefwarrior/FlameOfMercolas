@@ -108,24 +108,13 @@
 namespace granadad::render {
 
 // ---------------------------------------------------------------------------
-// UI-EA (LANE HUD): THE DISCLOSURE DURATIONS, NAMED ONCE AND SHARED.
-// UI-EA-SPEC sec. 3's rule is "durations are constants, named once, shared";
-// these are the spec's own numbers in the engine's own unit (steps at 60 Hz,
-// anim.hpp's header on why never milliseconds). kPageEaseSteps is already
-// EasedToggle's default 8 and is not restated here.
+// UI-EA: THE DISCLOSURE DURATIONS live in anim.hpp (included above), named
+// once and shared per UI-EA-SPEC sec. 3 -- kPlateHoldSteps (150, the EVENT
+// tier's ~2.5s hold), kTutorHoldSteps (180, the TUTOR tier's ~3s),
+// kIdleWakeSteps (300, hesitation-as-a-request-for-help). Both lanes landed
+// the same numbers in two homes; the integrator kept anim.hpp's and this
+// header defers to it. kPageEaseSteps is already EasedToggle's default 8.
 // ---------------------------------------------------------------------------
-
-/// EVENT tier: how long a plate or a woken reference row holds before easing
-/// down. The spec's kPlateHold, ~2.5s.
-inline constexpr int kPlateHoldSteps = 150;
-/// TUTOR tier: how long a raised band or hint holds. The spec's kTutorHold,
-/// ~3s.
-inline constexpr int kTutorHoldSteps = 180;
-/// TUTOR tier: how long a page sits idle before hesitation counts as a
-/// request for help and the band re-raises. The spec's kIdleWake, ~5s. The
-/// COUNTING of idleness is the input router's business (LANE FLOW signals the
-/// wake); this is only the shared number.
-inline constexpr int kIdleWakeSteps = 300;
 
 /// THE TUTOR BAND: the quickBar countdown-plus-toggle pattern, generalized --
 /// UI-EA-SPEC's cross-lane contract (c). A band of instructional text is

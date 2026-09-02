@@ -377,24 +377,30 @@ enum class Motif : std::uint8_t {
 // printable-character collisions: 0x01-0x06 are control bytes the font has no
 // glyph for and authored prose never contains (test_copy's sweep would refuse
 // them), which is what makes them safe to smuggle through std::string.
-inline constexpr char kSentinelArrowUp = '\x01';
-inline constexpr char kSentinelArrowDown = '\x02';
-inline constexpr char kSentinelArrowLeft = '\x03';
-inline constexpr char kSentinelArrowRight = '\x04';
-inline constexpr char kSentinelReturn = '\x05';
+// INTEGRATION RULING: the two lanes landed contract (a) with DIFFERENT byte
+// assignments -- controls.cpp's choke points emit Return=0x01, Up=0x02,
+// Down=0x03, Left=0x04, Right=0x05, DPad=0x06, and that numbering is pinned
+// in ~30 places across controls.cpp and three test files, against two pins
+// here. The emitter's numbering wins; these constants renumber to match it.
+// The values are arbitrary -- AGREEMENT is the contract.
+inline constexpr char kSentinelReturn = '\x01';
+inline constexpr char kSentinelArrowUp = '\x02';
+inline constexpr char kSentinelArrowDown = '\x03';
+inline constexpr char kSentinelArrowLeft = '\x04';
+inline constexpr char kSentinelArrowRight = '\x05';
 inline constexpr char kSentinelCross = '\x06';
 
 /// The composed forms a page's own copy reaches for. `kGlyphMoveKeys` is the
 /// rest-state keycap form of `ARROWS`/`UP DOWN LEFT RIGHT`; the single glyphs
-/// compose feet like `"\x05 - FACE IT"`.
-inline constexpr std::string_view kGlyphUp = "\x01";
-inline constexpr std::string_view kGlyphDown = "\x02";
-inline constexpr std::string_view kGlyphLeft = "\x03";
-inline constexpr std::string_view kGlyphRight = "\x04";
-inline constexpr std::string_view kGlyphReturn = "\x05";
+/// compose feet like `"\x01 - FACE IT"`.
+inline constexpr std::string_view kGlyphReturn = "\x01";
+inline constexpr std::string_view kGlyphUp = "\x02";
+inline constexpr std::string_view kGlyphDown = "\x03";
+inline constexpr std::string_view kGlyphLeft = "\x04";
+inline constexpr std::string_view kGlyphRight = "\x05";
 inline constexpr std::string_view kGlyphCross = "\x06";
-inline constexpr std::string_view kGlyphMoveKeys = "\x01\x02\x03\x04";
-inline constexpr std::string_view kGlyphUpDown = "\x01\x02";
+inline constexpr std::string_view kGlyphMoveKeys = "\x02\x03\x04\x05";
+inline constexpr std::string_view kGlyphUpDown = "\x02\x03";
 
 /// The motif a sentinel byte names, or false for any other character. Public
 /// so a page measuring words in a label (the census, the token-count pins) can

@@ -582,6 +582,14 @@ struct MapPageLayout {
 [[nodiscard]] MapPageLayout mapPageLayout(int frameWidth, int frameHeight,
                                           const DistrictMapState& state);
 
+/// Which view tab sits under framebuffer pixel (px,py), or -1. The inverse of
+/// the tab row drawDistrictMap draws -- same band, same title, same four tabs,
+/// same readout, through panel.hpp's tabRowTabAt -- exactly the casebook's own
+/// casebookTabAtPixel pattern. FLOW lane, UI-EA-SPEC sec. 4 violation #8: the
+/// map's tab row took clicks and dropped them while the casebook's answered.
+[[nodiscard]] int mapTabAtPixel(const DistrictMapState& state, int frameWidth, int frameHeight,
+                                int px, int py);
+
 /// How many rows the scrolling tabs (People, Index) show at once at this size,
 /// and which screenful `state.selected`/`state.detailFirst` puts you on.
 struct MapDetailScroll {

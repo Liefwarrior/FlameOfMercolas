@@ -174,3 +174,52 @@ TEST_CASE("pulse value never leaves 0..1 across a long run of scattered triggers
         CHECK(pulse.value() <= 1.0F);
     }
 }
+
+// ---------------------------------------------------------------------------
+// UI-EA-SPEC sec. 3: the one transition grammar's durations, pinned.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the transition grammar's constants hold the spec's values") {
+    // THESE ARE THE SPEC'S NUMBERS, NOT TUNABLES. kPageEaseSteps = 8 (the
+    // EasedToggle default every page opens on), kPlateHold ~2.5s, kTutorHold
+    // ~3s, kIdleWake ~5s, all at 60 steps a second. A lane that wants a
+    // different feel changes the spec first, then this case, then the value
+    // -- in that order.
+    CHECK(granadad::render::kPageEaseSteps == 8);
+    CHECK(granadad::render::kPlateHoldSteps == 150);
+    CHECK(granadad::render::kTutorHoldSteps == 180);
+    CHECK(granadad::render::kIdleWakeSteps == 300);
+
+    // THE AT-REST SHUTTER SITS INSIDE THE REST WINDOW: after the tutor band's
+    // page-open raise has fully eased down, before the idle re-raise arrives.
+    // This ordering is what makes the census's "rest" frame a real state and
+    // not a lucky race.
+    CHECK(granadad::render::kCaptureRestSteps >
+          granadad::render::kTutorHoldSteps + granadad::render::kPageEaseSteps);
+    CHECK(granadad::render::kCaptureRestSteps < granadad::render::kIdleWakeSteps);
+}
+
+TEST_CASE("the shipped defaults ARE the named constants") {
+    // EasedToggle() and ImpactPulse() default to kPageEaseSteps -- proven by
+    // behaviour rather than by reading the header: a default toggle reaches
+    // fully open in exactly kPageEaseSteps worth of motion (setTarget carries
+    // the first tick, see "opening from rest" above), and a default pulse
+    // decays to zero in exactly kPageEaseSteps advances.
+    EasedToggle toggle;
+    toggle.setTarget(true);
+    for (int i = 0; i < granadad::render::kPageEaseSteps - 1; ++i) {
+        CHECK_FALSE(toggle.settled());
+        toggle.advance();
+    }
+    CHECK(toggle.settled());
+    CHECK(toggle.value() == 1.0F);
+
+    ImpactPulse pulse;
+    pulse.trigger();
+    for (int i = 0; i < granadad::render::kPageEaseSteps - 1; ++i) {
+        pulse.advance();
+        CHECK(pulse.value() > 0.0F);
+    }
+    pulse.advance();
+    CHECK(pulse.value() == 0.0F);
+}

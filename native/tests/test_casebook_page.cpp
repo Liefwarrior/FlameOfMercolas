@@ -147,8 +147,11 @@ TEST_CASE("the lead-opened plate names the key in the hand holding the machine")
     REQUIRE(session.casePlateWanted());
     const std::string plate(session.casePlateLabel());
     INFO("plate: ", plate);
-    // UI-EA (LANE HUD): the dieted notice grammar, in the pad's own words.
-    CHECK(plate == "3 NEW LEADS - D-PAD UP");
+    // UI-EA: LANE HUD's dieted notice grammar carrying LANE FLOW's motif key
+    // -- the pad's D-PAD UP prints as the cross+up sentinels (sec. 5), so the
+    // whole plate is the news, a dash, and two glyphs that count zero words.
+    CHECK(plate == "3 NEW LEADS - \x06\x02");
+    CHECK(plate.find("YOUR CASEBOOK") == std::string::npos);
 }
 
 TEST_CASE("a lead that opens nothing new announces nothing") {
@@ -924,7 +927,7 @@ TEST_CASE("the commit verbs and GO TO IT wear the state's confirm key, not a har
     session.stepMany(sim::MoveInput{}, 2);
     session.examine();
     CasebookPageState page = session.casebookPageState();
-    REQUIRE(page.commitKey == "ENTER");  // keyboard session: the exact old literal
+    REQUIRE(page.commitKey == "\x01");  // keyboard session: the return motif, sec. 5
 
     // GATE FIX: the book was never toggled open, so the session's panel anim
     // reads 0 and both draws were pure black -- open the page by hand the way

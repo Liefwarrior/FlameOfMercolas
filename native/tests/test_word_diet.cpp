@@ -107,7 +107,7 @@ TEST_CASE("the word rule itself: tokens, values, and zero-cost glyphs") {
     // Punctuation-only and sentinel-only tokens are glyphs.
     CHECK(dietWords("+ -") == 0);
     CHECK(dietWords("\x01\x02\x03\x04") == 0);
-    CHECK(dietWords("\x05 - FACE IT") == 2);
+    CHECK(dietWords("\x01 - FACE IT") == 2);
     CHECK(dietWords("") == 0);
     CHECK(dietWords("  --  ") == 0);
 }

@@ -839,6 +839,31 @@ public:
     /// and is ignored rather than counted as the keyboard.
     void noteInputKey(Key key);
 
+    /// UI-EA-SPEC sec. 2, cross-lane contract (c): THE TUTOR WAKE EDGE.
+    /// FLOW's half of the tutor-band contract -- the client calls this on
+    /// the two wake events only IT can see: the prompt device changing
+    /// hands, and an unrecognized press (a key that resolved to no action
+    /// and no page verb -- the player asking a question the game did not
+    /// answer, which is the request for help). HUD's countdown/toggle
+    /// helper re-raises every tutor band whenever this serial moves; a
+    /// serial rather than a countdown so the signal composes with however
+    /// many bands exist without this side knowing their holds. CLIENT
+    /// state, promptDevice_'s own contract: never hashed, never fed to
+    /// MoveInput.
+    void noteTutorWake() noexcept { ++tutorWakeSerial_; }
+    [[nodiscard]] std::uint32_t tutorWakeSerial() const noexcept { return tutorWakeSerial_; }
+
+    /// UI-EA-SPEC sec. 3 rule 5, cross-lane contract (b): THE COMMIT BEAT.
+    /// The client arms this at commit routing -- the press that fires FACE
+    /// IT, TRAVEL, GO TO IT, REBIND, a wait or grimoire row, the
+    /// quit-confirm -- and the page drawers read the value back for one
+    /// restrained flash on the inverted fill (ImpactPulse's own decay,
+    /// kPageEaseSteps). One pulse for all pages -- at most one page owns
+    /// the input, so at most one commit lands per press. Render-side flow
+    /// state: never hashed, never fed to MoveInput.
+    void armCommitPulse() noexcept { commitPulse_.trigger(); }
+    [[nodiscard]] float commitPulseValue() const noexcept { return commitPulse_.value(); }
+
     /// THE CONTROLS PAGE, as the terminal-panel surface actually draws it:
     /// binding, verb, second binding, one sentence of help, and which family
     /// the row belongs to. Built from the live bindings, so a rebinding shows
@@ -2050,6 +2075,8 @@ private:
     /// that never heard of it (every test, every capture flag) draws the
     /// exact frames it always drew.
     InputDevice promptDevice_ = InputDevice::KeyboardMouse;
+    /// Contract (c)'s wake edge -- see noteTutorWake(). Client state.
+    std::uint32_t tutorWakeSerial_ = 0;
     bool optionsOpen_ = false;
     int optionCursor_ = 0;
     int optionPage_ = 0;
@@ -2320,6 +2347,18 @@ private:
     // the constructor's own note for why journalFocusAnim_ specifically
     // needs the real answer rather than an assumed one).
 
+    /// UI-EA-SPEC sec. 3 rule 4 -- CLOSE HONESTY: a page fades as what it
+    /// WAS. drawFrame() remembers, per frame, whether the surface it drew
+    /// the shared panel fade for was the tiled Menu, so the few frames of
+    /// close tail after casebookOpen_ goes false can keep drawing the tiles
+    /// easing out instead of the empty single panel the close used to hand
+    /// over to (the seam session.cpp:7455's own comment admitted).
+    /// `mutable` because drawFrame() is const and this is a memo about what
+    /// drawFrame itself just drew -- written and read nowhere else, so it
+    /// cannot desynchronize anything; a run's frame sequence is a pure
+    /// function of its steps and draws exactly as before. Never hashed.
+    mutable bool panelTailTiles_ = false;
+
     // --- INNOVATION SPRINT ITEM #3: some impact, tastefully -----------------
     //
     // Two real moments this build had never given any physical weight to --
@@ -2371,6 +2410,32 @@ private:
     /// so a session that boots the player already hurt does not read as
     /// having just been struck on its very first frame.
     std::int32_t lastPlayerHp_ = 0;
+
+    /// UI-EA-SPEC sec. 3 rule 5, cross-lane contract (b): THE COMMIT BEAT.
+    /// One restrained ImpactPulse for every page commit -- FACE IT, TRAVEL,
+    /// GO TO IT, REBIND, a wait row, a grimoire row, the quit-confirm --
+    /// triggered by the client at commit ROUTING (route_menu_key and
+    /// session_pointer's click commits, main.cpp), decayed here beside its
+    /// pulse siblings, and read back by the page drawers on the inverted
+    /// fill (PAGES' half of the contract). CreationFlow::commitPulse_ is
+    /// the same idea on the first window; this is the world's copy. One
+    /// instance for all pages, deliberately: at most one page owns the
+    /// input, so at most one commit can land per press, and per-page
+    /// instances would be state for a collision that cannot happen.
+    /// Render-side, never hashed.
+    ImpactPulse commitPulse_;
+
+    /// UI-EA-SPEC sec. 4 violation #4: WHO OPENED THE PAGE. True while the
+    /// Keys, Options or Wait page on screen was entered from the pause menu
+    /// (its CONTROLS/SETTINGS/WAIT rows) rather than by a direct shortcut,
+    /// re-derived at every open -- toggleKeys()/toggleOptions()/openWait()
+    /// set it from "was the pause menu up when I opened", and the keys<->
+    /// options sibling-tab swap carries it across (either of the pair still
+    /// owes its close to the same opener). closeConversation() reads it:
+    /// back returns to the OPENER -- the pause menu, cursor on the row that
+    /// opened the page, or the street for F1/F2 -- instead of always
+    /// skipping to the street. Render-side flow state, never hashed.
+    bool pageOpenedFromPause_ = false;
 
     /// A bouncer's warning finally lands with a little weight: the alert
     /// row's own legibility plate (drawTextPlate, this same sprint) briefly
