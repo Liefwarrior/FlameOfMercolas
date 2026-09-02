@@ -102,9 +102,77 @@
 #include <string>
 #include <string_view>
 
+#include "granadad/render/anim.hpp"
 #include "granadad/render/framebuffer.hpp"
 
 namespace granadad::render {
+
+// ---------------------------------------------------------------------------
+// UI-EA (LANE HUD): THE DISCLOSURE DURATIONS, NAMED ONCE AND SHARED.
+// UI-EA-SPEC sec. 3's rule is "durations are constants, named once, shared";
+// these are the spec's own numbers in the engine's own unit (steps at 60 Hz,
+// anim.hpp's header on why never milliseconds). kPageEaseSteps is already
+// EasedToggle's default 8 and is not restated here.
+// ---------------------------------------------------------------------------
+
+/// EVENT tier: how long a plate or a woken reference row holds before easing
+/// down. The spec's kPlateHold, ~2.5s.
+inline constexpr int kPlateHoldSteps = 150;
+/// TUTOR tier: how long a raised band or hint holds. The spec's kTutorHold,
+/// ~3s.
+inline constexpr int kTutorHoldSteps = 180;
+/// TUTOR tier: how long a page sits idle before hesitation counts as a
+/// request for help and the band re-raises. The spec's kIdleWake, ~5s. The
+/// COUNTING of idleness is the input router's business (LANE FLOW signals the
+/// wake); this is only the shared number.
+inline constexpr int kIdleWakeSteps = 300;
+
+/// THE TUTOR BAND: the quickBar countdown-plus-toggle pattern, generalized --
+/// UI-EA-SPEC's cross-lane contract (c). A band of instructional text is
+/// raised in full on an event (page open, device change, an unrecognized
+/// press, idle hesitation), holds for its countdown, and eases back down to
+/// whatever its at-rest form is (keycaps, or nothing).
+///
+/// OWNERSHIP SPLIT, per the contract: LANE HUD lands this shape; LANE PAGES
+/// instantiates one per band (map band, casebook foot, keys foot, creation
+/// feet, pause legend) and draws raised/rest forms off value(); LANE FLOW
+/// calls raise() on the wake events it routes. Steps-based, render-side,
+/// unhashed, exactly like every EasedToggle in the game.
+///
+/// THE CALLING CONVENTION IS THE QUICK BAR'S, deliberately: raise() wherever
+/// the event lands (any number of times per step -- a raise extends a live
+/// hold and never shortens one), sync(suppressed) wherever the owner's
+/// syncPanelAnim-equivalent runs (also any number of times per step), and
+/// advance() EXACTLY once per step -- a countdown spent per call would make
+/// the hold depend on how many keys were pressed during it, the defect
+/// Session::step()'s own countdown comment names.
+struct TutorBand {
+    EasedToggle anim;
+    int showSteps = 0;
+
+    /// The event: raise the band in full for `holdSteps`.
+    void raise(int holdSteps = kTutorHoldSteps) noexcept {
+        if (holdSteps > showSteps) {
+            showSteps = holdSteps;
+        }
+    }
+    /// Put it down now -- a page closing takes its bands with it.
+    void cancel() noexcept { showSteps = 0; }
+    /// Re-assert the target: up while the countdown lives and nothing owns
+    /// the frame over it. Safe to call many times per step.
+    void sync(bool suppressed) noexcept { anim.setTarget(!suppressed && showSteps > 0); }
+    /// Once per step, never from a const draw path.
+    void advance() noexcept {
+        if (showSteps > 0) {
+            --showSteps;
+        }
+        anim.advance();
+    }
+    /// 0 (at rest) .. 1 (fully raised): what the band's raised form draws at.
+    [[nodiscard]] float value() const noexcept { return anim.value(); }
+    /// True while the raise is still wanted -- the target a test asserts on.
+    [[nodiscard]] bool wanted() const noexcept { return showSteps > 0; }
+};
 
 /// What the HUD is told about the player. Nothing here is authoritative — the
 /// simulation owns all of it and the HUD only draws it.
@@ -137,12 +205,27 @@ struct HudState {
     bool showCompass = true;
     /// BAM facing, straight off the body.
     std::int32_t yawBam = 0;
-    /// Shown under the compass. Empty draws nothing.
-    std::string_view locationLabel;
+    /// UI-EA (LANE HUD): THE STREET SUB-LABEL IS GONE. locationLabel used to
+    /// sit here -- the place name under the ribbon, up every frame. The word
+    /// diet's row table deletes it outright: the threshold plate already
+    /// announces every crossing at the moment it happens, and a reference row
+    /// restating it sixty times a second was a word on screen because it was
+    /// true, not because it changed. The map and the dialogue epithet still
+    /// print Session::placeLabel(); the street does not.
     /// Seconds since midnight. Drawn top-right as HH:MM. Negative draws nothing.
     int timeOfDaySeconds = -1;
+    /// UI-EA (LANE HUD): THE CLOCK IS EARNED TEXT NOW. Session's own
+    /// EasedToggle (clockAnim_) raises it on an hour tick, on any time charge
+    /// (travel, a wait pick, a sleep) and while the wait page is pricing
+    /// hours, and puts it down ~2.5s later. Defaults to 1: every hand-built
+    /// HudState that predates the diet draws exactly as it always has.
+    float clockFade = 1.0F;
     /// The purse, top-right under the clock. Negative draws nothing.
     int coin = -1;
+    /// UI-EA (LANE HUD): THE PURSE WAKES ON A COIN DELTA and sleeps ~2.5s
+    /// later -- money is on screen when it moves, which is when it matters.
+    /// Same default-1 contract as clockFade.
+    float purseFade = 1.0F;
     /// What the ward as a whole thinks of the player, top-right under the
     /// purse. Reputation READABLE rather than hidden. Empty draws nothing.
     std::string_view standingLabel;
@@ -196,20 +279,45 @@ struct HudState {
     int quickSelected = -1;
     int quickEquipped = -1;
     float quickBarFade = 0.0F;
+    /// UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST -- "Q HOLD - WHEEL" (the key
+    /// through promptLabel, so a pad reads its own button). The grimoire's
+    /// tap-vs-hold split is a modern idiom and stays undiscoverable by
+    /// accident (flow map violation #9, ruled KEPT); this toast is how it is
+    /// taught: Session raises it the first two times the quick bar comes up,
+    /// riding the strip's own countdown, and never again. TUTOR tier: it
+    /// takes a bottom-band slot directly after the strip, in the quiet
+    /// reference ink, and both empty-and-zero defaults draw nothing at all.
+    std::string_view wheelHint;
+    float wheelHintFade = 0.0F;
     /// The ladder the player is highest on, and the rung: "FLAME - DISCIPLE".
     /// Bottom-left, stacked over the health bar, because that is where a
     /// character's own state lives and the centre stays empty. Drawn only when
     /// the player is on a rung at all.
+    /// UI-EA (LANE HUD): earned text -- wakes for ~2.5s when the rung
+    /// changes, sleeps otherwise. A title held for a week is on the sheet.
     std::string_view guildLabel;
     /// What the current questline wants next, in the journal's own words.
     /// Bottom-left under the guild, and clipped to a single line.
+    /// UI-EA (LANE HUD): earned text -- wakes on change, sleeps otherwise.
     std::string_view objectiveLabel;
-    /// S8: the man who has put the player on the floor most often, what he
-    /// answers to now, and whether he is looking for them -- "RIVAL BRAM
-    /// MARROW - CRAFTLORD x2  HUNTING". Bottom-left under the objective, still
-    /// on the edge. Empty draws nothing, which is the usual case: nobody has
+    /// S8: the man who has put the player on the floor most often and how
+    /// often -- "BRAM MARROW x2". Bottom-left under the objective, still on
+    /// the edge. Empty draws nothing, which is the usual case: nobody has
     /// beaten you yet.
+    ///
+    /// UI-EA (LANE HUD): DIETED 6 -> 3 (the spec's "rank 6->3"). The "RIVAL "
+    /// prefix and the title were reference material -- the row's own corner
+    /// and colour already say what he is, and his title is on his sheet. The
+    /// HUNTING word leaves the label too; the fact rides rivalHunts below and
+    /// the row's red ink, which is how the row has always been read at a
+    /// glance ("a hunted man should not have to read the line to notice it").
+    /// The count (x2) is a value and values never get vaguer.
     std::string_view rivalLabel;
+    /// UI-EA (LANE HUD): whether the rival is currently hunting the player.
+    /// Colours the row red. The word itself is off the label (above); a
+    /// hand-built label that still says "HUNTING" is honoured too, so every
+    /// pre-diet HudState draws in the colour it always did.
+    bool rivalHunts = false;
     /// S9: whether the room can currently make the player out, how much light
     /// is falling on them and how much noise they are making -- "HIDDEN CROUCH
     /// DARK 12  QUIET". Top-right under the sack, still hugging the edge.
@@ -248,8 +356,14 @@ struct HudState {
     /// Which accent the subject and the reticle take. See AimKind.
     int aimKind = 0;
     /// S10: where the bloodletter trail stands and where it wants you next --
-    /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row. Empty only when
-    /// casebook.json is missing.
+    /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row.
+    ///
+    /// UI-EA (LANE HUD): EARNED TEXT. The row used to be up every frame; now
+    /// Session raises it for ~2.5s when a beat or a lead moves and when the
+    /// casebook closes (the recap a player putting the book down actually
+    /// wants), and it sleeps the rest of the time -- the J page is where the
+    /// case lives, and a corner row nobody is looking at cannot orient
+    /// anybody by being permanent.
     ///
     /// AN INVESTIGATION READOUT IS THE ELEMENT MOST LIKELY TO BECOME A PANEL IN
     /// THE MIDDLE OF THE SCREEN. It gets one row on an edge, the same deal the
@@ -267,6 +381,9 @@ struct HudState {
     /// this struct at once at three resolutions.
     std::string_view caseLabel;
     /// One line about the room the player is standing in. Bottom-right.
+    /// UI-EA (LANE HUD): earned text -- wakes on room entry and on the room's
+    /// loudness turning over, sleeps ~2.5s later. A head-count drifting by
+    /// one is not an event and does not wake it.
     std::string_view roomLabel;
     /// Something said to the player that they need to have heard -- a
     /// bouncer's warning. Bottom edge, centred horizontally but well below the
@@ -343,15 +460,15 @@ struct HudState {
     /// of the Quayward's east gate -- announced once, briefly, on a plate
     /// centred over the compass ribbon, and then gone.
     ///
-    /// IT IS NOT A SECOND locationLabel AND IT MUST NEVER BECOME ONE.
-    /// locationLabel (above) is REFERENCE: the sub-label of the compass, up
-    /// every frame, dim, small, read when you want it. This is an EVENT --
-    /// crossing a boundary -- and the whole of what it adds is that the
-    /// crossing is legible AT THE MOMENT IT HAPPENS instead of only by
-    /// noticing that a dim row two sizes down has quietly changed its words.
-    /// Both are drawn from the same fact (sim::docks::placeNameAt); neither
-    /// is derived from the other, because one is a state and the other is an
-    /// edge, exactly the distinction anim.hpp draws between EasedToggle and
+    /// IT IS NOT A REFERENCE ROW AND IT MUST NEVER BECOME ONE. The old
+    /// locationLabel sub-label -- the same fact up every frame, dim, small --
+    /// is exactly what the word diet deleted; this is an EVENT -- crossing a
+    /// boundary -- and the whole of what it adds is that the crossing is
+    /// legible AT THE MOMENT IT HAPPENS. With the sub-label gone the plate is
+    /// the one thing on the street that names ground, which is the diet's own
+    /// argument: text prints when it changes, never merely because it is
+    /// true. Drawn from sim::docks::placeNameAt, an edge and not a state --
+    /// exactly the distinction anim.hpp draws between EasedToggle and
     /// ImpactPulse.
     ///
     /// TOP BAND, NOT THE MIDDLE, and that is this file's own rule and not a
@@ -409,11 +526,12 @@ struct HudState {
     /// already guarantees only one is non-empty at a time, and hud.cpp enforces
     /// it anyway rather than trusting a caller.
     ///
-    /// IT IS NOT A SECOND caseLabel. caseLabel is REFERENCE -- the bottom-left
-    /// row that is up every frame and says where the trail stands. This is an
-    /// EVENT. The same distinction placePlate draws against locationLabel, for
-    /// the same reason, and it is why this is a plate and not a brighter
-    /// corner: a row nobody is looking at cannot announce anything by changing.
+    /// IT IS NOT A SECOND caseLabel. caseLabel is the bottom-left row that
+    /// says where the trail stands -- and under the word diet even THAT row
+    /// sleeps at rest, waking only when a beat moves or the book closes. This
+    /// is an EVENT plate, and while it is up the case row is deliberately
+    /// kept down (the spec's "the notice IS the case news"): one piece of
+    /// news, said once, in one place.
     ///
     /// Empty draws nothing, and so does a zero fade: every hand-built HudState
     /// that predates these three fields is pixel-identical.

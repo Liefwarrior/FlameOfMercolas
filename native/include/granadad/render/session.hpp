@@ -1221,6 +1221,47 @@ public:
     /// can assert on.
     [[nodiscard]] bool quickBarWanted() const noexcept { return quickBarShowSteps_ > 0; }
 
+    // --- the Law of Earned Text (UI-EA-SPEC sec. 2, LANE HUD) ----------------
+    //
+    // TEXT PRINTS WHEN IT CHANGES, WHEN IT IS AIMED AT, OR WHEN THE PLAYER
+    // HESITATES -- NEVER MERELY BECAUSE IT IS TRUE. The street HUD's
+    // reference rows (clock, purse, case, room, guild, objective) used to be
+    // furniture: up every frame, saying that nothing had happened. Each is an
+    // EVENT row now -- a countdown armed on its own edge in syncPanelAnim(),
+    // spent once a step in step(), eased by its own EasedToggle, exactly the
+    // quickBarShowSteps_ machinery generalized. All render-side, steps-based,
+    // unhashed. These accessors are the targets tests assert on, the same
+    // deal quickBarWanted()/placePlateWanted() already offer.
+
+    /// True while the clock is WANTED: ~2.5s after an hour tick or a time
+    /// charge (travel, a wait pick, a sleep), for the life of the wait page
+    /// (whose rows price the very hours the clock shows), and on the pause
+    /// stack (the spec's #34 keeps rows, clock and title there).
+    [[nodiscard]] bool clockWanted() const noexcept {
+        return waitOpen_ || pauseOpen_ || clockShowSteps_ > 0;
+    }
+    /// True while the purse is WANTED: ~2.5s after any coin delta.
+    [[nodiscard]] bool purseWanted() const noexcept { return purseShowSteps_ > 0; }
+    /// True while the case row is WANTED: ~2.5s after a beat/lead change or a
+    /// casebook close -- and never while the lead-opened plate is up, which
+    /// says the same news louder ("the notice IS the case news").
+    [[nodiscard]] bool caseRowWanted() const noexcept { return caseShowSteps_ > 0; }
+    /// True while the room row is WANTED: ~2.5s after a room entry or the
+    /// room's loudness turning over. A head-count drifting is not an event.
+    [[nodiscard]] bool roomRowWanted() const noexcept { return roomShowSteps_ > 0; }
+    /// True while the guild/objective rows are WANTED: ~2.5s after a change.
+    [[nodiscard]] bool guildRowWanted() const noexcept { return guildShowSteps_ > 0; }
+    [[nodiscard]] bool objectiveRowWanted() const noexcept {
+        return objectiveShowSteps_ > 0;
+    }
+    /// The Q-hold tutor toast: what it says while it is up, and whether it is
+    /// wanted. Armed on the quick bar's first two risings ever, riding the
+    /// strip's own countdown, then retired for the session.
+    [[nodiscard]] std::string_view wheelHintLabel() const noexcept {
+        return std::string_view{wheelHintText_};
+    }
+    [[nodiscard]] bool wheelHintWanted() const noexcept { return wheelHint_.wanted(); }
+
     // --- the threshold plate (DISTRICT PHASE D) -------------------------------
     //
     // CROSSING INTO A NAMED PLACE IS AN EVENT AND THIS BUILD HAS NEVER SAID SO.
@@ -1951,6 +1992,13 @@ private:
     /// string is held through the fade so the notice ends with its own words.
     std::string casePlateText_;
     int casePlateShowSteps_ = 0;
+    /// UI-EA (LANE HUD): THE ONE NOTICE GRAMMAR -- "<NEWS> - <key>", the
+    /// spec's own "3 NEW LEADS - J". The news in the ward's words, a dash,
+    /// the live key that opens the book, through promptLabel so a pad reads
+    /// its own button. "YOUR CASEBOOK"/"YOUR LETTERS" died in the diet: the
+    /// key IS the pointer, and every notice ends at the same door (the Menu).
+    /// One place builds it so six announcement sites cannot drift apart.
+    void armCasePlate(std::string news);
     /// THE CHARACTER TILE'S OWN CURSOR AND PAGE. Read-only (nothing on this
     /// tile is a choice to make), so there is no "entry" to remember.
     int characterCursor_ = 0;
@@ -2114,6 +2162,50 @@ private:
     static constexpr int kQuickBarShowSteps = 120;
     int quickBarShowSteps_ = 0;
     std::array<std::string, 10> quickBarNames_{};
+    /// UI-EA (LANE HUD): THE LAW OF EARNED TEXT's own state. One wake
+    /// countdown per reference row (the quickBarShowSteps_ shape, one each,
+    /// because a purse waking has nothing to do with a room waking), the two
+    /// toggles the rows that draw live numbers need (clock, purse -- no
+    /// cache, numbers do not go away mid-fade), and the last-seen values the
+    /// edges are detected against. hudEdgesSeeded_ is lastPlaceName_'s own
+    /// reasoning for the whole family: the first syncPanelAnim() call seeds
+    /// every last-value and arms nothing, so a session cannot boot with its
+    /// corner rows all announcing themselves. EVENT tier holds
+    /// kPlateHoldSteps (~2.5s) -- hud.hpp's shared constant, named once per
+    /// the spec's own rule. All render-side, none of it hashed.
+    static constexpr int kHudWakeSteps = kPlateHoldSteps;
+    EasedToggle clockAnim_;
+    EasedToggle purseAnim_;
+    int clockShowSteps_ = 0;
+    int purseShowSteps_ = 0;
+    int caseShowSteps_ = 0;
+    int roomShowSteps_ = 0;
+    int guildShowSteps_ = 0;
+    int objectiveShowSteps_ = 0;
+    bool hudEdgesSeeded_ = false;
+    int lastClockHour_ = 0;
+    int lastClockTod_ = 0;
+    std::int32_t lastCoinSeen_ = 0;
+    std::string lastCaseSeen_;
+    std::string lastRoomSeen_;
+    std::string lastGuildSeen_;
+    std::string lastObjectiveSeen_;
+    bool lastBookOpen_ = false;
+    /// UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST. The grimoire's tap-vs-hold
+    /// split stays (flow map #9, ruled a kept modern idiom); this is how it
+    /// is taught -- "Q HOLD - WHEEL", through promptLabel so a pad names its
+    /// own button, raised on the quick bar's first TWO risings ever and
+    /// riding the strip's own countdown, then retired for the session. Two
+    /// exposures because one can land while the player is looking at the
+    /// street, and a third is nagging. The band itself is hud.hpp's
+    /// TutorBand -- the countdown/toggle helper the cross-lane contract has
+    /// this lane land, used here first so the shape PAGES instantiates per
+    /// band and FLOW wakes is a shape that demonstrably works.
+    static constexpr int kWheelHintShows = 2;
+    int wheelHintShows_ = 0;
+    bool lastQuickBarUp_ = false;
+    std::string wheelHintText_;
+    TutorBand wheelHint_;
     /// DISTRICT PHASE D. The threshold plate's own ease -- its OWN toggle per
     /// the settled convention (DECISIONS.md UI rule 1): crossing a boundary
     /// has nothing to do with any other row's trigger, and sharing one would
@@ -2343,7 +2435,11 @@ struct SmokeRunConfig {
     std::filesystem::path screenshot;
     /// Integer upscale applied to the captured PNG. 1 writes the raw buffer.
     int captureScale = 2;
-    /// A one-line stamp burnt into the corner of the capture.
+    /// UI-EA (LANE HUD): RETIRED, ACCEPTED AS A NO-OP. This used to burn
+    /// "GRANADAD <version>" into the corner of every capture; the word diet
+    /// deleted the stamp outright (it rides the pause/keys title rule only),
+    /// and the census transcribes captures, so it had to leave this path too.
+    /// The field stays so every existing caller and capture script parses.
     bool stamp = true;
     /// Walk the scripted route forward. Off holds position, which is what a
     /// capture of a room wants.

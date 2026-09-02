@@ -250,14 +250,18 @@ void pickCursorIfVisible(int& cursor, int page, int slot, std::size_t total) noe
 /// SHIP NOTE MOVE 3. The opening hint, GENERATED from the live bindings in
 /// the live device's vocabulary -- which closes the S3 verification gap the
 /// constructor stated out loud (a hand-written "TAB YOUR NOTES..." that went
-/// stale the moment Menu was rebound off Tab). On the shipped keyboard table
-/// this is character-for-character the string it replaces: promptKeyName
-/// prints '<'/'>' for the two brackets the 4x6 font cannot draw, the same
-/// glyphs the old literal chose for the same reason.
+/// stale the moment Menu was rebound off Tab).
+///
+/// UI-EA (LANE HUD): LIVE VERBS ONLY, AND FEWER OF THEM. The old band sold
+/// "< > MORE PAGES" on the street, where PagePrev/PageNext do nothing at all
+/// (flow map violation #11 -- a dead control advertised in the first ten
+/// seconds of play). The tutor tier names the three verbs a stranger can
+/// actually press where they stand: the notes, the map, the hand. Keycap
+/// then verb, no filler words -- "J NOTES  M MAP  E USE" on the shipped
+/// keyboard, the pad's own buttons the moment a pad speaks.
 [[nodiscard]] std::string openingHintLine(const ControlSettings& controls, InputDevice device) {
-    return std::string(promptLabel(controls, Action::Menu, device)) + " YOUR NOTES  " +
-           std::string(promptLabel(controls, Action::PagePrev, device)) + " " +
-           std::string(promptLabel(controls, Action::PageNext, device)) + " MORE PAGES  " +
+    return std::string(promptLabel(controls, Action::Menu, device)) + " NOTES  " +
+           std::string(promptLabel(controls, Action::Map, device)) + " MAP  " +
            std::string(promptLabel(controls, Action::Interact, device)) + " USE";
 }
 
@@ -377,10 +381,17 @@ Session::Session(const SessionConfig& config)
         // now (openingHintLine, above), so a rebound Menu renames itself here
         // by construction -- and noteInputDevice() re-words it live when a
         // pad speaks while it is still up. On the shipped table this reads
-        // "J YOUR NOTES  < > MORE PAGES  E USE" -- J per the owner's own
-        // "use J for journal since that's how it's done by convention".
+        // "J NOTES  M MAP  E USE" -- J per the owner's own "use J for
+        // journal since that's how it's done by convention".
+        //
+        // UI-EA (LANE HUD): FOUR SECONDS, NOT TWELVE. The hint is tutor
+        // tier now -- the message-row narration hold, not a twelfth of a
+        // minute of furniture. A device change while it is still on screen
+        // re-words it AND re-raises it whole (noteInputDevice -- the tutor
+        // tier's own "raised in full on device change"), so the four
+        // seconds are four seconds in whichever hand holds the machine.
         message_ = openingHintLine(controls_, promptDevice_);
-        messageSteps_ = 60 * 12;
+        messageSteps_ = 60 * 4;
     }
     // TASK #83. SNAPPED, NOT EASED. Nobody pressed a key to reach whichever of
     // these is true on frame one -- SessionConfig chose it -- so there is
@@ -422,6 +433,12 @@ Session::Session(const SessionConfig& config)
     standingAnim_.snapTo(standingAnim_.target());
     heatAnim_.snapTo(heatAnim_.target());
     stashAnim_.snapTo(stashAnim_.target());
+    // UI-EA (LANE HUD). The earned-text toggles: syncPanelAnim() above has
+    // just seeded every last-seen edge (hudEdgesSeeded_) and armed nothing,
+    // so all three targets are the family's frame-one truth -- closed.
+    clockAnim_.snapTo(clockAnim_.target());
+    purseAnim_.snapTo(purseAnim_.target());
+    wheelHint_.anim.snapTo(wheelHint_.anim.target());
     // HELD-EFFECTS BUILD. The same snap, one per slot -- a session cannot
     // boot with a hold live today, but the rule is "snap to whatever
     // syncPanelAnim() just chose", not "assume empty".
@@ -1011,17 +1028,24 @@ void Session::examine() {
     // this notice repeat by standing still and pressing the key.
     if (saw.opened > 0) {
         // THROUGH promptLabel, NOT keyName(primary[Menu]): the plate has to
-        // name the key in the hand that is holding the machine -- "J YOUR
-        // CASEBOOK" on a keyboard, "D-PAD UP YOUR CASEBOOK" on a pad -- and
-        // the raw primary slot is keyboard-only wording, the exact literal
-        // class the opening hint already left behind (openingHintLine).
-        casePlateText_ = std::to_string(saw.opened) +
-                         (saw.opened == 1 ? " NEW LEAD  " : " NEW LEADS  ") +
-                         std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
-                         " YOUR CASEBOOK";
-        casePlateShowSteps_ = kCasePlateShowSteps;
-        syncPanelAnim();
+        // name the key in the hand that is holding the machine -- "J" on a
+        // keyboard, "D-PAD UP" on a pad -- and the raw primary slot is
+        // keyboard-only wording, the exact literal class the opening hint
+        // already left behind (openingHintLine). UI-EA: the notice grammar
+        // is armCasePlate's -- "3 NEW LEADS - J", the spec's own line.
+        armCasePlate(std::to_string(saw.opened) +
+                     (saw.opened == 1 ? " NEW LEAD" : " NEW LEADS"));
     }
+}
+
+void Session::armCasePlate(std::string news) {
+    // UI-EA (LANE HUD): see the declaration. The dash and the live key are
+    // the whole chrome a notice gets; the news is the ward's own words and
+    // arrives untouched.
+    casePlateText_ = std::move(news) + " - " +
+                     std::string(promptLabel(controls_, Action::Menu, promptDevice_));
+    casePlateShowSteps_ = kCasePlateShowSteps;
+    syncPanelAnim();
 }
 
 /// PUTS THE NOTES AND THE KEY LIST DOWN. Called by every verb that acts on the
@@ -1088,24 +1112,12 @@ void Session::courierDeliverNow() {
     (void)sheetBook_.hear(first, caseNowSeconds());
     say("ONNA, AT YOUR ELBOW: PAPER FOR YOU, OUT OF THE MISSION. IT COULD NOT WAIT.");
     // The lead-opened plate, in its own words -- the same field, the same
-    // countdown, the same live Menu binding the new-leads notice builds from.
-    // THROUGH promptLabel, NOT keyName(primary[Menu]): the tutorial's own
-    // plate has to name the key in the hand that is holding the machine --
-    // "J YOUR LETTERS" on a keyboard, "D-PAD UP YOUR LETTERS" on a pad -- the
-    // same device-aware wording the Bloodletter lead-opened plate above
-    // (saw.opened) already keeps. The raw primary slot is keyboard-only
-    // wording, so a pad player was told "J" for a key their pad has not got;
-    // on a tutorial built to teach which key to press, that is the exact
-    // confusion the device-aware machinery exists to prevent (Ship phase,
-    // found by driving the courier on a pad).
-    casePlateText_ =
-        "A MISSION SHEET  " +
-        std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
-        " YOUR LETTERS";
-    casePlateShowSteps_ = kCasePlateShowSteps;
+    // countdown, the same live Menu binding the new-leads notice builds from,
+    // all through armCasePlate so the device-aware key and the notice grammar
+    // ("A MISSION SHEET - J") are one fact in one place.
+    armCasePlate("A MISSION SHEET");
     courierStage_ = 1;
     courierSteps_ = 0;
-    syncPanelAnim();
 }
 
 const sim::Actor* Session::sheetQuarry() const {
@@ -1186,14 +1198,10 @@ void Session::stepSheetCase() {
                     sheetBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
                 sheetCarry_ = false;
                 say(done.line);
-                // Device-aware, the courier plate's twin: "D-PAD UP YOUR
-                // CASEBOOK" on a pad, not the raw keyboard "J" (Ship phase).
-                casePlateText_ =
-                    "THE ERRAND IS PAID  " +
-                    std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
-                    " YOUR CASEBOOK";
-                casePlateShowSteps_ = kCasePlateShowSteps;
-                syncPanelAnim();
+                // Device-aware through armCasePlate, the courier plate's
+                // twin: "THE ERRAND IS PAID - J", the pad's own button when
+                // a pad holds the machine (Ship phase).
+                armCasePlate("THE ERRAND IS PAID");
             }
         }
     }
@@ -1256,12 +1264,7 @@ void Session::settleTakeWrit() {
     const sim::Lead& lead = evictRaws_.leads()[static_cast<std::size_t>(first)];
     (void)evictBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
     syncEvictionTopics();
-    casePlateText_ =
-        "A WRIT OF DISTRAINT  " +
-        std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
-        " YOUR LETTERS";
-    casePlateShowSteps_ = kCasePlateShowSteps;
-    syncPanelAnim();
+    armCasePlate("A WRIT OF DISTRAINT");
 }
 
 void Session::settleYieldWrit() {
@@ -1284,12 +1287,7 @@ void Session::settleYieldWrit() {
     const sim::LookResult done = evictBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
     say(done.line);
     syncEvictionTopics();
-    casePlateText_ =
-        "THE WRIT IS GIVEN BACK  " +
-        std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
-        " YOUR CASEBOOK";
-    casePlateShowSteps_ = kCasePlateShowSteps;
-    syncPanelAnim();
+    armCasePlate("THE WRIT IS GIVEN BACK");
 }
 
 int Session::evictLeadInLookReach() const {
@@ -1409,12 +1407,7 @@ void Session::stepEvictCase() {
                 evictBook_.look(lead.site.x, lead.site.y, lead.site.band, now);
             grantEvictor();
             say(done.line);
-            casePlateText_ =
-                "THE EVICTOR IS YOURS  " +
-                std::string(promptLabel(controls_, Action::Menu, promptDevice_)) +
-                " YOUR CASEBOOK";
-            casePlateShowSteps_ = kCasePlateShowSteps;
-            syncPanelAnim();
+            armCasePlate("THE EVICTOR IS YOURS");
         }
     }
 }
@@ -1436,6 +1429,11 @@ void Session::noteInputDevice(InputDevice device) {
     promptDevice_ = device;
     if (hintUp) {
         message_ = openingHintLine(controls_, promptDevice_);
+        // UI-EA (LANE HUD): the tutor tier raises in full on a device
+        // change. The hint's four seconds shrank from twelve in the word
+        // diet, so a hand-over mid-read gets the whole read back in the new
+        // vocabulary rather than the tail of the old one's clock.
+        messageSteps_ = std::max(messageSteps_, 60 * 4);
     }
 }
 
@@ -3664,6 +3662,32 @@ void Session::step(const sim::MoveInput& input) {
         --quickBarShowSteps_;
     }
     quickBarAnim_.advance();
+    // UI-EA (LANE HUD): THE EARNED-TEXT COUNTDOWNS, spent HERE and only
+    // here, once a step -- placePlateShowSteps_'s own rule, whole family:
+    // syncPanelAnim() can run several times in one step and a decrement in
+    // there would make a row's 2.5 seconds depend on how many keys were
+    // pressed during them.
+    if (clockShowSteps_ > 0) {
+        --clockShowSteps_;
+    }
+    if (purseShowSteps_ > 0) {
+        --purseShowSteps_;
+    }
+    if (caseShowSteps_ > 0) {
+        --caseShowSteps_;
+    }
+    if (roomShowSteps_ > 0) {
+        --roomShowSteps_;
+    }
+    if (guildShowSteps_ > 0) {
+        --guildShowSteps_;
+    }
+    if (objectiveShowSteps_ > 0) {
+        --objectiveShowSteps_;
+    }
+    clockAnim_.advance();
+    purseAnim_.advance();
+    wheelHint_.advance();
     // DISTRICT PHASE D. The plate's own countdown and ease -- the strip's
     // shape directly above, for the strip's reason. The countdown runs down
     // HERE and only here, once a step: syncPanelAnim() can be called several
@@ -3858,9 +3882,13 @@ void Session::say(std::string line) {
         line += "..";
     }
     message_ = std::move(line);
-    // Six seconds on screen. Long enough to read at a glance, short enough that
-    // the bottom of the frame is usually empty.
-    messageSteps_ = 6 * sim::kStepsPerSecond;
+    // UI-EA (LANE HUD): FOUR SECONDS, the spec's own message-row narration
+    // hold (sec. 2, EVENT tier). Six was the pre-diet number; a line the
+    // player is reading is re-armed by the next line anyway, and the bottom
+    // of the frame is meant to be empty more than it is full. A bouncer's
+    // WARNING is not on this clock -- `warned` holds the alert up for as
+    // long as the house is still saying it (syncPanelAnim's own rule).
+    messageSteps_ = 4 * sim::kStepsPerSecond;
     // TASK #83. EAGER, so the very first frame drawn after whichever verb
     // called this -- most of them do not call step() first, and the caller
     // here could be a test that never does -- already shows the prompt easing
@@ -6611,12 +6639,137 @@ void Session::syncPanelAnim() noexcept {
     }
     interactAnim_.setTarget(aimVisible);
     sync(lockAnim_, lockCache_, lockLine());
-    sync(caseAnim_, caseCache_, caseLine());
-    sync(roomAnim_, roomCache_, roomLine());
     sync(rivalAnim_, rivalCache_, rivalLine());
-    sync(guildAnim_, guildCache_, guildLine());
-    sync(objectiveAnim_, objectiveCache_, objectiveLine());
     sync(stealthAnim_, stealthCache_, tavern_->playerInside() ? stealthLine() : std::string());
+
+    // UI-EA (LANE HUD): THE LAW OF EARNED TEXT. Text prints when it CHANGES,
+    // when it is aimed at, or when the player hesitates -- never merely
+    // because it is true. The four reference rows below (case, room, guild,
+    // objective) and the clock/purse pair used to be furniture; each is an
+    // EVENT now: an edge detected here arms a ~2.5s countdown
+    // (kHudWakeSteps), step() spends it, and the row's own EasedToggle eases
+    // it down. THE EDGES ARE DETECTED AGAINST LAST-SEEN VALUES and this
+    // function runs several times a step, so every compare below is
+    // idempotent by construction -- lastPlaceName_'s own pattern, whole
+    // family. The first call ever (the constructor's) SEEDS and arms
+    // nothing: a session does not boot with its corner announcing itself.
+    const std::string caseNow = caseLine();
+    const std::string roomNow = roomLine();
+    const std::string guildNow = guildLine();
+    const std::string objectiveNow = objectiveLine();
+    const bool bookUp = casebookOpen_ || casebookPageOpen();
+    const int hourNow = timeOfDay_ / 3600;
+    const std::int32_t coinNow = tavern_->playerCoin();
+    if (!hudEdgesSeeded_) {
+        hudEdgesSeeded_ = true;
+        lastClockHour_ = hourNow;
+        lastClockTod_ = timeOfDay_;
+        lastCoinSeen_ = coinNow;
+        lastCaseSeen_ = caseNow;
+        lastRoomSeen_ = roomNow;
+        lastGuildSeen_ = guildNow;
+        lastObjectiveSeen_ = objectiveNow;
+        lastBookOpen_ = bookUp;
+    }
+    // THE CLOCK: an hour turning over is the ward's own bell, and a time
+    // CHARGE (travel's restated minute, a wait pick, a sleep) is the one
+    // moment a player is owed the hour they just spent. A charge is a jump
+    // of a minute or more between two syncs -- the ordinary tick advances by
+    // single seconds and never trips it.
+    if (hourNow != lastClockHour_) {
+        lastClockHour_ = hourNow;
+        clockShowSteps_ = kHudWakeSteps;
+    }
+    {
+        int jump = timeOfDay_ - lastClockTod_;
+        if (jump < 0) {
+            jump += sim::kSecondsPerDay;
+        }
+        if (jump >= 60) {
+            clockShowSteps_ = kHudWakeSteps;
+        }
+        lastClockTod_ = timeOfDay_;
+    }
+    // THE PURSE: money is on screen when it moves.
+    if (coinNow != lastCoinSeen_) {
+        lastCoinSeen_ = coinNow;
+        purseShowSteps_ = kHudWakeSteps;
+    }
+    // THE CASE ROW: a beat or lead moving is news; the book CLOSING is the
+    // recap a player putting it down actually wants. And while the
+    // lead-opened plate is up the row stays down -- the notice IS the case
+    // news (UI-EA-SPEC #16), and one piece of news does not print twice.
+    if (caseNow != lastCaseSeen_) {
+        if (!caseNow.empty()) {
+            caseShowSteps_ = kHudWakeSteps;
+        }
+        lastCaseSeen_ = caseNow;
+    }
+    if (lastBookOpen_ && !bookUp) {
+        caseShowSteps_ = kHudWakeSteps;
+    }
+    lastBookOpen_ = bookUp;
+    if (casePlateShowSteps_ > 0) {
+        caseShowSteps_ = 0;
+    }
+    // THE ROOM ROW: entry and loudness are events; a head-count drifting by
+    // one body is not, so the compare is made with the digits struck out --
+    // "THE GULL 14 IN LOUD" and "THE GULL 15 IN LOUD" are one state.
+    const auto strippedOfDigits = [](const std::string& text) {
+        std::string out;
+        out.reserve(text.size());
+        for (const char c : text) {
+            if (c < '0' || c > '9') {
+                out.push_back(c);
+            }
+        }
+        return out;
+    };
+    if (strippedOfDigits(roomNow) != strippedOfDigits(lastRoomSeen_)) {
+        if (!roomNow.empty()) {
+            roomShowSteps_ = kHudWakeSteps;
+        }
+    }
+    lastRoomSeen_ = roomNow;
+    // THE RUNG AND THE ERRAND: they wake when they change. A title held for
+    // a week is reference material, and reference material lives on a page.
+    if (guildNow != lastGuildSeen_) {
+        if (!guildNow.empty()) {
+            guildShowSteps_ = kHudWakeSteps;
+        }
+        lastGuildSeen_ = guildNow;
+    }
+    if (objectiveNow != lastObjectiveSeen_) {
+        if (!objectiveNow.empty()) {
+            objectiveShowSteps_ = kHudWakeSteps;
+        }
+        lastObjectiveSeen_ = objectiveNow;
+    }
+    // The four rows ride the sync() shape with one more condition: WANTED
+    // means "recently woken", not "true". The caches still hold the last
+    // shown words through the fade, exactly as every row above.
+    const auto syncWake = [conversing](EasedToggle& anim, std::string& cache,
+                                       const std::string& text, int wakeSteps) {
+        const bool visible = !conversing && !text.empty() && wakeSteps > 0;
+        if (visible) {
+            cache = text;
+        }
+        anim.setTarget(visible);
+    };
+    syncWake(caseAnim_, caseCache_, caseNow, caseShowSteps_);
+    syncWake(roomAnim_, roomCache_, roomNow, roomShowSteps_);
+    syncWake(guildAnim_, guildCache_, guildNow, guildShowSteps_);
+    syncWake(objectiveAnim_, objectiveCache_, objectiveNow, objectiveShowSteps_);
+    // The clock and the purse draw live numbers (no cache -- fatigueAnim_'s
+    // reasoning). The clock is additionally up for the life of the wait
+    // page (its rows price the very hours it shows) and the pause stack --
+    // the spec's own #34 keeps "rows, clock, title" on the pause, and the
+    // hour before quitting is exactly a fact a player came to check. Neither
+    // is gated on `conversing` -- a full page zeroes the fields at assembly,
+    // and an hour striking or a price being paid mid-conversation is still
+    // an event.
+    clockAnim_.setTarget(waitOpen_ || pauseOpen_ || clockShowSteps_ > 0);
+    purseAnim_.setTarget(purseShowSteps_ > 0);
     // PLANNING SPRINT (item #2, the sweep). THE SAME sync() SHAPE, FOR THE
     // TOP-RIGHT STACK'S THREE REMAINING ROWS -- see standingAnim_'s own
     // header on why these three, specifically, were still snapping.
@@ -6659,6 +6812,22 @@ void Session::syncPanelAnim() noexcept {
         }
     }
     quickBarAnim_.setTarget(barWanted);
+    // UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST, on the strip's own rising
+    // edge and only its first two ever. The grimoire's tap-vs-hold split is
+    // kept (flow map #9, a modern idiom); the toast is how it is taught --
+    // whichever way the bar first came up (a number press, a wheel hold),
+    // the player learns the hold exists, in the hand's own vocabulary
+    // through promptLabel. It rides the strip's countdown so the pair rise
+    // and fall as one, and after two showings it is retired for the session.
+    if (barWanted && !lastQuickBarUp_ && wheelHintShows_ < kWheelHintShows) {
+        ++wheelHintShows_;
+        wheelHint_.raise(kQuickBarShowSteps);
+        wheelHintText_ =
+            std::string(promptLabel(controls_, Action::QuickWheel, promptDevice_)) +
+            " HOLD - WHEEL";
+    }
+    lastQuickBarUp_ = barWanted;
+    wheelHint_.sync(conversing);
 
     // DISTRICT PHASE D: THE THRESHOLD MOMENT.
     //
@@ -6728,18 +6897,18 @@ std::string Session::rivalLine() const {
     // inventory, a guild or a rivalry is one row in a corner until it has
     // earned more. This is the only thing in the game that says the man across
     // the room is the man who put you here.
+    //
+    // UI-EA (LANE HUD): DIETED TO NAME AND COUNT -- the spec's "rank 6 -> 3".
+    // "RIVAL " and the title were reference words (his corner and his sheet
+    // already say what he is), and HUNTING leaves the label for the row's red
+    // ink (HudState::rivalHunts) -- the glance was always the point of that
+    // word, and the colour IS the glance. The count is a value; values never
+    // get vaguer.
     const sim::Nemesis* worst = tavern_->nemesis().worst();
     if (worst == nullptr) {
         return {};
     }
-    std::string line = "RIVAL " + upperAscii(worst->who);
-    if (!worst->title.empty()) {
-        line += " - " + upperAscii(worst->title);
-    }
-    line += " x" + std::to_string(worst->wins);
-    if (worst->hunts()) {
-        line += " HUNTING";
-    }
+    std::string line = upperAscii(worst->who) + " x" + std::to_string(worst->wins);
     // 44 columns: 220 pixels at scale 1 against a 320-wide frame with a
     // six-pixel margin, so the longest line this can produce still fits its
     // edge. A HUD line that runs off the frame is the S6 defect, and it is not
@@ -7089,10 +7258,16 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.fatigueMax = tavern_->playerFatigue().maxPoints();
     hud.fatigueFade = fatigueAnim_.value();
     hud.yawBam = body_->yaw();
-    const std::string label = placeLabel();
-    hud.locationLabel = label;
+    // UI-EA (LANE HUD): NO STREET SUB-LABEL. placeLabel() still answers for
+    // the map's title and the dialogue epithet; the street's own copy of it
+    // is deleted -- the threshold plate announces every crossing, and a row
+    // that restated it every frame was the diet's first cut. The clock and
+    // the purse are earned text on their own toggles: numbers stay live
+    // (they are what wakes), the fades are what sleep.
     hud.timeOfDaySeconds = timeOfDay_;
+    hud.clockFade = clockAnim_.value();
     hud.coin = tavern_->playerCoin();
+    hud.purseFade = purseAnim_.value();
     // While a conversation is open the bottom band belongs to the topic list,
     // so the room line and the running message stand down rather than draw on
     // top of it.
@@ -7175,6 +7350,9 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         }
     }
     hud.quickBarFade = quickBarAnim_.value();
+    // UI-EA (LANE HUD): the Q-hold tutor toast, riding the strip.
+    hud.wheelHint = std::string_view{wheelHintText_};
+    hud.wheelHintFade = wheelHint_.value();
     // S9. Whether the room can see you, and the lock under the wire. Both on
     // edges, both empty when they have nothing to say -- the right-hand stack
     // for the first, the bottom band for the second. Both read their own
@@ -7226,6 +7404,12 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // is about somebody else rather than about you.
     hud.rivalLabel = std::string_view{rivalCache_};
     hud.rivalFade = rivalAnim_.value();
+    // UI-EA (LANE HUD): the HUNTING word is off the label (rank 6 -> 3); the
+    // fact rides this bool and the row's red ink, read fresh off the same
+    // Nemesis the line is built from so the two can never disagree.
+    if (const sim::Nemesis* worstRival = tavern_->nemesis().worst(); worstRival != nullptr) {
+        hud.rivalHunts = worstRival->hunts();
+    }
     hud.showCompass = !conversing;
     // DISTRICT PHASE D: THE THRESHOLD MOMENT, under the ribbon it shares a
     // band with. See HudState::placePlate and drawPlacePlate.
@@ -10849,36 +11033,17 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
     result.summary = summary.str();
 
-    // The corner stamp, unless somebody is standing in it: while a conversation
-    // is open the top-left is the speaker's name, and two strings in the same
-    // eleven characters of screen is unreadable in a capture.
-    // NOT WHILE ANY PANEL IS UP. The top-left is the speaker's name whenever
-    // the conversation surface is drawing -- and S10 gave that surface two more
-    // users, the casebook and the key list, neither of which sets `talking`.
-    // The first S10 capture shipped "GRANADAD 0.10.0" printed straight through
-    // "THE CASEBOOK" because this test only knew about the third of them.
-    if (config.stamp && !result.talking && !session.casebookOpen() && !session.keysOpen() &&
-        !session.districtMapOpen()) {
-        // DERIVED, NOT TYPED. S9's read "GRANADAD S6" -- a literal three sprints
-        // out of date, burnt into the top-left of every capture including all
-        // four of S9's own, and found by the review in a PNG rather than in the
-        // source. It reads the project version now, which CMake sets in one
-        // place and build_info() carries, so there is nothing here left to
-        // forget to update.
-        //
-        // AND IT IS DRAWN AT 1:1, WHICH IS METADATA-SIZED. This is a capture
-        // stamp and not a HUD element -- the windowed game has never drawn it,
-        // as `--version` and the F1 keys page have always been where a player
-        // is told what build they are on. It was drawn at the full HUD scale
-        // anyway, so every screenshot this project has ever produced carried
-        // "GRANADAD 0.10.0" in 222 by 21 pixels of the top-left corner, and
-        // that corner is the first thing anybody looks at. Provenance is still
-        // burnt into every frame; it costs a ninth of what it did.
-        const sim::BuildInfo info = sim::build_info();
-        std::string stamp = "GRANADAD ";
-        stamp.append(info.version);
-        drawText(frame, 3, 3, stamp, Rgb{0.55F, 0.53F, 0.46F}, 0.55F, 1);
-    }
+    // UI-EA (LANE HUD): THE CORNER STAMP IS GONE, from captures too. The
+    // spec's row table deletes "GRANADAD 0.10.0" from every frame -- the
+    // version rides the pause/keys title rule instead (dialogueView already
+    // prints it in the CONTROLS epithet, and the pause title carries it under
+    // the PAGES lane), which is where a player actually goes to ask what
+    // build this is. The census transcribes captures, so the two words had to
+    // leave the capture path as well as the HUD; provenance lives in the PNG
+    // filenames, the ship notes and the F1 page, not in the sky. config.stamp
+    // is kept as an accepted no-op so every existing caller and capture
+    // script still parses.
+    (void)config.stamp;
 
     result.ok = !result.scriptFellShort();
     if (!config.screenshot.empty()) {

@@ -611,7 +611,6 @@ TEST_CASE("the HUD hugs the edges and leaves the centre completely clear") {
     HudState hud;
     hud.health = 72;
     hud.yawBam = session.body().yaw();
-    hud.locationLabel = "TARWALK - QUAYSIDE";
     drawHud(dressed, hud);
 
     const CentreRect centre = hudCentreRect(320, 180);
@@ -654,7 +653,6 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     full.fatigue = 80;
     full.fatigueMax = 160;
     full.yawBam = sim::kFacingWest;
-    full.locationLabel = "THE DOCKS - UPPER";
     full.timeOfDaySeconds = 21 * 3600 + 47 * 60;
     full.coin = 99999;
     full.standingLabel = "THE WARD WANTS YOU GONE";
@@ -880,7 +878,6 @@ TEST_CASE("the HUD costs a fraction of the frame, and the fraction is pinned") {
     HudState full;
     full.health = 100;
     full.yawBam = sim::kFacingWest;
-    full.locationLabel = "THE DOCKS - UPPER";
     full.timeOfDaySeconds = 20 * 3600;
     full.coin = 4071;
     full.standingLabel = "THE WARD WANTS YOU GONE";

@@ -429,7 +429,6 @@ TEST_CASE("the plate stays out of the play space and off every row already drawn
     full.fatigue = 30;
     full.fatigueMax = 100;
     full.yawBam = sim::angle_from_degrees(200);
-    full.locationLabel = "THE GILDED GULL - ROOMS";
     full.timeOfDaySeconds = 20 * 3600 + 42 * 60;
     full.coin = 99999;
     full.standingLabel = "THE WARD WANTS YOU GONE";
@@ -476,7 +475,6 @@ TEST_CASE("on an ordinary street HUD the plate is drawn, and drawn big") {
     street.health = 100;
     street.healthMax = 100;
     street.yawBam = sim::angle_from_degrees(180);
-    street.locationLabel = "SALTGATE RISE";
     street.timeOfDaySeconds = 20 * 3600;
     street.coin = 120;
     street.roomLabel = "THE GULL  14 IN  LOUD";
@@ -506,7 +504,6 @@ TEST_CASE("a HudState that never heard of the plate is pixel-identical") {
     before.health = 80;
     before.healthMax = 100;
     before.yawBam = sim::angle_from_degrees(90);
-    before.locationLabel = "TARWALK";
     before.timeOfDaySeconds = 8 * 3600;
     before.coin = 120;
     before.roomLabel = "THE GULL  14 IN  LOUD";

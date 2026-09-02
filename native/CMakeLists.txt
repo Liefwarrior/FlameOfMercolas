@@ -604,6 +604,12 @@ if(GRANADAD_BUILD_TESTS)
         # the geometry asserted in pixels, because this HUD's two shipped
         # collisions were both found in a PNG by a person.
         tests/test_place_plate.cpp
+        # UI-EA (LANE HUD) -- THE LAW OF EARNED TEXT. The at-rest street HUD's
+        # word budget pinned by counting tokens (the census's own law), each
+        # reference row's wake edge and 2.5s sleep, the rest state a fresh
+        # session actually settles into, and the Q-hold tutor toast's
+        # two-showings-then-retired life. The diet cannot regress silently.
+        tests/test_hud_diet.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.

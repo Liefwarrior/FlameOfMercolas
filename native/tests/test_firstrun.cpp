@@ -55,14 +55,15 @@ TEST_CASE("a new game opens on the case, not on a systems demo") {
     REQUIRE(opening.topics.size() == 1);
 
     // AND THE KEYS ARE ON THE MESSAGE ROW, so the first thing a player reads is
-    // how to put the notes down. #85 folded Keys and Options into Menu's own
-    // pages, flipped with brackets, so the row names Menu and the page-flip
-    // rather than F1/F2, which no longer open anything on their own.
+    // how to put the notes down. UI-EA (LANE HUD): live verbs only -- the old
+    // "< > MORE PAGES" advertised a pair of keys that do nothing on the
+    // street (flow map violation #11), so the hint names notes, map and hand
+    // and nothing else.
     INFO(session.lastMessage());
-    // "J YOUR NOTES" -- J for journal, the owner's own convention call.
-    CHECK(session.lastMessage().find("J YOUR NOTES") != std::string::npos);
-    CHECK(session.lastMessage().find("<") != std::string::npos);
-    CHECK(session.lastMessage().find(">") != std::string::npos);
+    // "J NOTES" -- J for journal, the owner's own convention call.
+    CHECK(session.lastMessage().find("J NOTES") != std::string::npos);
+    CHECK(session.lastMessage().find("M MAP") != std::string::npos);
+    CHECK(session.lastMessage().find("MORE PAGES") == std::string::npos);
 
     // WALKING PUTS IT AWAY, AND IT NEVER COMES BACK BY ITSELF.
     MoveInput walk;
