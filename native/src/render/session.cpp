@@ -1656,6 +1656,15 @@ void Session::toggleOptions() {
         return;
     }
     const bool willOpen = !optionsOpen_;
+    if (willOpen) {
+        // UI-EA-SPEC sec. 4 violation #4: REMEMBER THE OPENER, before the
+        // stand-down below erases the evidence. Opened over the pause menu
+        // (its SETTINGS row) means back returns there; opened over the
+        // sibling Keys page (the TAB swap) inherits whatever that page owed
+        // -- the pair is one tabbed surface as far as the way out is
+        // concerned; opened from the street (F2) owes nothing.
+        pageOpenedFromPause_ = pauseOpen_ || ((keysOpen_ || waitOpen_) && pageOpenedFromPause_);
+    }
     optionsOpen_ = willOpen;
     if (willOpen) {
         // EVERY OTHER OVERLAY STANDS DOWN, INCLUDING THE PAUSE MENU. This used
@@ -1964,6 +1973,13 @@ void Session::toggleKeys() {
         return;
     }
     const bool willOpen = !keysOpen_;
+    if (willOpen) {
+        // Violation #4: remember the opener -- see toggleOptions(). Opened
+        // over the pause menu's CONTROLS row, back returns there; the
+        // sibling-tab swap from Options inherits the debt.
+        pageOpenedFromPause_ =
+            pauseOpen_ || ((optionsOpen_ || waitOpen_) && pageOpenedFromPause_);
+    }
     keysOpen_ = willOpen;
     if (willOpen) {
         // See toggleOptions' comment: an overlay that opens without putting the
@@ -2676,6 +2692,9 @@ void Session::openWait(bool sleepMode) {
     if (talking() || picking()) {
         return;
     }
+    // Violation #4: remember the opener -- see toggleOptions(). The pause
+    // menu's WAIT row is a door, and back walks back through it.
+    pageOpenedFromPause_ = pauseOpen_;
     // Every other overlay stands down -- toggleOptions' rule, same reason.
     casebookOpen_ = false;
     keysOpen_ = false;
@@ -3728,6 +3747,10 @@ void Session::step(const sim::MoveInput& input) {
     punchTakenPulse_.advance();
     blockPulse_.advance();
     alertPulse_.advance();
+    // UI-EA-SPEC sec. 3 rule 5 (contract b). THE SAME PER-STEP ADVANCE: the
+    // commit beat decays here beside its pulse siblings; the client arms it
+    // at commit routing and the page drawers read it on the inverted fill.
+    commitPulse_.advance();
     // AUDIO WIRING: the purse and the bed, both by re-read rather than by
     // instrumenting every call site that could move either. Any purse change
     // -- a haggle settled, a pocket picked, rent paid, a bounty collected --
@@ -4685,6 +4708,24 @@ void Session::closeConversation() {
         syncPanelAnim();
         return;
     }
+    // UI-EA-SPEC sec. 4 violation #4: BACK RETURNS TO THE OPENER. A page
+    // entered through the pause menu -- CONTROLS, SETTINGS, WAIT -- backs
+    // out ONE layer, to the pause menu with its cursor on the row that
+    // opened the page, instead of skipping past it to the street. A page
+    // entered by its direct shortcut (F1/F2, a bed's wait) still lands on
+    // the street exactly as before: pageOpenedFromPause_ was derived false
+    // at its open. The panel never closes across the return -- conversingNow
+    // stays true -- so the swap reads as content changing inside one frame,
+    // transition rule 2, and no close/open sound pair fires.
+    const auto returnToPause = [this](int row) {
+        pageOpenedFromPause_ = false;
+        pauseOpen_ = true;
+        // The row indices are pauseRows()' own order: RESUME, WAIT,
+        // CONTROLS, SETTINGS, QUIT.
+        pauseCursor_ = row;
+        quitArmed_ = false;
+        syncPanelAnim();
+    };
     if (optionsOpen_) {
         // ESC out of a rebinding first, and out of the page second. A player
         // who opened "press a key" by accident has to be able to get out of it
@@ -4693,16 +4734,26 @@ void Session::closeConversation() {
             awaitingKey_ = false;
             return;
         }
+        const bool toPause = pageOpenedFromPause_;
         optionsOpen_ = false;
         optionCursor_ = 0;
         optionPage_ = 0;
+        if (toPause) {
+            returnToPause(3);  // SETTINGS
+            return;
+        }
         syncPanelAnim();
         return;
     }
     if (keysOpen_) {
+        const bool toPause = pageOpenedFromPause_;
         keysOpen_ = false;
         caseCursor_ = 0;
         casePage_ = 0;
+        if (toPause) {
+            returnToPause(2);  // CONTROLS
+            return;
+        }
         syncPanelAnim();
         return;
     }
@@ -4714,9 +4765,14 @@ void Session::closeConversation() {
         return;
     }
     if (waitOpen_) {
+        const bool toPause = pageOpenedFromPause_;
         waitOpen_ = false;
         waitCursor_ = 0;
         waitPage_ = 0;
+        if (toPause) {
+            returnToPause(1);  // WAIT
+            return;
+        }
         syncPanelAnim();
         return;
     }
@@ -7319,6 +7375,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
         }
+        panelTailTiles_ = false;
         return stats;
     }
     // PANES PASS: THE CONTROLS PAGE IS THE FIRST SURFACE DRAWN IN THE
@@ -7351,6 +7408,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
         }
+        panelTailTiles_ = false;
         return stats;
     }
     // MORROWIND ROUND: THE TILED MENU IS A DIFFERENT SURFACE FROM THE SINGLE
@@ -7399,9 +7457,16 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
         }
+        panelTailTiles_ = false;
         return stats;
     }
-    if (casebookOpen_) {
+    // UI-EA-SPEC sec. 3 rule 4 -- CLOSE HONESTY: the tiled Menu's close tail
+    // draws as the TILES easing out, not as the empty single panel the old
+    // handover fell through to (the seam the comment at the dialogue branch
+    // below used to admit). panelTailTiles_ is drawFrame's own memo of what
+    // it drew the panel fade for last frame -- see its header in session.hpp.
+    if (casebookOpen_ ||
+        (panelTailTiles_ && !conversing && panelAnim_.value() > 0.0F)) {
         MenuTileState tiles;
         tiles.open = true;
         tiles.character = characterPanelView();
@@ -7436,6 +7501,11 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
         }
+        // The memo: this frame's panel fade belonged to the tiles. Only the
+        // LIVE menu re-arms it -- a tail frame keeps it as-is, so the tail
+        // keeps drawing tiles until panelAnim_ settles and the condition
+        // above goes quiet on its own.
+        panelTailTiles_ = panelTailTiles_ || casebookOpen_;
         return stats;
     }
     DialogueViewState panel = dialogueView();
@@ -7452,16 +7522,18 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // this is exactly `panel.open` again, which is the pre-existing behaviour
     // for every caller and every test that never heard of this pass.
     //
-    // MORROWIND ROUND: THIS ALSO COVERS THE TILED MENU'S OWN CLOSING TAIL.
-    // The moment casebookOpen_ goes false this branch is what runs, and
-    // dialogueView() falls through to an empty, closed state -- so a Menu
-    // that was just closed fades out as an (empty) single panel for its last
-    // few frames rather than as the four tiles it was a moment before. That
-    // is the SAME pre-existing behaviour this build already had for closing
-    // Keys, Options or a conversation (dialogueView() has never reconstructed
-    // "what was open a frame ago" for a close tail), not a new gap the
-    // Morrowind round introduced.
+    // UI-EA-SPEC sec. 3 rule 4: the tiled Menu's closing tail no longer
+    // lands here -- the branch above catches it off panelTailTiles_ and
+    // fades the TILES, which is the close-honesty rule ("a page fades as
+    // what it was"). What still lands here is every single-panel surface's
+    // own tail -- Keys, Options, Wait, a conversation -- which genuinely
+    // WAS this panel, so fading as it is honest. The memo is cleared here
+    // whenever a live panel draws, so a keys tail after a menu visit cannot
+    // resurrect the tiles.
     panel.openAmount = panelAnim_.value();
+    if (conversing) {
+        panelTailTiles_ = false;
+    }
     panel.open = panel.open || panelAnim_.value() > 0.0F;
     // The panel FIRST, the HUD over it: a bouncer's warning has to survive
     // being told mid-conversation, and it is the one line that outranks a menu.

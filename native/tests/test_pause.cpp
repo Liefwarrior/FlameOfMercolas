@@ -523,3 +523,127 @@ TEST_CASE("every word the pause menu can show is a sentence, not a diagnostic") 
     mustRead(view.epithet);
     mustRead(view.line);
 }
+
+// ---------------------------------------------------------------------------
+// UI-EA-SPEC sec. 4 violation #4: back returns to the OPENER. FLOW lane.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("violation #4: ESC from a page the pause menu opened returns to the pause menu") {
+    render::Session session = standing();
+    session.togglePause();
+    REQUIRE(session.pauseOpen());
+
+    // CONTROLS (row 2) opens the keys page and puts the menu down...
+    session.movePauseCursor(1);
+    session.movePauseCursor(1);
+    session.choosePause();
+    REQUIRE(session.keysOpen());
+    REQUIRE_FALSE(session.pauseOpen());
+
+    // ...and back walks back through the same door: the pause menu again,
+    // cursor still on CONTROLS, not the street.
+    session.closeConversation();
+    CHECK_FALSE(session.keysOpen());
+    CHECK(session.pauseOpen());
+    CHECK(session.pauseRows()[2] == "CONTROLS");
+
+    // A second back is one more layer: the street.
+    session.closeConversation();
+    CHECK_FALSE(session.pauseOpen());
+    CHECK_FALSE(session.keysOpen());
+
+    // SETTINGS (row 3): the identical shape.
+    session.togglePause();
+    for (int i = 0; i < 3; ++i) {
+        session.movePauseCursor(1);
+    }
+    session.choosePause();
+    REQUIRE(session.optionsOpen());
+    session.closeConversation();
+    CHECK(session.pauseOpen());
+    CHECK(session.pauseRows()[3] == "SETTINGS");
+    session.closeConversation();
+    CHECK_FALSE(session.pauseOpen());
+
+    // WAIT (row 1): the door swings back too.
+    session.togglePause();
+    session.movePauseCursor(1);
+    session.choosePause();
+    REQUIRE(session.waitOpen());
+    session.closeConversation();
+    CHECK(session.pauseOpen());
+    CHECK(session.pauseRows()[1] == "WAIT");
+    session.closeConversation();
+    CHECK_FALSE(session.pauseOpen());
+}
+
+TEST_CASE("violation #4: a page opened by its own shortcut still closes to the street") {
+    // F1/F2's route: toggleKeys()/toggleOptions() with no pause menu up.
+    // Back must NOT invent a pause menu that was never there.
+    render::Session session = standing();
+    session.toggleKeys();
+    REQUIRE(session.keysOpen());
+    session.closeConversation();
+    CHECK_FALSE(session.keysOpen());
+    CHECK_FALSE(session.pauseOpen());
+
+    session.toggleOptions();
+    REQUIRE(session.optionsOpen());
+    session.closeConversation();
+    CHECK_FALSE(session.optionsOpen());
+    CHECK_FALSE(session.pauseOpen());
+}
+
+TEST_CASE("violation #4: the keys<->options sibling swap carries the way home with it") {
+    // Pause -> SETTINGS -> (tab swap) keys page -> back: the pause menu.
+    // The pair reads as one tabbed surface, so switching tabs must not
+    // launder away where back leads.
+    render::Session session = standing();
+    session.togglePause();
+    for (int i = 0; i < 3; ++i) {
+        session.movePauseCursor(1);
+    }
+    session.choosePause();
+    REQUIRE(session.optionsOpen());
+    session.toggleKeys();  // the router's TAB swap lands here
+    REQUIRE(session.keysOpen());
+    REQUIRE_FALSE(session.optionsOpen());
+    session.closeConversation();
+    CHECK(session.pauseOpen());
+
+    // And the mirror: street -> F1 keys -> swap to options -> back -> street.
+    session.closeConversation();  // pause -> street
+    REQUIRE_FALSE(session.pauseOpen());
+    session.toggleKeys();
+    session.toggleOptions();  // the swap the other way
+    REQUIRE(session.optionsOpen());
+    session.closeConversation();
+    CHECK_FALSE(session.pauseOpen());
+    CHECK_FALSE(session.optionsOpen());
+}
+
+TEST_CASE("contract (b): the commit pulse arms on demand and decays to nothing") {
+    // FLOW arms it at commit routing (main.cpp); PAGES reads it back on the
+    // inverted fill. Here: the Session plumbing -- trigger, read, decay --
+    // over kPageEaseSteps of ordinary step() calls.
+    render::Session session = standing();
+    CHECK(session.commitPulseValue() == 0.0F);
+    session.armCommitPulse();
+    CHECK(session.commitPulseValue() == 1.0F);
+    for (int i = 0; i < granadad::render::kPageEaseSteps; ++i) {
+        CHECK(session.commitPulseValue() > 0.0F);
+        session.step(MoveInput{});
+    }
+    CHECK(session.commitPulseValue() == 0.0F);
+}
+
+TEST_CASE("contract (c): the tutor wake serial moves only when it is told to") {
+    render::Session session = standing();
+    const std::uint32_t before = session.tutorWakeSerial();
+    session.step(MoveInput{});
+    CHECK(session.tutorWakeSerial() == before);  // steps alone never wake
+    session.noteTutorWake();
+    CHECK(session.tutorWakeSerial() == before + 1);
+    session.noteTutorWake();
+    CHECK(session.tutorWakeSerial() == before + 2);
+}

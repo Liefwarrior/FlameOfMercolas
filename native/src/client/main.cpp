@@ -1483,6 +1483,9 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            // Contract (b): the commit beat -- RESUME, a door row, the
+            // quit-arm and the quit-confirm all answer with it.
+            session.armCommitPulse();
             session.choosePause();
             return true;
         }
@@ -1519,6 +1522,7 @@ void print_usage() {
         // (see Session::pageOpenedFromPause_'s own header).
         if (key == render::Key::Tab || action == render::Action::PageNext ||
             action == render::Action::PagePrev) {
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
             session.toggleKeys();
             return true;
         }
@@ -1539,6 +1543,9 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            // Contract (b): the commit beat -- a slider nudge or the REBIND
+            // arm, both of them ENTER doing something.
+            session.armCommitPulse();
             session.chooseOption();
             return true;
         }
@@ -1578,6 +1585,7 @@ void print_usage() {
             return true;
         }
         if (numbered) {
+            session.armCommitPulse();  // contract (b): readying a crafting
             session.chooseGrimoireRow(slot);
             return true;
         }
@@ -1586,6 +1594,7 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            session.armCommitPulse();
             session.chooseGrimoireRow(session.grimoireCursor() -
                                       session.grimoirePage() * render::kTopicPageSize);
             return true;
@@ -1607,6 +1616,7 @@ void print_usage() {
             return true;
         }
         if (numbered) {
+            session.armCommitPulse();  // contract (b): passing hours commits
             session.chooseWaitRow(slot);
             return true;
         }
@@ -1615,6 +1625,7 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            session.armCommitPulse();
             session.chooseWaitRow(session.waitCursor() -
                                   session.waitPage() * render::kTopicPageSize);
             return true;
@@ -1654,6 +1665,7 @@ void print_usage() {
             // every other tabbed surface in the world means it here too, and a
             // page that let its own tab key fall through to a different page
             // would be the split-brain bug toggleOptions' comment describes.
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
             session.cycleDistrictMapTab(1);
             return true;
         }
@@ -1665,10 +1677,12 @@ void print_usage() {
         // lives, LB/RB is where a thumb expects a tab, and `[`/`]` come along
         // for free on the keyboard side.
         if (action == render::Action::PageNext) {
+            session.armCommitPulse();
             session.cycleDistrictMapTab(1);
             return true;
         }
         if (action == render::Action::PagePrev) {
+            session.armCommitPulse();
             session.cycleDistrictMapTab(-1);
             return true;
         }
@@ -1711,12 +1725,15 @@ void print_usage() {
         // Without the gate a mouse click would both face AND travel.
         if (key == render::Key::T ||
             (render::keyIsPad(key) && action == render::Action::Attack)) {
+            // Contract (b): the commit beat, armed at commit routing.
+            session.armCommitPulse();
             session.travelDistrictMapSelection();
             return true;
         }
         if (confirm) {
             // The commit verb at the foot of the detail pane: turn to face the
-            // selection and put the map away.
+            // selection and put the map away. Contract (b): the commit beat.
+            session.armCommitPulse();
             session.faceDistrictMapSelection();
             return true;
         }
@@ -1725,6 +1742,8 @@ void print_usage() {
             // `1` through `4`; the rest are swallowed rather than routed, for
             // the pause branch's own reason -- a number pressed over a
             // full-screen page must not reach the quick bar behind it.
+            // Transition rule 2: a tab step answers with the pulse.
+            session.armCommitPulse();
             session.setDistrictMapTab(slot);
             return true;
         }
@@ -1883,10 +1902,12 @@ void print_usage() {
             return true;
         }
         if (key == render::Key::Tab || action == render::Action::PageNext) {
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
             session.cycleCasebookTab(1);
             return true;
         }
         if (action == render::Action::PagePrev) {
+            session.armCommitPulse();
             session.cycleCasebookTab(-1);
             return true;
         }
@@ -1904,6 +1925,8 @@ void print_usage() {
         if (confirm) {
             // The commit verb at the foot of the detail pane. State chooses
             // which one it is -- see Session::commitCasebookLead.
+            // Contract (b): the commit beat.
+            session.armCommitPulse();
             session.commitCasebookLead();
             return true;
         }
@@ -1930,6 +1953,7 @@ void print_usage() {
         if (session.keysOpen() &&
             (key == render::Key::Tab || action == render::Action::PageNext ||
              action == render::Action::PagePrev)) {
+            session.armCommitPulse();  // rule 2
             session.toggleOptions();
             return true;
         }
@@ -2024,6 +2048,7 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         const int tab = render::mapTabAtPixel(plan, frameWidth, frameHeight, px, py);
         if (tab >= 0) {
             if (click && tab != static_cast<int>(plan.tab)) {
+                session.armCommitPulse();  // rule 2: a tab step answers
                 session.setDistrictMapTab(tab);
             }
             return true;
@@ -2046,7 +2071,8 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
             // page prints and what ENTER and PadSouth already do: turn to face
             // it and put the map away. A click is a select-then-confirm, so a
             // player who only wants to look moves the pointer and does not
-            // press.
+            // press. Contract (b): the commit beat.
+            session.armCommitPulse();
             session.faceDistrictMapSelection();
         }
         return true;
@@ -2077,6 +2103,7 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         const int tab = render::casebookTabAtPixel(page, frameWidth, frameHeight, px, py);
         if (tab >= 0) {
             if (click && tab != static_cast<int>(page.tab)) {
+                session.armCommitPulse();  // rule 2: a tab step answers
                 session.cycleCasebookTab(tab - static_cast<int>(page.tab));
             }
             return true;
@@ -2087,6 +2114,7 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         }
         session.setCasebookCursor(at);
         if (click) {
+            session.armCommitPulse();  // contract (b): the commit beat
             session.commitCasebookLead();
         }
         return true;
@@ -2215,6 +2243,9 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
             // A CLICK IS SELECT-THEN-CONFIRM (the map's own rule): the commit
             // is each page's ENTER -- pass the hours, ready the crafting,
             // fire the pause row, nudge or arm the option, say the thing.
+            // Contract (b): the commit beat, the same arm the keyboard's
+            // confirm gets.
+            session.armCommitPulse();
             if (session.waitOpen()) {
                 session.chooseWaitRow(hit.slot);
             } else if (session.grimoireOpen()) {
