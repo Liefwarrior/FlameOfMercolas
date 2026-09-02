@@ -167,6 +167,8 @@ points and water.
 
 ### 2.8 The charge and the bond — Trojian tenure (DECISIONS.md, Eli 2026-07-29)
 
+**AMENDED 2026-09-02 (Eli): the duke↔house-owner agreement is called a COVENANT** — the Den Duke owns the land and makes covenants with house-owners to build and farm on it, meant to run indefinitely; the ground penny is the covenant's rent. "Charge" retires from player-facing speech (this section's heading stays for history). The Flame's trust over every plot stands unrevoked; the tension between the duke's everyday ownership and the Flame's holding is unresolved by design **(needs an Eli ruling if a quest ever puts it on trial)**.
+
 The ground of Granadad is not property. It is a **charge**: a trust the Priests of the
 Flame hold for historical and legal preservation, and let out. Three tiers, and nobody
 at any tier owns the earth. The Flame holds every **plot** and will not sell one. A
