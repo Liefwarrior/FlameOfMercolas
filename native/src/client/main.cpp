@@ -325,6 +325,13 @@ struct Options {
     bool caseWatch = false;
     /// Where `--case-watch-capture=DIR` writes one PNG per landed beat.
     std::filesystem::path caseWatchShotDir;
+    /// VERIFICATION ONLY. Where `--framedump=DIR` writes every presented frame
+    /// of a --demo/--case-watch run, numbered f<NNNNN>.png by the frame loop's
+    /// own counter. Empty dumps nothing and is the ordinary run. This exists
+    /// because a transition seam -- a cut, a fade, a plate easing in -- is a
+    /// claim about CONSECUTIVE frames, and the 40 ms cadence of a pad script's
+    /// shot: beats can step right over a one-frame defect.
+    std::filesystem::path frameDumpDir;
 };
 
 // ---------------------------------------------------------------------------
@@ -783,6 +790,13 @@ void print_usage() {
         "  --demo-capture=DIR   the same route, writing a PNG of each of its\n"
         "                       named shots into DIR, so a trailer or a\n"
         "                       screenshot set falls out of the same run\n"
+        "  --framedump=DIR      VERIFICATION ONLY: while --demo or --case-watch\n"
+        "                       is driving, write EVERY presented frame into\n"
+        "                       DIR as f<NNNNN>.png -- consecutive frames, so a\n"
+        "                       transition (a cut, a fade, a plate easing in)\n"
+        "                       can be read frame by frame instead of argued\n"
+        "                       about. The shot is the framebuffer after the\n"
+        "                       overlays, exactly what the window presented\n"
         "  --creation[=STEP]    capture the character-creation flow with no\n"
         "                       window and no world. STEP is origin (default),\n"
         "                       calling (the nine-trade roster), quiz (question\n"
@@ -1163,6 +1177,8 @@ void print_usage() {
         } else if (starts_with(arg, "--demo=", &value)) {
             options.demo = true;
             options.demoSection = value;
+        } else if (starts_with(arg, "--framedump=", &value)) {
+            options.frameDumpDir = value;
         } else if (starts_with(arg, "--demo-capture=", &value)) {
             options.demo = true;
             options.demoShotDir = value;
@@ -4591,6 +4607,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         }
         if (watch != nullptr) {
             session.setHudStandDown(watch->cardOwnsFrame());
+            // THE WATCHER'S EYE, after the step and before the draw: the
+            // tape's raw yaw whips compass-to-compass step to step (the
+            // drive's walker steers by trying facings), which the replay's
+            // one-step-per-frame cadence turned into a 60 Hz strobe through
+            // the near wall -- the owner's "teleporting through walls ...
+            // double vision". The sim has already stepped under the tape's
+            // own yaw; this eases only what is about to be DRAWN. See
+            // CaseWatchDirector::composeView.
+            watch->composeView(session);
         }
         session.drawFrame(frame);
         // THE CARD AND THE CAPTION GO ON LAST, over the finished frame, and
@@ -4603,6 +4628,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         if (watch != nullptr) {
             watch->drawOverlay(frame, session);
             watch->shutter(frame);
+        }
+        // THE FRAME DUMP, LAST -- after every overlay and both shutters, so
+        // what lands on disk is exactly what the window is about to present.
+        // Scripted runs only: an interactive session would write PNGs forever.
+        if (!options.frameDumpDir.empty() && (demo != nullptr || watch != nullptr)) {
+            std::error_code frameDumpEc;
+            std::filesystem::create_directories(options.frameDumpDir, frameDumpEc);
+            char frameName[16];
+            (void)std::snprintf(frameName, sizeof(frameName), "f%05lld.png",
+                                static_cast<long long>(frames));
+            (void)render::writePng(frame, (options.frameDumpDir / frameName).string());
         }
         ++frames;
 

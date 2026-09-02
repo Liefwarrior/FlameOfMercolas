@@ -59,6 +59,34 @@ class CaseWatchDirector {
     /// DemoDirector contract, kept so main.cpp routes both through one gate.
     [[nodiscard]] Tick advance(Session& session);
 
+    /// AFTER the frame's steps and BEFORE the frame is drawn: put the
+    /// WATCHER'S eye on the body.
+    ///
+    /// THE OWNER'S "teleporting through walls ... double vision/ghosting",
+    /// run to ground (the fix's frame evidence sits in docs/frames/
+    /// cut-seam/): the drive's walker (stepToward, session.cpp) steers by
+    /// SNAPPING the body's yaw to a compass facing and reading "did the body
+    /// move" as "was that way open" -- so on a dogleg the recorded yaw whips
+    /// +-90 degrees step to step, and a blocked probe is a recorded step
+    /// spent facing INTO the wall half a tile away. Headless, nobody sees
+    /// any of that. The watch replays ONE step per rendered frame, so the
+    /// verbatim tape becomes a 60 Hz camera strobe -- every other frame
+    /// through the near wall's clipped face: double vision, jank,
+    /// teleporting through walls, exactly as reported.
+    ///
+    /// So the EYE is eased and the TAPE is not: every Step frame still
+    /// restores the tape's own yaw before stepping, and every op executes
+    /// under it (advance()'s guard), so the simulation receives the drive
+    /// verbatim; this call then turns the head toward the tape's heading at
+    /// the demo walker's own human rate and SNAPS onto it when within one
+    /// turn -- which is what converges the body's yaw back to the tape's
+    /// exact heading long before the outro ends, keeping twinMatched() and
+    /// the fingerprint's yaw field honest. This is the one place the build
+    /// eases anything about the first-person eye; a relocation would snap it
+    /// (Session::snapViewAfterRelocation), but the tape holds no relocation
+    /// -- its one cut is the clock's, and that one moves nobody.
+    void composeView(Session& session);
+
     /// THE CARD OWNS THE FRAME while this is true -- DemoDirector's own rule,
     /// for the client's setHudStandDown.
     [[nodiscard]] bool cardOwnsFrame() const noexcept;
@@ -89,6 +117,22 @@ class CaseWatchDirector {
 
     /// The replayed session ended exactly where the drive ended.
     [[nodiscard]] bool twinMatched(const Session& session) const;
+
+    /// The watch's own seam veil, 0 (clear) to 1 (black) -- and why it is the
+    /// DIRECTOR'S and not the session's: Session::dressInstantCut rides an
+    /// EasedToggle advanced in Session::step(), which is exactly right for
+    /// every caller whose steps run one per frame (the demo, travel, live
+    /// play) and exactly wrong here, where a hold steps the simulation ZERO
+    /// times a frame -- the veil would freeze black for the whole hold. The
+    /// watch's clock is FRAMES (see the file header), so its veil advances
+    /// once per advance() at the same 8-rise/36-fall width as the session's
+    /// (Session::kTravelFadeSteps restated), and is painted by the shared
+    /// drawRouteVeil. Exposed so a case can pin the skip is dressed and that
+    /// no shutter fires through it.
+    [[nodiscard]] float veil() const noexcept { return veil_.value(); }
+    /// True on a frame whose advance() armed the shutter -- the shot-list
+    /// safety check's other half, DemoDirector::shutterArmed's twin.
+    [[nodiscard]] bool shutterArmed() const noexcept { return pending_ != nullptr; }
 
   private:
     /// Executes one non-Step op on the session and answers how many
@@ -124,6 +168,20 @@ class CaseWatchDirector {
     std::string cardSub_;
     EasedToggle card_{18, 18};
     EasedToggle captionFade_{14, 14};
+    /// The seam veil, frame-clocked -- see veil()'s own header. 8 and 36 are
+    /// Session::kTravelFadeSteps' pair, restated because that constant is the
+    /// session's private business and this toggle counts a different clock
+    /// that happens to run at the same 60 Hz.
+    EasedToggle veil_{8, 36};
+
+    /// THE WATCHER'S EYE -- see composeView(). `tapeYaw_` is the drive's own
+    /// current heading (the last Step op's yaw, which is also what every op
+    /// must execute under); `eyeYaw_` is where the watcher's head has got to
+    /// chasing it. Both seeded from the session's spawn yaw on the first
+    /// advance, because the tape's early ops run before its first step.
+    std::int32_t tapeYaw_ = 0;
+    std::int32_t eyeYaw_ = 0;
+    bool eyeSeeded_ = false;
 };
 
 }  // namespace granadad::render

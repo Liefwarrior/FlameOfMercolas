@@ -1103,6 +1103,56 @@ public:
     /// black to ease up at the destination, and says the arrival line.
     void travelDistrictMapSelection();
 
+    // --- RELOCATED: SNAP THE VIEW -- the one seam for every instant jump ----
+    //
+    // THE OWNER'S BUG, run to ground: "teleporting through walls ... double
+    // vision/ghosting" on the scripted routes. The BODY has always jumped
+    // clean (PlayerBody::placeAt zeroes every arc, haul and velocity, and the
+    // camera reads the body raw -- there is no eased camera position in this
+    // build to race across the district). What DID survive a jump was the
+    // render side's eased, position-derived furniture: the crosshair's
+    // subject, the lock row, the room row -- each on its own EasedToggle --
+    // kept easing OUT over the NEW street for eight frames, a label from a
+    // place three hundred tiles away ghosting over the arrival. These three
+    // calls are the whole cure, and every relocation seam funnels through
+    // them so the next one (fast travel's arrival is already here; whatever
+    // comes after it will not be) cannot re-open the bug.
+
+    /// Snaps every eased, position-derived piece of VIEW state to what the
+    /// body's new ground actually offers -- which, on the frame of a jump, is
+    /// nothing: the stale crosshair subject, lock row and room row close NOW
+    /// instead of easing out over ground they were never true of. The next
+    /// step()'s own sync re-opens whichever of them the new place earns.
+    /// Render-only: nothing here reaches the simulation, the hash, or the
+    /// gate. EXPORTED as the arrival half of any future instant relocation --
+    /// a caller that moves the body by any means other than placeBodyAt()
+    /// calls this the same instant.
+    void snapViewAfterRelocation();
+
+    /// PlayerBody::placeAt plus snapViewAfterRelocation(), as one verb --
+    /// so a relocation cannot forget its snap. Every scripted placement
+    /// (the demo's cuts, the capture lines' stagings, the respawn, the
+    /// arrest release, the travel commit) goes through here.
+    void placeBodyAt(std::int32_t tileX, std::int32_t tileY, std::int32_t band);
+
+    /// DRESSES an instant cut in the travel seam's own cloth: the frame of
+    /// the cut is already fully black and the destination eases up under the
+    /// plate (see travelFadeAnim_'s header -- the owner called raw cuts
+    /// "teleporting"; this is the difference). Separate from the snap
+    /// deliberately: the capture lines relocate and must photograph the
+    /// world, not the veil, so they snap without dressing; a SCRIPTED cut a
+    /// viewer watches (a demo cut, a clock jump, a travel) snaps AND
+    /// dresses. Advanced in step(), so it serves any caller whose steps run
+    /// one per frame -- the demo, travel, live play. --case-watch's holds
+    /// step zero times a frame, so the watch wears its own veil at the same
+    /// width (see CaseWatchDirector).
+    void dressInstantCut();
+
+    /// The seam veil's current strength, 0 (clear) to 1 (black) -- so a case
+    /// can pin that a scripted cut was dressed and that no shutter ever
+    /// fires through it.
+    [[nodiscard]] float cutVeil() const noexcept { return travelFadeAnim_.value(); }
+
     /// The whole page, ready to draw. Public because a case reads it and
     /// because it is the same shape keysPageState() already has.
     [[nodiscard]] DistrictMapState districtMapState() const;

@@ -2093,7 +2093,7 @@ void Session::travelDistrictMapSelection() {
     // of it the same spent code every WAIT pick runs -- and the body makes
     // the same honest jump sleeping in a rented bed already makes.
     skipSeconds(plan.minutes * 60);
-    body_->placeAt(plan.toX, plan.toY, plan.toBand);
+    placeBodyAt(plan.toX, plan.toY, plan.toBand);
 
     // 3. FACING THE DOOR. You arrive looking at the threshold you came for --
     // the place's own anchor -- not wherever the walk left your eyes.
@@ -2119,12 +2119,60 @@ void Session::travelDistrictMapSelection() {
     // 5. THE SEAM. Snapped fully black on the commit frame -- the origin is
     // never seen again after the press -- easing up on the destination with
     // the plate and the arrival line already on it. The owner called the raw
-    // cut "teleporting"; this is the difference.
-    travelFadeAnim_.snapTo(true);
-    travelFadeAnim_.setTarget(false);
+    // cut "teleporting"; this is the difference. The dressing is
+    // dressInstantCut() -- the same cloth every scripted cut wears now --
+    // and the view snap rode in with placeBodyAt() above.
+    dressInstantCut();
 
     say("WALKED TO " + upperAscii(place.name) + ". " + travelClockText(timeOfDay_) + ".");
     syncPanelAnim();
+}
+
+// ---------------------------------------------------------------------------
+// RELOCATED: SNAP THE VIEW -- the one seam for every instant jump
+// ---------------------------------------------------------------------------
+//
+// See the header's own block. The three functions are deliberately small:
+// the SNAP is the bug fix, the DRESSING is the owner's read of even a clean
+// cut ("teleporting"), and placeBodyAt is what keeps the next relocation
+// feature from having to remember either.
+
+void Session::snapViewAfterRelocation() {
+    // THE GHOST, EXACTLY: each of these rows eases out over ~8 steps when its
+    // subject goes away, which is right for a subject that walked out of
+    // reach and wrong for a BODY that jumped -- the old street's crosshair
+    // subject, lock and room name have no business fading over the new one.
+    // snapTo, not setTarget: the whole point is that nothing eases here.
+    // The caches are cleared the same instant for the same reason
+    // clearIfClosed() clears them -- a label must not survive the verb it
+    // hung off, and after a jump there is no verb left.
+    interactAnim_.snapTo(false);
+    interactSubjectCache_.clear();
+    interactNoteCache_.clear();
+    interactKindCache_ = AimKind::Nothing;
+    lockAnim_.snapTo(false);
+    lockCache_.clear();
+    roomAnim_.snapTo(false);
+    roomCache_.clear();
+    // NOT the case trail, the guild row, the standing, the heat, the stash,
+    // the stance: those are facts about the PLAYER, and the player made the
+    // journey. Only what was derived from the ground under the old feet.
+    //
+    // AND NOTHING FOR THE CAMERA, stated so the next reader does not hunt
+    // for it: the camera is Camera::fromBody(body_->...) recomputed raw
+    // every frame -- there is no eased camera position in this build, which
+    // test_demo's "the frame after a cut" case now pins. If one is ever
+    // added, THIS is where its snap belongs.
+}
+
+void Session::placeBodyAt(std::int32_t tileX, std::int32_t tileY, std::int32_t band) {
+    body_->placeAt(tileX, tileY, band);
+    snapViewAfterRelocation();
+}
+
+void Session::dressInstantCut() {
+    travelFadeAnim_.snapTo(true);
+    travelFadeAnim_.setTarget(false);
 }
 
 DistrictMapState Session::districtMapState() const {
@@ -3096,7 +3144,9 @@ void Session::settleDefeat() {
         audio_->playOneShot(audio::SoundId::ThudHeavy);
     }
     tavern_->reviveAfterDefeat();
-    body_->placeAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
+    // Through placeBodyAt: waking on the quay apron is a relocation like any
+    // other, and the room you were beaten in must not ghost over the street.
+    placeBodyAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
     awaitingLanding_ = false;
     syncTavernToBody();
     timeOfDay_ = tavern_->timeOfDay();
@@ -3253,7 +3303,7 @@ void Session::step(const sim::MoveInput& input) {
     // impound and the morning at its gate happen here -- which is to say they
     // do not happen at all, and that is stated rather than implied.
     if (tavern_->takeArrestRelease()) {
-        body_->placeAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
+        placeBodyAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
         awaitingLanding_ = false;
         syncTavernToBody();
         say(tavern_->lastArrest().line);
@@ -8756,7 +8806,7 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
 
     // THE ONE PLACEMENT, and see SmokeRunConfig::street on why it is a placement
     // and not a walk. Everything after this line is the game.
-    session.body().placeAt(standX, standY, target->band);
+    session.placeBodyAt(standX, standY, target->band);
     {
         // Facing them, so the frame is a picture of a conversation. Four-point
         // and integer: a heading is simulation state, and an atan2 here would
@@ -8864,7 +8914,7 @@ ThresholdLineResult runThresholdLine(Session& session, const std::string& which,
     // unchanged: the capture harness's router box is the Gilded Gull and its
     // street, and walking the body to the head of Saltgate Rise would be
     // photographing the pathfinder. Everything after this line is the game.
-    session.body().placeAt(crossing->fromX, crossing->fromY, crossing->band);
+    session.placeBodyAt(crossing->fromX, crossing->fromY, crossing->band);
     const std::int32_t dx = crossing->toX - crossing->fromX;
     const std::int32_t dy = crossing->toY - crossing->fromY;
     const sim::Angle inward = (dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy)
@@ -9005,7 +9055,7 @@ PetitionLineResult runPetitionLine(Session& session, bool grantCoin) {
     }
 
     // 3. THE ONE PLACEMENT -- runStreetLine's own move, same reasons.
-    session.body().placeAt(standX, standY, target->band);
+    session.placeBodyAt(standX, standY, target->band);
     {
         const std::int32_t toX = target->x - standX;
         const std::int32_t toY = target->y - standY;
@@ -9121,7 +9171,7 @@ RadiantLineResult runRadiantLine(Session& session, bool takeIt) {
     out.brief = row->brief;
 
     // 2. THE ONE PLACEMENT -- runStreetLine's own move, same reasons.
-    session.body().placeAt(standX, standY, giver->band);
+    session.placeBodyAt(standX, standY, giver->band);
     {
         const std::int32_t toX = giver->x - standX;
         const std::int32_t toY = giver->y - standY;

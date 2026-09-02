@@ -336,7 +336,19 @@ void DemoDirector::enter(Session& session) {
             std::int32_t x = beat.a;
             std::int32_t y = beat.b;
             if (nearestStandable(session, beat.a, beat.b, beat.c, &x, &y)) {
-                session.body().placeAt(x, y, beat.c);
+                // THROUGH THE ONE RELOCATION SEAM, not the body directly: the
+                // snap closes the old street's eased crosshair/lock/room rows
+                // the same instant the body jumps, so nothing from three
+                // hundred tiles away ghosts over the arrival -- the owner's
+                // "double vision" read of these cuts, run to ground.
+                session.placeBodyAt(x, y, beat.c);
+                // AND THE CUT IS DRESSED: fully black on this very frame,
+                // easing up on the new street -- the travel seam's own cloth
+                // (Session::dressInstantCut), because the owner called even a
+                // clean raw cut "teleporting". The demo steps the simulation
+                // once per rendered frame, so the session-side veil decays at
+                // exactly the cadence a watcher sees.
+                session.dressInstantCut();
             }
             session.body().setYaw(sim::angle_from_degrees(beat.degrees));
             yawFrom_ = session.body().yaw();
@@ -399,6 +411,12 @@ void DemoDirector::enter(Session& session) {
             break;
         case DemoAct::Clock:
             session.skipToHour(beat.a);
+            // A CLOCK JUMP IS A CUT TOO -- noon to night in one frame reads
+            // as the same glitch a placeAt cut does -- so it wears the same
+            // veil. The route's own night section runs Clock straight into a
+            // Cut; the Cut's snapTo simply re-blacks a veil already up, and
+            // one fade covers the pair.
+            session.dressInstantCut();
             break;
         case DemoAct::Card:
         case DemoAct::Hold:
@@ -612,6 +630,22 @@ bool DemoDirector::cardOwnsFrame() const noexcept {
 // above it. It also stands down entirely under any page (the caller's
 // business, via routeOverlayStandsDown) -- a page IS the content and a line
 // of commentary over one is the same collision one step worse.
+// THE SEAM VEIL, the route overlays' third shared draw. The same cloth
+// Session::drawFrame dips travel's arrival in (dipTravelSeam): a plain black
+// fill at `amount`, because a cut's cover wants no border, no ink and no
+// register -- it is the absence of a picture, briefly. Shared here for the
+// one director that cannot ride the session's own veil: --case-watch's holds
+// step the simulation ZERO times a frame, so a step()-advanced EasedToggle
+// would freeze black for the whole hold; the watch advances its own toggle
+// on ITS clock (frames) and paints it with this.
+void drawRouteVeil(Framebuffer& target, float amount) {
+    if (amount <= 0.0F) {
+        return;
+    }
+    target.fillRect(0, 0, target.width(), target.height(), Rgb{0.0F, 0.0F, 0.0F},
+                    amount > 1.0F ? 1.0F : amount);
+}
+
 void drawRouteCaption(Framebuffer& target, const std::string& caption, float alpha) {
     if (alpha <= 0.01F || caption.empty()) {
         return;

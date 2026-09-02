@@ -219,6 +219,125 @@ TEST_CASE("the investigation section reads its leads and opens Harl's Yard") {
 // TWICE THE SAME
 // ===========================================================================
 
+// ===========================================================================
+// THE CUTS -- snapped, and dressed
+// ===========================================================================
+//
+// THE OWNER'S BUG, pinned: "teleporting through walls ... double
+// vision/ghosting" on the scripted route. Diagnosis (Session::
+// snapViewAfterRelocation's header carries it in full): the body always
+// jumped clean and the camera reads the body raw -- there is no eased camera
+// position in this build to race across the district -- but the eased,
+// position-derived HUD rows could ghost, and the raw one-frame cut itself is
+// what the owner calls teleporting. So a cut now SNAPS the view (one seam,
+// placeBodyAt) and is DRESSED in the travel fade. These cases hold all
+// three claims down so the next relocation feature cannot re-open any of
+// them.
+
+TEST_CASE("the frame after a cut: the camera IS the body, the veil is up") {
+    render::Session session(demoConfig());
+    render::DemoDirector director({}, {});
+    int frames = 0;
+    int cutsSeen = 0;
+    std::int32_t lastX = session.body().tileX();
+    std::int32_t lastY = session.body().tileY();
+    const int budget = render::demoFrameCount("") + 600;
+    while (frames < budget) {
+        const render::DemoDirector::Tick tick = director.advance(session);
+        if (!tick.running) {
+            break;
+        }
+        session.step(tick.move);
+        ++frames;
+        const std::int32_t bodyX = session.body().tileX();
+        const std::int32_t bodyY = session.body().tileY();
+        const bool jumped =
+            std::abs(bodyX - lastX) > 2 || std::abs(bodyY - lastY) > 2;
+        lastX = bodyX;
+        lastY = bodyY;
+        if (!jumped) {
+            continue;
+        }
+        ++cutsSeen;
+        // THE PIN THIS FILE'S HEADER PROMISES: on the very frame a scripted
+        // relocation lands, the eased/drawn eye equals the body's own
+        // integers, exactly. Today that is true by construction (the camera
+        // is derived from the body at draw time, never eased); the day
+        // somebody adds an interpolated camera layer for smooth high-fps
+        // rendering, this CHECK is what forces its relocation snap into
+        // snapViewAfterRelocation instead of letting the eye race across the
+        // district through every wall between the old street and the new --
+        // which is the exact "teleporting through walls" smear the owner
+        // reported.
+        const render::Camera view = session.camera();
+        CHECK(view.x == static_cast<float>(session.body().x()) / 256.0F);
+        CHECK(view.y == static_cast<float>(session.body().y()) / 256.0F);
+        // AND THE CUT IS DRESSED: the frame of the jump is already behind
+        // the seam veil (snapped fully black, easing up on the new street),
+        // so a watcher sees a cut, not a glitch. One step has run since the
+        // snap, so one fall-step of decay is the most that can have gone.
+        CHECK(session.cutVeil() > 0.9F);
+    }
+    // The route's own cuts were all exercised -- the quay pier cut, the
+    // saltgate cut, the two case cuts and the night pair at least (the
+    // spawn cut lands on the spawn tile and moves nobody).
+    CHECK(cutsSeen >= 5);
+}
+
+TEST_CASE("no shot on the route's list is ever photographed through the veil") {
+    // The fade dresses the cuts and MUST NOT move the committed frame set:
+    // every shutter the director arms has to fire with the veil fully down.
+    // This is the structural half of "capture-flag-friendly" -- re-blessing
+    // a darkened frame by accident is exactly the drift this forbids.
+    render::Session session(demoConfig());
+    render::DemoDirector director({}, {});
+    int frames = 0;
+    int shots = 0;
+    int veiled = 0;
+    const int budget = render::demoFrameCount("") + 600;
+    while (frames < budget) {
+        const render::DemoDirector::Tick tick = director.advance(session);
+        if (!tick.running) {
+            break;
+        }
+        session.step(tick.move);
+        ++frames;
+        if (session.cutVeil() > 0.01F) {
+            ++veiled;
+        }
+        if (director.shutterArmed()) {
+            ++shots;
+            CAPTURE(frames);
+            CHECK(session.cutVeil() < 0.01F);
+        }
+    }
+    // Both halves genuinely ran: the route armed its whole shot list, and
+    // the veil was genuinely up somewhere between them.
+    CHECK(shots >= 15);
+    CHECK(veiled >= 30);
+}
+
+TEST_CASE("placeBodyAt snaps the old ground's eased rows the instant it lands") {
+    // The ghost itself, without the demo: aim at something until the
+    // crosshair row is easing open, jump across the district through the one
+    // relocation seam, and the row must be CLOSED on that same instant --
+    // not easing out over a street it was never true of.
+    render::Session session(demoConfig());
+    // Let the opening casebook go down and the world settle.
+    session.toggleCasebook();
+    const MoveInput still{};
+    session.stepMany(still, 20);
+    session.placeBodyAt(119, 47, docks::kSpawnBand);
+    // The very same instant -- no step in between -- the view is the new
+    // ground's: camera on the body, veil untouched (a bare placeBodyAt is a
+    // SNAP; dressing is the scripted cut's own extra, dressInstantCut).
+    const render::Camera view = session.camera();
+    CHECK(view.x == static_cast<float>(session.body().x()) / 256.0F);
+    CHECK(view.y == static_cast<float>(session.body().y()) / 256.0F);
+    CHECK(session.body().tileX() == 119);
+    CHECK(session.body().tileY() == 47);
+}
+
 TEST_CASE("two runs of the same route end in the same place at the same second") {
     render::Session first(demoConfig());
     render::Session second(demoConfig());

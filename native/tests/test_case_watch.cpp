@@ -24,6 +24,7 @@
 #include "granadad/content/content_dir.hpp"
 #include "granadad/render/case_watch.hpp"
 #include "granadad/render/session.hpp"
+#include "granadad/sim/angle.hpp"
 
 namespace content = granadad::content;
 namespace render = granadad::render;
@@ -128,6 +129,115 @@ TEST_CASE("the watch is paced for an eye -- the demo's own neighbourhood") {
     // under five (a finished smaller thing).
     CHECK(seconds > 60);
     CHECK(seconds < 300);
+}
+
+TEST_CASE("the two o'clock cut is dressed, and no shutter fires through the veil") {
+    // THE OWNER'S BUG, the watch's half: the wait beat's skipToHour is the
+    // tape's one hard cut -- noon to a barred, blacked-out taproom in a
+    // single frame -- and it now wears the seam veil (the travel fade's own
+    // 8-rise/36-fall, on the watch's frame clock; see veil()'s header for
+    // why the director owns it). Two claims: the skip is genuinely dressed,
+    // and the committed shot list is never photographed through it --
+    // test_demo's own capture-safety rule, kept here so re-pacing the tape
+    // can never quietly darken a blessed frame.
+    render::CaseWatchDrive drive = render::recordCaseDrive(caseConfig());
+    REQUIRE(drive.beats == 8);
+    render::SessionConfig start = caseConfig().session;
+    start.timeOfDay = render::scriptedStartHour(caseConfig()) * 3600;
+    render::Session session(start);
+    render::CaseWatchDirector director(std::move(drive), {});
+
+    const int budget = director.plannedFrames() + 600;
+    int frames = 0;
+    int veiled = 0;
+    int shots = 0;
+    while (frames < budget) {
+        const render::CaseWatchDirector::Tick tick = director.advance(session);
+        if (!tick.running) {
+            break;
+        }
+        for (std::int32_t i = 0; i < tick.steps; ++i) {
+            session.step(tick.move);
+        }
+        ++frames;
+        if (director.veil() > 0.01F) {
+            ++veiled;
+        }
+        if (director.shutterArmed()) {
+            ++shots;
+            CAPTURE(frames);
+            CHECK(director.veil() < 0.01F);
+        }
+    }
+    // The dressing really happened -- the veil covered the skip and eased
+    // off over the hold that exists to look at the dark room -- and the
+    // whole shot list still fired.
+    CHECK(veiled >= 30);
+    CHECK(veiled <= 120);
+    CHECK(shots == 8);
+}
+
+TEST_CASE("the watcher's eye never whips -- and the eased head still lands the twin") {
+    // THE OWNER'S BUG, the walking half: the drive's walker steers by
+    // snapping yaw compass-to-compass (stepToward), so the verbatim tape
+    // replayed one step per frame strobed the camera through the near wall
+    // at 60 Hz -- photographed in docs/frames/cut-seam/. composeView is the
+    // cure: the SIM steps under the tape's exact yaw, the DRAWN head chases
+    // it at the demo walker's human rate. Two claims, both load-bearing:
+    // the drawn heading never moves more than that rate in one frame, and
+    // the eased eye converges back onto the tape so the replay is still the
+    // drive's twin to the fingerprint -- yaw field included.
+    render::CaseWatchDrive drive = render::recordCaseDrive(caseConfig());
+    REQUIRE(drive.beats == 8);
+    const render::WatchFingerprint want = drive.end;
+
+    render::SessionConfig start = caseConfig().session;
+    start.timeOfDay = render::scriptedStartHour(caseConfig()) * 3600;
+    render::Session session(start);
+    render::CaseWatchDirector director(std::move(drive), {});
+
+    const int budget = director.plannedFrames() + 600;
+    constexpr std::int32_t kTurnRate = granadad::sim::kTurnFull / 90;
+    int frames = 0;
+    int whips = 0;
+    bool haveLast = false;
+    std::int32_t lastDrawnYaw = 0;
+    bool finished = false;
+    while (frames < budget) {
+        const render::CaseWatchDirector::Tick tick = director.advance(session);
+        if (!tick.running) {
+            finished = true;
+            break;
+        }
+        for (std::int32_t i = 0; i < tick.steps; ++i) {
+            session.step(tick.move);
+        }
+        // The frame loop's own order: the eye goes on after the step and
+        // before the draw, and what the body carries NOW is what drawFrame
+        // would photograph.
+        director.composeView(session);
+        const std::int32_t drawn = session.body().yaw();
+        if (haveLast) {
+            const std::int32_t raw =
+                (drawn - lastDrawnYaw) & (granadad::sim::kTurnFull - 1);
+            const std::int32_t delta =
+                raw > granadad::sim::kTurnHalf ? raw - granadad::sim::kTurnFull : raw;
+            if (delta > kTurnRate || delta < -kTurnRate) {
+                ++whips;
+            }
+        }
+        lastDrawnYaw = drawn;
+        haveLast = true;
+        ++frames;
+    }
+    CHECK(finished);
+    // Not one drawn frame turned the head faster than the walker's eased
+    // rate -- the strobe is structurally gone.
+    CHECK(whips == 0);
+    // And the eased eye converged: the replay still stands exactly where
+    // the drive stood, yaw and all.
+    CHECK(director.twinMatched(session));
+    CHECK(render::watchFingerprintOf(session) == want);
 }
 
 TEST_CASE("a short ending stops the tape where the harness stops the drive") {

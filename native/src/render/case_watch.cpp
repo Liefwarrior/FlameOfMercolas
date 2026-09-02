@@ -6,6 +6,7 @@
 
 #include "granadad/render/capture.hpp"
 #include "granadad/render/demo.hpp"
+#include "granadad/sim/angle.hpp"
 #include "granadad/sim/casebook.hpp"
 
 namespace granadad::render {
@@ -129,6 +130,16 @@ std::int32_t CaseWatchDirector::execute(const WatchOp& op, Session& session) {
             session.toggleCasebook();
             break;
         case WatchOpKind::SkipHour:
+            // THE CUT, DRESSED. The skip is the watch's one hard cut -- noon
+            // to a barred, blacked-out taproom in a single frame, which the
+            // owner reads as "teleporting ... double vision" however clean
+            // the simulation underneath is. So the frame the clock jumps on
+            // is already fully black and the dark room eases up over the
+            // start of the hold that exists to look at it. The watch's own
+            // veil_ and not Session::dressInstantCut, because this hold steps
+            // the simulation zero times a frame -- see veil()'s header.
+            veil_.snapTo(true);
+            veil_.setTarget(false);
             session.skipToHour(static_cast<int>(op.a));
             break;
         case WatchOpKind::Crouch:
@@ -156,6 +167,14 @@ CaseWatchDirector::Tick CaseWatchDirector::advance(Session& session) {
         return tick;
     }
     ++frame_;
+    if (!eyeSeeded_) {
+        // The tape's early ops (the courier's hail, the sheet) run before its
+        // first Step carries a yaw, and the watcher's head has to start
+        // somewhere: both start where the session spawned looking.
+        tapeYaw_ = session.body().yaw();
+        eyeYaw_ = tapeYaw_;
+        eyeSeeded_ = true;
+    }
 
     // ARM THE SHUTTER for this frame, if a landed beat's delay just ran out --
     // ahead of everything else, so the frame that gets written is the frame
@@ -175,6 +194,11 @@ CaseWatchDirector::Tick CaseWatchDirector::advance(Session& session) {
                            !routeOverlayStandsDown(session));
     card_.advance();
     captionFade_.advance();
+    // The veil decays on the watch's own clock -- once per rendered frame --
+    // for the reason veil()'s header states: a hold steps the simulation zero
+    // times, and a black screen that waits for a step would hold for the
+    // whole hold.
+    veil_.advance();
 
     switch (phase_) {
         case Phase::Title:
@@ -195,11 +219,21 @@ CaseWatchDirector::Tick CaseWatchDirector::advance(Session& session) {
                     // THE DRIVE'S OWN STEP, one per rendered frame -- with the
                     // yaw the drive's walker had set, restored first, because
                     // stepToward steers the head outside the input struct.
+                    // composeView() will put the watcher's eased eye back on
+                    // after the step; the SIM always steps under the tape.
+                    tapeYaw_ = op.a;
                     session.body().setYaw(op.a);
                     tick.move = op.move;
                     tick.steps = 1;
                     return tick;
                 }
+                // EVERY OP EXECUTES UNDER THE TAPE'S OWN HEADING, not the
+                // eased eye's: an examine, a punch, an interact all resolve
+                // by where the body FACES, and the drive resolved them under
+                // tapeYaw_ -- an op run under the eye's lagging heading could
+                // aim at different ground and break the twin. composeView()
+                // re-applies the eye before anything is drawn.
+                session.body().setYaw(tapeYaw_);
                 const std::int32_t pause = execute(op, session);
                 if (pause > 0) {
                     // This frame shows the op landing; pause-1 more follow.
@@ -235,11 +269,46 @@ CaseWatchDirector::Tick CaseWatchDirector::advance(Session& session) {
     return tick;
 }
 
+void CaseWatchDirector::composeView(Session& session) {
+    if (!eyeSeeded_) {
+        return;  // nothing has run; the first advance() seeds both headings
+    }
+    // The shortest signed turn from the eye to the tape, in the sim's own
+    // BAM units -- DemoDirector's turnDelta, restated on the same wrap
+    // arithmetic because that helper is the demo's private business.
+    const std::int32_t raw = (tapeYaw_ - eyeYaw_) & (sim::kTurnFull - 1);
+    const std::int32_t delta = raw > sim::kTurnHalf ? raw - sim::kTurnFull : raw;
+    // The demo walker's own human rate (~4 degrees a frame). On a dogleg,
+    // where the tape alternates +-90 degrees every step, the eye holds the
+    // mean heading with a rate-wide sway instead of strobing; on a real
+    // corner it comes round in under half a second; and once within one
+    // turn it SNAPS EXACTLY onto the tape -- the convergence twinMatched()
+    // depends on.
+    constexpr std::int32_t kTurnRate = sim::kTurnFull / 90;
+    if (delta > kTurnRate) {
+        eyeYaw_ += kTurnRate;
+    } else if (delta < -kTurnRate) {
+        eyeYaw_ -= kTurnRate;
+    } else {
+        eyeYaw_ = tapeYaw_;
+    }
+    // Kept on the dial. The chase arithmetic above tolerates an unnormalized
+    // heading (raw is masked), but the yaw handed to the body should be the
+    // same wrapped BAM every other setYaw hands it.
+    eyeYaw_ &= sim::kTurnFull - 1;
+    session.body().setYaw(eyeYaw_);
+}
+
 bool CaseWatchDirector::cardOwnsFrame() const noexcept {
     return card_.value() > 0.01F && !cardLine_.empty();
 }
 
 void CaseWatchDirector::drawOverlay(Framebuffer& target, const Session& session) const {
+    // The veil goes UNDER the caption and the card -- the same layering the
+    // demo gets for free (Session::drawFrame dips before the director draws),
+    // so "THE WAIT..." stays readable while the room underneath cuts to two
+    // in the morning.
+    drawRouteVeil(target, veil_.value());
     drawRouteCaption(target, caption_, captionFade_.value());
     drawRouteCard(target, cardLine_, cardSub_, session.placeLabel(), card_.value());
 }
