@@ -300,10 +300,12 @@ TEST_CASE("the tutor band holds, yields, and spends its countdown once a step") 
     }
     CHECK_FALSE(band.wanted());
 
-    // The newest raise wins the hold; an older, longer one is never shortened.
+    // A raise extends a live hold and never shortens one.
     band.raise(100);
     band.raise(10);
     CHECK(band.showSteps == 100);
+    band.raise(120);
+    CHECK(band.showSteps == 120);
 
     // Suppression puts the band down without spending the countdown -- a page
     // over the top does not eat the hold.

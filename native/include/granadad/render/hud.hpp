@@ -140,8 +140,8 @@ inline constexpr int kIdleWakeSteps = 300;
 /// unhashed, exactly like every EasedToggle in the game.
 ///
 /// THE CALLING CONVENTION IS THE QUICK BAR'S, deliberately: raise() wherever
-/// the event lands (any number of times per step -- it is idempotent-ish, the
-/// newest raise wins the hold), sync(suppressed) wherever the owner's
+/// the event lands (any number of times per step -- a raise extends a live
+/// hold and never shortens one), sync(suppressed) wherever the owner's
 /// syncPanelAnim-equivalent runs (also any number of times per step), and
 /// advance() EXACTLY once per step -- a countdown spent per call would make
 /// the hold depend on how many keys were pressed during it, the defect
