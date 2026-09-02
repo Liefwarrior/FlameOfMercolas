@@ -1909,10 +1909,13 @@ CreationPage CreationFlow::pageForSheet() const {
             break;
         }
         case CustomizeRow::Kind::Begin: {
+            // THE NAME PANE, 26 -> 8 (UI-EA-SPEC 1.1 #6): the sheet on the
+            // left IS the review -- the 47 words that are the point -- so the
+            // BEGIN pane says only who and what, and commits. The bars and
+            // the past's ledger live on their own rows' panes.
             out.accent = panelInk().key;
             out.detailBadge = "BEGIN";
             out.detailStatus = canConfirm() ? "READY" : "NOT YET";
-            out.bars = pageSheetBars();
             out.facts = {
                 PanelFact{"NAME", name_.empty() ? "UNSET" : name_,
                           name_.empty() ? InkRole::Dim : InkRole::Accent},
@@ -1921,9 +1924,6 @@ CreationPage CreationFlow::pageForSheet() const {
                               ? taken->name
                               : (fixed ? std::string("THEIR OWN") : std::string("HAND-BUILT")),
                           InkRole::Prose}};
-            for (PanelLine& line : pagePastLines()) {
-                out.lines.push_back(std::move(line));
-            }
             // NEVER A DEAD BUTTON. With no name typed, the verb says what is
             // missing and pressing it goes and fixes that -- see
             // chooseCustomizeRow(). No route counts, no reassurance clauses

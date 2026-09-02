@@ -5526,9 +5526,6 @@ CreationPage Session::stripCard() const {
         rows = waitRows();
         cursor = waitCursor_;
         window = waitPage_;
-        // TWO COLUMNS: twenty-four hours read as two twelves side by side --
-        // the whole clock on one screen, no page turn at all.
-        out.maxColumns = 2;
         out.bodyHoldRows = 12;
     } else if (optionsOpen_) {
         out.title = "OPTIONS";
@@ -5554,19 +5551,40 @@ CreationPage Session::stripCard() const {
         out.bodyHoldRows = 8;
     }
 
-    out.rows.reserve(rows.size());
+    // THE CARD PAGES AT TWELVE (UI-EA-SPEC 1.7: the wait clock over two
+    // pages, the options table likewise) -- a screenful anchored on the
+    // cursor, `+N` as the last, unselectable row saying what waits past the
+    // fold, and the digit keys printed only on the nine-key window the
+    // direct-select arithmetic really answers to.
+    constexpr int kCardRows = 12;
+    const int total = static_cast<int>(rows.size());
+    const int screen = total > kCardRows ? std::clamp(cursor, 0, total - 1) / kCardRows : 0;
+    const int first = screen * kCardRows;
+    const int last = std::min(total, first + kCardRows);
+    out.rows.reserve(static_cast<std::size_t>(last - first) + 1);
     const int windowFirst = window * kTopicPageSize;
-    for (std::size_t i = 0; i < rows.size(); ++i) {
+    // The wait rows number THEMSELVES (`7 - DAWN 06:00`), so a printed key
+    // column would say every digit twice -- digits pick what they print, and
+    // those rows already print them.
+    const bool selfNumbered = waitOpen_;
+    for (int i = first; i < last; ++i) {
         CreationPageRow row;
-        const int slot = static_cast<int>(i) - windowFirst;
-        if (slot >= 0 && slot < kTopicPageSize) {
+        const int slot = i - windowFirst;
+        if (!selfNumbered && slot >= 0 && slot < kTopicPageSize) {
             row.key = std::to_string(slot + 1);
         }
-        row.label = rows[i];
+        row.label = rows[static_cast<std::size_t>(i)];
         row.accent = panelInk().accent;
         out.rows.push_back(std::move(row));
     }
-    out.cursor = cursor;
+    if (last < total) {
+        CreationPageRow more;
+        more.label = "+" + std::to_string(total - last);
+        more.accent = panelInk().dim;
+        more.selectable = false;
+        out.rows.push_back(std::move(more));
+    }
+    out.cursor = std::clamp(cursor, 0, std::max(0, total - 1)) - first;
     // The one keycap foot every page keeps at rest; the word rides the tutor
     // tier, which the pause stack leaves at rest -- these pages ARE their
     // rows.
