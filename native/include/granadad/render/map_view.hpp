@@ -469,10 +469,25 @@ struct DistrictMapState {
     std::string title;
     /// A bouncer's warning routed onto this page while it is up, the same
     /// contract the tiled Menu's journal tile carries. Empty draws nothing.
+    /// It outranks the header row while it lasts -- there is no separate
+    /// breadcrumb line to take any more (UI-EA-SPEC sec. 5, breadcrumb law).
     std::string alert;
     /// 0 (closed) .. 1 (open) -- the page's own EasedToggle, per the settled
     /// UI convention (DECISIONS.md rule 1).
     float openAmount = 1.0F;
+
+    // --- UI-EA-SPEC sec. 2: the Law of Earned Text -------------------------
+    /// TUTOR tier, 0 (rest) .. 1 (raised). At rest the nav band prints bare
+    /// keycaps and no verb words; raised, the verb words ride beside the caps
+    /// at this strength. Raised on page open, device change, unrecognized
+    /// press and idle -- the countdown helper is LANE HUD's, the wake signals
+    /// LANE FLOW's; this page only renders the value. Default 0: the at-rest
+    /// diet is what a hand-built state draws.
+    float tutor = 0.0F;
+    /// Contract (b): the commit beat. Armed (set toward 1) by the routing's
+    /// ImpactPulse at a commit press; this page renders drawCommitPulse over
+    /// its commit foot while it decays. Default 0 draws nothing.
+    float commitPulse = 0.0F;
 
     // --- the page's own cursor ---------------------------------------------
     /// Index into mapPlaces(). The cursor, and the subject of every tab.
@@ -538,17 +553,20 @@ struct MapPageLayout {
     PanelMetric metric{};
     PanelRect bounds{};
     PanelRect interior{};
+    /// THE ONE HEADER LINE (UI-EA-SPEC sec. 5, breadcrumb law): the tab row --
+    /// tabs, resource readout right -- IS the breadcrumb. The old separate
+    /// breadcrumb band and the SELECTED line under the plan are gone; their
+    /// rows went to the plan, and the selection is named ONCE, on the detail
+    /// pane's title row (`TARWALK - NE 12`).
     PanelRect headerBand{};
     PanelRect bodyBand{};
     PanelRect mapPane{};
     PanelRect detailPane{};
-    PanelRect selectionBand{};
     PanelRect navBand{};
     int tabRow = 0;
     int headerRow = 0;
     int bodyRow = 0;
     int bodyRows = 0;
-    int selectionRow = 0;
     int navRow = 0;
     int dividerCell = 0;
     std::vector<int> ruleRows;

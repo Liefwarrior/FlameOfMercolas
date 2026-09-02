@@ -2429,21 +2429,25 @@ DistrictMapState Session::districtMapState() const {
     plan.tab = districtMapTab_;
     plan.detailFirst = districtMapDetailFirst_;
     // THE READOUT: the clock and the band, right-aligned and permanent. The
-    // two facts a map reader wants on screen the whole time -- the hour because
-    // the ward's people move by it, and the band because this plan is a plan of
-    // ONE band and a reader on the roofs is looking at a different district
-    // from a reader on the quay.
+    // two facts a map reader wants on screen the whole time -- and the clock
+    // prints its LIVE MINUTE (UI-EA-SPEC sec. 4 #10): the HUD says 08:01 and a
+    // header that answers 08:00 is a page disagreeing with the world it maps.
     const int hour = ((timeOfDay_ / 3600) % 24 + 24) % 24;
-    plan.readout = (hour < 10 ? std::string("0") : std::string()) + std::to_string(hour) +
-                   ":00   BAND " + std::to_string(body_->band());
+    const int minute = ((timeOfDay_ / 60) % 60 + 60) % 60;
+    plan.readout = (hour < 10 ? std::string("0") : std::string()) + std::to_string(hour) + ":" +
+                   (minute < 10 ? std::string("0") : std::string()) + std::to_string(minute) +
+                   "   BAND " + std::to_string(body_->band());
 
     // SHIP NOTE MOVE 3: the nav band's keys, in the device's own vocabulary.
     // Each pad wording is what main.cpp's map branch ACTUALLY routes: the
     // D-pad walks places, LB/RB (PagePrev/PageNext) cycle the views, RT/LT
     // (Cast/Block) ride the zoom ladder, SELECT (Action::Map's own pad half)
-    // shuts the page, A commits. The keyboard strings are the old literals.
+    // shuts the page, A commits. The movement keys are the KEYCAP MOTIFS
+    // (UI-EA-SPEC sec. 5): four arrowheads for the keyboard, the d-pad cross
+    // for the pad -- rendered by the panel drawers from the sentinel bytes.
+    plan.navMoveKeys = std::string(kGlyphMoveKeys);
     if (promptDevice_ == InputDevice::Pad) {
-        plan.navMoveKeys = "D-PAD";
+        plan.navMoveKeys = std::string(kGlyphCross);
         plan.navTabKeys = std::string(promptLabel(controls_, Action::PagePrev, promptDevice_)) +
                           " " + std::string(promptLabel(controls_, Action::PageNext, promptDevice_));
         plan.navZoomKeys = std::string(promptLabel(controls_, Action::Cast, promptDevice_)) + " " +
