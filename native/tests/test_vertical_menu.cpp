@@ -255,10 +255,11 @@ TEST_CASE("the tiles that ship empty say what they are waiting for, in room the 
     const DialogueViewState book = session.dialogueView();
     REQUIRE(book.speaker == "THE CASEBOOK");
     REQUIRE(book.topics.size() >= 1);
-    CHECK_FALSE(book.emptyLine.empty());
-    // ONE STRING, TWO SURFACES: the tile and the full-screen page word the same
-    // absence with the same sentence rather than drifting apart.
-    CHECK(book.emptyLine == std::string(kBookWaitingLine));
+    // ONE ABSENCE, TWO SURFACES, STILL ONE WORDING -- which is now NO wording:
+    // the casebook page retired the waiting sentence (UI-EA-SPEC 1.5, prose
+    // 14 -> 0) and the tile retires it with it. The stipple says "left on
+    // purpose"; the hook still opens a fresh book.
+    CHECK(book.emptyLine.empty());
 
     session.menuPageNext();  // Journal -> Character
     session.menuPageNext();  // Character -> Map
@@ -269,24 +270,32 @@ TEST_CASE("the tiles that ship empty say what they are waiting for, in room the 
     CHECK(chart.emptyLine.find("CASEBOOK") != std::string::npos);
 
     // AND THE TILES ACTUALLY DRAW IT. Everything else about the two frames is
-    // identical, so the difference IS the sentences.
+    // identical, so the difference IS the sentences. The Letters tile is the
+    // one that is genuinely empty, so it carries the proof -- focused (the
+    // full form draws the empty state) AND unfocused (the summary form draws
+    // it too, because an empty tile's summary IS its empty state).
     MenuTileState tiles;
     tiles.open = true;
     tiles.map = chart;
     tiles.letters = letters;
     tiles.journal = book;
-    for (const int height : {180, 360, 540, 1080}) {
-        const int width = height * 16 / 9;
-        Framebuffer worded(width, height);
-        drawMenuTiles(worded, tiles);
-        MenuTileState blank = tiles;
-        blank.map.emptyLine.clear();
-        blank.letters.emptyLine.clear();
-        blank.journal.emptyLine.clear();
-        Framebuffer silent(width, height);
-        drawMenuTiles(silent, blank);
-        INFO("at ", width, "x", height);
-        CHECK(worded.pixels() != silent.pixels());
+    for (const bool focusLetters : {true, false}) {
+        tiles.focus = focusLetters ? kMenuFocusLetters : kMenuFocusJournal;
+        tiles.lettersFocus = focusLetters ? 1.0F : 0.0F;
+        tiles.journalFocus = focusLetters ? 0.0F : 1.0F;
+        for (const int height : {180, 360, 540, 1080}) {
+            const int width = height * 16 / 9;
+            Framebuffer worded(width, height);
+            drawMenuTiles(worded, tiles);
+            MenuTileState blank = tiles;
+            blank.map.emptyLine.clear();
+            blank.letters.emptyLine.clear();
+            blank.journal.emptyLine.clear();
+            Framebuffer silent(width, height);
+            drawMenuTiles(silent, blank);
+            INFO("at ", width, "x", height, " letters focused ", focusLetters);
+            CHECK(worded.pixels() != silent.pixels());
+        }
     }
 }
 

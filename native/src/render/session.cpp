@@ -4934,7 +4934,9 @@ DialogueViewState Session::mapPanelView() const {
     // reading of the book, and the book is what the player fills. True at
     // every point in a run, which is why it is not gated on the row count:
     // this panel is never finished until the case is.
-    view.emptyLine = "THE CHART KNOWS WHAT THE CASEBOOK KNOWS, AND NOT A STREET MORE.";
+    // Empty states run six words or fewer now (UI-EA-SPEC): the reading is
+    // the book's, said in four.
+    view.emptyLine = "WHAT THE CASEBOOK KNOWS.";
     for (const std::string& row : mapRows()) {
         view.topics.push_back(row);
     }
@@ -5018,10 +5020,10 @@ DialogueViewState Session::lettersPanelView() const {
         // faith with it: none of these five documents is addressed to the
         // player, so the copy talks about paper the leads keep, never about
         // post the player was sent.
-        view.emptyLine =
-            unlocked.empty()
-                ? "THE LEADS KEEP THEIR OWN PAPER. STAND OVER ONE AND IT TURNS UP HERE."
-                : "STAND OVER MORE LEADS. WHAT PAPER THEY KEEP TURNS UP HERE.";
+        // Six words or fewer (UI-EA-SPEC empty-state law), the same paper-
+        // not-post wording, shorter.
+        view.emptyLine = unlocked.empty() ? "NO PAPER YET. STAND OVER LEADS."
+                                          : "STAND OVER MORE LEADS.";
         view.page = lettersPage_;
     }
     for (const std::int32_t index : unlocked) {
@@ -5236,21 +5238,10 @@ DialogueViewState Session::journalPanelView() const {
     for (std::string& row : journalWorkRows()) {
         view.topics.push_back(std::move(row));
     }
-    // AND THE BAND UNDER THEM IS WORDED RATHER THAN BLACK. On a new game this
-    // is ONE row -- THE BODY -- across the full width of the frame, and it is
-    // the panel the world opens onto with no input at all about three and a
-    // half seconds in, so it is the second thing a stranger reads in this
-    // game. The same sentence the casebook PAGE's own master list carries, for
-    // the same reason and in the same words: two surfaces showing one list
-    // should not word its emptiness two different ways.
-    //
-    // GONE ONCE IT WOULD BE A LIE. Not when the trail is closed, and not once
-    // every lead in the file is in the book -- there is nothing left to open
-    // in either case, and a note promising more would be the "no shitty
-    // English anywhere" bar failing in the one place a player rereads.
-    if (!book.closed() && heard.size() < raws.leads().size()) {
-        view.emptyLine = std::string(kBookWaitingLine);
-    }
+    // THE WAITING SENTENCE IS RETIRED HERE TOO (UI-EA-SPEC 1.5, prose 14->0,
+    // and the two-surfaces-one-wording rule cuts both ways): the casebook
+    // page stopped saying it, so the tile stops with it. The stippled field
+    // still says "left on purpose"; the hook on a fresh book still leads.
     view.cursor = caseCursor_;
     view.page = casePage_;
     return view;

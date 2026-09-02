@@ -193,9 +193,17 @@ void drawLetterPane(Framebuffer& target, const PanelRect& pane, const PanelMetri
 ///   then     the empty-state sentence, in room the rows did not want, and a
 ///            stippled field under whatever is left -- emptiness textured,
 ///            not blank.
+/// HOW MUCH OF ITSELF A TILE SHOWS (UI-EA-SPEC 1.6) -- the Law of Earned Text
+/// applied to the hub: the FOCUSED tile is the real surface (its list, its
+/// prose); an unfocused tile is a SUMMARY -- badge, epithet, the picked row
+/// and a `+N` count -- because its forty rows are not news until you turn to
+/// them; and in READING MODE (a letter open) every other tile collapses to a
+/// CHIP, its one-word badge, so the letter has the room and the quiet.
+enum class TileMode : std::uint8_t { Full, Summary, Chip };
+
 void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
               const DialogueViewState& view, bool focused, float focusAmount, float fade,
-              bool journal, const Rgb& accent) {
+              bool journal, const Rgb& accent, TileMode mode) {
     const PanelInk& ink = panelInk();
     const int paneRows = metric.rowsIn(pane.h);
     const int paneCells = metric.cellsIn(pane.w);
@@ -218,10 +226,20 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
         }
         // A cell of air off the frame's own edge -- a value flush against the
         // border reads as punctuated by the `|`/`!` flicker.
-        if (!view.attitude.empty() &&
+        if (mode != TileMode::Chip && !view.attitude.empty() &&
             badge + static_cast<int>(view.attitude.size()) + 3 <= paneCells) {
             drawCellTextRight(target, pane, metric, 1, 0, view.attitude, ink.dim, 0.85F * fade);
         }
+    }
+    // A CHIP IS ITS BADGE -- reading mode's collapsed form. An alert still
+    // outranks the quiet: a bouncer does not wait for you to finish a letter.
+    if (mode == TileMode::Chip) {
+        if (!view.alert.empty()) {
+            drawCellText(target, pane, metric, 0, 1,
+                         clipLabel(view.alert, static_cast<std::size_t>(paneCells)), kAlertInk,
+                         fade);
+        }
+        return;
     }
 
     // --- row 1: the epithet, or a warning, which outranks it ----------------
@@ -239,6 +257,40 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
     // --- the letter branch: a document, not a menu --------------------------
     if (view.letter) {
         drawLetterPane(target, pane, metric, view, row, fade);
+        return;
+    }
+
+    // --- the summary form: what an unfocused tile earns ---------------------
+    // The picked row (the active lead, the newest-read letter, wherever the
+    // tile's own cursor sat) in the tile's accent, and `+N` for the rest --
+    // count and headline, no wall. The full list waits for focus.
+    if (mode == TileMode::Summary) {
+        ++row;
+        const int count = static_cast<int>(view.topics.size());
+        if (count > 0 && row < paneRows) {
+            const int at = std::clamp(view.cursor, 0, count - 1);
+            drawCellText(target, pane, metric, 0, row,
+                         clipLabel(view.topics[static_cast<std::size_t>(at)],
+                                   static_cast<std::size_t>(std::max(1, paneCells - 4))),
+                         accent, 0.95F * fade);
+            if (count > 1) {
+                drawCellTextRight(target, pane, metric, 1, row, "+" + std::to_string(count - 1),
+                                  ink.dim, 0.85F * fade);
+            }
+            ++row;
+        } else if (count == 0 && !view.emptyLine.empty() && row < paneRows) {
+            // An empty tile's summary IS its empty state -- worded, six words
+            // or fewer, so a fresh hub still says what each pane is for.
+            const PanelRect say = rowBand(pane, metric, row, std::max(1, paneRows - row - 1));
+            const std::vector<PanelLine> lines{
+                PanelLine{Bullet::None, "", view.emptyLine, InkRole::Dim, accent}};
+            row += drawProse(target, say, metric, lines, fade);
+        }
+        const int spare = paneRows - row - 1;
+        if (spare >= 3) {
+            drawStipple(target, rowBand(pane, metric, row + 1, spare - 1), metric, ink.rule,
+                        kPaneStippleAlpha * fade);
+        }
         return;
     }
 
@@ -359,7 +411,13 @@ MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height
         // drawTile's own refusals: nothing listed on a closed view, a pane too
         // small to compose, or an open letter (a document, not a menu). The
         // pane itself is still the answer -- a click there is on the TILE.
-        if (!view.open || paneRows < 4 || paneCells < 8 || view.letter) {
+        // AND ONLY THE FULL TILE ANSWERS ROWS: an unfocused tile draws a
+        // summary now (UI-EA-SPEC 1.6), so a row hit there would point at
+        // pixels no list occupies -- the click focuses the tile instead.
+        const bool letterReading = state.letters.open && state.letters.letter;
+        const bool full = letterReading ? pane.tile == kMenuFocusLetters
+                                        : state.focus == pane.tile;
+        if (!view.open || paneRows < 4 || paneCells < 8 || view.letter || !full) {
             return hit;
         }
         const int row = tileListStartRow(view, paneRows, paneCells, pane.journal);
@@ -524,22 +582,29 @@ void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
     frame.addDivider(comp.dividerCellB, 0, comp.topRows);
     frame.draw();
 
-    // CHARACTER, MAP, LETTERS: the three top tiles keep suppressing their own
-    // instructional `line` prose (each already said once, in full, on the page
-    // that first taught a new player to open this) so their rows -- the state
-    // a player opened the Menu to read -- get the pane. Letters' own prose
-    // reappears the moment a letter is picked, as that document's own body,
-    // via the letter branch. The Journal keeps its prose: the hook, the
-    // ward's dread, a picked lead's found text and its `•` dateline are the
-    // point of the page.
+    // THE LAW OF EARNED TEXT ON THE HUB (UI-EA-SPEC 1.6): the focused tile is
+    // the real surface; the others are summaries -- badge, epithet, headline
+    // row, `+N`. And READING MODE: with a letter open, the letter is the
+    // point of the whole page -- every other tile collapses to its chip so
+    // 169 words of neighbouring chrome stop shouting over 175 words of
+    // authored prose. The Journal keeps its prose when focused: the hook,
+    // the ward's dread and a picked lead's dateline are the page.
+    const bool reading = state.letters.open && state.letters.letter;
+    const auto modeFor = [&state, reading](int tile) {
+        if (reading) {
+            return tile == kMenuFocusLetters ? TileMode::Full : TileMode::Chip;
+        }
+        return state.focus == tile ? TileMode::Full : TileMode::Summary;
+    };
     drawTile(target, comp.character, comp.metric, state.character,
-             state.focus == kMenuFocusCharacter, state.characterFocus, fade, false, ink.accent);
+             state.focus == kMenuFocusCharacter, state.characterFocus, fade, false, ink.accent,
+             modeFor(kMenuFocusCharacter));
     drawTile(target, comp.map, comp.metric, state.map, state.focus == kMenuFocusMap,
-             state.mapFocus, fade, false, ink.accent);
+             state.mapFocus, fade, false, ink.accent, modeFor(kMenuFocusMap));
     drawTile(target, comp.letters, comp.metric, state.letters, state.focus == kMenuFocusLetters,
-             state.lettersFocus, fade, false, kParchmentInk);
+             state.lettersFocus, fade, false, kParchmentInk, modeFor(kMenuFocusLetters));
     drawTile(target, comp.journal, comp.metric, state.journal, state.focus == kMenuFocusJournal,
-             state.journalFocus, fade, true, ink.accent);
+             state.journalFocus, fade, true, ink.accent, modeFor(kMenuFocusJournal));
 }
 
 }  // namespace granadad::render
