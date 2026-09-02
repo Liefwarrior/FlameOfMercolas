@@ -326,6 +326,7 @@ add_library(granadad-render STATIC
     # table of beats and the playhead that walks it, driving the session
     # through the same public calls a keyboard makes. See the header on why it
     # is here and not another --smoke flag.
+    src/render/case_watch.cpp
     src/render/demo.cpp
     src/render/session.cpp
     src/render/step_pump.cpp

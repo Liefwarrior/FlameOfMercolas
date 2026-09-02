@@ -34,6 +34,7 @@ frames: **22/22 byte-identical** to the committed set (the courier is off under
 .\dist\granadad.exe --demo      # two minutes, plays itself, ends on a card
 .\dist\granadad.exe             # play it: DOWN DOWN ENTER, name, UP, ENTER, twelve ENTERs, UP, ENTER
 .\dist\granadad.exe --case      # drive THE QUIET TENANT end to end, headless, and print the errand's state
+.\dist\granadad.exe --case-watch  # WATCH the same errand: the identical drive at the demo's pacing, ~3 minutes, ESC leaves
 ```
 
 In the world: **J** casebook (per the owner's "use J for journal"), **M** map,

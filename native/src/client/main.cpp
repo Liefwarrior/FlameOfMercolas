@@ -31,6 +31,7 @@
 #include "granadad/content/world_reader.hpp"
 #include "granadad/sim/compound.hpp"
 #include "granadad/render/capture.hpp"
+#include "granadad/render/case_watch.hpp"
 #include "granadad/render/casebook_page.hpp"
 #include "granadad/render/controls.hpp"
 #include "granadad/render/creation.hpp"
@@ -316,6 +317,14 @@ struct Options {
     /// Where `--demo-capture=DIR` writes the route's own frames. Empty takes
     /// no pictures and is the ordinary way to watch it.
     std::filesystem::path demoShotDir;
+    /// CASE WATCH. Plays THE QUIET TENANT windowed at the demo's cadence --
+    /// the recorded --case drive, replayed one step per rendered frame. See
+    /// render/case_watch.hpp. Plain --case is untouched: this flag skips the
+    /// creation window and the smoke path both, and runs the client loop with
+    /// a CaseWatchDirector where --demo would put its DemoDirector.
+    bool caseWatch = false;
+    /// Where `--case-watch-capture=DIR` writes one PNG per landed beat.
+    std::filesystem::path caseWatchShotDir;
 };
 
 // ---------------------------------------------------------------------------
@@ -848,6 +857,18 @@ void print_usage() {
         "                       UP and the Mission's back room. WHERE is\n"
         "                       sheet, gull, night, down, or empty for the\n"
         "                       whole errand delivered\n"
+        "  --case-watch[=WHERE] WATCH the same errand: the identical --case\n"
+        "                       drive, recorded and replayed in a window at\n"
+        "                       the demo's own cadence -- one simulation step\n"
+        "                       per rendered frame on the demo's frame\n"
+        "                       deadline -- with captions, so a human can sit\n"
+        "                       through what --case proves. Same route, same\n"
+        "                       beats, same end state, about three minutes;\n"
+        "                       the wait to two is a cut, the demo's own\n"
+        "                       clock rule. ESC leaves. WHERE as --case\n"
+        "  --case-watch-capture=DIR\n"
+        "                       the same watch run, writing one PNG per\n"
+        "                       landed beat into DIR\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --ward[=DAYS]        run the ward's compounds -- courtyard farms,\n"
         "                       ground rents, bonds and the priest's hearings\n"
@@ -1234,6 +1255,21 @@ void print_usage() {
             options.smoke.caseRun = true;
             options.smoke.caseEnd = value;
             options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--case-watch") == 0) {
+            // CASE WATCH. caseRun is set WITHOUT wantsSmoke: the drive is
+            // recorded inside the client (recordCaseDrive reads the same
+            // smoke config the harness would), and main() routes to the
+            // windowed loop, never to runSmoke.
+            options.caseWatch = true;
+            options.smoke.caseRun = true;
+        } else if (starts_with(arg, "--case-watch=", &value)) {
+            options.caseWatch = true;
+            options.smoke.caseRun = true;
+            options.smoke.caseEnd = value;
+        } else if (starts_with(arg, "--case-watch-capture=", &value)) {
+            options.caseWatch = true;
+            options.smoke.caseRun = true;
+            options.caseWatchShotDir = value;
         } else if (std::strcmp(arg, "--skyrun") == 0) {
             options.smoke.skyrun = true;
             options.wantsSmoke = true;
@@ -3297,15 +3333,31 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // `--time` still wins, because an hour the player asked for is an hour they
     // meant.
     render::SessionConfig start = options.smoke.session;
-    start.openingPage = true;
-    // COURIER CASE (lane: case). The windowed game gets the courier; the demo
-    // does NOT -- its route and its committed frames predate the sheet, and a
-    // hail landing mid-reel would move street frames the ship note proves
-    // byte-identical. Same off-by-default-on-in-the-client pattern as
-    // openingPage, one line up.
-    start.courier = !options.demo;
-    if (!start.timeOfDayGiven) {
-        start.timeOfDay = 8 * 3600;
+    if (options.caseWatch) {
+        // CASE WATCH: THE HARNESS'S OWN SESSION, not the client's. The watch
+        // replays the recorded --case drive onto this session, and the replay
+        // is only the drive's twin if the two were born identical -- so no
+        // opening page, no courier config (the tape hails on its own, exactly
+        // as runCaseLine does), and the scripted line's own hour unless the
+        // caller named one. Everything below that would touch simulation
+        // state (the chargen sheet, the biography) is skipped the same way.
+        if (!start.timeOfDayGiven) {
+            const int scriptedHour = render::scriptedStartHour(options.smoke);
+            if (scriptedHour >= 0) {
+                start.timeOfDay = scriptedHour * 3600;
+            }
+        }
+    } else {
+        start.openingPage = true;
+        // COURIER CASE (lane: case). The windowed game gets the courier; the
+        // demo does NOT -- its route and its committed frames predate the
+        // sheet, and a hail landing mid-reel would move street frames the ship
+        // note proves byte-identical. Same off-by-default-on-in-the-client
+        // pattern as openingPage, one line up.
+        start.courier = !options.demo;
+        if (!start.timeOfDayGiven) {
+            start.timeOfDay = 8 * 3600;
+        }
     }
     render::Session session(start);
     if (!session.body().spawnedLegally()) {
@@ -3342,7 +3394,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // hands the whole sheet to the room and the body together --
     // Session::applyPlayerAttributes. CHARGEN'S ATTRIBUTE SPENDING MATTERS
     // FROM THIS BOOT ON.
-    {
+    // CASE WATCH SKIPS THE WHOLE SHEET: the harness applies no chargen, so the
+    // watch must not either -- a Wielder who punches harder than the drive's
+    // default sheet would put Finch down on a different blow.
+    if (!options.caseWatch) {
         sim::SkillTrack& playerSkills = session.tavern().dialogue().skills();
         sim::AttributeBlock sheet;
         if (chosen.companion.loaded()) {
@@ -3387,7 +3442,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // effect is applied exactly once from the engine's own base values, which
     // is what keeps the whole application idempotent per boot -- the
     // accumulator itself is pure (chargen_raws.hpp).
-    {
+    // (Skipped under --case-watch with the sheet above, and for the same
+    // reason -- though a default-constructed ChargenEffects is a no-op in
+    // every branch anyway, per its own header.)
+    if (!options.caseWatch) {
         const sim::ChargenEffects& fx = chosen.effects;
         sim::DialogueDirector& talk = session.tavern().dialogue();
         sim::SkillTrack& playerSkills = talk.skills();
@@ -3665,6 +3723,35 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         (void)std::fflush(stdout);
     }
 
+    // --- CASE WATCH --------------------------------------------------------
+    //
+    // See render/case_watch.hpp. The same three demo rules hold and nothing
+    // changes when it is off: the cadence is fixed (one step per frame, from
+    // the tape), the player's hands are off it (ESC alone still works, the
+    // same swallow as the demo's), and the tape owns MoveInput. The drive is
+    // recorded HERE, headless, before the first frame -- the identical
+    // runCaseLine the --case harness runs -- and the loop below replays it.
+    std::unique_ptr<render::CaseWatchDirector> watch;
+    if (options.caseWatch) {
+        watch = std::make_unique<render::CaseWatchDirector>(
+            render::recordCaseDrive(options.smoke), options.caseWatchShotDir);
+        mouseLook = false;
+        const render::CaseWatchDrive& drive = watch->drive();
+        std::printf(
+            "granadad: WATCH -- THE QUIET TENANT: drive recorded, %zu op(s), %d step(s), "
+            "beats=%d/%d mask=%d\n",
+            drive.ops.size(), static_cast<int>(drive.stepCount), static_cast<int>(drive.beats),
+            static_cast<int>(drive.beatsWanted), static_cast<int>(drive.mask));
+        std::printf("granadad: WATCH -- %d frame(s) planned at 60/s (~%d s). ESC leaves.\n",
+                    static_cast<int>(watch->plannedFrames()),
+                    static_cast<int>(watch->plannedFrames() / 60));
+        if (!options.caseWatchShotDir.empty()) {
+            std::printf("granadad: WATCH -- beat frames to %s\n",
+                        options.caseWatchShotDir.string().c_str());
+        }
+        (void)std::fflush(stdout);
+    }
+
     // The body advances on a fixed 60 Hz cadence whatever the frame rate does,
     // so what the simulation sees is a whole number of identical steps and a
     // slow machine plays the same game as a fast one. StepPump owns that, and
@@ -3937,7 +4024,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             // say so -- ahead of every handler, so nothing below can be reached
             // by accident. The close button and ESCAPE still work, because an
             // unattended route the watcher cannot stop is worse than no route.
-            if (demo != nullptr) {
+            // CASE WATCH keeps the identical rule for the identical reason.
+            if (demo != nullptr || watch != nullptr) {
                 if (event.type == SDL_EVENT_QUIT ||
                     (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                      event.key.scancode == SDL_SCANCODE_ESCAPE)) {
@@ -4217,7 +4305,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // and in every toggle*()), so this only widens the gap for that exact
         // window and closes again the moment anything else happens.
         const bool listening =
-            demo != nullptr || session.talking() || session.picking() ||
+            demo != nullptr || watch != nullptr || session.talking() || session.picking() ||
             (session.menuOpen() && !session.firstRun()) || session.pauseOpen() ||
             session.waitOpen();
         const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
@@ -4420,6 +4508,21 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 running = false;
             }
         }
+        // THE WATCH'S OWN TICK, at the demo's station and under the demo's
+        // contract -- with one difference the tape forces: a frame may step
+        // the simulation ZERO times (a hold showing a plate, a card) or once
+        // (a recorded step), never more, so the replayed session sees exactly
+        // the drive's steps and nothing the watcher's eye was given costs a
+        // byte of simulation.
+        std::int32_t watchSteps = 0;
+        if (watch != nullptr) {
+            const render::CaseWatchDirector::Tick tick = watch->advance(session);
+            held = tick.move;
+            watchSteps = tick.steps;
+            if (!tick.running) {
+                running = false;
+            }
+        }
 
         const Clock::time_point now = Clock::now();
         const double frameSeconds = std::chrono::duration<double>(now - last).count();
@@ -4427,10 +4530,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // ONE STEP PER FRAME WHILE THE DEMO IS UP. See the director's
         // declaration: this is the whole of the demo's determinism, and it
         // costs the ordinary game nothing because the branch is never taken.
-        const std::int32_t steps = demo != nullptr ? 1 : pump.advance(frameSeconds);
+        // The watch takes the same gate with its 0-or-1 count, above.
+        const std::int32_t steps = demo != nullptr    ? 1
+                                   : watch != nullptr ? watchSteps
+                                                      : pump.advance(frameSeconds);
         for (std::int32_t i = 0; i < steps; ++i) {
             ++stepClock;
-            session.step(demo != nullptr ? held : pump.nextStepInput(held));
+            session.step(demo != nullptr || watch != nullptr ? held
+                                                             : pump.nextStepInput(held));
         }
 
         // AUDIO, PER FRAME, per the plan: the clock for the beds' day/night
@@ -4452,6 +4559,9 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         if (demo != nullptr) {
             session.setHudStandDown(demo->cardOwnsFrame());
         }
+        if (watch != nullptr) {
+            session.setHudStandDown(watch->cardOwnsFrame());
+        }
         session.drawFrame(frame);
         // THE CARD AND THE CAPTION GO ON LAST, over the finished frame, and
         // the shutter goes after them -- so what a capture holds is exactly
@@ -4459,6 +4569,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         if (demo != nullptr) {
             demo->drawOverlay(frame, session);
             demo->shutter(frame);
+        }
+        if (watch != nullptr) {
+            watch->drawOverlay(frame, session);
+            watch->shutter(frame);
         }
         ++frames;
 
@@ -4486,7 +4600,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // an undersleep instead of banking it. A frame that genuinely overran
         // resets the deadline rather than trying to claw the time back, which
         // is what stops a hitch turning into a sprint.
-        if (demo != nullptr) {
+        if (demo != nullptr || watch != nullptr) {
             constexpr Uint64 kBudgetNs = 1'000'000'000ULL / 60ULL;
             const Uint64 nowNs = SDL_GetTicksNS();
             demoDeadlineNs = demoDeadlineNs == 0 || nowNs > demoDeadlineNs + kBudgetNs
@@ -4517,6 +4631,28 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     std::printf("granadad: %lld frame(s), body ended at (%d,%d,z%d)\n",
                 static_cast<long long>(frames), session.body().tileX(), session.body().tileY(),
                 session.body().band());
+
+    // THE WATCH'S VERDICT, while the session still stands. The summary line
+    // carries the same fields the --case harness prints, read off the REPLAYED
+    // session; the twin line says whether the replay ended exactly where the
+    // recorded drive did -- and a divergence is an exit 1, because a watch
+    // that shows something other than what --case proves is not a watch.
+    int watchExit = 0;
+    if (watch != nullptr) {
+        if (watch->finished()) {
+            std::printf("granadad: WATCH -- %s\n", watch->endSummary(session).c_str());
+            if (watch->twinMatched(session)) {
+                std::printf("granadad: WATCH -- replay matched the drive, step for step\n");
+            } else {
+                std::printf(
+                    "granadad: WATCH -- REPLAY DIVERGED FROM THE DRIVE -- what was watched is "
+                    "not what --case proves\n");
+                watchExit = 1;
+            }
+        } else {
+            std::printf("granadad: WATCH -- stopped early (ESC or close), nothing owed\n");
+        }
+    }
 
     if (pad != nullptr) {
         SDL_CloseGamepad(pad);
@@ -4551,7 +4687,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     session.setAudio(nullptr);
     audio.reset();
     SDL_Quit();
-    return 0;
+    return watchExit;
 }
 
 
@@ -4570,6 +4706,16 @@ int main(int argc, char** argv) {
     try {
         if (options.wantsCreation) {
             return run_creation_capture(options);
+        }
+        // CASE WATCH, ahead of the smoke branch on purpose: `--case-watch` on
+        // its own never sets wantsSmoke, and a command line carrying both
+        // flags plainly wants the watchable one. Straight into the client with
+        // an unconfirmed CreationResult -- the watch drives the HARNESS'S
+        // session (default sheet, the scripted hour), so the creation window
+        // and the chargen application are both deliberately skipped; run_client
+        // guards every chargen touch behind !caseWatch for exactly this.
+        if (options.caseWatch) {
+            return run_client(options, render::CreationResult{});
         }
         if (options.wantsSmoke) {
             const render::SmokeRunResult result = render::runSmoke(options.smoke);
