@@ -3286,6 +3286,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     controls.fovDegrees = start.fovDegrees;
     controls.sanitise();
     session.setControls(controls);
+    // SHIP NOTE SEAM #2, CLOSED: THE FEET READ THE HAND FROM THE DOOR. The
+    // creation window already knew which device drove it (CreationFlow's own
+    // promptDevice), and that fact used to die with the flow -- so a pad
+    // player's first world screen, the auto-opened casebook, said ENTER
+    // SHOWS YOU WHERE until their first world press. The result carries the
+    // device now and the Session is seeded with it at spawn, AFTER
+    // setControls so the opening hint re-words against the live table. A
+    // keyboard result is the Session's own default and this is a no-op.
+    session.noteInputDevice(chosen.device);
 
     std::printf("granadad: %s loaded, %zu lamp(s), art=%s\n",
                 options.smoke.session.world.c_str(), session.lampCount(),

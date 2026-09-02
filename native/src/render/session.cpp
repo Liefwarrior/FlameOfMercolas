@@ -962,8 +962,18 @@ void Session::noteInputKey(Key key) {
 }
 
 void Session::setControls(const ControlSettings& settings) {
+    // THE OPENING HINT FOLLOWS THE TABLE IT NAMES KEYS FROM -- the same
+    // still-the-hint re-wording noteInputDevice does, for the same reason:
+    // the hint is the one STORED prompt, and the constructor worded it off
+    // the shipped defaults before the settings file arrived here. Without
+    // this, a file that rebinds Menu leaves the first thing a player reads
+    // naming the old key for its twelve seconds.
+    const bool hintUp = !message_.empty() && message_ == openingHintLine(controls_, promptDevice_);
     controls_ = settings;
     controls_.sanitise();
+    if (hintUp) {
+        message_ = openingHintLine(controls_, promptDevice_);
+    }
     // The camera reads the field of view every frame off controls_, so a
     // settings file with an FOV in it is applied by the act of loading it and
     // there is no second copy to forget to update.

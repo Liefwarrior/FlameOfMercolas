@@ -888,6 +888,12 @@ bool CreationFlow::confirm() noexcept {
     result_.confirmed = true;
     result_.originId = chosenOrigin().id;
     result_.name = name_;
+    // SHIP NOTE SEAM #2. The device note used to die with this flow; now the
+    // hand that finished creation rides the result, so the Session it births
+    // opens already speaking that hand's vocabulary. The commit press itself
+    // has already been noted (noteInputKey runs before confirm at every call
+    // site), so this is the truth at the moment of confirmation.
+    result_.device = promptDevice_;
     // Everything the biography added up to, in chargen_raws.hpp's closed
     // vocabulary. Default -- a no-op -- for GABRI, DEVIN and any path that
     // never reached the questions, which is exactly the contract

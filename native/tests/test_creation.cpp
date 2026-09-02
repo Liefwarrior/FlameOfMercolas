@@ -562,6 +562,40 @@ TEST_CASE("confirming DEVIN carries his real CompanionTemplate, and no Chargen p
     CHECK(flow.result().chargen.picks().empty());
 }
 
+TEST_CASE("the result carries the hand that drove creation -- ship note seam #2") {
+    // The flow's device note used to die with the flow, leaving a pad
+    // player's first world screen keyboard-worded until their first world
+    // press. The result carries it now; run_client seeds the Session's
+    // noteInputDevice with it at spawn.
+    {
+        render::CreationFlow flow = fresh();
+        flow.moveOriginCursor(4);  // DEVIN
+        flow.chooseOrigin();
+        REQUIRE(flow.canConfirm());
+        // A pad drove the flow: the last thing creation heard was a pad key.
+        flow.noteInputKey(render::Key::PadSouth);
+        const std::size_t rowCount = flow.view().topics.size();
+        flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
+        flow.chooseCustomizeRow();
+        REQUIRE(flow.done());
+        CHECK(flow.result().device == render::InputDevice::Pad);
+    }
+    {
+        // And a keyboard drive stays the default -- the same wording every
+        // capture and every earlier case already gets.
+        render::CreationFlow flow = fresh();
+        flow.moveOriginCursor(4);
+        flow.chooseOrigin();
+        REQUIRE(flow.canConfirm());
+        flow.noteInputKey(render::Key::Enter);
+        const std::size_t rowCount = flow.view().topics.size();
+        flow.moveCustomizeCursor(static_cast<int>(rowCount) - 1);
+        flow.chooseCustomizeRow();
+        REQUIRE(flow.done());
+        CHECK(flow.result().device == render::InputDevice::KeyboardMouse);
+    }
+}
+
 // ===========================================================================
 // LOOK: the CUSTOM path's appearance/identity step, and DEVIN/GABRI's own
 // fixed one -- sim/appearance.hpp's eleven-option vocabulary, the same
