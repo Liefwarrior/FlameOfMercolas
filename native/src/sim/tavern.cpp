@@ -559,8 +559,8 @@ void Tavern::setPlayerCombat(Weapon weapon, Intent intent) noexcept {
 bool Tavern::grantPlayerWeapon(std::string_view weaponId) noexcept {
     // The roster is deliberately the ids the world can actually hand over,
     // not the enum: "fists" is not a thing anyone grants, and Edged arriving
-    // through a reward string would put a fight on the combat screen's side
-    // of the line by way of a typo-sized diff. See the header.
+    // through a reward string would put a fight on the LETHAL side of the
+    // brawl line by way of a typo-sized diff. See the header.
     if (weaponId == kEvictorWeaponId) {
         playerWeapon_ = Weapon::Evictor;
         return true;
@@ -654,7 +654,10 @@ const Actor* Tavern::nearestTo(std::int32_t xQ8, std::int32_t yQ8,
     const Actor* best = nullptr;
     std::int32_t bestDistance = reachQ8 + 1;
     for (const Actor& actor : actors_) {
-        if (!actor.present() || actor.activity() == Activity::Downed) {
+        // isFloored, not just Downed: a corpse is skipped by conversation,
+        // greeting and targeting exactly as a downed man is (a dead man closes
+        // no cases and answers no questions).
+        if (!actor.present() || isFloored(actor.activity())) {
             continue;
         }
         // NEAREST PERSON. Everything that asks this -- talking, greeting, the
@@ -710,11 +713,19 @@ std::int32_t Tavern::speedFor(const Actor& actor) const noexcept {
 
 void Tavern::stepMovement() {
     for (Actor& actor : actors_) {
-        if (!actor.present() || actor.activity() == Activity::Downed) {
+        if (!actor.present() || isFloored(actor.activity())) {
             continue;
         }
         actor.step(path_, speedFor(actor));
     }
+
+    // ACTION-COMBAT BUILD: the player's swing machine and the NPC swing cadence
+    // both run on the movement step, not the 1 Hz tick. Driven here so every
+    // owner of the step loop -- the client, the tests, the scripted drives --
+    // gets them without wiring a second call. The player's position and facing
+    // for this step were pushed by setPlayer/setPlayerYaw before this call.
+    stepPlayerCombat();
+    stepBrawl();
 
     // THE RUN LANDS AT THE THRESHOLD, and it is a transition rather than a
     // state: a bale that is out of the house is out, and standing in the street
@@ -897,6 +908,9 @@ void Tavern::applySchedules() {
             case Activity::Ejecting:
             case Activity::Brawling:
             case Activity::Downed:
+            // A corpse keeps no schedule: it never resumes the rota, exactly
+            // as a downed man does not walk anywhere (it simply never gets up).
+            case Activity::Dead:
                 continue;
             default:
                 break;
@@ -1208,22 +1222,21 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     result.targetId = target->id();
     result.targetName = target->name();
 
-    if (std::find(brawlers_.begin(), brawlers_.end(), target->id()) == brawlers_.end()) {
-        brawlers_.push_back(target->id());
-        std::sort(brawlers_.begin(), brawlers_.end());
-    }
+    joinBrawl(*target);
 
     // THE RULE, at the only moment it matters: before the blow lands.
     const std::vector<Fighter> fighters = currentFight();
     result.fight = classifyFight(fighters);
     if (!resolvesInWorld(result.fight)) {
-        // Not this room's fight. The world stops resolving it and says so; the
-        // client takes it to the dedicated combat screen.
+        // LEGACY REFUSAL. This tap-punch does not resolve a lethal fight -- the
+        // pre-veto behaviour, kept for the un-migrated call sites; the
+        // action-combat player-swing path (playerAttackUp) resolves lethal in
+        // the world. Here the swing is dropped and the escalation is latched.
         //
         // The house still minds, and the two things are separate: where the
-        // FIGHT is resolved is a rendering-and-rules question, and whether the
-        // bouncers come over is a door-policy question. Drawing a blade in the
-        // Gilded Gull answers both.
+        // FIGHT is resolved is a rules question, and whether the bouncers come
+        // over is a door-policy question. Drawing a blade in the Gilded Gull
+        // answers both.
         escalation_ = result.fight;
         // THE CONSUMER escalated() did not have in S2. A drawn blade in a
         // captains' house is not a private matter: the man it is pointed at
@@ -1267,6 +1280,309 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     return result;
 }
 
+void Tavern::joinBrawl(Actor& actor) {
+    if (std::find(brawlers_.begin(), brawlers_.end(), actor.id()) != brawlers_.end()) {
+        return;
+    }
+    brawlers_.push_back(actor.id());
+    std::sort(brawlers_.begin(), brawlers_.end());
+    // Stagger the first swing (section 1.5): a fresh brawler waits actorId %
+    // kNpcSwingStaggerSteps steps before it swings, so a crowd joining on the
+    // same blow does not swing in lockstep.
+    actor.setNpcSwingTimer(actor.id() % kNpcSwingStaggerSteps);
+}
+
+const Actor* Tavern::sightlineTarget() const noexcept {
+    if (!playerKnown_) {
+        return nullptr;
+    }
+    // VETO 1: the first body the crosshair passes through. Project each body's
+    // offset onto the look-ray with the forward vector angle.hpp already owns;
+    // draw-free integer, no atan2, no sqrt (the S9 no-rolls law). A body is on
+    // the line iff it is ahead (0 < along <= reach) and within half a cell of
+    // the ray (|perp| <= kBodyHalfWidth, a DISTANCE not an angle); the target
+    // is the on-line body with the smallest `along`. No species preference --
+    // person or rat, whoever is on the line first (friendly fire is the aim's
+    // fault). Ties on `along` break on the lower id so two runs cannot disagree.
+    const std::int64_t fx = forward_x_q16(playerYaw_);
+    const std::int64_t fy = forward_y_q16(playerYaw_);
+    const Actor* best = nullptr;
+    std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+    for (const Actor& actor : actors_) {
+        if (!actor.present() || isFloored(actor.activity())) {
+            continue;
+        }
+        const std::int64_t dx = static_cast<std::int64_t>(actor.x()) - playerX_;
+        const std::int64_t dy = static_cast<std::int64_t>(actor.y()) - playerY_;
+        const std::int64_t along = (fx * dx + fy * dy) >> 16;
+        if (along <= 0 || along > kMeleeReach) {
+            continue;
+        }
+        const std::int64_t perp = (-fy * dx + fx * dy) >> 16;
+        if (perp > kBodyHalfWidth || perp < -kBodyHalfWidth) {
+            continue;
+        }
+        if (along < bestAlong) {
+            bestAlong = along;
+            best = &actor;
+        }
+    }
+    return best;
+}
+
+void Tavern::slayActor(Actor& target) {
+    // MURDER LAW, weighed BEFORE the body drops: a killing is witnessed when a
+    // CONSCIOUS bystander -- not the victim (dead men tell no tales), not
+    // anyone already on the floor -- noticed the player, the same three-clause
+    // notice rule every crime reads. Witnessed, it is instant paper
+    // (kMurderHeat is exactly the warrant line) and it marks the killer for the
+    // Condemned hook the next arrest reads; unwitnessed, the ward heard nothing
+    // and nothing rises. Routed beside noteCrime's six: no faction-mirror bump
+    // in v1 (murder is not guild work). The COURT that decides what
+    // condemnation means is the separate justice build.
+    bool witnessed = false;
+    for (const Actor& bystander : actors_) {
+        if (bystander.id() == target.id() || isFloored(bystander.activity())) {
+            continue;
+        }
+        if (noticeBy(bystander).seen) {
+            witnessed = true;
+            break;
+        }
+    }
+    // A corpse is a Downed that never stands (Activity::Dead) -- advanceSecond
+    // never heals it, schedules never resume, nearestTo skips it, and it is
+    // never removed from the roster. Everyone can die (VETO 2); the caller has
+    // already ruled out a crowned Evictor blow, which only ever puts a man out.
+    target.setActivity(Activity::Dead);
+    dialogue_.ledger().record(target.id(), Deed::Slew);
+    spreadWitness(target.id(), Deed::Slew);
+    if (witnessed) {
+        dialogue_.crimes().markMurderer();
+    }
+}
+
+void Tavern::playerAttackDown() noexcept {
+    // A down-edge only starts a charge from IDLE. During CHARGING it is a
+    // no-op (already holding); during RECOVERY it is dropped, not buffered --
+    // no queue-fed instant hard swing off the tail of the last one.
+    if (combatState_ != PlayerCombatState::Idle) {
+        return;
+    }
+    combatState_ = PlayerCombatState::Charging;
+    chargeSteps_ = 0;
+}
+
+void Tavern::cancelPlayerCharge() noexcept {
+    // The hand does one thing: a cast, a page, a conversation or a pick drops a
+    // raised charge with no cost and no swing. IDLE and RECOVERY are untouched.
+    if (combatState_ == PlayerCombatState::Charging) {
+        combatState_ = PlayerCombatState::Idle;
+        chargeSteps_ = 0;
+    }
+}
+
+void Tavern::stepPlayerCombat() noexcept {
+    switch (combatState_) {
+        case PlayerCombatState::Charging:
+            // Holding is free and capped at the hard threshold: past it the tier
+            // does not change, so the counter stops there and the hash for any
+            // hold >= kHardSwingHoldSteps is one number.
+            if (chargeSteps_ < kHardSwingHoldSteps) {
+                ++chargeSteps_;
+            }
+            break;
+        case PlayerCombatState::Recovery:
+            if (--recoverySteps_ <= 0) {
+                recoverySteps_ = 0;
+                combatState_ = PlayerCombatState::Idle;
+            }
+            break;
+        case PlayerCombatState::Idle:
+            break;
+    }
+    // The live sightline flag, recomputed every step whatever the state -- the
+    // reticle brightens on a valid target even at rest.
+    sightlineFlag_ = sightlineTarget() != nullptr;
+}
+
+Tavern::PlayerSwingResult Tavern::playerAttackUp() {
+    PlayerSwingResult result;
+    if (combatState_ != PlayerCombatState::Charging) {
+        // A release with no charge behind it (an edge that arrived in recovery
+        // or idle) throws nothing.
+        return result;
+    }
+    const bool hard = chargeSteps_ >= kHardSwingHoldSteps;
+    result.hard = hard;
+    // Winded refuses the HARD swing -- the hand cannot commit it -- and says so
+    // once. A winded tap still swings (the fatigue whiff band is its penalty).
+    if (hard && fatigue_.winded()) {
+        result.refused = true;
+        combatState_ = PlayerCombatState::Idle;  // nothing thrown, no recovery
+        chargeSteps_ = 0;
+        return result;
+    }
+    // Committed. Enter recovery, and read the fatigue term BEFORE the wind is
+    // paid so the blow is powered by the wind it was thrown on (strike()'s own
+    // contract), then drain the cost on release.
+    const std::int32_t chargeQ8 = hard ? kHardSwingChargeQ8 : kSwingChargeQ8;
+    const std::int32_t windCost =
+        (hard ? kHardSwingFatiguePoints : kPunchFatiguePoints) * kFatiguePointFine;
+    combatState_ = PlayerCombatState::Recovery;
+    recoverySteps_ = hard ? kHardSwingRecoverySteps : kSwingRecoverySteps;
+    chargeSteps_ = 0;
+    result.swung = true;
+
+    const Actor* found = sightlineTarget();
+    const std::int32_t swingTerm = fatigue_.termQ8();
+    fatigue_.drain(windCost);
+    if (found == nullptr) {
+        // Swung at air: committed and paid, hit nobody. The row says NOBODY IN
+        // REACH; the wind is still spent, because the arm still swung.
+        return result;
+    }
+    result.targetId = found->id();
+    result.targetName = found->name();
+    const std::int32_t bonus =
+        meleeDamageBonus(effectiveAttributes().value(AttributeId::Might));
+
+    if (found->role() == ActorRole::Vermin) {
+        // A rat first on the line. No house opinion, no classify, no brawl --
+        // the same silence playerPunchNearest keeps for vermin; the crosshair
+        // simply found the rat (VETO 1: the species preference is retired, so
+        // the rat is hit because it was on the line, not because it is a rat).
+        Actor* rat = mutableActorById(found->id());
+        if (rat == nullptr) {
+            return result;
+        }
+        Fighter prey = rat->asFighter();
+        result.blow =
+            strike(playerWeapon_, prey, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+        rat->setHealth(prey.hp, prey.hpMax);
+        rat->setActivity(result.blow.downed ? Activity::Downed : Activity::Walking);
+        return result;
+    }
+
+    Actor* target = mutableActorById(found->id());
+    if (target == nullptr) {
+        return result;
+    }
+    // INTENT-BY-VERB (VETO 3): the first HARD swing in a fight means Harm.
+    // Upgrade only -- never step on a Kill a nemesis or a test already set --
+    // and reset to Subdue when the fight ends (see tickBrawl's disengage).
+    if (hard && playerIntent_ < Intent::Harm) {
+        playerIntent_ = Intent::Harm;
+    }
+    joinBrawl(*target);
+    const std::vector<Fighter> fighters = currentFight();
+    result.fight = classifyFight(fighters);
+    const bool lethal = result.fight == FightClass::Lethal;
+    // The flip's social latch fires once (this was a refusal in the pre-veto
+    // model; now the blow lands and the room stands back).
+    if (lethal && !escalationSeen_) {
+        escalation_ = result.fight;
+        noteEscalation(target->id());
+    }
+    Fighter victim = target->asFighter();
+    result.blow = strike(playerWeapon_, victim, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+    target->setHealth(victim.hp, victim.hpMax);
+    target->faceToward(playerX_, playerY_);
+    if (result.blow.downed) {
+        if (lethal && !result.blow.crowned) {
+            // A KILLING blow under lethal rules. A crowned Evictor blow is the
+            // one exception -- it was forged to put a man OUT, not open (it
+            // downs even here).
+            result.killed = true;
+            slayActor(*target);
+        } else {
+            target->setActivity(Activity::Downed);
+        }
+        // A rematch put down -- grudge down, rung/house/toll/charge all stand.
+        nemesis_.recordVictory(target->id());
+    } else {
+        target->setActivity(Activity::Brawling);
+    }
+    if (!result.killed) {
+        // A kill already recorded Deed::Slew; a landed non-kill is a Struck.
+        dialogue_.ledger().record(target->id(), Deed::Struck);
+        spreadWitness(target->id(), Deed::Struck);
+    }
+    if (talkingToId_ == target->id()) {
+        endConversation();
+    }
+    reportOffence(Offence::Brawled);
+    return result;
+}
+
+void Tavern::stepBrawl() noexcept {
+    if (brawlers_.empty() || playerFloored_) {
+        return;
+    }
+    // The class right now. NPC blows resolve only under BRAWL rules: under
+    // lethal the exchange is refused here exactly as the 1 Hz loop refused it
+    // before this build, so the shipped brawl behaviour and the scripted
+    // rematch arc are unchanged. tickBrawl latches the escalation; the
+    // NPC-kills-player path waits on the presentation lane's arc rewrite.
+    const std::vector<Fighter> fighters = currentFight();
+    if (classifyFight(fighters) != FightClass::Brawl) {
+        return;
+    }
+    const Fighter playerFighter = fighters.front();
+    for (const std::int32_t id : brawlers_) {
+        Actor* actor = mutableActorById(id);
+        if (actor == nullptr || !actor->present() || isFloored(actor->activity())) {
+            continue;
+        }
+        if (actor->distanceTo(playerX_, playerY_) > kMeleeReach) {
+            // Out of reach: close via A*, and re-arm the timer for a quick
+            // re-check while the gap closes rather than swinging at air.
+            actor->setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
+            actor->setActivity(Activity::Brawling);
+            if (actor->npcSwingTimer() > kNpcSwingRetrySteps) {
+                actor->setNpcSwingTimer(kNpcSwingRetrySteps);
+            }
+            continue;
+        }
+        actor->faceToward(playerX_, playerY_);
+        const std::int32_t timer = actor->npcSwingTimer();
+        if (timer > 0) {
+            actor->setNpcSwingTimer(timer - 1);
+            continue;
+        }
+        // The timer expired in reach: swing, re-keyed to this actor's own
+        // monotonic sequence (order-independent across the cadence change), and
+        // re-arm to the full interval.
+        const std::uint64_t roll =
+            rng_.draw(static_cast<std::uint64_t>(id), actor->npcSwingSeq());
+        actor->bumpNpcSwingSeq();
+        actor->setNpcSwingTimer(kNpcSwingIntervalSteps);
+        Fighter blowTarget = playerFighter;
+        const Blow blow = strike(actor->weapon(), blowTarget, roll);
+        if (!blow.landed) {
+            continue;
+        }
+        std::int32_t dmg = blow.damage;
+        if (playerBlocking_) {
+            // THE GUARD: blockedDamage argues what a landed blow is worth, never
+            // whether it landed -- no second roll. Every softened blow trains
+            // shieldwall and, this build, costs the blocker wind (turtling
+            // empties the pool that powers the counterattack).
+            dmg = blockedDamage(blow.damage, dialogue_.skills().level(kBlockSkill));
+            blowsBlocked_ = wrap_add(blowsBlocked_, 1);
+            dialogue_.skills().use(kBlockSkill);
+            fatigue_.drain(kBlockCatchFatiguePoints * kFatiguePointFine);
+        }
+        playerHp_ = std::max(kPlayerBrawlFloor, playerHp_ - dmg);
+        lastBlowBy_ = id;
+    }
+    if (playerHp_ <= kPlayerBrawlFloor && !playerFloored_) {
+        // Down. A brawl stops at the floor and the defeat seam takes it from
+        // here -- the same applyDefeat every in-world beating routes through.
+        applyDefeat(lastBlowBy_);
+    }
+}
+
 void Tavern::noteEscalation(std::int32_t targetId) {
     if (escalationSeen_) {
         return;
@@ -1283,74 +1599,35 @@ void Tavern::tickBrawl() {
     if (brawlers_.empty()) {
         return;
     }
+    // ACTION-COMBAT BUILD: the per-blow exchange moved to stepBrawl (per-step
+    // cadence). What stays at 1 Hz is what belongs at 1 Hz -- re-classify, the
+    // escalation latch, and the disengage.
+    //
     // Re-classify every second: a fight that was a brawl a moment ago stops
     // being one the instant somebody draws, escalates, or is beaten past the
     // bloodied line.
     const std::vector<Fighter> fighters = currentFight();
     const FightClass fight = classifyFight(fighters);
-    if (!resolvesInWorld(fight)) {
-        escalation_ = fight;
-        noteEscalation(brawlers_.empty() ? -1 : brawlers_.front());
+    if (fight == FightClass::Lethal) {
+        // The flip's social consequence fires once (Deed::DrewSteel, the
+        // witness spread, the ejection ladder). The blow exchange itself is
+        // NOT resolved by the NPC loop while steel is out -- the shipped
+        // behaviour, and the pre-veto contract the scripted rematch arc still
+        // reads (escalated, player not floored). The player's own lethal blows
+        // resolve through playerAttackUp, not here. No disengage while lethal.
+        if (!escalationSeen_) {
+            escalation_ = fight;
+            noteEscalation(brawlers_.front());
+        }
         return;
     }
 
-    std::int32_t drawIndex = 0;
-    for (const std::int32_t id : brawlers_) {
-        Actor* actor = mutableActorById(id);
-        if (actor == nullptr || !actor->present()) {
-            continue;
-        }
-        if (actor->activity() == Activity::Downed) {
-            continue;
-        }
-        if (actor->distanceTo(playerX_, playerY_) > kMeleeReach) {
-            // Out of reach: close, rather than swing at air.
-            actor->setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
-            actor->setActivity(Activity::Brawling);
-            ++drawIndex;
-            continue;
-        }
-        const std::uint64_t roll = rng_.draw(static_cast<std::uint64_t>(id), drawIndex++);
-        Fighter playerFighter = fighters.front();
-        const Blow blow = strike(actor->weapon(), playerFighter, roll);
-        if (blow.landed) {
-            std::int32_t hpAfter = playerFighter.hp;
-            if (playerBlocking_) {
-                // THE GUARD. Same roll, same draw stream -- blockedDamage is a
-                // pure function arguing about what the landed blow is WORTH,
-                // never a second chance at whether it landed. Scaled by
-                // SHIELDWALL and never to zero (see brawl.hpp), and every blow
-                // it softens trains the skill -- Morrowind's own rule, taking
-                // a hit on raised arms is how a guard is learned.
-                const std::int32_t kept =
-                    blockedDamage(blow.damage, dialogue_.skills().level(kBlockSkill));
-                hpAfter = std::max(0, fighters.front().hp - kept);
-                blowsBlocked_ = wrap_add(blowsBlocked_, 1);
-                dialogue_.skills().use(kBlockSkill);
-            }
-            playerHp_ = std::max(kPlayerBrawlFloor, hpAfter);
-            // WHOSE FIST IT WAS. S8 turns being put down into a promotion for
-            // whoever did it, so the room has to know which of the men swinging
-            // at it landed the last one -- and it is the LAST, not the first,
-            // because a man who joins in at the end and finishes you is who the
-            // room saw standing over you.
-            lastBlowBy_ = id;
-        }
-        actor->faceToward(playerX_, playerY_);
-    }
-
-    if (playerHp_ <= kPlayerBrawlFloor && !playerFloored_) {
-        // Down. A brawl stops there -- see kPlayerBrawlFloor -- and what
-        // follows is not more fighting, it is being carried out.
-        applyDefeat(lastBlowBy_);
-        return;
-    }
-
-    // A fight nobody is left standing for is over.
+    // A brawl nobody is left standing for is over. A corpse counts as down
+    // (isFloored), so a fight that ends in a killing disengages honestly.
     bool anyoneUp = false;
     for (const std::int32_t id : brawlers_) {
         const Actor* actor = actorById(id);
-        if (actor != nullptr && actor->present() && actor->activity() != Activity::Downed) {
+        if (actor != nullptr && actor->present() && !isFloored(actor->activity())) {
             anyoneUp = true;
         }
     }
@@ -1362,6 +1639,9 @@ void Tavern::tickBrawl() {
             }
         }
         brawlers_.clear();
+        // INTENT-BY-VERB reset (VETO 3): the fight is over, the hand means
+        // Subdue again until the next hard swing says otherwise.
+        playerIntent_ = Intent::Subdue;
     }
 }
 
@@ -2864,6 +3144,24 @@ Actor* Tavern::watchmanWatchingPlayer() noexcept {
 
 void Tavern::tickWatch() {
     CrimeLedger& crimes = dialogue_.crimes();
+    // DEFERENCE IS CANON AND ABSOLUTE (VETO / COMBAT-ACTION-SPEC.md section
+    // 4.4): the Watch never goes hostile to a PRESENTED WIELDER. No arrest, no
+    // closing on cause; a stance already closing is dropped and the officer
+    // stands down. Not reachable in current play -- nothing sets this flag yet
+    // (the player has no way to present as Wielder) -- so it lands as a sim
+    // rule with a test, honestly, against the day the Persona seam sets it.
+    if (playerPresentsAsWielder_) {
+        if (watchStance_ == WatchStance::Closing) {
+            if (Actor* officer = watchmanId_ < 0 ? nullptr : mutableActorById(watchmanId_);
+                officer != nullptr && officer->activity() == Activity::Warning) {
+                officer->setActivity(Activity::Watching);
+            }
+            watchStance_ = WatchStance::Idle;
+            watchmanId_ = -1;
+            watchCause_ = WatchCause::None;
+        }
+        return;
+    }
     // S6 SHIPPED THE OPPOSITE OF THIS AND IT WAS AN EXPLOIT. The condemned
     // branch used to return here -- stance idle, no watchman, no notice, no
     // arrest -- which made the ward's HARSHEST sentence its SAFEST state: two
@@ -3475,6 +3773,14 @@ Tavern::CastResult Tavern::playerCastEquipped() {
     }
     Actor* touched = nullptr;
     if (shape == TargetShape::Touch) {
+        // VETO 1 names the touch-cast as the swing's twin verb on the sightline
+        // raycast (sightlineTarget). It stays on radial nearestTo in this SIM
+        // slice because the raycast reads playerYaw_, which the presentation
+        // lane does not push into the room yet -- flipping this to
+        // sightlineTarget() before live yaw flows would target due-north only.
+        // It is a one-line change the day the body pushes its facing; the swing
+        // path proves the raycast now (playerAttackUp), driven with an explicit
+        // yaw in test_combat_action.
         const Actor* found = nearestTo(playerX_, playerY_, kMeleeReach);
         if (found == nullptr) {
             out.line = "NOBODY IN REACH TO LINK.";
@@ -3497,18 +3803,18 @@ Tavern::CastResult Tavern::playerCastEquipped() {
         // A SCALD IS AN ASSAULT, whatever the hand was holding: the same
         // consequences a punch carries, in the same order playerPunchNearest
         // applies them -- join the fight, classify it BEFORE the harm lands,
-        // and refuse the room's own resolution when steel is out.
-        if (std::find(brawlers_.begin(), brawlers_.end(), touched->id()) == brawlers_.end()) {
-            brawlers_.push_back(touched->id());
-            std::sort(brawlers_.begin(), brawlers_.end());
-        }
+        // and (this legacy touch-cast path) refuse the room's resolution when
+        // steel is out, exactly as playerPunchNearest still does. The player's
+        // lethal KILL vector in v1 is the swing (playerAttackUp); the flip line
+        // is the veto-blessed literal.
+        joinBrawl(*touched);
         const std::vector<Fighter> fighters = currentFight();
         out.fight = classifyFight(fighters);
         if (!resolvesInWorld(out.fight)) {
             escalation_ = out.fight;
             noteEscalation(touched->id());
             reportOffence(Offence::Brawled);
-            out.line = "STEEL IS OUT. THIS IS NOT THE ROOM'S FIGHT ANY MORE.";
+            out.line = "STEEL OUT. THE ROOM STANDS BACK.";
             return out;
         }
     }
@@ -3633,25 +3939,40 @@ void Tavern::applySpellDose(std::int32_t targetId, std::int32_t magnitude) {
     if (magnitude == 0) {
         return;
     }
+    // ACTION-COMBAT BUILD: under LETHAL rules the vitality floor is LIFTED -- a
+    // killing link kills, the same way steel does. Under brawl it holds at
+    // kVitalityFloor: the public shelf cannot put a body on the ground, which
+    // is spells.json's own structural floor. Read once from the live fight.
+    const bool lethal = classifyFight(currentFight()) == FightClass::Lethal;
+    const std::int32_t floor = lethal ? 0 : kVitalityFloor;
     if (targetId < 0) {
-        // The player. The vitality floor holds here too, and it does NOT set
-        // playerFloored_: no crafting on the public shelf can put a body on
-        // the ground -- the floor is structural, spells.json's own words.
+        // The player.
         if (magnitude > 0) {
             playerHp_ = std::min(playerHpMax_, playerHp_ + magnitude);
         } else {
-            playerHp_ = std::max(kVitalityFloor, playerHp_ + magnitude);
+            playerHp_ = std::max(floor, playerHp_ + magnitude);
+            // A lethal link that empties the player routes the defeat seam the
+            // same as a beating does (the ceremony is the presentation lane's).
+            if (lethal && playerHp_ <= 0 && !playerFloored_) {
+                applyDefeat(lastBlowBy_);
+            }
         }
         return;
     }
     Actor* actor = mutableActorById(targetId);
-    if (actor == nullptr || !actor->present()) {
+    if (actor == nullptr || !actor->present() || actor->activity() == Activity::Dead) {
+        // A corpse takes no dose -- a trickle laid before the killing goes
+        // inert with the body.
         return;
     }
-    const std::int32_t hp =
-        std::clamp(actor->hp() + magnitude, kVitalityFloor, actor->hpMax());
-    // Never Downed by a dose, for the same structural reason as the floor.
+    const std::int32_t hp = std::clamp(actor->hp() + magnitude, floor, actor->hpMax());
     actor->setHealth(hp, actor->hpMax());
+    // A killing link kills: under lethal, a dose that empties a body slays it
+    // (Dead + Deed::Slew + murder-if-witnessed), the terminal state a blade
+    // leaves. Under brawl the floor above already refused to reach zero.
+    if (lethal && hp <= 0 && actor->activity() != Activity::Dead) {
+        slayActor(*actor);
+    }
 }
 
 void Tavern::tickSpellwork() {
@@ -3777,6 +4098,19 @@ void Tavern::hash_into(HashSink& sink) const {
     // gates compare live runs of THIS shape against itself.
     sink.put_byte(playerBlocking_ ? 1U : 0U);
     sink.put_int(static_cast<std::uint32_t>(blowsBlocked_));
+    // ACTION-COMBAT BUILD: the swing machine, the facing it casts along, and
+    // the deference bit. The charge tier decides what the next release does,
+    // the recovery lockout whether a press is heard, the yaw who a swing hits,
+    // and the deference bit what the Watch does -- state the twin-run gate
+    // compares or does not protect. This is the ONE declared tavern-baseline
+    // move (with the per-actor swing cadence hashed in Actor::hashInto); the
+    // population baseline never reaches this code.
+    sink.put_int(static_cast<std::uint32_t>(playerYaw_));
+    sink.put_byte(static_cast<std::uint32_t>(combatState_));
+    sink.put_int(static_cast<std::uint32_t>(chargeSteps_));
+    sink.put_int(static_cast<std::uint32_t>(recoverySteps_));
+    sink.put_byte(sightlineFlag_ ? 1U : 0U);
+    sink.put_byte(playerPresentsAsWielder_ ? 1U : 0U);
     sink.put_int(static_cast<std::uint32_t>(equippedSpellId_.size()));
     for (const char character : equippedSpellId_) {
         sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));

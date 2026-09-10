@@ -77,6 +77,8 @@ std::string_view deedName(Deed deed) noexcept {
             return "spoke politely";
         case Deed::SpokeBluntly:
             return "spoke bluntly";
+        case Deed::Slew:
+            return "slew";
     }
     return "?";
 }
@@ -120,6 +122,11 @@ std::int32_t deedWeight(Deed deed) noexcept {
         // list, because it is the one that ends the room.
         case Deed::DrewSteel:
             return -60;
+        // Worse: the blade was used. A killing takes the victim's own memory
+        // to the floor with them, but for anyone still keeping one, it is the
+        // bottom of the scale -- clamped at kDispositionMin either way.
+        case Deed::Slew:
+            return -100;
     }
     return 0;
 }
@@ -152,6 +159,10 @@ std::int32_t witnessWeight(Deed deed) noexcept {
             return -25;
         case Deed::DrewSteel:
             return -50;
+        // Seeing a killing is the worst thing a bystander can carry out of the
+        // room -- and it is what the ward's heat and the Watch's cause read.
+        case Deed::Slew:
+            return -60;
     }
     return 0;
 }

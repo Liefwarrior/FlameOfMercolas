@@ -21,7 +21,9 @@ constexpr std::uint8_t kCrimeMagic1 = 'C';
 /// and a codec that silently narrows is the sort of thing that is discovered by
 /// a save file rather than by a test.
 /// 3 (S6): the sack has contents and the ward has a record of what it did back.
-constexpr std::uint8_t kCrimeVersion = 3;
+/// 4 (action-combat): a witnessed killing stands on the record -- one appended
+/// byte, so a v3 blob is refused by version rather than silently misread.
+constexpr std::uint8_t kCrimeVersion = 4;
 
 void putI32(std::vector<std::uint8_t>& out, std::int32_t value) {
     const std::uint32_t bits = static_cast<std::uint32_t>(value);
@@ -236,10 +238,29 @@ std::int32_t CrimeLedger::deliverBale(bool ownBuyer) {
     return 0;
 }
 
+void CrimeLedger::markMurderer() noexcept {
+    // ACTION-COMBAT BUILD. A witnessed killing: the record stands, and the heat
+    // jumps to exactly the warrant line in one act (kMurderHeat == kWarrantAt),
+    // so addHeat also raises the paper. Idempotent on the flag -- a second
+    // murder does not un-mark the first -- but the heat is charged each time,
+    // the same as any witnessed crime.
+    murderer_ = true;
+    addHeat(kMurderHeat);
+}
+
 CrimeLedger::ArrestOutcome CrimeLedger::arrest(bool skyrunner, std::int32_t purse,
                                                std::uint64_t draw) {
     ArrestOutcome out;
     out.sentence = sentenceFor(skyrunner, warrant_, arrests_);
+    // ACTION-COMBAT BUILD: a murderer is CONDEMNED whatever the theft ladder
+    // said -- the rope is for the blade, not the purse. A witnessed murder
+    // always left a warrant (kMurderHeat == kWarrantAt), so there is a cause to
+    // close on; this only decides what the sentence IS once he is taken. What
+    // condemnation then means beyond the status bit -- the court, jail, the
+    // rope as a true game over -- is the justice build, not this one.
+    if (murderer_) {
+        out.sentence = Sentence::Condemned;
+    }
     // The impound first: Watchman Cull's whole job is seized cargo, and it is
     // the one part of an arrest that happens whether or not there was paper.
     out.unitsSeized = stash_.seizeIllicit();
@@ -351,6 +372,8 @@ std::vector<std::uint8_t> CrimeLedger::encode() const {
     out.push_back(static_cast<std::uint8_t>(lastSentence_));
     out.push_back(maimed_ ? 1U : 0U);
     out.push_back(condemned_ ? 1U : 0U);
+    // v4, appended: the murder record.
+    out.push_back(murderer_ ? 1U : 0U);
     return out;
 }
 
@@ -397,12 +420,13 @@ bool CrimeLedger::decode(const std::vector<std::uint8_t>& bytes, CrimeLedger& ou
         !takeI32(bytes, cursor, parsed.arrests_)) {
         return false;
     }
-    if (cursor + 3 > bytes.size() || bytes[cursor] > static_cast<std::uint8_t>(Sentence::Condemned)) {
+    if (cursor + 4 > bytes.size() || bytes[cursor] > static_cast<std::uint8_t>(Sentence::Condemned)) {
         return false;
     }
     parsed.lastSentence_ = static_cast<Sentence>(bytes[cursor]);
     parsed.maimed_ = bytes[cursor + 1] != 0;
     parsed.condemned_ = bytes[cursor + 2] != 0;
+    parsed.murderer_ = bytes[cursor + 3] != 0;
     out = parsed;
     return true;
 }
@@ -429,6 +453,7 @@ void CrimeLedger::hashInto(HashSink& sink) const {
     sink.put_byte(static_cast<std::uint32_t>(lastSentence_));
     sink.put_byte(maimed_ ? 1U : 0U);
     sink.put_byte(condemned_ ? 1U : 0U);
+    sink.put_byte(murderer_ ? 1U : 0U);
 }
 
 // ---------------------------------------------------------------------------

@@ -606,7 +606,10 @@ TEST_CASE("he comes prepared, and a man with a blade is not a brawl any more") {
     CHECK(armed->weapon() == Weapon::Edged);
     CHECK(armed->intent() == Intent::Kill);
 
-    // And swinging at him is now the combat screen's business, not the room's.
+    // And a fight with him is Lethal now: the legacy tap (playerPunchNearest)
+    // still refuses to resolve it and latches the escalation, the pre-veto
+    // behaviour. The action-combat player-swing path (playerAttackUp) resolves
+    // it in the world under lethal rules -- exercised in test_combat_action.
     const Tavern::PunchResult swung = room.tavern().playerPunchNearest();
     REQUIRE(swung.swung);
     CHECK(swung.targetId == id);

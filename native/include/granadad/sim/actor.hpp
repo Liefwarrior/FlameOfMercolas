@@ -102,9 +102,25 @@ enum class Activity : std::uint8_t {
     Brawling = 7,
     /// On the floor. A brawl's natural end, and not a death.
     Downed = 8,
+    /// Dead. THE ACTION-COMBAT BUILD'S ONE NEW TERMINAL STATE, and it is a
+    /// Downed that never stands: advanceSecond never heals it, schedules never
+    /// resume, nearestTo skips it, and it is never removed from the roster (the
+    /// never-remove convention -- a corpse is presence, not absence). Only a
+    /// PLAYER blow under lethal rules sets it in v1; a crowned Evictor blow puts
+    /// a man Downed, not Dead. See Tavern::playerAttackUp and
+    /// COMBAT-ACTION-SPEC.md section 4.4.
+    Dead = 9,
 };
 
 [[nodiscard]] std::string_view activityName(Activity activity) noexcept;
+
+/// ON THE FLOOR AND OUT OF IT: Downed or Dead. The one predicate every "skip
+/// the body on the ground" test asks, so a corpse is treated exactly like a
+/// downed man everywhere that already skipped the downed -- targeting, movement,
+/// the disengage sweep -- without each site re-listing the two states.
+[[nodiscard]] constexpr bool isFloored(Activity activity) noexcept {
+    return activity == Activity::Downed || activity == Activity::Dead;
+}
 
 /// One block of somebody's day: be HERE, doing THIS, between these two seconds.
 ///
@@ -198,6 +214,20 @@ public:
     void setIntent(Intent intent) noexcept { intent_ = intent; }
     [[nodiscard]] Fighter asFighter() const noexcept;
 
+    // --- the swing timer (ACTION-COMBAT BUILD) -----------------------------
+    //
+    // Per-actor state for Tavern::stepBrawl's per-step NPC cadence: a
+    // countdown of movement steps to the next swing, and a monotonic sequence
+    // the swing draw is re-keyed to (rng_.draw(id, npcSwingSeq_)) so moving the
+    // blow off the shared 1 Hz drawIndex leaves an order-independent stream.
+    // Both hashed -- the one declared tavern-baseline move -- and both live on
+    // sim::Actor (the tavern roster), which the population baseline never
+    // registers, so WardActor and its baseline are untouched.
+    [[nodiscard]] std::int32_t npcSwingTimer() const noexcept { return npcSwingTimer_; }
+    void setNpcSwingTimer(std::int32_t steps) noexcept { npcSwingTimer_ = steps; }
+    [[nodiscard]] std::int32_t npcSwingSeq() const noexcept { return npcSwingSeq_; }
+    void bumpNpcSwingSeq() noexcept { npcSwingSeq_ = wrap_add(npcSwingSeq_, 1); }
+
     /// Coin, in the smallest unit there is. Bartenders take it; patrons run out.
     [[nodiscard]] std::int32_t coin() const noexcept { return coin_; }
     void setCoin(std::int32_t coin) noexcept { coin_ = coin; }
@@ -264,6 +294,9 @@ private:
     Weapon weapon_ = Weapon::Fists;
     Intent intent_ = Intent::Subdue;
     std::int32_t coin_ = 0;
+    /// ACTION-COMBAT BUILD: the per-step swing cadence, see the accessors.
+    std::int32_t npcSwingTimer_ = 0;
+    std::int32_t npcSwingSeq_ = 0;
 };
 
 }  // namespace granadad::sim
