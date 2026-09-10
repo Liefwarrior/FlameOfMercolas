@@ -26,6 +26,7 @@
 #include "granadad/render/controls.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/human_scale.hpp"
+#include "granadad/sim/tavern.hpp"
 
 using namespace granadad::render;
 namespace sim = granadad::sim;
@@ -1283,4 +1284,42 @@ TEST_CASE("violation #5: F1 and F2 are real, bindable, defaulted actions now") {
     moved.bind(Action::QuickSlot1, Key::F1);
     CHECK_FALSE(moved.bound(Action::KeysPage, Key::F1));
     CHECK(moved.actionFor(Key::F1) == Action::QuickSlot1);
+}
+
+// ---------------------------------------------------------------------------
+// COMBAT: Attack became a HELD button (down-edge starts the sim's hold clock,
+// release-edge resolves the swing, hard iff the hold reached the tap/hold
+// boundary). Two things this migration rides on that this file owns: the ONE
+// tap/hold number the whole game shares, and the Attack bindings surviving
+// unchanged so the muscle memory the scheme was built on still holds.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the hard-swing hold clock and the client's tap/hold boundary are one number") {
+    // main.cpp ties these with a file-scope static_assert -- the sim header
+    // cannot include render, so the seam that includes both is where the two
+    // meet. This case pins the same equality from the test side, so a change
+    // to EITHER constant that drifts them apart is a red build here as well as
+    // a compile error in the client: the hold-clock model measures a hard
+    // swing at kHardSwingHoldSteps, and the client's HoldToggle calls anything
+    // at or under kTapSteps a tap -- if those diverge, "held long enough to be
+    // a hard swing" and "held long enough to not be a tap" stop being the same
+    // instant and the swing tier the player feels no longer matches the guard.
+    CHECK(static_cast<std::int64_t>(sim::kHardSwingHoldSteps) == HoldToggle::kTapSteps);
+    // The value itself, pinned so a silent edit to either side is caught even
+    // if the other were edited to match by accident.
+    CHECK(HoldToggle::kTapSteps == 15);
+}
+
+TEST_CASE("Attack's bindings survive the held-button migration unchanged") {
+    // The down-edge/release-edge rewrite changed WHEN Attack resolves, never
+    // WHICH keys it is on. A held button is worthless if the migration also
+    // moved the keys out from under the player's thumb: MouseLeft and PadWest
+    // are exactly where "the shipped bindings are the ones a player already
+    // knows" put them, and the page-scoped Attack uses (district-map fast
+    // travel on pad, lockpick forceLock) resolve off these same two keys.
+    const ControlSettings keys = ControlSettings::defaults();
+    CHECK(keys.bound(Action::Attack, Key::MouseLeft));
+    CHECK(keys.bound(Action::Attack, Key::PadWest));
+    CHECK(keys.actionFor(Key::MouseLeft) == Action::Attack);
+    CHECK(keys.actionFor(Key::PadWest) == Action::Attack);
 }
