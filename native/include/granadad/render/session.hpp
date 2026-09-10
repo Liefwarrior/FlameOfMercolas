@@ -2787,15 +2787,23 @@ struct SmokeRunConfig {
     /// all. N presses of the same public nextTopicPage() the 0/MORE key
     /// makes, after the menu-opening flags above have put a tile up.
     int tilePage = 0;
-    /// VERIFICATION ONLY (INNOVATION SPRINT). Closes any open conversation
-    /// and throws the player's own punch at whoever is nearest, retrying up
-    /// to eight times (one movement step apart) until one actually LANDS --
+    /// VERIFICATION ONLY (INNOVATION SPRINT). Closes any open conversation,
+    /// WALKS UP TO whoever is nearest, puts them on the crosshair and throws
+    /// the player's own punch, retrying up to sixteen times (a full recovery
+    /// lockout apart, re-facing them each time) until one actually LANDS --
     /// a miss leaves nothing to photograph, and the swing itself is a coin
     /// flip this flag has no business hardcoding around. Exists for the
     /// identical reason `character`/`map` do: item #3's brawl-impact flash
     /// (and, as a natural side effect of throwing a punch inside a taproom
     /// with bouncers watching, the alert plate's own pulse once the house
     /// notices) had no headless capture path at all before this.
+    ///
+    /// ACTION-COMBAT BUILD: the walk-up is not decoration. A swing hits the
+    /// first body on the LOOK-RAY (Tavern::sightlineTarget), not the nearest
+    /// body in reach, so a punch thrown from wherever the smoke walk left the
+    /// body is a punch at air -- which is how this flag came to land 0/1 at
+    /// the Tarwalk spawn. It now drives the same walk-up / face / tap /
+    /// recovery beat the nemesis and tenant lines throw.
     bool punch = false;
     /// FATIGUE BUILD. VERIFICATION ONLY, the identical reason every flag
     /// above states: the fatigue bar's mid and empty states, the winded
@@ -2811,9 +2819,11 @@ struct SmokeRunConfig {
     /// FIRST-PERSON COMBAT (S13). VERIFICATION ONLY, the identical reason
     /// `punch` exists: the held-guard indicator and its blocked-blow wash had
     /// no headless capture path. Starts a brawl exactly the way --punch does
-    /// (the same Session::punch() a keypress calls), raises the guard through
-    /// the same Session::setBlocking() the right mouse button calls, and
-    /// holds it until at least one blow has actually been SOFTENED (the
+    /// (walked up to, faced and tapped through the same Session::punch() a
+    /// keypress calls, until the tap connects and there is a man in the fight
+    /// to throw the blows the guard is meant to catch), raises the guard
+    /// through the same Session::setBlocking() the right mouse button calls,
+    /// and holds it until at least one blow has actually been SOFTENED (the
     /// room's own blowsBlocked() moving) or a bounded wait runs out -- a
     /// brawl whose every swing whiffed leaves nothing on screen to prove.
     bool block = false;

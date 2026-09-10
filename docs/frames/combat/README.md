@@ -30,6 +30,8 @@ works fine, and that is where the frames below come from.
 | `casewatch/watch-8-delivered.png` | same run | The errand closes over the brawl. `beats=8/8`, and the replay "matched the drive, step for step." |
 | `nemesis-01-end-promoted.png` | `--nemesis` (TARN WRENHALE, 7/7 beats) | **Lose the fight, live anyway.** The rival that was nobody is `TARN WRENHALE x3` in red (HUNTING), Foreman of a founded house holding THE GULLET — and the health bar is full, because the quay revive stood you back up. |
 | `verb-cast.png` | `--cast` | The Cast verb routes through `Session::castEquipped()` — the default sheet holds no spell, so it lands on *"NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES."* The button works; the spell is a sheet you haven't earned yet. |
+| `verb-punch.png` | `--punch` (1/1, post-SHIP) | The legacy smoke drive, taught to aim: it walks from the Tarwalk spawn into the Gull, puts the nearest man — Tarn Wrenhale, as it happens — dead on the crosshair and taps until the blow connects. The house minds at once: *"YOU HAVE HAD THE ONLY WORD YOU GET. THE DOOR."* |
+| `verb-block.png` | `--block` (1/1, post-SHIP) | The same fight picked the same way, then the guard up through `Session::setBlocking()` and held until the room says a blow was softened — the `GUARD UP` row over a fight the guard actually worked in. |
 
 ## What a still frame can't hold — proven live instead
 
@@ -90,9 +92,12 @@ Combined that's **32/32 combat-relevant cases, 97,282 assertions, 0 failed**, li
 3. **The death-ceremony dip and epitaph plate are un-photographed** (windowed
    animation), proven by `settleDefeat` in tests and narrated in the `--nemesis`
    stdout.
-4. **The bare `--punch` / `--block` smoke drives now land 0/1 at the default
-   Tarwalk spawn.** They swing in place, and the sightline ruling retired the old
-   radial-nearest pick — you have to be looking at the body. Real aimed fights
-   connect fine (the nemesis drive lands 7/7, the case-watch brawl 8/8); these two
-   legacy verification flags should be taught to walk-to-and-face a mark like the
-   nemesis line does. Not a ship blocker; a stale-harness note.
+4. ~~**The bare `--punch` / `--block` smoke drives land 0/1 at the default
+   Tarwalk spawn.**~~ **Fixed, post-SHIP.** They swung in place, and the sightline
+   ruling retired the old radial-nearest pick — you have to be looking at the
+   body. Both flags now throw the beat the nemesis and tenant lines throw: walk up
+   to the nearest person, put them dead on the crosshair, tap, step the recovery
+   lockout through, re-face, tap again — read as landed off the body's own hit
+   points, not the say-row. From the same spawn both land 1/1 and exit 0, both
+   byte-identical run to run (`verb-punch.png`, `verb-block.png`), the gate is
+   green on both halves and the population baseline is still `0x2646C1AAA2BA38DF`.

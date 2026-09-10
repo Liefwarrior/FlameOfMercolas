@@ -8408,6 +8408,92 @@ void facePlayerAndSync(Session& session, std::int32_t xQ8, std::int32_t yQ8) {
     return nullptr;
 }
 
+/// The nearest PERSON on the player's own band -- present, on their feet, not
+/// a rat -- or nullptr. What `--punch` and `--block` mean by "whoever is
+/// nearest": the pre-sightline radial punch picked by proximity, and the two
+/// flags keep that meaning, they just walk it over now. Same band, because the
+/// scripted walker routes on the body's band and a stool upstairs is nearer by
+/// a count that means nothing to a fist. Ties break on the lower id (roster
+/// order), so two runs cannot disagree about who got hit.
+[[nodiscard]] const sim::Actor* nearestMark(const Session& session) {
+    const sim::Actor* best = nullptr;
+    std::int32_t bestDistance = 0;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (!actor.present() || sim::isFloored(actor.activity()) ||
+            actor.role() == sim::ActorRole::Vermin ||
+            actor.band() != session.body().band()) {
+            continue;
+        }
+        const std::int32_t distance =
+            actor.distanceTo(session.body().x(), session.body().y());
+        if (best == nullptr || distance < bestDistance) {
+            best = &actor;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+/// Walks up to a body, puts it DEAD ON the crosshair and taps -- the same
+/// walk-up / re-face / tap / step-past-recovery beat the tenant and rat drives
+/// throw -- until a blow CONNECTS or the tries run out. Connection is read
+/// from the body itself: its hit points moving, or it going to the floor,
+/// which is strike()'s own output and the one thing a whiffed roll never
+/// changes (the house minds a swing the moment the sightline finds a person,
+/// landed or not, so the player's standing is no proof of a blow). Between
+/// taps the man may shift his feet or trade back, so each tap re-closes if he
+/// left reach and re-faces him regardless; and the lockout is stepped through
+/// in full first, because a down-edge in recovery is dropped, not buffered.
+[[nodiscard]] bool tapUntilItConnects(Session& session, std::int32_t markId, int tries) {
+    for (int attempt = 0; attempt < tries; ++attempt) {
+        const sim::Actor* mark = session.tavern().actorById(markId);
+        if (mark == nullptr || !mark->present() || sim::isFloored(mark->activity())) {
+            return false;
+        }
+        if (mark->distanceTo(session.body().x(), session.body().y()) > sim::kMeleeReach) {
+            walkToTile(session, mark->tileX(), mark->tileY());
+            mark = session.tavern().actorById(markId);
+            if (mark == nullptr) {
+                return false;
+            }
+        }
+        if (mark->x() == session.body().x() && mark->y() == session.body().y()) {
+            // Standing IN him: `along` is zero and the ray finds nobody. One
+            // step of clear ground opens the gap the crosshair needs; tried
+            // in each direction until the body actually moved, since the
+            // first way may be a wall.
+            const std::int32_t beforeX = session.body().x();
+            const std::int32_t beforeY = session.body().y();
+            const std::int32_t nudges[4][2] = {{-1, 0}, {0, -1}, {0, 1}, {1, 0}};
+            for (const auto& nudge : nudges) {
+                sim::MoveInput back;
+                back.forward = nudge[0];
+                back.strafe = nudge[1];
+                back.autoTraverse = false;
+                back.snapVelocity = true;
+                session.step(back);
+                if (session.body().x() != beforeX || session.body().y() != beforeY) {
+                    break;
+                }
+            }
+            mark = session.tavern().actorById(markId);
+            if (mark == nullptr) {
+                return false;
+            }
+        }
+        facePlayerAndSync(session, mark->x(), mark->y());
+        const std::int32_t hpBefore = mark->hp();
+        session.punch();
+        const sim::Actor* struck = session.tavern().actorById(markId);
+        if (struck != nullptr &&
+            (struck->hp() < hpBefore || sim::isFloored(struck->activity()))) {
+            return true;
+        }
+        session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps + 1);
+    }
+    return false;
+}
+
 /// Walks to a named person and opens a conversation with them.
 ///
 /// Onto their OWN tile, and that is not laziness. "Who answers" is the nearest
@@ -10716,27 +10802,22 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
 
     if (config.punch) {
         // VERIFICATION ONLY. See SmokeRunConfig::punch's own header. The
-        // SAME key F makes -- Session::punch() -- retried until it actually
-        // connects, since a swing that misses leaves nothing on screen for
-        // punchLandedPulse_ to draw.
+        // SAME key F makes -- Session::punch() -- thrown at whoever is
+        // nearest and retried until it actually connects, since a swing that
+        // misses leaves nothing on screen for punchLandedPulse_ to draw.
+        //
+        // ACTION-COMBAT BUILD: a swing hits the first body ON THE LOOK-RAY
+        // (Tavern::sightlineTarget), not the nearest body in reach, so a tap
+        // thrown from wherever the smoke walk left the body is a tap at air --
+        // this drive landed 0/1 at the Tarwalk spawn for exactly that reason.
+        // It now throws the beat the nemesis and tenant lines throw: walk up
+        // to the mark, put him dead on the crosshair, tap, step the recovery
+        // lockout through, re-face him (a man who is hit back shifts his
+        // feet), tap again. See tapUntilItConnects.
         session.closeConversation();
         bool landed = false;
-        for (int attempt = 0; attempt < 16 && !landed; ++attempt) {
-            session.punch();
-            // ACTION-COMBAT BUILD: the say-row diet retired the per-blow "HIT"
-            // line, so a connecting swing is read from the ROOM now -- a down /
-            // kill / crown line, or the house minding a struck body
-            // (reportOffence flips Welcome the instant the sightline finds a
-            // person). A whiff or an out-of-reach swing leaves both untouched.
-            const std::string& msg = session.lastMessage();
-            landed = msg.find(" GOES DOWN.") != std::string::npos ||
-                     msg.find(" DIES ON THE BOARDS.") != std::string::npos ||
-                     msg.find("OUT COLD.") != std::string::npos ||
-                     session.tavern().playerStanding() != sim::Standing::Welcome;
-            if (!landed) {
-                // The tap's recovery lockout must clear before the next swing.
-                session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps + 1);
-            }
+        if (const sim::Actor* mark = nearestMark(session)) {
+            landed = tapUntilItConnects(session, mark->id(), 16);
         }
         result.scriptedWanted += 1;
         result.scriptedLanded += landed ? 1 : 0;
@@ -10744,13 +10825,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
 
     if (config.block) {
         // VERIFICATION ONLY. See SmokeRunConfig::block's own header. The
-        // brawl starts the way --punch starts one, the guard goes up through
-        // the SAME Session::setBlocking() the right mouse button calls, and
-        // the wait is until the room itself says a blow was softened --
-        // blowsBlocked() moving -- because a run of whiffs leaves a GUARD UP
-        // row over a fight the guard never actually worked in.
+        // brawl starts the way --punch starts one -- walked up to, faced and
+        // tapped until the tap connects, so there is a man IN the fight to
+        // throw the blows the guard is meant to catch -- the guard goes up
+        // through the SAME Session::setBlocking() the right mouse button
+        // calls, and the wait is until the room itself says a blow was
+        // softened -- blowsBlocked() moving -- because a run of whiffs leaves
+        // a GUARD UP row over a fight the guard never actually worked in.
+        // The wait runs even if no tap connected: a sightline that found him
+        // put him in the brawl whether or not the roll landed, and his blows
+        // are what the beat is about.
         session.closeConversation();
-        session.punch();
+        if (const sim::Actor* mark = nearestMark(session)) {
+            (void)tapUntilItConnects(session, mark->id(), 16);
+        }
         // ACTION-COMBAT BUILD: the swing dropped the guard clause to false for
         // its recovery window (section 1.3), so let the hand return to idle
         // before raising the guard -- otherwise the first steps of the wait
