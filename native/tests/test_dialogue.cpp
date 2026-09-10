@@ -88,7 +88,8 @@ TEST_CASE("a second bark file adds to the ward's voice and can never overwrite i
 
 TEST_CASE("the owner's bark tables load, all of them") {
     REQUIRE(barks().loaded());
-    // 210 tables in the owner's content/raws/barks/barks.json, plus the 32 in
+    // 211 tables in the owner's content/raws/barks/barks.json (210 plus the
+    // EVICTION war-rumor table gossip.maell-netter-shortfall), plus the 32 in
     // content/raws/barks/flame_barks.json (S4), the 22 in roof_barks.json (S5),
     // the 18 in contract_barks.json (S6), the 12 in house_barks.json (S7), the
     // 8 in nemesis_barks.json (S8), the 25 in ward_barks.json (#79), the 4 in
@@ -97,7 +98,7 @@ TEST_CASE("the owner's bark tables load, all of them") {
     // beside it -- each sprint adds a SECOND file rather than editing 59KB of
     // canon, and BarkTables::load reads the whole directory. Pinned: content
     // added should be a visible change here, and content LOST should be red.
-    CHECK(barks().tableCount() == 373);
+    CHECK(barks().tableCount() == 374);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.
@@ -215,8 +216,11 @@ TEST_CASE("the Forty Notables, their stories, and who may repeat them") {
     REQUIRE(registry().loaded());
     // 42 -- the Forty plus the vanished-clerk pass's Widow Sedge, plus Haddie.
     CHECK(registry().notables().size() == 42);
-    CHECK(registry().histories().size() == 15);
-    CHECK(registry().domains().size() == 15);
+    // 16 -- the fifteen interpersonal micro-histories plus the EVICTION war
+    // event (maell-netter-shortfall), pegged to the priest and the charge-holder
+    // the Mercian/Dezdant shortfall binds together. One domain per history.
+    CHECK(registry().histories().size() == 16);
+    CHECK(registry().domains().size() == 16);
 
     for (const Notable& notable : registry().notables()) {
         INFO("notable ", notable.id);
@@ -271,10 +275,17 @@ TEST_CASE("who can tell you what is decided by the raws, not by a dice roll") {
     // Being a PARTY is not being a KNOWER -- the file never re-declares them.
     CHECK_FALSE(registry().isKnower("vess-venn-grudge", "venn"));
 
-    // Father Maell knows exactly his own, and no gossip at all.
+    // Father Maell carries two stories now, and both are HIS OWN: the old
+    // promise, and the war-driven petition glut the Mission drowns in
+    // (maell-netter-shortfall, added with EVICTION). He is a party to each and
+    // still repeats no one else's gossip -- the priest keeps to his own.
+    // tellableBy returns own histories ascending by id, so the war sorts first.
     const std::vector<const History*> maell = registry().tellableBy("maell");
-    REQUIRE(maell.size() == 1);
-    CHECK(maell[0]->id == "sethra-maell-ember");
+    REQUIRE(maell.size() == 2);
+    CHECK(maell[0]->id == "maell-netter-shortfall");
+    CHECK(maell[0]->involves("maell"));
+    CHECK(maell[1]->id == "sethra-maell-ember");
+    CHECK(maell[1]->involves("maell"));
 
     // Captain Wake is nobody's confidant, which is a fact about the content and
     // not an omission here.

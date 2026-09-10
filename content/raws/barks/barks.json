@@ -1038,6 +1038,12 @@
         "The Loft's lamp burns late whenever the Bilge's does. Coincidence, twice a week, for a year.",
         "Redda keeps a sailmaker's needle behind the bar. Luff keeps a tankard on his cutting bench."
       ] },
+    { "key": "gossip.maell-netter-shortfall", "canonAnchor": "histories.json:maell-netter-shortfall",
+      "rows": [
+        "No Mercian bottom has touched the quay in two quarters. They say the Dezdant war with Trojia has the sea lanes, so the wages stopped, and the pennies after them.",
+        "Father Maell's petition-day docket is all one story this season: a war too far off to spell took the sea road, and the widows come to the Flame for their ground back.",
+        "Ask why the priest looks grey. Same reason the wing is behind on the penny. No Mercian shipment, and a Dezdant quarrel a long way off doing the squeezing."
+      ] },
 
     { "key": "quest.vanished-clerk", "canonAnchor": "quests.json:vanished-clerk",
       "rows": [
