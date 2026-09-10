@@ -8,7 +8,8 @@
 //   RAYCAST   the sightline target, cross-checked against an independent
 //             re-implementation of its own draw-free projection over the real
 //             roster: where you look is who you hit, and the species preference
-//             is gone.
+//             is gone. The touch-cast targets through the same line (one rule,
+//             two verbs), held up against the radial rule it used to follow.
 //   LETHAL    a killing resolves in the world: Activity::Dead, the corpse
 //             conventions, everyone can die, the vitality floor lifted.
 //   LAW       the murder hook -- witnessed heat, the Condemned arrest -- and
@@ -197,6 +198,75 @@ public:
         return best;
     }
 
+    /// THE RADIAL RULE, for contrast: Tavern::nearestTo re-implemented -- the
+    /// nearest present person on their feet within kMeleeReach (never a rat),
+    /// ties on the lower id. It is what the touch-cast answered with before
+    /// VETO 1 put it on the sightline, and the touch-cast cases hold it up
+    /// beside expectedSightlineId() so the two rules are told apart by an
+    /// assertion, not assumed apart. Returns the actor id, or -1.
+    [[nodiscard]] std::int32_t nearestPersonId() const {
+        std::int32_t best = -1;
+        std::int32_t bestDistance = kMeleeReach + 1;
+        for (const Actor& actor : tavern_->actors()) {
+            if (!actor.present() || isFloored(actor.activity()) ||
+                actor.role() == ActorRole::Vermin) {
+                continue;
+            }
+            const std::int32_t distance = actor.distanceTo(px(), py());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = actor.id();
+            }
+        }
+        return best;
+    }
+
+    /// Stands one tile off a person and faces them such that they are BOTH
+    /// the first body on the look-ray AND, by a clear margin, the nearest
+    /// person by radius: the one placement where turning the crosshair
+    /// separates the sightline from the radial rule. Walks the roster for the
+    /// first such mark (one settled step per candidate, so positions and the
+    /// flag are current on return); nullptr if the room offers none. The
+    /// margins are generous against one more step of movement: nobody else
+    /// within half a cell of the mark's radius, and the mark itself short of
+    /// the reach by more than any body walks in a step (13 Q8, purposeful).
+    const Actor* standFacingIsolatedMark() {
+        constexpr std::int32_t kStepMargin = 32;  // Q8; a step moves far less
+        for (const Actor& candidate : tavern_->actors()) {
+            if (!candidate.present() || isFloored(candidate.activity()) ||
+                candidate.role() == ActorRole::Vermin) {
+                continue;
+            }
+            if (standFacing(candidate) == -1) {
+                continue;
+            }
+            settleToIdle();
+            stepOnce();
+            if (expectedSightlineId() != candidate.id()) {
+                continue;  // somebody (or a rat) stands between
+            }
+            const std::int32_t reach = candidate.distanceTo(px(), py());
+            if (reach + kStepMargin > kMeleeReach) {
+                continue;  // a walking mark, about to leave the radius
+            }
+            bool alone = true;
+            for (const Actor& other : tavern_->actors()) {
+                if (&other == &candidate || !other.present() ||
+                    isFloored(other.activity()) || other.role() == ActorRole::Vermin) {
+                    continue;
+                }
+                if (other.distanceTo(px(), py()) <= reach + kBodyHalfWidth) {
+                    alone = false;
+                    break;
+                }
+            }
+            if (alone) {
+                return &candidate;
+            }
+        }
+        return nullptr;
+    }
+
 private:
     void push() {
         tavern_->setPlayer(body_->x(), body_->y(), body_->band());
@@ -357,6 +427,93 @@ TEST_CASE("a body off to the side, past the beam's half-width, is not on the lin
     // And the sim's own raycast agrees with the reference at the turned facing.
     room.tavern().playerAttackDown();
     CHECK(room.tavern().playerAttackUp().targetId == offToSide);
+}
+
+// ---------------------------------------------------------------------------
+// The touch-cast is the swing's twin verb on the SAME raycast (VETO 1: one
+// targeting rule, two verbs). The two cases mirror the two swing cases above
+// with one thing added: the radial rule the cast USED to follow (nearestTo,
+// re-implemented as Room::nearestPersonId) is held up beside the sightline, so
+// "not the nearer body off the line" is an assertion and not an assumption.
+// Sting is the crafting -- TOUCH, harmful, level 0, the smallest link the
+// shelf teaches. CastResult::targetId is read off the line BEFORE the check's
+// one draw, so a slipped link still says who it was bridged to, and no case
+// here depends on how that draw fell. No new draw anywhere: targeting is
+// draw-free (the S9 law), and a cast still costs exactly its one.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Stocks the grimoire with sting and leaves it as the default equip -- the
+/// first crafting known is what the hand holds, no menu trip.
+void learnSting(Tavern& tavern) {
+    const Spell* sting = tavern.spellbook().find("sting");
+    REQUIRE(sting != nullptr);
+    REQUIRE(tavern.dialogue().grimoire().learn(*sting));
+    REQUIRE(tavern.equippedSpell() != nullptr);
+    REQUIRE(tavern.equippedSpell()->id == "sting");
+}
+
+}  // namespace
+
+TEST_CASE("a touch-cast is the swing's twin verb: it links the body on the look-ray") {
+    Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    Tavern& tavern = room.tavern();
+    room.run(2);  // let the room fill and settle
+    learnSting(tavern);
+
+    const Actor* mark = room.standFacingIsolatedMark();
+    REQUIRE(mark != nullptr);
+    const std::int32_t markId = mark->id();
+    // Dead ahead, the sightline and the radial rule agree on the mark -- which
+    // is exactly why this case alone cannot say which rule the cast follows.
+    // It pins the positive half; the case after it separates the two rules.
+    REQUIRE(room.expectedSightlineId() == markId);
+    REQUIRE(room.nearestPersonId() == markId);
+    CHECK(tavern.playerSightlineTarget());  // the live flag agrees
+
+    const Tavern::CastResult result = tavern.playerCastEquipped();
+    CHECK(result.targetId == markId);
+    // Opened or slipped, the line was bridged to the mark -- never a refusal
+    // for want of a body.
+    CHECK(result.line != "NOBODY IN REACH TO LINK.");
+}
+
+TEST_CASE("a touch-cast passes over the nearest body when it is off the line") {
+    Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    Tavern& tavern = room.tavern();
+    room.run(2);
+    learnSting(tavern);
+
+    const Actor* mark = room.standFacingIsolatedMark();
+    REQUIRE(mark != nullptr);
+    const std::int32_t markId = mark->id();
+    REQUIRE(room.expectedSightlineId() == markId);
+    const std::int32_t hpBefore = mark->hp();
+
+    // A quarter turn without moving. The mark is still the nearest person by
+    // a clear margin -- the radial rule's answer, unchanged -- and now a whole
+    // tile off the ray, far past kBodyHalfWidth.
+    room.setYaw((room.yaw() + kTurnQuarter) & (kTurnFull - 1));
+    room.stepOnce();
+    CHECK(room.nearestPersonId() == markId);  // by radius: still the mark
+    const std::int32_t offToSide = room.expectedSightlineId();
+    CHECK(offToSide != markId);               // by sightline: not the mark
+    CHECK(tavern.playerSightlineTarget() == (offToSide >= 0));
+
+    // The cast follows the crosshair, not the radius.
+    const Tavern::CastResult result = tavern.playerCastEquipped();
+    CHECK(result.targetId != markId);
+    CHECK(result.targetId == offToSide);      // sim == reference
+    if (offToSide < 0) {
+        // An empty line refuses BEFORE the check: nothing drawn, no cooldown
+        // started -- the same press a moment later is heard again.
+        CHECK_FALSE(result.cast);
+        CHECK(result.line == "NOBODY IN REACH TO LINK.");
+        CHECK(tavern.castCooldownLeft() == 0);
+    }
+    // And the body passed over took nothing.
+    CHECK(mark->hp() == hpBefore);
 }
 
 // ===========================================================================

@@ -3773,15 +3773,17 @@ Tavern::CastResult Tavern::playerCastEquipped() {
     }
     Actor* touched = nullptr;
     if (shape == TargetShape::Touch) {
-        // VETO 1 names the touch-cast as the swing's twin verb on the sightline
-        // raycast (sightlineTarget). It stays on radial nearestTo in this SIM
-        // slice because the raycast reads playerYaw_, which the presentation
-        // lane does not push into the room yet -- flipping this to
-        // sightlineTarget() before live yaw flows would target due-north only.
-        // It is a one-line change the day the body pushes its facing; the swing
-        // path proves the raycast now (playerAttackUp), driven with an explicit
-        // yaw in test_combat_action.
-        const Actor* found = nearestTo(playerX_, playerY_, kMeleeReach);
+        // VETO 1: ONE TARGETING RULE, TWO VERBS. The touch-cast is the swing's
+        // twin on the sightline raycast -- the first body the crosshair passes
+        // through (sightlineTarget), not the nearest body by radius. The SIM
+        // slice shipped this on radial nearestTo with a deferral note, because
+        // the raycast reads playerYaw_ and nothing pushed the body's facing
+        // into the room yet; the presentation lane now pushes it every step
+        // (setPlayerYaw from syncTavernToBody), so the deferral is closed and
+        // the flip is the one line it was always going to be. Draw-free, as
+        // the swing's is: a cast still costs exactly the one draw its check
+        // takes, and nothing before it.
+        const Actor* found = sightlineTarget();
         if (found == nullptr) {
             out.line = "NOBODY IN REACH TO LINK.";
             return out;
@@ -3799,7 +3801,15 @@ Tavern::CastResult Tavern::playerCastEquipped() {
             harms = true;
         }
     }
-    if (touched != nullptr && harms) {
+    // The sightline has no species preference (VETO 1), so a rat first on the
+    // line is the body the link bridges -- and a stung rat carries none of an
+    // assault's consequences, the exact silence playerPunchNearest and
+    // playerAttackUp keep for vermin: no brawl list, no classify, no ledger, no
+    // offence, nobody told. The dose still lands (applySpellDose); the house
+    // has no opinion about it. `assault` is the person-shaped half of `harms`.
+    const bool assault =
+        touched != nullptr && harms && touched->role() != ActorRole::Vermin;
+    if (assault) {
         // A SCALD IS AN ASSAULT, whatever the hand was holding: the same
         // consequences a punch carries, in the same order playerPunchNearest
         // applies them -- join the fight, classify it BEFORE the harm lands,
@@ -3920,7 +3930,7 @@ Tavern::CastResult Tavern::playerCastEquipped() {
     if (laysHold) {
         applyHeldEffects();
     }
-    if (touched != nullptr && harms) {
+    if (assault) {
         touched->setActivity(Activity::Brawling);
         touched->faceToward(playerX_, playerY_);
         dialogue_.ledger().record(touched->id(), Deed::Struck);

@@ -1336,9 +1336,13 @@ public:
     /// grimoire, a link still cooling, an axis or target nothing can hold yet
     /// (temperature, another body's tuning, a forged tuning with no named
     /// string -- see the VERIFICATION GAP (S15) in the .cpp), the unbridged
-    /// link, an empty reach. A harmful touch on a person carries a punch's
+    /// link, an empty sightline. A touch bridges the FIRST BODY ON THE
+    /// LOOK-RAY (sightlineTarget -- VETO 1's one targeting rule, shared with
+    /// the swing: two verbs, one rule), person or rat, whoever the crosshair
+    /// passes through first. A harmful touch on a person carries a punch's
     /// own consequences -- the brawl list, the ledger, the offence -- because
-    /// a scald is an assault whatever the hand was holding. The cast check is
+    /// a scald is an assault whatever the hand was holding; a rat on the line
+    /// is touched in the silence a fist keeps for vermin. The cast check is
     /// linkcraft against spellDifficulty: skill raises the odds and never
     /// buys certainty. A WHILE_ACTIVE self tuning that opens lands as a live
     /// row on heldEffects() -- recast refreshes it whole -- and is felt
@@ -1450,7 +1454,9 @@ private:
     /// 0 < along <= kMeleeReach and |perp| <= kBodyHalfWidth, and the target is
     /// the on-line body with the smallest `along`. Draw-free integer, the S9
     /// no-rolls law applied to targeting. Ties on `along` break on the lower id
-    /// so two runs cannot disagree. nullptr for an empty line.
+    /// so two runs cannot disagree. nullptr for an empty line. ONE RULE, TWO
+    /// VERBS: the swing (playerAttackUp) and the touch-cast
+    /// (playerCastEquipped) both target through here and nowhere else.
     [[nodiscard]] const Actor* sightlineTarget() const noexcept;
     /// The actor id of the first rat. Roster order: every person, then every
     /// rat, so this plus an index is a rat's id and the bitmask has a home.
