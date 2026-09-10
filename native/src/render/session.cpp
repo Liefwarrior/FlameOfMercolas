@@ -2213,6 +2213,15 @@ namespace {
     return false;
 }
 
+/// The HERE clause's reach: squared tile distance from the body to the
+/// selection's aim point, at or under which a travel plan says standingIn
+/// instead of pricing a walk. Six IS the map pane's "within two paces" --
+/// the pane prints lround(sqrt(dx*dx + dy*dy)) as the paces count and calls
+/// HERE at <= 2, and sqrt(6) rounds to 2 while sqrt(7) rounds to 3 -- so
+/// this integer and the pane's float read are the same predicate, stated
+/// once each side of the render/plan line. Change one, change both.
+constexpr std::int64_t kTravelHerePacesSq = 6;
+
 /// "02:14" -- the clock as the arrival line speaks it. The wait page says
 /// whole hours because it deals in them; a walk lands mid-hour and says so.
 [[nodiscard]] std::string travelClockText(int secondOfDay) {
@@ -2263,18 +2272,42 @@ Session::TravelPlan Session::districtMapTravelPlan() const {
         plan.standingIn = true;
         return plan;
     }
-    // THE STATE REFUSALS FIRST -- they are cheap, they are the ones a player
+    // THE HERE CLAUSE -- the ship note's "zero-paces re-travel", closed on
+    // the KEY's side to match the page. The map pane already stopped selling
+    // the doorstep: within two paces of the aim the badge reads HERE and the
+    // travel row sleeps (map_view's zero-paces predicate, UI-EA-SPEC sec. 4
+    // #12). But the pane only hid the row -- the T press re-plans through
+    // THIS function, and a place's door (the anchor, the aim) can sit just
+    // OUTSIDE the footprint contains() answers for (the Counting-House's is
+    // one row north of its own rectangle), so the arrival ring lands a body
+    // at a door the strict check disowns and the key still charged a real
+    // minute to shuffle one step and re-fire the plate, with no row on
+    // screen saying it would. The predicate here is the pane's own, in the
+    // sim's integers: lround(sqrt(d2)) <= 2 paces is exactly d2 <= 6, so the
+    // page and the key can never name different doors. No band guard, also
+    // to match the page. Checked before the refusals, the way contains()
+    // above already is -- a body with nowhere to go is not refused travel,
+    // it is told it has arrived.
+    std::int32_t aimX = 0;
+    std::int32_t aimY = 0;
+    mapAimPoint(place, px, py, aimX, aimY);
+    {
+        const std::int64_t dx = aimX - px;
+        const std::int64_t dy = aimY - py;
+        if (dx * dx + dy * dy <= kTravelHerePacesSq) {
+            plan.standingIn = true;
+            return plan;
+        }
+    }
+    // THE STATE REFUSALS -- they are cheap, they are the ones a player
     // needs told about, and a refused plan owes no route.
     plan.refusal = travelRefusal();
     if (!plan.refusal.empty()) {
         return plan;
     }
     // THE ARRIVAL: the same aim point the pane's bearing and FACE IT already
-    // use (the door you knock on), snapped to standable ground on the place's
-    // own band -- the demo Cut's own landing rule.
-    std::int32_t aimX = 0;
-    std::int32_t aimY = 0;
-    mapAimPoint(place, px, py, aimX, aimY);
+    // use (the door you knock on, computed above), snapped to standable
+    // ground on the place's own band -- the demo Cut's own landing rule.
     if (!travelStandable(*tiles_, aimX, aimY, place.band, &plan.toX, &plan.toY)) {
         plan.refusal = "NO GROUND TO STAND ON.";
         return plan;
