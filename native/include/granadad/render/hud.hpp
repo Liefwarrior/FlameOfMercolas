@@ -254,6 +254,13 @@ struct HudState {
     /// in priority -- a held guard is read every second of a fight, and it
     /// is the ROOM's fact (what tickBrawl actually reads), never the key's.
     std::string_view blockLabel;
+    /// ACTION-COMBAT BUILD (section 5, channel 2): "HELD HARD -- CUDGEL 14-18"
+    /// while a swing is charged past the hard threshold. Bottom band, adjacent
+    /// to the guard row, in the hot charge register -- a swing and a guard are
+    /// mutually exclusive (the guard drops the instant the hand leaves Idle),
+    /// so the two never contend for the band. Empty draws nothing, the usual
+    /// state, so every hand-built HudState that predates it is pixel-identical.
+    std::string_view chargeLabel;
     /// SPELLS BUILD: the quick bar strip -- BOTTOM-CENTRE, which is this
     /// file's own header giving Barony's hotbar its place ("hotbar
     /// bottom-centre"). Ten cells out of the bottom band's slot grid, never
@@ -344,6 +351,21 @@ struct HudState {
     std::string_view aimNote;
     /// Which accent the subject and the reticle take. See AimKind.
     int aimKind = 0;
+    /// ACTION-COMBAT BUILD (section 5, channel 1). THE RETICLE IS THE WEAPON --
+    /// the charge readout, DECOUPLED from the interact prompt so it draws the
+    /// reticle during a swing hold even with nothing in reach (aimVerb empty),
+    /// which the interact-only early-return could not do.
+    ///   aimChargeFrac    0..1, the hold's progress toward the hard threshold;
+    ///                    the four ticks retract toward centre across it.
+    ///   aimChargeHard    the hold reached the hard tier; the ticks take the
+    ///                    warm accent.
+    ///   aimChargeOnLine  a body sits on the look-ray right now; the ticks
+    ///                    brighten, and a swing thrown will land.
+    /// All three default to the at-rest values, so every hand-built HudState
+    /// that predates them draws its reticle exactly as it always has.
+    float aimChargeFrac = 0.0F;
+    bool aimChargeHard = false;
+    bool aimChargeOnLine = false;
     /// S10: where the bloodletter trail stands and where it wants you next --
     /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row.
     ///
@@ -432,6 +454,10 @@ struct HudState {
     /// Cast/Block task added, each on its own Session-side EasedToggle.
     float spellFade = 1.0F;
     float blockFade = 1.0F;
+    /// ACTION-COMBAT BUILD. The HELD HARD charge row's own ease, its own
+    /// Session-side EasedToggle, the same no-op-by-default reasoning as every
+    /// *Fade above: a HudState nobody eased draws exactly as it always has.
+    float chargeFade = 1.0F;
     /// INNOVATION SPRINT ITEM #3. 1 the instant a NEW bouncer's warning
     /// arrives, easing down to 0 over a handful of frames -- see
     /// render::ImpactPulse's own header and Session::alertPulse_'s. Unlike

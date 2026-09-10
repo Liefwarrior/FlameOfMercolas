@@ -433,7 +433,30 @@ public:
     void vertical();
     /// F. Throws a punch. In a taproom that is an offence, and the house has
     /// opinions about it.
+    ///
+    /// ACTION-COMBAT BUILD: now a TAP of the new Attack verbs -- attackDown()
+    /// then an immediate attackUp() with no charge behind it -- so the swing
+    /// runs through the same sightline/lethal path a mouse press does, and the
+    /// six existing call sites (the scripted drives, case_watch, the render
+    /// suite) drive real combat rather than the retired legacy tap. A tap
+    /// never reaches the hard tier, so it is always a Subdue swing: it can down
+    /// a man but the intent-by-verb rule never lets a tap alone turn a bar
+    /// fight lethal.
     void punch();
+    /// Attack DOWN-EDGE. Starts the sim's hold clock (Tavern::playerAttackDown)
+    /// -- the charge is measured in movement steps by the room, so the tier is
+    /// deterministic. Overlays are dismissed the same way punch() dismisses
+    /// them. INPUT calls this on the Attack key's down-edge; a page-consumed
+    /// press must be guarded out on the client's side (the attack-armed
+    /// tracker), the same shape the QuickWheel self-guards.
+    void attackDown();
+    /// Attack RELEASE-EDGE. Resolves the swing through Tavern::playerAttackUp()
+    /// -- hard iff the hold reached kHardSwingHoldSteps -- and speaks the diet's
+    /// surviving lines (downs, a crowning, a kill, the refusals), never the
+    /// per-blow HIT/MISSED log the say-row diet retired. Fires the connecting
+    /// wash and the by-band swing audio. A release with no charge behind it
+    /// (an edge that arrived in recovery or idle) says nothing and does nothing.
+    void attackUp();
     /// C. Casts the equipped crafting -- sim::Tavern::playerCastEquipped() is
     /// the whole resolution including every refusal, and every outcome is
     /// said on the alert row, because a key that can silently do nothing is a
@@ -1442,6 +1465,21 @@ public:
     /// fight is not a verb.
     void settleDefeat();
 
+    /// ACTION-COMBAT BUILD (section 4.5). THE DEATH CEREMONY, drawn over
+    /// everything the instant a defeat lands under lethal rules (steel was out
+    /// -- tavern_->escalated()). Fills the frame toward black, holds the
+    /// epitaph plate (killer, weapon, place) for kDeathHoldSteps, then eases
+    /// back to reveal the quay revive settleDefeat already performed under it.
+    /// Render-only, never hashed: the sim revived at the moment of defeat, this
+    /// is the OCCASION laid over the top -- Barony's lesson that ceremony at the
+    /// end buys the frictionless beginning. A no-op while deathCeremonySteps_ is
+    /// zero, so it is harmless in every drawFrame return path it rides.
+    void composeDeathCeremony(Framebuffer& target) const;
+    /// Arms the ceremony above from the last defeat's Rise -- the killer's name,
+    /// a weapon word off his hand, and the place it happened. Called by
+    /// settleDefeat only on an escalated (lethal) defeat.
+    void armDeathCeremony();
+
     /// What the last roof move did, in words. Exposed so a test can assert on
     /// the REPORT and not only on where the body ended up.
     [[nodiscard]] const std::string& lastRoofMove() const noexcept { return roofMove_; }
@@ -1514,6 +1552,13 @@ public:
     /// empty otherwise -- the held state made visible, not the keypress.
     /// PUBLIC for the identical reason.
     [[nodiscard]] std::string blockLine() const;
+    /// ACTION-COMBAT BUILD. "HELD HARD -- CUDGEL 14-18" while the swing is
+    /// charged past the hard threshold (Tavern::playerChargeHard), naming the
+    /// held weapon in the sheet's own weaponSheetLine grammar. Empty at rest,
+    /// at a light charge, and in recovery -- the row is the hard tier made
+    /// visible, the reticle carries the light one. PUBLIC so a case can pin
+    /// what it says and that it stays on its edge, the same as blockLine.
+    [[nodiscard]] std::string chargeLine() const;
     /// HELD-EFFECTS BUILD. "STEADY THE HAND 842S" -- the slot-th live hold on
     /// the player, its name out of the grimoire and the seconds it has left,
     /// counting down continuously. Empty past the table's end, which is the
@@ -2167,6 +2212,13 @@ private:
     /// nothing to do with a guard going up, so they do not share one.
     EasedToggle spellAnim_;
     EasedToggle blockAnim_;
+    /// ACTION-COMBAT BUILD. The "HELD HARD -- <weapon> <span>" charge row's own
+    /// EasedToggle, on the bottom band adjacent to the guard row -- the same
+    /// per-row convention. A guard going up and a swing charging hard are
+    /// unrelated, so they do not share a toggle; and a charge is mutually
+    /// exclusive with a guard by construction (the guard only holds in Idle),
+    /// so the two rows never both want the band at once.
+    EasedToggle chargeAnim_;
     /// FATIGUE BUILD. The fatigue bar's own visibility ease -- its OWN
     /// EasedToggle per the pinned convention, mirroring the health bar's one
     /// visibility rule (down for the length of a conversation, up otherwise)
@@ -2325,6 +2377,10 @@ private:
     std::string stashCache_;
     std::string spellCache_;
     std::string blockCache_;
+    /// ACTION-COMBAT BUILD. The charge row's cache, filled while the swing is
+    /// held hard and kept through the fade-out the identical way blockCache_ is
+    /// -- an alpha cannot fade a string that is already gone.
+    std::string chargeCache_;
     /// HELD-EFFECTS BUILD. One toggle and one cache PER ROW, the pinned
     /// convention: a warmth lapsing has nothing to do with a tuning arriving,
     /// so slot i eases on its own. Slots are table order (oldest hold first);
@@ -2401,6 +2457,15 @@ private:
     /// its two siblings.
     ImpactPulse blockPulse_;
     std::int32_t lastBlowsBlocked_ = 0;
+    /// ACTION-COMBAT BUILD (section 5, channel 5). THE CAMERA IMPULSE, composed
+    /// as a render-only BAM offset inside Session::camera() -- never written to
+    /// sim yaw. Three events, three pulses: a HARD swing's own forward dip on
+    /// release (this one, triggered in attackUp), the taken-jolt (punchTakenPulse_
+    /// above) and the block-nudge (blockPulse_ above) reused, since those already
+    /// fire on exactly their events. Decays over kPageEaseSteps like its siblings;
+    /// its peak angle is capped in camera() well under the spec's <=2deg. Not
+    /// hashed -- a camera impulse is a courtesy to the eye, like the washes.
+    ImpactPulse hardSwingDipPulse_;
     /// Whether the Block key is physically down, straight off the client's
     /// edge events. Render-side bookkeeping, NOT the fact the sim hashes --
     /// step() derives that (held AND not talking/picking) and pushes it into
@@ -2463,6 +2528,24 @@ private:
     /// showing" (re-read every step, must NOT retrigger the pulse every
     /// step) and "warned went from true back to false" (no pulse either way).
     bool lastWarned_ = false;
+    /// ACTION-COMBAT BUILD (section 4.1). Whether the fight had crossed the
+    /// brawl line as of the last step, so step() can catch the RISING EDGE of
+    /// tavern_->escalated() -- the one instant steel comes out -- and speak the
+    /// flip once ("STEEL OUT. THE ROOM STANDS BACK." + the SwordDraw) rather
+    /// than every step the latch stays up. The same remember-the-edge shape
+    /// lastWarned_ uses; clearEscalation() drops the latch and this follows it
+    /// down, ready to fire again on the next fight that draws.
+    bool lastEscalated_ = false;
+    /// ACTION-COMBAT BUILD (section 4.5). THE DEATH CEREMONY's own countdown,
+    /// in movement steps, and the two epitaph lines it holds. Nonzero only
+    /// between an escalated (lethal) defeat and the reveal kDeathHoldSteps +
+    /// the two eases later; armDeathCeremony() sets it, step() spends it, and
+    /// composeDeathCeremony() reads it to draw the dip and the plate. Render-
+    /// only, never hashed -- the sim revived at the defeat; this is the veil
+    /// laid over the top. NOT travelFadeAnim_ (an ease that cannot hold).
+    std::int32_t deathCeremonySteps_ = 0;
+    std::string deathEpitaphTop_;
+    std::string deathEpitaphBottom_;
 
     // --- the audio wiring pass ----------------------------------------------
     //

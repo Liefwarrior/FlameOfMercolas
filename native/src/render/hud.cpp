@@ -975,19 +975,36 @@ constexpr Rgb kAimNote{0.60F, 0.58F, 0.52F};
 /// straight off the sign table and a trade off the roster; neither has a
 /// length this file controls.
 void drawAim(Framebuffer& target, const HudState& state) {
-    if (state.aimVerb.empty()) {
+    // ACTION-COMBAT BUILD (section 5, channel 1). THE RETICLE IS THE WEAPON, so
+    // it draws during a swing hold even with nothing in reach: the interact
+    // prompt (aimVerb) is no longer the sole gate -- a live charge fraction
+    // draws the reticle on its own, and only the two prompt ROWS below still
+    // ride the interact verb. At rest (no verb, no charge) it still returns.
+    const float charge = std::clamp(state.aimChargeFrac, 0.0F, 1.0F);
+    const bool charging = charge > 0.0F;
+    if (state.aimVerb.empty() && !charging) {
         return;
     }
     const float alpha = std::clamp(state.interactFade, 0.0F, 1.0F);
-    if (alpha <= 0.0F) {
+    // The reticle rides its OWN alpha: loud while charging (a deliberate press
+    // earns feedback even over nothing), the interact fade otherwise.
+    const float reticleAlpha = charging ? std::max(alpha, 0.85F) : alpha;
+    if (reticleAlpha <= 0.0F) {
         return;
     }
     const int width = target.width();
     const int height = target.height();
     const AimBox box = aimBox(width, height);
     const CentreRect fence = hudAimRect(width, height);
-    const Rgb accent = aimAccent(state.aimKind);
-    const bool onSomething = static_cast<AimKind>(state.aimKind) != AimKind::Nothing;
+    // THE ACCENT TAKES THE WARM CHARGE HUE at the hard threshold -- a swing
+    // about to land twice as hard reads hot -- and the subject's accent
+    // otherwise.
+    const Rgb warmCharge{0.95F, 0.55F, 0.20F};
+    const Rgb accent = state.aimChargeHard ? warmCharge : aimAccent(state.aimKind);
+    // BRIGHT when something is in reach to interact with OR a body sits on the
+    // look-ray a swing would land on -- the reticle answering "this will hit".
+    const bool onSomething = static_cast<AimKind>(state.aimKind) != AimKind::Nothing ||
+                             state.aimChargeOnLine;
 
     // Clamped fill. Everything below goes through it, reticle included.
     const auto fill = [&](int x, int y, int w, int h, const Rgb& colour, float a) {
@@ -1004,13 +1021,18 @@ void drawAim(Framebuffer& target, const HudState& state) {
     // the subject's accent when something is in reach and sits back to a dim
     // bone when nothing is -- the reference frame's "the spatial view
     // highlights the current interaction target", in eight small rectangles.
-    const float tickAlpha = (onSomething ? 0.85F : 0.40F) * alpha;
+    const float tickAlpha = (onSomething ? 0.85F : 0.40F) * reticleAlpha;
     const int half = box.unit / 2;
+    // THE TICKS RETRACT toward centre across the hold: each slides inward by up
+    // to one gap-unit as the charge fills, so the reticle visibly closes on the
+    // aim point the longer the swing is held. Zero pull at rest, so an ordinary
+    // interact reticle is drawn at exactly the pixels it always was.
+    const int pull = static_cast<int>(std::lround(charge * static_cast<float>(box.gap)));
     const int ticks[4][4] = {
-        {box.cx - box.reach, box.cy - half, box.arm, box.unit},
-        {box.cx + box.gap, box.cy - half, box.arm, box.unit},
-        {box.cx - half, box.cy - box.reach, box.unit, box.arm},
-        {box.cx - half, box.cy + box.gap, box.unit, box.arm},
+        {box.cx - box.reach + pull, box.cy - half, box.arm, box.unit},
+        {box.cx + box.gap - pull, box.cy - half, box.arm, box.unit},
+        {box.cx - half, box.cy - box.reach + pull, box.unit, box.arm},
+        {box.cx - half, box.cy + box.gap - pull, box.unit, box.arm},
     };
     for (const auto& tick : ticks) {
         // THE FONT'S OWN DROP SHADOW, ON A SHAPE THAT IS NOT A GLYPH. The
@@ -1346,6 +1368,15 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // and the flash read as one fact.
     takeCentred(state.blockLabel, Rgb{0.62F, 0.70F, 0.80F},
                 0.92F * std::clamp(state.blockFade, 0.0F, 1.0F));
+    // ACTION-COMBAT BUILD (section 5, channel 2). THE HELD HARD charge row,
+    // adjacent to the guard row and in the hot charge register -- the same warm
+    // hue the reticle takes at the hard threshold, so the row and the reticle
+    // read as one fact. A swing charging hard and a guard held are mutually
+    // exclusive (the guard drops the instant the hand leaves Idle), so they
+    // never both claim the band; and it sits behind the alert and the lock, a
+    // shout and a lock both outranking a swing the player is still winding up.
+    takeCentred(state.chargeLabel, Rgb{0.90F, 0.58F, 0.24F},
+                0.94F * std::clamp(state.chargeFade, 0.0F, 1.0F));
     // The case. IT IS THE COLOUR OF THE WARD'S NERVE and not a fixed one: a
     // player who has frightened the district enough that nobody walks the
     // Gullet alone should see that without reading the words.
