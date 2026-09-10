@@ -49,6 +49,7 @@
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/fixed.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
 
@@ -56,6 +57,14 @@ namespace {
 
 namespace render = granadad::render;
 namespace sim = granadad::sim;
+
+// COMBAT. The hard-swing hold threshold (sim, deterministic movement steps) and
+// the tap/hold boundary the client's HoldToggle already uses are ONE number by
+// design -- the whole game reads a single tap/hold line. The sim header cannot
+// include render, so the two are tied here, at the one seam that includes both.
+static_assert(sim::kHardSwingHoldSteps == render::HoldToggle::kTapSteps,
+              "the hard-swing hold clock and the client tap/hold boundary must "
+              "be the same number of steps");
 
 void print_build_banner() {
     const sim::BuildInfo info = sim::build_info();
@@ -730,10 +739,12 @@ void print_usage() {
         "  --sprint=N           VERIFICATION ONLY: hold forward+sprint for N\n"
         "                       real steps before the shutter -- the fatigue\n"
         "                       bar's mid/empty states and the winded refusal\n"
-        "  --punch              VERIFICATION ONLY: retry the punch key until\n"
-        "                       one lands, before the shutter goes\n"
-        "  --block              VERIFICATION ONLY: start a brawl, raise the\n"
-        "                       guard, hold it until a blow is softened\n"
+        "  --punch              VERIFICATION ONLY: walk up to the nearest\n"
+        "                       person, put them on the crosshair and tap\n"
+        "                       the punch key until one lands, before the\n"
+        "                       shutter goes\n"
+        "  --block              VERIFICATION ONLY: pick that same fight, raise\n"
+        "                       the guard, hold it until a blow is softened\n"
         "  --cast               VERIFICATION ONLY: press the cast key once\n"
         "                       (pair with --flame to have a spell to cast)\n"
         "  --held=ID[,ID]       VERIFICATION ONLY: equip each crafting by id\n"
@@ -4050,6 +4061,18 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     bool quickWheelOpen = false;
     std::int64_t quickWheelDownAt = 0;
     bool quickWheelStepped = false;
+    // COMBAT. THE ATTACK-ARMED SELF-GUARD, the QuickWheel's exact shape. Attack
+    // is now a down-edge/release-edge pair: the down edge starts the sim's hold
+    // clock, the release edge resolves the swing. But every UP edge in this loop
+    // reaches released() DIRECTLY, bypassing route_menu_key -- so a press the
+    // district-map fast-travel branch or a lockpick or pointerLive already ate
+    // still emits a release. This flag is set ONLY inside the world pressed()
+    // Attack branch below; released() resolves a swing only when it is set, and
+    // clears it. A page-consumed press never set it, so its release is inert --
+    // no phantom world swing. Unlike the wheel, there is no press-step timestamp
+    // to keep: the SIM owns the charge counter (it advances every movement step
+    // and the tier is measured room-side), so the client only guards the edges.
+    bool attackHeld = false;
     // S13. THE TRIGGERS' OWN EDGE STATE. SDL reports LT/RT as AXES, never as
     // button events, so kPadTable can never produce them; the poll after the
     // stick section synthesizes pressed()/released() on threshold crossings
@@ -4143,10 +4166,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 case render::Action::Interact:
                     session.interact();
                     return;
-                // #85. Was Punch, renamed to say what it will still be doing
-                // once armed combat exists: swinging whatever is in the hand.
+                // COMBAT. Attack is a DOWN-EDGE now, not a one-shot. It arms the
+                // self-guard and starts the sim's hold clock via
+                // Session::attackDown(); the swing itself resolves on the
+                // release edge (see released()). The tier -- tap (Subdue) or
+                // hard (Intent::Harm) -- is measured room-side across the hold,
+                // so the client resolves nothing here. Set the armed flag ONLY
+                // on this world path so a page-consumed press fires no phantom
+                // swing on its release.
                 case render::Action::Attack:
-                    session.punch();
+                    attackHeld = true;
+                    session.attackDown();
                     return;
                 // #85. Was Jump + Traverse + DropDown. session.vertical() is
                 // the rule: climb (mantle-or-leap) first, a drop if there is
@@ -4303,6 +4333,20 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 if (!quickWheelStepped &&
                     stepClock - quickWheelDownAt <= render::HoldToggle::kTapSteps) {
                     session.toggleGrimoire();
+                }
+            } else if (action == render::Action::Attack) {
+                // COMBAT. RESOLVES THE SWING on the release edge -- hard iff the
+                // hold reached kHardSwingHoldSteps, measured room-side. GUARDED
+                // by attackHeld, which the world pressed() Attack branch is the
+                // only place to set: this released() is reached DIRECTLY on
+                // every up edge (bypassing route_menu_key), so a press eaten by
+                // the district-map fast-travel branch, a lockpick, or a
+                // pointerLive-consumed MouseLeft never armed it, and its release
+                // does nothing here. Disarm on the way out so the next press
+                // starts clean.
+                if (attackHeld) {
+                    attackHeld = false;
+                    session.attackUp();
                 }
             } else if (action == render::Action::Block) {
                 // S13. LOWERS THE GUARD. Held means blocking, up means not,

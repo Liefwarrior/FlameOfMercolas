@@ -1,16 +1,20 @@
 #pragma once
 
-// The line between a fight the world resolves and a fight that gets its own
-// screen.
+// The line between a bar fight and a killing, both fought IN THE WORLD.
 //
-// Eli's ruling: "real-time brawls, dedicated screen for real fights. Fists,
-// shoves and bouncer ejections resolve IN-WORLD with no transition. Lethal
-// armed combat enters the dedicated first-person combat screen. You will need a
-// clear rule for which is which -- make it explicit and testable."
+// Eli's action-combat ruling (2026-09-02, DECISIONS.md:63) scrapped the paused
+// combat screen: combat is real-time, first-person, in the tick stream, with no
+// transition. This classifier SURVIVES as the LEGALITY layer -- the brawl line
+// (DECISIONS.md:37) still rules what a fight IS -- but the answer no longer
+// picks a venue. Both a brawl and a lethal fight resolve right here; the class
+// picks the RULES: fists-and-Subdue is a bar fight with all its floors, and
+// steel out / Kill meant / a bloodied man beaten is LETHAL, where blows can
+// kill, the Watch has a cause, and the player's own death routes through the
+// respawn/nemesis ruling. See COMBAT-ACTION-SPEC.md.
 //
 // THE RULE
 //
-// A fight is a BRAWL, and stays in the world, exactly while ALL THREE hold:
+// A fight is a BRAWL, and stays under bar-fight rules, exactly while ALL THREE hold:
 //
 //   B1  NOTHING EDGED IS OUT.        Every hand in it holds fists, something
 //                                    improvised off a table, or a carried
@@ -26,8 +30,9 @@
 //                                    meaning him Harm is not a bar fight any
 //                                    more, whatever is in your hands.
 //
-// The moment any one of them stops holding, the fight is LETHAL and belongs to
-// the dedicated first-person combat screen (docs/design/COMBAT-SCREEN-SPEC.md).
+// The moment any one of them stops holding, the fight is LETHAL: it keeps
+// resolving in the world, but under lethal RULES (blows kill, floors lifted,
+// the Watch minds it) -- see COMBAT-ACTION-SPEC.md section 4.
 //
 // B3 is the clause that makes this a rule rather than an inventory check. Two
 // men swinging stools at each other is a brawl however long it goes on, as long
@@ -35,10 +40,11 @@
 // someone on the floor is exactly what a bouncer does for a living. What tips
 // it is intent meeting damage.
 //
-// WHY IT LIVES IN SIM. The classification decides whether the client transitions
-// screens, so it cannot be a renderer's opinion; and it is pure integer logic
-// over state the world already owns, so it costs nothing to keep here where the
-// twin-run gate can see it.
+// WHY IT LIVES IN SIM. The classification decides what a landed blow is allowed
+// to do -- whether it can kill, whether the Watch has a cause, which floor the
+// player takes -- so it cannot be a renderer's opinion; and it is pure integer
+// logic over state the world already owns, so it costs nothing to keep here
+// where the twin-run gate can see it.
 
 #include <cstdint>
 #include <span>
@@ -102,9 +108,12 @@ enum class Intent : std::uint8_t {
 [[nodiscard]] std::string_view intentName(Intent intent) noexcept;
 
 enum class FightClass : std::uint8_t {
-    /// Resolved here, in the world, with no transition.
+    /// Bar-fight rules: nobody dies, the player floors at kPlayerBrawlFloor,
+    /// the house handles it. Resolved in the world.
     Brawl = 0,
-    /// The dedicated first-person combat screen's business.
+    /// Lethal rules: blows can kill, floors are lifted, and the Watch has a
+    /// cause. Also resolved in the world -- there is no combat screen; the
+    /// class picks the rules, not a venue. See COMBAT-ACTION-SPEC.md section 4.
     Lethal = 1,
 };
 
@@ -140,8 +149,12 @@ inline constexpr std::int32_t kBloodiedDenominator = 4;
 /// An empty or single-fighter list is a Brawl: there is nothing to escalate.
 [[nodiscard]] FightClass classifyFight(std::span<const Fighter> fighters) noexcept;
 
-/// Whether a fight of this class is resolved by the world rather than by the
-/// combat screen. One place, so no caller re-derives the polarity.
+/// Whether a fight of this class runs under BAR-FIGHT rules (nobody dies, the
+/// player floors, the house handles it) rather than LETHAL rules. RETIRED AS A
+/// VENUE by the action-combat build: every fight now resolves in the world, so
+/// this no longer means "resolved here vs. on a screen" -- it selects the rule
+/// set. One place, so no caller re-derives the polarity. Retained because live
+/// callers still read it; its meaning, not its shape, is what changed.
 [[nodiscard]] constexpr bool resolvesInWorld(FightClass fight) noexcept {
     return fight == FightClass::Brawl;
 }
@@ -186,6 +199,22 @@ inline constexpr std::int32_t kShoveImpulse = 96;
 /// bar counter or past the man in front of you.
 inline constexpr std::int32_t kMeleeReach = 320;
 
+/// HALF THE WIDTH OF THE BEAM the crosshair casts, Q8. VETO 1's one tuning
+/// knob, and it is a DISTANCE, not an angle: a body is "on the line" when its
+/// perpendicular offset from the look-ray is within this, so the beam is the
+/// same half-cell wide point-blank and at reach. That is what "you were looking
+/// right at them" means. See Tavern::sightlineTarget and COMBAT-ACTION-SPEC.md
+/// section 2.1 -- the draft's 120-degree cone is dead; this replaces it.
+inline constexpr std::int32_t kBodyHalfWidth = 128;
+
+/// The Q8 damage scale strike() reads for the two swing tiers -- a swing is 1x
+/// (256, the bit-identical baseline) and a HARD swing is 2x (512), doubling the
+/// rolled weapon damage before the MGT bonus. A PARAMETER, never a draw: the
+/// charge tier is measured in integer hold-steps by the caller and passed in,
+/// so the same-roll discipline is untouched. See strike() and section 2.2.
+inline constexpr std::int32_t kSwingChargeQ8 = 256;
+inline constexpr std::int32_t kHardSwingChargeQ8 = 512;
+
 /// One resolved blow.
 struct Blow {
     bool landed = false;
@@ -223,11 +252,23 @@ struct Blow {
 /// kEvictorHeadBand256's own header -- and no other weapon does, so for
 /// every weapon that shipped before it this function is bit-identical.
 ///
-/// Ward brawlers call this with the defaults: they carry no pool in this
-/// build (see fatigue.hpp's header on where the player-scoped line is drawn).
+/// ACTION-COMBAT BUILD, and the THREE defaults ARE the old function.
+/// `chargeQ8` is the swing tier (§2.2): kSwingChargeQ8 (256) is a tap and
+/// kHardSwingChargeQ8 (512) a held hard swing, applied as
+/// ((base+variance)*chargeQ8)>>8 BEFORE the damageBonus and the max(1,..)
+/// floor -- so a hard swing doubles the rolled weapon damage and a bare hand
+/// still bruises. It is a PARAMETER and not a draw: the whiff bands and the
+/// crown are carved off the same roll at both tiers (a hard swing is not a
+/// truer swing), and at kSwingChargeQ8 the function is bit-identical to what
+/// it replaced (test_fatigue.cpp sweeps that equivalence).
+///
+/// Ward brawlers and NPC swings call this with the defaults: they carry no
+/// pool and no charge in this build (see fatigue.hpp's header on where the
+/// player-scoped line is drawn).
 [[nodiscard]] Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
                           std::int32_t damageBonus = 0,
-                          std::int32_t fatigueTermQ8 = kFatigueTermFullQ8) noexcept;
+                          std::int32_t fatigueTermQ8 = kFatigueTermFullQ8,
+                          std::int32_t chargeQ8 = kSwingChargeQ8) noexcept;
 
 // ---------------------------------------------------------------------------
 // the guard

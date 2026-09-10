@@ -434,9 +434,54 @@ inline constexpr std::int32_t kVerminUntil = hourOfDay(11);
 /// the player is put them on the floor and then out of it. Hit points stop
 /// here, the fight ends, and the bouncers carry on with the ejection.
 ///
-/// The player being knocked properly unconscious -- and everything that follows
-/// from it -- belongs with the dedicated combat screen, which S2 does not have.
+/// Under LETHAL rules this floor is lifted -- the player can reach zero and
+/// die, routing through the same applyDefeat/nemesis/quay-revive the brawl KO
+/// uses (COMBAT-ACTION-SPEC.md section 4.5). The player-KILLS path lands in
+/// this build (Tavern::playerAttackUp); the NPC-KILLS-player path stays gated
+/// on the presentation lane's scripted-arc rewrite, so this floor still holds
+/// for the NPC brawl loop below.
 inline constexpr std::int32_t kPlayerBrawlFloor = 1;
+
+// ---------------------------------------------------------------------------
+// ACTION-COMBAT BUILD: the swing state machine and the NPC swing cadence
+// ---------------------------------------------------------------------------
+//
+// The named integer constants of COMBAT-ACTION-SPEC.md sections 1.2 and 1.5,
+// all at the 60-steps-per-second spine. The swing charge tiers (kSwingChargeQ8
+// / kHardSwingChargeQ8) live in brawl.hpp beside strike(); the two new wind
+// costs (kHardSwingFatiguePoints / kBlockCatchFatiguePoints) in fatigue.hpp.
+
+/// The hold, in movement steps, at or above which a swing is a HARD swing.
+/// 250 ms. Equal by design to render::HoldToggle::kTapSteps (== 15) so every
+/// tap/hold boundary in the game is one number; the client ties them with a
+/// static_assert at file scope in main.cpp (sim cannot include render).
+inline constexpr std::int32_t kHardSwingHoldSteps = 15;
+/// The lockout after a swing / a hard swing, in steps. 600 ms and 900 ms;
+/// Attack edges during recovery are dropped, not buffered.
+inline constexpr std::int32_t kSwingRecoverySteps = 36;
+inline constexpr std::int32_t kHardSwingRecoverySteps = 54;
+/// How long the death ceremony holds its epitaph plate before the revive
+/// plate, in steps. 4.5 s, Barony's measured hold. The SIM only names it and
+/// routes the defeat; the plate itself is PRESENTATION's (section 4.5).
+inline constexpr std::int32_t kDeathHoldSteps = 270;
+
+/// A standing brawler's seconds between swings, as a step count: 1.1 s.
+inline constexpr std::int32_t kNpcSwingIntervalSteps = 66;
+/// The fight-join timer offset, actorId % this, so a crowd never metronomes.
+inline constexpr std::int32_t kNpcSwingStaggerSteps = 30;
+/// The re-arm when the swing timer expires out of reach: 0.2 s re-check while
+/// the actor is still closing the gap.
+inline constexpr std::int32_t kNpcSwingRetrySteps = 12;
+
+/// The player's swing machine, sim-owned and hashed. SWING and HARD resolve
+/// instantly on release (we have no viewmodel to animate; recovery carries the
+/// cadence), so the persistent states are the three below and the tier is read
+/// off the charge step count at release. See Tavern::stepPlayerCombat.
+enum class PlayerCombatState : std::uint8_t {
+    Idle = 0,
+    Charging = 1,
+    Recovery = 2,
+};
 
 /// THE CAST CHECK. A cast succeeds when a d100 draw lands under
 ///
@@ -512,6 +557,15 @@ public:
     /// reconstructed at draw time.
     void setPlayer(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band) noexcept;
     void setPlayerCombat(Weapon weapon, Intent intent) noexcept;
+
+    /// Tells the room WHICH WAY the body is facing, Q16-BAM yaw, pushed every
+    /// step beside setPlayer. The sightline raycast (VETO 1) casts down it, so
+    /// it is authoritative facing the same way setPlayer's position is
+    /// authoritative -- and hashed for the same reason position is. A room the
+    /// client never tells stays at its default facing, which is what every
+    /// pre-combat capture and the workload do; targeting simply reads that.
+    void setPlayerYaw(Angle yaw) noexcept { playerYaw_ = yaw & (kTurnFull - 1); }
+    [[nodiscard]] Angle playerYaw() const noexcept { return playerYaw_; }
 
     /// Arms the player by an authored weapon id -- kEvictorWeaponId is the
     /// whole roster today -- and touches NOTHING else: intent stays where it
@@ -1056,9 +1110,11 @@ public:
     void reviveAfterDefeat();
 
     /// Puts the player on the floor at somebody's hands, with no fight around
-    /// it. The seam a dedicated combat screen will use when it has one, and the
-    /// seam a scripted proof uses now -- so the rise can be driven through
-    /// exactly the code a real beating drives.
+    /// it. The DEFEAT SEAM: the same applyDefeat a real in-world beating routes
+    /// through, exposed so a scripted proof can drive the rise through exactly
+    /// the code the game uses. (There is no combat screen -- lethal fights
+    /// resolve in the world now; this is a direct-defeat convenience, not a
+    /// venue.)
     void concedeTo(std::int32_t actorId);
 
     // --- trouble ------------------------------------------------------------
@@ -1129,10 +1185,12 @@ public:
     /// Tells the house the player did something. Idempotent within a second.
     void reportOffence(Offence offence);
 
-    /// The player throws a punch at whoever is in reach. Resolves IN WORLD when
-    /// classifyFight says brawl, and refuses -- raising escalation() -- when it
-    /// says lethal, because that is the combat screen's fight and not this
-    /// room's.
+    /// LEGACY. The player throws a tap-punch at the nearest body (radial, with
+    /// the rat preference). Resolves IN WORLD when classifyFight says brawl, and
+    /// still REFUSES -- raising escalation() -- when it says lethal, the
+    /// pre-veto behaviour kept for the un-migrated call sites. The action-combat
+    /// player-swing path is playerAttackUp(), which casts the sightline and
+    /// resolves lethal in the world.
     struct PunchResult {
         bool swung = false;
         FightClass fight = FightClass::Brawl;
@@ -1140,12 +1198,100 @@ public:
         std::int32_t targetId = -1;
         std::string targetName;
     };
+    /// LEGACY TAP, kept for the call sites that have not migrated to the
+    /// attackDown/attackUp state machine (Session::punch and the scripted
+    /// arcs). Radial-nearest with the rat-vs-person preference, and it REFUSES
+    /// to resolve a lethal fight -- the pre-veto model. The action-combat
+    /// player-swing path is playerAttackUp() below, which casts the sightline,
+    /// retires the species preference, and resolves lethal in the world; when
+    /// the presentation lane repoints Session::punch() to a tap of the new
+    /// verbs this becomes the last reader of the old shape.
     PunchResult playerPunchNearest();
 
-    /// Set when a fight in this room stopped being the world's business. The
-    /// client routes this to the dedicated first-person combat screen; until
-    /// that screen exists (S3+) the tavern simply stops resolving the fight and
-    /// says so, rather than quietly resolving a knife fight with fist rules.
+    // --- the swing (Attack, ACTION-COMBAT BUILD) -----------------------------
+    //
+    // The state machine of COMBAT-ACTION-SPEC.md section 1.2, sim-owned so the
+    // charge tier is deterministic by construction. INPUT reports the two edges
+    // (down starts the hold clock, release resolves) and the SIM owns the step
+    // counter, the sightline, the intent-by-verb, the wind, and the rules.
+
+    /// What one press-to-release of Attack resolved. `swung` is a committed
+    /// swing (the wind was paid), `refused` a hard swing the wind would not
+    /// buy (a winded tap still swings), `hard` the tier, `killed` a blow that
+    /// took the target to death under lethal rules. `fight` is the class the
+    /// blow resolved under; `blow`/`targetId`/`targetName` the hit itself.
+    struct PlayerSwingResult {
+        bool swung = false;
+        bool hard = false;
+        bool refused = false;
+        bool killed = false;
+        FightClass fight = FightClass::Brawl;
+        Blow blow;
+        std::int32_t targetId = -1;
+        std::string targetName;
+    };
+    /// Attack down-edge: from IDLE, start charging (the hold clock is the sim's
+    /// own step counter). A down-edge during CHARGING or RECOVERY is dropped --
+    /// no queue-buffered instant hards. Cancelled with no cost by a cast, a
+    /// page, talking or picking (the hand does one thing) via cancelPlayerCharge.
+    void playerAttackDown() noexcept;
+    /// Attack release-edge: resolve the swing. HARD iff the charge reached
+    /// kHardSwingHoldSteps; the sightline raycast picks the target (first body
+    /// on the look-ray, VETO 1); strike() runs with the tier's chargeQ8; the
+    /// first hard swing in a fight sets Intent::Harm (intent-by-verb); the
+    /// class is computed and lethal blows kill (Activity::Dead), floors lifted,
+    /// murder heat and the Condemned hook fire on a witnessed kill; the wind is
+    /// paid. A hard swing while winded is REFUSED (a refusal in the result, no
+    /// cost). Returns to RECOVERY. A release outside CHARGING is a no-op result.
+    PlayerSwingResult playerAttackUp();
+    /// Drops a charge with no swing and no cost -- what a cast, a page, a
+    /// conversation or a pick does to a raised hand. IDLE and RECOVERY are
+    /// untouched. Idempotent.
+    void cancelPlayerCharge() noexcept;
+    /// One movement step of the swing machine: increments the charge while
+    /// CHARGING, counts the recovery lockout down while RECOVERING, and
+    /// recomputes the live sightline-target flag every step so the reticle can
+    /// read it. Driven from stepMovement, once per movement step.
+    void stepPlayerCombat() noexcept;
+
+    /// True while the hand is free to start a swing (IDLE) -- not charging, not
+    /// in the recovery lockout.
+    [[nodiscard]] bool playerCombatIdle() const noexcept {
+        return combatState_ == PlayerCombatState::Idle;
+    }
+    /// Steps the current charge has held, 0 when not charging. The client draws
+    /// the reticle retracting across this toward kHardSwingHoldSteps.
+    [[nodiscard]] std::int32_t playerChargeSteps() const noexcept { return chargeSteps_; }
+    /// True while charging AND the hold has reached the hard threshold -- what
+    /// the reticle's warm accent and the HELD HARD row read.
+    [[nodiscard]] bool playerChargeHard() const noexcept {
+        return combatState_ == PlayerCombatState::Charging && chargeSteps_ >= kHardSwingHoldSteps;
+    }
+    /// Whether a body sits on the look-ray right now (recomputed each step).
+    /// The reticle brightens on it; a swing thrown with it false hits nobody.
+    [[nodiscard]] bool playerSightlineTarget() const noexcept { return sightlineFlag_; }
+    /// What the hand is holding. A thin accessor beside playerWeapon(), named
+    /// as the cross-lane contract names it.
+    [[nodiscard]] Weapon playerHeldWeapon() const noexcept { return playerWeapon_; }
+
+    /// DEFERENCE (VETO / section 4.4). Whether the player is PRESENTING as a
+    /// Wielder right now. When true the Watch never goes hostile to him -- no
+    /// arrest-close, no joining a fight against him. Not reachable in current
+    /// play (the player has no way to present as Wielder yet), so it lives as a
+    /// settable sim rule with a test, honestly, against the day the Persona
+    /// seam sets it. Hashed, since it changes what the Watch does.
+    void setPlayerPresentsAsWielder(bool presents) noexcept {
+        playerPresentsAsWielder_ = presents;
+    }
+    [[nodiscard]] bool playerPresentsAsWielder() const noexcept {
+        return playerPresentsAsWielder_;
+    }
+
+    /// Latched to Lethal at the moment a fight crosses the brawl line. There is
+    /// no combat screen to route to -- the fight keeps resolving in the world
+    /// under lethal rules -- so the client reads this for the flip's feedback
+    /// (the SwordDraw, the "STEEL OUT" line) rather than for a transition. The
+    /// escalation is a once-per-fight social latch, cleared by clearEscalation.
     [[nodiscard]] FightClass escalation() const noexcept { return escalation_; }
     [[nodiscard]] bool escalated() const noexcept { return escalation_ == FightClass::Lethal; }
     void clearEscalation() noexcept {
@@ -1179,8 +1325,10 @@ public:
     struct CastResult {
         bool cast = false;
         std::string line;
-        /// Mirror of PunchResult::fight: a harmful link laid on a room where
-        /// steel is out is the combat screen's business, not this room's.
+        /// Mirror of PunchResult::fight: the class a harmful link resolved
+        /// under. This legacy touch-cast still refuses when steel is out (the
+        /// player's lethal vector is the swing); the flip is the room standing
+        /// back, not a screen taking over.
         FightClass fight = FightClass::Brawl;
         std::int32_t targetId = -1;
     };
@@ -1188,9 +1336,13 @@ public:
     /// grimoire, a link still cooling, an axis or target nothing can hold yet
     /// (temperature, another body's tuning, a forged tuning with no named
     /// string -- see the VERIFICATION GAP (S15) in the .cpp), the unbridged
-    /// link, an empty reach. A harmful touch on a person carries a punch's
+    /// link, an empty sightline. A touch bridges the FIRST BODY ON THE
+    /// LOOK-RAY (sightlineTarget -- VETO 1's one targeting rule, shared with
+    /// the swing: two verbs, one rule), person or rat, whoever the crosshair
+    /// passes through first. A harmful touch on a person carries a punch's
     /// own consequences -- the brawl list, the ledger, the offence -- because
-    /// a scald is an assault whatever the hand was holding. The cast check is
+    /// a scald is an assault whatever the hand was holding; a rat on the line
+    /// is touched in the silence a fist keeps for vermin. The cast check is
     /// linkcraft against spellDifficulty: skill raises the odds and never
     /// buys certainty. A WHILE_ACTIVE self tuning that opens lands as a live
     /// row on heldEffects() -- recast refreshes it whole -- and is felt
@@ -1295,6 +1447,17 @@ private:
     /// The nearest rat on its feet within reach, or nullptr.
     [[nodiscard]] const Actor* nearestVerminTo(std::int32_t xQ8, std::int32_t yQ8,
                                                std::int32_t reachQ8) const noexcept;
+    /// THE SIGHTLINE RAYCAST (VETO 1). The first body the crosshair passes
+    /// through: over every present body on its feet -- person OR rat, no
+    /// species preference -- project the offset onto the look-ray via
+    /// forward_x_q16/forward_y_q16(playerYaw_); a body is on the line iff
+    /// 0 < along <= kMeleeReach and |perp| <= kBodyHalfWidth, and the target is
+    /// the on-line body with the smallest `along`. Draw-free integer, the S9
+    /// no-rolls law applied to targeting. Ties on `along` break on the lower id
+    /// so two runs cannot disagree. nullptr for an empty line. ONE RULE, TWO
+    /// VERBS: the swing (playerAttackUp) and the touch-cast
+    /// (playerCastEquipped) both target through here and nowhere else.
+    [[nodiscard]] const Actor* sightlineTarget() const noexcept;
     /// The actor id of the first rat. Roster order: every person, then every
     /// rat, so this plus an index is a rat's id and the bitmask has a home.
     [[nodiscard]] std::int32_t verminFirstId() const noexcept;
@@ -1315,6 +1478,15 @@ private:
     /// The authored skill level of a roster body, without building a Speaker.
     [[nodiscard]] std::int32_t rosterSkillOf(const Actor& actor) const noexcept;
     void tickBrawl();
+    /// ACTION-COMBAT BUILD. The per-step NPC swing cadence (section 1.5),
+    /// moved out of tickBrawl's 1 Hz exchange: per brawler, count the swing
+    /// timer down, close when out of reach, and on expiry within reach throw a
+    /// blow re-keyed to the actor's own npcSwingSeq_. Applies the guard, the
+    /// caught-blow wind, and the brawl-floor defeat check. Driven from
+    /// stepMovement. Like the old loop, it does NOT resolve while the fight is
+    /// lethal -- the NPC-kills-player path waits on the presentation lane's
+    /// scripted-arc rewrite, so this preserves the shipped brawl behaviour.
+    void stepBrawl() noexcept;
     void tickPatrons();
     /// Advances every trickle still delivering. One second per call.
     void tickSpellwork();
@@ -1347,6 +1519,16 @@ private:
     void applyReply(Reply& reply);
     /// What a drawn blade does to a room full of people, exactly once.
     void noteEscalation(std::int32_t targetId);
+    /// Adds `actor` to the brawl list (idempotent, kept sorted) and staggers
+    /// its first swing (npcSwingTimer_ = id % kNpcSwingStaggerSteps) so a crowd
+    /// joining at once never metronomes. The one door into brawlers_.
+    void joinBrawl(Actor& actor);
+    /// ACTION-COMBAT BUILD. Kills a body: Activity::Dead (a Downed that never
+    /// stands), the victim's Deed::Slew, the witness spread, and -- WITNESSED
+    /// (the three-clause rule via witnessCount) -- the murder law's heat and
+    /// the Condemned arrest hook (CrimeLedger::markMurderer). Only the player
+    /// kills in v1, so this is only ever reached from a player blow or link.
+    void slayActor(Actor& target);
 
     // --- S8 -------------------------------------------------------------------
     /// THE ONE CALL SITE A DEFEAT GOES THROUGH, wherever the player went down.
@@ -1412,6 +1594,24 @@ private:
     // the guard and the cast -- first-person combat's own player state
     bool playerBlocking_ = false;
     std::int32_t blowsBlocked_ = 0;
+
+    // the swing machine and the sightline -- ACTION-COMBAT BUILD. All hashed
+    // (the declared tavern-baseline move): the charge tier decides what the
+    // next release does, the recovery lockout whether a press is even heard,
+    // the facing who a swing hits, and the deference bit what the Watch does --
+    // so two runs that disagreed about any of them would be two different
+    // fights. playerYaw_ is authoritative facing pushed from the body, exactly
+    // as playerX_/Y_ are authoritative position.
+    Angle playerYaw_ = 0;
+    PlayerCombatState combatState_ = PlayerCombatState::Idle;
+    std::int32_t chargeSteps_ = 0;
+    std::int32_t recoverySteps_ = 0;
+    /// Recomputed every stepPlayerCombat off position + yaw + roster; the
+    /// reticle reads it. Hashed with the rest for gate visibility.
+    bool sightlineFlag_ = false;
+    /// DEFERENCE: the player presents as a Wielder. Default false; no play path
+    /// sets it yet (section 4.4). Hashed -- it changes the Watch.
+    bool playerPresentsAsWielder_ = false;
     /// Empty means "nothing picked" and equippedSpell() defaults to the first
     /// known crafting. Kept as the ID rather than an index because the
     /// grimoire inserts in id order: learning a new crafting must never

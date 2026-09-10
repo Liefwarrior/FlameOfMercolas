@@ -199,6 +199,19 @@ public:
     /// the ledger's own state.
     ArrestOutcome arrest(bool skyrunner, std::int32_t purse, std::uint64_t draw);
 
+    /// ACTION-COMBAT BUILD. A WITNESSED killing was done. Raises kMurderHeat
+    /// (watch.hpp) -- exactly the warrant threshold, so one witnessed murder is
+    /// instant paper -- and marks the player a murderer, which makes the next
+    /// arrest a Condemned one whatever the ordinary sentence ladder would say.
+    /// The caller gates on the three-clause witness rule; an unwitnessed kill
+    /// calls nothing, because heat is what the Watch heard. See
+    /// COMBAT-ACTION-SPEC.md section 4.4.
+    void markMurderer() noexcept;
+    /// Whether a witnessed murder stands on the record. Read by arrest() to
+    /// route to Sentence::Condemned. Permanent within a run (the court that
+    /// would clear or execute it is the justice build, section 10).
+    [[nodiscard]] bool murderer() const noexcept { return murderer_; }
+
     [[nodiscard]] std::int32_t arrests() const noexcept { return arrests_; }
     [[nodiscard]] Sentence lastSentence() const noexcept { return lastSentence_; }
     /// A hand the ward has taken. Permanent.
@@ -264,6 +277,9 @@ private:
     Sentence lastSentence_ = Sentence::None;
     bool maimed_ = false;
     bool condemned_ = false;
+    /// ACTION-COMBAT BUILD: a witnessed killing stands on the record, so the
+    /// next arrest condemns. See markMurderer / arrest.
+    bool murderer_ = false;
 };
 
 /// What a fence pays this player, as a percentage of kLootValue a piece.

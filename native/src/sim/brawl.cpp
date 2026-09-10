@@ -132,7 +132,8 @@ std::int32_t blockedDamage(std::int32_t damage, std::int32_t shieldwallLevel) no
 }
 
 Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
-            std::int32_t damageBonus, std::int32_t fatigueTermQ8) noexcept {
+            std::int32_t damageBonus, std::int32_t fatigueTermQ8,
+            std::int32_t chargeQ8) noexcept {
     Blow blow;
     // One in eight swings misses outright. A brawl that never whiffs reads as a
     // spreadsheet; one that whiffs half the time reads as broken.
@@ -159,7 +160,17 @@ Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
     // landed blow a blow whatever a future negative bonus does.
     const std::int32_t variance = static_cast<std::int32_t>((roll >> 3) % 3U);
     blow.landed = true;
-    blow.damage = std::max(1, baseDamage(weapon) + variance + damageBonus);
+    // ACTION-COMBAT BUILD: the charge tier scales the ROLLED weapon damage
+    // (base + variance) before the MGT bonus and the floor. ((base+variance) *
+    // chargeQ8) >> 8: at kSwingChargeQ8 (256) this is base+variance to the bit,
+    // so a tap is the shipped blow; at kHardSwingChargeQ8 (512) it doubles. A
+    // widening multiply then a truncating shift, once, so no rounding drifts;
+    // the bonus and the max(1,..) floor land after, exactly as before, and a
+    // weak arm still bruises. No new draw: the tier is a parameter.
+    const std::int32_t rolled = baseDamage(weapon) + variance;
+    const std::int32_t scaled =
+        static_cast<std::int32_t>((static_cast<std::int64_t>(rolled) * chargeQ8) >> 8);
+    blow.damage = std::max(1, scaled + damageBonus);
     target.hp = std::max(0, target.hp - blow.damage);
     if (weapon == Weapon::Evictor &&
         ((roll >> kEvictorHeadRollShift) & 0xFFU) < kEvictorHeadBand256) {
