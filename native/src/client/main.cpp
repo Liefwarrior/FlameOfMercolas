@@ -7,13 +7,26 @@
 // all, and it is why the docker gate can render a frame of the Docks on every
 // build.
 //
+// 3D BUILD (2026-09-10). THE WINDOW IS RAYLIB'S NOW. granadad-render3d-rl
+// owns the window, the GL context, the 3D pass and the composite; SDL stays
+// for exactly two things it is still best at -- the audio device and the
+// gamepad -- and is initialised with SDL_INIT_GAMEPAD alone, never VIDEO.
+// The keyboard and the mouse come out of raylib in a neutral vocabulary (HID
+// usage ids == SDL scancodes) and are pushed onto SDL's own event queue by
+// VideoBridge below, so the five thousand lines of input routing under it
+// -- the scancode table, route_menu_key, pressed()/released(), the pad
+// parity, the virtual pad harness -- keep reading the SDL_Event they always
+// read. See VideoBridge's header for what that buys and what it costs.
+//
 // Floats are legal in this file and its neighbours under src/client. They are
 // not legal anywhere under src/sim.
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -39,10 +52,15 @@
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/keys_page.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/step_pump.hpp"
+#include "granadad/render/world_renderer.hpp"
+#include "granadad/render3d/backend.hpp"
+#include "granadad/render3d/scene.hpp"
+#include "granadad/render3d/starter_scene.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
@@ -56,7 +74,13 @@
 namespace {
 
 namespace render = granadad::render;
+namespace render3d = granadad::render3d;
 namespace sim = granadad::sim;
+
+/// 3D BUILD. Whether a shift key is held, kept by VideoBridge off the edges
+/// raylib reports. It replaces SDL_GetModState(), which only ever knew the
+/// answer while SDL owned the keyboard.
+bool g_video_shift_held = false;
 
 // COMBAT. The hard-swing hold threshold (sim, deterministic movement steps) and
 // the tap/hold boundary the client's HoldToggle already uses are ONE number by
@@ -293,6 +317,13 @@ struct Options {
     render::SmokeRunConfig smoke;
     bool wantsSmoke = false;
     int windowScale = 2;
+    /// 3D BUILD. `--3d`: the world is drawn by the raylib backend (for now
+    /// the starter scene -- a lit plane and a cube -- until the chunk mesher
+    /// lands) and the software frame is drawn WITHOUT its world pass, as a
+    /// transparent overlay over it. Off, the software world rides inside the
+    /// overlay and the picture is the one this build has always shown; the
+    /// window, the composite and the capture go through raylib either way.
+    bool video3d = false;
     /// Mouse look sensitivity, BAM per mouse count. Only used when NAMED: the
     /// settings file is the source of truth, and a command line that always
     /// overrode it would silently undo the options page on every launch.
@@ -655,7 +686,13 @@ void print_usage() {
     std::printf(
         "usage: granadad [options]\n"
         "  --smoke=N            run N movement steps, then capture and exit\n"
-        "  --screenshot=PATH    write the captured frame as a PNG (implies no window)\n"
+        "  --screenshot=PATH    write the captured frame as a PNG. Composited\n"
+        "                       through the 3D backend: the shipped build opens\n"
+        "                       a window for the shutter and closes it; the\n"
+        "                       headless (rlsw) build opens none\n"
+        "  --3d                 draw the world through the 3D backend, with the\n"
+        "                       terminal HUD composited over it (the starter\n"
+        "                       scene until the chunk mesher lands)\n"
         "  --width=N            internal render width  (default 640)\n"
         "  --height=N           internal render height (default 360)\n"
         "  --scale=N            window / capture upscale, nearest neighbor (default 2)\n"
@@ -1051,6 +1088,8 @@ void print_usage() {
             options.sensitivityGiven = true;
         } else if (std::strcmp(arg, "--invert-y") == 0) {
             options.invertY = true;
+        } else if (std::strcmp(arg, "--3d") == 0) {
+            options.video3d = true;
         } else if (starts_with(arg, "--controls=", &value)) {
             options.controlsFile = value;
         } else if (starts_with(arg, "--clock=", &value)) {
@@ -1831,7 +1870,7 @@ void print_usage() {
             return true;  // nothing else reaches the world through a workbench
         }
         if (session.haggling()) {
-            const int stride = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0 ? 5 : 1;
+            const int stride = g_video_shift_held ? 5 : 1;
             if (leftward || downward) {
                 session.adjustOffer(-stride);
                 return true;
@@ -3246,68 +3285,236 @@ int run_creation_capture(const Options& options) {
 }
 
 // ---------------------------------------------------------------------------
+// 3D BUILD: THE WINDOW IS RAYLIB'S; THE LOOP STILL SPEAKS SDL EVENTS
+// ---------------------------------------------------------------------------
+//
+// WHAT CHANGED. raylib (granadad-render3d-rl) owns the window and the GL
+// context now, because the 3D pass has to be drawn INTO the window and SDL's
+// 2D renderer cannot host it. SDL is therefore never initialised with VIDEO
+// in this file any more -- it keeps the audio device and the gamepad, both of
+// which work with SDL_INIT_GAMEPAD alone (the gamepad selftest has always
+// done exactly that).
+//
+// WHAT DID NOT CHANGE, AND WHY. Every line under the event loops below reads
+// an SDL_Event: the scancode table, route_menu_key, pressed()/released(), the
+// pad parity pass, the virtual-pad harness that pushes its own button edges
+// with SDL_PushEvent. That code was proven page by page and frame by frame,
+// and rewriting it onto a second input vocabulary in the toolchain lane would
+// be a week of re-proving for no new feature. So the bridge does the one
+// translation that exists anyway -- raylib reports keys as PHYSICAL keys in
+// GLFW's US-layout tokens, the adapter turns those into USB HID usage ids,
+// and a HID usage id IS an SDL scancode -- and hands the loop what it already
+// speaks: SDL_EVENT_KEY_DOWN/UP with a scancode, MOUSE_MOTION with relative
+// counts, MOUSE_BUTTON_DOWN/UP and MOUSE_WHEEL with the pointer already in
+// FRAMEBUFFER pixels (what SDL_ConvertEventToRenderCoordinates used to do),
+// and QUIT. SDL_PushEvent needs no video subsystem; the queue is the event
+// subsystem's, which SDL_INIT_GAMEPAD implies.
+//
+// The two things the loop used to POLL rather than receive -- the held-key
+// array (SDL_GetKeyboardState) and the mouse button mask (SDL_GetMouseState)
+// -- are kept here off the same edges, because without VIDEO those two calls
+// answer for a keyboard SDL no longer reads.
+struct VideoBridge {
+    std::array<bool, SDL_SCANCODE_COUNT> held{};
+    Uint32 mouseMask = 0;
+
+    /// Reads a frame of raylib input and pushes it as SDL events. Once per
+    /// frame, right before the SDL_PollEvent loop drains them.
+    void pump(render3d::Backend& video, int frameWidth, int frameHeight) {
+        const render3d::InputFrame in = video.poll();
+        const render3d::OverlayPlacement placement =
+            video.overlayPlacement(frameWidth, frameHeight);
+        const Uint64 now = SDL_GetTicksNS();
+
+        if (in.closeRequested) {
+            SDL_Event out{};
+            out.type = SDL_EVENT_QUIT;
+            out.common.timestamp = now;
+            (void)SDL_PushEvent(&out);
+        }
+        for (const render3d::KeyEdge& key : in.keys) {
+            if (key.hid >= held.size()) {
+                continue;
+            }
+            if (!key.repeat) {
+                held[key.hid] = key.down;
+            }
+            g_video_shift_held = held[SDL_SCANCODE_LSHIFT] || held[SDL_SCANCODE_RSHIFT];
+            SDL_Event out{};
+            out.type = key.down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+            out.key.timestamp = now;
+            out.key.scancode = static_cast<SDL_Scancode>(key.hid);
+            out.key.down = key.down;
+            out.key.repeat = key.repeat;
+            out.key.mod = static_cast<SDL_Keymod>(g_video_shift_held ? SDL_KMOD_SHIFT : SDL_KMOD_NONE);
+            (void)SDL_PushEvent(&out);
+        }
+        for (const render3d::MouseButtonEdge& button : in.buttons) {
+            const Uint32 bit = SDL_BUTTON_MASK(button.button);
+            if (button.down) {
+                mouseMask |= bit;
+            } else {
+                mouseMask &= ~bit;
+            }
+            SDL_Event out{};
+            out.type = button.down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+            out.button.timestamp = now;
+            out.button.button = button.button;
+            out.button.down = button.down;
+            out.button.clicks = 1;
+            out.button.x = static_cast<float>(placement.toFrameX(button.x));
+            out.button.y = static_cast<float>(placement.toFrameY(button.y));
+            (void)SDL_PushEvent(&out);
+        }
+        if (in.mouseDeltaX != 0.0F || in.mouseDeltaY != 0.0F) {
+            SDL_Event out{};
+            out.type = SDL_EVENT_MOUSE_MOTION;
+            out.motion.timestamp = now;
+            out.motion.state = mouseMask;
+            out.motion.x = static_cast<float>(placement.toFrameX(in.mouseX));
+            out.motion.y = static_cast<float>(placement.toFrameY(in.mouseY));
+            // Raw window counts, exactly what SDL's relative mode delivered:
+            // MouseSettings::yawFor turns them into BAM downstream.
+            out.motion.xrel = in.mouseDeltaX;
+            out.motion.yrel = in.mouseDeltaY;
+            (void)SDL_PushEvent(&out);
+        }
+        if (in.wheelY != 0.0F) {
+            SDL_Event out{};
+            out.type = SDL_EVENT_MOUSE_WHEEL;
+            out.wheel.timestamp = now;
+            out.wheel.x = 0.0F;
+            out.wheel.y = in.wheelY;
+            (void)SDL_PushEvent(&out);
+        }
+    }
+};
+
+/// 3D BUILD. THE STARTER SCENE, PLACED FOR A SESSION: the ground under the
+/// band the body stands on, the cube four tiles ahead of where the body was
+/// looking when the scene was first placed, the light from the session's
+/// own clock, the camera from the session's own Camera. Until the chunk
+/// mesher lands this IS the 3D world;
+/// after it, the W lane replaces buildStarterScene with the chunk meshes and
+/// nothing here about the camera or the composite changes.
+struct SceneRig {
+    render3d::SceneDescription scene;
+    render3d::StarterSceneParams params;
+    bool placed = false;
+
+    void refresh(const render::Session& session, float aspect) {
+        const render::Camera view = session.camera();
+        if (!placed) {
+            params.centre = render3d::toScene(view.x, view.y, 0.0F);
+            // Four tiles AHEAD of where the body is looking, so the first
+            // frame -- and every capture -- has the cube in view. World x is
+            // east and y is south; yaw 0 faces north (-y) and turns clockwise,
+            // render::Camera's own convention.
+            params.cube = render3d::toScene(view.x + 4.0F * std::sin(view.yaw),
+                                            view.y - 4.0F * std::cos(view.yaw), 0.0F);
+            placed = true;
+        }
+        params.groundY = render::bandSurface(session.body().band());
+        params.timeOfDaySeconds = session.timeOfDay();
+        render3d::buildStarterScene(scene, params);
+        scene.camera = render3d::cameraFrom(view, aspect);
+    }
+};
+
+/// 3D BUILD. ONE FRAME THROUGH THE BACKEND: clear to the sky, the 3D pass
+/// when --3d is on, the software frame as the overlay, present -- and, when
+/// asked, the finished frame read back before the swap.
+render3d::SceneStats present_frame(render3d::Backend& video, const Options& options,
+                                   SceneRig& rig, const render::Session& session,
+                                   const render::Framebuffer& overlay,
+                                   render::Framebuffer* capture) {
+    const float aspect = static_cast<float>(std::max(1, video.width())) /
+                         static_cast<float>(std::max(1, video.height()));
+    rig.refresh(session, aspect);
+    render3d::SceneStats stats;
+    if (options.video3d) {
+        video.beginFrame(rig.scene.clearColour);
+        stats = video.drawScene(rig.scene);
+    } else {
+        video.beginFrame(render3d::Rgba8{0, 0, 0, 255});
+    }
+    video.drawOverlay(overlay);
+    video.endFrame(capture);
+    return stats;
+}
+
+/// 3D BUILD. THE SMOKE PATH'S SHUTTER: runSmoke drove the session and drew
+/// its software frame; this composites that frame through the backend the
+/// window uses and writes what the window would have shown. On the shipped
+/// build that opens a real window for the length of one frame -- which is
+/// exactly what scripts/verify-windows.ps1 wants proved on the host -- and on
+/// the headless build it opens none.
+[[nodiscard]] bool shutter_through_backend(const Options& options, const render::Session& session,
+                                           const render::Framebuffer& software) {
+    render3d::BackendConfig config;
+    config.width = software.width();
+    config.height = software.height();
+    config.windowScale = options.smoke.captureScale;
+    config.resizable = false;
+    config.vsync = false;
+    std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
+    if (video == nullptr) {
+        std::printf("granadad: the 3D backend could not open for the shutter\n");
+        return false;
+    }
+    render::Framebuffer overlay = software;
+    if (options.video3d) {
+        (void)session.drawFrame(overlay, render::Session::FramePasses{.world = false});
+    }
+    SceneRig rig;
+    render::Framebuffer shot(1, 1);
+    const render3d::SceneStats stats =
+        present_frame(*video, options, rig, session, overlay, &shot);
+    // The headless build's frame is the framebuffer's own size; the window
+    // build already presented at the capture scale.
+    const bool needsUpscale =
+        shot.width() == software.width() && options.smoke.captureScale > 1;
+    const render::Framebuffer output =
+        needsUpscale ? render::upscaleNearest(shot, options.smoke.captureScale) : shot;
+    const bool ok = render::writePng(output, options.smoke.screenshot);
+    std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s)%s\n",
+                video->kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", output.width(),
+                output.height(), stats.instancesDrawn, stats.trianglesDrawn,
+                options.video3d ? "" : " (software world in the overlay; --3d for the scene)");
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
 // #80: the origin-select/customize flow, in its own small window
 // ---------------------------------------------------------------------------
 //
-// ITS OWN WINDOW RATHER THAN A RESTRUCTURED run_client(). No Session and no
+// ITS OWN LOOP RATHER THAN A RESTRUCTURED run_client(). No Session and no
 // world exist yet at this point in the boot sequence -- this screen has to
-// run BEFORE either -- and the alternative (hoisting run_client's own forty
-// lines of SDL setup above the Session construction they currently follow)
-// touches code every other page in this build was proven against. A second,
-// self-contained SDL_Init/window/renderer/texture that tears itself down
-// before run_client's own setup runs is a few lines longer and a great deal
-// safer to review, and it costs nothing at runtime a player would notice:
-// SDL_QuitSubSystem below balances the SDL_Init here, so run_client's own
-// SDL_Init(VIDEO | GAMEPAD) right after this returns is an ordinary fresh
-// init and not a double-init of anything.
+// run BEFORE either -- and the alternative (hoisting run_client's own setup
+// above the Session construction it currently follows) touches code every
+// other page in this build was proven against.
+//
+// 3D BUILD: ONE WINDOW FOR THE WHOLE LAUNCH. This used to open its own SDL
+// window and tear it down before run_client opened the world's; the raylib
+// window is opened once in main() and handed to both, so the creation->world
+// cut is a veil over one window instead of a window swap. The pad still gets
+// its own SDL_Init/QuitSubSystem pair here, exactly as before, so the virtual
+// pad harness sees the same lifetime it always did.
 //
 // Returns an UNCONFIRMED CreationResult if the player closed the window --
 // main() treats that exactly like closing the game, not like starting one.
-render::CreationResult run_creation_window(const Options& options) {
+render::CreationResult run_creation_window(const Options& options, render3d::Backend& video) {
     render::CreationFlow flow(granadad::content::contentDir());
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+    if (!SDL_Init(SDL_INIT_GAMEPAD)) {
         std::printf("SDL_Init (creation) failed: %s\n", SDL_GetError());
         return {};
     }
-    // DON'T STEAL FOCUS ON LAUNCH. SDL's own default is to activate a window
-    // the moment SDL_ShowWindow (which SDL_CreateWindow calls internally)
-    // shows it -- which is exactly the OS's ordinary activate-on-show
-    // behaviour for a foreground-launched process, and exactly what Eli asked
-    // not to have happen. This is the FIRST window a real launch opens (see
-    // main()'s own call order), so the hint has to be set here too, not only
-    // in run_client() below -- setting it on only the second window would
-    // leave THIS one still stealing focus the moment it appears. Set to "0"
-    // BEFORE SDL_CreateWindow, per SDL's own documented contract; it does
-    // nothing to ordinary click-to-focus, which the OS still grants normally.
-    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
     const int width = options.smoke.session.width;
     const int height = options.smoke.session.height;
-    SDL_Window* window =
-        SDL_CreateWindow("Granadad: The Darkstreets", width * options.windowScale,
-                         height * options.windowScale, SDL_WINDOW_RESIZABLE);
-    if (window == nullptr) {
-        std::printf("SDL_CreateWindow (creation) failed: %s\n", SDL_GetError());
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SDL_QuitSubSystem(SDL_INIT_VIDEO);
-        return {};
-    }
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (renderer == nullptr) {
-        std::printf("SDL_CreateRenderer (creation) failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SDL_QuitSubSystem(SDL_INIT_VIDEO);
-        return {};
-    }
-    SDL_SetRenderLogicalPresentation(renderer, width, height,
-                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
-    SDL_SetRenderVSync(renderer, 1);
-    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888,
-                                             SDL_TEXTUREACCESS_STREAMING, width, height);
-    if (texture != nullptr) {
-        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
-    }
+    VideoBridge bridge;
+    // A pointer, not mouselook: this screen is lists and a name field.
+    video.setRelativeMouse(false);
 
     // #93. A PAD THAT IS PLUGGED IN SHOULD JUST WORK, on the FIRST screen of
     // the game and not only after it. Opened here and hot-plugged below, the
@@ -3365,6 +3572,9 @@ render::CreationResult run_creation_window(const Options& options) {
 
     while (!flow.done() && !cancelled) {
         SDL_Event event;
+        // 3D BUILD: raylib's keys and pointer onto SDL's queue, ahead of the
+        // drain -- see VideoBridge.
+        bridge.pump(video, width, height);
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 cancelled = true;
@@ -3423,12 +3633,12 @@ render::CreationResult run_creation_window(const Options& options) {
                 }
                 case SDL_EVENT_MOUSE_MOTION:
                 case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                    // INTO FRAMEBUFFER PIXELS FIRST. The window is presented
-                    // with SDL_SetRenderLogicalPresentation at an integer
-                    // scale, so a window coordinate is not a frame coordinate;
-                    // SDL's own conversion is the only correct way across every
-                    // scale and every letterbox.
-                    SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                    // ALREADY IN FRAMEBUFFER PIXELS. The window presents the
+                    // frame at an integer scale with a letterbox, so a window
+                    // coordinate is not a frame coordinate; VideoBridge
+                    // converts through the backend's own placement before the
+                    // event is queued (what SDL_ConvertEventToRenderCoordinates
+                    // did when SDL owned the window).
                     const bool click = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
                     if (click) {
                         // A click is a press; bare motion deliberately is
@@ -3517,13 +3727,10 @@ render::CreationResult run_creation_window(const Options& options) {
                            static_cast<float>(bootVeilFrame) /
                                static_cast<float>(kCreationVeilFrames));
         }
-        if (texture != nullptr) {
-            SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
-            SDL_RenderPresent(renderer);
-        }
+        // No 3D pass on this screen: the sheet is the whole frame, opaque.
+        video.beginFrame(render3d::Rgba8{0, 0, 0, 255});
+        video.drawOverlay(frame);
+        video.endFrame();
         if (reel.active) {
             // The same 60 Hz floor the world loop keeps while the demo is up,
             // and for the same reason: the reel's pacing is counted in frames,
@@ -3548,22 +3755,27 @@ render::CreationResult run_creation_window(const Options& options) {
     }
 
     // UI-EA-SPEC sec. 3 rule 3: CREATION->WORLD IS DRESSED. Black falls over
-    // the finished sheet BEFORE the SDL window teardown -- so the seconds of
-    // window-swap that follow read as one deliberate cut to black, not as the
-    // app restarting -- and run_client dresses the other side, easing the
-    // world up from black through the travel dip's own machinery
+    // the finished sheet BEFORE the world's session is built -- so the moment
+    // that follows reads as one deliberate cut to black, not as the app
+    // restarting -- and run_client dresses the other side, easing the world
+    // up from black through the travel dip's own machinery
     // (Session::dressInstantCut). Windowed-only, played only on a COMPLETED
     // flow: a cancel (the armed door quit) still leaves plainly.
-    if (flow.done() && !cancelled && texture != nullptr) {
+    if (flow.done() && !cancelled) {
         for (int i = 1; i <= kCreationVeilFrames; ++i) {
             render::drawCreation(frame, flow);
             frame.fillRect(0, 0, frame.width(), frame.height(), render::Rgb{0.0F, 0.0F, 0.0F},
                            static_cast<float>(i) / static_cast<float>(kCreationVeilFrames));
-            SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
-            SDL_RenderPresent(renderer);
+            video.beginFrame(render3d::Rgba8{0, 0, 0, 255});
+            video.drawOverlay(frame);
+            video.endFrame();
+            // The input this frame brought in is drained, not acted on: the
+            // flow is done and nothing here reads it, but a queue left full
+            // would hand run_client a stale click.
+            bridge.pump(video, width, height);
+            SDL_Event drained;
+            while (SDL_PollEvent(&drained)) {
+            }
         }
     }
 
@@ -3573,13 +3785,7 @@ render::CreationResult run_creation_window(const Options& options) {
     if (pad != nullptr) {
         SDL_CloseGamepad(pad);
     }
-    if (texture != nullptr) {
-        SDL_DestroyTexture(texture);
-    }
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
     SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-    SDL_QuitSubSystem(SDL_INIT_VIDEO);
     return result;
 }
 
@@ -3587,7 +3793,8 @@ render::CreationResult run_creation_window(const Options& options) {
 // the window
 // ---------------------------------------------------------------------------
 
-int run_client(const Options& options, const render::CreationResult& chosen) {
+int run_client(const Options& options, const render::CreationResult& chosen,
+               render3d::Backend& video) {
     // A NEW GAME OPENS ON THE CASE, AND AT DAWN.
     //
     // The window path -- and only the window path. A scripted capture and two
@@ -3823,21 +4030,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 session.atlas().fromAuthoredArt() ? "content/art/custom" : "procedural fallback");
     std::printf("granadad: controls from %s\n", controlsFile.string().c_str());
 
-    // SDL_INIT_GAMEPAD as well as VIDEO. A pad that is plugged in should just
-    // work; asking a player to turn one on in a menu is a 2006 courtesy.
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+    // SDL_INIT_GAMEPAD, and ONLY that. A pad that is plugged in should just
+    // work; asking a player to turn one on in a menu is a 2006 courtesy. 3D
+    // BUILD: no VIDEO -- the window is raylib's (see VideoBridge) and SDL's
+    // video subsystem would open a second one nobody draws into.
+    if (!SDL_Init(SDL_INIT_GAMEPAD)) {
         std::printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
-    // DON'T STEAL FOCUS ON LAUNCH. See the identical call and comment in
-    // run_creation_window() above -- this is the SECOND window a real launch
-    // opens. Set again here rather than trusted to carry over: SDL does not
-    // document SDL_SetHint as scoped to a subsystem's lifetime, but this file
-    // does not lean on that either way -- run_creation_window() fully quits
-    // SDL_INIT_VIDEO and this function calls SDL_Init from scratch, so
-    // stating the hint again at the one call site that actually needs it is
-    // one line and removes the question entirely.
-    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
 
     // THE AUDIO WIRING PASS. Once, after SDL_Init, exactly as
     // audio_engine.hpp's plan states (createSdlAudioEngine does its own
@@ -3864,51 +4064,22 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         std::printf("granadad: audio engine unavailable -- running silent\n");
     }
 
-    const int windowW = start.width * options.windowScale;
-    const int windowH = start.height * options.windowScale;
-    SDL_Window* window =
-        SDL_CreateWindow("Granadad: The Darkstreets", windowW, windowH, SDL_WINDOW_RESIZABLE);
-    // The two failure paths below open no window worth keeping, but they DO
-    // run after the engine exists -- so they take the same order the normal
-    // shutdown does. Detach, drop the engine, then let SDL go.
-    if (window == nullptr) {
-        std::printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
-        session.setAudio(nullptr);
-        audio.reset();
-        SDL_Quit();
-        return 1;
-    }
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (renderer == nullptr) {
-        std::printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        session.setAudio(nullptr);
-        audio.reset();
-        SDL_Quit();
-        return 1;
-    }
-    // Nearest neighbour, always. The chunkiness is the art direction.
-    SDL_SetRenderLogicalPresentation(renderer, options.smoke.session.width,
-                                     options.smoke.session.height,
-                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
-    // VSYNC ON. Without it the renderer free-runs, which burns a core to draw
-    // frames the monitor throws away AND -- the part that matters for feel --
-    // hands the compositor torn frames. The step pump already decouples the
-    // simulation from the frame rate, so this costs nothing in latency that the
-    // display was not going to cost anyway.
-    SDL_SetRenderVSync(renderer, 1);
-
-    SDL_Texture* texture =
-        SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING,
-                          options.smoke.session.width, options.smoke.session.height);
-    if (texture != nullptr) {
-        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
-    }
+    // 3D BUILD. The window was opened in main() and handed in; it presents
+    // at the largest integer scale that fits (nearest neighbour, always --
+    // the chunkiness is the art direction) with vsync on, exactly the two
+    // properties the SDL renderer used to be configured for here. The
+    // bridge is what turns its keys and pointer into the SDL events the
+    // loop below reads; the rig is the 3D scene under the overlay.
+    VideoBridge bridge;
+    SceneRig rig;
+    std::printf("granadad: video %s backend, %dx%d window%s\n",
+                video.kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", video.width(),
+                video.height(), options.video3d ? ", --3d" : "");
 
     render::Framebuffer frame(options.smoke.session.width, options.smoke.session.height);
 
     bool mouseLook = true;
-    SDL_SetWindowRelativeMouseMode(window, true);
+    video.setRelativeMouse(true);
     // THE PARITY PASS. THE POINTER COMES BACK WHEN A PAGE IS UP, and this is
     // the whole of the mechanism: one bool that says which of the two mouse
     // modes the window is in, flipped at the top of the frame off
@@ -4113,7 +4284,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             if (wantPointer != pointerLive || wantRelative != relativeMouse) {
                 pointerLive = wantPointer;
                 relativeMouse = wantRelative;
-                SDL_SetWindowRelativeMouseMode(window, relativeMouse);
+                video.setRelativeMouse(relativeMouse);
             }
         }
         // WHAT A KEY DOES, in one place, whatever pressed it. Called from the
@@ -4355,6 +4526,9 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             }
         };
 
+        // 3D BUILD: raylib's keys and pointer onto SDL's queue, ahead of the
+        // drain -- see VideoBridge. The pad's own events are already there.
+        bridge.pump(video, frame.width(), frame.height());
         while (SDL_PollEvent(&event)) {
             // THE DEMO OWNS THE INPUT, and this is the one place that has to
             // say so -- ahead of every handler, so nothing below can be reached
@@ -4513,7 +4687,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         if (event.button.button != SDL_BUTTON_LEFT) {
                             break;
                         }
-                        SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                        // Already in framebuffer pixels -- VideoBridge
+                        // converted through the backend's placement.
                         if (session_pointer(session, frame.width(), frame.height(),
                                             static_cast<int>(event.button.x),
                                             static_cast<int>(event.button.y), true)) {
@@ -4559,8 +4734,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         // plan was drawn through. Dozens of those per frame is
                         // a hang, and it was one. The pointer can only be in
                         // one place when the frame is drawn, so only the last
-                        // position of the batch can matter.
-                        SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                        // position of the batch can matter. (Framebuffer
+                        // pixels already -- see VideoBridge.)
                         pointerX = static_cast<int>(event.motion.x);
                         pointerY = static_cast<int>(event.motion.y);
                         pointerMoved = true;
@@ -4636,8 +4811,11 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             demo != nullptr || watch != nullptr || session.talking() || session.picking() ||
             (session.menuOpen() && !session.firstRun()) || session.pauseOpen() ||
             session.waitOpen();
-        const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
-        const Uint32 mouseButtons = listening ? 0U : SDL_GetMouseState(nullptr, nullptr);
+        // 3D BUILD: the held state is the bridge's, kept off the same edges
+        // the events came from -- SDL_GetKeyboardState/SDL_GetMouseState
+        // answer for a keyboard SDL no longer reads.
+        const bool* keys = listening ? nullptr : bridge.held.data();
+        const Uint32 mouseButtons = listening ? 0U : bridge.mouseMask;
         SDL_Gamepad* livePad = listening ? nullptr : pad;
         const render::ControlSettings& controls_now = session.controls();
         if (keys != nullptr) {
@@ -4937,14 +5115,9 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         }
         ++frames;
 
-        if (texture != nullptr) {
-            SDL_UpdateTexture(texture, nullptr, frame.pixels().data(),
-                              options.smoke.session.width * 4);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
-            SDL_RenderPresent(renderer);
-        }
+        // 3D BUILD: the frame goes out through the backend -- the 3D pass
+        // under --3d, then this frame as the overlay, then the swap.
+        (void)present_frame(video, options, rig, session, frame, nullptr);
 
         // PACED FOR AN EYE, NOT FOR A BENCHMARK. VSync alone is whatever the
         // monitor happens to be, so a 144 Hz panel would run the route at 2.4x
@@ -5019,11 +5192,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         SDL_CloseGamepad(pad);
     }
     padDriver.detach();
-    if (texture != nullptr) {
-        SDL_DestroyTexture(texture);
-    }
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+    // The window itself is main()'s and closes after this returns.
 
     // THE ENGINE GOES BEFORE SDL DOES, and this is the contract setAudio()'s
     // own header in session.hpp states -- "main.cpp detaches (setAudio(nullptr))
@@ -5075,11 +5244,40 @@ int main(int argc, char** argv) {
         // session (default sheet, the scripted hour), so the creation window
         // and the chargen application are both deliberately skipped; run_client
         // guards every chargen touch behind !caseWatch for exactly this.
+        // 3D BUILD. ONE WINDOW FOR THE WHOLE LAUNCH, opened here and handed
+        // to the creation screen and the world in turn -- see VideoBridge
+        // and run_creation_window's header. Opened lazily, after the
+        // headless branches above, so a capture or a report still opens
+        // nothing.
+        const auto open_video = [&options]() {
+            render3d::BackendConfig config;
+            config.width = options.smoke.session.width;
+            config.height = options.smoke.session.height;
+            config.windowScale = options.windowScale;
+            std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
+            if (video == nullptr) {
+                std::printf("granadad: could not open the window -- closing.\n");
+            }
+            return video;
+        };
         if (options.caseWatch) {
-            return run_client(options, render::CreationResult{});
+            std::unique_ptr<render3d::Backend> video = open_video();
+            if (video == nullptr) {
+                return 1;
+            }
+            return run_client(options, render::CreationResult{}, *video);
         }
         if (options.wantsSmoke) {
-            const render::SmokeRunResult result = render::runSmoke(options.smoke);
+            render::SmokeRunConfig smoke = options.smoke;
+            if (!smoke.screenshot.empty()) {
+                // 3D BUILD: the capture is composited through the backend the
+                // window uses, so the PNG is the picture the window shows.
+                smoke.shutter = [&options](const render::Session& session,
+                                           const render::Framebuffer& software) {
+                    return shutter_through_backend(options, session, software);
+                };
+            }
+            const render::SmokeRunResult result = render::runSmoke(smoke);
             std::printf("granadad: %s\n", result.summary.c_str());
             if (!options.smoke.screenshot.empty()) {
                 // The PNG and the RUN are two different verdicts, and S5 keeps
@@ -5119,7 +5317,11 @@ int main(int argc, char** argv) {
         // line -- a capture or a test wants a frame of the Docks (or, now,
         // of the creation flow via --creation), never a frame of one menu
         // blocking another.
-        const render::CreationResult chosen = run_creation_window(options);
+        std::unique_ptr<render3d::Backend> video = open_video();
+        if (video == nullptr) {
+            return 1;
+        }
+        const render::CreationResult chosen = run_creation_window(options, *video);
         if (!chosen.confirmed) {
             std::printf("granadad: no character was made -- closing.\n");
             return 0;
@@ -5130,7 +5332,7 @@ int main(int argc, char** argv) {
         // the moment this function returned -- see run_client()'s own header
         // for where the sheet is actually applied now, and why the attribute
         // bonus pool still is not.
-        return run_client(options, chosen);
+        return run_client(options, chosen, *video);
     } catch (const std::exception& error) {
         std::printf("granadad: %s\n", error.what());
         std::printf("granadad: content directory is %s (set %s to move it)\n",

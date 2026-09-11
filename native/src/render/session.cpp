@@ -7540,7 +7540,7 @@ void dipTravelSeam(Framebuffer& target, float amount) {
 
 }  // namespace
 
-FrameStats Session::drawFrame(Framebuffer& target) const {
+FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // The flicker phase is a pure function of the body's step count, so the
     // same scripted session captures the same frame every time.
     const float phase = static_cast<float>(body_->stepCount()) / 60.0F;
@@ -7604,7 +7604,19 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     const std::vector<SpriteInstance> ward = wardSprites(view);
     sprites.insert(sprites.end(), ward.begin(), ward.end());
 
-    const FrameStats stats = renderer_->renderFrame(target, view, settings, sprites);
+    FrameStats stats;
+    if (passes.world) {
+        stats = renderer_->renderFrame(target, view, settings, sprites);
+    } else {
+        // 3D BUILD. THE WORLD IS THE RAYLIB BACKEND'S FRAME NOW, and this
+        // target is the OVERLAY it composites on top: cleared to nothing,
+        // then every pass below draws exactly as it always has. The one
+        // thing that changes is what the signage sees -- an infinite depth
+        // buffer, so no sign is occluded by a wall until the V lane gives
+        // signage its line-of-sight projector. The stats are empty because
+        // no world was drawn here; the backend reports its own.
+        target.clearTransparent();
+    }
 
     // World content, not interface -- drawn like the sprites above rather
     // than gated behind config_.hud, and BEFORE the HUD/menu/dialogue passes
@@ -11772,9 +11784,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         // The PNG is still written. A frame of a run that fell short is
         // evidence OF the shortfall, and deleting it would make the failure
         // harder to diagnose rather than easier -- but ok stays false.
-        const Framebuffer output =
-            config.captureScale > 1 ? upscaleNearest(frame, config.captureScale) : frame;
-        result.ok = writePng(output, config.screenshot) && result.ok;
+        if (config.shutter) {
+            // 3D BUILD: the client's shutter composites this frame through
+            // the raylib backend and writes what the window shows.
+            result.ok = config.shutter(session, frame) && result.ok;
+        } else {
+            const Framebuffer output =
+                config.captureScale > 1 ? upscaleNearest(frame, config.captureScale) : frame;
+            result.ok = writePng(output, config.screenshot) && result.ok;
+        }
     }
     return result;
 }

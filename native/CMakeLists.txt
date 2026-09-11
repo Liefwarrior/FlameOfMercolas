@@ -433,14 +433,74 @@ if(GRANADAD_BUILD_CLIENT)
 endif()
 
 # ---------------------------------------------------------------------------
-# client-observer — the SDL3 window and nothing else.
+# granadad-render3d-core — the 3D scene, as pure C++. Floats are legal here.
+#
+# 3D BUILD. Everything the 3D renderer draws comes through ONE struct, the
+# SceneDescription (include/granadad/render3d/scene.hpp): meshes as plain
+# vertex arrays, textures as plain RGBA bytes, instances as (mesh, transform,
+# tint), a camera and a clear colour. This library BUILDS that struct as a
+# pure function of Session state -- the chunk mesher, the actor instancer,
+# the viewmodel state machine, the starter scene -- and hashes it (FNV-1a
+# over its canonical byte image), and it never sees raylib.h. That is the
+# renderer's determinism claim: a GPU frame is never hashed, the description
+# is, and two sessions driven by the same script must produce identical scene
+# bytes. Built and tested in the sim-only host check like everything else.
+#
+# Links granadad-render (PUBLIC: render::Camera, the day curve, bandSurface)
+# and through it the sim -- read-only. Nothing here writes to a sim struct.
+# ---------------------------------------------------------------------------
+add_library(granadad-render3d-core STATIC
+    # The description, its hash, and the camera adapter.
+    src/render3d/scene.cpp
+    # A lit ground plane and a cube: the first thing the 3D path drew, the
+    # reference the frame tests render, and the worked example of how a lane
+    # fills a SceneDescription.
+    src/render3d/starter_scene.cpp
+    # The three lanes' contracts, each shipped as a stub with the ids, the
+    # coordinate mapping and the version rules fixed so the lanes can build
+    # against them in parallel: chunk meshes (W), actor instances (A), the
+    # viewmodel machine (V).
+    src/render3d/chunk_mesher.cpp
+    src/render3d/actor_instances.cpp
+    src/render3d/viewmodel.cpp
+)
+target_include_directories(granadad-render3d-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(granadad-render3d-core PUBLIC granadad-render)
+granadad_apply_determinism(granadad-render3d-core)
+
+# ---------------------------------------------------------------------------
+# granadad-render3d-rl — the raylib adapter. EXACTLY ONE translation unit in
+# the whole project includes raylib.h, and it is this library's one source.
+#
+# raylib is PRIVATE: its headers, its global-namespace names (Rectangle,
+# Camera, CloseWindow...) and its PUBLIC platform defines stop here. The
+# client and the tests see include/granadad/render3d/backend.hpp and nothing
+# of raylib's. Built in BOTH configures -- on the Memory platform with the
+# software rasterizer for the host check, on Desktop/GL 3.3 for the .exe --
+# so the frame tests can draw a real 3D frame headless on every build. The
+# HUD keeps drawing into its render::Framebuffer; this composites it over the
+# 3D frame as a point-filtered, integer-scaled overlay texture, which is what
+# keeps the eighteen pixel-exact HUD/page test files byte-identical.
+# ---------------------------------------------------------------------------
+add_library(granadad-render3d-rl STATIC src/render3d/rl_backend.cpp)
+target_link_libraries(granadad-render3d-rl
+    PUBLIC granadad-render3d-core
+    PRIVATE raylib)
+granadad_apply_determinism(granadad-render3d-rl)
+
+# ---------------------------------------------------------------------------
+# client — the window. 3D BUILD: raylib owns the window, the GL context, the
+# 3D pass and the composite (granadad-render3d-rl); SDL stays for the audio
+# device and the gamepad, and is never initialised with VIDEO any more.
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_CLIENT)
     add_executable(granadad src/client/main.cpp)
     # granadad-audio-sdl per audio_engine.hpp's wiring plan: the client is the
-    # ONE target that reaches a real sound device.
+    # ONE target that reaches a real sound device. granadad-render3d-rl for
+    # video; ${GRANADAD_SDL_TARGET} for the gamepad and the event queue the
+    # input routing still reads (see VideoBridge in main.cpp).
     target_link_libraries(granadad
-        PRIVATE granadad-render granadad-audio-sdl ${GRANADAD_SDL_TARGET})
+        PRIVATE granadad-render granadad-render3d-rl granadad-audio-sdl ${GRANADAD_SDL_TARGET})
     granadad_apply_determinism(granadad)
     # Console subsystem stays on — the sim prints, and we want stdout to work
     # when the game is launched from a terminal on Windows.
@@ -706,11 +766,27 @@ if(GRANADAD_BUILD_TESTS)
         # the vendored Kenney tree wherever it exists, and graceful silence
         # where it does not.
         tests/test_audio_engine.cpp
+        # 3D BUILD -- THE SCENE DESCRIPTION AS THE THING THAT GETS HASHED.
+        # Identical state hashes identically, any byte moved is a different
+        # hash, the frame convention every lane builds against (north -Z,
+        # east +X, up +Y), the mesh id spaces that keep the lanes apart, and
+        # the viewmodel machine's integer clock. No raylib, no window, no
+        # licensed asset: the starter scene is procedural.
+        tests/test_scene3d.cpp
+        # 3D BUILD -- THE 3D FRAME, ASSERTED ON ITS PIXELS, HEADLESS. A real
+        # frame of a lit plane and a cube drawn through raylib's software
+        # rasterizer inside the test suite -- no window, no GPU, no display
+        # server -- with the pixels checked: non-trivial, the sky where the
+        # sky is, the ground where the ground is, the lit face brighter than
+        # the shaded one, and the same description drawn twice byte-identical.
+        # Under a GPU build (the .exe's own test binary) the frame cases skip
+        # rather than open a window; the overlay-alpha cases run everywhere.
+        tests/test_render3d.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
     target_link_libraries(granadad-tests
-        PRIVATE granadad-gate granadad-render granadad-audio doctest::doctest)
+        PRIVATE granadad-gate granadad-render granadad-render3d-rl granadad-audio doctest::doctest)
 
     # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
     # granadad-gate's PUBLIC compile definitions. tests/test_world_hash.cpp

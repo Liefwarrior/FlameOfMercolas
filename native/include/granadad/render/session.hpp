@@ -22,6 +22,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -307,8 +308,19 @@ public:
     /// The camera the body is currently looking through.
     [[nodiscard]] Camera camera() const noexcept;
 
+    /// 3D BUILD. Which passes drawFrame runs. `world` off skips the software
+    /// world pass (the sky, the tiles, the sprites) and clears the target to
+    /// transparent first, so everything drawn after it -- signage, washes,
+    /// the HUD, every page -- lands on an OVERLAY the raylib backend
+    /// composites over its own 3D frame. On by default: every test and the
+    /// software capture path draw the frame they always drew.
+    struct FramePasses {
+        bool world = true;
+    };
+
     /// Draws the world, everybody in it, and the HUD into `target`.
-    FrameStats drawFrame(Framebuffer& target) const;
+    FrameStats drawFrame(Framebuffer& target) const { return drawFrame(target, FramePasses{}); }
+    FrameStats drawFrame(Framebuffer& target, FramePasses passes) const;
 
     /// Where the player is, in words the player would use. Derived from x, y
     /// AND the band — see sim::docks::kPlaces for why that is worth saying.
@@ -2612,6 +2624,13 @@ struct SmokeRunConfig {
     std::filesystem::path screenshot;
     /// Integer upscale applied to the captured PNG. 1 writes the raw buffer.
     int captureScale = 2;
+    /// 3D BUILD. THE CLIENT'S OWN SHUTTER. When set, runSmoke hands the
+    /// finished session and the software frame it just drew to this instead
+    /// of writing the PNG itself: the client composites the frame through
+    /// the raylib backend and writes what the window would have shown. It
+    /// returns whether the PNG was written. Null keeps the software capture,
+    /// which is what every test and the docker host check use.
+    std::function<bool(const Session&, const Framebuffer&)> shutter;
     /// UI-EA (LANE HUD): RETIRED, ACCEPTED AS A NO-OP. This used to burn
     /// "GRANADAD <version>" into the corner of every capture; the word diet
     /// deleted the stamp outright (it rides the pause/keys title rule only),
