@@ -228,6 +228,13 @@ struct Blow {
     /// ever sets it, so every existing caller reads exactly what it always
     /// read.
     bool crowned = false;
+    /// WATCH & RHYTHM BUILD. True when the target's GUARD caught the blow:
+    /// it landed (the whiff dice were already thrown) and was then softened
+    /// by blockedDamage, exactly as the player's own held guard softens an
+    /// NPC blow. strike() never sets it -- it knows nothing about guards --
+    /// the caller that owns the guard state does (Tavern::landPlayerBlow),
+    /// so every existing caller reads exactly what it always read.
+    bool blocked = false;
 };
 
 /// Resolves one blow against `target`, mutating its hp. `roll` is a raw draw

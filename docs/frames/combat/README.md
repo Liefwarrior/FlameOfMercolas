@@ -74,9 +74,19 @@ Combined that's **32/32 combat-relevant cases, 97,282 assertions, 0 failed**, li
 - **A real scripted fight, byte-identical run to run.** `--nemesis` twice: trace
   IDENTICAL, frame `sha256 18cc76fb…` IDENTICAL.
 - **The twin gate on the tavern fight workload** — the one that actually loses a
-  fight: run A == run B == `0x0D83D18F00E2C6CE`, PASS.
+  fight: run A == run B == `0x0D83D18F00E2C6CE`, PASS. **Re-blessed once by the
+  Oblivion-feel program (feel/build, DECISIONS.md "Oblivion feel, the Gull"):
+  `0x0D83D18F00E2C6CE` -> `0x86E05F527E54E795` — the ONE declared tavern/gate-workload move
+  (fighting mode + the room fights back + the Watch on seen violence + the rhythm),
+  run A == run B, PASS.**
 - **The population baseline never moved** — `0x2646C1AAA2BA38DF` at hour 16 /
   7200 ticks, 18,772-byte report, byte-for-byte the recorded Phase C/D baseline.
+  **Then DECLARED MOVED ONCE by the Oblivion-feel program's street panic (feel/build,
+  DECISIONS.md "Oblivion feel: street panic"): `WardPopulation::alarm` is the first thing
+  that ever changed a WardActor's BEHAVIOUR off the player's violence, so the number is
+  re-run and re-blessed by law — `0x2646C1AAA2BA38DF` -> `0x2646C1AAA2BA38DF`, unchanged,
+  because the gate's no-player run frightens nobody and the panic rate is inert above the
+  FLEE gate (`docs/BASELINE-WORLD-HASH.md`, "Oblivion feel — street panic").**
 
 ## The honest gaps
 

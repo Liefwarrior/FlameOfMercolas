@@ -1,6 +1,6 @@
 // The action-combat build, asserted at the seams it added.
 //
-// Five things, and they are deliberately separate:
+// Six things, and they are deliberately separate:
 //
 //   MACHINE   the swing state machine as a table -- IDLE/CHARGING/RECOVERY, the
 //             charge tiers off the step count, the winded refusal -- driven
@@ -16,6 +16,10 @@
 //             the Watch's absolute deference to a presented Wielder.
 //   VERB      intent-by-verb: the first hard swing means Harm, so a bloodied
 //             man hard-swung goes Lethal with no blade drawn.
+//   ROOM      STANCE & ROOM BUILD -- the room fights back: an NPC blow resolves
+//             under lethal rules with the floor lifted (the player can be
+//             killed), the brawl floor holds exactly as shipped, and a lethal
+//             fight disengages like a brawl once nobody is standing.
 
 #include <doctest/doctest.h>
 
@@ -33,6 +37,7 @@
 #include "granadad/sim/crime.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine.hpp"
+#include "granadad/sim/nemesis.hpp"
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/tavern.hpp"
 #include "granadad/sim/watch.hpp"
@@ -736,4 +741,117 @@ TEST_CASE("intent-by-verb, proven on the classifier directly: harm + bloodied is
         Fighter{0, Weapon::Fists, Intent::Harm, 40, 40},
         Fighter{1, Weapon::Fists, Intent::Subdue, 5, 40}};
     CHECK(classifyFight(harmBloodied) == FightClass::Lethal);
+}
+
+// ===========================================================================
+// ROOM -- the room fights back (STANCE & ROOM BUILD)
+// ===========================================================================
+
+TEST_CASE("under lethal rules an NPC blow damages the player, and can take him to zero") {
+    Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    Tavern& tavern = room.tavern();
+    room.run(2);
+    const Actor* mark = room.findRole(ActorRole::Patron);
+    REQUIRE(mark != nullptr);
+    const std::int32_t markId = mark->id();
+    REQUIRE(room.standFacing(*mark) != -1);
+
+    // Fists, and the player MEANS it: B2 says a fighter who means to kill
+    // makes the fight lethal from the first blow, with never a blade out. One
+    // tap starts it; the man on the line swings back UNDER LETHAL RULES --
+    // before this build stepBrawl refused every NPC blow the moment the fight
+    // was not a brawl, and the fight the owner would test was one-sided.
+    tavern.setPlayerCombat(Weapon::Fists, Intent::Kill);
+    const std::int32_t hpBefore = tavern.playerHp();
+    const Tavern::PlayerSwingResult tap = room.swing(false);
+    REQUIRE(tap.targetId == markId);
+    CHECK(tap.fight == FightClass::Lethal);
+
+    // Stand there and take it. Bounded, because a loop whose exit depends on
+    // simulation state is a loop that hangs a build the day that state is
+    // wrong.
+    bool hurt = false;
+    int seconds = 0;
+    while (!tavern.playerFloored() && seconds < 240) {
+        room.run(1);
+        hurt = hurt || tavern.playerHp() < hpBefore;
+        ++seconds;
+    }
+    INFO("the room took ", seconds, " seconds to finish it");
+    CHECK(hurt);
+    REQUIRE(tavern.playerFloored());
+    // DEAD, not floored-at-one: under lethal the floor is zero, the blow
+    // reached it, and the defeat seam left it there until the revive.
+    CHECK(tavern.playerHp() == 0);
+    CHECK(tavern.escalated());
+    // The same defeat seam a brawl KO routes through: the man is named, the
+    // rise is recorded, the release is armed for whoever owns the body.
+    const Rise& rise = tavern.lastDefeat();
+    CHECK(rise.happened);
+    CHECK(rise.actorId == markId);
+    CHECK(tavern.takeDefeatRelease());
+    // And the revive is the one the brawl KO uses.
+    tavern.reviveAfterDefeat();
+    CHECK(tavern.playerHp() == tavern.playerHpMax());
+    CHECK_FALSE(tavern.playerFloored());
+}
+
+TEST_CASE("under brawl rules the floor holds exactly as shipped: put down at one, never zero") {
+    Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    Tavern& tavern = room.tavern();
+    room.run(2);
+    const Actor* mark = room.findRole(ActorRole::Patron);
+    REQUIRE(mark != nullptr);
+    const std::int32_t markId = mark->id();
+    REQUIRE(room.standFacing(*mark) != -1);
+
+    // Fists and Subdue, the default: a bar fight forever with taps.
+    const Tavern::PlayerSwingResult tap = room.swing(false);
+    REQUIRE(tap.targetId == markId);
+    CHECK(tap.fight == FightClass::Brawl);
+
+    std::int32_t lowest = tavern.playerHp();
+    int seconds = 0;
+    while (!tavern.playerFloored() && seconds < 240) {
+        room.run(1);
+        lowest = std::min(lowest, tavern.playerHp());
+        ++seconds;
+    }
+    REQUIRE(tavern.playerFloored());
+    // Never below the brawl floor at any second of it, and on it at the end.
+    CHECK(lowest >= kPlayerBrawlFloor);
+    CHECK(tavern.playerHp() == kPlayerBrawlFloor);
+    CHECK_FALSE(tavern.escalated());
+}
+
+TEST_CASE("a lethal fight disengages like a brawl once nobody is standing") {
+    Room room(hourOfDay(19), gull::kBartenderX, gull::kBarY - 1);
+    Tavern& tavern = room.tavern();
+    room.run(2);
+    const Actor* mark = room.findRole(ActorRole::Patron);
+    REQUIRE(mark != nullptr);
+    REQUIRE(room.standFacing(*mark) != -1);
+    tavern.setPlayerCombat(Weapon::Edged, Intent::Kill);
+
+    std::int32_t victim = -1;
+    for (int swings = 0; swings < 30 && victim < 0; ++swings) {
+        const Tavern::PlayerSwingResult result = room.swing(true);
+        if (result.killed) {
+            victim = result.targetId;
+        }
+    }
+    REQUIRE(victim >= 0);
+    REQUIRE(tavern.escalated());
+
+    // Before this build tickBrawl latched the escalation and RETURNED under
+    // lethal -- no disengage, so a fight that ended in a killing never ended.
+    // Now the 1 Hz sweep finds nobody standing and stands the room down: the
+    // corpse is off the list and the hand means Subdue again.
+    int seconds = 0;
+    while (tavern.currentFight().size() > 1 && seconds < 30) {
+        room.run(1);
+        ++seconds;
+    }
+    CHECK(tavern.currentFight().size() == 1);
+    CHECK(tavern.currentFight().front().intent == Intent::Subdue);
 }

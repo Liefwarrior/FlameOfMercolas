@@ -263,6 +263,12 @@ std::string wardMoodKey(const WardActor& actor, JobFamily family, const BarkTabl
         return {};
     }
     if (actor.policy == WardPolicy::Flee) {
+        // BARKS LANE (feel/build): only WardPopulation::alarm puts a PERSON
+        // under the FLEE gate (street panic, 9a), so a fleeing person is
+        // running from the player's violence and crowd.flee is the sentence
+        // for it -- `crowd.flee.<family>` first, then the sheet, then the
+        // owner's own mood.panicked as the floor it always had.
+        wanted.emplace_back("crowd.flee");
         wanted.emplace_back("mood.panicked");
     }
     if (actor.need(Need::Hunger) <= kNeedCritical) {

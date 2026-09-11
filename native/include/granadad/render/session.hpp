@@ -379,7 +379,12 @@ public:
     ///      its lock -- crackStrongbox() does not read stance, so "facing a
     ///      lock picks it, sneaking or not" is already true with no branch
     ///      here), the bale, the rat, the wire that buys more picks.
-    ///   5. NOTHING RESOLVED: the investigation look (examine()), which
+    ///   5. HANDS UP AND NOTHING IN REACH = LOWER HANDS (STANCE & ROOM
+    ///      BUILD, oblivion-roadmap.md 3.2 lower rule 1): after the person,
+    ///      the fixture and a lead the book has heard of, before the
+    ///      never-refusing look. Tavern::lowerPlayerHands(); the reticle says
+    ///      LOWER HANDS before the press through lowerHandsResolves().
+    ///   6. NOTHING RESOLVED: the investigation look (examine()), which
     ///      never refuses.
     ///
     /// interactPrompt() BELOW WALKS THE IDENTICAL ORDER on read-only queries,
@@ -457,6 +462,15 @@ public:
     /// for the ninth exit to forget it. Nothing outside interactTarget() has
     /// any business calling this.
     [[nodiscard]] InteractTarget resolveInteract() const;
+    /// STANCE & ROOM BUILD. THE LOWER HANDS SLOT'S ONE PREDICATE, shared by
+    /// the act walk (interact()) and the prompt walk (resolveInteract()) so
+    /// the reticle cannot say LOWER HANDS on a press that would LOOK, or the
+    /// reverse: true exactly when the hands are up and no lead the book has
+    /// heard of stands under the crosshair (a named lead is something in
+    /// reach, and the look outranks the lower). It is the SLOT'S predicate,
+    /// asked by both walks only after the person and the fixture slots ahead
+    /// of it have not resolved -- it does not re-ask those. Read-only.
+    [[nodiscard]] bool lowerHandsResolves() const;
     /// #85. Was Jump + Traverse + DropDown. ONE BUTTON, RESOLVED BY WHAT IS
     /// DIRECTLY AHEAD OR BELOW: climb (mantle, or the leap it falls back to)
     /// first, a drop if there is a ledge to step off, an ordinary standing
@@ -1599,6 +1613,12 @@ public:
     /// visible, the reticle carries the light one. PUBLIC so a case can pin
     /// what it says and that it stays on its edge, the same as blockLine.
     [[nodiscard]] std::string chargeLine() const;
+    /// STANCE & ROOM BUILD. "FISTS UP" / "CUDGEL UP" / "THE EVICTOR UP" /
+    /// "STEEL UP" exactly while the room's own playerHandsUp() is true, and
+    /// empty otherwise -- fighting mode made visible, the ONE presentation
+    /// touch the stance lane makes, on the blockLine pattern: the ROOM's fact,
+    /// never the keypress. PUBLIC for the identical reason blockLine is.
+    [[nodiscard]] std::string handsLine() const;
     /// HELD-EFFECTS BUILD. "STEADY THE HAND 842S" -- the slot-th live hold on
     /// the player, its name out of the grimoire and the seconds it has left,
     /// counting down continuously. Empty past the table's end, which is the
@@ -2259,6 +2279,11 @@ private:
     /// exclusive with a guard by construction (the guard only holds in Idle),
     /// so the two rows never both want the band at once.
     EasedToggle chargeAnim_;
+    /// STANCE & ROOM BUILD. The "<WEAPON> UP" fighting-mode row's own
+    /// EasedToggle, the per-row convention: hands coming up has nothing to do
+    /// with a guard going up (a guard RAISES the hands, but a swing raises
+    /// them too and the guard does not follow), so they do not share one.
+    EasedToggle handsAnim_;
     /// FATIGUE BUILD. The fatigue bar's own visibility ease -- its OWN
     /// EasedToggle per the pinned convention, mirroring the health bar's one
     /// visibility rule (down for the length of a conversation, up otherwise)
@@ -2421,6 +2446,9 @@ private:
     /// held hard and kept through the fade-out the identical way blockCache_ is
     /// -- an alpha cannot fade a string that is already gone.
     std::string chargeCache_;
+    /// STANCE & ROOM BUILD. The fighting-mode row's cache, kept through the
+    /// fade-out the identical way blockCache_ is.
+    std::string handsCache_;
     /// HELD-EFFECTS BUILD. One toggle and one cache PER ROW, the pinned
     /// convention: a warmth lapsing has nothing to do with a tuning arriving,
     /// so slot i eases on its own. Slots are table order (oldest hold first);
@@ -2497,6 +2525,22 @@ private:
     /// its two siblings.
     ImpactPulse blockPulse_;
     std::int32_t lastBlowsBlocked_ = 0;
+    /// STREET PANIC BUILD (feel/build, 9a). What the room looked like last
+    /// step, so step() can tell the street what just happened to it: the sum
+    /// of every non-vermin hp on the tavern roster (a drop under lethal rules
+    /// is a landed blow) and how many of them are corpses (a rise is a
+    /// killing). The identical comparison-not-flag shape lastPlayerHp_ keeps
+    /// for the player's own body, and for the identical reason: nothing new
+    /// reaches into the simulation and nothing here is hashed. -1 until the
+    /// first step has read the room, so boot never reads as a blow.
+    std::int32_t lastRoomHpForAlarm_ = -1;
+    std::int32_t lastCorpsesForAlarm_ = -1;
+    /// BARKS LANE (feel/build). The last halt / join / panic line step() put
+    /// on the alert row, so a line the sim composed once is said once: the
+    /// same comparison-not-flag shape as the two latches above. Unhashed.
+    std::string lastDemandSpoken_;
+    std::string lastJoinSpoken_;
+    std::string lastFleeSpoken_;
     /// ACTION-COMBAT BUILD (section 5, channel 5). THE CAMERA IMPULSE, composed
     /// as a render-only BAM offset inside Session::camera() -- never written to
     /// sim yaw. Three events, three pulses: a HARD swing's own forward dip on
@@ -2950,6 +2994,15 @@ struct SmokeRunConfig {
     /// "away" (closed, so the HUD's own RIVAL line is visible).
     bool nemesis = false;
     std::string nemesisEnd = "away";
+    /// BARKS LANE (feel/build). Play the Watch on seen violence: walk into
+    /// the Gull at Watchman Cull's hour, draw steel, swing at a patron he
+    /// can SEE, and stand there -- he closes with the halt (watch.halt) on
+    /// the alert row and takes you at reach, cause VIOLENCE, and the impound
+    /// turns you loose on the Tarwalk. WHERE is "halt" (stop the step he
+    /// starts Closing, so the frame holds the halt) or "street" (the whole
+    /// arc, the arrest line on the row).
+    bool watchHalt = false;
+    std::string watchHaltEnd = "street";
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -3337,6 +3390,8 @@ struct SmokeRunResult {
     std::int32_t flameStages = 0;
     /// The same for the Skyrunner line.
     std::int32_t skyrunStages = 0;
+    /// BARKS LANE: beats of the Watch-on-violence line (--watch-halt).
+    std::int32_t watchHaltBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.
