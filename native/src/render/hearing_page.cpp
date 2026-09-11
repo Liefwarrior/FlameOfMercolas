@@ -180,6 +180,22 @@ struct Composition {
     return lines;
 }
 
+/// The officer's block under the rows: "WATCHMAN CULL:" in the subject's
+/// accent, the court.taken row in dim ink -- the reference's own `Name:`
+/// line shape, the Watch's voice kept apart from the priest's.
+[[nodiscard]] std::vector<PanelLine> officerLines(const HearingPageState& state) {
+    std::vector<PanelLine> lines;
+    if (state.officerSays.empty()) {
+        return lines;
+    }
+    PanelLine line;
+    line.name = state.officerName.empty() ? std::string("THE WATCH:") : state.officerName + ":";
+    line.body = state.officerSays;
+    line.bodyInk = InkRole::Dim;
+    lines.push_back(std::move(line));
+    return lines;
+}
+
 /// The Plea view's pane: the priest's opening in prose ink, then the
 /// consequence of the hovered row in number ink -- flavour, then the
 /// mechanical consequence, colour-sorted (the reference's own order).
@@ -458,12 +474,22 @@ void drawHearingPage(Framebuffer& target, const HearingPageState& state) {
         const int count = static_cast<int>(options.size());
         const int at = std::clamp(state.cursor, 0, count - 1);
         drawOptionListPlanned(target, comp.body.master, metric, options, at, plan, alpha);
-        // The master pane's dead space, textured -- the rule every pane keeps.
+        // THE OFFICER BY THE WALL: his line under the rows, a row of air
+        // between, wrapped to the pane and stopped at its bottom (drawProse's
+        // own rule). Then the master pane's dead space, textured -- the rule
+        // every pane keeps -- below whatever he said.
         const int listRows = metric.rowsIn(comp.body.master.h);
-        const int spare = listRows - plan.rows;
+        int used = plan.rows;
+        if (!state.officerSays.empty() && listRows - used >= 3) {
+            const PanelRect escort{comp.body.master.x,
+                                   comp.body.master.y + metric.heightOf(used + 1),
+                                   comp.body.master.w, metric.heightOf(listRows - used - 1)};
+            used += 1 + drawProse(target, escort, metric, officerLines(state), alpha);
+        }
+        const int spare = listRows - used;
         if (spare >= 3) {
             const PanelRect rest{comp.body.master.x,
-                                 comp.body.master.y + metric.heightOf(plan.rows + 1),
+                                 comp.body.master.y + metric.heightOf(used + 1),
                                  comp.body.master.w, metric.heightOf(spare - 1)};
             drawStipple(target, rest, metric, ink.rule, kPaneStippleAlpha * alpha);
         }

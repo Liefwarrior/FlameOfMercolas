@@ -1,6 +1,6 @@
 {
   "id": "contract_barks",
-  "notes": "S6 ADDITION, and it obeys the same rule every other bark file does: NOTHING in the code writes a spoken line. JUSTICE BUILD (2026-09-11) APPENDS THE BENCH: the twelve court.* tables are Father Maell at the Mission hearing the Watch's paper -- court.paper / court.blood / court.roofs / court.nothing open the hearing by what the paper is (a thief, a killing, the roofs, a commuted man back for the rope), court.spared .. court.rope are his word on each of the seven judgments, court.lie is a denial disbelieved; three rows each, rotated on the count of hearings, the watch.condemned precedent. One court.blood row nearly says the learned word (the diction rule allows the PRIEST it and no common-folk line ever does). Listed for the owner's redline. The contract board composes a BRIEF from the notables' own file, which is menu furniture and a journal entry; what a broker actually SAYS when he hands you work, and what a watchman says when he puts his hand on your shoulder, is here. Keys resolve through the same fallback chain barks.json uses - the specific key first, then the generic - so a broker with no table of his own still speaks.",
+  "notes": "S6 ADDITION, and it obeys the same rule every other bark file does: NOTHING in the code writes a spoken line. JUSTICE BUILD (2026-09-11) APPENDS THE BENCH: the fourteen court.* tables are the bench at the Mission hearing the Watch's paper -- court.taken is the WATCHMAN walking you in (said as he lays the paper, under the rows), court.paper / court.blood / court.roofs / court.nothing are Father Maell opening the hearing by what the paper is (a thief, a killing, the roofs, a commuted man back for the rope), court.plead is the priest pressing for the answer once a plea is armed, court.spared .. court.rope are his word on each of the seven judgments, court.lie is a denial disbelieved; three to four rows each, rotated on the count of hearings, the watch.condemned precedent. One court.blood row nearly says the learned word (the diction rule allows the PRIEST it and no common-folk line ever does). Listed for the owner's redline. The contract board composes a BRIEF from the notables' own file, which is menu furniture and a journal entry; what a broker actually SAYS when he hands you work, and what a watchman says when he puts his hand on your shoulder, is here. Keys resolve through the same fallback chain barks.json uses - the specific key first, then the generic - so a broker with no table of his own still speaks.",
   "tables": [
     {
       "key": "contract.none",
@@ -146,6 +146,15 @@
       ]
     },
     {
+      "key": "court.taken",
+      "rows": [
+        "Through the door and sit where he points. The priest asks the questions in here. I only carry the paper.",
+        "Mind the step. Men have gone down it in irons and come out with a fine; men have gone down it free and come out for the post.",
+        "I lay it on the table and I stand by the wall. What he does with it is between you and the lamp.",
+        "You will call him Father and you will not lie to him. The second one is not my rule, but I have watched it enforced."
+      ]
+    },
+    {
       "key": "court.paper",
       "rows": [
         "I have read what you gave at this door. It is the only reason we are talking.",
@@ -175,6 +184,15 @@
         "I gave you mercy once and told you it was once. I do not have a second.",
         "You will say nothing, because there is nothing left to say. The ward may have you.",
         "The Flame remembers its own bargains. So did you, and you came back."
+      ]
+    },
+    {
+      "key": "court.plead",
+      "rows": [
+        "Well? The lamp is lit and I am an old man. Did you, or did you not?",
+        "Say it plainly. The Flame has no ear for a long story and neither have I, at this hour.",
+        "That is your answer, then. Give it to me once, out loud, and it is yours for good.",
+        "I will not ask twice. The Watch would; the Watch is paid by the hour."
       ]
     },
     {

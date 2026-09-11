@@ -137,6 +137,14 @@ struct HearingPageState {
     std::string charge;
     /// "THE PAPER ASKS FOR A CELL." / "THE HAND." / "THE ROPE."
     std::string asks;
+    /// THE OFFICER WHO WALKED YOU IN, and what he says as he lays the paper
+    /// (court.taken, out of the bark tables) -- drawn under the rows in the
+    /// master pane's spare room, his name in the subject's accent and the
+    /// line in dim ink: the Watch stands by the wall while the priest
+    /// speaks. Empty on a record with no officer, and the pane keeps its
+    /// stipple.
+    std::string officerName;
+    std::string officerSays;
 
     // --- the master list --------------------------------------------------
     HearingView view = HearingView::Plea;

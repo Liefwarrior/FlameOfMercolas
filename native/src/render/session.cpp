@@ -6922,6 +6922,18 @@ HearingPageState Session::hearingPageState() const {
             break;
     }
 
+    // THE OFFICER WHO WALKED YOU IN, and his line as he lays the paper
+    // (court.taken), off the record's own officer and rotated with the
+    // priest's opening -- one hearing, one rotation, both voices. He stands
+    // by the wall for the whole hearing: the block reads under the rows
+    // until the page closes.
+    if (!hearing.officer.empty()) {
+        out.officerName = upperAscii(hearing.officer);
+        const std::int32_t escortRotation =
+            hearing.judged() ? std::max<std::int32_t>(0, crimes.hearings() - 1) : crimes.hearings();
+        out.officerSays = std::string(barks.line("court.taken", escortRotation));
+    }
+
     // --- the rows ---------------------------------------------------------
     const bool offered = courtSentenceOffered();
     const std::vector<CourtRowKind> kinds = courtRowKindsFor(hearing, courtPaperOpen_, offered);
@@ -6987,6 +6999,15 @@ HearingPageState Session::hearingPageState() const {
             opening = "court.roofs";
         }
         out.priest = bark(opening);
+        // THE PRIEST PRESSES once a plea is armed (court.plead): the "-- SURE?"
+        // beat in his own mouth, the question the row is about to answer.
+        // A commuted man's one row is not a plea and the opening stands.
+        if (courtArmed_ >= 0 && courtArmed_ < static_cast<int>(kinds.size())) {
+            const CourtRowKind armedKind = kinds[static_cast<std::size_t>(courtArmed_)];
+            if (armedKind == CourtRowKind::Guilty || armedKind == CourtRowKind::NotGuilty) {
+                out.priest = bark("court.plead");
+            }
+        }
         if (!kinds.empty()) {
             out.consequence = rowConsequence(kinds[static_cast<std::size_t>(out.cursor)], sheet.tier);
         }

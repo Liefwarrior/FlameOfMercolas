@@ -521,6 +521,33 @@ TEST_CASE("the page says the charge off the sheet, the consequence of the hovere
     REQUIRE(barks.has("court.paper"));
     CHECK(page.priest == std::string(barks.line("court.paper", 0)));
     CHECK(page.priest == "I have read what you gave at this door. It is the only reason we are talking.");
+    // THE OFFICER WHO WALKED YOU IN stands by the wall under the rows: his
+    // name off the record, his line out of court.taken, rotated with the
+    // opening (BARKS lane).
+    REQUIRE(barks.has("court.taken"));
+    CHECK(page.officerName == "WATCHMAN CULL");
+    CHECK(page.officerSays == std::string(barks.line("court.taken", 0)));
+    CHECK(page.officerSays ==
+          "Through the door and sit where he points. The priest asks the questions in here. I "
+          "only carry the paper.");
+    // ARMING A PLEA puts the question in the priest's mouth (court.plead);
+    // disarming gives him his opening back. The paper row arms nothing and
+    // asks nothing.
+    REQUIRE(barks.has("court.plead"));
+    session.moveCourtCursor(-1);
+    session.chooseCourtRow();  // arms I DID IT
+    REQUIRE(session.courtPleaArmed());
+    page = session.hearingPageState();
+    CHECK(page.priest == std::string(barks.line("court.plead", 0)));
+    CHECK(page.priest == "Well? The lamp is lit and I am an old man. Did you, or did you not?");
+    CHECK(page.officerSays == std::string(barks.line("court.taken", 0)));
+    session.courtBack();
+    REQUIRE_FALSE(session.courtPleaArmed());
+    page = session.hearingPageState();
+    CHECK(page.priest == std::string(barks.line("court.paper", 0)));
+    session.moveCourtCursor(1);
+    page = session.hearingPageState();
+    CHECK(page.cursor == 1);
     // HEAR THE PAPER: the sheet as phrases. No digit anywhere on it.
     session.moveCourtCursor(1);
     session.chooseCourtRow();
@@ -554,11 +581,27 @@ TEST_CASE("the page says the charge off the sheet, the consequence of the hovere
     mustRead("asks", page.asks);
     mustRead("consequence", page.consequence);
     mustRead("priest", page.priest);
+    mustRead("officerName", page.officerName);
+    mustRead("officerSays", page.officerSays);
     for (const render::HearingRow& row : page.rows) {
         mustRead("row", row.label);
     }
     for (const std::string& row : session.courtRows()) {
         mustRead("courtRows", row);
+    }
+    // EVERY AUTHORED COURT ROW READS, all fourteen tables: the redline list
+    // is drawable to the glyph, and no row is blank in anybody's mouth.
+    for (const char* key : {"court.taken", "court.paper", "court.blood", "court.roofs",
+                            "court.nothing", "court.plead", "court.spared", "court.fined",
+                            "court.held", "court.bound", "court.hand", "court.commuted",
+                            "court.rope", "court.lie"}) {
+        const std::vector<std::string>* rows = barks.rows(key);
+        REQUIRE(rows != nullptr);
+        CHECK(rows->size() >= 3);
+        CHECK(rows->size() <= 5);
+        for (const std::string& row : *rows) {
+            mustRead(key, row);
+        }
     }
 }
 
