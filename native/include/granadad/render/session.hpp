@@ -1839,7 +1839,14 @@ private:
     /// points and the roof-run tally, in the one place a landing is resolved.
     void settleLanding(const sim::RoofResult& move);
     /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
+    /// JUSTICE BUILD: "WANTED FOR BLOOD  HEAT 60" while the paper has a
+    /// corpse behind it, "CONDEMNED  HEAT 12" after a commutation. This row
+    /// is the criminal tag's one presentation, so it is reachable to be
+    /// proved (test_court.cpp) the way unlockedLetters() is.
+public:
     [[nodiscard]] std::string heatLine() const;
+
+private:
     /// "THE GULL  14 IN  BUSY", or empty when the player is not inside.
     /// Pulled out of drawFrame() into its own Line() method, the same shape
     /// every other bottom-band row already had, so syncPanelAnim() can call
